@@ -1,6 +1,6 @@
 import { inject, provideAppInitializer, provideZoneChangeDetection } from '@angular/core';
 import { bootstrapApplication } from '@angular/platform-browser';
-import { provideRouter } from '@angular/router';
+import { provideRouter, withInMemoryScrolling } from '@angular/router';
 import { provideHttpClient, withInterceptors, withXhr } from '@angular/common/http';
 
 import { AppComponent } from './app/app.component';
@@ -13,7 +13,7 @@ bootstrapApplication(AppComponent, {
         provideZoneChangeDetection(),
         // Public content/shell do not wait for a private API; protected guards await restore().
         provideAppInitializer(() => { void inject(AuthService).restore(); }),
-        provideRouter(appRoutes),
+        provideRouter(appRoutes, withInMemoryScrolling({ anchorScrolling: 'enabled', scrollPositionRestoration: 'enabled' })),
         provideHttpClient(withXhr(), withInterceptors([authInterceptor]))
     ]
 }).catch(err => console.error(err));

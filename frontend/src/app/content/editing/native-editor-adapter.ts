@@ -40,7 +40,7 @@ const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
 const TYPE = /^[a-z][a-z0-9_]{0,63}$/;
 const KNOWN_TYPES = new Set([
     'doc', 'paragraph', 'heading', 'blockquote', 'bullet_list', 'ordered_list',
-    'list_item', 'text', 'ruby', 'link', 'divider'
+    'list_item', 'text', 'ruby', 'link', 'divider', 'image', 'audio', 'video', 'youtube', 'mermaid', 'table'
 ]);
 const textIdentityKey = new PluginKey('mnema-text-identity');
 
@@ -90,6 +90,14 @@ const nodes: Record<string, NodeSpec> = {
         group: 'block', atom: true, selectable: true, attrs: commonAttrs,
         parseDOM: [{ tag: 'hr' }], toDOM: node => ['hr', metadataDomAttrs(node.attrs)]
     },
+    image: richAtom('image', { ...commonAttrs, assetId: {}, alt: {}, caption: { default: null },
+        description: { default: null } }, 'Изображение'),
+    audio: richAtom('audio', { ...commonAttrs, assetId: {}, title: {}, transcript: { default: null } }, 'Аудио'),
+    video: richAtom('video', { ...commonAttrs, assetId: {}, title: {}, transcript: { default: null } }, 'Видео'),
+    youtube: richAtom('youtube', { ...commonAttrs, videoId: {}, title: {}, transcript: { default: null } }, 'YouTube'),
+    mermaid: richAtom('mermaid', { ...commonAttrs, source: {}, title: {}, description: {} }, 'Схема Mermaid'),
+    table: richAtom('table', { ...commonAttrs, caption: {}, summary: { default: null }, columns: {}, rows: {} },
+        'Таблица'),
     ruby: {
         inline: true, group: 'inline', atom: true, selectable: true,
         attrs: { ...commonAttrs, base: {}, reading: {} },
@@ -137,6 +145,15 @@ const marks: Record<string, MarkSpec> = {
         toDOM: () => ['span', { 'data-mnema-text': '' }, 0]
     }
 };
+
+function richAtom(kind: string, attrs: NodeSpec['attrs'], label: string): NodeSpec {
+    return {
+        group: 'block', atom: true, selectable: true, attrs,
+        toDOM: node => ['div', { ...metadataDomAttrs(node.attrs), class: 'mnema-rich-atom',
+            'data-native-kind': kind, role: 'note' }, `${label}: ${String(node.attrs['title']
+            ?? node.attrs['caption'] ?? node.attrs['alt'] ?? '')}`]
+    };
+}
 
 export const nativeEditorSchema = new Schema({ nodes, marks });
 
@@ -288,6 +305,24 @@ function importNode(node: NativeNode, slot: NativeSlot): ProseMirrorNode {
             return nativeEditorSchema.node('list_item', metadata, node.content.map(child => importNode(child, 'block')));
         case 'divider':
             return nativeEditorSchema.node('divider', metadata);
+        case 'image':
+            return nativeEditorSchema.node('image', { ...metadata, assetId: node.attrs['assetId'],
+                alt: node.attrs['alt'], caption: node.attrs['caption'] ?? null,
+                description: node.attrs['description'] ?? null });
+        case 'audio':
+        case 'video':
+            return nativeEditorSchema.node(node.type, { ...metadata, assetId: node.attrs['assetId'],
+                title: node.attrs['title'], transcript: node.attrs['transcript'] ?? null });
+        case 'youtube':
+            return nativeEditorSchema.node('youtube', { ...metadata, videoId: node.attrs['videoId'],
+                title: node.attrs['title'], transcript: node.attrs['transcript'] ?? null });
+        case 'mermaid':
+            return nativeEditorSchema.node('mermaid', { ...metadata, source: node.attrs['source'],
+                title: node.attrs['title'], description: node.attrs['description'] });
+        case 'table':
+            return nativeEditorSchema.node('table', { ...metadata, caption: node.attrs['caption'],
+                summary: node.attrs['summary'] ?? null, columns: cloneJson(node.attrs['columns']),
+                rows: cloneJson(node.attrs['rows']) });
         case 'ruby':
             return nativeEditorSchema.node('ruby', { ...metadata, base: node.attrs['base'], reading: node.attrs['reading'] });
         case 'link':
@@ -325,8 +360,40 @@ function exportNode(node: ProseMirrorNode): NativeNode {
             attrs['reading'] = String(node.attrs['reading']);
             break;
         case 'link': attrs['href'] = String(node.attrs['href']); break;
+        case 'image':
+            attrs['assetId'] = String(node.attrs['assetId']);
+            attrs['alt'] = String(node.attrs['alt']);
+            addOptional(attrs, node.attrs, 'caption');
+            addOptional(attrs, node.attrs, 'description');
+            break;
+        case 'audio':
+        case 'video':
+            attrs['assetId'] = String(node.attrs['assetId']);
+            attrs['title'] = String(node.attrs['title']);
+            addOptional(attrs, node.attrs, 'transcript');
+            break;
+        case 'youtube':
+            attrs['videoId'] = String(node.attrs['videoId']);
+            attrs['title'] = String(node.attrs['title']);
+            addOptional(attrs, node.attrs, 'transcript');
+            break;
+        case 'mermaid':
+            attrs['source'] = String(node.attrs['source']);
+            attrs['title'] = String(node.attrs['title']);
+            attrs['description'] = String(node.attrs['description']);
+            break;
+        case 'table':
+            attrs['caption'] = String(node.attrs['caption']);
+            addOptional(attrs, node.attrs, 'summary');
+            attrs['columns'] = cloneJson(node.attrs['columns']) as NativeJson;
+            attrs['rows'] = cloneJson(node.attrs['rows']) as NativeJson;
+            break;
     }
     return { id, type, version, attrs, content: node.content.content.map(exportNode) };
+}
+
+function addOptional(target: Record<string, NativeJson>, source: Record<string, unknown>, key: string): void {
+    if (typeof source[key] === 'string') target[key] = source[key];
 }
 
 function exportText(node: ProseMirrorNode): NativeNode {

@@ -1,12 +1,11 @@
 # Mnema
-Mnema is a learning platform under active development. The current signed-in experience supports creating private decks and editing their title and description.
+Mnema is a learning platform under active development. The current signed-in experience supports private decks, learning materials, exercises, Study and owned media.
 
 ## Key Pages
 - https://mnema.app/
-- https://mnema.app/public-decks
 - https://mnema.app/privacy
 - https://mnema.app/terms
 
 ## Notes
-- Private deck pages require a verified Mnema account.
-- Study, editor, import, and public-catalog behavior is not part of the current own-deck flow.
+- Private deck, authoring, media and Study pages require a Mnema account.
+- The old public deck catalogue, template, import and AI pages are not part of the current runtime.

@@ -128,6 +128,59 @@
     @case ('divider') {
       <hr class="native-divider" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null" />
     }
+    @case ('image') {
+      <figure class="native-media" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
+        @if (sources().get(node.assetId.toLowerCase()); as source) {
+          <app-native-media-image [source]="source.url" [poster]="source.posterUrl ?? null"
+            [download]="source.downloadUrl ?? source.url" [alt]="node.alt"
+            [animated]="source.mimeType === 'image/gif'" (sourceFailed)="assetFailed.emit(node.assetId)" />
+        } @else {
+          <p class="native-media-pending" role="status">{{ assetStatuses()[node.assetId.toLowerCase()] ?? 'Изображение пока недоступно' }}: {{ node.alt }}</p>
+        }
+        @if (node.caption) { <figcaption>{{ node.caption }}</figcaption> }
+        @if (node.description) { <p class="native-media-description">{{ node.description }}</p> }
+      </figure>
+    }
+    @case ('audio') {
+      <figure class="native-media" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
+        <figcaption>{{ node.title }}</figcaption>
+        @if (sources().get(node.assetId.toLowerCase()); as source) {
+          <app-native-media-player kind="audio" [source]="source.url" [title]="node.title"
+            (sourceFailed)="assetFailed.emit(node.assetId)" />
+        } @else { <p class="native-media-pending" role="status">{{ assetStatuses()[node.assetId.toLowerCase()] ?? 'Аудио пока недоступно.' }}</p> }
+        @if (node.transcript) { <details><summary>Текст аудио</summary><p>{{ node.transcript }}</p></details> }
+      </figure>
+    }
+    @case ('video') {
+      <figure class="native-media" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
+        <figcaption>{{ node.title }}</figcaption>
+        @if (sources().get(node.assetId.toLowerCase()); as source) {
+          <app-native-media-player kind="video" [source]="source.url" [poster]="source.posterUrl ?? null"
+            [title]="node.title" (sourceFailed)="assetFailed.emit(node.assetId)" />
+        } @else { <p class="native-media-pending" role="status">{{ assetStatuses()[node.assetId.toLowerCase()] ?? 'Видео пока недоступно.' }}</p> }
+        @if (node.transcript) { <details><summary>Текст видео</summary><p>{{ node.transcript }}</p></details> }
+      </figure>
+    }
+    @case ('youtube') {
+      <app-native-youtube [videoId]="node.videoId" [title]="node.title" [transcript]="node.transcript ?? null" />
+    }
+    @case ('mermaid') {
+      <app-native-mermaid [source]="node.source" [title]="node.title" [description]="node.description" />
+    }
+    @case ('table') {
+      <figure class="native-table-figure" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
+        <div class="native-table-scroll" tabindex="0" aria-label="Таблица: прокрутка по горизонтали при необходимости">
+          <table>
+            <caption>{{ node.caption }}</caption>
+            <thead><tr>@for (column of node.columns; track $index) { <th scope="col">{{ column }}</th> }</tr></thead>
+            <tbody>@for (row of node.rows; track $index) {
+              <tr>@for (cell of row; track $index) { <td>{{ cell }}</td> }</tr>
+            }</tbody>
+          </table>
+        </div>
+        @if (node.summary) { <figcaption>{{ node.summary }}</figcaption> }
+      </figure>
+    }
     @case ('opaque') {
       @if (node.display === 'list-item') {
         <li class="native-list-item native-unsupported native-unsupported--list-item">Этот пункт пока не поддерживается.</li>

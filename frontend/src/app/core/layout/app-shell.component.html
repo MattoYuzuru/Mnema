@@ -3,14 +3,19 @@
 <div class="paper-shell">
   <header class="masthead">
     <a class="brand" routerLink="/" aria-label="Mnema — главная">
-      <span class="brand-mark" aria-hidden="true">M</span>
-      <span>Mnema</span>
+      <img class="brand-mark" src="/assets/brand/mnema-mark.svg" width="32" height="32" alt="" aria-hidden="true">
+      <span>MNEMA</span>
     </a>
 
     <nav class="primary-nav" aria-label="Основная навигация">
       @if (status() === 'authenticated') {
-        <a routerLink="/decks" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Мои колоды</a>
-        <a routerLink="/decks/new" routerLinkActive="active">Новая колода</a>
+        <a routerLink="/decks" routerLinkActive="active" ariaCurrentWhenActive="page" [routerLinkActiveOptions]="{ exact: true }">Мои колоды</a>
+        <a routerLink="/decks/new" routerLinkActive="active" ariaCurrentWhenActive="page">Новая колода</a>
+        <a routerLink="/profile" routerLinkActive="active" ariaCurrentWhenActive="page">Профиль</a>
+      } @else {
+        <a routerLink="/" fragment="materials">Материалы</a>
+        <a routerLink="/" fragment="exercises">Упражнения</a>
+        <a routerLink="/" fragment="rhythm">Как учиться</a>
       }
     </nav>
 
@@ -27,11 +32,12 @@
   </header>
 
   <main id="main-content" tabindex="-1">
+    @if (constellationSeed(); as seed) { <app-deck-constellation [seed]="seed" [layoutKey]="routeUrl()" /> }
     <router-outlet (activate)="focusPageHeading()"></router-outlet>
   </main>
 
   <footer class="footer">
-    <span>Mnema</span>
+    <span>MNEMA · ДЛЯ ТЕХ, КТО ЛЮБИТ УЧИТЬСЯ</span>
     <nav aria-label="Служебные ссылки">
       <a routerLink="/privacy">Конфиденциальность</a>
       <a routerLink="/terms">Условия</a>

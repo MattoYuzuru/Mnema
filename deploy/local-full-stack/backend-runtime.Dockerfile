@@ -20,3 +20,11 @@ COPY --from=build /workspace/services/identity-account/build/libs/*.jar app.jar
 
 FROM backend-runtime AS learning-runtime
 COPY --from=build /workspace/services/learning/build/libs/*.jar app.jar
+
+FROM docker:29.5.2-cli@sha256:9ba8e32bfc35a2c7ae2feb1e3241b2778ae21dee80f4dcd31d04e1cfdea86ea2 AS docker-cli
+
+# Local media processor only: the worker gateway shells out to `docker run`. The static
+# client binary is copied into this one target; the browser-facing learning-runtime
+# has neither the client nor the Docker socket.
+FROM learning-runtime AS learning-media-processor-runtime
+COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker

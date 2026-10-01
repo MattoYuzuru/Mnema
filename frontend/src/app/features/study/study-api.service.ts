@@ -3,24 +3,28 @@ import { Injectable, inject } from '@angular/core';
 import { Observable, defer, map } from 'rxjs';
 
 import { appConfig } from '../../app.config';
+import { LearnerContent, MECHANICS, Mechanic, allLearnerBlocks } from '../../content/exercise/exercise-content.models';
+import { ExerciseContentError, parseLearnerBlock, parseLearnerContent } from '../../content/exercise/exercise-content.parse';
 import {
     AttemptCommand,
     AttemptFeedback,
     AttemptOutcome,
+    HintResult,
     MaterialProgress,
     PreparingStudySession,
     ReadyStudySession,
     ReplaySources,
     RestartAcknowledgement,
-    StudyBinding,
     StudyExerciseType,
+    StudyHint,
     StudyMode,
     StudyPresentation,
     StudyProtocolError,
     StudySession,
     StudyStartIntent,
     StudyProgressPage,
-    StudyWriteResult
+    StudyWriteResult,
+    TranscriptReveal
 } from './study.models';
 
 @Injectable({ providedIn: 'root' })
@@ -129,6 +133,59 @@ export class StudyApiService {
             return { value, replayed: replayHeader(response.headers) };
         }));
     }
+
+    checkPair(deckId: string, sessionId: string, presentationId: string, nonce: string,
+              leftId: string, rightId: string): Observable<{ readonly correct: boolean }> {
+        return defer(() => this.http.post<unknown>(
+            `${this.baseUrl}/decks/${entity(deckId)}/study-sessions/${entity(sessionId)}/pair-checks`,
+            { presentationId: entity(presentationId), nonce: text(nonce, 100, 16),
+                leftId: entity(leftId), rightId: entity(rightId) }, { observe: 'response' }
+        )).pipe(map(response => {
+            if (response.status !== 200) throw protocol('Unexpected pair check status.');
+            privateResponse(response);
+            const object = exact(response.body, ['correct']);
+            if (typeof object['correct'] !== 'boolean') throw protocol('Invalid pair check result.');
+            return { correct: object['correct'] };
+        }));
+    }
+
+    /** Records and returns the first letter of one blank; the server is the only source of the letter. */
+    hint(deckId: string, sessionId: string, presentationId: string, nonce: string,
+         blankId: string): Observable<HintResult> {
+        return defer(() => this.http.post<unknown>(
+            `${this.baseUrl}/decks/${entity(deckId)}/study-sessions/${entity(sessionId)}`
+                + `/presentations/${entity(presentationId)}/hints`,
+            { nonce: text(nonce, 100, 16), blankId: entity(blankId) }, { observe: 'response' }
+        )).pipe(map(response => {
+            if (response.status !== 200) throw protocol('Unexpected hint status.');
+            privateResponse(response);
+            const object = exact(response.body, ['presentationId', 'blankId', 'firstLetter']);
+            const result = { presentationId: entity(object['presentationId']), blankId: entity(object['blankId']),
+                firstLetter: letter(object['firstLetter']) };
+            if (result.presentationId !== presentationId.toLowerCase() || result.blankId !== blankId.toLowerCase()) {
+                throw protocol('Hint scope mismatch.');
+            }
+            return result;
+        }));
+    }
+
+    revealTranscript(deckId: string, sessionId: string, presentationId: string, nonce: string,
+                     type: Mechanic): Observable<TranscriptReveal> {
+        return defer(() => this.http.post<unknown>(
+            `${this.baseUrl}/decks/${entity(deckId)}/study-sessions/${entity(sessionId)}`
+                + `/presentations/${entity(presentationId)}/transcript`,
+            { nonce: text(nonce, 100, 16) }, { observe: 'response' }
+        )).pipe(map(response => {
+            if (response.status !== 200) throw protocol('Unexpected transcript status.');
+            privateResponse(response);
+            const object = exact(response.body, ['presentationId', 'transcriptRevealed', 'content']);
+            if (entity(object['presentationId']) !== presentationId.toLowerCase()) throw protocol('Transcript scope mismatch.');
+            if (object['transcriptRevealed'] !== true) throw protocol('Transcript was not revealed.');
+            const content = guard(() => parseLearnerContent(type, object['content'], true));
+            if (!hasTranscript(content)) throw protocol('Transcript was not revealed.');
+            return { presentationId: presentationId.toLowerCase(), content };
+        }));
+    }
 }
 
 function startCommand(commandId: string, intent: StudyStartIntent): Record<string, unknown> {
@@ -156,17 +213,21 @@ function parseProgress(value: unknown): StudyProgressPage {
 
 function parseMaterialProgress(value: unknown): MaterialProgress {
     const object = exact(value, ['memberKey', 'itemRevisionId', 'state', 'objectiveCoverage',
-        'lastAssessedAt', 'nextDue']);
+        'lastAssessedAt', 'nextDue', 'title']);
     const state = object['state'];
     if (state !== 'NOT_STARTED' && state !== 'LEARNING' && state !== 'DUE' && state !== 'ON_TRACK') {
         throw protocol('Invalid material progress state.');
+    }
+    const title = object['title'];
+    if (typeof title !== 'string' || Array.from(title).length > 240) {
+        throw protocol('Invalid material preview.');
     }
     const coverage = exact(object['objectiveCoverage'], ['enabled', 'introduced', 'assessed']);
     const enabled = count(coverage['enabled'], 1_000_000);
     const introduced = count(coverage['introduced'], enabled);
     const assessed = count(coverage['assessed'], introduced);
     const nullableInstant = (item: unknown): string | null => item === null ? null : instant(item);
-    return { memberKey: entity(object['memberKey']), itemRevisionId: entity(object['itemRevisionId']), state,
+    return { title: title as string, memberKey: entity(object['memberKey']), itemRevisionId: entity(object['itemRevisionId']), state,
         objectiveCoverage: { enabled, introduced, assessed },
         lastAssessedAt: nullableInstant(object['lastAssessedAt']), nextDue: nullableInstant(object['nextDue']) };
 }
@@ -244,51 +305,48 @@ function parseSession(value: unknown, expectedDeck: string, expectedSession?: st
     return session;
 }
 
+const EVALUATORS: Readonly<Record<Mechanic, readonly string[]>> = {
+    SELF_CHECK: ['self-check'], FREE_RESPONSE: ['deterministic-text', 'ai-semantic'], CLOZE: ['deterministic-cloze'],
+    CHOICE: ['deterministic-choice'], MATCH: ['deterministic-match']
+};
+
 function parsePresentation(value: unknown): StudyPresentation {
     const object = exact(value, [
         'presentationId', 'nonce', 'ordinal', 'exerciseRevisionId', 'type', 'objectiveId', 'objectiveRevisionId',
-        'learningEpoch', 'reference', 'prompt', 'options', 'bindings', 'evaluator'
+        'learningEpoch', 'content', 'transcriptRevealed', 'hints', 'evaluator'
     ]);
-    const prompt = exact(object['prompt'], ['kind', 'text']);
-    if (prompt['kind'] !== 'TEXT') throw protocol('Invalid prompt projection.');
-    const evaluator = exact(object['evaluator'], ['id', 'version']);
-    if (!Array.isArray(object['options']) || object['options'].length > 6 || !Array.isArray(object['bindings'])
-        || object['bindings'].length < 1 || object['bindings'].length > 16) throw protocol('Invalid presentation content.');
-    const options = object['options'].map(option => {
-        const item = exact(option, ['optionId', 'text']);
-        return { optionId: entity(item['optionId']), text: text(item['text'], 1024) };
-    });
-    const bindings = object['bindings'].map(parseBinding);
-    if (bindings.filter(binding => binding.role === 'ASSESSED').length !== 1) throw protocol('Invalid assessed binding.');
     const type = exerciseType(object['type']);
-    const optionBindings = bindings.filter(binding => binding.role === 'OPTION');
-    if (type === 'SINGLE_CHOICE') {
-        const optionIds = new Set(options.map(option => option.optionId));
-        if (options.length < 2 || options.length > 6 || optionIds.size !== options.length
-            || optionBindings.length !== options.length
-            || optionBindings.some(binding => !optionIds.has(binding.bindingId))) {
-            throw protocol('Invalid choice options.');
-        }
-    } else if (options.length !== 0 || optionBindings.length !== 0) throw protocol('Unexpected choice options.');
+    if (typeof object['transcriptRevealed'] !== 'boolean') throw protocol('Invalid transcript state.');
+    const learner = guard(() => parseLearnerContent(type, object['content'], object['transcriptRevealed'] as boolean));
+    const evaluator = exact(object['evaluator'], ['id', 'version']);
+    if (!EVALUATORS[type].includes(text(evaluator['id'], 100))) throw protocol('Evaluator does not match the exercise.');
+    const hints = parseHints(object['hints'], learner);
     return {
         presentationId: entity(object['presentationId']), nonce: text(object['nonce'], 100, 16),
         ordinal: count(object['ordinal'], 99), exerciseRevisionId: entity(object['exerciseRevisionId']),
-        type, objectiveId: entity(object['objectiveId']),
-        objectiveRevisionId: entity(object['objectiveRevisionId']), learningEpoch: unsigned(object['learningEpoch']),
-        reference: text(object['reference'], 4096, 0), prompt: { kind: 'TEXT', text: text(prompt['text'], 4096, 0) },
-        options, bindings, evaluator: { id: text(evaluator['id'], 100), version: text(evaluator['version'], 100) }
+        objectiveId: entity(object['objectiveId']), objectiveRevisionId: entity(object['objectiveRevisionId']),
+        learningEpoch: unsigned(object['learningEpoch']), transcriptRevealed: object['transcriptRevealed'],
+        hints, evaluator: { id: text(evaluator['id'], 100), version: text(evaluator['version'], 100) }, ...learner
     };
 }
 
-function parseBinding(value: unknown): StudyBinding {
-    const object = exact(value, ['bindingId', 'role', 'memberKey', 'itemRevisionId', 'ordinal', 'nodeIds', 'display']);
-    const role = object['role'];
-    if (role !== 'ASSESSED' && role !== 'CUE' && role !== 'OPTION' && role !== 'CONTEXT') throw protocol('Invalid binding role.');
-    if (!Array.isArray(object['nodeIds']) || object['nodeIds'].length > 16) throw protocol('Invalid binding nodes.');
-    const display = exact(object['display'], ['kind']);
-    return { bindingId: entity(object['bindingId']), role, memberKey: entity(object['memberKey']),
-        itemRevisionId: entity(object['itemRevisionId']), ordinal: count(object['ordinal'], 15),
-        nodeIds: object['nodeIds'].map(entity), display: { kind: text(display['kind'], 100) } };
+function parseHints(value: unknown, learner: LearnerContent): readonly StudyHint[] {
+    if (!Array.isArray(value) || value.length > 12) throw protocol('Invalid hints.');
+    const hintable = new Set(learner.type === 'CLOZE'
+        ? learner.content.passage.flatMap(segment => segment.kind === 'BLANK' && segment.firstLetterHint ? [segment.blankId] : [])
+        : []);
+    const hints = value.map(entry => {
+        const hint = exact(entry, ['blankId', 'firstLetter']);
+        return { blankId: entity(hint['blankId']), firstLetter: letter(hint['firstLetter']) };
+    });
+    if (new Set(hints.map(hint => hint.blankId)).size !== hints.length || hints.some(hint => !hintable.has(hint.blankId))) {
+        throw protocol('Invalid hint scope.');
+    }
+    return hints;
+}
+
+function hasTranscript(content: LearnerContent): boolean {
+    return allLearnerBlocks(content).some(block => (block.kind === 'AUDIO' || block.kind === 'VIDEO') && block.transcript !== undefined);
 }
 
 function parseOutcome(value: unknown): AttemptOutcome {
@@ -322,26 +380,70 @@ function parseEvidence(value: unknown, status: AttemptOutcome['status'], parsedM
         || object['reasonCodes'].some(item => typeof item !== 'string')) throw protocol('Invalid canonical evidence.');
 }
 
+const RESULTS = ['CORRECT', 'PARTIAL', 'UNSURE', 'INCORRECT'] as const;
+
 function parseFeedback(value: unknown): AttemptFeedback {
     if (!isRecord(value) || typeof value['result'] !== 'string') throw protocol('Invalid feedback.');
     const result = value['result'];
-    if (!['CORRECT', 'PARTIAL', 'UNSURE', 'INCORRECT', 'NOT_ASSESSED', 'UNAVAILABLE'].includes(result)) {
-        throw protocol('Invalid feedback result.');
+    if (result === 'NOT_ASSESSED' || result === 'UNAVAILABLE') {
+        const object = exact(value, ['result', 'reasonCodes']);
+        return { result, reasonCodes: strings(object['reasonCodes']) };
     }
-    const allowed = result === 'NOT_ASSESSED' ? ['result']
-        : result === 'UNAVAILABLE' ? ['result', 'reasonCodes']
-            : ('reference' in value ? ['result', 'reference', 'appliedRules'] : ['result', 'appliedRules']);
-    const object = exact(value, allowed);
-    const strings = (field: string): readonly string[] => {
-        const values = object[field] ?? [];
-        if (!Array.isArray(values) || values.length > 20 || values.some(item => typeof item !== 'string')) {
-            throw protocol('Invalid feedback details.');
+    if (!(RESULTS as readonly string[]).includes(result)) throw protocol('Invalid feedback result.');
+    const verdict = result as (typeof RESULTS)[number];
+    const rules = (object: Record<string, unknown>) => strings(object['appliedRules']);
+    if ('blanks' in value) {
+        const object = exact(value, ['result', 'appliedRules', 'blanks']);
+        if (!Array.isArray(object['blanks']) || object['blanks'].length < 1 || object['blanks'].length > 12) {
+            throw protocol('Invalid blank feedback.');
         }
-        return values as string[];
-    };
-    return { result: result as AttemptFeedback['result'],
-        reference: 'reference' in object ? text(object['reference'], 4096, 0) : null,
-        appliedRules: strings('appliedRules'), reasonCodes: strings('reasonCodes') };
+        const blanks = object['blanks'].map(entry => {
+            const blank = exact(entry, ['blankId', 'correct', 'hinted', 'reference']);
+            if (typeof blank['correct'] !== 'boolean' || typeof blank['hinted'] !== 'boolean') throw protocol('Invalid blank result.');
+            return { blankId: entity(blank['blankId']), correct: blank['correct'], hinted: blank['hinted'],
+                reference: text(blank['reference'], 4096, 0) };
+        });
+        if (new Set(blanks.map(blank => blank.blankId)).size !== blanks.length) throw protocol('Duplicate blank feedback.');
+        return { result: verdict, appliedRules: rules(object), blanks };
+    }
+    if ('correctOptionIds' in value) {
+        const object = exact(value, ['result', 'appliedRules', 'correctOptionIds']);
+        if (!Array.isArray(object['correctOptionIds']) || object['correctOptionIds'].length < 1
+            || object['correctOptionIds'].length > 12) throw protocol('Invalid choice feedback.');
+        const correctOptionIds = object['correctOptionIds'].map(entity);
+        if (new Set(correctOptionIds).size !== correctOptionIds.length) throw protocol('Duplicate correct option.');
+        return { result: verdict, appliedRules: rules(object), correctOptionIds };
+    }
+    if ('pairs' in value) {
+        const object = exact(value, ['result', 'appliedRules', 'pairs']);
+        if (!Array.isArray(object['pairs']) || object['pairs'].length < 2 || object['pairs'].length > 6) {
+            throw protocol('Invalid pair feedback.');
+        }
+        const pairs = object['pairs'].map(entry => {
+            const pair = exact(entry, ['leftId', 'selectedRightId', 'correctRightId', 'correct']);
+            if (typeof pair['correct'] !== 'boolean') throw protocol('Invalid pair result.');
+            return { leftId: entity(pair['leftId']), selectedRightId: entity(pair['selectedRightId']),
+                correctRightId: entity(pair['correctRightId']), correct: pair['correct'] };
+        });
+        if (new Set(pairs.map(pair => pair.leftId)).size !== pairs.length) throw protocol('Duplicate pair feedback.');
+        return { result: verdict, appliedRules: rules(object), pairs };
+    }
+    if ('referenceContent' in value) {
+        const object = exact(value, ['result', 'appliedRules', 'reference', 'referenceContent']);
+        if (!Array.isArray(object['referenceContent']) || object['referenceContent'].length > 8) {
+            throw protocol('Invalid reference content.');
+        }
+        return { result: verdict, appliedRules: rules(object), reference: text(object['reference'], 4096, 0),
+            referenceContent: object['referenceContent'].map(block => guard(() => parseLearnerBlock(block, 'REFERENCE', null))) };
+    }
+    return { result: verdict, appliedRules: rules(exact(value, ['result', 'appliedRules'])) };
+}
+
+function strings(value: unknown): readonly string[] {
+    if (!Array.isArray(value) || value.length > 20 || value.some(item => typeof item !== 'string')) {
+        throw protocol('Invalid feedback details.');
+    }
+    return value as string[];
 }
 
 function parseTransition(value: unknown): AttemptOutcome['transition'] {
@@ -354,21 +456,57 @@ function parseTransition(value: unknown): AttemptOutcome['transition'] {
 }
 
 function validateCommand(command: AttemptCommand): void {
+    exact(command, ['attemptId', 'presentationId', 'nonce', 'response', 'confidence', 'durationMs']);
     commandIdValue(command.attemptId); entity(command.presentationId); text(command.nonce, 100, 16);
-    if (!Array.isArray(command.hintsUsed) || command.hintsUsed.length > 8
-        || command.hintsUsed.some(value => typeof value !== 'string' || value.length === 0 || value.length > 64)
-        || !Number.isSafeInteger(command.durationMs) || command.durationMs < 0 || command.durationMs > 3_600_000) {
+    if (!Number.isSafeInteger(command.durationMs) || command.durationMs < 0 || command.durationMs > 3_600_000) {
         throw protocol('Invalid attempt command.');
     }
     const response = command.response;
-    if (response.kind === 'TEXT') text(response.text, 4096, 0);
+    if (response.kind === 'TEXT') { exact(response, ['kind', 'text']); text(response.text, 4096, 0); }
     else if (response.kind === 'SELF_CHECK') {
+        exact(response, ['kind', 'rating']);
         if (!['NOT_RECALLED', 'HINTED', 'PARTIAL', 'FULL'].includes(response.rating)) throw protocol('Invalid rating.');
-    } else if (response.kind === 'CHOICE') entity(response.optionId);
-    else if (response.kind !== 'CANCEL') throw protocol('Invalid response kind.');
+    } else if (response.kind === 'CLOZE') {
+        exact(response, ['kind', 'blanks']);
+        if (!Array.isArray(response.blanks) || response.blanks.length < 1 || response.blanks.length > 12
+            || new Set(response.blanks.map(blank => entity(blank.blankId))).size !== response.blanks.length) {
+            throw protocol('Invalid cloze response.');
+        }
+        response.blanks.forEach(blank => { exact(blank, ['blankId', 'text']); text(blank.text, 4096, 0); });
+    } else if (response.kind === 'CHOICE') {
+        exact(response, ['kind', 'optionIds']);
+        if (!Array.isArray(response.optionIds) || response.optionIds.length === 0 || response.optionIds.length > 12
+            || new Set(response.optionIds.map(entity)).size !== response.optionIds.length) {
+            throw protocol('Invalid choice selection.');
+        }
+    } else if (response.kind === 'MATCH') {
+        exact(response, ['kind', 'pairs']);
+        if (!Array.isArray(response.pairs) || response.pairs.length < 2 || response.pairs.length > 6
+            || new Set(response.pairs.map(pair => entity(pair.leftId))).size !== response.pairs.length
+            || new Set(response.pairs.map(pair => entity(pair.rightId))).size !== response.pairs.length) {
+            throw protocol('Invalid match response.');
+        }
+        response.pairs.forEach(pair => exact(pair, ['leftId', 'rightId']));
+    } else if (response.kind === 'CANCEL') exact(response, ['kind']);
+    else throw protocol('Invalid response kind.');
     if (command.confidence !== null && !['KNEW', 'UNSURE', 'GUESSED'].includes(command.confidence)) {
         throw protocol('Invalid confidence.');
     }
+}
+
+/** Content parsers throw their own error type; Study callers only see Study protocol errors. */
+function guard<T>(parse: () => T): T {
+    try {
+        return parse();
+    } catch (error) {
+        if (error instanceof ExerciseContentError) throw protocol(error.message);
+        throw error;
+    }
+}
+
+function letter(value: unknown): string {
+    if (typeof value !== 'string' || value.length < 1 || value.length > 16) throw protocol('Invalid hint letter.');
+    return value;
 }
 
 function privateResponse(response: HttpResponse<unknown>): void {
@@ -400,5 +538,8 @@ function localDate(value: unknown): string { const result = text(value, 10); if 
 function hash(value: unknown): string { const result = text(value, 80); if (!/^sha256:[0-9a-f]{64}$/u.test(result)) throw protocol('Invalid config hash.'); return result; }
 function cursor(value: unknown): string | null { if (value === null) return null; return text(value, 4096); }
 function mode(value: unknown): StudyMode { if (value !== 'SCHEDULED' && value !== 'REPLAY' && value !== 'PRACTICE') throw protocol('Invalid Study mode.'); return value; }
-function exerciseType(value: unknown): StudyExerciseType { if (value !== 'SELF_CHECK' && value !== 'TYPED' && value !== 'CLOZE_SINGLE' && value !== 'SINGLE_CHOICE') throw protocol('Invalid exercise type.'); return value; }
+function exerciseType(value: unknown): StudyExerciseType {
+    if (typeof value !== 'string' || !(MECHANICS as readonly string[]).includes(value)) throw protocol('Invalid exercise type.');
+    return value as StudyExerciseType;
+}
 function identity(actual: string, expected?: string): void { if (expected !== undefined && actual !== expected.toLowerCase()) throw protocol('Session identity mismatch.'); }

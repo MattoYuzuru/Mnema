@@ -4,7 +4,7 @@
   }
 
   @if (editable()) {
-    <div class="editor-toolbar" role="toolbar" aria-label="Форматирование материала">
+    <div class="editor-toolbar" role="group" aria-label="Форматирование материала">
       <button type="button" [disabled]="disabled()" (click)="paragraph()">Текст</button>
       <button type="button" [disabled]="disabled()" (click)="heading(2)">Заголовок</button>
       <button type="button" [disabled]="disabled()" [attr.aria-pressed]="activeMarks().has('strong')" (click)="toggle('strong')"><strong>Жирный</strong></button>
@@ -14,18 +14,98 @@
       <button type="button" [disabled]="disabled()" (click)="list('bullet_list')">Список</button>
       <button type="button" [disabled]="disabled()" (click)="list('ordered_list')">Нумерация</button>
       <button type="button" [disabled]="disabled()" (click)="divider()">Разделитель</button>
+      <button type="button" [disabled]="disabled()" (click)="openMediaTools()">Медиа</button>
+      <button type="button" [disabled]="disabled()" (click)="insertTable()">Таблица 2×2</button>
+      <button type="button" [disabled]="disabled()" [attr.aria-pressed]="linkSelected()" (click)="openLinkTools()">Ссылка</button>
+      <button type="button" [disabled]="disabled()" [attr.aria-pressed]="rubySelected()" (click)="openRubyTools()">Чтение</button>
       <button type="button" [disabled]="disabled()" (click)="undo()" aria-label="Отменить последнее изменение">↶</button>
       <button type="button" [disabled]="disabled()" (click)="redo()" aria-label="Повторить отменённое изменение">↷</button>
     </div>
 
-    <div #editorHost class="editor-host"></div>
+    <div #editorHost class="editor-host" [class.is-empty]="empty()"></div>
 
-    <fieldset class="ruby-fields">
-      <legend>Добавить чтение над текстом</legend>
+    @if (selectionActions()) {
+      <div class="selection-popover selection-actions" [style.left.px]="popoverLeft()" [style.top.px]="popoverTop()" role="group" aria-label="Действия с выделенным текстом">
+        <button type="button" (click)="openLinkTools()">Сделать ссылкой</button>
+        <button type="button" (click)="openRubyTools()">Добавить чтение</button>
+      </div>
+    }
+    @if (activePopover() === 'link') {
+    <section class="selection-popover link-tools" [style.left.px]="popoverLeft()" [style.top.px]="popoverTop()" aria-label="Ссылка в тексте">
+      <div class="popover-heading"><strong>Ссылка в тексте</strong><button type="button" aria-label="Закрыть настройки ссылки" (click)="closePopover()">×</button></div>
+      <p class="editor-note">Выделите текст или поставьте курсор внутри ссылки.</p>
+      <div class="link-fields">
+        <label>Адрес HTTPS
+          <input type="url" inputmode="url" placeholder="https://example.org/" [disabled]="disabled()"
+            [value]="linkHref()" (input)="linkHref.set($any($event.target).value)" />
+        </label>
+        <button type="button" [disabled]="disabled()" (click)="applyLink()">{{ linkSelected() ? 'Обновить ссылку' : 'Сделать ссылкой' }}</button>
+        @if (linkSelected()) { <button type="button" [disabled]="disabled()" (click)="removeLink()">Убрать ссылку</button> }
+      </div>
+    </section>
+    }
+    @if (activePopover() === 'ruby') {
+    <fieldset class="selection-popover ruby-fields" [style.left.px]="popoverLeft()" [style.top.px]="popoverTop()">
+      <legend>Чтение над текстом</legend>
+      <div class="popover-heading"><span>Текст и чтение</span><button type="button" aria-label="Закрыть настройки чтения" (click)="closePopover()">×</button></div>
       <label>Текст <input type="text" maxlength="256" [disabled]="disabled()" [value]="rubyBase()" (input)="rubyBase.set($any($event.target).value)"></label>
       <label>Чтение <input type="text" maxlength="256" [disabled]="disabled()" [value]="rubyReading()" (input)="rubyReading.set($any($event.target).value)"></label>
-      <button type="button" [disabled]="disabled() || !canInsertRuby()" (click)="insertRuby()">Вставить ruby</button>
+      <button type="button" [disabled]="disabled() || !canInsertRuby()" (click)="insertRuby()">{{ rubySelected() ? 'Обновить чтение' : 'Добавить чтение' }}</button>
     </fieldset>
+    }
+
+    <section #richTools class="rich-tools" [hidden]="!mediaInspectorOpen()" aria-label="Настройки медиа">
+      <div class="rich-heading"><h3>Медиа</h3><button type="button" aria-label="Закрыть настройки медиа" (click)="closeMediaTools()">×</button></div>
+      <div class="rich-kind-picker" role="group" aria-label="Тип содержимого">
+        @for (kind of ['image', 'audio', 'video', 'youtube', 'mermaid']; track kind) {
+          <button type="button" [disabled]="disabled()" [attr.aria-pressed]="richKind() === kind"
+                  (click)="selectRichKind($any(kind))">
+            {{ kind === 'image' ? 'Изображение' : kind === 'audio' ? 'Аудио' : kind === 'video' ? 'Видео' : kind === 'youtube' ? 'YouTube' : 'Схема' }}
+          </button>
+        }
+      </div>
+      <div class="media-slot" [hidden]="richKind() !== 'image' && richKind() !== 'audio' && richKind() !== 'video'">
+        <ng-content />
+      </div>
+      <div class="rich-fields" (keydown)="richFieldKeydown($event)">
+        @if (richKind() === 'image' || richKind() === 'audio' || richKind() === 'video') {
+          <p class="editor-note" role="status">{{ richAssetId() ? 'Файл выбран. Добавьте описание и вставьте его в материал.' : 'Выберите файл, сделайте снимок или запишите звук ниже.' }}</p>
+        }
+        @if (richKind() === 'youtube') {
+          <label>Ссылка на видео YouTube
+            <input type="url" inputmode="url" placeholder="https://www.youtube.com/watch?v=…" [disabled]="disabled()"
+              [value]="richYoutubeUrl()" (input)="richYoutubeUrl.set($any($event.target).value)" />
+          </label>
+        }
+        <label>{{ richKind() === 'image' ? 'Краткое описание изображения' : 'Название' }}
+          <input type="text" [disabled]="disabled()" [value]="richTitle()" (input)="richTitle.set($any($event.target).value)" />
+        </label>
+        @if (richKind() === 'image') {
+          <label>Подпись
+            <input type="text" [disabled]="disabled()" [value]="richCaption()" (input)="richCaption.set($any($event.target).value)" />
+          </label>
+        }
+        @if (richKind() === 'image' || richKind() === 'mermaid') {
+          <label>{{ richKind() === 'mermaid' ? 'Текстовое описание связей' : 'Подробное описание, если на изображении схема или график' }}
+            <textarea rows="3" [disabled]="disabled()" [value]="richDescription()" (input)="richDescription.set($any($event.target).value)"></textarea>
+          </label>
+        }
+        @if (richKind() === 'audio' || richKind() === 'video' || richKind() === 'youtube') {
+          <label>Текстовая расшифровка
+            <textarea rows="3" [disabled]="disabled()" [value]="richTranscript()" (input)="richTranscript.set($any($event.target).value)"></textarea>
+          </label>
+        }
+        @if (richKind() === 'mermaid') {
+          <label>Исходный текст Mermaid
+            <textarea rows="6" spellcheck="false" [disabled]="disabled()" [value]="richSource()" (input)="richSource.set($any($event.target).value)"></textarea>
+          </label>
+        }
+        <button class="rich-apply" type="button" [disabled]="disabled()" (click)="applyRichNode()">
+          {{ richSelected() ? 'Сохранить изменения' : 'Добавить медиа' }}
+        </button>
+      </div>
+    </section>
+
   } @else if (!failure()) {
     <p class="editor-note" role="note">Эта версия документа сохранена без изменений, но пока доступна только для просмотра.</p>
   }

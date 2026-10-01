@@ -4,15 +4,17 @@ import { TestBed } from '@angular/core/testing';
 import { firstValueFrom } from 'rxjs';
 
 import { StudyApiService } from './study-api.service';
-import { AttemptCommand, ReadyStudySession, StudyProtocolError } from './study.models';
+import { AttemptCommand, StudyProtocolError } from './study.models';
+import { assessedOutcome, clone, ids, mechanics, privateHeaders, readySession } from './study-test-data';
 
 describe('StudyApiService', () => {
-    const id = (suffix: string) => `00000000-0000-4000-8000-${suffix.padStart(12, '0')}`;
-    const deckId = id('1');
-    const sessionId = id('2');
-    const presentationId = id('3');
-    const commandId = id('4');
-    const privateHeaders = { 'Cache-Control': 'private, no-store' };
+    const deckId = ids.deckId;
+    const sessionId = ids.sessionId;
+    const commandId = ids.commandId;
+    const location = `/api/decks/${deckId}/study-sessions/${sessionId}`;
+    const created = { status: 201, statusText: 'Created', headers: { ...privateHeaders, Location: location } };
+    const selfCheck = mechanics['presentations']['selfCheck'];
+    const cloze = mechanics['presentations']['cloze'];
     let api: StudyApiService;
     let http: HttpTestingController;
 
@@ -26,139 +28,163 @@ describe('StudyApiService', () => {
     it('starts only a bounded scheduled session and validates its deck-scoped snapshot', async () => {
         const result = firstValueFrom(api.start(deckId, commandId, { mode: 'SCHEDULED', preset: 'STANDARD' }));
         const request = http.expectOne(`/api/decks/${deckId}/study-sessions`);
-        expect(request.request.body).toEqual({ commandId, mode: 'SCHEDULED',
-            budget: { maxPresentations: 20, maxNewObjectives: 5 } });
-        request.flush(active('TYPED'), { status: 201, statusText: 'Created', headers: {
-            ...privateHeaders, Location: `/api/decks/${deckId}/study-sessions/${sessionId}`
-        } });
+        expect(request.request.body).toEqual({ commandId, mode: 'SCHEDULED', budget: { maxPresentations: 20, maxNewObjectives: 5 } });
+        request.flush(readySession([selfCheck]), created);
         expect((await result).value.status).toBe('ACTIVE');
     });
 
     it('maps the quick preset to one bounded scheduler budget', () => {
         api.start(deckId, commandId, { mode: 'SCHEDULED', preset: 'QUICK' }).subscribe();
         const request = http.expectOne(`/api/decks/${deckId}/study-sessions`);
-        expect(request.request.body).toEqual({ commandId, mode: 'SCHEDULED',
-            budget: { maxPresentations: 10, maxNewObjectives: 2 } });
-        request.flush(active('TYPED'), { status: 201, statusText: 'Created', headers: {
-            ...privateHeaders, Location: `/api/decks/${deckId}/study-sessions/${sessionId}`
-        } });
+        expect(request.request.body).toEqual({ commandId, mode: 'SCHEDULED', budget: { maxPresentations: 10, maxNewObjectives: 2 } });
+        request.flush(readySession([selfCheck]), created);
     });
 
-    it('submits an exact attempt and accepts a truthful deterministic feedback receipt', async () => {
-        const command: AttemptCommand = { attemptId: commandId, presentationId, nonce: 'abcdefghijklmnop',
-            response: { kind: 'TEXT', text: ' Memory ' }, hintsUsed: [], confidence: null, durationMs: 1000 };
-        const result = firstValueFrom(api.submit(deckId, sessionId, command));
-        const request = http.expectOne(`/api/decks/${deckId}/study-sessions/${sessionId}/attempts`);
-        expect(request.request.body).toEqual(command);
-        request.flush({ attemptId: commandId, presentationId, mode: 'SCHEDULED', status: 'ASSESSED',
-            evidence: { objectiveId: id('7'), objectiveRevisionId: id('8'), result: 'CORRECT', evidenceClass: 'HIGH',
-                reasonCodes: ['UNHINTED', 'DETERMINISTIC'] }, feedback: { result: 'CORRECT', reference: 'memory',
-                appliedRules: ['TRIM', 'CASE_FOLD'] }, transition: { learningEpoch: '0', sequence: '1', beforeLevel: 0,
-                afterLevel: 2, acceptedAt: '2026-09-20T10:00:00Z', nextDue: '2026-09-21T10:00:00Z',
-                reducerId: 'mnema-baseline', reducerVersion: '1', configId: id('9'),
-                configHash: `sha256:${'a'.repeat(64)}` } }, { headers: privateHeaders });
-        expect((await result).value.feedback.appliedRules).toEqual(['TRIM', 'CASE_FOLD']);
-    });
-
-    it('fails closed on another deck, cacheable data, or an invalid replay marker', async () => {
+    it('fails closed on another deck, cacheable data, a wrong location or duplicate presentations', async () => {
         const mismatch = firstValueFrom(api.read(deckId, sessionId));
-        http.expectOne(`/api/decks/${deckId}/study-sessions/${sessionId}`).flush({ ...active('TYPED'), deckId: id('99') },
-            { headers: privateHeaders });
+        http.expectOne(location).flush(readySession([selfCheck], { deckId: '99999999-9999-4999-8999-999999999999' }), { headers: privateHeaders });
         await expectAsync(mismatch).toBeRejectedWithError(StudyProtocolError);
 
         const cacheable = firstValueFrom(api.start(deckId, commandId));
-        http.expectOne(`/api/decks/${deckId}/study-sessions`).flush(active('TYPED'), { status: 201, statusText: 'Created',
-            headers: { Location: `/api/decks/${deckId}/study-sessions/${sessionId}` } });
+        http.expectOne(`/api/decks/${deckId}/study-sessions`).flush(readySession([selfCheck]),
+            { status: 201, statusText: 'Created', headers: { Location: location } });
         await expectAsync(cacheable).toBeRejectedWithError(StudyProtocolError);
+
+        const misplaced = firstValueFrom(api.start(deckId, commandId));
+        http.expectOne(`/api/decks/${deckId}/study-sessions`).flush(readySession([selfCheck]),
+            { status: 201, statusText: 'Created', headers: { ...privateHeaders, Location: '/api/elsewhere' } });
+        await expectAsync(misplaced).toBeRejectedWithError(StudyProtocolError);
+
+        const duplicate = firstValueFrom(api.read(deckId, sessionId));
+        http.expectOne(location).flush(readySession([selfCheck, selfCheck]), { headers: privateHeaders });
+        await expectAsync(duplicate).toBeRejectedWithError(StudyProtocolError);
     });
 
-    it('accepts only choice options backed by the same server-issued OPTION bindings', async () => {
-        const choice = active('SINGLE_CHOICE');
-        const result = firstValueFrom(api.read(deckId, sessionId));
-        http.expectOne(`/api/decks/${deckId}/study-sessions/${sessionId}`).flush(choice, { headers: privateHeaders });
-        const parsed = await result;
-        expect(parsed.status).toBe('ACTIVE');
-        if (parsed.status === 'PREPARING') fail('Expected an active session.');
-        else expect(parsed.presentations[0].options).toHaveSize(2);
-
-        const original = choice.presentations[0];
-        const tampered = { ...choice, presentations: [{ ...original,
-            options: [original.options[0], { ...original.options[1], optionId: id('99') }] }] };
-        const rejected = firstValueFrom(api.read(deckId, sessionId));
-        http.expectOne(`/api/decks/${deckId}/study-sessions/${sessionId}`).flush(tampered, { headers: privateHeaders });
-        await expectAsync(rejected).toBeRejectedWithError(StudyProtocolError);
+    it('submits an exact free-response attempt and accepts a deterministic receipt', async () => {
+        const command = mechanics['submits']['freeResponse'] as AttemptCommand;
+        const result = firstValueFrom(api.submit(deckId, sessionId, command));
+        const request = http.expectOne(`${location}/attempts`);
+        expect(request.request.body).toEqual(command);
+        request.flush(assessedOutcome(command, mechanics['feedback']['freeResponse']), { headers: privateHeaders });
+        const outcome = (await result).value;
+        expect(outcome.status).toBe('ASSESSED');
+        expect(outcome.feedback.result).toBe('CORRECT');
     });
 
-    it('sends server-owned replay/practice intents and validates refilled sessions', async () => {
-        const replayResult = firstValueFrom(api.start(deckId, commandId,
-            { mode: 'REPLAY', sourceSessionId: sessionId }));
+    it('refuses an invalid attempt before any request is made', async () => {
+        const base = mechanics['submits'];
+        const bad: unknown[] = [
+            { ...base['choice'], response: { kind: 'CHOICE', optionIds: [] } },
+            { ...base['choice'], response: { kind: 'CHOICE', optionIds: [base['choice'].response.optionIds[0], base['choice'].response.optionIds[0]] } },
+            { ...base['cloze'], response: { kind: 'CLOZE', blanks: [base['cloze'].response.blanks[0], base['cloze'].response.blanks[0]] } },
+            { ...base['match'], response: { kind: 'MATCH', pairs: [base['match'].response.pairs[0]] } },
+            { ...base['selfCheck'], response: { kind: 'SELF_CHECK', rating: 'EXCELLENT' } },
+            { ...base['freeResponse'], confidence: 'SURE' },
+            { ...base['freeResponse'], durationMs: -1 }
+        ];
+        for (const command of bad) {
+            await expectAsync(firstValueFrom(api.submit(deckId, sessionId, command as AttemptCommand)))
+                .toBeRejectedWithError(StudyProtocolError);
+        }
+        http.expectNone(`${location}/attempts`);
+    });
+
+    it('rejects feedback that mixes verdict shapes or lists a blank twice', async () => {
+        const command = mechanics['submits']['cloze'] as AttemptCommand;
+        const outcomeFor = (feedback: unknown) => {
+            const result = firstValueFrom(api.submit(deckId, sessionId, command));
+            http.expectOne(`${location}/attempts`).flush(assessedOutcome(command, feedback), { headers: privateHeaders });
+            return result;
+        };
+        await expectAsync(outcomeFor({ ...mechanics['feedback']['cloze'], correctOptionIds: [] })).toBeRejectedWithError(StudyProtocolError);
+        const twice = clone(mechanics['feedback']['cloze']);
+        twice.blanks[1].blankId = twice.blanks[0].blankId;
+        await expectAsync(outcomeFor(twice)).toBeRejectedWithError(StudyProtocolError);
+        await expectAsync(outcomeFor({ result: 'CORRECT' })).toBeRejectedWithError(StudyProtocolError);
+    });
+
+    it('keeps replay and practice outcomes free of canonical effects', async () => {
+        const command = mechanics['submits']['choice'] as AttemptCommand;
+        const result = firstValueFrom(api.submit(deckId, sessionId, command));
+        http.expectOne(`${location}/attempts`).flush({
+            attemptId: command.attemptId, presentationId: command.presentationId, mode: 'PRACTICE', status: 'ASSESSED',
+            canonicalEffects: false, evidence: null, transition: null, feedback: mechanics['feedback']['choice']
+        }, { headers: privateHeaders });
+        const outcome = (await result).value;
+        expect(outcome.canonicalEffects).toBeFalse();
+        expect(outcome.transition).toBeNull();
+    });
+
+    it('rejects a transcript response whose content has no transcript or that reveals nothing', async () => {
+        const presentation = mechanics['presentations']['freeResponse'];
+        const call = () => firstValueFrom(api.revealTranscript(deckId, sessionId, presentation.presentationId, 'c3R1ZHktbm9uY2UtMTI', 'FREE_RESPONSE'));
+        const missing = call();
+        http.expectOne(`${location}/presentations/${presentation.presentationId}/transcript`).flush(
+            { ...mechanics['transcriptRevealResponse'], content: presentation.content }, { headers: privateHeaders });
+        await expectAsync(missing).toBeRejectedWithError(StudyProtocolError);
+        const flag = call();
+        http.expectOne(`${location}/presentations/${presentation.presentationId}/transcript`).flush(
+            { ...mechanics['transcriptRevealResponse'], transcriptRevealed: false }, { headers: privateHeaders });
+        await expectAsync(flag).toBeRejectedWithError(StudyProtocolError);
+    });
+
+    it('rejects a hint answer for another blank and a pair check that reveals the key', async () => {
+        const hint = firstValueFrom(api.hint(deckId, sessionId, cloze.presentationId, 'c3R1ZHktbm9uY2UtMTM',
+            mechanics['hintCommand'].blankId));
+        http.expectOne(`${location}/presentations/${cloze.presentationId}/hints`).flush(
+            { ...mechanics['hintResponse'], blankId: 'b1a00000-0000-4000-8000-000000000003' }, { headers: privateHeaders });
+        await expectAsync(hint).toBeRejectedWithError(StudyProtocolError);
+
+        const pair = mechanics['pairCheck'];
+        const check = firstValueFrom(api.checkPair(deckId, sessionId, pair.presentationId, pair.nonce, pair.leftId, pair.rightId));
+        http.expectOne(`${location}/pair-checks`).flush({ correct: true, correctRightId: pair.rightId }, { headers: privateHeaders });
+        await expectAsync(check).toBeRejectedWithError(StudyProtocolError);
+    });
+
+    it('sends server-owned replay and practice intents and validates refilled sessions', async () => {
+        const replayResult = firstValueFrom(api.start(deckId, commandId, { mode: 'REPLAY', sourceSessionId: sessionId }));
         const replay = http.expectOne(`/api/decks/${deckId}/study-sessions`);
-        expect(replay.request.body).toEqual({ commandId, mode: 'REPLAY', sourceSessionId: sessionId,
-            budget: { maxPresentations: 20 } });
-        replay.flush({ ...active('TYPED'), mode: 'REPLAY' }, { status: 201, statusText: 'Created', headers: {
-            ...privateHeaders, Location: `/api/decks/${deckId}/study-sessions/${sessionId}`
-        } });
+        expect(replay.request.body).toEqual({ commandId, mode: 'REPLAY', sourceSessionId: sessionId, budget: { maxPresentations: 20 } });
+        replay.flush(readySession([selfCheck], { mode: 'REPLAY' }), created);
         expect((await replayResult).value.mode).toBe('REPLAY');
 
-        const practiceResult = firstValueFrom(api.start(deckId, commandId,
-            { mode: 'PRACTICE', includeNew: false, order: 'WEAKEST_FIRST' }));
+        const practiceResult = firstValueFrom(api.start(deckId, commandId, { mode: 'PRACTICE', includeNew: false, order: 'WEAKEST_FIRST' }));
         const practice = http.expectOne(`/api/decks/${deckId}/study-sessions`);
-        expect(practice.request.body).toEqual({ commandId, mode: 'PRACTICE', includeNew: false,
-            order: 'WEAKEST_FIRST', budget: { maxPresentations: 20 } });
-        practice.flush({ ...active('TYPED'), mode: 'PRACTICE' }, { status: 201, statusText: 'Created', headers: {
-            ...privateHeaders, Location: `/api/decks/${deckId}/study-sessions/${sessionId}`
-        } });
+        expect(practice.request.body).toEqual({ commandId, mode: 'PRACTICE', includeNew: false, order: 'WEAKEST_FIRST',
+            budget: { maxPresentations: 20 } });
+        practice.flush(readySession([selfCheck], { mode: 'PRACTICE' }), created);
         expect((await practiceResult).value.mode).toBe('PRACTICE');
 
         const refillResult = firstValueFrom(api.refill(deckId, sessionId));
-        const refill = http.expectOne(`/api/decks/${deckId}/study-sessions/${sessionId}/presentations`);
+        const refill = http.expectOne(`${location}/presentations`);
         expect(refill.request.method).toBe('POST');
-        refill.flush(active('TYPED'), { headers: privateHeaders });
+        refill.flush(readySession([selfCheck]), { headers: privateHeaders });
         expect((await refillResult).status).toBe('ACTIVE');
     });
 
     it('validates explainable progress, replay sources and restart acknowledgements', async () => {
         const progressResult = firstValueFrom(api.progress(deckId));
         http.expectOne(`/api/decks/${deckId}/study-progress?limit=100`).flush({
-            asOf: '2026-09-20T10:00:00Z', items: [{ memberKey: id('20'), itemRevisionId: id('21'),
-                state: 'DUE', objectiveCoverage: { enabled: 2, introduced: 1, assessed: 1 },
-                lastAssessedAt: '2026-09-19T10:00:00Z', nextDue: '2026-09-20T09:00:00Z' }], nextCursor: null
+            asOf: '2026-10-01T10:00:00Z', items: [{ memberKey: '44444444-4444-4444-8444-444444444444',
+                itemRevisionId: '55555555-5555-4555-8555-555555555555', title: 'Вопрос по истории', state: 'DUE',
+                objectiveCoverage: { enabled: 2, introduced: 1, assessed: 1 }, lastAssessedAt: '2026-09-30T10:00:00Z',
+                nextDue: '2026-10-01T09:00:00Z' }], nextCursor: null
         }, { headers: privateHeaders });
         expect((await progressResult).items[0].state).toBe('DUE');
 
         const sourcesResult = firstValueFrom(api.replaySources(deckId));
         http.expectOne(`/api/decks/${deckId}/study-sessions/replay-sources`).flush({
-            asOf: '2026-09-20T10:00:00Z', localStudyDate: '2026-09-20',
-            items: [{ sessionId, completedAt: '2026-09-20T09:00:00Z', presentationCount: 4 }]
+            asOf: '2026-10-01T10:00:00Z', localStudyDate: '2026-10-01',
+            items: [{ sessionId, completedAt: '2026-10-01T09:00:00Z', presentationCount: 4 }]
         }, { headers: privateHeaders });
         expect((await sourcesResult).items[0].presentationCount).toBe(4);
 
-        const restartResult = firstValueFrom(api.restart(deckId, commandId, [id('20')]));
+        const member = '44444444-4444-4444-8444-444444444444';
+        const restartResult = firstValueFrom(api.restart(deckId, commandId, [member]));
         const restart = http.expectOne(`/api/decks/${deckId}/study-restarts`);
-        expect(restart.request.body).toEqual({ commandId, memberKeys: [id('20')] });
-        restart.flush({ commandId, restartedAt: '2026-09-20T10:00:00Z', objectiveCount: 1,
-            learningEpochs: [{ objectiveId: id('22'), learningEpoch: '1' }] }, { headers: privateHeaders });
+        expect(restart.request.body).toEqual({ commandId, memberKeys: [member] });
+        restart.flush({ commandId, restartedAt: '2026-10-01T10:00:00Z', objectiveCount: 1,
+            learningEpochs: [{ objectiveId: '77777777-7777-4777-8777-777777777771', learningEpoch: '1' }] }, { headers: privateHeaders });
         expect((await restartResult).value.objectiveCount).toBe(1);
     });
-
-    function active(type: 'TYPED' | 'SELF_CHECK' | 'CLOZE_SINGLE' | 'SINGLE_CHOICE'): ReadyStudySession {
-        const assessed = { bindingId: id('11'), role: 'ASSESSED' as const, memberKey: id('12'),
-            itemRevisionId: id('13'), ordinal: 0, nodeIds: [id('14')], display: { kind: 'NODE_TEXT' } };
-        const options = type === 'SINGLE_CHOICE'
-            ? [{ optionId: id('15'), text: 'memory' }, { optionId: id('16'), text: 'forgetting' }] : [];
-        const bindings = type === 'SINGLE_CHOICE' ? [assessed,
-            { ...assessed, bindingId: id('15'), role: 'OPTION' as const, ordinal: 1 },
-            { ...assessed, bindingId: id('16'), role: 'OPTION' as const, ordinal: 2, nodeIds: [id('17')] }
-        ] : [assessed];
-        return { sessionId, deckId, mode: 'SCHEDULED', status: 'ACTIVE', timezone: 'Europe/Moscow',
-            localStudyDate: '2026-09-20', deckRevisionId: id('5'), exerciseGenerationId: id('6'),
-            selectionPolicyVersion: 'deck-due-new-v2', budget: { maxPresentations: 20, maxNewObjectives: 5 },
-            issuedCount: 1, reducer: { id: 'mnema-baseline', version: '1',
-                configId: id('9'), configHash: `sha256:${'a'.repeat(64)}` }, seed: '42', nextCursor: null,
-            expiresAt: '2026-09-21T10:00:00Z', presentations: [{ presentationId, nonce: 'abcdefghijklmnop', ordinal: 0,
-                exerciseRevisionId: id('10'), type, objectiveId: id('7'), objectiveRevisionId: id('8'), learningEpoch: '0',
-                reference: 'memory', prompt: { kind: 'TEXT', text: 'What remains?' }, options, bindings,
-                evaluator: { id: type === 'SELF_CHECK' ? 'self-check'
-                    : type === 'SINGLE_CHOICE' ? 'deterministic-choice' : 'deterministic-text', version: '1' } }] };
-    }
 });

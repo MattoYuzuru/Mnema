@@ -1,6 +1,8 @@
 package app.mnema.learning.platform.api;
 
 import app.mnema.learning.platform.concurrency.VersionConflictException;
+import app.mnema.learning.media.MediaStorageUnavailableException;
+import app.mnema.learning.media.MediaUploadConflictException;
 import app.mnema.learning.platform.concurrency.VersionPreconditionRequiredException;
 import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
 import app.mnema.learning.study.session.StudySessionExpiredException;
@@ -29,6 +31,22 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(InvalidRequestException.class)
     ResponseEntity<Object> handleInvalidRequest(InvalidRequestException exception, HttpServletRequest request) {
         return response(ApiErrorCode.INVALID_REQUEST, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(CapabilityUnavailableException.class)
+    ResponseEntity<Object> handleCapabilityUnavailable(CapabilityUnavailableException exception,
+                                                        HttpServletRequest request) {
+        return response(ApiErrorCode.CAPABILITY_UNAVAILABLE, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(MediaUploadConflictException.class)
+    ResponseEntity<Object> handleMediaUploadConflict(MediaUploadConflictException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.MEDIA_UPLOAD_CONFLICT, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(MediaStorageUnavailableException.class)
+    ResponseEntity<Object> handleMediaStorageUnavailable(MediaStorageUnavailableException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.MEDIA_STORAGE_UNAVAILABLE, request.getRequestURI(), new HttpHeaders());
     }
 
     @ExceptionHandler(ResourceNotFoundException.class)

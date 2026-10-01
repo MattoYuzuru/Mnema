@@ -3,6 +3,8 @@ import { isCanonicalCommandId, isCanonicalEntityId, isCanonicalVersion } from '.
 
 export const ITEM_PAGE_SIZE = 20;
 export const AUTHORING_PAGE_SIZE = 20;
+/** Maximum validated backend draft count; a partial recovery list is a protocol error. */
+export const AUTHORING_MAX_DRAFT_SCAN = 1000;
 
 export interface ItemRecordSummary {
     readonly memberKey: string;
@@ -13,7 +15,7 @@ export interface ItemRecordSummary {
     readonly updatedAt: string;
 }
 
-export interface ItemSummary extends ItemRecordSummary { readonly ordinal: number; }
+export interface ItemSummary extends ItemRecordSummary { readonly ordinal: number; readonly title: string; }
 
 export interface ItemPage {
     readonly deckId: string;
@@ -92,6 +94,7 @@ export interface CaptureNote {
 }
 
 export interface CapturePage { readonly items: readonly CaptureNote[]; readonly nextCursor: string | null; }
+export interface DeckCapturePage extends CapturePage { readonly total: number; }
 
 export interface CaptureAcknowledgement { readonly commandId: string; readonly capture: CaptureNote; }
 export interface CaptureWriteResult { readonly acknowledgement: CaptureAcknowledgement; readonly replayed: boolean; }

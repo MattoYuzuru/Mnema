@@ -121,4 +121,21 @@ class DeckControllerTest {
                 .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "private, no-store"));
         verify(service).list(actor, "20", "opaque");
     }
+
+    @Test
+    void deleteRequiresStrongValidatorAndReturnsPrivateNoContent() throws Exception {
+        mvc.perform(delete("/decks/" + deck))
+                .andExpect(status().isPreconditionRequired())
+                .andExpect(jsonPath("$.code").value("PRECONDITION_REQUIRED"));
+        mvc.perform(delete("/decks/" + deck).header("If-Match", "W/\"2\""))
+                .andExpect(status().isBadRequest());
+        mvc.perform(delete("/decks/" + deck).header("If-Match", "\"2\""))
+                .andExpect(status().isNoContent())
+                .andExpect(header().string("Cache-Control", "private, no-store"));
+        verify(service).delete(actor, deck, 2L);
+        doThrow(new VersionConflictException()).when(service).delete(actor, deck, 2L);
+        mvc.perform(delete("/decks/" + deck).header("If-Match", "\"2\""))
+                .andExpect(status().isPreconditionFailed())
+                .andExpect(jsonPath("$.code").value("VERSION_CONFLICT"));
+    }
 }

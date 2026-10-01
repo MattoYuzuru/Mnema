@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -22,6 +23,71 @@ class NativeDocumentReaderTest {
 
     private static final JsonNodeFactory JSON = JsonNodeFactory.instance;
     private final NativeDocumentReader reader = new NativeDocumentReader();
+
+    @Test
+    void richFixtureRoundTripsAndExposesOnlySupportedMediaReferences() throws Exception {
+        byte[] fixture = Files.readAllBytes(contractRoot().resolve("valid/rich.json"));
+        NativeDocument document = reader.read(fixture);
+        assertThat(document.nodeCount()).isEqualTo(6);
+        assertThat(document.hasUnsupportedContent()).isFalse();
+        assertThat(NativeMediaReferences.from(document)).hasSize(3);
+        assertThat(reader.read(new CanonicalJsonHasher().canonicalBytes(document.toJson())).toJson())
+                .isEqualTo(document.toJson());
+
+        ObjectNode future = (ObjectNode) document.toJson();
+        ((ObjectNode) future.path("root").path("content").get(0)).put("version", 2);
+        assertThat(NativeMediaReferences.from(read(future))).hasSize(2);
+    }
+
+    @Test
+    void youtubeFixtureStoresOnlyAnInertVideoIdAndRejectsUntrustedUrls() throws Exception {
+        ObjectNode fixture = (ObjectNode) new ContentJsonReader(1_048_576, 128, 250_000)
+                .read(Files.readAllBytes(contractRoot().resolve("valid/youtube.json")));
+        NativeDocument document = read(fixture);
+        assertThat(document.nodeCount()).isEqualTo(2);
+        assertThat(NativeMediaReferences.from(document)).isEmpty();
+        ObjectNode attrs = (ObjectNode) fixture.path("root").path("content").get(0).path("attrs");
+        attrs.put("videoId", "https://www.youtube.com/watch?v=M7lc1UVf-VE");
+        invalid(fixture);
+        attrs.put("videoId", "M7lc1UVf-VE");
+        attrs.put("src", "https://attacker.example/embed");
+        invalid(fixture);
+    }
+
+    @Test
+    void richNodesRejectForeignAttrsBadAssetsAndRaggedTables() throws Exception {
+        ObjectNode source = (ObjectNode) new ContentJsonReader(1_048_576, 128, 250_000)
+                .read(Files.readAllBytes(contractRoot().resolve("valid/rich.json")));
+        ObjectNode image = (ObjectNode) source.path("root").path("content").get(0);
+        image.withObject("attrs").put("assetId", UUID.randomUUID().toString());
+        assertThat(read(source).nodeCount()).isEqualTo(6);
+        image.withObject("attrs").put("assetId", "not-an-asset");
+        invalid(source);
+        image.withObject("attrs").put("assetId", UUID.randomUUID().toString());
+        image.withObject("attrs").put("caption", " ");
+        invalid(source);
+        image.withObject("attrs").put("caption", "Изображение");
+        image.withObject("attrs").put("src", "https://attacker.test/file");
+        invalid(source);
+        image.withObject("attrs").remove("src");
+        ObjectNode table = (ObjectNode) source.path("root").path("content").get(4);
+        ((ArrayNode) table.path("attrs").path("rows").get(0)).remove(1);
+        invalid(source);
+    }
+
+    @Test
+    void richRequiredTextUsesSharedJavaWhitespaceProfile() throws Exception {
+        JsonNode vectors = new ContentJsonReader(16_384, 16, 1_000)
+                .read(Files.readAllBytes(contractRoot().resolve("rich-text-vectors.json")));
+        for (JsonNode vector : vectors.path("cases")) {
+            ObjectNode document = (ObjectNode) new ContentJsonReader(1_048_576, 128, 250_000)
+                    .read(Files.readAllBytes(contractRoot().resolve("valid/rich.json")));
+            ((ObjectNode) document.path("root").path("content").get(0).path("attrs"))
+                    .put("alt", vector.path("value").textValue());
+            if (vector.path("valid").booleanValue()) assertThat(read(document).nodeCount()).isEqualTo(6);
+            else invalid(document);
+        }
+    }
 
     @Test
     void sharedMultilingualEditorFixturePreservesEverySemanticFieldAndIdentity() throws Exception {

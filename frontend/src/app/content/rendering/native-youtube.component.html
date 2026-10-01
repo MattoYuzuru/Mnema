@@ -1,0 +1,16 @@
+<figure class="youtube-card">
+  <figcaption>{{ title() }}</figcaption>
+  @if (validId()) {
+    @if (enabled()) {
+      <div class="youtube-frame"><iframe [src]="embedUrl()" [title]="title()" loading="lazy"
+        referrerpolicy="strict-origin-when-cross-origin" allow="encrypted-media; picture-in-picture; fullscreen"
+        allowfullscreen></iframe></div>
+    } @else {
+      <div class="youtube-consent"><span aria-hidden="true">▶</span>
+        <p>Видео откроется через YouTube. При воспроизведении браузер свяжется с этим сервисом.</p>
+        <button type="button" (click)="enabled.set(true)">Показать видео</button></div>
+    }
+    <a [href]="externalUrl()" target="_blank" rel="noopener noreferrer">Открыть на YouTube ↗</a>
+  } @else { <p role="alert">Некорректная ссылка на YouTube. Автор может исправить материал.</p> }
+  @if (transcript()) { <details><summary>Текст видео</summary><p>{{ transcript() }}</p></details> }
+</figure>

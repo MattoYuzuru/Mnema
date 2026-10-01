@@ -16,6 +16,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import uuid
 from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -174,6 +175,51 @@ class Fixture(BASE.Fixture):
         self.logout_requests = []
         self.browser_cleanup_result = None
         self.identity_port = self.learning_port = 0
+        self.media_container = None
+        self.media_origin = None
+
+    def start(self):
+        if self.args.media:
+            self.start_media_store()
+        super().start()
+
+    def start_media_store(self):
+        image = ("ghcr.io/l33tlamer/minio-backup@sha256:"
+                 "a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e")
+        self.media_container = "mnema-browser-media-" + uuid.uuid4().hex[:10]
+        BASE.command(["docker", "image", "inspect", image])
+        BASE.command(["docker", "run", "--detach", "--name", self.media_container,
+                      "--publish", "127.0.0.1::9000", "--env", "MINIO_ROOT_USER=mnema-browser-access",
+                      "--env", "MINIO_ROOT_PASSWORD=mnema-browser-secret-key",
+                      "--env", "MINIO_API_CORS_ALLOW_ORIGIN=" + self.frontend_origin,
+                      image, "server", "/data"])
+        mapped = BASE.command(["docker", "port", self.media_container, "9000/tcp"]).stdout.decode().strip()
+        port = int(mapped.rsplit(":", 1)[1])
+        self.media_origin = f"http://127.0.0.1:{port}"
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            try:
+                connection = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+                connection.request("GET", "/minio/health/ready")
+                healthy = connection.getresponse().status == 200
+                connection.close()
+                if healthy:
+                    break
+            except (OSError, http.client.HTTPException):
+                pass
+            self.cancellation.wait(0.2)
+        else:
+            raise AssertionError("local media store readiness timeout")
+        aws_env = {**os.environ, "AWS_ACCESS_KEY_ID": "mnema-browser-access",
+                   "AWS_SECRET_ACCESS_KEY": "mnema-browser-secret-key",
+                   "AWS_DEFAULT_REGION": "us-east-1", "AWS_EC2_METADATA_DISABLED": "true"}
+        def aws(*arguments):
+            result = subprocess.run(["aws", "--endpoint-url", self.media_origin,
+                                     "s3api", *arguments], env=aws_env, capture_output=True, timeout=20)
+            if result.returncode:
+                (self.tmp / "media-store-setup.log").write_bytes(result.stderr)
+            BASE.require(result.returncode == 0, "local media store " + arguments[0] + " setup failed")
+        aws("create-bucket", "--bucket", "mnema-browser-media")
 
     def prepare_origins(self):
         # Called after the caller owns this fixture, so partial listener startup is cleaned up.
@@ -197,7 +243,24 @@ class Fixture(BASE.Fixture):
                             "MNEMA_IDENTITY_SIGNING_JWK_SET_FILE": str(self.tmp / "signing.json"),
                             "MNEMA_IDENTITY_SIGNING_ACTIVE_KID": "blackbox", "APP_ENV": "local-browser-fixture"})
         arguments = ["java", "-Xms64m", "-Xmx384m", "-jar", str(jar), "--server.address=127.0.0.1"]
+        if module == "identity-account" and self.args.media:
+            environment.update({"MNEMA_AVATAR_ENDPOINT": self.media_origin,
+                                "MNEMA_AVATAR_REGION": "us-east-1",
+                                "MNEMA_AVATAR_BUCKET": "mnema-browser-media",
+                                "MNEMA_AVATAR_ACCESS_KEY": "mnema-browser-access",
+                                "MNEMA_AVATAR_SECRET_KEY": "mnema-browser-secret-key"})
+            arguments += ["--identity.avatar.allow-loopback-http=true"]
         if module == "learning":
+            if self.args.media:
+                environment.update({"LEARNING_MEDIA_UPLOAD_ENDPOINT": self.media_origin,
+                                    "LEARNING_MEDIA_UPLOAD_ALLOW_LOOPBACK_HTTP": "true",
+                                    "LEARNING_MEDIA_UPLOAD_REGION": "us-east-1",
+                                    "LEARNING_MEDIA_UPLOAD_BUCKET": "mnema-browser-media",
+                                    "LEARNING_MEDIA_UPLOAD_ACCESS_KEY": "mnema-browser-access",
+                                    "LEARNING_MEDIA_UPLOAD_SECRET_KEY": "mnema-browser-secret-key",
+                                    "LEARNING_MEDIA_PROCESSING_ENABLED": "true",
+                                    "LEARNING_MEDIA_PROCESSING_INITIAL_DELAY": "PT1S",
+                                    "LEARNING_MEDIA_PROCESSING_SCAN_INTERVAL": "PT2S"})
             arguments += [f"--learning.identity.transport-base=http://127.0.0.1:{self.identity_port}",
                           "--learning.identity.allow-loopback-http=true"]
         log = (self.tmp / (module + ".log")).open("wb")
@@ -219,6 +282,20 @@ class Fixture(BASE.Fixture):
     def run(self):
         self.prepare_origins()
         self.start()
+        media_clips = None
+        if self.args.media:
+            audio = self.tmp / "browser-audio.mp3"
+            video = self.tmp / "browser-video.mp4"
+            for command in (["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+                             "sine=frequency=440:duration=2", "-c:a", "libmp3lame", str(audio)],
+                            ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+                             "testsrc2=s=160x90:r=12:d=2", "-f", "lavfi", "-i",
+                             "sine=frequency=440:duration=2", "-c:v", "libx264",
+                             "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(video)]):
+                result = subprocess.run(command, capture_output=True, timeout=20)
+                BASE.require(result.returncode == 0, "local media fixture generation failed")
+            media_clips = {"audio": base64.b64encode(audio.read_bytes()).decode(),
+                           "video": base64.b64encode(video.read_bytes()).decode()}
         cert, key = self.tmp / "tls.crt", self.tmp / "tls.key"
         BASE.command(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
                       "-subj", "/CN=127.0.0.1", "-addext", "subjectAltName=IP:127.0.0.1",
@@ -251,7 +328,8 @@ class Fixture(BASE.Fixture):
                   "output": str(self.args.output), "login": "browser_fixture", "email": "browser_fixture@example.invalid",
                   "password": BASE.PASSWORD, "readySelector": self.args.ready_selector,
                   "logoutSelector": self.args.logout_selector, "errorSelector": self.args.error_selector,
-                  "authoring": self.args.authoring}
+                  "authoring": self.args.authoring, "media": self.args.media,
+                  "mediaOrigin": self.media_origin, "mediaClips": media_clips}
         private_config = self.tmp / "browser.json"
         private_config.write_text(json.dumps(config))
         digest = hashlib.sha256()
@@ -319,6 +397,11 @@ class Fixture(BASE.Fixture):
                 except OSError:
                     issues.append("listener_close")
             result = super().close(failed)
+            if self.media_container is not None:
+                removed = subprocess.run(["docker", "rm", "--force", "--volumes", self.media_container],
+                                         capture_output=True, timeout=5)
+                if removed.returncode and b"No such container" not in removed.stderr:
+                    issues.append("media_container_remove")
             # macOS can transiently refuse a signal while a Chrome helper exits. Final ownership
             # verification distinguishes that race from a genuinely surviving process group.
             surviving = list(self.groups)
@@ -351,11 +434,15 @@ def main():
     parser.add_argument("--error-selector", default='[role="alert"]')
     parser.add_argument("--authoring", action="store_true",
                         help="also verify the real Deck, Capture, draft, publication and Browse loop")
+    parser.add_argument("--media", action="store_true",
+                        help="local MinIO and worker proof for browser media upload (implies --authoring)")
     parser.add_argument("--timeout", type=int, choices=range(30, 301), default=180)
     parser.add_argument("--keep-on-failure", action="store_true",
                         help="keep mode-0700 private logs/keys for local debugging")
     parser.add_argument("--control-file", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if args.media and not args.authoring:
+        parser.error("--media requires --authoring")
     args.dist = args.dist.resolve()
     BASE.require((args.dist / "index.html").is_file(), "missing built frontend index")
     args.output = Path(tempfile.mkdtemp(prefix="mnema-browser-evidence-"))

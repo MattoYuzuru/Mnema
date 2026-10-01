@@ -1,0 +1,18 @@
+:host { display: block; }
+* { box-sizing: border-box; }
+.image-frame { display: grid; justify-items: start; gap: .5rem; min-inline-size: 0; }
+.image-open { display: grid; gap: .5rem; max-inline-size: 100%; padding: 0; border: 0; background: transparent; color: var(--mn-ink); text-align: start; cursor: zoom-in; }
+.image-open img { display: block; max-inline-size: 100%; max-block-size: min(70vh, 42rem); object-fit: contain; }
+.image-open span { font: 600 .8rem var(--mn-font-body, system-ui, sans-serif); text-decoration: underline; text-underline-offset: .2em; }
+.image-action, .image-actions :where(button,a) { display: inline-flex; align-items: center; min-block-size: var(--mn-touch-min, 2.75rem); padding: .5rem .7rem; border: 1px solid currentColor; border-radius: var(--mn-radius, 2px); background: var(--mn-sheet); color: var(--mn-ink); font: 600 .85rem var(--mn-font-body, system-ui, sans-serif); text-decoration: none; cursor: pointer; }
+.image-action:hover, .image-actions :where(button,a):hover { background: var(--mn-soft); }
+.image-dialog { inline-size: min(96vw, 90rem); max-inline-size: none; max-block-size: 94dvh; border: 2px solid var(--mn-ink); padding: 0; background: var(--mn-sheet); color: var(--mn-body); }
+.image-dialog::backdrop { background: rgb(20 15 35 / 80%); }
+.image-toolbar { position: sticky; inset-block-start: 0; z-index: 1; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: .6rem; padding: .7rem; border-block-end: 1px solid var(--mn-ink); background: var(--mn-sheet); }
+.image-toolbar strong { overflow-wrap: anywhere; }
+.image-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
+.image-canvas { display: block; min-block-size: 10rem; max-block-size: calc(94dvh - 5rem); overflow: auto; overscroll-behavior: contain; padding: 1.5rem; }
+.image-canvas img { display: block; max-inline-size: none; block-size: auto; object-fit: contain; }
+:where(button,a):focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 3px; }
+@media (max-width: 40rem) { .image-dialog { inline-size: 100vw; max-block-size: 100dvh; } .image-canvas { max-block-size: calc(100dvh - 9rem); padding: .75rem; } }
+@media (forced-colors: active) { .image-dialog { border-color: CanvasText; } }

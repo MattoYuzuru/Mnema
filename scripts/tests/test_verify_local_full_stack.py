@@ -94,6 +94,10 @@ class LocalFullStackTest(unittest.TestCase):
             "MNEMA_LOCAL_TLS_CERT_FILE": str(self.state / "localhost.crt"),
             "MNEMA_LOCAL_TLS_KEY_FILE": str(self.state / "localhost.key"),
             "MNEMA_LOCAL_TRUSTSTORE_FILE": str(self.state / "learning-truststore.p12"),
+            "MNEMA_LOCAL_STORAGE_TLS_CERT_FILE": str(self.state / "storage.crt"),
+            "MNEMA_LOCAL_STORAGE_TLS_KEY_FILE": str(self.state / "storage.key"),
+            "MNEMA_LOCAL_CA_CERT_FILE": str(self.state / "local-ca.crt"),
+            "MNEMA_LOCAL_MEDIA_WORK_ROOT": str(self.state / "media-processing"),
         }
         subprocess.run(
             ["docker", "compose", "--file", str(COMPOSE), "config", "--quiet"],
@@ -216,27 +220,49 @@ class LocalFullStackTest(unittest.TestCase):
 
         self.assertFalse(fresh)
         self.assertEqual("retained", upgraded["password"])
-        self.assertEqual(3, upgraded["schemaVersion"])
+        self.assertEqual(4, upgraded["schemaVersion"])
         self.assertIsNone(upgraded["studyExerciseId"])
-        self.assertEqual({}, upgraded["p0Mechanics"])
+        self.assertEqual({}, upgraded["mechanics"])
 
-    def test_v2_smoke_state_preserves_identity_when_adding_p0_fixtures(self):
+    def test_retired_mechanic_fixtures_are_dropped_but_credentials_survive(self):
         module = load_smoke_module()
         state = self.state / "smoke-account.json"
         self.state.mkdir(mode=0o700)
         state.write_text(json.dumps({
-            "schemaVersion": 2, "email": "smoke@example.invalid", "login": "smoke",
+            "schemaVersion": 3, "email": "smoke@example.invalid", "login": "smoke",
             "password": "retained", "deckId": "deck", "captureId": "capture",
             "studyMemberKey": "member", "studyItemRevisionId": "revision",
             "studyAnswerNodeId": "node", "studyExerciseId": "exercise",
+            "p0Mechanics": {"SINGLE_CHOICE": {}},
         }))
 
         upgraded, fresh = module.load_or_create_account(state)
 
         self.assertFalse(fresh)
-        self.assertEqual(3, upgraded["schemaVersion"])
-        self.assertEqual("exercise", upgraded["studyExerciseId"])
-        self.assertEqual({}, upgraded["p0Mechanics"])
+        self.assertEqual(4, upgraded["schemaVersion"])
+        self.assertEqual(("retained", "deck", "capture"),
+                         (upgraded["password"], upgraded["deckId"], upgraded["captureId"]))
+        self.assertIsNone(upgraded["studyExerciseId"])
+        self.assertEqual({}, upgraded["mechanics"])
+        self.assertNotIn("p0Mechanics", upgraded)
+
+    def test_smoke_covers_five_mechanics_and_fail_closed_capabilities(self):
+        module = load_smoke_module()
+        self.assertEqual(("SELF_CHECK", "CLOZE", "CHOICE", "MATCH"), module.ADDITIONAL_MECHANICS)
+        smoke = SMOKE.read_text()
+        self.assertIn('"/api/capabilities"', smoke)
+        self.assertIn('"CAPABILITY_UNAVAILABLE"', smoke)
+        self.assertIn('/hints"', smoke)
+        self.assertIn('"PAIR_RETRY"', smoke)
+        self.assertNotIn('hintsUsed', smoke)
+
+    def test_presentation_leak_guard_allows_only_self_check_reference(self):
+        module = load_smoke_module()
+        self.assertEqual([], module.private_keys({"SELF_CHECK": {"content": {"reference": []}}}))
+        self.assertEqual([".FREE_RESPONSE.reference"],
+                         module.private_keys({"FREE_RESPONSE": {"reference": "memory"}}))
+        self.assertEqual([".CHOICE.content.options.correctOptionIds"], module.private_keys(
+            {"CHOICE": {"content": {"options": [{"correctOptionIds": []}]}}}))
 
     def test_launcher_keeps_bounded_failure_diagnostics(self):
         launcher = LAUNCHER.read_text()

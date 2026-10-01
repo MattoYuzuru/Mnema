@@ -11,7 +11,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-/** Baseline editable capabilities only; later renderers must explicitly register their schemas. */
+/** Explicit version-one capabilities; unknown and future versions remain inert native data. */
 final class NativeNodeSchema {
 
     private static final Map<String, Set<String>> ATTRIBUTES = Map.ofEntries(
@@ -25,7 +25,13 @@ final class NativeNodeSchema {
             Map.entry("divider", Set.of()),
             Map.entry("text", Set.of("text", "marks")),
             Map.entry("ruby", Set.of("base", "reading")),
-            Map.entry("link", Set.of("href")));
+            Map.entry("link", Set.of("href")),
+            Map.entry("image", Set.of("assetId", "alt", "caption", "description")),
+            Map.entry("audio", Set.of("assetId", "title", "transcript")),
+            Map.entry("video", Set.of("assetId", "title", "transcript")),
+            Map.entry("youtube", Set.of("videoId", "title", "transcript")),
+            Map.entry("mermaid", Set.of("source", "title", "description")),
+            Map.entry("table", Set.of("caption", "summary", "columns", "rows")));
     private static final Set<String> INLINE = Set.of("text", "ruby", "link");
     private static final Set<String> DIRECTIONS = Set.of("auto", "ltr", "rtl");
     private static final Set<String> MARKS = Set.of("strong", "em", "code");
@@ -37,6 +43,7 @@ final class NativeNodeSchema {
                     + "(?:-(?:[a-z0-9]{5,8}|[0-9][a-z0-9]{3}))*", Pattern.CASE_INSENSITIVE);
     private static final Pattern DNS_LABEL = Pattern.compile("[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?",
             Pattern.CASE_INSENSITIVE);
+    private static final Pattern YOUTUBE_VIDEO_ID = Pattern.compile("[A-Za-z0-9_-]{11}");
 
     private NativeNodeSchema() {
     }
@@ -107,6 +114,31 @@ final class NativeNodeSchema {
                     throw NativeDocumentReader.invalid();
                 }
             }
+            case "image" -> {
+                requireAsset(attrs.path("assetId"));
+                requireBoundedText(attrs.path("alt"), 4_096);
+                optionalBoundedText(attrs, "caption", 1_024);
+                optionalBoundedText(attrs, "description", 8_192);
+            }
+            case "audio", "video" -> {
+                requireAsset(attrs.path("assetId"));
+                requireBoundedText(attrs.path("title"), 1_024);
+                optionalBoundedText(attrs, "transcript", 16_384);
+            }
+            case "youtube" -> {
+                JsonNode videoId = attrs.path("videoId");
+                if (!videoId.isTextual() || !YOUTUBE_VIDEO_ID.matcher(videoId.textValue()).matches()) {
+                    throw NativeDocumentReader.invalid();
+                }
+                requireBoundedText(attrs.path("title"), 1_024);
+                optionalBoundedText(attrs, "transcript", 16_384);
+            }
+            case "mermaid" -> {
+                requireBoundedText(attrs.path("source"), 16_384);
+                requireBoundedText(attrs.path("title"), 1_024);
+                requireBoundedText(attrs.path("description"), 8_192);
+            }
+            case "table" -> validateTable(attrs);
             default -> { }
         }
         return children;
@@ -115,6 +147,40 @@ final class NativeNodeSchema {
     private static void requireText(JsonNode node) {
         if (!node.isTextual() || node.textValue().isEmpty()) {
             throw NativeDocumentReader.invalid();
+        }
+    }
+
+    private static void requireAsset(JsonNode value) {
+        if (!value.isTextual() || !NativeDocumentReader.uuidV4(value.textValue())) {
+            throw NativeDocumentReader.invalid();
+        }
+    }
+
+    private static void requireBoundedText(JsonNode value, int maxCharacters) {
+        if (!value.isTextual() || value.textValue().isBlank() || value.textValue().length() > maxCharacters) {
+            throw NativeDocumentReader.invalid();
+        }
+    }
+
+    private static void optionalBoundedText(JsonNode attrs, String name, int maxCharacters) {
+        if (attrs.has(name)) requireBoundedText(attrs.path(name), maxCharacters);
+    }
+
+    private static void validateTable(JsonNode attrs) {
+        requireBoundedText(attrs.path("caption"), 1_024);
+        optionalBoundedText(attrs, "summary", 8_192);
+        JsonNode columns = attrs.path("columns");
+        JsonNode rows = attrs.path("rows");
+        if (!columns.isArray() || columns.isEmpty() || columns.size() > 12
+                || !rows.isArray() || rows.size() > 100) throw NativeDocumentReader.invalid();
+        columns.forEach(column -> requireBoundedText(column, 1_024));
+        for (JsonNode row : rows) {
+            if (!row.isArray() || row.size() != columns.size()) throw NativeDocumentReader.invalid();
+            row.forEach(cell -> {
+                if (!cell.isTextual() || cell.textValue().length() > 4_096) {
+                    throw NativeDocumentReader.invalid();
+                }
+            });
         }
     }
 

@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -20,9 +21,11 @@ class AttemptRepository {
     AttemptRepository(JdbcClient jdbc) { this.jdbc = jdbc; }
 
     record Presentation(UUID accountId, UUID sessionId, UUID presentationId, UUID deckId, String mode,
-                        String sessionStatus, String nonce, String exerciseType, UUID objectiveId,
-                        UUID objectiveRevisionId, long learningEpoch, JsonNode bindings, JsonNode evaluator,
-                        JsonNode answerContract, UUID configId, String reducerId, String reducerVersion,
+                        String sessionStatus, String nonce, UUID exerciseId, UUID exerciseRevisionId,
+                        String exerciseType, UUID objectiveId,
+                        UUID objectiveRevisionId, long learningEpoch, JsonNode content, JsonNode reveal,
+                        JsonNode evaluator, JsonNode answerKey, boolean transcriptRevealed, List<UUID> hintedBlanks,
+                        UUID configId, String reducerId, String reducerVersion,
                         String configHash, Instant expiresAt) { }
     record Receipt(UUID attemptId, UUID accountId, UUID sessionId, UUID presentationId, UUID deckId,
                    byte[] payloadHash, String mode, String status, JsonNode outcome, Instant receiptExpiresAt) {
@@ -33,8 +36,34 @@ class AttemptRepository {
                  int correctStreak, int lapseCount, long transitionSequence, long rowVersion) { }
 
     boolean ownsDeck(UUID actor, UUID deck) {
-        return jdbc.sql("SELECT EXISTS(SELECT 1 FROM app_learning.deck WHERE owner_id=:actor AND deck_id=:deck)")
+        return jdbc.sql("SELECT EXISTS(SELECT 1 FROM app_learning.deck WHERE owner_id=:actor AND deck_id=:deck AND deleted_at IS NULL)")
                 .param("actor", actor).param("deck", deck).query(Boolean.class).single();
+    }
+
+    Optional<Boolean> pairInteraction(UUID actor, UUID session, PairCheckCommand command) {
+        return jdbc.sql("""
+                SELECT correct FROM app_learning.study_pair_interaction
+                 WHERE account_id=:actor AND session_id=:session AND presentation_id=:presentation
+                   AND left_id=:left AND right_id=:right
+                """).param("actor", actor).param("session", session).param("presentation", command.presentationId())
+                .param("left", command.leftId()).param("right", command.rightId()).query(Boolean.class).optional();
+    }
+
+    void insertPairInteraction(UUID actor, UUID session, PairCheckCommand command, boolean correct, Instant expiresAt) {
+        jdbc.sql("""
+                INSERT INTO app_learning.study_pair_interaction(account_id,session_id,presentation_id,left_id,right_id,correct,expires_at)
+                VALUES (:actor,:session,:presentation,:left,:right,:correct,:expires) ON CONFLICT DO NOTHING
+                """).param("actor", actor).param("session", session).param("presentation", command.presentationId())
+                .param("left", command.leftId()).param("right", command.rightId()).param("correct", correct)
+                .param("expires", Timestamp.from(expiresAt)).update();
+    }
+
+    boolean hasPairMistakes(UUID actor, UUID session, UUID presentation) {
+        return jdbc.sql("""
+                SELECT EXISTS(SELECT 1 FROM app_learning.study_pair_interaction
+                  WHERE account_id=:actor AND session_id=:session AND presentation_id=:presentation AND NOT correct)
+                """).param("actor", actor).param("session", session).param("presentation", presentation)
+                .query(Boolean.class).single();
     }
 
     void lockAttempt(UUID attempt) {
@@ -79,7 +108,13 @@ class AttemptRepository {
     Optional<Presentation> presentationForUpdate(UUID actor, UUID deck, UUID session, UUID presentation) {
         return jdbc.sql("""
                 SELECT p.*,s.mode,s.status AS session_status,s.reducer_config_id,c.reducer_id,c.reducer_version,
-                       c.config_hash
+                       c.config_hash, EXISTS(SELECT 1 FROM app_learning.study_transcript_accommodation a
+                           WHERE a.account_id=p.account_id AND a.session_id=p.session_id
+                             AND a.presentation_id=p.presentation_id) AS transcript_revealed,
+                       COALESCE((SELECT jsonb_agg(h.blank_id::text ORDER BY h.revealed_at,h.blank_id)
+                                   FROM app_learning.study_hint_reveal h
+                                  WHERE h.account_id=p.account_id AND h.session_id=p.session_id
+                                    AND h.presentation_id=p.presentation_id),'[]'::jsonb) AS hinted_blanks
                   FROM app_learning.study_presentation p
                   JOIN app_learning.study_session s ON s.account_id=p.account_id AND s.session_id=p.session_id
                   JOIN app_learning.scheduler_config c ON c.config_id=s.reducer_config_id
@@ -91,10 +126,12 @@ class AttemptRepository {
                         row.getObject("account_id", UUID.class), row.getObject("session_id", UUID.class),
                         row.getObject("presentation_id", UUID.class), row.getObject("deck_id", UUID.class),
                         row.getString("mode"), row.getString("session_status"), row.getString("nonce"),
+                        row.getObject("exercise_id", UUID.class), row.getObject("exercise_revision_id", UUID.class),
                         row.getString("exercise_type"), row.getObject("objective_id", UUID.class),
                         row.getObject("objective_revision_id", UUID.class), row.getLong("learning_epoch"),
-                        json(row.getString("bindings")), json(row.getString("evaluator")),
-                        json(row.getString("answer_contract")),
+                        json(row.getString("content")), json(row.getString("reveal")),
+                        json(row.getString("evaluator")), json(row.getString("answer_key")),
+                        row.getBoolean("transcript_revealed"), blankIds(json(row.getString("hinted_blanks"))),
                         row.getObject("reducer_config_id", UUID.class), row.getString("reducer_id"),
                         row.getString("reducer_version"), row.getString("config_hash"),
                         row.getTimestamp("expires_at").toInstant())).optional();
@@ -143,7 +180,8 @@ class AttemptRepository {
                 .param("reasons", jsonArray(evaluation.reasonCodes()).toString())
                 .param("evaluatorId", presentation.evaluator().path("id").textValue())
                 .param("evaluatorVersion", presentation.evaluator().path("version").textValue())
-                .param("hints", jsonArray(command.hintsUsed()).toString()).param("confidence", command.confidence(),
+                .param("hints", jsonArray(presentation.hintedBlanks().stream()
+                        .map(blank -> "FIRST_LETTER:" + blank)::iterator).toString()).param("confidence", command.confidence(),
                         java.sql.Types.VARCHAR).param("duration", command.durationMs())
                 .param("accepted", Timestamp.from(acceptedAt)).update();
     }
@@ -222,6 +260,12 @@ class AttemptRepository {
     private static JsonNode json(String value) {
         try { return JSON.readTree(value); }
         catch (JsonProcessingException exception) { throw new IllegalStateException("Invalid persisted JSON", exception); }
+    }
+
+    private static List<UUID> blankIds(JsonNode values) {
+        List<UUID> result = new java.util.ArrayList<>();
+        values.forEach(value -> result.add(UUID.fromString(value.textValue())));
+        return List.copyOf(result);
     }
 
     private static JsonNode jsonArray(Iterable<String> values) {

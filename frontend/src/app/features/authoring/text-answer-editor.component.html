@@ -1,0 +1,35 @@
+<fieldset class="answer" [attr.aria-describedby]="error() ? idPrefix() + '-error' : null">
+  <legend>{{ legend() }}</legend>
+  <p class="hint">Достаточно одной альтернативы: ученику не нужно вводить все варианты. До {{ max() }} вариантов, каждый до {{ length() }} знаков.</p>
+  <div class="alias-list">
+    @for (row of answer().rows; track row.id; let index = $index) {
+      <div class="alias-row">
+        <label [for]="idPrefix() + '-' + row.id">{{ index === 0 ? 'Основной ответ' : 'Допустимая альтернатива ' + index }}</label>
+        <div class="alias-controls">
+          <input type="text" [id]="idPrefix() + '-' + row.id" [value]="row.value" autocomplete="off" spellcheck="false"
+                 [attr.aria-invalid]="error() ? 'true' : null" (input)="setValue(row.id, $any($event.target).value)" />
+          @if (answer().rows.length > 1) {
+            <button type="button" class="button small" [attr.aria-label]="'Убрать вариант ' + (index + 1)"
+                    (click)="remove(row.id)">−</button>
+          }
+        </div>
+      </div>
+    }
+  </div>
+  <button type="button" class="button" [disabled]="answer().rows.length >= max()" (click)="add()">+ Добавить альтернативу</button>
+
+  <fieldset class="rules">
+    <legend class="setting-title">Как сравниваем</legend>
+    @for (rule of rules; track rule) {
+      <label class="check-line"><input type="checkbox" [checked]="answer().normalization.includes(rule)"
+        (change)="toggleRule(rule, $any($event.target).checked)" /> {{ ruleLabel(rule) }}</label>
+    }
+    <label class="radio-line"><input type="radio" [name]="idPrefix() + '-mode'" [checked]="answer().matchingMode === 'STRICT'"
+      (change)="setMode('STRICT')" /> Строго</label>
+    <p class="hint">После выбранных преобразований текст должен совпасть полностью.</p>
+    <label class="radio-line"><input type="radio" [name]="idPrefix() + '-mode'" [checked]="answer().matchingMode === 'SOFT'"
+      (change)="setMode('SOFT')" /> Мягко</label>
+    <p class="hint">Дополнительно не учитываются знаки препинания, диакритика, дефисы и пробелы. Это не проверка смысла: другая формулировка засчитана не будет.</p>
+  </fieldset>
+  @if (error(); as message) { <p class="field-error" role="alert" [id]="idPrefix() + '-error'">{{ message }}</p> }
+</fieldset>

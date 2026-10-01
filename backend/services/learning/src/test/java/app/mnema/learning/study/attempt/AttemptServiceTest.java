@@ -1,6 +1,7 @@
 package app.mnema.learning.study.attempt;
 
 import app.mnema.learning.platform.json.CanonicalJsonHasher;
+import app.mnema.learning.media.MediaCatalog;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.Test;
 
@@ -22,17 +23,18 @@ class AttemptServiceTest {
     @Test
     void expiredPresentationStopsBeforeEvaluationOrAnyWrite() {
         AttemptRepository repository = mock(AttemptRepository.class);
-        AttemptService service = new AttemptService(repository, new CanonicalJsonHasher());
+        AttemptService service = new AttemptService(repository, new CanonicalJsonHasher(), mock(MediaCatalog.class));
         UUID actor = UUID.randomUUID(), deck = UUID.randomUUID(), session = UUID.randomUUID();
         AttemptCommand command = new AttemptCommand(UUID.randomUUID(), UUID.randomUUID(), "1234567890123456",
-                new AttemptCommand.TextResponse("answer"), List.of(), null, 10, JSON.createObjectNode());
-        var answer = JSON.createObjectNode();
+                new AttemptCommand.TextResponse("answer"), null, 10, JSON.createObjectNode());
+        var answer = JSON.createObjectNode().put("kind", "TEXT");
         answer.putArray("accepted").add("answer");
         var presentation = new AttemptRepository.Presentation(actor, session, command.presentationId(), deck,
-                "SCHEDULED", "ACTIVE", command.nonce(), "TYPED", UUID.randomUUID(), UUID.randomUUID(), 0,
-                JSON.createArrayNode(),
+                "SCHEDULED", "ACTIVE", command.nonce(), UUID.randomUUID(), UUID.randomUUID(),
+                "FREE_RESPONSE", UUID.randomUUID(), UUID.randomUUID(), 0,
+                JSON.createObjectNode(), JSON.createObjectNode(),
                 JSON.createObjectNode().put("id", "deterministic-text").put("version", "1"),
-                answer, UUID.randomUUID(),
+                answer, false, List.of(), UUID.randomUUID(),
                 "mnema-baseline", "1", "hash", Instant.parse("2026-09-20T09:00:00Z"));
         when(repository.ownsDeck(actor, deck)).thenReturn(true);
         when(repository.receipt(command.attemptId())).thenReturn(Optional.empty());

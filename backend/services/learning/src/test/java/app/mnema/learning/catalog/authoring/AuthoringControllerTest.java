@@ -22,6 +22,7 @@ import java.util.UUID;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -129,6 +130,21 @@ class AuthoringControllerTest {
         mvc.perform(post("/editing-drafts").contentType(MediaType.APPLICATION_JSON).content(draftCreateBody()))
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.code").value("RESOURCE_LIMIT_EXCEEDED"));
+    }
+
+    @Test
+    void deckScopedCapturePageBindsDeckAndKeepsPrivateCount() throws Exception {
+        ObjectNode page = JSON.createObjectNode().put("total", 3).putNull("nextCursor");
+        page.putArray("items");
+        when(captures.list(actor, deck.toString(), "20", "opaque")).thenReturn(page);
+        mvc.perform(get("/capture-notes").param("deckId", deck.toString())
+                        .param("limit", "20").param("cursor", "opaque"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(3))
+                .andExpect(header().string("Cache-Control", "private, no-store"));
+        verify(captures).list(actor, deck.toString(), "20", "opaque");
+        mvc.perform(get("/capture-notes").param("deckId", deck.toString(), deck.toString()))
+                .andExpect(status().isBadRequest());
     }
 
     private String draftCreateBody() {

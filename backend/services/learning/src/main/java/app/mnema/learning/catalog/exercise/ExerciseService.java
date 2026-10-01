@@ -6,9 +6,9 @@ import app.mnema.learning.catalog.content.pages.CountedPageTypes.PageEdit;
 import app.mnema.learning.catalog.content.pages.CountedPageTypes.Profile;
 import app.mnema.learning.catalog.content.pages.CountedPageTypes.TreeRoot;
 import app.mnema.learning.catalog.content.pages.CountedPages;
-import app.mnema.learning.catalog.content.storage.NativeSnapshot;
-import app.mnema.learning.catalog.content.storage.NativeSnapshotDecoder;
+import app.mnema.learning.catalog.content.NativeNodeIndex;
 import app.mnema.learning.catalog.content.storage.NativeStorageBatches;
+import app.mnema.learning.capability.LearningCapabilities;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.concurrency.CompareAndSetExecutor;
@@ -16,6 +16,7 @@ import app.mnema.learning.platform.concurrency.VersionConflictException;
 import app.mnema.learning.platform.id.UuidPolicy;
 import app.mnema.learning.platform.idempotency.CommandIdentity;
 import app.mnema.learning.platform.idempotency.CommandReceiptService;
+import app.mnema.learning.media.MediaCatalog;
 import app.mnema.learning.storage.ImmutableStorage;
 import app.mnema.learning.storage.StorageTypes.NewObject;
 import app.mnema.learning.storage.StorageTypes.ObjectKind;
@@ -35,10 +36,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -53,17 +53,22 @@ public class ExerciseService {
     private final CommandReceiptService receipts;
     private final CompareAndSetExecutor cas;
     private final ImmutableStorage storage;
+    private final MediaCatalog mediaCatalog;
     private final NativeStorageBatches nativeBatches;
+    private final LearningCapabilities capabilities;
     private final TransactionTemplate publication;
     private final TransactionTemplate cleanup;
 
     public ExerciseService(ExerciseRepository repository, CommandReceiptService receipts, CompareAndSetExecutor cas,
-                           ImmutableStorage storage, PlatformTransactionManager transactions) {
+                           ImmutableStorage storage, MediaCatalog mediaCatalog, LearningCapabilities capabilities,
+                           PlatformTransactionManager transactions) {
         this.repository = repository;
         this.receipts = receipts;
         this.cas = cas;
         this.storage = storage;
+        this.mediaCatalog = mediaCatalog;
         this.nativeBatches = new NativeStorageBatches(storage);
+        this.capabilities = capabilities;
         this.publication = new TransactionTemplate(transactions);
         publication.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
         publication.setTimeout(10);
@@ -106,19 +111,62 @@ public class ExerciseService {
                 ? repository.exerciseHead(actor, deckId, exerciseId)
                 : repository.exerciseRevision(actor, deckId, exerciseId, revisionId))
                 .orElseThrow(ResourceNotFoundException::new);
-        List<ExerciseRepository.BindingRow> bindings = repository.bindings(deckId, exerciseId, exercise.revisionId());
-        ExerciseRepository.BindingRow assessed = bindings.stream().filter(row -> row.role().equals("ASSESSED"))
-                .findFirst().orElseThrow(() -> new IllegalStateException("Exercise has no assessed binding"));
+        ExerciseRepository.SubjectRow subject = repository.subject(deckId, exerciseId, exercise.revisionId())
+                .orElseThrow(() -> new IllegalStateException("Exercise has no assessed binding"));
         ExerciseRepository.ObjectiveRow objective = repository.objectiveRevision(actor, deckId,
-                assessed.objectiveId(), assessed.objectiveRevisionId()).orElseThrow(IllegalStateException::new);
-        ObjectNode result = summary(exercise).put("deckId", deckId.toString())
-                .put("deckRevisionId", deck.revisionId().toString()).put("deckVersion", Long.toString(deck.version()));
-        result.set("prompt", exercise.prompt().deepCopy());
-        result.set("evaluatorPolicy", exercise.evaluator().deepCopy());
+                subject.objectiveId(), subject.objectiveRevisionId()).orElseThrow(IllegalStateException::new);
+        ObjectNode result = summary(exercise);
         result.set("objective", objective(objective));
-        ArrayNode bindingValues = result.putArray("bindings");
-        bindings.forEach(row -> bindingValues.add(binding(row)));
+        result.put("deckId", deckId.toString()).put("deckRevisionId", deck.revisionId().toString())
+                .put("deckVersion", Long.toString(deck.version()));
+        result.putObject("subject").put("memberKey", subject.memberKey().toString())
+                .put("itemRevisionId", subject.itemRevisionId().toString());
+        result.set("content", exercise.content().deepCopy());
+        result.set("answerKey", exercise.answerKey().deepCopy());
+        result.set("evaluatorPolicy", exercise.evaluator().deepCopy());
         return result;
+    }
+
+    /** Removes only the current exercise roster entry; pinned history and completed attempts remain valid. */
+    public void delete(UUID actor, UUID deckId, UUID exerciseId, long expectedDeckVersion) {
+        ExerciseRepository.DeckHead deck = own(actor, deckId);
+        UuidPolicy.requireEntityId(exerciseId, "exerciseId");
+        ExerciseRepository.ExerciseRow previous = repository.exerciseHead(actor, deckId, exerciseId)
+                .orElseThrow(ResourceNotFoundException::new);
+        if (deck.version() != expectedDeckVersion) throw new VersionConflictException();
+        UUID nextRevision = UUID.randomUUID();
+        List<StagedRoot> pins = new ArrayList<>();
+        try {
+            TreeRoot root = tree(deck.scopeId(), deck.exercisesRootId(), deck.exerciseCount());
+            TreeRoot exercises = stagePage(exercisePages().delete(root, previous.ordinal(), exerciseId),
+                    deck.scopeId(), actor, pins);
+            StagedRoot members = storage.stageBatch(new StageBatch(deck.scopeId(), actor, List.of(),
+                    List.of(deck.membersRootId())), PREPARATION_LEASE).getFirst();
+            pins.add(members);
+            publication.executeWithoutResult(ignored -> {
+                ExerciseRepository.DeckHead current = own(actor, deckId);
+                ExerciseRepository.ExerciseRow currentExercise = repository.exerciseHead(actor, deckId, exerciseId)
+                        .orElseThrow(ResourceNotFoundException::new);
+                if (!sameHead(current, deck) || !currentExercise.revisionId().equals(previous.revisionId())
+                        || currentExercise.ordinal() != previous.ordinal()) throw new VersionConflictException();
+                long sequence = cas.updateOne(expectedDeckVersion,
+                        () -> repository.advance(actor, deckId, nextRevision, expectedDeckVersion));
+                if (repository.deleteExerciseHead(deckId, exerciseId, previous.revisionId()) != 1) {
+                    throw new VersionConflictException();
+                }
+                repository.shiftExerciseOrdinals(deckId, previous.ordinal());
+                Instant now = repository.now();
+                PinOwner owner = new PinOwner("deck.revision", nextRevision, actor);
+                UUID membersPin = storage.retain(members, owner);
+                UUID exercisesPin = storage.retain(findPin(pins, exercises.ref()), owner);
+                repository.insertDeckRevision(deck, nextRevision, UUID.randomUUID(), now, membersPin,
+                        exercises.ref().objectId(), exercisesPin, deck.exerciseCount() - 1);
+                repository.insertRemoval(deckId, nextRevision, sequence, exerciseId, previous.revisionId(),
+                        previous.ordinal());
+            });
+        } finally {
+            cleanup.executeWithoutResult(ignored -> pins.forEach(pin -> storage.release(deck.scopeId(), pin.stagingPinId())));
+        }
     }
 
     public WriteResult publish(UUID actor, UUID deckId, UUID pathExerciseId, long expectedDeckVersion,
@@ -131,6 +179,10 @@ public class ExerciseService {
         ObjectNode envelope = command.envelope(deckId, pathExerciseId, expectedDeckVersion);
         var replay = receipts.replay(identity, envelope);
         if (replay.isPresent()) return new WriteResult(replay.orElseThrow(), true);
+        // Structural errors were already rejected as INVALID_REQUEST; a valid command that needs a
+        // disabled or provider-less capability is a state conflict, never silently downgraded.
+        if (command.exercise().requiresSemanticAssessment()) capabilities.requireAiAssessment();
+        if (command.exercise().requiresSpeechToText()) capabilities.requireSpeechToText();
         Prepared prepared = prepare(actor, deckId, pathExerciseId, expectedDeckVersion, command);
         boolean[] applied = {false};
         try {
@@ -169,17 +221,15 @@ public class ExerciseService {
             exerciseSequence = previous.sequence() + 1;
         }
 
-        ExerciseCommand.Binding assessed = command.exercise().bindings().stream()
-                .filter(binding -> binding.role().equals("ASSESSED")).findFirst().orElseThrow();
-        Map<ItemKey, Set<UUID>> nodes = validateBindings(actor, deckId, command.exercise());
-        validatePrompt(command.exercise().prompt(), nodes);
-        ObjectivePlan objective = prepareObjective(actor, deckId, command.objective(), assessed.memberKey());
+        ExerciseCommand.Exercise exercise = command.exercise();
+        validateSubjectAndMaterials(actor, deckId, exercise);
+        ObjectivePlan objective = prepareObjective(actor, deckId, command.objective(), exercise.subject().memberKey());
 
         UUID exerciseRevision = UUID.randomUUID();
         UUID deckRevision = UUID.randomUUID();
         List<StagedRoot> pins = new ArrayList<>();
         StagedRoot descriptor = stageDescriptor(deck.scopeId(), actor, exerciseId, exerciseRevision,
-                command.exercise().type(), pins);
+                command.exercise().type().name(), pins);
         CountedPages pages = exercisePages();
         TreeRoot root = tree(deck.scopeId(), deck.exercisesRootId(), deck.exerciseCount());
         PageEdit edit = create ? pages.insert(root, ordinal, new Entry(exerciseId, descriptor.root()))
@@ -196,14 +246,14 @@ public class ExerciseService {
                                            UUID assessedMember) {
         return switch (command) {
             case ExerciseCommand.CreateObjective create -> new ObjectivePlan(UUID.randomUUID(), UUID.randomUUID(),
-                    UUID.randomUUID(), 0, null, assessedMember, create.answerContract(), true, false);
+                    UUID.randomUUID(), 0, null, assessedMember, create.title(), true, false);
             case ExerciseCommand.ReuseObjective reuse -> {
                 ExerciseRepository.ObjectiveRow current = repository.objectiveHead(actor, deckId, reuse.objectiveId())
                         .orElseThrow(ResourceNotFoundException::new);
                 if (!current.revisionId().equals(reuse.objectiveRevisionId())) throw new VersionConflictException();
                 if (!current.memberKey().equals(assessedMember)) throw new InvalidRequestException();
                 yield new ObjectivePlan(current.objectiveId(), current.objectiveKey(), current.revisionId(),
-                        current.sequence(), current.revisionId(), current.memberKey(), current.answerContract(), false, false);
+                        current.sequence(), current.revisionId(), current.memberKey(), current.title(), false, false);
             }
             case ExerciseCommand.ReviseObjective revise -> {
                 ExerciseRepository.ObjectiveRow current = repository.objectiveHead(actor, deckId, revise.objectiveId())
@@ -211,46 +261,34 @@ public class ExerciseService {
                 if (!current.revisionId().equals(revise.expectedObjectiveRevisionId())) throw new VersionConflictException();
                 if (!current.memberKey().equals(assessedMember)) throw new InvalidRequestException();
                 yield new ObjectivePlan(current.objectiveId(), current.objectiveKey(), UUID.randomUUID(),
-                        current.sequence() + 1, current.revisionId(), current.memberKey(), revise.answerContract(), false, true);
+                        current.sequence() + 1, current.revisionId(), current.memberKey(), revise.title(), false, true);
             }
         };
     }
 
-    private Map<ItemKey, Set<UUID>> validateBindings(UUID actor, UUID deckId, ExerciseCommand.Exercise exercise) {
-        Map<ItemKey, Set<UUID>> result = new HashMap<>();
-        for (ExerciseCommand.Binding binding : exercise.bindings()) {
-            ItemKey key = new ItemKey(binding.memberKey(), binding.itemRevisionId());
-            Set<UUID> nodes = result.computeIfAbsent(key, ignored -> loadNodes(actor, deckId, key));
-            if (!nodes.containsAll(binding.nodeIds())) throw new InvalidRequestException();
+    /**
+     * The subject and every quoted material must be the current revision of a member of this deck (a foreign
+     * or stale reference is an opaque 404). Quoted nodes must exist in the pinned revision, have a plain-text
+     * projection and fit the limit of the slot that quotes them (an invalid reference is a 400).
+     */
+    private void validateSubjectAndMaterials(UUID actor, UUID deckId, ExerciseCommand.Exercise exercise) {
+        ExerciseCommand.Subject subject = exercise.subject();
+        itemRevision(actor, deckId, new ItemKey(subject.memberKey(), subject.itemRevisionId()));
+        Map<ItemKey, NativeNodeIndex> indexes = new LinkedHashMap<>();
+        for (Block.Material material : exercise.materials()) {
+            ItemKey key = new ItemKey(material.memberKey(), material.itemRevisionId());
+            NativeNodeIndex index = indexes.computeIfAbsent(key, ignored -> {
+                ExerciseRepository.ItemRevision revision = itemRevision(actor, deckId, key);
+                return NativeNodeIndex.load(nativeBatches, new ObjectRef(revision.scopeId(), revision.contentRootId()));
+            });
+            String text = index.text(material.nodeId()).orElseThrow(InvalidRequestException::new);
+            if (text.isBlank() || text.length() > material.maxText()) throw new InvalidRequestException();
         }
-        return result;
     }
 
-    private void validatePrompt(JsonNode prompt, Map<ItemKey, Set<UUID>> loaded) {
-        if (!prompt.path("kind").textValue().equals("NODE_TEXT")) return;
-        ItemKey key = new ItemKey(UUID.fromString(prompt.path("memberKey").textValue()),
-                UUID.fromString(prompt.path("itemRevisionId").textValue()));
-        Set<UUID> nodes = loaded.get(key);
-        if (nodes == null || !nodes.contains(UUID.fromString(prompt.path("nodeId").textValue()))) {
-            throw new InvalidRequestException();
-        }
-    }
-
-    private Set<UUID> loadNodes(UUID actor, UUID deckId, ItemKey key) {
-        ExerciseRepository.ItemRevision revision = repository.itemRevision(actor, deckId, key.member(), key.revision())
+    private ExerciseRepository.ItemRevision itemRevision(UUID actor, UUID deckId, ItemKey key) {
+        return repository.itemRevision(actor, deckId, key.member(), key.revision())
                 .orElseThrow(ResourceNotFoundException::new);
-        NativeSnapshotDecoder decoder = new NativeSnapshotDecoder(new ObjectRef(revision.scopeId(), revision.contentRootId()));
-        while (!decoder.isComplete()) nativeBatches.readNext(decoder);
-        NativeSnapshot snapshot = decoder.snapshot();
-        Set<UUID> result = new HashSet<>();
-        ArrayDeque<JsonNode> pending = new ArrayDeque<>();
-        pending.add(snapshot.document().toJson().path("root"));
-        while (!pending.isEmpty()) {
-            JsonNode node = pending.removeLast();
-            result.add(UUID.fromString(node.path("id").textValue()));
-            node.path("content").forEach(pending::add);
-        }
-        return Set.copyOf(result);
     }
 
     private ObjectNode apply(UUID actor, UUID deckId, UUID pathExerciseId, long expectedDeckVersion,
@@ -273,12 +311,12 @@ public class ExerciseService {
             repository.insertObjective(deckId, objective.objectiveId(), objective.objectiveKey(), objective.memberKey(),
                     actor, deck.scopeId(), time);
             repository.insertObjectiveRevision(deckId, objective.objectiveId(), objective.revisionId(), 0, null,
-                    prepared.deckRevision(), deckSequence, command.commandId(), objective.answerContract(), time);
+                    prepared.deckRevision(), deckSequence, command.commandId(), objective.title(), time);
             repository.insertObjectiveHead(deckId, objective.objectiveId(), objective.revisionId(), 0, time);
         } else if (objective.createRevision()) {
             repository.insertObjectiveRevision(deckId, objective.objectiveId(), objective.revisionId(),
                     objective.sequence(), objective.parentRevisionId(), prepared.deckRevision(), deckSequence,
-                    command.commandId(), objective.answerContract(), time);
+                    command.commandId(), objective.title(), time);
             repository.updateObjectiveHead(deckId, objective.objectiveId(), objective.revisionId(),
                     objective.sequence(), time);
         }
@@ -290,11 +328,12 @@ public class ExerciseService {
                 prepared.exerciseSequence(), prepared.previous() == null ? null : prepared.previous().revisionId(),
                 prepared.deckRevision(), deckSequence, command.commandId(), command.exercise(),
                 prepared.descriptor().root().objectId(), time);
-        for (ExerciseCommand.Binding binding : command.exercise().bindings()) {
-            boolean assessed = binding.role().equals("ASSESSED");
-            repository.insertBinding(deckId, prepared.exerciseId(), prepared.exerciseRevision(), binding,
-                    assessed ? objective.objectiveId() : null, assessed ? objective.revisionId() : null);
+        List<MediaCatalog.ExerciseAsset> assets = command.exercise().assets();
+        if (!assets.isEmpty()) {
+            mediaCatalog.attachExerciseRevision(actor, deckId, prepared.exerciseId(), prepared.exerciseRevision(),
+                    assets);
         }
+        insertBindings(deckId, prepared, command.exercise(), objective);
         if (pathExerciseId == null) {
             repository.insertExerciseHead(deckId, prepared.exerciseId(), prepared.exerciseRevision(), 0,
                     prepared.ordinal(), time);
@@ -322,6 +361,26 @@ public class ExerciseService {
                 .put("exerciseId", prepared.exerciseId().toString())
                 .put("exerciseRevisionId", prepared.exerciseRevision().toString())
                 .put("enabled", command.exercise().enabled());
+    }
+
+    /** The ASSESSED subject plus one CONTEXT row per distinct quoted material revision, with its node IDs. */
+    private void insertBindings(UUID deckId, Prepared prepared, ExerciseCommand.Exercise exercise,
+                                ObjectivePlan objective) {
+        ExerciseCommand.Subject subject = exercise.subject();
+        int ordinal = 0;
+        repository.insertBinding(deckId, prepared.exerciseId(), prepared.exerciseRevision(),
+                new ExerciseRepository.BindingInsert(UUID.randomUUID(), ordinal++, "ASSESSED", subject.memberKey(),
+                        subject.itemRevisionId(), List.of(), objective.objectiveId(), objective.revisionId()));
+        Map<ItemKey, Set<UUID>> context = new LinkedHashMap<>();
+        for (Block.Material material : exercise.materials()) {
+            context.computeIfAbsent(new ItemKey(material.memberKey(), material.itemRevisionId()),
+                    ignored -> new LinkedHashSet<>()).add(material.nodeId());
+        }
+        for (var entry : context.entrySet()) {
+            repository.insertBinding(deckId, prepared.exerciseId(), prepared.exerciseRevision(),
+                    new ExerciseRepository.BindingInsert(UUID.randomUUID(), ordinal++, "CONTEXT",
+                            entry.getKey().member(), entry.getKey().revision(), List.copyOf(entry.getValue()), null, null));
+        }
     }
 
     private void recheckObjective(UUID actor, UUID deckId, ObjectivePlan plan) {
@@ -399,36 +458,22 @@ public class ExerciseService {
         return JsonNodeFactory.instance.objectNode().put("exerciseId", row.exerciseId().toString())
                 .put("exerciseRevisionId", row.revisionId().toString())
                 .put("exerciseVersion", Long.toString(row.sequence())).put("ordinal", row.ordinal())
-                .put("type", row.type()).put("enabled", row.enabled()).put("schemaVersion", 1)
+                .put("type", row.type()).put("enabled", row.enabled()).put("schemaVersion", ExerciseCommand.SCHEMA_VERSION)
                 .put("createdAt", row.createdAt().toString()).put("updatedAt", row.updatedAt().toString());
     }
 
     private static ObjectNode objective(ExerciseRepository.ObjectiveRow row) {
-        ObjectNode result = JsonNodeFactory.instance.objectNode().put("objectiveId", row.objectiveId().toString())
+        return JsonNodeFactory.instance.objectNode().put("objectiveId", row.objectiveId().toString())
                 .put("objectiveKey", row.objectiveKey().toString())
                 .put("objectiveRevisionId", row.revisionId().toString())
-                .put("objectiveVersion", Long.toString(row.sequence())).put("memberKey", row.memberKey().toString());
-        result.set("answerContract", row.answerContract().deepCopy());
-        return result;
-    }
-
-    private static ObjectNode binding(ExerciseRepository.BindingRow row) {
-        ObjectNode result = JsonNodeFactory.instance.objectNode().put("bindingId", row.bindingId().toString())
-                .put("role", row.role()).put("memberKey", row.memberKey().toString())
-                .put("itemRevisionId", row.itemRevisionId().toString()).put("ordinal", row.ordinal());
-        ArrayNode nodes = result.putArray("nodeIds");
-        row.nodeIds().forEach(id -> nodes.add(id.toString()));
-        result.set("display", row.display().deepCopy());
-        return result;
+                .put("objectiveVersion", Long.toString(row.sequence())).put("memberKey", row.memberKey().toString())
+                .put("title", row.title());
     }
 
     private record ItemKey(UUID member, UUID revision) { }
     private record ObjectivePlan(UUID objectiveId, UUID objectiveKey, UUID revisionId, long sequence,
-                                 UUID parentRevisionId, UUID memberKey, JsonNode answerContract,
-                                 boolean createIdentity, boolean createRevision) {
-        private ObjectivePlan { answerContract = answerContract.deepCopy(); }
-        @Override public JsonNode answerContract() { return answerContract.deepCopy(); }
-    }
+                                 UUID parentRevisionId, UUID memberKey, String title,
+                                 boolean createIdentity, boolean createRevision) { }
     private record Prepared(ExerciseRepository.DeckHead deck, UUID deckRevision, UUID exerciseId,
                             UUID exerciseRevision, long exerciseSequence, int ordinal,
                             ExerciseRepository.ExerciseRow previous, ObjectivePlan objective, StagedRoot descriptor,

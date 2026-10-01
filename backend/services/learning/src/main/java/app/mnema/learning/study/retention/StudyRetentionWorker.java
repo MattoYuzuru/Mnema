@@ -16,9 +16,9 @@ class StudyRetentionWorker {
             fixedDelayString = "${mnema.study.retention.fixed-delay:PT1H}")
     void purge() {
         StudyRetentionService.PurgeResult result = service.purgeBatch();
-        if (result.rawResponses() != 0 || result.compactOutcomes() != 0) {
-            LOG.info("Study retention batch completed rawResponses={} compactOutcomes={}",
-                    result.rawResponses(), result.compactOutcomes());
+        if (result.rawResponses() != 0 || result.compactOutcomes() != 0 || result.pairInteractions() != 0) {
+            LOG.info("Study retention batch completed rawResponses={} compactOutcomes={} pairInteractions={}",
+                    result.rawResponses(), result.compactOutcomes(), result.pairInteractions());
         }
     }
 }

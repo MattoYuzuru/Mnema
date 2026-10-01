@@ -4,27 +4,34 @@
   }
   @if (loading()) {
     <h1 id="browse-title" tabindex="-1">Материалы</h1>
-    <p role="status">Загружаем материалы…</p>
+    <p class="notice" role="status">Загружаем материалы…</p>
   } @else if (failure()) {
     <h1 id="browse-title" tabindex="-1">Материалы недоступны</h1>
-    <section class="notice error" role="alert"><p>Не удалось получить подтверждённую сервером версию.</p><button class="button" type="button" (click)="load()">Повторить</button></section>
+    <section class="notice error" role="alert"><p>Не удалось загрузить материалы.</p><button class="button" type="button" (click)="load()">Повторить</button></section>
   } @else if (deck(); as currentDeck) {
     @if (item(); as currentItem) {
-      <header class="page-heading"><div><p class="eyebrow">{{ selectedOrdinal() === null ? 'Материал' : 'Материал ' + (selectedOrdinal()! + 1) }}</p><h1 id="browse-title" tabindex="-1">{{ currentDeck.metadata.title }}</h1><p class="lede">Единый безопасный рендер опубликованной версии.</p></div>
+      <header class="page-heading material-heading"><div><p class="eyebrow">{{ selectedOrdinal() === null ? 'Материал' : 'Материал ' + (selectedOrdinal()! + 1) }}</p><h1 id="browse-title" tabindex="-1">{{ currentDeck.metadata.title }}</h1><p class="lede">Опубликованная версия материала</p></div>
         <div class="actions"><a class="button" [routerLink]="['/decks', currentDeck.deckId, 'materials', currentItem.memberKey, 'exercises', 'new']">Упражнения</a>
+        <app-hold-to-delete-button label="Удалить" [disabled]="deleting() || selectedOrdinal() === null" (confirmed)="deleteItem()" />
         @if (selectedOrdinal() !== null) { <a class="button primary" [routerLink]="['/decks', currentDeck.deckId, 'materials', currentItem.memberKey, 'edit']" [queryParams]="{ ordinal: selectedOrdinal() }">Редактировать</a> }</div>
       </header>
-      @if (selectedOrdinal() === null) { <p class="notice">Для безопасного редактирования откройте материал из списка: ссылка должна содержать позицию в текущей версии колоды.</p> }
-      <article class="sheet"><app-native-document-renderer [document]="currentItem.document" /></article>
+      @if (positionError()) { <p class="notice" role="alert">Не удалось подтвердить текущую версию материала. <button class="button" type="button" (click)="load()">Обновить</button></p> }
+      @if (deleteMessage(); as message) { <p class="notice error" role="alert">{{ message }}</p> }
+      <article class="sheet"><app-native-media-surface [document]="currentItem.document" /></article>
     } @else if (page(); as currentPage) {
-      <header class="page-heading"><div><p class="eyebrow">Просмотр колоды</p><h1 id="browse-title" tabindex="-1">{{ currentDeck.metadata.title }}</h1><p class="lede">{{ currentPage.total }} материалов</p></div><div class="actions"><a class="button" [routerLink]="['/decks', currentDeck.deckId, 'capture']">На потом</a><a class="button primary" [routerLink]="['/decks', currentDeck.deckId, 'materials', 'new']">Новый материал</a></div></header>
+      <header class="page-heading browse-list-heading"><div><p class="eyebrow">Просмотр колоды</p><h1 id="browse-title" tabindex="-1">{{ currentDeck.metadata.title }}</h1><p class="lede">{{ currentPage.total }} материалов</p></div><div class="actions"><a class="button capture-link" [routerLink]="['/decks', currentDeck.deckId, 'capture']" [attr.aria-label]="captureCount() ? 'На потом, заметок: ' + captureCount() : 'На потом'">На потом@if (captureCount(); as count) { <span class="capture-badge" aria-hidden="true">{{ count > 999 ? '999+' : count }}</span> }</a><a class="button primary" [routerLink]="['/decks', currentDeck.deckId, 'materials', 'new']">Новый материал</a></div></header>
       @if (currentPage.items.length === 0) { <section class="notice"><h2>Здесь пока пусто</h2><p>Создайте первый материал или перенесите заметку из «На потом».</p></section> }
       <ol class="item-list">
         @for (entry of currentPage.items; track entry.memberKey) {
-          <li><a class="item-row" [routerLink]="['/decks', currentDeck.deckId, 'materials', entry.memberKey]" [queryParams]="{ ordinal: entry.ordinal }"><span class="folio">{{ entry.ordinal + 1 }}</span><strong>Материал {{ entry.ordinal + 1 }}</strong><time [attr.datetime]="entry.updatedAt">{{ entry.updatedAt | date:'dd.MM.y, HH:mm' }}</time></a></li>
+          <li><a class="item-row" [routerLink]="['/decks', currentDeck.deckId, 'materials', entry.memberKey]"><span class="folio">{{ entry.ordinal + 1 }}</span><strong [title]="entry.title || 'Материал без текста'">{{ entry.title || 'Материал без текста' }}</strong><time [attr.datetime]="entry.updatedAt">{{ entry.updatedAt | date:'dd.MM.y, HH:mm' }}</time></a></li>
         }
       </ol>
-      @if (currentPage.nextCursor) { <div class="actions"><button class="button" type="button" (click)="loadMore()">Показать ещё</button></div> }
+      @if (currentPage.nextCursor) {
+        <div #loadSentinel class="list-sentinel" aria-live="polite">
+          @if (loadingMore()) { <p role="status">Загружаем следующие материалы…</p> }
+          @if (moreError()) { <p>Не удалось загрузить следующие материалы.</p><button class="button" type="button" (click)="loadMore()">Повторить</button> }
+        </div>
+      }
     }
   }
 </section>

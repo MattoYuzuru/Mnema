@@ -1,7 +1,11 @@
 # Frontend (`frontend`)
 
-> **Status: legacy.** This page describes the v1 Angular UI. Current routes and
-> Angular 22 boundaries are in the repository guide and source.
+> **Status: legacy.** This page describes the removed v1 Angular UI. For the
+> current Angular 22 routes and runtime boundaries, use the
+> [repository guide](../engineering/repository-guide.md) and
+> [`app.routes.ts`](../../frontend/src/app/app.routes.ts). For the accepted visual
+> direction and current implementation rules, use the
+> [brand and UI contract](../frontend/mnema-brand-and-ui-contract.md).
 
 ## Назначение
 

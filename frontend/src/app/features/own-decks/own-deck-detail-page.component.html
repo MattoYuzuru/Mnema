@@ -1,4 +1,4 @@
-<section class="page narrow" aria-labelledby="deck-detail-title">
+<section class="page narrow deck-detail-page" aria-labelledby="deck-detail-title">
   <a class="back-link" routerLink="/decks"><span aria-hidden="true">←</span> Мои колоды</a>
 
   @let detail = store.detailState();
@@ -36,11 +36,11 @@
         <h2 id="conflict-title">Колода уже изменена в другой вкладке</h2>
         <p>Ваш ввод остаётся в форме. Выберите, какую версию продолжить.</p>
         <dl class="server-version">
-          <div><dt>Текущее название на сервере</dt><dd>{{ mutation.latest.metadata.title }}</dd></div>
-          <div><dt>Текущее описание на сервере</dt><dd>{{ mutation.latest.metadata.description || 'Без описания' }}</dd></div>
+          <div><dt>Текущее название</dt><dd>{{ mutation.latest.metadata.title }}</dd></div>
+          <div><dt>Текущее описание</dt><dd>{{ mutation.latest.metadata.description || 'Без описания' }}</dd></div>
         </dl>
         <div class="actions">
-          <button class="button secondary" type="button" (click)="chooseServerVersion()">Использовать версию сервера</button>
+          <button class="button secondary" type="button" (click)="chooseServerVersion()">Оставить текущую версию</button>
           <button class="button primary" type="button" (click)="reapplyConflict()">Применить мой прежний ввод поверх неё</button>
         </div>
       </section>
@@ -66,14 +66,10 @@
       </section>
     }
 
-    @if (mutation.phase === 'completed') {
-      <p class="notice success" role="status">Сервер подтвердил текущую версию колоды.</p>
-    }
-
     <nav class="actions" aria-label="Материалы колоды">
       <a class="button primary" [routerLink]="['/decks', deck.deckId, 'study']">Учить</a>
       <a class="button secondary" [routerLink]="['/decks', deck.deckId, 'materials']">Просмотреть материалы</a>
-      <a class="button secondary" [routerLink]="['/decks', deck.deckId, 'capture']">На потом</a>
+      <a class="button secondary capture-link" [routerLink]="['/decks', deck.deckId, 'capture']" [attr.aria-label]="captureCount() ? 'На потом, заметок: ' + captureCount() : 'На потом'">На потом@if (captureCount(); as count) { <span class="capture-badge" aria-hidden="true">{{ count > 999 ? '999+' : count }}</span> }</a>
       <a class="button secondary" [routerLink]="['/decks', deck.deckId, 'materials', 'new']">Новый материал</a>
     </nav>
 
@@ -85,8 +81,8 @@
           [attr.aria-invalid]="submitted() && (validation().titleBlank || validation().titleCodePoints > 200 || validation().titleBytes > 800)"
           aria-describedby="detail-title-help detail-title-error" autocomplete="off"></textarea>
         <div class="field-meta" id="detail-title-help">
-          <span>До 200 символов и 800 байт</span>
-          <span>{{ validation().titleCodePoints }}/200 · {{ validation().titleBytes }}/800 байт</span>
+          <span>До 200 символов</span>
+          <span>{{ validation().titleCodePoints }}/200</span>
         </div>
         @if (submitted() && validation().titleBlank) {
           <p class="field-error" id="detail-title-error">Введите название, состоящее не только из пробелов.</p>
@@ -100,13 +96,16 @@
         <textarea id="detail-description" rows="8" maxlength="4096" formControlName="description" (input)="syncDraft()"
           [readOnly]="mutationLocksDraft(mutation)"
           [attr.aria-invalid]="submitted() && validation().descriptionBytes > 4096"
-          aria-describedby="detail-description-help detail-description-error"></textarea>
-        <div class="field-meta" id="detail-description-help">
-          <span>До 4096 байт</span>
-          <span>{{ validation().descriptionBytes }}/4096 байт</span>
-        </div>
+          [attr.aria-describedby]="submitted() && validation().descriptionBytes > 4096 ? 'detail-description-error' : null"></textarea>
+        <p class="field-hint">Поддерживаются **жирный**, *курсив*, ~~зачёркивание~~ и списки.</p>
+        @if (draft().description.trim()) {
+          <div class="description-preview" aria-label="Предпросмотр описания">
+            <p class="eyebrow">Как будет выглядеть</p>
+            <app-deck-description [text]="draft().description" />
+          </div>
+        }
         @if (submitted() && validation().descriptionBytes > 4096) {
-          <p class="field-error" id="detail-description-error">Сократите описание до 4096 байт.</p>
+          <p class="field-error" id="detail-description-error">Сократите описание.</p>
         }
       </div>
 
@@ -114,16 +113,22 @@
         <p class="notice error" role="alert">Текст содержит неподдерживаемую последовательность Unicode.</p>
       }
       @if (submitted() && validation().requestBytes > 8192) {
-        <p class="notice error" role="alert">Название и описание вместе превышают размер команды 8192 байта.</p>
+        <p class="notice error" role="alert">Сократите название или описание.</p>
       }
 
       <div class="form-actions">
         <span class="draft-state" aria-live="polite">{{ form.dirty ? 'Есть несохранённые изменения' : 'Нет локальных изменений' }}</span>
-        <button class="button primary" type="submit"
-          [disabled]="!canStartNewMutation(mutation)">
-          {{ mutation.phase === 'pending' ? 'Отправляем…' : 'Сохранить изменения' }}
-        </button>
+        <div class="actions">
+          <app-hold-to-delete-button label="Удалить колоду" [disabled]="deleting() || !canDelete(mutation)" (confirmed)="deleteDeck(deck)" />
+          <button class="button primary" type="submit"
+            [disabled]="!canStartNewMutation(mutation)">
+            {{ mutation.phase === 'pending' ? 'Отправляем…' : 'Сохранить изменения' }}
+          </button>
+        </div>
       </div>
+      @if (deleteError(); as message) { <p class="field-error" role="alert">{{ message }}</p> }
     </form>
+
+
   }
 </section>

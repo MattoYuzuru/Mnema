@@ -2,20 +2,20 @@
   "cases": [
     {
       "id": "A-01",
-      "event": "binding references another deck",
+      "event": "MATERIAL block references a member of another deck",
       "preconditions": ["owner controls deck A", "member belongs only to deck B"],
-      "request": {"operation": "publishExercise", "deck": "A", "bindingDeck": "B"},
+      "request": {"operation": "publishExercise", "deck": "A", "materialDeck": "B"},
       "persistedEffect": {"rows": 0, "canonicalEffects": false},
       "response": {"status": 404, "code": "RESOURCE_NOT_FOUND"},
-      "recovery": "correct the binding to a member in the authorized deck snapshot"
+      "recovery": "quote a node of a member in the authorized deck snapshot"
     },
     {
       "id": "A-02",
-      "event": "binding references stale or deleted node",
+      "event": "MATERIAL block references a node that is not in the pinned item revision",
       "preconditions": ["item revision changed after editor selection"],
-      "request": {"operation": "publishExercise", "node": "stale"},
+      "request": {"operation": "publishExercise", "node": "absent"},
       "persistedEffect": {"rows": 0, "canonicalEffects": false},
-      "response": {"status": 412, "code": "VERSION_CONFLICT"},
+      "response": {"status": 400, "code": "INVALID_REQUEST"},
       "recovery": "reload the current item revision and select a valid node"
     },
     {
@@ -47,9 +47,9 @@
     },
     {
       "id": "A-06",
-      "event": "client spoofs mode or roles",
+      "event": "client spoofs mode, roles, bindings or hintsUsed",
       "preconditions": ["server presentation is PRACTICE with one assessed binding"],
-      "request": {"operation": "submitAttempt", "extraField": "mode or bindings"},
+      "request": {"operation": "submitAttempt", "extraField": "mode, bindings or hintsUsed"},
       "persistedEffect": {"rows": 0, "canonicalEffects": false},
       "response": {"status": 400, "code": "INVALID_REQUEST"},
       "recovery": "submit only the strict response envelope"
@@ -128,12 +128,12 @@
     },
     {
       "id": "A-15",
-      "event": "multi-assessed P0 publication",
-      "preconditions": ["exercise contains two ASSESSED objective bindings"],
-      "request": {"operation": "publishExercise", "assessedBindings": 2},
+      "event": "client sends bindings or a second assessed subject",
+      "preconditions": ["the command carries bindings or more than one subject"],
+      "request": {"operation": "publishExercise", "bindings": "client supplied"},
       "persistedEffect": {"rows": 0, "canonicalEffects": false},
       "response": {"status": 400, "code": "INVALID_REQUEST"},
-      "recovery": "split into single-objective exercises or defer to P1"
+      "recovery": "send one subject; the server derives the ASSESSED and CONTEXT bindings"
     },
     {
       "id": "A-16",
@@ -155,9 +155,9 @@
     },
     {
       "id": "A-18",
-      "event": "correct typed answer after hint",
-      "preconditions": ["deterministic production evaluator returns CORRECT"],
-      "request": {"operation": "submitAttempt", "hintsUsed": ["REVEAL_FIRST_GRAPHEME"]},
+      "event": "correct cloze answer after a server-recorded first-letter hint",
+      "preconditions": ["a study_hint_reveal row exists for one blank of the presentation", "deterministic production evaluator returns CORRECT or PARTIAL"],
+      "request": {"operation": "submitAttempt", "hintSource": "study_hint_reveal"},
       "persistedEffect": {"result": "CORRECT", "evidenceClass": "MEDIUM", "transitions": 1},
       "response": {"status": 200, "outcome": "ASSESSED"},
       "recovery": "none"
@@ -179,6 +179,42 @@
       "persistedEffect": {"evaluationRuns": 0, "additionalRows": 0, "transitions": 1},
       "response": {"status": 200, "header": "Idempotency-Replayed: true"},
       "recovery": "return the durable stored outcome"
+    },
+    {
+      "id": "A-21",
+      "event": "legacy mechanic name in a publication command",
+      "preconditions": ["a client still sends TYPED, LISTEN_TYPE, CLOZE_SINGLE, SINGLE_CHOICE, LISTEN_CHOICE or AUDIO_TEXT_MATCH"],
+      "request": {"operation": "publishExercise", "type": "TYPED"},
+      "persistedEffect": {"rows": 0, "canonicalEffects": false},
+      "response": {"status": 400, "code": "INVALID_REQUEST"},
+      "recovery": "publish one of the five canonical mechanics"
+    },
+    {
+      "id": "A-22",
+      "event": "ai-semantic evaluator or TEXT_OR_SPEECH input while the capability is unavailable",
+      "preconditions": ["the capability flag is false, or true without a provider"],
+      "request": {"operation": "publishExercise", "evaluator": "ai-semantic"},
+      "persistedEffect": {"rows": 0, "canonicalEffects": false},
+      "response": {"status": 409, "code": "CAPABILITY_UNAVAILABLE"},
+      "recovery": "publish the deterministic variant"
+    },
+    {
+      "id": "A-23",
+      "event": "learner presentation never carries an answer key",
+      "preconditions": ["a presentation of any mechanic is issued"],
+      "request": {"operation": "readPresentation", "raw": true},
+      "persistedEffect": {"answerKeyBytes": 0, "acceptedStrings": 0, "mediaTitles": 0, "unrevealedTranscripts": 0, "bindings": 0},
+      "response": {"status": 200, "snapshot": "learner content only"},
+      "recovery": "none"
+    },
+    {
+      "id": "A-24",
+      "event": "media is not ready when an answer is submitted",
+      "preconditions": ["a pinned asset is not READY or its verified source is not the declared kind"],
+      "request": {"operation": "submitAttempt", "responseKind": "TEXT"},
+      "persistedEffect": {"terminalReceipt": 1, "canonicalEffects": false, "transitions": 0},
+      "response": {"status": 200, "outcome": "NOT_ASSESSED", "reasonCode": "MEDIA_NOT_READY"},
+      "recovery": "retry later with a new presentation"
     }
   ]
 }

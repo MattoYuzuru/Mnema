@@ -7,8 +7,8 @@ import { NativeDocument } from '../../content/native-document';
 import { readNativeDocument } from '../../content/native-document-boundary';
 import { expectedEtag } from '../own-decks/own-deck.models';
 import {
-    AUTHORING_PAGE_SIZE, AuthoringProtocolError, CaptureAcknowledgement, CaptureConversion,
-    CaptureConversionAcknowledgement, CaptureNote, CapturePage, CaptureWriteResult, DraftAcknowledgement,
+    AUTHORING_MAX_DRAFT_SCAN, AUTHORING_PAGE_SIZE, AuthoringProtocolError, CaptureAcknowledgement, CaptureConversion,
+    CaptureConversionAcknowledgement, CaptureNote, CapturePage, CaptureWriteResult, DeckCapturePage, DraftAcknowledgement,
     DraftDetail, DraftPage, DraftSummary, DraftWriteResult, ItemAcknowledgement, ItemChangeResult,
     requireCommand, requireCount, requireCursor, requireEntity, requireInstant, requireObject, requireVersion
 } from './authoring.models';
@@ -25,11 +25,20 @@ export class AuthoringApiService {
     }
 
     listAllDrafts(): Observable<DraftPage> {
+        // Backend validates at most 1,000 active drafts per account; 20 per page needs up to 50 pages.
+        // A further cursor is a protocol/policy drift error, never a successful partial recovery list.
+        const maxPages = Math.ceil(AUTHORING_MAX_DRAFT_SCAN / AUTHORING_PAGE_SIZE);
         return this.listDrafts().pipe(
             expand(page => page.nextCursor === null ? EMPTY : this.listDrafts(page.nextCursor)),
-            take(10),
+            take(maxPages),
             reduce((all, page) => ({ items: [...all.items, ...page.items], nextCursor: page.nextCursor }),
-                { items: [] as readonly DraftSummary[], nextCursor: null } as DraftPage)
+                { items: [] as readonly DraftSummary[], nextCursor: null } as DraftPage),
+            map(all => {
+                if (all.nextCursor !== null || all.items.length > AUTHORING_MAX_DRAFT_SCAN) {
+                    throw new AuthoringProtocolError('Draft list exceeds the account policy.');
+                }
+                return all;
+            })
         );
     }
 
@@ -78,6 +87,39 @@ export class AuthoringApiService {
         return this.list('/capture-notes', cursor).pipe(map(response => ({
             items: parsePage(response, parseCapture), nextCursor: parseNextCursor(response)
         })));
+    }
+
+    listDeckCaptures(deckId: string, cursor: string | null = null, limit = AUTHORING_PAGE_SIZE): Observable<DeckCapturePage> {
+        return defer(() => {
+            if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+                throw new AuthoringProtocolError('Invalid capture page size.');
+            }
+            let params = new HttpParams().set('deckId', requireEntity(deckId)).set('limit', limit.toString());
+            if (cursor !== null) params = params.set('cursor', requireCursor(cursor)!);
+            return this.http.get<unknown>(`${this.baseUrl}/capture-notes`, { params, observe: 'response' });
+        }).pipe(map(response => {
+            requirePrivate(response);
+            const object = requireObject(response.body, ['items', 'nextCursor', 'total']);
+            if (!Array.isArray(object['items']) || object['items'].length > limit) {
+                throw new AuthoringProtocolError('Invalid deck capture page.');
+            }
+            const items = object['items'].map(parseCapture);
+            if (items.some(item => item.deckId !== deckId.toLowerCase() || item.archived || item.conversion !== null)) {
+                throw new AuthoringProtocolError('Deck capture page contains an unrelated note.');
+            }
+            const total = requireCount(object['total']);
+            if (total < items.length) throw new AuthoringProtocolError('Deck capture total is too small.');
+            return { items, nextCursor: requireCursor(object['nextCursor']), total };
+        }));
+    }
+
+    deleteCapture(note: CaptureNote): Observable<void> {
+        return this.http.delete(`${this.baseUrl}/capture-notes/${encodeURIComponent(requireEntity(note.noteId))}`, {
+            headers: ifMatch(note.rowVersion), observe: 'response', responseType: 'text'
+        }).pipe(map(response => {
+            if (response.status !== 204) throw new AuthoringProtocolError('Unexpected capture delete status.');
+            requirePrivate(response);
+        }));
     }
 
     createCapture(deckId: string, source: string, noteText: string, commandId: string): Observable<CaptureWriteResult> {

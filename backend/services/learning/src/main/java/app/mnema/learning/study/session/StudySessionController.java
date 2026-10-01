@@ -61,6 +61,26 @@ public class StudySessionController {
                 .body(service.presentations(id(identity.getSubject()), id(deckId), id(sessionId)));
     }
 
+    @PostMapping(value = "/{sessionId}/presentations/{presentationId}/transcript",
+            consumes = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<JsonNode> transcript(@AuthenticationPrincipal Jwt identity, @PathVariable String deckId,
+                                        @PathVariable String sessionId, @PathVariable String presentationId,
+                                        InputStream body) {
+        return ResponseEntity.ok().headers(privateHeaders()).body(service.revealTranscript(
+                id(identity.getSubject()), id(deckId), id(sessionId), id(presentationId),
+                StudyTranscriptCommand.nonce(body)));
+    }
+
+    @PostMapping(value = "/{sessionId}/presentations/{presentationId}/hints",
+            consumes = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<JsonNode> hint(@AuthenticationPrincipal Jwt identity, @PathVariable String deckId,
+                                  @PathVariable String sessionId, @PathVariable String presentationId,
+                                  InputStream body) {
+        return ResponseEntity.ok().headers(privateHeaders()).body(service.revealHint(
+                id(identity.getSubject()), id(deckId), id(sessionId), id(presentationId),
+                StudyHintCommand.read(body)));
+    }
+
     private static HttpHeaders privateHeaders() {
         HttpHeaders headers = new HttpHeaders();
         headers.setCacheControl("private, no-store");

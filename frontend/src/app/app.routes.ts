@@ -27,11 +27,6 @@ export const appRoutes: Routes = [
         canActivate: [authGuard]
     },
     {
-        path: 'my-study',
-        loadComponent: () => import('./features/my-study/my-study.component').then(module => module.MyStudyComponent),
-        canActivate: [authGuard]
-    },
-    {
         path: 'decks',
         loadComponent: () => import('./features/own-decks/own-decks-list-page.component')
             .then(module => module.OwnDecksListPageComponent),
@@ -100,24 +95,6 @@ export const appRoutes: Routes = [
         path: 'decks/:deckId',
         loadComponent: () => import('./features/own-decks/own-deck-detail-page.component')
             .then(module => module.OwnDeckDetailPageComponent),
-        canActivate: [authGuard]
-    },
-    {
-        path: 'public-decks',
-        loadComponent: () => import('./features/public-decks/public-decks-catalog.component').then(module => module.PublicDecksCatalogComponent)
-    },
-    {
-        path: 'public-decks/:deckId/browse',
-        loadComponent: () => import('./features/public-decks/public-card-browser.component').then(module => module.PublicCardBrowserComponent)
-    },
-    {
-        path: 'settings',
-        loadComponent: () => import('./features/settings/settings.component').then(module => module.SettingsComponent),
-        canActivate: [authGuard]
-    },
-    {
-        path: 'admin',
-        loadComponent: () => import('./features/admin/admin-panel.component').then(module => module.AdminPanelComponent),
         canActivate: [authGuard]
     },
     { path: 'privacy', component: PrivacyPageComponent },

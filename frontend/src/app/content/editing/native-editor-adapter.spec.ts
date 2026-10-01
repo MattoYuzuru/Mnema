@@ -3,6 +3,8 @@ import { history, undo } from 'prosemirror-history';
 import { EditorState, TextSelection } from 'prosemirror-state';
 
 import mixedDocumentJson from '../../../../../contracts/content/native-v1/valid/mixed.json';
+import richDocumentJson from '../../../../../contracts/content/native-v1/valid/rich.json';
+import youtubeDocumentJson from '../../../../../contracts/content/native-v1/valid/youtube.json';
 import { NativeDocument, NativeNode } from '../native-document';
 import {
     exportNativeDocument,
@@ -25,6 +27,24 @@ describe('native ProseMirror adapter', () => {
         expect(exported).toEqual(mixed);
         expect(JSON.stringify(exported)).not.toContain('selection');
         expect(JSON.stringify(exported)).not.toContain('mnema_text');
+    });
+
+    it('round-trips every shared v1 rich block and keeps asset IDs as references', () => {
+        const rich = richDocumentJson as unknown as NativeDocument;
+        const imported = importNativeDocument(rich);
+
+        expect(imported.editable).toBeTrue();
+        expect(imported.document?.childCount).toBe(5);
+        expect(exportNativeDocument(imported.document!)).toEqual(rich);
+        expect(imported.document!.toString()).not.toContain('object-storage');
+    });
+
+    it('round-trips a YouTube block as an inert provider ID', () => {
+        const youtube = youtubeDocumentJson as unknown as NativeDocument;
+        const imported = importNativeDocument(youtube);
+        expect(imported.editable).toBeTrue();
+        expect(exportNativeDocument(imported.document!)).toEqual(youtube);
+        expect(imported.document!.toString()).not.toContain('iframe');
     });
 
     it('preserves future nodes and their unsafe-looking opaque payload semantically', () => {

@@ -1,0 +1,67 @@
+{
+  "formatVersion": 1,
+  "root": {
+    "id": "ed8955d1-f8b1-4e78-9360-49df06d607c1",
+    "type": "doc",
+    "version": 1,
+    "attrs": {},
+    "content": [
+      {
+        "id": "a538a1b4-8862-4d73-8702-cd31e8e687bf",
+        "type": "image",
+        "version": 1,
+        "attrs": {
+          "assetId": "31901995-16ea-4f8b-8301-5d8e03004c72",
+          "alt": "Схема пути запроса",
+          "caption": "От браузера до базы данных",
+          "description": "Клиент отправляет запрос в API, тот читает базу и возвращает результат."
+        },
+        "content": []
+      },
+      {
+        "id": "e6531af7-4573-48ee-b5dd-63d8b92e2815",
+        "type": "audio",
+        "version": 1,
+        "attrs": {
+          "assetId": "948ef76d-68ab-4a79-9f83-f3a45ffb3eda",
+          "title": "Произношение термина",
+          "transcript": "Распределённая система"
+        },
+        "content": []
+      },
+      {
+        "id": "6a0c4156-d936-4329-b0e4-6f0f8f4ed290",
+        "type": "video",
+        "version": 1,
+        "attrs": {
+          "assetId": "c8fcb301-b270-472d-ac0d-a811b9d63b24",
+          "title": "Разбор архитектуры",
+          "transcript": "Краткое текстовое содержание видео."
+        },
+        "content": []
+      },
+      {
+        "id": "b535949e-c054-4c88-b182-d3c8d96649d2",
+        "type": "mermaid",
+        "version": 1,
+        "attrs": {
+          "source": "flowchart LR\n  Client --> API --> DB",
+          "title": "Путь запроса",
+          "description": "Клиент передаёт запрос API, API обращается к базе данных."
+        },
+        "content": []
+      },
+      {
+        "id": "6feb57b4-5239-4edc-b8c9-b44646b7d3ab",
+        "type": "table",
+        "version": 1,
+        "attrs": {
+          "caption": "Сравнение хранилищ",
+          "columns": ["Хранилище", "Сценарий"],
+          "rows": [["PostgreSQL", "Транзакционные данные"], ["Object Storage", "Медиафайлы"]]
+        },
+        "content": []
+      }
+    ]
+  }
+}

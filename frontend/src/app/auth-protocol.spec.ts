@@ -7,7 +7,7 @@ describe('browser Identity protocol boundaries', () => {
     const clientId = 'mnema-web';
     const redirectUri = `${origin}/auth/callback`;
     const now = 1800000000000;
-    const token = { access_token: 'opaque-token', expires_in: 300, token_type: 'Bearer', scope: AUTH_SCOPES };
+    const token = { access_token: 'opaque-token', expires_in: 259200, token_type: 'Bearer', scope: AUTH_SCOPES };
 
     it('only accepts same-application return paths and prevents auth loops', () => {
         expect(safeReturnUrl('/decks/123?view=metadata#title')).toBe('/decks/123?view=metadata#title');
@@ -30,13 +30,13 @@ describe('browser Identity protocol boundaries', () => {
 
     it('stores only access expiry/binding and never trusts ID/refresh claims', () => {
         expect(parseToken({ ...token, id_token: 'unverified', refresh_token: 'do-not-store' }, now, issuer, clientId)).toEqual({
-            token: 'opaque-token', expiresAt: now + 300000, issuer, clientId
+            token: 'opaque-token', expiresAt: now + 259200000, issuer, clientId
         });
     });
 
     it('rejects malformed token response, excessive lifetime and missing permissions', () => {
         for (const value of [null, [], {}, { ...token, access_token: 'abc\ndef' }, { ...token, access_token: 'a'.repeat(16385) },
-            { ...token, expires_in: 301 }, { ...token, expires_in: 0 }, { ...token, expires_in: 1.5 },
+            { ...token, expires_in: 259201 }, { ...token, expires_in: 0 }, { ...token, expires_in: 1.5 },
             { ...token, expires_in: '300' }, { ...token, token_type: 'Basic' }, { ...token, scope: 'openid profile account.read' }]) {
             expect(() => parseToken(value, now, issuer, clientId)).toThrow();
         }
@@ -45,7 +45,8 @@ describe('browser Identity protocol boundaries', () => {
     it('restored access must be unexpired and bound to this issuer/client', () => {
         const stored = parseToken(token, now, issuer, clientId);
         expect(parseStoredAccess(JSON.stringify(stored), now, issuer, clientId)).toEqual(stored);
-        for (const update of [{ expiresAt: now }, { expiresAt: now + 300001 }, { issuer: 'https://elsewhere.test' }, { clientId: 'other' }, { token: '' }]) {
+        expect(parseStoredAccess(JSON.stringify(stored), now + 2 * 24 * 60 * 60 * 1000, issuer, clientId)).toEqual(stored);
+        for (const update of [{ expiresAt: now }, { expiresAt: now + 259200001 }, { issuer: 'https://elsewhere.test' }, { clientId: 'other' }, { token: '' }]) {
             expect(() => parseStoredAccess(JSON.stringify({ ...stored, ...update }), now, issuer, clientId)).toThrow();
         }
         expect(() => parseStoredAccess(' '.repeat(18001), now, issuer, clientId)).toThrow();

@@ -18,10 +18,10 @@ RUN chmod +x /docker-entrypoint.d/40-gen-app-config.sh \
     && mkdir -p /run/secrets \
     && openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 1 -subj '/CN=build-check' \
       -keyout /run/secrets/mnema_local_tls_key -out /run/secrets/mnema_local_tls_cert >/dev/null 2>&1 \
-    && MNEMA_FEATURE_AI_ENABLED=false /docker-entrypoint.d/40-gen-app-config.sh \
+    && /docker-entrypoint.d/40-gen-app-config.sh \
     && nginx -t \
     && rm -rf /run/secrets \
-    && rm -f /usr/share/nginx/html/app-config.js /etc/nginx/conf.d/ai-route.inc
+    && rm -f /usr/share/nginx/html/app-config.js
 COPY --from=build /app/dist/mnema-frontend /usr/share/nginx/html
 
 EXPOSE 8443 8444

@@ -1,97 +1,113 @@
 package app.mnema.learning.study.attempt;
 
+import app.mnema.learning.catalog.exercise.AnswerKey;
+import app.mnema.learning.catalog.exercise.ExerciseType;
+import app.mnema.learning.catalog.exercise.TextRule;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
-import java.text.Normalizer;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+/**
+ * Pure, deterministic evaluation of one response against the pinned answer key. It never reads the
+ * database, the clock or client-supplied authority: hints and transcript use come from server records.
+ */
 record AttemptEvaluation(Status status, Result result, EvidenceClass evidenceClass,
                          List<String> reasonCodes, ObjectNode feedback) {
-    static AttemptEvaluation evaluate(String exerciseType, JsonNode evaluator, JsonNode answer,
-                                      JsonNode bindings, AttemptCommand command) {
-        if (command.response() instanceof AttemptCommand.CancelResponse) {
-            return notAssessed();
-        }
-        String evaluatorId = evaluator.path("id").asText();
-        String evaluatorVersion = evaluator.path("version").asText();
-        if (!evaluatorVersion.equals("1")) return unavailable();
-        if ((exerciseType.equals("TYPED") || exerciseType.equals("CLOZE_SINGLE"))
-                && evaluatorId.equals("deterministic-text")) {
-            if (!(command.response() instanceof AttemptCommand.TextResponse text)) throw new InvalidRequestException();
-            return text(answer, text.text(), command.hintsUsed(), exerciseType.equals("CLOZE_SINGLE"));
-        }
-        if (exerciseType.equals("SELF_CHECK") && evaluatorId.equals("self-check")) {
-            if (!(command.response() instanceof AttemptCommand.SelfCheckResponse self)) {
-                throw new InvalidRequestException();
+
+    /**
+     * Everything the evaluator may know about an issued presentation. {@code content} is the learner
+     * content that was issued, so ids are validated against what the learner actually saw.
+     */
+    record Subject(ExerciseType type, JsonNode evaluator, JsonNode answerKey, JsonNode content, JsonNode reveal,
+                   Set<UUID> hintedBlanks, boolean transcriptRevealed) {
+        Subject { hintedBlanks = Set.copyOf(hintedBlanks); }
+    }
+
+    static AttemptEvaluation evaluate(Subject subject, AttemptCommand.Response response) {
+        return evaluate(subject, response, true);
+    }
+
+    /**
+     * The response must fit the issued presentation (kind, ids, blank and pair sets) before anything else:
+     * a malformed response is a 400 that consumes nothing, even when the media or the evaluator is unavailable.
+     * Only an explicit CANCEL bypasses that check and the media check.
+     */
+    static AttemptEvaluation evaluate(Subject subject, AttemptCommand.Response response, boolean mediaReady) {
+        if (response instanceof AttemptCommand.CancelResponse) return notAssessed();
+        requireShape(subject, response);
+        if (!mediaReady) return mediaNotReady();
+        JsonNode evaluator = subject.evaluator();
+        // The semantic evaluator has no runtime: never fall back to exact matching, never blame the learner.
+        if (!"1".equals(evaluator.path("version").asText())
+                || !subject.type().evaluatorId().equals(evaluator.path("id").asText())) return unavailable();
+        AnswerKey key = AnswerKey.parse(subject.type(), subject.answerKey());
+        return switch (subject.type()) {
+            case SELF_CHECK -> selfCheck((AttemptCommand.SelfCheckResponse) response);
+            case FREE_RESPONSE -> freeResponse((AnswerKey.Text) key, subject, (AttemptCommand.TextResponse) response);
+            case CLOZE -> cloze((AnswerKey.Cloze) key, subject, (AttemptCommand.ClozeResponse) response);
+            case CHOICE -> choice((AnswerKey.Choice) key, subject, (AttemptCommand.ChoiceResponse) response);
+            case MATCH -> match((AnswerKey.Match) key, subject, (AttemptCommand.MatchResponse) response);
+        };
+    }
+
+    private static void requireShape(Subject subject, AttemptCommand.Response response) {
+        boolean fits = switch (subject.type()) {
+            case SELF_CHECK -> response instanceof AttemptCommand.SelfCheckResponse;
+            case FREE_RESPONSE -> response instanceof AttemptCommand.TextResponse;
+            case CLOZE -> response instanceof AttemptCommand.ClozeResponse cloze && blanksMatch(subject, cloze);
+            case CHOICE -> response instanceof AttemptCommand.ChoiceResponse choice && optionsMatch(subject, choice);
+            case MATCH -> response instanceof AttemptCommand.MatchResponse match && pairsMatch(subject, match);
+        };
+        if (!fits) throw new InvalidRequestException();
+    }
+
+    private static boolean blanksMatch(Subject subject, AttemptCommand.ClozeResponse cloze) {
+        Set<UUID> issued = new HashSet<>();
+        subject.content().path("passage").forEach(segment -> {
+            if (segment.path("kind").textValue().equals("BLANK")) {
+                issued.add(UUID.fromString(segment.path("blankId").textValue()));
             }
-            return selfCheck(self.rating());
-        }
-        if (exerciseType.equals("SINGLE_CHOICE") && evaluatorId.equals("deterministic-choice")) {
-            if (!(command.response() instanceof AttemptCommand.ChoiceResponse choice)
-                    || !command.hintsUsed().isEmpty()) throw new InvalidRequestException();
-            return choice(answer, bindings, choice.optionId());
-        }
-        return unavailable();
+        });
+        Set<UUID> supplied = new HashSet<>();
+        cloze.blanks().forEach(blank -> supplied.add(blank.blankId()));
+        return supplied.size() == cloze.blanks().size() && supplied.equals(issued);
     }
 
-    private static AttemptEvaluation text(JsonNode answer, String supplied, List<String> hints, boolean cloze) {
-        Set<String> allowedHints = Set.of("REVEAL_FIRST_GRAPHEME");
-        if (!allowedHints.containsAll(hints)) throw new InvalidRequestException();
-        List<String> rules = new ArrayList<>();
-        answer.path("normalization").forEach(rule -> rules.add(rule.textValue()));
-        String normalized = normalize(supplied, rules);
-        boolean correct = false;
-        for (JsonNode accepted : answer.path("accepted")) {
-            if (normalize(accepted.textValue(), rules).equals(normalized)) { correct = true; break; }
-        }
-        Result result = correct ? Result.CORRECT : Result.INCORRECT;
-        EvidenceClass strength = correct && !hints.isEmpty() ? EvidenceClass.MEDIUM : EvidenceClass.HIGH;
-        List<String> reasons = new ArrayList<>();
-        reasons.add(hints.isEmpty() ? "UNHINTED" : "HINTED");
-        reasons.add("DETERMINISTIC");
-        reasons.add("PRODUCTION");
-        ObjectNode feedback = JsonNodeFactory.instance.objectNode().put("result", result.name())
-                .put("reference", answer.path("accepted").get(0).textValue());
-        ArrayNode applied = feedback.putArray("appliedRules");
-        if (cloze) applied.add("SINGLE_BLANK");
-        rules.forEach(applied::add);
-        return new AttemptEvaluation(Status.ASSESSED, result, strength, reasons, feedback);
+    private static boolean optionsMatch(Subject subject, AttemptCommand.ChoiceResponse choice) {
+        Set<UUID> issued = new HashSet<>();
+        subject.content().path("options")
+                .forEach(option -> issued.add(UUID.fromString(option.path("optionId").textValue())));
+        Set<UUID> selected = new HashSet<>(choice.optionIds());
+        boolean single = subject.content().path("selectionMode").textValue().equals("SINGLE");
+        return selected.size() == choice.optionIds().size() && issued.containsAll(selected)
+                && (!single || selected.size() == 1);
     }
 
-    private static AttemptEvaluation choice(JsonNode answer, JsonNode bindings, UUID selectedOption) {
-        JsonNode assessed = null;
-        JsonNode selected = null;
-        for (JsonNode binding : bindings) {
-            if (binding.path("role").textValue().equals("ASSESSED")) assessed = binding;
-            if (binding.path("role").textValue().equals("OPTION")
-                    && binding.path("bindingId").textValue().equals(selectedOption.toString())) selected = binding;
-        }
-        if (assessed == null || selected == null) throw new InvalidRequestException();
-        boolean correct = sameTarget(assessed, selected);
-        Result result = correct ? Result.CORRECT : Result.INCORRECT;
-        ObjectNode feedback = JsonNodeFactory.instance.objectNode().put("result", result.name())
-                .put("reference", answer.path("accepted").get(0).textValue());
-        feedback.putArray("appliedRules").add("SERVER_ISSUED_OPTION");
-        return new AttemptEvaluation(Status.ASSESSED, result, EvidenceClass.LOW,
-                List.of("RECOGNITION", "DETERMINISTIC", "PRODUCTION"), feedback);
+    /** An exact bijection of the issued ids: nothing missing, nothing foreign, nothing used twice. */
+    private static boolean pairsMatch(Subject subject, AttemptCommand.MatchResponse match) {
+        Set<UUID> lefts = new HashSet<>();
+        Set<UUID> rights = new HashSet<>();
+        subject.content().path("left").forEach(item -> lefts.add(UUID.fromString(item.path("itemId").textValue())));
+        subject.content().path("right").forEach(item -> rights.add(UUID.fromString(item.path("itemId").textValue())));
+        Map<UUID, UUID> supplied = new HashMap<>();
+        match.pairs().forEach(pair -> supplied.put(pair.leftId(), pair.rightId()));
+        return supplied.size() == match.pairs().size() && supplied.keySet().equals(lefts)
+                && new HashSet<>(supplied.values()).equals(rights);
     }
 
-    private static boolean sameTarget(JsonNode left, JsonNode right) {
-        return left.path("memberKey").equals(right.path("memberKey"))
-                && left.path("itemRevisionId").equals(right.path("itemRevisionId"))
-                && left.path("nodeIds").equals(right.path("nodeIds"));
-    }
-
-    private static AttemptEvaluation selfCheck(AttemptCommand.SelfRating rating) {
-        Result result = switch (rating) {
+    private static AttemptEvaluation selfCheck(AttemptCommand.SelfCheckResponse self) {
+        Result result = switch (self.rating()) {
             case FULL -> Result.CORRECT;
             case PARTIAL, HINTED -> Result.PARTIAL;
             case NOT_RECALLED -> Result.INCORRECT;
@@ -99,25 +115,119 @@ record AttemptEvaluation(Status status, Result result, EvidenceClass evidenceCla
         ObjectNode feedback = JsonNodeFactory.instance.objectNode().put("result", result.name());
         feedback.putArray("appliedRules").add("SELF_REPORT");
         return new AttemptEvaluation(Status.ASSESSED, result, EvidenceClass.LOW,
-                List.of("SELF_REPORT", rating.name()), feedback);
+                List.of("SELF_REPORT", self.rating().name()), feedback);
     }
 
-    private static String normalize(String value, List<String> rules) {
-        String result = value;
-        for (String rule : rules) {
-            result = switch (rule) {
-                case "UNICODE_NFC" -> Normalizer.normalize(result, Normalizer.Form.NFC);
-                case "TRIM" -> result.strip();
-                case "CASE_FOLD" -> result.toLowerCase(Locale.ROOT);
-                default -> throw new IllegalStateException("Unknown persisted normalization rule");
-            };
+    private static AttemptEvaluation freeResponse(AnswerKey.Text key, Subject subject,
+                                                  AttemptCommand.TextResponse text) {
+        boolean correct = key.rule().matches(text.text());
+        Result result = correct ? Result.CORRECT : Result.INCORRECT;
+        ObjectNode feedback = JsonNodeFactory.instance.objectNode().put("result", result.name());
+        rules(feedback, key.rule().appliedRules());
+        feedback.put("reference", key.rule().accepted().getFirst());
+        feedback.set("referenceContent", subject.reveal().path("reference").deepCopy());
+        return new AttemptEvaluation(Status.ASSESSED, result,
+                subject.transcriptRevealed() ? EvidenceClass.LOW : EvidenceClass.HIGH,
+                List.of(subject.transcriptRevealed() ? "TRANSCRIPT_ACCOMMODATION" : "UNHINTED", "DETERMINISTIC",
+                        "PRODUCTION"), feedback);
+    }
+
+    private static AttemptEvaluation cloze(AnswerKey.Cloze key, Subject subject, AttemptCommand.ClozeResponse cloze) {
+        List<UUID> issued = new ArrayList<>();
+        subject.content().path("passage").forEach(segment -> {
+            if (segment.path("kind").textValue().equals("BLANK")) {
+                issued.add(UUID.fromString(segment.path("blankId").textValue()));
+            }
+        });
+        Map<UUID, String> supplied = new HashMap<>();
+        cloze.blanks().forEach(blank -> supplied.put(blank.blankId(), blank.text()));
+        Map<UUID, TextRule> rules = new HashMap<>();
+        key.blanks().forEach(blank -> rules.put(blank.blankId(), blank.rule()));
+        ArrayNode blanks = JsonNodeFactory.instance.arrayNode();
+        Set<String> applied = new LinkedHashSet<>();
+        applied.add("PER_BLANK");
+        int correct = 0;
+        for (UUID blankId : issued) {
+            TextRule rule = rules.get(blankId);
+            boolean right = rule.matches(supplied.get(blankId));
+            if (right) correct++;
+            applied.addAll(rule.appliedRules());
+            blanks.addObject().put("blankId", blankId.toString()).put("correct", right)
+                    .put("hinted", subject.hintedBlanks().contains(blankId))
+                    .put("reference", rule.accepted().getFirst());
         }
-        return result;
+        Result result = correct == issued.size() ? Result.CORRECT : correct == 0 ? Result.INCORRECT : Result.PARTIAL;
+        ObjectNode feedback = JsonNodeFactory.instance.objectNode().put("result", result.name());
+        rules(feedback, List.copyOf(applied));
+        feedback.set("blanks", blanks);
+        boolean hinted = !subject.hintedBlanks().isEmpty();
+        EvidenceClass strength = subject.transcriptRevealed() ? EvidenceClass.LOW
+                : result != Result.INCORRECT && hinted ? EvidenceClass.MEDIUM : EvidenceClass.HIGH;
+        return new AttemptEvaluation(Status.ASSESSED, result, strength,
+                List.of(subject.transcriptRevealed() ? "TRANSCRIPT_ACCOMMODATION" : hinted ? "HINTED" : "UNHINTED",
+                        "DETERMINISTIC", "PRODUCTION"), feedback);
+    }
+
+    private static AttemptEvaluation choice(AnswerKey.Choice key, Subject subject, AttemptCommand.ChoiceResponse choice) {
+        Set<UUID> selected = new HashSet<>(choice.optionIds());
+        Result result = selected.equals(new HashSet<>(key.correctOptionIds())) ? Result.CORRECT : Result.INCORRECT;
+        ObjectNode feedback = JsonNodeFactory.instance.objectNode().put("result", result.name());
+        feedback.putArray("appliedRules").add("SERVER_ISSUED_OPTION").add("EXACT_OPTION_SET");
+        ArrayNode correct = feedback.putArray("correctOptionIds");
+        key.correctOptionIds().forEach(id -> correct.add(id.toString()));
+        return new AttemptEvaluation(Status.ASSESSED, result, EvidenceClass.LOW,
+                List.of("RECOGNITION", "DETERMINISTIC",
+                        subject.transcriptRevealed() ? "TRANSCRIPT_ACCOMMODATION" : "PRODUCTION"), feedback);
+    }
+
+    private static AttemptEvaluation match(AnswerKey.Match key, Subject subject, AttemptCommand.MatchResponse match) {
+        Map<UUID, UUID> supplied = new HashMap<>();
+        match.pairs().forEach(pair -> supplied.put(pair.leftId(), pair.rightId()));
+        ArrayNode pairs = JsonNodeFactory.instance.arrayNode();
+        int correct = 0;
+        for (AnswerKey.Pair pair : key.pairs()) {
+            UUID selected = supplied.get(pair.leftId());
+            boolean right = selected.equals(pair.rightId());
+            if (right) correct++;
+            pairs.addObject().put("leftId", pair.leftId().toString()).put("selectedRightId", selected.toString())
+                    .put("correctRightId", pair.rightId().toString()).put("correct", right);
+        }
+        Result result = correct == key.pairs().size() ? Result.CORRECT
+                : correct == 0 ? Result.INCORRECT : Result.PARTIAL;
+        ObjectNode feedback = JsonNodeFactory.instance.objectNode().put("result", result.name());
+        feedback.putArray("appliedRules").add("SERVER_ISSUED_PAIR_MAP");
+        feedback.set("pairs", pairs);
+        return new AttemptEvaluation(Status.ASSESSED, result, EvidenceClass.LOW,
+                List.of("MATCHING", "DETERMINISTIC",
+                        subject.transcriptRevealed() ? "TRANSCRIPT_ACCOMMODATION" : "RECOGNITION"), feedback);
+    }
+
+    /**
+     * A MATCH assembled correctly only after a recorded wrong pair-check is partial evidence: the learner
+     * can find the mapping by elimination.
+     */
+    AttemptEvaluation withPairRetry() {
+        ObjectNode adjusted = feedback.deepCopy().put("result", Result.PARTIAL.name());
+        adjusted.withArray("appliedRules").add("PAIR_RETRY");
+        List<String> reasons = new ArrayList<>(reasonCodes);
+        reasons.add("PAIR_RETRY");
+        return new AttemptEvaluation(status, Result.PARTIAL, evidenceClass, List.copyOf(reasons), adjusted);
+    }
+
+    private static void rules(ObjectNode feedback, List<String> rules) {
+        ArrayNode applied = feedback.putArray("appliedRules");
+        rules.forEach(applied::add);
     }
 
     private static AttemptEvaluation notAssessed() {
         return new AttemptEvaluation(Status.NOT_ASSESSED, null, null, List.of(),
                 JsonNodeFactory.instance.objectNode().put("result", "NOT_ASSESSED"));
+    }
+
+    static AttemptEvaluation mediaNotReady() {
+        ObjectNode feedback = JsonNodeFactory.instance.objectNode().put("result", "NOT_ASSESSED");
+        feedback.putArray("reasonCodes").add("MEDIA_NOT_READY");
+        return new AttemptEvaluation(Status.NOT_ASSESSED, null, null, List.of("MEDIA_NOT_READY"), feedback);
     }
 
     private static AttemptEvaluation unavailable() {

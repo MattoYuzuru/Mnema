@@ -53,9 +53,53 @@ children, including opaque ones. Empty documents use one empty paragraph.
 
 Opaque acceptance grants **no rendering or execution capability**. Registering a
 new type/renderer must revalidate retained content against that schema before
-activating it; a matching type string is insufficient. Baseline unsupported examples
-include code/math/media/table nodes. Adding an actual rich schema/renderer needs its
-own capability and tests; an inert placeholder is not evidence that it exists.
+activating it; a matching type string is insufficient. Code/math and unknown
+future versions remain inert placeholders. The Epic #76 rich nodes below have
+explicit validators; their `version: 1` is the only supported version.
+
+## Rich block nodes (Epic #76)
+
+`image`, `audio`, `video`, `youtube`, `mermaid` and `table` are block leaves with empty
+`content: []`. They share optional `lang`/`dir` with baseline nodes. Media nodes
+hold logical UUIDv4 `assetId` values, never object keys or direct URLs. The server
+extracts only supported image/audio/video references and binds them inside the
+same transaction that inserts a pinned item revision. Unknown/future nodes and
+their descendants do not grant media access. Pending assets may be referenced;
+the viewer resolves them only after verification.
+
+| Node | Required attributes | Optional attributes |
+|---|---|---|
+| image | `assetId`, nonblank `alt` | nonblank `caption`, `description` (long text alternative) |
+| audio | `assetId`, nonblank `title` | nonblank `transcript` |
+| video | `assetId`, nonblank `title` | nonblank `transcript` |
+| youtube | `videoId` (exactly 11 URL-safe YouTube ID characters), nonblank `title` | nonblank `transcript` |
+| mermaid | nonblank `source`, `title`, `description` | none |
+| table | nonblank `caption`, `columns` (1–12 nonblank headings), `rows` (0–100 rectangular rows) | nonblank `summary` |
+
+Text length bounds use UTF-16 code units in both Java and TypeScript: image alt
+4096, caption/title/table heading 1024, description/summary 8192, transcript or
+Mermaid source 16384, and table cell 4096. Empty table cells are valid. The outer
+native scalar and document byte limits still apply. `mermaid.source` remains
+editable inert data on the server; the reader never parses or executes diagrams.
+The web renderer uses strict Mermaid security settings and a text alternative.
+Malformed source shows an error while retaining the source for repair. Tables
+render as semantic HTML tables. See [rich.json](valid/rich.json) for a shared
+cross-client fixture.
+"Nonblank" follows Java `String.isBlank()` on both clients; the shared
+[rich text vectors](rich-text-vectors.json) cover Unicode whitespace differences
+from JavaScript `trim()`.
+
+A video poster is a derived variant of the same asset. Synchronized caption
+tracks need a separate versioned sidecar-reference contract; a transcript alone
+is not a synchronized caption track. The current video node must not claim full
+caption accessibility before that contract is delivered.
+
+`youtube` stores only a fixed provider video ID, never arbitrary iframe HTML or
+an external URL. The viewer constructs a `youtube-nocookie.com/embed/ID` frame
+only after the reader activates it, leaves YouTube controls visible, and always
+offers a source link. The frame is third-party content and may be unavailable or
+disallow embedding; the source link remains usable. See
+[youtube.json](valid/youtube.json) for the shared fixture.
 
 ## Shared lexical profile
 

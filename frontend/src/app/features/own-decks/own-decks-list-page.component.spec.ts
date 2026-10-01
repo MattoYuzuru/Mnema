@@ -1,5 +1,5 @@
 import { signal } from '@angular/core';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 
 import metadataFixture from '../../../../../contracts/decks/metadata.json';
@@ -21,7 +21,7 @@ describe('OwnDecksListPageComponent', () => {
             operation: null, failure: null
         });
         store = jasmine.createSpyObj<OwnDecksStore>('OwnDecksStore', [
-            'loadList', 'loadMore', 'loadPrevious', 'retryList'
+            'loadList', 'loadMore', 'loadPrevious', 'retryList', 'refreshVisibleList'
         ]);
         Object.defineProperty(store, 'listState', { value: state.asReadonly() });
         Object.defineProperty(store, 'canGoBack', { value: signal(false).asReadonly() });
@@ -45,6 +45,7 @@ describe('OwnDecksListPageComponent', () => {
         expect(root.textContent).not.toContain('Учиться');
         expect(root.querySelector<HTMLAnchorElement>('.deck-row')?.getAttribute('href'))
             .toBe(`/decks/${expected.deckId}`);
+        expect(root.textContent).not.toContain('Обновить список');
     });
 
     it('keeps loaded rows visible when loading another page fails', () => {
@@ -55,6 +56,29 @@ describe('OwnDecksListPageComponent', () => {
         fixture.detectChanges();
 
         expect(fixture.nativeElement.querySelectorAll('.deck-row').length).toBe(1);
-        expect(fixture.nativeElement.textContent).toContain('Ответ сервера не получен');
+        expect(fixture.nativeElement.textContent).toContain('Нет связи');
     });
+
+    it('rechecks a visible library on focus and on its bounded timer, then stops on teardown', fakeAsync(() => {
+        window.dispatchEvent(new Event('focus'));
+        expect(store.refreshVisibleList).toHaveBeenCalledTimes(1);
+        tick(10_000);
+        expect(store.refreshVisibleList).toHaveBeenCalledTimes(2);
+        fixture.destroy();
+        tick(20_000);
+        expect(store.refreshVisibleList).toHaveBeenCalledTimes(2);
+    }));
+
+    it('pauses background checks and rechecks as soon as the library becomes visible', fakeAsync(() => {
+        const visibility = spyOnProperty(document, 'visibilityState', 'get').and.returnValue('hidden');
+        document.dispatchEvent(new Event('visibilitychange'));
+        tick(20_000);
+        expect(store.refreshVisibleList).not.toHaveBeenCalled();
+
+        visibility.and.returnValue('visible');
+        document.dispatchEvent(new Event('visibilitychange'));
+        expect(store.refreshVisibleList).toHaveBeenCalledTimes(1);
+        tick(10_000);
+        expect(store.refreshVisibleList).toHaveBeenCalledTimes(2);
+    }));
 });

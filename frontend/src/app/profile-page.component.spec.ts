@@ -1,80 +1,110 @@
-import { FormBuilder } from '@angular/forms';
 import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { of } from 'rxjs';
-
-import { AuthService, PasswordStatus } from './auth.service';
-import { I18nService } from './core/services/i18n.service';
-import { ToastService } from './core/services/toast.service';
-import { MediaApiService } from './core/services/media-api.service';
+import { AccountProfile, AccountProfileApi } from './account-profile.api';
+import { AuthService } from './auth.service';
 import { ProfilePageComponent } from './profile-page.component';
-import { UserApiService, UserProfile } from './user-api.service';
+import { appConfig } from './app.config';
+
+const profile: AccountProfile = { accountId: 'd2815e20-ea25-4dce-977a-66ee086f294d',
+    email: 'reader@example.test', emailVerified: true, profileUsername: 'reader', displayName: 'Reader',
+    bio: '', avatarPresent: false, hasPassword: true };
 
 describe('ProfilePageComponent', () => {
     let component: ProfilePageComponent;
-    let auth: jasmine.SpyObj<AuthService>;
-    let api: jasmine.SpyObj<UserApiService>;
-    let toast: jasmine.SpyObj<ToastService>;
+    let api: jasmine.SpyObj<AccountProfileApi>;
+    const originalEmailWarning = appConfig.features.showEmailVerificationWarning;
 
-    const profile: UserProfile = {
-        id: 'user-1',
-        email: 'mnema@example.com',
-        username: 'mnema',
-        bio: 'old bio',
-        avatarUrl: null,
-        avatarMediaId: null,
-        admin: false,
-        createdAt: '2026-04-08T10:00:00Z',
-        updatedAt: '2026-04-08T10:00:00Z'
-    };
+    afterEach(() => { appConfig.features.showEmailVerificationWarning = originalEmailWarning; });
 
     beforeEach(() => {
-        localStorage.removeItem('mnema_language');
-
-        auth = jasmine.createSpyObj<AuthService>('AuthService', ['setPassword', 'status', 'getPasswordStatus']);
-        api = jasmine.createSpyObj<UserApiService>('UserApiService', ['updateMe', 'getMe']);
-        toast = jasmine.createSpyObj<ToastService>('ToastService', ['success', 'error', 'info', 'warning', 'show', 'dismiss']);
-
-        TestBed.configureTestingModule({
-            providers: [
-                { provide: AuthService, useValue: auth },
-                { provide: UserApiService, useValue: api },
-                { provide: MediaApiService, useValue: jasmine.createSpyObj<MediaApiService>('MediaApiService', ['resolve', 'uploadFile']) },
-                { provide: FormBuilder, useValue: new FormBuilder() },
-                { provide: I18nService, useValue: new I18nService() },
-                { provide: ToastService, useValue: toast }
-            ]
-        });
+        api = jasmine.createSpyObj<AccountProfileApi>('AccountProfileApi', ['load', 'update', 'uploadAvatar', 'avatarUrl']);
+        api.load.and.returnValue(of(profile));
+        api.update.and.returnValue(of({ ...profile, displayName: 'Updated' }));
+        TestBed.configureTestingModule({ providers: [
+            provideRouter([]),
+            { provide: AccountProfileApi, useValue: api },
+            { provide: AuthService, useValue: jasmine.createSpyObj<AuthService>('AuthService', ['setPassword']) }
+        ] });
         component = TestBed.runInInjectionContext(() => new ProfilePageComponent());
     });
 
-    it('shows a toast after saving profile changes', async () => {
-        api.updateMe.and.returnValue(of({ ...profile, username: 'updated', bio: 'new bio' }));
-        component.profile = profile;
-        component.form.setValue({
-            username: 'updated',
-            bio: 'new bio'
-        });
-
-        component.save();
-        await Promise.resolve();
-
-        expect(toast.success).toHaveBeenCalledWith('profile.saveSuccess');
+    it('loads and saves the native profile fields', async () => {
+        await component.load();
+        component.form.patchValue({ displayName: 'Updated' });
+        await component.save();
+        expect(api.update).toHaveBeenCalledWith({ profileUsername: 'reader', displayName: 'Updated', bio: '' });
+        expect(component.profile()?.displayName).toBe('Updated');
+        expect(component.saveSuccess()).toBeTrue();
     });
 
-    it('shows a toast after updating password', async () => {
-        const passwordStatus: PasswordStatus = { hasPassword: true };
-        auth.setPassword.and.returnValue(Promise.resolve(passwordStatus));
-        component.passwordStatus = passwordStatus;
-        component.passwordForm.setValue({
-            currentPassword: 'old-password',
-            newPassword: 'new-password-123',
-            confirmPassword: 'new-password-123'
-        });
+    it('rejects oversized avatars before upload', async () => {
+        const file = new File([new Uint8Array(10 * 1024 * 1024 + 1)], 'big.png', { type: 'image/png' });
+        const input = document.createElement('input');
+        Object.defineProperty(input, 'files', { value: [file] });
+        await component.uploadAvatar({ target: input } as unknown as Event);
+        expect(api.uploadAvatar).not.toHaveBeenCalled();
+        expect(component.avatarError()).toBe('Изображение слишком большое или пустое. Выберите другое.');
+    });
 
-        component.savePassword();
-        await Promise.resolve();
-        await Promise.resolve();
+    it('requires password confirmation before contacting Identity', async () => {
+        const auth = TestBed.inject(AuthService) as jasmine.SpyObj<AuthService>;
+        component.passwordForm.setValue({ currentPassword: 'existing-secret',
+            newPassword: 'new-long-password', confirmPassword: 'different-password' });
+        await component.changePassword();
+        expect(auth.setPassword).not.toHaveBeenCalled();
+        expect(component.passwordError()).toContain('не совпадают');
+    });
 
-        expect(toast.success).toHaveBeenCalledWith('profile.passwordSuccess');
+    it('renders email verification and blocks a password over the server UTF-8 limit', async () => {
+        appConfig.features.showEmailVerificationWarning = true;
+        api.load.and.returnValue(of({ ...profile, emailVerified: false }));
+        const fixture = TestBed.createComponent(ProfilePageComponent);
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.detectChanges();
+        const root = fixture.nativeElement as HTMLElement;
+        expect(root.querySelector('.notice')?.textContent).toContain('Почта ещё не подтверждена');
+        const passwordButton = root.querySelector<HTMLButtonElement>('.password-sheet button[type=submit]')!;
+        expect(passwordButton.disabled).toBeTrue();
+        const newPassword = root.querySelector<HTMLInputElement>('#new-password')!;
+        expect(newPassword.getAttribute('aria-describedby')).toBe('password-hint');
+
+        fixture.componentInstance.passwordForm.setValue({ currentPassword: 'current-secret',
+            newPassword: 'é'.repeat(40), confirmPassword: 'é'.repeat(40) });
+        fixture.componentInstance.passwordForm.controls.newPassword.markAsTouched();
+        fixture.detectChanges();
+        expect(passwordButton.disabled).toBeTrue();
+        expect(newPassword.getAttribute('aria-invalid')).toBe('true');
+        expect(newPassword.getAttribute('aria-describedby')).toBe('password-hint password-error');
+        expect(root.querySelector('.password-sheet .error')?.textContent).toContain('слишком короткий или длинный');
+    });
+
+    it('associates an invalid profile username with its field guidance', async () => {
+        const fixture = TestBed.createComponent(ProfilePageComponent);
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.componentInstance.form.controls.profileUsername.setValue('!');
+        fixture.componentInstance.form.controls.profileUsername.markAsTouched();
+        fixture.detectChanges();
+
+        const root = fixture.nativeElement as HTMLElement;
+        const input = root.querySelector<HTMLInputElement>('#profile-username')!;
+        expect(input.getAttribute('aria-invalid')).toBe('true');
+        expect(input.getAttribute('aria-describedby')).toBe('username-hint username-error');
+        expect(root.querySelector('#username-error')?.textContent).toContain('3–50');
+        expect(root.querySelector<HTMLButtonElement>('.profile-layout button[type=submit]')?.disabled).toBeTrue();
+    });
+
+    it('uses the avatar itself as the keyboard accessible file trigger', async () => {
+        const fixture = TestBed.createComponent(ProfilePageComponent);
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.detectChanges();
+        const root = fixture.nativeElement as HTMLElement;
+        expect(root.querySelector('.profile-sheet .avatar-action')?.getAttribute('for')).toBe('avatar-file');
+        expect(root.querySelector('.profile-sheet .avatar-action')?.getAttribute('aria-label')).toBe('Изменить аватар');
+        expect(root.querySelector('.profile-sheet .file-input')?.getAttribute('type')).toBe('file');
+        expect(root.querySelector('.file-label')).toBeNull();
     });
 });

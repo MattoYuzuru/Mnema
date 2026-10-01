@@ -33,13 +33,13 @@ describe('ItemApiService', () => {
     it('reads bounded summaries and exact native detail through private no-store responses', async () => {
         const page = firstValueFrom(api.list(deckId));
         http.expectOne(`/api/decks/${deckId}/items?limit=20`).flush({
-            deckId, deckRevisionId, deckVersion: '8', total: 5, items: [summary], nextCursor: null
+            deckId, deckRevisionId, deckVersion: '8', total: 5, items: [{ ...summary, title: 'Первый текст материала' }], nextCursor: null
         }, { headers: { ...headers, ETag: '"8"' } });
-        expect((await page).items).toEqual([summary]);
+        expect((await page).items).toEqual([{ ...summary, title: 'Первый текст материала' }]);
 
         const detail = firstValueFrom(api.read(deckId, memberKey));
         http.expectOne(`/api/decks/${deckId}/items/${memberKey}`).flush({
-            ...summary, ordinal: null, deckId, deckRevisionId, deckVersion: '8', document
+            ...summary, ordinal: 4, deckId, deckRevisionId, deckVersion: '8', document
         }, { headers: { ...headers, ETag: '"8"' } });
         expect((await detail).document).toEqual(document);
 
@@ -73,5 +73,57 @@ describe('ItemApiService', () => {
             deckId, deckRevisionId, deckVersion: '8', total: 0, items: [], nextCursor: null, secret: true
         }, { headers: { ETag: '"8"' } });
         await expectAsync(page).toBeRejectedWithError(AuthoringProtocolError);
+    });
+
+    it('requires a current ordinal but allows nullable historical locations', async () => {
+        const detail = firstValueFrom(api.read(deckId, memberKey));
+        http.expectOne(`/api/decks/${deckId}/items/${memberKey}`).flush({
+            ...summary, ordinal: null, deckId, deckRevisionId, deckVersion: '8', document
+        }, { headers: { ...headers, ETag: '"8"' } });
+        await expectAsync(detail).toBeRejectedWithError(AuthoringProtocolError);
+        const history = firstValueFrom(api.read(deckId, memberKey, revisionId));
+        http.expectOne(`/api/decks/${deckId}/items/${memberKey}?revisionId=${revisionId}`).flush({
+            ...summary, ordinal: null, deckId, deckRevisionId, deckVersion: '7', document
+        }, { headers: { ...headers, ETag: '"7"' } });
+        expect((await history).ordinal).toBeNull();
+    });
+
+    it('deletes through one canonical publication and replays the same preconditions without an ETag', async () => {
+        const acknowledgement = { commandId, deckId, deckRevisionId: id('76'), deckVersion: '9', memberCount: 4,
+            changes: [{ operation: 'delete' as const, memberKey, itemRevisionId: null, itemVersion: '0', ordinal: null }] };
+        for (const replayed of [false, true]) {
+            const result = firstValueFrom(api.delete(deckId, memberKey, '8', deckRevisionId, revisionId, 4, commandId));
+            const request = http.expectOne(`/api/decks/${deckId}/items/publications`);
+            expect(request.request.method).toBe('POST');
+            expect(request.request.headers.get('If-Match')).toBe('"8"');
+            expect(request.request.body).toEqual({ commandId, expectedDeckRevisionId: deckRevisionId,
+                changes: [{ operation: 'delete', memberKey, expectedItemRevisionId: revisionId, expectedOrdinal: 4 }] });
+            request.flush(acknowledgement, { headers: replayed
+                ? { ...headers, 'Idempotency-Replayed': 'true' } : { ...headers, ETag: '"9"' } });
+            expect(await result).toEqual({ acknowledgement, replayed });
+        }
+    });
+
+    it('rejects malformed deletion acknowledgements and invalid ordinals', async () => {
+        expect(() => api.delete(deckId, memberKey, '8', deckRevisionId, revisionId, -1, commandId))
+            .toThrowError(AuthoringProtocolError);
+        for (const change of [
+            { operation: 'save', memberKey, itemRevisionId: revisionId, itemVersion: '0', ordinal: 4 },
+            { operation: 'delete', memberKey: id('99'), itemRevisionId: null, itemVersion: '0', ordinal: null },
+            { operation: 'delete', memberKey, itemRevisionId: revisionId, itemVersion: '0', ordinal: null }
+        ]) {
+            const result = firstValueFrom(api.delete(deckId, memberKey, '8', deckRevisionId, revisionId, 4, commandId));
+            http.expectOne(`/api/decks/${deckId}/items/publications`).flush({
+                commandId, deckId, deckRevisionId: id('76'), deckVersion: '9', memberCount: 4, changes: [change]
+            }, { headers: { ...headers, ETag: '"9"' } });
+            await expectAsync(result).toBeRejectedWithError(AuthoringProtocolError);
+        }
+    });
+
+    it('passes deletion precondition failures through for snapshot reconciliation', async () => {
+        const result = firstValueFrom(api.delete(deckId, memberKey, '8', deckRevisionId, revisionId, 4, commandId));
+        http.expectOne(`/api/decks/${deckId}/items/publications`).flush({ code: 'VERSION_CONFLICT' },
+            { status: 412, statusText: 'Precondition Failed' });
+        await expectAsync(result).toBeRejectedWith(jasmine.objectContaining({ status: 412 }));
     });
 });
