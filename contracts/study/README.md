@@ -113,7 +113,9 @@ resolved; media `assetId`s are opaque). Actions: `SUBMIT {response, hintedBlankI
 transcriptRevealed}` → `{feedback}` with Study feedback shapes (no evidence or transition;
 `referenceContent` is `[]` because the editor shows the author's draft itself); `PAIR_CHECK {leftId, rightId}`
 → `{correct}`; `HINT {blankId}` → `{blankId, firstLetter}`. `ai-semantic` returns `UNAVAILABLE`, never a
-substitute result. Fixtures: [preview.json](preview.json).
+substitute result. `hintedBlankIds` must be distinct blanks with `firstLetterHint: true` (as in Study);
+`CANCEL` is a Study-only terminal response and is rejected; `PAIR_CHECK` is MATCH-only. All validation
+failures, including bodies over the cap, are the opaque `400 INVALID_REQUEST`. Fixtures: [preview.json](preview.json).
 
 ### AI assessment and speech-to-text capabilities
 

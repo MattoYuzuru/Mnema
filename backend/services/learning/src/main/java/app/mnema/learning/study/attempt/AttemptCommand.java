@@ -55,7 +55,8 @@ public record AttemptCommand(UUID attemptId, UUID presentationId, String nonce, 
         } catch (IOException | IllegalArgumentException exception) { throw invalid(); }
     }
 
-    private static Response response(JsonNode value) {
+    /** The response union shared with the stateless author preview; CANCEL is a Study-only terminal command. */
+    static Response response(JsonNode value) {
         if (!value.path("kind").isTextual()) throw invalid();
         return switch (value.path("kind").textValue()) {
             case "TEXT" -> {
@@ -124,7 +125,7 @@ public record AttemptCommand(UUID attemptId, UUID presentationId, String nonce, 
         return value.textValue();
     }
 
-    private static UUID id(JsonNode value, boolean command) {
+    static UUID id(JsonNode value, boolean command) {
         if (!value.isTextual() || value.textValue().length() != 36) throw invalid();
         try {
             UUID id = UUID.fromString(value.textValue());
@@ -134,7 +135,7 @@ public record AttemptCommand(UUID attemptId, UUID presentationId, String nonce, 
         } catch (IllegalArgumentException exception) { throw invalid(); }
     }
 
-    private static void fields(JsonNode value, Set<String> expected) {
+    static void fields(JsonNode value, Set<String> expected) {
         if (!value.isObject() || !value.properties().stream().map(java.util.Map.Entry::getKey)
                 .collect(java.util.stream.Collectors.toUnmodifiableSet()).equals(expected)) throw invalid();
     }

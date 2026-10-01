@@ -180,17 +180,8 @@ public class StudySessionService {
 
     /** Blank id to first letter, for blanks whose author enabled a first-letter hint. */
     private static Map<UUID, String> hintableBlanks(StudySessionRepository.Presentation row) {
-        AnswerKey.Cloze key = (AnswerKey.Cloze) AnswerKey.parse(ExerciseType.CLOZE, row.answerKey());
-        Map<UUID, String> keyed = new HashMap<>();
-        key.blanks().forEach(blank -> keyed.put(blank.blankId(), LearnerContent.firstLetter(blank.rule().accepted().getFirst())));
-        Map<UUID, String> result = new HashMap<>();
-        for (JsonNode segment : row.content().path("passage")) {
-            if (segment.path("kind").textValue().equals("BLANK") && segment.path("firstLetterHint").booleanValue()) {
-                UUID blankId = UUID.fromString(segment.path("blankId").textValue());
-                result.put(blankId, keyed.get(blankId));
-            }
-        }
-        return result;
+        return LearnerContent.firstLetterHints(row.content(),
+                (AnswerKey.Cloze) AnswerKey.parse(ExerciseType.CLOZE, row.answerKey()));
     }
 
     @Transactional(readOnly = true, timeout = 10)

@@ -10,10 +10,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -32,7 +29,7 @@ import static app.mnema.learning.catalog.exercise.StrictJson.nonBlank;
 public record ExerciseCommand(UUID commandId, UUID expectedDeckRevisionId, UUID expectedExerciseRevisionId,
                               Objective objective, Exercise exercise, ObjectNode payload) {
     public static final int SCHEMA_VERSION = 2;
-    public static final int MAX_MEDIA_BLOCKS = MediaCatalog.MAX_EXERCISE_ASSETS;
+    public static final int MAX_MEDIA_BLOCKS = ExerciseDefinition.MAX_MEDIA_BLOCKS;
     public static final int MAX_TITLE = 160;
     private static final int MAX_BYTES = 262_144;
     private static final ContentJsonReader JSON = new ContentJsonReader(MAX_BYTES, 32, 20_000);
@@ -103,20 +100,16 @@ public record ExerciseCommand(UUID commandId, UUID expectedDeckRevisionId, UUID 
 
     private static Exercise exercise(JsonNode value) {
         fields(value, "type", "schemaVersion", "enabled", "subject", "content", "answerKey", "evaluatorPolicy");
-        ExerciseType type = ExerciseType.fromWire(value.path("type").textValue()).orElseThrow(StrictJson::invalid);
         integer(value.path("schemaVersion"), SCHEMA_VERSION, SCHEMA_VERSION);
         boolean enabled = bool(value.path("enabled"));
         JsonNode subject = value.path("subject");
         fields(subject, "memberKey", "itemRevisionId");
-        ExerciseContent model = ExerciseContent.parse(type, value.path("content"));
-        AnswerKey key = AnswerKey.parse(type, value.path("answerKey"));
-        AnswerKey.requireConsistent(model, key);
-        EvaluatorPolicy policy = EvaluatorPolicy.parse(type, value.path("evaluatorPolicy"));
-        Exercise exercise = new Exercise(type, enabled, new Subject(id(subject, "memberKey"),
+        ExerciseDefinition definition = ExerciseDefinition.read(value.path("type"), value.path("content"),
+                value.path("answerKey"), value.path("evaluatorPolicy"));
+        Exercise exercise = new Exercise(definition.type(), enabled, new Subject(id(subject, "memberKey"),
                 id(subject, "itemRevisionId")), (ObjectNode) value.path("content"),
-                (ObjectNode) value.path("answerKey"), (ObjectNode) value.path("evaluatorPolicy"), model, policy);
-        exercise.assets(); // rejects one asset pinned as two different media kinds
-        if (model.blocks().stream().filter(Block::isMedia).count() > MAX_MEDIA_BLOCKS) throw invalid();
+                (ObjectNode) value.path("answerKey"), (ObjectNode) value.path("evaluatorPolicy"), definition.model(),
+                definition.policy());
         return exercise;
     }
 
@@ -147,18 +140,7 @@ public record ExerciseCommand(UUID commandId, UUID expectedDeckRevisionId, UUID 
         @Override public ObjectNode evaluatorPolicy() { return evaluatorPolicy.deepCopy(); }
 
         /** Distinct assets pinned by IMAGE, AUDIO and VIDEO blocks of every slot. */
-        public List<MediaCatalog.ExerciseAsset> assets() {
-            Map<UUID, MediaCatalog.Kind> kinds = new LinkedHashMap<>();
-            for (Block block : model.blocks()) {
-                MediaCatalog.ExerciseAsset asset = block.asset().orElse(null);
-                if (asset == null) continue;
-                MediaCatalog.Kind previous = kinds.putIfAbsent(asset.assetId(), asset.kind());
-                if (previous != null && previous != asset.kind()) throw invalid();
-            }
-            List<MediaCatalog.ExerciseAsset> result = new ArrayList<>();
-            kinds.forEach((assetId, kind) -> result.add(new MediaCatalog.ExerciseAsset(assetId, kind)));
-            return List.copyOf(result);
-        }
+        public List<MediaCatalog.ExerciseAsset> assets() { return ExerciseDefinition.assets(model); }
 
         /** MATERIAL blocks of every slot, in document order. */
         public List<Block.Material> materials() {

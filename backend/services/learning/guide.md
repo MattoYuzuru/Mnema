@@ -177,6 +177,16 @@ capacity evidence.
   30 days. The first terminal receipt atomically removes that presentation from
   the resumable batch; after its last presentation, the bounded session becomes
   `COMPLETE` in the same transaction.
+- `POST /api/exercise-previews` evaluates one draft action for the exercise editor with
+  the same `AttemptEvaluation` and first-letter rule as Study, but with no deck, session,
+  attempt, receipt or media lookup: it has no repository and writes nothing. It needs the
+  `learning.write` scope, answers `Cache-Control: private, no-store` and accepts at most
+  64 KiB. The exercise (type, schema version 2, content, answer key, evaluator) passes the
+  publication validation structurally (`MATERIAL` blocks and media ids are opaque). Actions
+  are `SUBMIT` (client-reported `hintedBlankIds`, `pairMistakes`, `transcriptRevealed`),
+  `PAIR_CHECK` and `HINT`; `ai-semantic` yields `UNAVAILABLE`, and `FREE_RESPONSE`
+  `referenceContent` is `[]`. Every validation failure is the same opaque 400
+  (`contracts/study/preview.json` is the wire contract).
 - `/api/decks/{deckId}/study-restarts` starts a new learning epoch for objectives
   under explicitly selected current materials. It locks objectives in UUID order,
   keeps prior evidence/transitions and makes old presentations non-assessing.

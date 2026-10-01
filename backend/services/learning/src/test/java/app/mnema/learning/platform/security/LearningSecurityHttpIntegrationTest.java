@@ -1,6 +1,8 @@
 package app.mnema.learning.platform.security;
 
+import app.mnema.learning.support.ContractFixtures;
 import app.mnema.learning.support.PostgresIntegrationTest;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.nimbusds.jose.JOSEObjectType;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
@@ -16,9 +18,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -106,6 +110,9 @@ class LearningSecurityHttpIntegrationTest extends PostgresIntegrationTest {
     @LocalServerPort
     int port;
 
+    @Autowired
+    private JdbcClient jdbc;
+
     @DynamicPropertySource
     static void identityProperties(DynamicPropertyRegistry registry) {
         registry.add("learning.identity.issuer", () -> ISSUER);
@@ -187,6 +194,64 @@ class LearningSecurityHttpIntegrationTest extends PostgresIntegrationTest {
         assertProblem(request("POST", "/editing-drafts", token("learning.read", c -> { })), 403, "ACCESS_DENIED");
         assertProblem(request("POST", "/capture-notes", token("learning.read", c -> { })), 403, "ACCESS_DENIED");
         assertProblem(request("GET", "/editing-drafts", token("learning.write", c -> { })), 403, "ACCESS_DENIED");
+    }
+
+    @Test
+    void exercisePreviewsAreWriteScopedPrivateStatelessAndLeaveEveryStudyExerciseAndMediaTableUntouched()
+            throws Exception {
+        var fixtures = ContractFixtures.fixture("preview.json");
+        String cloze = fixtures.path("submitCloze").toString();
+        assertProblem(post("/exercise-previews", null, cloze), 401, "AUTHENTICATION_REQUIRED");
+        assertProblem(post("/exercise-previews", token("learning.read", c -> { }), cloze), 403, "ACCESS_DENIED");
+        assertProblem(post("/exercise-previews", token("account.read account.write", c -> { }), cloze), 403,
+                "ACCESS_DENIED");
+        assertThat(CALLS).hasValue(0);
+
+        var tables = jdbc.sql("""
+                SELECT table_name FROM information_schema.tables WHERE table_schema = 'app_learning'
+                AND (table_name LIKE 'study\\_%' OR table_name LIKE 'exercise\\_%' OR table_name LIKE 'media\\_%')
+                ORDER BY table_name""").query(String.class).list();
+        assertThat(tables).contains("study_presentation", "study_evidence", "study_state", "exercise_media_ref",
+                "exercise_revision", "media_asset");
+        Map<String, Long> before = rowCounts(tables);
+
+        String write = token("learning.write", c -> { });
+        for (String[] pair : new String[][] {{"submitCloze", "submitClozeResult"}, {"submitChoice", "submitChoiceResult"},
+                {"submitMatchAfterMistake", "submitMatchAfterMistakeResult"},
+                {"submitFreeResponse", "submitFreeResponseResult"}, {"pairCheck", "pairCheckResult"},
+                {"hint", "hintResult"}}) {
+            var response = post("/exercise-previews", write, fixtures.path(pair[0]).toString());
+            assertThat(response.statusCode()).as(pair[0]).isEqualTo(200);
+            assertThat(response.headers().firstValue("cache-control")).contains("private, no-store");
+            assertThat(ContractFixtures.JSON.readTree(response.body())).isEqualTo(fixtures.path(pair[1]));
+        }
+        // a semantic evaluator is structurally validated and then unavailable, never a substitute result
+        ObjectNode exercise = ContractFixtures.mechanic("rejectedAiAssessment").withObject("exercise");
+        exercise.remove("enabled");
+        exercise.remove("subject");
+        ObjectNode aiRequest = ContractFixtures.JSON.createObjectNode();
+        aiRequest.set("exercise", exercise);
+        ObjectNode action = aiRequest.putObject("action").put("kind", "SUBMIT");
+        action.putObject("response").put("kind", "TEXT").put("text", "свойство тела сохранять скорость");
+        action.putArray("hintedBlankIds");
+        action.put("pairMistakes", false).put("transcriptRevealed", false);
+        var unavailable = post("/exercise-previews", write, aiRequest.toString());
+        assertThat(unavailable.statusCode()).isEqualTo(200);
+        assertThat(ContractFixtures.JSON.readTree(unavailable.body())).isEqualTo(fixtures.path("aiSemanticResult"));
+
+        // opaque 400s for an invalid draft and for a body over 64 KiB
+        var broken = fixtures.path("submitFreeResponse").deepCopy();
+        ((ObjectNode) broken.path("exercise").path("answerKey"))
+                .put("leak", "TOP-SECRET-ANSWER");
+        var invalid = post("/exercise-previews", write, broken.toString());
+        assertInvalidRequest(invalid);
+        assertThat(invalid.body()).doesNotContain("TOP-SECRET-ANSWER", "Erinnerung");
+        assertInvalidRequest(post("/exercise-previews", write, cloze.replaceFirst("\\}$",
+                ",\"padding\":\"" + "x".repeat(65_536) + "\"}")));
+
+        // nothing was read into or written to any Study, exercise or media table
+        assertThat(rowCounts(tables)).isEqualTo(before);
+        assertThat(OPERATIONS).hasValue(0);
     }
 
     @Test
@@ -332,6 +397,21 @@ class LearningSecurityHttpIntegrationTest extends PostgresIntegrationTest {
         return CLIENT.send(builder.build(), HttpResponse.BodyHandlers.ofString());
     }
 
+    private HttpResponse<String> post(String path, String bearer, String body) throws Exception {
+        var builder = HttpRequest.newBuilder(uri(path)).timeout(Duration.ofSeconds(5))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body));
+        if (bearer != null) builder.header("Authorization", "Bearer " + bearer);
+        return CLIENT.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private Map<String, Long> rowCounts(java.util.List<String> tables) {
+        Map<String, Long> counts = new java.util.TreeMap<>();
+        tables.forEach(table -> counts.put(table,
+                jdbc.sql("SELECT count(*) FROM app_learning." + table).query(Long.class).single()));
+        return counts;
+    }
+
     private URI uri(String path) { return URI.create("http://127.0.0.1:" + port + "/api" + path); }
 
     private static JWTClaimsSet.Builder claims(String scopes) {
@@ -347,6 +427,14 @@ class LearningSecurityHttpIntegrationTest extends PostgresIntegrationTest {
                 .type(new JOSEObjectType("at+jwt")).build(), builder.build());
         token.sign(new RSASSASigner(KEY));
         return token.serialize();
+    }
+
+    private static void assertInvalidRequest(HttpResponse<String> response) {
+        assertThat(response.statusCode()).isEqualTo(400);
+        assertThat(response.headers().firstValue("content-type")).hasValueSatisfying(value ->
+                assertThat(value).startsWith("application/problem+json"));
+        assertThat(response.headers().firstValue("cache-control")).contains("private, no-store");
+        assertThat(response.body()).contains("\"code\":\"INVALID_REQUEST\"");
     }
 
     private static void assertProblem(HttpResponse<String> response, int status, String code) {
