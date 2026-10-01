@@ -189,16 +189,6 @@ class LearnerContentTest {
     }
 
     @Test
-    void anOrderOfIdenticalItemsTerminatesBecauseNoLayoutCanDiffer() {
-        ObjectNode exercise = threeWordOrder();
-        ((ObjectNode) exercise.path("content").path("items").get(0).path("blocks").get(0)).put("text", "b");
-        CountingSource always = new CountingSource(true);
-        JsonNode shown = issueOrder(exercise, always);
-        assertThat(shown.path("items")).hasSize(3);
-        assertThat(always.draws).isEqualTo((1 + LearnerContent.MAX_REDRAWS) * 2);
-    }
-
-    @Test
     void categorizeShufflesItemsOnlyAndKeepsTheAuthoredCategoryOrderAndLabels() {
         ObjectNode exercise = mechanic("createCategorize").withObject("exercise");
         List<String> authored = ids(exercise.path("content").path("items"));

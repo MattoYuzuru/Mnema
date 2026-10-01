@@ -112,6 +112,10 @@ issued category. Result: all correct `CORRECT`, some `PARTIAL`, none `INCORRECT`
 is the whole record. Evidence `LOW` (`CATEGORIZING`, `DETERMINISTIC`, `RECOGNITION`).
 
 Both mechanics assess one composite objective of the subject item; no per-element credit is created.
+An ORDER needs at least two distinguishable items, and CATEGORIZE labels must stay distinct after NFC, edge trimming of
+whitespace/format characters and case folding; a label with no visible character is rejected. Item, option, pair and blank IDs are visible to the learner, so clients must mint them as
+random UUIDv4 (the editor uses `crypto.randomUUID()`); ordered or meaningful IDs would reveal keys. Decks are
+owner-private today; any future sharing feature must re-check this invariant or issue per-presentation IDs.
 
 **Media lifecycle.** Every IMAGE/AUDIO/VIDEO block in every slot is pinned in
 `exercise_media_ref` with its declared media kind inside the publication transaction, after owner

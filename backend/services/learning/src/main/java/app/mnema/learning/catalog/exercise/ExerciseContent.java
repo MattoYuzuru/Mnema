@@ -8,6 +8,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.UUID;
 import java.util.stream.Stream;
 
@@ -130,8 +131,12 @@ public sealed interface ExerciseContent {
             }
             case ORDER -> {
                 fields(value, "prompt", "items");
-                yield new Order(Slot.PROMPT.read(value.path("prompt"), 0, MAX_PROMPT_BLOCKS),
-                        items(value.path("items"), Slot.SEQUENCE, MIN_ORDER_ITEMS, MAX_ORDER_ITEMS));
+                List<Item> items = items(value.path("items"), Slot.SEQUENCE, MIN_ORDER_ITEMS, MAX_ORDER_ITEMS);
+                // fewer than two distinguishable tiles would make every arrangement trivially correct
+                if (OrderEquivalence.signatures(value.path("items")).values().stream().distinct().count() < 2) {
+                    throw invalid();
+                }
+                yield new Order(Slot.PROMPT.read(value.path("prompt"), 0, MAX_PROMPT_BLOCKS), items);
             }
             case CATEGORIZE -> {
                 fields(value, "prompt", "categories", "items");
@@ -207,10 +212,25 @@ public sealed interface ExerciseContent {
             fields(category, "categoryId", "label");
             UUID categoryId = id(category, "categoryId");
             String label = nonBlank(category.path("label"), MAX_CATEGORY_LABEL);
-            if (!ids.add(categoryId) || !labels.add(label.strip().toLowerCase(Locale.ROOT))) throw invalid();
+            String folded = foldLabel(label);
+            if (folded.isEmpty() || !ids.add(categoryId) || !labels.add(folded)) throw invalid();
             categories.add(new Category(categoryId, label));
         }
         return List.copyOf(categories);
+    }
+
+    Pattern INVISIBLE = Pattern.compile("[\\p{Z}\\s\\p{Cf}]");
+    Pattern EDGE_INVISIBLE = Pattern.compile("^[\\p{Z}\\s\\p{Cf}]+|[\\p{Z}\\s\\p{Cf}]+$");
+
+    /**
+     * Comparison key of a category label: NFC, no leading or trailing Unicode whitespace or format characters
+     * (NBSP, U+200B), then a full case fold approximated by upper- then lower-casing, so {@code ß}/{@code SS} and
+     * {@code Σ}/{@code ς} collide. An empty result means the label shows nothing. The stored label stays verbatim.
+     */
+    static String foldLabel(String label) {
+        String canonical = Normalizer.normalize(label, Normalizer.Form.NFC);
+        if (INVISIBLE.matcher(canonical).replaceAll("").isEmpty()) return "";
+        return EDGE_INVISIBLE.matcher(canonical).replaceAll("").toUpperCase(Locale.ROOT).toLowerCase(Locale.ROOT);
     }
 
     private static List<Block> withItems(List<Block> prompt, List<Item> items) {

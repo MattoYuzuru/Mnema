@@ -168,6 +168,66 @@ class OrderCategorizeCommandTest {
     }
 
     @Test
+    void labelsCollideAfterNfcWhitespaceAndFullCaseFoldAndInvisibleLabelsAreBlank() {
+        // «Глагол» is category 1 of the fixture; each variant of category 0 must collide with another label
+        String[][] pairs = {{"e\u0301", "\u00e9"}, {"A", "A "}, {"A", "A\u00a0"}, {"Stra\u00dfe", "STRASSE"},
+                {"\u03a3", "\u03c2"}, {"\u200bX", "x"}, {"\u3000Y\u2003", "y"}};
+        for (String[] pair : pairs) {
+            assertInvalid("createCategorize", body -> {
+                label(body, 0, pair[0]);
+                label(body, 1, pair[1]);
+            });
+        }
+        // distinct labels stay distinct, internal spaces and different letters are not folded away
+        ExerciseCommand.readCreate(bytes(patched("createCategorize", body -> {
+            label(body, 0, "New York");
+            label(body, 1, "NewYork");
+        })));
+        // the stored label is verbatim, not the comparison key
+        ExerciseCommand stored = ExerciseCommand.readCreate(bytes(patched("createCategorize", body -> {
+            label(body, 0, " Stra\u00dfe\u00a0");
+            label(body, 1, "Other");
+        })));
+        assertThat(stored.exercise().content().path("categories").get(0).path("label").textValue())
+                .isEqualTo(" Stra\u00dfe\u00a0");
+        // a label that shows nothing is blank: whitespace, NBSP, ideographic space, zero-width and format characters
+        for (String invisible : new String[] {"\u00a0", "\u3000", "\u200b", "\u2060\ufeff", " \u200b\t\u00a0", "\u00ad"}) {
+            assertInvalid("createCategorize", body -> label(body, 0, invisible));
+        }
+    }
+
+    @Test
+    void anOrderNeedsAtLeastTwoDistinctEquivalenceClasses() {
+        // every tile identical: any arrangement is trivially correct
+        assertInvalid("createOrder", body -> {
+            for (int index = 0; index < items(content(body)).size(); index++) {
+                items(content(body)).set(index, item(UUID.fromString(items(content(body)).get(index)
+                        .path("itemId").textValue()), Blocks.text("очень")));
+            }
+        });
+        assertInvalid("createOrder", body -> {
+            reduceOrder(body, 2);
+            itemText(body, 0, "same");
+            itemText(body, 1, "same");
+        });
+        // the contract fixture has «очень» twice but also other tiles; two classes are enough
+        ExerciseCommand.readCreate(bytes(patched("createOrder", body -> {
+            reduceOrder(body, 3);
+            itemText(body, 0, "a");
+            itemText(body, 1, "b");
+            itemText(body, 2, "b");
+        })));
+        // tiles that differ only in an author-only audio title are the same class
+        assertInvalid("createOrder", body -> {
+            reduceOrder(body, 2);
+            blocks(body, 0).removeAll().add(Blocks.audio("aaaaaaaa-0000-4000-8000-000000000011"));
+            ((ObjectNode) blocks(body, 0).get(0)).put("title", "first");
+            blocks(body, 1).removeAll().add(Blocks.audio("aaaaaaaa-0000-4000-8000-000000000011"));
+            ((ObjectNode) blocks(body, 1).get(0)).put("title", "second");
+        });
+    }
+
+    @Test
     void categorizeKeyAssignsEveryItemToExactlyOneExistingCategory() {
         // an item assigned to a category that no longer exists (a removed category) is rejected at publication
         assertInvalid("createCategorize", body -> ((ObjectNode) assignments(body).get(0)).put("categoryId",
