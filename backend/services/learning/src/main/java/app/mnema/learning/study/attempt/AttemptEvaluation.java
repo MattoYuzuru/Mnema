@@ -2,6 +2,8 @@ package app.mnema.learning.study.attempt;
 
 import app.mnema.learning.catalog.exercise.AnswerKey;
 import app.mnema.learning.catalog.exercise.ExerciseType;
+import app.mnema.learning.catalog.exercise.MappingRules;
+import app.mnema.learning.catalog.exercise.OrderEquivalence;
 import app.mnema.learning.catalog.exercise.TextRule;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -58,6 +60,9 @@ record AttemptEvaluation(Status status, Result result, EvidenceClass evidenceCla
             case CLOZE -> cloze((AnswerKey.Cloze) key, subject, (AttemptCommand.ClozeResponse) response);
             case CHOICE -> choice((AnswerKey.Choice) key, subject, (AttemptCommand.ChoiceResponse) response);
             case MATCH -> match((AnswerKey.Match) key, subject, (AttemptCommand.MatchResponse) response);
+            case ORDER -> order((AnswerKey.Order) key, subject, (AttemptCommand.OrderResponse) response);
+            case CATEGORIZE -> categorize((AnswerKey.Categorize) key, subject,
+                    (AttemptCommand.CategorizeResponse) response);
         };
     }
 
@@ -68,6 +73,9 @@ record AttemptEvaluation(Status status, Result result, EvidenceClass evidenceCla
             case CLOZE -> response instanceof AttemptCommand.ClozeResponse cloze && blanksMatch(subject, cloze);
             case CHOICE -> response instanceof AttemptCommand.ChoiceResponse choice && optionsMatch(subject, choice);
             case MATCH -> response instanceof AttemptCommand.MatchResponse match && pairsMatch(subject, match);
+            case ORDER -> response instanceof AttemptCommand.OrderResponse order && permutationMatches(subject, order);
+            case CATEGORIZE -> response instanceof AttemptCommand.CategorizeResponse categorize
+                    && assignmentsMatch(subject, categorize);
         };
         if (!fits) throw new InvalidRequestException();
     }
@@ -96,14 +104,28 @@ record AttemptEvaluation(Status status, Result result, EvidenceClass evidenceCla
 
     /** An exact bijection of the issued ids: nothing missing, nothing foreign, nothing used twice. */
     private static boolean pairsMatch(Subject subject, AttemptCommand.MatchResponse match) {
-        Set<UUID> lefts = new HashSet<>();
-        Set<UUID> rights = new HashSet<>();
-        subject.content().path("left").forEach(item -> lefts.add(UUID.fromString(item.path("itemId").textValue())));
-        subject.content().path("right").forEach(item -> rights.add(UUID.fromString(item.path("itemId").textValue())));
-        Map<UUID, UUID> supplied = new HashMap<>();
-        match.pairs().forEach(pair -> supplied.put(pair.leftId(), pair.rightId()));
-        return supplied.size() == match.pairs().size() && supplied.keySet().equals(lefts)
-                && new HashSet<>(supplied.values()).equals(rights);
+        return MappingRules.bijection(
+                match.pairs().stream().map(pair -> new MappingRules.Link(pair.leftId(), pair.rightId())).toList(),
+                ids(subject.content().path("left"), "itemId"), ids(subject.content().path("right"), "itemId"));
+    }
+
+    /** An exact permutation of the issued item ids: nothing missing, nothing foreign, nothing repeated. */
+    private static boolean permutationMatches(Subject subject, AttemptCommand.OrderResponse order) {
+        Set<UUID> supplied = new HashSet<>(order.sequence());
+        return supplied.size() == order.sequence().size() && supplied.equals(ids(subject.content().path("items"), "itemId"));
+    }
+
+    /** Every issued item exactly once, each to an issued category; categories may repeat or stay empty. */
+    private static boolean assignmentsMatch(Subject subject, AttemptCommand.CategorizeResponse categorize) {
+        return MappingRules.totalManyToOne(categorize.assignments().stream()
+                        .map(assignment -> new MappingRules.Link(assignment.itemId(), assignment.categoryId())).toList(),
+                ids(subject.content().path("items"), "itemId"), ids(subject.content().path("categories"), "categoryId"));
+    }
+
+    private static Set<UUID> ids(JsonNode array, String field) {
+        Set<UUID> ids = new HashSet<>();
+        array.forEach(node -> ids.add(UUID.fromString(node.path(field).textValue())));
+        return ids;
     }
 
     private static AttemptEvaluation selfCheck(AttemptCommand.SelfCheckResponse self) {
@@ -199,6 +221,59 @@ record AttemptEvaluation(Status status, Result result, EvidenceClass evidenceCla
         feedback.set("pairs", pairs);
         return new AttemptEvaluation(Status.ASSESSED, result, EvidenceClass.LOW,
                 List.of("MATCHING", "DETERMINISTIC",
+                        subject.transcriptRevealed() ? "TRANSCRIPT_ACCOMMODATION" : "RECOGNITION"), feedback);
+    }
+
+    /**
+     * Binary result on the equivalence-class sequence: swapping items whose blocks are identical never changes
+     * it, so a correct order with interchangeable copies is not an error. Per-position correctness uses the same
+     * comparison, so positions and result always agree.
+     */
+    private static AttemptEvaluation order(AnswerKey.Order key, Subject subject, AttemptCommand.OrderResponse order) {
+        Map<UUID, String> signatures = OrderEquivalence.signatures(subject.content().path("items"));
+        List<String> expected = OrderEquivalence.classes(key.sequence(), signatures);
+        List<String> selected = OrderEquivalence.classes(order.sequence(), signatures);
+        ArrayNode positions = JsonNodeFactory.instance.arrayNode();
+        boolean all = true;
+        for (int position = 0; position < expected.size(); position++) {
+            boolean right = expected.get(position).equals(selected.get(position));
+            all &= right;
+            positions.addObject().put("position", position)
+                    .put("selectedItemId", order.sequence().get(position).toString()).put("correct", right);
+        }
+        Result result = all ? Result.CORRECT : Result.INCORRECT;
+        ObjectNode feedback = JsonNodeFactory.instance.objectNode().put("result", result.name());
+        feedback.putArray("appliedRules").add("SERVER_ISSUED_SEQUENCE").add("EXACT_SEQUENCE")
+                .add("IDENTICAL_ITEMS_INTERCHANGEABLE");
+        ArrayNode correct = feedback.putArray("correctSequence");
+        key.sequence().forEach(id -> correct.add(id.toString()));
+        feedback.set("positions", positions);
+        List<String> reasons = new ArrayList<>(List.of("SEQUENCING", "DETERMINISTIC"));
+        if (subject.transcriptRevealed()) reasons.add("TRANSCRIPT_ACCOMMODATION");
+        return new AttemptEvaluation(Status.ASSESSED, result, EvidenceClass.MEDIUM, List.copyOf(reasons), feedback);
+    }
+
+    private static AttemptEvaluation categorize(AnswerKey.Categorize key, Subject subject,
+                                                AttemptCommand.CategorizeResponse categorize) {
+        Map<UUID, UUID> supplied = new HashMap<>();
+        categorize.assignments().forEach(assignment -> supplied.put(assignment.itemId(), assignment.categoryId()));
+        ArrayNode assignments = JsonNodeFactory.instance.arrayNode();
+        int correct = 0;
+        for (AnswerKey.Assignment assignment : key.assignments()) {
+            UUID selected = supplied.get(assignment.itemId());
+            boolean right = selected.equals(assignment.categoryId());
+            if (right) correct++;
+            assignments.addObject().put("itemId", assignment.itemId().toString())
+                    .put("selectedCategoryId", selected.toString())
+                    .put("correctCategoryId", assignment.categoryId().toString()).put("correct", right);
+        }
+        Result result = correct == key.assignments().size() ? Result.CORRECT
+                : correct == 0 ? Result.INCORRECT : Result.PARTIAL;
+        ObjectNode feedback = JsonNodeFactory.instance.objectNode().put("result", result.name());
+        feedback.putArray("appliedRules").add("SERVER_ISSUED_CATEGORY_MAP");
+        feedback.set("assignments", assignments);
+        return new AttemptEvaluation(Status.ASSESSED, result, EvidenceClass.LOW,
+                List.of("CATEGORIZING", "DETERMINISTIC",
                         subject.transcriptRevealed() ? "TRANSCRIPT_ACCOMMODATION" : "RECOGNITION"), feedback);
     }
 

@@ -155,6 +155,10 @@ public final class StudyFixtures {
         return JSON.createObjectNode().put("itemId", id.toString()).set("blocks", blocks(blocks));
     }
 
+    public static ObjectNode category(UUID id, String label) {
+        return JSON.createObjectNode().put("categoryId", id.toString()).put("label", label);
+    }
+
     public static ObjectNode textKey(String... accepted) {
         ObjectNode key = JSON.createObjectNode().put("kind", "TEXT");
         accepted(key, accepted);
@@ -234,6 +238,32 @@ public final class StudyFixtures {
             values.addObject().put("leftId", pair[0].toString()).put("rightId", pair[1].toString());
         }
         return exercise(material, "MATCH", content, key, "deterministic-match");
+    }
+
+    /** ORDER: {@code items} in any authored arrangement, the key is the explicit {@code sequence}. */
+    public ObjectNode order(Material material, ArrayNode prompt, ArrayNode items, UUID... sequence) {
+        ObjectNode content = JSON.createObjectNode();
+        content.set("prompt", prompt);
+        content.set("items", items);
+        ObjectNode key = JSON.createObjectNode().put("kind", "ORDER");
+        ArrayNode ids = key.putArray("sequence");
+        for (UUID id : sequence) ids.add(id.toString());
+        return exercise(material, "ORDER", content, key, "deterministic-order");
+    }
+
+    /** CATEGORIZE: {@code assignments} are {itemId, categoryId} pairs. */
+    public ObjectNode categorize(Material material, ArrayNode prompt, ArrayNode categories, ArrayNode items,
+                                 UUID[][] assignments) {
+        ObjectNode content = JSON.createObjectNode();
+        content.set("prompt", prompt);
+        content.set("categories", categories);
+        content.set("items", items);
+        ObjectNode key = JSON.createObjectNode().put("kind", "CATEGORIZE");
+        ArrayNode values = key.putArray("assignments");
+        for (UUID[] assignment : assignments) {
+            values.addObject().put("itemId", assignment[0].toString()).put("categoryId", assignment[1].toString());
+        }
+        return exercise(material, "CATEGORIZE", content, key, "deterministic-categorize");
     }
 
     // ---- publication ----

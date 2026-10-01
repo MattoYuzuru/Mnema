@@ -1,5 +1,6 @@
 package app.mnema.learning.study.attempt;
 
+import app.mnema.learning.catalog.exercise.ExerciseContent;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.id.UuidPolicy;
 import app.mnema.learning.platform.json.ContentJsonReader;
@@ -111,6 +112,35 @@ public record AttemptCommand(UUID attemptId, UUID presentationId, String nonce, 
                 }
                 yield new MatchResponse(List.copyOf(result));
             }
+            case "ORDER" -> {
+                fields(value, Set.of("kind", "sequence"));
+                JsonNode sequence = value.path("sequence");
+                if (!sequence.isArray() || sequence.size() < ExerciseContent.MIN_ORDER_ITEMS
+                        || sequence.size() > ExerciseContent.MAX_ORDER_ITEMS) throw invalid();
+                List<UUID> ids = new ArrayList<>();
+                Set<UUID> distinct = new HashSet<>();
+                for (JsonNode item : sequence) {
+                    UUID itemId = id(item, false);
+                    if (!distinct.add(itemId)) throw invalid();
+                    ids.add(itemId);
+                }
+                yield new OrderResponse(ids);
+            }
+            case "CATEGORIZE" -> {
+                fields(value, Set.of("kind", "assignments"));
+                JsonNode assignments = value.path("assignments");
+                if (!assignments.isArray() || assignments.size() < ExerciseContent.MIN_CATEGORIZE_ITEMS
+                        || assignments.size() > ExerciseContent.MAX_CATEGORIZE_ITEMS) throw invalid();
+                List<CategoryAssignment> result = new ArrayList<>();
+                Set<UUID> items = new HashSet<>();
+                for (JsonNode assignment : assignments) {
+                    fields(assignment, Set.of("itemId", "categoryId"));
+                    UUID itemId = id(assignment.path("itemId"), false);
+                    if (!items.add(itemId)) throw invalid();
+                    result.add(new CategoryAssignment(itemId, id(assignment.path("categoryId"), false)));
+                }
+                yield new CategorizeResponse(List.copyOf(result));
+            }
             case "CANCEL" -> {
                 fields(value, Set.of("kind"));
                 yield new CancelResponse();
@@ -143,7 +173,7 @@ public record AttemptCommand(UUID attemptId, UUID presentationId, String nonce, 
     private static InvalidRequestException invalid() { return new InvalidRequestException(); }
 
     public sealed interface Response permits TextResponse, SelfCheckResponse, ClozeResponse, ChoiceResponse,
-            MatchResponse, CancelResponse { }
+            MatchResponse, OrderResponse, CategorizeResponse, CancelResponse { }
     public record TextResponse(String text) implements Response { }
     public record SelfCheckResponse(SelfRating rating) implements Response { }
     public record BlankText(UUID blankId, String text) { }
@@ -155,6 +185,14 @@ public record AttemptCommand(UUID attemptId, UUID presentationId, String nonce, 
     }
     public record MatchPair(UUID leftId, UUID rightId) { }
     public record MatchResponse(List<MatchPair> pairs) implements Response { }
+    public record OrderResponse(List<UUID> sequence) implements Response {
+        public OrderResponse { sequence = List.copyOf(sequence); }
+    }
+    /** One item placed in one category; categories may repeat across assignments, items may not. */
+    public record CategoryAssignment(UUID itemId, UUID categoryId) { }
+    public record CategorizeResponse(List<CategoryAssignment> assignments) implements Response {
+        public CategorizeResponse { assignments = List.copyOf(assignments); }
+    }
     public record CancelResponse() implements Response { }
     public enum SelfRating { NOT_RECALLED, HINTED, PARTIAL, FULL }
 }

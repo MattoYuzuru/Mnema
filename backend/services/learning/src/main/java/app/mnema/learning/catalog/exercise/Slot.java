@@ -18,7 +18,9 @@ public enum Slot {
     /** Reveal-after-the-fact material: SELF_CHECK reference, FREE_RESPONSE explanation. */
     REFERENCE(4_000, true),
     /** One CHOICE option or one MATCH item: a short label plus at most one media block. */
-    COMPACT(300, false);
+    COMPACT(300, false),
+    /** One ORDER item: like COMPACT, but long enough for a paragraph, a step or a code block (newlines are kept). */
+    SEQUENCE(1_000, false);
 
     private final int maxText;
     private final boolean youtubeAllowed;
@@ -32,11 +34,11 @@ public enum Slot {
 
     boolean accepts(Block block) { return youtubeAllowed || !(block instanceof Block.Youtube); }
 
-    /** Reads a block array with {@code min..max} blocks, enforcing the compact composition rule. */
+    /** Reads a block array with {@code min..max} blocks, enforcing the one-text-plus-one-media tile rule. */
     List<Block> read(JsonNode array, int min, int max) {
         List<Block> blocks = array(array, min, max).stream().map(node -> Block.parse(node, this))
                 .collect(Collectors.toUnmodifiableList());
-        if (this == COMPACT) {
+        if (this == COMPACT || this == SEQUENCE) {
             long text = blocks.stream().filter(block -> block instanceof Block.Text
                     || block instanceof Block.Material).count();
             if (text > 1 || blocks.size() - text > 1) throw invalid();

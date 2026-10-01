@@ -21,12 +21,17 @@ ACCOUNT_KEYS = LEGACY_ACCOUNT_KEYS | {
     "mechanics",
 }
 ACCOUNT_SCHEMA = 4
-# FREE_RESPONSE is the primary Study fixture; these cover the remaining canonical #266 mechanics.
-ADDITIONAL_MECHANICS = ("SELF_CHECK", "CLOZE", "CHOICE", "MATCH")
+# FREE_RESPONSE is the primary Study fixture; these cover the remaining six canonical mechanics (#266, #268).
+ADDITIONAL_MECHANICS = ("SELF_CHECK", "CLOZE", "CHOICE", "MATCH", "ORDER", "CATEGORIZE")
+# ORDER: a sentence with punctuation, two identical tiles and a CJK tile; the authored order is the key.
+ORDER_TILES = ("Это", "очень", "очень", "важно,", "学习很重要。")
+# CATEGORIZE: several items per group and a third group left empty as a distractor.
+CATEGORIZE_GROUPS = ("Существительное", "Глагол", "Наречие")
+CATEGORIZE_TILES = (("дом", 0), ("бежать", 1), ("река", 0), ("читать", 1))
 MECHANIC_STATE_KEYS = {"deckId", "memberKey", "itemRevisionId", "answerNodeId", "distractorNodeId", "exerciseId",
                        "ids"}
 PRIVATE_PRESENTATION_KEYS = {"answerKey", "accepted", "correctOptionIds", "pairs", "bindings", "reference",
-                             "title", "transcript"}
+                             "title", "transcript", "sequence", "assignments"}
 
 
 def require(condition, message):
@@ -262,6 +267,21 @@ def mechanic_exercise(mechanic, member, revision, answer_node, distractor_node, 
         key = {"kind": "MATCH", "pairs": [{"leftId": left[0], "rightId": right[0]},
                                           {"leftId": left[1], "rightId": right[1]}]}
         evaluator = "deterministic-match"
+    elif mechanic == "ORDER":
+        content = {"prompt": [text_block("Restore the sentence")],
+                   "items": [{"itemId": item, "blocks": [text_block(text)]}
+                             for item, text in zip(ids["items"], ORDER_TILES)]}
+        key, evaluator = {"kind": "ORDER", "sequence": list(ids["items"])}, "deterministic-order"
+    elif mechanic == "CATEGORIZE":
+        content = {"prompt": [text_block("Sort the words by part of speech")],
+                   "categories": [{"categoryId": category, "label": label}
+                                  for category, label in zip(ids["categories"], CATEGORIZE_GROUPS)],
+                   "items": [{"itemId": item, "blocks": [text_block(text)]}
+                             for item, (text, _) in zip(ids["items"], CATEGORIZE_TILES)]}
+        key = {"kind": "CATEGORIZE", "assignments": [
+            {"itemId": item, "categoryId": ids["categories"][group]}
+            for item, (_, group) in zip(ids["items"], CATEGORIZE_TILES)]}
+        evaluator = "deterministic-categorize"
     else:
         raise AssertionError(f"unknown mechanic {mechanic}")
     return {"type": mechanic, "schemaVersion": 2, "enabled": True, "subject": subject, "content": content,
@@ -275,6 +295,11 @@ def mechanic_ids(mechanic):
         return {"options": [str(uuid.uuid4()) for _ in range(3)]}
     if mechanic == "MATCH":
         return {"left": [str(uuid.uuid4()) for _ in range(2)], "right": [str(uuid.uuid4()) for _ in range(2)]}
+    if mechanic == "ORDER":
+        return {"items": [str(uuid.uuid4()) for _ in ORDER_TILES]}
+    if mechanic == "CATEGORIZE":
+        return {"items": [str(uuid.uuid4()) for _ in CATEGORIZE_TILES],
+                "categories": [str(uuid.uuid4()) for _ in CATEGORIZE_GROUPS]}
     return {}
 
 
@@ -692,12 +717,80 @@ def mechanic_response(web, access, deck_id, session_id, mechanic, shown, ids):
             status, _, checked = web.request("POST", f"{base}/pair-checks", wrong, bearer=access)
             require(status == 200 and checked == {"correct": False}, "wrong pair check was not durable")
         return {"kind": "MATCH", "pairs": [{"leftId": l, "rightId": r} for l, r in zip(ids["left"], ids["right"])]}
+    if mechanic == "ORDER":
+        return order_response(web, access, deck_id, base, shown, ids)
+    if mechanic == "CATEGORIZE":
+        return categorize_response(web, access, deck_id, base, shown, ids)
     raise AssertionError(f"unknown mechanic {mechanic}")
+
+
+def require_rejected_without_consuming(web, access, deck_id, session_id, shown, response, label):
+    """A malformed answer is a 400 and leaves the presentation pending for the real answer."""
+    attempt = attempt_payload(shown)
+    attempt["confidence"] = None
+    attempt["response"] = response
+    status, headers, _ = submit_attempt(web, access, deck_id, session_id, attempt)
+    require(status == 400, f"{label} must be rejected with 400, got {status}")
+    require_private(headers, f"{label} rejection")
+
+
+def require_board_persisted(web, access, base, shown, label):
+    """Reading the session again returns exactly the issued (shuffled) content."""
+    status, headers, session = web.request("GET", base, bearer=access)
+    require(status == 200 and isinstance(session, dict), f"{label} session read failed")
+    require_private(headers, f"{label} session")
+    reread = session.get("presentations")
+    require(isinstance(reread, list) and len(reread) == 1 and reread[0].get("content") == shown["content"],
+            f"{label} board changed between reads")
+
+
+def order_response(web, access, deck_id, base, shown, ids):
+    content = shown["content"]
+    items = content.get("items")
+    require(isinstance(items, list) and sorted(item["itemId"] for item in items) == sorted(ids["items"]),
+            "order items were not issued")
+    tiles = {item["itemId"]: item["blocks"] for item in items}
+    require([tiles[item] for item in ids["items"]] == [[text_block(text)] for text in ORDER_TILES],
+            "order tiles lost punctuation, repeated words or non-Latin text")
+    require_board_persisted(web, access, base, shown, "order")
+    session_id = base.rsplit("/", 1)[1]
+    first = ids["items"][0]
+    require_rejected_without_consuming(web, access, deck_id, session_id, shown,
+                                       {"kind": "ORDER", "sequence": [first] * len(ids["items"])},
+                                       "duplicated order id")
+    require_rejected_without_consuming(web, access, deck_id, session_id, shown,
+                                       {"kind": "ORDER", "sequence": ids["items"][:-1]}, "incomplete order")
+    # the two identical tiles are interchangeable: swapping them is still the right order
+    authored = ids["items"]
+    return {"kind": "ORDER", "sequence": [authored[0], authored[2], authored[1], authored[3], authored[4]]}
+
+
+def categorize_response(web, access, deck_id, base, shown, ids):
+    content = shown["content"]
+    require(content.get("categories") == [{"categoryId": category, "label": label}
+                                          for category, label in zip(ids["categories"], CATEGORIZE_GROUPS)],
+            "categories must keep their authored order")
+    items = content.get("items")
+    require(isinstance(items, list) and sorted(item["itemId"] for item in items) == sorted(ids["items"]),
+            "categorize items were not issued")
+    require_board_persisted(web, access, base, shown, "categorize")
+    session_id = base.rsplit("/", 1)[1]
+    assignments = [{"itemId": item, "categoryId": ids["categories"][group]}
+                   for item, (_, group) in zip(ids["items"], CATEGORIZE_TILES)]
+    require_rejected_without_consuming(web, access, deck_id, session_id, shown,
+                                       {"kind": "CATEGORIZE", "assignments": assignments[:-1]},
+                                       "incomplete categorize")
+    require_rejected_without_consuming(web, access, deck_id, session_id, shown, {
+        "kind": "CATEGORIZE",
+        "assignments": [*assignments[:-1], {"itemId": ids["items"][-1], "categoryId": str(uuid.uuid4())}],
+    }, "unknown category")
+    return {"kind": "CATEGORIZE", "assignments": list(reversed(assignments))}
 
 
 def additional_mechanics_smoke(web, access, account, state_file):
     expected = {"SELF_CHECK": ("CORRECT", "LOW"), "CLOZE": ("CORRECT", "MEDIUM"),
-                "CHOICE": ("CORRECT", "LOW"), "MATCH": ("PARTIAL", "LOW")}
+                "CHOICE": ("CORRECT", "LOW"), "MATCH": ("PARTIAL", "LOW"),
+                "ORDER": ("CORRECT", "MEDIUM"), "CATEGORIZE": ("CORRECT", "LOW")}
     for mechanic in ADDITIONAL_MECHANICS:
         fixture = provision_additional_mechanic(web, access, account, state_file, mechanic)
         deck_id, member = fixture["deckId"], fixture["memberKey"]
@@ -728,6 +821,19 @@ def additional_mechanics_smoke(web, access, account, state_file):
         if mechanic == "CLOZE":
             blanks = outcome.get("feedback", {}).get("blanks", [])
             require([blank.get("hinted") for blank in blanks] == [True, False], "per-blank hint evidence missing")
+        if mechanic == "ORDER":
+            feedback = outcome.get("feedback", {})
+            require(feedback.get("correctSequence") == fixture["ids"]["items"]
+                    and [position.get("correct") for position in feedback.get("positions", [])] == [True] * 5
+                    and "SEQUENCING" in evidence.get("reasonCodes", []),
+                    "order feedback must report the authored sequence and every position as correct")
+        if mechanic == "CATEGORIZE":
+            feedback = outcome.get("feedback", {})
+            require(sorted(item.get("itemId") for item in feedback.get("assignments", []))
+                    == sorted(fixture["ids"]["items"])
+                    and all(item.get("correct") is True for item in feedback.get("assignments", []))
+                    and "CATEGORIZING" in evidence.get("reasonCodes", []),
+                    "categorize feedback must score every item")
         retry_status, retry_headers, retry = submit_attempt(web, access, deck_id, scheduled["sessionId"], attempt)
         require(retry_status == 200 and retry_headers.get("idempotency-replayed") == "true"
                 and retry == outcome, f"{mechanic} retry changed the result")

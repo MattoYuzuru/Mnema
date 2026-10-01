@@ -4,6 +4,7 @@ import app.mnema.learning.catalog.exercise.AnswerKey;
 import app.mnema.learning.catalog.exercise.Block;
 import app.mnema.learning.catalog.exercise.ExerciseContent;
 import app.mnema.learning.catalog.exercise.ExerciseType;
+import app.mnema.learning.catalog.exercise.OrderEquivalence;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
@@ -25,12 +26,14 @@ import java.util.UUID;
  *
  * <p>MATERIAL becomes TEXT from the pinned revision; author labels (media titles), answer keys and
  * accepted strings never enter the result. Transcripts stay inside the stored content and are filtered
- * by {@link #view} until the learner reveals them. MATCH sides are shuffled here with an unpredictable
- * source and the result is persisted, so reads and replays return the same order; the order is deliberately
- * not derivable from any identifier a client holds.
+ * by {@link #view} until the learner reveals them. MATCH sides, ORDER items and CATEGORIZE items are shuffled
+ * here with an unpredictable source and the result is persisted, so reads and replays return the same order;
+ * the order is deliberately not derivable from any identifier a client holds.
  */
 public final class LearnerContent {
     private static final JsonNodeFactory JSON = JsonNodeFactory.instance;
+    /** Bound of the ORDER redraw loop; the chance of needing more is negligible for any realistic board. */
+    static final int MAX_REDRAWS = 16;
 
     private LearnerContent() { }
 
@@ -72,6 +75,19 @@ public final class LearnerContent {
             case ExerciseContent.Match match -> {
                 content.set("prompt", blocks(match.prompt(), text));
                 shuffledSides(match, random, content, text);
+            }
+            case ExerciseContent.Order order -> {
+                content.set("prompt", blocks(order.prompt(), text));
+                content.set("items", shuffledSequence(order, (AnswerKey.Order) key, random, text));
+            }
+            case ExerciseContent.Categorize categorize -> {
+                content.set("prompt", blocks(categorize.prompt(), text));
+                ArrayNode categories = content.putArray("categories");
+                categorize.categories().forEach(category -> categories.addObject()
+                        .put("categoryId", category.categoryId().toString()).put("label", category.label()));
+                List<ExerciseContent.Item> items = new ArrayList<>(categorize.items());
+                Collections.shuffle(items, random);
+                content.set("items", items(items, text));
             }
         }
         return new Resolved(content, reveal);
@@ -201,6 +217,37 @@ public final class LearnerContent {
         Collections.shuffle(right, random);
         content.set("left", items(left, text));
         content.set("right", items(right, text));
+    }
+
+    /**
+     * ORDER items in a persisted unpredictable permutation. With three or more items, a draw whose equivalence
+     * class sequence already equals the key (the learner would see the solved board) is redrawn, at most
+     * {@link #MAX_REDRAWS} times; the deterministic fallback then rotates the last draw to the first rotation that
+     * differs. With two items the permutation is uniform: excluding the single wrong layout would always reveal
+     * the answer. If every item is equivalent no layout can differ and the draw stands.
+     */
+    private static ArrayNode shuffledSequence(ExerciseContent.Order order, AnswerKey.Order key,
+                                              RandomGenerator random, TextSource text) {
+        ArrayNode resolved = items(order.items(), text);
+        Map<UUID, String> signatures = OrderEquivalence.signatures(resolved);
+        Map<UUID, ExerciseContent.Item> byId = new HashMap<>();
+        order.items().forEach(item -> byId.put(item.itemId(), item));
+        List<String> solved = OrderEquivalence.classes(key.sequence(), signatures);
+        List<UUID> arrangement = new ArrayList<>(key.sequence());
+        Collections.shuffle(arrangement, random);
+        if (arrangement.size() > 2) {
+            for (int redraw = 0; redraw < MAX_REDRAWS && shows(arrangement, signatures, solved); redraw++) {
+                Collections.shuffle(arrangement, random);
+            }
+            for (int shift = 1; shift < arrangement.size() && shows(arrangement, signatures, solved); shift++) {
+                Collections.rotate(arrangement, 1);
+            }
+        }
+        return items(arrangement.stream().map(byId::get).toList(), text);
+    }
+
+    private static boolean shows(List<UUID> arrangement, Map<UUID, String> signatures, List<String> solved) {
+        return OrderEquivalence.classes(arrangement, signatures).equals(solved);
     }
 
     private static ArrayNode items(List<ExerciseContent.Item> values, TextSource text) {

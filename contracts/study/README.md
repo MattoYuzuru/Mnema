@@ -92,13 +92,15 @@ items per side, globally unique item IDs and an exact bijection key; any COMPACT
 
 **ORDER (#268).** Content `{prompt (0..8), items: [{itemId, blocks}] 2..12}` (SEQUENCE profile); answer key
 `{kind:"ORDER", sequence}` is an exact permutation of the item IDs, explicitly authored — order is never inferred.
-Items whose blocks are identical (same canonical JSON) are interchangeable: swapping indistinguishable copies is not an
-error; nothing else is treated as equivalent. Issue shuffles items with the secure source and persists the order;
+Items whose learner-visible blocks are identical (same canonical JSON after MATERIAL resolution, ignoring author-only
+media titles) are interchangeable: swapping indistinguishable copies is not an error; nothing else is treated as
+equivalent. The author preview does not resolve MATERIAL, so there two different fragments with equal text stay
+distinct (a stricter, never more lenient, check). Issue shuffles items with the secure source and persists the order;
 for 3+ items a shuffle that already shows the correct (equivalence-aware) sequence is redrawn, for 2 items the
 permutation is uniform so the layout never reveals the answer. Response `ORDER {sequence}` must be an exact
 permutation of the issued IDs. Result is binary: `CORRECT` for the right sequence, otherwise `INCORRECT` — a
 positional score is not a measure of knowing a process. Feedback lists `correctSequence` and per-`position`
-correctness. Evidence `MEDIUM` (`SEQUENCING`, `DETERMINISTIC`).
+correctness. Evidence `MEDIUM` (`SEQUENCING`, `DETERMINISTIC`; plus `TRANSCRIPT_ACCOMMODATION` after a reveal).
 
 **CATEGORIZE (#268).** Content `{prompt (0..8), categories: [{categoryId, label}] 2..6, items: [{itemId, blocks}]
 2..12}`; labels are nonblank plain text ≤ 80 UTF-16 units, unique after trim + case fold; items use the COMPACT
