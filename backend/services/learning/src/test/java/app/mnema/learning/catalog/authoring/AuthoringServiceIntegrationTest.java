@@ -257,6 +257,43 @@ class AuthoringServiceIntegrationTest extends PostgresIntegrationTest {
         assertThat(count("command_receipt", "command_id", rollbackCommand)).isZero();
     }
 
+    /**
+     * A database clock that steps backwards makes the next transaction see rows created "in the future".
+     * Writes must stay monotonic instead of violating the unchanged created_at ordering constraints.
+     */
+    @Test
+    void draftAndCaptureWritesStayMonotonicWhenRowsAreAheadOfTheDatabaseClock() {
+        UUID actor = UUID.randomUUID();
+        DeckHead deck = createDeck(actor);
+        Instant ahead = repository.now().plus(Duration.ofHours(1));
+
+        UUID draft = UUID.randomUUID();
+        repository.insertDraft(draft, actor, draftCreate(deck.id(), null, null, nativeDocument("ahead")), ahead);
+        drafts.update(actor, draft, 0, new AuthoringCommands.DraftUpdate(UUID.randomUUID(), nativeDocument("saved")));
+        assertThat(jdbc.sql("SELECT acknowledged_at = created_at "
+                        + "AND expires_at = acknowledged_at + interval '30 days' "
+                        + "FROM app_learning.editing_draft WHERE draft_id=:draft")
+                .param("draft", draft).query(Boolean.class).single()).isTrue();
+        assertThat(drafts.read(actor, draft).path("rowVersion").textValue()).isEqualTo("1");
+
+        UUID edited = UUID.randomUUID();
+        repository.insertCapture(edited, actor, captureCreate(deck.id(), "source", "text"), ahead);
+        captures.update(actor, edited, 0, new AuthoringCommands.CaptureUpdate("source", "changed"));
+        captures.archive(actor, edited, 1, new AuthoringCommands.CaptureArchive(true));
+        assertThat(captures.read(actor, edited).path("rowVersion").textValue()).isEqualTo("2");
+
+        UUID converted = UUID.randomUUID();
+        repository.insertCapture(converted, actor, captureCreate(deck.id(), "source", "convert me"), ahead);
+        captures.convert(actor, converted, 0, conversion(UUID.randomUUID(), deck(actor, deck.id()),
+                document("converted"), null));
+        assertThat(jdbc.sql("SELECT updated_at >= created_at AND converted_at >= created_at AND created_at > "
+                        + "statement_timestamp() FROM app_learning.capture_note WHERE note_id=:note")
+                .param("note", converted).query(Boolean.class).single()).isTrue();
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.capture_note WHERE note_id IN (:edited,:converted) "
+                        + "AND updated_at >= created_at AND created_at > statement_timestamp()")
+                .param("edited", edited).param("converted", converted).query(Long.class).single()).isEqualTo(2);
+    }
+
     @Test
     void foreignIdsAndAccountEntryLimitsFailClosedWithoutDeletingExistingData() {
         UUID actor = UUID.randomUUID();

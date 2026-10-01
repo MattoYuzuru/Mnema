@@ -77,9 +77,9 @@ public class FederatedAccounts {
                         .param("id", id).param("provider", external.provider()).param("subject", external.subject())
                         .update();
             jdbcClient.sql(
-                            "UPDATE app_identity.external_identity SET last_login_at=statement_timestamp() WHERE provider=:provider AND provider_subject=:subject")
+                            "UPDATE app_identity.external_identity SET last_login_at=GREATEST(statement_timestamp(),linked_at) WHERE provider=:provider AND provider_subject=:subject")
                     .param("provider", external.provider()).param("subject", external.subject()).update();
-            jdbcClient.sql("UPDATE app_identity.account SET last_login_at=statement_timestamp() WHERE account_id=:id")
+            jdbcClient.sql("UPDATE app_identity.account SET last_login_at=GREATEST(statement_timestamp(),created_at) WHERE account_id=:id")
                     .param("id", id).update();
             return accounts.get(id, true).access();
         });

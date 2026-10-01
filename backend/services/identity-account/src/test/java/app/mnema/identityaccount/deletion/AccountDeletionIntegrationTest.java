@@ -321,6 +321,30 @@ class AccountDeletionIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void requestCancelAndPurgeStayMonotonicWhenAccountRowsAreAheadOfTheDatabaseClock() {
+        AccountAccess cancelled = account();
+        AccountAccess purged = account();
+        for (AccountAccess account : java.util.List.of(cancelled, purged)) {
+            jdbc.sql("UPDATE app_identity.account SET created_at=statement_timestamp() + interval '1 hour',"
+                    + "updated_at=statement_timestamp() + interval '1 hour',profile_created_at=NULL,last_login_at=NULL "
+                    + "WHERE account_id=:id").param("id", account.accountId()).update();
+        }
+
+        var operation = deletions.request(cancelled, proof(cancelled).token());
+        deletions.cancel(accounts.get(cancelled.accountId(), false).access(), operation.operationId());
+        assertThat(accounts.get(cancelled.accountId(), false).deletionState()).isEqualTo("ACTIVE");
+
+        deletions.request(purged, proof(purged).token());
+        makeDue(purged.accountId());
+        worker.scan();
+        assertThat(accounts.get(purged.accountId(), false).deletionState()).isEqualTo("PURGED");
+        assertThat(jdbc.sql("SELECT count(*) FROM app_identity.account WHERE account_id IN (:a,:b) "
+                        + "AND updated_at >= created_at AND created_at > statement_timestamp()")
+                .param("a", cancelled.accountId()).param("b", purged.accountId()).query(Long.class).single())
+                .isEqualTo(2);
+    }
+
+    @Test
     void purgeRetriesOwnedAvatarFailuresThenScrubsIdentityAndWritesFencedReceipts() {
         AccountAccess account = account();
         String originalEmail = email(account);
