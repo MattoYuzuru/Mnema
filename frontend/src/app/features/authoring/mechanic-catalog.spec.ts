@@ -11,13 +11,13 @@ import { learnerContent } from './exercise-draft';
 describe('mechanic catalog and demo fixtures', () => {
     const subject = { memberKey: '00000000-0000-4000-8000-000000000000', itemRevisionId: '00000000-0000-4000-8000-000000000000' };
 
-    it('registers exactly the five mechanics with human titles, ordered steps and no placeholder entries', () => {
+    it('registers exactly the seven mechanics with human titles, ordered steps and no placeholder entries', () => {
         expect(MECHANIC_CATALOG.map(entry => entry.mechanic)).toEqual([...MECHANICS]);
         expect(MECHANIC_CATALOG.map(entry => entry.title)).toEqual(['Вспомнить и сверить', 'Ввести ответ', 'Заполнить пропуски',
-            'Выбрать ответ', 'Сопоставить элементы']);
+            'Выбрать ответ', 'Сопоставить элементы', 'Восстановить порядок', 'Распределить по группам']);
         for (const entry of MECHANIC_CATALOG) {
             expect(entry.steps.at(-1)).toBe('finish');
-            expect(entry.steps.length).toBe(3);
+            expect(entry.steps.length).toBe(entry.mechanic === 'CATEGORIZE' ? 4 : 3);
             expect(new Set(entry.steps).size).toBe(entry.steps.length);
             expect(entry.description.length).toBeGreaterThan(40);
             for (const step of entry.steps) expect(stepTitle(entry.mechanic, step)).not.toBe('');

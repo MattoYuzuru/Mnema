@@ -28,7 +28,7 @@ describe('ExercisePreviewApiService', () => {
     };
 
     it('sends exactly the contract request for every SUBMIT fixture and parses the golden feedback', async () => {
-        for (const name of ['submitCloze', 'submitChoice', 'submitMatchAfterMistake', 'submitFreeResponse']) {
+        for (const name of ['submitCloze', 'submitChoice', 'submitMatchAfterMistake', 'submitFreeResponse', 'submitOrder', 'submitCategorize']) {
             const result = firstValueFrom(api.submit(previews[name].exercise, submission(name)));
             const request = http.expectOne(url);
             expect(request.request.method).toBe('POST');
@@ -110,6 +110,15 @@ describe('ExercisePreviewApiService', () => {
             http.expectOne(url).flush({ feedback: { ...previews['submitFreeResponseResult'].feedback,
                 referenceContent: [{ kind: 'TEXT', text: 'x' }] } }, { headers });
             await expectAsync(free).toBeRejectedWithError(/does not match/);
+        });
+
+        it('rejects ORDER feedback for a CATEGORIZE exercise and the other way round', async () => {
+            const categorize = firstValueFrom(api.submit(previews['submitCategorize'].exercise, submission('submitCategorize')));
+            http.expectOne(url).flush(previews['submitOrderResult'], { headers });
+            await expectAsync(categorize).toBeRejectedWithError(/does not match/);
+            const order = firstValueFrom(api.submit(previews['submitOrder'].exercise, submission('submitOrder')));
+            http.expectOne(url).flush(previews['submitCategorizeResult'], { headers });
+            await expectAsync(order).toBeRejectedWithError(/does not match/);
         });
 
         it('rejects a hint for another blank, a non-boolean pair verdict and an extra pair field', async () => {

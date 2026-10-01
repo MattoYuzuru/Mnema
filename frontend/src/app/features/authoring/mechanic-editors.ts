@@ -16,7 +16,7 @@ import { TextAnswerEditorComponent } from './text-answer-editor.component';
  * components own the mechanic-specific step: answers, passage, options or pairs.
  */
 @Directive()
-abstract class MechanicEditorBase {
+export abstract class MechanicEditorBase {
     readonly context = input.required<SlotContext>();
     readonly errors = input<DraftErrors>({});
     readonly showProblems = input(false);

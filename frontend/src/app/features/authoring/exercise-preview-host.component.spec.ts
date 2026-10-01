@@ -183,6 +183,92 @@ describe('ExercisePreviewHostComponent', () => {
         });
     });
 
+    describe('ORDER and CATEGORIZE demos use the author preview endpoint only', () => {
+        const headers = { 'Cache-Control': 'private, no-store' };
+
+        it('ORDER: starts shuffled, is rearranged with the keyboard controls and checked on the server with the issued ids', () => {
+            show(demo('ORDER'));
+            const ids = () => [...root().querySelectorAll('li.order-item')].map(row => row.getAttribute('data-item-id')!);
+            const demoOrder = catalogEntry('ORDER').demo.exercise as unknown as { answerKey: { sequence: string[] } };
+            const key = demoOrder.answerKey.sequence;
+            expect(ids()).not.toEqual(key);                                      // never opens in the authored order
+            expect(ids().slice().sort()).toEqual(key.slice().sort());
+            expect([...root().querySelectorAll('audio')].map(audio => audio.getAttribute('src')))
+                .toEqual(['/assets/demo/tone-low.mp3', '/assets/demo/tone-high.mp3']);   // local, original media
+            expect(new Set([...root().querySelectorAll('app-native-media-image img')].map(image => image.getAttribute('src'))))
+                .toEqual(new Set(['/assets/demo/wave-sparse.svg', '/assets/demo/wave-dense.svg']));
+            // Move each item to its place by pressing the real controls.
+            for (const [position, itemId] of key.entries()) {
+                while (ids().indexOf(itemId) > position) {
+                    root().querySelector<HTMLButtonElement>(`[data-item-id="${itemId}"] [data-move="up"]`)!.click(); refresh();
+                }
+            }
+            expect(ids()).toEqual(key);
+            expect(root().querySelector('.order-status')?.textContent).toContain('перемещён на позицию');
+            click('button[data-submit]');
+            const call = request();
+            expect(call.request.body.exercise.type).toBe('ORDER');
+            expect(action(call)).toEqual({ kind: 'SUBMIT', response: { kind: 'ORDER', sequence: key }, hintedBlankIds: [],
+                pairMistakes: false, transcriptRevealed: false });
+            call.flush({ feedback: { result: 'CORRECT', appliedRules: ['EXACT_SEQUENCE'], correctSequence: key,
+                positions: key.map((itemId, position) => ({ position, selectedItemId: itemId, correct: true })) } }, { headers });
+            refresh();
+            expect(root().querySelector('#preview-result-title')?.textContent).toBe('Верно');
+            expect(root().querySelectorAll('.positions li').length).toBe(4);
+            expect(root().querySelectorAll('.correct-sequence li').length).toBe(4);
+            expect(root().textContent).toContain('Пример завершён');
+            click('[data-restart]');
+            expect(root().querySelectorAll('li.order-item').length).toBe(4);
+            expect(root().querySelector('#preview-result-title')).toBeNull();
+        });
+
+        it('CATEGORIZE: items are assigned by select-then-group and the server marks each assignment', () => {
+            show(demo('CATEGORIZE'));
+            const demoKey = (catalogEntry('CATEGORIZE').demo.exercise as unknown as {
+                answerKey: { assignments: { itemId: string; categoryId: string }[] } }).answerKey.assignments;
+            expect(root().querySelectorAll('.group').length).toBe(3);
+            expect(root().querySelector<HTMLButtonElement>('button[data-submit]')?.disabled).toBeTrue();
+            for (const { itemId, categoryId } of demoKey.slice().reverse()) {
+                root().querySelector<HTMLButtonElement>(`[data-item-id="${itemId}"] [data-select]`)!.click(); refresh();
+                root().querySelector<HTMLButtonElement>(`[data-category="${categoryId}"] [data-place]`)!.click(); refresh();
+            }
+            expect(root().querySelector<HTMLButtonElement>('button[data-submit]')?.disabled).toBeFalse();
+            click('button[data-submit]');
+            const call = request();
+            expect(call.request.body.exercise.type).toBe('CATEGORIZE');
+            const response = action(call).response;
+            expect(response.kind).toBe('CATEGORIZE');
+            expect(response.assignments.length).toBe(6);
+            expect(new Map(response.assignments.map((entry: { itemId: string; categoryId: string }) => [entry.itemId, entry.categoryId])))
+                .toEqual(new Map(demoKey.map(entry => [entry.itemId, entry.categoryId])));
+            call.flush({ feedback: { result: 'CORRECT', appliedRules: ['SERVER_ISSUED_CATEGORY_MAP'],
+                assignments: demoKey.map(entry => ({ itemId: entry.itemId, selectedCategoryId: entry.categoryId,
+                    correctCategoryId: entry.categoryId, correct: true })) } }, { headers });
+            refresh();
+            expect(root().querySelector('#preview-result-title')?.textContent).toBe('Верно');
+            expect(root().querySelectorAll('.pair-feedback li').length).toBe(6);
+            click('[data-restart]');
+            expect(root().querySelector('[data-pool] h3')?.textContent).toContain('Осталось распределить: 6');
+        });
+
+        it('never reaches a session, attempt, pair-check, hint or transcript route for either mechanic', () => {
+            for (const mechanic of ['ORDER', 'CATEGORIZE'] as const) {
+                show(demo(mechanic));
+                if (mechanic === 'CATEGORIZE') {
+                    const items = [...root().querySelectorAll<HTMLElement>('[data-pool] [data-item-id]')].map(row => row.getAttribute('data-item-id'));
+                    for (const itemId of items) {
+                        root().querySelector<HTMLButtonElement>(`[data-item-id="${itemId}"] [data-select]`)!.click(); refresh();
+                        root().querySelector<HTMLButtonElement>('[data-place]:not(:disabled)')!.click(); refresh();
+                    }
+                }
+                click('button[data-submit]');
+                const call = request();
+                expect(call.request.url).toBe('/api/exercise-previews');
+                call.flush(null, { status: 500, statusText: 'x' });
+            }
+        });
+    });
+
     it('tells the author when checking failed, keeps the answer and lets them try again', () => {
         show(demo('FREE_RESPONSE'));
         const area = root().querySelector<HTMLTextAreaElement>('textarea')!;

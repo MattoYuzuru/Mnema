@@ -2,11 +2,13 @@ import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, a
 import { Observable, Subscription } from 'rxjs';
 
 import { ChoiceListComponent } from '../../content/exercise/choice-list.component';
+import { CategorizeBoardComponent, CategoryAssignment } from '../../content/exercise/categorize-board.component';
 import { ClozePassageComponent } from '../../content/exercise/cloze-passage.component';
 import { ExclusivePlaybackDirective } from '../../content/exercise/exclusive-playback.directive';
 import { LearnerBlock, LearnerContent, allLearnerBlocks } from '../../content/exercise/exercise-content.models';
 import { LearnerBlocksComponent } from '../../content/exercise/learner-blocks.component';
 import { MatchBoardComponent, MatchPair } from '../../content/exercise/match-board.component';
+import { OrderBoardComponent } from '../../content/exercise/order-board.component';
 import { SelfRating, StudyResponse } from './study.models';
 
 export type PairChecker = (pair: MatchPair) => Observable<boolean>;
@@ -18,13 +20,14 @@ const RATING_LABELS: Readonly<Record<SelfRating, string>> = {
 const VOICE_REASON = 'Голосовой ответ пока недоступен: распознавание речи не подключено. Напишите ответ текстом.';
 
 /**
- * The learner answer surface for all five mechanics. It owns the in-progress input only; the host owns
+ * The learner answer surface for all seven mechanics. It owns the in-progress input only; the host owns
  * server calls (hints, transcript, pair check, submit) so a late response can never overwrite a newer
  * input. Study and the author preview mount the same component with different hosts.
  */
 @Component({
     selector: 'app-learner-exercise',
-    imports: [LearnerBlocksComponent, ClozePassageComponent, ChoiceListComponent, MatchBoardComponent, ExclusivePlaybackDirective],
+    imports: [LearnerBlocksComponent, ClozePassageComponent, ChoiceListComponent, MatchBoardComponent, OrderBoardComponent,
+        CategorizeBoardComponent, ExclusivePlaybackDirective],
     templateUrl: './learner-exercise.component.html',
     styleUrl: './learner-exercise.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -60,6 +63,9 @@ export class LearnerExerciseComponent {
     readonly pairChecking = signal(false);
     readonly pairError = signal(false);
     readonly revealed = signal(false);
+    /** The learner's own order once they moved something; `null` shows the issued order. */
+    readonly orderIds = signal<readonly string[] | null>(null);
+    readonly assignments = signal<Readonly<Record<string, string>>>({});
 
     readonly ratings = RATINGS;
     readonly voiceReason = VOICE_REASON;
@@ -69,7 +75,28 @@ export class LearnerExerciseComponent {
     readonly cloze = computed(() => { const value = this.exercise(); return value.type === 'CLOZE' ? value.content : null; });
     readonly choice = computed(() => { const value = this.exercise(); return value.type === 'CHOICE' ? value.content : null; });
     readonly match = computed(() => { const value = this.exercise(); return value.type === 'MATCH' ? value.content : null; });
+    readonly order = computed(() => { const value = this.exercise(); return value.type === 'ORDER' ? value.content : null; });
+    readonly categorize = computed(() => { const value = this.exercise(); return value.type === 'CATEGORIZE' ? value.content : null; });
     readonly prompt = computed(() => this.exercise().content.prompt);
+    /**
+     * The sequence on screen. It is the issued order until the learner moves something, and it survives any
+     * re-render of the same items; only a different set of items (another presentation) falls back to the issued order.
+     */
+    readonly orderSequence = computed<readonly string[]>(() => {
+        const content = this.order();
+        if (content === null) return [];
+        const issued = content.items.map(item => item.itemId);
+        const chosen = this.orderIds();
+        return chosen !== null && chosen.length === issued.length && issued.every(itemId => chosen.includes(itemId)) ? chosen : issued;
+    });
+    readonly orderMoved = computed(() => {
+        const content = this.order();
+        return content !== null && this.orderSequence().some((itemId, index) => itemId !== content.items[index].itemId);
+    });
+    readonly categorizeComplete = computed(() => {
+        const content = this.categorize();
+        return content !== null && content.items.every(item => this.assignments()[item.itemId] !== undefined);
+    });
     /**
      * A transcript is offered while one is available and not yet revealed. For a self-check the hidden
      * reference does not count: offering its transcript before the answer is shown would reveal the answer.
@@ -85,7 +112,8 @@ export class LearnerExerciseComponent {
         return content !== null && content.left.every(item => this.matches()[item.itemId] !== undefined);
     });
     readonly dirty = computed(() => this.text().length > 0 || Object.values(this.clozeValues()).some(value => value.length > 0)
-        || this.selectedOptionIds().length > 0 || Object.keys(this.matches()).length > 0 || this.revealed());
+        || this.selectedOptionIds().length > 0 || Object.keys(this.matches()).length > 0 || this.revealed()
+        || this.orderMoved() || Object.keys(this.assignments()).length > 0);
 
     private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
     private readonly injector = inject(Injector);
@@ -132,6 +160,17 @@ export class LearnerExerciseComponent {
             : [optionId]);
     }
 
+    setOrder(sequence: readonly string[]): void { this.orderIds.set(sequence); }
+
+    assign(change: CategoryAssignment): void {
+        this.assignments.update(current => {
+            const { [change.itemId]: _removed, ...rest } = current;
+            return change.categoryId === null ? rest : { ...rest, [change.itemId]: change.categoryId };
+        });
+        // The last assignment hands the keyboard learner straight to the submit action, like the last pair does.
+        if (change.keyboard && this.categorizeComplete()) this.focusAfterRender('[data-submit]');
+    }
+
     checkPair(pair: MatchPair): void {
         const check = this.pairChecker();
         if (check === null || this.pairChecking() || this.matches()[pair.leftId] !== undefined) return;
@@ -175,6 +214,16 @@ export class LearnerExerciseComponent {
                         leftId: item.itemId, rightId: this.matches()[item.itemId]! })) });
                 }
                 return;
+            case 'ORDER':
+                this.answered.emit({ kind: 'ORDER', sequence: this.orderSequence() });
+                return;
+            case 'CATEGORIZE':
+                if (this.categorizeComplete()) {
+                    // Issued item order, so the same decision always serializes identically.
+                    this.answered.emit({ kind: 'CATEGORIZE', assignments: value.content.items.map(item => ({
+                        itemId: item.itemId, categoryId: this.assignments()[item.itemId]! })) });
+                }
+                return;
             case 'SELF_CHECK':
                 return;
         }
@@ -187,6 +236,8 @@ export class LearnerExerciseComponent {
         this.clozeValues.set({});
         this.selectedOptionIds.set([]);
         this.matches.set({});
+        this.orderIds.set(null);
+        this.assignments.set({});
         this.wrongPair.set(null);
         this.pairChecking.set(false);
         this.pairError.set(false);

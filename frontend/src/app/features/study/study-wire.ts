@@ -81,6 +81,19 @@ export function validateResponse(response: StudyResponse): void {
             throw protocol('Invalid match response.');
         }
         response.pairs.forEach(pair => exact(pair, ['leftId', 'rightId']));
+    } else if (response.kind === 'ORDER') {
+        exact(response, ['kind', 'sequence']);
+        if (!Array.isArray(response.sequence) || response.sequence.length < 2 || response.sequence.length > 12
+            || new Set(response.sequence.map(entity)).size !== response.sequence.length) {
+            throw protocol('Invalid order response.');
+        }
+    } else if (response.kind === 'CATEGORIZE') {
+        exact(response, ['kind', 'assignments']);
+        if (!Array.isArray(response.assignments) || response.assignments.length < 2 || response.assignments.length > 12
+            || new Set(response.assignments.map(assignment => entity(assignment.itemId))).size !== response.assignments.length) {
+            throw protocol('Invalid categorize response.');
+        }
+        response.assignments.forEach(assignment => { exact(assignment, ['itemId', 'categoryId']); entity(assignment.categoryId); });
     } else if (response.kind === 'CANCEL') exact(response, ['kind']);
     else throw protocol('Invalid response kind.');
 }

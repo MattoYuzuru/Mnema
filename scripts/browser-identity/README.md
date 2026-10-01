@@ -63,11 +63,14 @@ Create, save, reopen (full page reload of the edit route) and assert restored va
 | `CHOICE` multiple | two correct marks, one option with an uploaded audio file; switching to SINGLE with two marks shows the fix-required error and keeps both marks | clicking the option's player controls does not select; keyboard selection and submit |
 | `CHOICE` single | one correct mark | radio semantics, keyboard selection and submit |
 | `MATCH` | text-text pair, text to uploaded audio (through the slot media picker), text plus a recording on one side | one deliberate wrong pair, then correct pairs; playing audio neither pairs nor sends a pair check; `PARTIAL` with the retry notice and `PAIR_RETRY` |
+| `ORDER` | the demo is solved with the arrow buttons; «Разбить на слова» turns a sentence with punctuation and a repeated word into items, plus a code block and an uploaded PNG frame; the finished exercise is solved in the preview with the keyboard (one preview request) | issued shuffled; one real use of the «На позицию N» select, the arrows do the rest, the move is announced in the live region; swapped identical words are `CORRECT`, evidence `MEDIUM`; 390 px overflow recorded as a finding |
+| `CATEGORIZE` | the demo is played with select-then-group; three groups (the last stays an empty distractor) and a temporary fourth one; items with an uploaded audio; the group select by keyboard; removing the fourth group asks first and moves its item; keyboard preview | pressing the audio player neither selects nor assigns; a decision is changed before submit; counters follow; one wrong item gives `PARTIAL`, the right group is shown, evidence `LOW`; groups stack in one column at 390 px (a finding otherwise) |
 
-Study uses one standard session (five new objectives) and dispatches on what the UI presents.
+Study uses standard sessions (five new objectives each, so seven authored exercises take two) and dispatches on
+what the UI presents.
 Screenshots: `mechanics-edit-*-1440.png` (full-page reopened editors), `mechanics-study-*-1440.png` and
-`*-feedback-1440.png` for every mechanic, and `mechanics-study-cloze-390.png` / `mechanics-study-match-390.png`
-(horizontal overflow at 390 px is recorded as a finding).
+`*-feedback-1440.png` for every mechanic, and `mechanics-study-cloze-390.png` / `mechanics-study-match-390.png` /
+`mechanics-study-order-390.png` / `mechanics-study-categorize-390.png` (horizontal overflow at 390 px is recorded as a finding).
 
 **Microphone.** In this mode Chrome starts with `--use-fake-ui-for-media-stream
 --use-fake-device-for-media-stream`, so "Записать аудио" -> stop -> "Загрузить запись" -> READY -> "Добавить в
@@ -78,9 +81,10 @@ permission prompt, hardware, OS routing and Safari/Firefox recording remain unco
 
 Not covered by this mode: other browsers, touch input, screen readers, the 320 px layout of these screens,
 editing an existing exercise's media, AI evaluation and speech input (disabled by the server in this fixture),
-and the hint/recording flows of mechanics other than those listed above. Study answers were chosen to
-exercise partial results (a wrong cloze blank, a wrong first match pair), so a green run says nothing about
-a fully correct cloze or match attempt.
+and the hint/recording flows of mechanics other than those listed above. Dragging an ORDER item is not
+exercised (the buttons and the select are the supported path). Study answers were chosen to exercise partial
+results (a wrong cloze blank, a wrong first match pair, a wrong categorized item), so a green run says nothing
+about a fully correct cloze, match or categorize attempt.
 
 Use `--chrome` for another existing Chrome executable. The page contract defaults to
 `[data-testid="identity-profile"]`, `[data-testid="logout"]`, and `[role="alert"]`;

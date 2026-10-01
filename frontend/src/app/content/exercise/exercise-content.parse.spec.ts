@@ -1,5 +1,5 @@
 import { clone, mechanics } from '../../features/study/study-test-data';
-import { AuthoringBlock, COMPACT_SLOT, PROMPT_SLOTS, SLOT_PROFILES, allLearnerBlocks } from './exercise-content.models';
+import { AuthoringBlock, COMPACT_SLOT, PROMPT_SLOTS, SEQUENCE_SLOT, SLOT_PROFILES, allLearnerBlocks, categoryLabelKey, distinguishableItems, visibleBlocksKey } from './exercise-content.models';
 import {
     ExerciseContentError, blockProblem, exactObject, parseExerciseSpec, parseLearnerBlock, parseLearnerContent, slotProblem
 } from './exercise-content.parse';
@@ -11,6 +11,10 @@ describe('Exercise content rules', () => {
         expect(SLOT_PROFILES.PROMPT.kinds).toEqual(['TEXT', 'MATERIAL', 'IMAGE', 'AUDIO', 'VIDEO', 'YOUTUBE']);
         expect(SLOT_PROFILES.REFERENCE.textLimit).toBe(4000);
         expect(SLOT_PROFILES.COMPACT).toEqual({ kinds: ['TEXT', 'MATERIAL', 'IMAGE', 'AUDIO', 'VIDEO'], textLimit: 300, oneTextAndOneMedia: true });
+        expect(SLOT_PROFILES.SEQUENCE).toEqual({ kinds: ['TEXT', 'MATERIAL', 'IMAGE', 'AUDIO', 'VIDEO'], textLimit: 1000, oneTextAndOneMedia: true });
+        expect(SEQUENCE_SLOT).toEqual({ profile: 'SEQUENCE', min: 1, max: 2 });
+        expect(PROMPT_SLOTS['ORDER']).toEqual({ profile: 'PROMPT', min: 0, max: 8 });
+        expect(PROMPT_SLOTS['CATEGORIZE']).toEqual({ profile: 'PROMPT', min: 0, max: 8 });
         expect(PROMPT_SLOTS['CLOZE'].min).toBe(0);
         expect(PROMPT_SLOTS['MATCH'].min).toBe(0);
         expect(PROMPT_SLOTS['CHOICE'].min).toBe(1);
@@ -45,6 +49,14 @@ describe('Exercise content rules', () => {
             expect(problem({ kind: 'YOUTUBE', videoId: 'dQw4w9WgXcQ', title: ' ' })).toContain('Укажите название ролика');
             expect(problem({ kind: 'YOUTUBE', videoId: 'dQw4w9WgXcQ', title: 'x'.repeat(1025) })).toContain('1024');
             expect(problem({ kind: 'YOUTUBE', videoId: 'dQw4w9WgXcQ', title: 'ok' })).toBeNull();
+        });
+
+        it('measures a SEQUENCE item up to 1000 units and keeps newlines and indentation', () => {
+            expect(blockProblem({ kind: 'TEXT', text: 'for (;;) {\n    x++;\n}' }, 'SEQUENCE')).toBeNull();
+            expect(blockProblem({ kind: 'TEXT', text: 'x'.repeat(1000) }, 'SEQUENCE')).toBeNull();
+            expect(blockProblem({ kind: 'TEXT', text: 'x'.repeat(1001) }, 'SEQUENCE')).toContain('1000');
+            expect(blockProblem({ kind: 'YOUTUBE', videoId: 'dQw4w9WgXcQ', title: 'ok' }, 'SEQUENCE')).toContain('недоступен');
+            expect(slotProblem([{ kind: 'TEXT' }, { kind: 'TEXT' }], SEQUENCE_SLOT)).toContain('не больше одного текста');
         });
 
         it('allows YouTube only where the profile does', () => {
@@ -160,5 +172,79 @@ describe('Exercise content rules', () => {
             options.options[1].optionId = options.options[0].optionId;
             expect(() => parseLearnerContent('CHOICE', options, false)).toThrowError(ExerciseContentError);
         });
+    });
+});
+
+describe('ORDER and CATEGORIZE content', () => {
+    it('parses both authoring fixtures and keeps the authored sequence and assignment order verbatim', () => {
+        const order = parseExerciseSpec(mechanics['createOrder'].exercise);
+        expect(order).toEqual(mechanics['createOrder'].exercise);
+        expect(order.type === 'ORDER' && order.answerKey.sequence).toEqual(order.type === 'ORDER' ? order.content.items.map(item => item.itemId) : []);
+        const categorize = parseExerciseSpec(mechanics['createCategorize'].exercise);
+        expect(categorize).toEqual(mechanics['createCategorize'].exercise);
+    });
+
+    it('parses the issued presentations as learner content without any key', () => {
+        for (const name of ['order', 'categorize'] as const) {
+            const presentation = mechanics['presentations'][name];
+            const parsed = parseLearnerContent(presentation.type, presentation.content, false);
+            expect(parsed.content).toEqual(presentation.content);
+            expect(JSON.stringify(parsed)).not.toContain('sequence');
+            expect(JSON.stringify(parsed)).not.toContain('assignments');
+        }
+        const learner = parseLearnerContent('CATEGORIZE', mechanics['presentations']['categorize'].content, false);
+        expect(allLearnerBlocks(learner).some(block => block.kind === 'AUDIO')).toBeTrue();
+    });
+
+    it('folds group labels like the contract: NFC, edge whitespace and format characters, then case', () => {
+        const same = (a: string, b: string) => expect(categoryLabelKey(a)).withContext(`${a} / ${b}`).toBe(categoryLabelKey(b));
+        same('  Глагол ', 'ГЛАГОЛ');
+        same('Straße', 'STRASSE');
+        same('Σ', 'ς');
+        same('Cafe\u0301', 'caf\u00e9');
+        same('\u00a0Глагол\u3000', 'глагол');
+        same('\u200bГлагол\u200b', 'Глагол');
+        expect(categoryLabelKey('Глагол')).not.toBe(categoryLabelKey('Глаголы'));
+        expect(categoryLabelKey('Гла\u200bгол')).not.toBe(categoryLabelKey('Глагол'));   // only the edges are trimmed
+        expect(categoryLabelKey(' \u200b\u00a0\u3000')).toBe('');                         // no visible character
+    });
+
+    it('rejects a group label without a visible character or one that folds onto another label, and keeps labels verbatim', () => {
+        const base = mechanics['createCategorize'].exercise;
+        for (const label of ['\u200b', '\u00a0\u3000', ' ']) {
+            const spec = clone(base); spec.content.categories[0].label = label;
+            expect(() => parseExerciseSpec(spec)).withContext(JSON.stringify(label)).toThrowError(ExerciseContentError);
+        }
+        for (const [first, second] of [['Straße', 'STRASSE'], ['Σ', 'ς'], ['Caf\u00e9', 'Cafe\u0301'], ['Глагол', '\u200bГЛАГОЛ\u00a0']]) {
+            const spec = clone(base); spec.content.categories[0].label = first; spec.content.categories[1].label = second;
+            expect(() => parseExerciseSpec(spec)).withContext(`${first} / ${second}`).toThrowError(ExerciseContentError);
+        }
+        const verbatim = clone(base); verbatim.content.categories[0].label = ' Существительное ';
+        expect(parseExerciseSpec(verbatim).type === 'CATEGORIZE' && parseExerciseSpec(verbatim).content).toEqual(verbatim.content);
+    });
+
+    it('tells items apart by what the learner sees: identical blocks count once, author-only titles are ignored', () => {
+        const text = (value: string) => ({ blocks: [{ kind: 'TEXT' as const, text: value }] });
+        expect(visibleBlocksKey(text('очень').blocks)).toBe(visibleBlocksKey(text('очень').blocks));
+        expect(visibleBlocksKey(text('очень').blocks)).not.toBe(visibleBlocksKey(text('Очень').blocks));
+        const audio = (title: string, transcript?: string) => [{ kind: 'AUDIO' as const, assetId: 'aaaaaaaa-0000-4000-8000-000000000001', title,
+            ...(transcript === undefined ? {} : { transcript }) }];
+        expect(visibleBlocksKey(audio('Запись 1'))).toBe(visibleBlocksKey(audio('Другое название')));
+        expect(visibleBlocksKey(audio('x'))).not.toBe(visibleBlocksKey(audio('x', 'расшифровка')));   // the learner can ask for one
+        const material = (nodeId: string) => [{ kind: 'MATERIAL' as const, memberKey: 'm', itemRevisionId: 'r', nodeId }];
+        expect(visibleBlocksKey(material('a'))).not.toBe(visibleBlocksKey(material('b')));            // preview: never more lenient
+        expect(visibleBlocksKey(material('a'), () => 'один текст')).toBe(visibleBlocksKey(material('b'), () => 'один текст'));
+        expect(visibleBlocksKey(material('a'), () => 'один текст')).toBe(visibleBlocksKey(text('один текст').blocks));
+        expect(distinguishableItems([text('а'), text('а'), text('а')])).toBe(1);
+        expect(distinguishableItems([text('а'), text('а'), text('б')])).toBe(2);
+    });
+
+    it('rejects an ORDER whose items are all indistinguishable', () => {
+        const spec = clone(mechanics['createOrder'].exercise);
+        spec.content.items = spec.content.items.slice(1, 3);                    // two identical «очень» tiles
+        spec.answerKey.sequence = spec.content.items.map((entry: { itemId: string }) => entry.itemId);
+        expect(() => parseExerciseSpec(spec)).toThrowError(ExerciseContentError);
+        spec.content.items[1].blocks = [{ kind: 'TEXT', text: 'совсем' }];
+        expect(() => parseExerciseSpec(spec)).not.toThrow();
     });
 });

@@ -8,7 +8,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { forkJoin, switchMap } from 'rxjs';
 
 import {
-    AuthoringBlock, ExerciseSpec, LIMITS, Mechanic, ObjectiveCommand, PROMPT_SLOTS, REFERENCE_SLOTS, authoringSlots,
+    AuthoringBlock, ExerciseSpec, LIMITS, MECHANICS, Mechanic, ObjectiveCommand, PROMPT_SLOTS, REFERENCE_SLOTS, authoringSlots,
     isBlank, previewExerciseOf
 } from '../../content/exercise/exercise-content.models';
 import { MECHANIC_CATALOG, StepId, catalogEntry, stepTitle } from '../../content/exercise/mechanic-catalog';
@@ -20,9 +20,10 @@ import { AuthoringProtocolError, ItemDetail, newCommandId } from './authoring.mo
 import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService, LearningCapabilities } from './capabilities-api.service';
 import { ExerciseApiService } from './exercise-api.service';
 import {
-    ChoiceDraft, ClozeDraft, DraftErrors, ExerciseDrafts, FreeResponseDraft, MatchDraft, SlotContext, buildSpec, carryPrompt,
+    CategorizeDraft, ChoiceDraft, ClozeDraft, DraftErrors, ExerciseDrafts, FreeResponseDraft, MatchDraft, OrderDraft, SlotContext, buildSpec, carryPrompt,
     draftsFromDetail, emptyDrafts, isPristine, learnerContent, materialText, mechanicSpecificData, validateDraft
 } from './exercise-draft';
+import { CategorizeItemsEditorComponent, CategoryGroupsEditorComponent } from './categorize-editors.component';
 import { ExercisePreviewHostComponent } from './exercise-preview-host.component';
 import { PreviewPresentation } from './exercise-preview.models';
 import { ExerciseSlotEditorComponent } from './exercise-slot-editor.component';
@@ -32,6 +33,7 @@ import {
 import { ItemApiService } from './item-api.service';
 import { ChoiceEditorComponent, ClozeEditorComponent, FreeResponseEditorComponent, MatchEditorComponent } from './mechanic-editors';
 import { MechanicChoice, MechanicPickerComponent } from './mechanic-picker.component';
+import { OrderEditorComponent } from './order-editor.component';
 
 type Phase = 'loading' | 'ready' | 'saving' | 'saved' | 'conflict' | 'rejected' | 'error';
 type ObjectiveMode = 'create' | 'reuse' | 'revise';
@@ -49,14 +51,17 @@ interface PendingSwitch {
 }
 
 const ID_PREFIX: Readonly<Record<Mechanic, string>> = {
-    SELF_CHECK: 'self-check', FREE_RESPONSE: 'free-response', CLOZE: 'cloze', CHOICE: 'choice', MATCH: 'match'
+    SELF_CHECK: 'self-check', FREE_RESPONSE: 'free-response', CLOZE: 'cloze', CHOICE: 'choice', MATCH: 'match', ORDER: 'order',
+    CATEGORIZE: 'categorize'
 };
 const PROMPT_LABELS: Readonly<Record<StepId, string>> = {
     prompt: 'Что увидит ученик', context: 'Вводные слова (необязательно)', reference: 'Что увидит ученик после ответа',
-    answers: '', passage: '', options: '', pairs: '', finish: ''
+    answers: '', passage: '', options: '', pairs: '', items: '', groups: '', finish: ''
 };
 const PROMPT_HINTS: Readonly<Partial<Record<Mechanic, string>>> = {
-    MATCH: 'Необязательно: напишите общую инструкцию. Сами пары вы зададите на следующем шаге.'
+    MATCH: 'Необязательно: напишите общую инструкцию. Сами пары вы зададите на следующем шаге.',
+    ORDER: 'Необязательно: например, «Восстановите порядок шагов». Сами элементы вы зададите на следующем шаге.',
+    CATEGORIZE: 'Необязательно: например, «Распределите слова по частям речи». Группы и элементы вы зададите на следующих шагах.'
 };
 const STEPS_WITH_PROMPT: ReadonlySet<StepId> = new Set<StepId>(['prompt', 'context']);
 
@@ -70,6 +75,8 @@ function stepOwns(step: StepId, key: string): boolean {
         case 'passage': return key === 'passage' || key.startsWith('blank:');
         case 'options': return key === 'options' || key === 'selection' || key.startsWith('option:');
         case 'pairs': return key === 'pairs' || key.startsWith('left:') || key.startsWith('right:');
+        case 'groups': return key === 'categories' || key.startsWith('category:');
+        case 'items': return key === 'items' || key.startsWith('item:') || key.startsWith('assignment:');
         case 'finish': return false;
     }
 }
@@ -77,13 +84,14 @@ function stepOwns(step: StepId, key: string): boolean {
 @Component({
     selector: 'app-exercise-authoring-page',
     imports: [RouterLink, MnemaSelectComponent, HoldToDeleteButtonComponent, MechanicPickerComponent, ExercisePreviewHostComponent,
-        ExerciseSlotEditorComponent, FreeResponseEditorComponent, ClozeEditorComponent, ChoiceEditorComponent, MatchEditorComponent],
+        ExerciseSlotEditorComponent, FreeResponseEditorComponent, ClozeEditorComponent, ChoiceEditorComponent, MatchEditorComponent,
+        OrderEditorComponent, CategoryGroupsEditorComponent, CategorizeItemsEditorComponent],
     templateUrl: './exercise-authoring-page.component.html',
     styleUrl: './exercise-authoring-page.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ExerciseAuthoringPageComponent {
-    /** The catalog drives the tiles, the steps and the demo; the next mechanics (#268) are added there. */
+    /** The catalog drives the tiles, the steps and the demo; a new mechanic is added there. */
     readonly catalog = MECHANIC_CATALOG;
     readonly deck = signal<OwnDeck | null>(null);
     readonly item = signal<ItemDetail | null>(null);
@@ -102,7 +110,7 @@ export class ExerciseAuthoringPageComponent {
     /** Nothing is selected on a new exercise: the page starts with the type choice alone. */
     readonly mechanic = signal<Mechanic | null>(null);
     /** How many steps are open per mechanic. 0 means the type was never chosen; 1 is the preview and the first step. */
-    readonly opened = signal<Readonly<Record<Mechanic, number>>>({ SELF_CHECK: 0, FREE_RESPONSE: 0, CLOZE: 0, CHOICE: 0, MATCH: 0 });
+    readonly opened = signal<Readonly<Record<Mechanic, number>>>(closedSteps());
     readonly pendingSwitch = signal<PendingSwitch | null>(null);
     readonly enabled = signal(true);
     readonly drafts = signal<ExerciseDrafts>(emptyDrafts());
@@ -333,6 +341,8 @@ export class ExerciseAuthoringPageComponent {
     setCloze(draft: ClozeDraft): void { this.setDraft('CLOZE', draft); }
     setChoice(draft: ChoiceDraft): void { this.setDraft('CHOICE', draft); }
     setMatch(draft: MatchDraft): void { this.setDraft('MATCH', draft); }
+    setOrder(draft: OrderDraft): void { this.setDraft('ORDER', draft); }
+    setCategorize(draft: CategorizeDraft): void { this.setDraft('CATEGORIZE', draft); }
 
     setObjectiveMode(value: ObjectiveMode): void {
         this.objectiveMode.set(value);
@@ -490,7 +500,7 @@ export class ExerciseAuthoringPageComponent {
     private openNew(deck: OwnDeck, item: ItemDetail, page: ExercisePage): void {
         this.deck.set(deck); this.item.set(item); this.page.set(page); this.exercise.set(null);
         this.mechanic.set(null); this.pendingSwitch.set(null); this.enabled.set(true); this.drafts.set(emptyDrafts());
-        this.opened.set({ SELF_CHECK: 0, FREE_RESPONSE: 0, CLOZE: 0, CHOICE: 0, MATCH: 0 });
+        this.opened.set(closedSteps());
         this.objectiveMode.set('create'); this.selectedObjectiveId.set(null);
         this.objectiveTitle.set(''); this.titleEdited.set(false);
         this.stepErrors.set({});
@@ -502,7 +512,7 @@ export class ExerciseAuthoringPageComponent {
         this.mechanic.set(detail.type); this.pendingSwitch.set(null); this.enabled.set(detail.enabled);
         this.drafts.set(draftsFromDetail(detail));
         // An existing exercise opens with every relevant step filled in and open: no onboarding, no demo.
-        this.opened.set({ SELF_CHECK: 0, FREE_RESPONSE: 0, CLOZE: 0, CHOICE: 0, MATCH: 0, [detail.type]: catalogEntry(detail.type).steps.length });
+        this.opened.set({ ...closedSteps(), [detail.type]: catalogEntry(detail.type).steps.length });
         this.objectiveMode.set('reuse'); this.selectedObjectiveId.set(detail.objective.objectiveId);
         this.objectiveTitle.set(detail.objective.title); this.titleEdited.set(false);
         this.stepErrors.set({});
@@ -637,6 +647,11 @@ export class ExerciseAuthoringPageComponent {
 
 export function canLeaveExerciseAuthoring(component: ExerciseAuthoringPageComponent): boolean {
     return component.canLeave();
+}
+
+/** Every mechanic starts with no step open; 0 means its type was never chosen. */
+function closedSteps(): Record<Mechanic, number> {
+    return Object.fromEntries(MECHANICS.map(mechanic => [mechanic, 0])) as Record<Mechanic, number>;
 }
 
 function uniqueObjectives(values: readonly ExerciseObjective[]): readonly ExerciseObjective[] {

@@ -86,6 +86,15 @@
             } @else if (step === 'pairs') {
               <app-match-editor [draft]="drafts().MATCH" (draftChange)="setMatch($event)" [context]="slotContext"
                 [errors]="visibleErrors()" [showProblems]="showProblems()" idPrefix="match" />
+            } @else if (step === 'groups') {
+              <app-category-groups-editor [draft]="drafts().CATEGORIZE" (draftChange)="setCategorize($event)" [context]="slotContext"
+                [errors]="visibleErrors()" [showProblems]="showProblems()" idPrefix="categorize-groups" />
+            } @else if (step === 'items' && mechanic() === 'ORDER') {
+              <app-order-editor [draft]="drafts().ORDER" (draftChange)="setOrder($event)" [context]="slotContext"
+                [errors]="visibleErrors()" [showProblems]="showProblems()" idPrefix="order" />
+            } @else if (step === 'items') {
+              <app-categorize-items-editor [draft]="drafts().CATEGORIZE" (draftChange)="setCategorize($event)" [context]="slotContext"
+                [errors]="visibleErrors()" [showProblems]="showProblems()" idPrefix="categorize" />
             } @else if (step === 'finish') {
               @if (fieldErrors()['media']; as error) { <p class="field-error" role="alert">{{ error }}</p> }
               @if (fieldErrors()['capability']; as error) { <p class="field-error" role="alert">{{ error }}</p> }

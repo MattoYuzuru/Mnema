@@ -83,6 +83,26 @@
     </form>
   }
 
+  @if (order(); as content) {
+    <form (submit)="$event.preventDefault(); submit()">
+      <app-order-board [items]="content.items" [sequence]="orderSequence()" [disabled]="busy()"
+        [idPrefix]="idPrefix() + '-order'" (sequenceChange)="setOrder($event)" />
+      <button class="button primary" type="submit" data-submit [disabled]="busy() || blockedReason() !== null"
+              [attr.aria-describedby]="blockedReason() === null ? null : idPrefix() + '-blocked'">
+        {{ busy() ? 'Проверяем…' : 'Проверить порядок' }}</button>
+    </form>
+  }
+
+  @if (categorize(); as content) {
+    <form (submit)="$event.preventDefault(); submit()">
+      <app-categorize-board [categories]="content.categories" [items]="content.items" [assignments]="assignments()"
+        [disabled]="busy()" [idPrefix]="idPrefix() + '-categorize'" (assigned)="assign($event)" />
+      <button class="button primary" type="submit" data-submit [disabled]="busy() || blockedReason() !== null || !categorizeComplete()"
+              [attr.aria-describedby]="blockedReason() === null ? null : idPrefix() + '-blocked'">
+        {{ busy() ? 'Проверяем…' : 'Проверить распределение' }}</button>
+    </form>
+  }
+
   @if (blockedReason(); as reason) {
     <p class="hint blocked" [id]="idPrefix() + '-blocked'" role="status">{{ reason }}</p>
   }

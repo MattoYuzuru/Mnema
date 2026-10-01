@@ -1,8 +1,8 @@
 import {
-    AiRubric, AuthoringBlock, ChoiceOption, ClozeBlankKey, ClozeSegment, ClozeSize, COMPACT_SLOT, ExerciseSpec,
+    AiRubric, AuthoringBlock, Category, ChoiceOption, ClozeBlankKey, ClozeSegment, ClozeSize, COMPACT_SLOT, ExerciseSpec,
     ExerciseSubject, LIMITS, LearnerBlock, LearnerClozeSegment, LearnerContent, MatchingMode, MatchItem, Mechanic, NORMALIZATION_RULES,
-    NormalizationRule, PROMPT_SLOTS, PreviewExercise, REFERENCE_SLOTS, ResponseInput, SLOT_PROFILES, SelectionMode, SlotSpec, authoringSlots,
-    codePointLength, isBlank, mediaBlockCount
+    NormalizationRule, OrderItem, PROMPT_SLOTS, PreviewExercise, REFERENCE_SLOTS, ResponseInput, SEQUENCE_SLOT, SLOT_PROFILES,
+    SelectionMode, SlotSpec, authoringSlots, categoryLabelKey, codePointLength, distinguishableItems, isBlank, mediaBlockCount
 } from '../../content/exercise/exercise-content.models';
 import { blockProblem, isEntityId, slotProblem } from '../../content/exercise/exercise-content.parse';
 import { NativeDocument } from '../../content/native-document';
@@ -54,12 +54,30 @@ export interface MatchSideDraft { readonly itemId: string; readonly blocks: read
 export interface MatchPairDraft { readonly pairId: string; readonly left: MatchSideDraft; readonly right: MatchSideDraft; }
 export interface MatchDraft { readonly prompt: readonly AuthoringBlock[]; readonly pairs: readonly MatchPairDraft[]; }
 
+/** One ORDER item. The authored list order IS the answer key: nothing about the sequence is inferred. */
+export interface OrderItemDraft { readonly itemId: string; readonly blocks: readonly AuthoringBlock[]; }
+export interface OrderDraft { readonly prompt: readonly AuthoringBlock[]; readonly items: readonly OrderItemDraft[]; }
+export interface CategoryDraft { readonly categoryId: string; readonly label: string; }
+/** `categoryId` is null until the author picks a group; it can never name a group that was removed. */
+export interface CategorizeItemDraft {
+    readonly itemId: string;
+    readonly blocks: readonly AuthoringBlock[];
+    readonly categoryId: string | null;
+}
+export interface CategorizeDraft {
+    readonly prompt: readonly AuthoringBlock[];
+    readonly categories: readonly CategoryDraft[];
+    readonly items: readonly CategorizeItemDraft[];
+}
+
 export interface ExerciseDrafts {
     readonly SELF_CHECK: SelfCheckDraft;
     readonly FREE_RESPONSE: FreeResponseDraft;
     readonly CLOZE: ClozeDraft;
     readonly CHOICE: ChoiceDraft;
     readonly MATCH: MatchDraft;
+    readonly ORDER: OrderDraft;
+    readonly CATEGORIZE: CategorizeDraft;
 }
 
 /** What slot editors and validation need to know about the material the exercise is attached to. */
@@ -90,13 +108,23 @@ export function newPair(): MatchPairDraft {
     return { pairId: newId(), left: { itemId: newId(), blocks: [textBlock()] }, right: { itemId: newId(), blocks: [textBlock()] } };
 }
 
+export function newOrderItem(text = ''): OrderItemDraft { return { itemId: newId(), blocks: [textBlock(text)] }; }
+
+export function newCategory(label = ''): CategoryDraft { return { categoryId: newId(), label }; }
+
+export function newCategorizeItem(categoryId: string | null = null): CategorizeItemDraft {
+    return { itemId: newId(), blocks: [textBlock()], categoryId };
+}
+
 export function emptyDrafts(): ExerciseDrafts {
     return {
         SELF_CHECK: { prompt: [textBlock()], reference: [textBlock()] },
         FREE_RESPONSE: { prompt: [textBlock()], reference: [], answer: newAnswer(), responseInput: 'TEXT', aiRubric: null },
         CLOZE: { prompt: [], texts: [''], blanks: [] },
         CHOICE: { prompt: [textBlock()], selectionMode: 'SINGLE', options: [newOption(), newOption()], correctIds: [] },
-        MATCH: { prompt: [], pairs: [newPair(), newPair()] }
+        MATCH: { prompt: [], pairs: [newPair(), newPair()] },
+        ORDER: { prompt: [], items: [newOrderItem(), newOrderItem()] },
+        CATEGORIZE: { prompt: [], categories: [newCategory(), newCategory()], items: [newCategorizeItem(), newCategorizeItem()] }
     };
 }
 
@@ -137,6 +165,12 @@ export function draftsFromDetail(detail: ExerciseDetail): ExerciseDrafts {
             pairId: newId(), left,
             right: detail.content.right.find(item => item.itemId === detail.answerKey.pairs
                 .find(pair => pair.leftId === left.itemId)?.rightId) ?? detail.content.right[index] })) } };
+        case 'ORDER': return { ...drafts, ORDER: { prompt: detail.content.prompt,
+            // The key is the authored order; list it in that order whatever order the content array has.
+            items: detail.answerKey.sequence.flatMap(itemId => detail.content.items.filter(item => item.itemId === itemId)) } };
+        case 'CATEGORIZE': return { ...drafts, CATEGORIZE: { prompt: detail.content.prompt, categories: detail.content.categories,
+            items: detail.content.items.map(item => ({ ...item, categoryId: detail.answerKey.assignments
+                .find(assignment => assignment.itemId === item.itemId)?.categoryId ?? null })) } };
     }
 }
 
@@ -190,6 +224,22 @@ export function buildSpec(type: Mechanic, drafts: ExerciseDrafts, subject: Exerc
             return { ...base, type, content: { prompt: draft.prompt, left, right },
                 answerKey: { kind: 'MATCH', pairs: draft.pairs.map(pair => ({ leftId: pair.left.itemId, rightId: pair.right.itemId })) },
                 evaluatorPolicy: { id: 'deterministic-match', version: '1' } };
+        }
+        case 'ORDER': {
+            const draft = drafts.ORDER;
+            const items: readonly OrderItem[] = draft.items;
+            return { ...base, type, content: { prompt: draft.prompt, items },
+                answerKey: { kind: 'ORDER', sequence: items.map(item => item.itemId) },
+                evaluatorPolicy: { id: 'deterministic-order', version: '1' } };
+        }
+        case 'CATEGORIZE': {
+            const draft = drafts.CATEGORIZE;
+            const categories: readonly Category[] = draft.categories;
+            return { ...base, type, content: { prompt: draft.prompt, categories,
+                items: draft.items.map(item => ({ itemId: item.itemId, blocks: item.blocks })) },
+                answerKey: { kind: 'CATEGORIZE', assignments: draft.items.flatMap(item => item.categoryId === null ? []
+                    : [{ itemId: item.itemId, categoryId: item.categoryId }]) },
+                evaluatorPolicy: { id: 'deterministic-categorize', version: '1' } };
         }
     }
 }
@@ -296,6 +346,42 @@ export function validateDraft(type: Mechanic, drafts: ExerciseDrafts, context: S
             }
             break;
         }
+        case 'ORDER': {
+            const draft = drafts.ORDER;
+            check('prompt', draft.prompt, PROMPT_SLOTS.ORDER);
+            if (draft.items.length < LIMITS.orderItems.min || draft.items.length > LIMITS.orderItems.max) {
+                errors['items'] = `Нужно от ${LIMITS.orderItems.min} до ${LIMITS.orderItems.max} элементов. Если частей больше, разделите упражнение на несколько.`;
+            }
+            draft.items.forEach(item => check(`item:${item.itemId}`, item.blocks, SEQUENCE_SLOT));
+            // Identical tiles are interchangeable, so a key made of copies of one tile asks the learner for nothing.
+            if (errors['items'] === undefined && !draft.items.some(item => errors[`item:${item.itemId}`] !== undefined)
+                && distinguishableItems(draft.items, block => materialText(block, context)) < 2) {
+                errors['items'] = 'Добавьте хотя бы два разных элемента — одинаковые плитки взаимозаменяемы.';
+            }
+            break;
+        }
+        case 'CATEGORIZE': {
+            const draft = drafts.CATEGORIZE;
+            check('prompt', draft.prompt, PROMPT_SLOTS.CATEGORIZE);
+            if (draft.categories.length < LIMITS.categories.min || draft.categories.length > LIMITS.categories.max) {
+                errors['categories'] = `Нужно от ${LIMITS.categories.min} до ${LIMITS.categories.max} групп.`;
+            }
+            const seen = new Set<string>();
+            for (const category of draft.categories) {
+                const message = categoryProblem(category, seen);
+                if (message !== null) errors[`category:${category.categoryId}`] = message;
+            }
+            if (draft.items.length < LIMITS.categorizeItems.min || draft.items.length > LIMITS.categorizeItems.max) {
+                errors['items'] = `Нужно от ${LIMITS.categorizeItems.min} до ${LIMITS.categorizeItems.max} элементов. Если их больше, разделите упражнение на несколько.`;
+            }
+            for (const item of draft.items) {
+                check(`item:${item.itemId}`, item.blocks, COMPACT_SLOT);
+                if (item.categoryId === null || !draft.categories.some(category => category.categoryId === item.categoryId)) {
+                    errors[`assignment:${item.itemId}`] = 'Выберите группу для этого элемента.';
+                }
+            }
+            break;
+        }
     }
     const spec = buildSpec(type, drafts, { memberKey: context.memberKey, itemRevisionId: context.itemRevisionId }, true);
     const slots = authoringSlots(spec);
@@ -311,6 +397,18 @@ export function validateDraft(type: Mechanic, drafts: ExerciseDrafts, context: S
         kinds.set(block.assetId, block.kind);
     }
     return errors;
+}
+
+/** A group label is short plain text and unique after trim and case folding; `seen` collects the folded labels so far. */
+function categoryProblem(category: CategoryDraft, seen: Set<string>): string | null {
+    if (categoryLabelKey(category.label) === '') return 'Назовите группу: в названии должен быть хотя бы один видимый знак.';
+    if (category.label.length > LIMITS.categories.label) {
+        return `Название группы не длиннее ${LIMITS.categories.label} знаков (сейчас ${category.label.length}).`;
+    }
+    const key = categoryLabelKey(category.label);
+    if (seen.has(key)) return 'Это название уже занято другой группой: у групп должны быть разные названия.';
+    seen.add(key);
+    return null;
 }
 
 function blankSizeMessage(blank: ClozeBlankDraft): string | null {
@@ -341,9 +439,13 @@ export function choiceSelectionProblem(draft: ChoiceDraft): string | null {
 
 const ID_KEYS: ReadonlySet<string> = new Set(['id', 'optionId', 'itemId', 'pairId', 'blankId']);
 
-/** Draft structure without the random ids that `emptyDrafts` generates on every call. */
+/**
+ * Draft structure without the random ids that `emptyDrafts` generates on every call. A group assignment keeps
+ * its meaning (assigned or not) because choosing a group is an authored value, only the random id is dropped.
+ */
 function shape(value: unknown): string {
-    return JSON.stringify(value, (key, entry: unknown) => ID_KEYS.has(key) ? undefined : entry);
+    return JSON.stringify(value, (key, entry: unknown) => key === 'categoryId' ? (entry === null ? null : 'assigned')
+        : ID_KEYS.has(key) ? undefined : entry);
 }
 
 /** True while the draft of this mechanic still equals a freshly created one: nothing authored yet. */
@@ -380,6 +482,15 @@ export function mechanicSpecificData(type: Mechanic, drafts: ExerciseDrafts): re
         case 'MATCH':
             if (drafts.MATCH.pairs.some(pair => filled(pair.left.blocks) || filled(pair.right.blocks))) found.push('пары');
             break;
+        case 'ORDER':
+            if (drafts.ORDER.items.some(item => filled(item.blocks))) found.push('элементы и их порядок');
+            break;
+        case 'CATEGORIZE':
+            if (drafts.CATEGORIZE.categories.some(category => !isBlank(category.label))
+                || drafts.CATEGORIZE.items.some(item => filled(item.blocks) || item.categoryId !== null)) {
+                found.push('группы, элементы и их распределение');
+            }
+            break;
     }
     return found;
 }
@@ -401,7 +512,9 @@ export const PREVIEW_PLACEHOLDERS = {
     passage: 'Добавьте текст и сделайте в нём пропуски',
     firstOption: 'Добавьте вариант',
     nextOption: 'Добавьте ещё один вариант',
-    item: 'Добавьте элемент пары'
+    item: 'Добавьте элемент пары',
+    orderItem: 'Добавьте элемент',
+    group: 'Название группы'
 } as const;
 
 export interface LearnerProjection {
@@ -488,6 +601,29 @@ export function learnerContent(exercise: PreviewExercise, projection: LearnerPro
             const rotated = right.length > 1 ? [...right.slice(1), right[0]] : right;
             return { type: exercise.type, content: { prompt: promptBlocks(exercise.content.prompt, projection, false),
                 left: side(exercise.content.left), right: rotated } };
+        }
+        case 'ORDER': {
+            const items = exercise.content.items.map(item => {
+                const blocks = learnerBlocks(item.blocks, context, revealed);
+                return { itemId: item.itemId, blocks: blocks.length > 0 ? blocks
+                    : placeholderText(placeholders ? PREVIEW_PLACEHOLDERS.orderItem : 'Пустой элемент') };
+            });
+            // Rotate by one so the preview never opens in the authored (correct) order; the real order is Study's secure shuffle.
+            const shown = items.length > 1 ? [...items.slice(1), items[0]] : items;
+            return { type: exercise.type, content: { prompt: promptBlocks(exercise.content.prompt, projection, false), items: shown } };
+        }
+        case 'CATEGORIZE': {
+            const items = exercise.content.items.map(item => {
+                const blocks = learnerBlocks(item.blocks, context, revealed);
+                return { itemId: item.itemId, blocks: blocks.length > 0 ? blocks
+                    : placeholderText(placeholders ? PREVIEW_PLACEHOLDERS.item : 'Пустой элемент') };
+            });
+            const shown = items.length > 1 ? [...items.slice(1), items[0]] : items;
+            return { type: exercise.type, content: { prompt: promptBlocks(exercise.content.prompt, projection, false),
+                categories: exercise.content.categories.map((category, index) => ({ categoryId: category.categoryId,
+                    label: isBlank(category.label) ? (placeholders ? `${PREVIEW_PLACEHOLDERS.group} ${index + 1}` : `Группа ${index + 1}`)
+                        : category.label })),
+                items: shown } };
         }
     }
 }

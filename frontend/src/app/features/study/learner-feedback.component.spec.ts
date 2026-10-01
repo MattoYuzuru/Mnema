@@ -56,4 +56,37 @@ describe('LearnerFeedbackComponent', () => {
         const retry = create(learner('match'), { result: 'PARTIAL', appliedRules: ['PAIR_RETRY'], pairs: [] }, null);
         expect(retry.textContent).toContain('Все пары найдены');
     });
+
+    it('shows the correct sequence and a mark for every position of an ORDER answer, with a text mark besides the glyph', () => {
+        const root = create(learner('order'), feedback('order'), null);
+        const marks = [...root.querySelectorAll('.positions li')];
+        expect(marks.length).toBe(6);
+        expect(marks.map(row => row.classList.contains('is-wrong'))).toEqual([false, false, false, false, true, true]);
+        expect(marks[0].querySelector('.mark')?.textContent).toContain('Верно');
+        expect(marks[4].querySelector('.mark')?.textContent).toContain('Не на своём месте');
+        expect(marks[1].textContent).toContain('очень');
+        const correct = [...root.querySelectorAll('.correct-sequence li')].map(row => row.textContent?.replace(/\s+/g, ' ').trim());
+        expect(correct.length).toBe(6);
+        expect(correct[0]).toBe('Это');
+        expect(correct[4]).toContain('for (int i = 0; i < n; i++) {');
+        expect(root.querySelector('.correct-sequence img, .correct-sequence app-learner-media')).not.toBeNull();   // the image frame is shown again
+    });
+
+    it('treats swapped identical tiles as right: nothing is marked wrong when the server says so', () => {
+        const root = create(learner('order'), feedback('orderEquivalent'), null);
+        expect(root.querySelectorAll('.positions li.is-wrong').length).toBe(0);
+    });
+
+    it('shows every CATEGORIZE item with the chosen and the correct group, naming the correct one only for a mistake', () => {
+        const root = create(learner('categorize'), feedback('categorize'), null);
+        const rows = [...root.querySelectorAll('.pair-feedback li')];
+        expect(rows.length).toBe(4);
+        const wrong = rows.filter(row => row.classList.contains('is-wrong'));
+        expect(wrong.length).toBe(1);
+        expect(wrong[0].textContent).toContain('река');
+        expect(wrong[0].textContent).toContain('Ваша группа: Наречие');
+        expect(wrong[0].textContent).toContain('Правильная группа: Существительное');
+        expect(rows.filter(row => row.textContent?.includes('Правильная группа')).length).toBe(1);
+        expect(rows.some(row => row.querySelector('app-learner-media'))).toBeTrue();   // the audio item can be heard again
+    });
 });

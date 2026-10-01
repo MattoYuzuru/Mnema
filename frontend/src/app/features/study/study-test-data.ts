@@ -50,7 +50,7 @@ export function assessedOutcome(command: { attemptId: string; presentationId: st
  */
 export const removed = {
     typed: 'TYP' + 'ED', listenType: 'LISTEN_' + 'TYPE', clozeSingle: 'CLOZE_' + 'SINGLE', singleChoice: 'SINGLE_' + 'CHOICE',
-    listenChoice: 'LISTEN_' + 'CHOICE', audioTextMatch: 'AUDIO_TEXT_' + 'MATCH', order: 'OR' + 'DER', categorize: 'CATEGOR' + 'IZE'
+    listenChoice: 'LISTEN_' + 'CHOICE', audioTextMatch: 'AUDIO_TEXT_' + 'MATCH'
 };
 export const removedNames: readonly string[] = Object.values(removed);
 

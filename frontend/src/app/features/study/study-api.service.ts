@@ -307,7 +307,8 @@ function parseSession(value: unknown, expectedDeck: string, expectedSession?: st
 
 const EVALUATORS: Readonly<Record<Mechanic, readonly string[]>> = {
     SELF_CHECK: ['self-check'], FREE_RESPONSE: ['deterministic-text', 'ai-semantic'], CLOZE: ['deterministic-cloze'],
-    CHOICE: ['deterministic-choice'], MATCH: ['deterministic-match']
+    CHOICE: ['deterministic-choice'], MATCH: ['deterministic-match'], ORDER: ['deterministic-order'],
+    CATEGORIZE: ['deterministic-categorize']
 };
 
 function parsePresentation(value: unknown): StudyPresentation {

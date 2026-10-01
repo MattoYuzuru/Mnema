@@ -84,3 +84,43 @@ export const DEMO_MATCH: PreviewExercise = {
     answerKey: { kind: 'MATCH', pairs: [31, 32, 33, 34].map(left => ({ leftId: id(left), rightId: id(left + 10) })) },
     evaluatorPolicy: { id: 'deterministic-match', version: '1' }
 };
+
+export const DEMO_ORDER: PreviewExercise = {
+    type: 'ORDER', schemaVersion: 2,
+    content: {
+        prompt: [text('Расположите по порядку: от самых редких колебаний звуковой волны к самым частым.')],
+        items: [
+            { itemId: id(51), blocks: [{ kind: 'IMAGE', assetId: DEMO_ASSETS.waveSparse, alt: 'Схема звуковой волны: колебания редкие' }] },
+            { itemId: id(52), blocks: [text('Низкий звук'), { kind: 'AUDIO', assetId: DEMO_ASSETS.toneLow, title: 'Низкий тон' }] },
+            { itemId: id(53), blocks: [text('Высокий звук'), { kind: 'AUDIO', assetId: DEMO_ASSETS.toneHigh, title: 'Высокий тон' }] },
+            { itemId: id(54), blocks: [{ kind: 'IMAGE', assetId: DEMO_ASSETS.waveDense, alt: 'Схема звуковой волны: колебания очень частые' }] }
+        ]
+    },
+    answerKey: { kind: 'ORDER', sequence: [51, 52, 53, 54].map(id) },
+    evaluatorPolicy: { id: 'deterministic-order', version: '1' }
+};
+
+export const DEMO_CATEGORIZE: PreviewExercise = {
+    type: 'CATEGORIZE', schemaVersion: 2,
+    content: {
+        prompt: [text('Распределите слова, звуки и схемы по группам. Одна группа может остаться пустой.')],
+        categories: [
+            { categoryId: id(61), label: 'Низкий звук' },
+            { categoryId: id(62), label: 'Высокий звук' },
+            { categoryId: id(63), label: 'Тишина' }
+        ],
+        items: [
+            { itemId: id(71), blocks: [{ kind: 'AUDIO', assetId: DEMO_ASSETS.toneLow, title: 'Низкий тон' }] },
+            { itemId: id(72), blocks: [{ kind: 'AUDIO', assetId: DEMO_ASSETS.toneHigh, title: 'Высокий тон' }] },
+            { itemId: id(73), blocks: [text('Гул')] },
+            { itemId: id(74), blocks: [text('Писк')] },
+            { itemId: id(75), blocks: [{ kind: 'IMAGE', assetId: DEMO_ASSETS.waveSparse, alt: 'Схема звуковой волны: колебания редкие' }] },
+            { itemId: id(76), blocks: [{ kind: 'IMAGE', assetId: DEMO_ASSETS.waveDense, alt: 'Схема звуковой волны: колебания частые' }] }
+        ]
+    },
+    answerKey: {
+        kind: 'CATEGORIZE',
+        assignments: [[71, 61], [72, 62], [73, 61], [74, 62], [75, 61], [76, 62]].map(([item, group]) => ({ itemId: id(item), categoryId: id(group) }))
+    },
+    evaluatorPolicy: { id: 'deterministic-categorize', version: '1' }
+};

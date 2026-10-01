@@ -1,4 +1,4 @@
-// Real-browser baseline of the five exercise mechanics: create -> save -> reopen -> study.
+// Real-browser baseline of the seven exercise mechanics: create -> preview -> save -> reopen -> study.
 // Runs only with `--authoring --media --mechanics`, after the base authoring flow, through the real Angular UI on a
 // desktop viewport with real CDP keyboard/mouse input where the interaction is natural. Node22 built-ins only.
 //
@@ -55,6 +55,26 @@ const MATCH = {
   objective: 'Подбор пар: слова и звук'
 };
 const FREE_RESPONSE_PROMPT = 'Прослушайте запись и напишите ответ';
+// ORDER: a sentence with punctuation and a repeated word (word helper), a code block and an image frame.
+const ORDER = {
+  instruction: 'Восстановите предложение, код и кадр результата.',
+  sentence: 'Это очень очень важно, правда?',
+  words: ['Это', 'очень', 'очень', 'важно,', 'правда?'],
+  code: 'for (int i = 0; i < n; i++) {\n    sum += i;\n}',
+  codeName: 'for (int i = 0; i < n; i++) { sum += i; }',   // the accessible name collapses white space
+  imageAlt: 'Кадр: готовый результат',
+  objective: 'Порядок: предложение, код и кадр'
+};
+// CATEGORIZE: three real groups (the last one stays an empty distractor), a text item set and an uploaded audio item.
+// A fourth group is created only to be removed again, which must move its item and leave nothing dangling.
+const CATEGORIZE = {
+  instruction: 'Распределите слова и звук по частям речи.',
+  groups: ['Существительное', 'Глагол', 'Не относится'],
+  spare: 'Лишняя группа',
+  texts: [{ text: 'дом', group: 'Существительное' }, { text: 'бежать', group: 'Глагол' }, { text: 'река', group: 'Существительное' }],
+  audioGroup: 'Глагол',
+  objective: 'Распределение слов по частям речи'
+};
 
 export async function runMechanics(ctx) {
   const { tab, config, record, SafeFailure, until, exists, bodyIncludes, sanitizedLocation } = ctx;
@@ -159,8 +179,9 @@ export async function runMechanics(ctx) {
     if (!row) return null;
     return { ready: row.querySelector('.media-status')?.textContent?.includes('Готов к просмотру') === true,
       error: row.querySelector('.media-status[role="alert"]')?.textContent.trim() ?? null };`, slot, name);
-  async function uploadIntoSlot(slot, name, label, upload) {
-    await realClick({ ...slot, css: 'button[data-add]', includes: 'Добавить аудио' });
+  const MEDIA_KIND = { audio: { button: 'Добавить аудио', block: 'Аудио' }, image: { button: 'Добавить изображение', block: 'Изображение' } };
+  async function uploadIntoSlot(slot, name, label, upload, kind = 'audio') {
+    await realClick({ ...slot, css: 'button[data-add]', includes: MEDIA_KIND[kind].button });
     await waitFor(() => has({ ...slot, css: 'app-native-media-upload .media-drop' }), label + ': picker did not render');
     await upload();
     await waitFor(async () => {
@@ -172,7 +193,7 @@ export async function runMechanics(ctx) {
       const choose = [...(row?.querySelectorAll('button') ?? [])].find(b => b.textContent.trim() === 'Добавить в упражнение');
       if (!(choose instanceof HTMLButtonElement)) return false; choose.click(); return true;`, slot, name),
     label + ': READY file could not be attached to the slot');
-    await waitFor(async () => (await slotBlocks(slot)).some(block => block.kind === 'Аудио'), label + ' block did not enter the slot');
+    await waitFor(async () => (await slotBlocks(slot)).some(block => block.kind === MEDIA_KIND[kind].block), label + ' block did not enter the slot');
   }
   const dropAudio = (slot, name) => call(`const drop = find({ ...args[0], css: 'app-native-media-upload .media-drop' })[0];
     if (!(drop instanceof HTMLElement)) return false;
@@ -180,6 +201,21 @@ export async function runMechanics(ctx) {
     const transfer = new DataTransfer(); transfer.items.add(new File([bytes], args[2], { type: 'audio/mpeg' }));
     drop.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer })); return true;`,
   slot, config.mediaClips.audio, name).then(done => need(done, 'synthetic audio file could not be dropped on the slot picker'));
+  // A generated PNG, like the base flow's: no external fixture file is needed for an image item.
+  const dropImage = (slot, name) => call(`const drop = find({ ...args[0], css: 'app-native-media-upload .media-drop' })[0];
+    if (!(drop instanceof HTMLElement)) return false;
+    return (async () => {
+      const canvas = document.createElement('canvas'); canvas.width = 96; canvas.height = 72;
+      const drawing = canvas.getContext('2d');
+      drawing.fillStyle = '#eee8dc'; drawing.fillRect(0, 0, 96, 72); drawing.fillStyle = '#281378'; drawing.fillRect(12, 18, 72, 36);
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+      if (!blob) return false;
+      const transfer = new DataTransfer(); transfer.items.add(new File([blob], args[1], { type: 'image/png' }));
+      drop.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer })); return true;
+    })();`, slot, name).then(done => need(done, 'generated PNG could not be dropped on the slot picker'));
+  /** An upload leaves the slot's empty text block in front of the media block; an item that is only media drops it. */
+  const dropEmptyTextBlock = async (slot, label) => need(await call(`const b = find({ ...args[0], css: '[data-block="0"] button[aria-label^="Удалить блок"]' })[0];
+    if (!(b instanceof HTMLButtonElement)) return false; b.click(); return true;`, slot), label + ': empty text block could not be removed');
   const slotButton = (slot, label) => call(`const b = find({ ...args[0], css: 'button', text: args[1] })[0];
     if (!(b instanceof HTMLButtonElement) || b.disabled) return false;
     b.scrollIntoView({ block: 'center', behavior: 'instant' }); b.focus(); return document.activeElement === b;`, slot, label);
@@ -275,7 +311,7 @@ export async function runMechanics(ctx) {
     need(!(await has({ css: '#exercise-preview-anchor' })) && !(await has({ css: 'section.step' })),
       'the initial state must show the type choice alone');
     need(!(await has({ css: 'aside, .preview-column, .material-card' })), 'a side column or the material block is back');
-    need((await count({ css: 'label.tile' })) === 5, 'five type tiles expected');
+    need((await count({ css: 'label.tile' })) === 7, 'seven type tiles expected');
     need(/^К упражнениям · \d+$/.test(await text({ css: '.jump-link' }) ?? ''), 'the anchor to the existing exercises is missing');
     await ctx.saveFullScreenshot('editor-initial-1440.png', tab);
 
@@ -603,7 +639,202 @@ export async function runMechanics(ctx) {
   record('mechanics_recording_ui_synthetic_microphone', recording);
 
   // =================================================================================================================
-  // Study: one standard session (5 new objectives) presents every authored mechanic; dispatch by what is shown.
+  // 7. ORDER and CATEGORIZE: board helpers shared by the author preview and Study (real keyboard, no drag)
+  // =================================================================================================================
+  const itemSection = (index, section = 'section[data-item]') => ({ within: root + ' ' + section, withinIndex: index });
+  /** Opens the option list of an app-mnema-select with the keyboard and picks `optionIndex` (0 is the placeholder). */
+  async function chooseOption(spec, optionIndex, label) {
+    await focusEl(spec);
+    await keys.ArrowDown();
+    await waitFor(() => has({ css: '[role="option"]' }), label + ': the option list did not open');
+    for (let step = 0; step < optionIndex; step++) await keys.ArrowDown();
+    await keys.Enter();
+  }
+  const orderNames = scope => call(`return [...document.querySelectorAll(args[0] + ' li.order-item')].map(row =>
+    (row.querySelector('[data-move="up"]')?.getAttribute('aria-label') ?? '').replace(/^[^:]+: /, ''));`, scope);
+  /** Rearranges an ORDER board with the focused up arrows only (keyboard Space); identical names are interchangeable. */
+  async function arrangeOrder(scope, desired) {
+    for (let target = 0; target < desired.length; target++) {
+      let current = await orderNames(scope);
+      let from = current.findIndex((name, index) => index >= target && name === desired[target]);
+      need(from >= 0, 'the order board does not offer «' + desired[target] + '»; it shows: ' + current.join(' | '));
+      while (from > target) {
+        const before = current.join('|');
+        await activate({ css: '[data-move="up"]', within: scope + ' li.order-item', withinIndex: from });
+        await waitFor(async () => (await orderNames(scope)).join('|') !== before, 'moving «' + desired[target] + '» up had no effect');
+        current = await orderNames(scope);
+        from -= 1;
+      }
+    }
+  }
+  const poolNames = scope => call(`return [...document.querySelectorAll(args[0] + ' [data-pool] [data-select]')]
+    .map(button => button.getAttribute('aria-label').replace(/^Выбрать: /, ''));`, scope);
+  /** Assigns every unassigned item with select-then-group keyboard presses; `groupOf(name)` is the target group label. */
+  async function assignAll(scope, groupOf) {
+    for (let guard = 0; guard < 20; guard++) {
+      const pool = await poolNames(scope);
+      if (pool.length === 0) return;
+      const group = groupOf(pool[0]);
+      await activate({ css: '[data-pool] [data-select]', within: scope });
+      await activate({ css: 'button[data-place]', within: scope + ' section[data-category]', labelIncludes: '«' + group + '»' });
+      await waitFor(async () => (await poolNames(scope)).length === pool.length - 1, '«' + pool[0] + '» was not placed into «' + group + '»');
+    }
+    throw new UiFailure('the unassigned list never emptied');
+  }
+
+  // =================================================================================================================
+  // 8. ORDER: word helper, code, image frame, keyboard-only preview, save, reopen
+  // =================================================================================================================
+  authored.ORDER = await scenario('mechanics_order_authoring', async () => {
+    await openEditor('ORDER');
+    // The tile opens a playable demo (local audio and images); it is solved with the arrow buttons only.
+    await waitFor(() => has({ css: '#exercise-preview-anchor [data-mode="DEMO"]' }), 'the ORDER demo did not open');
+    const demoSequence = ['Схема звуковой волны: колебания редкие', 'Низкий звук', 'Высокий звук', 'Схема звуковой волны: колебания очень частые'];
+    await arrangeOrder('#exercise-preview-anchor', demoSequence);
+    await submitKey({ css: '#exercise-preview-anchor button[data-submit]' });
+    await waitFor(() => has({ css: '#preview-result-title' }), 'the ORDER demo verdict did not arrive', 20_000);
+    need((await text({ css: '#preview-result-title' })) === 'Верно' && (await text({ css: '#exercise-preview-anchor .result' })).includes('Пример завершён'),
+      'the ORDER demo was not solved by its own key');
+    await realClick({ css: '#exercise-preview-anchor button[data-restart]' });
+    await realClick({ css: 'button[data-add]', within: root, slot: 0, includes: '+ Текст' });
+    await typeInto({ css: '#order-prompt-text-0' }, ORDER.instruction);
+    await advance('items');
+    const rules = (await text({ css: '#order-rules' })).replace(/\s+/g, ' ');
+    need(rules.includes('Каждый сегмент используется ровно один раз') && rules.includes('другие порядки, даже осмысленные, Mnema не определяет'),
+      'the ORDER hint does not explain the single use of every segment and the undetected alternative orders');
+    // «Разбить на слова»: punctuation stays with its word and the repeated word stays two separate items.
+    await realClick({ css: '#step-items details > summary' });
+    await waitFor(() => has({ css: '#order-source' }), 'the splitting helper did not open');
+    await typeInto({ css: '#order-source' }, ORDER.sentence);
+    await realClick({ css: '[data-split-words]' });
+    await waitFor(async () => (await count({ css: root + ' section[data-item]' })) === ORDER.words.length, 'the word helper did not create the items');
+    const words = await call(`return [...document.querySelectorAll(args[0] + ' section[data-item]')].map(section => section.querySelector('textarea')?.value);`, root);
+    need(JSON.stringify(words) === JSON.stringify(ORDER.words), 'the word helper produced «' + words.join(' | ') + '»');
+    need(await has({ css: root + ' [data-duplicate]' }), 'identical items are not marked as interchangeable');
+    // A code block and an image frame are ordinary items.
+    for (let index = 0; index < 2; index++) await realClick({ css: root + ' [data-add-item]' });
+    await waitFor(async () => (await count({ css: root + ' section[data-item]' })) === ORDER.words.length + 2, 'two more items were not added');
+    await typeInto({ ...itemSection(ORDER.words.length), css: 'textarea' }, ORDER.code);
+    const frame = { ...itemSection(ORDER.words.length + 1), slot: 0 };
+    await uploadIntoSlot(frame, 'order-frame.png', 'order image', () => dropImage(frame, 'order-frame.png'), 'image');
+    await dropEmptyTextBlock(frame, 'order image item');
+    await waitFor(async () => JSON.stringify((await slotBlocks(frame)).map(block => block.kind)) === '["Изображение"]', 'image-only item not formed');
+    await typeInto({ ...frame, css: 'input[type="text"]' }, ORDER.imageAlt);
+    await advance('finish');
+    // The finished exercise is playable in the preview; the right order is built with the arrow buttons only.
+    await waitFor(() => has({ css: '#exercise-preview-anchor [data-mode="AUTHOR_READY"]' }), 'the finished ORDER did not become playable');
+    const previewBefore = wire.previews;
+    const desired = [...ORDER.words, ORDER.codeName, ORDER.imageAlt];
+    need(JSON.stringify(await orderNames('#exercise-preview-anchor')) !== JSON.stringify(desired), 'the preview opened in the authored order');
+    await arrangeOrder('#exercise-preview-anchor', desired);
+    await submitKey({ css: '#exercise-preview-anchor button[data-submit]' });
+    await waitFor(() => has({ css: '#preview-result-title' }), 'the ORDER preview verdict did not arrive from the preview endpoint', 20_000);
+    need((await text({ css: '#preview-result-title' })) === 'Верно', 'the authored order was not accepted by the preview evaluator');
+    need(wire.previews === previewBefore + 1, 'the ORDER preview must use exactly one preview request');
+    await realClick({ css: '#exercise-preview-anchor button[data-restart]' });
+    await setObjective(ORDER.objective);
+    editPaths.ORDER = await saveNewExercise('ORDER');
+    await reopen('ORDER');
+    const restored = await call(`return {
+      mechanic: document.querySelector('input[name="mechanic"][value="ORDER"]')?.checked === true,
+      items: [...document.querySelectorAll(args[0] + ' section[data-item]')].map(section => ({
+        text: section.querySelector('textarea')?.value ?? null, alt: section.querySelector('input[type="text"]')?.value ?? null,
+        file: section.textContent.includes('Файл выбран') })),
+      mode: document.querySelector('app-exercise-preview-host .preview')?.getAttribute('data-mode') ?? null };`, root);
+    need(restored.mechanic && restored.items.length === ORDER.words.length + 2, 'ORDER items not restored');
+    need(JSON.stringify(restored.items.slice(0, ORDER.words.length).map(item => item.text)) === JSON.stringify(ORDER.words), 'ORDER words not restored in order');
+    need(restored.items[ORDER.words.length].text === ORDER.code, 'ORDER code block not restored verbatim');
+    need(restored.items.at(-1).alt === ORDER.imageAlt && restored.items.at(-1).file, 'ORDER image frame not restored');
+    need(restored.mode === 'AUTHOR_READY', 'a reopened ORDER must preview itself, not a demo');
+    await ctx.saveFullScreenshot('mechanics-edit-order-1440.png', tab);
+    return { saved: true, reopened: true, wordHelperKeptPunctuation: true, repeatedWordsSeparateItems: true, codeKeptVerbatim: true,
+      imageFrame: true, previewPlayedWithKeyboard: true, previewEndpointOnly: true, valuesRestored: true };
+  });
+
+  // =================================================================================================================
+  // 9. CATEGORIZE: groups, items with group selects, group deletion with reassignment, keyboard preview
+  // =================================================================================================================
+  authored.CATEGORIZE = await scenario('mechanics_categorize_authoring', async () => {
+    await openEditor('CATEGORIZE');
+    // The tile opens a playable demo; putting everything into one group shows the per-item verdict of the preview endpoint.
+    await waitFor(() => has({ css: '#exercise-preview-anchor [data-mode="DEMO"]' }), 'the CATEGORIZE demo did not open');
+    await assignAll('#exercise-preview-anchor', () => 'Низкий звук');
+    await submitKey({ css: '#exercise-preview-anchor button[data-submit]' });
+    await waitFor(() => has({ css: '#preview-result-title' }), 'the CATEGORIZE demo verdict did not arrive', 20_000);
+    need((await text({ css: '#preview-result-title' })) === 'Частично' && (await count({ css: '#exercise-preview-anchor .pair-feedback li' })) === 6,
+      'the CATEGORIZE demo did not return a per-item verdict');
+    await realClick({ css: '#exercise-preview-anchor button[data-restart]' });
+    await realClick({ css: 'button[data-add]', within: root, slot: 0, includes: '+ Текст' });
+    await typeInto({ css: '#categorize-prompt-text-0' }, CATEGORIZE.instruction);
+    await advance('groups');
+    for (let index = 0; index < 2; index++) await realClick({ css: root + ' [data-add-category]' });
+    await waitFor(async () => (await count({ css: root + ' section[data-category]' })) === 4, 'groups were not added');
+    for (const [index, label] of [...CATEGORIZE.groups, CATEGORIZE.spare].entries()) {
+      await typeInto({ ...itemSection(index, 'section[data-category]'), css: 'input[type="text"]' }, label);
+    }
+    await advance('items');
+    for (let index = 0; index < 2; index++) await realClick({ css: root + ' [data-add-item]' });
+    await waitFor(async () => (await count({ css: root + ' section[data-item]' })) === 4, 'items were not added');
+    for (const [index, entry] of CATEGORIZE.texts.entries()) await typeInto({ ...itemSection(index), css: 'textarea' }, entry.text);
+    const audio = { ...itemSection(3), slot: 0 };
+    await uploadIntoSlot(audio, 'categorize-audio.mp3', 'categorize audio', () => dropAudio(audio, 'categorize-audio.mp3'));
+    await dropEmptyTextBlock(audio, 'categorize audio item');
+    await waitFor(async () => JSON.stringify((await slotBlocks(audio)).map(block => block.kind)) === '["Аудио"]', 'audio-only item not formed');
+    await typeInto({ ...audio, css: 'input[type="text"]' }, 'Запись: читать');
+    // Every item gets its group with the keyboard; «река» first goes to the temporary group.
+    const option = group => [...CATEGORIZE.groups, CATEGORIZE.spare].indexOf(group) + 1;
+    const groupSelect = index => ({ ...itemSection(index), css: '[role="combobox"]' });
+    for (const [index, entry] of CATEGORIZE.texts.entries()) {
+      await chooseOption(groupSelect(index), option(index === 2 ? CATEGORIZE.spare : entry.group), 'group of item ' + (index + 1));
+    }
+    await chooseOption(groupSelect(3), option(CATEGORIZE.audioGroup), 'group of the audio item');
+    await waitFor(async () => (await text(groupSelect(2))) === CATEGORIZE.spare, 'the temporary group was not chosen');
+    // Removing the group that still holds «река» must ask first, then move the item: no dangling id, no lost item.
+    await realClick({ css: 'button[data-remove]', ...itemSection(3, 'section[data-category]') });
+    await waitFor(() => has({ css: root + ' .removal' }), 'removing a group with items did not ask what to do with them');
+    need((await text({ css: root + ' .removal' })).includes('элементов: 1'), 'the removal question does not count the items');
+    need(await count({ css: root + ' section[data-category]' }) === 4, 'the group was removed before the author decided');
+    await chooseOption({ css: '[role="combobox"]', within: root + ' .removal' }, 1, 'reassign target');
+    await realClick({ css: root + ' [data-reassign]' });
+    await waitFor(async () => (await count({ css: root + ' section[data-category]' })) === 3, 'the group was not removed after the reassignment');
+    await waitFor(async () => (await text(groupSelect(2))) === CATEGORIZE.groups[0], 'the item of the removed group did not move to the chosen group');
+    need((await text({ css: root + ' [data-note]' })).includes('перенесены'), 'the removal outcome was not announced');
+    await advance('finish');
+    // Keyboard preview: assign everything correctly and submit.
+    await waitFor(() => has({ css: '#exercise-preview-anchor [data-mode="AUTHOR_READY"]' }), 'the finished CATEGORIZE did not become playable');
+    const previewBefore = wire.previews;
+    const target = name => name.startsWith('Аудио') ? CATEGORIZE.audioGroup : CATEGORIZE.texts.find(entry => entry.text === name).group;
+    await assignAll('#exercise-preview-anchor', target);
+    await submitKey({ css: '#exercise-preview-anchor button[data-submit]' });
+    await waitFor(() => has({ css: '#preview-result-title' }), 'the CATEGORIZE preview verdict did not arrive', 20_000);
+    need((await text({ css: '#preview-result-title' })) === 'Верно', 'the authored assignments were not accepted by the preview evaluator');
+    need(wire.previews === previewBefore + 1, 'the CATEGORIZE preview must use exactly one preview request');
+    await realClick({ css: '#exercise-preview-anchor button[data-restart]' });
+    await setObjective(CATEGORIZE.objective);
+    editPaths.CATEGORIZE = await saveNewExercise('CATEGORIZE');
+    await reopen('CATEGORIZE');
+    const restored = await call(`return {
+      mechanic: document.querySelector('input[name="mechanic"][value="CATEGORIZE"]')?.checked === true,
+      groups: [...document.querySelectorAll(args[0] + ' section[data-category] input[type="text"]')].map(input => input.value),
+      items: [...document.querySelectorAll(args[0] + ' section[data-item]')].map(section => ({
+        group: section.querySelector('[role="combobox"]')?.textContent.trim() ?? null,
+        text: section.querySelector('textarea')?.value ?? null, file: section.textContent.includes('Файл выбран') })),
+      mode: document.querySelector('app-exercise-preview-host .preview')?.getAttribute('data-mode') ?? null };`, root);
+    need(restored.mechanic && JSON.stringify(restored.groups) === JSON.stringify(CATEGORIZE.groups),
+      'CATEGORIZE groups not restored (the empty distractor group must survive): ' + restored.groups.join(' | '));
+    need(restored.items.length === 4, 'CATEGORIZE items not restored');
+    for (const [index, entry] of CATEGORIZE.texts.entries()) {
+      need(restored.items[index].text === entry.text && restored.items[index].group === entry.group, 'CATEGORIZE item ' + (index + 1) + ' not restored with its group');
+    }
+    need(restored.items[3].file && restored.items[3].group === CATEGORIZE.audioGroup, 'CATEGORIZE audio item not restored with its group');
+    need(restored.mode === 'AUTHOR_READY', 'a reopened CATEGORIZE must preview itself, not a demo');
+    await ctx.saveFullScreenshot('mechanics-edit-categorize-1440.png', tab);
+    return { saved: true, reopened: true, groupDeletionAskedAndReassigned: true, emptyDistractorGroupKept: true, uploadedAudioItem: true,
+      previewPlayedWithKeyboard: true, previewEndpointOnly: true, valuesRestored: true };
+  });
+
+  // =================================================================================================================
+  // Study: standard sessions (5 new objectives each) present every authored mechanic; dispatch by what is shown.
   // =================================================================================================================
   const outcomeAfter = async (before, label) => {
     await waitFor(() => Promise.resolve(wire.attempts.length > before), label + ': attempt response not observed');
@@ -787,6 +1018,87 @@ export async function runMechanics(ctx) {
       return { wrongPairFeedback: true, audioPlayDoesNotPair: true, pairChecks: 4, retryNotice: true, result: outcome.result,
         appliedRules: outcome.appliedRules, evidenceClass: outcome.evidenceClass, screenshot390: true, noHorizontalOverflow390: !wide };
     },
+    async ORDER() {
+      const scope = '.study-card';
+      const desired = [...ORDER.words, ORDER.codeName, ORDER.imageAlt];
+      await waitFor(async () => (await count({ css: 'li.order-item', within: scope })) === desired.length, 'ORDER did not present every item');
+      await waitFor(() => call(`const image = document.querySelector('.study-card .order-item img');
+        return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0;`), 'the image frame did not load in the shared renderer', 30_000);
+      const issued = await orderNames(scope);
+      need(JSON.stringify(issued) !== JSON.stringify(desired), 'ORDER was issued in the authored order');
+      need([...issued].sort().join('|') === [...desired].sort().join('|'), 'ORDER did not issue exactly the authored items: ' + issued.join(' | '));
+      await answeringShot('mechanics-study-order-1440.png');
+      await phone();
+      const wide = await overflowing();
+      await ctx.saveScreenshot('mechanics-study-order-390.png', tab);
+      if (wide) finding('order_study_390_overflow', 'ORDER Study answering view overflows horizontally at 390 px');
+      await desktop();
+      // The «На позицию N» select moves an item too; one real keyboard use of it, then the arrows finish the job.
+      const firstSelect = { css: '[role="combobox"]', within: scope + ' li.order-item', withinIndex: 0 };
+      const firstName = issued[0];
+      await chooseOption(firstSelect, 2, 'position select');   // the list opens on the current position (1): two presses reach «На позицию 3»
+      await waitFor(async () => (await orderNames(scope))[2] === firstName, 'the position select did not move the first item to position 3');
+      need((await text({ css: '.order-status', within: scope })).includes('перемещён на позицию 3'), 'the move was not announced in the live region');
+      await arrangeOrder(scope, desired);
+      const before = wire.attempts.length;
+      await submitKey({ css: 'button[data-submit]', within: scope });
+      await afterSubmit('ORDER', 'Верно');
+      need((await count({ css: '.feedback-card .positions li' })) === desired.length && (await count({ css: '.feedback-card .positions li.is-wrong' })) === 0,
+        'ORDER feedback does not mark every position as right');
+      need((await count({ css: '.feedback-card .correct-sequence li' })) === desired.length, 'the correct sequence is not shown');
+      await feedbackShot('mechanics-study-order-feedback-1440.png');
+      const outcome = await outcomeAfter(before, 'ORDER');
+      need(outcome.result === 'CORRECT' && outcome.evidenceClass === 'MEDIUM', `ORDER outcome ${outcome.result}/${outcome.evidenceClass}, expected CORRECT/MEDIUM`);
+      return { shuffledOnIssue: true, positionSelectByKeyboard: true, movedWithArrowsOnly: true, identicalWordsInterchangeable: true,
+        liveRegionAnnounced: true, result: outcome.result, evidenceClass: outcome.evidenceClass, screenshot390: true, noHorizontalOverflow390: !wide };
+    },
+    async CATEGORIZE() {
+      const scope = '.study-card';
+      await waitFor(async () => (await count({ css: 'section[data-category]', within: scope })) === CATEGORIZE.groups.length, 'CATEGORIZE did not present every group');
+      need((await poolNames(scope)).length === 4, 'CATEGORIZE did not present four items');
+      await waitFor(() => call(`const a = document.querySelector('.study-card app-categorize-board audio');
+        return a instanceof HTMLAudioElement && a.readyState >= 1;`), 'categorize audio did not load in the shared player', 30_000);
+      await answeringShot('mechanics-study-categorize-1440.png');
+      await phone();
+      const wide = await overflowing();
+      const columns = await call(`return getComputedStyle(document.querySelector('.study-card .groups')).gridTemplateColumns.split(' ').length;`);
+      await ctx.saveScreenshot('mechanics-study-categorize-390.png', tab);
+      if (wide) finding('categorize_study_390_overflow', 'CATEGORIZE Study answering view overflows horizontally at 390 px');
+      if (columns !== 1) finding('categorize_study_390_columns', 'CATEGORIZE groups do not stack vertically at 390 px (' + columns + ' columns)');
+      await desktop();
+      // Pressing the player of the audio item must neither select it nor assign anything.
+      const players = await count({ css: '.mnema-player-controls > button:first-child', within: scope + ' app-categorize-board' });
+      need(players >= 1, 'the audio item has no player');
+      for (let index = 0; index < players; index++) {
+        await realClick({ css: '.mnema-player-controls > button:first-child', within: scope + ' app-categorize-board', index });
+      }
+      await new Promise(resolve => setTimeout(resolve, 500));
+      need((await count({ css: '[data-select][aria-pressed="true"]', within: scope })) === 0 && (await poolNames(scope)).length === 4,
+        'pressing the audio player selected or assigned an item');
+      const groupFor = name => name.startsWith('Аудио') ? CATEGORIZE.audioGroup : CATEGORIZE.texts.find(entry => entry.text === name).group;
+      // «река» first goes to the wrong group, then the learner changes the decision and puts it into the distractor on purpose.
+      await assignAll(scope, name => name === 'река' ? 'Глагол' : groupFor(name));
+      await activate({ css: '[data-select]', within: scope, label: 'Выбрать: река' });
+      await activate({ css: 'button[data-place]', within: scope + ' section[data-category]', labelIncludes: '«Не относится»' });
+      await waitFor(async () => (await text({ css: '[data-category] .counter', within: scope, index: 2 })) === 'Элементов: 1', 'the changed decision was not counted');
+      need((await text({ css: '[data-category] .counter', within: scope, index: 1 })) === 'Элементов: 2'
+        && (await text({ css: '[data-category] .counter', within: scope, index: 0 })) === 'Элементов: 1', 'the group counters did not follow the changed decision');
+      need(await call("return document.querySelector('.study-card [data-pool] .empty') !== null;"), 'the pool does not say that everything is assigned');
+      const before = wire.attempts.length;
+      await waitFor(() => call("return !document.querySelector('.study-card button[data-submit]').disabled;"), 'submit stayed disabled with every item assigned');
+      await submitKey({ css: 'button[data-submit]', within: scope });
+      await afterSubmit('CATEGORIZE', 'Частично');
+      need((await count({ css: '.feedback-card .pair-feedback li' })) === 4 && (await count({ css: '.feedback-card .pair-feedback li.is-wrong' })) === 1,
+        'CATEGORIZE feedback does not mark exactly one wrong item out of four');
+      const wrong = await text({ css: '.feedback-card .pair-feedback li.is-wrong' });
+      need(wrong.includes('Ваша группа: Не относится') && wrong.includes('Правильная группа: Существительное'), 'the wrong item does not show both groups: ' + wrong);
+      await feedbackShot('mechanics-study-categorize-feedback-1440.png');
+      const outcome = await outcomeAfter(before, 'CATEGORIZE');
+      need(outcome.result === 'PARTIAL' && outcome.evidenceClass === 'LOW', `CATEGORIZE outcome ${outcome.result}/${outcome.evidenceClass}, expected PARTIAL/LOW`);
+      return { audioPlayerDoesNotAssign: true, assignedByKeyboard: true, decisionChangedBeforeSubmit: true, emptyDistractorGroup: true,
+        countersFollowAssignments: true, perItemFeedback: true, result: outcome.result, evidenceClass: outcome.evidenceClass,
+        groupsStackedAt390: columns === 1, screenshot390: true, noHorizontalOverflow390: !wide };
+    },
     async FREE_RESPONSE() {
       await typeInto({ css: '.study-card textarea' }, ctx.materialText);
       const before = wire.attempts.length;
@@ -799,13 +1111,6 @@ export async function runMechanics(ctx) {
 
   const authoredAll = Object.entries(authored).filter(([, ok]) => ok).map(([key]) => key);
   const studied = new Set();
-  let started = await scenario('mechanics_study_session_start', async () => {
-    await desktop();
-    await ctx.navigate(ctx.deckPath + '/study', tab);
-    await waitFor(() => has({ css: '.session-setup' }), 'Study preset setup did not load');
-    await activate({ css: '.session-setup button', includes: 'Начать стандартную' });
-    return { preset: 'STANDARD', maxNewObjectives: 5, authoredMechanics: authoredAll };
-  });
   const detect = async () => {
     await waitFor(async () => (await has({ css: '.study-card:not(.feedback-card) h2' })) || (await has({ css: '.completion' }))
       || (await has({ css: '.notice.error' })), 'Study did not present an exercise', 25_000);
@@ -816,41 +1121,54 @@ export async function runMechanics(ctx) {
       return (await text({ css: '.study-card .choice-set legend' })).includes('все подходящие') ? 'CHOICE_MULTIPLE' : 'CHOICE_SINGLE';
     }
     const kind = ({ 'Вспомните, затем сверьтесь': 'SELF_CHECK', 'Напишите ответ': 'FREE_RESPONSE', 'Заполните пропуски': 'CLOZE',
-      'Соедините пары': 'MATCH' })[heading];
+      'Соедините пары': 'MATCH', 'Восстановите порядок': 'ORDER', 'Распределите по группам': 'CATEGORIZE' })[heading];
     need(kind !== undefined, 'Study presented an unknown exercise: ' + heading);
     return kind;
   };
-  let aborted = !started;
-  for (let turn = 0; started && turn < 8; turn++) {
-    let kind = null;
-    try { kind = await detect(); } catch (error) {
-      const reason = error instanceof SafeFailure ? error.message : 'driver_failure';
-      await ctx.saveScreenshot('failure-mechanics_study_turn.png', tab).catch(() => {});
-      record('mechanics_study_session', { state: 'failed', reason, turn: turn + 1, screenshot: 'failure-mechanics_study_turn.png' });
-      failures.push('mechanics_study_session');
-      aborted = true;
-      break;
-    }
-    if (kind === null) break;
-    if (studied.has(kind)) { record('mechanics_study_session', { state: 'failed', reason: kind + ' was presented twice in one session' }); failures.push('mechanics_study_wire'); aborted = true; break; }
-    studied.add(kind);
-    started = await scenario('mechanics_study_' + kind.toLowerCase(), async () => {
-      const details = await handlers[kind]();
-      await proceed();
-      return details;
+  let aborted = false;
+  // A standard session introduces at most five new objectives, so seven authored exercises need a second session.
+  async function studyRound(round) {
+    let started = await scenario(round === 1 ? 'mechanics_study_session_start' : 'mechanics_study_session_start_' + round, async () => {
+      await desktop();
+      await ctx.navigate(ctx.deckPath + '/study', tab);
+      await waitFor(() => has({ css: '.session-setup' }), 'Study preset setup did not load');
+      await activate({ css: '.session-setup button', includes: 'Начать стандартную' });
+      return { preset: 'STANDARD', maxNewObjectives: 5, round, authoredMechanics: authoredAll };
     });
-    if (!started) aborted = true;
+    if (!started) { aborted = true; return; }
+    for (let turn = 0; started && turn < 8; turn++) {
+      let kind = null;
+      try { kind = await detect(); } catch (error) {
+        const reason = error instanceof SafeFailure ? error.message : 'driver_failure';
+        await ctx.saveScreenshot('failure-mechanics_study_turn.png', tab).catch(() => {});
+        record('mechanics_study_session', { state: 'failed', reason, round, turn: turn + 1, screenshot: 'failure-mechanics_study_turn.png' });
+        failures.push('mechanics_study_session');
+        aborted = true;
+        return;
+      }
+      if (kind === null) return;
+      if (studied.has(kind)) { record('mechanics_study_session', { state: 'failed', reason: kind + ' was presented twice' }); failures.push('mechanics_study_wire'); aborted = true; return; }
+      studied.add(kind);
+      started = await scenario('mechanics_study_' + kind.toLowerCase(), async () => {
+        const details = await handlers[kind]();
+        await proceed();
+        return details;
+      });
+      if (!started) { aborted = true; return; }
+    }
   }
+  await studyRound(1);
+  if (!aborted && authoredAll.some(key => !studied.has(key))) await studyRound(2);
   for (const key of authoredAll) {
     if (studied.has(key)) continue;
     if (aborted) {
       record('mechanics_study_' + key.toLowerCase(), { state: 'not_run', reason: 'an earlier Study step failed; see that scenario' });
     } else {
-      record('mechanics_study_' + key.toLowerCase(), { state: 'failed', reason: 'authored exercise was not presented in the standard session' });
+      record('mechanics_study_' + key.toLowerCase(), { state: 'failed', reason: 'authored exercise was not presented in the standard sessions' });
       failures.push('mechanics_study_' + key.toLowerCase());
     }
   }
-  for (const key of ['SELF_CHECK', 'CLOZE', 'CHOICE_MULTIPLE', 'CHOICE_SINGLE', 'MATCH']) {
+  for (const key of ['SELF_CHECK', 'CLOZE', 'CHOICE_MULTIPLE', 'CHOICE_SINGLE', 'MATCH', 'ORDER', 'CATEGORIZE']) {
     if (!authoredAll.includes(key)) record('mechanics_study_' + key.toLowerCase(), { state: 'not_run', reason: 'authoring did not succeed' });
   }
   for (const entry of findings) failures.push('finding:' + entry.id);
