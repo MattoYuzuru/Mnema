@@ -147,7 +147,7 @@ artifact:
 | O-10 | Формула понятного прогресса материала? | Агрегировать явно проверяемые цели, показывать coverage/next due; определить formula/version и проверить понимание. Не выдавать arbitrary double за научно доказанное освоение. |
 | O-11 | Manual или automatic source updates? | Первый future sharing UX рекомендован manual/selective; auto-update default уточнить в community этапе. Upstream contribution теперь часть долгосрочной цели. |
 | O-12 | Количество бесплатных колод и платность offline? | Гипотезы; 5+5 не фиксировать как тариф. Сохранность существующих колод при окончании подписки обязательна. |
-| O-13 | Какая механика beyond P0 первой? | Matching с explicit short text/audio projections обязателен в target и prototype; production ordering относительно P0 уточнить без реализации всех mechanics сразу. |
+| O-13 | Какая механика beyond P0 первой? | Matching с explicit short text/audio projections обязателен в target и prototype; production ordering относительно P0 уточнить без реализации всех mechanics сразу. **Решено в #266/#268:** `MATCH`, `ORDER` и `CATEGORIZE` реализованы в составе семи механик ([контракт](../../contracts/study/README.md#exercise-mechanics-266)). |
 
 ## Current implementation sequence
 

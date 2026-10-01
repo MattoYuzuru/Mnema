@@ -5,20 +5,24 @@ artifact:
   title: "Mnema repository guide"
   status: current
   created_at: "2026-08-15"
-  updated_at: "2026-09-28"
+  updated_at: "2026-10-01"
   owners: ["project-owner"]
-  evidence_revision: "1879d9ae0cadde67bf8a0ccc74fbccb53f2acee5"
+  evidence_revision: "f6955a5fb9889f546dc47129e5e4bed7b913f95a"
 ---
 
 # Repository guide
 
-This guide describes the checkout after Epics #74–#76. Root [`AGENTS.md`](../../AGENTS.md)
-is normative; [docs/README.md](../README.md) owns documentation status/navigation.
+This guide describes the checkout after Epics #74–#76 and #266/#268. Root
+[`AGENTS.md`](../../AGENTS.md) is normative; [docs/README.md](../README.md) owns
+documentation status/navigation. Commands and workstation setup:
+[agent runbook](./agent-runbook.md); which source answers which domain question, plus the
+glossary: [domain truth map](./domain-truth-map.md).
 
 ## First read
 
 1. [`AGENTS.md`](../../AGENTS.md).
-2. [System overview](../system-overview.md).
+2. [System overview](../system-overview.md), then the
+   [domain truth map](./domain-truth-map.md) for the owning contract.
 3. The current guide for the owning runtime and its nearby tests.
 4. [Local-only delivery](../operations/local-development-delivery.md) before any
    delivery decision.
@@ -38,8 +42,9 @@ is normative; [docs/README.md](../README.md) owns documentation status/navigatio
 | Node | 22.23.2 in CI/images | workflows and `frontend/Dockerfile` |
 | PostgreSQL | 18 in replacement compose/tests | `docker-compose.yml`, test fixtures |
 
-The workstation JDK/Node may be newer; release claims use repository/CI toolchains,
-not whichever executable happens to be first on `PATH`.
+The workstation JDK/Node may be newer (on the owner's Mac the default `java` is 26); release
+claims use repository/CI toolchains, not whichever executable happens to be first on `PATH`.
+Exact per-shell setup: [agent runbook](./agent-runbook.md#workstation-setup-owners-mac).
 
 ## Repository map
 
@@ -87,17 +92,18 @@ Identity `/userinfo`; it never reads Identity tables.
 
 ### Learning
 
-Read [its guide](../../backend/services/learning/guide.md). Fresh migrations V1–V15
-own platform/storage, private Deck, deck-local LearningItem, EditingDraft,
-CaptureNote, immutable objective/exercise authoring and bounded Study session
-snapshots. API paths are canonical
+Read [its guide](../../backend/services/learning/guide.md). Fresh migrations
+(`src/main/resources/db/learning/migration`, V1–V23 at this revision; Identity V1–V3) own
+platform/storage, private Deck, deck-local LearningItem, EditingDraft, CaptureNote,
+immutable objective/exercise authoring, bounded Study session snapshots, the media
+lifecycle and the unified exercise mechanics (V21, V23). API paths are canonical
 under `/api`; there is no `/v2` or v1 alias.
 
 The important #75 inputs already implemented are UUID identity, canonical JSON,
 global command receipts, CAS, RFC 9457 errors, owner ACL, immutable revisions,
 deck-local item identity, counted pages, native content, stable objectives,
-versioned P0 exercise bindings, pinned session presentations, deterministic
-all four P0 attempts, durable evidence, explicit restart and the baseline
+versioned exercise bindings, pinned session presentations, deterministic
+attempts for all seven mechanics, durable evidence, explicit restart and the baseline
 `StudyState` reducer. Progress, additional session modes and retention cleanup
 are now part of the canonical Learning runtime: progress is cursor-bounded,
 selection is server-enforced for scheduled/replay/practice, and cleanup preserves
@@ -106,9 +112,12 @@ durable evidence and attempt tombstones.
 ### Frontend
 
 `app.routes.ts` is the route source of truth. `/decks` authoring routes are current
-and lazy. Material Browse/editor links to a separate lazy exercise inspector for
-all four P0 mechanics; the inspector uses current node projections, strict
-exercise envelopes and recoverable conflict/retry state without loading Study.
+and lazy. Material Browse/editor links to the lazy step-by-step exercise editor
+(`/decks/:deckId/materials/:memberKey/exercises/new` and
+`/decks/:deckId/exercises/:exerciseId/edit`) for all seven mechanics. It uses current
+node projections, strict exercise envelopes, recoverable conflict/retry state and an
+interactive preview served by `POST /api/exercise-previews` (no attempt, evidence or
+progress), without loading Study.
 Old `my-study`, public-deck, template, review/import/media/AI services and routes
 were removed in #146; account profile uses native Identity API.
 For frontend changes, use the current
@@ -122,9 +131,10 @@ are under `frontend/src/app` and `frontend/src/assets/brand`; the historical
 remains design evidence, not runtime code. Theme values are centralized in
 `frontend/src/theme/tokens.css`.
 
-The canonical `/decks/:deckId/study` route is lazy and deck-scoped. It implements the five
-#266 mechanics (`SELF_CHECK`, `FREE_RESPONSE`, multi-blank `CLOZE`, single/multiple
-`CHOICE` and mixed-media `MATCH`), PREPARING polling, strict server-envelope
+The canonical `/decks/:deckId/study` route is lazy and deck-scoped. It implements all seven
+mechanics (`SELF_CHECK`, `FREE_RESPONSE`, multi-blank `CLOZE`, single/multiple `CHOICE`,
+mixed-media `MATCH`, `ORDER`, `CATEGORIZE`; wire contract in
+[`contracts/study`](../../contracts/study/README.md#exercise-mechanics-266)), PREPARING polling, strict server-envelope
 validation, account-bound 24-hour session recovery and an
 exact-attempt retry after an unknown network outcome. Learner presentations never
 contain answer keys; references arrive only in feedback, and first-letter hints and
@@ -153,12 +163,10 @@ There is no legacy `my-study` fallback.
 
 Prerequisites: JDK 21 toolchain availability, Node 22.23.2, npm, Chrome/Chromium and
 working Docker/Testcontainers resources. Do not allow database tests to skip. With
-Colima on macOS, point discovery at its host socket and mounts at the Linux VM socket:
-
-```bash
-export DOCKER_HOST="unix://${HOME}/.colima/default/docker.sock"
-export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
-```
+Colima on macOS, point discovery at its host socket and mounts at the Linux VM socket;
+the verified per-shell setup (`JAVA_HOME`, `DOCKER_HOST`,
+`TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE`, Node 22 path) is in the
+[agent runbook](./agent-runbook.md#workstation-setup-owners-mac).
 
 ```bash
 cd backend
@@ -198,12 +206,13 @@ commands in the `frontend-quality` job of
 disposable no-snapshot purge rehearsal. Operational contract tests do not perform a
 deployment.
 
-The real browser harness covers auth, authoring and one typed Study interaction; it is not a substitute
-for unit gates:
+The real browser harness covers auth, authoring and one `FREE_RESPONSE` Study interaction in
+its base `--authoring` flow; `--authoring --media --mechanics` extends it to authoring and
+studying every mechanic through the real UI. It is not a substitute for unit gates:
 
 ```bash
 python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend \
-  --node /absolute/path/to/node22 --authoring
+  --node /absolute/path/to/node22 --authoring            # add --media --mechanics for all mechanics
 ```
 
 It uses disposable local services and a real HTTPS Chrome flow. Follow
@@ -224,7 +233,8 @@ infrastructure issue.
 
 - Add new domain code under `backend/services/learning`; do not repair or import
   `core/.../review` algorithms/entities/migrations.
-- Add new fresh Learning migrations after V5; never edit applied V1–V5.
+- Add new fresh Learning migrations after the current head (list
+  `db/learning/migration`; V23 at this revision); never edit an applied migration.
 - Keep content, exercise revision, attempt/evaluation/evidence and `StudyState`
   separate. Only explicitly `ASSESSED` objectives may receive scheduler evidence.
 - Reuse command receipts/CAS/problem details and Deck/LearningItem revision pins.
@@ -292,3 +302,7 @@ Add durable docs only when they own a decision, contract or evidence set. Give t
 one explicit status and link them from [docs/README.md](../README.md). Run
 `python3 scripts/verify_docs.py`; never fix drift by copying the same rules into a
 second agent guide.
+
+Agent instruction files: root `AGENTS.md` (always loaded, short, normative) plus
+`backend/AGENTS.md` and `frontend/AGENTS.md` (local differences only, loaded on demand).
+Long rationale belongs in docs linked from them, not in those files.

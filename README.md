@@ -1,50 +1,59 @@
 # Mnema
 
-Mnema — greenfield-платформа обучения вокруг версионируемых `LearningItem`,
-разных типов упражнений и объяснимого spaced practice. Репозиторий находится в
-прямой замене v1: compatibility API, `/v2`, dual read/write и legacy fallback не
-являются требованиями.
+Mnema помогает учиться по собственным материалам. Вы сохраняете конспект, слово или
+фрагмент текста как `LearningItem`, делаете из него упражнения и проходите их в
+занятиях. Расписание повторений объясняет, почему материал вернулся сегодня.
 
-## Текущее состояние
+Репозиторий — новая реализация продукта, которая полностью заменила первую версию.
+Старые API, маршруты `/v2`, двойное чтение и запись и обратная совместимость с v1 не
+поддерживаются.
 
-После завершения [Epic #74](https://github.com/MattoYuzuru/Mnema/issues/74)
-replacement runtime содержит:
+## Что уже работает
 
-- единый Spring Boot runtime **Identity & Account** для аккаунтов, OAuth/OIDC,
-  сессий, профиля и account lifecycle;
-- Spring Boot **Learning API** с приватными Deck, deck-local LearningItem,
-  immutable revisions, native content, EditingDraft и CaptureNote;
-- Angular 22 SPA с paper/antiquity/indigo интерфейсом создания колоды,
-  Capture, редактора, явной публикации и Browse;
-- PostgreSQL 18 integration tests, real Identity/Learning security composition и
-  локальный HTTPS browser harness для authoring-пути.
+- **Аккаунты.** Сервис Identity & Account: регистрация, вход через OAuth 2.0/OIDC с PKCE,
+  сессии, профиль, аватар и удаление аккаунта.
+- **Материалы.** Learning API хранит приватные колоды и их `LearningItem` с неизменяемыми
+  ревизиями. Редактор поддерживает текст, изображения, аудио, видео, YouTube, Mermaid и
+  таблицы, черновики и быстрые заметки (Capture).
+- **Упражнения.** Семь механик: вспомнить и сверить (`SELF_CHECK`), ввести ответ
+  (`FREE_RESPONSE`), заполнить пропуски (`CLOZE`), выбрать ответ (`CHOICE`), сопоставить
+  (`MATCH`), восстановить порядок (`ORDER`) и распределить по группам (`CATEGORIZE`).
+  Условие, варианты и элементы могут сочетать текст и медиа. Автор пишет упражнение на
+  одной странице: выбирает механику, пробует интерактивный пример и сразу видит, как
+  его задание увидит ученик.
+- **Занятия.** Плановое повторение, повтор сегодняшнего занятия и свободная практика.
+  Прогресс меняется только в плановом режиме. Проверку ответов и подсказки выдаёт
+  сервер, и ключи ответов ученику заранее не приходят.
+- **Возможности ИИ.** Смысловая проверка ответов и распознавание речи подготовлены как
+  выключенные серверные возможности. Провайдеров нет, и обойти запрет через API нельзя.
+- **Интерфейс.** Angular 22 с «бумажным» оформлением: тёплый фон, классическая типографика,
+  индиго.
 
-После #146 shipping Gradle graph и Angular routes содержат только replacement
-runtime. Исходники v1 доступны в теге
-[`v1-apache-final`](https://github.com/MattoYuzuru/Mnema/tree/v1-apache-final)
-и Git history; текущий checkout не собирает старые сервисы.
+Исходники первой версии лежат в теге
+[`v1-apache-final`](https://github.com/MattoYuzuru/Mnema/tree/v1-apache-final); текущий
+checkout их не собирает.
 
-Deck-scoped Study из [Epic #75](https://github.com/MattoYuzuru/Mnema/issues/75)
-реализован: четыре P0-механики, versioned objectives/exercises, объяснимое
-расписание, короткая/стандартная сессии, progress, restart, replay и practice.
-Локальный HTTPS launcher позволяет пройти полный авторизованный путь; границы
-проверки и оставшиеся платформенные ограничения записаны в
-[acceptance evidence](docs/engineering/evidence/epic-75/verification/integrated-main-2026-09-24.md).
+## Запустить локально
 
-## С чего начать
+Нужны JDK 21, Node 22, Docker (на macOS — Colima), OpenSSL, `keytool` и Chrome. Лаунчер
+поднимает весь стек с локальным HTTPS: PostgreSQL 18, Identity & Account, Learning,
+MinIO для файлов, обработку медиа и фронтенд.
 
-1. Прочитайте [`AGENTS.md`](AGENTS.md) — это нормативные правила разработки.
-2. Откройте [каноническую навигацию](docs/README.md).
-3. Используйте [обзор текущей системы](docs/system-overview.md) и
-   [карту репозитория](docs/engineering/repository-guide.md).
-4. Перед Issue или PR следуйте
-   [work item standard](docs/engineering/work-item-standard.md).
+```bash
+./scripts/mnema-local-full-stack.sh bootstrap
+./scripts/mnema-local-full-stack.sh start
+./scripts/mnema-local-full-stack.sh smoke
+```
 
-## Быстрые проверки
+После `start` приложение доступно на `https://localhost:3443`. Перезапуск сохраняет
+данные. Доверие к локальному CA, сброс данных, особенности Colima и ограничения
+описаны в [runbook локального запуска](docs/deploy/selfhost-local.md). Файл
+`docker-compose.yml` поднимает только backend и нужен для обслуживания, а не для
+ежедневной работы.
 
-Требуются JDK 21, Node 22.23.2, npm, Chrome/Chromium и Docker для fail-closed
-PostgreSQL/Testcontainers проверок. Для Colima сначала примените socket environment
-из [repository guide](docs/engineering/repository-guide.md#полный-quality-gate).
+## Проверить изменения
+
+Перед PR нужен полный набор проверок. Минимальный локальный набор:
 
 ```bash
 cd backend
@@ -58,39 +67,39 @@ npm run build
 
 cd ..
 python3 scripts/verify_docs.py
-python3 -m unittest discover -s scripts/tests -p 'test_verify_*.py' -v
+python3 -m unittest discover -s scripts/tests -p 'test_*.py'
 ```
 
-Это не весь repository gate: security, browser, backup, purge и release-contract
-проверки перечислены в
-[repository guide](docs/engineering/repository-guide.md#полный-quality-gate) и
-исполняются PR workflow. Coverage thresholds и container-backed tests являются
-обязательными.
+Backend-проверки поднимают PostgreSQL в Testcontainers, пороги покрытия обязательны.
+Переменные окружения для Colima, браузерный прогон и остальные проверки PR описаны в
+[руководстве по репозиторию](docs/engineering/repository-guide.md#полный-quality-gate).
 
-## Локальный runtime и delivery
+## Документация
 
-Persistent local launcher поднимает PostgreSQL 18, Identity & Account, Learning и
-production Angular frontend с локальным HTTPS и same-origin `/api`; обычный restart
-сохраняет данные. Безопасный bootstrap, trust локального CA, start/stop/smoke/reset
-описаны в [local replacement runtime](docs/deploy/selfhost-local.md). Smoke проверяет
-реальные auth, authoring, scheduled Study, progress, restart, replay и practice API.
-Backend-only
-`docker-compose.yml` остаётся maintenance-контуром.
+1. [`AGENTS.md`](AGENTS.md) — обязательные правила разработки для людей и агентов.
+2. [Навигация по документации](docs/README.md) — где лежит актуальное описание
+   продукта, архитектуры и контрактов.
+3. [Обзор системы](docs/system-overview.md) и
+   [руководство по репозиторию](docs/engineering/repository-guide.md).
+4. [Стандарт задач и PR](docs/engineering/work-item-standard.md) — перед созданием Issue
+   или pull request.
 
-Общий сервер недоступен. Текущая граница готовности:
+## Поставка
+
+Общего сервера сейчас нет. Работа считается готовой после такого пути:
 
 ```text
 feature branch → полный local gate → hosted PR checks → protected squash → main checks
 ```
 
-Staging, production, SSH, rollout и recovery не входят в local delivery и не
-заявляются как выполненные. Каноническая политика —
+Staging, production, SSH-доступ, выкатка и восстановление в эту схему не входят и не
+считаются выполненными. Подробности — в политике
 [Delivery without hosted infrastructure](docs/operations/local-development-delivery.md).
 
 ## Лицензия и участие
 
 Текущие ревизии распространяются по
-[Mnema Source-Available License 1.0](LICENSE). Условия участия — в
-[`CONTRIBUTING.md`](CONTRIBUTING.md), security reporting — в
-[`SECURITY.md`](SECURITY.md). Последний Apache 2.0-срез сохранён в теге
+[Mnema Source-Available License 1.0](LICENSE). Как участвовать в разработке — в
+[`CONTRIBUTING.md`](CONTRIBUTING.md), как сообщить об уязвимости — в
+[`SECURITY.md`](SECURITY.md). Последний срез под Apache 2.0 сохранён в теге
 [`v1-apache-final`](https://github.com/MattoYuzuru/Mnema/tree/v1-apache-final).

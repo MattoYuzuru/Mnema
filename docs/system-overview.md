@@ -4,7 +4,7 @@ artifact:
   type: architecture-overview
   title: "Mnema current system overview"
   status: current
-  updated_at: "2026-09-28"
+  updated_at: "2026-10-01"
   owners: ["project-owner"]
   evidence_revision: "1879d9ae0cadde67bf8a0ccc74fbccb53f2acee5"
 ---
@@ -15,11 +15,12 @@ Mnema напрямую заменяет v1 платформой вокруг ver
 #74 канонический authoring runtime уже находится в `identity-account`, `learning` и
 Angular SPA. Epic #75 добавил objective/exercise authoring, bounded Study session
 snapshots, deterministic attempts, baseline scheduler state и production exercise
-inspector. Канонический Study runner уже проводит все четыре scheduled P0-механики:
-self-check, typed, single-blank cloze и single choice, показывает progress и даёт
-replay/practice и явные session budgets. Persistent local HTTPS runtime также
-реализован. Epic #76 добавил native media lifecycle, playback, аудирование,
-offline manifest и безопасный GC в Learning.
+authoring. Канонический Study runner проводит семь механик (`SELF_CHECK`,
+`FREE_RESPONSE`, `CLOZE`, `CHOICE`, `MATCH`, `ORDER`, `CATEGORIZE`; #266, #268),
+показывает progress и даёт replay/practice и явные session budgets. Persistent local
+HTTPS runtime с MinIO и обработкой медиа также реализован. Epic #76 добавил native
+media lifecycle, playback, offline manifest и безопасный GC в Learning; медиа
+(в том числе аудио) — содержимое упражнения, а не отдельная механика.
 
 ## Shipping и local replacement boundary
 
@@ -38,9 +39,10 @@ Angular 22 SPA
   contracts, immutable storage и личным content/authoring доменом.
 - Angular SPA использует standalone components и lazy routes. Канонический #74 flow:
   Deck → Capture/«На потом» → EditingDraft → явная публикация → Browse.
-- `compose.local-full-stack.yml` запускает persistent PostgreSQL, Identity,
-  Learning и production Angular через localhost HTTPS; обычный stop/start сохраняет
-  локальные данные. `docker-compose.yml` остаётся backend maintenance runtime.
+- `compose.local-full-stack.yml` запускает persistent PostgreSQL, MinIO, Identity,
+  Learning, отдельный media-processor и production Angular через localhost HTTPS;
+  обычный stop/start сохраняет локальные данные
+  ([runbook](./deploy/selfhost-local.md)). `docker-compose.yml` остаётся backend maintenance runtime.
 
 У replacement нет `/v2`, aliases к v1, dual write/read или scheduler fallback.
 Identity и Learning — отдельные deployables без Gradle dependency на legacy modules.
@@ -55,14 +57,18 @@ Identity и Learning — отдельные deployables без Gradle dependency
 - acknowledged server `EditingDraft` и durable `CaptureNote` с idempotent conversion;
 - immutable `MemoryObjective`/Exercise revisions и bounded owner-scoped
   `SCHEDULED`/`REPLAY`/`PRACTICE` session snapshots;
-- deterministic typed/self-check attempts, durable evidence, versioned baseline
+- immutable exercise revisions с ключом ответа на ревизии (objective хранит только
+  заголовок), семь детерминированных evaluators, durable evidence, versioned baseline
   reducer и explicit material restart без удаления истории; terminal attempt
   атомарно завершает bounded batch, а resume не возвращает решённые presentation;
+- stateless `POST /api/exercise-previews` — тот же evaluator для интерактивного
+  preview редактора упражнений; `GET /api/capabilities` — выключенные server-owned
+  возможности AI-проверки и speech-to-text (провайдера нет, #77);
 - due-first scheduled selection, replay выбранной завершённой сессии текущего
   локального дня и practice по уже введённым objective с явным opt-in новых;
 - единый scheduled scheduler с server-pinned quick 10/2 и standard 20/5 budgets;
 - owner-scoped media assets, upload/finalize, worker processing, playback и
-  три механики аудирования; offline manifest и объектный GC;
+  offline manifest и объектный GC;
 - cursor-bounded material progress без фиктивного mastery percentage, exact restart
   нового learning epoch и bounded retention raw/compact attempt payloads;
 - UUID, canonical JSON, command receipts, RFC 9457 Problem Details, row-version CAS;
@@ -81,18 +87,19 @@ Replacement routes `/decks`, `/decks/:deckId`, deck-scoped
 Мнемозины и композицию принятого макета с реальными маршрутами и русским текстом.
 Семантические CSS-токены находятся в `frontend/src/theme/tokens.css`, правила
 оформления и проверки — в [бренд-контракте](./frontend/mnema-brand-and-ui-contract.md).
-Прототип остаётся визуальным свидетельством, не Angular runtime. Отдельный lazy exercise inspector позволяет
-выбрать актуальные node projections или короткий prompt, создать/переиспользовать/
-изменить одну явную objective, настроить четыре P0 mechanics и preview без работы с
-UUID/JSON. Native editor state не является persisted format; frontend валидирует
-серверные envelopes и ETag/command contracts.
+Прототип остаётся визуальным свидетельством, не Angular runtime. Отдельный lazy
+редактор упражнения (#267) — одна колонка: выбор из семи механик, интерактивный
+preview через серверный evaluator, пошаговая настройка ответа и список упражнений
+материала; UUID/JSON пользователю не показываются. Native editor state не является
+persisted format; frontend валидирует серверные envelopes и ETag/command contracts.
 
 Lazy route `/decks/:deckId/study` запускается основной кнопкой «Учить» из своей
-колоды. Реализованы PREPARING polling, typed answer без показа эталона до принятого
-ответа, self-check reveal с четырьмя поведенческими оценками, one-blank cloze с
-явно учитываемой first-grapheme подсказкой и native-radio single choice, явные состояния
-completion/expiry/error и account-bound recovery точной pending attempt после
-неопределённого сетевого результата. Terminal flow также включает replay из
+колоды. Реализованы PREPARING polling, свободный ответ без показа эталона до принятого
+ответа, self-check reveal с четырьмя поведенческими оценками, multi-blank cloze с
+серверно учитываемой first-grapheme подсказкой, native radio/checkbox choice,
+соединение пар, упорядочивание и распределение по группам,
+явные состояния completion/expiry/error и account-bound recovery точной pending
+attempt после неопределённого сетевого результата. Terminal flow также включает replay из
 выбранной сегодняшней сессии, practice с явной политикой новых материалов,
 объяснимый progress и подтверждаемое «Учить заново».
 Перед scheduled start пользователь выбирает короткую или стандартную границу, видит
@@ -129,6 +136,10 @@ Acceptance #74: [integrated main evidence](./engineering/evidence/epic-74/verifi
 
 ## Следующие этапы
 
-1. #147 — отдельный production cutover/purge gate; сейчас не разрешён и не готов.
+1. #77 — управляемый AI/speech провайдер; сейчас отложен, возможности выключены.
+2. #147 — отдельный production cutover/purge gate; сейчас не разрешён и не готов.
 
-Интеграционная проверка #75 и её пределы: [acceptance evidence](./engineering/evidence/epic-75/verification/integrated-main-2026-09-24.md).
+Интеграционная проверка #75 и её пределы: [acceptance evidence](./engineering/evidence/epic-75/verification/integrated-main-2026-09-24.md);
+Epic #76: [browser/Study evidence](./engineering/evidence/epic-76/integrated-browser/README.md).
+Evidence до #266 использует имена удалённых механик; действующие — в
+[`contracts/study`](../contracts/study/README.md).

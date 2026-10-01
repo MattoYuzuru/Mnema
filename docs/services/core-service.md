@@ -1,6 +1,7 @@
 # Core Service (`backend/services/core`)
 
-> **Status: legacy.** Retained as v1 replacement/deletion evidence until #146.
+> **Status: legacy.** The module was removed from the checkout in #146 and survives only
+> in the [`v1-apache-final`](https://github.com/MattoYuzuru/Mnema/tree/v1-apache-final) tag and Git history; this page is v1 evidence.
 
 ## Назначение
 

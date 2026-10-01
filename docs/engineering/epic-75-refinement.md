@@ -12,6 +12,13 @@ artifact:
 
 # Epic #75: принятый Study contract и delivery slices
 
+> **Дальнейшее развитие.** Названия P0-механик ниже (self-check, typed, single-blank cloze,
+> single choice) описывают состояние на закрытии Epic #75. #266 заменил их семью
+> механиками (`SELF_CHECK`, `FREE_RESPONSE`, `CLOZE`, `CHOICE`, `MATCH`, `ORDER`,
+> `CATEGORIZE`; ответы хранятся в ревизии упражнения), #268 добавил `ORDER` и
+> `CATEGORIZE`. Действующий контракт — [`contracts/study`](../../contracts/study/README.md);
+> решения о `MemoryObjective`, reducer, replay/practice и retention ниже остаются в силе.
+
 Этот документ фиксирует решения владельца для реализации Epic #75. Точный wire
 contract и исполняемые примеры находятся в [`contracts/study`](../../contracts/study/README.md).
 Архитектурная модель остаётся в [Content and Study platform](../architecture/content-platform-v2.md),

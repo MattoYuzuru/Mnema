@@ -12,6 +12,11 @@ artifact:
 
 Evidence is historical proof for a specific revision and environment. It does not
 override current code, accepted contracts or the local-only delivery boundary.
+Records written before #266 use the removed exercise names (`TYPED`, `LISTEN_TYPE`,
+`CLOZE_SINGLE`, `SINGLE_CHOICE`, `LISTEN_CHOICE`, `AUDIO_TEXT_MATCH`) and the older
+wire shapes; the current mechanics and fields are in
+[`contracts/study`](../../../contracts/study/README.md#exercise-mechanics-266). Screenshots
+of the former two-column exercise editor are likewise historical.
 
 ## Epic #74 closure
 
@@ -27,6 +32,13 @@ override current code, accepted contracts or the local-only delivery boundary.
 - [Integrated Study acceptance](./epic-75/verification/integrated-main-2026-09-24.md)
   maps every P0 criterion to executable evidence, records local full-stack and
   browser results, and names the remaining device/cohort/production limits.
+
+## Epic #76 closure
+
+- [Integrated browser and Study run](./epic-76/integrated-browser/README.md),
+  [five-minute phone-derived worker run](./epic-76/phone-worker.md) and
+  [component visual checks](./epic-76/media-visual/README.md) are the local acceptance
+  evidence for media; they cover three listening types that #266 later replaced.
 
 ## Storage и content
 
@@ -46,6 +58,9 @@ override current code, accepted contracts or the local-only delivery boundary.
 - [Бумажный интерфейс и упражнения](./paper-polish-2026-09-30/README.md)
   содержит результаты 12 правок, desktop/mobile screenshots и границы проверки.
 
+- [Frontend brand restoration](./frontend-brand-2026-09-28/README.md) —
+  снимки production Angular на desktop/mobile и результат реального HTTPS-сценария.
+
 - [Angular migration](./epic-74/angular-migration.md),
   [editor evidence](./epic-74/editor/README.md) and
   [native renderer](./epic-74/native-renderer/implementation.md) retain decisions.
@@ -58,7 +73,9 @@ override current code, accepted contracts or the local-only delivery boundary.
 
 - [Learning security composition](./epic-74/learning-auth-blackbox.md) and
   [identity/boundaries](./epic-74/verification/identity-and-boundaries.md) retain
-  authentication, cancellation and direct-ID evidence.
+  authentication, cancellation and direct-ID evidence;
+  [independent authentication review](./epic-74/learning-auth-review.md) validates the
+  bearer-only CSRF finding.
 - [Environment capabilities](./epic-74/verification/environment-capabilities.md)
   records what was and was not available for manual/device verification.
 
