@@ -8,9 +8,9 @@ RUN npm run build
 
 FROM nginx:1.31.4-alpine@sha256:db35bfc6b2951e7f8a72db5db120288c127ffaeeb4a6d4b95a26fead017d5913
 RUN apk add --no-cache --upgrade \
-    libcrypto3=3.5.8-r0 \
-    libssl3=3.5.8-r0 \
-    openssl=3.5.8-r0
+    'libcrypto3>=3.5.8-r0' \
+    'libssl3>=3.5.8-r0' \
+    'openssl>=3.5.8-r0'
 
 COPY deploy/local-full-stack/nginx.conf /etc/nginx/conf.d/default.conf
 COPY frontend/docker/40-gen-app-config.sh /docker-entrypoint.d/40-gen-app-config.sh

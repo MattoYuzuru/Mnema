@@ -99,9 +99,11 @@ ignore entries in that file are rejected by the evidence validator; `.trivyignor
 the release policy. This prevents scanner-native ignores from bypassing the owner, scope and expiry
 contract above.
 
-The retained, non-shipping frontend Dockerfile keeps its reviewed nginx base digest and pins Alpine `libcrypto3` and
-`libssl3` to the first fixed build found by the initial shipping-image baseline. Do not replace
-that repair with a scan exception while the fixed packages remain available.
+The retained, non-shipping frontend Dockerfile keeps its reviewed nginx base digest and requires Alpine `libcrypto3`
+and `libssl3` **at least** at the first fixed build found by the initial shipping-image baseline (`>=3.5.8-r0`).
+An exact pin broke every uncached rebuild once Alpine replaced 3.5.8-r0 with 3.5.9-r0 (2026-10-01), so the floor
+accepts newer security patches and the release image scan remains the gate for what is installed. Do not replace
+that repair with a scan exception.
 
 The initial backend baseline was repaired by updating the existing Spring Boot 3.5 line to its
 current patch, updating the existing PostgreSQL JDBC driver patch, and removing the unused

@@ -15,11 +15,12 @@ RUN npm run build
 # --- serve stage ---
 FROM nginx:1.31.4-alpine@sha256:db35bfc6b2951e7f8a72db5db120288c127ffaeeb4a6d4b95a26fead017d5913
 
-# Retain the reviewed nginx base while installing the first fixed Alpine OpenSSL build.
-# Exact package versions prevent unreviewed drift on a rebuild.
+# Retain the reviewed nginx base while requiring at least the first fixed Alpine OpenSSL build.
+# A floor (not an exact pin) keeps rebuilds working when Alpine ships a newer security patch and
+# drops the old one; the release image scan stays the gate for what is actually installed.
 RUN apk add --no-cache --upgrade \
-    libcrypto3=3.5.8-r0 \
-    libssl3=3.5.8-r0
+    'libcrypto3>=3.5.8-r0' \
+    'libssl3>=3.5.8-r0'
 
 # SPA-фолбэк, чтобы роутинг работал при F5
 COPY nginx.conf /etc/nginx/conf.d/default.conf
