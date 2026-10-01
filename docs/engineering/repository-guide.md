@@ -31,7 +31,7 @@ is normative; [docs/README.md](../README.md) owns documentation status/navigatio
 |---|---:|---|
 | Java | toolchain 21 | `backend/build.gradle.kts`, CI setup-java |
 | Spring Boot | 3.5.16 | `backend/settings.gradle.kts` |
-| Kotlin | 2.1.10 | `backend/settings.gradle.kts` |
+| Kotlin | 2.4.20 | `backend/settings.gradle.kts` |
 | Gradle | 8.14.5 | `backend/gradle/wrapper/gradle-wrapper.properties` |
 | Angular | core 22.1.5; CLI/build 22.1.7 | `frontend/package.json` |
 | TypeScript | 6.0.3 | `frontend/package.json` |
