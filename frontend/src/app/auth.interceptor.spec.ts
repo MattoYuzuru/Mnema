@@ -26,6 +26,7 @@ describe('canonical bearer interceptor', () => {
         for (const url of ['/api/decks', '/api/decks/123', '/api/editing-drafts', '/api/editing-drafts/123',
             '/api/capture-notes', '/api/capture-notes/123/conversions',
             '/api/media-assets/upload-policy', '/api/media-assets/123/playback',
+            '/api/capabilities', '/api/exercise-previews',
             `${identity}/api/accounts/me`, `${identity}/userinfo`]) {
             http.get(url).subscribe();
             const request = mock.expectOne(url);
@@ -37,6 +38,7 @@ describe('canonical bearer interceptor', () => {
     it('refuses legacy APIs, lookalike hosts/path prefixes and routing encodings', () => {
         for (const url of ['/api/core/decks', '/api/user/me', '/api/media/x', '/api/decks-other', '/api/editing-drafts-other',
             '/api/capture-notes-other', '/api/media-assets-other', '/api/other/../decks',
+            '/api/capabilities/x', '/api/capabilities-other', '/api/exercise-previews/x', '/api/exercise-previews-other',
             'https://storage.example.test/bucket/source?X-Amz-Signature=abc',
             'https://identity.example.test.evil.test/api/accounts/me', `${identity}/api/accounts/me/other`,
             `${identity}/api/accounts/login`, `${identity}/oauth2/token`, '/api/%64ecks', '/api/decks%2f123',
