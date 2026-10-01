@@ -768,9 +768,9 @@ export async function runMechanics(ctx) {
     await typeInto({ css: '#categorize-prompt-text-0' }, CATEGORIZE.instruction);
     await advance('groups');
     for (let index = 0; index < 2; index++) await realClick({ css: root + ' [data-add-category]' });
-    await waitFor(async () => (await count({ css: root + ' section[data-category]' })) === 4, 'groups were not added');
+    await waitFor(async () => (await count({ css: root + ' app-category-groups-editor section[data-category]' })) === 4, 'groups were not added');
     for (const [index, label] of [...CATEGORIZE.groups, CATEGORIZE.spare].entries()) {
-      await typeInto({ ...itemSection(index, 'section[data-category]'), css: 'input[type="text"]' }, label);
+      await typeInto({ ...itemSection(index, 'app-category-groups-editor section[data-category]'), css: 'input[type="text"]' }, label);
     }
     await advance('items');
     for (let index = 0; index < 2; index++) await realClick({ css: root + ' [data-add-item]' });
@@ -790,13 +790,13 @@ export async function runMechanics(ctx) {
     await chooseOption(groupSelect(3), option(CATEGORIZE.audioGroup), 'group of the audio item');
     await waitFor(async () => (await text(groupSelect(2))) === CATEGORIZE.spare, 'the temporary group was not chosen');
     // Removing the group that still holds «река» must ask first, then move the item: no dangling id, no lost item.
-    await realClick({ css: 'button[data-remove]', ...itemSection(3, 'section[data-category]') });
+    await realClick({ css: 'button[data-remove]', ...itemSection(3, 'app-category-groups-editor section[data-category]') });
     await waitFor(() => has({ css: root + ' .removal' }), 'removing a group with items did not ask what to do with them');
     need((await text({ css: root + ' .removal' })).includes('элементов: 1'), 'the removal question does not count the items');
-    need(await count({ css: root + ' section[data-category]' }) === 4, 'the group was removed before the author decided');
+    need(await count({ css: root + ' app-category-groups-editor section[data-category]' }) === 4, 'the group was removed before the author decided');
     await chooseOption({ css: '[role="combobox"]', within: root + ' .removal' }, 1, 'reassign target');
     await realClick({ css: root + ' [data-reassign]' });
-    await waitFor(async () => (await count({ css: root + ' section[data-category]' })) === 3, 'the group was not removed after the reassignment');
+    await waitFor(async () => (await count({ css: root + ' app-category-groups-editor section[data-category]' })) === 3, 'the group was not removed after the reassignment');
     await waitFor(async () => (await text(groupSelect(2))) === CATEGORIZE.groups[0], 'the item of the removed group did not move to the chosen group');
     need((await text({ css: root + ' [data-note]' })).includes('перенесены'), 'the removal outcome was not announced');
     await advance('finish');
@@ -815,7 +815,7 @@ export async function runMechanics(ctx) {
     await reopen('CATEGORIZE');
     const restored = await call(`return {
       mechanic: document.querySelector('input[name="mechanic"][value="CATEGORIZE"]')?.checked === true,
-      groups: [...document.querySelectorAll(args[0] + ' section[data-category] input[type="text"]')].map(input => input.value),
+      groups: [...document.querySelectorAll(args[0] + ' app-category-groups-editor section[data-category] input[type="text"]')].map(input => input.value),
       items: [...document.querySelectorAll(args[0] + ' section[data-item]')].map(section => ({
         group: section.querySelector('[role="combobox"]')?.textContent.trim() ?? null,
         text: section.querySelector('textarea')?.value ?? null, file: section.textContent.includes('Файл выбран') })),
