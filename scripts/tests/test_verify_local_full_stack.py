@@ -94,6 +94,10 @@ class LocalFullStackTest(unittest.TestCase):
             "MNEMA_LOCAL_TLS_CERT_FILE": str(self.state / "localhost.crt"),
             "MNEMA_LOCAL_TLS_KEY_FILE": str(self.state / "localhost.key"),
             "MNEMA_LOCAL_TRUSTSTORE_FILE": str(self.state / "learning-truststore.p12"),
+            "MNEMA_LOCAL_STORAGE_TLS_CERT_FILE": str(self.state / "storage.crt"),
+            "MNEMA_LOCAL_STORAGE_TLS_KEY_FILE": str(self.state / "storage.key"),
+            "MNEMA_LOCAL_CA_CERT_FILE": str(self.state / "local-ca.crt"),
+            "MNEMA_LOCAL_MEDIA_WORK_ROOT": str(self.state / "media-processing"),
         }
         subprocess.run(
             ["docker", "compose", "--file", str(COMPOSE), "config", "--quiet"],
