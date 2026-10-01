@@ -1,0 +1,744 @@
+{
+  "submitCloze": {
+    "exercise": {
+      "type": "CLOZE",
+      "schemaVersion": 2,
+      "content": {
+        "prompt": [
+          {
+            "kind": "TEXT",
+            "text": "Заполните пропуски в коде."
+          }
+        ],
+        "passage": [
+          {
+            "kind": "TEXT",
+            "text": "list.stream()\n    ."
+          },
+          {
+            "kind": "BLANK",
+            "blankId": "b1a00000-0000-4000-8000-000000000001",
+            "size": {
+              "mode": "ANSWER_LENGTH"
+            },
+            "firstLetterHint": true
+          },
+          {
+            "kind": "TEXT",
+            "text": "(x -> x * 2)\n    ."
+          },
+          {
+            "kind": "BLANK",
+            "blankId": "b1a00000-0000-4000-8000-000000000002",
+            "size": {
+              "mode": "FIXED",
+              "length": 8
+            },
+            "firstLetterHint": false
+          },
+          {
+            "kind": "TEXT",
+            "text": "();\n// map и map: одинаковые слова, разные пропуски — "
+          },
+          {
+            "kind": "BLANK",
+            "blankId": "b1a00000-0000-4000-8000-000000000003",
+            "size": {
+              "mode": "FIXED",
+              "length": 5
+            },
+            "firstLetterHint": true
+          }
+        ]
+      },
+      "answerKey": {
+        "kind": "CLOZE",
+        "blanks": [
+          {
+            "blankId": "b1a00000-0000-4000-8000-000000000001",
+            "accepted": [
+              "map"
+            ],
+            "normalization": [
+              "UNICODE_NFC",
+              "TRIM"
+            ],
+            "matchingMode": "STRICT"
+          },
+          {
+            "blankId": "b1a00000-0000-4000-8000-000000000002",
+            "accepted": [
+              "toList"
+            ],
+            "normalization": [
+              "UNICODE_NFC",
+              "TRIM"
+            ],
+            "matchingMode": "STRICT"
+          },
+          {
+            "blankId": "b1a00000-0000-4000-8000-000000000003",
+            "accepted": [
+              "map"
+            ],
+            "normalization": [
+              "UNICODE_NFC",
+              "TRIM",
+              "CASE_FOLD"
+            ],
+            "matchingMode": "STRICT"
+          }
+        ]
+      },
+      "evaluatorPolicy": {
+        "id": "deterministic-cloze",
+        "version": "1"
+      }
+    },
+    "action": {
+      "kind": "SUBMIT",
+      "response": {
+        "kind": "CLOZE",
+        "blanks": [
+          {
+            "blankId": "b1a00000-0000-4000-8000-000000000001",
+            "text": "map"
+          },
+          {
+            "blankId": "b1a00000-0000-4000-8000-000000000002",
+            "text": "toSet"
+          },
+          {
+            "blankId": "b1a00000-0000-4000-8000-000000000003",
+            "text": "Map"
+          }
+        ]
+      },
+      "hintedBlankIds": [
+        "b1a00000-0000-4000-8000-000000000003"
+      ],
+      "pairMistakes": false,
+      "transcriptRevealed": false
+    }
+  },
+  "submitClozeResult": {
+    "feedback": {
+      "result": "PARTIAL",
+      "appliedRules": [
+        "PER_BLANK",
+        "UNICODE_NFC",
+        "TRIM",
+        "CASE_FOLD"
+      ],
+      "blanks": [
+        {
+          "blankId": "b1a00000-0000-4000-8000-000000000001",
+          "correct": true,
+          "hinted": false,
+          "reference": "map"
+        },
+        {
+          "blankId": "b1a00000-0000-4000-8000-000000000002",
+          "correct": false,
+          "hinted": false,
+          "reference": "toList"
+        },
+        {
+          "blankId": "b1a00000-0000-4000-8000-000000000003",
+          "correct": true,
+          "hinted": true,
+          "reference": "map"
+        }
+      ]
+    }
+  },
+  "submitChoice": {
+    "exercise": {
+      "type": "CHOICE",
+      "schemaVersion": 2,
+      "content": {
+        "prompt": [
+          {
+            "kind": "VIDEO",
+            "assetId": "aaaaaaaa-0000-4000-8000-000000000001",
+            "title": "Опыт 3"
+          },
+          {
+            "kind": "TEXT",
+            "text": "Какие признаки химической реакции видны в опыте?"
+          }
+        ],
+        "selectionMode": "MULTIPLE",
+        "options": [
+          {
+            "optionId": "dddddddd-dddd-4ddd-8ddd-ddddddddddd1",
+            "blocks": [
+              {
+                "kind": "TEXT",
+                "text": "Выделение газа"
+              }
+            ]
+          },
+          {
+            "optionId": "dddddddd-dddd-4ddd-8ddd-ddddddddddd2",
+            "blocks": [
+              {
+                "kind": "TEXT",
+                "text": "Изменение цвета"
+              }
+            ]
+          },
+          {
+            "optionId": "dddddddd-dddd-4ddd-8ddd-ddddddddddd3",
+            "blocks": [
+              {
+                "kind": "IMAGE",
+                "assetId": "aaaaaaaa-0000-4000-8000-000000000003",
+                "alt": "Осадок на дне пробирки"
+              }
+            ]
+          },
+          {
+            "optionId": "dddddddd-dddd-4ddd-8ddd-ddddddddddd4",
+            "blocks": [
+              {
+                "kind": "TEXT",
+                "text": "Звук"
+              },
+              {
+                "kind": "AUDIO",
+                "assetId": "aaaaaaaa-0000-4000-8000-000000000004",
+                "title": "Шипение"
+              }
+            ]
+          }
+        ]
+      },
+      "answerKey": {
+        "kind": "CHOICE",
+        "correctOptionIds": [
+          "dddddddd-dddd-4ddd-8ddd-ddddddddddd1",
+          "dddddddd-dddd-4ddd-8ddd-ddddddddddd2"
+        ]
+      },
+      "evaluatorPolicy": {
+        "id": "deterministic-choice",
+        "version": "1"
+      }
+    },
+    "action": {
+      "kind": "SUBMIT",
+      "response": {
+        "kind": "CHOICE",
+        "optionIds": [
+          "dddddddd-dddd-4ddd-8ddd-ddddddddddd2",
+          "dddddddd-dddd-4ddd-8ddd-ddddddddddd1"
+        ]
+      },
+      "hintedBlankIds": [],
+      "pairMistakes": false,
+      "transcriptRevealed": false
+    }
+  },
+  "submitChoiceResult": {
+    "feedback": {
+      "result": "CORRECT",
+      "appliedRules": [
+        "SERVER_ISSUED_OPTION",
+        "EXACT_OPTION_SET"
+      ],
+      "correctOptionIds": [
+        "dddddddd-dddd-4ddd-8ddd-ddddddddddd1",
+        "dddddddd-dddd-4ddd-8ddd-ddddddddddd2"
+      ]
+    }
+  },
+  "submitMatchAfterMistake": {
+    "exercise": {
+      "type": "MATCH",
+      "schemaVersion": 2,
+      "content": {
+        "prompt": [
+          {
+            "kind": "TEXT",
+            "text": "Соедините пары."
+          }
+        ],
+        "left": [
+          {
+            "itemId": "1e000000-0000-4000-8000-000000000001",
+            "blocks": [
+              {
+                "kind": "TEXT",
+                "text": "der Hund"
+              }
+            ]
+          },
+          {
+            "itemId": "1e000000-0000-4000-8000-000000000002",
+            "blocks": [
+              {
+                "kind": "AUDIO",
+                "assetId": "aaaaaaaa-0000-4000-8000-000000000002",
+                "title": "Запись: Katze",
+                "transcript": "die Katze"
+              }
+            ]
+          },
+          {
+            "itemId": "1e000000-0000-4000-8000-000000000003",
+            "blocks": [
+              {
+                "kind": "IMAGE",
+                "assetId": "aaaaaaaa-0000-4000-8000-000000000003",
+                "alt": "Рисунок птицы на ветке"
+              }
+            ]
+          },
+          {
+            "itemId": "1e000000-0000-4000-8000-000000000004",
+            "blocks": [
+              {
+                "kind": "VIDEO",
+                "assetId": "aaaaaaaa-0000-4000-8000-000000000005",
+                "title": "Короткий ролик: лошадь"
+              }
+            ]
+          }
+        ],
+        "right": [
+          {
+            "itemId": "7e000000-0000-4000-8000-000000000001",
+            "blocks": [
+              {
+                "kind": "TEXT",
+                "text": "собака"
+              }
+            ]
+          },
+          {
+            "itemId": "7e000000-0000-4000-8000-000000000002",
+            "blocks": [
+              {
+                "kind": "TEXT",
+                "text": "кошка"
+              }
+            ]
+          },
+          {
+            "itemId": "7e000000-0000-4000-8000-000000000003",
+            "blocks": [
+              {
+                "kind": "AUDIO",
+                "assetId": "aaaaaaaa-0000-4000-8000-000000000004",
+                "title": "Запись: Vogel"
+              }
+            ]
+          },
+          {
+            "itemId": "7e000000-0000-4000-8000-000000000004",
+            "blocks": [
+              {
+                "kind": "MATERIAL",
+                "memberKey": "44444444-4444-4444-8444-444444444444",
+                "itemRevisionId": "55555555-5555-4555-8555-555555555555",
+                "nodeId": "00000000-0000-4000-8000-000000000003"
+              }
+            ]
+          }
+        ]
+      },
+      "answerKey": {
+        "kind": "MATCH",
+        "pairs": [
+          {
+            "leftId": "1e000000-0000-4000-8000-000000000001",
+            "rightId": "7e000000-0000-4000-8000-000000000001"
+          },
+          {
+            "leftId": "1e000000-0000-4000-8000-000000000002",
+            "rightId": "7e000000-0000-4000-8000-000000000002"
+          },
+          {
+            "leftId": "1e000000-0000-4000-8000-000000000003",
+            "rightId": "7e000000-0000-4000-8000-000000000003"
+          },
+          {
+            "leftId": "1e000000-0000-4000-8000-000000000004",
+            "rightId": "7e000000-0000-4000-8000-000000000004"
+          }
+        ]
+      },
+      "evaluatorPolicy": {
+        "id": "deterministic-match",
+        "version": "1"
+      }
+    },
+    "action": {
+      "kind": "SUBMIT",
+      "response": {
+        "kind": "MATCH",
+        "pairs": [
+          {
+            "leftId": "1e000000-0000-4000-8000-000000000001",
+            "rightId": "7e000000-0000-4000-8000-000000000001"
+          },
+          {
+            "leftId": "1e000000-0000-4000-8000-000000000002",
+            "rightId": "7e000000-0000-4000-8000-000000000002"
+          },
+          {
+            "leftId": "1e000000-0000-4000-8000-000000000003",
+            "rightId": "7e000000-0000-4000-8000-000000000003"
+          },
+          {
+            "leftId": "1e000000-0000-4000-8000-000000000004",
+            "rightId": "7e000000-0000-4000-8000-000000000004"
+          }
+        ]
+      },
+      "hintedBlankIds": [],
+      "pairMistakes": true,
+      "transcriptRevealed": false
+    }
+  },
+  "submitMatchAfterMistakeResult": {
+    "feedback": {
+      "result": "PARTIAL",
+      "appliedRules": [
+        "SERVER_ISSUED_PAIR_MAP",
+        "PAIR_RETRY"
+      ],
+      "pairs": [
+        {
+          "leftId": "1e000000-0000-4000-8000-000000000001",
+          "selectedRightId": "7e000000-0000-4000-8000-000000000001",
+          "correctRightId": "7e000000-0000-4000-8000-000000000001",
+          "correct": true
+        },
+        {
+          "leftId": "1e000000-0000-4000-8000-000000000002",
+          "selectedRightId": "7e000000-0000-4000-8000-000000000002",
+          "correctRightId": "7e000000-0000-4000-8000-000000000002",
+          "correct": true
+        },
+        {
+          "leftId": "1e000000-0000-4000-8000-000000000003",
+          "selectedRightId": "7e000000-0000-4000-8000-000000000003",
+          "correctRightId": "7e000000-0000-4000-8000-000000000003",
+          "correct": true
+        },
+        {
+          "leftId": "1e000000-0000-4000-8000-000000000004",
+          "selectedRightId": "7e000000-0000-4000-8000-000000000004",
+          "correctRightId": "7e000000-0000-4000-8000-000000000004",
+          "correct": true
+        }
+      ]
+    }
+  },
+  "submitFreeResponse": {
+    "exercise": {
+      "type": "FREE_RESPONSE",
+      "schemaVersion": 2,
+      "content": {
+        "prompt": [
+          {
+            "kind": "AUDIO",
+            "assetId": "aaaaaaaa-0000-4000-8000-000000000002",
+            "title": "Слово 12",
+            "transcript": "Erinnerung"
+          },
+          {
+            "kind": "TEXT",
+            "text": "Напишите услышанное слово."
+          }
+        ],
+        "reference": [],
+        "responseInput": "TEXT"
+      },
+      "answerKey": {
+        "kind": "TEXT",
+        "accepted": [
+          "Erinnerung",
+          "die Erinnerung"
+        ],
+        "normalization": [
+          "UNICODE_NFC",
+          "TRIM",
+          "CASE_FOLD"
+        ],
+        "matchingMode": "STRICT"
+      },
+      "evaluatorPolicy": {
+        "id": "deterministic-text",
+        "version": "1"
+      }
+    },
+    "action": {
+      "kind": "SUBMIT",
+      "response": {
+        "kind": "TEXT",
+        "text": "erinnerung "
+      },
+      "hintedBlankIds": [],
+      "pairMistakes": false,
+      "transcriptRevealed": false
+    }
+  },
+  "submitFreeResponseResult": {
+    "feedback": {
+      "result": "CORRECT",
+      "appliedRules": [
+        "UNICODE_NFC",
+        "TRIM",
+        "CASE_FOLD"
+      ],
+      "reference": "Erinnerung",
+      "referenceContent": []
+    }
+  },
+  "pairCheck": {
+    "exercise": {
+      "type": "MATCH",
+      "schemaVersion": 2,
+      "content": {
+        "prompt": [
+          {
+            "kind": "TEXT",
+            "text": "Соедините пары."
+          }
+        ],
+        "left": [
+          {
+            "itemId": "1e000000-0000-4000-8000-000000000001",
+            "blocks": [
+              {
+                "kind": "TEXT",
+                "text": "der Hund"
+              }
+            ]
+          },
+          {
+            "itemId": "1e000000-0000-4000-8000-000000000002",
+            "blocks": [
+              {
+                "kind": "AUDIO",
+                "assetId": "aaaaaaaa-0000-4000-8000-000000000002",
+                "title": "Запись: Katze",
+                "transcript": "die Katze"
+              }
+            ]
+          },
+          {
+            "itemId": "1e000000-0000-4000-8000-000000000003",
+            "blocks": [
+              {
+                "kind": "IMAGE",
+                "assetId": "aaaaaaaa-0000-4000-8000-000000000003",
+                "alt": "Рисунок птицы на ветке"
+              }
+            ]
+          },
+          {
+            "itemId": "1e000000-0000-4000-8000-000000000004",
+            "blocks": [
+              {
+                "kind": "VIDEO",
+                "assetId": "aaaaaaaa-0000-4000-8000-000000000005",
+                "title": "Короткий ролик: лошадь"
+              }
+            ]
+          }
+        ],
+        "right": [
+          {
+            "itemId": "7e000000-0000-4000-8000-000000000001",
+            "blocks": [
+              {
+                "kind": "TEXT",
+                "text": "собака"
+              }
+            ]
+          },
+          {
+            "itemId": "7e000000-0000-4000-8000-000000000002",
+            "blocks": [
+              {
+                "kind": "TEXT",
+                "text": "кошка"
+              }
+            ]
+          },
+          {
+            "itemId": "7e000000-0000-4000-8000-000000000003",
+            "blocks": [
+              {
+                "kind": "AUDIO",
+                "assetId": "aaaaaaaa-0000-4000-8000-000000000004",
+                "title": "Запись: Vogel"
+              }
+            ]
+          },
+          {
+            "itemId": "7e000000-0000-4000-8000-000000000004",
+            "blocks": [
+              {
+                "kind": "MATERIAL",
+                "memberKey": "44444444-4444-4444-8444-444444444444",
+                "itemRevisionId": "55555555-5555-4555-8555-555555555555",
+                "nodeId": "00000000-0000-4000-8000-000000000003"
+              }
+            ]
+          }
+        ]
+      },
+      "answerKey": {
+        "kind": "MATCH",
+        "pairs": [
+          {
+            "leftId": "1e000000-0000-4000-8000-000000000001",
+            "rightId": "7e000000-0000-4000-8000-000000000001"
+          },
+          {
+            "leftId": "1e000000-0000-4000-8000-000000000002",
+            "rightId": "7e000000-0000-4000-8000-000000000002"
+          },
+          {
+            "leftId": "1e000000-0000-4000-8000-000000000003",
+            "rightId": "7e000000-0000-4000-8000-000000000003"
+          },
+          {
+            "leftId": "1e000000-0000-4000-8000-000000000004",
+            "rightId": "7e000000-0000-4000-8000-000000000004"
+          }
+        ]
+      },
+      "evaluatorPolicy": {
+        "id": "deterministic-match",
+        "version": "1"
+      }
+    },
+    "action": {
+      "kind": "PAIR_CHECK",
+      "leftId": "1e000000-0000-4000-8000-000000000001",
+      "rightId": "7e000000-0000-4000-8000-000000000002"
+    }
+  },
+  "pairCheckResult": {
+    "correct": false
+  },
+  "hint": {
+    "exercise": {
+      "type": "CLOZE",
+      "schemaVersion": 2,
+      "content": {
+        "prompt": [
+          {
+            "kind": "TEXT",
+            "text": "Заполните пропуски в коде."
+          }
+        ],
+        "passage": [
+          {
+            "kind": "TEXT",
+            "text": "list.stream()\n    ."
+          },
+          {
+            "kind": "BLANK",
+            "blankId": "b1a00000-0000-4000-8000-000000000001",
+            "size": {
+              "mode": "ANSWER_LENGTH"
+            },
+            "firstLetterHint": true
+          },
+          {
+            "kind": "TEXT",
+            "text": "(x -> x * 2)\n    ."
+          },
+          {
+            "kind": "BLANK",
+            "blankId": "b1a00000-0000-4000-8000-000000000002",
+            "size": {
+              "mode": "FIXED",
+              "length": 8
+            },
+            "firstLetterHint": false
+          },
+          {
+            "kind": "TEXT",
+            "text": "();\n// map и map: одинаковые слова, разные пропуски — "
+          },
+          {
+            "kind": "BLANK",
+            "blankId": "b1a00000-0000-4000-8000-000000000003",
+            "size": {
+              "mode": "FIXED",
+              "length": 5
+            },
+            "firstLetterHint": true
+          }
+        ]
+      },
+      "answerKey": {
+        "kind": "CLOZE",
+        "blanks": [
+          {
+            "blankId": "b1a00000-0000-4000-8000-000000000001",
+            "accepted": [
+              "map"
+            ],
+            "normalization": [
+              "UNICODE_NFC",
+              "TRIM"
+            ],
+            "matchingMode": "STRICT"
+          },
+          {
+            "blankId": "b1a00000-0000-4000-8000-000000000002",
+            "accepted": [
+              "toList"
+            ],
+            "normalization": [
+              "UNICODE_NFC",
+              "TRIM"
+            ],
+            "matchingMode": "STRICT"
+          },
+          {
+            "blankId": "b1a00000-0000-4000-8000-000000000003",
+            "accepted": [
+              "map"
+            ],
+            "normalization": [
+              "UNICODE_NFC",
+              "TRIM",
+              "CASE_FOLD"
+            ],
+            "matchingMode": "STRICT"
+          }
+        ]
+      },
+      "evaluatorPolicy": {
+        "id": "deterministic-cloze",
+        "version": "1"
+      }
+    },
+    "action": {
+      "kind": "HINT",
+      "blankId": "b1a00000-0000-4000-8000-000000000001"
+    }
+  },
+  "hintResult": {
+    "blankId": "b1a00000-0000-4000-8000-000000000001",
+    "firstLetter": "m"
+  },
+  "aiSemanticResult": {
+    "feedback": {
+      "result": "UNAVAILABLE",
+      "reasonCodes": [
+        "EVALUATOR_UNAVAILABLE"
+      ]
+    }
+  }
+}
