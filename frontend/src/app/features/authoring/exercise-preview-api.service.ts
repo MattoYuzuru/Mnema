@@ -6,7 +6,10 @@ import { appConfig } from '../../app.config';
 import { PreviewExercise, previewExerciseOf } from '../../content/exercise/exercise-content.models';
 import { parseExerciseSpec } from '../../content/exercise/exercise-content.parse';
 import { parseAttemptFeedback } from '../study/attempt-feedback.parse';
-import { AttemptFeedback, isChoiceFeedback, isClozeFeedback, isFreeResponseFeedback, isMatchFeedback, isUnassessed } from '../study/study.models';
+import {
+    AttemptFeedback, isCategorizeFeedback, isChoiceFeedback, isClozeFeedback, isFreeResponseFeedback, isMatchFeedback, isOrderFeedback,
+    isUnassessed
+} from '../study/study.models';
 import { entity, exact, guard, hintLetter, protocol, validateResponse } from '../study/study-wire';
 import { PreviewSubmission } from './exercise-preview.models';
 
@@ -85,10 +88,12 @@ function feedbackFits(exercise: PreviewExercise, feedback: AttemptFeedback): boo
         case 'CLOZE': return isClozeFeedback(feedback);
         case 'CHOICE': return isChoiceFeedback(feedback);
         case 'MATCH': return isMatchFeedback(feedback);
+        case 'ORDER': return isOrderFeedback(feedback);
+        case 'CATEGORIZE': return isCategorizeFeedback(feedback);
         // The editor shows the author's own reference, so the server returns no extra reference content.
         case 'FREE_RESPONSE': return isFreeResponseFeedback(feedback) && feedback.referenceContent.length === 0;
         case 'SELF_CHECK': return !isClozeFeedback(feedback) && !isChoiceFeedback(feedback) && !isMatchFeedback(feedback)
-            && !isFreeResponseFeedback(feedback);
+            && !isOrderFeedback(feedback) && !isCategorizeFeedback(feedback) && !isFreeResponseFeedback(feedback);
     }
 }
 

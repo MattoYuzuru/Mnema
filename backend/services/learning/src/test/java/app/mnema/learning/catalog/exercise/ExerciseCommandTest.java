@@ -30,8 +30,8 @@ class ExerciseCommandTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"createSelfCheck", "createFreeResponseAudio", "createCloze", "createChoiceVideoMultiple",
-            "createMatchMixed"})
-    void everyContractFixtureOfTheFiveMechanicsParsesAndKeepsItsStoredShape(String name) {
+            "createMatchMixed", "createOrder", "createCategorize"})
+    void everyContractFixtureOfTheSevenMechanicsParsesAndKeepsItsStoredShape(String name) {
         ObjectNode fixture = mechanic(name);
         ExerciseCommand command = ExerciseCommand.readCreate(bytes(fixture));
         assertThat(command.exercise().type().name()).isEqualTo(fixture.path("exercise").path("type").textValue());
@@ -132,7 +132,7 @@ class ExerciseCommandTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"TYPED", "LISTEN_TYPE", "CLOZE_SINGLE", "SINGLE_CHOICE", "LISTEN_CHOICE",
-            "AUDIO_TEXT_MATCH", "ORDER", "CATEGORIZE", "choice", "Choice", ""})
+            "AUDIO_TEXT_MATCH", "LISTEN_ORDER", "IMAGE_GROUP", "order", "Categorize", "choice", "Choice", ""})
     void legacyAndUnknownMechanicNamesAreRejectedWithoutAliases(String type) {
         assertInvalid("createChoiceVideoMultiple", body -> exercise(body).put("type", type));
     }

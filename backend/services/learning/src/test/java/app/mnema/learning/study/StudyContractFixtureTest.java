@@ -30,7 +30,7 @@ class StudyContractFixtureTest {
 
         // Publication carries one subject and no bindings: the server derives them.
         for (String name : new String[] {"createSelfCheck", "createFreeResponseAudio", "createCloze",
-                "createChoiceVideoMultiple", "createMatchMixed"}) {
+                "createChoiceVideoMultiple", "createMatchMixed", "createOrder", "createCategorize"}) {
             JsonNode exercise = mechanics.path(name).path("exercise");
             assertThat(exercise.has("bindings")).isFalse();
             assertThat(exercise.path("subject").has("memberKey")).isTrue();
@@ -121,6 +121,25 @@ class StudyContractFixtureTest {
                 root -> root.withObject("submitCloze").withObject("exercise").put("type", "CLOZE_SINGLE"),
                 root -> root.withObject("submitCloze").withObject("exercise").remove("answerKey"),
                 root -> root.withObject("submitCloze").withObject("exercise").withObject("answerKey").put("kind", "TEXT"),
+                root -> root.withObject("submitOrder").withObject("exercise").withObject("answerKey")
+                        .put("kind", "CATEGORIZE"),
+                root -> root.withObject("submitOrder").withObject("exercise").withObject("evaluatorPolicy")
+                        .put("id", "deterministic-categorize"),
+                root -> root.withObject("submitOrder").withObject("exercise").put("enabled", true),
+                root -> root.withObject("submitOrder").withObject("action").withObject("response")
+                        .withArray("sequence").removeAll(),
+                root -> root.withObject("submitOrder").withObject("action").withObject("response")
+                        .put("kind", "CATEGORIZE"),
+                root -> root.withObject("submitCategorize").withObject("exercise").withObject("content")
+                        .withArray("categories").removeAll(),
+                root -> ((ObjectNode) root.withObject("submitCategorize").withObject("exercise").withObject("content")
+                        .withArray("categories").get(0)).put("label", "x".repeat(81)),
+                root -> ((ObjectNode) root.withObject("submitCategorize").withObject("action").withObject("response")
+                        .withArray("assignments").get(0)).remove("categoryId"),
+                root -> root.withObject("submitOrderResult").withObject("feedback").withArray("positions").addObject()
+                        .put("position", -1),
+                root -> root.withObject("submitCategorizeResult").withObject("feedback").withArray("assignments")
+                        .addObject().put("itemId", "x"),
                 root -> root.withObject("submitCloze").put("attemptId", "cccccccc-cccc-4ccc-8ccc-cccccccccc11"),
                 root -> root.withObject("submitCloze").remove("action"),
                 root -> root.withObject("submitCloze").withObject("action").put("hintsUsed", 1),
@@ -172,6 +191,32 @@ class StudyContractFixtureTest {
                         .withArray("prompt").get(0)).put("title", "leaked author label"),
                 root -> root.withObject("feedback").withObject("match").withArray("pairs").addObject().put("cueId", "x"),
                 root -> root.withObject("evidence").withObject("clozeHinted").put("evidenceClass", "NONE"),
+                root -> root.withObject("createOrder").withObject("exercise").withObject("answerKey")
+                        .withArray("sequence").add("0d000000-0000-4000-8000-000000000001"),
+                root -> drop(root.withObject("createOrder").withObject("exercise").withObject("content")
+                        .withArray("items"), 5, 4, 3, 2, 1),
+                root -> ((ObjectNode) root.withObject("createOrder").withObject("exercise").withObject("content")
+                        .withArray("items").get(0).withArray("blocks").get(0)).put("text", "x".repeat(1_001)),
+                root -> root.withObject("createOrder").withObject("exercise").withObject("evaluatorPolicy")
+                        .put("id", "deterministic-match"),
+                root -> ((ObjectNode) root.withObject("createCategorize").withObject("exercise").withObject("content")
+                        .withArray("items").get(0).withArray("blocks").get(0)).put("text", "x".repeat(301)),
+                root -> root.withObject("createCategorize").withObject("exercise").withObject("answerKey")
+                        .withArray("assignments").addObject().put("itemId", "9a000000-0000-4000-8000-000000000001"),
+                root -> root.withObject("createCategorize").withObject("exercise").withObject("content")
+                        .withArray("categories").addObject().put("categoryId", "ca000000-0000-4000-8000-000000000009"),
+                root -> root.withObject("presentations").withObject("order").withObject("content").put("sequence", "x"),
+                root -> root.withObject("presentations").withObject("categorize").withObject("content")
+                        .withArray("items").addObject().put("itemId", "not-an-id"),
+                root -> ((ObjectNode) root.withObject("presentations").withObject("categorize").withObject("content")
+                        .withArray("items").get(1).withArray("blocks").get(0)).put("title", "leaked author label"),
+                root -> root.withObject("submits").withObject("order").withObject("response").put("kind", "CATEGORIZE"),
+                root -> root.withObject("submits").withObject("categorize").withObject("response")
+                        .withArray("assignments").insertObject(0).put("optionId", "x"),
+                root -> root.withObject("feedback").withObject("order").withArray("correctSequence").removeAll(),
+                root -> root.withObject("feedback").withObject("categorize").withArray("assignments").removeAll(),
+                root -> root.withObject("evidence").withObject("orderIncorrect").put("evidenceClass", "NONE"),
+                root -> root.remove("createCategorize"),
                 root -> root.withObject("capabilities").withObject("aiAssessment").putNull("reason"),
                 root -> root.withObject("capabilities").withObject("aiAssessment").put("available", true),
                 root -> root.withObject("capabilityUnavailableProblem").put("status", 400))) {

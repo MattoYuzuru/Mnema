@@ -9,6 +9,7 @@ import stat
 import subprocess
 import tempfile
 import unittest
+import uuid
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -246,15 +247,103 @@ class LocalFullStackTest(unittest.TestCase):
         self.assertEqual({}, upgraded["mechanics"])
         self.assertNotIn("p0Mechanics", upgraded)
 
-    def test_smoke_covers_five_mechanics_and_fail_closed_capabilities(self):
+    def test_smoke_covers_all_seven_mechanics_and_fail_closed_capabilities(self):
         module = load_smoke_module()
-        self.assertEqual(("SELF_CHECK", "CLOZE", "CHOICE", "MATCH"), module.ADDITIONAL_MECHANICS)
+        self.assertEqual(("SELF_CHECK", "CLOZE", "CHOICE", "MATCH", "ORDER", "CATEGORIZE"),
+                         module.ADDITIONAL_MECHANICS)
         smoke = SMOKE.read_text()
         self.assertIn('"/api/capabilities"', smoke)
         self.assertIn('"CAPABILITY_UNAVAILABLE"', smoke)
         self.assertIn('/hints"', smoke)
         self.assertIn('"PAIR_RETRY"', smoke)
         self.assertNotIn('hintsUsed', smoke)
+
+    def test_order_and_categorize_fixtures_follow_the_contract_shape_and_the_agreed_content(self):
+        module = load_smoke_module()
+        mechanics = json.loads((ROOT / "contracts/study/mechanics.json").read_text())
+        for mechanic, create in (("ORDER", "createOrder"), ("CATEGORIZE", "createCategorize")):
+            ids = module.mechanic_ids(mechanic)
+            exercise = module.mechanic_exercise(mechanic, "member", "revision", "answer", "distractor", ids)
+            contract = mechanics[create]["exercise"]
+            self.assertEqual(set(contract), set(exercise))
+            self.assertEqual(set(contract["content"]), set(exercise["content"]))
+            self.assertEqual(contract["answerKey"]["kind"], exercise["answerKey"]["kind"])
+            self.assertEqual(set(contract["answerKey"]), set(exercise["answerKey"]))
+            self.assertEqual(contract["evaluatorPolicy"], exercise["evaluatorPolicy"])
+            self.assertEqual(mechanic, exercise["type"])
+            self.assertEqual(2, exercise["schemaVersion"])
+
+        order = module.mechanic_exercise("ORDER", "m", "r", "a", "d", module.mechanic_ids("ORDER"))
+        texts = [item["blocks"][0]["text"] for item in order["content"]["items"]]
+        self.assertEqual(list(module.ORDER_TILES), texts)
+        self.assertEqual({"очень"}, {text for text in texts if texts.count(text) > 1}, "two identical tiles")
+        self.assertTrue(any(text.endswith(",") for text in texts), "punctuation must stay attached")
+        self.assertTrue(any(ord(character) > 0x2E80 for text in texts for character in text), "CJK tile expected")
+        self.assertEqual([item["itemId"] for item in order["content"]["items"]], order["answerKey"]["sequence"])
+
+        ids = module.mechanic_ids("CATEGORIZE")
+        groups = module.mechanic_exercise("CATEGORIZE", "m", "r", "a", "d", ids)
+        categories = {category["categoryId"] for category in groups["content"]["categories"]}
+        assigned = [assignment["categoryId"] for assignment in groups["answerKey"]["assignments"]]
+        self.assertEqual(4, len(groups["answerKey"]["assignments"]))
+        self.assertTrue(set(assigned) < categories, "one distractor group stays empty")
+        self.assertEqual(1, len(categories - set(assigned)))
+        self.assertTrue(any(assigned.count(category) >= 2 for category in set(assigned)),
+                        "several items must share a group")
+
+    def test_new_mechanic_responses_are_strict_idempotent_and_keep_the_issued_board(self):
+        module = load_smoke_module()
+
+        class FakeWeb:
+            """Serves one issued presentation and rejects every malformed attempt like the Learning API."""
+
+            def __init__(self, shown):
+                self.shown = shown
+                self.attempts = []
+
+            def request(self, method, path, body=None, bearer=None, headers=None):
+                if method == "GET":
+                    return 200, {"cache-control": "private, no-store"}, {"presentations": [self.shown]}
+                self.attempts.append(body["response"])
+                return 400, {"cache-control": "private, no-store"}, {"code": "INVALID_REQUEST"}
+
+        for mechanic in ("ORDER", "CATEGORIZE"):
+            ids = module.mechanic_ids(mechanic)
+            exercise = module.mechanic_exercise(mechanic, "m", "r", "a", "d", ids)
+            content = json.loads(json.dumps(exercise["content"]))
+            content["items"].reverse()  # a shuffled board; categories keep their authored order
+            shown = {"presentationId": str(uuid.uuid4()), "nonce": "n" * 24, "content": content}
+            web = FakeWeb(shown)
+            response = module.mechanic_response(web, "token", "deck", "session", mechanic, shown, ids)
+            self.assertEqual(mechanic, response["kind"])
+            self.assertEqual(2, len(web.attempts), "two malformed answers are refused first")
+            if mechanic == "ORDER":
+                sequence = response["sequence"]
+                self.assertEqual(sorted(ids["items"]), sorted(sequence))
+                self.assertEqual([ids["items"][i] for i in (0, 2, 1, 3, 4)], sequence)
+            else:
+                self.assertEqual(sorted(ids["items"]), sorted(a["itemId"] for a in response["assignments"]))
+                self.assertEqual({a["itemId"]: a["categoryId"] for a in exercise["answerKey"]["assignments"]},
+                                 {a["itemId"]: a["categoryId"] for a in response["assignments"]})
+
+        # a board that changes between reads, or tiles that lost their text, are failures
+        ids = module.mechanic_ids("ORDER")
+        exercise = module.mechanic_exercise("ORDER", "m", "r", "a", "d", ids)
+        shown = {"presentationId": str(uuid.uuid4()), "nonce": "n" * 24, "content": exercise["content"]}
+        web = FakeWeb(dict(shown, content=dict(exercise["content"], items=exercise["content"]["items"][::-1])))
+        with self.assertRaisesRegex(AssertionError, "board changed"):
+            module.mechanic_response(web, "token", "deck", "session", "ORDER", shown, ids)
+        lossy = json.loads(json.dumps(shown))
+        lossy["content"]["items"][3]["blocks"][0]["text"] = "важно"
+        with self.assertRaisesRegex(AssertionError, "lost punctuation"):
+            module.mechanic_response(FakeWeb(lossy), "token", "deck", "session", "ORDER", lossy, ids)
+
+    def test_presentation_leak_guard_covers_the_new_mechanic_keys(self):
+        module = load_smoke_module()
+        self.assertEqual([".ORDER.content.sequence"], module.private_keys({"ORDER": {"content": {"sequence": []}}}))
+        self.assertEqual([".CATEGORIZE.content.assignments"],
+                         module.private_keys({"CATEGORIZE": {"content": {"assignments": []}}}))
+        self.assertEqual([], module.private_keys({"ORDER": {"content": {"items": [], "prompt": []}}}))
 
     def test_presentation_leak_guard_allows_only_self_check_reference(self):
         module = load_smoke_module()

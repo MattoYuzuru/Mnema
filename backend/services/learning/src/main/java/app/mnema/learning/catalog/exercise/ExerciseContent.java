@@ -6,7 +6,9 @@ import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.UUID;
 import java.util.stream.Stream;
 
@@ -16,6 +18,7 @@ import static app.mnema.learning.catalog.exercise.StrictJson.fields;
 import static app.mnema.learning.catalog.exercise.StrictJson.id;
 import static app.mnema.learning.catalog.exercise.StrictJson.integer;
 import static app.mnema.learning.catalog.exercise.StrictJson.invalid;
+import static app.mnema.learning.catalog.exercise.StrictJson.nonBlank;
 import static app.mnema.learning.catalog.exercise.StrictJson.oneOf;
 
 /**
@@ -33,6 +36,13 @@ public sealed interface ExerciseContent {
     int MAX_OPTIONS = 12;
     int MIN_SIDE = 2;
     int MAX_SIDE = 6;
+    int MIN_ORDER_ITEMS = 2;
+    int MAX_ORDER_ITEMS = 12;
+    int MIN_CATEGORIES = 2;
+    int MAX_CATEGORIES = 6;
+    int MIN_CATEGORIZE_ITEMS = 2;
+    int MAX_CATEGORIZE_ITEMS = 12;
+    int MAX_CATEGORY_LABEL = 80;
     Set<String> RESPONSE_INPUTS = Set.of("TEXT", "TEXT_OR_SPEECH");
 
     /** Every block of every slot in document order. */
@@ -68,11 +78,22 @@ public sealed interface ExerciseContent {
         }
     }
 
+    /** Items in authored order; the answer key is the explicit correct sequence of their identifiers. */
+    record Order(List<Block> prompt, List<Item> items) implements ExerciseContent {
+        @Override public List<Block> blocks() { return withItems(prompt, items); }
+    }
+
+    /** Categories keep their authored order (display only); items are assigned by identifier. */
+    record Categorize(List<Block> prompt, List<Category> categories, List<Item> items) implements ExerciseContent {
+        @Override public List<Block> blocks() { return withItems(prompt, items); }
+    }
+
     sealed interface Segment { }
     record Literal(String text) implements Segment { }
     record Blank(UUID blankId, boolean fixed, int length, boolean firstLetterHint) implements Segment { }
     record Option(UUID optionId, List<Block> blocks) { }
     record Item(UUID itemId, List<Block> blocks) { }
+    record Category(UUID categoryId, String label) { }
 
     /** Strict exact-field parse of one mechanic's {@code content} object. */
     static ExerciseContent parse(ExerciseType type, JsonNode value) {
@@ -101,12 +122,27 @@ public sealed interface ExerciseContent {
             }
             case MATCH -> {
                 fields(value, "prompt", "left", "right");
-                List<Item> left = items(value.path("left"));
-                List<Item> right = items(value.path("right"));
+                List<Item> left = items(value.path("left"), Slot.COMPACT, MIN_SIDE, MAX_SIDE);
+                List<Item> right = items(value.path("right"), Slot.COMPACT, MIN_SIDE, MAX_SIDE);
                 Set<UUID> ids = new HashSet<>();
                 if (left.size() != right.size() || Stream.concat(left.stream(), right.stream())
                         .anyMatch(item -> !ids.add(item.itemId()))) throw invalid();
                 yield new Match(Slot.PROMPT.read(value.path("prompt"), 0, MAX_PROMPT_BLOCKS), left, right);
+            }
+            case ORDER -> {
+                fields(value, "prompt", "items");
+                List<Item> items = items(value.path("items"), Slot.SEQUENCE, MIN_ORDER_ITEMS, MAX_ORDER_ITEMS);
+                // fewer than two distinguishable tiles would make every arrangement trivially correct
+                if (OrderEquivalence.signatures(value.path("items")).values().stream().distinct().count() < 2) {
+                    throw invalid();
+                }
+                yield new Order(Slot.PROMPT.read(value.path("prompt"), 0, MAX_PROMPT_BLOCKS), items);
+            }
+            case CATEGORIZE -> {
+                fields(value, "prompt", "categories", "items");
+                yield new Categorize(Slot.PROMPT.read(value.path("prompt"), 0, MAX_PROMPT_BLOCKS),
+                        categories(value.path("categories")),
+                        items(value.path("items"), Slot.COMPACT, MIN_CATEGORIZE_ITEMS, MAX_CATEGORIZE_ITEMS));
             }
         };
     }
@@ -154,13 +190,51 @@ public sealed interface ExerciseContent {
         return List.copyOf(options);
     }
 
-    private static List<Item> items(JsonNode node) {
+    /** Items of one ORDER or CATEGORIZE exercise: unique identifiers, tiles of the given slot profile. */
+    private static List<Item> items(JsonNode node, Slot slot, int min, int max) {
         List<Item> items = new ArrayList<>();
-        for (JsonNode item : array(node, MIN_SIDE, MAX_SIDE)) {
+        Set<UUID> ids = new HashSet<>();
+        for (JsonNode item : array(node, min, max)) {
             fields(item, "itemId", "blocks");
-            items.add(new Item(id(item, "itemId"), Slot.COMPACT.read(item.path("blocks"), 1, 2)));
+            UUID itemId = id(item, "itemId");
+            if (!ids.add(itemId)) throw invalid();
+            items.add(new Item(itemId, slot.read(item.path("blocks"), 1, 2)));
         }
         return List.copyOf(items);
+    }
+
+    /** Unique identifiers and labels: plain nonblank text, distinct after trimming and case folding. */
+    private static List<Category> categories(JsonNode node) {
+        List<Category> categories = new ArrayList<>();
+        Set<UUID> ids = new HashSet<>();
+        Set<String> labels = new HashSet<>();
+        for (JsonNode category : array(node, MIN_CATEGORIES, MAX_CATEGORIES)) {
+            fields(category, "categoryId", "label");
+            UUID categoryId = id(category, "categoryId");
+            String label = nonBlank(category.path("label"), MAX_CATEGORY_LABEL);
+            String folded = foldLabel(label);
+            if (folded.isEmpty() || !ids.add(categoryId) || !labels.add(folded)) throw invalid();
+            categories.add(new Category(categoryId, label));
+        }
+        return List.copyOf(categories);
+    }
+
+    Pattern INVISIBLE = Pattern.compile("[\\p{Z}\\s\\p{Cf}]");
+    Pattern EDGE_INVISIBLE = Pattern.compile("^[\\p{Z}\\s\\p{Cf}]+|[\\p{Z}\\s\\p{Cf}]+$");
+
+    /**
+     * Comparison key of a category label: NFC, no leading or trailing Unicode whitespace or format characters
+     * (NBSP, U+200B), then a full case fold approximated by upper- then lower-casing, so {@code ß}/{@code SS} and
+     * {@code Σ}/{@code ς} collide. An empty result means the label shows nothing. The stored label stays verbatim.
+     */
+    static String foldLabel(String label) {
+        String canonical = Normalizer.normalize(label, Normalizer.Form.NFC);
+        if (INVISIBLE.matcher(canonical).replaceAll("").isEmpty()) return "";
+        return EDGE_INVISIBLE.matcher(canonical).replaceAll("").toUpperCase(Locale.ROOT).toLowerCase(Locale.ROOT);
+    }
+
+    private static List<Block> withItems(List<Block> prompt, List<Item> items) {
+        return Stream.concat(prompt.stream(), items.stream().flatMap(item -> item.blocks().stream())).toList();
     }
 
     /** Canonical (NFC) length in code points, the unit of an ANSWER_LENGTH blank. */

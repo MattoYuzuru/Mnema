@@ -4,7 +4,7 @@ import { NativeDocument } from '../../content/native-document';
 import { mechanics } from '../study/study-test-data';
 import {
     ExerciseDrafts, SlotContext, buildSpec, carryPrompt, choiceSelectionProblem, clozePassage, draftsFromDetail, emptyDrafts,
-    isPristine, learnerContent, materialText, mechanicSpecificData, newBlank, newPair, slotErrorMessage, validateDraft
+    isPristine, learnerContent, materialText, mechanicSpecificData, newBlank, newCategorizeItem, newCategory, newOrderItem, newPair, slotErrorMessage, validateDraft
 } from './exercise-draft';
 import { ExerciseDetail } from './exercise.models';
 
@@ -31,13 +31,13 @@ describe('Exercise drafts', () => {
         expect(drafts.CLOZE.texts).toEqual(['']);
         expect(drafts.FREE_RESPONSE.aiRubric).toBeNull();
         expect(drafts.FREE_RESPONSE.responseInput).toBe('TEXT');
-        for (const type of ['SELF_CHECK', 'FREE_RESPONSE', 'CLOZE', 'CHOICE', 'MATCH'] as const) {
+        for (const type of ['SELF_CHECK', 'FREE_RESPONSE', 'CLOZE', 'CHOICE', 'MATCH', 'ORDER', 'CATEGORIZE'] as const) {
             expect(Object.keys(validateDraft(type, drafts, context)).length).toBeGreaterThan(0);
         }
     });
 
     it('round-trips every fixture through the drafts without changing the specification', () => {
-        for (const name of ['createSelfCheck', 'createFreeResponseAudio', 'createCloze', 'createChoiceVideoMultiple', 'createMatchMixed', 'rejectedAiAssessment']) {
+        for (const name of ['createSelfCheck', 'createFreeResponseAudio', 'createCloze', 'createChoiceVideoMultiple', 'createMatchMixed', 'createOrder', 'createCategorize', 'rejectedAiAssessment']) {
             const detail = detailFor(name);
             const rebuilt = buildSpec(detail.type, draftsFromDetail(detail), detail.subject, detail.enabled);
             expect(rebuilt).toEqual(mechanics[name].exercise);
@@ -231,6 +231,81 @@ describe('Exercise drafts', () => {
             const taken = { ...source, MATCH: { ...source.MATCH, prompt: [text('Своё')] } };
             expect(carryPrompt(taken, 'CHOICE', 'MATCH')).toBe(taken);
             expect(carryPrompt(source, 'CHOICE', 'CHOICE')).toBe(source);
+        });
+    });
+
+    describe('ORDER and CATEGORIZE', () => {
+        it('mints every item and group id with crypto.randomUUID, never from a counter or from the content', () => {
+            const minted = spyOn(crypto, 'randomUUID').and.callThrough();
+            const order = newOrderItem('один'); const category = newCategory('Глагол'); const item = newCategorizeItem();
+            const drafts = emptyDrafts();
+            const ids = [order.itemId, category.categoryId, item.itemId, ...drafts.ORDER.items.map(entry => entry.itemId),
+                ...drafts.CATEGORIZE.categories.map(entry => entry.categoryId), ...drafts.CATEGORIZE.items.map(entry => entry.itemId)];
+            for (const value of ids) expect(value).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+            expect(new Set(ids).size).toBe(ids.length);
+            expect(minted.calls.count()).toBeGreaterThanOrEqual(ids.length);   // every id above came through the spy
+        });
+
+        const withItems = (...values: string[]) => ({ prompt: [], items: values.map(value => newOrderItem(value)) });
+
+        it('uses the authored list order as the key and keeps identical items as separate ids', () => {
+            const draft = withItems('Это', 'очень', 'очень', 'важно');
+            const spec = buildSpec('ORDER', { ...emptyDrafts(), ORDER: draft }, subject, true);
+            expect(spec.type === 'ORDER' && spec.answerKey.sequence).toEqual(draft.items.map(item => item.itemId));
+            expect(new Set(draft.items.map(item => item.itemId)).size).toBe(4);
+            expect(validateDraft('ORDER', { ...emptyDrafts(), ORDER: draft }, context)).toEqual({});
+        });
+
+        it('checks the item count, every item against the SEQUENCE profile and the media cap', () => {
+            const errors = (draft: ReturnType<typeof withItems>) => validateDraft('ORDER', { ...emptyDrafts(), ORDER: draft }, context);
+            expect(errors(withItems('один'))['items']).toContain('от 2 до 12');
+            expect(errors(withItems(...Array.from({ length: 13 }, (_, index) => `${index}`)))['items']).toContain('разделите упражнение');
+            const long = withItems('x'.repeat(1001), 'ок');
+            expect(errors(long)['item:' + long.items[0].itemId]).toContain('1000');
+            const code = withItems('for (;;) {\n    x++;\n}', 'ок');
+            expect(errors(code)).toEqual({});
+            expect(Object.keys(errors({ prompt: [], items: [{ itemId: 'a', blocks: [] }, newOrderItem('x')] })).some(key => key.startsWith('item:'))).toBeTrue();
+        });
+
+        it('previews an ORDER or CATEGORIZE in a rotated order, never the authored one, with placeholders for empty parts', () => {
+            const draft = withItems('первый', 'второй', 'третий');
+            const exercise = previewExerciseOf(buildSpec('ORDER', { ...emptyDrafts(), ORDER: draft }, subject, true));
+            const learner = learnerContent(exercise, { context: null, revealed: false, placeholders: false });
+            const shown = learner.type === 'ORDER' ? learner.content.items.map(item => item.itemId) : [];
+            expect(shown.slice().sort()).toEqual(draft.items.map(item => item.itemId).sort());
+            expect(shown).not.toEqual(draft.items.map(item => item.itemId));
+            const blank = previewExerciseOf(buildSpec('ORDER', emptyDrafts(), subject, true));
+            const placeholder = learnerContent(blank, { context: null, revealed: false, placeholders: true });
+            expect(placeholder.type === 'ORDER' && placeholder.content.items.map(item => item.blocks[0])).toEqual([
+                { kind: 'TEXT', text: 'Добавьте элемент' }, { kind: 'TEXT', text: 'Добавьте элемент' }]);
+
+            const categorize = emptyDrafts();
+            const groups = categorize.CATEGORIZE.categories;
+            const cat = previewExerciseOf(buildSpec('CATEGORIZE', categorize, subject, true));
+            const view = learnerContent(cat, { context: null, revealed: false, placeholders: true });
+            expect(view.type === 'CATEGORIZE' && view.content.categories.map(group => group.label)).toEqual(['Название группы 1', 'Название группы 2']);
+            expect(view.type === 'CATEGORIZE' && view.content.categories.map(group => group.categoryId)).toEqual(groups.map(group => group.categoryId));
+            expect(JSON.stringify(view)).not.toContain('assignments');
+        });
+
+        it('never builds an answer key entry for an unassigned item, and only the picked group counts as assigned', () => {
+            const base = emptyDrafts().CATEGORIZE;
+            const draft = { ...base, items: base.items.map((item, index) => index === 0 ? { ...item, categoryId: base.categories[1].categoryId } : item) };
+            const spec = buildSpec('CATEGORIZE', { ...emptyDrafts(), CATEGORIZE: draft }, subject, true);
+            expect(spec.type === 'CATEGORIZE' && spec.answerKey.assignments).toEqual([{ itemId: draft.items[0].itemId, categoryId: base.categories[1].categoryId }]);
+            expect(isPristine('CATEGORIZE', { ...emptyDrafts(), CATEGORIZE: draft })).toBeFalse();
+            expect(isPristine('CATEGORIZE', { ...emptyDrafts(), CATEGORIZE: emptyDrafts().CATEGORIZE })).toBeTrue();
+            expect(isPristine('ORDER', { ...emptyDrafts(), ORDER: withItems('x', '') })).toBeFalse();
+            expect(isPristine('ORDER', emptyDrafts())).toBeTrue();
+        });
+
+        it('lists what a switch would lose', () => {
+            const base = emptyDrafts();
+            expect(mechanicSpecificData('ORDER', base)).toEqual([]);
+            expect(mechanicSpecificData('ORDER', { ...base, ORDER: withItems('а', 'б') })).toEqual(['элементы и их порядок']);
+            expect(mechanicSpecificData('CATEGORIZE', base)).toEqual([]);
+            expect(mechanicSpecificData('CATEGORIZE', { ...base, CATEGORIZE: { ...base.CATEGORIZE,
+                categories: [{ categoryId: 'x', label: 'Глагол' }, base.CATEGORIZE.categories[1]] } })).toEqual(['группы, элементы и их распределение']);
         });
     });
 });

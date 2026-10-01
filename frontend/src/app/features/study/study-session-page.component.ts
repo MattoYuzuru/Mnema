@@ -176,7 +176,7 @@ export class StudySessionPageComponent {
 
     heading(type: Mechanic): string {
         return ({ SELF_CHECK: 'Вспомните, затем сверьтесь', FREE_RESPONSE: 'Напишите ответ', CLOZE: 'Заполните пропуски',
-            CHOICE: 'Выберите ответ', MATCH: 'Соедините пары' })[type];
+            CHOICE: 'Выберите ответ', MATCH: 'Соедините пары', ORDER: 'Восстановите порядок', CATEGORIZE: 'Распределите по группам' })[type];
     }
 
     retryPending(): void {

@@ -19,8 +19,9 @@ import java.util.UUID;
  * request and is evaluated by exactly the code Study uses ({@link AttemptEvaluation}, {@link LearnerContent}).
  *
  * <p>Authored content is passed to the evaluator as the learner content: blank, option and side identifiers are the
- * same in both, MATERIAL blocks are never resolved and MATCH sides are not shuffled because the evaluator only
- * reads identifier sets. The editor shows the author's own draft, so there is no reference content to reveal.
+ * same in both, MATERIAL blocks are never resolved and MATCH sides, ORDER items and CATEGORIZE items are not
+ * shuffled because the evaluator only reads identifier sets (and, for ORDER, the learner-visible block equivalence).
+ * The editor shows the author's own draft, so there is no reference content to reveal.
  */
 @Service
 public class ExercisePreviewService {

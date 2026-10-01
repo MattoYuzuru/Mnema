@@ -39,7 +39,8 @@ class ExercisePreviewServiceTest {
     @ParameterizedTest
     @CsvSource({"SELF_CHECK,createSelfCheck,selfCheck,false", "FREE_RESPONSE,createFreeResponseAudio,freeResponse,false",
             "CLOZE,createCloze,cloze,false", "CHOICE,createChoiceVideoMultiple,choice,false",
-            "MATCH,createMatchMixed,match,true"})
+            "MATCH,createMatchMixed,match,true", "ORDER,createOrder,order,false",
+            "CATEGORIZE,createCategorize,categorize,false"})
     void previewFeedbackEqualsStudyFeedbackForTheSameInputs(ExerciseType type, String create, String name,
                                                            boolean pairMistakes) {
         JsonNode mechanics = fixture("mechanics.json");
@@ -65,7 +66,7 @@ class ExercisePreviewServiceTest {
 
     @Test
     void theSharedPreviewFixturesProduceTheirDocumentedResults() {
-        for (String name : new String[] {"Cloze", "Choice", "MatchAfterMistake", "FreeResponse"}) {
+        for (String name : new String[] {"Cloze", "Choice", "MatchAfterMistake", "FreeResponse", "Order", "Categorize"}) {
             JsonNode result = service.evaluate(ExercisePreviewCommand.read(bytes(previewFixture("submit" + name))));
             assertThat(result).isEqualTo(fixture("preview.json").path("submit" + name + "Result"));
         }
@@ -150,6 +151,63 @@ class ExercisePreviewServiceTest {
         assertThat(service.evaluate(ExercisePreviewCommand.read(bytes(withResponse("submitChoice",
                 r -> r.withArray("optionIds").remove(1))))).path("feedback").path("result").textValue())
                 .isEqualTo("INCORRECT");
+    }
+
+    @Test
+    void orderAndCategorizePreviewsValidateTheDraftAndTheResponseLikeStudy() {
+        ObjectNode order = previewFixture("submitOrder");
+        // the equivalent swap of the identical tiles gives exactly the golden Study feedback
+        JsonNode mechanics = fixture("mechanics.json");
+        assertThat(service.evaluate(ExercisePreviewCommand.read(bytes(request(mechanicExercise("createOrder"),
+                submit(mechanics.path("submits").path("orderEquivalent").path("response"))))))
+                .path("feedback")).isEqualTo(mechanics.path("feedback").path("orderEquivalent"));
+        // a correct explicit order and its equivalent swap are both CORRECT; a misplaced item is INCORRECT
+        assertThat(feedbackResult(order)).isEqualTo("CORRECT");
+        JsonNode misplaced = withResponse("submitOrder", r -> {
+            var sequence = r.withArray("sequence");
+            var first = sequence.get(0);
+            sequence.set(0, sequence.get(4));
+            sequence.set(4, first);
+        }).path("action").path("response");
+        JsonNode wrong = service.evaluate(ExercisePreviewCommand.read(bytes(request(
+                previewFixture("submitOrder").withObject("exercise"), submit(misplaced))))).path("feedback");
+        assertThat(wrong.path("result").textValue()).isEqualTo("INCORRECT");
+        assertThat(wrong.path("positions").get(0).path("correct").booleanValue()).isFalse();
+        // unknown, missing, duplicate and foreign ids are a 400, never a wrong answer
+        assertInvalid(withResponse("submitOrder", r -> r.withArray("sequence").remove(0)));
+        assertInvalid(withResponse("submitOrder", r -> r.withArray("sequence").set(0,
+                JSON.getNodeFactory().textNode(UUID.randomUUID().toString()))));
+        assertInvalid(withResponse("submitOrder", r -> r.withArray("sequence").set(1, r.withArray("sequence").get(0))));
+        assertInvalid(withResponse("submitOrder", r -> r.withArray("sequence").add(UUID.randomUUID().toString())));
+        assertInvalid(withResponse("submitCategorize", r -> r.withArray("assignments").remove(0)));
+        assertInvalid(withResponse("submitCategorize", r -> ((ObjectNode) r.withArray("assignments").get(0))
+                .put("categoryId", UUID.randomUUID().toString())));
+        assertInvalid(withResponse("submitCategorize", r -> ((ObjectNode) r.withArray("assignments").get(0))
+                .put("itemId", UUID.randomUUID().toString())));
+        assertInvalid(withResponse("submitCategorize", r -> ((ObjectNode) r.withArray("assignments").get(1))
+                .put("itemId", r.withArray("assignments").get(0).path("itemId").textValue())));
+        // the responses of the other mechanics do not fit
+        assertInvalid(request(previewFixture("submitOrder").withObject("exercise"),
+                submit(previewFixture("submitCategorize").path("action").path("response"))));
+        assertInvalid(request(previewFixture("submitCategorize").withObject("exercise"),
+                submit(previewFixture("submitOrder").path("action").path("response"))));
+        assertInvalid(request(previewFixture("submitChoice").withObject("exercise"),
+                submit(previewFixture("submitOrder").path("action").path("response"))));
+        // pair checks and hints belong to MATCH and CLOZE only; an invalid draft never reaches the evaluator
+        assertInvalid(request(order.withObject("exercise").deepCopy(), pairCheck(LEFT_1, RIGHT_1)));
+        assertInvalid(request(order.withObject("exercise").deepCopy(), hint(BLANK_1)));
+        assertInvalid(request(previewFixture("submitCategorize").withObject("exercise"), pairCheck(LEFT_1, RIGHT_1)));
+        ObjectNode duplicateLabels = previewFixture("submitCategorize");
+        ((ObjectNode) duplicateLabels.withObject("exercise").withObject("content").withArray("categories").get(0))
+                .put("label", " ГЛАГОЛ ");
+        assertInvalid(duplicateLabels);
+        ObjectNode removedCategory = previewFixture("submitCategorize");
+        removedCategory.withObject("exercise").withObject("content").withArray("categories").remove(0);
+        assertInvalid(removedCategory);
+    }
+
+    private String feedbackResult(ObjectNode body) {
+        return service.evaluate(ExercisePreviewCommand.read(bytes(body))).path("feedback").path("result").textValue();
     }
 
     @Test

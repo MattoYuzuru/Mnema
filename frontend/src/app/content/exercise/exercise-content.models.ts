@@ -6,7 +6,7 @@
  * Every length below is measured in UTF-16 code units, exactly like the backend.
  */
 
-export const MECHANICS = ['SELF_CHECK', 'FREE_RESPONSE', 'CLOZE', 'CHOICE', 'MATCH'] as const;
+export const MECHANICS = ['SELF_CHECK', 'FREE_RESPONSE', 'CLOZE', 'CHOICE', 'MATCH', 'ORDER', 'CATEGORIZE'] as const;
 export type Mechanic = (typeof MECHANICS)[number];
 
 // ---------------------------------------------------------------------------------------------
@@ -44,7 +44,7 @@ export type MediaBlockKind = 'IMAGE' | 'AUDIO' | 'VIDEO';
 // Slot profiles (handoff section 2.2). Frontend shows these limits next to each field.
 // ---------------------------------------------------------------------------------------------
 
-export type SlotProfile = 'PROMPT' | 'REFERENCE' | 'COMPACT';
+export type SlotProfile = 'PROMPT' | 'REFERENCE' | 'COMPACT' | 'SEQUENCE';
 
 export interface SlotProfileRules {
     readonly kinds: readonly AuthoringBlockKind[];
@@ -57,7 +57,9 @@ export interface SlotProfileRules {
 export const SLOT_PROFILES: Readonly<Record<SlotProfile, SlotProfileRules>> = {
     PROMPT: { kinds: ['TEXT', 'MATERIAL', 'IMAGE', 'AUDIO', 'VIDEO', 'YOUTUBE'], textLimit: 4000, oneTextAndOneMedia: false },
     REFERENCE: { kinds: ['TEXT', 'MATERIAL', 'IMAGE', 'AUDIO', 'VIDEO', 'YOUTUBE'], textLimit: 4000, oneTextAndOneMedia: false },
-    COMPACT: { kinds: ['TEXT', 'MATERIAL', 'IMAGE', 'AUDIO', 'VIDEO'], textLimit: 300, oneTextAndOneMedia: true }
+    COMPACT: { kinds: ['TEXT', 'MATERIAL', 'IMAGE', 'AUDIO', 'VIDEO'], textLimit: 300, oneTextAndOneMedia: true },
+    /** ORDER items: like COMPACT, but longer so a code line or a short step fits; newlines are kept. */
+    SEQUENCE: { kinds: ['TEXT', 'MATERIAL', 'IMAGE', 'AUDIO', 'VIDEO'], textLimit: 1000, oneTextAndOneMedia: true }
 };
 
 export interface SlotSpec { readonly profile: SlotProfile; readonly min: number; readonly max: number; }
@@ -67,13 +69,16 @@ export const PROMPT_SLOTS: Readonly<Record<Mechanic, SlotSpec>> = {
     FREE_RESPONSE: { profile: 'PROMPT', min: 1, max: 8 },
     CHOICE: { profile: 'PROMPT', min: 1, max: 8 },
     CLOZE: { profile: 'PROMPT', min: 0, max: 8 },
-    MATCH: { profile: 'PROMPT', min: 0, max: 8 }
+    MATCH: { profile: 'PROMPT', min: 0, max: 8 },
+    ORDER: { profile: 'PROMPT', min: 0, max: 8 },
+    CATEGORIZE: { profile: 'PROMPT', min: 0, max: 8 }
 };
 export const REFERENCE_SLOTS = {
     SELF_CHECK: { profile: 'REFERENCE', min: 1, max: 8 },
     FREE_RESPONSE: { profile: 'REFERENCE', min: 0, max: 8 }
 } as const satisfies Partial<Record<Mechanic, SlotSpec>>;
 export const COMPACT_SLOT: SlotSpec = { profile: 'COMPACT', min: 1, max: 2 };
+export const SEQUENCE_SLOT: SlotSpec = { profile: 'SEQUENCE', min: 1, max: 2 };
 
 export const LIMITS = {
     mediaBlocksPerExercise: 32,
@@ -89,6 +94,9 @@ export const LIMITS = {
     clozeAnswerLength: { min: 1, max: 80 },
     choiceOptions: { min: 2, max: 12 },
     matchPairs: { min: 2, max: 6 },
+    orderItems: { min: 2, max: 12 },
+    categories: { min: 2, max: 6, label: 80 },
+    categorizeItems: { min: 2, max: 12 },
     aiCriteria: { min: 1, max: 10, description: 500 },
     aiReferenceAnswer: 4000
 } as const;
@@ -127,6 +135,15 @@ export interface MatchContent {
     readonly left: readonly MatchItem[];
     readonly right: readonly MatchItem[];
 }
+export interface OrderItem { readonly itemId: string; readonly blocks: readonly AuthoringBlock[]; }
+export interface OrderContent { readonly prompt: readonly AuthoringBlock[]; readonly items: readonly OrderItem[]; }
+export interface Category { readonly categoryId: string; readonly label: string; }
+export interface CategorizeItem { readonly itemId: string; readonly blocks: readonly AuthoringBlock[]; }
+export interface CategorizeContent {
+    readonly prompt: readonly AuthoringBlock[];
+    readonly categories: readonly Category[];
+    readonly items: readonly CategorizeItem[];
+}
 
 export type NormalizationRule = 'UNICODE_NFC' | 'TRIM' | 'CASE_FOLD';
 export const NORMALIZATION_RULES: readonly NormalizationRule[] = ['UNICODE_NFC', 'TRIM', 'CASE_FOLD'];
@@ -145,6 +162,11 @@ export interface ChoiceKey { readonly kind: 'CHOICE'; readonly correctOptionIds:
 export interface MatchKey {
     readonly kind: 'MATCH';
     readonly pairs: readonly { readonly leftId: string; readonly rightId: string }[];
+}
+export interface OrderKey { readonly kind: 'ORDER'; readonly sequence: readonly string[]; }
+export interface CategorizeKey {
+    readonly kind: 'CATEGORIZE';
+    readonly assignments: readonly { readonly itemId: string; readonly categoryId: string }[];
 }
 
 export type AiLevel = 'COMPLETE' | 'PARTIAL' | 'INSUFFICIENT';
@@ -190,7 +212,19 @@ export interface MatchSpec extends SpecBase {
     readonly answerKey: MatchKey;
     readonly evaluatorPolicy: EvaluatorRef<'deterministic-match'>;
 }
-export type ExerciseSpec = SelfCheckSpec | FreeResponseSpec | ClozeSpec | ChoiceSpec | MatchSpec;
+export interface OrderSpec extends SpecBase {
+    readonly type: 'ORDER';
+    readonly content: OrderContent;
+    readonly answerKey: OrderKey;
+    readonly evaluatorPolicy: EvaluatorRef<'deterministic-order'>;
+}
+export interface CategorizeSpec extends SpecBase {
+    readonly type: 'CATEGORIZE';
+    readonly content: CategorizeContent;
+    readonly answerKey: CategorizeKey;
+    readonly evaluatorPolicy: EvaluatorRef<'deterministic-categorize'>;
+}
+export type ExerciseSpec = SelfCheckSpec | FreeResponseSpec | ClozeSpec | ChoiceSpec | MatchSpec | OrderSpec | CategorizeSpec;
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
@@ -243,6 +277,9 @@ export interface LearnerClozeBlank {
 export type LearnerClozeSegment = LearnerText | LearnerClozeBlank;
 export interface LearnerChoiceOption { readonly optionId: string; readonly blocks: readonly LearnerBlock[]; }
 export interface LearnerMatchItem { readonly itemId: string; readonly blocks: readonly LearnerBlock[]; }
+export interface LearnerOrderItem { readonly itemId: string; readonly blocks: readonly LearnerBlock[]; }
+export interface LearnerCategory { readonly categoryId: string; readonly label: string; }
+export interface LearnerCategorizeItem { readonly itemId: string; readonly blocks: readonly LearnerBlock[]; }
 
 export interface SelfCheckLearnerContent { readonly prompt: readonly LearnerBlock[]; readonly reference: readonly LearnerBlock[]; }
 export interface FreeResponseLearnerContent { readonly prompt: readonly LearnerBlock[]; readonly responseInput: ResponseInput; }
@@ -257,13 +294,24 @@ export interface MatchLearnerContent {
     readonly left: readonly LearnerMatchItem[];
     readonly right: readonly LearnerMatchItem[];
 }
+export interface OrderLearnerContent {
+    readonly prompt: readonly LearnerBlock[];
+    readonly items: readonly LearnerOrderItem[];
+}
+export interface CategorizeLearnerContent {
+    readonly prompt: readonly LearnerBlock[];
+    readonly categories: readonly LearnerCategory[];
+    readonly items: readonly LearnerCategorizeItem[];
+}
 
 export type LearnerContent =
     | { readonly type: 'SELF_CHECK'; readonly content: SelfCheckLearnerContent }
     | { readonly type: 'FREE_RESPONSE'; readonly content: FreeResponseLearnerContent }
     | { readonly type: 'CLOZE'; readonly content: ClozeLearnerContent }
     | { readonly type: 'CHOICE'; readonly content: ChoiceLearnerContent }
-    | { readonly type: 'MATCH'; readonly content: MatchLearnerContent };
+    | { readonly type: 'MATCH'; readonly content: MatchLearnerContent }
+    | { readonly type: 'ORDER'; readonly content: OrderLearnerContent }
+    | { readonly type: 'CATEGORIZE'; readonly content: CategorizeLearnerContent };
 
 /** Every learner block of a presentation, in reading order. Used to find transcripts and media. */
 export function allLearnerBlocks(value: LearnerContent): readonly LearnerBlock[] {
@@ -274,6 +322,8 @@ export function allLearnerBlocks(value: LearnerContent): readonly LearnerBlock[]
         case 'CHOICE': return [...value.content.prompt, ...value.content.options.flatMap(option => option.blocks)];
         case 'MATCH': return [...value.content.prompt, ...value.content.left.flatMap(item => item.blocks),
             ...value.content.right.flatMap(item => item.blocks)];
+        case 'ORDER': return [...value.content.prompt, ...value.content.items.flatMap(item => item.blocks)];
+        case 'CATEGORIZE': return [...value.content.prompt, ...value.content.items.flatMap(item => item.blocks)];
     }
 }
 
@@ -298,5 +348,43 @@ export function authoringSlots(spec: ExerciseSpec): readonly (readonly Authoring
         case 'CHOICE': return [spec.content.prompt, ...spec.content.options.map(option => option.blocks)];
         case 'MATCH': return [spec.content.prompt, ...spec.content.left.map(item => item.blocks),
             ...spec.content.right.map(item => item.blocks)];
+        case 'ORDER': return [spec.content.prompt, ...spec.content.items.map(item => item.blocks)];
+        case 'CATEGORIZE': return [spec.content.prompt, ...spec.content.items.map(item => item.blocks)];
     }
+}
+
+/**
+ * Identity of a group label: NFC, edge whitespace and format characters (NBSP, U+3000, U+200B, ...) removed, then
+ * case folded (`toUpperCase().toLowerCase()`, so "Straße" and "STRASSE" or "Σ" and "ς" collide). The stored label stays
+ * verbatim; an empty key means the label has no visible character.
+ */
+export function categoryLabelKey(label: string): string {
+    return label.normalize('NFC').replace(/^[\p{Z}\s\p{Cf}]+|[\p{Z}\s\p{Cf}]+$/gu, '').toUpperCase().toLowerCase();
+}
+
+/**
+ * Canonical form of what the learner sees of an item (author-only media titles ignored). `resolveMaterial` turns a
+ * MATERIAL block into its text like publication does; without it (author preview) two fragments stay distinct.
+ * Items with equal keys are interchangeable in an ORDER exercise.
+ */
+export function visibleBlocksKey(blocks: readonly AuthoringBlock[], resolveMaterial?: (block: MaterialBlock) => string | null): string {
+    return JSON.stringify(blocks.map(block => {
+        switch (block.kind) {
+            case 'TEXT': return ['TEXT', block.text];
+            case 'MATERIAL': {
+                const text = resolveMaterial?.(block) ?? null;
+                return text === null ? ['MATERIAL', block.memberKey, block.itemRevisionId, block.nodeId] : ['TEXT', text];
+            }
+            case 'IMAGE': return ['IMAGE', block.assetId, block.alt];
+            case 'AUDIO':
+            case 'VIDEO': return [block.kind, block.assetId, block.transcript !== undefined];
+            case 'YOUTUBE': return ['YOUTUBE', block.videoId, block.title];
+        }
+    }));
+}
+
+/** How many ORDER items a learner can tell apart; identical copies count once. */
+export function distinguishableItems(items: readonly { readonly blocks: readonly AuthoringBlock[] }[],
+    resolveMaterial?: (block: MaterialBlock) => string | null): number {
+    return new Set(items.map(item => visibleBlocksKey(item.blocks, resolveMaterial))).size;
 }

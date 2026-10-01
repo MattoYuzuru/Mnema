@@ -131,4 +131,114 @@ describe('LearnerExerciseComponent', () => {
         component.submit();
         expect(answers).toEqual([{ kind: 'TEXT', text: 'x' }]);
     });
+
+    describe('ORDER', () => {
+        const ids = (...numbers: number[]) => numbers.map(n => `0d000000-0000-4000-8000-${n.toString().padStart(12, '0')}`);
+        const order = (root: HTMLElement) => [...root.querySelectorAll('li.order-item')].map(row => row.getAttribute('data-item-id'));
+        const move = (root: HTMLElement, itemId: string, kind: 'up' | 'down') =>
+            root.querySelector<HTMLButtonElement>(`[data-item-id="${itemId}"] [data-move="${kind}"]`)!.click();
+
+        it('starts in the issued order and submits exactly the order on screen, without a client-side verdict', () => {
+            const { fixture, root, answers, component } = create('order');
+            expect(order(root)).toEqual(ids(4, 6, 2, 1, 5, 3));
+            expect(root.querySelector<HTMLButtonElement>('button[data-submit]')?.textContent).toContain('Проверить порядок');
+            move(root, ids(1)[0], 'up'); fixture.detectChanges();
+            move(root, ids(1)[0], 'up'); fixture.detectChanges();
+            expect(order(root)).toEqual(ids(4, 1, 6, 2, 5, 3));
+            component.submit();
+            expect(answers).toEqual([{ kind: 'ORDER', sequence: ids(4, 1, 6, 2, 5, 3) }]);
+        });
+
+        it('keeps the learner order when the same presentation is rendered again, but not for another presentation', () => {
+            const { fixture, root, component } = create('order');
+            move(root, ids(3)[0], 'up'); fixture.detectChanges();
+            const moved = order(root);
+            fixture.componentRef.setInput('exercise', learner('order')); fixture.detectChanges();
+            fixture.componentRef.setInput('hints', {}); fixture.detectChanges();
+            expect(order(root)).toEqual(moved);
+            expect(component.orderMoved()).toBeTrue();
+            fixture.componentRef.setInput('resetKey', 'next'); fixture.detectChanges();
+            fixture.componentRef.setInput('resetKey', 'other'); fixture.detectChanges();
+            expect(order(root)).toEqual(ids(4, 6, 2, 1, 5, 3));
+            expect(component.orderMoved()).toBeFalse();
+            // A different set of items is never mixed with a stale order.
+            move(root, ids(3)[0], 'up'); fixture.detectChanges();
+            const full = learner('order');
+            const other: LearnerContent = full.type === 'ORDER' ? { type: 'ORDER', content: { ...full.content, items: full.content.items.slice(0, 5) } } : full;
+            fixture.componentRef.setInput('exercise', other); fixture.detectChanges();
+            expect(order(root)).toEqual(ids(4, 6, 2, 1, 5));
+        });
+
+        it('reports a moved order as input and an order moved back as none', () => {
+            const { fixture, root, dirty } = create('order');
+            move(root, ids(6)[0], 'up'); fixture.detectChanges();
+            expect(dirty.at(-1)).toBeTrue();
+            move(root, ids(6)[0], 'down'); fixture.detectChanges();
+            expect(dirty.at(-1)).toBeFalse();
+        });
+
+        it('is locked while busy and while an author draft is unfinished', () => {
+            const { fixture, root, answers, component } = create('order', { blockedReason: 'Проверить ответ пока нельзя: Добавьте элемент.' });
+            expect(root.querySelector<HTMLButtonElement>('button[data-submit]')?.disabled).toBeTrue();
+            component.submit();
+            expect(answers).toEqual([]);
+            fixture.componentRef.setInput('blockedReason', null); fixture.componentRef.setInput('busy', true); fixture.detectChanges();
+            expect([...root.querySelectorAll<HTMLButtonElement>('button[data-move]')].every(button => button.disabled)).toBeTrue();
+            component.submit();
+            expect(answers).toEqual([]);
+        });
+    });
+
+    describe('CATEGORIZE', () => {
+        const itemIds = [1, 2, 3, 4].map(n => `9a000000-0000-4000-8000-${n.toString().padStart(12, '0')}`);
+        const groupIds = [1, 2, 3].map(n => `ca000000-0000-4000-8000-${n.toString().padStart(12, '0')}`);
+        const put = (fixture: { detectChanges(): void }, root: HTMLElement, itemId: string, groupId: string) => {
+            root.querySelector<HTMLButtonElement>(`[data-item-id="${itemId}"] [data-select]`)!.click(); fixture.detectChanges();
+            root.querySelector<HTMLButtonElement>(`[data-category="${groupId}"] [data-place]`)!.click(); fixture.detectChanges();
+        };
+
+        it('cannot be submitted until every item has a group, then submits the issued item order with the chosen groups', () => {
+            const { fixture, root, answers, component } = create('categorize');
+            const submit = () => root.querySelector<HTMLButtonElement>('button[data-submit]')!;
+            expect(submit().disabled).toBeTrue();
+            put(fixture, root, itemIds[0], groupIds[0]); put(fixture, root, itemIds[1], groupIds[1]); put(fixture, root, itemIds[2], groupIds[0]);
+            expect(submit().disabled).toBeTrue();
+            component.submit();
+            expect(answers).toEqual([]);
+            put(fixture, root, itemIds[3], groupIds[2]);
+            expect(submit().disabled).toBeFalse();
+            // Change of mind before submit: the last choice counts.
+            put(fixture, root, itemIds[3], groupIds[1]);
+            submit().click();
+            expect(answers).toEqual([{ kind: 'CATEGORIZE', assignments: [
+                { itemId: itemIds[2], categoryId: groupIds[0] }, { itemId: itemIds[3], categoryId: groupIds[1] },
+                { itemId: itemIds[0], categoryId: groupIds[0] }, { itemId: itemIds[1], categoryId: groupIds[1] }] }]);
+            // The presentation lists items as issued (река, запись, дом, бежать), not in the key order.
+            expect(root.querySelector('[data-item-id]')?.getAttribute('data-item-id')).toBe(itemIds[2]);
+        });
+
+        it('hands the keyboard learner to the submit button after the last assignment', async () => {
+            const { fixture, root, component } = create('categorize');
+            document.body.appendChild(root);
+            try {
+                const board = root.querySelector('app-categorize-board')!;
+                const instance = fixture.debugElement.query(element => element.name === 'app-categorize-board').componentInstance as { keyboard: boolean };
+                instance.keyboard = true;
+                for (const [item, group] of [[0, 0], [1, 1], [2, 0], [3, 2]]) put(fixture, root, itemIds[item], groupIds[group]);
+                await fixture.whenStable();
+                expect(board).not.toBeNull();
+                expect(document.activeElement).toBe(root.querySelector('button[data-submit]'));
+                expect(component.categorizeComplete()).toBeTrue();
+            } finally { root.remove(); }
+        });
+
+        it('discards the assignments when the reset key changes and reports them as input before', () => {
+            const { fixture, root, dirty, component } = create('categorize', { resetKey: 'one' });
+            put(fixture, root, itemIds[0], groupIds[0]);
+            expect(dirty.at(-1)).toBeTrue();
+            fixture.componentRef.setInput('resetKey', 'two'); fixture.detectChanges();
+            expect(component.assignments()).toEqual({});
+            expect(dirty.at(-1)).toBeFalse();
+        });
+    });
 });

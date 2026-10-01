@@ -4,9 +4,11 @@ import { ChoiceListComponent } from '../../content/exercise/choice-list.componen
 import { ClozeBlankVerdict, ClozePassageComponent } from '../../content/exercise/cloze-passage.component';
 import { ExclusivePlaybackDirective } from '../../content/exercise/exclusive-playback.directive';
 import { LearnerContent } from '../../content/exercise/exercise-content.models';
+import { itemLabel } from '../../content/exercise/item-label';
 import { LearnerBlocksComponent } from '../../content/exercise/learner-blocks.component';
 import {
-    AttemptFeedback, SelfRating, StudyResponse, isChoiceFeedback, isClozeFeedback, isFreeResponseFeedback, isMatchFeedback, isUnassessed
+    AttemptFeedback, SelfRating, StudyResponse, isCategorizeFeedback, isChoiceFeedback, isClozeFeedback, isFreeResponseFeedback,
+    isMatchFeedback, isOrderFeedback, isUnassessed
 } from './study.models';
 
 const RATING_LABELS: Readonly<Record<SelfRating, string>> = {
@@ -81,6 +83,46 @@ export function feedbackTitle(feedback: AttemptFeedback): string { return TITLES
               </ul>
             }
           }
+          @case ('ORDER') {
+            @if (order(); as value) {
+              <section class="sequence" aria-labelledby="order-yours">
+                <h3 id="order-yours">Ваш порядок</h3>
+                <ol class="positions">
+                  @for (position of value.positions; track position.position) {
+                    <li [class.is-wrong]="!position.correct">
+                      <span class="mark"><span aria-hidden="true">{{ position.correct ? '✓' : '✗' }}</span>
+                        {{ position.correct ? 'Верно' : 'Не на своём месте' }}</span>
+                      <span class="position-name">{{ orderName(position.selectedItemId) }}</span>
+                    </li>
+                  }
+                </ol>
+              </section>
+              <section class="sequence" aria-labelledby="order-correct">
+                <h3 id="order-correct">Правильный порядок</h3>
+                <ol class="correct-sequence">
+                  @for (itemId of value.correctSequence; track itemId; let index = $index) {
+                    @if (orderItem(itemId); as item) {
+                      <li><app-learner-blocks [blocks]="item.blocks" [nameSuffix]="', шаг ' + (index + 1)" /></li>
+                    }
+                  }
+                </ol>
+              </section>
+            }
+          }
+          @case ('CATEGORIZE') {
+            @if (categorizeFeedback(); as value) {
+              <ul class="pair-feedback">
+                @for (assignment of value.assignments; track assignment.itemId) {
+                  <li [class.is-wrong]="!assignment.correct">
+                    <p><strong>{{ assignment.correct ? 'Верно' : 'Проверьте' }}</strong></p>
+                    @if (categorizeItem(assignment.itemId); as item) { <app-learner-blocks [blocks]="item.blocks" [nameSuffix]="', элемент ' + item.ordinal" /> }
+                    <p>Ваша группа: <strong>{{ categoryLabel(assignment.selectedCategoryId) }}</strong></p>
+                    @if (!assignment.correct) { <p>Правильная группа: <strong>{{ categoryLabel(assignment.correctCategoryId) }}</strong></p> }
+                  </li>
+                }
+              </ul>
+            }
+          }
         }
       </div>
     `,
@@ -91,6 +133,15 @@ export function feedbackTitle(feedback: AttemptFeedback): string { return TITLES
       .notice { border-inline-start: 4px solid var(--mn-ink); padding: .8rem 1rem; background: var(--mn-soft); }
       .pair-feedback { display: grid; gap: .9rem; margin: 0; padding: 0; list-style: none; }
       .pair-feedback li { min-inline-size: 0; display: grid; gap: .5rem; border-block-start: 1px solid var(--mn-rule); padding-block-start: .75rem; }
+      .sequence { display: grid; gap: .6rem; min-inline-size: 0; }
+      .sequence h3 { margin: 0; color: var(--mn-ink); font: 500 1.2rem/1.25 var(--mn-font-display, Georgia, serif); }
+      .positions, .correct-sequence { display: grid; gap: .5rem; margin: 0; padding-inline-start: 1.6rem; }
+      .positions li, .correct-sequence li { min-inline-size: 0; overflow-wrap: anywhere; }
+      .positions li { display: list-item; }
+      .positions li.is-wrong .mark { color: var(--mn-danger); }
+      .mark { display: inline-block; margin-inline-end: .6rem; font-weight: 700; }
+      .position-name { white-space: pre-wrap; }
+      .pair-feedback li.is-wrong { border-inline-start: 3px solid var(--mn-danger); padding-inline-start: .75rem; }
       .pair-arrow { color: var(--mn-muted); }
       .answer-text { white-space: pre-wrap; overflow-wrap: anywhere; }
       .comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 0; }
@@ -112,6 +163,8 @@ export class LearnerFeedbackComponent {
     readonly cloze = computed(() => { const value = this.feedback(); return isClozeFeedback(value) ? value : null; });
     readonly choice = computed(() => { const value = this.feedback(); return isChoiceFeedback(value) ? value : null; });
     readonly match = computed(() => { const value = this.feedback(); return isMatchFeedback(value) ? value : null; });
+    readonly order = computed(() => { const value = this.feedback(); return isOrderFeedback(value) ? value : null; });
+    readonly categorizeFeedback = computed(() => { const value = this.feedback(); return isCategorizeFeedback(value) ? value : null; });
     readonly freeResponse = computed(() => { const value = this.feedback(); return isFreeResponseFeedback(value) ? value : null; });
     readonly retryNote = computed(() => {
         const value = this.feedback();
@@ -120,6 +173,8 @@ export class LearnerFeedbackComponent {
     readonly clozeContent = computed(() => { const value = this.content(); return value.type === 'CLOZE' ? value.content : null; });
     readonly choiceContent = computed(() => { const value = this.content(); return value.type === 'CHOICE' ? value.content : null; });
     readonly matchContent = computed(() => { const value = this.content(); return value.type === 'MATCH' ? value.content : null; });
+    readonly orderContent = computed(() => { const value = this.content(); return value.type === 'ORDER' ? value.content : null; });
+    readonly categorizeContent = computed(() => { const value = this.content(); return value.type === 'CATEGORIZE' ? value.content : null; });
     readonly clozeVerdicts = computed<Readonly<Record<string, ClozeBlankVerdict>> | null>(() => {
         const value = this.cloze();
         return value === null ? null : Object.fromEntries(value.blanks.map(blank => [blank.blankId,
@@ -134,6 +189,25 @@ export class LearnerFeedbackComponent {
     readonly rating = computed(() => { const value = this.submitted(); return value?.kind === 'SELF_CHECK' ? value.rating : null; });
 
     ratingLabel(rating: SelfRating): string { return RATING_LABELS[rating]; }
+
+    /** Issued item of the answered ORDER content, with its stable 1-based ordinal for generated names. */
+    orderItem(itemId: string) { return this.orderContent()?.items.find(item => item.itemId === itemId) ?? null; }
+
+    orderName(itemId: string): string {
+        const items = this.orderContent()?.items ?? [];
+        const index = items.findIndex(item => item.itemId === itemId);
+        return index < 0 ? '' : itemLabel(items[index].blocks, index + 1);
+    }
+
+    categorizeItem(itemId: string) {
+        const items = this.categorizeContent()?.items ?? [];
+        const index = items.findIndex(item => item.itemId === itemId);
+        return index < 0 ? null : { blocks: items[index].blocks, ordinal: index + 1 };
+    }
+
+    categoryLabel(categoryId: string): string {
+        return this.categorizeContent()?.categories.find(category => category.categoryId === categoryId)?.label ?? '';
+    }
 
     /** Item of the answered MATCH content, used to show a pair's media again in the result. */
     matchItem(side: 'left' | 'right', itemId: string) {

@@ -51,6 +51,42 @@ export function parseAttemptFeedback(value: unknown): AttemptFeedback {
         if (new Set(pairs.map(pair => pair.leftId)).size !== pairs.length) throw protocol('Duplicate pair feedback.');
         return { result: verdict, appliedRules: rules(object), pairs };
     }
+    if ('correctSequence' in value) {
+        const object = exact(value, ['result', 'appliedRules', 'correctSequence', 'positions']);
+        if (!Array.isArray(object['correctSequence']) || object['correctSequence'].length < 2
+            || object['correctSequence'].length > 12 || !Array.isArray(object['positions'])
+            || object['positions'].length !== object['correctSequence'].length) throw protocol('Invalid order feedback.');
+        const correctSequence = object['correctSequence'].map(entity);
+        const positions = object['positions'].map((entry, index) => {
+            const position = exact(entry, ['position', 'selectedItemId', 'correct']);
+            if (position['position'] !== index || typeof position['correct'] !== 'boolean') throw protocol('Invalid position result.');
+            return { position: index, selectedItemId: entity(position['selectedItemId']), correct: position['correct'] };
+        });
+        if (new Set(correctSequence).size !== correctSequence.length
+            || new Set(positions.map(position => position.selectedItemId)).size !== positions.length
+            || positions.some(position => !correctSequence.includes(position.selectedItemId))) throw protocol('Invalid order feedback ids.');
+        // The result is binary: the sequence is either right at every position or the attempt is incorrect.
+        if (verdict !== (positions.every(position => position.correct) ? 'CORRECT' : 'INCORRECT')) throw protocol('Order result mismatch.');
+        return { result: verdict, appliedRules: rules(object), correctSequence, positions };
+    }
+    if ('assignments' in value) {
+        const object = exact(value, ['result', 'appliedRules', 'assignments']);
+        if (!Array.isArray(object['assignments']) || object['assignments'].length < 2 || object['assignments'].length > 12) {
+            throw protocol('Invalid categorize feedback.');
+        }
+        const assignments = object['assignments'].map(entry => {
+            const assignment = exact(entry, ['itemId', 'selectedCategoryId', 'correctCategoryId', 'correct']);
+            if (typeof assignment['correct'] !== 'boolean') throw protocol('Invalid assignment result.');
+            return { itemId: entity(assignment['itemId']), selectedCategoryId: entity(assignment['selectedCategoryId']),
+                correctCategoryId: entity(assignment['correctCategoryId']), correct: assignment['correct'] };
+        });
+        if (new Set(assignments.map(assignment => assignment.itemId)).size !== assignments.length) throw protocol('Duplicate assignment feedback.');
+        const right = assignments.filter(assignment => assignment.correct).length;
+        if (verdict !== (right === assignments.length ? 'CORRECT' : right === 0 ? 'INCORRECT' : 'PARTIAL')) {
+            throw protocol('Categorize result mismatch.');
+        }
+        return { result: verdict, appliedRules: rules(object), assignments };
+    }
     if ('referenceContent' in value) {
         const object = exact(value, ['result', 'appliedRules', 'reference', 'referenceContent']);
         if (!Array.isArray(object['referenceContent']) || object['referenceContent'].length > 8) {

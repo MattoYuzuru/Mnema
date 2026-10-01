@@ -1,9 +1,10 @@
 import { isCanonicalEntityId } from '../../features/own-decks/own-deck.models';
 import {
     AI_LEVELS, AiRubric, AuthoringBlock, ChoiceOption, ClozeBlankKey, ClozeBlankSegment, ClozeSegment, ClozeSize,
-    COMPACT_SLOT, ExerciseSpec, LIMITS, LearnerBlock, LearnerClozeSegment, LearnerContent, MatchItem, MECHANICS,
-    Mechanic, NORMALIZATION_RULES, NormalizationRule, ObjectiveCommand, PROMPT_SLOTS, REFERENCE_SLOTS, SLOT_PROFILES,
-    SlotProfile, SlotSpec, authoringSlots, codePointLength, isBlank, mediaBlockCount
+    COMPACT_SLOT, Category, CategorizeItem, ExerciseSpec, LIMITS, LearnerBlock, LearnerClozeSegment, LearnerContent, MatchItem,
+    MECHANICS, Mechanic, NORMALIZATION_RULES, NormalizationRule, ObjectiveCommand, OrderItem, PROMPT_SLOTS, REFERENCE_SLOTS,
+    SEQUENCE_SLOT, SLOT_PROFILES, SlotProfile, SlotSpec, authoringSlots, categoryLabelKey, codePointLength, distinguishableItems, isBlank,
+    mediaBlockCount
 } from './exercise-content.models';
 
 /** Thrown for any shape or invariant violation; services translate it into their own protocol error. */
@@ -263,6 +264,36 @@ function matchSide(value: unknown): readonly MatchItem[] {
     });
 }
 
+function orderItems(value: unknown): readonly OrderItem[] {
+    const items = array(value, LIMITS.orderItems.min, LIMITS.orderItems.max).map(entry => {
+        const object = exactObject(entry, ['itemId', 'blocks']);
+        return { itemId: id(object['itemId']), blocks: authoringSlot(object['blocks'], SEQUENCE_SLOT) };
+    });
+    unique(items.map(item => item.itemId));
+    return items;
+}
+
+function categories(value: unknown): readonly Category[] {
+    const result = array(value, LIMITS.categories.min, LIMITS.categories.max).map(entry => {
+        const object = exactObject(entry, ['categoryId', 'label']);
+        const label = nonblank(object['label'], LIMITS.categories.label);
+        if (categoryLabelKey(label) === '') fail('Label without a visible character.');
+        return { categoryId: id(object['categoryId']), label };
+    });
+    unique(result.map(category => category.categoryId));
+    unique(result.map(category => categoryLabelKey(category.label)));
+    return result;
+}
+
+function categorizeItems(value: unknown): readonly CategorizeItem[] {
+    const items = array(value, LIMITS.categorizeItems.min, LIMITS.categorizeItems.max).map(entry => {
+        const object = exactObject(entry, ['itemId', 'blocks']);
+        return { itemId: id(object['itemId']), blocks: authoringSlot(object['blocks'], COMPACT_SLOT) };
+    });
+    unique(items.map(item => item.itemId));
+    return items;
+}
+
 /** Strictly parses the exercise part of a publication command or of an exercise detail. */
 export function parseExerciseSpec(value: unknown): ExerciseSpec {
     const object = exactObject(value, ['type', 'schemaVersion', 'enabled', 'subject', 'content', 'answerKey', 'evaluatorPolicy']);
@@ -366,6 +397,35 @@ function parseByType(type: Mechanic, base: { readonly schemaVersion: 2; readonly
             return { ...base, type, content: { prompt: authoringSlot(content['prompt'], PROMPT_SLOTS[type]), left, right },
                 answerKey: { kind: 'MATCH', pairs }, evaluatorPolicy: evaluator(object['evaluatorPolicy'], 'deterministic-match') };
         }
+        case 'ORDER': {
+            const content = exactObject(object['content'], ['prompt', 'items']);
+            const key = exactObject(object['answerKey'], ['kind', 'sequence']);
+            if (key['kind'] !== 'ORDER') fail('Unexpected answer key.');
+            const items = orderItems(content['items']);
+            if (distinguishableItems(items) < 2) fail('An order needs two distinguishable items.');
+            const sequence = array(key['sequence'], items.length, items.length).map(id);
+            unique(sequence);
+            if (sequence.some(itemId => !items.some(item => item.itemId === itemId))) fail('Sequence must use item ids.');
+            return { ...base, type, content: { prompt: authoringSlot(content['prompt'], PROMPT_SLOTS[type]), items },
+                answerKey: { kind: 'ORDER', sequence }, evaluatorPolicy: evaluator(object['evaluatorPolicy'], 'deterministic-order') };
+        }
+        case 'CATEGORIZE': {
+            const content = exactObject(object['content'], ['prompt', 'categories', 'items']);
+            const key = exactObject(object['answerKey'], ['kind', 'assignments']);
+            if (key['kind'] !== 'CATEGORIZE') fail('Unexpected answer key.');
+            const groups = categories(content['categories']);
+            const items = categorizeItems(content['items']);
+            const assignments = array(key['assignments'], items.length, items.length).map(entry => {
+                const assignment = exactObject(entry, ['itemId', 'categoryId']);
+                return { itemId: id(assignment['itemId']), categoryId: id(assignment['categoryId']) };
+            });
+            unique(assignments.map(assignment => assignment.itemId));
+            if (assignments.some(assignment => !items.some(item => item.itemId === assignment.itemId)
+                || !groups.some(group => group.categoryId === assignment.categoryId))) fail('Assignments must use issued ids.');
+            return { ...base, type, content: { prompt: authoringSlot(content['prompt'], PROMPT_SLOTS[type]), categories: groups, items },
+                answerKey: { kind: 'CATEGORIZE', assignments },
+                evaluatorPolicy: evaluator(object['evaluatorPolicy'], 'deterministic-categorize') };
+        }
     }
 }
 
@@ -443,12 +503,17 @@ function parseLearnerSlot(value: unknown, spec: SlotSpec, revealed: boolean | nu
     return blocks;
 }
 
-function learnerSide(value: unknown, revealed: boolean): readonly { readonly itemId: string; readonly blocks: readonly LearnerBlock[] }[] {
-    return array(value, LIMITS.matchPairs.min, LIMITS.matchPairs.max).map(entry => {
+function learnerItems(value: unknown, limits: { readonly min: number; readonly max: number }, slot: SlotSpec,
+    revealed: boolean): readonly { readonly itemId: string; readonly blocks: readonly LearnerBlock[] }[] {
+    const items = array(value, limits.min, limits.max).map(entry => {
         const object = exactObject(entry, ['itemId', 'blocks']);
-        return { itemId: id(object['itemId']), blocks: parseLearnerSlot(object['blocks'], COMPACT_SLOT, revealed) };
+        return { itemId: id(object['itemId']), blocks: parseLearnerSlot(object['blocks'], slot, revealed) };
     });
+    unique(items.map(item => item.itemId));
+    return items;
 }
+
+const learnerSide = (value: unknown, revealed: boolean) => learnerItems(value, LIMITS.matchPairs, COMPACT_SLOT, revealed);
 
 /** Parses the learner-resolved content of one presentation; `type` selects the exact content shape. */
 export function parseLearnerContent(type: Mechanic, value: unknown, revealed: boolean): LearnerContent {
@@ -507,6 +572,16 @@ export function parseLearnerContent(type: Mechanic, value: unknown, revealed: bo
             if (left.length !== right.length) fail('Sides must have equal sizes.');
             unique([...left, ...right].map(item => item.itemId));
             return { type, content: { prompt: parseLearnerSlot(object['prompt'], PROMPT_SLOTS[type], revealed), left, right } };
+        }
+        case 'ORDER': {
+            const object = exactObject(value, ['prompt', 'items']);
+            return { type, content: { prompt: parseLearnerSlot(object['prompt'], PROMPT_SLOTS[type], revealed),
+                items: learnerItems(object['items'], LIMITS.orderItems, SEQUENCE_SLOT, revealed) } };
+        }
+        case 'CATEGORIZE': {
+            const object = exactObject(value, ['prompt', 'categories', 'items']);
+            return { type, content: { prompt: parseLearnerSlot(object['prompt'], PROMPT_SLOTS[type], revealed),
+                categories: categories(object['categories']), items: learnerItems(object['items'], LIMITS.categorizeItems, COMPACT_SLOT, revealed) } };
         }
     }
 }

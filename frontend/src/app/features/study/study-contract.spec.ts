@@ -33,7 +33,7 @@ describe('Mechanics wire contract (contracts/study/mechanics.json)', () => {
     afterEach(() => http.verify());
 
     const commands = ['createSelfCheck', 'createFreeResponseAudio', 'createCloze', 'createChoiceVideoMultiple',
-        'createMatchMixed', 'rejectedAiAssessment', 'rejectedSpeechInput'];
+        'createMatchMixed', 'createOrder', 'createCategorize', 'rejectedAiAssessment', 'rejectedSpeechInput'];
 
     it('contains no removed mechanic names, no later-epic mechanics and no hintsUsed anywhere', () => {
         const text = JSON.stringify(mechanics);
@@ -80,7 +80,7 @@ describe('Mechanics wire contract (contracts/study/mechanics.json)', () => {
 
     it('parses every learner presentation exactly, including the revealed transcript variant', async () => {
         const fixtures = mechanics['presentations'];
-        const plain = ['selfCheck', 'freeResponse', 'cloze', 'choice', 'match'].map(name => fixtures[name]);
+        const plain = ['selfCheck', 'freeResponse', 'cloze', 'choice', 'match', 'order', 'categorize'].map(name => fixtures[name]);
         const reading = firstValueFrom(study.read(deckId, ids.sessionId));
         http.expectOne(`/api/decks/${deckId}/study-sessions/${ids.sessionId}`).flush(readySession(plain), { headers: privateHeaders });
         const session = await reading;
@@ -123,7 +123,7 @@ describe('Mechanics wire contract (contracts/study/mechanics.json)', () => {
         expect(await checking).toEqual(mechanics['pairCheckResult']);
     });
 
-    for (const name of ['selfCheck', 'freeResponse', 'cloze', 'choice', 'match', 'cancel']) {
+    for (const name of ['selfCheck', 'freeResponse', 'cloze', 'choice', 'match', 'order', 'orderEquivalent', 'categorize', 'cancel']) {
         it(`serializes the ${name} attempt exactly and has no hintsUsed`, () => {
             const command = mechanics['submits'][name] as AttemptCommand;
             study.submit(deckId, ids.sessionId, command).subscribe();
@@ -133,7 +133,7 @@ describe('Mechanics wire contract (contracts/study/mechanics.json)', () => {
         });
     }
 
-    for (const name of ['selfCheck', 'freeResponse', 'cloze', 'choice', 'match']) {
+    for (const name of ['selfCheck', 'freeResponse', 'cloze', 'choice', 'match', 'order', 'orderEquivalent', 'categorize']) {
         it(`parses the ${name} feedback exactly`, async () => {
             const command = mechanics['submits'][name] as AttemptCommand;
             const submitting = firstValueFrom(study.submit(deckId, ids.sessionId, command));
@@ -206,6 +206,33 @@ describe('Mechanics wire contract (contracts/study/mechanics.json)', () => {
             expect(() => parseObjectiveCommand({ ...mechanics['reuseObjective'], title: 'x' })).toThrowError(ExerciseContentError);
         });
 
+        it('ORDER and CATEGORIZE keys, items and groups that break their rules', () => {
+            const order = (change: (spec: any) => void) => {
+                const spec = clone(mechanics['createOrder'].exercise); change(spec);
+                expect(() => parseExerciseSpec(spec)).toThrowError(ExerciseContentError);
+            };
+            order(spec => { spec.answerKey.sequence.pop(); });                                   // missing item
+            order(spec => { spec.answerKey.sequence[1] = spec.answerKey.sequence[0]; });         // duplicate item
+            order(spec => { spec.answerKey.sequence[0] = '0d000000-0000-4000-8000-0000000000ff'; }); // foreign item
+            order(spec => { spec.content.items.pop(); spec.content.items.pop(); spec.content.items.pop(); spec.content.items.pop(); spec.content.items.pop(); }); // one item
+            order(spec => { spec.content.items[1].itemId = spec.content.items[0].itemId; });     // duplicate id
+            order(spec => { spec.content.items[0].blocks = [{ kind: 'TEXT', text: 'x'.repeat(1001) }]; }); // SEQUENCE bound
+            order(spec => { spec.content.items[0].blocks = [{ kind: 'YOUTUBE', videoId: 'dQw4w9WgXcQ', title: 'x' }]; });
+            order(spec => { spec.evaluatorPolicy = { id: 'deterministic-match', version: '1' }; });
+            const categorize = (change: (spec: any) => void) => {
+                const spec = clone(mechanics['createCategorize'].exercise); change(spec);
+                expect(() => parseExerciseSpec(spec)).toThrowError(ExerciseContentError);
+            };
+            categorize(spec => { spec.answerKey.assignments.pop(); });                           // item without a group
+            categorize(spec => { spec.answerKey.assignments[0].categoryId = 'ca000000-0000-4000-8000-0000000000ff'; }); // dangling group
+            categorize(spec => { spec.answerKey.assignments[1].itemId = spec.answerKey.assignments[0].itemId; }); // twice
+            categorize(spec => { spec.content.categories[1].label = ' СУЩЕСТВИТЕЛЬНОЕ '; });    // same after trim and case fold
+            categorize(spec => { spec.content.categories[0].label = 'я'.repeat(81); });
+            categorize(spec => { spec.content.categories.splice(2, 1); spec.content.categories.splice(1, 1); }); // one group
+            categorize(spec => { spec.content.categories.push(...[4, 5, 6, 7].map(n => ({ categoryId: `ca000000-0000-4000-8000-00000000000${n}`, label: `Г${n}` }))); });
+            categorize(spec => { spec.content.items[0].blocks = [{ kind: 'TEXT', text: 'x'.repeat(301) }]; });
+        });
+
         it('a publication command that does not satisfy the contract never reaches the network', async () => {
             const bad = clone(mechanics['createCloze']);
             bad.exercise.answerKey.blanks[0].accepted = ['map', 'map'];
@@ -233,6 +260,60 @@ describe('Mechanics wire contract (contracts/study/mechanics.json)', () => {
             await read(legacy);
             const hint = clone(mechanics['presentations']['cloze']); hint.hints = [{ blankId: 'b1a00000-0000-4000-8000-000000000002', firstLetter: 't' }];
             await read(hint); // blank 2 has no first-letter hint
+        });
+
+        it('ORDER and CATEGORIZE presentations that repeat items or leak the key', async () => {
+            const read = async (value: unknown) => {
+                const reading = firstValueFrom(study.read(deckId, ids.sessionId));
+                http.expectOne(`/api/decks/${deckId}/study-sessions/${ids.sessionId}`)
+                    .flush(readySession([value]), { headers: privateHeaders });
+                await expectAsync(reading).toBeRejectedWithError(StudyProtocolError);
+            };
+            const duplicate = clone(mechanics['presentations']['order']);
+            duplicate.content.items[1].itemId = duplicate.content.items[0].itemId;
+            await read(duplicate);
+            const leak = clone(mechanics['presentations']['order']); leak.content.sequence = [];
+            await read(leak);
+            const wrongEvaluator = clone(mechanics['presentations']['categorize']); wrongEvaluator.evaluator.id = 'deterministic-order';
+            await read(wrongEvaluator);
+            const keyed = clone(mechanics['presentations']['categorize']); keyed.content.items[0].categoryId = keyed.content.categories[0].categoryId;
+            await read(keyed);
+            const labelClash = clone(mechanics['presentations']['categorize']); labelClash.content.categories[1].label = 'существительное';
+            await read(labelClash);
+        });
+
+        it('ORDER and CATEGORIZE responses that are not a full, duplicate-free answer never leave the browser', async () => {
+            const order = mechanics['submits']['order'];
+            const categorize = mechanics['submits']['categorize'];
+            const broken: AttemptCommand[] = [
+                { ...order, response: { kind: 'ORDER', sequence: [order.response['sequence'][0]] } },
+                { ...order, response: { kind: 'ORDER', sequence: [order.response['sequence'][0], order.response['sequence'][0]] } },
+                { ...order, response: { kind: 'ORDER', sequence: order.response['sequence'], extra: 1 } },
+                { ...categorize, response: { kind: 'CATEGORIZE', assignments: [categorize.response['assignments'][0]] } },
+                { ...categorize, response: { kind: 'CATEGORIZE', assignments: [categorize.response['assignments'][0], categorize.response['assignments'][0]] } },
+                { ...categorize, response: { kind: 'CATEGORIZE', assignments: categorize.response['assignments'].map((entry: object) => ({ ...entry, label: 'x' })) } }
+            ];
+            for (const command of broken) await expectAsync(firstValueFrom(study.submit(deckId, ids.sessionId, command))).toBeRejectedWithError(StudyProtocolError);
+            http.expectNone(`/api/decks/${deckId}/study-sessions/${ids.sessionId}/attempts`);
+        });
+
+        it('ORDER and CATEGORIZE feedback that contradicts its own verdict or ids is a protocol error', async () => {
+            const submit = async (name: string, change: (feedback: any) => void) => {
+                const command = mechanics['submits'][name] as AttemptCommand;
+                const feedback = clone(mechanics['feedback'][name]); change(feedback);
+                const submitting = firstValueFrom(study.submit(deckId, ids.sessionId, command));
+                http.expectOne(`/api/decks/${deckId}/study-sessions/${ids.sessionId}/attempts`)
+                    .flush(assessedOutcome(command, feedback), { headers: privateHeaders });
+                await expectAsync(submitting).toBeRejectedWithError(StudyProtocolError);
+            };
+            await submit('order', feedback => { feedback.result = 'PARTIAL'; });                      // ORDER is binary
+            await submit('order', feedback => { feedback.result = 'CORRECT'; });                      // wrong positions exist
+            await submit('order', feedback => { feedback.positions[2].position = 7; });
+            await submit('order', feedback => { feedback.correctSequence.pop(); });
+            await submit('order', feedback => { feedback.positions[0].selectedItemId = feedback.positions[1].selectedItemId; });
+            await submit('categorize', feedback => { feedback.result = 'CORRECT'; });                 // one assignment is wrong
+            await submit('categorize', feedback => { feedback.result = 'INCORRECT'; });               // three are right
+            await submit('categorize', feedback => { feedback.assignments[1].itemId = feedback.assignments[0].itemId; });
         });
 
         it('an attempt carrying legacy fields or the wrong response shape', async () => {

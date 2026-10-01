@@ -30,6 +30,11 @@ public sealed interface AnswerKey {
     record Cloze(List<BlankKey> blanks) implements AnswerKey { }
     record Choice(List<UUID> correctOptionIds) implements AnswerKey { }
     record Match(List<Pair> pairs) implements AnswerKey { }
+    /** The explicit correct sequence of every item identifier; order is never inferred. */
+    record Order(List<UUID> sequence) implements AnswerKey { }
+    /** Every item mapped to exactly one category; categories may repeat or stay empty. */
+    record Categorize(List<Assignment> assignments) implements AnswerKey { }
+    record Assignment(UUID itemId, UUID categoryId) { }
     record BlankKey(UUID blankId, TextRule rule) { }
     record Pair(UUID leftId, UUID rightId) { }
 
@@ -75,6 +80,24 @@ public sealed interface AnswerKey {
                 }
                 yield new Match(List.copyOf(pairs));
             }
+            case ORDER -> {
+                fields(value, "kind", "sequence");
+                yield new Order(distinctIds(array(value.path("sequence"), ExerciseContent.MIN_ORDER_ITEMS,
+                        ExerciseContent.MAX_ORDER_ITEMS)));
+            }
+            case CATEGORIZE -> {
+                fields(value, "kind", "assignments");
+                List<Assignment> assignments = new ArrayList<>();
+                Set<UUID> items = new HashSet<>();
+                for (JsonNode assignment : array(value.path("assignments"), ExerciseContent.MIN_CATEGORIZE_ITEMS,
+                        ExerciseContent.MAX_CATEGORIZE_ITEMS)) {
+                    fields(assignment, "itemId", "categoryId");
+                    Assignment parsed = new Assignment(id(assignment, "itemId"), id(assignment, "categoryId"));
+                    if (!items.add(parsed.itemId())) throw invalid();
+                    assignments.add(parsed);
+                }
+                yield new Categorize(List.copyOf(assignments));
+            }
         };
     }
 
@@ -87,8 +110,8 @@ public sealed interface AnswerKey {
     }
 
     /**
-     * Agreement between key and content: blanks, options and sides name exactly the same identifiers, and
-     * an ANSWER_LENGTH blank has one well-defined width.
+     * Agreement between key and content: blanks, options, sides and items name exactly the same identifiers,
+     * every CATEGORIZE item sits in an existing category, and an ANSWER_LENGTH blank has one well-defined width.
      */
     static void requireConsistent(ExerciseContent content, AnswerKey key) {
         switch (content) {
@@ -119,9 +142,25 @@ public sealed interface AnswerKey {
                 Set<UUID> rights = new HashSet<>();
                 match.left().forEach(item -> lefts.add(item.itemId()));
                 match.right().forEach(item -> rights.add(item.itemId()));
-                List<Pair> pairs = ((Match) key).pairs();
-                if (pairs.size() != lefts.size() || !pairs.stream().allMatch(pair ->
-                        lefts.contains(pair.leftId()) && rights.contains(pair.rightId()))) throw invalid();
+                List<MappingRules.Link> links = ((Match) key).pairs().stream()
+                        .map(pair -> new MappingRules.Link(pair.leftId(), pair.rightId())).toList();
+                if (!MappingRules.bijection(links, lefts, rights)) throw invalid();
+            }
+            case ExerciseContent.Order order -> {
+                Set<UUID> items = new HashSet<>();
+                order.items().forEach(item -> items.add(item.itemId()));
+                // distinct ids of the same size, so equal sets mean an exact permutation
+                List<UUID> sequence = ((Order) key).sequence();
+                if (sequence.size() != items.size() || !items.containsAll(sequence)) throw invalid();
+            }
+            case ExerciseContent.Categorize categorize -> {
+                Set<UUID> items = new HashSet<>();
+                Set<UUID> categories = new HashSet<>();
+                categorize.items().forEach(item -> items.add(item.itemId()));
+                categorize.categories().forEach(category -> categories.add(category.categoryId()));
+                List<MappingRules.Link> links = ((Categorize) key).assignments().stream()
+                        .map(assignment -> new MappingRules.Link(assignment.itemId(), assignment.categoryId())).toList();
+                if (!MappingRules.totalManyToOne(links, items, categories)) throw invalid();
             }
             default -> { }
         }

@@ -1,4 +1,4 @@
-import { DEMO_CHOICE, DEMO_CLOZE, DEMO_FREE_RESPONSE, DEMO_MATCH, DEMO_SELF_CHECK } from './demo/demo-fixtures';
+import { DEMO_CATEGORIZE, DEMO_CHOICE, DEMO_CLOZE, DEMO_FREE_RESPONSE, DEMO_MATCH, DEMO_ORDER, DEMO_SELF_CHECK } from './demo/demo-fixtures';
 import { Mechanic, PreviewExercise } from './exercise-content.models';
 
 /**
@@ -6,7 +6,7 @@ import { Mechanic, PreviewExercise } from './exercise-content.models';
  * second is optional context for a cloze), `finish` is naming and saving. A step opens after the previous one
  * is completed with an explicit action, never on keystrokes.
  */
-export type StepId = 'prompt' | 'reference' | 'answers' | 'context' | 'passage' | 'options' | 'pairs' | 'finish';
+export type StepId = 'prompt' | 'reference' | 'answers' | 'context' | 'passage' | 'options' | 'pairs' | 'items' | 'groups' | 'finish';
 
 export interface DemoFixture { readonly exercise: PreviewExercise; }
 
@@ -48,6 +48,16 @@ export const MECHANIC_CATALOG: readonly MechanicCatalogEntry[] = [
         mechanic: 'MATCH', title: 'Сопоставить элементы',
         description: 'Соедините связанные элементы: понятия и определения, записи и текст, изображения и названия.',
         steps: ['prompt', 'pairs', 'finish'], demo: { exercise: DEMO_MATCH }
+    },
+    {
+        mechanic: 'ORDER', title: 'Восстановить порядок',
+        description: 'Разместите слова, этапы или фрагменты в правильной последовательности. Ученик получит их вперемешку.',
+        steps: ['prompt', 'items', 'finish'], demo: { exercise: DEMO_ORDER }
+    },
+    {
+        mechanic: 'CATEGORIZE', title: 'Распределить по группам',
+        description: 'Создайте категории и примеры для каждой. Ученик определит, к какой группе относится каждый элемент.',
+        steps: ['prompt', 'groups', 'items', 'finish'], demo: { exercise: DEMO_CATEGORIZE }
     }
 ];
 
@@ -59,10 +69,13 @@ export function catalogEntry(mechanic: Mechanic): MechanicCatalogEntry {
 
 const STEP_TITLES: Readonly<Record<StepId, string>> = {
     prompt: 'Условие', reference: 'Эталон ответа', answers: 'Допустимые ответы', context: 'Контекст',
-    passage: 'Текст и пропуски', options: 'Варианты ответа', pairs: 'Пары', finish: 'Название и сохранение'
+    passage: 'Текст и пропуски', options: 'Варианты ответа', pairs: 'Пары', items: 'Элементы', groups: 'Группы',
+    finish: 'Название и сохранение'
 };
 const STEP_TITLE_OVERRIDES: Readonly<Partial<Record<Mechanic, Partial<Record<StepId, string>>>>> = {
-    FREE_RESPONSE: { prompt: 'Вопрос' }, CHOICE: { prompt: 'Вопрос' }, MATCH: { prompt: 'Общая инструкция' }
+    FREE_RESPONSE: { prompt: 'Вопрос' }, CHOICE: { prompt: 'Вопрос' }, MATCH: { prompt: 'Общая инструкция' },
+    ORDER: { prompt: 'Инструкция', items: 'Элементы в правильном порядке' },
+    CATEGORIZE: { prompt: 'Инструкция', groups: 'Названия групп', items: 'Элементы и их группы' }
 };
 
 export function stepTitle(mechanic: Mechanic, step: StepId): string {

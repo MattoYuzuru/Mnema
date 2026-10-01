@@ -99,13 +99,14 @@ capacity evidence.
   current/historical reads and atomic publication.
 - `/api/decks/{deckId}/exercises` owns owner-only bounded reads and atomic
   publication of stable objectives and immutable exercise revisions. There are
-  five mechanics (`SELF_CHECK`, `FREE_RESPONSE`, `CLOZE`, `CHOICE`, `MATCH`);
+  seven mechanics (`SELF_CHECK`, `FREE_RESPONSE`, `CLOZE`, `CHOICE`, `MATCH`, `ORDER`,
+  `CATEGORIZE`);
   media kind is content, never a mechanic. A revision stores independent
   `content` (typed slots of `TEXT`, `MATERIAL`, `IMAGE`, `AUDIO`, `VIDEO`,
   `YOUTUBE` blocks), a private `answerKey` and an `evaluatorPolicy`; the
   objective is a stable identity plus a human `title` and never holds an answer
   key. Every object has an exact field set, schema version 2 and UTF-16 length
-  limits; slot profiles (`PROMPT`, `REFERENCE`, `COMPACT`) bound block kinds,
+  limits; slot profiles (`PROMPT`, `REFERENCE`, `COMPACT`, `SEQUENCE`) bound block kinds,
   block counts and text per block (`contracts/study/mechanics.json` is the wire
   contract). The server derives bindings (the `ASSESSED` subject and one
   `CONTEXT` row per quoted material revision), validates `MATERIAL` nodes against
@@ -131,6 +132,20 @@ capacity evidence.
   blank is `FIXED` (5..20) or `ANSWER_LENGTH`, which requires every accepted answer
   of that blank to have the same NFC code-point length; the presentation supplies
   the length and neither mode limits input.
+  `ORDER` has 2..12 items (`SEQUENCE` slot: one text-like and at most one media block,
+  text up to 1000 UTF-16 units with newlines kept for code) and an explicit
+  `{kind:"ORDER", sequence}` key that is an exact permutation of the item ids; order
+  is never inferred. Items with identical learner-visible blocks (`OrderEquivalence`: the
+  same canonical JSON, ignoring item ids and author-only audio/video titles) are
+  interchangeable, nothing else is. The result is binary (`CORRECT`/`INCORRECT`,
+  evidence `MEDIUM`) with `correctSequence` and per-position correctness from the same
+  comparison. `CATEGORIZE` has 2..6 categories (labels up to 80 UTF-16 units, unique
+  after trim and case fold; an empty category is a valid distractor) and 2..12 `COMPACT`
+  items; its key assigns every item to exactly one existing category (a missing
+  category at publication is 400). The result is `CORRECT`/`PARTIAL`/`INCORRECT`
+  (evidence `LOW`) with per-item feedback. `MappingRules` is the one mapping validator:
+  `bijection` for `MATCH` and `totalManyToOne` for `CATEGORIZE`, two distinct rule sets
+  over one totality check, used for authored keys and learner responses.
 - `GET /api/capabilities` (authenticated, `private, no-store`) reports
   `aiAssessment` and `speechToText` as `{available, reason}`. A capability is
   available only when `learning.features.ai-assessment.enabled` /
@@ -147,8 +162,11 @@ capacity evidence.
   `zoneinfo` claim determines the local study date; invalid or absent values fall
   back to UTC, and clients cannot submit a timezone. Resume returns only
   presentations without a terminal attempt. A presentation carries learner
-  `content` resolved once at issue time (`MATERIAL` becomes `TEXT`, `MATCH` sides
-  are shuffled deterministically from the presentation id) and never an answer key,
+  `content` resolved once at issue time (`MATERIAL` becomes `TEXT`; `MATCH` sides, `ORDER` items and `CATEGORIZE` items
+  are shuffled once at issue with a `SecureRandom` source and persisted, so reads and replays
+  repeat the same order; with three or more `ORDER` items a draw that already shows the
+  solved class sequence is redrawn up to 16 times and then rotated, with two items the draw
+  is uniform; categories keep their authored order) and never an answer key,
   accepted strings, media titles, unrevealed transcripts or bindings.
   `POST .../presentations/{id}/transcript` and `.../hints` (CLOZE blanks with
   `firstLetterHint`) are server-recorded, idempotent reveals that evidence reads.
@@ -161,14 +179,16 @@ capacity evidence.
   defaults to already introduced objectives, supports deterministic seeded or
   weakest-first order, and admits new objectives only when explicitly requested.
 - `/api/decks/{deckId}/study-sessions/{sessionId}/attempts` terminalizes one
-  server-issued presentation. All five evaluators are deterministic;
+  server-issued presentation. All seven evaluators are deterministic;
   only `SCHEDULED` writes evidence and one versioned `mnema-baseline-v1`
   transition, for the single subject objective (`CONTEXT` materials never gain
   exposure, evidence or state). `FREE_RESPONSE` and each `CLOZE` blank normalize
   against the private answer key; a recorded first-letter hint caps a non-incorrect
   cloze at `MEDIUM`, a revealed transcript caps any result at `LOW`. `CHOICE` and
   `MATCH` accept only ids that were issued and always produce `LOW` recognition
-  evidence; a `MATCH` completed after a wrong pair check is `PARTIAL` with
+  evidence (`ORDER` `MEDIUM` sequencing, `CATEGORIZE` `LOW` recognition; `ORDER` and
+  `CATEGORIZE` need an exact permutation / a total assignment of the issued ids, anything else
+  is 400 and consumes nothing); a `MATCH` completed after a wrong pair check is `PARTIAL` with
   `PAIR_RETRY`. The client sends no hint list: hint use is a server record. A pinned
   asset that is not READY (or whose verified source is not the declared kind)
   gives `NOT_ASSESSED`/`MEDIA_NOT_READY` and no transition. Exact retries
@@ -209,8 +229,10 @@ capacity evidence.
   back both material and exercise membership roots. Exercise writes advance the
   Deck CAS and receipt in the same transaction.
 
-Fresh Learning migrations V1–V21 are the database source of truth. V21 (unified exercise
-mechanics) fails closed when pre-#266 exercise data exists: use a fresh local database. Do not append
+Fresh Learning migrations V1–V23 are the database source of truth. V21 (unified exercise
+mechanics) fails closed when pre-#266 exercise data exists: use a fresh local database. V23
+only widens the exercise type and answer-key kind constraints for `ORDER` and `CATEGORIZE`
+(no data rewrite). Do not append
 Study tables to legacy `core` migrations or port old review algorithms.
 
 Sources: [Spring Security 6.5 JWT](https://docs.spring.io/spring-security/reference/6.5/servlet/oauth2/resource-server/jwt.html)

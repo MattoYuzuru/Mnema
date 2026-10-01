@@ -32,6 +32,7 @@ import static app.mnema.learning.support.StudyFixtures.audio;
 import static app.mnema.learning.support.StudyFixtures.blank;
 import static app.mnema.learning.support.StudyFixtures.blankKey;
 import static app.mnema.learning.support.StudyFixtures.blocks;
+import static app.mnema.learning.support.StudyFixtures.category;
 import static app.mnema.learning.support.StudyFixtures.image;
 import static app.mnema.learning.support.StudyFixtures.item;
 import static app.mnema.learning.support.StudyFixtures.option;
@@ -100,6 +101,11 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
         UUID second = UUID.randomUUID();
         UUID leftOne = UUID.randomUUID(), leftTwo = UUID.randomUUID();
         UUID rightOne = UUID.randomUUID(), rightTwo = UUID.randomUUID();
+        UUID orderOne = UUID.randomUUID(), orderTwo = UUID.randomUUID(), orderThree = UUID.randomUUID();
+        UUID orderFour = UUID.randomUUID();
+        UUID groupOne = UUID.randomUUID(), groupTwo = UUID.randomUUID(), groupThree = UUID.randomUUID();
+        UUID sortOne = UUID.randomUUID(), sortTwo = UUID.randomUUID(), sortThree = UUID.randomUUID();
+        UUID sortFour = UUID.randomUUID();
         List<ObjectNode> exercises = List.of(
                 fixtures.selfCheck(material, blocks(image(image, "Diagram"), text("Explain"), quote(material, material.node())),
                         blocks(audio(sound, "Narration", "spoken answer"), quote(material, material.distractor()))),
@@ -113,9 +119,23 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
                 fixtures.match(material, blocks(text("Match")),
                         StudyFixtures.blocks().add(item(leftOne, audio(sound, "Sound", null))).add(item(leftTwo, text("two"))),
                         StudyFixtures.blocks().add(item(rightOne, text("one"))).add(item(rightTwo, image(image, "Alt"))),
-                        new UUID[][] {{leftOne, rightOne}, {leftTwo, rightTwo}}));
-        long[] mediaRefs = {2, 1, 0, 1, 2};
-        long[] contexts = {1, 0, 0, 1, 0};
+                        new UUID[][] {{leftOne, rightOne}, {leftTwo, rightTwo}}),
+                fixtures.order(material, blocks(text("Restore")),
+                        StudyFixtures.blocks().add(item(orderOne, text("first")))
+                                .add(item(orderTwo, quote(material, material.node())))
+                                .add(item(orderThree, image(image, "Step three")))
+                                .add(item(orderFour, audio(sound, "Step four", "spoken step"))),
+                        orderOne, orderTwo, orderThree, orderFour),
+                fixtures.categorize(material, blocks(text("Sort")),
+                        StudyFixtures.blocks().add(category(groupOne, "Sounds")).add(category(groupTwo, "Pictures"))
+                                .add(category(groupThree, "Neither")),
+                        StudyFixtures.blocks().add(item(sortOne, audio(sound, "Clip", null)))
+                                .add(item(sortTwo, image(image, "Photo"))).add(item(sortThree, text("note")))
+                                .add(item(sortFour, text("other note"))),
+                        new UUID[][] {{sortOne, groupOne}, {sortTwo, groupTwo}, {sortThree, groupTwo},
+                                {sortFour, groupTwo}}));
+        long[] mediaRefs = {2, 1, 0, 1, 2, 2, 2};
+        long[] contexts = {1, 0, 0, 1, 0, 1, 0};
         for (int index = 0; index < exercises.size(); index++) {
             ObjectNode exercise = exercises.get(index);
             String type = exercise.path("type").textValue();
@@ -182,7 +202,7 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
             assertThat(history.path("objective").path("objectiveRevisionId").textValue()).isEqualTo(firstObjectiveRevision.toString());
             assertThat(history.path("objective").path("title").textValue()).isEqualTo("Objective " + type);
         }
-        assertThat(decks.read(material.actor(), material.deck()).path("exerciseCount").intValue()).isEqualTo(5);
+        assertThat(decks.read(material.actor(), material.deck()).path("exerciseCount").intValue()).isEqualTo(7);
     }
 
     @Test
@@ -437,13 +457,17 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
-    void persistedSchemaHasOnlyTheFiveMechanicsAndAValidatedObjectiveDescriptor() {
+    void persistedSchemaHasOnlyTheSevenMechanicsAndAValidatedObjectiveDescriptor() {
         for (String constraint : new String[] {"exercise_revision_exercise_type_check", "study_presentation_exercise_type_check"}) {
             String definition = jdbc.sql("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname=:name")
                     .param("name", constraint).query(String.class).single();
-            assertThat(definition).contains("SELF_CHECK", "FREE_RESPONSE", "CLOZE", "CHOICE", "MATCH")
+            assertThat(definition).contains("SELF_CHECK", "FREE_RESPONSE", "CLOZE", "CHOICE", "MATCH", "ORDER",
+                            "CATEGORIZE")
                     .doesNotContain("TYPED", "LISTEN", "SINGLE_CHOICE", "AUDIO_TEXT_MATCH", "CLOZE_SINGLE");
         }
+        assertThat(jdbc.sql("SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+                + "WHERE conname='exercise_revision_answer_key_check'").query(String.class).single())
+                .contains("SELF_REPORT", "TEXT", "CLOZE", "CHOICE", "MATCH", "ORDER", "CATEGORIZE");
         assertThat(jdbc.sql("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='exercise_revision_schema_version_check'")
                 .query(String.class).single()).contains("2");
         assertThat(jdbc.sql("SELECT count(*) FROM information_schema.columns WHERE table_schema='app_learning' "

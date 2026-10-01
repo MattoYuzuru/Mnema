@@ -35,6 +35,22 @@ describe('StudyRecoveryService', () => {
         service.save({ deckId: id, sessionId: id, pending: match });
         expect(service.restore(id)?.pending).toEqual(match);
     });
+    it('restores an order and a categorize response, and drops a repeated or malformed one', () => {
+        const other = id.replace(/.$/, '2');
+        const order: AttemptCommand = { ...pending, response: { kind: 'ORDER', sequence: [id, other] } };
+        service.save({ deckId: id, sessionId: id, pending: order });
+        expect(service.restore(id)?.pending).toEqual(order);
+        const categorize: AttemptCommand = { ...pending, response: { kind: 'CATEGORIZE', assignments: [{ itemId: id, categoryId: other }, { itemId: other, categoryId: other }] } };
+        service.save({ deckId: id, sessionId: id, pending: categorize });
+        expect(service.restore(id)?.pending).toEqual(categorize);
+        for (const broken of [{ kind: 'ORDER', sequence: [id, id] }, { kind: 'ORDER', sequence: [id] },
+            { kind: 'CATEGORIZE', assignments: [{ itemId: id, categoryId: other }, { itemId: id, categoryId: other }] },
+            { kind: 'CATEGORIZE', assignments: [{ itemId: id, groupId: other }, { itemId: other, groupId: other }] }]) {
+            storage.set(key, JSON.stringify({ version: 3, accountId: id, deckId: id, sessionId: id, updatedAt: 10000,
+                pending: { ...pending, response: broken } }));
+            expect(service.restore(id)).withContext(JSON.stringify(broken)).toBeNull();
+        }
+    });
     it('invalidates older snapshots, old scalar responses and any command that still carries hintsUsed', () => {
         for (const version of [1, 2]) {
             storage.set(key, JSON.stringify({ version, accountId: id, deckId: id, sessionId: id, updatedAt: 10000,

@@ -75,6 +75,11 @@ function validResponse(value: unknown): boolean {
                 && id(blank.blankId) && typeof blank.text === 'string');
         case 'MATCH': return Array.isArray(response['pairs']) && response['pairs'].every(pair =>
             pair !== null && typeof pair === 'object' && id(pair.leftId) && id(pair.rightId));
+        case 'ORDER': return Array.isArray(response['sequence']) && response['sequence'].length > 1 && response['sequence'].every(id)
+            && new Set(response['sequence']).size === response['sequence'].length;
+        case 'CATEGORIZE': return Array.isArray(response['assignments']) && response['assignments'].length > 1
+            && response['assignments'].every(entry => entry !== null && typeof entry === 'object' && id(entry.itemId) && id(entry.categoryId))
+            && new Set(response['assignments'].map(entry => entry.itemId)).size === response['assignments'].length;
         case 'CANCEL': return true;
         default: return false;
     }

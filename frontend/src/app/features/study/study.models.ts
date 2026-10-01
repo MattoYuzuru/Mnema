@@ -73,6 +73,8 @@ export type StudyResponse =
     | { readonly kind: 'CLOZE'; readonly blanks: readonly { readonly blankId: string; readonly text: string }[] }
     | { readonly kind: 'CHOICE'; readonly optionIds: readonly string[] }
     | { readonly kind: 'MATCH'; readonly pairs: readonly { readonly leftId: string; readonly rightId: string }[] }
+    | { readonly kind: 'ORDER'; readonly sequence: readonly string[] }
+    | { readonly kind: 'CATEGORIZE'; readonly assignments: readonly { readonly itemId: string; readonly categoryId: string }[] }
     | { readonly kind: 'CANCEL' };
 
 /** Hints are not part of the command: the server-recorded reveals are the only authority. */
@@ -113,17 +115,33 @@ export interface MatchFeedback {
         readonly leftId: string; readonly selectedRightId: string; readonly correctRightId: string; readonly correct: boolean;
     }[];
 }
+/** Binary: the right sequence, or not. `positions[].correct` already treats identical items as interchangeable. */
+export interface OrderFeedback {
+    readonly result: AssessedResult;
+    readonly appliedRules: readonly string[];
+    readonly correctSequence: readonly string[];
+    readonly positions: readonly { readonly position: number; readonly selectedItemId: string; readonly correct: boolean }[];
+}
+export interface CategorizeFeedback {
+    readonly result: AssessedResult;
+    readonly appliedRules: readonly string[];
+    readonly assignments: readonly {
+        readonly itemId: string; readonly selectedCategoryId: string; readonly correctCategoryId: string; readonly correct: boolean;
+    }[];
+}
 /** NOT_ASSESSED / UNAVAILABLE: no learner verdict and no canonical effect. */
 export interface UnassessedFeedback {
     readonly result: 'NOT_ASSESSED' | 'UNAVAILABLE';
     readonly reasonCodes: readonly string[];
 }
 export type AttemptFeedback = SelfCheckFeedback | FreeResponseFeedback | ClozeFeedback | ChoiceFeedback
-    | MatchFeedback | UnassessedFeedback;
+    | MatchFeedback | OrderFeedback | CategorizeFeedback | UnassessedFeedback;
 
 export function isClozeFeedback(value: AttemptFeedback): value is ClozeFeedback { return 'blanks' in value; }
 export function isChoiceFeedback(value: AttemptFeedback): value is ChoiceFeedback { return 'correctOptionIds' in value; }
 export function isMatchFeedback(value: AttemptFeedback): value is MatchFeedback { return 'pairs' in value; }
+export function isOrderFeedback(value: AttemptFeedback): value is OrderFeedback { return 'correctSequence' in value; }
+export function isCategorizeFeedback(value: AttemptFeedback): value is CategorizeFeedback { return 'assignments' in value; }
 export function isFreeResponseFeedback(value: AttemptFeedback): value is FreeResponseFeedback { return 'referenceContent' in value; }
 export function isUnassessed(value: AttemptFeedback): value is UnassessedFeedback { return 'reasonCodes' in value; }
 

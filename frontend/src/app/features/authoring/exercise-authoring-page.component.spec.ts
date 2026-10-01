@@ -161,7 +161,8 @@ describe('ExerciseAuthoringPageComponent', () => {
             expect(getUserMedia).not.toHaveBeenCalled();
             expect(page().querySelector('app-mechanic-picker legend')?.textContent).toBe('1. Тип упражнения');
             const names = [...page().querySelectorAll('.tile-title')].map(node => node.textContent);
-            expect(names).toEqual(['Вспомнить и сверить', 'Ввести ответ', 'Заполнить пропуски', 'Выбрать ответ', 'Сопоставить элементы']);
+            expect(names).toEqual(['Вспомнить и сверить', 'Ввести ответ', 'Заполнить пропуски', 'Выбрать ответ', 'Сопоставить элементы',
+                'Восстановить порядок', 'Распределить по группам']);
             expect([...page().querySelectorAll('input[name="mechanic"]')].some(input => (input as HTMLInputElement).checked)).toBeFalse();
             expect(component().mechanic()).toBeNull();
             expect(preview()).toBeNull();
@@ -177,7 +178,7 @@ describe('ExerciseAuthoringPageComponent', () => {
         it('uses the catalog texts for the tiles and makes the whole tile a native radio inside a label', () => {
             configure();
             const tiles = [...page().querySelectorAll('label.tile')];
-            expect(tiles.length).toBe(5);
+            expect(tiles.length).toBe(7);
             expect(tiles[1].textContent).toContain('Ученик напишет ответ на ваш вопрос.');
             for (const tile of tiles) expect(tile.querySelector('input[type="radio"][name="mechanic"]')).not.toBeNull();
             expect(page().textContent).not.toContain('ИИ');
@@ -193,7 +194,7 @@ describe('ExerciseAuthoringPageComponent', () => {
             expect(list.querySelector('h2')?.textContent).toContain('Упражнения этого материала · 1');
             expect(page().querySelector('.jump-link')?.textContent?.trim()).toBe('К упражнениям · 1');
             // No intermediate create/view screen: the tiles are right there.
-            expect(page().querySelectorAll('label.tile').length).toBe(5);
+            expect(page().querySelectorAll('label.tile').length).toBe(7);
             const row = list.querySelector('li')!;
             expect(row.textContent).toContain('Выбрать ответ');
             expect(row.textContent).toContain('Признаки реакции в опыте');
@@ -319,7 +320,9 @@ describe('ExerciseAuthoringPageComponent', () => {
                 FREE_RESPONSE: ['2. Вопрос', '3. Допустимые ответы', '4. Название и сохранение'],
                 CLOZE: ['2. Контекст', '3. Текст и пропуски', '4. Название и сохранение'],
                 CHOICE: ['2. Вопрос', '3. Варианты ответа', '4. Название и сохранение'],
-                MATCH: ['2. Общая инструкция', '3. Пары', '4. Название и сохранение']
+                MATCH: ['2. Общая инструкция', '3. Пары', '4. Название и сохранение'],
+                ORDER: ['2. Инструкция', '3. Элементы в правильном порядке', '4. Название и сохранение'],
+                CATEGORIZE: ['2. Инструкция', '3. Названия групп', '4. Элементы и их группы', '5. Название и сохранение']
             };
             configure();
             for (const mechanic of Object.keys(expected) as Mechanic[]) {
@@ -393,7 +396,7 @@ describe('ExerciseAuthoringPageComponent', () => {
             select('MATCH', false);
             expect(mode()).toBe('DEMO');
             expect(preview()!.textContent).not.toBe(demoText);
-            for (const kind of ['SELF_CHECK', 'FREE_RESPONSE', 'CLOZE', 'CHOICE', 'MATCH'] as const) {
+            for (const kind of ['SELF_CHECK', 'FREE_RESPONSE', 'CLOZE', 'CHOICE', 'MATCH', 'ORDER', 'CATEGORIZE'] as const) {
                 expect(JSON.stringify(component().drafts()[kind])).not.toContain('de000000');
                 expect(JSON.stringify(component().drafts()[kind])).not.toContain('Канберра');
             }
@@ -665,7 +668,8 @@ describe('ExerciseAuthoringPageComponent', () => {
 
     describe('reopens and saves every mechanic without changing it', () => {
         const cases: Array<[Mechanic, string]> = [['SELF_CHECK', 'createSelfCheck'], ['FREE_RESPONSE', 'createFreeResponseAudio'],
-            ['CLOZE', 'createCloze'], ['CHOICE', 'createChoiceVideoMultiple'], ['MATCH', 'createMatchMixed']];
+            ['CLOZE', 'createCloze'], ['CHOICE', 'createChoiceVideoMultiple'], ['MATCH', 'createMatchMixed'], ['ORDER', 'createOrder'],
+            ['CATEGORIZE', 'createCategorize']];
         for (const [kind, name] of cases) {
             it(`${kind}`, () => {
                 const spec: ExerciseSpec = mechanics[name].exercise;
@@ -673,7 +677,7 @@ describe('ExerciseAuthoringPageComponent', () => {
                 expect(component().mechanic()).toBe(kind);
                 expect(component().objectiveMode()).toBe('reuse');
                 // Every relevant step is already open and filled in; nothing asks to be filled again.
-                expect(stepIds().length).toBe(3);
+                expect(stepIds().length).toBe(catalogEntry(kind).steps.length);
                 expect(page().querySelector('[data-continue]')).toBeNull();
                 expect(radio(kind).checked).toBeTrue();
                 expect(mode()).toBe('AUTHOR_READY');
@@ -1211,12 +1215,184 @@ describe('ExerciseAuthoringPageComponent', () => {
         });
     });
 
+    describe('ORDER and CATEGORIZE', () => {
+        const orderSpec = () => mechanics['createOrder'].exercise;
+        const categorizeSpec = () => mechanics['createCategorize'].exercise;
+
+        it('ORDER from the contract fixture: the authored order is exactly what is saved', () => {
+            configure();
+            select('ORDER');
+            component().setOrder({ prompt: orderSpec().content.prompt, items: orderSpec().content.items });
+            component().save();
+            expect(created().exercise).toEqual(orderSpec());
+            expect(parseExerciseSpec(created().exercise)).toEqual(orderSpec());
+            expect(created().objective).toEqual({ operation: 'create', title: 'Восстановите порядок.' });
+        });
+
+        it('CATEGORIZE from the contract fixture: the groups and the assignments are exactly what is saved', () => {
+            configure();
+            select('CATEGORIZE');
+            component().setCategorize({ prompt: categorizeSpec().content.prompt, categories: categorizeSpec().content.categories,
+                items: categorizeSpec().content.items.map((entry: { itemId: string; blocks: AuthoringBlock[] }) => ({ ...entry,
+                    categoryId: categorizeSpec().answerKey.assignments.find((assignment: { itemId: string }) => assignment.itemId === entry.itemId).categoryId })) });
+            component().save();
+            expect(created().exercise).toEqual(categorizeSpec());
+        });
+
+        it('opens a saved ORDER with every step filled and the authored order', () => {
+            configure(detailOf(orderSpec()));
+            expect(component().drafts().ORDER.items.map(entry => entry.itemId)).toEqual(orderSpec().answerKey.sequence);
+            expect(page().querySelectorAll('app-order-editor [data-item]').length).toBe(6);
+        });
+
+        it('opens a saved CATEGORIZE with the groups and the group of each item', () => {
+            configure(detailOf(categorizeSpec()));
+            expect(component().drafts().CATEGORIZE.categories.map(group => group.label)).toEqual(['Существительное', 'Глагол', 'Наречие']);
+            expect(component().drafts().CATEGORIZE.items.map(entry => entry.categoryId)).toEqual(
+                categorizeSpec().answerKey.assignments.map((assignment: { categoryId: string }) => assignment.categoryId));
+            expect(page().querySelectorAll('app-category-groups-editor [data-category]').length).toBe(3);
+            expect(page().querySelectorAll('app-categorize-items-editor [data-item]').length).toBe(4);
+        });
+
+        it('reopens an ORDER whose content array is not in key order and saves it back with the key as the authored order', () => {
+            const shuffled = clone(orderSpec());
+            shuffled.content.items = [...shuffled.content.items].reverse();
+            shuffled.answerKey.sequence = shuffled.content.items.map((entry: { itemId: string }) => entry.itemId).reverse();
+            configure(detailOf(shuffled));
+            expect(component().drafts().ORDER.items.map(entry => entry.itemId)).toEqual(shuffled.answerKey.sequence);
+            component().save();
+            const saved = api.update.calls.mostRecent().args[6] as ExerciseSpec;
+            expect(saved.type === 'ORDER' && saved.answerKey.sequence).toEqual(shuffled.answerKey.sequence);
+            expect(saved.type === 'ORDER' && saved.content.items.map(entry => entry.itemId)).toEqual(shuffled.answerKey.sequence);
+        });
+
+        it('shows a real, playable demo with local media for each, the exact tile texts and a badge', () => {
+            configure();
+            const tiles = [...page().querySelectorAll('label.tile')].map(tile => [tile.querySelector('.tile-title')!.textContent, tile.querySelector('.tile-description')!.textContent]);
+            expect(tiles).toContain(['Восстановить порядок', 'Разместите слова, этапы или фрагменты в правильной последовательности. Ученик получит их вперемешку.']);
+            expect(tiles).toContain(['Распределить по группам', 'Создайте категории и примеры для каждой. Ученик определит, к какой группе относится каждый элемент.']);
+            select('ORDER', false);
+            expect(mode()).toBe('DEMO');
+            expect(preview()!.querySelector('.badge')?.textContent?.trim()).toBe('Пример');
+            expect(preview()!.querySelectorAll('li.order-item').length).toBe(4);
+            expect(preview()!.querySelectorAll('audio').length).toBe(2);
+            select('CATEGORIZE', false);
+            expect(mode()).toBe('DEMO');
+            expect(preview()!.querySelectorAll('.group').length).toBe(3);
+            expect(preview()!.querySelectorAll('[data-pool] [data-item-id]').length).toBe(6);
+            expect(component().drafts().CATEGORIZE.items.every(entry => entry.categoryId === null)).toBeTrue();
+        });
+
+        it('plays only through the preview endpoint: an ORDER demo answer reaches previewApi, never the Study API', () => {
+            configure();
+            select('ORDER', false);
+            preview()!.querySelector<HTMLButtonElement>('button[data-submit]')!.click(); refresh();
+            expect(previewApi.submit).toHaveBeenCalledTimes(1);
+            const [exercise, submission] = previewApi.submit.calls.mostRecent().args;
+            expect(exercise.type).toBe('ORDER');
+            expect(submission.response.kind).toBe('ORDER');
+            expect(studyApi.submit).not.toHaveBeenCalled();
+            expect(studyApi.start).not.toHaveBeenCalled();
+            expect(api.create).not.toHaveBeenCalled();
+        });
+
+        it('follows the steps: instruction, items with the helpers, save; instruction, groups, items, save', () => {
+            configure();
+            select('ORDER', false);
+            expect(stepIds()).toEqual(['step-prompt']);
+            moveOn();
+            expect(stepIds()).toEqual(['step-prompt', 'step-items']);
+            expect(page().querySelector('#step-items summary')?.textContent).toContain('Разбить текст на части');
+            expect(page().querySelector('[data-split-words]')?.textContent).toContain('Разбить на слова');
+            expect(page().querySelector('[data-split-lines]')?.textContent).toContain('Разбить по строкам');
+            moveOn();
+            expect(stepIds()).toEqual(['step-prompt', 'step-items']);
+            expect(page().querySelector('#step-items .step-problem')?.textContent).toContain('Введите текст блока');
+            type('#order-item-' + component().drafts().ORDER.items[0].itemId + '-text-0', 'Первый');
+            type('#order-item-' + component().drafts().ORDER.items[1].itemId + '-text-0', 'Второй');
+            moveOn();
+            expect(stepIds()).toEqual(['step-prompt', 'step-items', 'step-finish']);
+            expect(mode()).toBe('AUTHOR_READY');
+
+            select('CATEGORIZE', false);
+            expect(stepIds()).toEqual(['step-prompt']);
+            moveOn();
+            expect(stepIds()).toEqual(['step-prompt', 'step-groups']);
+            moveOn();
+            expect(page().querySelector('#step-groups .step-problem')?.textContent).toContain('Назовите группу');
+            for (const group of component().drafts().CATEGORIZE.categories) type('#categorize-groups-label-' + group.categoryId, 'Группа ' + group.categoryId.slice(-2));
+            moveOn();
+            expect(stepIds()).toEqual(['step-prompt', 'step-groups', 'step-items']);
+            moveOn();
+            expect(page().querySelector('#step-items .step-problem')).not.toBeNull();
+            expect(stepIds()).toEqual(['step-prompt', 'step-groups', 'step-items']);
+        });
+
+        it('switching away from items or groups asks first, keeps the draft on cancel and restores it on the way back', () => {
+            configure();
+            select('ORDER');
+            component().setOrder({ prompt: [], items: [{ itemId: '0d000000-0000-4000-8000-0000000000a1', blocks: [text('Первый')] },
+                { itemId: '0d000000-0000-4000-8000-0000000000a2', blocks: [text('Второй')] }] }); refresh();
+            radio('CATEGORIZE').click(); refresh();
+            expect(page().querySelector('.switch-confirm')?.textContent).toContain('элементы и их порядок');
+            expect(component().mechanic()).toBe('ORDER');
+            buttonByText('Отмена', page().querySelector('.switch-confirm')!).click(); refresh();
+            expect(component().mechanic()).toBe('ORDER');
+            expect(component().drafts().ORDER.items.length).toBe(2);
+            radio('CATEGORIZE').click(); refresh();
+            buttonByText('Переключиться').click(); refresh();
+            expect(component().mechanic()).toBe('CATEGORIZE');
+            expect(component().drafts().ORDER.items.length).toBe(2);
+            // A group with a name and an assigned item is data the next mechanic would lose, too.
+            const groups = [{ categoryId: 'ca000000-0000-4000-8000-0000000000a1', label: 'Первая' }, { categoryId: 'ca000000-0000-4000-8000-0000000000a2', label: 'Вторая' }];
+            component().setCategorize({ prompt: [], categories: groups, items: [{ itemId: '9a000000-0000-4000-8000-0000000000a1', blocks: [text('x')], categoryId: groups[0].categoryId },
+                { itemId: '9a000000-0000-4000-8000-0000000000a2', blocks: [text('y')], categoryId: null }] }); refresh();
+            radio('MATCH').click(); refresh();
+            expect(page().querySelector('.switch-confirm')?.textContent).toContain('группы, элементы и их распределение');
+            buttonByText('Отмена', page().querySelector('.switch-confirm')!).click(); refresh();
+            expect(component().drafts().CATEGORIZE.categories.length).toBe(2);
+        });
+
+        it('treats an assigned-only CATEGORIZE draft as authored data, but an untouched one as pristine', () => {
+            configure();
+            select('CATEGORIZE', false);
+            expect(mode()).toBe('DEMO');
+            const first = component().drafts().CATEGORIZE;
+            component().setCategorize({ ...first, items: first.items.map((entry, index) => index === 0 ? { ...entry, categoryId: first.categories[0].categoryId } : entry) });
+            refresh();
+            expect(mode()).toBe('AUTHOR_DRAFT');
+        });
+
+        it('shows a neutral draft preview with placeholders and stays unanswerable until the draft validates', () => {
+            configure();
+            select('CATEGORIZE', false);
+            component().setPrompt([text('Распределите слова.')]); refresh();
+            expect(mode()).toBe('AUTHOR_DRAFT');
+            expect(preview()!.querySelector('.blocked')?.textContent).toContain('Проверить ответ пока нельзя');
+            expect(preview()!.textContent).toContain('Добавьте элемент пары');
+            expect(preview()!.textContent).toContain('Название группы 1');
+            expect(preview()!.querySelector<HTMLButtonElement>('button[data-submit]')!.disabled).toBeTrue();
+            expect(previewApi.submit).not.toHaveBeenCalled();
+        });
+
+        for (const [mechanic, reason] of [['ORDER', 'Введите текст блока'], ['CATEGORIZE', 'Назовите группу']] as const) {
+            it(`never saves the ${mechanic} demo and refuses an unfinished one with the reason`, () => {
+                configure();
+                select(mechanic);
+                component().save(); refresh();
+                expect(api.create).not.toHaveBeenCalled();
+                expect(component().phase()).toBe('rejected');
+                expect(page().querySelector('#exercise-errors')?.textContent).toContain(reason);
+            });
+        }
+    });
+
     it('has no horizontal overflow at 320, 390 and 1440 with long strings in every mechanic, preview and list included', () => {
         const other = { ...detailOf(mechanics['createSelfCheck'].exercise, 1), exerciseId: id('60') };
         configure(null, CAPABILITIES_UNAVAILABLE, [other]);
         const long = 'я'.repeat(300);
         const root = page(); root.style.display = 'block';
-        for (const kind of ['SELF_CHECK', 'FREE_RESPONSE', 'CLOZE', 'CHOICE', 'MATCH'] as const) {
+        for (const kind of ['SELF_CHECK', 'FREE_RESPONSE', 'CLOZE', 'CHOICE', 'MATCH', 'ORDER', 'CATEGORIZE'] as const) {
             select(kind);
             component().setPrompt([text(long)]);
             if (kind === 'SELF_CHECK') component().setReference([text(long)]);

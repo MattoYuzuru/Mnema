@@ -274,6 +274,65 @@ describe('StudySessionPageComponent', () => {
         expect(root.textContent).toContain('Все пары найдены');
     });
 
+    it('restores a sequence with the move controls only: the issued order is the start, media never moves an item, one explicit submit', () => {
+        spyOn(HTMLMediaElement.prototype, 'play').and.resolveTo();
+        startWith('order');
+        const root = page();
+        const rows = () => [...root.querySelectorAll('app-order-board li.order-item')].map(row => row.getAttribute('data-item-id')!);
+        const issued = fixtures['order'].content.items.map((entry: { itemId: string }) => entry.itemId);
+        expect(rows()).toEqual(issued);
+        expect(root.querySelector('h2')?.textContent).toBe('Восстановите порядок');
+        expect(root.querySelector('app-order-board .order-content app-native-media-player')).toBeNull();   // the issued set has an image, no player
+        root.querySelectorAll<HTMLElement>('app-order-board .order-content').forEach(content => content.click());
+        fixture.detectChanges();
+        expect(rows()).toEqual(issued);
+        expect(api.submit).not.toHaveBeenCalled();
+
+        const down = (itemId: string) => root.querySelector<HTMLButtonElement>(`[data-item-id="${itemId}"] [data-move="down"]`)!.click();
+        // Move the first issued item ("важно,") to the end with the arrow buttons.
+        for (let step = 0; step < 5; step++) { down(issued[0]); fixture.detectChanges(); }
+        expect(rows()).toEqual([...issued.slice(1), issued[0]]);
+        expect(root.querySelector('.order-status')?.textContent).toContain('перемещён на позицию 6 из 6');
+        api.submit.and.returnValue(of({ value: outcome('order'), replayed: false }));
+        click('button[data-submit]');
+        const command = api.submit.calls.mostRecent().args[2];
+        expect(command.response).toEqual({ kind: 'ORDER', sequence: [...issued.slice(1), issued[0]] });
+        expect(Object.keys(command)).toEqual(['attemptId', 'presentationId', 'nonce', 'response', 'confidence', 'durationMs']);
+        expect(root.querySelector('#feedback-title')?.textContent).toBe('Нужно повторить');
+        expect(root.querySelectorAll('.positions li').length).toBe(6);
+        expect(root.querySelector('.correct-sequence')?.textContent).toContain('for (int i = 0; i < n; i++) {');
+    });
+
+    it('assigns every item to a group by select-then-group, keeps changing possible until submit and shows the right group', () => {
+        spyOn(HTMLMediaElement.prototype, 'play').and.resolveTo();
+        startWith('categorize');
+        const root = page();
+        const item = (n: number) => `9a000000-0000-4000-8000-${n.toString().padStart(12, '0')}`;
+        const group = (n: number) => `ca000000-0000-4000-8000-${n.toString().padStart(12, '0')}`;
+        const put = (itemId: string, groupId: string) => {
+            root.querySelector<HTMLButtonElement>(`[data-item-id="${itemId}"] [data-select]`)!.click(); fixture.detectChanges();
+            root.querySelector<HTMLButtonElement>(`[data-category="${groupId}"] [data-place]`)!.click(); fixture.detectChanges();
+        };
+        // A player is a sibling of the selection button: pressing it neither selects nor assigns.
+        root.querySelector<HTMLButtonElement>(`[data-item-id="${item(4)}"] app-native-media-player button[aria-label="Воспроизвести"]`)!.click();
+        fixture.detectChanges();
+        expect(root.querySelectorAll('[data-select][aria-pressed="true"]').length).toBe(0);
+        expect(root.querySelector<HTMLButtonElement>('button[data-submit]')!.disabled).toBeTrue();
+
+        put(item(1), group(1)); put(item(2), group(2)); put(item(3), group(3)); put(item(4), group(2));
+        put(item(3), group(1));   // changed their mind: "река" belongs with the nouns
+        expect(root.querySelector(`[data-category="${group(1)}"]`)!.textContent).toContain('Элементов: 2');
+        api.submit.and.returnValue(of({ value: outcome('categorize'), replayed: false }));
+        click('button[data-submit]');
+        const command = api.submit.calls.mostRecent().args[2];
+        expect(command.response).toEqual({ kind: 'CATEGORIZE', assignments: [
+            { itemId: item(3), categoryId: group(1) }, { itemId: item(4), categoryId: group(2) },
+            { itemId: item(1), categoryId: group(1) }, { itemId: item(2), categoryId: group(2) }] });
+        expect(root.querySelector('#feedback-title')?.textContent).toBe('Частично');
+        expect(root.querySelectorAll('.pair-feedback li').length).toBe(4);
+        expect(root.querySelector('.pair-feedback li.is-wrong')?.textContent).toContain('Правильная группа: Существительное');
+    });
+
     it('keeps one media element playing at a time inside the exercise', () => {
         startWith('match');
         const players = [...page().querySelectorAll<HTMLMediaElement>('app-match-board audio, app-match-board video')];
@@ -461,7 +520,7 @@ describe('StudySessionPageComponent', () => {
         return [...page().querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent?.trim() === label)!;
     }
 
-    function startWith(name: 'selfCheck' | 'freeResponse' | 'cloze' | 'choice' | 'match'): void {
+    function startWith(name: 'selfCheck' | 'freeResponse' | 'cloze' | 'choice' | 'match' | 'order' | 'categorize'): void {
         startWithPresentations([fixtures[name]]);
     }
 
@@ -487,7 +546,7 @@ describe('StudySessionPageComponent', () => {
             presentations: clone(presentations) as StudyPresentation[] };
     }
 
-    function outcome(name: 'selfCheck' | 'freeResponse' | 'cloze' | 'choice' | 'match', command?: AttemptCommand): AttemptOutcome {
+    function outcome(name: 'selfCheck' | 'freeResponse' | 'cloze' | 'choice' | 'match' | 'order' | 'categorize', command?: AttemptCommand): AttemptOutcome {
         return { attemptId: command?.attemptId ?? ids.commandId, presentationId: fixtures[name].presentationId, mode: 'SCHEDULED',
             status: 'ASSESSED', feedback: clone(mechanics['feedback'][name]), canonicalEffects: true,
             transition: { beforeLevel: 0, afterLevel: 1, nextDue: '2026-10-02T10:00:00Z' } };

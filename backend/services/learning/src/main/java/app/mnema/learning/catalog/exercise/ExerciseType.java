@@ -2,13 +2,15 @@ package app.mnema.learning.catalog.exercise;
 
 import java.util.Optional;
 
-/** The five canonical mechanics. Media kind is content, never a mechanic. */
+/** The seven canonical mechanics. Media kind is content, never a mechanic. */
 public enum ExerciseType {
     SELF_CHECK("self-check"),
     FREE_RESPONSE("deterministic-text"),
     CLOZE("deterministic-cloze"),
     CHOICE("deterministic-choice"),
-    MATCH("deterministic-match");
+    MATCH("deterministic-match"),
+    ORDER("deterministic-order"),
+    CATEGORIZE("deterministic-categorize");
 
     private final String evaluatorId;
 

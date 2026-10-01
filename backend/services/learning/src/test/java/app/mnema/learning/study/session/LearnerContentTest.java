@@ -131,6 +131,85 @@ class LearnerContentTest {
     }
 
     @Test
+    void orderItemsAreIssuedAsTheContractLearnerContentWithoutTheKeyOrAuthorLabels() {
+        ObjectNode exercise = mechanic("createOrder").withObject("exercise");
+        LearnerContent.Resolved resolved = LearnerContent.issue(ExerciseType.ORDER, exercise.path("content"),
+                AnswerKey.parse(ExerciseType.ORDER, exercise.path("answerKey")), new Random(7), m -> MATERIAL_TEXT);
+        JsonNode content = LearnerContent.view(resolved.content(), false);
+        JsonNode expected = fixture("mechanics.json").path("presentations").path("order").path("content");
+        // the fixture shows one possible shuffle: same prompt and the same tiles, in any permutation
+        assertThat(content.path("prompt")).isEqualTo(expected.path("prompt"));
+        assertThat(content.path("items")).containsExactlyInAnyOrderElementsOf(expected.path("items"));
+        assertThat(content.fieldNames()).toIterable().containsExactlyInAnyOrder("prompt", "items");
+        assertThat(resolved.reveal()).isEmpty();
+        assertThat(content.toString()).doesNotContain("sequence", "answerKey", "\"title\"");
+    }
+
+    @Test
+    void anOrderBoardThatWouldShowTheSolutionIsRedrawnWithinABoundAndThenRotated() {
+        ObjectNode exercise = mechanic("createOrder").withObject("exercise");
+        List<String> key = ids(exercise.path("content").path("items"));
+        // identity draws leave the board in key order, i.e. solved: n-1 draws per shuffle, every one of them kept
+        CountingSource solved = new CountingSource(true);
+        List<String> shown = ids(issueOrder(exercise, solved).path("items"));
+        assertThat(solved.draws).as("1 draw plus the bounded redraws, five bounded draws each")
+                .isEqualTo((1 + LearnerContent.MAX_REDRAWS) * 5);
+        // deterministic last resort: the first rotation whose equivalence-class sequence differs from the key
+        assertThat(shown).containsExactly(key.get(5), key.get(0), key.get(1), key.get(2), key.get(3), key.get(4));
+
+        // a first draw that is not the key stops immediately: one shuffle only
+        CountingSource first = new CountingSource(false);
+        List<String> kept = ids(issueOrder(exercise, first).path("items"));
+        assertThat(first.draws).isEqualTo(5);
+        assertThat(kept).isNotEqualTo(key);
+        assertThat(kept).containsExactlyInAnyOrderElementsOf(key);
+    }
+
+    @Test
+    void aRedrawFollowsTheEquivalenceClassSequenceNotTheIdentifiers() {
+        ObjectNode exercise = threeWordOrder();
+        List<String> key = ids(exercise.path("content").path("items"));
+        // draws (3 items: nextInt(3), nextInt(2)) continue from the board of the previous draw: (2,1) keeps the key,
+        // (1,1) only swaps the two identical «b» tiles (still the solved class sequence), (2,0) then swaps the first
+        // two tiles and finally shows a different class sequence
+        JsonNode shown = issueOrder(exercise, new ScriptedSource(2, 1, 1, 1, 2, 0));
+        assertThat(ids(shown.path("items"))).containsExactly(key.get(2), key.get(0), key.get(1));
+    }
+
+    @Test
+    void twoItemOrderIsUniformSoNeitherLayoutIsEverExcluded() {
+        ObjectNode exercise = threeWordOrder();
+        drop((com.fasterxml.jackson.databind.node.ArrayNode) exercise.path("content").path("items"), 2);
+        exercise.withObject("answerKey").withArray("sequence").remove(2);
+        List<String> key = ids(exercise.path("content").path("items"));
+        // one draw only: 1 keeps the order (the solved board is allowed), 0 swaps it
+        assertThat(ids(issueOrder(exercise, new ScriptedSource(1)).path("items"))).containsExactlyElementsOf(key);
+        assertThat(ids(issueOrder(exercise, new ScriptedSource(0)).path("items")))
+                .containsExactly(key.get(1), key.get(0));
+    }
+
+    @Test
+    void categorizeShufflesItemsOnlyAndKeepsTheAuthoredCategoryOrderAndLabels() {
+        ObjectNode exercise = mechanic("createCategorize").withObject("exercise");
+        List<String> authored = ids(exercise.path("content").path("items"));
+        // four items: nextInt(4), nextInt(3), nextInt(2); (0,0,0) is a full rotation of the list
+        JsonNode content = issueCategorize(exercise, new ScriptedSource(0, 0, 0));
+        assertThat(ids(content.path("items"))).containsExactlyInAnyOrderElementsOf(authored)
+                .isNotEqualTo(authored);
+        assertThat(content.path("categories")).isEqualTo(exercise.path("content").path("categories"));
+        JsonNode expected = fixture("mechanics.json").path("presentations").path("categorize").path("content");
+        assertThat(content.path("prompt")).isEqualTo(expected.path("prompt"));
+        assertThat(content.path("categories")).isEqualTo(expected.path("categories"));
+        assertThat(content.path("items")).containsExactlyInAnyOrderElementsOf(expected.path("items"));
+        // the key is never read for the arrangement
+        ObjectNode otherKey = exercise.deepCopy();
+        ((ObjectNode) otherKey.path("answerKey").path("assignments").get(0)).put("categoryId",
+                otherKey.path("content").path("categories").get(1).path("categoryId").textValue());
+        assertThat(issueCategorize(otherKey, new ScriptedSource(0, 0, 0))).isEqualTo(content);
+        assertThat(content.toString()).doesNotContain("assignments", "correct", "\"title\"");
+    }
+
+    @Test
     void feedbackReferenceContentKeepsAvailabilityButNeverTranscriptText() {
         ObjectNode exercise = mechanic("createFreeResponseAudio").withObject("exercise");
         exercise.withObject("content").withArray("reference").addObject().put("kind", "AUDIO")
@@ -162,6 +241,47 @@ class LearnerContentTest {
         assertThat(LearnerContent.firstLetter("\r\nx")).isEqualTo("x");
         // a base letter with a combining mark that has no precomposed form stays together
         assertThat(LearnerContent.firstLetter("q\u0307x")).isEqualTo("q\u0307");
+    }
+
+    /** Three text tiles whose last two are identical: authored order «a», «b», «b». */
+    private static ObjectNode threeWordOrder() {
+        ObjectNode exercise = mechanic("createOrder").withObject("exercise");
+        com.fasterxml.jackson.databind.node.ArrayNode items = (com.fasterxml.jackson.databind.node.ArrayNode)
+                exercise.path("content").path("items");
+        drop(items, 5, 4, 3);
+        ((ObjectNode) items.get(0).path("blocks").get(0)).put("text", "a");
+        ((ObjectNode) items.get(1).path("blocks").get(0)).put("text", "b");
+        ((ObjectNode) items.get(2).path("blocks").get(0)).put("text", "b");
+        exercise.withObject("answerKey").withArray("sequence").removeAll();
+        items.forEach(item -> exercise.withObject("answerKey").withArray("sequence").add(item.path("itemId").textValue()));
+        return exercise;
+    }
+
+    private static JsonNode issueOrder(ObjectNode exercise, RandomGenerator random) {
+        return LearnerContent.issue(ExerciseType.ORDER, exercise.path("content"),
+                AnswerKey.parse(ExerciseType.ORDER, exercise.path("answerKey")), random, m -> MATERIAL_TEXT).content();
+    }
+
+    private static JsonNode issueCategorize(ObjectNode exercise, RandomGenerator random) {
+        return LearnerContent.issue(ExerciseType.CATEGORIZE, exercise.path("content"),
+                AnswerKey.parse(ExerciseType.CATEGORIZE, exercise.path("answerKey")), random, m -> MATERIAL_TEXT).content();
+    }
+
+    /** Counts bounded draws; {@code identity} keeps every position, so a shuffle leaves the list unchanged. */
+    private static final class CountingSource implements RandomGenerator {
+        private final boolean identity;
+        private int draws;
+
+        CountingSource(boolean identity) { this.identity = identity; }
+
+        @Override public int nextInt(int bound) {
+            // a non-identity source rotates the first shuffle; every later draw keeps its position
+            int value = identity || draws >= 5 ? bound - 1 : 0;
+            draws++;
+            return value;
+        }
+
+        @Override public long nextLong() { throw new AssertionError("only bounded draws are expected"); }
     }
 
     private static ObjectNode twoPairMatch() {

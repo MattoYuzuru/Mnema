@@ -18,7 +18,8 @@ class CDP {
         const request = this.pending.get(message.id);
         if (!request) return;
         this.pending.delete(message.id); clearTimeout(request.timeout);
-        if (message.error) request.reject(new Error('CDP command failed'));
+        // Method and CDP error text only (no params): enough to classify a failure without leaking request data.
+        if (message.error) request.reject(new Error(`CDP ${request.method} failed: ${String(message.error.message).slice(0, 120)}`));
         else request.resolve(message.result);
       } else for (const listener of this.listeners.get(message.method) || []) listener(message.params);
     });
@@ -27,7 +28,7 @@ class CDP {
     return new Promise((resolve, reject) => {
       const id = ++this.next;
       const timeout = setTimeout(() => { this.pending.delete(id); reject(new Error('CDP timeout')); }, 10000);
-      this.pending.set(id, { resolve, reject, timeout });
+      this.pending.set(id, { resolve, reject, timeout, method });
       this.socket.send(JSON.stringify({ id, method, params }));
     });
   }
@@ -106,8 +107,17 @@ try {
   let asynchronousFailure = false, firstAsynchronousFailure = null;
   let actorAfterLogout = null, otherAfterLogout = null;
   diagnostics = () => ({ networkRequests, identityRequests, tokenExchanges, browserErrors, externalRequests,
-    asynchronousFailure, firstAsynchronousFailure, eventFailed: tabs.some(tab => tab.eventFailed), actorAfterLogout, otherAfterLogout,
+    asynchronousFailure, firstAsynchronousFailure, cancelledInterceptions, eventFailed: tabs.some(tab => tab.eventFailed), actorAfterLogout, otherAfterLogout,
     authoringResponses, mediaResponses, mediaFailures, mediaApiResponses, browseMediaState });
+  let cancelledInterceptions = 0;
+  /** A paused request that the browser cancelled during navigation can no longer be continued; nothing else is benign. */
+  const interception = promise => promise.catch(error => {
+    if (/^CDP Fetch\.(continueRequest|failRequest|fulfillRequest) failed: Invalid InterceptionId/.test(error?.message ?? '')) {
+      cancelledInterceptions++;
+      return;
+    }
+    throw error;
+  });
   const run = promise => {
     asyncWork.add(promise);
     promise.catch(error => { asynchronousFailure = true; firstAsynchronousFailure ??= error?.message ?? 'unknown'; })
@@ -128,15 +138,15 @@ try {
           || identityRequests > 150) asynchronousFailure = true;
       if (!allowed.has(url.origin) || asynchronousFailure) {
         externalRequests++;
-        run(tab.call('Fetch.failRequest', { requestId: event.requestId, errorReason: 'BlockedByClient' }));
+        run(interception(tab.call('Fetch.failRequest', { requestId: event.requestId, errorReason: 'BlockedByClient' })));
       } else if (tamperNextCallback && url.origin === config.frontend && url.pathname === '/auth/callback'
           && url.searchParams.has('code')) {
         tamperNextCallback = false;
         url.searchParams.set('state', 'fixture-wrong-live-state');
         // A real navigation redirect changes location.search; an invisible request URL rewrite would not.
-        run(tab.call('Fetch.fulfillRequest', { requestId: event.requestId, responseCode: 302,
-          responseHeaders: [{ name: 'Location', value: url.href }, { name: 'Cache-Control', value: 'no-store' }], body: '' }));
-      } else run(tab.call('Fetch.continueRequest', { requestId: event.requestId }));
+        run(interception(tab.call('Fetch.fulfillRequest', { requestId: event.requestId, responseCode: 302,
+          responseHeaders: [{ name: 'Location', value: url.href }, { name: 'Cache-Control', value: 'no-store' }], body: '' })));
+      } else run(interception(tab.call('Fetch.continueRequest', { requestId: event.requestId })));
     });
     tab.on('Network.requestWillBeSent', event => {
       const url = new URL(event.request.url);
@@ -1027,7 +1037,7 @@ try {
   await writeFile(join(config.output, 'login.png'), Buffer.from(screenshot.data, 'base64'));
   const evidence = { state: mechanicsFailures.length === 0 ? 'passed' : 'failed',
     ...(config.mechanics ? { mechanicsFailures, mechanicsFindings, syntheticMicrophone: true, realDeviceMicrophone: false } : {}),
-    scenarios: results, tokenExchanges, networkRequests, identityRequests,
+    scenarios: results, tokenExchanges, networkRequests, identityRequests, cancelledInterceptions,
     externalRequestsBlocked: externalRequests,
     browserRuntimeErrors: browserErrors, transport: 'real HTTPS, exact ephemeral SPKI allowlist, same-site cross-origin loopback',
     browser: (await cdp.call('Browser.getVersion')).product };
