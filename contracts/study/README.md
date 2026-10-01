@@ -40,7 +40,7 @@ Deck-head CAS, immutable rows and current projection commit together.
 
 ### Exercise mechanics (#266)
 
-Five canonical mechanics separate what the learner sees (**content**), what they do
+Seven canonical mechanics separate what the learner sees (**content**), what they do
 (**interaction**), how the exercise is checked (**evaluator policy + answer key**) and what is
 assessed (**objective**). Media type is content, never a mechanic: there is no audio-, video- or
 listening-specific exercise type.
@@ -52,6 +52,8 @@ listening-specific exercise type.
 | `CLOZE` | one text input per blank in an authored passage | `CLOZE`: accepted answers per `blankId` | `deterministic-cloze` |
 | `CHOICE` | `SINGLE` or `MULTIPLE` selection of authored options | `CHOICE`: exact set of `correctOptionIds` | `deterministic-choice` |
 | `MATCH` | one-to-one pairing of independently shuffled left/right items | `MATCH`: bijection `pairs[{leftId,rightId}]` | `deterministic-match` |
+| `ORDER` | restore the authored sequence of shuffled items | `ORDER`: full `sequence` of item IDs | `deterministic-order` |
+| `CATEGORIZE` | assign every item to exactly one of the authored groups | `CATEGORIZE`: `assignments[{itemId,categoryId}]` (many-to-one) | `deterministic-categorize` |
 
 Publication command: `{commandId, expectedDeckRevisionId, [expectedExerciseRevisionId], objective,
 exercise}` with `exercise = {type, schemaVersion: 2, enabled, subject:{memberKey,itemRevisionId},
@@ -76,6 +78,7 @@ do not modify the source LearningItem.
 | REFERENCE | `SELF_CHECK` (1..8), `FREE_RESPONSE` (0..8) `content.reference` | all six | see left | 4000 per block |
 | COMPACT | `CHOICE` options, `MATCH` left/right items | `TEXT`, `MATERIAL`, `IMAGE`, `AUDIO`, `VIDEO` | 1..2: ≤1 text-like and ≤1 media | 300 |
 | Passage | `CLOZE content.passage` | `TEXT` segments and `BLANK` | 2..64 segments, 1..12 blanks | 4000 total |
+| SEQUENCE | `ORDER` items | `TEXT`, `MATERIAL`, `IMAGE`, `AUDIO`, `VIDEO` | 1..2: ≤1 text-like and ≤1 media | 1000 (newlines kept, e.g. code) |
 
 At most 32 media blocks per exercise. Text is never truncated; limits are validation errors.
 
@@ -86,6 +89,27 @@ set against one or more correct IDs. `CLOZE` blanks are explicit passage segment
 covers exactly the passage blank IDs, so repeated words never match by position. `MATCH` has 2..6
 items per side, globally unique item IDs and an exact bijection key; any COMPACT combination
 (text, recorded audio, image, short video or material on either side) is valid.
+
+**ORDER (#268).** Content `{prompt (0..8), items: [{itemId, blocks}] 2..12}` (SEQUENCE profile); answer key
+`{kind:"ORDER", sequence}` is an exact permutation of the item IDs, explicitly authored — order is never inferred.
+Items whose blocks are identical (same canonical JSON) are interchangeable: swapping indistinguishable copies is not an
+error; nothing else is treated as equivalent. Issue shuffles items with the secure source and persists the order;
+for 3+ items a shuffle that already shows the correct (equivalence-aware) sequence is redrawn, for 2 items the
+permutation is uniform so the layout never reveals the answer. Response `ORDER {sequence}` must be an exact
+permutation of the issued IDs. Result is binary: `CORRECT` for the right sequence, otherwise `INCORRECT` — a
+positional score is not a measure of knowing a process. Feedback lists `correctSequence` and per-`position`
+correctness. Evidence `MEDIUM` (`SEQUENCING`, `DETERMINISTIC`).
+
+**CATEGORIZE (#268).** Content `{prompt (0..8), categories: [{categoryId, label}] 2..6, items: [{itemId, blocks}]
+2..12}`; labels are nonblank plain text ≤ 80 UTF-16 units, unique after trim + case fold; items use the COMPACT
+profile. Key `{kind:"CATEGORIZE", assignments}` assigns every item to exactly one existing category; a category may
+stay empty (a distractor). Labels and category order are display only; IDs are canonical. Issue shuffles items and
+keeps authored category order. Response `CATEGORIZE {assignments}` assigns every issued item exactly once to an
+issued category. Result: all correct `CORRECT`, some `PARTIAL`, none `INCORRECT`; feedback per item
+(`selectedCategoryId`, `correctCategoryId`, `correct`). There are no intermediate checks, so the single submission
+is the whole record. Evidence `LOW` (`CATEGORIZING`, `DETERMINISTIC`, `RECOGNITION`).
+
+Both mechanics assess one composite objective of the subject item; no per-element credit is created.
 
 **Media lifecycle.** Every IMAGE/AUDIO/VIDEO block in every slot is pinned in
 `exercise_media_ref` with its declared media kind inside the publication transaction, after owner
@@ -235,6 +259,8 @@ Responses use these shapes:
 - `CLOZE {blanks:[{blankId,text}]}` covering exactly the issued blank IDs;
 - `CHOICE {optionIds}`, a non-empty unique array of server-issued option IDs (exactly one for `SINGLE`);
 - `MATCH {pairs:[{leftId,rightId}]}`, an exact one-to-one map of all issued left and right IDs;
+- `ORDER {sequence}`, an exact permutation of the issued item IDs;
+- `CATEGORIZE {assignments:[{itemId,categoryId}]}`, every issued item exactly once to an issued category;
 - `CANCEL`, which terminalizes as `NOT_ASSESSED` without a transition.
 
 The submit command is `{attemptId, presentationId, nonce, response, confidence, durationMs}`.
@@ -250,6 +276,8 @@ affect evidence.
 | `CLOZE` | all blanks `CORRECT`, some `PARTIAL`, none `INCORRECT` | `HIGH`; any hinted blank caps non-incorrect results at `MEDIUM`; transcript → `LOW` | per-blank `correct`, `hinted`, `reference` |
 | `CHOICE` | exact selected set → `CORRECT`, else `INCORRECT` | `LOW` recognition | `correctOptionIds` |
 | `MATCH` | all pairs `CORRECT`, some `PARTIAL`, none `INCORRECT`; a correct final map after any wrong pair check is `PARTIAL` + `PAIR_RETRY` | `LOW` recognition | per-pair selected/correct IDs |
+| `ORDER` | exact (equivalence-aware) sequence → `CORRECT`, else `INCORRECT` | `MEDIUM` sequencing | `correctSequence`, per-position correctness |
+| `CATEGORIZE` | all items `CORRECT`, some `PARTIAL`, none `INCORRECT` | `LOW` recognition | per-item selected/correct category |
 
 Soft matching (`SOFT`) is a documented string normalization, not semantic understanding.
 Deterministic incorrect production can be `HIGH`: result describes direction, while

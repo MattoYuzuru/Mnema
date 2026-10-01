@@ -740,5 +740,311 @@
         "EVALUATOR_UNAVAILABLE"
       ]
     }
+  },
+  "submitOrder": {
+    "exercise": {
+      "type": "ORDER",
+      "schemaVersion": 2,
+      "content": {
+        "prompt": [
+          {
+            "kind": "TEXT",
+            "text": "Восстановите порядок."
+          }
+        ],
+        "items": [
+          {
+            "itemId": "0d000000-0000-4000-8000-000000000001",
+            "blocks": [
+              {
+                "kind": "TEXT",
+                "text": "Это"
+              }
+            ]
+          },
+          {
+            "itemId": "0d000000-0000-4000-8000-000000000002",
+            "blocks": [
+              {
+                "kind": "TEXT",
+                "text": "очень"
+              }
+            ]
+          },
+          {
+            "itemId": "0d000000-0000-4000-8000-000000000003",
+            "blocks": [
+              {
+                "kind": "TEXT",
+                "text": "очень"
+              }
+            ]
+          },
+          {
+            "itemId": "0d000000-0000-4000-8000-000000000004",
+            "blocks": [
+              {
+                "kind": "TEXT",
+                "text": "важно,"
+              }
+            ]
+          },
+          {
+            "itemId": "0d000000-0000-4000-8000-000000000005",
+            "blocks": [
+              {
+                "kind": "TEXT",
+                "text": "for (int i = 0; i < n; i++) {\n    sum += i;\n}"
+              }
+            ]
+          },
+          {
+            "itemId": "0d000000-0000-4000-8000-000000000006",
+            "blocks": [
+              {
+                "kind": "IMAGE",
+                "assetId": "aaaaaaaa-0000-4000-8000-000000000003",
+                "alt": "Кадр 3: готовый результат"
+              }
+            ]
+          }
+        ]
+      },
+      "answerKey": {
+        "kind": "ORDER",
+        "sequence": [
+          "0d000000-0000-4000-8000-000000000001",
+          "0d000000-0000-4000-8000-000000000002",
+          "0d000000-0000-4000-8000-000000000003",
+          "0d000000-0000-4000-8000-000000000004",
+          "0d000000-0000-4000-8000-000000000005",
+          "0d000000-0000-4000-8000-000000000006"
+        ]
+      },
+      "evaluatorPolicy": {
+        "id": "deterministic-order",
+        "version": "1"
+      }
+    },
+    "action": {
+      "kind": "SUBMIT",
+      "response": {
+        "kind": "ORDER",
+        "sequence": [
+          "0d000000-0000-4000-8000-000000000001",
+          "0d000000-0000-4000-8000-000000000003",
+          "0d000000-0000-4000-8000-000000000002",
+          "0d000000-0000-4000-8000-000000000004",
+          "0d000000-0000-4000-8000-000000000005",
+          "0d000000-0000-4000-8000-000000000006"
+        ]
+      },
+      "hintedBlankIds": [],
+      "pairMistakes": false,
+      "transcriptRevealed": false
+    }
+  },
+  "submitOrderResult": {
+    "feedback": {
+      "result": "CORRECT",
+      "appliedRules": [
+        "SERVER_ISSUED_SEQUENCE",
+        "EXACT_SEQUENCE",
+        "IDENTICAL_ITEMS_INTERCHANGEABLE"
+      ],
+      "correctSequence": [
+        "0d000000-0000-4000-8000-000000000001",
+        "0d000000-0000-4000-8000-000000000002",
+        "0d000000-0000-4000-8000-000000000003",
+        "0d000000-0000-4000-8000-000000000004",
+        "0d000000-0000-4000-8000-000000000005",
+        "0d000000-0000-4000-8000-000000000006"
+      ],
+      "positions": [
+        {
+          "position": 0,
+          "selectedItemId": "0d000000-0000-4000-8000-000000000001",
+          "correct": true
+        },
+        {
+          "position": 1,
+          "selectedItemId": "0d000000-0000-4000-8000-000000000003",
+          "correct": true
+        },
+        {
+          "position": 2,
+          "selectedItemId": "0d000000-0000-4000-8000-000000000002",
+          "correct": true
+        },
+        {
+          "position": 3,
+          "selectedItemId": "0d000000-0000-4000-8000-000000000004",
+          "correct": true
+        },
+        {
+          "position": 4,
+          "selectedItemId": "0d000000-0000-4000-8000-000000000005",
+          "correct": true
+        },
+        {
+          "position": 5,
+          "selectedItemId": "0d000000-0000-4000-8000-000000000006",
+          "correct": true
+        }
+      ]
+    }
+  },
+  "submitCategorize": {
+    "exercise": {
+      "type": "CATEGORIZE",
+      "schemaVersion": 2,
+      "content": {
+        "prompt": [
+          {
+            "kind": "TEXT",
+            "text": "Распределите слова по частям речи."
+          }
+        ],
+        "categories": [
+          {
+            "categoryId": "ca000000-0000-4000-8000-000000000001",
+            "label": "Существительное"
+          },
+          {
+            "categoryId": "ca000000-0000-4000-8000-000000000002",
+            "label": "Глагол"
+          },
+          {
+            "categoryId": "ca000000-0000-4000-8000-000000000003",
+            "label": "Наречие"
+          }
+        ],
+        "items": [
+          {
+            "itemId": "9a000000-0000-4000-8000-000000000001",
+            "blocks": [
+              {
+                "kind": "TEXT",
+                "text": "дом"
+              }
+            ]
+          },
+          {
+            "itemId": "9a000000-0000-4000-8000-000000000002",
+            "blocks": [
+              {
+                "kind": "TEXT",
+                "text": "бежать"
+              }
+            ]
+          },
+          {
+            "itemId": "9a000000-0000-4000-8000-000000000003",
+            "blocks": [
+              {
+                "kind": "TEXT",
+                "text": "река"
+              }
+            ]
+          },
+          {
+            "itemId": "9a000000-0000-4000-8000-000000000004",
+            "blocks": [
+              {
+                "kind": "AUDIO",
+                "assetId": "aaaaaaaa-0000-4000-8000-000000000004",
+                "title": "Запись: читать"
+              }
+            ]
+          }
+        ]
+      },
+      "answerKey": {
+        "kind": "CATEGORIZE",
+        "assignments": [
+          {
+            "itemId": "9a000000-0000-4000-8000-000000000001",
+            "categoryId": "ca000000-0000-4000-8000-000000000001"
+          },
+          {
+            "itemId": "9a000000-0000-4000-8000-000000000002",
+            "categoryId": "ca000000-0000-4000-8000-000000000002"
+          },
+          {
+            "itemId": "9a000000-0000-4000-8000-000000000003",
+            "categoryId": "ca000000-0000-4000-8000-000000000001"
+          },
+          {
+            "itemId": "9a000000-0000-4000-8000-000000000004",
+            "categoryId": "ca000000-0000-4000-8000-000000000002"
+          }
+        ]
+      },
+      "evaluatorPolicy": {
+        "id": "deterministic-categorize",
+        "version": "1"
+      }
+    },
+    "action": {
+      "kind": "SUBMIT",
+      "response": {
+        "kind": "CATEGORIZE",
+        "assignments": [
+          {
+            "itemId": "9a000000-0000-4000-8000-000000000001",
+            "categoryId": "ca000000-0000-4000-8000-000000000001"
+          },
+          {
+            "itemId": "9a000000-0000-4000-8000-000000000002",
+            "categoryId": "ca000000-0000-4000-8000-000000000002"
+          },
+          {
+            "itemId": "9a000000-0000-4000-8000-000000000003",
+            "categoryId": "ca000000-0000-4000-8000-000000000003"
+          },
+          {
+            "itemId": "9a000000-0000-4000-8000-000000000004",
+            "categoryId": "ca000000-0000-4000-8000-000000000002"
+          }
+        ]
+      },
+      "hintedBlankIds": [],
+      "pairMistakes": false,
+      "transcriptRevealed": false
+    }
+  },
+  "submitCategorizeResult": {
+    "feedback": {
+      "result": "PARTIAL",
+      "appliedRules": [
+        "SERVER_ISSUED_CATEGORY_MAP"
+      ],
+      "assignments": [
+        {
+          "itemId": "9a000000-0000-4000-8000-000000000001",
+          "selectedCategoryId": "ca000000-0000-4000-8000-000000000001",
+          "correctCategoryId": "ca000000-0000-4000-8000-000000000001",
+          "correct": true
+        },
+        {
+          "itemId": "9a000000-0000-4000-8000-000000000002",
+          "selectedCategoryId": "ca000000-0000-4000-8000-000000000002",
+          "correctCategoryId": "ca000000-0000-4000-8000-000000000002",
+          "correct": true
+        },
+        {
+          "itemId": "9a000000-0000-4000-8000-000000000003",
+          "selectedCategoryId": "ca000000-0000-4000-8000-000000000003",
+          "correctCategoryId": "ca000000-0000-4000-8000-000000000001",
+          "correct": false
+        },
+        {
+          "itemId": "9a000000-0000-4000-8000-000000000004",
+          "selectedCategoryId": "ca000000-0000-4000-8000-000000000002",
+          "correctCategoryId": "ca000000-0000-4000-8000-000000000002",
+          "correct": true
+        }
+      ]
+    }
   }
 }
