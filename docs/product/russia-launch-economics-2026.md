@@ -5,7 +5,7 @@ artifact:
   title: "Mnema Russia launch, payments and AI economics"
   status: proposed
   created_at: "2026-08-15"
-  updated_at: "2026-09-06"
+  updated_at: "2026-10-02"
   owners: ["project-owner"]
   evidence_date: "2026-08-15"
 ---
@@ -25,6 +25,16 @@ artifact:
 сохраняются и доступны; ограничивается только добавление сверх free allowance.
 См. [owner workflows](./authoring-and-study-workflows.md).
 Цены и юридические предположения ниже нужно заново проверить перед платным запуском.
+
+## Status update — 2026-10-02
+
+AI-экономика пересчитана в [AI layer contract](./ai-layer-2026-10.md) на основе
+[economics research](../reviews/ai-layer-research-2026-10/economics.md): DeepSeek
+заменил V4 Flash на V4.1 Flash (`deepseek-flash`, с 2026-09-10; peak $0.30/$1.20,
+off-peak $0.15/$0.60 за 1M input/output; thinking включён по умолчанию); приняты
+тиры Plus 449 / Pro 990 / Max 1 900 ₽ (Max — тизер), один usage-бар + fair-use +
+caps, Free 50 credits и 60 минут STT в месяц. Таблицы ниже сохраняются как
+исторический контекст и не являются действующими ценами.
 
 ## Историческая рекомендация — не текущий launch contract
 

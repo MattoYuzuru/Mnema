@@ -5,7 +5,7 @@ artifact:
   title: "Mnema v2 owner decisions"
   status: accepted
   created_at: "2026-08-15"
-  updated_at: "2026-09-06"
+  updated_at: "2026-10-02"
   owners: ["project-owner"]
 ---
 
@@ -113,6 +113,26 @@ artifact:
 - Текущий шаг 2026-09-06 — формализация #74–#76 и отдельный clickable design prototype. #73 foundation/Identity уже реализованы в source; #146/#147 ждут replacement gates. Этот шаг не разрешает runtime implementation, публикацию GitHub или production reset.
 - После просмотра документов и preview владелец одобрил направление и разрешил отдельный docs/prototype delivery через push, PR и защищённый squash-merge с полными quality gates. Это последующее разрешение заменяет запрет GitHub publication для данного конечного шага; production/data reset, новые dependencies и окончательный выбор непроверенной storage/editor реализации не включены.
 
+### AI-слой (принято 2026-10-02)
+
+По итогам исследования и ответов владельца Epic #77 реактивирован. Канонические
+решения — в [AI layer contract](../product/ai-layer-2026-10.md) и
+[AI generation platform](../architecture/ai-generation-platform.md). Кратко:
+
+- Первый хостинг и все ПД — в России; stateless AI-шлюз за рубежом допустим;
+  Финляндия как primary отменена.
+- Текст: direct DeepSeek V4.1 Flash (non-thinking), эскалация V4 Pro, RU-fallback
+  GigaChat; OpenRouter — опциональный адаптер; без BYOK и выбора модели пользователем.
+- Актуализация стека (Java 25, Spring Boot 4.1, Angular/Node latest) — первая задача.
+- AI-слой — модули внутри Learning; Мастерская с батчем артефактов; approve через
+  существующие команды публикации; AI не пишет `StudyState`.
+- Один usage-бар + fair-use на голос/проверку + caps на дорогие медиа; тиры
+  Plus 449 / Pro 990 / Max 1 900 (тизер за toggle); промокоды и A/B-инфраструктура.
+- STT бесплатно всем как fair-use (Free 60 мин/мес); self-host, если быстро на
+  целевом VPS. Проверка объяснений `ai-semantic` с прогрессивной строгостью.
+- Видео и генерация изображений отложены; иллюстрации — лицензионные стоки.
+- Имя помощника — «Мнема»; никаких пометок «создано с ИИ» на контенте.
+
 ## Rejected or deferred
 
 - Два обязательных Markdown-документа как единственная форма item.
@@ -128,8 +148,8 @@ artifact:
 - Любой retained full legacy snapshot после destructive cutover.
 - Liquid Glass и сохранение текущей визуальной идентичности как constraint нового frontend.
 - Произвольные theme/layout builders в первом релизе.
-- Unlimited AI и монетизация размера содержимого одной колоды. Гипотеза лимита количества колод 2026-09-06 — отдельный будущий вопрос.
-- Yandex AI как hosted provider.
+- Unlimited AI и монетизация размера содержимого одной колоды. Гипотеза лимита количества колод 2026-09-06 — отдельный будущий вопрос; 2026-10-02: не вводится на старте AI-монетизации.
+- Yandex AI как hosted LLM provider; исключение для Search API/SpeechKit TTS — открытый вопрос 2026-10-02.
 
 ## Open decisions with an owner or validation method
 
@@ -139,8 +159,8 @@ artifact:
 | O-02 | Что делать, если изменился проверяемый ответ? | **Решено 2026-09-06:** сохранить историю и текущее состояние/расписание, без автоматической revalidation. Явное «Учить заново» начинает новый learning epoch. Действительно новая независимая цель получает собственное начальное состояние. |
 | O-03 | Какой editor engine? | **Решено в #74:** bounded ProseMirror adapter с Mnema-owned persisted format; unrun real IME/device/AT sessions остаются честной verification boundary. |
 | O-04 | Какой exact Anki conversion coverage достижим без legacy renderer? | После native launch собрать corpus; компилировать common HTML/CSS patterns в AST, выпускать per-item warnings и не публиковать unsafe/unsupported behaviour. |
-| O-05 | Точный будущий AI Starter quota и нужен ли Plus? | Исторический ориентир 299 ₽/30 дней относится к AI, не deck/offline offer. После реактивации #77 проверить цену и quota по measured p95 cost; Plus не вводить до доказанной необходимости. |
-| O-06 | AI provider routing? | Golden eval — фиксированный набор тестовых prompts/expected outputs. Сравнить direct DeepSeek и минимум один не-Yandex fallback по languages/STEM/code, cost/accepted item, p95 latency, privacy и доступности из РФ; см. [launch economics](../product/russia-launch-economics-2026.md). |
+| O-05 | Точный будущий AI Starter quota и нужен ли Plus? | **Решено 2026-10-02:** Plus 449 / Pro 990 на старте, Max 1 900 как тизер; allowances в [AI layer contract](../product/ai-layer-2026-10.md); пересмотр после двух платёжных когорт по measured p95. |
+| O-06 | AI provider routing? | **Решено 2026-10-02:** direct DeepSeek V4.1 Flash primary, V4 Pro эскалация, GigaChat fallback; golden eval остаётся gate включения реальных пользователей (AI-17). Открыт вопрос про Yandex Search API и SpeechKit TTS. |
 | O-07 | Лицензия нового кода? | **Решено 2026-08-30:** public source-available с private personal use для одного физического лица; любое organizational/shared/hosted/commercial/ML use требует отдельной письменной лицензии. Последний Apache-срез — `v1-apache-final`; см. [license transition](./source-license-transition.md). |
 | O-08 | Можно ли использовать public content for AI improvement? | Require explicit author grant, provenance, deletion/export rules and provider terms before enabling. |
 | O-09 | Точный account-retention legal policy? | Six months is not assumed lawful. Separate product deletion from legally retained tax/payment records and approve every retention period with Russian counsel; см. [legal launch checklist](../product/russia-legal-launch-checklist-2026.md). |

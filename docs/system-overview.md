@@ -4,7 +4,7 @@ artifact:
   type: architecture-overview
   title: "Mnema current system overview"
   status: current
-  updated_at: "2026-09-28"
+  updated_at: "2026-10-02"
   owners: ["project-owner"]
   evidence_revision: "1879d9ae0cadde67bf8a0ccc74fbccb53f2acee5"
 ---
@@ -130,5 +130,7 @@ Acceptance #74: [integrated main evidence](./engineering/evidence/epic-74/verifi
 ## Следующие этапы
 
 1. #147 — отдельный production cutover/purge gate; сейчас не разрешён и не готов.
+2. #77 — реактивированный AI-слой: [refinement и прогоны](./engineering/epic-77-refinement.md),
+   [архитектура](./architecture/ai-generation-platform.md).
 
 Интеграционная проверка #75 и её пределы: [acceptance evidence](./engineering/evidence/epic-75/verification/integrated-main-2026-09-24.md).
