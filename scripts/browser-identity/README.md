@@ -32,8 +32,8 @@ Pass `--authoring --media` for the complete local media path. The runner starts
 an isolated MinIO bucket and the configured worker, drops a generated PNG, MP3
 and MP4 in the editor, waits for READY, publishes native media with Mermaid and
 a YouTube consent card, and checks loaded Browse players. It then creates a
-`LISTEN_TYPE` exercise through the UI from the uploaded audio and answers it in
-Study. It writes a full-page Browse capture and removes its local bucket and
+`FREE_RESPONSE` exercise with an audio prompt through the UI from the uploaded audio
+and answers it in Study. It writes a full-page Browse capture and removes its local bucket and
 temporary browser state. The ordinary `--authoring` mode additionally waits
 through the visible 45-second deck polling interval; `--media` checks immediate
 focus refresh and skips that long timer wait.

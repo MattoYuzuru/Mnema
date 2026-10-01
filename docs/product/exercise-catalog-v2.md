@@ -5,7 +5,7 @@ artifact:
   title: "Mnema exercise and learning-evidence contracts"
   status: accepted
   created_at: "2026-08-15"
-  updated_at: "2026-09-20"
+  updated_at: "2026-10-01"
   owners: ["project-owner"]
 ---
 
@@ -20,7 +20,8 @@ artifact:
 LearningItem → immutable ItemRevision
              → one or more MemoryObjectives
 ExerciseDefinition → immutable ExerciseRevision
-ExerciseRevision → one or more pinned ItemRevisions with explicit roles
+ExerciseRevision → subject ItemRevision (assessed) + pinned context materials/media
+                 → mechanic-specific content, answer key and evaluator policy
 Scheduled attempt → per-objective evidence → versioned reducer → StudyState
 Browse / replay / extra practice ───────────X no canonical update
 ```
@@ -33,9 +34,29 @@ Browse / replay / extra practice ───────────X no canonical
 progress. Scheduler update разрешён только для objective, по которому есть
 наблюдаемый assessed response.
 
-AI не входит в этот epic. P0/P1 работают с deterministic evaluator или явной
-self/human rubric. Будущий #77 может добавить versioned evaluator, но не прямую
-запись в `StudyState`.
+P0/P1 работают с deterministic evaluator или явной self/human rubric. #266 добавил
+только выключенные server-owned capabilities «смысловая проверка ИИ» и «speech-to-text»
+и типизированную rubric-точку расширения: без провайдера они недоступны, публикация
+зависимых заданий отклоняется. Будущий #77 может добавить versioned evaluator, но не
+прямую запись в `StudyState`.
+
+## Механики упражнений (#266)
+
+Механика описывает действие ученика, а не носитель вопроса. Текст, изображение,
+аудио, видео и фрагменты материала — содержимое слотов, а не отдельные типы.
+
+| Механика | Действие ученика | Проверка | Кластеры каталога |
+|---|---|---|---|
+| `SELF_CHECK` | вспомнить, явно раскрыть эталон, честно оценить себя | self-report | E-01, E-09 (self) |
+| `FREE_RESPONSE` | один текстовый ответ на любое условие (в т.ч. аудио → запись) | точные альтернативы с явной нормализацией; «мягкое» совпадение — не понимание смысла | E-02, E-10 |
+| `CLOZE` | заполнить один или несколько пропусков | отдельный ключ и feedback на каждый `blankId` | E-03 |
+| `CHOICE` | выбрать один или несколько вариантов | точный набор server-issued `optionId` | E-04 |
+| `MATCH` | соединить пары один-к-одному | ID-биекция независимо от медиатипа | E-06 (pairs) |
+
+`ORDER` и `CATEGORIZE` — следующий шаг эпика #265 (#268). Один и тот же ответный
+механизм не объединяет прогресс разных навыков: слушание и чтение остаются разными
+objectives, если автор создал разные упражнения с разными целями. Точный wire-контракт,
+профили слотов и лимиты — [`contracts/study`](../../contracts/study/README.md#exercise-mechanics-266).
 
 ## Learning evidence, а не «вес кнопки»
 
@@ -67,7 +88,6 @@ evaluator и правильный ответ берутся из server-issued p
   "presentationId": "server-issued-question-id",
   "nonce": "server-issued-nonce",
   "response": {"kind": "TEXT", "text": "..."},
-  "hintsUsed": [],
   "confidence": "KNEW|UNSURE|GUESSED|null",
   "durationMs": 4200
 }
@@ -89,7 +109,8 @@ Evaluator возвращает outcome одного P0 objective:
 ```
 
 Сервер сверяет envelope с сохранённой presentation: клиент не выбирает правильный
-ответ, роли/набор целей или session mode. Effective snapshot фиксирует именно
+ответ, роли/набор целей, использованные подсказки или session mode: подсказки и
+раскрытия transcript фиксирует сервер. Effective snapshot фиксирует именно
 личную колоду, включая выбранные private changes, а не только чужую source revision.
 Versioned scheduler policy преобразует evidence в transition только для
 `SCHEDULED`. `REPLAY` и `PRACTICE` возвращают feedback, но не пишут canonical
@@ -142,7 +163,9 @@ Recognition не бесполезно, но correct choice не означает
 ## Multi-item contract
 
 1. Все bindings принадлежат выбранной личной deck и одному pinned effective snapshot, содержащему точные item/exercise revisions.
-2. У каждого binding есть роль `ASSESSED`, `CUE`, `OPTION` или `CONTEXT`.
+2. Сервер выводит bindings из упражнения: один `ASSESSED` (subject item) и `CONTEXT` для
+   каждого материала, показанного в слотах. Варианты, пары и пропуски — содержимое
+   упражнения со своими ID, а не bindings.
 3. Только `ASSESSED` binding связывается с `MemoryObjective` и scheduler evidence.
 4. Aggregate UI score не копируется всем участвующим items.
 5. Matching/categorization возвращает per-objective result. Если валидное
@@ -165,14 +188,14 @@ objective + три pinned options или четыре independently assessed pai
 ## Authoring: материал не равен ячейке упражнения
 
 Пользователь свободно смешивает грамматику, слова и конспекты в одной колоде.
-`ExerciseContentBinding.displaySpec` выбирает стабильные узлы/фрагменты либо
-собственный короткий label/asset; это не обязательные поля у каждого материала.
-Matching использует только явно разрешённый совместимый pool. Слово → перевод,
-слово → аудио и пользовательская подпись → подпись допустимы; огромный документ
-не становится подписью по умолчанию. Удалённая ссылка требует исправления,
-а не подстановки полного материала. Начальный предложенный предел matching label —
-80 graphemes; длина и media capabilities валидируются для каждой механики с
-проверкой mobile/zoom. Полный материал остаётся доступен отдельно для чтения.
+Слоты упражнения содержат типизированные блоки: собственный текст, закреплённый
+фрагмент материала, изображение, аудио (в том числе записанное автором), видео и
+YouTube там, где профиль слота это допускает. Новое вложение упражнения не требует
+менять исходный материал. Условие и эталон допускают длинный текст и несколько блоков;
+вариант и элемент пары — компактный профиль (короткий текст и/или одно медиа).
+Огромный документ не становится подписью по умолчанию, текст не обрезается молча —
+превышение лимита показывается рядом с полем. Удалённая или устаревшая ссылка требует
+явного исправления, а уже опубликованная revision остаётся закреплённой.
 
 У flashcard явно настраиваются prompt и reveal; интервальное повторение —
 политика планирования этих и других упражнений, а не особый двухсторонний материал.
@@ -229,12 +252,11 @@ effects. Новые due позже в тот же день не блокирую
 Multiple select перенесён из P0 в P1: он добавляет partial-scoring semantics, но не
 доказывает новый loop сверх single choice.
 
-Реализованный P0 contract использует один native input для single-blank cloze и
-native radio group для single choice и checkbox group для multiple choice. Cloze без подсказки может дать `HIGH`, а
-явная first-grapheme подсказка ограничивает правильный результат до `MEDIUM`.
-Single choice всегда `LOW`; правильность определяется совпадением server-issued
-`OPTION` target с единственным pinned `ASSESSED` target, поэтому подменённый option
-отклоняется, а distractor не становится learned alias и не получает transition.
+После #266 cloze поддерживает несколько пропусков: подсказка первой буквы выдаётся
+сервером для конкретного пропуска и ограничивает результат до `MEDIUM`. Choice — native
+radio group (`SINGLE`) или checkbox group (`MULTIPLE`), всегда `LOW`; правильность
+определяется точным набором server-issued `optionId`, distractor не становится learned
+alias и не получает transition.
 
 ### P1 — разнообразие без AI
 

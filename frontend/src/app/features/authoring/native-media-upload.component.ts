@@ -26,6 +26,8 @@ const MAX_PARALLEL_TRANSFERS = 2;
 const POLL_INITIAL_MS = 2_000;
 const POLL_MAX_MS = 15_000;
 const PART_URL_BATCH = 16;
+/** A recording stops by itself here; the server still verifies the real bytes and size after upload. */
+const MAX_RECORDING_MS = 10 * 60_000;
 const FILE_ACCEPT = '.jpg,.jpeg,.png,.webp,.gif,.mp3,.m4a,.mp4,.mov,.webm';
 
 const MIME_BY_EXTENSION: Readonly<Record<string, { kind: NativeMediaKind; mime: string }>> = {
@@ -46,10 +48,14 @@ const MIME_BY_EXTENSION: Readonly<Record<string, { kind: NativeMediaKind; mime: 
 export class NativeMediaUploadComponent {
     readonly document = input.required<NativeDocument>();
     readonly disabled = input(false);
+    /** Label of the per-file button; the exercise editor says «Добавить в упражнение». */
+    readonly chooseLabel = input('Выбрать для материала');
     readonly chooseAsset = output<{ kind: NativeMediaKind; assetId: string }>();
     readonly entries = signal<readonly QueueEntry[]>([]);
     readonly dropActive = signal(false);
     readonly recording = signal(false);
+    /** True from the explicit record click until the browser grants or refuses the microphone. */
+    readonly requesting = signal(false);
     readonly cameraOpen = signal(false);
     readonly recordPreview = signal<string | null>(null);
     readonly message = signal<string | null>(null);
@@ -70,6 +76,9 @@ export class NativeMediaUploadComponent {
     private chunks: Blob[] = [];
     private recordedFile: File | null = null;
     private recordingUrl: string | null = null;
+    /** Invalidates a pending microphone request when the recording is cancelled or the component is destroyed. */
+    private recordToken = 0;
+    private recordTimer: ReturnType<typeof setTimeout> | null = null;
 
     constructor() {
         effect(() => this.recoverDocumentRefs(this.document()));
@@ -85,7 +94,7 @@ export class NativeMediaUploadComponent {
             this.clearPoll();
             // In-flight byte transfers finish after SPA navigation to the published material.
             // A full browser reload still requires reselecting the local file.
-            this.stopMediaTracks();
+            this.abortRecording();
             this.stopCamera();
             if (this.recordingUrl !== null) URL.revokeObjectURL(this.recordingUrl);
         });
@@ -184,8 +193,12 @@ export class NativeMediaUploadComponent {
         this.drain();
     }
 
+    /**
+     * Recorder state machine: idle, requesting, recording, preview. The microphone is requested only here,
+     * after an explicit click, never when the page opens or the exercise mechanic changes.
+     */
     async startRecording(): Promise<void> {
-        if (this.disabled() || this.recording()) return;
+        if (this.disabled() || this.recording() || this.requesting()) return;
         if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
             this.message.set('Запись здесь недоступна. Выберите готовый аудиофайл.');
             return;
@@ -195,36 +208,57 @@ export class NativeMediaUploadComponent {
             this.message.set('Браузер не поддерживает подходящий формат записи. Выберите аудиофайл.');
             return;
         }
+        this.discardRecording();
+        const token = ++this.recordToken;
+        this.requesting.set(true);
+        this.message.set(null);
+        let stream: MediaStream;
         try {
-            this.discardRecording();
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            if (this.destroyRef.destroyed) { stream.getTracks().forEach(track => track.stop()); return; }
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (error) {
+            if (token === this.recordToken) {
+                this.requesting.set(false);
+                this.message.set(microphoneError(error));
+            }
+            return;
+        }
+        // Cancelled or destroyed while the permission prompt was open: release the device, insert nothing.
+        if (token !== this.recordToken || this.destroyRef.destroyed) {
+            stream.getTracks().forEach(track => track.stop());
+            return;
+        }
+        this.requesting.set(false);
+        try {
             this.stream = stream;
             this.chunks = [];
             const recorder = new MediaRecorder(stream, { mimeType: mime });
             this.recorder = recorder;
             recorder.ondataavailable = event => { if (event.data.size > 0) this.chunks.push(event.data); };
-            recorder.onerror = () => { this.message.set('Запись прервалась. Повторите или выберите файл.'); this.stopMediaTracks(); };
-            recorder.onstop = () => {
-                const recorded = new Blob(this.chunks, { type: recorder.mimeType });
-                const extension = recorder.mimeType.startsWith('audio/mp4') ? 'm4a' : 'webm';
-                this.recordedFile = new File([recorded], `Запись-${Date.now()}.${extension}`, { type: recorder.mimeType });
-                this.recordingUrl = URL.createObjectURL(recorded);
-                this.recordPreview.set(this.recordingUrl);
-                this.stopMediaTracks();
-            };
+            recorder.onerror = () => { this.message.set('Запись прервалась. Повторите или выберите файл.'); this.abortRecording(); };
+            recorder.onstop = () => this.finishRecording(recorder, token);
+            // A device that disappears mid-recording ends its track; keep what was recorded so far.
+            stream.getAudioTracks().forEach(track => { track.onended = () => this.stopRecording(); });
             recorder.start();
             this.recording.set(true);
-            this.message.set(null);
+            this.recordTimer = setTimeout(() => {
+                this.message.set('Достигнут предел записи — 10 минут. Запись остановлена, её можно прослушать и загрузить.');
+                this.stopRecording();
+            }, MAX_RECORDING_MS);
         } catch {
-            this.stopMediaTracks();
-            this.message.set('Микрофон недоступен или доступ запрещён. Выберите готовый файл.');
+            this.abortRecording();
+            this.message.set('Не удалось начать запись. Выберите готовый файл.');
         }
     }
 
     stopRecording(): void {
         if (this.recorder?.state === 'recording') this.recorder.stop();
         this.recording.set(false);
+    }
+
+    /** Cancels a pending permission request or a running recording without producing a preview. */
+    cancelRecording(): void {
+        this.abortRecording();
+        this.message.set(null);
     }
 
     useRecording(): void {
@@ -235,11 +269,7 @@ export class NativeMediaUploadComponent {
     }
 
     discardRecording(): void {
-        if (this.recorder?.state === 'recording') {
-            this.recorder.onstop = null;
-            this.recorder.stop();
-            this.stopMediaTracks();
-        }
+        if (this.recorder?.state === 'recording') this.abortRecording();
         if (this.recordingUrl !== null) URL.revokeObjectURL(this.recordingUrl);
         this.recordingUrl = null;
         this.recordPreview.set(null);
@@ -439,7 +469,36 @@ export class NativeMediaUploadComponent {
         this.entries.update(items => items.map(entry => entry.id === id ? { ...entry, ...change } : entry));
     }
 
+    private finishRecording(recorder: MediaRecorder, token: number): void {
+        const chunks = this.chunks;
+        this.stopMediaTracks();
+        if (token !== this.recordToken || this.destroyRef.destroyed) return;
+        const recorded = new Blob(chunks, { type: recorder.mimeType });
+        if (recorded.size === 0) {
+            this.message.set('Запись получилась пустой. Проверьте микрофон и запишите ещё раз.');
+            return;
+        }
+        const extension = recorder.mimeType.startsWith('audio/mp4') ? 'm4a' : 'webm';
+        this.recordedFile = new File([recorded], `Запись-${Date.now()}.${extension}`, { type: recorder.mimeType });
+        this.recordingUrl = URL.createObjectURL(recorded);
+        this.recordPreview.set(this.recordingUrl);
+    }
+
+    /** Stops everything the recorder holds: pending request, running recorder, device tracks and timer. */
+    private abortRecording(): void {
+        this.recordToken += 1;
+        if (this.recorder !== null) {
+            this.recorder.onstop = null;
+            if (this.recorder.state === 'recording') this.recorder.stop();
+        }
+        this.chunks = [];
+        this.requesting.set(false);
+        this.stopMediaTracks();
+    }
+
     private stopMediaTracks(): void {
+        if (this.recordTimer !== null) clearTimeout(this.recordTimer);
+        this.recordTimer = null;
         this.stream?.getTracks().forEach(track => track.stop());
         this.stream = null;
         this.recorder = null;
@@ -459,6 +518,21 @@ function classify(file: File): { kind: NativeMediaKind; mime: string } | null {
         && file.type.split(';')[0] !== known.mime.split(';')[0]
         && !(extension === 'm4a' && file.type === 'audio/x-m4a')) return null;
     return { kind: known.kind, mime: file.type && file.type !== 'application/octet-stream' ? file.type : known.mime };
+}
+
+function microphoneError(error: unknown): string {
+    switch (error instanceof DOMException ? error.name : '') {
+        case 'NotAllowedError':
+        case 'SecurityError':
+            return 'Доступ к микрофону запрещён. Разрешите его в настройках браузера или выберите готовый файл.';
+        case 'NotFoundError':
+        case 'DevicesNotFoundError':
+            return 'Микрофон не найден. Подключите его или выберите готовый файл.';
+        case 'NotReadableError':
+            return 'Микрофон занят другим приложением. Закройте его и повторите или выберите файл.';
+        default:
+            return 'Микрофон недоступен. Выберите готовый файл.';
+    }
 }
 
 function uploadError(error: unknown): string {

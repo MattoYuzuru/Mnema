@@ -76,7 +76,7 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                         "15:media object gc:SUCCESS", "16:active capture deck page:SUCCESS",
                         "17:deck tombstone and exercise removal:SUCCESS",
                         "18:choice option ordinals:SUCCESS", "19:study pair interactions:SUCCESS",
-                        "20:item preview projection:SUCCESS");
+                        "20:item preview projection:SUCCESS", "21:unified exercise mechanics:SUCCESS");
 
         assertThat(jdbcClient.sql("""
                         SELECT schema_name
@@ -137,7 +137,7 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                 .containsExactlyInAnyOrder("deckController", "itemController", "draftController", "captureController",
                         "exerciseController", "studySessionController", "attemptController", "pairCheckController", "studyRestartController",
                         "studyProgressController", "mediaUploadController", "mediaPlaybackController",
-                        "mediaProcessingController", "mediaManifestController");
+                        "mediaProcessingController", "mediaManifestController", "capabilityController");
         assertThat(requestMappings.getHandlerMethods().keySet())
                 .flatExtracting(mapping -> mapping.getPatternValues())
                 .allSatisfy(route -> {

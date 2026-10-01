@@ -1,10 +1,12 @@
 {
-  "typedSubmit": {
+  "freeResponseSubmit": {
     "attemptId": "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
     "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
     "nonce": "c3R1ZHktbm9uY2UtdjE",
-    "response": {"kind": "TEXT", "text": "Память"},
-    "hintsUsed": [],
+    "response": {
+      "kind": "TEXT",
+      "text": "Память"
+    },
     "confidence": "KNEW",
     "durationMs": 4200
   },
@@ -12,8 +14,10 @@
     "attemptId": "cccccccc-cccc-4ccc-8ccc-ccccccccccc2",
     "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2",
     "nonce": "c3R1ZHktbm9uY2UtdjI",
-    "response": {"kind": "SELF_CHECK", "rating": "FULL"},
-    "hintsUsed": ["REVEAL"],
+    "response": {
+      "kind": "SELF_CHECK",
+      "rating": "FULL"
+    },
     "confidence": null,
     "durationMs": 8000
   },
@@ -21,8 +25,12 @@
     "attemptId": "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
     "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3",
     "nonce": "c3R1ZHktbm9uY2UtdjM",
-    "response": {"kind": "CHOICE", "optionIds": ["dddddddd-dddd-4ddd-8ddd-ddddddddddd1"]},
-    "hintsUsed": [],
+    "response": {
+      "kind": "CHOICE",
+      "optionIds": [
+        "dddddddd-dddd-4ddd-8ddd-ddddddddddd1"
+      ]
+    },
     "confidence": "UNSURE",
     "durationMs": 3100
   },
@@ -30,8 +38,9 @@
     "attemptId": "cccccccc-cccc-4ccc-8ccc-ccccccccccc4",
     "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb4",
     "nonce": "c3R1ZHktbm9uY2UtdjQ",
-    "response": {"kind": "CANCEL"},
-    "hintsUsed": [],
+    "response": {
+      "kind": "CANCEL"
+    },
     "confidence": null,
     "durationMs": 0
   },
@@ -45,12 +54,21 @@
       "objectiveRevisionId": "77777777-7777-4777-8777-777777777773",
       "result": "CORRECT",
       "evidenceClass": "HIGH",
-      "reasonCodes": ["UNHINTED", "DETERMINISTIC", "PRODUCTION"]
+      "reasonCodes": [
+        "UNHINTED",
+        "DETERMINISTIC",
+        "PRODUCTION"
+      ]
     },
     "feedback": {
       "result": "CORRECT",
+      "appliedRules": [
+        "UNICODE_NFC",
+        "TRIM",
+        "CASE_FOLD"
+      ],
       "reference": "память",
-      "appliedRules": ["UNICODE_NFC", "TRIM", "CASE_FOLD"]
+      "referenceContent": []
     },
     "transition": {
       "learningEpoch": "0",
@@ -71,7 +89,14 @@
     "mode": "PRACTICE",
     "status": "ASSESSED",
     "evidence": null,
-    "feedback": {"result": "CORRECT", "reference": "память", "appliedRules": ["TRIM"]},
+    "feedback": {
+      "result": "CORRECT",
+      "appliedRules": [
+        "TRIM"
+      ],
+      "reference": "память",
+      "referenceContent": []
+    },
     "transition": null,
     "canonicalEffects": false
   },
@@ -81,7 +106,9 @@
     "mode": "SCHEDULED",
     "status": "NOT_ASSESSED",
     "evidence": null,
-    "feedback": {"result": "NOT_ASSESSED"},
+    "feedback": {
+      "result": "NOT_ASSESSED"
+    },
     "transition": null
   }
 }

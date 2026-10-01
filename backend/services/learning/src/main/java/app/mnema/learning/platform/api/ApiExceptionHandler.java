@@ -33,6 +33,12 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return response(ApiErrorCode.INVALID_REQUEST, request.getRequestURI(), new HttpHeaders());
     }
 
+    @ExceptionHandler(CapabilityUnavailableException.class)
+    ResponseEntity<Object> handleCapabilityUnavailable(CapabilityUnavailableException exception,
+                                                        HttpServletRequest request) {
+        return response(ApiErrorCode.CAPABILITY_UNAVAILABLE, request.getRequestURI(), new HttpHeaders());
+    }
+
     @ExceptionHandler(MediaUploadConflictException.class)
     ResponseEntity<Object> handleMediaUploadConflict(MediaUploadConflictException exception, HttpServletRequest request) {
         return response(ApiErrorCode.MEDIA_UPLOAD_CONFLICT, request.getRequestURI(), new HttpHeaders());

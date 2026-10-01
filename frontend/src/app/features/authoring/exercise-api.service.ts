@@ -8,9 +8,13 @@ import {
     AuthoringProtocolError, newCommandId, requireCommand, requireCount, requireCursor, requireEntity, requireInstant,
     requireObject, requireVersion
 } from './authoring.models';
+import { ExerciseSpec, MECHANICS, Mechanic, ObjectiveCommand } from '../../content/exercise/exercise-content.models';
 import {
-    AnswerContract, BindingRole, ClozeBlank, EXERCISE_PAGE_SIZE, ExerciseAcknowledgement, ExerciseBinding, ExerciseDetail,
-    ExerciseObjective, ExercisePage, ExercisePrompt, ExerciseSummary, ExerciseType, ExerciseWriteResult
+    ExerciseContentError, parseExerciseSpec, parseObjectiveCommand
+} from '../../content/exercise/exercise-content.parse';
+import {
+    EXERCISE_PAGE_SIZE, ExerciseAcknowledgement, ExerciseDetail, ExerciseObjective, ExercisePage, ExerciseSummary,
+    ExerciseWriteResult
 } from './exercise.models';
 
 @Injectable({ providedIn: 'root' })
@@ -45,7 +49,7 @@ export class ExerciseApiService {
             { observe: 'response' }
         )).pipe(map(response => {
             requirePrivate(response);
-            const detail = parseDetail(response.body);
+            const detail = contract(() => parseDetail(response.body));
             requireEtag(response, detail.deckVersion);
             if (detail.deckId !== deckId.toLowerCase() || detail.exerciseId !== exerciseId.toLowerCase()) {
                 throw new AuthoringProtocolError('Exercise identity mismatch.');
@@ -55,19 +59,21 @@ export class ExerciseApiService {
     }
 
     create(deckId: string, deckVersion: string, deckRevisionId: string,
-           objective: Record<string, unknown>, exercise: Record<string, unknown>, commandId = newCommandId()): Observable<ExerciseWriteResult> {
-        return this.write('POST', deckId, null, deckVersion, {
-            commandId: requireCommand(commandId), expectedDeckRevisionId: requireEntity(deckRevisionId), objective, exercise
-        }, 201);
+           objective: ObjectiveCommand, exercise: ExerciseSpec, commandId = newCommandId()): Observable<ExerciseWriteResult> {
+        return this.write('POST', deckId, null, deckVersion, () => ({
+            commandId: requireCommand(commandId), expectedDeckRevisionId: requireEntity(deckRevisionId),
+            objective: contract(() => parseObjectiveCommand(objective)), exercise: contract(() => parseExerciseSpec(exercise))
+        }), 201);
     }
 
     update(deckId: string, exerciseId: string, deckVersion: string, deckRevisionId: string,
-           exerciseRevisionId: string, objective: Record<string, unknown>, exercise: Record<string, unknown>,
+           exerciseRevisionId: string, objective: ObjectiveCommand, exercise: ExerciseSpec,
            commandId = newCommandId()): Observable<ExerciseWriteResult> {
-        return this.write('PUT', deckId, exerciseId, deckVersion, {
+        return this.write('PUT', deckId, exerciseId, deckVersion, () => ({
             commandId: requireCommand(commandId), expectedDeckRevisionId: requireEntity(deckRevisionId),
-            expectedExerciseRevisionId: requireEntity(exerciseRevisionId), objective, exercise
-        }, 200);
+            expectedExerciseRevisionId: requireEntity(exerciseRevisionId),
+            objective: contract(() => parseObjectiveCommand(objective)), exercise: contract(() => parseExerciseSpec(exercise))
+        }), 200);
     }
 
     delete(deckId: string, exerciseId: string, deckVersion: string): Observable<void> {
@@ -81,8 +87,10 @@ export class ExerciseApiService {
     }
 
     private write(method: 'POST' | 'PUT', deckId: string, exerciseId: string | null, deckVersion: string,
-                  body: Record<string, unknown>, status: number): Observable<ExerciseWriteResult> {
+                  command: () => Record<string, unknown>, status: number): Observable<ExerciseWriteResult> {
+        let body: Record<string, unknown> = {};
         return defer(() => {
+            body = command();
             const deck = requireEntity(deckId);
             const suffix = exerciseId === null ? '' : `/${encodeURIComponent(requireEntity(exerciseId))}`;
             return this.http.request<unknown>(method,
@@ -114,11 +122,11 @@ function parseSummary(value: unknown): ExerciseSummary {
         'exerciseId', 'exerciseRevisionId', 'exerciseVersion', 'ordinal', 'type', 'enabled', 'schemaVersion',
         'createdAt', 'updatedAt', 'objective'
     ]);
-    if (object['schemaVersion'] !== 1) throw new AuthoringProtocolError('Unsupported exercise schema.');
+    if (object['schemaVersion'] !== 2) throw new AuthoringProtocolError('Unsupported exercise schema.');
     return {
         exerciseId: requireEntity(object['exerciseId']), exerciseRevisionId: requireEntity(object['exerciseRevisionId']),
         exerciseVersion: requireVersion(object['exerciseVersion']), ordinal: requireCount(object['ordinal'], 99_999),
-        type: exerciseType(object['type']), enabled: boolean(object['enabled']), schemaVersion: 1,
+        type: exerciseType(object['type']), enabled: boolean(object['enabled']), schemaVersion: 2,
         createdAt: requireInstant(object['createdAt']), updatedAt: requireInstant(object['updatedAt']),
         objective: parseObjective(object['objective'])
     };
@@ -127,171 +135,48 @@ function parseSummary(value: unknown): ExerciseSummary {
 function parseDetail(value: unknown): ExerciseDetail {
     const object = requireObject(value, [
         'exerciseId', 'exerciseRevisionId', 'exerciseVersion', 'ordinal', 'type', 'enabled', 'schemaVersion',
-        'createdAt', 'updatedAt', 'deckId', 'deckRevisionId', 'deckVersion', 'prompt', 'evaluatorPolicy',
-        'objective', 'bindings'
+        'createdAt', 'updatedAt', 'deckId', 'deckRevisionId', 'deckVersion', 'subject', 'content', 'answerKey',
+        'evaluatorPolicy', 'objective'
     ]);
-    const summary = parseSummary({
-        exerciseId: object['exerciseId'], exerciseRevisionId: object['exerciseRevisionId'],
-        exerciseVersion: object['exerciseVersion'], ordinal: object['ordinal'], type: object['type'],
-        enabled: object['enabled'], schemaVersion: object['schemaVersion'], createdAt: object['createdAt'],
-        updatedAt: object['updatedAt'], objective: object['objective']
+    const spec = parseExerciseSpec({
+        type: object['type'], schemaVersion: object['schemaVersion'], enabled: object['enabled'],
+        subject: object['subject'], content: object['content'], answerKey: object['answerKey'],
+        evaluatorPolicy: object['evaluatorPolicy']
     });
-    if (!Array.isArray(object['bindings']) || object['bindings'].length === 0) {
-        throw new AuthoringProtocolError('Invalid exercise bindings.');
-    }
-    const evaluator = requireObject(object['evaluatorPolicy'], ['id', 'version']);
-    if (typeof evaluator['id'] !== 'string' || evaluator['version'] !== '1') {
-        throw new AuthoringProtocolError('Invalid evaluator policy.');
-    }
-    const bindings = object['bindings'].map(parseBinding);
-    const answer = summary.objective.answerContract;
-    if (answer.schemaVersion === 3 && (summary.type !== 'SINGLE_CHOICE' && summary.type !== 'LISTEN_CHOICE'
-        || answer.correctOptionIds.some(id => !bindings.some(binding => binding.role === 'OPTION' && binding.bindingId === id)))) {
-        throw new AuthoringProtocolError('Invalid choice target projection.');
-    }
+    const objective = parseObjective(object['objective']);
+    if (objective.memberKey !== spec.subject.memberKey) throw new AuthoringProtocolError('Objective member mismatch.');
     return {
-        ...summary, deckId: requireEntity(object['deckId']), deckRevisionId: requireEntity(object['deckRevisionId']),
-        deckVersion: requireVersion(object['deckVersion']), prompt: parsePrompt(object['prompt']),
-        evaluatorPolicy: { id: evaluator['id'], version: '1' }, bindings
+        exerciseId: requireEntity(object['exerciseId']), exerciseRevisionId: requireEntity(object['exerciseRevisionId']),
+        exerciseVersion: requireVersion(object['exerciseVersion']), ordinal: requireCount(object['ordinal'], 99_999),
+        createdAt: requireInstant(object['createdAt']), updatedAt: requireInstant(object['updatedAt']),
+        deckId: requireEntity(object['deckId']), deckRevisionId: requireEntity(object['deckRevisionId']),
+        deckVersion: requireVersion(object['deckVersion']), objective, ...spec
     };
 }
 
 function parseObjective(value: unknown): ExerciseObjective {
     const object = requireObject(value, [
-        'objectiveId', 'objectiveKey', 'objectiveRevisionId', 'objectiveVersion', 'memberKey', 'answerContract'
+        'objectiveId', 'objectiveKey', 'objectiveRevisionId', 'objectiveVersion', 'memberKey', 'title'
     ]);
+    const title = object['title'];
+    if (typeof title !== 'string' || title.trim().length === 0 || title.length > 160) {
+        throw new AuthoringProtocolError('Invalid objective title.');
+    }
     return {
         objectiveId: requireEntity(object['objectiveId']), objectiveKey: requireEntity(object['objectiveKey']),
         objectiveRevisionId: requireEntity(object['objectiveRevisionId']),
-        objectiveVersion: requireVersion(object['objectiveVersion']), memberKey: requireEntity(object['memberKey']),
-        answerContract: parseAnswer(object['answerContract'])
+        objectiveVersion: requireVersion(object['objectiveVersion']), memberKey: requireEntity(object['memberKey']), title
     };
 }
 
-function parseAnswer(value: unknown): AnswerContract {
-    if (value !== null && typeof value === 'object' && !Array.isArray(value)
-        && (value as Record<string, unknown>)['schemaVersion'] === 3) {
-        const object = requireObject(value, ['schemaVersion', 'selectionMode', 'correctOptionIds', 'accepted']);
-        if ((object['selectionMode'] !== 'SINGLE' && object['selectionMode'] !== 'MULTIPLE')
-            || !Array.isArray(object['correctOptionIds']) || object['correctOptionIds'].length === 0
-            || !Array.isArray(object['accepted']) || object['accepted'].length !== object['correctOptionIds'].length
-            || object['accepted'].some(text => typeof text !== 'string' || !text.trim())
-            || (object['selectionMode'] === 'SINGLE' && object['correctOptionIds'].length !== 1)) {
-            throw new AuthoringProtocolError('Invalid choice answer contract.');
-        }
-        const correctOptionIds = object['correctOptionIds'].map(requireEntity);
-        if (new Set(correctOptionIds).size !== correctOptionIds.length) {
-            throw new AuthoringProtocolError('Duplicate correct choice.');
-        }
-        return { schemaVersion: 3, selectionMode: object['selectionMode'], correctOptionIds,
-            accepted: object['accepted'] as string[] };
+/** Content parsers throw their own error type; callers of this service only see protocol errors. */
+function contract<T>(parse: () => T): T {
+    try {
+        return parse();
+    } catch (error) {
+        if (error instanceof ExerciseContentError) throw new AuthoringProtocolError(error.message);
+        throw error;
     }
-    if (value !== null && typeof value === 'object' && !Array.isArray(value)
-        && (value as Record<string, unknown>)['schemaVersion'] === 2) {
-        const object = requireObject(value, ['schemaVersion', 'pairs']);
-        if (!Array.isArray(object['pairs']) || object['pairs'].length < 2 || object['pairs'].length > 6) {
-            throw new AuthoringProtocolError('Invalid match answer contract.');
-        }
-        const pairs = object['pairs'].map(pair => {
-            const entry = requireObject(pair, ['cueId', 'optionId']);
-            return { cueId: requireEntity(entry['cueId']), optionId: requireEntity(entry['optionId']) };
-        });
-        if (new Set(pairs.map(pair => pair.cueId)).size !== pairs.length
-            || new Set(pairs.map(pair => pair.optionId)).size !== pairs.length) {
-            throw new AuthoringProtocolError('Duplicate match pair.');
-        }
-        return { schemaVersion: 2, pairs };
-    }
-    const raw = value as Record<string, unknown> | null;
-    const object = requireObject(value, ['schemaVersion', 'normalization', 'accepted',
-        ...(raw !== null && typeof raw === 'object' && 'matchingMode' in raw ? ['matchingMode'] : [])]);
-    if (object['schemaVersion'] !== 1 || !Array.isArray(object['normalization'])
-        || !Array.isArray(object['accepted']) || object['accepted'].length === 0 || object['accepted'].length > 20) {
-        throw new AuthoringProtocolError('Invalid answer contract.');
-    }
-    const allowed = new Set(['UNICODE_NFC', 'TRIM', 'CASE_FOLD']);
-    if (object['normalization'].some(rule => typeof rule !== 'string' || !allowed.has(rule))
-        || object['accepted'].some(answer => typeof answer !== 'string' || answer.trim().length === 0)
-        || (object['matchingMode'] !== undefined && object['matchingMode'] !== 'STRICT' && object['matchingMode'] !== 'SOFT')) {
-        throw new AuthoringProtocolError('Invalid answer contract values.');
-    }
-    return { schemaVersion: 1, normalization: object['normalization'] as ('UNICODE_NFC' | 'TRIM' | 'CASE_FOLD')[],
-        accepted: object['accepted'] as string[], ...(object['matchingMode'] === undefined ? {} : { matchingMode: object['matchingMode'] as 'STRICT' | 'SOFT' }) };
-}
-
-function parseBlank(value: unknown): ClozeBlank | undefined {
-    if (value === undefined) return undefined;
-    const raw = value as Record<string, unknown> | null;
-    const object = requireObject(value, ['mode', ...(raw !== null && typeof raw === 'object' && 'length' in raw ? ['length'] : [])]);
-    if (object['mode'] === 'ANSWER_LENGTH' && object['length'] === undefined) return { mode: 'ANSWER_LENGTH' };
-    if (object['mode'] === 'FIXED' && Number.isInteger(object['length'])
-        && (object['length'] as number) >= 5 && (object['length'] as number) <= 20) {
-        return { mode: 'FIXED', length: object['length'] as number };
-    }
-    throw new AuthoringProtocolError('Invalid cloze blank.');
-}
-
-function parsePrompt(value: unknown): ExercisePrompt {
-    if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new AuthoringProtocolError('Invalid prompt.');
-    const kind = (value as Record<string, unknown>)['kind'];
-    if (kind === 'CUSTOM_TEXT') {
-        const raw = value as Record<string, unknown>;
-        const object = requireObject(value, ['kind', 'text', ...('blank' in raw ? ['blank'] : [])]);
-        if (typeof object['text'] !== 'string') throw new AuthoringProtocolError('Invalid custom prompt.');
-        return { kind, text: object['text'], ...(object['blank'] === undefined ? {} : { blank: parseBlank(object['blank']) }) };
-    }
-    if (kind === 'AUDIO_ASSET') {
-        const object = requireObject(value, ['kind', 'assetId', 'title', 'instruction', 'transcript']);
-        if (typeof object['title'] !== 'string' || typeof object['instruction'] !== 'string'
-            || typeof object['transcript'] !== 'string') throw new AuthoringProtocolError('Invalid audio cue.');
-        return { kind, assetId: requireEntity(object['assetId']), title: object['title'],
-            instruction: object['instruction'], transcript: object['transcript'] };
-    }
-    if (kind === 'AUDIO_MATCH') {
-        const object = requireObject(value, ['kind', 'instruction', 'cues']);
-        if (typeof object['instruction'] !== 'string' || !Array.isArray(object['cues'])
-            || object['cues'].length < 2 || object['cues'].length > 6) {
-            throw new AuthoringProtocolError('Invalid audio match prompt.');
-        }
-        const cues = object['cues'].map(cue => {
-            const entry = requireObject(cue, ['cueId', 'assetId', 'title', 'transcript']);
-            if (typeof entry['title'] !== 'string' || typeof entry['transcript'] !== 'string') {
-                throw new AuthoringProtocolError('Invalid audio match cue.');
-            }
-            return { cueId: requireEntity(entry['cueId']), assetId: requireEntity(entry['assetId']),
-                title: entry['title'], transcript: entry['transcript'] };
-        });
-        return { kind, instruction: object['instruction'], cues };
-    }
-    const raw = value as Record<string, unknown>;
-    const object = requireObject(value, ['kind', 'memberKey', 'itemRevisionId', 'nodeId', ...('blank' in raw ? ['blank'] : [])]);
-    if (object['kind'] !== 'NODE_TEXT') throw new AuthoringProtocolError('Unsupported prompt.');
-    return { kind: 'NODE_TEXT', memberKey: requireEntity(object['memberKey']),
-        itemRevisionId: requireEntity(object['itemRevisionId']), nodeId: requireEntity(object['nodeId']),
-        ...(object['blank'] === undefined ? {} : { blank: parseBlank(object['blank']) }) };
-}
-
-function parseBinding(value: unknown): ExerciseBinding {
-    const object = requireObject(value, ['bindingId', 'role', 'memberKey', 'itemRevisionId', 'ordinal', 'nodeIds', 'display']);
-    if (!Array.isArray(object['nodeIds']) || object['nodeIds'].length > 16) throw new AuthoringProtocolError('Invalid binding nodes.');
-    const displayValue = object['display'];
-    const kind = displayValue !== null && typeof displayValue === 'object' && !Array.isArray(displayValue)
-        ? (displayValue as Record<string, unknown>)['kind'] : null;
-    const display = kind === 'CUSTOM_TEXT' ? requireObject(displayValue, ['kind', 'text'])
-        : requireObject(displayValue, ['kind']);
-    const role = bindingRole(object['role']);
-    if (kind !== 'NODE_TEXT' && kind !== 'CUSTOM_TEXT') throw new AuthoringProtocolError('Invalid display projection.');
-    if (kind === 'CUSTOM_TEXT' && (typeof display['text'] !== 'string' || display['text'].trim().length === 0
-        || object['nodeIds'].length !== 0 || role !== 'ASSESSED')) throw new AuthoringProtocolError('Invalid custom answer.');
-    if (kind === 'NODE_TEXT' && role === 'ASSESSED' && object['nodeIds'].length === 0) {
-        throw new AuthoringProtocolError('Missing answer fragment.');
-    }
-    return {
-        bindingId: requireEntity(object['bindingId']), role,
-        memberKey: requireEntity(object['memberKey']), itemRevisionId: requireEntity(object['itemRevisionId']),
-        ordinal: requireCount(object['ordinal'], 2_147_483_647), nodeIds: object['nodeIds'].map(requireEntity),
-        display: kind === 'CUSTOM_TEXT' ? { kind, text: display['text'] as string } : { kind }
-    };
 }
 
 function parseWrite(response: HttpResponse<unknown>, status: number, commandId: string, deckId: string): ExerciseWriteResult {
@@ -322,19 +207,11 @@ function parseWrite(response: HttpResponse<unknown>, status: number, commandId: 
     return { acknowledgement, replayed };
 }
 
-function exerciseType(value: unknown): ExerciseType {
-    if (value !== 'SELF_CHECK' && value !== 'TYPED' && value !== 'CLOZE_SINGLE' && value !== 'SINGLE_CHOICE'
-        && value !== 'LISTEN_CHOICE' && value !== 'AUDIO_TEXT_MATCH' && value !== 'LISTEN_TYPE') {
+function exerciseType(value: unknown): Mechanic {
+    if (typeof value !== 'string' || !(MECHANICS as readonly string[]).includes(value)) {
         throw new AuthoringProtocolError('Invalid exercise type.');
     }
-    return value;
-}
-
-function bindingRole(value: unknown): BindingRole {
-    if (value !== 'ASSESSED' && value !== 'CUE' && value !== 'OPTION' && value !== 'CONTEXT') {
-        throw new AuthoringProtocolError('Invalid binding role.');
-    }
-    return value;
+    return value as Mechanic;
 }
 
 function boolean(value: unknown): boolean {

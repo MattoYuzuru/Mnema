@@ -1,8 +1,10 @@
 package app.mnema.learning.catalog.exercise;
 
 import app.mnema.learning.platform.api.ApiExceptionHandler;
+import app.mnema.learning.platform.api.CapabilityUnavailableException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.concurrency.VersionConflictException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.AfterEach;
@@ -18,6 +20,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.UUID;
 
+import static app.mnema.learning.support.ContractFixtures.fixture;
+import static app.mnema.learning.support.ContractFixtures.mechanic;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -65,12 +69,12 @@ class ExerciseControllerTest {
         when(service.publish(eq(actor), eq(deck), eq(null), eq(1L), any()))
                 .thenReturn(new ExerciseService.WriteResult(acknowledgement, false));
         mvc.perform(post("/api/decks/" + deck + "/exercises").contextPath("/api").header("If-Match", "\"1\"")
-                        .contentType(MediaType.APPLICATION_JSON).content(ExerciseCommandTest.valid("TYPED").toString()))
+                        .contentType(MediaType.APPLICATION_JSON).content(mechanic("createCloze").toString()))
                 .andExpect(status().isCreated()).andExpect(header().string("ETag", "\"2\""))
                 .andExpect(header().string("Location", "/api/decks/" + deck + "/exercises/" + exercise))
                 .andExpect(header().string("Cache-Control", "private, no-store"));
 
-        ObjectNode update = ExerciseCommandTest.valid("TYPED")
+        ObjectNode update = mechanic("createCloze")
                 .put("expectedExerciseRevisionId", exerciseRevision.toString());
         when(service.publish(eq(actor), eq(deck), eq(exercise), eq(2L), any()))
                 .thenReturn(new ExerciseService.WriteResult(acknowledgement, true));
@@ -94,7 +98,7 @@ class ExerciseControllerTest {
     @Test
     void malformedIdsParametersAndMissingPreconditionsFailBeforeService() throws Exception {
         mvc.perform(post("/decks/" + deck + "/exercises").contentType(MediaType.APPLICATION_JSON)
-                        .content(ExerciseCommandTest.valid("TYPED").toString()))
+                        .content(mechanic("createCloze").toString()))
                 .andExpect(status().isPreconditionRequired()).andExpect(jsonPath("$.code").value("PRECONDITION_REQUIRED"));
         mvc.perform(get("/decks/bad/exercises")).andExpect(status().isBadRequest());
         mvc.perform(get("/decks/" + deck + "/exercises").param("memberKey", "bad"))
@@ -125,5 +129,23 @@ class ExerciseControllerTest {
                         .header("If-Match", "\"2\""))
                 .andExpect(status().isPreconditionFailed())
                 .andExpect(jsonPath("$.code").value("VERSION_CONFLICT"));
+    }
+
+    @Test
+    void unavailableCapabilityIsAConflictWithTheContractProblemAndNoStatefulHeaders() throws Exception {
+        when(service.publish(eq(actor), eq(deck), eq(null), eq(1L), any())).thenThrow(new CapabilityUnavailableException());
+        JsonNode expected = fixture("mechanics.json").path("capabilityUnavailableProblem");
+        String body = mvc.perform(post("/api/decks/" + deck + "/exercises").contextPath("/api").header("If-Match", "\"1\"")
+                        .contentType(MediaType.APPLICATION_JSON).content(mechanic("rejectedAiAssessment").toString()))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CAPABILITY_UNAVAILABLE"))
+                .andExpect(header().string("Cache-Control", "private, no-store"))
+                .andExpect(header().doesNotExist("ETag"))
+                .andReturn().getResponse().getContentAsString();
+        JsonNode problem = JSON.readTree(body);
+        for (String field : new String[] {"type", "title", "status", "detail", "code"}) {
+            org.assertj.core.api.Assertions.assertThat(problem.path(field)).isEqualTo(expected.path(field));
+        }
+        org.assertj.core.api.Assertions.assertThat(problem.path("instance").textValue())
+                .isEqualTo("/api/decks/" + deck + "/exercises");
     }
 }

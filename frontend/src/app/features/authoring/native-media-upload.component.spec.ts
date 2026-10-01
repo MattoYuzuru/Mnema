@@ -1,4 +1,4 @@
-import { TestBed, fakeAsync, flushMicrotasks } from '@angular/core/testing';
+import { TestBed, fakeAsync, flushMicrotasks, tick } from '@angular/core/testing';
 
 import { createEmptyNativeDocument } from '../../content/editing/native-editor-adapter';
 import { NativeMediaUploadApi, UploadView } from './native-media-upload.api';
@@ -160,4 +160,190 @@ describe('NativeMediaUploadComponent', () => {
         expect(api.intent).not.toHaveBeenCalled();
         fixture.destroy();
     }));
+
+    describe('audio recorder', () => {
+        class FakeRecorder {
+            static instances: FakeRecorder[] = [];
+            static payload = new Blob(['audio-bytes']);
+            static isTypeSupported = (): boolean => true;
+            state: 'inactive' | 'recording' = 'inactive';
+            mimeType: string;
+            ondataavailable: ((event: { data: Blob }) => void) | null = null;
+            onstop: (() => void) | null = null;
+            onerror: (() => void) | null = null;
+            constructor(readonly stream: unknown, options: { mimeType: string }) { this.mimeType = options.mimeType; FakeRecorder.instances.push(this); }
+            start(): void { this.state = 'recording'; }
+            stop(): void {
+                this.state = 'inactive';
+                this.ondataavailable?.({ data: FakeRecorder.payload });
+                this.onstop?.();
+            }
+        }
+        const globals = window as unknown as { MediaRecorder: unknown };
+        let original: unknown;
+        let tracks: { stop: jasmine.Spy; onended: (() => void) | null }[];
+        let stream: MediaStream;
+
+        beforeEach(() => {
+            original = globals.MediaRecorder;
+            globals.MediaRecorder = FakeRecorder;
+            FakeRecorder.instances = [];
+            FakeRecorder.payload = new Blob(['audio-bytes']);
+            tracks = [{ stop: jasmine.createSpy('stop'), onended: null }];
+            stream = { getTracks: () => tracks, getAudioTracks: () => tracks } as unknown as MediaStream;
+        });
+        afterEach(() => { globals.MediaRecorder = original; });
+
+        it('never touches the microphone until the explicit record click', () => {
+            const getUserMedia = spyOn(navigator.mediaDevices, 'getUserMedia').and.resolveTo(stream);
+            const { fixture } = setup();
+            fixture.detectChanges();
+            expect(getUserMedia).not.toHaveBeenCalled();
+            expect(fixture.nativeElement.textContent).toContain('Записать аудио');
+            fixture.destroy();
+        });
+
+        it('explains a denied permission, a missing device and an unsupported browser without losing the page state', fakeAsync(() => {
+            const { fixture, component } = setup();
+            const getUserMedia = spyOn(navigator.mediaDevices, 'getUserMedia');
+            getUserMedia.and.rejectWith(new DOMException('no', 'NotAllowedError'));
+            void component.startRecording(); flushMicrotasks();
+            expect(component.message()).toContain('Доступ к микрофону запрещён');
+            expect(component.requesting()).toBeFalse();
+            expect(component.recording()).toBeFalse();
+            expect(FakeRecorder.instances.length).toBe(0);
+
+            getUserMedia.and.rejectWith(new DOMException('none', 'NotFoundError'));
+            void component.startRecording(); flushMicrotasks();
+            expect(component.message()).toContain('Микрофон не найден');
+            getUserMedia.and.rejectWith(new DOMException('busy', 'NotReadableError'));
+            void component.startRecording(); flushMicrotasks();
+            expect(component.message()).toContain('занят другим приложением');
+            getUserMedia.and.rejectWith(new Error('other'));
+            void component.startRecording(); flushMicrotasks();
+            expect(component.message()).toContain('Микрофон недоступен');
+
+            FakeRecorder.isTypeSupported = () => false;
+            void component.startRecording(); flushMicrotasks();
+            expect(component.message()).toContain('не поддерживает подходящий формат');
+            FakeRecorder.isTypeSupported = () => true;
+            fixture.destroy();
+        }));
+
+        it('records, previews, uploads as a recording and releases every resource', fakeAsync(() => {
+            const { fixture, component, api } = setup();
+            const revoke = spyOn(URL, 'revokeObjectURL').and.callThrough();
+            spyOn(navigator.mediaDevices, 'getUserMedia').and.resolveTo(stream);
+            void component.startRecording(); flushMicrotasks();
+            expect(component.recording()).toBeTrue();
+            fixture.detectChanges();
+            expect(fixture.nativeElement.textContent).toContain('Идёт запись');
+            expect(fixture.nativeElement.textContent).toContain('Отменить запись');
+
+            component.stopRecording(); flushMicrotasks();
+            expect(component.recording()).toBeFalse();
+            expect(tracks[0].stop).toHaveBeenCalled();
+            const preview = component.recordPreview();
+            expect(preview).toMatch(/^blob:/);
+
+            component.useRecording(); flushMicrotasks();
+            expect(api.intent).toHaveBeenCalledOnceWith(jasmine.any(String), 'recording', 'audio', 'audio/webm;codecs=opus', 'audio-bytes'.length);
+            expect(component.recordPreview()).toBeNull();
+            expect(revoke).toHaveBeenCalledWith(preview!);
+            fixture.destroy();
+        }));
+
+        it('refuses an empty recording instead of uploading it', fakeAsync(() => {
+            const { fixture, component, api } = setup();
+            FakeRecorder.payload = new Blob([]);
+            spyOn(navigator.mediaDevices, 'getUserMedia').and.resolveTo(stream);
+            void component.startRecording(); flushMicrotasks();
+            component.stopRecording(); flushMicrotasks();
+            expect(component.message()).toContain('пустой');
+            expect(component.recordPreview()).toBeNull();
+            expect(component.entries().length).toBe(0);
+            expect(api.intent).not.toHaveBeenCalled();
+            expect(tracks[0].stop).toHaveBeenCalled();
+            fixture.destroy();
+        }));
+
+        it('cancels a running recording without a preview and stops the device', fakeAsync(() => {
+            const { fixture, component } = setup();
+            spyOn(navigator.mediaDevices, 'getUserMedia').and.resolveTo(stream);
+            void component.startRecording(); flushMicrotasks();
+            component.cancelRecording(); flushMicrotasks();
+            expect(component.recording()).toBeFalse();
+            expect(component.recordPreview()).toBeNull();
+            expect(tracks[0].stop).toHaveBeenCalled();
+            expect(FakeRecorder.instances[0].state).toBe('inactive');
+            expect(component.message()).toBeNull();
+            fixture.destroy();
+        }));
+
+        it('releases a microphone granted after the permission prompt was cancelled', fakeAsync(() => {
+            const { fixture, component } = setup();
+            let grant: (value: MediaStream) => void = () => undefined;
+            spyOn(navigator.mediaDevices, 'getUserMedia').and.returnValue(new Promise(resolve => { grant = resolve; }));
+            void component.startRecording();
+            expect(component.requesting()).toBeTrue();
+            fixture.detectChanges();
+            expect(fixture.nativeElement.textContent).toContain('Ждём разрешения микрофона');
+            component.cancelRecording();
+            expect(component.requesting()).toBeFalse();
+            grant(stream); flushMicrotasks();
+            expect(tracks[0].stop).toHaveBeenCalled();
+            expect(FakeRecorder.instances.length).toBe(0);
+            expect(component.recording()).toBeFalse();
+            fixture.destroy();
+        }));
+
+        it('stops the device when the component is destroyed while recording', fakeAsync(() => {
+            const { fixture, component } = setup();
+            spyOn(navigator.mediaDevices, 'getUserMedia').and.resolveTo(stream);
+            void component.startRecording(); flushMicrotasks();
+            fixture.destroy();
+            expect(tracks[0].stop).toHaveBeenCalled();
+            expect(FakeRecorder.instances[0].state).toBe('inactive');
+        }));
+
+        it('frees the preview URL when the component is destroyed', fakeAsync(() => {
+            const { fixture, component } = setup();
+            const revoke = spyOn(URL, 'revokeObjectURL').and.callThrough();
+            spyOn(URL, 'createObjectURL').and.returnValue('blob:kept');
+            spyOn(navigator.mediaDevices, 'getUserMedia').and.resolveTo(stream);
+            void component.startRecording(); flushMicrotasks();
+            component.stopRecording(); flushMicrotasks();
+            expect(component.recordPreview()).toBe('blob:kept');
+            fixture.destroy();
+            expect(revoke).toHaveBeenCalledWith('blob:kept');
+        }));
+
+        it('stops by itself at the duration limit and when the device disappears', fakeAsync(() => {
+            const { fixture, component } = setup();
+            spyOn(navigator.mediaDevices, 'getUserMedia').and.resolveTo(stream);
+            void component.startRecording(); flushMicrotasks();
+            tick(10 * 60_000);
+            expect(component.recording()).toBeFalse();
+            expect(component.message()).toContain('предел записи');
+            expect(component.recordPreview()).not.toBeNull();
+
+            component.discardRecording();
+            void component.startRecording(); flushMicrotasks();
+            tracks[0].onended?.(); flushMicrotasks();
+            expect(component.recording()).toBeFalse();
+            expect(component.recordPreview()).not.toBeNull();
+            fixture.destroy();
+        }));
+
+        it('reports a recorder failure and keeps the queue untouched', fakeAsync(() => {
+            const { fixture, component } = setup();
+            spyOn(navigator.mediaDevices, 'getUserMedia').and.resolveTo(stream);
+            void component.startRecording(); flushMicrotasks();
+            FakeRecorder.instances[0].onerror?.();
+            expect(component.message()).toContain('Запись прервалась');
+            expect(component.recording()).toBeFalse();
+            expect(tracks[0].stop).toHaveBeenCalled();
+            fixture.destroy();
+        }));
+    });
 });

@@ -6,32 +6,46 @@ import app.mnema.learning.catalog.exercise.ExerciseCommand;
 import app.mnema.learning.catalog.exercise.ExerciseService;
 import app.mnema.learning.catalog.item.ItemPublicationCommand;
 import app.mnema.learning.catalog.item.ItemService;
-import app.mnema.learning.study.attempt.AttemptCommand;
-import app.mnema.learning.study.attempt.AttemptService;
+import app.mnema.learning.media.MediaCatalog;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
+import app.mnema.learning.study.attempt.AttemptService;
 import app.mnema.learning.support.PostgresIntegrationTest;
+import app.mnema.learning.support.StudyFixtures;
+import app.mnema.learning.support.StudyFixtures.Material;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
-import java.io.ByteArrayInputStream;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import static app.mnema.learning.support.ContractFixtures.bytes;
+import static app.mnema.learning.support.StudyFixtures.JSON;
+import static app.mnema.learning.support.StudyFixtures.attempt;
+import static app.mnema.learning.support.StudyFixtures.audio;
+import static app.mnema.learning.support.StudyFixtures.blank;
+import static app.mnema.learning.support.StudyFixtures.blankKey;
+import static app.mnema.learning.support.StudyFixtures.blocks;
+import static app.mnema.learning.support.StudyFixtures.image;
+import static app.mnema.learning.support.StudyFixtures.item;
+import static app.mnema.learning.support.StudyFixtures.option;
+import static app.mnema.learning.support.StudyFixtures.quote;
+import static app.mnema.learning.support.StudyFixtures.text;
+import static app.mnema.learning.support.StudyFixtures.textResponse;
+import static app.mnema.learning.support.StudyFixtures.video;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 class StudySessionServiceIntegrationTest extends PostgresIntegrationTest {
-    private static final JsonMapper JSON = JsonMapper.builder().build();
     @Autowired private StudySessionService service;
     @Autowired private DeckService decks;
     @Autowired private ItemService items;
@@ -39,33 +53,32 @@ class StudySessionServiceIntegrationTest extends PostgresIntegrationTest {
     @Autowired private StudySessionRepository sessions;
     @Autowired private JdbcClient jdbc;
     @Autowired private AttemptService attempts;
+    @Autowired private MediaCatalog media;
+    private StudyFixtures fixtures;
+
+    @BeforeEach
+    void fixtures() { fixtures = new StudyFixtures(decks, items, exercises, service, media, jdbc); }
 
     @Test
     void materialDeletionExcludesNewIssuanceButKeepsOtherMaterialsAndIssuedSnapshots() {
-        Fixture removed = materialWithExercise();
-        Fixture retained = addMaterialWithExercise(removed.actor(), removed.deck());
-        ObjectNode dependent = exerciseBody(retained, "create", null, null, null);
-        dependent.withObject("exercise").put("type", "SINGLE_CHOICE").set("evaluatorPolicy",
-                JSON.createObjectNode().put("id", "deterministic-choice").put("version", "1"));
-        var bindings = dependent.withObject("exercise").withArray("bindings");
-        ObjectNode correct = bindings.get(0).deepCopy();
-        correct.put("bindingId", UUID.randomUUID().toString()).put("role", "OPTION").put("ordinal", 1);
-        bindings.add(correct);
-        ObjectNode distractor = correct.deepCopy();
-        distractor.put("bindingId", UUID.randomUUID().toString()).put("ordinal", 2)
-                .put("memberKey", removed.member().toString()).put("itemRevisionId", removed.itemRevision().toString());
-        distractor.withArray("nodeIds").set(0, JSON.getNodeFactory().textNode(removed.node().toString()));
-        bindings.add(distractor);
-        exercises.publish(removed.actor(), removed.deck(), null,
-                Long.parseLong(decks.read(removed.actor(), removed.deck()).path("rowVersion").asText()),
-                ExerciseCommand.readCreate(bytes(dependent)));
-        var started = service.start(removed.actor(), removed.deck(), "UTC", scheduled(UUID.randomUUID(), 20));
+        Material removed = fixtures.material();
+        JsonNode removedExercise = fixtures.publish(removed, fixtures.freeResponse(removed,
+                blocks(text("Removed question")), blocks(), "memory"));
+        Material retained = fixtures.addMaterial(removed.actor(), removed.deck(), "kept", "other");
+        JsonNode retainedExercise = fixtures.publish(retained, fixtures.freeResponse(retained,
+                blocks(text("Retained question")), blocks(), "kept"));
+        // an exercise about the retained material that quotes the removed one as context
+        UUID correct = UUID.randomUUID();
+        fixtures.publish(retained, fixtures.choice(retained, false, blocks(text("Pick")), StudyFixtures.blocks()
+                .add(option(correct, text("Right"))).add(option(UUID.randomUUID(), quote(removed, removed.node()))), correct));
+
+        var started = service.start(removed.actor(), removed.deck(), "UTC", fixtures.scheduled());
         UUID oldSession = UUID.fromString(started.body().path("sessionId").asText());
         JsonNode old = service.read(removed.actor(), removed.deck(), oldSession);
         assertThat(old.path("presentations")).hasSize(3);
         JsonNode issued = null;
         for (JsonNode presentation : old.path("presentations")) {
-            if (presentation.path("exerciseRevisionId").asText().equals(removed.exerciseRevision().toString())) {
+            if (presentation.path("exerciseRevisionId").asText().equals(removedExercise.path("exerciseRevisionId").asText())) {
                 issued = presentation;
             }
         }
@@ -80,46 +93,50 @@ class StudySessionServiceIntegrationTest extends PostgresIntegrationTest {
                 ItemPublicationCommand.readBulk(bytes(delete)));
         assertThat(service.presentations(removed.actor(), removed.deck(), oldSession).path("presentations"))
                 .isEqualTo(old.path("presentations"));
-        for (StudySessionCommand command : new StudySessionCommand[]{scheduled(UUID.randomUUID(), 20), practice(UUID.randomUUID(), true)}) {
+        for (StudySessionCommand command : new StudySessionCommand[] {fixtures.scheduled(), fixtures.start("PRACTICE", null)}) {
             var fresh = service.start(removed.actor(), removed.deck(), "UTC", command);
             UUID freshId = UUID.fromString(fresh.body().path("sessionId").asText());
             JsonNode presentations = service.read(removed.actor(), removed.deck(), freshId).path("presentations");
+            // neither the removed material nor the exercise quoting it as context is issued any more
             assertThat(presentations).hasSize(1);
-            assertThat(presentations.get(0).path("exerciseRevisionId").asText()).isEqualTo(retained.exerciseRevision().toString());
+            assertThat(presentations.get(0).path("exerciseRevisionId").asText())
+                    .isEqualTo(retainedExercise.path("exerciseRevisionId").asText());
         }
-        ObjectNode answer = JSON.createObjectNode().put("attemptId", UUID.randomUUID().toString())
-                .put("presentationId", issued.path("presentationId").asText()).put("nonce", issued.path("nonce").asText())
-                .putNull("confidence").put("durationMs", 100);
-        answer.putArray("hintsUsed"); answer.putObject("response").put("kind", "TEXT").put("text", "memory");
-        assertThat(attempts.submit(removed.actor(), removed.deck(), oldSession, AttemptCommand.read(bytes(answer)))
+        assertThat(attempts.submit(removed.actor(), removed.deck(), oldSession,
+                attempt(new StudyFixtures.Issued(oldSession, issued), textResponse("memory")))
                 .outcome().path("feedback").path("result").asText()).isEqualTo("CORRECT");
         assertThat(items.read(removed.actor(), removed.deck(), removed.member(), removed.itemRevision()).path("document").isObject())
                 .isTrue();
-        assertThat(exercises.read(removed.actor(), removed.deck(), removed.exercise(), null).path("exerciseId").asText())
-                .isEqualTo(removed.exercise().toString());
+        assertThat(exercises.read(removed.actor(), removed.deck(),
+                UUID.fromString(removedExercise.path("exerciseId").textValue()), null).path("type").textValue())
+                .isEqualTo("FREE_RESPONSE");
         jdbc.sql("UPDATE app_learning.study_session SET status='COMPLETE',completed_at=statement_timestamp() "
                 + "WHERE session_id=:session").param("session", oldSession).update();
-        var replayed = service.start(removed.actor(), removed.deck(), "UTC", replay(UUID.randomUUID(), oldSession));
+        var replayed = service.start(removed.actor(), removed.deck(), "UTC", fixtures.start("REPLAY", oldSession));
         JsonNode replayPresentations = replayed.body().path("presentations");
         assertThat(replayPresentations).hasSize(3);
         Set<String> revisions = new HashSet<>();
         replayPresentations.forEach(presentation -> revisions.add(presentation.path("exerciseRevisionId").asText()));
-        assertThat(revisions).contains(removed.exerciseRevision().toString(), retained.exerciseRevision().toString());
+        assertThat(revisions).contains(removedExercise.path("exerciseRevisionId").asText(),
+                retainedExercise.path("exerciseRevisionId").asText());
+        // the quoted removed material was resolved when the choice was issued and stays in the snapshot
+        assertThat(replayed.body().toString()).contains("memory");
     }
 
     @Test
     void scheduledPreparationPinsPresentationAndExactRetryResumesIt() {
-        Fixture fixture = materialWithExercise();
-        StudySessionCommand command = scheduled(UUID.randomUUID(), 20);
+        Material material = fixtures.material();
+        JsonNode published = fixtures.publish(material, fixtures.freeResponse(material,
+                blocks(quote(material, material.node()), text("Type it")), blocks(), "memory"));
+        StudySessionCommand command = fixtures.scheduled();
 
-        StudySessionService.StartResult started = service.start(fixture.actor(), fixture.deck(),
-                "Europe/Moscow", command);
+        StudySessionService.StartResult started = service.start(material.actor(), material.deck(), "Europe/Moscow", command);
         assertThat(started.preparing()).isTrue();
         assertThat(started.body().path("status").textValue()).isEqualTo("PREPARING");
-        assertThat(service.start(fixture.actor(), fixture.deck(), "Pacific/Honolulu", command).replayed()).isTrue();
+        assertThat(service.start(material.actor(), material.deck(), "Pacific/Honolulu", command).replayed()).isTrue();
 
         UUID session = UUID.fromString(started.body().path("sessionId").textValue());
-        JsonNode active = service.read(fixture.actor(), fixture.deck(), session);
+        JsonNode active = service.read(material.actor(), material.deck(), session);
         JsonNode presentation = active.path("presentations").get(0);
         assertThat(active.path("status").textValue()).isEqualTo("ACTIVE");
         assertThat(active.path("timezone").textValue()).isEqualTo("Europe/Moscow");
@@ -127,13 +144,25 @@ class StudySessionServiceIntegrationTest extends PostgresIntegrationTest {
         assertThat(active.path("budget").path("maxNewObjectives").intValue()).isEqualTo(20);
         assertThat(active.path("issuedCount").intValue()).isOne();
         assertThat(active.path("presentations")).hasSize(1);
-        assertThat(presentation.path("type").textValue()).isEqualTo("TYPED");
-        assertThat(presentation.path("prompt").path("text").textValue()).isEqualTo("memory");
+        assertThat(presentation.path("type").textValue()).isEqualTo("FREE_RESPONSE");
+        // MATERIAL is resolved to plain TEXT from the pinned revision at issue time
+        assertThat(presentation.path("content").path("prompt").get(0).toString())
+                .isEqualTo("{\"kind\":\"TEXT\",\"text\":\"memory\"}");
+        assertThat(presentation.path("content").path("responseInput").textValue()).isEqualTo("TEXT");
+        assertThat(presentation.path("evaluator").toString()).isEqualTo("{\"id\":\"deterministic-text\",\"version\":\"1\"}");
 
-        reviseExercise(fixture);
-        JsonNode resumed = service.presentations(fixture.actor(), fixture.deck(), session);
+        // editing the exercise afterwards never changes an issued presentation
+        ObjectNode revise = fixtures.createBody(material, fixtures.freeResponse(material,
+                blocks(text("Changed")), blocks(), "other"), "x");
+        revise.set("objective", JSON.createObjectNode().put("operation", "reuse")
+                .put("objectiveId", published.path("objectiveId").textValue())
+                .put("objectiveRevisionId", published.path("objectiveRevisionId").textValue()));
+        revise.put("expectedExerciseRevisionId", published.path("exerciseRevisionId").textValue());
+        exercises.publish(material.actor(), material.deck(), UUID.fromString(published.path("exerciseId").textValue()),
+                fixtures.deckVersion(material), ExerciseCommand.readUpdate(bytes(revise)));
+        JsonNode resumed = service.presentations(material.actor(), material.deck(), session);
         assertThat(resumed.path("presentations").get(0)).isEqualTo(presentation);
-        assertThatThrownBy(() -> jdbc.sql("UPDATE app_learning.study_presentation SET prompt=prompt "
+        assertThatThrownBy(() -> jdbc.sql("UPDATE app_learning.study_presentation SET content=content "
                         + "WHERE session_id=:session").param("session", session).update())
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
@@ -141,68 +170,70 @@ class StudySessionServiceIntegrationTest extends PostgresIntegrationTest {
     @Test
     void emptyPracticeIsolationExpiryAndCompletedSameDayReplayAreEnforced() {
         UUID emptyActor = UUID.randomUUID();
-        UUID emptyDeck = createDeck(emptyActor);
-        StudySessionService.StartResult empty = service.start(emptyActor, emptyDeck, "not/a-zone",
-                scheduled(UUID.randomUUID(), 20));
+        UUID emptyDeck = UUID.fromString(decks.create(emptyActor, new DeckCommand(UUID.randomUUID(), "Deck", "Description"))
+                .acknowledgement().path("deck").path("deckId").textValue());
+        StudySessionService.StartResult empty = service.start(emptyActor, emptyDeck, "not/a-zone", fixtures.scheduled());
         assertThat(empty.preparing()).isFalse();
         assertThat(empty.body().path("status").textValue()).isEqualTo("EMPTY");
         assertThat(empty.body().path("timezone").textValue()).isEqualTo("UTC");
 
-        Fixture fixture = materialWithExercise();
-        StudySessionService.StartResult practiceStart = service.start(fixture.actor(), fixture.deck(), "UTC",
-                practice(UUID.randomUUID(), false));
+        Material material = fixtures.material();
+        fixtures.publish(material, fixtures.freeResponse(material, blocks(text("Q")), blocks(), "a"));
+        StudySessionService.StartResult practiceStart = service.start(material.actor(), material.deck(), "UTC",
+                practice(false));
         UUID practiceSession = UUID.fromString(practiceStart.body().path("sessionId").textValue());
-        assertThat(service.read(fixture.actor(), fixture.deck(), practiceSession).path("status").textValue())
+        assertThat(service.read(material.actor(), material.deck(), practiceSession).path("status").textValue())
                 .isEqualTo("EMPTY");
 
-        StudySessionService.StartResult scheduledStart = service.start(fixture.actor(), fixture.deck(), "UTC",
-                scheduled(UUID.randomUUID(), 20));
+        StudySessionService.StartResult scheduledStart = service.start(material.actor(), material.deck(), "UTC",
+                fixtures.scheduled());
         UUID source = UUID.fromString(scheduledStart.body().path("sessionId").textValue());
-        JsonNode sourceActive = service.read(fixture.actor(), fixture.deck(), source);
-        StudySessionService.StartResult introducedPractice = service.start(fixture.actor(), fixture.deck(), "UTC",
-                practice(UUID.randomUUID(), false));
-        assertThat(service.read(fixture.actor(), fixture.deck(),
+        JsonNode sourceActive = service.read(material.actor(), material.deck(), source);
+        StudySessionService.StartResult introducedPractice = service.start(material.actor(), material.deck(), "UTC",
+                practice(false));
+        assertThat(service.read(material.actor(), material.deck(),
                 UUID.fromString(introducedPractice.body().path("sessionId").textValue())).path("status").textValue())
                 .isEqualTo("ACTIVE");
-        assertThatThrownBy(() -> service.read(UUID.randomUUID(), fixture.deck(), source))
+        assertThatThrownBy(() -> service.read(UUID.randomUUID(), material.deck(), source))
                 .isInstanceOf(ResourceNotFoundException.class);
 
         jdbc.sql("UPDATE app_learning.study_session SET status='COMPLETE',completed_at=statement_timestamp() "
                         + "WHERE account_id=:actor AND session_id=:session")
-                .param("actor", fixture.actor()).param("session", source).update();
-        JsonNode sources = service.replaySources(fixture.actor(), fixture.deck(), "UTC");
+                .param("actor", material.actor()).param("session", source).update();
+        JsonNode sources = service.replaySources(material.actor(), material.deck(), "UTC");
         assertThat(sources.path("items")).hasSize(1);
         assertThat(sources.path("items").get(0).path("sessionId").textValue()).isEqualTo(source.toString());
-        StudySessionService.StartResult replay = service.start(fixture.actor(), fixture.deck(), "UTC",
-                replay(UUID.randomUUID(), source));
+        StudySessionService.StartResult replay = service.start(material.actor(), material.deck(), "UTC",
+                fixtures.start("REPLAY", source));
         assertThat(replay.body().path("status").textValue()).isEqualTo("ACTIVE");
         assertThat(replay.body().path("presentations")).hasSize(1);
         assertThat(replay.body().path("presentations").get(0).path("exerciseRevisionId"))
                 .isEqualTo(sourceActive.path("presentations").get(0).path("exerciseRevisionId"));
+        // a replay is a verbatim copy of the issued content under a fresh presentation and nonce
+        assertThat(replay.body().path("presentations").get(0).path("content"))
+                .isEqualTo(sourceActive.path("presentations").get(0).path("content"));
+        assertThat(replay.body().path("presentations").get(0).path("nonce"))
+                .isNotEqualTo(sourceActive.path("presentations").get(0).path("nonce"));
 
         jdbc.sql("UPDATE app_learning.study_session SET expires_at=created_at + interval '1 millisecond' "
                         + "WHERE account_id=:actor AND session_id=:session")
-                .param("actor", fixture.actor()).param("session", source).update();
-        assertThatThrownBy(() -> service.read(fixture.actor(), fixture.deck(), source))
+                .param("actor", material.actor()).param("session", source).update();
+        assertThatThrownBy(() -> service.read(material.actor(), material.deck(), source))
                 .isInstanceOf(StudySessionExpiredException.class);
     }
 
     @Test
     void quickBudgetSelectsKnownFirstAndIntroducesAtMostTwoObjectives() {
         UUID actor = UUID.randomUUID();
-        UUID deck = createDeck(actor);
-        for (int index = 0; index < 12; index++) addMaterialWithExercise(actor, deck);
+        UUID deck = deckWithExercises(actor, 12);
 
-        StudySessionService.StartResult introduction = service.start(actor, deck, "UTC",
-                scheduled(UUID.randomUUID(), 8, 8));
-        JsonNode introduced = service.read(actor, deck,
-                UUID.fromString(introduction.body().path("sessionId").textValue()));
+        StudySessionService.StartResult introduction = service.start(actor, deck, "UTC", scheduled(8, 8));
+        JsonNode introduced = service.read(actor, deck, UUID.fromString(introduction.body().path("sessionId").textValue()));
         Set<String> known = new HashSet<>();
         introduced.path("presentations").forEach(value -> known.add(value.path("objectiveId").textValue()));
         assertThat(known).hasSize(8);
 
-        StudySessionService.StartResult quickStart = service.start(actor, deck, "UTC",
-                scheduled(UUID.randomUUID(), 10, 2));
+        StudySessionService.StartResult quickStart = service.start(actor, deck, "UTC", scheduled(10, 2));
         JsonNode quick = quickStart.preparing() ? service.read(actor, deck,
                 UUID.fromString(quickStart.body().path("sessionId").textValue())) : quickStart.body();
         assertThat(quick.path("budget").path("maxPresentations").intValue()).isEqualTo(10);
@@ -217,11 +248,9 @@ class StudySessionServiceIntegrationTest extends PostgresIntegrationTest {
     @Test
     void selectionReadsOnlyTheSeededBoundedWindowIncludingWrap() {
         UUID actor = UUID.randomUUID();
-        UUID deck = createDeck(actor);
-        for (int index = 0; index < 12; index++) addMaterialWithExercise(actor, deck);
+        UUID deck = deckWithExercises(actor, 12);
 
-        StudySessionService.StartResult started = service.start(actor, deck, "UTC",
-                scheduled(UUID.randomUUID(), 1, 1));
+        StudySessionService.StartResult started = service.start(actor, deck, "UTC", scheduled(1, 1));
         UUID sessionId = UUID.fromString(started.body().path("sessionId").textValue());
         service.read(actor, deck, sessionId);
         // The first presentation initializes the generation; restore the new quota for this repository probe.
@@ -230,15 +259,13 @@ class StudySessionServiceIntegrationTest extends PostgresIntegrationTest {
                 .param("actor", actor).param("session", sessionId).update();
         StudySessionRepository.Session session = sessions.session(actor, deck, sessionId).orElseThrow();
 
-        assertThat(sessions.eligibleCandidates(session, 10, 4, Instant.now()))
+        assertThat(sessions.eligibleCandidates(session, 10, 4, Instant.now(), false))
                 .extracting(StudySessionRepository.Candidate::ordinal)
-                .isNotEmpty()
-                .hasSizeLessThanOrEqualTo(4)
+                .isNotEmpty().hasSizeLessThanOrEqualTo(4)
                 .allSatisfy(ordinal -> assertThat(ordinal).isIn(10, 11, 0, 1));
-        assertThat(sessions.eligibleCandidates(session, 4, 4, Instant.now()))
+        assertThat(sessions.eligibleCandidates(session, 4, 4, Instant.now(), false))
                 .extracting(StudySessionRepository.Candidate::ordinal)
-                .isNotEmpty()
-                .hasSizeLessThanOrEqualTo(4)
+                .isNotEmpty().hasSizeLessThanOrEqualTo(4)
                 .allSatisfy(ordinal -> assertThat(ordinal).isBetween(4, 7));
 
         UUID knownOutsideWindow = jdbc.sql("""
@@ -252,123 +279,120 @@ class StudySessionServiceIntegrationTest extends PostgresIntegrationTest {
                 """).param("generation", session.generationId()).param("session", sessionId)
                 .query(UUID.class).single();
         sessions.ensureState(actor, deck, knownOutsideWindow, session.configId(), Instant.now());
-        assertThat(sessions.eligibleCandidates(session, 4, 4, Instant.now()))
+        assertThat(sessions.eligibleCandidates(session, 4, 4, Instant.now(), false))
                 .extracting(StudySessionRepository.Candidate::objectiveId)
                 .contains(knownOutsideWindow);
     }
 
-    private Fixture materialWithExercise() {
-        UUID actor = UUID.randomUUID();
-        UUID deck = createDeck(actor);
-        return addMaterialWithExercise(actor, deck);
-    }
+    @Test
+    void learnerPresentationsNeverCarryKeysTitlesTranscriptsOrBindingsForAnyMechanic() {
+        Material material = fixtures.material();
+        UUID sound = fixtures.readyAsset(material.actor(), "audio/mpeg");
+        UUID clip = fixtures.readyAsset(material.actor(), "video/mp4");
+        UUID picture = fixtures.readyAsset(material.actor(), "image/png");
+        UUID blankOne = UUID.randomUUID(), blankTwo = UUID.randomUUID();
+        UUID right = UUID.randomUUID(), wrong = UUID.randomUUID();
+        UUID leftOne = UUID.randomUUID(), leftTwo = UUID.randomUUID(), rightOne = UUID.randomUUID(), rightTwo = UUID.randomUUID();
+        fixtures.publish(material, fixtures.selfCheck(material,
+                blocks(image(picture, "Visible alt"), text("Self question")),
+                blocks(audio(sound, "TITLE-SELF", "TRANSCRIPT-SELF"), quote(material, material.distractor()))));
+        fixtures.publish(material, fixtures.freeResponse(material,
+                blocks(audio(sound, "TITLE-FREE", "TRANSCRIPT-FREE"), text("Free question")),
+                blocks(text("EXPLANATION-FREE")), "ACCEPTED-FREE", "ACCEPTED-FREE-TWO"));
+        fixtures.publish(material, fixtures.cloze(material, blocks(video(clip, "TITLE-CLOZE", "TRANSCRIPT-CLOZE")),
+                blocks(text("pre "), blank(blankOne, false, 0, true), text(" mid "), blank(blankTwo, true, 9, false)),
+                blankKey(blankOne, "ACCEPTED-CLOZE"), blankKey(blankTwo, "ACCEPTED-CLOZE-TWO")));
+        fixtures.publish(material, fixtures.choice(material, true, blocks(video(clip, "TITLE-CHOICE", "TRANSCRIPT-CHOICE")),
+                blocks().add(option(right, audio(sound, "TITLE-OPTION", "TRANSCRIPT-OPTION"), text("Right option")))
+                        .add(option(wrong, image(picture, "Wrong alt"))), right));
+        fixtures.publish(material, fixtures.match(material, blocks(text("Match them")),
+                blocks().add(item(leftOne, audio(sound, "TITLE-LEFT", "TRANSCRIPT-LEFT"))).add(item(leftTwo, text("left two"))),
+                blocks().add(item(rightOne, text("right one"))).add(item(rightTwo, image(picture, "Right alt"))),
+                new UUID[][] {{leftOne, rightOne}, {leftTwo, rightTwo}}));
 
-    private Fixture addMaterialWithExercise(UUID actor, UUID deck) {
-        JsonNode deckHead = decks.read(actor, deck);
-        long itemExpectedVersion = Long.parseLong(deckHead.path("rowVersion").textValue());
-        UUID answerNode = UUID.randomUUID();
-        ObjectNode document = JSON.createObjectNode().put("formatVersion", 1);
-        ObjectNode root = document.putObject("root").put("id", UUID.randomUUID().toString())
-                .put("type", "doc").put("version", 1);
-        root.putObject("attrs");
-        ObjectNode paragraph = root.putArray("content").addObject().put("id", answerNode.toString())
-                .put("type", "paragraph").put("version", 1);
-        paragraph.putObject("attrs");
-        ObjectNode text = paragraph.putArray("content").addObject().put("id", UUID.randomUUID().toString())
-                .put("type", "text").put("version", 1);
-        text.putObject("attrs").put("text", "memory");
-        text.putArray("content");
-        ObjectNode itemBody = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString())
-                .put("expectedDeckRevisionId", deckHead.path("revisionId").textValue());
-        itemBody.set("document", document);
-        JsonNode item = items.publish(actor, deck, itemExpectedVersion, ItemPublicationCommand.readCreate(bytes(itemBody)))
-                .acknowledgement().path("changes").get(0);
-        Fixture initial = new Fixture(actor, deck, UUID.fromString(item.path("memberKey").textValue()),
-                UUID.fromString(item.path("itemRevisionId").textValue()), answerNode, null, null, null);
-        long exerciseExpectedVersion = Long.parseLong(decks.read(actor, deck).path("rowVersion").textValue());
-        ExerciseService.WriteResult published = exercises.publish(actor, deck, null, exerciseExpectedVersion,
-                ExerciseCommand.readCreate(bytes(exerciseBody(initial, "create", null, null, null))));
-        JsonNode result = published.acknowledgement();
-        return new Fixture(actor, deck, initial.member(), initial.itemRevision(), answerNode,
-                UUID.fromString(result.path("exerciseId").textValue()),
-                UUID.fromString(result.path("exerciseRevisionId").textValue()),
-                UUID.fromString(result.path("objectiveId").textValue()));
-    }
-
-    private void reviseExercise(Fixture fixture) {
-        JsonNode current = exercises.read(fixture.actor(), fixture.deck(), fixture.exercise(), null);
-        UUID objectiveRevision = UUID.fromString(current.path("objective").path("objectiveRevisionId").textValue());
-        ObjectNode body = exerciseBody(fixture, "reuse", fixture.objective(), objectiveRevision,
-                fixture.exerciseRevision());
-        exercises.publish(fixture.actor(), fixture.deck(), fixture.exercise(), 2,
-                ExerciseCommand.readUpdate(bytes(body)));
-    }
-
-    private ObjectNode exerciseBody(Fixture fixture, String operation, UUID objective, UUID objectiveRevision,
-                                    UUID expectedExerciseRevision) {
-        JsonNode deck = decks.read(fixture.actor(), fixture.deck());
-        ObjectNode body = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString())
-                .put("expectedDeckRevisionId", deck.path("revisionId").textValue());
-        if (expectedExerciseRevision != null) {
-            body.put("expectedExerciseRevisionId", expectedExerciseRevision.toString());
+        JsonNode session = fixtures.session(material, "SCHEDULED", null);
+        assertThat(session.path("presentations")).hasSize(5);
+        String raw = session.toString();
+        for (String forbidden : new String[] {"TITLE-", "TRANSCRIPT-", "ACCEPTED-", "EXPLANATION-FREE", "answerKey",
+                "accepted", "correctOptionIds", "\"pairs\"", "bindings", "rubric", "\"title\"", "normalization",
+                "matchingMode"}) {
+            assertThat(raw).as(forbidden).doesNotContain(forbidden);
         }
-        ObjectNode objectiveValue = body.putObject("objective").put("operation", operation);
-        if (operation.equals("reuse")) {
-            objectiveValue.put("objectiveId", objective.toString())
-                    .put("objectiveRevisionId", objectiveRevision.toString());
-        } else {
-            ObjectNode answer = objectiveValue.putObject("answerContract").put("schemaVersion", 1);
-            answer.putArray("normalization").add("UNICODE_NFC").add("TRIM").add("CASE_FOLD");
-            answer.putArray("accepted").add("memory");
-        }
-        ObjectNode exercise = body.putObject("exercise").put("type", expectedExerciseRevision == null
-                        ? "TYPED" : "SELF_CHECK").put("schemaVersion", 1).put("enabled", true);
-        exercise.putObject("prompt").put("kind", "NODE_TEXT").put("memberKey", fixture.member().toString())
-                .put("itemRevisionId", fixture.itemRevision().toString()).put("nodeId", fixture.node().toString());
-        ObjectNode binding = exercise.putArray("bindings").addObject().put("bindingId", UUID.randomUUID().toString())
-                .put("role", "ASSESSED").put("memberKey", fixture.member().toString())
-                .put("itemRevisionId", fixture.itemRevision().toString()).put("ordinal", 0);
-        binding.putArray("nodeIds").add(fixture.node().toString());
-        binding.putObject("display").put("kind", "NODE_TEXT");
-        exercise.putObject("evaluatorPolicy").put("id", expectedExerciseRevision == null
-                ? "deterministic-text" : "self-check").put("version", "1");
-        return body;
+        Map<String, JsonNode> byType = new java.util.HashMap<>();
+        session.path("presentations").forEach(presentation -> {
+            byType.put(presentation.path("type").textValue(), presentation);
+            for (String legacy : new String[] {"reference", "prompt", "options", "bindings", "selectionMode", "answerKey"}) {
+                assertThat(presentation.has(legacy)).as(legacy).isFalse();
+            }
+            assertThat(presentation.path("transcriptRevealed").booleanValue()).isFalse();
+            assertThat(presentation.path("hints")).isEmpty();
+            assertThat(presentation.path("evaluator").size()).isEqualTo(2);
+        });
+        assertThat(byType).containsOnlyKeys("SELF_CHECK", "FREE_RESPONSE", "CLOZE", "CHOICE", "MATCH");
+        // what the learner may see: resolved text, alt text, availability of a transcript, never its text
+        assertThat(byType.get("SELF_CHECK").path("content").path("reference").get(0).toString())
+                .isEqualTo("{\"kind\":\"AUDIO\",\"assetId\":\"" + sound + "\",\"transcriptAvailable\":true}");
+        assertThat(byType.get("SELF_CHECK").path("content").path("reference").get(1).path("text").textValue())
+                .isEqualTo("forgetting");
+        assertThat(byType.get("CHOICE").path("content").path("selectionMode").textValue()).isEqualTo("MULTIPLE");
+        assertThat(byType.get("CLOZE").path("content").path("passage").get(1).path("size").toString())
+                .isEqualTo("{\"mode\":\"ANSWER_LENGTH\",\"length\":" + "ACCEPTED-CLOZE".length() + "}");
+        // the private key is persisted, but only server side
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.study_presentation WHERE answer_key::text LIKE '%ACCEPTED-%'")
+                .query(Long.class).single()).isGreaterThanOrEqualTo(2);
+        // a second read returns exactly the same issued content, including the shuffled order
+        assertThat(service.read(material.actor(), material.deck(), UUID.fromString(session.path("sessionId").textValue()))
+                .path("presentations")).isEqualTo(session.path("presentations"));
     }
 
-    private UUID createDeck(UUID actor) {
-        return UUID.fromString(decks.create(actor, new DeckCommand(UUID.randomUUID(), "Deck", "Description"))
+    @Test
+    void candidatesAreIssuedOnlyWhileEveryPinnedAssetIsReadyAndOfTheDeclaredKind() {
+        Material material = fixtures.material();
+        UUID sound = fixtures.pendingAsset(material.actor());
+        JsonNode published = fixtures.publish(material, fixtures.freeResponse(material,
+                blocks(audio(sound, "Voice", null), text("Type it")), blocks(), "x"));
+        assertThat(published.path("exerciseRevisionId").textValue()).isNotBlank();
+        assertThat(fixtures.issue(material, "SCHEDULED", null)).isEmpty();
+        // READY but really an image: audio must not be an image
+        fixtures.ready(sound, "image/png");
+        assertThat(fixtures.issue(material, "SCHEDULED", null)).isEmpty();
+
+        Material video = fixtures.material();
+        UUID clip = fixtures.readyAsset(video.actor(), "video/mp4");
+        UUID picture = fixtures.pendingAsset(video.actor());
+        UUID correct = UUID.randomUUID();
+        fixtures.publish(video, fixtures.choice(video, false, blocks(video(clip, "Clip", null)), blocks().add(option(correct, image(picture, "Alt")))
+                .add(option(UUID.randomUUID(), text("Other"))), correct));
+        assertThat(fixtures.issue(video, "SCHEDULED", null)).isEmpty();
+        fixtures.ready(picture, "image/webp");
+        assertThat(fixtures.issue(video, "SCHEDULED", null)).hasSize(1);
+        // a text-only exercise is trivially ready
+        Material plain = fixtures.material();
+        fixtures.publish(plain, fixtures.freeResponse(plain, blocks(text("Plain")), blocks(), "x"));
+        assertThat(fixtures.issue(plain, "SCHEDULED", null)).hasSize(1);
+    }
+
+    private UUID deckWithExercises(UUID actor, int count) {
+        UUID deck = UUID.fromString(decks.create(actor, new DeckCommand(UUID.randomUUID(), "Deck", "Description"))
                 .acknowledgement().path("deck").path("deckId").textValue());
+        for (int index = 0; index < count; index++) {
+            Material material = fixtures.addMaterial(actor, deck, "memory", "other");
+            fixtures.publish(material, fixtures.freeResponse(material, blocks(text("Q" + index)), blocks(), "memory"));
+        }
+        return deck;
     }
 
-    private static StudySessionCommand scheduled(UUID command, int budget) {
-        return scheduled(command, budget, budget);
+    private static StudySessionCommand scheduled(int budget, int maxNew) {
+        return StudySessionCommand.read(bytes(JSON.createObjectNode().put("commandId", UUID.randomUUID().toString())
+                .put("mode", "SCHEDULED").set("budget", JSON.createObjectNode().put("maxPresentations", budget)
+                        .put("maxNewObjectives", maxNew))));
     }
 
-    private static StudySessionCommand scheduled(UUID command, int budget, int maxNew) {
-        return read(JSON.createObjectNode().put("commandId", command.toString()).put("mode", "SCHEDULED")
-                .set("budget", JSON.createObjectNode().put("maxPresentations", budget)
-                        .put("maxNewObjectives", maxNew)));
-    }
-
-    private static StudySessionCommand practice(UUID command, boolean includeNew) {
-        ObjectNode value = JSON.createObjectNode().put("commandId", command.toString()).put("mode", "PRACTICE")
+    private static StudySessionCommand practice(boolean includeNew) {
+        ObjectNode value = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString()).put("mode", "PRACTICE")
                 .put("includeNew", includeNew).put("order", "WEAKEST_FIRST");
         value.set("budget", JSON.createObjectNode().put("maxPresentations", 20));
-        return read(value);
+        return StudySessionCommand.read(bytes(value));
     }
 
-    private static StudySessionCommand replay(UUID command, UUID source) {
-        ObjectNode value = JSON.createObjectNode().put("commandId", command.toString()).put("mode", "REPLAY")
-                .put("sourceSessionId", source.toString());
-        value.set("budget", JSON.createObjectNode().put("maxPresentations", 20));
-        return read(value);
-    }
-
-    private static StudySessionCommand read(JsonNode value) { return StudySessionCommand.read(bytes(value)); }
-    private static ByteArrayInputStream bytes(JsonNode value) {
-        return new ByteArrayInputStream(value.toString().getBytes(StandardCharsets.UTF_8));
-    }
-
-    private record Fixture(UUID actor, UUID deck, UUID member, UUID itemRevision, UUID node,
-                           UUID exercise, UUID exerciseRevision, UUID objective) { }
 }

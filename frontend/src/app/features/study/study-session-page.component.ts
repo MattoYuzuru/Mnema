@@ -2,13 +2,15 @@ import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, a
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
-import { timer } from 'rxjs';
+import { map, timer } from 'rxjs';
 
-import { SignedMediaSource } from '../../content/rendering/media-playback.api';
-import { NativeMediaPlayerComponent } from '../../content/rendering/native-media-player.component';
+import { ChoiceListComponent } from '../../content/exercise/choice-list.component';
+import { ClozeBlankVerdict, ClozePassageComponent } from '../../content/exercise/cloze-passage.component';
+import { ExclusivePlaybackDirective } from '../../content/exercise/exclusive-playback.directive';
+import { Mechanic } from '../../content/exercise/exercise-content.models';
+import { LearnerBlocksComponent } from '../../content/exercise/learner-blocks.component';
 import { MnemaSelectComponent, MnemaSelectOption } from '../../core/controls/mnema-select.component';
-import { AudioMatchBoardComponent, MatchPair } from './audio-match-board.component';
-import { ClozeInputComponent } from '../../shared/cloze-input.component';
+import { LearnerExerciseComponent, PairChecker } from './learner-exercise.component';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { OwnDeck } from '../own-decks/own-deck.models';
 import { StudyApiService } from './study-api.service';
@@ -21,20 +23,24 @@ import {
     ReplaySource,
     ScheduledStudyPreset,
     SelfRating,
-    StudyPresentation,
     StudyResponse,
     StudySession,
-    StudyStartIntent
+    StudyStartIntent,
+    isChoiceFeedback,
+    isClozeFeedback,
+    isFreeResponseFeedback,
+    isMatchFeedback,
+    isUnassessed
 } from './study.models';
 import { StudyRecoveryService } from './study-recovery.service';
-import { MEDIA_PLAYBACK_RESOLVER } from './media-playback-resolver';
 
 type Phase = 'setup' | 'loading' | 'preparing' | 'answering' | 'revealed' | 'submitting' | 'feedback'
     | 'unknown' | 'conflict' | 'empty' | 'complete' | 'expired' | 'unavailable' | 'error';
 
 @Component({
     selector: 'app-study-session-page',
-    imports: [RouterLink, NativeMediaPlayerComponent, MnemaSelectComponent, ClozeInputComponent, AudioMatchBoardComponent],
+    imports: [RouterLink, MnemaSelectComponent, LearnerExerciseComponent, LearnerBlocksComponent, ClozePassageComponent,
+        ChoiceListComponent, ExclusivePlaybackDirective],
     templateUrl: './study-session-page.component.html',
     styleUrl: './study-session-page.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -46,14 +52,12 @@ export class StudySessionPageComponent {
     readonly deck = signal<OwnDeck | null>(null);
     readonly session = signal<ReadyStudySession | null>(null);
     readonly phase = signal<Phase>('loading');
-    readonly typedAnswer = signal('');
-    readonly selectedOptionIds = signal<readonly string[]>([]);
-    readonly pairChecking = signal(false);
-    readonly wrongPair = signal<MatchPair | null>(null);
-    readonly matchSelections = signal<Readonly<Partial<Record<string, string>>>>({});
-    readonly audioUrls = signal<Readonly<Record<string, SignedMediaSource>>>({});
+    /** The response committed for the current presentation; feedback is shown next to it. */
+    readonly submitted = signal<StudyResponse | null>(null);
+    /** True while the answer surface holds input that would be lost by leaving. */
+    readonly answerDirty = signal(false);
     readonly transcriptLoading = signal(false);
-    readonly clozeHintUsed = signal(false);
+    readonly hintPending = signal<string | null>(null);
     readonly feedback = signal<AttemptOutcome | null>(null);
     readonly message = signal<string | null>(null);
     readonly pending = signal<AttemptCommand | null>(null);
@@ -74,10 +78,36 @@ export class StudySessionPageComponent {
     readonly scheduledPreset = signal<ScheduledStudyPreset>('STANDARD');
     readonly supportLoading = signal(true);
     readonly current = computed(() => this.session()?.presentations[0] ?? null);
-    readonly clozeBlankLength = computed(() => {
-        const prompt = this.current()?.prompt;
-        return prompt?.kind === 'TEXT' ? prompt.blank?.length ?? 5 : 5;
+    readonly hints = computed<Readonly<Record<string, string>>>(() => Object.fromEntries(
+        (this.current()?.hints ?? []).map(hint => [hint.blankId, hint.firstLetter])));
+    /** Pair checks go to the server; the board never decides correctness itself. */
+    readonly pairChecker = computed<PairChecker | null>(() => {
+        const presentation = this.current();
+        const session = this.session();
+        if (presentation === null || session === null) return null;
+        return pair => this.api.checkPair(this.deckId, session.sessionId, presentation.presentationId,
+            presentation.nonce, pair.leftId, pair.rightId).pipe(map(result => result.correct));
     });
+    readonly clozeContent = computed(() => { const value = this.current(); return value?.type === 'CLOZE' ? value.content : null; });
+    readonly choiceContent = computed(() => { const value = this.current(); return value?.type === 'CHOICE' ? value.content : null; });
+    readonly matchContent = computed(() => { const value = this.current(); return value?.type === 'MATCH' ? value.content : null; });
+    readonly clozeFeedback = computed(() => { const value = this.feedback()?.feedback; return value && isClozeFeedback(value) ? value : null; });
+    readonly choiceFeedback = computed(() => { const value = this.feedback()?.feedback; return value && isChoiceFeedback(value) ? value : null; });
+    readonly matchFeedback = computed(() => { const value = this.feedback()?.feedback; return value && isMatchFeedback(value) ? value : null; });
+    readonly freeResponseFeedback = computed(() => { const value = this.feedback()?.feedback; return value && isFreeResponseFeedback(value) ? value : null; });
+    readonly unassessed = computed(() => { const value = this.feedback()?.feedback; return value && isUnassessed(value) ? value : null; });
+    readonly clozeVerdicts = computed<Readonly<Record<string, ClozeBlankVerdict>> | null>(() => {
+        const feedback = this.clozeFeedback();
+        return feedback === null ? null : Object.fromEntries(feedback.blanks.map(blank => [blank.blankId,
+            { correct: blank.correct, hinted: blank.hinted, reference: blank.reference }]));
+    });
+    readonly submittedText = computed(() => { const value = this.submitted(); return value?.kind === 'TEXT' ? value.text : ''; });
+    readonly submittedClozeValues = computed<Readonly<Record<string, string>>>(() => {
+        const value = this.submitted();
+        return value?.kind === 'CLOZE' ? Object.fromEntries(value.blanks.map(blank => [blank.blankId, blank.text])) : {};
+    });
+    readonly submittedOptionIds = computed(() => { const value = this.submitted(); return value?.kind === 'CHOICE' ? value.optionIds : []; });
+    readonly submittedRating = computed(() => { const value = this.submitted(); return value?.kind === 'SELF_CHECK' ? value.rating : null; });
     readonly position = computed(() => {
         const current = this.current();
         const session = this.session();
@@ -89,15 +119,12 @@ export class StudySessionPageComponent {
     private readonly decks = inject(OwnDecksApiService);
     private readonly api = inject(StudyApiService);
     private readonly recovery = inject(StudyRecoveryService);
-    private readonly playback = inject(MEDIA_PLAYBACK_RESOLVER);
     private readonly destroyRef = inject(DestroyRef);
     private readonly injector = inject(Injector);
     private readonly element: ElementRef<HTMLElement> = inject(ElementRef);
     readonly deckId: string;
     private presentedAt = 0;
     private pollCount = 0;
-    private audioTimer: ReturnType<typeof setTimeout> | null = null;
-    private audioEpoch = 0;
 
     constructor() {
         effect(onCleanup => {
@@ -109,18 +136,6 @@ export class StudySessionPageComponent {
             }, { rootMargin: '0px 0px 700px 0px' });
             observer.observe(sentinel);
             onCleanup(() => observer.disconnect());
-        });
-        const recheckAudio = () => {
-            if (document.visibilityState === 'visible' && navigator.onLine) this.refreshAudio();
-        };
-        document.addEventListener('visibilitychange', recheckAudio);
-        window.addEventListener('focus', recheckAudio);
-        window.addEventListener('online', recheckAudio);
-        this.destroyRef.onDestroy(() => {
-            document.removeEventListener('visibilitychange', recheckAudio);
-            window.removeEventListener('focus', recheckAudio);
-            window.removeEventListener('online', recheckAudio);
-            this.clearAudioTimer();
         });
         const deckId = this.route.snapshot.paramMap.get('deckId');
         if (deckId === null) throw new Error('Study route requires deckId.');
@@ -134,116 +149,54 @@ export class StudySessionPageComponent {
         if (recovered === null) this.phase.set('setup');
         else {
             this.pending.set(recovered.pending);
-            if (recovered.pending?.response.kind === 'TEXT') this.typedAnswer.set(recovered.pending.response.text);
-            if (recovered.pending?.response.kind === 'CHOICE') {
-                this.selectedOptionIds.set(recovered.pending.response.optionIds);
-            }
-            if (recovered.pending?.response.kind === 'MATCH') {
-                this.matchSelections.set(Object.fromEntries(recovered.pending.response.pairs
-                    .map(pair => [pair.cueId, pair.optionId])));
-            }
-            this.clozeHintUsed.set(recovered.pending?.hintsUsed.includes('REVEAL_FIRST_GRAPHEME') ?? false);
+            this.submitted.set(recovered.pending?.response ?? null);
             this.resume(recovered.sessionId, recovered.pending !== null);
         }
     }
 
-    setTypedAnswer(value: string): void { this.typedAnswer.set(value); }
-
-    reveal(): void {
-        if (this.phase() !== 'answering' || this.current()?.type !== 'SELF_CHECK') return;
-        this.phase.set('revealed');
-        this.focusAfterRender('[data-first-rating]');
+    /** Commits the learner's response for the current presentation. */
+    answer(response: StudyResponse): void {
+        if (this.phase() !== 'answering') return;
+        this.submit(response);
     }
 
-    submitTyped(): void {
-        const type = this.current()?.type;
-        if (this.phase() !== 'answering' || (type !== 'TYPED' && type !== 'CLOZE_SINGLE'
-            && type !== 'LISTEN_TYPE')) return;
-        this.submit({ kind: 'TEXT', text: this.typedAnswer() },
-            type === 'CLOZE_SINGLE' && this.clozeHintUsed() ? ['REVEAL_FIRST_GRAPHEME'] : []);
-    }
+    setAnswerDirty(value: boolean): void { this.answerDirty.set(value); }
 
-    showClozeHint(): void {
-        if (this.phase() !== 'answering' || this.current()?.type !== 'CLOZE_SINGLE') return;
-        const prefix = this.firstGrapheme(this.current()?.reference ?? '');
-        if (!prefix) return;
-        this.clozeHintUsed.set(true);
-        this.typedAnswer.update(value => value.startsWith(prefix) ? value : prefix + value);
-        this.focusAfterRender('#cloze-answer');
-    }
-
-    firstGrapheme(value: string): string {
-        const first = new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(value)[Symbol.iterator]().next();
-        return first.done ? '' : first.value.segment;
-    }
-
-    selectOption(optionId: string): void {
-        if (!this.current()?.options.some(option => option.optionId === optionId) || this.phase() !== 'answering') return;
-        this.selectedOptionIds.update(values => this.current()?.selectionMode === 'MULTIPLE'
-            ? values.includes(optionId) ? values.filter(value => value !== optionId) : [...values, optionId]
-            : [optionId]);
-    }
-
-    submitChoice(): void {
-        const optionIds = this.selectedOptionIds();
-        if (this.phase() !== 'answering' || (this.current()?.type !== 'SINGLE_CHOICE'
-            && this.current()?.type !== 'LISTEN_CHOICE') || optionIds.length === 0) return;
-        this.submit({ kind: 'CHOICE', optionIds }, []);
-    }
-
-    checkMatch(pair: MatchPair): void {
+    /** Asks the server for one blank's first letter; the letter is never derived in the browser. */
+    requestHint(blankId: string): void {
         const current = this.current();
         const session = this.session();
-        if (!current || !session || this.phase() !== 'answering' || this.pairChecking()
-            || this.matchSelections()[pair.cueId] || Object.values(this.matchSelections()).includes(pair.optionId)) return;
-        this.pairChecking.set(true);
-        this.wrongPair.set(null);
-        this.api.checkPair(this.deckId, session.sessionId, current.presentationId, current.nonce, pair.cueId, pair.optionId)
+        if (this.phase() !== 'answering' || current?.type !== 'CLOZE' || session === null || this.hintPending() !== null
+            || this.hints()[blankId] !== undefined) return;
+        this.hintPending.set(blankId);
+        this.api.hint(this.deckId, session.sessionId, current.presentationId, current.nonce, blankId)
             .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
                 next: result => {
-                    this.pairChecking.set(false);
-                    if (this.current()?.presentationId !== current.presentationId) return;
-                    if (result.correct) {
-                        this.selectMatch(pair.cueId, pair.optionId);
-                        if (this.matchComplete(current)) this.focusAfterRender('[data-match-submit]');
-                    }
-                    else this.wrongPair.set(pair);
+                    this.hintPending.set(null);
+                    this.session.update(value => value === null ? null : { ...value,
+                        presentations: value.presentations.map(item => item.presentationId === result.presentationId
+                            ? { ...item, hints: [...item.hints.filter(hint => hint.blankId !== result.blankId),
+                                { blankId: result.blankId, firstLetter: result.firstLetter }] } : item) });
                 },
                 error: () => {
-                    this.pairChecking.set(false);
-                    this.message.set('Не удалось проверить пару. Попробуйте выбрать её ещё раз.');
+                    this.hintPending.set(null);
+                    this.message.set('Не удалось получить подсказку. Попробуйте ещё раз.');
                 }
             });
-    }
-
-    selectMatch(cueId: string, optionId: string): void {
-        this.matchSelections.update(current => ({ ...Object.fromEntries(Object.entries(current)
-            .filter(([key, value]) => key === cueId || value !== optionId)), [cueId]: optionId }));
-    }
-
-    submitMatch(): void {
-        const current = this.current();
-        if (this.phase() !== 'answering' || current?.type !== 'AUDIO_TEXT_MATCH'
-            || current.prompt.kind !== 'AUDIO_MATCH') return;
-        const pairs = current.prompt.cues.map(cue => ({ cueId: cue.cueId,
-            optionId: this.matchSelections()[cue.cueId] ?? '' }));
-        if (pairs.some(pair => !pair.optionId) || new Set(pairs.map(pair => pair.optionId)).size !== pairs.length) return;
-        this.submit({ kind: 'MATCH', pairs }, []);
     }
 
     revealTranscript(): void {
         const current = this.current();
         const session = this.session();
         if (this.phase() !== 'answering' || current === null || session === null
-            || current.prompt.kind === 'TEXT' || !current.prompt.transcriptAvailable
-            || current.prompt.transcriptRevealed || this.transcriptLoading()) return;
+            || current.transcriptRevealed || this.transcriptLoading()) return;
         this.transcriptLoading.set(true);
-        this.api.revealTranscript(this.deckId, session.sessionId, current.presentationId, current.nonce)
+        this.api.revealTranscript(this.deckId, session.sessionId, current.presentationId, current.nonce, current.type)
             .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-                next: prompt => {
+                next: reveal => {
                     this.session.update(value => value === null ? null : { ...value,
-                        presentations: value.presentations.map(item => item.presentationId === current.presentationId
-                            ? { ...item, prompt } : item) });
+                        presentations: value.presentations.map(item => item.presentationId === reveal.presentationId
+                            ? { ...item, ...reveal.content, transcriptRevealed: true } : item) });
                     this.transcriptLoading.set(false);
                 },
                 error: () => { this.transcriptLoading.set(false);
@@ -251,32 +204,15 @@ export class StudySessionPageComponent {
             });
     }
 
-    promptTitle(presentation: StudyPresentation): string {
-        return presentation.prompt.kind === 'TEXT' ? presentation.prompt.text : presentation.prompt.instruction;
+    heading(type: Mechanic): string {
+        return ({ SELF_CHECK: 'Вспомните, затем сверьтесь', FREE_RESPONSE: 'Напишите ответ', CLOZE: 'Заполните пропуски',
+            CHOICE: 'Выберите ответ', MATCH: 'Соедините пары' })[type];
     }
 
-    audioAssetIds(presentation: StudyPresentation): readonly string[] {
-        return presentation.prompt.kind === 'AUDIO_ASSET' ? [presentation.prompt.assetId]
-            : presentation.prompt.kind === 'AUDIO_MATCH' ? presentation.prompt.cues.map(cue => cue.assetId) : [];
-    }
-    audioReady(presentation: StudyPresentation): boolean {
-        return this.audioAssetIds(presentation).every(id => !!this.audioUrls()[id]);
-    }
-    matchComplete(presentation: StudyPresentation): boolean {
-        return presentation.prompt.kind === 'AUDIO_MATCH'
-            && presentation.prompt.cues.every(cue => !!this.matchSelections()[cue.cueId]);
-    }
-    optionText(presentation: StudyPresentation, optionId: string): string {
-        return presentation.options.find(option => option.optionId === optionId)?.text ?? 'Вариант недоступен';
-    }
-    cueTitle(presentation: StudyPresentation, cueId: string): string {
-        return presentation.prompt.kind === 'AUDIO_MATCH'
-            ? presentation.prompt.cues.find(cue => cue.cueId === cueId)?.title ?? 'Запись' : 'Запись';
-    }
-
-    rate(rating: SelfRating): void {
-        if (this.phase() !== 'revealed' || this.current()?.type !== 'SELF_CHECK') return;
-        this.submit({ kind: 'SELF_CHECK', rating }, ['REVEAL']);
+    /** Item of the issued MATCH content, used to show a pair's media again in feedback. */
+    matchItem(side: 'left' | 'right', itemId: string) {
+        const content = this.matchContent();
+        return (side === 'left' ? content?.left : content?.right)?.find(item => item.itemId === itemId) ?? null;
     }
 
     retryPending(): void {
@@ -365,9 +301,7 @@ export class StudySessionPageComponent {
     }
 
     canLeave(): boolean {
-        if (this.phase() !== 'submitting' && this.phase() !== 'unknown' && this.typedAnswer().length === 0
-            && this.selectedOptionIds().length === 0 && !this.pairChecking()
-            && Object.keys(this.matchSelections()).length === 0) return true;
+        if (this.phase() !== 'submitting' && this.phase() !== 'unknown' && !this.answerDirty()) return true;
         return window.confirm('Сессия сохранена в этой вкладке. Выйти и продолжить её позже?');
     }
 
@@ -452,16 +386,14 @@ export class StudySessionPageComponent {
     }
 
     private resetAnswer(): void {
-        this.typedAnswer.set('');
-        this.selectedOptionIds.set([]);
-        this.wrongPair.set(null);
-        this.matchSelections.set({});
-        this.clozeHintUsed.set(false);
+        this.submitted.set(null);
+        this.answerDirty.set(false);
+        this.hintPending.set(null);
+        this.transcriptLoading.set(false);
     }
 
     private apply(session: ReadyStudySession, pendingUnknown: boolean): void {
         this.session.set(session);
-        this.resolveAudio(session.presentations[0] ?? null);
         this.presentedAt = this.recovery.now();
         if (session.status === 'EMPTY') {
             this.phase.set('empty'); this.recovery.clear(); this.loadSupportingState(); return;
@@ -484,70 +416,17 @@ export class StudySessionPageComponent {
         this.focusAfterRender('[data-answer-control]');
     }
 
-    private resolveAudio(presentation: StudyPresentation | null): void {
-        this.audioEpoch += 1;
-        this.clearAudioTimer();
-        this.audioUrls.set({});
-        if (presentation !== null) this.refreshAudio();
-    }
-
-    retryAudio(assetId: string): void {
-        if (!this.audioUrls()[assetId]) return;
-        this.audioUrls.update(values => Object.fromEntries(Object.entries(values).filter(([id]) => id !== assetId)));
-        this.refreshAudio();
-    }
-
-    private refreshAudio(): void {
-        const presentation = this.current();
-        if (presentation === null || document.visibilityState !== 'visible' || !navigator.onLine) return;
-        const epoch = this.audioEpoch;
-        this.clearAudioTimer();
-        for (const assetId of this.audioAssetIds(presentation)) {
-            this.playback.resolve(assetId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-                next: source => {
-                    if (epoch !== this.audioEpoch || this.current()?.presentationId !== presentation.presentationId) return;
-                    this.audioUrls.update(values => source === null
-                        ? Object.fromEntries(Object.entries(values).filter(([id]) => id !== assetId))
-                        : { ...values, [assetId]: source });
-                    this.scheduleAudioRefresh();
-                },
-                error: () => {
-                    if (epoch !== this.audioEpoch) return;
-                    this.audioUrls.update(values => Object.fromEntries(Object.entries(values).filter(([id]) => id !== assetId)));
-                    this.scheduleAudioRefresh();
-                }
-            });
-        }
-    }
-
-    private scheduleAudioRefresh(): void {
-        this.clearAudioTimer();
-        const presentation = this.current();
-        if (presentation === null || document.visibilityState !== 'visible' || !navigator.onLine) return;
-        const ids = this.audioAssetIds(presentation);
-        if (ids.length === 0) return;
-        const missing = ids.some(id => !this.audioUrls()[id]);
-        const expiry = ids.map(id => Date.parse(this.audioUrls()[id]?.expiresAt ?? '') - Date.now() - 60_000)
-            .filter(Number.isFinite);
-        const delay = missing ? 15_000 : Math.max(1_000, Math.min(15 * 60_000, ...expiry));
-        this.audioTimer = setTimeout(() => { this.audioTimer = null; this.refreshAudio(); }, delay);
-    }
-
-    private clearAudioTimer(): void {
-        if (this.audioTimer) clearTimeout(this.audioTimer);
-        this.audioTimer = null;
-    }
-
-    private submit(response: StudyResponse, hintsUsed: readonly string[]): void {
+    private submit(response: StudyResponse): void {
         const presentation = this.current();
         const session = this.session();
         if (presentation === null || session === null) return;
         const command: AttemptCommand = {
             attemptId: crypto.randomUUID(), presentationId: presentation.presentationId, nonce: presentation.nonce,
-            response, hintsUsed, confidence: null,
+            response, confidence: null,
             durationMs: Math.min(3_600_000, Math.max(0, this.recovery.now() - this.presentedAt))
         };
         this.pending.set(command);
+        this.submitted.set(response);
         this.recovery.save({ deckId: this.deckId, sessionId: session.sessionId, pending: command });
         this.send(session.sessionId, command);
     }

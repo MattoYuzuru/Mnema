@@ -1,0 +1,40 @@
+:host { display: block; min-inline-size: 0; max-inline-size: 100%; }
+* { box-sizing: border-box; }
+fieldset { min-inline-size: 0; display: grid; gap: .75rem; margin: 0; border: 0; padding: 0; }
+legend { padding: 0 0 .4rem; color: var(--mn-ink); font: 600 1.15rem/1.3 var(--mn-font-body, system-ui, sans-serif); }
+label { font-weight: 700; overflow-wrap: anywhere; }
+.hint { margin: 0; color: var(--mn-muted); font-weight: 400; font-size: .9rem; line-height: 1.5; overflow-wrap: anywhere; }
+textarea, input[type='text'], input[type='number'] { min-inline-size: 0; max-inline-size: 100%; inline-size: 100%; min-block-size: var(--mn-touch-min, 2.75rem); border: 1px solid var(--mn-field-border); border-radius: var(--mn-radius, 2px); padding: .7rem; color: inherit; background: var(--mn-sheet); font: 1rem/1.45 var(--mn-font-body, system-ui, sans-serif); }
+textarea { resize: vertical; white-space: pre-wrap; }
+input[type='number'] { inline-size: 7rem; }
+.button { min-block-size: var(--mn-touch-min, 2.75rem); display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--mn-ink); border-radius: var(--mn-radius, 2px); padding: .5rem .9rem; color: var(--mn-ink); background: transparent; font: 650 .95rem/1.2 var(--mn-font-body, system-ui, sans-serif); text-align: center; cursor: pointer; }
+.button.small { min-inline-size: var(--mn-touch-min, 2.75rem); padding-inline: .6rem; }
+.button:disabled { cursor: not-allowed; opacity: .55; }
+.block-list { display: grid; gap: .9rem; margin: 0; padding: 0; list-style: none; }
+.block { display: grid; gap: .5rem; min-inline-size: 0; border: 1px solid var(--mn-rule); border-inline-start: 3px solid var(--mn-ink); padding: .8rem; background: var(--mn-sheet); }
+.block-head { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; justify-content: space-between; }
+.block-actions { display: flex; flex-wrap: wrap; gap: .35rem; }
+.add-row { display: flex; flex-wrap: wrap; gap: .5rem; }
+.counter { margin: 0; color: var(--mn-muted); font: .8rem var(--mn-font-mono, ui-monospace, monospace); text-align: end; }
+.counter.over { color: var(--mn-danger); font-weight: 700; }
+.preview-text { margin: 0; border-inline-start: 3px solid var(--mn-rule); padding-inline-start: .7rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.field-error { margin: 0; color: var(--mn-danger); font-weight: 650; overflow-wrap: anywhere; }
+.notice { margin: 0; border-inline-start: 4px solid var(--mn-ink); padding: .7rem 1rem; background: var(--mn-soft); }
+.notice.warning { border-color: var(--mn-caution); }
+.media-picker { display: grid; gap: .75rem; border: 1px dashed var(--mn-ink); padding: .8rem; }
+.media-picker[hidden] { display: none; }
+.card { display: grid; gap: .75rem; min-inline-size: 0; border: 1px solid var(--mn-rule); padding: 1rem; background: var(--mn-sheet); }
+.card-head { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; justify-content: space-between; }
+.card-head h3 { margin: 0; color: var(--mn-ink); font: 500 1.35rem/1.2 var(--mn-font-display, Georgia, serif); }
+.radio-line, .check-line { display: flex; gap: .65rem; align-items: center; min-block-size: var(--mn-touch-min, 2.75rem); font-weight: 600; }
+.radio-line input, .check-line input { flex: 0 0 auto; inline-size: 1.15rem; block-size: 1.15rem; }
+.alias-list { display: grid; gap: .6rem; }
+.alias-row { display: grid; gap: .3rem; }
+.alias-controls { display: flex; gap: .5rem; }
+.setting-title { margin: 0; color: var(--mn-ink); font-weight: 700; }
+.row-stack { display: grid; gap: .5rem; }
+.badge { display: inline-flex; align-items: center; border: 1px solid var(--mn-ink); padding: .05rem .4rem; color: var(--mn-ink); font: 700 .7rem/1.4 var(--mn-font-mono, ui-monospace, monospace); letter-spacing: .08em; }
+:where(a, button, input, textarea, summary, select):focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 3px; }
+[aria-invalid='true'] { border-color: var(--mn-danger); }
+@media (max-width: 25rem) { .add-row .button, .block-actions { inline-size: 100%; } }
+@media (forced-colors: active) { .block, .card, textarea, input { border-color: CanvasText; } }

@@ -2,512 +2,474 @@ package app.mnema.learning.catalog.exercise;
 
 import app.mnema.learning.catalog.deck.DeckCommand;
 import app.mnema.learning.catalog.deck.DeckService;
-import app.mnema.learning.catalog.item.ItemPublicationCommand;
 import app.mnema.learning.catalog.item.ItemService;
+import app.mnema.learning.media.MediaCatalog;
+import app.mnema.learning.platform.api.CapabilityUnavailableException;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.concurrency.VersionConflictException;
 import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
-import app.mnema.learning.media.MediaCatalog;
-import app.mnema.learning.study.session.StudySessionCommand;
 import app.mnema.learning.study.session.StudySessionService;
-import app.mnema.learning.study.attempt.AttemptCommand;
-import app.mnema.learning.study.attempt.AttemptService;
-import app.mnema.learning.study.attempt.PairCheckCommand;
-import app.mnema.learning.study.retention.StudyRetentionService;
 import app.mnema.learning.support.PostgresIntegrationTest;
+import app.mnema.learning.support.StudyFixtures;
+import app.mnema.learning.support.StudyFixtures.Material;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
-import java.io.ByteArrayInputStream;
-import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.UUID;
 
+import static app.mnema.learning.support.ContractFixtures.bytes;
+import static app.mnema.learning.support.ContractFixtures.mechanic;
+import static app.mnema.learning.support.StudyFixtures.JSON;
+import static app.mnema.learning.support.StudyFixtures.audio;
+import static app.mnema.learning.support.StudyFixtures.blank;
+import static app.mnema.learning.support.StudyFixtures.blankKey;
+import static app.mnema.learning.support.StudyFixtures.blocks;
+import static app.mnema.learning.support.StudyFixtures.image;
+import static app.mnema.learning.support.StudyFixtures.item;
+import static app.mnema.learning.support.StudyFixtures.option;
+import static app.mnema.learning.support.StudyFixtures.quote;
+import static app.mnema.learning.support.StudyFixtures.text;
+import static app.mnema.learning.support.StudyFixtures.video;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
-    private static final JsonMapper JSON = JsonMapper.builder().build();
     @Autowired private ExerciseService service;
     @Autowired private DeckService decks;
     @Autowired private ItemService items;
     @Autowired private JdbcClient jdbc;
     @Autowired private MediaCatalog media;
     @Autowired private StudySessionService studies;
-    @Autowired private AttemptService attempts;
-    @Autowired private StudyRetentionService retention;
+    private StudyFixtures fixtures;
+
+    @BeforeEach
+    void fixtures() { fixtures = new StudyFixtures(decks, items, service, studies, media, jdbc); }
 
     @Test
     void removalCompactsCurrentRosterAndPreservesPublishedHistory() {
-        Fixture fixture = material(UUID.randomUUID());
+        Material material = fixtures.material();
         UUID[] ids = new UUID[3];
         UUID[] revisions = new UUID[3];
         for (int index = 0; index < ids.length; index++) {
-            JsonNode deck = decks.read(fixture.actor(), fixture.deck());
-            var result = service.publish(fixture.actor(), fixture.deck(), null,
-                    Long.parseLong(deck.path("rowVersion").textValue()),
-                    ExerciseCommand.readCreate(bytes(body(UUID.randomUUID(), deck, fixture,
-                            "TYPED", "create", null, null)))).acknowledgement();
+            JsonNode result = fixtures.publish(material, fixtures.freeResponse(material, blocks(text("Q" + index)),
+                    blocks(), "answer"));
             ids[index] = UUID.fromString(result.path("exerciseId").textValue());
             revisions[index] = UUID.fromString(result.path("exerciseRevisionId").textValue());
         }
-        assertThat(service.list(fixture.actor(), fixture.deck(), null, null, null)
-                .path("exercises")).hasSize(3);
-        long version = Long.parseLong(decks.read(fixture.actor(), fixture.deck()).path("rowVersion").textValue());
-        assertThatThrownBy(() -> service.delete(fixture.actor(), fixture.deck(), ids[1], version - 1))
+        assertThat(service.list(material.actor(), material.deck(), null, null, null).path("exercises")).hasSize(3);
+        long version = fixtures.deckVersion(material);
+        assertThatThrownBy(() -> service.delete(material.actor(), material.deck(), ids[1], version - 1))
                 .isInstanceOf(VersionConflictException.class);
-        assertThatThrownBy(() -> service.delete(UUID.randomUUID(), fixture.deck(), ids[1], version))
+        assertThatThrownBy(() -> service.delete(UUID.randomUUID(), material.deck(), ids[1], version))
                 .isInstanceOf(ResourceNotFoundException.class);
-        service.delete(fixture.actor(), fixture.deck(), ids[1], version);
+        service.delete(material.actor(), material.deck(), ids[1], version);
 
-        JsonNode current = service.list(fixture.actor(), fixture.deck(), null, null, null);
+        JsonNode current = service.list(material.actor(), material.deck(), null, null, null);
         assertThat(current.path("total").intValue()).isEqualTo(2);
         assertThat(current.path("exercises").get(0).path("exerciseId").textValue()).isEqualTo(ids[0].toString());
         assertThat(current.path("exercises").get(1).path("exerciseId").textValue()).isEqualTo(ids[2].toString());
         assertThat(current.path("exercises").get(1).path("ordinal").intValue()).isEqualTo(1);
-        assertThatThrownBy(() -> service.read(fixture.actor(), fixture.deck(), ids[1], null))
+        assertThatThrownBy(() -> service.read(material.actor(), material.deck(), ids[1], null))
                 .isInstanceOf(ResourceNotFoundException.class);
-        assertThat(service.read(fixture.actor(), fixture.deck(), ids[1], revisions[1])
+        assertThat(service.read(material.actor(), material.deck(), ids[1], revisions[1])
                 .path("exerciseRevisionId").textValue()).isEqualTo(revisions[1].toString());
-        assertThatThrownBy(() -> service.delete(fixture.actor(), fixture.deck(), ids[1], version + 1))
-                .isInstanceOf(ResourceNotFoundException.class);
-        assertThat(count("exercise_revision", "deck_id", fixture.deck())).isEqualTo(3);
+        assertThat(count("exercise_revision", "deck_id", material.deck())).isEqualTo(3);
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.deck_exercise_change "
                         + "WHERE deck_id=:deck AND revision_id IS NULL")
-                .param("deck", fixture.deck()).query(Long.class).single()).isOne();
+                .param("deck", material.deck()).query(Long.class).single()).isOne();
     }
 
     @Test
-    void clozeAnswerLengthIsResolvedFromPinnedAnswersForStudyPresentation() {
-        Fixture fixture = material(UUID.randomUUID());
-        JsonNode deck = decks.read(fixture.actor(), fixture.deck());
-        ObjectNode command = body(UUID.randomUUID(), deck, fixture, "CLOZE_SINGLE", "create", null, null);
-        command.withObject("objective").withObject("answerContract").withArray("accepted").add("recall");
-        command.withObject("exercise").withObject("prompt").putObject("blank")
-                .put("mode", "ANSWER_LENGTH");
-        service.publish(fixture.actor(), fixture.deck(), null, 1, ExerciseCommand.readCreate(bytes(command)));
-        JsonNode started = studies.start(fixture.actor(), fixture.deck(), "UTC", scheduled()).body();
-        UUID session = UUID.fromString(started.path("sessionId").textValue());
-        JsonNode presentation = studies.read(fixture.actor(), fixture.deck(), session)
-                .path("presentations").get(0);
-        assertThat(presentation.path("prompt").path("blank").path("mode").textValue())
-                .isEqualTo("ANSWER_LENGTH");
-        assertThat(presentation.path("prompt").path("blank").path("length").intValue()).isEqualTo(6);
-    }
+    void everyMechanicIsCreatedReadListedRevisedReusedAndKeptInHistory() {
+        Material material = fixtures.material();
+        UUID image = fixtures.pendingAsset(material.actor());
+        UUID sound = fixtures.pendingAsset(material.actor());
+        UUID clip = fixtures.pendingAsset(material.actor());
+        UUID blankOne = UUID.randomUUID();
+        UUID blankTwo = UUID.randomUUID();
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        UUID leftOne = UUID.randomUUID(), leftTwo = UUID.randomUUID();
+        UUID rightOne = UUID.randomUUID(), rightTwo = UUID.randomUUID();
+        List<ObjectNode> exercises = List.of(
+                fixtures.selfCheck(material, blocks(image(image, "Diagram"), text("Explain"), quote(material, material.node())),
+                        blocks(audio(sound, "Narration", "spoken answer"), quote(material, material.distractor()))),
+                fixtures.freeResponse(material, blocks(video(clip, "Clip", null), text("What is shown?")),
+                        blocks(text("Longer explanation")), "memory", "retention"),
+                fixtures.cloze(material, blocks(text("Fill in")), StudyFixtures.blocks(text("a "), blank(blankOne, false, 0, true),
+                        text(" and "), blank(blankTwo, true, 7, false)), blankKey(blankOne, "alpha"), blankKey(blankTwo, "beta")),
+                fixtures.choice(material, true, blocks(quote(material, material.node())),
+                        StudyFixtures.blocks().add(option(first, text("one"), image(image, "Pic")))
+                                .add(option(second, quote(material, material.distractor()))), first),
+                fixtures.match(material, blocks(text("Match")),
+                        StudyFixtures.blocks().add(item(leftOne, audio(sound, "Sound", null))).add(item(leftTwo, text("two"))),
+                        StudyFixtures.blocks().add(item(rightOne, text("one"))).add(item(rightTwo, image(image, "Alt"))),
+                        new UUID[][] {{leftOne, rightOne}, {leftTwo, rightTwo}}));
+        long[] mediaRefs = {2, 1, 0, 1, 2};
+        long[] contexts = {1, 0, 0, 1, 0};
+        for (int index = 0; index < exercises.size(); index++) {
+            ObjectNode exercise = exercises.get(index);
+            String type = exercise.path("type").textValue();
+            JsonNode created = fixtures.publish(material, exercise, "Objective " + type);
+            UUID exerciseId = UUID.fromString(created.path("exerciseId").textValue());
+            UUID firstRevision = UUID.fromString(created.path("exerciseRevisionId").textValue());
+            UUID objective = UUID.fromString(created.path("objectiveId").textValue());
+            UUID firstObjectiveRevision = UUID.fromString(created.path("objectiveRevisionId").textValue());
 
-    @Test
-    void listeningPublicationsPinOwnedAssetsAndRejectForeignCueAtomically() {
-        Fixture fixture = material(UUID.randomUUID());
-        UUID firstAsset = media.reserve(fixture.actor(), UUID.randomUUID(), MediaCatalog.Origin.UPLOAD);
-        UUID secondAsset = media.reserve(fixture.actor(), UUID.randomUUID(), MediaCatalog.Origin.UPLOAD);
-        for (String type : new String[] { "LISTEN_CHOICE", "LISTEN_TYPE", "AUDIO_TEXT_MATCH" }) {
-            JsonNode head = decks.read(fixture.actor(), fixture.deck());
-            ObjectNode body = body(UUID.randomUUID(), head, fixture, type, "create", null, null);
-            ObjectNode exercise = body.withObject("exercise");
-            exercise.set("evaluatorPolicy", JSON.createObjectNode().put("id", type.equals("AUDIO_TEXT_MATCH")
-                    ? "deterministic-audio-match" : type.equals("LISTEN_CHOICE")
-                    ? "deterministic-choice" : "deterministic-text").put("version", "1"));
-            ArrayNode bindings = exercise.withArray("bindings");
-            if (!type.equals("LISTEN_TYPE")) {
-                bindings.add(binding("OPTION", 1, fixture));
-                bindings.add(binding("OPTION", 2, fixture, fixture.distractor()));
-            }
-            if (type.equals("AUDIO_TEXT_MATCH")) {
-                UUID firstCue = UUID.randomUUID(), secondCue = UUID.randomUUID();
-                ObjectNode prompt = JSON.createObjectNode().put("kind", "AUDIO_MATCH")
-                        .put("instruction", "Соотнесите записи и текст");
-                prompt.putArray("cues").addObject().put("cueId", firstCue.toString())
-                        .put("assetId", firstAsset.toString()).put("title", "Первая").put("transcript", "");
-                prompt.withArray("cues").addObject().put("cueId", secondCue.toString())
-                        .put("assetId", secondAsset.toString()).put("title", "Вторая").put("transcript", "");
-                exercise.set("prompt", prompt);
-                ObjectNode answer = JSON.createObjectNode().put("schemaVersion", 2);
-                answer.putArray("pairs").addObject().put("cueId", firstCue.toString())
-                        .put("optionId", bindings.get(1).path("bindingId").textValue());
-                answer.withArray("pairs").addObject().put("cueId", secondCue.toString())
-                        .put("optionId", bindings.get(2).path("bindingId").textValue());
-                body.withObject("objective").set("answerContract", answer);
-            } else exercise.set("prompt", JSON.createObjectNode().put("kind", "AUDIO_ASSET")
-                    .put("assetId", firstAsset.toString()).put("title", "Первая")
-                    .put("instruction", "Прослушайте запись").put("transcript", "memory"));
-            var published = service.publish(fixture.actor(), fixture.deck(), null,
-                    Long.parseLong(head.path("rowVersion").textValue()), ExerciseCommand.readCreate(bytes(body)));
-            UUID revision = UUID.fromString(published.acknowledgement().path("exerciseRevisionId").textValue());
-            assertThat(count("exercise_media_ref", "exercise_revision_id", revision))
-                    .isEqualTo(type.equals("AUDIO_TEXT_MATCH") ? 2 : 1);
-            assertThatThrownBy(() -> jdbc.sql("DELETE FROM app_learning.exercise_media_ref "
-                            + "WHERE deck_id=:deck AND exercise_revision_id=:revision")
-                    .param("deck", fixture.deck()).param("revision", revision).update())
-                    .isInstanceOf(DataIntegrityViolationException.class);
-            assertThat(media.exerciseReady(fixture.actor(), fixture.deck(),
-                    UUID.fromString(published.acknowledgement().path("exerciseId").textValue()), revision)).isFalse();
+            JsonNode detail = service.read(material.actor(), material.deck(), exerciseId, null);
+            assertThat(detail.path("type").textValue()).isEqualTo(type);
+            assertThat(detail.path("schemaVersion").intValue()).isEqualTo(2);
+            assertThat(detail.path("content")).isEqualTo(exercise.path("content"));
+            assertThat(detail.path("answerKey")).isEqualTo(exercise.path("answerKey"));
+            assertThat(detail.path("evaluatorPolicy")).isEqualTo(exercise.path("evaluatorPolicy"));
+            assertThat(detail.path("subject").path("memberKey").textValue()).isEqualTo(material.member().toString());
+            assertThat(detail.path("subject").path("itemRevisionId").textValue()).isEqualTo(material.itemRevision().toString());
+            assertThat(detail.path("objective").path("title").textValue()).isEqualTo("Objective " + type);
+            assertThat(detail.path("objective").path("memberKey").textValue()).isEqualTo(material.member().toString());
+            assertThat(detail.has("bindings")).isFalse();
+            assertThat(detail.has("prompt")).isFalse();
+            assertThat(detail.path("objective").has("answerContract")).isFalse();
+            // server-derived bindings: one ASSESSED subject, one CONTEXT row per quoted material revision
+            assertThat(bindings(firstRevision, "ASSESSED")).isOne();
+            assertThat(bindings(firstRevision, "CONTEXT")).isEqualTo(contexts[index]);
+            assertThat(count("exercise_media_ref", "exercise_revision_id", firstRevision)).isEqualTo(mediaRefs[index]);
+
+            JsonNode listed = service.list(material.actor(), material.deck(), material.member(), "100", null);
+            JsonNode row = java.util.stream.StreamSupport.stream(listed.path("exercises").spliterator(), false)
+                    .filter(value -> value.path("exerciseId").textValue().equals(exerciseId.toString())).findFirst().orElseThrow();
+            assertThat(row.path("type").textValue()).isEqualTo(type);
+            assertThat(row.path("objective").path("title").textValue()).isEqualTo("Objective " + type);
+            assertThat(row.has("content")).isFalse();
+
+            // revise: new exercise revision and new objective revision with the stable identity retained
+            ObjectNode revised = fixtures.createBody(material, exercise.deepCopy(), "ignored");
+            revised.set("objective", JSON.createObjectNode().put("operation", "revise")
+                    .put("objectiveId", objective.toString())
+                    .put("expectedObjectiveRevisionId", firstObjectiveRevision.toString())
+                    .put("title", "Renamed " + type));
+            revised.put("expectedExerciseRevisionId", firstRevision.toString());
+            JsonNode second2 = service.publish(material.actor(), material.deck(), exerciseId, fixtures.deckVersion(material),
+                    ExerciseCommand.readUpdate(bytes(revised))).acknowledgement();
+            UUID secondRevision = UUID.fromString(second2.path("exerciseRevisionId").textValue());
+            UUID secondObjectiveRevision = UUID.fromString(second2.path("objectiveRevisionId").textValue());
+            assertThat(second2.path("objectiveId").textValue()).isEqualTo(objective.toString());
+            assertThat(secondObjectiveRevision).isNotEqualTo(firstObjectiveRevision);
+            assertThat(service.read(material.actor(), material.deck(), exerciseId, null).path("objective").path("title").textValue())
+                    .isEqualTo("Renamed " + type);
+
+            // reuse: a third exercise revision pins the second objective revision unchanged
+            ObjectNode reused = fixtures.createBody(material, exercise.deepCopy(), "ignored");
+            reused.set("objective", JSON.createObjectNode().put("operation", "reuse")
+                    .put("objectiveId", objective.toString()).put("objectiveRevisionId", secondObjectiveRevision.toString()));
+            reused.put("expectedExerciseRevisionId", secondRevision.toString());
+            JsonNode third = service.publish(material.actor(), material.deck(), exerciseId, fixtures.deckVersion(material),
+                    ExerciseCommand.readUpdate(bytes(reused))).acknowledgement();
+            assertThat(third.path("objectiveRevisionId").textValue()).isEqualTo(secondObjectiveRevision.toString());
+            assertThat(count("objective_revision", "objective_id", objective)).isEqualTo(2);
+            assertThat(count("exercise_revision", "exercise_id", exerciseId)).isEqualTo(3);
+
+            // immutable history: the first revision still reads with its own objective revision and title
+            JsonNode history = service.read(material.actor(), material.deck(), exerciseId, firstRevision);
+            assertThat(history.path("objective").path("objectiveRevisionId").textValue()).isEqualTo(firstObjectiveRevision.toString());
+            assertThat(history.path("objective").path("title").textValue()).isEqualTo("Objective " + type);
         }
-
-        UUID waitingSession = UUID.fromString(studies.start(fixture.actor(), fixture.deck(), "UTC",
-                scheduled()).body().path("sessionId").textValue());
-        assertThat(studies.read(fixture.actor(), fixture.deck(), waitingSession).path("status").textValue())
-                .isEqualTo("EMPTY");
-        readyAudio(firstAsset);
-        readyAudio(secondAsset);
-        UUID readySession = UUID.fromString(studies.start(fixture.actor(), fixture.deck(), "UTC",
-                scheduled()).body().path("sessionId").textValue());
-        JsonNode study = studies.read(fixture.actor(), fixture.deck(), readySession);
-        assertThat(study.path("presentations")).hasSize(3);
-        study.path("presentations").forEach(row -> {
-            assertThat(row.path("bindings")).isEmpty();
-            assertThat(row.path("reference").isNull()).isTrue();
-        });
-        JsonNode match = java.util.stream.StreamSupport.stream(study.path("presentations").spliterator(), false)
-                .filter(row -> row.path("type").asText().equals("AUDIO_TEXT_MATCH")).findFirst().orElseThrow();
-        UUID matchId = UUID.fromString(match.path("presentationId").textValue());
-        JsonNode reread = studies.read(fixture.actor(), fixture.deck(), readySession);
-        assertThat(java.util.stream.StreamSupport.stream(reread.path("presentations").spliterator(), false)
-                .filter(row -> row.path("presentationId").asText().equals(matchId.toString()))
-                .findFirst().orElseThrow().path("options")).isEqualTo(match.path("options"));
-        JsonNode answerMap;
-        try {
-            answerMap = JSON.readTree(jdbc.sql("SELECT answer_contract::text FROM app_learning.study_presentation WHERE presentation_id=:id")
-                    .param("id", matchId).query(String.class).single());
-        } catch (java.io.IOException exception) { throw new IllegalStateException(exception); }
-        JsonNode firstPair = answerMap.path("pairs").get(0), secondPair = answerMap.path("pairs").get(1);
-        PairCheckCommand mistake = new PairCheckCommand(matchId, match.path("nonce").asText(),
-                UUID.fromString(firstPair.path("cueId").asText()), UUID.fromString(secondPair.path("optionId").asText()));
-        assertThat(attempts.checkPair(fixture.actor(), fixture.deck(), readySession, mistake)).isFalse();
-        assertThat(attempts.checkPair(fixture.actor(), fixture.deck(), readySession, mistake)).isFalse();
-        assertThat(count("study_pair_interaction", "presentation_id", matchId)).isOne();
-        assertThatThrownBy(() -> attempts.checkPair(UUID.randomUUID(), fixture.deck(), readySession, mistake))
-                .isInstanceOf(ResourceNotFoundException.class);
-        PairCheckCommand correctPair = new PairCheckCommand(matchId, match.path("nonce").asText(),
-                UUID.fromString(firstPair.path("cueId").asText()), UUID.fromString(firstPair.path("optionId").asText()));
-        assertThat(attempts.checkPair(fixture.actor(), fixture.deck(), readySession, correctPair)).isTrue();
-        ObjectNode matchAttempt = JSON.createObjectNode().put("attemptId", UUID.randomUUID().toString())
-                .put("presentationId", matchId.toString()).put("nonce", match.path("nonce").asText())
-                .putNull("confidence").put("durationMs", 100);
-        matchAttempt.putObject("response").put("kind", "MATCH").set("pairs", answerMap.path("pairs"));
-        matchAttempt.putArray("hintsUsed");
-        AttemptCommand submittedMatch = AttemptCommand.read(bytes(matchAttempt));
-        JsonNode matchResult = attempts.submit(fixture.actor(), fixture.deck(), readySession, submittedMatch).outcome();
-        assertThat(matchResult.path("feedback").path("result").asText()).isEqualTo("PARTIAL");
-        assertThat(matchResult.path("evidence").path("reasonCodes").toString()).contains("PAIR_RETRY");
-        assertThat(attempts.submit(fixture.actor(), fixture.deck(), readySession, submittedMatch).replayed()).isTrue();
-        assertThat(attempts.checkPair(fixture.actor(), fixture.deck(), readySession, correctPair)).isTrue();
-        assertThatThrownBy(() -> attempts.checkPair(fixture.actor(), fixture.deck(), readySession,
-                new PairCheckCommand(matchId, "invalid-nonce-0000", mistake.cueId(), mistake.optionId())))
-                .isInstanceOf(ResourceNotFoundException.class);
-        JsonNode typed = java.util.stream.StreamSupport.stream(study.path("presentations").spliterator(), false)
-                .filter(row -> row.path("type").asText().equals("LISTEN_TYPE")).findFirst().orElseThrow();
-        assertThat(typed.path("reference").isNull()).isTrue();
-        assertThat(typed.path("prompt").has("transcript")).isFalse();
-        UUID typedPresentation = UUID.fromString(typed.path("presentationId").textValue());
-        assertThat(studies.revealTranscript(fixture.actor(), fixture.deck(), readySession, typedPresentation,
-                typed.path("nonce").textValue()).path("prompt").path("transcript").textValue())
-                .isEqualTo("memory");
-        assertThat(studies.read(fixture.actor(), fixture.deck(), readySession).path("presentations")
-                .findValuesAsText("transcript")).contains("memory");
-        assertThatThrownBy(() -> jdbc.sql("DELETE FROM app_learning.study_audio_accommodation "
-                        + "WHERE account_id=:actor AND presentation_id=:presentation")
-                .param("actor", fixture.actor()).param("presentation", typedPresentation).update())
-                .isInstanceOf(DataIntegrityViolationException.class);
-        jdbc.sql("UPDATE app_learning.media_asset SET state='DELETED',updated_at=CURRENT_TIMESTAMP "
-                + "WHERE asset_id=:asset").param("asset", firstAsset).update();
-        ObjectNode attempt = JSON.createObjectNode().put("attemptId", UUID.randomUUID().toString())
-                .put("presentationId", typedPresentation.toString()).put("nonce", typed.path("nonce").textValue())
-                .putNull("confidence").put("durationMs", 100);
-        attempt.putObject("response").put("kind", "TEXT").put("text", "memory");
-        attempt.putArray("hintsUsed");
-        JsonNode blocked = attempts.submit(fixture.actor(), fixture.deck(), readySession,
-                AttemptCommand.read(bytes(attempt))).outcome();
-        assertThat(blocked.path("status").textValue()).isEqualTo("NOT_ASSESSED");
-        assertThat(blocked.path("feedback").path("reasonCodes").get(0).textValue()).isEqualTo("MEDIA_NOT_READY");
-        assertThat(blocked.path("transition").isNull()).isTrue();
-
-        jdbc.sql("UPDATE app_learning.study_pair_interaction SET expires_at=CURRENT_TIMESTAMP - INTERVAL '1 hour' "
-                        + "WHERE presentation_id=:presentation")
-                .param("presentation", matchId).update();
-        assertThat(retention.purgeBatch().pairInteractions()).isEqualTo(2);
-        assertThat(count("study_pair_interaction", "presentation_id", matchId)).isZero();
-
-        UUID foreignAsset = media.reserve(UUID.randomUUID(), UUID.randomUUID(), MediaCatalog.Origin.UPLOAD);
-        JsonNode head = decks.read(fixture.actor(), fixture.deck());
-        ObjectNode foreign = body(UUID.randomUUID(), head, fixture, "LISTEN_TYPE", "create", null, null);
-        foreign.withObject("exercise").set("prompt", JSON.createObjectNode().put("kind", "AUDIO_ASSET")
-                .put("assetId", foreignAsset.toString()).put("title", "Чужая запись")
-                .put("instruction", "Прослушайте запись").put("transcript", ""));
-        assertThatThrownBy(() -> service.publish(fixture.actor(), fixture.deck(), null,
-                Long.parseLong(head.path("rowVersion").textValue()), ExerciseCommand.readCreate(bytes(foreign))))
-                .isInstanceOf(ResourceNotFoundException.class);
-        assertThat(decks.read(fixture.actor(), fixture.deck()).path("rowVersion").textValue())
-                .isEqualTo(head.path("rowVersion").textValue());
+        assertThat(decks.read(material.actor(), material.deck()).path("exerciseCount").intValue()).isEqualTo(5);
     }
 
     @Test
-    void ownerCreatesReusesAndRevisesImmutableObjectiveAndExerciseHistory() {
-        Fixture fixture = material(UUID.randomUUID());
-        UUID command = UUID.randomUUID();
-        ExerciseCommand create = command(command, fixture.deckHead(), fixture, "TYPED", "create", null, null);
-        var created = service.publish(fixture.actor(), fixture.deck(), null, 1, create);
-        JsonNode acknowledgement = created.acknowledgement();
-        UUID exercise = UUID.fromString(acknowledgement.path("exerciseId").textValue());
-        UUID firstExerciseRevision = UUID.fromString(acknowledgement.path("exerciseRevisionId").textValue());
-        UUID objective = UUID.fromString(acknowledgement.path("objectiveId").textValue());
-        UUID firstObjectiveRevision = UUID.fromString(acknowledgement.path("objectiveRevisionId").textValue());
-
-        assertThat(created.replayed()).isFalse();
-        assertThat(service.publish(fixture.actor(), fixture.deck(), null, 1, create).replayed()).isTrue();
-        JsonNode materialExercises = service.list(fixture.actor(), fixture.deck(), fixture.member(), "1", null);
-        assertThat(materialExercises.path("exercises")).hasSize(1);
-        assertThat(materialExercises.path("total").intValue()).isOne();
-        assertThat(materialExercises.path("exercises").get(0).path("objective").path("objectiveId").textValue())
-                .isEqualTo(objective.toString());
-        assertThat(materialExercises.path("exercises").get(0).path("objective")
-                .path("answerContract").path("accepted").get(0).textValue()).isEqualTo("memory");
-        assertThat(service.list(fixture.actor(), fixture.deck(), UUID.randomUUID(), "1", null)
-                .path("exercises")).isEmpty();
-        JsonNode first = service.read(fixture.actor(), fixture.deck(), exercise, null);
-        assertThat(first.path("objective").path("objectiveRevisionId").textValue())
-                .isEqualTo(firstObjectiveRevision.toString());
-        assertThat(first.path("bindings")).hasSize(1);
-
-        JsonNode head2 = decks.read(fixture.actor(), fixture.deck());
-        ExerciseCommand reuse = command(UUID.randomUUID(), head2, fixture, "SELF_CHECK", "reuse", objective,
-                firstObjectiveRevision, firstExerciseRevision);
-        var reused = service.publish(fixture.actor(), fixture.deck(), exercise, 2, reuse);
-        UUID secondExerciseRevision = UUID.fromString(reused.acknowledgement().path("exerciseRevisionId").textValue());
-        assertThat(reused.acknowledgement().path("objectiveRevisionId").textValue())
-                .isEqualTo(firstObjectiveRevision.toString());
-
-        JsonNode head3 = decks.read(fixture.actor(), fixture.deck());
-        ExerciseCommand revise = command(UUID.randomUUID(), head3, fixture, "CLOZE_SINGLE", "revise", objective,
-                firstObjectiveRevision, secondExerciseRevision);
-        var revised = service.publish(fixture.actor(), fixture.deck(), exercise, 3, revise);
-        UUID secondObjectiveRevision = UUID.fromString(revised.acknowledgement().path("objectiveRevisionId").textValue());
-        assertThat(secondObjectiveRevision).isNotEqualTo(firstObjectiveRevision);
-        assertThat(service.read(fixture.actor(), fixture.deck(), exercise, firstExerciseRevision)
-                .path("type").textValue()).isEqualTo("TYPED");
-        assertThat(service.read(fixture.actor(), fixture.deck(), exercise, null)
-                .path("type").textValue()).isEqualTo("CLOZE_SINGLE");
-        assertThat(count("objective_revision", "objective_id", objective)).isEqualTo(2);
-        assertThat(count("exercise_revision", "exercise_id", exercise)).isEqualTo(3);
-        assertThat(decks.read(fixture.actor(), fixture.deck()).path("exerciseCount").intValue()).isOne();
+    void matchAcceptsEveryMediaCombinationThroughTheSharedSlotsAndPinsEachMediaKind() {
+        Material material = fixtures.material();
+        UUID sound = fixtures.pendingAsset(material.actor()), otherSound = fixtures.pendingAsset(material.actor());
+        UUID picture = fixtures.pendingAsset(material.actor()), otherPicture = fixtures.pendingAsset(material.actor());
+        UUID clip = fixtures.pendingAsset(material.actor());
+        record Combination(String name, com.fasterxml.jackson.databind.node.ObjectNode left,
+                           com.fasterxml.jackson.databind.node.ObjectNode right, long refs) { }
+        List<Combination> combinations = List.of(
+                new Combination("text-text", text("A"), text("a"), 0),
+                new Combination("audio-text", audio(sound, "Sound", "A"), text("a"), 1),
+                new Combination("text-audio", text("A"), audio(otherSound, "Sound", null), 1),
+                new Combination("image-text", image(picture, "Picture"), text("a"), 1),
+                new Combination("audio-image", audio(sound, "Sound", null), image(otherPicture, "Picture"), 2),
+                new Combination("video-text", video(clip, "Clip", null), quote(material, material.node()), 1),
+                new Combination("audio-audio", audio(sound, "Sound", null), audio(otherSound, "Other", null), 2),
+                new Combination("image-image", image(picture, "One"), image(otherPicture, "Two"), 2));
+        for (Combination combination : combinations) {
+            UUID left = UUID.randomUUID(), right = UUID.randomUUID();
+            UUID leftTwo = UUID.randomUUID(), rightTwo = UUID.randomUUID();
+            ObjectNode exercise = fixtures.match(material, blocks(text(combination.name())),
+                    StudyFixtures.blocks().add(item(left, combination.left())).add(item(leftTwo, text("second left"))),
+                    StudyFixtures.blocks().add(item(right, combination.right())).add(item(rightTwo, text("second right"))),
+                    new UUID[][] {{left, right}, {leftTwo, rightTwo}});
+            JsonNode created = fixtures.publish(material, exercise, combination.name());
+            UUID revision = UUID.fromString(created.path("exerciseRevisionId").textValue());
+            assertThat(count("exercise_media_ref", "exercise_revision_id", revision)).as(combination.name()).isEqualTo(combination.refs());
+            assertThat(service.read(material.actor(), material.deck(), UUID.fromString(created.path("exerciseId").textValue()), null)
+                    .path("content")).isEqualTo(exercise.path("content"));
+        }
+        // the pinned kind is the declared kind of each block
+        assertThat(jdbc.sql("SELECT DISTINCT media_kind FROM app_learning.exercise_media_ref WHERE deck_id=:deck ORDER BY 1")
+                .param("deck", material.deck()).query(String.class).list()).containsExactly("audio", "image", "video");
+        assertThat(jdbc.sql("SELECT media_kind FROM app_learning.exercise_media_ref WHERE asset_id=:asset LIMIT 1")
+                .param("asset", clip).query(String.class).single()).isEqualTo("video");
     }
 
     @Test
-    void customAnswerAndSynonymSurvivePublicationAndAssessWithoutMaterialNode() {
-        Fixture fixture = material(UUID.randomUUID());
-        ObjectNode command = body(UUID.randomUUID(), fixture.deckHead(), fixture, "TYPED", "create", null, null);
-        ObjectNode assessed = (ObjectNode) command.withObject("exercise").withArray("bindings").get(0);
-        assessed.putArray("nodeIds");
-        assessed.set("display", JSON.createObjectNode().put("kind", "CUSTOM_TEXT")
-                .put("text", "long-term memory"));
-        command.withObject("objective").withObject("answerContract").putArray("accepted")
-                .add("long-term memory").add("durable memory");
-        var published = service.publish(fixture.actor(), fixture.deck(), null, 1,
-                ExerciseCommand.readCreate(bytes(command)));
-        UUID exercise = UUID.fromString(published.acknowledgement().path("exerciseId").textValue());
-        JsonNode detail = service.read(fixture.actor(), fixture.deck(), exercise, null);
-        assertThat(detail.path("bindings").get(0).path("nodeIds")).isEmpty();
-        assertThat(detail.path("bindings").get(0).path("display").path("text").textValue())
-                .isEqualTo("long-term memory");
-        UUID session = UUID.fromString(studies.start(fixture.actor(), fixture.deck(), "UTC", scheduled())
-                .body().path("sessionId").textValue());
-        JsonNode presentation = studies.read(fixture.actor(), fixture.deck(), session)
-                .path("presentations").get(0);
-        assertThat(presentation.path("reference").textValue()).isEqualTo("long-term memory");
-        ObjectNode attempt = JSON.createObjectNode().put("attemptId", UUID.randomUUID().toString())
-                .put("presentationId", presentation.path("presentationId").textValue())
-                .put("nonce", presentation.path("nonce").textValue())
-                .putNull("confidence").put("durationMs", 100);
-        attempt.putObject("response").put("kind", "TEXT").put("text", "durable memory");
-        attempt.putArray("hintsUsed");
-        JsonNode outcome = attempts.submit(fixture.actor(), fixture.deck(), session,
-                AttemptCommand.read(bytes(attempt))).outcome();
-        assertThat(outcome.path("evidence").path("result").textValue()).isEqualTo("CORRECT");
-
-        ObjectNode reuse = body(UUID.randomUUID(), decks.read(fixture.actor(), fixture.deck()), fixture,
-                "TYPED", "reuse", UUID.fromString(published.acknowledgement().path("objectiveId").textValue()),
-                UUID.fromString(published.acknowledgement().path("objectiveRevisionId").textValue()));
-        ObjectNode unrelated = (ObjectNode) reuse.withObject("exercise").withArray("bindings").get(0);
-        unrelated.putArray("nodeIds");
-        unrelated.set("display", JSON.createObjectNode().put("kind", "CUSTOM_TEXT").put("text", "wrong answer"));
-        assertThatThrownBy(() -> service.publish(fixture.actor(), fixture.deck(), null, 2,
-                ExerciseCommand.readCreate(bytes(reuse)))).isInstanceOf(InvalidRequestException.class);
+    void foreignOrDeletedAssetsFailAtomicallyWithoutAdvancingTheDeck() {
+        Material material = fixtures.material();
+        UUID foreignAsset = fixtures.pendingAsset(UUID.randomUUID());
+        UUID deletedAsset = fixtures.pendingAsset(material.actor());
+        jdbc.sql("UPDATE app_learning.media_asset SET state='DELETED',updated_at=CURRENT_TIMESTAMP WHERE asset_id=:asset")
+                .param("asset", deletedAsset).update();
+        long before = fixtures.deckVersion(material);
+        UUID correct = UUID.randomUUID();
+        for (UUID asset : new UUID[] {foreignAsset, deletedAsset, UUID.randomUUID()}) {
+            for (ObjectNode exercise : List.of(
+                    fixtures.freeResponse(material, blocks(audio(asset, "Voice", null), text("Type it")), blocks(), "x"),
+                    fixtures.choice(material, false, blocks(text("Pick")), StudyFixtures.blocks()
+                            .add(option(correct, image(asset, "Picture"))).add(option(UUID.randomUUID(), text("b"))), correct))) {
+                assertThatThrownBy(() -> fixtures.publish(material, exercise)).isInstanceOf(ResourceNotFoundException.class);
+            }
+        }
+        assertThat(fixtures.deckVersion(material)).isEqualTo(before);
+        assertThat(count("exercise_revision", "deck_id", material.deck())).isZero();
+        assertThat(count("exercise_media_ref", "deck_id", material.deck())).isZero();
     }
 
     @Test
-    void choiceSupportsPinnedOptionsWhileAclStalePinsAndDeletedNodesFailAtomically() {
-        Fixture fixture = material(UUID.randomUUID());
-        ObjectNode create = body(UUID.randomUUID(), fixture.deckHead(), fixture, "SINGLE_CHOICE", "create", null, null);
-        create.withObject("exercise").set("evaluatorPolicy",
-                JSON.createObjectNode().put("id", "deterministic-choice").put("version", "1"));
-        ArrayNode bindings = create.withObject("exercise").withArray("bindings");
-        bindings.add(binding("OPTION", 1, fixture));
-        bindings.add(binding("OPTION", 24, fixture, fixture.distractor()));
-        ObjectNode choiceContract = JSON.createObjectNode().put("schemaVersion", 3).put("selectionMode", "MULTIPLE");
-        choiceContract.putArray("correctOptionIds").add(bindings.get(1).path("bindingId").asText())
-                .add(bindings.get(2).path("bindingId").asText());
-        choiceContract.putArray("accepted").add("memory").add("attention");
-        create.withObject("objective").set("answerContract", choiceContract);
-        var published = service.publish(fixture.actor(), fixture.deck(), null, 1,
-                ExerciseCommand.readCreate(bytes(create)));
-        assertThat(service.read(fixture.actor(), fixture.deck(),
-                UUID.fromString(published.acknowledgement().path("exerciseId").textValue()), null).path("bindings"))
-                .hasSize(3);
-        UUID choiceSession = UUID.fromString(studies.start(fixture.actor(), fixture.deck(), "UTC", scheduled())
-                .body().path("sessionId").asText());
-        JsonNode study = studies.read(fixture.actor(), fixture.deck(), choiceSession);
-        JsonNode presentation = study.path("presentations").get(0);
-        assertThat(presentation.path("selectionMode").asText()).isEqualTo("MULTIPLE");
-        assertThat(presentation.path("reference").isNull()).isTrue();
-        ObjectNode attempt = JSON.createObjectNode().put("attemptId", UUID.randomUUID().toString())
-                .put("presentationId", presentation.path("presentationId").asText())
-                .put("nonce", presentation.path("nonce").asText()).putNull("confidence").put("durationMs", 100);
-        attempt.putArray("hintsUsed");
-        attempt.putObject("response").put("kind", "CHOICE").putArray("optionIds")
-                .add(bindings.get(2).path("bindingId").asText()).add(bindings.get(1).path("bindingId").asText());
-        assertThat(attempts.submit(fixture.actor(), fixture.deck(), UUID.fromString(study.path("sessionId").asText()),
-                AttemptCommand.read(bytes(attempt))).outcome().path("feedback").path("result").asText())
-                .isEqualTo("CORRECT");
-
-        assertThatThrownBy(() -> service.list(UUID.randomUUID(), fixture.deck(), null, null))
-                .isInstanceOf(ResourceNotFoundException.class);
-        Fixture other = material(UUID.randomUUID());
-        ObjectNode crossDeck = body(UUID.randomUUID(), decks.read(fixture.actor(), fixture.deck()), other,
-                "TYPED", "create", null, null);
-        assertThatThrownBy(() -> service.publish(fixture.actor(), fixture.deck(), null, 2,
-                ExerciseCommand.readCreate(bytes(crossDeck))))
-                .isInstanceOf(ResourceNotFoundException.class);
-
-        ObjectNode badNode = body(UUID.randomUUID(), decks.read(fixture.actor(), fixture.deck()), fixture,
-                "TYPED", "create", null, null);
-        ((ObjectNode) badNode.path("exercise").path("bindings").get(0)).withArray("nodeIds")
-                .set(0, JSON.getNodeFactory().textNode(UUID.randomUUID().toString()));
-        assertThatThrownBy(() -> service.publish(fixture.actor(), fixture.deck(), null, 2,
-                ExerciseCommand.readCreate(bytes(badNode))))
+    void aReadyAssetOfAnotherKindIsRejectedAtPublicationWhilePendingOnesStayAllowed() {
+        Material material = fixtures.material();
+        UUID picture = fixtures.readyAsset(material.actor(), "image/png");
+        UUID sound = fixtures.readyAsset(material.actor(), "audio/mpeg");
+        UUID pending = fixtures.pendingAsset(material.actor());
+        long before = fixtures.deckVersion(material);
+        assertThatThrownBy(() -> fixtures.publish(material,
+                fixtures.freeResponse(material, blocks(audio(picture, "Not audio", null), text("Q")), blocks(), "x")))
                 .isInstanceOf(InvalidRequestException.class);
-        assertThat(decks.read(fixture.actor(), fixture.deck()).path("rowVersion").textValue()).isEqualTo("2");
+        assertThatThrownBy(() -> fixtures.publish(material,
+                fixtures.freeResponse(material, blocks(image(sound, "Not an image"), text("Q")), blocks(), "x")))
+                .isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> fixtures.publish(material,
+                fixtures.freeResponse(material, blocks(video(sound, "Not a video", null), text("Q")), blocks(), "x")))
+                .isInstanceOf(InvalidRequestException.class);
+        assertThat(fixtures.deckVersion(material)).isEqualTo(before);
+        assertThat(count("exercise_media_ref", "deck_id", material.deck())).isZero();
+        fixtures.publish(material, fixtures.freeResponse(material,
+                blocks(audio(sound, "Audio", null), image(picture, "Image"), text("Q")), blocks(), "x"));
+        fixtures.publish(material, fixtures.freeResponse(material, blocks(audio(pending, "Pending", null), text("Q2")), blocks(), "x"));
+        assertThat(ExerciseCommand.MAX_MEDIA_BLOCKS).isEqualTo(MediaCatalog.MAX_EXERCISE_ASSETS);
+    }
+
+    @Test
+    void materialBlocksQuoteOnlyExistingTextNodesOfThisDecksCurrentRevisions() {
+        Material material = fixtures.material();
+        Material other = fixtures.material();
+        long before = fixtures.deckVersion(material);
+        // a node that is not in the pinned revision, a node without text and a node of the wrong revision
+        for (ObjectNode block : List.of(
+                quote(material, UUID.randomUUID()),
+                quote(material, material.divider()))) {
+            assertThatThrownBy(() -> fixtures.publish(material,
+                    fixtures.freeResponse(material, blocks(text("Q"), block), blocks(), "x")))
+                    .as(block.toString()).isInstanceOf(InvalidRequestException.class);
+        }
+        // a member of another deck and an unknown revision are opaque 404s, both as quote and as subject
+        assertThatThrownBy(() -> fixtures.publish(material,
+                fixtures.freeResponse(material, blocks(quote(other, other.node())), blocks(), "x")))
+                .isInstanceOf(ResourceNotFoundException.class);
+        ObjectNode unknownRevision = quote(material, material.node());
+        unknownRevision.put("itemRevisionId", UUID.randomUUID().toString());
+        assertThatThrownBy(() -> fixtures.publish(material,
+                fixtures.freeResponse(material, blocks(unknownRevision), blocks(), "x")))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> fixtures.publish(material, fixtures.freeResponse(other, blocks(text("Q")), blocks(), "x")))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThat(fixtures.deckVersion(material)).isEqualTo(before);
+
+        // a quoted text node of a long paragraph is bounded by the slot that quotes it
+        Material long300 = fixtures.addMaterial(material.actor(), material.deck(), "x".repeat(301), "short");
+        ExerciseCommand.readCreate(bytes(fixtures.createBody(long300,
+                fixtures.freeResponse(long300, blocks(quote(long300, long300.node())), blocks(), "x"), "Prompt")));
+        fixtures.publish(long300, fixtures.freeResponse(long300, blocks(quote(long300, long300.node())), blocks(), "x"));
+        assertThatThrownBy(() -> fixtures.publish(long300, fixtures.choice(long300, false, blocks(text("Pick")),
+                StudyFixtures.blocks().add(option(UUID.fromString("dddddddd-dddd-4ddd-8ddd-ddddddddddd1"),
+                        quote(long300, long300.node()))).add(option(UUID.fromString("dddddddd-dddd-4ddd-8ddd-ddddddddddd2"), text("b"))),
+                UUID.fromString("dddddddd-dddd-4ddd-8ddd-ddddddddddd1")))).isInstanceOf(InvalidRequestException.class);
+        Material huge = fixtures.addMaterial(material.actor(), material.deck(), "y".repeat(4_001), "short");
+        assertThatThrownBy(() -> fixtures.publish(huge, fixtures.freeResponse(huge, blocks(quote(huge, huge.node())), blocks(), "x")))
+                .isInstanceOf(InvalidRequestException.class);
+        // a text projection of the whole document quotes both paragraphs on separate lines
+        fixtures.publish(material, fixtures.freeResponse(material, blocks(quote(material, material.root())), blocks(), "x"));
+    }
+
+    @Test
+    void staleDeckRevisionAndVersionConflictsLeaveNothingBehind() {
+        Material material = fixtures.material();
+        ObjectNode stale = fixtures.createBody(material, fixtures.freeResponse(material, blocks(text("Q")), blocks(), "x"), "Stale");
+        long staleVersion = fixtures.deckVersion(material);
+        fixtures.publish(material, fixtures.freeResponse(material, blocks(text("Other")), blocks(), "y"));
+        assertThatThrownBy(() -> service.publish(material.actor(), material.deck(), null, staleVersion,
+                ExerciseCommand.readCreate(bytes(stale)))).isInstanceOf(VersionConflictException.class);
+        // the right revision with a wrong version number conflicts as well
+        ObjectNode current = fixtures.createBody(material, fixtures.freeResponse(material, blocks(text("Q2")), blocks(), "x"), "Current");
+        assertThatThrownBy(() -> service.publish(material.actor(), material.deck(), null, fixtures.deckVersion(material) + 1,
+                ExerciseCommand.readCreate(bytes(current)))).isInstanceOf(VersionConflictException.class);
+        assertThat(decks.read(material.actor(), material.deck()).path("exerciseCount").intValue()).isOne();
+        assertThat(count("memory_objective", "deck_id", material.deck())).isOne();
+
+        // an update must pin the current exercise revision
+        JsonNode first = service.list(material.actor(), material.deck(), null, null, null).path("exercises").get(0);
+        ObjectNode wrongRevision = fixtures.createBody(material, fixtures.freeResponse(material, blocks(text("Q3")), blocks(), "x"), "Q3");
+        wrongRevision.put("expectedExerciseRevisionId", UUID.randomUUID().toString());
+        assertThatThrownBy(() -> service.publish(material.actor(), material.deck(),
+                UUID.fromString(first.path("exerciseId").textValue()), fixtures.deckVersion(material),
+                ExerciseCommand.readUpdate(bytes(wrongRevision)))).isInstanceOf(VersionConflictException.class);
+        assertThatThrownBy(() -> service.publish(material.actor(), material.deck(), UUID.randomUUID(), fixtures.deckVersion(material),
+                ExerciseCommand.readUpdate(bytes(wrongRevision)))).isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void unavailableCapabilitiesAreRejectedWithoutWritesAndStructuralErrorsStayInvalid() {
+        Material material = fixtures.material();
+        long before = fixtures.deckVersion(material);
+        // the same fixtures the architect pinned, retargeted at this deck's real material
+        for (String name : new String[] {"rejectedAiAssessment", "rejectedSpeechInput"}) {
+            ObjectNode command = fixtures.createBody(material, mechanic(name).path("exercise").deepCopy(), "Capability");
+            ObjectNode exercise = command.withObject("exercise");
+            exercise.set("subject", JSON.createObjectNode().put("memberKey", material.member().toString())
+                    .put("itemRevisionId", material.itemRevision().toString()));
+            assertThatThrownBy(() -> service.publish(material.actor(), material.deck(), null, before,
+                    ExerciseCommand.readCreate(bytes(command)))).as(name).isInstanceOf(CapabilityUnavailableException.class);
+        }
+        assertThat(fixtures.deckVersion(material)).isEqualTo(before);
+        assertThat(count("exercise_revision", "deck_id", material.deck())).isZero();
+        assertThat(count("memory_objective", "deck_id", material.deck())).isZero();
+
+        // a broken rubric is a 400 before any capability question
+        ObjectNode broken = fixtures.createBody(material, mechanic("rejectedAiAssessment").path("exercise").deepCopy(), "Broken");
+        broken.withObject("exercise").withObject("evaluatorPolicy").withObject("rubric").withArray("criteria").removeAll();
+        assertThatThrownBy(() -> ExerciseCommand.readCreate(bytes(broken))).isInstanceOf(InvalidRequestException.class);
+        // a deterministic free response with typed input needs no capability
+        fixtures.publish(material, fixtures.freeResponse(material, blocks(text("Q")), blocks(), "answer"));
+    }
+
+    @Test
+    void objectiveOperationsEnforceMemberTitleAndRevisionPins() {
+        Material material = fixtures.material();
+        Material second = fixtures.addMaterial(material.actor(), material.deck(), "other", "another");
+        JsonNode created = fixtures.publish(material, fixtures.freeResponse(material, blocks(text("Q")), blocks(), "a"), "Title");
+        UUID objective = UUID.fromString(created.path("objectiveId").textValue());
+        UUID revision = UUID.fromString(created.path("objectiveRevisionId").textValue());
+
+        // an objective belongs to the material that owns it: reuse and revise from another material are 400
+        for (String operation : new String[] {"reuse", "revise"}) {
+            ObjectNode body = fixtures.createBody(second, fixtures.freeResponse(second, blocks(text("Q2")), blocks(), "b"), "x");
+            ObjectNode objectiveValue = JSON.createObjectNode().put("operation", operation)
+                    .put("objectiveId", objective.toString());
+            if (operation.equals("reuse")) objectiveValue.put("objectiveRevisionId", revision.toString());
+            else objectiveValue.put("expectedObjectiveRevisionId", revision.toString()).put("title", "Hijack");
+            body.set("objective", objectiveValue);
+            assertThatThrownBy(() -> service.publish(second.actor(), second.deck(), null, fixtures.deckVersion(second),
+                    ExerciseCommand.readCreate(bytes(body)))).as(operation).isInstanceOf(InvalidRequestException.class);
+        }
+        // a stale objective pin conflicts and an unknown objective is opaque
+        ObjectNode stale = fixtures.createBody(material, fixtures.freeResponse(material, blocks(text("Q3")), blocks(), "c"), "x");
+        stale.set("objective", JSON.createObjectNode().put("operation", "reuse").put("objectiveId", objective.toString())
+                .put("objectiveRevisionId", UUID.randomUUID().toString()));
+        assertThatThrownBy(() -> service.publish(material.actor(), material.deck(), null, fixtures.deckVersion(material),
+                ExerciseCommand.readCreate(bytes(stale)))).isInstanceOf(VersionConflictException.class);
+        stale.set("objective", JSON.createObjectNode().put("operation", "revise").put("objectiveId", objective.toString())
+                .put("expectedObjectiveRevisionId", UUID.randomUUID().toString()).put("title", "x"));
+        assertThatThrownBy(() -> service.publish(material.actor(), material.deck(), null, fixtures.deckVersion(material),
+                ExerciseCommand.readCreate(bytes(stale)))).isInstanceOf(VersionConflictException.class);
+        stale.set("objective", JSON.createObjectNode().put("operation", "reuse").put("objectiveId", UUID.randomUUID().toString())
+                .put("objectiveRevisionId", revision.toString()));
+        assertThatThrownBy(() -> service.publish(material.actor(), material.deck(), null, fixtures.deckVersion(material),
+                ExerciseCommand.readCreate(bytes(stale)))).isInstanceOf(ResourceNotFoundException.class);
+        // another owner sees nothing
+        assertThatThrownBy(() -> service.read(UUID.randomUUID(), material.deck(), UUID.randomUUID(), null))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> service.list(UUID.randomUUID(), material.deck(), null, null))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThat(count("memory_objective", "deck_id", material.deck())).isOne();
     }
 
     @Test
     void retriesConflictsPaginationAndDatabaseImmutabilityAreEnforced() {
-        Fixture fixture = material(UUID.randomUUID());
-        UUID commandId = UUID.randomUUID();
-        ExerciseCommand command = command(commandId, fixture.deckHead(), fixture, "TYPED", "create", null, null);
-        JsonNode first = service.publish(fixture.actor(), fixture.deck(), null, 1, command).acknowledgement();
-        ObjectNode changed = body(commandId, fixture.deckHead(), fixture, "SELF_CHECK", "create", null, null);
-        changed.withObject("exercise").set("evaluatorPolicy",
-                JSON.createObjectNode().put("id", "self-check").put("version", "1"));
-        assertThatThrownBy(() -> service.publish(fixture.actor(), fixture.deck(), null, 1,
+        Material material = fixtures.material();
+        ObjectNode body = fixtures.createBody(material, fixtures.freeResponse(material, blocks(text("Q")), blocks(), "a"), "Title");
+        long version = fixtures.deckVersion(material);
+        ExerciseCommand command = ExerciseCommand.readCreate(bytes(body));
+        var first = service.publish(material.actor(), material.deck(), null, version, command);
+        assertThat(first.replayed()).isFalse();
+        assertThat(service.publish(material.actor(), material.deck(), null, version, command).replayed()).isTrue();
+        ObjectNode changed = body.deepCopy();
+        changed.withObject("objective").put("title", "Different");
+        assertThatThrownBy(() -> service.publish(material.actor(), material.deck(), null, version,
                 ExerciseCommand.readCreate(bytes(changed)))).isInstanceOf(IdempotencyConflictException.class);
-        assertThatThrownBy(() -> service.publish(fixture.actor(), fixture.deck(), null, 1,
-                command(UUID.randomUUID(), fixture.deckHead(), fixture, "TYPED", "create", null, null)))
-                .isInstanceOf(VersionConflictException.class);
 
-        JsonNode page = service.list(fixture.actor(), fixture.deck(), "1", null);
+        JsonNode page = service.list(material.actor(), material.deck(), "1", null);
         assertThat(page.path("nextCursor").isNull()).isTrue();
-        assertThatThrownBy(() -> service.list(fixture.actor(), fixture.deck(), "0", null))
-                .isInstanceOf(InvalidRequestException.class);
-        assertThatThrownBy(() -> service.read(fixture.actor(), fixture.deck(), UUID.randomUUID(), null))
+        assertThatThrownBy(() -> service.list(material.actor(), material.deck(), "0", null)).isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> service.read(material.actor(), material.deck(), UUID.randomUUID(), null))
                 .isInstanceOf(ResourceNotFoundException.class);
 
-        UUID objective = UUID.fromString(first.path("objectiveId").textValue());
-        UUID exercise = UUID.fromString(first.path("exerciseId").textValue());
+        UUID objective = UUID.fromString(first.acknowledgement().path("objectiveId").textValue());
+        UUID exercise = UUID.fromString(first.acknowledgement().path("exerciseId").textValue());
         assertThatThrownBy(() -> jdbc.sql("UPDATE app_learning.memory_objective SET created_at=created_at "
                         + "WHERE deck_id=:deck AND objective_id=:objective")
-                .param("deck", fixture.deck()).param("objective", objective).update())
+                .param("deck", material.deck()).param("objective", objective).update())
                 .isInstanceOf(DataIntegrityViolationException.class);
-        assertThatThrownBy(() -> jdbc.sql("DELETE FROM app_learning.exercise_revision "
-                        + "WHERE deck_id=:deck AND exercise_id=:exercise")
-                .param("deck", fixture.deck()).param("exercise", exercise).update())
+        assertThatThrownBy(() -> jdbc.sql("DELETE FROM app_learning.exercise_revision WHERE deck_id=:deck AND exercise_id=:exercise")
+                .param("deck", material.deck()).param("exercise", exercise).update())
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.sql("UPDATE app_learning.objective_revision SET descriptor='{\"schemaVersion\":1,\"title\":\"x\"}'::jsonb "
+                        + "WHERE deck_id=:deck").param("deck", material.deck()).update())
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
-    private Fixture material(UUID actor) {
-        UUID deck = UUID.fromString(decks.create(actor, new DeckCommand(UUID.randomUUID(), "Deck", "Description"))
-                .acknowledgement().path("deck").path("deckId").textValue());
-        JsonNode deckHead = decks.read(actor, deck);
-        UUID rootNode = UUID.randomUUID(), answerNode = UUID.randomUUID(), distractorNode = UUID.randomUUID();
-        ObjectNode document = JSON.createObjectNode().put("formatVersion", 1);
-        ObjectNode root = document.putObject("root").put("id", rootNode.toString()).put("type", "doc").put("version", 1);
-        root.putObject("attrs");
-        ObjectNode paragraph = root.putArray("content").addObject().put("id", answerNode.toString())
-                .put("type", "paragraph").put("version", 1);
-        paragraph.putObject("attrs");
-        ObjectNode text = paragraph.putArray("content").addObject().put("id", UUID.randomUUID().toString())
-                .put("type", "text").put("version", 1);
-        text.putObject("attrs").put("text", "memory"); text.putArray("content");
-        ObjectNode distractor = root.withArray("content").addObject().put("id", distractorNode.toString())
-                .put("type", "paragraph").put("version", 1);
-        distractor.putObject("attrs");
-        ObjectNode distractorText = distractor.putArray("content").addObject().put("id", UUID.randomUUID().toString())
-                .put("type", "text").put("version", 1);
-        distractorText.putObject("attrs").put("text", "forgetting"); distractorText.putArray("content");
-        ObjectNode itemBody = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString())
-                .put("expectedDeckRevisionId", deckHead.path("revisionId").textValue());
-        itemBody.set("document", document);
-        JsonNode item = items.publish(actor, deck, 0, ItemPublicationCommand.readCreate(bytes(itemBody)))
-                .acknowledgement().path("changes").get(0);
-        return new Fixture(actor, deck, decks.read(actor, deck), UUID.fromString(item.path("memberKey").textValue()),
-                UUID.fromString(item.path("itemRevisionId").textValue()), answerNode, distractorNode);
-    }
-
-    private static ExerciseCommand command(UUID command, JsonNode deck, Fixture fixture, String type,
-                                           String operation, UUID objective, UUID objectiveRevision) {
-        return command(command, deck, fixture, type, operation, objective, objectiveRevision, null);
-    }
-
-    private static ExerciseCommand command(UUID command, JsonNode deck, Fixture fixture, String type,
-                                           String operation, UUID objective, UUID objectiveRevision,
-                                           UUID expectedExerciseRevision) {
-        ObjectNode body = body(command, deck, fixture, type, operation, objective, objectiveRevision);
-        if (expectedExerciseRevision == null) return ExerciseCommand.readCreate(bytes(body));
-        body.put("expectedExerciseRevisionId", expectedExerciseRevision.toString());
-        return ExerciseCommand.readUpdate(bytes(body));
-    }
-
-    private static ObjectNode body(UUID command, JsonNode deck, Fixture fixture, String type,
-                                   String operation, UUID objective, UUID objectiveRevision) {
-        ObjectNode body = JSON.createObjectNode().put("commandId", command.toString())
-                .put("expectedDeckRevisionId", deck.path("revisionId").textValue());
-        ObjectNode objectiveValue = body.putObject("objective").put("operation", operation);
-        if (operation.equals("reuse")) {
-            objectiveValue.put("objectiveId", objective.toString())
-                    .put("objectiveRevisionId", objectiveRevision.toString());
-        } else {
-            if (operation.equals("revise")) objectiveValue.put("objectiveId", objective.toString())
-                    .put("expectedObjectiveRevisionId", objectiveRevision.toString());
-            ObjectNode answer = objectiveValue.putObject("answerContract").put("schemaVersion", 1);
-            answer.putArray("normalization").add("UNICODE_NFC").add("TRIM").add("CASE_FOLD");
-            answer.putArray("accepted").add(operation.equals("revise") ? "long-term memory" : "memory");
+    @Test
+    void persistedSchemaHasOnlyTheFiveMechanicsAndAValidatedObjectiveDescriptor() {
+        for (String constraint : new String[] {"exercise_revision_exercise_type_check", "study_presentation_exercise_type_check"}) {
+            String definition = jdbc.sql("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname=:name")
+                    .param("name", constraint).query(String.class).single();
+            assertThat(definition).contains("SELF_CHECK", "FREE_RESPONSE", "CLOZE", "CHOICE", "MATCH")
+                    .doesNotContain("TYPED", "LISTEN", "SINGLE_CHOICE", "AUDIO_TEXT_MATCH", "CLOZE_SINGLE");
         }
-        ObjectNode exercise = body.putObject("exercise").put("type", type).put("schemaVersion", 1)
-                .put("enabled", true);
-        exercise.putObject("prompt").put("kind", "NODE_TEXT").put("memberKey", fixture.member().toString())
-                .put("itemRevisionId", fixture.itemRevision().toString()).put("nodeId", fixture.node().toString());
-        exercise.putArray("bindings").add(binding("ASSESSED", 0, fixture));
-        exercise.putObject("evaluatorPolicy").put("id", type.equals("SELF_CHECK") ? "self-check" : "deterministic-text")
-                .put("version", "1");
-        return body;
+        assertThat(jdbc.sql("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname='exercise_revision_schema_version_check'")
+                .query(String.class).single()).contains("2");
+        assertThat(jdbc.sql("SELECT count(*) FROM information_schema.columns WHERE table_schema='app_learning' "
+                + "AND ((table_name='exercise_revision' AND column_name IN ('prompt_spec')) "
+                + "OR (table_name='objective_revision' AND column_name='answer_contract') "
+                + "OR (table_name='study_presentation' AND column_name IN ('options','bindings','prompt','answer_contract')) "
+                + "OR (table_name='exercise_content_binding' AND column_name='display_spec') "
+                + "OR (table_name='study_pair_interaction' AND column_name IN ('cue_id','option_id')))")
+                .query(Long.class).single()).isZero();
+        assertThat(jdbc.sql("SELECT count(*) FROM pg_proc WHERE proname='exercise_audio_ready'")
+                .query(Long.class).single()).isZero();
     }
 
-    private static ObjectNode binding(String role, int ordinal, Fixture fixture) {
-        return binding(role, ordinal, fixture, fixture.node());
+    @Test
+    void anEmptyDeckListsNoExercisesAndForeignDecksAreOpaque() {
+        UUID actor = UUID.randomUUID();
+        UUID deck = UUID.fromString(decks.create(actor, new DeckCommand(UUID.randomUUID(), "Empty", "Deck"))
+                .acknowledgement().path("deck").path("deckId").textValue());
+        assertThat(service.list(actor, deck, null, null).path("exercises")).isEmpty();
+        assertThat(service.list(actor, deck, null, null).path("total").intValue()).isZero();
     }
 
-    private static ObjectNode binding(String role, int ordinal, Fixture fixture, UUID node) {
-        ObjectNode binding = JSON.createObjectNode().put("bindingId", UUID.randomUUID().toString())
-                .put("role", role).put("memberKey", fixture.member().toString())
-                .put("itemRevisionId", fixture.itemRevision().toString()).put("ordinal", ordinal);
-        binding.putArray("nodeIds").add(node.toString());
-        binding.putObject("display").put("kind", "NODE_TEXT");
-        return binding;
+    private long bindings(UUID revision, String role) {
+        return jdbc.sql("SELECT count(*) FROM app_learning.exercise_content_binding "
+                        + "WHERE exercise_revision_id=:revision AND role=:role")
+                .param("revision", revision).param("role", role).query(Long.class).single();
     }
 
     private long count(String table, String column, UUID value) {
@@ -515,30 +477,4 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
                 .param("value", value).query(Long.class).single();
     }
 
-    private void readyAudio(UUID asset) {
-        UUID blob = UUID.randomUUID();
-        byte[] hash = new byte[32];
-        java.nio.ByteBuffer.wrap(hash).putLong(blob.getMostSignificantBits()).putLong(blob.getLeastSignificantBits());
-        jdbc.sql("INSERT INTO app_learning.media_blob(blob_id,sha256,byte_length,mime_type,object_key,verified_at) "
-                + "VALUES (:blob,:hash,32,'audio/mpeg',:key,CURRENT_TIMESTAMP)")
-                .param("blob", blob).param("hash", hash).param("key", "audio/" + blob).update();
-        jdbc.sql("UPDATE app_learning.media_asset SET state='PROCESSING',updated_at=CURRENT_TIMESTAMP "
-                + "WHERE asset_id=:asset").param("asset", asset).update();
-        assertThat(media.ready(asset, 0, blob)).isTrue();
-    }
-
-    private static StudySessionCommand scheduled() {
-        ObjectNode command = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString())
-                .put("mode", "SCHEDULED");
-        command.putObject("budget").put("maxPresentations", 20).put("maxNewObjectives", 5);
-        return StudySessionCommand.read(bytes(command));
-    }
-
-
-    private static ByteArrayInputStream bytes(JsonNode value) {
-        return new ByteArrayInputStream(value.toString().getBytes(StandardCharsets.UTF_8));
-    }
-
-    private record Fixture(UUID actor, UUID deck, JsonNode deckHead, UUID member, UUID itemRevision, UUID node,
-                           UUID distractor) { }
 }
