@@ -168,8 +168,9 @@ and explicit Replay retain their immutable snapshots.
 exerciseRevisionId, type, objectiveId, objectiveRevisionId, learningEpoch, content,
 transcriptRevealed, hints, evaluator}`. `content` is resolved once at issue and replayed verbatim:
 `MATERIAL` becomes `TEXT`, media blocks expose only `assetId` (+ image `alt`) and
-`transcriptAvailable`, `MATCH` sides are shuffled independently and deterministically per
-presentation (never left aligned with their partners), `CLOZE` blanks expose only `blankId`,
+`transcriptAvailable`, `MATCH` sides are shuffled independently by a secure random source at issue
+and persisted; the answer key never adjusts the permutation (any arrangement, including
+rows that happen to line up, is possible), `CLOZE` blanks expose only `blankId`,
 `size {mode,length}` and `firstLetterHint`. No presentation contains an answer key, accepted
 strings, correct option/pair IDs, binding rows, media titles or unrevealed transcripts.
 `SELF_CHECK` carries its reference blocks because revealing them is the interaction; clients keep

@@ -7,14 +7,10 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.Random;
-import java.util.UUID;
 import java.util.random.RandomGenerator;
-import java.util.stream.IntStream;
 
 import static app.mnema.learning.support.ContractFixtures.fixture;
 import static app.mnema.learning.support.ContractFixtures.mechanic;
@@ -80,69 +76,58 @@ class LearnerContentTest {
     }
 
     @Test
-    void matchSidesAreShuffledIndependentlyWithTheGivenSourceAndNeverAligned() {
+    void matchSidesComeOnlyFromTheSuppliedSourceAndKeepAuthorOnlyDataOut() {
         ObjectNode exercise = mechanic("createMatchMixed").withObject("exercise");
-        Map<String, String> partner = partners(exercise);
         JsonNode content = issue(exercise, new Random(42));
         assertThat(issue(exercise, new Random(42))).as("same source, same order").isEqualTo(content);
         assertThat(ids(content.path("left"))).containsExactlyInAnyOrderElementsOf(ids(exercise.path("content").path("left")));
         assertThat(ids(content.path("right"))).containsExactlyInAnyOrderElementsOf(ids(exercise.path("content").path("right")));
         assertThat(content.path("left").get(0).path("blocks").get(0).has("title")).isFalse();
-
-        boolean leftMoved = false;
-        boolean rightMoved = false;
-        Random random = new Random(7);
-        for (int attempt = 0; attempt < 200; attempt++) {
-            JsonNode shuffled = issue(exercise, random);
-            List<String> left = ids(shuffled.path("left"));
-            List<String> right = ids(shuffled.path("right"));
-            assertThat(IntStream.range(0, left.size()).allMatch(index -> partner.get(left.get(index)).equals(right.get(index))))
-                    .as("a column that lines up with its partners hands out the answer").isFalse();
-            leftMoved |= !left.equals(ids(exercise.path("content").path("left")));
-            rightMoved |= !right.equals(ids(exercise.path("content").path("right")));
-        }
-        assertThat(leftMoved).isTrue();
-        assertThat(rightMoved).isTrue();
     }
 
     @Test
-    void theShuffleIsNotAFunctionOfAnyIdentifierTheLearnerHolds() {
-        // The permutation comes only from the supplied source: the content is persisted at issue, so nothing
-        // in the exercise or presentation ids can reproduce it.
-        ObjectNode exercise = mechanic("createMatchMixed").withObject("exercise");
-        Set<List<String>> orders = new java.util.HashSet<>();
-        for (int attempt = 0; attempt < 30; attempt++) orders.add(ids(issue(exercise, new java.security.SecureRandom()).path("left")));
-        assertThat(orders.size()).isGreaterThan(5);
-        // two issues from one source differ, and an id-seeded generator does not predict them
-        RandomGenerator source = new java.security.SecureRandom();
-        int predicted = 0;
-        for (int attempt = 0; attempt < 50; attempt++) {
-            UUID presentation = UUID.randomUUID();
-            JsonNode issued = issue(exercise, source);
-            List<String> guess = new ArrayList<>(ids(exercise.path("content").path("left")));
-            java.util.Collections.shuffle(guess, new Random(presentation.getMostSignificantBits()));
-            if (guess.equals(ids(issued.path("left")))) predicted++;
-        }
-        assertThat(predicted).isLessThan(10);
+    void twoPairMatchCanBeIssuedAlignedOrCrossedBecauseTheKeyIsNeverConsulted() {
+        ObjectNode exercise = twoPairMatch();
+        List<String> left = ids(exercise.path("content").path("left"));
+        List<String> right = ids(exercise.path("content").path("right"));
+        // Collections.shuffle on two items draws nextInt(2) once per side: 1 keeps the order, 0 swaps.
+        JsonNode aligned = issue(exercise, new ScriptedSource(1, 1));
+        assertThat(ids(aligned.path("left"))).containsExactlyElementsOf(left);
+        assertThat(ids(aligned.path("right"))).as("rows may line up with their partners").containsExactlyElementsOf(right);
+
+        JsonNode crossed = issue(exercise, new ScriptedSource(1, 0));
+        assertThat(ids(crossed.path("left"))).containsExactlyElementsOf(left);
+        assertThat(ids(crossed.path("right"))).containsExactlyElementsOf(List.of(right.get(1), right.get(0)));
+
+        JsonNode bothSwapped = issue(exercise, new ScriptedSource(0, 0));
+        assertThat(ids(bothSwapped.path("left"))).containsExactlyElementsOf(List.of(left.get(1), left.get(0)));
+        assertThat(ids(bothSwapped.path("right"))).containsExactlyElementsOf(List.of(right.get(1), right.get(0)));
     }
 
     @Test
-    void twoItemMatchRotatesWheneverTheShuffleWouldAlign() {
-        ObjectNode exercise = mechanic("createMatchMixed").withObject("exercise");
-        drop(exercise.withObject("content").withArray("left"), 3, 2);
-        drop(exercise.withObject("content").withArray("right"), 3, 2);
-        drop(exercise.withObject("answerKey").withArray("pairs"), 3, 2);
-        Map<String, String> partner = partners(exercise);
-        Set<List<String>> rightOrders = new java.util.HashSet<>();
-        Random random = new Random(3);
-        for (int attempt = 0; attempt < 100; attempt++) {
-            JsonNode shuffled = issue(exercise, random);
-            List<String> left = ids(shuffled.path("left"));
-            List<String> right = ids(shuffled.path("right"));
-            assertThat(partner.get(left.get(0)).equals(right.get(0)) && partner.get(left.get(1)).equals(right.get(1))).isFalse();
-            rightOrders.add(right);
+    void thePermutationDoesNotDependOnTheAnswerKey() {
+        ObjectNode exercise = twoPairMatch();
+        ObjectNode swappedKey = exercise.deepCopy();
+        com.fasterxml.jackson.databind.node.ArrayNode pairs = swappedKey.withObject("answerKey").withArray("pairs");
+        String firstRight = pairs.get(0).path("rightId").textValue();
+        ((ObjectNode) pairs.get(0)).put("rightId", pairs.get(1).path("rightId").textValue());
+        ((ObjectNode) pairs.get(1)).put("rightId", firstRight);
+        for (int[] draws : new int[][] {{1, 1}, {1, 0}, {0, 1}, {0, 0}}) {
+            assertThat(issue(swappedKey, new ScriptedSource(draws)))
+                    .as("draws %s", java.util.Arrays.toString(draws))
+                    .isEqualTo(issue(exercise, new ScriptedSource(draws)));
         }
-        assertThat(rightOrders).hasSize(2);
+    }
+
+    @Test
+    void aFullyAlignedLargerMatchIsIssuedUnchangedWhenTheSourceKeepsEveryPosition() {
+        ObjectNode exercise = mechanic("createMatchMixed").withObject("exercise");
+        int size = exercise.path("content").path("left").size();
+        int[] keep = new int[2 * (size - 1)];
+        for (int index = 0; index < keep.length; index++) keep[index] = size - 1 - (index % (size - 1));
+        JsonNode content = issue(exercise, new ScriptedSource(keep));
+        assertThat(ids(content.path("left"))).containsExactlyElementsOf(ids(exercise.path("content").path("left")));
+        assertThat(ids(content.path("right"))).containsExactlyElementsOf(ids(exercise.path("content").path("right")));
     }
 
     @Test
@@ -179,17 +164,36 @@ class LearnerContentTest {
         assertThat(LearnerContent.firstLetter("q\u0307x")).isEqualTo("q\u0307");
     }
 
+    private static ObjectNode twoPairMatch() {
+        ObjectNode exercise = mechanic("createMatchMixed").withObject("exercise");
+        drop(exercise.withObject("content").withArray("left"), 3, 2);
+        drop(exercise.withObject("content").withArray("right"), 3, 2);
+        drop(exercise.withObject("answerKey").withArray("pairs"), 3, 2);
+        return exercise;
+    }
+
+    /** Replays fixed bounded draws so a shuffle is fully determined by the test. */
+    private static final class ScriptedSource implements RandomGenerator {
+        private final int[] draws;
+        private int next;
+
+        ScriptedSource(int... draws) { this.draws = draws.clone(); }
+
+        @Override public int nextInt(int bound) {
+            if (next >= draws.length) throw new AssertionError("unexpected extra draw");
+            int value = draws[next++];
+            if (value < 0 || value >= bound) throw new AssertionError("draw " + value + " outside bound " + bound);
+            return value;
+        }
+
+        @Override public long nextLong() { throw new AssertionError("only bounded draws are expected"); }
+    }
+
     private static JsonNode issue(ObjectNode exercise, RandomGenerator random) {
         return LearnerContent.issue(ExerciseType.MATCH, exercise.path("content"),
                 AnswerKey.parse(ExerciseType.MATCH, exercise.path("answerKey")), random, m -> MATERIAL_TEXT).content();
     }
 
-    private static Map<String, String> partners(ObjectNode exercise) {
-        AnswerKey.Match key = (AnswerKey.Match) AnswerKey.parse(ExerciseType.MATCH, exercise.path("answerKey"));
-        Map<String, String> partner = new HashMap<>();
-        key.pairs().forEach(pair -> partner.put(pair.leftId().toString(), pair.rightId().toString()));
-        return partner;
-    }
 
     private static List<String> ids(JsonNode items) {
         List<String> ids = new ArrayList<>();

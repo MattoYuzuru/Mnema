@@ -445,31 +445,31 @@ class StudyMechanicsIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
-    void issuedMatchOrderIsNotReproducibleFromThePresentationId() {
-        int predicted = 0;
-        int total = 0;
-        for (int round = 0; round < 6; round++) {
-            Material material = fixtures.material();
-            UUID[] left = new UUID[6], right = new UUID[6];
-            ArrayNode lefts = blocks(), rights = blocks();
-            UUID[][] pairs = new UUID[6][];
-            for (int index = 0; index < 6; index++) {
-                left[index] = UUID.randomUUID();
-                right[index] = UUID.randomUUID();
-                lefts.add(item(left[index], text("l" + index)));
-                rights.add(item(right[index], text("r" + index)));
-                pairs[index] = new UUID[] {left[index], right[index]};
-            }
-            fixtures.publish(material, fixtures.match(material, blocks(), lefts, rights, pairs));
-            Issued presentation = fixtures.issueOne(material);
-            List<UUID> authored = new java.util.ArrayList<>(List.of(left));
-            java.util.Collections.shuffle(authored, new java.util.Random(presentation.id().getMostSignificantBits()));
-            List<UUID> issued = new java.util.ArrayList<>();
-            presentation.content().path("left").forEach(value -> issued.add(UUID.fromString(value.path("itemId").textValue())));
-            total++;
-            if (issued.equals(authored)) predicted++;
+    void theIssuedMatchOrderIsPersistedForReadsAndReplayedVerbatim() {
+        Material material = fixtures.material();
+        UUID[] left = new UUID[4], right = new UUID[4];
+        ArrayNode lefts = blocks(), rights = blocks();
+        UUID[][] pairs = new UUID[4][];
+        for (int index = 0; index < 4; index++) {
+            left[index] = UUID.randomUUID();
+            right[index] = UUID.randomUUID();
+            lefts.add(item(left[index], text("l" + index)));
+            rights.add(item(right[index], text("r" + index)));
+            pairs[index] = new UUID[] {left[index], right[index]};
         }
-        assertThat(predicted).as("id-seeded prediction of %d issues", total).isLessThan(total);
+        fixtures.publish(material, fixtures.match(material, blocks(), lefts, rights, pairs));
+        Issued issued = fixtures.issueOne(material);
+        JsonNode reread = sessions.read(material.actor(), material.deck(), issued.session()).path("presentations").get(0);
+        assertThat(reread.path("content")).as("read/resume keeps the issued order").isEqualTo(issued.content());
+
+        ObjectNode response = JSON.createObjectNode().put("kind", "MATCH");
+        for (UUID[] pair : pairs) {
+            response.withArray("pairs").addObject().put("leftId", pair[0].toString()).put("rightId", pair[1].toString());
+        }
+        attempts.submit(material.actor(), material.deck(), issued.session(), attempt(issued, response));
+        Issued replay = fixtures.issue(material, "REPLAY", issued.session()).getFirst();
+        assertThat(replay.content().path("left")).as("replay copies the left column").isEqualTo(issued.content().path("left"));
+        assertThat(replay.content().path("right")).as("replay copies the right column").isEqualTo(issued.content().path("right"));
     }
 
     private JsonNode hint(Material material, Issued presentation, UUID blank) {
