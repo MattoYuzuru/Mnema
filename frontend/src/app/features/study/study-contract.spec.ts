@@ -1,239 +1,246 @@
-import choiceAndPairs from '../../../../../contracts/study/choice-and-pairs.json';
-import adversarial from '../../../../../contracts/study/adversarial.json';
-import attempts from '../../../../../contracts/study/attempts.json';
-import authoring from '../../../../../contracts/study/authoring.json';
-import flows from '../../../../../contracts/study/flows.json';
-import progress from '../../../../../contracts/study/progress.json';
-import replaySources from '../../../../../contracts/study/replay-sources.json';
-import reducer from '../../../../../contracts/study/reducer-v1.json';
-import restart from '../../../../../contracts/study/restart.json';
-import schemaDocument from '../../../../../contracts/study/study.schema.json';
-import session from '../../../../../contracts/study/session.json';
-import listening from '../../../../../contracts/study/listening.json';
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { TestBed } from '@angular/core/testing';
+import { firstValueFrom } from 'rxjs';
 
-type JsonObject = Record<string, unknown>;
+import { MECHANICS } from '../../content/exercise/exercise-content.models';
+import { ExerciseContentError, parseExerciseSpec, parseObjectiveCommand } from '../../content/exercise/exercise-content.parse';
+import { CapabilitiesApiService } from '../authoring/capabilities-api.service';
+import { AuthoringProtocolError } from '../authoring/authoring.models';
+import { ExerciseApiService } from '../authoring/exercise-api.service';
+import { StudyApiService } from './study-api.service';
+import { AttemptCommand, StudyProtocolError } from './study.models';
+import { assessedOutcome, clone, ids, mechanics, privateHeaders, readySession, removed, removedNames } from './study-test-data';
 
-describe('Study shared contract', () => {
-    it('validates every fixture and rejects unknown or missing envelope fields', () => {
-        const root = schemaDocument as unknown as JsonObject;
-        const definitions = asObject(root['$defs']);
-        const fixtures: Array<[unknown, string]> = [
-            [authoring, 'authoringDocument'],
-            [choiceAndPairs, 'choiceAndPairsDocument'],
-            [session, 'sessionDocument'],
-            [attempts, 'attemptsDocument'],
-            [reducer, 'reducerDocument'],
-            [adversarial, 'adversarialDocument'],
-            [flows, 'flowsDocument'],
-            [progress, 'progressDocument'],
-            [replaySources, 'replaySourcesDocument'],
-            [restart, 'restartDocument'],
-            [listening, 'listeningDocument']
-        ];
-        fixtures.forEach(([fixture, definition]) => validate(fixture, asObject(definitions[definition]), root));
+/**
+ * contracts/study/mechanics.json is the single wire contract of the five mechanics. Every fixture must
+ * parse and serialize exactly, and unknown fields, legacy types and answer leaks must be rejected.
+ */
+describe('Mechanics wire contract (contracts/study/mechanics.json)', () => {
+    const deckId = ids.deckId;
+    let http: HttpTestingController;
+    let exercises: ExerciseApiService;
+    let study: StudyApiService;
+    let capabilities: CapabilitiesApiService;
 
-        const customDisplay = clone(session);
-        const presentations = asObject(customDisplay['active'])['presentations'] as unknown[];
-        const bindings = asObject(presentations[0])['bindings'] as unknown[];
-        asObject(bindings[0])['display'] = { kind: 'CUSTOM_TEXT', text: 'Париж' };
-        validate(customDisplay, asObject(definitions['sessionDocument']), root);
-        asObject(bindings[0])['display'] = { kind: 'CUSTOM_TEXT' };
-        expect(() => validate(customDisplay, asObject(definitions['sessionDocument']), root))
-            .toThrowError(/must match exactly one schema/);
+    beforeEach(() => {
+        TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] });
+        http = TestBed.inject(HttpTestingController);
+        exercises = TestBed.inject(ExerciseApiService);
+        study = TestBed.inject(StudyApiService);
+        capabilities = TestBed.inject(CapabilitiesApiService);
+    });
+    afterEach(() => http.verify());
 
-        const unknown = clone(authoring);
-        unknown['clientAuthority'] = true;
-        expect(() => validate(unknown, asObject(definitions['authoringDocument']), root))
-            .toThrowError(/unknown property/);
+    const commands = ['createSelfCheck', 'createFreeResponseAudio', 'createCloze', 'createChoiceVideoMultiple',
+        'createMatchMixed', 'rejectedAiAssessment', 'rejectedSpeechInput'];
 
-        const missing = clone(attempts);
-        delete asObject(missing['typedSubmit'])['attemptId'];
-        expect(() => validate(missing, asObject(definitions['attemptsDocument']), root))
-            .toThrowError(/attemptId/);
-
-        const nestedUnknown = clone(attempts);
-        asObject(asObject(nestedUnknown['typedSubmit'])['response'])['correctAnswer'] = 'spoofed';
-        expect(() => validate(nestedUnknown, asObject(definitions['attemptsDocument']), root))
-            .toThrowError(/must match exactly one schema/);
-
-        const invalidMode = clone(session);
-        delete asObject(invalidMode['startReplay'])['sourceSessionId'];
-        expect(() => validate(invalidMode, asObject(definitions['sessionDocument']), root))
-            .toThrowError(/must match exactly one schema/);
-
-        const forgedEffect = clone(attempts);
-        asObject(forgedEffect['practiceOutcome'])['mode'] = 'SCHEDULED';
-        expect(() => validate(forgedEffect, asObject(definitions['attemptsDocument']), root))
-            .toThrowError(/must match exactly one schema/);
+    it('contains no removed mechanic names, no later-epic mechanics and no hintsUsed anywhere', () => {
+        const text = JSON.stringify(mechanics);
+        for (const token of [...removedNames, 'hintsUsed', 'AUDIO_ASSET']) {
+            expect(text).not.toContain(token);
+        }
     });
 
-    it('keeps assessment authority in the server-issued presentation', () => {
-        const assessed = session.active.presentations[0].bindings.filter(binding => binding.role === 'ASSESSED');
-        expect(assessed.length).toBe(1);
-        expect(authoring.createTyped.exercise.bindings.filter(binding => binding.role === 'ASSESSED').length).toBe(1);
-
-        const submit = attempts.typedSubmit as unknown as JsonObject;
-        expect(submit['mode']).toBeUndefined();
-        expect(submit['deckRevisionId']).toBeUndefined();
-        expect(submit['exerciseRevisionId']).toBeUndefined();
-        expect(submit['bindings']).toBeUndefined();
-        expect(submit['correctAnswer']).toBeUndefined();
-    });
-
-    it('defines every assessed reducer combination once and binds its canonical hash', async () => {
-        const combinations = reducer.transitions.map(row => `${row.result}:${row.evidenceClass}`);
-        expect(combinations.length).toBe(12);
-        expect(new Set(combinations).size).toBe(12);
-        expect(combinations.some(value => value.endsWith(':NONE'))).toBeFalse();
-        expect(reducer.intervals.length).toBe(8);
-
-        const projection = {
-            configId: reducer.configId,
-            intervals: reducer.intervals,
-            reducerId: reducer.reducerId,
-            reducerVersion: reducer.reducerVersion,
-            transitions: reducer.transitions
-        };
-        const bytes = new TextEncoder().encode(JSON.stringify(canonical(projection)));
-        const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
-        const hash = `sha256:${[...digest].map(value => value.toString(16).padStart(2, '0')).join('')}`;
-        expect(session.active.reducer.configHash).toBe(hash);
-        expect(attempts.scheduledOutcome.transition.configHash).toBe(hash);
-    });
-
-    it('pins progress, restart and adversarial zero-effect behavior', () => {
-        expect(flows.flows.length).toBe(10);
-        flows.flows.forEach(flow => {
-            expect(resolveFixturePointer(flow.requestFixture)).toBeDefined();
-            expect(resolveFixturePointer(flow.responseFixture)).toBeDefined();
+    for (const name of commands) {
+        it(`parses and serializes ${name} exactly`, () => {
+            const fixture = mechanics[name];
+            expect(parseExerciseSpec(fixture.exercise)).toEqual(fixture.exercise);
+            expect(parseObjectiveCommand(fixture.objective)).toEqual(fixture.objective);
+            // The strict parse is also the serializer: the HTTP body equals the fixture.
+            exercises.create(deckId, '6', fixture.expectedDeckRevisionId, fixture.objective, fixture.exercise, fixture.commandId).subscribe();
+            const request = http.expectOne(`/api/decks/${deckId}/exercises`);
+            expect(request.request.body).toEqual(fixture);
+            expect(request.request.headers.get('If-Match')).toBe('"6"');
         });
-        expect(session.active.mode).toBe(session.startScheduled.mode);
-        expect(session.activeReplay.mode).toBe(session.startReplay.mode);
-        expect(session.activePractice.mode).toBe(session.startPractice.mode);
-        expect(progress.response.items.map(item => item.state)).toEqual(['ON_TRACK', 'NOT_STARTED']);
-        expect((progress.response as unknown as JsonObject)['percentage']).toBeUndefined();
-        expect(restart.precondition.objectiveStates[0].learningEpoch).toBe('0');
-        expect(restart.persistedEffect.objectiveStates[0].learningEpoch).toBe('1');
-        expect(restart.persistedEffect.historyRowsDeleted).toBe(0);
+    }
 
-        expect(attempts.practiceOutcome.canonicalEffects).toBeFalse();
-        expect(attempts.practiceOutcome.evidence).toBeNull();
-        expect(attempts.practiceOutcome.transition).toBeNull();
-        expect(attempts.notAssessedOutcome.transition).toBeNull();
+    it('parses objective operations and publishes a revision with the expected exercise revision', () => {
+        expect(parseObjectiveCommand(mechanics['reviseObjective'])).toEqual(mechanics['reviseObjective']);
+        expect(parseObjectiveCommand(mechanics['reuseObjective'])).toEqual(mechanics['reuseObjective']);
+        const create = mechanics['createCloze'];
+        exercises.update(deckId, '88888888-8888-4888-8888-888888888881', '6', create.expectedDeckRevisionId,
+            '88888888-8888-4888-8888-888888888882', mechanics['reviseObjective'], create.exercise, create.commandId).subscribe();
+        const request = http.expectOne(`/api/decks/${deckId}/exercises/88888888-8888-4888-8888-888888888881`);
+        expect(request.request.body).toEqual({ commandId: create.commandId, expectedDeckRevisionId: create.expectedDeckRevisionId,
+            expectedExerciseRevisionId: '88888888-8888-4888-8888-888888888882', objective: mechanics['reviseObjective'],
+            exercise: create.exercise });
+    });
 
-        const cases = new Map(adversarial.cases.map(testCase => [testCase.id, testCase]));
-        expect(cases.size).toBe(20);
-        expect(cases.get('A-03')?.persistedEffect.transitions).toBe(1);
-        expect(cases.get('A-05')?.persistedEffect.transitions).toBe(0);
-        expect(cases.get('A-11')?.persistedEffect.stateTransitions).toBe(0);
-        expect(cases.get('A-13')?.persistedEffect.fullScan).toBeFalse();
-        expect(cases.get('A-20')?.persistedEffect.evaluationRuns).toBe(0);
+    it('reads the exercise detail with the typed content, key and evaluator', async () => {
+        const reading = firstValueFrom(exercises.read(deckId, mechanics['exerciseDetail'].exerciseId));
+        http.expectOne(`/api/decks/${deckId}/exercises/${mechanics['exerciseDetail'].exerciseId}`)
+            .flush(mechanics['exerciseDetail'], { headers: { ...privateHeaders, ETag: '"6"' } });
+        const detail = await reading;
+        expect(detail.type).toBe('CHOICE');
+        expect(detail.objective.title).toBe('Признаки реакции в опыте');
+        expect(detail.answerKey).toEqual(mechanics['exerciseDetail'].answerKey);
+        expect(detail.content).toEqual(mechanics['exerciseDetail'].content);
+    });
+
+    it('parses every learner presentation exactly, including the revealed transcript variant', async () => {
+        const fixtures = mechanics['presentations'];
+        const plain = ['selfCheck', 'freeResponse', 'cloze', 'choice', 'match'].map(name => fixtures[name]);
+        const reading = firstValueFrom(study.read(deckId, ids.sessionId));
+        http.expectOne(`/api/decks/${deckId}/study-sessions/${ids.sessionId}`).flush(readySession(plain), { headers: privateHeaders });
+        const session = await reading;
+        if (session.status === 'PREPARING') { fail('Expected a ready session.'); return; }
+        expect(session.presentations).toEqual(plain);
+        expect(session.presentations.map(item => item.type)).toEqual([...MECHANICS]);
+
+        const revealedReading = firstValueFrom(study.read(deckId, ids.sessionId));
+        http.expectOne(`/api/decks/${deckId}/study-sessions/${ids.sessionId}`)
+            .flush(readySession([fixtures['freeResponseTranscriptRevealed']]), { headers: privateHeaders });
+        const revealed = await revealedReading;
+        if (revealed.status !== 'PREPARING') expect(revealed.presentations[0]).toEqual(fixtures['freeResponseTranscriptRevealed']);
+    });
+
+    it('reveals a transcript and records a hint exactly as fixtured', async () => {
+        const presentation = mechanics['presentations']['freeResponse'];
+        const reveal = firstValueFrom(study.revealTranscript(deckId, ids.sessionId, presentation.presentationId,
+            mechanics['transcriptRevealCommand'].nonce, 'FREE_RESPONSE'));
+        const request = http.expectOne(`/api/decks/${deckId}/study-sessions/${ids.sessionId}/presentations/${presentation.presentationId}/transcript`);
+        expect(request.request.body).toEqual(mechanics['transcriptRevealCommand']);
+        request.flush(mechanics['transcriptRevealResponse'], { headers: privateHeaders });
+        expect((await reveal).content).toEqual({ type: 'FREE_RESPONSE', content: mechanics['transcriptRevealResponse'].content });
+
+        const cloze = mechanics['presentations']['cloze'];
+        const hint = firstValueFrom(study.hint(deckId, ids.sessionId, cloze.presentationId,
+            mechanics['hintCommand'].nonce, mechanics['hintCommand'].blankId));
+        const hintRequest = http.expectOne(`/api/decks/${deckId}/study-sessions/${ids.sessionId}/presentations/${cloze.presentationId}/hints`);
+        expect(hintRequest.request.body).toEqual(mechanics['hintCommand']);
+        hintRequest.flush(mechanics['hintResponse'], { headers: privateHeaders });
+        expect(await hint).toEqual(mechanics['hintResponse']);
+    });
+
+    it('checks a pair with the left and right ids and nothing else', async () => {
+        const fixture = mechanics['pairCheck'];
+        const checking = firstValueFrom(study.checkPair(deckId, ids.sessionId, fixture.presentationId, fixture.nonce,
+            fixture.leftId, fixture.rightId));
+        const request = http.expectOne(`/api/decks/${deckId}/study-sessions/${ids.sessionId}/pair-checks`);
+        expect(request.request.body).toEqual(fixture);
+        request.flush(mechanics['pairCheckResult'], { headers: privateHeaders });
+        expect(await checking).toEqual(mechanics['pairCheckResult']);
+    });
+
+    for (const name of ['selfCheck', 'freeResponse', 'cloze', 'choice', 'match', 'cancel']) {
+        it(`serializes the ${name} attempt exactly and has no hintsUsed`, () => {
+            const command = mechanics['submits'][name] as AttemptCommand;
+            study.submit(deckId, ids.sessionId, command).subscribe();
+            const request = http.expectOne(`/api/decks/${deckId}/study-sessions/${ids.sessionId}/attempts`);
+            expect(request.request.body).toEqual(command);
+            expect(Object.keys(request.request.body)).not.toContain('hintsUsed');
+        });
+    }
+
+    for (const name of ['selfCheck', 'freeResponse', 'cloze', 'choice', 'match']) {
+        it(`parses the ${name} feedback exactly`, async () => {
+            const command = mechanics['submits'][name] as AttemptCommand;
+            const submitting = firstValueFrom(study.submit(deckId, ids.sessionId, command));
+            http.expectOne(`/api/decks/${deckId}/study-sessions/${ids.sessionId}/attempts`)
+                .flush(assessedOutcome(command, mechanics['feedback'][name]), { headers: privateHeaders });
+            expect((await submitting).value.feedback).toEqual(mechanics['feedback'][name]);
+        });
+    }
+
+    it('parses media-not-ready and evaluator-unavailable outcomes without evidence or transition', async () => {
+        const command = mechanics['submits']['choice'] as AttemptCommand;
+        for (const [name, status] of [['mediaNotReady', 'NOT_ASSESSED'], ['evaluatorUnavailable', 'UNAVAILABLE']]) {
+            const submitting = firstValueFrom(study.submit(deckId, ids.sessionId, command));
+            http.expectOne(`/api/decks/${deckId}/study-sessions/${ids.sessionId}/attempts`).flush({
+                attemptId: command.attemptId, presentationId: command.presentationId, mode: 'SCHEDULED', status,
+                evidence: null, feedback: mechanics['feedback'][name], transition: null
+            }, { headers: privateHeaders });
+            expect((await submitting).value.feedback).toEqual(mechanics['feedback'][name]);
+        }
+    });
+
+    it('parses capabilities, including a flag enabled without a provider', async () => {
+        for (const name of ['capabilities', 'capabilitiesFlagWithoutProvider']) {
+            const reading = firstValueFrom(capabilities.read());
+            http.expectOne('/api/capabilities').flush(mechanics[name], { headers: privateHeaders });
+            expect(await reading).toEqual(mechanics[name]);
+        }
+        const cacheable = firstValueFrom(capabilities.read());
+        http.expectOne('/api/capabilities').flush(mechanics['capabilities']);
+        await expectAsync(cacheable).toBeRejectedWithError(AuthoringProtocolError);
+    });
+
+    it('keeps the capability-unavailable problem on a stable code', () => {
+        expect(mechanics['capabilityUnavailableProblem']).toEqual(jasmine.objectContaining({
+            status: 409, code: 'CAPABILITY_UNAVAILABLE' }));
+    });
+
+    describe('rejects what the contract forbids', () => {
+        it('legacy mechanic names, unknown fields and answer leaks in the exercise', () => {
+            const base = mechanics['createChoiceVideoMultiple'].exercise;
+            const legacy = clone(base); legacy.type = removed.singleChoice;
+            expect(() => parseExerciseSpec(legacy)).toThrowError(ExerciseContentError);
+            const extra = clone(base); extra.bindings = [];
+            expect(() => parseExerciseSpec(extra)).toThrowError(ExerciseContentError);
+            const block = clone(base); block.content.prompt[1].html = '<b>x</b>';
+            expect(() => parseExerciseSpec(block)).toThrowError(ExerciseContentError);
+            const v1 = clone(base); v1.schemaVersion = 1;
+            expect(() => parseExerciseSpec(v1)).toThrowError(ExerciseContentError);
+            const mismatch = clone(base); mismatch.evaluatorPolicy = { id: 'deterministic-match', version: '1' };
+            expect(() => parseExerciseSpec(mismatch)).toThrowError(ExerciseContentError);
+        });
+
+        it('structural violations of slots, keys and objectives', () => {
+            const choice = clone(mechanics['createChoiceVideoMultiple'].exercise);
+            choice.content.selectionMode = 'SINGLE';
+            expect(() => parseExerciseSpec(choice)).toThrowError(ExerciseContentError); // two correct options
+            const image = clone(mechanics['createSelfCheck'].exercise);
+            image.content.prompt[0].alt = '  ';
+            expect(() => parseExerciseSpec(image)).toThrowError(ExerciseContentError);
+            const youtubeCompact = clone(mechanics['createChoiceVideoMultiple'].exercise);
+            youtubeCompact.content.options[0].blocks = [{ kind: 'YOUTUBE', videoId: 'dQw4w9WgXcQ', title: 'x' }];
+            expect(() => parseExerciseSpec(youtubeCompact)).toThrowError(ExerciseContentError);
+            const cloze = clone(mechanics['createCloze'].exercise);
+            cloze.answerKey.blanks.pop();
+            expect(() => parseExerciseSpec(cloze)).toThrowError(ExerciseContentError);
+            const match = clone(mechanics['createMatchMixed'].exercise);
+            match.answerKey.pairs[1].rightId = match.answerKey.pairs[0].rightId;
+            expect(() => parseExerciseSpec(match)).toThrowError(ExerciseContentError);
+            expect(() => parseObjectiveCommand({ operation: 'create', title: '  ' })).toThrowError(ExerciseContentError);
+            expect(() => parseObjectiveCommand({ ...mechanics['reuseObjective'], title: 'x' })).toThrowError(ExerciseContentError);
+        });
+
+        it('a publication command that does not satisfy the contract never reaches the network', async () => {
+            const bad = clone(mechanics['createCloze']);
+            bad.exercise.answerKey.blanks[0].accepted = ['map', 'map'];
+            const writing = firstValueFrom(exercises.create(deckId, '6', bad.expectedDeckRevisionId, bad.objective, bad.exercise, bad.commandId));
+            await expectAsync(writing).toBeRejectedWithError(AuthoringProtocolError);
+            http.expectNone(`/api/decks/${deckId}/exercises`);
+        });
+
+        it('learner presentations that leak keys, titles or unrevealed transcripts', async () => {
+            const read = async (value: unknown) => {
+                const reading = firstValueFrom(study.read(deckId, ids.sessionId));
+                http.expectOne(`/api/decks/${deckId}/study-sessions/${ids.sessionId}`)
+                    .flush(readySession([value]), { headers: privateHeaders });
+                await expectAsync(reading).toBeRejectedWithError(StudyProtocolError);
+            };
+            const choice = clone(mechanics['presentations']['choice']); choice.correctOptionIds = [];
+            await read(choice);
+            const bindings = clone(mechanics['presentations']['choice']); bindings.bindings = [];
+            await read(bindings);
+            const title = clone(mechanics['presentations']['freeResponse']); title.content.prompt[0].title = 'Слово 12';
+            await read(title);
+            const transcript = clone(mechanics['presentations']['freeResponse']); transcript.content.prompt[0].transcript = 'Erinnerung';
+            await read(transcript);
+            const legacy = clone(mechanics['presentations']['selfCheck']); legacy.type = removed.typed;
+            await read(legacy);
+            const hint = clone(mechanics['presentations']['cloze']); hint.hints = [{ blankId: 'b1a00000-0000-4000-8000-000000000002', firstLetter: 't' }];
+            await read(hint); // blank 2 has no first-letter hint
+        });
+
+        it('an attempt carrying legacy fields or the wrong response shape', async () => {
+            const spoof = { ...mechanics['submits']['freeResponse'], hintsUsed: [] };
+            await expectAsync(firstValueFrom(study.submit(deckId, ids.sessionId, spoof))).toBeRejectedWithError(StudyProtocolError);
+            const speech = { ...mechanics['submits']['freeResponse'], response: { kind: 'SPEECH', audio: 'x' } };
+            await expectAsync(firstValueFrom(study.submit(deckId, ids.sessionId, speech))).toBeRejectedWithError(StudyProtocolError);
+            http.expectNone(`/api/decks/${deckId}/study-sessions/${ids.sessionId}/attempts`);
+        });
     });
 });
-
-function validate(value: unknown, schema: JsonObject, root: JsonObject, path = '$'): void {
-    if (Array.isArray(schema['oneOf'])) {
-        const matches = schema['oneOf'].filter(candidate => {
-            try {
-                validate(value, asObject(candidate), root, path);
-                return true;
-            } catch {
-                return false;
-            }
-        }).length;
-        if (matches !== 1) fail(path, 'must match exactly one schema');
-        return;
-    }
-    if (typeof schema['$ref'] === 'string') {
-        const segments = schema['$ref'].slice(2).split('/');
-        const target = segments.reduce<unknown>((current, segment) => asObject(current)[segment], root);
-        validate(value, asObject(target), root, path);
-        return;
-    }
-    if ('const' in schema && !equal(value, schema['const'])) fail(path, 'does not match const');
-    if (Array.isArray(schema['enum']) && !schema['enum'].some(option => equal(value, option))) {
-        fail(path, 'is not in enum');
-    }
-    if ('type' in schema && !matchesType(value, schema['type'])) fail(path, 'has wrong type');
-    if (typeof schema['pattern'] === 'string' && typeof value === 'string'
-        && !new RegExp(schema['pattern']).test(value)) fail(path, 'does not match pattern');
-
-    if (isObject(value)) {
-        const required = Array.isArray(schema['required']) ? schema['required'] : [];
-        required.forEach(name => {
-            if (typeof name === 'string' && !(name in value)) fail(path, `missing required ${name}`);
-        });
-        const properties = isObject(schema['properties']) ? schema['properties'] : {};
-        Object.entries(value).forEach(([name, child]) => {
-            if (name in properties) validate(child, asObject(properties[name]), root, `${path}.${name}`);
-            else if (schema['additionalProperties'] === false) fail(path, `unknown property ${name}`);
-        });
-    }
-    if (Array.isArray(value)) {
-        if (typeof schema['minItems'] === 'number' && value.length < schema['minItems']) fail(path, 'too few items');
-        if (typeof schema['maxItems'] === 'number' && value.length > schema['maxItems']) fail(path, 'too many items');
-        if (isObject(schema['items'])) value.forEach((child, index) =>
-            validate(child, schema['items'] as JsonObject, root, `${path}[${index}]`));
-    }
-}
-
-function matchesType(value: unknown, type: unknown): boolean {
-    if (Array.isArray(type)) return type.some(candidate => matchesType(value, candidate));
-    switch (type) {
-        case 'object': return isObject(value);
-        case 'array': return Array.isArray(value);
-        case 'string': return typeof value === 'string';
-        case 'integer': return typeof value === 'number' && Number.isInteger(value);
-        case 'boolean': return typeof value === 'boolean';
-        case 'null': return value === null;
-        default: return false;
-    }
-}
-
-function canonical(value: unknown): unknown {
-    if (Array.isArray(value)) return value.map(canonical);
-    if (isObject(value)) return Object.fromEntries(Object.keys(value).sort()
-        .map(key => [key, canonical(value[key])]));
-    return value;
-}
-
-function resolveFixturePointer(reference: string): unknown {
-    const [file, pointer = ''] = reference.split('#', 2);
-    const documents: Record<string, unknown> = {
-        'adversarial.json': adversarial,
-        'attempts.json': attempts,
-        'authoring.json': authoring,
-        'progress.json': progress,
-        'restart.json': restart,
-        'session.json': session
-    };
-    let current = documents[file];
-    if (current === undefined) throw new Error(`Unknown fixture ${file}`);
-    for (const segment of pointer.split('/').filter(Boolean)) {
-        if (Array.isArray(current)) current = current[Number(segment)];
-        else current = asObject(current)[segment];
-        if (current === undefined) throw new Error(`Missing pointer ${reference}`);
-    }
-    return current;
-}
-
-function clone(value: unknown): JsonObject {
-    return asObject(JSON.parse(JSON.stringify(value)) as unknown);
-}
-
-function equal(left: unknown, right: unknown): boolean {
-    return JSON.stringify(left) === JSON.stringify(right);
-}
-
-function isObject(value: unknown): value is JsonObject {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function asObject(value: unknown): JsonObject {
-    if (!isObject(value)) throw new Error('Expected JSON object');
-    return value;
-}
-
-function fail(path: string, reason: string): never {
-    throw new Error(`${path} ${reason}`);
-}

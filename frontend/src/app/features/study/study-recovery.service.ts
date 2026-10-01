@@ -18,7 +18,7 @@ export class StudyRecoveryService {
             const raw = this.browser.storage.getItem(KEY);
             if (raw === null || encoder.encode(raw).length > 16_384) return null;
             const value = JSON.parse(raw) as Record<string, unknown>;
-            if (value['version'] !== 2 || value['accountId'] !== this.accountId() || value['deckId'] !== deckId
+            if (value['version'] !== 3 || value['accountId'] !== this.accountId() || value['deckId'] !== deckId
                 || typeof value['updatedAt'] !== 'number' || this.browser.now() - value['updatedAt'] > TTL_MS
                 || !id(value['sessionId'])) throw new Error();
             return { deckId, sessionId: value['sessionId'], pending: parsePending(value['pending']) };
@@ -32,7 +32,7 @@ export class StudyRecoveryService {
         const accountId = this.accountId();
         if (accountId === null || !id(snapshot.deckId) || !id(snapshot.sessionId)) return;
         try {
-            this.browser.storage.setItem(KEY, JSON.stringify({ version: 2, accountId, ...snapshot,
+            this.browser.storage.setItem(KEY, JSON.stringify({ version: 3, accountId, ...snapshot,
                 updatedAt: this.browser.now() }));
         } catch { /* Session remains usable without browser storage. */ }
     }
@@ -50,9 +50,11 @@ function parsePending(value: unknown): AttemptCommand | null {
     if (value === null) return null;
     if (typeof value !== 'object' || Array.isArray(value)) throw new Error();
     const command = value as Record<string, unknown>;
+    const keys = Object.keys(command);
+    if (keys.length !== 6 || ['attemptId', 'presentationId', 'nonce', 'response', 'confidence', 'durationMs']
+        .some(key => !keys.includes(key))) throw new Error();
     if (!id(command['attemptId']) || !id(command['presentationId']) || typeof command['nonce'] !== 'string'
-        || typeof command['durationMs'] !== 'number' || !Array.isArray(command['hintsUsed'])
-        || !validResponse(command['response'])) throw new Error();
+        || typeof command['durationMs'] !== 'number' || !validResponse(command['response'])) throw new Error();
     return command as unknown as AttemptCommand;
 }
 
@@ -68,8 +70,11 @@ function validResponse(value: unknown): boolean {
         case 'SELF_CHECK': return ['NOT_RECALLED', 'HINTED', 'PARTIAL', 'FULL'].includes(String(response['rating']));
         case 'CHOICE': return Array.isArray(response['optionIds']) && response['optionIds'].every(id)
             && new Set(response['optionIds']).size === response['optionIds'].length;
+        case 'CLOZE': return Array.isArray(response['blanks']) && response['blanks'].length > 0
+            && response['blanks'].every(blank => blank !== null && typeof blank === 'object'
+                && id(blank.blankId) && typeof blank.text === 'string');
         case 'MATCH': return Array.isArray(response['pairs']) && response['pairs'].every(pair =>
-            pair !== null && typeof pair === 'object' && id(pair.cueId) && id(pair.optionId));
+            pair !== null && typeof pair === 'object' && id(pair.leftId) && id(pair.rightId));
         case 'CANCEL': return true;
         default: return false;
     }

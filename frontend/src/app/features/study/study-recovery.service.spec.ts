@@ -10,7 +10,7 @@ describe('StudyRecoveryService', () => {
     let storage: Map<string, string>;
     let service: StudyRecoveryService;
     const pending: AttemptCommand = { attemptId: id, presentationId: id, nonce: 'nonce',
-        response: { kind: 'CHOICE', optionIds: [id] }, hintsUsed: [], confidence: null, durationMs: 1000 };
+        response: { kind: 'CHOICE', optionIds: [id] }, confidence: null, durationMs: 1000 };
     beforeEach(() => {
         storage = new Map();
         TestBed.configureTestingModule({ providers: [
@@ -27,15 +27,29 @@ describe('StudyRecoveryService', () => {
         service.save({ deckId: id, sessionId: id, pending });
         expect(service.restore(id)?.pending).toEqual(pending);
     });
-    it('invalidates old scalar responses and malformed current snapshots', () => {
+    it('restores a cloze response with its blank ids and a match response with issued pair ids', () => {
+        const cloze: AttemptCommand = { ...pending, response: { kind: 'CLOZE', blanks: [{ blankId: id, text: 'map' }] } };
+        service.save({ deckId: id, sessionId: id, pending: cloze });
+        expect(service.restore(id)?.pending).toEqual(cloze);
+        const match: AttemptCommand = { ...pending, response: { kind: 'MATCH', pairs: [{ leftId: id, rightId: id }] } };
+        service.save({ deckId: id, sessionId: id, pending: match });
+        expect(service.restore(id)?.pending).toEqual(match);
+    });
+    it('invalidates older snapshots, old scalar responses and any command that still carries hintsUsed', () => {
         for (const version of [1, 2]) {
             storage.set(key, JSON.stringify({ version, accountId: id, deckId: id, sessionId: id, updatedAt: 10000,
-                pending: { ...pending, response: { kind: 'CHOICE', optionId: id } } }));
+                pending: { ...pending, hintsUsed: [], response: { kind: 'CHOICE', optionId: id } } }));
             expect(service.restore(id)).toBeNull(); expect(storage.has(key)).toBeFalse();
         }
+        storage.set(key, JSON.stringify({ version: 3, accountId: id, deckId: id, sessionId: id, updatedAt: 10000,
+            pending: { ...pending, hintsUsed: [] } }));
+        expect(service.restore(id)).toBeNull(); expect(storage.has(key)).toBeFalse();
     });
-    it('rejects repeated option IDs', () => {
+    it('rejects repeated option IDs and the legacy cue and option pair fields', () => {
         service.save({ deckId: id, sessionId: id, pending: { ...pending, response: { kind: 'CHOICE', optionIds: [id, id] } } });
+        expect(service.restore(id)).toBeNull();
+        storage.set(key, JSON.stringify({ version: 3, accountId: id, deckId: id, sessionId: id, updatedAt: 10000,
+            pending: { ...pending, response: { kind: 'MATCH', pairs: [{ cueId: id, optionId: id }] } } }));
         expect(service.restore(id)).toBeNull();
     });
 });

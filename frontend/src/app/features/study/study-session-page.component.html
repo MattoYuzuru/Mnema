@@ -57,142 +57,76 @@
   }
 
   @if (current(); as presentation) {
-    @if (phase() === 'answering' || phase() === 'revealed' || phase() === 'submitting') {
+    @if (phase() === 'answering' || phase() === 'submitting') {
       <article class="study-card" [attr.aria-busy]="phase() === 'submitting'">
         <p class="eyebrow">Вспомните без подсказки</p>
-        <h2>{{ promptTitle(presentation) }}</h2>
-
-        @if (presentation.prompt.kind === 'AUDIO_ASSET') {
-          <section class="audio-cue" aria-label="Аудиозапись для задания">
-            <p class="eyebrow">Слушайте</p><h3>{{ presentation.prompt.title }}</h3>
-            @if (audioUrls()[presentation.prompt.assetId]; as source) {
-              <app-native-media-player kind="audio" [title]="presentation.prompt.title" [source]="source.url"
-                (sourceFailed)="retryAudio(presentation.prompt.assetId)" />
-            } @else { <p class="hint" role="status">Запись пока недоступна. Проверка ответа будет доступна после загрузки.</p> }
-            @if (presentation.prompt.transcriptRevealed) {
-              <p class="transcript"><strong>Транскрипт:</strong> {{ presentation.prompt.transcript }}</p>
-            }
-          </section>
-        }
-        @if (presentation.prompt.kind === 'AUDIO_MATCH') {
-          <p class="hint">Прослушайте записи и сопоставьте каждую с одним текстом.</p>
-        }
-        @if (presentation.prompt.kind !== 'TEXT' && presentation.prompt.transcriptAvailable
-            && !presentation.prompt.transcriptRevealed) {
-          <button class="button secondary transcript-action" type="button" [disabled]="transcriptLoading() || phase() === 'submitting'"
-                  (click)="revealTranscript()">{{ transcriptLoading() ? 'Открываем…' : 'Показать транскрипт' }}</button>
-          <p class="hint">После раскрытия ответ учитывается как подсказанный.</p>
-        }
-
-        @if (presentation.type === 'TYPED' || presentation.type === 'CLOZE_SINGLE' || presentation.type === 'LISTEN_TYPE') {
-          <form (submit)="$event.preventDefault(); submitTyped()" novalidate>
-            @if (presentation.type === 'CLOZE_SINGLE') {
-              <app-cloze-input controlId="cloze-answer" [blankLength]="clozeBlankLength()"
-                [hintPrefix]="clozeHintUsed() ? firstGrapheme(presentation.reference ?? '') : ''"
-                [value]="typedAnswer()" [readOnly]="phase() === 'submitting'" (valueChange)="setTypedAnswer($event)" />
-              @if (!clozeHintUsed()) {
-                <button class="button secondary hint-action" type="button" (click)="showClozeHint()">Показать первую букву</button>
-              }
-            } @else {
-              <label for="typed-answer">Ваш ответ</label>
-              <textarea id="typed-answer" data-answer-control rows="4" autocomplete="off" autocapitalize="off"
-                        [value]="typedAnswer()" [readOnly]="phase() === 'submitting'"
-                        (input)="setTypedAnswer($any($event.target).value)"></textarea>
-            }
-            <button class="button primary" type="submit" data-match-submit
-                    [disabled]="phase() === 'submitting' || (presentation.type === 'LISTEN_TYPE'
-                      && presentation.prompt.kind === 'AUDIO_ASSET' && !audioUrls()[presentation.prompt.assetId])">
-              {{ phase() === 'submitting' ? 'Проверяем…' : 'Проверить ответ' }}
-            </button>
-          </form>
-        }
-
-        @if (presentation.type === 'SINGLE_CHOICE' || presentation.type === 'LISTEN_CHOICE') {
-          <form (submit)="$event.preventDefault(); submitChoice()">
-            <fieldset [disabled]="phase() === 'submitting'">
-              <legend>{{ presentation.selectionMode === 'MULTIPLE' ? 'Выберите варианты ответов' : 'Выберите один ответ' }}</legend>
-              <div class="choice-list">
-                @for (option of presentation.options; track option.optionId; let first = $first) {
-                  <label class="choice-option">
-                    <input [type]="presentation.selectionMode === 'MULTIPLE' ? 'checkbox' : 'radio'" name="study-choice" [value]="option.optionId"
-                           [attr.data-answer-control]="first ? '' : null"
-                           [checked]="selectedOptionIds().includes(option.optionId)"
-                           (change)="selectOption(option.optionId)" />
-                    <span>{{ option.text }}</span>
-                  </label>
-                }
-              </div>
-            </fieldset>
-            <button class="button primary" type="submit" data-match-submit
-                    [disabled]="phase() === 'submitting' || selectedOptionIds().length === 0
-                      || (presentation.type === 'LISTEN_CHOICE' && presentation.prompt.kind === 'AUDIO_ASSET'
-                        && !audioUrls()[presentation.prompt.assetId])">
-              {{ phase() === 'submitting' ? 'Проверяем…' : 'Подтвердить выбор' }}
-            </button>
-          </form>
-        }
-
-        @if (presentation.type === 'AUDIO_TEXT_MATCH' && presentation.prompt.kind === 'AUDIO_MATCH') {
-          <form (submit)="$event.preventDefault(); submitMatch()">
-            <fieldset [disabled]="phase() === 'submitting'">
-              <legend>Сопоставьте аудио и текст</legend>
-              <app-audio-match-board [seed]="presentation.exerciseRevisionId" [prompt]="presentation.prompt" [options]="presentation.options"
-                [sources]="audioUrls()" [matches]="matchSelections()" [busy]="pairChecking() || phase() === 'submitting'"
-                [wrongPair]="wrongPair()" (pairSelected)="checkMatch($event)" (sourceFailed)="retryAudio($event)" />
-            </fieldset>
-            <button class="button primary" type="submit" data-match-submit
-                    [disabled]="phase() === 'submitting' || pairChecking() || !audioReady(presentation) || !matchComplete(presentation)">
-              {{ phase() === 'submitting' ? 'Проверяем…' : 'Проверить пары' }}
-            </button>
-          </form>
-        }
-
-        @if (presentation.type === 'SELF_CHECK') {
-          @if (phase() === 'answering') {
-            <button class="button primary reveal" data-answer-control type="button" (click)="reveal()">Показать ответ</button>
-          } @else {
-            <section class="reference" aria-labelledby="reference-title">
-              <p class="eyebrow" id="reference-title">Эталон</p>
-              <p>{{ presentation.reference }}</p>
-            </section>
-            <fieldset [disabled]="phase() === 'submitting'">
-              <legend>Как получилось на самом деле?</legend>
-              <div class="ratings">
-                @for (rating of ['NOT_RECALLED', 'HINTED', 'PARTIAL', 'FULL']; track rating; let first = $first) {
-                  <button class="button secondary" [attr.data-first-rating]="first ? '' : null" type="button"
-                          (click)="rate($any(rating))">{{ ratingLabel($any(rating)) }}</button>
-                }
-              </div>
-            </fieldset>
-          }
-        }
+        <h2>{{ heading(presentation.type) }}</h2>
+        <app-learner-exercise [exercise]="presentation" [transcriptRevealed]="presentation.transcriptRevealed"
+          [resetKey]="presentation.presentationId" [hints]="hints()" [hintPending]="hintPending()"
+          [transcriptLoading]="transcriptLoading()" [busy]="phase() === 'submitting'" [pairChecker]="pairChecker()"
+          [idPrefix]="'study-' + presentation.ordinal" (answered)="answer($event)" (hintRequested)="requestHint($event)"
+          (transcriptRequested)="revealTranscript()" (dirtyChange)="setAnswerDirty($event)" />
       </article>
     }
 
     @if (phase() === 'feedback' && feedback(); as outcome) {
-      <article class="study-card feedback-card" [class.correct]="outcome.feedback.result === 'CORRECT'">
+      <article class="study-card feedback-card" [class.correct]="outcome.feedback.result === 'CORRECT'" appExclusivePlayback>
         <p class="eyebrow">Ответ принят</p>
         <h2 id="feedback-title" tabindex="-1">{{ feedbackTitle(outcome) }}</h2>
-        @if (outcome.feedback.reasonCodes.includes('MEDIA_NOT_READY')) {
-          <p class="notice" role="status">Запись стала недоступна. Ответ не оценён и не изменил расписание; попробуйте упражнение позже.</p>
+        @if (unassessed(); as unassessedFeedback) {
+          @if (unassessedFeedback.reasonCodes.includes('MEDIA_NOT_READY')) {
+            <p class="notice" role="status">Запись стала недоступна. Ответ не оценён и не изменил расписание; попробуйте упражнение позже.</p>
+          } @else {
+            <p class="notice" role="status">Проверка сейчас недоступна. Это не ошибка ученика: ответ не изменил расписание.</p>
+          }
         }
-        @if (outcome.feedback.reasonCodes.includes('PAIR_RETRY')) {
-          <p class="notice">Все пары найдены. Поскольку были ошибки при подборе, стоит прослушать эти записи ещё раз позже.</p>
+        @if (outcome.feedback.result !== 'NOT_ASSESSED' && outcome.feedback.result !== 'UNAVAILABLE'
+            && $any(outcome.feedback).appliedRules?.includes('PAIR_RETRY')) {
+          <p class="notice">Все пары найдены. Поскольку были ошибки при подборе, стоит ещё раз вернуться к этим парам позже.</p>
         }
-        @if (presentation.type === 'TYPED' || presentation.type === 'CLOZE_SINGLE' || presentation.type === 'LISTEN_TYPE') {
-          <dl class="comparison">
-            <div><dt>Ваш ответ</dt><dd>{{ typedAnswer() || 'Пустой ответ' }}</dd></div>
-            <div><dt>Эталон</dt><dd>{{ outcome.feedback.reference || presentation.reference }}</dd></div>
-          </dl>
-        } @else if (outcome.feedback.pairResults.length > 0) {
-          <ul class="pair-feedback">
-            @for (pair of outcome.feedback.pairResults; track pair.cueId) {
-              <li><strong>{{ pair.correct ? 'Верно' : 'Проверьте' }}:</strong>
-                {{ cueTitle(presentation, pair.cueId) }} → {{ optionText(presentation, pair.correctOptionId) }}</li>
+
+        @switch (presentation.type) {
+          @case ('SELF_CHECK') {
+            @if (submittedRating(); as rating) { <p class="reference-line"><strong>Ваша оценка:</strong> {{ ratingLabel(rating) }}</p> }
+          }
+          @case ('FREE_RESPONSE') {
+            @if (freeResponseFeedback(); as freeFeedback) {
+              <dl class="comparison">
+                <div><dt>Ваш ответ</dt><dd class="answer-text">{{ submittedText() || 'Пустой ответ' }}</dd></div>
+                <div><dt>Эталон</dt><dd class="answer-text">{{ freeFeedback.reference }}</dd></div>
+              </dl>
+              @if (freeFeedback.referenceContent.length > 0) {
+                <app-learner-blocks [blocks]="freeFeedback.referenceContent" nameSuffix=" в эталоне" />
+              }
             }
-          </ul>
-        } @else if (outcome.feedback.reference || presentation.reference) {
-          <p class="reference-line"><strong>Эталон:</strong> {{ outcome.feedback.reference || presentation.reference }}</p>
+          }
+          @case ('CLOZE') {
+            @if (clozeContent(); as content) {
+              <app-cloze-passage [passage]="content.passage" [values]="submittedClozeValues()" [verdicts]="clozeVerdicts()"
+                [readOnly]="true" idPrefix="feedback-blank" />
+            }
+          }
+          @case ('CHOICE') {
+            @if (choiceContent(); as content) {
+              <app-choice-list [options]="content.options" [selectionMode]="content.selectionMode"
+                [selected]="submittedOptionIds()" [disabled]="true" idPrefix="feedback-choice"
+                [correctIds]="choiceFeedback()?.correctOptionIds ?? null" />
+            }
+          }
+          @case ('MATCH') {
+            @if (matchFeedback(); as pairsFeedback) {
+              <ul class="pair-feedback">
+                @for (pair of pairsFeedback.pairs; track pair.leftId) {
+                  <li>
+                    <p><strong>{{ pair.correct ? 'Верно' : 'Проверьте' }}</strong></p>
+                    @if (matchItem('left', pair.leftId); as item) { <app-learner-blocks [blocks]="item.blocks" nameSuffix=", слева" /> }
+                    <p class="pair-arrow" aria-hidden="true">↓</p>
+                    @if (matchItem('right', pair.correctRightId); as item) { <app-learner-blocks [blocks]="item.blocks" nameSuffix=", справа" /> }
+                  </li>
+                }
+              </ul>
+            }
+          }
         }
         <p class="progress-note" [class.caution]="outcome.transition && outcome.transition.afterLevel < outcome.transition.beforeLevel">{{ progressMessage(outcome) }}</p>
         <button class="button primary" type="button" (click)="next()">Продолжить</button>

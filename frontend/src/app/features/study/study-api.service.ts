@@ -3,25 +3,28 @@ import { Injectable, inject } from '@angular/core';
 import { Observable, defer, map } from 'rxjs';
 
 import { appConfig } from '../../app.config';
+import { LearnerContent, MECHANICS, Mechanic, allLearnerBlocks } from '../../content/exercise/exercise-content.models';
+import { ExerciseContentError, parseLearnerBlock, parseLearnerContent } from '../../content/exercise/exercise-content.parse';
 import {
     AttemptCommand,
     AttemptFeedback,
     AttemptOutcome,
+    HintResult,
     MaterialProgress,
     PreparingStudySession,
     ReadyStudySession,
     ReplaySources,
     RestartAcknowledgement,
-    StudyBinding,
     StudyExerciseType,
+    StudyHint,
     StudyMode,
     StudyPresentation,
-    StudyPrompt,
     StudyProtocolError,
     StudySession,
     StudyStartIntent,
     StudyProgressPage,
-    StudyWriteResult
+    StudyWriteResult,
+    TranscriptReveal
 } from './study.models';
 
 @Injectable({ providedIn: 'root' })
@@ -132,11 +135,11 @@ export class StudyApiService {
     }
 
     checkPair(deckId: string, sessionId: string, presentationId: string, nonce: string,
-              cueId: string, optionId: string): Observable<{ readonly correct: boolean }> {
+              leftId: string, rightId: string): Observable<{ readonly correct: boolean }> {
         return defer(() => this.http.post<unknown>(
             `${this.baseUrl}/decks/${entity(deckId)}/study-sessions/${entity(sessionId)}/pair-checks`,
             { presentationId: entity(presentationId), nonce: text(nonce, 100, 16),
-                cueId: entity(cueId), optionId: entity(optionId) }, { observe: 'response' }
+                leftId: entity(leftId), rightId: entity(rightId) }, { observe: 'response' }
         )).pipe(map(response => {
             if (response.status !== 200) throw protocol('Unexpected pair check status.');
             privateResponse(response);
@@ -146,7 +149,28 @@ export class StudyApiService {
         }));
     }
 
-    revealTranscript(deckId: string, sessionId: string, presentationId: string, nonce: string): Observable<StudyPrompt> {
+    /** Records and returns the first letter of one blank; the server is the only source of the letter. */
+    hint(deckId: string, sessionId: string, presentationId: string, nonce: string,
+         blankId: string): Observable<HintResult> {
+        return defer(() => this.http.post<unknown>(
+            `${this.baseUrl}/decks/${entity(deckId)}/study-sessions/${entity(sessionId)}`
+                + `/presentations/${entity(presentationId)}/hints`,
+            { nonce: text(nonce, 100, 16), blankId: entity(blankId) }, { observe: 'response' }
+        )).pipe(map(response => {
+            if (response.status !== 200) throw protocol('Unexpected hint status.');
+            privateResponse(response);
+            const object = exact(response.body, ['presentationId', 'blankId', 'firstLetter']);
+            const result = { presentationId: entity(object['presentationId']), blankId: entity(object['blankId']),
+                firstLetter: letter(object['firstLetter']) };
+            if (result.presentationId !== presentationId.toLowerCase() || result.blankId !== blankId.toLowerCase()) {
+                throw protocol('Hint scope mismatch.');
+            }
+            return result;
+        }));
+    }
+
+    revealTranscript(deckId: string, sessionId: string, presentationId: string, nonce: string,
+                     type: Mechanic): Observable<TranscriptReveal> {
         return defer(() => this.http.post<unknown>(
             `${this.baseUrl}/decks/${entity(deckId)}/study-sessions/${entity(sessionId)}`
                 + `/presentations/${entity(presentationId)}/transcript`,
@@ -154,11 +178,12 @@ export class StudyApiService {
         )).pipe(map(response => {
             if (response.status !== 200) throw protocol('Unexpected transcript status.');
             privateResponse(response);
-            const object = exact(response.body, ['presentationId', 'prompt']);
+            const object = exact(response.body, ['presentationId', 'transcriptRevealed', 'content']);
             if (entity(object['presentationId']) !== presentationId.toLowerCase()) throw protocol('Transcript scope mismatch.');
-            const prompt = parsePrompt(object['prompt']);
-            if (prompt.kind === 'TEXT' || !prompt.transcriptRevealed) throw protocol('Transcript was not revealed.');
-            return prompt;
+            if (object['transcriptRevealed'] !== true) throw protocol('Transcript was not revealed.');
+            const content = guard(() => parseLearnerContent(type, object['content'], true));
+            if (!hasTranscript(content)) throw protocol('Transcript was not revealed.');
+            return { presentationId: presentationId.toLowerCase(), content };
         }));
     }
 }
@@ -280,122 +305,48 @@ function parseSession(value: unknown, expectedDeck: string, expectedSession?: st
     return session;
 }
 
+const EVALUATORS: Readonly<Record<Mechanic, readonly string[]>> = {
+    SELF_CHECK: ['self-check'], FREE_RESPONSE: ['deterministic-text', 'ai-semantic'], CLOZE: ['deterministic-cloze'],
+    CHOICE: ['deterministic-choice'], MATCH: ['deterministic-match']
+};
+
 function parsePresentation(value: unknown): StudyPresentation {
     const object = exact(value, [
         'presentationId', 'nonce', 'ordinal', 'exerciseRevisionId', 'type', 'objectiveId', 'objectiveRevisionId',
-        'learningEpoch', 'reference', 'prompt', 'options', 'bindings', 'evaluator',
-        ...(isRecord(value) && 'selectionMode' in value ? ['selectionMode'] : [])
+        'learningEpoch', 'content', 'transcriptRevealed', 'hints', 'evaluator'
     ]);
-    const prompt = parsePrompt(object['prompt']);
-    const evaluator = exact(object['evaluator'], ['id', 'version']);
-    if (!Array.isArray(object['options']) || !Array.isArray(object['bindings'])) throw protocol('Invalid presentation content.');
-    const options = object['options'].map(option => {
-        const item = exact(option, ['optionId', 'text']);
-        return { optionId: entity(item['optionId']), text: text(item['text'], 1024) };
-    });
-    const bindings = object['bindings'].map(parseBinding);
     const type = exerciseType(object['type']);
-    const listening = type === 'LISTEN_CHOICE' || type === 'AUDIO_TEXT_MATCH' || type === 'LISTEN_TYPE';
-    if (listening ? bindings.length !== 0 : bindings.filter(binding => binding.role === 'ASSESSED').length !== 1) {
-        throw protocol('Invalid public binding projection.');
-    }
-    const optionBindings = bindings.filter(binding => binding.role === 'OPTION');
-    if (type === 'SINGLE_CHOICE' || type === 'LISTEN_CHOICE' || type === 'AUDIO_TEXT_MATCH') {
-        const optionIds = new Set(options.map(option => option.optionId));
-        if (options.length < 2 || (type === 'AUDIO_TEXT_MATCH' && options.length > 6) || optionIds.size !== options.length
-            || (!listening && (optionBindings.length !== options.length
-                || optionBindings.some(binding => !optionIds.has(binding.bindingId))))) {
-            throw protocol('Invalid choice options.');
-        }
-    } else if (options.length !== 0 || optionBindings.length !== 0) throw protocol('Unexpected choice options.');
-    if ((type === 'LISTEN_CHOICE' || type === 'LISTEN_TYPE') && prompt.kind !== 'AUDIO_ASSET'
-        || type === 'AUDIO_TEXT_MATCH' && (prompt.kind !== 'AUDIO_MATCH'
-            || prompt.cues.length !== options.length)
-        || !['LISTEN_CHOICE', 'LISTEN_TYPE', 'AUDIO_TEXT_MATCH'].includes(type) && prompt.kind !== 'TEXT') {
-        throw protocol('Exercise prompt/type mismatch.');
-    }
-    if (prompt.kind === 'TEXT' && type !== 'CLOZE_SINGLE' && prompt.blank !== undefined) {
-        throw protocol('Unexpected cloze blank.');
-    }
-    const selectionMode = object['selectionMode'];
-    if (selectionMode !== undefined && (type !== 'SINGLE_CHOICE' && type !== 'LISTEN_CHOICE'
-        || selectionMode !== 'SINGLE' && selectionMode !== 'MULTIPLE')) throw protocol('Invalid choice selection mode.');
+    if (typeof object['transcriptRevealed'] !== 'boolean') throw protocol('Invalid transcript state.');
+    const learner = guard(() => parseLearnerContent(type, object['content'], object['transcriptRevealed'] as boolean));
+    const evaluator = exact(object['evaluator'], ['id', 'version']);
+    if (!EVALUATORS[type].includes(text(evaluator['id'], 100))) throw protocol('Evaluator does not match the exercise.');
+    const hints = parseHints(object['hints'], learner);
     return {
-        ...(selectionMode === undefined ? {} : { selectionMode: selectionMode as 'SINGLE' | 'MULTIPLE' }),
         presentationId: entity(object['presentationId']), nonce: text(object['nonce'], 100, 16),
         ordinal: count(object['ordinal'], 99), exerciseRevisionId: entity(object['exerciseRevisionId']),
-        type, objectiveId: entity(object['objectiveId']),
-        objectiveRevisionId: entity(object['objectiveRevisionId']), learningEpoch: unsigned(object['learningEpoch']),
-        reference: object['reference'] === null ? null : text(object['reference'], 4096, 0), prompt,
-        options, bindings, evaluator: { id: text(evaluator['id'], 100), version: text(evaluator['version'], 100) }
+        objectiveId: entity(object['objectiveId']), objectiveRevisionId: entity(object['objectiveRevisionId']),
+        learningEpoch: unsigned(object['learningEpoch']), transcriptRevealed: object['transcriptRevealed'],
+        hints, evaluator: { id: text(evaluator['id'], 100), version: text(evaluator['version'], 100) }, ...learner
     };
 }
 
-function parsePrompt(value: unknown): StudyPrompt {
-    if (!isRecord(value)) throw protocol('Invalid prompt projection.');
-    if (value['kind'] === 'TEXT') {
-        const object = exact(value, value['blank'] === undefined ? ['kind', 'text'] : ['kind', 'text', 'blank']);
-        let blank: { readonly mode: 'FIXED' | 'ANSWER_LENGTH'; readonly length: number } | undefined;
-        if (object['blank'] !== undefined) {
-            const raw = exact(object['blank'], ['mode', 'length']);
-            if ((raw['mode'] !== 'FIXED' && raw['mode'] !== 'ANSWER_LENGTH')
-                || !Number.isInteger(raw['length']) || (raw['length'] as number) < 1
-                || (raw['length'] as number) > 80
-                || (raw['mode'] === 'FIXED' && ((raw['length'] as number) < 5 || (raw['length'] as number) > 20))) {
-                throw protocol('Invalid cloze blank projection.');
-            }
-            blank = { mode: raw['mode'], length: raw['length'] as number };
-        }
-        return { kind: 'TEXT', text: text(object['text'], 4096, 0), ...(blank === undefined ? {} : { blank }) };
+function parseHints(value: unknown, learner: LearnerContent): readonly StudyHint[] {
+    if (!Array.isArray(value) || value.length > 12) throw protocol('Invalid hints.');
+    const hintable = new Set(learner.type === 'CLOZE'
+        ? learner.content.passage.flatMap(segment => segment.kind === 'BLANK' && segment.firstLetterHint ? [segment.blankId] : [])
+        : []);
+    const hints = value.map(entry => {
+        const hint = exact(entry, ['blankId', 'firstLetter']);
+        return { blankId: entity(hint['blankId']), firstLetter: letter(hint['firstLetter']) };
+    });
+    if (new Set(hints.map(hint => hint.blankId)).size !== hints.length || hints.some(hint => !hintable.has(hint.blankId))) {
+        throw protocol('Invalid hint scope.');
     }
-    const revealed = value['transcriptRevealed'] === true;
-    const transcriptAvailable = value['transcriptAvailable'];
-    if (typeof transcriptAvailable !== 'boolean' || typeof value['transcriptRevealed'] !== 'boolean') {
-        throw protocol('Invalid transcript state.');
-    }
-    if (value['kind'] === 'AUDIO_ASSET') {
-        const object = exact(value, revealed
-            ? ['kind', 'assetId', 'title', 'instruction', 'transcript', 'transcriptAvailable', 'transcriptRevealed']
-            : ['kind', 'assetId', 'title', 'instruction', 'transcriptAvailable', 'transcriptRevealed']);
-        return { kind: 'AUDIO_ASSET', assetId: entity(object['assetId']), title: text(object['title'], 1024),
-            instruction: text(object['instruction'], 320), transcriptAvailable, transcriptRevealed: revealed,
-            ...(revealed ? { transcript: text(object['transcript'], 16384, 0) } : {}) };
-    }
-    if (value['kind'] === 'AUDIO_MATCH') {
-        const object = exact(value, ['kind', 'instruction', 'cues', 'transcriptAvailable', 'transcriptRevealed']);
-        if (!Array.isArray(object['cues']) || object['cues'].length < 2 || object['cues'].length > 6) {
-            throw protocol('Invalid audio match cues.');
-        }
-        const cues = object['cues'].map(cue => {
-            const entry = exact(cue, revealed ? ['cueId', 'assetId', 'title', 'transcript']
-                : ['cueId', 'assetId', 'title']);
-            return { cueId: entity(entry['cueId']), assetId: entity(entry['assetId']),
-                title: text(entry['title'], 1024),
-                ...(revealed ? { transcript: text(entry['transcript'], 16384, 0) } : {}) };
-        });
-        if (new Set(cues.map(cue => cue.cueId)).size !== cues.length
-            || new Set(cues.map(cue => cue.assetId)).size !== cues.length) throw protocol('Duplicate audio cue.');
-        return { kind: 'AUDIO_MATCH', instruction: text(object['instruction'], 320), cues,
-            transcriptAvailable, transcriptRevealed: revealed };
-    }
-    throw protocol('Unsupported prompt projection.');
+    return hints;
 }
 
-function parseBinding(value: unknown): StudyBinding {
-    const object = exact(value, ['bindingId', 'role', 'memberKey', 'itemRevisionId', 'ordinal', 'nodeIds', 'display']);
-    const role = object['role'];
-    if (role !== 'ASSESSED' && role !== 'CUE' && role !== 'OPTION' && role !== 'CONTEXT') throw protocol('Invalid binding role.');
-    if (!Array.isArray(object['nodeIds']) || object['nodeIds'].length > 16) throw protocol('Invalid binding nodes.');
-    if (!isRecord(object['display'])) throw protocol('Invalid binding display.');
-    const display = object['display']['kind'] === 'CUSTOM_TEXT'
-        ? exact(object['display'], ['kind', 'text']) : exact(object['display'], ['kind']);
-    if (display['kind'] !== 'NODE_TEXT' && display['kind'] !== 'CUSTOM_TEXT') {
-        throw protocol('Invalid binding display.');
-    }
-    return { bindingId: entity(object['bindingId']), role, memberKey: entity(object['memberKey']),
-        itemRevisionId: entity(object['itemRevisionId']), ordinal: count(object['ordinal'], 2_147_483_647),
-        nodeIds: object['nodeIds'].map(entity), display: display['kind'] === 'CUSTOM_TEXT'
-            ? { kind: 'CUSTOM_TEXT', text: text(display['text'], 320) } : { kind: 'NODE_TEXT' } };
+function hasTranscript(content: LearnerContent): boolean {
+    return allLearnerBlocks(content).some(block => (block.kind === 'AUDIO' || block.kind === 'VIDEO') && block.transcript !== undefined);
 }
 
 function parseOutcome(value: unknown): AttemptOutcome {
@@ -429,34 +380,70 @@ function parseEvidence(value: unknown, status: AttemptOutcome['status'], parsedM
         || object['reasonCodes'].some(item => typeof item !== 'string')) throw protocol('Invalid canonical evidence.');
 }
 
+const RESULTS = ['CORRECT', 'PARTIAL', 'UNSURE', 'INCORRECT'] as const;
+
 function parseFeedback(value: unknown): AttemptFeedback {
     if (!isRecord(value) || typeof value['result'] !== 'string') throw protocol('Invalid feedback.');
     const result = value['result'];
-    if (!['CORRECT', 'PARTIAL', 'UNSURE', 'INCORRECT', 'NOT_ASSESSED', 'UNAVAILABLE'].includes(result)) {
-        throw protocol('Invalid feedback result.');
+    if (result === 'NOT_ASSESSED' || result === 'UNAVAILABLE') {
+        const object = exact(value, ['result', 'reasonCodes']);
+        return { result, reasonCodes: strings(object['reasonCodes']) };
     }
-    const allowed = result === 'NOT_ASSESSED' ? ('reasonCodes' in value ? ['result', 'reasonCodes'] : ['result'])
-        : result === 'UNAVAILABLE' ? ['result', 'reasonCodes']
-            : ('pairResults' in value ? ['result', 'pairResults', 'appliedRules']
-                : 'reference' in value ? ['result', 'reference', 'appliedRules'] : ['result', 'appliedRules']);
-    const object = exact(value, allowed);
-    const strings = (field: string): readonly string[] => {
-        const values = object[field] ?? [];
-        if (!Array.isArray(values) || values.length > 20 || values.some(item => typeof item !== 'string')) {
-            throw protocol('Invalid feedback details.');
+    if (!(RESULTS as readonly string[]).includes(result)) throw protocol('Invalid feedback result.');
+    const verdict = result as (typeof RESULTS)[number];
+    const rules = (object: Record<string, unknown>) => strings(object['appliedRules']);
+    if ('blanks' in value) {
+        const object = exact(value, ['result', 'appliedRules', 'blanks']);
+        if (!Array.isArray(object['blanks']) || object['blanks'].length < 1 || object['blanks'].length > 12) {
+            throw protocol('Invalid blank feedback.');
         }
-        return values as string[];
-    };
-    const pairResults = 'pairResults' in object ? (Array.isArray(object['pairResults'])
-        ? object['pairResults'].map(value => {
-            const pair = exact(value, ['cueId', 'selectedOptionId', 'correctOptionId', 'correct']);
+        const blanks = object['blanks'].map(entry => {
+            const blank = exact(entry, ['blankId', 'correct', 'hinted', 'reference']);
+            if (typeof blank['correct'] !== 'boolean' || typeof blank['hinted'] !== 'boolean') throw protocol('Invalid blank result.');
+            return { blankId: entity(blank['blankId']), correct: blank['correct'], hinted: blank['hinted'],
+                reference: text(blank['reference'], 4096, 0) };
+        });
+        if (new Set(blanks.map(blank => blank.blankId)).size !== blanks.length) throw protocol('Duplicate blank feedback.');
+        return { result: verdict, appliedRules: rules(object), blanks };
+    }
+    if ('correctOptionIds' in value) {
+        const object = exact(value, ['result', 'appliedRules', 'correctOptionIds']);
+        if (!Array.isArray(object['correctOptionIds']) || object['correctOptionIds'].length < 1
+            || object['correctOptionIds'].length > 12) throw protocol('Invalid choice feedback.');
+        const correctOptionIds = object['correctOptionIds'].map(entity);
+        if (new Set(correctOptionIds).size !== correctOptionIds.length) throw protocol('Duplicate correct option.');
+        return { result: verdict, appliedRules: rules(object), correctOptionIds };
+    }
+    if ('pairs' in value) {
+        const object = exact(value, ['result', 'appliedRules', 'pairs']);
+        if (!Array.isArray(object['pairs']) || object['pairs'].length < 2 || object['pairs'].length > 6) {
+            throw protocol('Invalid pair feedback.');
+        }
+        const pairs = object['pairs'].map(entry => {
+            const pair = exact(entry, ['leftId', 'selectedRightId', 'correctRightId', 'correct']);
             if (typeof pair['correct'] !== 'boolean') throw protocol('Invalid pair result.');
-            return { cueId: entity(pair['cueId']), selectedOptionId: entity(pair['selectedOptionId']),
-                correctOptionId: entity(pair['correctOptionId']), correct: pair['correct'] };
-        }) : (() => { throw protocol('Invalid pair results.'); })()) : [];
-    return { result: result as AttemptFeedback['result'],
-        reference: 'reference' in object ? text(object['reference'], 4096, 0) : null,
-        appliedRules: strings('appliedRules'), reasonCodes: strings('reasonCodes'), pairResults };
+            return { leftId: entity(pair['leftId']), selectedRightId: entity(pair['selectedRightId']),
+                correctRightId: entity(pair['correctRightId']), correct: pair['correct'] };
+        });
+        if (new Set(pairs.map(pair => pair.leftId)).size !== pairs.length) throw protocol('Duplicate pair feedback.');
+        return { result: verdict, appliedRules: rules(object), pairs };
+    }
+    if ('referenceContent' in value) {
+        const object = exact(value, ['result', 'appliedRules', 'reference', 'referenceContent']);
+        if (!Array.isArray(object['referenceContent']) || object['referenceContent'].length > 8) {
+            throw protocol('Invalid reference content.');
+        }
+        return { result: verdict, appliedRules: rules(object), reference: text(object['reference'], 4096, 0),
+            referenceContent: object['referenceContent'].map(block => guard(() => parseLearnerBlock(block, 'REFERENCE', null))) };
+    }
+    return { result: verdict, appliedRules: rules(exact(value, ['result', 'appliedRules'])) };
+}
+
+function strings(value: unknown): readonly string[] {
+    if (!Array.isArray(value) || value.length > 20 || value.some(item => typeof item !== 'string')) {
+        throw protocol('Invalid feedback details.');
+    }
+    return value as string[];
 }
 
 function parseTransition(value: unknown): AttemptOutcome['transition'] {
@@ -469,33 +456,57 @@ function parseTransition(value: unknown): AttemptOutcome['transition'] {
 }
 
 function validateCommand(command: AttemptCommand): void {
+    exact(command, ['attemptId', 'presentationId', 'nonce', 'response', 'confidence', 'durationMs']);
     commandIdValue(command.attemptId); entity(command.presentationId); text(command.nonce, 100, 16);
-    if (!Array.isArray(command.hintsUsed) || command.hintsUsed.length > 8
-        || command.hintsUsed.some(value => typeof value !== 'string' || value.length === 0 || value.length > 64)
-        || !Number.isSafeInteger(command.durationMs) || command.durationMs < 0 || command.durationMs > 3_600_000) {
+    if (!Number.isSafeInteger(command.durationMs) || command.durationMs < 0 || command.durationMs > 3_600_000) {
         throw protocol('Invalid attempt command.');
     }
     const response = command.response;
-    if (response.kind === 'TEXT') text(response.text, 4096, 0);
+    if (response.kind === 'TEXT') { exact(response, ['kind', 'text']); text(response.text, 4096, 0); }
     else if (response.kind === 'SELF_CHECK') {
+        exact(response, ['kind', 'rating']);
         if (!['NOT_RECALLED', 'HINTED', 'PARTIAL', 'FULL'].includes(response.rating)) throw protocol('Invalid rating.');
+    } else if (response.kind === 'CLOZE') {
+        exact(response, ['kind', 'blanks']);
+        if (!Array.isArray(response.blanks) || response.blanks.length < 1 || response.blanks.length > 12
+            || new Set(response.blanks.map(blank => entity(blank.blankId))).size !== response.blanks.length) {
+            throw protocol('Invalid cloze response.');
+        }
+        response.blanks.forEach(blank => { exact(blank, ['blankId', 'text']); text(blank.text, 4096, 0); });
     } else if (response.kind === 'CHOICE') {
-        if (!Array.isArray(response.optionIds) || response.optionIds.length === 0
+        exact(response, ['kind', 'optionIds']);
+        if (!Array.isArray(response.optionIds) || response.optionIds.length === 0 || response.optionIds.length > 12
             || new Set(response.optionIds.map(entity)).size !== response.optionIds.length) {
             throw protocol('Invalid choice selection.');
         }
-    }
-    else if (response.kind === 'MATCH') {
-        if (response.pairs.length < 2 || response.pairs.length > 6
-            || new Set(response.pairs.map(pair => entity(pair.cueId))).size !== response.pairs.length
-            || new Set(response.pairs.map(pair => entity(pair.optionId))).size !== response.pairs.length) {
-            throw protocol('Invalid audio match response.');
+    } else if (response.kind === 'MATCH') {
+        exact(response, ['kind', 'pairs']);
+        if (!Array.isArray(response.pairs) || response.pairs.length < 2 || response.pairs.length > 6
+            || new Set(response.pairs.map(pair => entity(pair.leftId))).size !== response.pairs.length
+            || new Set(response.pairs.map(pair => entity(pair.rightId))).size !== response.pairs.length) {
+            throw protocol('Invalid match response.');
         }
-    }
-    else if (response.kind !== 'CANCEL') throw protocol('Invalid response kind.');
+        response.pairs.forEach(pair => exact(pair, ['leftId', 'rightId']));
+    } else if (response.kind === 'CANCEL') exact(response, ['kind']);
+    else throw protocol('Invalid response kind.');
     if (command.confidence !== null && !['KNEW', 'UNSURE', 'GUESSED'].includes(command.confidence)) {
         throw protocol('Invalid confidence.');
     }
+}
+
+/** Content parsers throw their own error type; Study callers only see Study protocol errors. */
+function guard<T>(parse: () => T): T {
+    try {
+        return parse();
+    } catch (error) {
+        if (error instanceof ExerciseContentError) throw protocol(error.message);
+        throw error;
+    }
+}
+
+function letter(value: unknown): string {
+    if (typeof value !== 'string' || value.length < 1 || value.length > 16) throw protocol('Invalid hint letter.');
+    return value;
 }
 
 function privateResponse(response: HttpResponse<unknown>): void {
@@ -527,7 +538,8 @@ function localDate(value: unknown): string { const result = text(value, 10); if 
 function hash(value: unknown): string { const result = text(value, 80); if (!/^sha256:[0-9a-f]{64}$/u.test(result)) throw protocol('Invalid config hash.'); return result; }
 function cursor(value: unknown): string | null { if (value === null) return null; return text(value, 4096); }
 function mode(value: unknown): StudyMode { if (value !== 'SCHEDULED' && value !== 'REPLAY' && value !== 'PRACTICE') throw protocol('Invalid Study mode.'); return value; }
-function exerciseType(value: unknown): StudyExerciseType { if (value !== 'SELF_CHECK' && value !== 'TYPED'
-    && value !== 'CLOZE_SINGLE' && value !== 'SINGLE_CHOICE' && value !== 'LISTEN_CHOICE'
-    && value !== 'AUDIO_TEXT_MATCH' && value !== 'LISTEN_TYPE') throw protocol('Invalid exercise type.'); return value; }
+function exerciseType(value: unknown): StudyExerciseType {
+    if (typeof value !== 'string' || !(MECHANICS as readonly string[]).includes(value)) throw protocol('Invalid exercise type.');
+    return value as StudyExerciseType;
+}
 function identity(actual: string, expected?: string): void { if (expected !== undefined && actual !== expected.toLowerCase()) throw protocol('Session identity mismatch.'); }

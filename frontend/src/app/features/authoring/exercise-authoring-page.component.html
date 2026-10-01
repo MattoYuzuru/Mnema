@@ -20,201 +20,86 @@
     </section>
   }
   @if (staleProjection()) {
-    <p class="notice warning" role="status">Материал изменился. Проверьте вопрос и ответ: некоторые фрагменты могли стать недоступны.</p>
+    <p class="notice warning" role="status">Материал изменился. Проверьте условие и эталон: некоторые фрагменты закреплены за прежней версией и могут отличаться от текущего текста.</p>
   }
 
   @if (item(); as currentItem) {
+    @if (context(); as slotContext) {
     <div class="authoring-layout">
       <form class="inspector" (submit)="$event.preventDefault(); save()" novalidate>
+        @if (errorSummary().length > 0) {
+          <div id="exercise-errors" class="notice error" role="alert" tabindex="-1">
+            <p><strong>Проверьте упражнение:</strong></p>
+            <ul>@for (text of errorSummary(); track $index) { <li>{{ text }}</li> }</ul>
+          </div>
+        }
+
         <fieldset>
-          <legend>1. Тип упражнения</legend>
-          <div class="choice-grid">
-            @for (candidate of ['SELF_CHECK', 'TYPED', 'CLOZE_SINGLE', 'SINGLE_CHOICE', 'LISTEN_CHOICE', 'AUDIO_TEXT_MATCH', 'LISTEN_TYPE']; track candidate) {
+          <legend>1. Как отвечает ученик</legend>
+          <div class="choice-grid" role="radiogroup" aria-label="Механика упражнения">
+            @for (candidate of mechanics; track candidate) {
               <label class="choice-card">
-                <input type="radio" name="type" [value]="candidate" [checked]="type() === candidate"
-                       (change)="setType($any(candidate))" />
-                <span class="choice-description"><strong>{{ exerciseName($any(candidate)) }}</strong>
-                  <small>{{ exerciseExample($any(candidate)) }}</small></span>
+                <input type="radio" name="mechanic" [value]="candidate" [checked]="type() === candidate"
+                       (change)="setType(candidate)" />
+                <span class="choice-description"><strong>{{ mechanicName(candidate) }}</strong>
+                  <small>{{ mechanicExample(candidate) }}</small></span>
               </label>
             }
           </div>
+          <p class="hint">Вид условия (текст, картинка, аудио, видео) выбирается внутри упражнения и не меняет механику. Всё, что вы уже ввели для других механик, сохраняется.</p>
         </fieldset>
 
-        <fieldset [attr.aria-describedby]="fieldErrors()['prompt'] ? 'prompt-error' : null">
-          <legend>2. Вопрос</legend>
-          @if (isListening()) {
-            <label for="audio-instruction">Инструкция <span class="hint">до 80 символов</span></label>
-            <input id="audio-instruction" type="text" [value]="audioInstruction()"
-                   [attr.aria-invalid]="fieldErrors()['prompt'] ? 'true' : null"
-                   (input)="setAudio('instruction', $any($event.target).value)" />
-            @if (type() === 'AUDIO_TEXT_MATCH') {
-              <p class="hint">Для каждой записи выберите текст, который ей соответствует.</p>
-              @for (row of matchRows(); track row.cueId; let index = $index) {
-                <div class="audio-cue-row">
-                  <h3>Запись {{ index + 1 }}</h3>
-                  <p class="hint" role="status">{{ row.assetId ? 'Аудиофайл выбран' : 'Выберите аудиофайл ниже' }}</p>
-                  <button class="button" type="button" [attr.aria-pressed]="audioTargetIndex() === index"
-                          (click)="selectAudioTarget(index)">Выбрать файл для записи {{ index + 1 }}</button>
-                  <label [for]="'match-title-' + index">Название записи</label>
-                  <input [id]="'match-title-' + index" type="text" [value]="row.title"
-                         (input)="setMatchRow(index, 'title', $any($event.target).value)" />
-                  <label [for]="'match-option-' + index">Правильный текст</label>
-                  <app-mnema-select [controlId]="'match-option-' + index" label="Правильный текст"
-                    [options]="projectionOptions()" [value]="row.optionNodeId" [invalid]="!!fieldErrors()['options']"
-                    (valueChange)="setMatchRow(index, 'optionNodeId', $event)" />
-                  <label [for]="'match-transcript-' + index">Расшифровка записи <span class="hint">необязательно</span></label>
-                  <textarea [id]="'match-transcript-' + index" rows="2" [value]="row.transcript"
-                            (input)="setMatchRow(index, 'transcript', $any($event.target).value)"></textarea>
-                  <button class="button" type="button" [disabled]="matchRows().length <= 2"
-                          (click)="removeMatchRow(index)">Убрать запись</button>
-                </div>
-              }
-              <button class="button" type="button" [disabled]="matchRows().length >= 6" (click)="addMatchRow()">Добавить запись</button>
-            } @else {
-              <p class="hint" role="status">{{ audioAssetId() ? 'Аудиофайл выбран' : 'Выберите аудиофайл ниже' }}</p>
-              <label for="audio-title">Название записи</label>
-              <input id="audio-title" type="text" [value]="audioTitle()"
-                     (input)="setAudio('title', $any($event.target).value)" />
-              <label for="audio-transcript">Расшифровка записи <span class="hint">необязательно</span></label>
-              <textarea id="audio-transcript" rows="3" [value]="audioTranscript()"
-                        (input)="setAudio('transcript', $any($event.target).value)"></textarea>
+        <div class="content-section">
+          <h2 class="section-title">2. Содержание</h2>
+          @switch (type()) {
+            @case ('SELF_CHECK') {
+              <app-self-check-editor [draft]="drafts().SELF_CHECK" (draftChange)="setSelfCheck($event)" [context]="slotContext"
+                [errors]="fieldErrors()" [showProblems]="showProblems()" idPrefix="self-check" />
             }
-            <div class="exercise-audio-upload">
-              <p class="hint">{{ type() === 'AUDIO_TEXT_MATCH'
-                ? 'Выбрана запись ' + (audioTargetIndex() + 1) + '. После загрузки выберите её из списка.'
-                : 'Загрузите аудиофайл или запишите голос, затем выберите запись из списка.' }}</p>
-              <app-native-media-upload [document]="currentItem.document" (chooseAsset)="chooseUploadedAudio($event)" />
-            </div>
-            @if (fieldErrors()['audio']; as error) { <p class="field-error" role="alert">{{ error }}</p> }
-            @if (fieldErrors()['options']; as error) { <p class="field-error" role="alert">{{ error }}</p> }
-          } @else {
-          <div class="segmented" role="group" aria-label="Источник вопроса">
-            <button type="button" [class.active]="promptMode() === 'node'" [attr.aria-pressed]="promptMode() === 'node'" (click)="setPromptMode('node', $event)"><span>Фрагмент материала</span></button>
-            <button type="button" [class.active]="promptMode() === 'custom'" [attr.aria-pressed]="promptMode() === 'custom'" (click)="setPromptMode('custom', $event)"><span>Произвольный вопрос</span></button>
-          </div>
-          @if (promptMode() === 'node') {
-            <label for="prompt-node">Фрагмент вопроса</label>
-            <app-mnema-select controlId="prompt-node" label="Фрагмент вопроса" [options]="projectionOptions()"
-              [value]="promptNodeId() ?? ''" [invalid]="!!fieldErrors()['prompt']"
-              (valueChange)="setPromptNode($event)" />
-          } @else {
-            <label for="custom-prompt">Текст вопроса <span class="hint">до 80 символов</span></label>
-            <textarea id="custom-prompt" rows="3" [value]="customPrompt()" [attr.aria-invalid]="fieldErrors()['prompt'] ? 'true' : null"
-                      (input)="setCustomPrompt($any($event.target).value)"></textarea>
-          }
-          }
-          @if (fieldErrors()['prompt']; as error) { <p class="field-error" id="prompt-error">{{ error }}</p> }
-          @if (type() === 'CLOZE_SINGLE') {
-            <div class="blank-settings" [attr.aria-describedby]="fieldErrors()['blank'] ? 'blank-error' : null">
-              <p class="setting-title">Длина пропуска</p>
-              <label class="radio-line"><input type="radio" name="blankMode" [checked]="blankMode() === 'FIXED'" (change)="setBlankMode('FIXED')" /> Указать число знаков</label>
-              @if (blankMode() === 'FIXED') {
-                <label for="blank-length">Знаков в пропуске</label>
-                <input id="blank-length" type="number" min="5" max="20" step="1" [value]="fixedBlankLength()"
-                  [attr.aria-invalid]="fieldErrors()['blank'] ? 'true' : null"
-                  (input)="setFixedBlankLength($any($event.target).valueAsNumber)" />
-              }
-              <label class="radio-line"><input type="radio" name="blankMode" [checked]="blankMode() === 'ANSWER_LENGTH'" (change)="setBlankMode('ANSWER_LENGTH')" /> По длине ответа</label>
-              <p class="hint">Длина ответа видна ученику, если все допустимые варианты одной длины.</p>
-              @if (fieldErrors()['blank']; as error) { <p class="field-error" id="blank-error">{{ error }}</p> }
-            </div>
-          }
-        </fieldset>
-
-        @if (isChoice()) {
-          <fieldset [attr.aria-describedby]="fieldErrors()['options'] ? 'options-error' : null">
-            <legend>3. Варианты ответа</legend>
-            <p class="hint">Добавьте хотя бы два разных фрагмента и отметьте правильные ответы.</p>
-            <label class="enable-line"><input type="checkbox" [checked]="multipleAnswers()"
-              (change)="setMultipleAnswers($any($event.target).checked)" /> Можно выбрать несколько ответов</label>
-            <p class="hint">{{ multipleAnswers() ? 'Ученик увидит флажки. Правильным может быть и один ответ.' : 'Ученик выберет один ответ.' }}</p>
-            <div class="option-list">
-              @for (projection of projections(); track projection.nodeId) {
-                <label><input type="checkbox" [checked]="optionNodeIds().includes(projection.nodeId)"
-                  (change)="toggleOption(projection.nodeId, $any($event.target).checked)" /> {{ projection.label }}</label>
-              }
-            </div>
-            @if (optionNodeIds().length > 0) {
-              <fieldset class="correct-options"><legend>{{ multipleAnswers() ? 'Правильные ответы' : 'Правильный ответ' }}</legend>
-                @for (nodeId of optionNodeIds(); track nodeId) {
-                  <label class="radio-line"><input [type]="multipleAnswers() ? 'checkbox' : 'radio'" name="correctOption"
-                    [checked]="correctNodeIds().includes(nodeId)" (change)="toggleCorrectOption(nodeId, $any($event.target).checked)" /> {{ projection(nodeId)?.label }}</label>
-                }
-              </fieldset>
+            @case ('FREE_RESPONSE') {
+              <app-free-response-editor [draft]="drafts().FREE_RESPONSE" (draftChange)="setFreeResponse($event)" [context]="slotContext"
+                [errors]="fieldErrors()" [showProblems]="showProblems()" [capabilities]="capabilities()" idPrefix="free-response" />
             }
-            @if (fieldErrors()['options']; as error) { <p class="field-error" id="options-error">{{ error }}</p> }
-          </fieldset>
-        } @else {
-        <fieldset [attr.aria-describedby]="fieldErrors()['answer'] ? 'answer-error' : null">
-          <legend>3. Проверяемый ответ</legend>
-          @if (supportsCustomAnswer()) {
-            <div class="segmented" role="group" aria-label="Источник ответа">
-              <button type="button" [class.active]="answerMode() === 'node'" [attr.aria-pressed]="answerMode() === 'node'"
-                      (click)="setAnswerMode('node', $event)"><span>Фрагмент материала</span></button>
-              <button type="button" [class.active]="answerMode() === 'custom'" [attr.aria-pressed]="answerMode() === 'custom'"
-                      (click)="setAnswerMode('custom', $event)"><span>Свой ответ</span></button>
-            </div>
-          }
-          @if (answerMode() === 'node') {
-            <label for="answer-node">Фрагмент ответа</label>
-            <app-mnema-select controlId="answer-node" label="Фрагмент ответа" [options]="projectionOptions()"
-              [value]="answerNodeId() ?? ''" [invalid]="!!fieldErrors()['answer']"
-              (valueChange)="setAnswerNode($event)" />
-          } @else {
-            <p class="hint">Первый вариант показываем как образец. Остальные считаем правильными при проверке ответа.</p>
-          }
-          @if (fieldErrors()['answer']; as error) { <p class="field-error" id="answer-error">{{ error }}</p> }
-          @if (type() !== 'AUDIO_TEXT_MATCH' && (type() !== 'SELF_CHECK' || answerMode() === 'custom')) {
-            <div class="aliases-heading"><strong>{{ answerMode() === 'custom' ? 'Свой ответ и допустимые варианты' : 'Допустимые ответы' }}</strong><span class="hint">До 20 вариантов</span></div>
-            <div class="alias-list">
-              @for (row of aliasRows(); track row.id; let index = $index) {
-                <div class="alias-row">
-                  <label [for]="'alias-' + row.id">{{ index === 0 ? 'Основной ответ' : 'Допустимый вариант ' + (index + 1) }}</label>
-                  <div class="alias-controls">
-                    <input [id]="'alias-' + row.id" type="text" [value]="row.value" [disabled]="objectiveMode() === 'reuse'"
-                      [attr.aria-invalid]="fieldErrors()['aliases'] ? 'true' : null"
-                      (input)="setAlias(index, $any($event.target).value)" />
-                    @if (index > 0 && objectiveMode() !== 'reuse') {
-                      <button class="button alias-remove" type="button" [attr.aria-label]="'Убрать вариант ' + (index + 1)" (click)="removeAlias(index)">−</button>
-                    }
-                  </div>
-                </div>
-              }
-            </div>
-            @if (objectiveMode() !== 'reuse') {
-              <button class="button alias-add" type="button" [disabled]="aliasRows().length >= 20" (click)="addAlias()">+ Добавить вариант</button>
+            @case ('CLOZE') {
+              <app-cloze-editor [draft]="drafts().CLOZE" (draftChange)="setCloze($event)" [context]="slotContext"
+                [errors]="fieldErrors()" [showProblems]="showProblems()" idPrefix="cloze" />
             }
-            @if (fieldErrors()['aliases']; as error) { <p class="field-error">{{ error }}</p> }
+            @case ('CHOICE') {
+              <app-choice-editor [draft]="drafts().CHOICE" (draftChange)="setChoice($event)" [context]="slotContext"
+                [errors]="fieldErrors()" [showProblems]="showProblems()" idPrefix="choice" />
+            }
+            @case ('MATCH') {
+              <app-match-editor [draft]="drafts().MATCH" (draftChange)="setMatch($event)" [context]="slotContext"
+                [errors]="fieldErrors()" [showProblems]="showProblems()" idPrefix="match" />
+            }
           }
-          @if (type() === 'TYPED' || type() === 'CLOZE_SINGLE' || type() === 'LISTEN_TYPE') {
-            <div class="matching-setting" role="group" aria-label="Проверка написанного ответа">
-              <p class="setting-title">Проверка ответа</p>
-              <label class="radio-line"><input type="radio" name="matchingMode" [checked]="matchingMode() === 'STRICT'" (change)="setMatchingMode('STRICT')" /> Строгая</label>
-              <p class="hint">Регистр и пробелы по краям не важны; остальное сверяется точно.</p>
-              <label class="radio-line"><input type="radio" name="matchingMode" [checked]="matchingMode() === 'SOFT'" (change)="setMatchingMode('SOFT')" /> Мягкая</label>
-              <p class="hint">Допускает различия в знаках препинания, диакритике, дефисах и пробелах.</p>
-            </div>
-          }
-        </fieldset>
+          @if (fieldErrors()['media']; as error) { <p class="field-error" role="alert">{{ error }}</p> }
+          @if (fieldErrors()['capability']; as error) { <p class="field-error" role="alert">{{ error }}</p> }
+        </div>
 
-        }
-
-        <fieldset [attr.aria-describedby]="fieldErrors()['objective'] ? 'objective-error' : null">
-          <legend>4. Направление знания</legend>
-          <p class="hint">Выберите, считать ли это новым знанием или ещё одним способом проверить уже изучаемое. Например, перевод слова и перевод обратно можно учить отдельно.</p>
-          <label class="radio-line"><input type="radio" name="objectiveMode" [checked]="objectiveMode() === 'create'" (change)="setObjectiveMode('create')" /> Учить как новое знание</label>
-          @if (objectives().length > 0 && type() !== 'AUDIO_TEXT_MATCH') {
-            @if (!isChoice()) { <label class="radio-line"><input type="radio" name="objectiveMode" [checked]="objectiveMode() === 'reuse'" (change)="setObjectiveMode('reuse')" /> Проверять уже изучаемое тем же ответом</label> }
-            <label class="radio-line"><input type="radio" name="objectiveMode" [checked]="objectiveMode() === 'revise'" (change)="setObjectiveMode('revise')" /> Изменить ответ уже изучаемого знания</label>
+        <fieldset [attr.aria-describedby]="fieldErrors()['objective'] || fieldErrors()['objective-title'] ? 'objective-error' : null">
+          <legend>3. Цель обучения</legend>
+          <p class="hint">Цель — то, что вы хотите уметь. Её прогресс считается по этому упражнению; несколько упражнений могут проверять одну цель.</p>
+          <label class="radio-line"><input type="radio" name="objectiveMode" [checked]="objectiveMode() === 'create'" (change)="setObjectiveMode('create')" /> Новая цель</label>
+          @if (objectives().length > 0) {
+            <label class="radio-line"><input type="radio" name="objectiveMode" [checked]="objectiveMode() === 'reuse'" (change)="setObjectiveMode('reuse')" /> Проверять уже изучаемую цель</label>
+            <label class="radio-line"><input type="radio" name="objectiveMode" [checked]="objectiveMode() === 'revise'" (change)="setObjectiveMode('revise')" /> Изменить название изучаемой цели</label>
           }
-          @if (objectiveMode() === 'revise') { <p class="hint">Обновлённые ответы и правила проверки появятся в следующих занятиях. Прежние попытки и расписание повторений сохранятся.</p> }
           @if (objectiveMode() !== 'create') {
             <label for="objective">Существующая цель</label>
             <app-mnema-select controlId="objective" label="Существующая цель" [options]="objectiveOptions()"
               [value]="selectedObjectiveId() ?? ''" [invalid]="!!fieldErrors()['objective']"
               (valueChange)="selectObjective($event)" />
           }
+          @if (objectiveMode() !== 'reuse') {
+            <label for="objective-title">Название цели <span class="hint">до 160 знаков</span></label>
+            <input id="objective-title" type="text" autocomplete="off" [value]="effectiveTitle()"
+                   [attr.aria-invalid]="fieldErrors()['objective-title'] ? 'true' : null"
+                   (input)="setObjectiveTitle($any($event.target).value)" />
+            @if (objectiveMode() === 'revise') { <p class="hint">Новое название появится в следующих занятиях. Прежние попытки и расписание сохранятся.</p> }
+          }
           @if (fieldErrors()['objective']; as error) { <p class="field-error" id="objective-error">{{ error }}</p> }
+          @if (fieldErrors()['objective-title']; as error) { <p class="field-error" id="objective-error">{{ error }}</p> }
         </fieldset>
 
         <label class="enable-line"><input type="checkbox" [checked]="enabled()" (change)="setEnabled($any($event.target).checked)" /> Добавлять упражнение в новые занятия</label>
@@ -231,25 +116,7 @@
 
       <aside class="preview-column" aria-label="Предпросмотр упражнения">
         <section class="preview-card">
-          <p class="eyebrow">Предпросмотр · {{ exerciseName(type()) }}</p>
-          <h2>{{ previewPrompt() }}</h2>
-          @if (isListening()) { <p class="hint">{{ type() === 'AUDIO_TEXT_MATCH' ? matchRows().length + ' аудиозаписи' : audioTitle() || 'Аудиозапись' }}</p> }
-          @if (type() === 'CLOZE_SINGLE') {
-            <app-cloze-input controlId="cloze-preview-input" label="Пробный ответ" [blankLength]="previewBlankLength()"
-              [value]="previewClozeAnswer()" (valueChange)="previewClozeAnswer.set($event)" />
-          } @else if (type() === 'TYPED' || type() === 'LISTEN_TYPE') { <label>Ответ <input type="text" disabled placeholder="Поле ученика" /></label> }
-          @if (type() === 'SINGLE_CHOICE' || type() === 'LISTEN_CHOICE') {
-            <fieldset class="preview-choice"><legend>{{ multipleAnswers() ? 'Выберите варианты ответов' : 'Выберите один ответ' }}</legend>
-              <div class="preview-options">@for (nodeId of optionNodeIds(); track nodeId) {
-                <label class="radio-line"><input [type]="multipleAnswers() ? 'checkbox' : 'radio'" disabled /> {{ projection(nodeId)?.label }}</label>
-              }</div>
-            </fieldset>
-          }
-          @if (type() === 'AUDIO_TEXT_MATCH') {
-            <div class="preview-options">@for (row of matchRows(); track row.cueId) { <span>{{ row.title || 'Запись' }} ↔ {{ projection(row.optionNodeId)?.label || 'Текст' }}</span> }</div>
-          }
-          @if (type() === 'SELF_CHECK') { <button class="reveal" type="button" disabled>Показать ответ</button> }
-          <details><summary>Эталон ответа</summary><p>{{ previewAnswer() }}</p></details>
+          <app-exercise-preview [type]="type()" [drafts]="drafts()" [context]="slotContext" />
         </section>
         <section class="material-card" aria-labelledby="material-preview-heading">
           <h2 id="material-preview-heading">Актуальный материал</h2>
@@ -257,6 +124,7 @@
         </section>
       </aside>
     </div>
+    }
 
     @if (page(); as currentPage) {
       <section class="existing" aria-labelledby="existing-title">
@@ -264,7 +132,7 @@
         @if (currentPage.exercises.length === 0) { <p class="notice">Пока нет упражнений. Настройте первую явную проверку знания.</p> }
         <ul>
           @for (entry of currentPage.exercises; track entry.exerciseId) {
-            <li><div><strong>{{ exerciseName(entry.type) }}</strong><span>{{ objectiveName(entry.objective) }} · {{ entry.enabled ? 'включено' : 'выключено' }}</span></div>
+            <li><div><strong>{{ mechanicName(entry.type) }}</strong><span>{{ entry.objective.title }} · {{ entry.enabled ? 'включено' : 'выключено' }}</span></div>
               <a class="button" [routerLink]="['/decks', currentPage.deckId, 'exercises', entry.exerciseId, 'edit']">Настроить</a></li>
           }
         </ul>
