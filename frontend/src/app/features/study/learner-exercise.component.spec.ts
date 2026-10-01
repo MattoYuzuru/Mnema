@@ -43,15 +43,23 @@ describe('LearnerExerciseComponent', () => {
         expect(root.querySelector('.transcript-offer')).not.toBeNull();
     });
 
-    it('does not submit anything in preview mode and says so', () => {
-        const { fixture, root, answers, component } = create('selfCheck', { canSubmit: false });
+    it('disables every submit and rating control with the reason while an author draft is unfinished', () => {
+        const reason = 'Проверить ответ пока нельзя: Добавьте вопрос.';
+        const { fixture, root, answers, component } = create('selfCheck', { blockedReason: reason });
         root.querySelector<HTMLButtonElement>('[data-answer-control]')!.click(); fixture.detectChanges();
-        expect(root.querySelector('[data-first-rating]')).toBeNull();
-        expect(root.textContent).toContain('В предпросмотре оценка не отправляется');
+        expect(root.querySelector('fieldset')?.disabled).toBeTrue();
+        expect(root.querySelector('.blocked')?.textContent).toContain(reason);
         component.rate('FULL'); component.submit();
         expect(answers).toEqual([]);
-        const free = create('freeResponse', { canSubmit: false });
-        expect(free.root.querySelector('button[data-submit]')).toBeNull();
+        const free = create('freeResponse', { blockedReason: reason });
+        const submit = free.root.querySelector<HTMLButtonElement>('button[data-submit]')!;
+        expect(submit.disabled).toBeTrue();
+        expect(submit.getAttribute('aria-describedby')).toBe(free.root.querySelector('.blocked')!.id);
+        free.component.submit();
+        expect(free.answers).toEqual([]);
+        const choice = create('choice', { blockedReason: reason });
+        choice.root.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(); choice.fixture.detectChanges();
+        expect(choice.root.querySelector<HTMLButtonElement>('button[data-submit]')!.disabled).toBeTrue();
     });
 
     it('reports whether it holds input, keeps the issued order of choices and ignores an empty choice', () => {

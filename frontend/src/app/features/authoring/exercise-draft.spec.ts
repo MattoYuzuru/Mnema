@@ -1,10 +1,10 @@
-import { AuthoringBlock, LIMITS } from '../../content/exercise/exercise-content.models';
+import { AuthoringBlock, LIMITS, previewExerciseOf } from '../../content/exercise/exercise-content.models';
 import { parseExerciseSpec } from '../../content/exercise/exercise-content.parse';
 import { NativeDocument } from '../../content/native-document';
 import { mechanics } from '../study/study-test-data';
 import {
-    ExerciseDrafts, SlotContext, buildSpec, choiceSelectionProblem, clozePassage, draftsFromDetail, emptyDrafts, isPreviewPair,
-    materialText, newBlank, newPair, previewContent, slotErrorMessage, validateDraft
+    ExerciseDrafts, SlotContext, buildSpec, carryPrompt, choiceSelectionProblem, clozePassage, draftsFromDetail, emptyDrafts,
+    isPristine, learnerContent, materialText, mechanicSpecificData, newBlank, newPair, slotErrorMessage, validateDraft
 } from './exercise-draft';
 import { ExerciseDetail } from './exercise.models';
 
@@ -141,43 +141,96 @@ describe('Exercise drafts', () => {
     });
 
     describe('preview', () => {
+        const project = (type: Parameters<typeof buildSpec>[0], drafts: ExerciseDrafts, revealed = false, placeholders = false) =>
+            learnerContent(previewExerciseOf(buildSpec(type, drafts, subject, true)), { context, revealed, placeholders });
+
         it('keeps hidden things hidden: no labels, no transcripts until revealed, no keys', () => {
             const detail = detailFor('createSelfCheck');
             const drafts = draftsFromDetail(detail);
-            const hidden = previewContent('SELF_CHECK', drafts, context, false);
+            const hidden = project('SELF_CHECK', drafts);
             expect(JSON.stringify(hidden)).not.toContain('Моё объяснение');
             expect(JSON.stringify(hidden)).not.toContain('Ядро хранит ДНК" ');
             const audio = hidden.type === 'SELF_CHECK' ? hidden.content.reference.find(block => block.kind === 'AUDIO') : null;
             expect(audio).toEqual({ kind: 'AUDIO', assetId: 'aaaaaaaa-0000-4000-8000-000000000004', transcriptAvailable: true });
-            const revealed = previewContent('SELF_CHECK', drafts, context, true);
+            const revealed = project('SELF_CHECK', drafts, true);
             expect(JSON.stringify(revealed)).toContain('Ядро хранит ДНК, митохондрии');
         });
 
         it('skips incomplete blocks, sizes blanks and rotates the right column of a match', () => {
             const base = emptyDrafts();
-            const free = previewContent('FREE_RESPONSE', { ...base, FREE_RESPONSE: { ...base.FREE_RESPONSE,
-                prompt: [text(' '), { kind: 'IMAGE', assetId: 'bad', alt: 'x' }, { kind: 'YOUTUBE', videoId: 'x', title: 'y' }, text('ok')] } }, context, false);
+            const free = project('FREE_RESPONSE', { ...base, FREE_RESPONSE: { ...base.FREE_RESPONSE,
+                prompt: [text(' '), { kind: 'IMAGE', assetId: 'bad', alt: 'x' }, { kind: 'YOUTUBE', videoId: 'x', title: 'y' }, text('ok')] } });
             expect(free.content.prompt).toEqual([{ kind: 'TEXT', text: 'ok' }]);
 
             const blank = newBlank('abcdefg');
-            const cloze = previewContent('CLOZE', { ...base, CLOZE: { prompt: [], texts: ['a ', ''], blanks: [{ ...blank, size: { mode: 'ANSWER_LENGTH' } }] } }, context, false);
+            const cloze = project('CLOZE', { ...base, CLOZE: { prompt: [], texts: ['a ', ''], blanks: [{ ...blank, size: { mode: 'ANSWER_LENGTH' } }] } });
             expect(cloze.type === 'CLOZE' && cloze.content.passage[1]).toEqual({ kind: 'BLANK', blankId: blank.blankId, size: { mode: 'ANSWER_LENGTH', length: 7 }, firstLetterHint: false });
 
             const pairs = [newPair(), newPair(), newPair()];
-            const match = previewContent('MATCH', { ...base, MATCH: { prompt: [], pairs } }, context, false);
+            const match = project('MATCH', { ...base, MATCH: { prompt: [], pairs } });
             if (match.type !== 'MATCH') throw new Error('Expected MATCH');
             expect(match.content.right.map(item => item.itemId)).toEqual([pairs[1].right.itemId, pairs[2].right.itemId, pairs[0].right.itemId]);
             expect(match.content.left.every(item => item.blocks.length === 1)).toBeTrue();
-            expect(isPreviewPair({ ...base, MATCH: { prompt: [], pairs } }, pairs[0].left.itemId, pairs[0].right.itemId)).toBeTrue();
-            expect(isPreviewPair({ ...base, MATCH: { prompt: [], pairs } }, pairs[0].left.itemId, pairs[1].right.itemId)).toBeFalse();
             expect(match.content.left[0].blocks).toEqual([{ kind: 'TEXT', text: 'Пустой элемент' }]);
         });
 
         it('previews a choice without any answer key', () => {
             const drafts = draftsFromDetail(detailFor('createChoiceVideoMultiple'));
-            const choice = previewContent('CHOICE', drafts, context, false);
+            const choice = project('CHOICE', drafts);
             expect(JSON.stringify(choice)).not.toContain('correct');
             expect(choice.type === 'CHOICE' && choice.content.options.length).toBe(4);
+        });
+
+        it('shows neutral placeholders for unfinished parts of a draft and never invents content', () => {
+            const base = emptyDrafts();
+            const choice = project('CHOICE', base, false, true);
+            if (choice.type !== 'CHOICE') throw new Error('Expected CHOICE');
+            expect(choice.content.prompt).toEqual([{ kind: 'TEXT', text: 'Добавьте вопрос' }]);
+            expect(choice.content.options.map(option => option.blocks)).toEqual([
+                [{ kind: 'TEXT', text: 'Добавьте вариант' }], [{ kind: 'TEXT', text: 'Добавьте вариант' }]]);
+            const half = project('CHOICE', { ...base, CHOICE: { ...base.CHOICE, options: [{ ...base.CHOICE.options[0], blocks: [text('Да')] }, base.CHOICE.options[1]] } }, false, true);
+            expect(half.type === 'CHOICE' && half.content.options[1].blocks).toEqual([{ kind: 'TEXT', text: 'Добавьте ещё один вариант' }]);
+            const check = project('SELF_CHECK', { ...base, SELF_CHECK: { prompt: [text('Вопрос')], reference: [text('')] } }, false, true);
+            expect(check.type === 'SELF_CHECK' && check.content.reference).toEqual([{ kind: 'TEXT', text: 'Укажите правильный ответ' }]);
+            // Without placeholders (a complete exercise) nothing is substituted.
+            expect(project('SELF_CHECK', { ...base, SELF_CHECK: { prompt: [text('Вопрос')], reference: [] } }).content)
+                .toEqual({ prompt: [{ kind: 'TEXT', text: 'Вопрос' }], reference: [] });
+        });
+    });
+
+    describe('pristine drafts and mechanic switching', () => {
+        it('recognises a fresh draft regardless of the random ids and notices the first edit', () => {
+            const drafts = emptyDrafts();
+            for (const type of ['SELF_CHECK', 'FREE_RESPONSE', 'CLOZE', 'CHOICE', 'MATCH'] as const) {
+                expect(isPristine(type, drafts)).withContext(type).toBeTrue();
+                expect(isPristine(type, emptyDrafts())).withContext(type).toBeTrue();
+            }
+            expect(isPristine('SELF_CHECK', { ...drafts, SELF_CHECK: { ...drafts.SELF_CHECK, prompt: [text('a')] } })).toBeFalse();
+            expect(isPristine('CHOICE', { ...drafts, CHOICE: { ...drafts.CHOICE, selectionMode: 'MULTIPLE' } })).toBeFalse();
+            expect(isPristine('CHOICE', { ...drafts, CHOICE: { ...drafts.CHOICE, options: [...drafts.CHOICE.options, drafts.CHOICE.options[0]] } })).toBeFalse();
+            expect(isPristine('MATCH', { ...drafts, MATCH: { ...drafts.MATCH, pairs: [...drafts.MATCH.pairs, newPair()] } })).toBeFalse();
+            // Typing and deleting again returns to a pristine draft.
+            expect(isPristine('SELF_CHECK', { ...drafts, SELF_CHECK: { ...drafts.SELF_CHECK, prompt: [text('')] } })).toBeTrue();
+        });
+
+        it('lists only the parts another mechanic cannot show', () => {
+            const base = emptyDrafts();
+            expect(mechanicSpecificData('CHOICE', base)).toEqual([]);
+            expect(mechanicSpecificData('CHOICE', { ...base, CHOICE: { ...base.CHOICE, prompt: [text('только вопрос')] } })).toEqual([]);
+            expect(mechanicSpecificData('CHOICE', { ...base, CHOICE: { ...base.CHOICE, correctIds: [base.CHOICE.options[0].optionId] } }).length).toBe(1);
+            expect(mechanicSpecificData('MATCH', draftsFromDetail(detailFor('createMatchMixed')))).toEqual(['пары']);
+            expect(mechanicSpecificData('CLOZE', draftsFromDetail(detailFor('createCloze')))[0]).toContain('пропусками');
+            expect(mechanicSpecificData('FREE_RESPONSE', { ...base, FREE_RESPONSE: { ...base.FREE_RESPONSE, reference: [text('эталон')] } })).toEqual(['эталон ответа']);
+        });
+
+        it('carries the question into an empty mechanic and never overwrites authored text', () => {
+            const base = emptyDrafts();
+            const source = { ...base, CHOICE: { ...base.CHOICE, prompt: [text('Вопрос')] } };
+            expect(carryPrompt(source, 'CHOICE', 'CLOZE').CLOZE.prompt).toEqual([text('Вопрос')]);
+            expect(carryPrompt(base, 'CHOICE', 'CLOZE')).toBe(base);
+            const taken = { ...source, MATCH: { ...source.MATCH, prompt: [text('Своё')] } };
+            expect(carryPrompt(taken, 'CHOICE', 'MATCH')).toBe(taken);
+            expect(carryPrompt(source, 'CHOICE', 'CHOICE')).toBe(source);
         });
     });
 });

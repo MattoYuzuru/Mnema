@@ -4,13 +4,10 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { map, timer } from 'rxjs';
 
-import { ChoiceListComponent } from '../../content/exercise/choice-list.component';
-import { ClozeBlankVerdict, ClozePassageComponent } from '../../content/exercise/cloze-passage.component';
-import { ExclusivePlaybackDirective } from '../../content/exercise/exclusive-playback.directive';
 import { Mechanic } from '../../content/exercise/exercise-content.models';
-import { LearnerBlocksComponent } from '../../content/exercise/learner-blocks.component';
 import { MnemaSelectComponent, MnemaSelectOption } from '../../core/controls/mnema-select.component';
 import { LearnerExerciseComponent, PairChecker } from './learner-exercise.component';
+import { LearnerFeedbackComponent, feedbackTitle } from './learner-feedback.component';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { OwnDeck } from '../own-decks/own-deck.models';
 import { StudyApiService } from './study-api.service';
@@ -22,15 +19,9 @@ import {
     ReadyStudySession,
     ReplaySource,
     ScheduledStudyPreset,
-    SelfRating,
     StudyResponse,
     StudySession,
-    StudyStartIntent,
-    isChoiceFeedback,
-    isClozeFeedback,
-    isFreeResponseFeedback,
-    isMatchFeedback,
-    isUnassessed
+    StudyStartIntent
 } from './study.models';
 import { StudyRecoveryService } from './study-recovery.service';
 
@@ -39,8 +30,7 @@ type Phase = 'setup' | 'loading' | 'preparing' | 'answering' | 'revealed' | 'sub
 
 @Component({
     selector: 'app-study-session-page',
-    imports: [RouterLink, MnemaSelectComponent, LearnerExerciseComponent, LearnerBlocksComponent, ClozePassageComponent,
-        ChoiceListComponent, ExclusivePlaybackDirective],
+    imports: [RouterLink, MnemaSelectComponent, LearnerExerciseComponent, LearnerFeedbackComponent],
     templateUrl: './study-session-page.component.html',
     styleUrl: './study-session-page.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -88,26 +78,6 @@ export class StudySessionPageComponent {
         return pair => this.api.checkPair(this.deckId, session.sessionId, presentation.presentationId,
             presentation.nonce, pair.leftId, pair.rightId).pipe(map(result => result.correct));
     });
-    readonly clozeContent = computed(() => { const value = this.current(); return value?.type === 'CLOZE' ? value.content : null; });
-    readonly choiceContent = computed(() => { const value = this.current(); return value?.type === 'CHOICE' ? value.content : null; });
-    readonly matchContent = computed(() => { const value = this.current(); return value?.type === 'MATCH' ? value.content : null; });
-    readonly clozeFeedback = computed(() => { const value = this.feedback()?.feedback; return value && isClozeFeedback(value) ? value : null; });
-    readonly choiceFeedback = computed(() => { const value = this.feedback()?.feedback; return value && isChoiceFeedback(value) ? value : null; });
-    readonly matchFeedback = computed(() => { const value = this.feedback()?.feedback; return value && isMatchFeedback(value) ? value : null; });
-    readonly freeResponseFeedback = computed(() => { const value = this.feedback()?.feedback; return value && isFreeResponseFeedback(value) ? value : null; });
-    readonly unassessed = computed(() => { const value = this.feedback()?.feedback; return value && isUnassessed(value) ? value : null; });
-    readonly clozeVerdicts = computed<Readonly<Record<string, ClozeBlankVerdict>> | null>(() => {
-        const feedback = this.clozeFeedback();
-        return feedback === null ? null : Object.fromEntries(feedback.blanks.map(blank => [blank.blankId,
-            { correct: blank.correct, hinted: blank.hinted, reference: blank.reference }]));
-    });
-    readonly submittedText = computed(() => { const value = this.submitted(); return value?.kind === 'TEXT' ? value.text : ''; });
-    readonly submittedClozeValues = computed<Readonly<Record<string, string>>>(() => {
-        const value = this.submitted();
-        return value?.kind === 'CLOZE' ? Object.fromEntries(value.blanks.map(blank => [blank.blankId, blank.text])) : {};
-    });
-    readonly submittedOptionIds = computed(() => { const value = this.submitted(); return value?.kind === 'CHOICE' ? value.optionIds : []; });
-    readonly submittedRating = computed(() => { const value = this.submitted(); return value?.kind === 'SELF_CHECK' ? value.rating : null; });
     readonly position = computed(() => {
         const current = this.current();
         const session = this.session();
@@ -209,12 +179,6 @@ export class StudySessionPageComponent {
             CHOICE: 'Выберите ответ', MATCH: 'Соедините пары' })[type];
     }
 
-    /** Item of the issued MATCH content, used to show a pair's media again in feedback. */
-    matchItem(side: 'left' | 'right', itemId: string) {
-        const content = this.matchContent();
-        return (side === 'left' ? content?.left : content?.right)?.find(item => item.itemId === itemId) ?? null;
-    }
-
     retryPending(): void {
         const command = this.pending();
         const session = this.session();
@@ -305,10 +269,7 @@ export class StudySessionPageComponent {
         return window.confirm('Сессия сохранена в этой вкладке. Выйти и продолжить её позже?');
     }
 
-    feedbackTitle(outcome: AttemptOutcome): string {
-        return ({ CORRECT: 'Верно', PARTIAL: 'Частично', UNSURE: 'Неуверенно', INCORRECT: 'Нужно повторить',
-            NOT_ASSESSED: 'Без оценки', UNAVAILABLE: 'Проверка недоступна' })[outcome.feedback.result];
-    }
+    feedbackTitle(outcome: AttemptOutcome): string { return feedbackTitle(outcome.feedback); }
 
     progressMessage(outcome: AttemptOutcome): string {
         const transition = outcome.transition;
@@ -320,11 +281,6 @@ export class StudySessionPageComponent {
         return outcome.feedback.result === 'CORRECT'
             ? 'Вы закрепили материал. Уровень пока не изменился.'
             : 'Уровень пока не изменился. Дайте себе время и повторите материал.';
-    }
-
-    ratingLabel(rating: SelfRating): string {
-        return ({ NOT_RECALLED: 'Не вспомнил', HINTED: 'Вспомнил с подсказкой',
-            PARTIAL: 'Вспомнил частично', FULL: 'Вспомнил полностью' })[rating];
     }
 
     private start(intent: StudyStartIntent): void {

@@ -47,6 +47,12 @@ input where the interaction is natural. It records one `mechanics_*` result per 
 (`state: "failed"`, `mechanicsFailures`, a `failure-<step>.png` screenshot and the UI's own reason) when a step
 breaks. It never works around a defective control; a broken step is a finding for the product, not a harness fix.
 
+The exercise editor is one page: choose a type tile, play the demo, then fill the steps one by one with
+«Продолжить». `mechanics_editor_flow` runs first and checks the initial state (type choice alone), the demo through
+`POST /api/exercise-previews` only (no attempt, hint or pair-check request), the switch to the author's own draft
+with checking blocked and its reason, the instant jump with `prefers-reduced-motion`, and the 390 px overflow
+(`editor-*.png`). The scenarios below drive the same step flow.
+
 Create, save, reopen (full page reload of the edit route) and assert restored values, then Study:
 
 | Mechanic | Authoring and reopen | Study |

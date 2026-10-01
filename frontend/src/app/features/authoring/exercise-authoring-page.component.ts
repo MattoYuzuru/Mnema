@@ -1,14 +1,17 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { DOCUMENT } from '@angular/common';
-import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import {
+    ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, inject, signal
+} from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { forkJoin } from 'rxjs';
+import { forkJoin, switchMap } from 'rxjs';
 
 import {
-    ExerciseSpec, LIMITS, MECHANICS, Mechanic, ObjectiveCommand, authoringSlots, isBlank
+    AuthoringBlock, ExerciseSpec, LIMITS, Mechanic, ObjectiveCommand, PROMPT_SLOTS, REFERENCE_SLOTS, authoringSlots,
+    isBlank, previewExerciseOf
 } from '../../content/exercise/exercise-content.models';
-import { NativeMediaSurfaceComponent } from '../../content/rendering/native-media-surface.component';
+import { MECHANIC_CATALOG, StepId, catalogEntry, stepTitle } from '../../content/exercise/mechanic-catalog';
 import { MnemaSelectComponent, MnemaSelectOption } from '../../core/controls/mnema-select.component';
 import { HoldToDeleteButtonComponent } from '../../shared/hold-to-delete-button.component';
 import { OwnDeck } from '../own-decks/own-deck.models';
@@ -17,17 +20,18 @@ import { AuthoringProtocolError, ItemDetail, newCommandId } from './authoring.mo
 import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService, LearningCapabilities } from './capabilities-api.service';
 import { ExerciseApiService } from './exercise-api.service';
 import {
-    ChoiceDraft, ClozeDraft, DraftErrors, ExerciseDrafts, FreeResponseDraft, MatchDraft, SelfCheckDraft, SlotContext,
-    buildSpec, draftsFromDetail, emptyDrafts, materialText, validateDraft
+    ChoiceDraft, ClozeDraft, DraftErrors, ExerciseDrafts, FreeResponseDraft, MatchDraft, SlotContext, buildSpec, carryPrompt,
+    draftsFromDetail, emptyDrafts, isPristine, learnerContent, materialText, mechanicSpecificData, validateDraft
 } from './exercise-draft';
-import { ExercisePreviewComponent } from './exercise-preview.component';
+import { ExercisePreviewHostComponent } from './exercise-preview-host.component';
+import { PreviewPresentation } from './exercise-preview.models';
+import { ExerciseSlotEditorComponent } from './exercise-slot-editor.component';
 import {
-    ExerciseDetail, ExerciseObjective, ExercisePage, ExerciseWriteResult, textProjections
+    ExerciseDetail, ExerciseObjective, ExercisePage, ExerciseSummary, ExerciseWriteResult, specOf, textProjections
 } from './exercise.models';
 import { ItemApiService } from './item-api.service';
-import {
-    ChoiceEditorComponent, ClozeEditorComponent, FreeResponseEditorComponent, MatchEditorComponent, SelfCheckEditorComponent
-} from './mechanic-editors';
+import { ChoiceEditorComponent, ClozeEditorComponent, FreeResponseEditorComponent, MatchEditorComponent } from './mechanic-editors';
+import { MechanicChoice, MechanicPickerComponent } from './mechanic-picker.component';
 
 type Phase = 'loading' | 'ready' | 'saving' | 'saved' | 'conflict' | 'rejected' | 'error';
 type ObjectiveMode = 'create' | 'reuse' | 'revise';
@@ -38,24 +42,49 @@ interface PendingWrite {
     readonly exercise: ExerciseSpec;
 }
 
-const MECHANIC_NAMES: Readonly<Record<Mechanic, { readonly name: string; readonly example: string }>> = {
-    SELF_CHECK: { name: 'Вспомнить и сверить', example: 'Вспомните ответ, откройте эталон и честно оцените себя.' },
-    FREE_RESPONSE: { name: 'Ввести ответ', example: 'Напишите ответ; подойдёт любая из допустимых формулировок.' },
-    CLOZE: { name: 'Заполнить пропуски', example: 'Вставьте пропуски в текст или код.' },
-    CHOICE: { name: 'Выбрать ответ', example: 'Один или несколько правильных вариантов.' },
-    MATCH: { name: 'Соединить пары', example: 'Сопоставьте слова, записи, картинки или видео.' }
+/** A tile pressed while the current draft holds mechanic-specific data: nothing changes until the author decides. */
+interface PendingSwitch {
+    readonly target: Mechanic;
+    readonly lost: readonly string[];
+}
+
+const ID_PREFIX: Readonly<Record<Mechanic, string>> = {
+    SELF_CHECK: 'self-check', FREE_RESPONSE: 'free-response', CLOZE: 'cloze', CHOICE: 'choice', MATCH: 'match'
 };
+const PROMPT_LABELS: Readonly<Record<StepId, string>> = {
+    prompt: 'Что увидит ученик', context: 'Вводные слова (необязательно)', reference: 'Что увидит ученик после ответа',
+    answers: '', passage: '', options: '', pairs: '', finish: ''
+};
+const PROMPT_HINTS: Readonly<Partial<Record<Mechanic, string>>> = {
+    MATCH: 'Необязательно: напишите общую инструкцию. Сами пары вы зададите на следующем шаге.'
+};
+const STEPS_WITH_PROMPT: ReadonlySet<StepId> = new Set<StepId>(['prompt', 'context']);
+
+/** Whether a validation key belongs to the given step, so «Продолжить» only checks what the step just asked for. */
+function stepOwns(step: StepId, key: string): boolean {
+    switch (step) {
+        case 'prompt':
+        case 'context': return key === 'prompt';
+        case 'reference': return key === 'reference';
+        case 'answers': return key === 'accepted' || key === 'reference';
+        case 'passage': return key === 'passage' || key.startsWith('blank:');
+        case 'options': return key === 'options' || key === 'selection' || key.startsWith('option:');
+        case 'pairs': return key === 'pairs' || key.startsWith('left:') || key.startsWith('right:');
+        case 'finish': return false;
+    }
+}
 
 @Component({
     selector: 'app-exercise-authoring-page',
-    imports: [RouterLink, NativeMediaSurfaceComponent, MnemaSelectComponent, HoldToDeleteButtonComponent, ExercisePreviewComponent,
-        SelfCheckEditorComponent, FreeResponseEditorComponent, ClozeEditorComponent, ChoiceEditorComponent, MatchEditorComponent],
+    imports: [RouterLink, MnemaSelectComponent, HoldToDeleteButtonComponent, MechanicPickerComponent, ExercisePreviewHostComponent,
+        ExerciseSlotEditorComponent, FreeResponseEditorComponent, ClozeEditorComponent, ChoiceEditorComponent, MatchEditorComponent],
     templateUrl: './exercise-authoring-page.component.html',
     styleUrl: './exercise-authoring-page.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ExerciseAuthoringPageComponent {
-    readonly mechanics = MECHANICS;
+    /** The catalog drives the tiles, the steps and the demo; the next mechanics (#268) are added there. */
+    readonly catalog = MECHANIC_CATALOG;
     readonly deck = signal<OwnDeck | null>(null);
     readonly item = signal<ItemDetail | null>(null);
     readonly exercise = signal<ExerciseDetail | null>(null);
@@ -64,17 +93,32 @@ export class ExerciseAuthoringPageComponent {
     readonly dirty = signal(false);
     readonly message = signal<string | null>(null);
     readonly fieldErrors = signal<DraftErrors>({});
+    /** Problems of the step whose «Продолжить» was pressed; they disappear with the next edit. */
+    readonly stepErrors = signal<DraftErrors>({});
     /** Set after the first failed save so untouched new blocks are not flagged while the author is still typing. */
     readonly showProblems = signal(false);
     readonly capabilities = signal<LearningCapabilities>(CAPABILITIES_UNAVAILABLE);
 
-    readonly type = signal<Mechanic>('FREE_RESPONSE');
+    /** Nothing is selected on a new exercise: the page starts with the type choice alone. */
+    readonly mechanic = signal<Mechanic | null>(null);
+    /** How many steps are open per mechanic. 0 means the type was never chosen; 1 is the preview and the first step. */
+    readonly opened = signal<Readonly<Record<Mechanic, number>>>({ SELF_CHECK: 0, FREE_RESPONSE: 0, CLOZE: 0, CHOICE: 0, MATCH: 0 });
+    readonly pendingSwitch = signal<PendingSwitch | null>(null);
     readonly enabled = signal(true);
     readonly drafts = signal<ExerciseDrafts>(emptyDrafts());
     readonly objectiveMode = signal<ObjectiveMode>('create');
     readonly selectedObjectiveId = signal<string | null>(null);
     readonly objectiveTitle = signal('');
+    /** Existing-exercise row whose enable toggle or delete is in flight. */
+    readonly listBusy = signal<string | null>(null);
+    readonly listMessage = signal<string | null>(null);
     private readonly titleEdited = signal(false);
+
+    readonly entry = computed(() => { const value = this.mechanic(); return value === null ? null : catalogEntry(value); });
+    readonly steps = computed(() => this.entry()?.steps ?? []);
+    readonly openCount = computed(() => { const value = this.mechanic(); return value === null ? 0 : this.opened()[value]; });
+    readonly visibleSteps = computed(() => this.steps().slice(0, this.openCount()));
+    readonly idPrefix = computed(() => { const value = this.mechanic(); return value === null ? 'exercise' : ID_PREFIX[value]; });
 
     readonly projections = computed(() => this.item() === null ? [] : textProjections(this.item()!.document));
     readonly context = computed<SlotContext | null>(() => {
@@ -90,25 +134,56 @@ export class ExerciseAuthoringPageComponent {
     readonly selectedObjective = computed(() => this.objectives()
         .find(value => value.objectiveId === this.selectedObjectiveId()) ?? null);
     /** First line of the question: a sensible default name for a new learning objective. */
-    readonly suggestedTitle = computed(() => suggestTitle(this.type(), this.drafts(), this.context()));
+    readonly suggestedTitle = computed(() => suggestTitle(this.mechanic(), this.drafts(), this.context()));
     readonly effectiveTitle = computed(() => {
         if (this.titleEdited()) return this.objectiveTitle();
         return this.objectiveMode() === 'create' ? this.suggestedTitle() : this.selectedObjective()?.title ?? '';
     });
     readonly errorSummary = computed(() => Object.values(this.fieldErrors()).filter((text): text is string => text !== undefined));
+    readonly stepProblems = computed(() => Object.values(this.stepErrors()).filter((text): text is string => text !== undefined));
+    readonly visibleErrors = computed<DraftErrors>(() => ({ ...this.stepErrors(), ...this.fieldErrors() }));
     readonly staleProjection = computed(() => {
         const detail = this.exercise();
         const item = this.item();
-        if (item === null) return false;
+        const mechanic = this.mechanic();
+        if (item === null || mechanic === null) return false;
         const stale = (revision: string) => revision !== item.itemRevisionId;
         return (detail !== null && stale(detail.subject.itemRevisionId))
-            || authoringSlots(buildSpec(this.type(), this.drafts(), { memberKey: item.memberKey, itemRevisionId: item.itemRevisionId }, true))
+            || authoringSlots(buildSpec(mechanic, this.drafts(), { memberKey: item.memberKey, itemRevisionId: item.itemRevisionId }, true))
                 .flat().some(block => block.kind === 'MATERIAL' && block.memberKey === item.memberKey && stale(block.itemRevisionId));
+    });
+    /**
+     * What the preview shows. A pristine draft of a new exercise shows the catalog demo; the first authored value
+     * switches to the author's own content, and a complete draft becomes playable. An existing exercise never
+     * shows a demo.
+     */
+    readonly presentation = computed<PreviewPresentation | null>(() => {
+        const mechanic = this.mechanic();
+        const context = this.context();
+        if (mechanic === null || context === null || this.openCount() < 1) return null;
+        const drafts = this.drafts();
+        if (this.exercise() === null && isPristine(mechanic, drafts)) {
+            const demo = catalogEntry(mechanic).demo.exercise;
+            return { mode: 'DEMO', key: `demo:${mechanic}`, exercise: demo, blockedReason: null,
+                learner: revealed => learnerContent(demo, { context: null, revealed, placeholders: false }) };
+        }
+        const spec = buildSpec(mechanic, drafts, { memberKey: context.memberKey, itemRevisionId: context.itemRevisionId }, true);
+        const exercise = previewExerciseOf(spec);
+        const problems = Object.values(validateDraft(mechanic, drafts, context));
+        if (problems.length === 0) {
+            return { mode: 'AUTHOR_READY', key: `ready:${JSON.stringify(exercise)}`, exercise, blockedReason: null,
+                learner: revealed => learnerContent(exercise, { context, revealed, placeholders: false }) };
+        }
+        const learner = (revealed: boolean) => learnerContent(exercise, { context, revealed, placeholders: true });
+        return { mode: 'AUTHOR_DRAFT', key: `draft:${mechanic}:${JSON.stringify(learner(false))}`, exercise: null,
+            blockedReason: `Проверить ответ пока нельзя: ${problems[0]}`, learner };
     });
 
     private readonly route = inject(ActivatedRoute);
     private readonly router = inject(Router);
     private readonly browserDocument = inject(DOCUMENT);
+    private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+    private readonly injector = inject(Injector);
     private readonly decks = inject(OwnDecksApiService);
     private readonly items = inject(ItemApiService);
     private readonly exercises = inject(ExerciseApiService);
@@ -174,11 +249,86 @@ export class ExerciseAuthoringPageComponent {
             });
     }
 
-    /** Switching only changes which draft is shown: everything typed for the other mechanics is kept. */
-    setType(value: Mechanic): void { this.type.set(value); this.changed(); }
+    // -----------------------------------------------------------------------------------------
+    // Step 1: the type
+    // -----------------------------------------------------------------------------------------
+
+    /** A tile was activated. Arrow keys inside the group select but never scroll. */
+    choose(choice: MechanicChoice): void {
+        const target = choice.mechanic;
+        if (target === this.mechanic() && this.pendingSwitch() === null) {
+            if (choice.deliberate) this.scrollTo('#exercise-preview-anchor', false, true);
+            return;
+        }
+        if (this.pendingSwitch()?.target === target) return;
+        const current = this.mechanic();
+        if (current !== null) {
+            const lost = mechanicSpecificData(current, this.drafts());
+            if (lost.length > 0) { this.pendingSwitch.set({ target, lost }); return; }
+        }
+        this.applySwitch(target, choice.deliberate);
+    }
+
+    confirmSwitch(): void {
+        const request = this.pendingSwitch();
+        if (request !== null) this.applySwitch(request.target, true);
+    }
+
+    /** «Отмена»: the previous type and the whole draft stay as they were. */
+    cancelSwitch(): void {
+        this.pendingSwitch.set(null);
+        afterNextRender({ write: () => this.host.nativeElement
+            .querySelector<HTMLElement>('input[name="mechanic"]:checked')?.focus({ preventScroll: true }) }, { injector: this.injector });
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Steps 2..N
+    // -----------------------------------------------------------------------------------------
+
+    /** «Продолжить»: validates the step that was just filled, then opens the next one and brings it into view. */
+    continueFrom(step: StepId): void {
+        const mechanic = this.mechanic();
+        const context = this.context();
+        if (mechanic === null || context === null) return;
+        const problems = Object.entries(validateDraft(mechanic, this.drafts(), context)).filter(([key]) => stepOwns(step, key));
+        if (problems.length > 0) {
+            this.showProblems.set(true);
+            this.stepErrors.set(Object.fromEntries(problems));
+            return;
+        }
+        this.stepErrors.set({});
+        const index = this.steps().indexOf(step);
+        const next = this.steps()[index + 1];
+        if (next === undefined) return;
+        this.opened.update(current => ({ ...current, [mechanic]: Math.max(current[mechanic], index + 2) }));
+        this.scrollTo(`#step-${next}`, true, false);
+    }
+
+    stepNumber(index: number): number { return index + 2; }
+    titleOf(step: StepId): string { return stepTitle(this.mechanic()!, step); }
+    typeTitle(type: Mechanic): string { return catalogEntry(type).title; }
+    promptLabel(step: StepId): string { return PROMPT_LABELS[step]; }
+    promptHint(): string | null { return PROMPT_HINTS[this.mechanic()!] ?? null; }
+    isPromptStep(step: StepId): boolean { return STEPS_WITH_PROMPT.has(step); }
+    promptSpec() { return PROMPT_SLOTS[this.mechanic()!]; }
+    readonly referenceSpec = REFERENCE_SLOTS.SELF_CHECK;
+    /** Whether the last open step is not the final one, so «Продолжить» belongs under it. */
+    canContinueFrom(index: number): boolean { return index === this.openCount() - 1 && index < this.steps().length - 1; }
+
+    setPrompt(blocks: readonly AuthoringBlock[]): void {
+        const mechanic = this.mechanic();
+        if (mechanic === null) return;
+        this.drafts.update(current => ({ ...current, [mechanic]: { ...current[mechanic], prompt: blocks } }));
+        this.changed();
+    }
+
+    setReference(blocks: readonly AuthoringBlock[]): void {
+        this.drafts.update(current => ({ ...current, SELF_CHECK: { ...current.SELF_CHECK, reference: blocks } }));
+        this.changed();
+    }
+
     setEnabled(value: boolean): void { this.enabled.set(value); this.changed(); }
 
-    setSelfCheck(draft: SelfCheckDraft): void { this.setDraft('SELF_CHECK', draft); }
     setFreeResponse(draft: FreeResponseDraft): void { this.setDraft('FREE_RESPONSE', draft); }
     setCloze(draft: ClozeDraft): void { this.setDraft('CLOZE', draft); }
     setChoice(draft: ChoiceDraft): void { this.setDraft('CHOICE', draft); }
@@ -205,15 +355,21 @@ export class ExerciseAuthoringPageComponent {
         this.changed();
     }
 
+    /** The finish step only exists once the last content step was completed; Enter in a field cannot skip ahead. */
+    submit(): void {
+        if (this.openCount() >= this.steps().length) this.save();
+    }
+
     save(retry = false): void {
         const deck = this.deck();
         const item = this.item();
         const context = this.context();
+        const mechanic = this.mechanic();
         const current = this.exercise();
-        if (deck === null || item === null || context === null || this.phase() === 'saving') return;
+        if (deck === null || item === null || context === null || mechanic === null || this.phase() === 'saving') return;
         let pending = retry ? this.pending : null;
         if (pending === null) {
-            const errors = this.validate(context);
+            const errors = this.validate(mechanic, context);
             this.fieldErrors.set(errors);
             this.showProblems.set(true);
             if (Object.keys(errors).length > 0) {
@@ -222,7 +378,7 @@ export class ExerciseAuthoringPageComponent {
                 queueMicrotask(() => this.focusErrors());
                 return;
             }
-            const exercise = buildSpec(this.type(), this.drafts(), { memberKey: item.memberKey, itemRevisionId: item.itemRevisionId },
+            const exercise = buildSpec(mechanic, this.drafts(), { memberKey: item.memberKey, itemRevisionId: item.itemRevisionId },
                 this.enabled());
             pending = { commandId: newCommandId(), objective: this.objectiveCommand(), exercise };
             this.pending = pending;
@@ -273,8 +429,58 @@ export class ExerciseAuthoringPageComponent {
         return !this.dirty() || window.confirm('Уйти и потерять неподтверждённые настройки упражнения?');
     }
 
-    mechanicName(type: Mechanic): string { return MECHANIC_NAMES[type].name; }
-    mechanicExample(type: Mechanic): string { return MECHANIC_NAMES[type].example; }
+    // -----------------------------------------------------------------------------------------
+    // Existing exercises of this material (bottom of the page)
+    // -----------------------------------------------------------------------------------------
+
+    /** The small anchor at the top: moves to the list without opening another page. */
+    jumpToList(event: Event): void {
+        event.preventDefault();
+        this.scrollTo('#existing-exercises', true, true);
+    }
+
+    /** Flips the enabled flag of another exercise through a normal revision of that exercise. */
+    toggleListed(entry: ExerciseSummary): void {
+        const deck = this.deck();
+        if (deck === null || this.listBusy() !== null || entry.exerciseId === this.exercise()?.exerciseId) return;
+        this.listBusy.set(entry.exerciseId); this.listMessage.set(null);
+        this.exercises.read(deck.deckId, entry.exerciseId).pipe(
+            switchMap(detail => this.exercises.update(deck.deckId, entry.exerciseId, deck.rowVersion, deck.revisionId,
+                detail.exerciseRevisionId, { operation: 'reuse', objectiveId: detail.objective.objectiveId,
+                    objectiveRevisionId: detail.objective.objectiveRevisionId },
+                { ...specOf(detail), enabled: !detail.enabled }, newCommandId())),
+            takeUntilDestroyed(this.destroyRef)
+        ).subscribe({
+            next: () => this.refreshList('Настройка упражнения обновлена.'),
+            error: error => this.listFailed(error, 'Не удалось изменить упражнение. Попробуйте ещё раз.')
+        });
+    }
+
+    deleteListed(entry: ExerciseSummary): void {
+        const deck = this.deck();
+        if (deck === null || this.listBusy() !== null || entry.exerciseId === this.exercise()?.exerciseId) return;
+        this.listBusy.set(entry.exerciseId); this.listMessage.set(null);
+        this.exercises.delete(deck.deckId, entry.exerciseId, deck.rowVersion).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+            next: () => this.refreshList('Упражнение удалено.'),
+            error: error => this.listFailed(error, 'Не удалось удалить упражнение. Попробуйте ещё раз.')
+        });
+    }
+
+    // -----------------------------------------------------------------------------------------
+
+    private applySwitch(target: Mechanic, scroll: boolean): void {
+        const current = this.mechanic();
+        const carried = current === null ? this.drafts() : carryPrompt(this.drafts(), current, target);
+        const changedDraft = carried !== this.drafts();
+        this.drafts.set(carried);
+        this.mechanic.set(target);
+        this.pendingSwitch.set(null);
+        this.stepErrors.set({});
+        this.opened.update(open => ({ ...open, [target]: Math.max(open[target], 1) }));
+        // Exploring the examples of a new exercise is not an edit; carrying a question or changing a saved exercise is.
+        if (changedDraft || this.exercise() !== null) this.changed();
+        if (scroll) this.scrollTo('#exercise-preview-anchor', false, false);
+    }
 
     private setDraft<T extends Mechanic>(type: T, draft: ExerciseDrafts[T]): void {
         this.drafts.update(current => ({ ...current, [type]: draft }));
@@ -283,17 +489,23 @@ export class ExerciseAuthoringPageComponent {
 
     private openNew(deck: OwnDeck, item: ItemDetail, page: ExercisePage): void {
         this.deck.set(deck); this.item.set(item); this.page.set(page); this.exercise.set(null);
-        this.type.set('FREE_RESPONSE'); this.enabled.set(true); this.drafts.set(emptyDrafts());
+        this.mechanic.set(null); this.pendingSwitch.set(null); this.enabled.set(true); this.drafts.set(emptyDrafts());
+        this.opened.set({ SELF_CHECK: 0, FREE_RESPONSE: 0, CLOZE: 0, CHOICE: 0, MATCH: 0 });
         this.objectiveMode.set('create'); this.selectedObjectiveId.set(null);
         this.objectiveTitle.set(''); this.titleEdited.set(false);
+        this.stepErrors.set({});
         this.pending = null; this.dirty.set(false); this.showProblems.set(false); this.phase.set('ready');
     }
 
     private openExisting(deck: OwnDeck, item: ItemDetail, page: ExercisePage, detail: ExerciseDetail): void {
         this.deck.set(deck); this.item.set(item); this.page.set(page); this.exercise.set(detail);
-        this.type.set(detail.type); this.enabled.set(detail.enabled); this.drafts.set(draftsFromDetail(detail));
+        this.mechanic.set(detail.type); this.pendingSwitch.set(null); this.enabled.set(detail.enabled);
+        this.drafts.set(draftsFromDetail(detail));
+        // An existing exercise opens with every relevant step filled in and open: no onboarding, no demo.
+        this.opened.set({ SELF_CHECK: 0, FREE_RESPONSE: 0, CLOZE: 0, CHOICE: 0, MATCH: 0, [detail.type]: catalogEntry(detail.type).steps.length });
         this.objectiveMode.set('reuse'); this.selectedObjectiveId.set(detail.objective.objectiveId);
         this.objectiveTitle.set(detail.objective.title); this.titleEdited.set(false);
+        this.stepErrors.set({});
         this.pending = null; this.dirty.set(false); this.showProblems.set(false); this.phase.set('ready');
         if (this.route.snapshot.queryParamMap.get('saved') === '1') {
             this.phase.set('saved'); this.message.set('Упражнение сохранено.');
@@ -301,12 +513,12 @@ export class ExerciseAuthoringPageComponent {
     }
 
     private changed(): void {
-        this.dirty.set(true); this.pending = null; this.fieldErrors.set({}); this.message.set(null);
+        this.dirty.set(true); this.pending = null; this.fieldErrors.set({}); this.stepErrors.set({}); this.message.set(null);
         if (this.phase() !== 'loading' && this.phase() !== 'saving') this.phase.set('ready');
     }
 
-    private validate(context: SlotContext): DraftErrors {
-        const errors: Record<string, string | undefined> = { ...validateDraft(this.type(), this.drafts(), context) };
+    private validate(mechanic: Mechanic, context: SlotContext): DraftErrors {
+        const errors: Record<string, string | undefined> = { ...validateDraft(mechanic, this.drafts(), context) };
         const mode = this.objectiveMode();
         if (mode !== 'create' && this.selectedObjective() === null) errors['objective'] = 'Выберите существующую цель.';
         const title = this.effectiveTitle();
@@ -314,7 +526,7 @@ export class ExerciseAuthoringPageComponent {
             errors['objective-title'] = `Назовите цель: от 1 до ${LIMITS.objectiveTitle} знаков.`;
         }
         // Never send AI checking or voice input while the server reports them unavailable.
-        const spec = buildSpec(this.type(), this.drafts(), { memberKey: context.memberKey, itemRevisionId: context.itemRevisionId }, true);
+        const spec = buildSpec(mechanic, this.drafts(), { memberKey: context.memberKey, itemRevisionId: context.itemRevisionId }, true);
         if (spec.type === 'FREE_RESPONSE') {
             const capabilities = this.capabilities();
             if (spec.evaluatorPolicy.id === 'ai-semantic' && !capabilities.aiAssessment.available) {
@@ -376,6 +588,46 @@ export class ExerciseAuthoringPageComponent {
         this.message.set('Не удалось сохранить упражнение. Проверьте фрагменты материала и настройки ответа.');
     }
 
+    /** Re-reads the deck pins and the list after another exercise changed, without touching the open draft. */
+    private refreshList(done: string): void {
+        const deck = this.deck();
+        const item = this.item();
+        if (deck === null || item === null) return;
+        forkJoin({ deck: this.decks.detail(deck.deckId), page: this.exercises.list(deck.deckId, item.memberKey) })
+            .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+                next: result => {
+                    this.deck.set(result.deck); this.page.set(result.page);
+                    this.listBusy.set(null); this.listMessage.set(done);
+                },
+                error: () => { this.listBusy.set(null); this.listMessage.set('Не удалось обновить список. Обновите страницу.'); }
+            });
+    }
+
+    private listFailed(error: unknown, fallback: string): void {
+        const status = error instanceof HttpErrorResponse ? error.status : 0;
+        this.listBusy.set(null);
+        this.listMessage.set(status === 409 || status === 412
+            ? 'Колода изменилась в другой вкладке. Обновите страницу и повторите действие.' : fallback);
+    }
+
+    /**
+     * Brings a part of the page into view. Only called from an explicit action (a tile, «Продолжить», an anchor),
+     * never while typing. Reduced motion jumps instead of animating; a step heading may take focus so keyboard and
+     * screen-reader users keep their place.
+     */
+    private scrollTo(selector: string, focusHeading: boolean, immediate: boolean): void {
+        const run = (): void => {
+            const target = this.host.nativeElement.querySelector<HTMLElement>(selector);
+            if (target === null) return;
+            const reduced = this.browserDocument.defaultView?.matchMedia('(prefers-reduced-motion: reduce)').matches === true;
+            target.scrollIntoView({ block: 'start', behavior: reduced ? 'auto' : 'smooth' });
+            if (focusHeading) target.querySelector<HTMLElement>('h2')?.focus({ preventScroll: true });
+        };
+        // Right after a state change the target may not exist yet, so wait for the next render; an anchor can go now.
+        if (immediate) run();
+        else afterNextRender({ write: run }, { injector: this.injector });
+    }
+
     private focusErrors(): void {
         this.browserDocument.querySelector<HTMLElement>('#exercise-errors')?.focus();
     }
@@ -394,7 +646,8 @@ function uniqueObjectives(values: readonly ExerciseObjective[]): readonly Exerci
 }
 
 /** First readable line of the question, at most 160 UTF-16 units and never ending inside a surrogate pair. */
-function suggestTitle(type: Mechanic, drafts: ExerciseDrafts, context: SlotContext | null): string {
+function suggestTitle(type: Mechanic | null, drafts: ExerciseDrafts, context: SlotContext | null): string {
+    if (type === null) return '';
     const prompt = drafts[type].prompt;
     let source = '';
     for (const block of prompt) {

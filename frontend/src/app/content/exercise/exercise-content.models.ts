@@ -192,6 +192,20 @@ export interface MatchSpec extends SpecBase {
 }
 export type ExerciseSpec = SelfCheckSpec | FreeResponseSpec | ClozeSpec | ChoiceSpec | MatchSpec;
 
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
+/**
+ * An exercise without `enabled` and `subject`: what an author preview or a demo evaluates. Nothing is stored
+ * and no material is resolved, so there is no subject to pin.
+ */
+export type PreviewExercise = DistributiveOmit<ExerciseSpec, 'enabled' | 'subject'>;
+
+/** The preview exercise of a publication-shaped spec. */
+export function previewExerciseOf(spec: ExerciseSpec): PreviewExercise {
+    const { enabled: _enabled, subject: _subject, ...exercise } = spec;
+    return exercise;
+}
+
 export type ObjectiveCommand =
     | { readonly operation: 'create'; readonly title: string }
     | { readonly operation: 'reuse'; readonly objectiveId: string; readonly objectiveRevisionId: string }

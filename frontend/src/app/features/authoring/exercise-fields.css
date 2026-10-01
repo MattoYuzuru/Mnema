@@ -38,3 +38,4 @@ input[type='number'] { inline-size: 7rem; }
 [aria-invalid='true'] { border-color: var(--mn-danger); }
 @media (max-width: 25rem) { .add-row .button, .block-actions { inline-size: 100%; } }
 @media (forced-colors: active) { .block, .card, textarea, input { border-color: CanvasText; } }
+.visually-hidden { position: absolute; inline-size: 1px; block-size: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

@@ -1,9 +1,13 @@
 import { Observable, of } from 'rxjs';
 
 import mechanicsFixture from '../../../../../contracts/study/mechanics.json';
+import previewFixture from '../../../../../contracts/study/preview.json';
 
 /** Canonical wire fixtures shared with the backend. Specs read them; production code never imports this file. */
 export const mechanics = mechanicsFixture as unknown as Record<string, any>;
+
+/** Author preview wire fixtures (contracts/study/preview.json), shared with the backend. */
+export const previews = previewFixture as unknown as Record<string, any>;
 
 export function clone<T>(value: T): T { return JSON.parse(JSON.stringify(value)) as T; }
 

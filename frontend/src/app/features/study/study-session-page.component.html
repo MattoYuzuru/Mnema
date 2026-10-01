@@ -70,64 +70,10 @@
     }
 
     @if (phase() === 'feedback' && feedback(); as outcome) {
-      <article class="study-card feedback-card" [class.correct]="outcome.feedback.result === 'CORRECT'" appExclusivePlayback>
+      <article class="study-card feedback-card" [class.correct]="outcome.feedback.result === 'CORRECT'">
         <p class="eyebrow">Ответ принят</p>
         <h2 id="feedback-title" tabindex="-1">{{ feedbackTitle(outcome) }}</h2>
-        @if (unassessed(); as unassessedFeedback) {
-          @if (unassessedFeedback.reasonCodes.includes('MEDIA_NOT_READY')) {
-            <p class="notice" role="status">Запись стала недоступна. Ответ не оценён и не изменил расписание; попробуйте упражнение позже.</p>
-          } @else {
-            <p class="notice" role="status">Проверка сейчас недоступна. Это не ошибка ученика: ответ не изменил расписание.</p>
-          }
-        }
-        @if (outcome.feedback.result !== 'NOT_ASSESSED' && outcome.feedback.result !== 'UNAVAILABLE'
-            && $any(outcome.feedback).appliedRules?.includes('PAIR_RETRY')) {
-          <p class="notice">Все пары найдены. Поскольку были ошибки при подборе, стоит ещё раз вернуться к этим парам позже.</p>
-        }
-
-        @switch (presentation.type) {
-          @case ('SELF_CHECK') {
-            @if (submittedRating(); as rating) { <p class="reference-line"><strong>Ваша оценка:</strong> {{ ratingLabel(rating) }}</p> }
-          }
-          @case ('FREE_RESPONSE') {
-            @if (freeResponseFeedback(); as freeFeedback) {
-              <dl class="comparison">
-                <div><dt>Ваш ответ</dt><dd class="answer-text">{{ submittedText() || 'Пустой ответ' }}</dd></div>
-                <div><dt>Эталон</dt><dd class="answer-text">{{ freeFeedback.reference }}</dd></div>
-              </dl>
-              @if (freeFeedback.referenceContent.length > 0) {
-                <app-learner-blocks [blocks]="freeFeedback.referenceContent" nameSuffix=" в эталоне" />
-              }
-            }
-          }
-          @case ('CLOZE') {
-            @if (clozeContent(); as content) {
-              <app-cloze-passage [passage]="content.passage" [values]="submittedClozeValues()" [verdicts]="clozeVerdicts()"
-                [readOnly]="true" idPrefix="feedback-blank" />
-            }
-          }
-          @case ('CHOICE') {
-            @if (choiceContent(); as content) {
-              <app-choice-list [options]="content.options" [selectionMode]="content.selectionMode"
-                [selected]="submittedOptionIds()" [disabled]="true" idPrefix="feedback-choice"
-                [correctIds]="choiceFeedback()?.correctOptionIds ?? null" />
-            }
-          }
-          @case ('MATCH') {
-            @if (matchFeedback(); as pairsFeedback) {
-              <ul class="pair-feedback">
-                @for (pair of pairsFeedback.pairs; track pair.leftId) {
-                  <li>
-                    <p><strong>{{ pair.correct ? 'Верно' : 'Проверьте' }}</strong></p>
-                    @if (matchItem('left', pair.leftId); as item) { <app-learner-blocks [blocks]="item.blocks" nameSuffix=", слева" /> }
-                    <p class="pair-arrow" aria-hidden="true">↓</p>
-                    @if (matchItem('right', pair.correctRightId); as item) { <app-learner-blocks [blocks]="item.blocks" nameSuffix=", справа" /> }
-                  </li>
-                }
-              </ul>
-            }
-          }
-        }
+        <app-learner-feedback [content]="presentation" [feedback]="outcome.feedback" [submitted]="submitted()" />
         <p class="progress-note" [class.caution]="outcome.transition && outcome.transition.afterLevel < outcome.transition.beforeLevel">{{ progressMessage(outcome) }}</p>
         <button class="button primary" type="button" (click)="next()">Продолжить</button>
       </article>
