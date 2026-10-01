@@ -350,12 +350,12 @@ library версионируется в AI-02, бюджеты применяют
 |---|---|---|---|
 | `TextGeneration` | direct DeepSeek V4.1 Flash (non-thinking; thinking выключать явно), эскалация V4 Pro | GigaChat (cloud.ru); OpenRouter как опциональный адаптер при доступности аккаунта | детерминированный Stub для local/CI |
 | `SemanticAssessment` (есть seam) | DeepSeek Flash, rubric в кэшируемом префиксе | GigaChat Lite | `UNAVAILABLE` → self-check |
-| `Transcription` (есть seam `SpeechToTextProvider`) | self-host faster-whisper в РФ (после benchmark на целевом VPS) | Groq whisper-turbo / Voxtral после проверки terms | ручной ввод |
-| `SpeechSynthesis` | вендор по итогам eval (кандидаты: Fish Audio, MiniMax, Yandex SpeechKit при явном исключении из запрета, self-host) с кэшем по (нормализованный текст, язык, голос, модель, версия) | self-host Piper/Qwen3-TTS для слов | загруженное автором аудио |
+| `Transcription` (есть seam `SpeechToTextProvider`) | self-host в отдельном контейнере (2 vCPU / 2,5 GB, очередь, backpressure) с маршрутизацией по языку колоды: RU → GigaAM-v3 (MIT), остальные → Qwen3-ASR-0.6B int8 (Apache-2.0); Whisper turbo/medium на 4 vCPU слишком медленны для интерактива; benchmark на целевом VPS обязателен | Yandex SpeechKit STT (RU/EN, без KO/JA/ZH) при снятом исключении; внешние US/EU STT-API юридически закрыты для оператора из РФ (EU Reg. 833/2014 Art. 5n) — только по заключению юриста | ручной ввод |
+| `SpeechSynthesis` | RU: Yandex SpeechKit TTS v1 (1 342 ₽/1M символов с НДС; terms разрешают кэш и переиспользование) при явном снятии исключения владельцем; FR/ES/JA/ZH/KO: MiniMax или Alibaba Qwen-Audio при легальной оплате, иначе self-host Qwen3-TTS/CosyVoice3 пакетно на почасовом GPU; кэш по SHA-256 канонического ключа (схема, нормализованный текст, язык, провайдер/модель/версия, голос, формат) в S3 по контент-адресу, `ON CONFLICT` + lease, без `account_id`, pre-warm при публикации, credits только при промахе | загруженное автором аудио | загруженное автором аудио |
 | `ImageSearch` | Pexels + Pixabay + Openverse/Wikimedia; файл сохраняется, атрибуция в provenance и `caption` | — | — |
 | `ImageGeneration` | позже (Pro/Max), после legal-проверки контрагента | — | — |
 | `VideoGeneration` | не в первом релизе; порт зарезервирован | — | — |
-| `WebSearch` | по итогам eval: Yandex Search API / Perplexity Search / Exa; мировое покрытие и цена — критерии | — | фактчек выключен |
+| `WebSearch` | Yandex Search API (0,488 ₽ sync / 0,0305 ₽ deferred за запрос; иностранные языки через тип COM; российский контрагент) | Brave / Perplexity только при легальной оплате; Exa и Tavily исключают Россию; извлечение страниц — self-host jsoup за SSRF-guard | фактчек выключен |
 
 Адаптеры — JDK `HttpClient` + Jackson + records (как `IdentityHttp`): ограниченный body,
 deadline, без redirects; SSE провайдера читается построчно на virtual thread.
@@ -488,10 +488,15 @@ ETag/304 раз в 30–60 s, раз в 10 s при `activeWork > 0`. Первы
 ## 15. Platform
 
 Backend — Spring Boot 3.5.16 (OSS-поддержка 3.5.x закончилась 2026-06-30), Java 21.
-Первая инфраструктурная задача эпика — актуализация стека (Java 25, Spring Boot 4.1,
-Framework 7, Security 7, Jackson 3, Angular/Node latest, Docker/CI images, линтеры и
-предупреждения). AI-код пишется переносимо: JDK `HttpClient`, без spring-retry и
-Resilience4j; Spring AI не используется и может быть пересмотрен после миграции.
+Первая инфраструктурная задача эпика — актуализация стека: Java 25 LTS, Gradle 9.8,
+Spring Boot 4.1.x (BOM: Framework 7.0.x, Security 7.1.x с Authorization Server внутри,
+Jackson 3.1.x, JUnit 6, Testcontainers 2.0.x, Flyway 12.x, Tomcat 11), Angular 22.2.x
+(TypeScript остаётся 6.0.x), Node 24 LTS, JaCoCo ≥0,8.15, Docker/CI images; главные
+риски — семантика Jackson 3 (`JacksonException` unchecked, `textValue()` на
+`MissingNode`), новые стартеры Flyway/Session JDBC, override `tomcat.version`.
+Порядок и characterization-тесты — в [platform research](../reviews/ai-layer-research-2026-10/platform-speech-search.md).
+AI-код пишется переносимо: JDK `HttpClient`, без spring-retry и Resilience4j; Spring AI
+не используется и может быть пересмотрен после миграции.
 
 ## 16. Источники
 
