@@ -1,5 +1,7 @@
 package app.mnema.learning.study.attempt;
 
+import app.mnema.learning.catalog.exercise.AnswerKey;
+import app.mnema.learning.catalog.exercise.ExerciseType;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.id.UuidPolicy;
@@ -16,9 +18,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.UUID;
-import java.util.List;
-import java.util.ArrayList;
 
 @Service
 public class AttemptService {
@@ -50,23 +51,20 @@ public class AttemptService {
         if (previous.isPresent()) return previous.orElseThrow();
         if (!presentation.expiresAt().isAfter(repository.now())) throw new PresentationExpiredException();
         if (repository.terminal(actor, session, command.presentationId()).isPresent()) throw new IdempotencyConflictException();
-        if (!presentation.exerciseType().equals("AUDIO_TEXT_MATCH")
-                || presentation.answerContract().path("schemaVersion").intValue() != 2) {
+        if (!presentation.exerciseType().equals(ExerciseType.MATCH.name())) throw new InvalidRequestException();
+        if (!mediaCatalog.exerciseMediaReady(actor, deck, presentation.exerciseId(), presentation.exerciseRevisionId())) {
             throw new InvalidRequestException();
         }
-        if (!mediaCatalog.exerciseReady(actor, deck, presentation.exerciseId(), presentation.exerciseRevisionId())) {
-            throw new InvalidRequestException();
-        }
-        UUID expected = null;
-        boolean issuedOption = false;
-        for (JsonNode pair : presentation.answerContract().path("pairs")) {
-            if (pair.path("cueId").asText().equals(command.cueId().toString())) {
-                expected = UUID.fromString(pair.path("optionId").textValue());
-            }
-            if (pair.path("optionId").asText().equals(command.optionId().toString())) issuedOption = true;
-        }
-        if (expected == null || !issuedOption) throw new InvalidRequestException();
-        boolean correct = expected.equals(command.optionId());
+        // Both ids must be sides the learner was actually issued; the answer key decides correctness.
+        var lefts = new HashSet<UUID>();
+        var rights = new HashSet<UUID>();
+        presentation.content().path("left").forEach(item -> lefts.add(UUID.fromString(item.path("itemId").textValue())));
+        presentation.content().path("right").forEach(item -> rights.add(UUID.fromString(item.path("itemId").textValue())));
+        if (!lefts.contains(command.leftId()) || !rights.contains(command.rightId())) throw new InvalidRequestException();
+        AnswerKey.Match key = (AnswerKey.Match) AnswerKey.parse(ExerciseType.MATCH, presentation.answerKey());
+        UUID expected = key.pairs().stream().filter(pair -> pair.leftId().equals(command.leftId()))
+                .map(AnswerKey.Pair::rightId).findFirst().orElseThrow(InvalidRequestException::new);
+        boolean correct = expected.equals(command.rightId());
         repository.insertPairInteraction(actor, session, command, correct,
                 presentation.expiresAt().plus(COMPACT_RECEIPT_RETENTION));
         return correct;
@@ -95,21 +93,16 @@ public class AttemptService {
             throw new IdempotencyConflictException();
         }
 
-        AttemptEvaluation evaluation = isListening(presentation.exerciseType())
-                && !mediaCatalog.exerciseReady(actor, deck, presentation.exerciseId(), presentation.exerciseRevisionId())
+        // Media is checked for every mechanic: an unavailable asset must never turn into a wrong answer.
+        AttemptEvaluation evaluation = !(command.response() instanceof AttemptCommand.CancelResponse)
+                && !mediaCatalog.exerciseMediaReady(actor, deck, presentation.exerciseId(),
+                        presentation.exerciseRevisionId())
                 ? AttemptEvaluation.mediaNotReady()
-                : AttemptEvaluation.evaluate(presentation.exerciseType(), presentation.evaluator(),
-                        presentation.answerContract(), presentation.bindings(), command,
-                        presentation.transcriptRevealed());
-        if (presentation.exerciseType().equals("AUDIO_TEXT_MATCH")
+                : AttemptEvaluation.evaluate(subject(presentation), command.response());
+        if (presentation.exerciseType().equals(ExerciseType.MATCH.name())
                 && evaluation.result() == AttemptEvaluation.Result.CORRECT
                 && repository.hasPairMistakes(actor, session, command.presentationId())) {
-            ObjectNode feedback = evaluation.feedback().deepCopy().put("result", "PARTIAL");
-            feedback.withArray("appliedRules").add("PAIR_RETRY");
-            List<String> reasons = new ArrayList<>(evaluation.reasonCodes());
-            reasons.add("PAIR_RETRY");
-            evaluation = new AttemptEvaluation(evaluation.status(), AttemptEvaluation.Result.PARTIAL,
-                    AttemptEvaluation.EvidenceClass.LOW, List.copyOf(reasons), feedback);
+            evaluation = evaluation.withPairRetry();
         }
         LOG.debug("Study answer evaluated attemptId={} presentationId={} exerciseRevisionId={} "
                         + "evaluatorId={} evaluatorVersion={} appliedRules={} reasonCodes={} result={}",
@@ -166,8 +159,11 @@ public class AttemptService {
         return new SubmitResult(receipt.outcome(), true);
     }
 
-    private static boolean isListening(String type) {
-        return type.equals("LISTEN_CHOICE") || type.equals("AUDIO_TEXT_MATCH") || type.equals("LISTEN_TYPE");
+    private static AttemptEvaluation.Subject subject(AttemptRepository.Presentation presentation) {
+        return new AttemptEvaluation.Subject(
+                ExerciseType.fromWire(presentation.exerciseType()).orElseThrow(IllegalStateException::new),
+                presentation.evaluator(), presentation.answerKey(), presentation.content(), presentation.reveal(),
+                new HashSet<>(presentation.hintedBlanks()), presentation.transcriptRevealed());
     }
 
     private static ObjectNode assessed(AttemptCommand command, AttemptRepository.Presentation presentation,

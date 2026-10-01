@@ -62,7 +62,7 @@ class PairCheckControllerTest {
     void rejectsMalformedIdsUnknownAuthorityAndInvalidEnvelopes() throws Exception {
         mvc.perform(post("/decks/bad/study-sessions/" + session + "/pair-checks")
                         .contentType(MediaType.APPLICATION_JSON).content(body())).andExpect(status().isBadRequest());
-        for (String body : new String[] { body().replace("cueId", "correctCue"), body().replace("1234567890123456", "short"),
+        for (String body : new String[] { body().replace("leftId", "correctLeft"), body().replace("1234567890123456", "short"),
                 body().replace(presentation.toString(), "bad"), "[]", "{", " ".repeat(1025) }) {
             mvc.perform(post("/decks/" + deck + "/study-sessions/" + session + "/pair-checks")
                             .contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isBadRequest());
@@ -72,6 +72,6 @@ class PairCheckControllerTest {
 
     private String body() {
         return JSON.createObjectNode().put("presentationId", presentation.toString()).put("nonce", "1234567890123456")
-                .put("cueId", UUID.randomUUID().toString()).put("optionId", UUID.randomUUID().toString()).toString();
+                .put("leftId", UUID.randomUUID().toString()).put("rightId", UUID.randomUUID().toString()).toString();
     }
 }

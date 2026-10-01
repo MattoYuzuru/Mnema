@@ -190,6 +190,18 @@ class LearningSecurityHttpIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void capabilitiesAreAuthenticatedReadOnlyPrivateAndFailClosedByDefault() throws Exception {
+        assertProblem(request("GET", "/capabilities", null), 401, "AUTHENTICATION_REQUIRED");
+        assertProblem(request("GET", "/capabilities", token("learning.write", c -> { })), 403, "ACCESS_DENIED");
+        assertProblem(request("POST", "/capabilities", token("learning.read", c -> { })), 403, "ACCESS_DENIED");
+        var response = request("GET", "/capabilities", token("learning.read", c -> { }));
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.headers().firstValue("cache-control")).contains("private, no-store");
+        assertThat(response.body()).isEqualTo("{\"aiAssessment\":{\"available\":false,\"reason\":\"DISABLED\"},"
+                + "\"speechToText\":{\"available\":false,\"reason\":\"DISABLED\"}}");
+    }
+
+    @Test
     void rejectsMissingCookieAndQueryCredentialsWithoutCreatingSession() throws Exception {
         String token = token("learning.read", c -> { });
         var response = CLIENT.send(HttpRequest.newBuilder(uri("/_security?access_token=" + token))

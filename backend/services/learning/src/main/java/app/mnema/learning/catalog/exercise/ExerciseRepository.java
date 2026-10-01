@@ -7,10 +7,8 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
-import java.sql.Array;
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -26,12 +24,16 @@ class ExerciseRepository {
                     String description, UUID membersRootId, UUID exercisesRootId, int memberCount,
                     int exerciseCount) { }
     record ObjectiveRow(UUID objectiveId, UUID objectiveKey, UUID memberKey, UUID revisionId, long sequence,
-                        JsonNode answerContract, Instant createdAt, Instant updatedAt) { }
+                        String title, Instant createdAt, Instant updatedAt) { }
     record ExerciseRow(UUID exerciseId, UUID revisionId, long sequence, int ordinal, String type, boolean enabled,
-                       JsonNode prompt, JsonNode evaluator, UUID descriptorRootId, Instant createdAt, Instant updatedAt) { }
+                       JsonNode content, JsonNode answerKey, JsonNode evaluator, UUID descriptorRootId,
+                       Instant createdAt, Instant updatedAt) { }
     record ExerciseListRow(ExerciseRow exercise, ObjectiveRow objective) { }
-    record BindingRow(UUID bindingId, int ordinal, String role, UUID memberKey, UUID itemRevisionId,
-                      UUID objectiveId, UUID objectiveRevisionId, List<UUID> nodeIds, JsonNode display) { }
+    /** The ASSESSED binding: the subject material and the objective revision it evidences. */
+    record SubjectRow(UUID memberKey, UUID itemRevisionId, UUID objectiveId, UUID objectiveRevisionId) { }
+    /** A server-derived binding row; the client never supplies bindings. */
+    record BindingInsert(UUID bindingId, int ordinal, String role, UUID memberKey, UUID itemRevisionId,
+                         List<UUID> nodeIds, UUID objectiveId, UUID objectiveRevisionId) { }
     record ItemRevision(UUID memberKey, UUID revisionId, UUID scopeId, UUID contentRootId) { }
 
     private static final RowMapper<DeckHead> DECK = (row, ignored) -> new DeckHead(
@@ -43,24 +45,20 @@ class ExerciseRepository {
     private static final RowMapper<ObjectiveRow> OBJECTIVE = (row, ignored) -> new ObjectiveRow(
             row.getObject("objective_id", UUID.class), row.getObject("objective_key", UUID.class),
             row.getObject("member_key", UUID.class), row.getObject("revision_id", UUID.class),
-            row.getLong("objective_sequence"), json(row.getString("answer_contract")),
+            row.getLong("objective_sequence"), row.getString("title"),
             row.getTimestamp("created_at").toInstant(), row.getTimestamp("updated_at").toInstant());
     private static final RowMapper<ExerciseRow> EXERCISE = (row, ignored) -> new ExerciseRow(
             row.getObject("exercise_id", UUID.class), row.getObject("revision_id", UUID.class),
             row.getLong("exercise_sequence"), row.getInt("ordinal"), row.getString("exercise_type"),
-            row.getBoolean("enabled"), json(row.getString("prompt_spec")), json(row.getString("evaluator_policy")),
+            row.getBoolean("enabled"), json(row.getString("content")), json(row.getString("answer_key")),
+            json(row.getString("evaluator_policy")),
             row.getObject("descriptor_root_id", UUID.class), row.getTimestamp("created_at").toInstant(),
             row.getTimestamp("updated_at").toInstant());
-    private static final RowMapper<BindingRow> BINDING = (row, ignored) -> new BindingRow(
-            row.getObject("binding_id", UUID.class), row.getInt("binding_ordinal"), row.getString("role"),
-            row.getObject("member_key", UUID.class), row.getObject("item_revision_id", UUID.class),
-            row.getObject("objective_id", UUID.class), row.getObject("objective_revision_id", UUID.class),
-            uuidArray(row.getArray("node_ids")), json(row.getString("display_spec")));
     private static final RowMapper<ExerciseListRow> EXERCISE_LIST = (row, ignored) -> new ExerciseListRow(
             EXERCISE.mapRow(row, ignored), new ObjectiveRow(row.getObject("objective_id", UUID.class),
                     row.getObject("objective_key", UUID.class), row.getObject("member_key", UUID.class),
                     row.getObject("objective_revision_id", UUID.class), row.getLong("objective_sequence"),
-                    json(row.getString("answer_contract")), row.getTimestamp("objective_created_at").toInstant(),
+                    row.getString("objective_title"), row.getTimestamp("objective_created_at").toInstant(),
                     row.getTimestamp("objective_updated_at").toInstant()));
 
     Optional<DeckHead> deck(UUID actor, UUID deck) {
@@ -76,7 +74,7 @@ class ExerciseRepository {
     Optional<ObjectiveRow> objectiveHead(UUID actor, UUID deck, UUID objective) {
         return jdbc.sql("""
                 SELECT o.objective_id,o.objective_key,o.member_key,r.revision_id,r.objective_sequence,
-                       r.answer_contract,o.created_at,h.updated_at
+                       r.descriptor ->> 'title' AS title,o.created_at,h.updated_at
                   FROM app_learning.deck d JOIN app_learning.memory_objective o ON o.deck_id=d.deck_id
                   JOIN app_learning.objective_head h ON h.deck_id=o.deck_id AND h.objective_id=o.objective_id
                   JOIN app_learning.objective_revision r ON r.deck_id=h.deck_id AND r.objective_id=h.objective_id
@@ -89,7 +87,7 @@ class ExerciseRepository {
     Optional<ObjectiveRow> objectiveRevision(UUID actor, UUID deck, UUID objective, UUID revision) {
         return jdbc.sql("""
                 SELECT o.objective_id,o.objective_key,o.member_key,r.revision_id,r.objective_sequence,
-                       r.answer_contract,o.created_at,r.created_at AS updated_at
+                       r.descriptor ->> 'title' AS title,o.created_at,r.created_at AS updated_at
                   FROM app_learning.deck d JOIN app_learning.memory_objective o ON o.deck_id=d.deck_id
                   JOIN app_learning.objective_revision r ON r.deck_id=o.deck_id AND r.objective_id=o.objective_id
                  WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND o.deck_id=:deck AND o.objective_id=:objective AND r.revision_id=:revision
@@ -114,7 +112,7 @@ class ExerciseRepository {
         String ordinal = revision == null ? "h.ordinal" : "COALESCE((SELECT c.ordinal FROM app_learning.deck_exercise_change c WHERE c.deck_id=x.deck_id AND c.exercise_id=x.exercise_id AND c.revision_id=r.revision_id),h.ordinal)";
         var query = jdbc.sql("""
                 SELECT x.exercise_id,r.revision_id,r.exercise_sequence,%s AS ordinal,r.exercise_type,r.enabled,
-                       r.prompt_spec,r.evaluator_policy,r.descriptor_root_id,x.created_at,r.created_at AS updated_at
+                       r.content,r.answer_key,r.evaluator_policy,r.descriptor_root_id,x.created_at,r.created_at AS updated_at
                   FROM app_learning.deck d JOIN app_learning.exercise_definition x ON x.deck_id=d.deck_id
                   %s
                  WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND x.deck_id=:deck AND x.exercise_id=:exercise
@@ -128,10 +126,10 @@ class ExerciseRepository {
         String memberFilter = member == null ? "" : " AND b.member_key=:member";
         var query = jdbc.sql("""
                 SELECT x.exercise_id,r.revision_id,r.exercise_sequence,h.ordinal,r.exercise_type,r.enabled,
-                       r.prompt_spec,r.evaluator_policy,r.descriptor_root_id,x.created_at,r.created_at AS updated_at,
+                       r.content,r.answer_key,r.evaluator_policy,r.descriptor_root_id,x.created_at,r.created_at AS updated_at,
                        o.objective_id,o.objective_key,o.member_key,
                        objective.revision_id AS objective_revision_id,objective.objective_sequence,
-                       objective.answer_contract,o.created_at AS objective_created_at,
+                       objective.descriptor ->> 'title' AS objective_title,o.created_at AS objective_created_at,
                        head.updated_at AS objective_updated_at
                   FROM app_learning.deck d JOIN app_learning.deck_head_exercise h ON h.deck_id=d.deck_id
                   JOIN app_learning.exercise_definition x ON x.deck_id=h.deck_id AND x.exercise_id=h.exercise_id
@@ -162,15 +160,15 @@ class ExerciseRepository {
                 .query(Integer.class).single();
     }
 
-    List<BindingRow> bindings(UUID deck, UUID exercise, UUID revision) {
+    Optional<SubjectRow> subject(UUID deck, UUID exercise, UUID revision) {
         return jdbc.sql("""
-                SELECT binding_id,binding_ordinal,role,member_key,item_revision_id,objective_id,
-                       objective_revision_id,node_ids,display_spec
+                SELECT member_key,item_revision_id,objective_id,objective_revision_id
                   FROM app_learning.exercise_content_binding
-                 WHERE deck_id=:deck AND exercise_id=:exercise AND exercise_revision_id=:revision
-                 ORDER BY binding_ordinal
+                 WHERE deck_id=:deck AND exercise_id=:exercise AND exercise_revision_id=:revision AND role='ASSESSED'
                 """).param("deck", deck).param("exercise", exercise).param("revision", revision)
-                .query(BINDING).list();
+                .query((row, ignored) -> new SubjectRow(row.getObject("member_key", UUID.class),
+                        row.getObject("item_revision_id", UUID.class), row.getObject("objective_id", UUID.class),
+                        row.getObject("objective_revision_id", UUID.class))).optional();
     }
 
     Optional<ItemRevision> itemRevision(UUID actor, UUID deck, UUID member, UUID revision) {
@@ -222,18 +220,18 @@ class ExerciseRepository {
     }
 
     void insertObjectiveRevision(UUID deck, UUID objective, UUID revision, long sequence, UUID parent,
-                                 UUID deckRevision, long deckSequence, UUID command, JsonNode answer, Instant time) {
+                                 UUID deckRevision, long deckSequence, UUID command, String title, Instant time) {
         jdbc.sql("""
                 INSERT INTO app_learning.objective_revision(deck_id,objective_id,revision_id,objective_sequence,
                     parent_revision_id,parent_objective_sequence,deck_revision_id,deck_sequence,command_id,
-                    answer_contract,created_at)
+                    descriptor,created_at)
                 VALUES (:deck,:objective,:revision,:sequence,:parent,:parentSequence,:deckRevision,:deckSequence,
-                    :command,CAST(:answer AS jsonb),:time)
+                    :command,CAST(:descriptor AS jsonb),:time)
                 """).param("deck", deck).param("objective", objective).param("revision", revision)
                 .param("sequence", sequence).param("parent", parent, java.sql.Types.OTHER)
                 .param("parentSequence", parent == null ? null : sequence - 1, java.sql.Types.BIGINT)
                 .param("deckRevision", deckRevision).param("deckSequence", deckSequence).param("command", command)
-                .param("answer", answer.toString()).param("time", Timestamp.from(time)).update();
+                .param("descriptor", descriptor(title).toString()).param("time", Timestamp.from(time)).update();
     }
 
     void insertObjectiveHead(UUID deck, UUID objective, UUID revision, long sequence, Instant time) {
@@ -266,32 +264,33 @@ class ExerciseRepository {
         jdbc.sql("""
                 INSERT INTO app_learning.exercise_revision(deck_id,exercise_id,revision_id,reuse_scope_id,
                     exercise_sequence,parent_revision_id,parent_exercise_sequence,deck_revision_id,deck_sequence,
-                    command_id,exercise_type,schema_version,enabled,prompt_spec,evaluator_policy,descriptor_root_id,created_at)
+                    command_id,exercise_type,schema_version,enabled,content,answer_key,evaluator_policy,descriptor_root_id,
+                    created_at)
                 VALUES (:deck,:exercise,:revision,:scope,:sequence,:parent,:parentSequence,:deckRevision,:deckSequence,
-                    :command,:type,1,:enabled,CAST(:prompt AS jsonb),CAST(:evaluator AS jsonb),:descriptor,:time)
+                    :command,:type,2,:enabled,CAST(:content AS jsonb),CAST(:answerKey AS jsonb),
+                    CAST(:evaluator AS jsonb),:descriptor,:time)
                 """).param("deck", deck).param("exercise", exercise).param("revision", revision).param("scope", scope)
                 .param("sequence", sequence).param("parent", parent, java.sql.Types.OTHER)
                 .param("parentSequence", parent == null ? null : sequence - 1, java.sql.Types.BIGINT)
                 .param("deckRevision", deckRevision).param("deckSequence", deckSequence).param("command", command)
-                .param("type", value.type()).param("enabled", value.enabled()).param("prompt", value.prompt().toString())
+                .param("type", value.type().name()).param("enabled", value.enabled())
+                .param("content", value.content().toString()).param("answerKey", value.answerKey().toString())
                 .param("evaluator", value.evaluatorPolicy().toString()).param("descriptor", descriptor)
                 .param("time", Timestamp.from(time)).update();
     }
 
-    void insertBinding(UUID deck, UUID exercise, UUID revision, ExerciseCommand.Binding binding,
-                       UUID objective, UUID objectiveRevision) {
+    void insertBinding(UUID deck, UUID exercise, UUID revision, BindingInsert binding) {
         jdbc.sql("""
                 INSERT INTO app_learning.exercise_content_binding(deck_id,exercise_id,exercise_revision_id,binding_id,
-                    binding_ordinal,role,member_key,item_revision_id,objective_id,objective_revision_id,node_ids,display_spec)
+                    binding_ordinal,role,member_key,item_revision_id,objective_id,objective_revision_id,node_ids)
                 VALUES (:deck,:exercise,:revision,:binding,:ordinal,:role,:member,:itemRevision,:objective,
-                    :objectiveRevision,:nodeIds,CAST(:display AS jsonb))
+                    :objectiveRevision,:nodeIds)
                 """).param("deck", deck).param("exercise", exercise).param("revision", revision)
                 .param("binding", binding.bindingId()).param("ordinal", binding.ordinal()).param("role", binding.role())
                 .param("member", binding.memberKey()).param("itemRevision", binding.itemRevisionId())
-                .param("objective", objective, java.sql.Types.OTHER)
-                .param("objectiveRevision", objectiveRevision, java.sql.Types.OTHER)
-                .param("nodeIds", binding.nodeIds().toArray(UUID[]::new)).param("display", binding.display().toString())
-                .update();
+                .param("objective", binding.objectiveId(), java.sql.Types.OTHER)
+                .param("objectiveRevision", binding.objectiveRevisionId(), java.sql.Types.OTHER)
+                .param("nodeIds", binding.nodeIds().toArray(UUID[]::new)).update();
     }
 
     void insertExerciseHead(UUID deck, UUID exercise, UUID revision, long sequence, int ordinal, Instant time) {
@@ -348,8 +347,8 @@ class ExerciseRepository {
         catch (JsonProcessingException exception) { throw new IllegalStateException("Invalid persisted JSON", exception); }
     }
 
-    private static List<UUID> uuidArray(Array array) {
-        try { return Arrays.stream((Object[]) array.getArray()).map(value -> (UUID) value).toList(); }
-        catch (java.sql.SQLException exception) { throw new IllegalStateException("Invalid persisted UUID array", exception); }
+    /** The objective revision payload: identity text only, no answer key. */
+    static JsonNode descriptor(String title) {
+        return JSON.createObjectNode().put("schemaVersion", 1).put("title", title);
     }
 }

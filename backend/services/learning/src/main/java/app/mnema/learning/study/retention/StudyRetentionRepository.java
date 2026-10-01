@@ -26,8 +26,8 @@ class StudyRetentionRepository {
     int purgePairInteractions(Instant asOf, int limit) {
         return jdbc.sql("""
                 DELETE FROM app_learning.study_pair_interaction interaction
-                 WHERE (interaction.account_id,interaction.session_id,interaction.presentation_id,interaction.cue_id,interaction.option_id) IN (
-                       SELECT candidate.account_id,candidate.session_id,candidate.presentation_id,candidate.cue_id,candidate.option_id
+                 WHERE (interaction.account_id,interaction.session_id,interaction.presentation_id,interaction.left_id,interaction.right_id) IN (
+                       SELECT candidate.account_id,candidate.session_id,candidate.presentation_id,candidate.left_id,candidate.right_id
                          FROM app_learning.study_pair_interaction candidate
                         WHERE candidate.expires_at<=:asOf
                         ORDER BY candidate.expires_at LIMIT :limit FOR UPDATE SKIP LOCKED

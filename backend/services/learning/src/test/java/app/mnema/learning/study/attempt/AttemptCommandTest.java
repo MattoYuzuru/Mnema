@@ -2,78 +2,157 @@ package app.mnema.learning.study.attempt;
 
 import app.mnema.learning.platform.api.InvalidRequestException;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
-import java.io.ByteArrayInputStream;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.util.UUID;
+import java.util.function.Consumer;
 
+import static app.mnema.learning.support.ContractFixtures.bytes;
+import static app.mnema.learning.support.ContractFixtures.fixture;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class AttemptCommandTest {
-    private static final JsonMapper JSON = JsonMapper.builder().build();
-    private static JsonNode fixture;
-
-    @BeforeAll
-    static void load() throws Exception {
-        Path root = Path.of("").toAbsolutePath();
-        while (root != null && !Files.exists(root.resolve("contracts/study/attempts.json"))) root = root.getParent();
-        fixture = JSON.readTree(Files.readString(root.resolve("contracts/study/attempts.json")));
+    @ParameterizedTest
+    @ValueSource(strings = {"selfCheck", "freeResponse", "cloze", "choice", "match", "cancel"})
+    void everyContractSubmitParsesToItsResponseKind(String name) {
+        AttemptCommand command = read(submit(name));
+        Class<?> expected = switch (name) {
+            case "selfCheck" -> AttemptCommand.SelfCheckResponse.class;
+            case "freeResponse" -> AttemptCommand.TextResponse.class;
+            case "cloze" -> AttemptCommand.ClozeResponse.class;
+            case "choice" -> AttemptCommand.ChoiceResponse.class;
+            case "match" -> AttemptCommand.MatchResponse.class;
+            default -> AttemptCommand.CancelResponse.class;
+        };
+        assertThat(command.response()).isInstanceOf(expected);
+        assertThat(command.envelope(UUID.randomUUID(), UUID.randomUUID()).has("deckId")).isTrue();
+        assertThat(command.payload().has("hintsUsed")).isFalse();
     }
 
     @Test
-    void parsesEveryContractResponseWithoutClientAuthorityFields() {
-        assertThat(read(fixture.path("typedSubmit")).response()).isInstanceOf(AttemptCommand.TextResponse.class);
-        assertThat(read(fixture.path("selfCheckSubmit")).response())
-                .isInstanceOf(AttemptCommand.SelfCheckResponse.class);
-        assertThat(read(fixture.path("choiceSubmit")).response()).isInstanceOf(AttemptCommand.ChoiceResponse.class);
-        assertThat(read(fixture.path("cancelSubmit")).response()).isInstanceOf(AttemptCommand.CancelResponse.class);
+    void attemptsFixtureParsesWithoutClientHintAuthority() {
+        JsonNode attempts = fixture("attempts.json");
+        for (String name : new String[] {"freeResponseSubmit", "selfCheckSubmit", "choiceSubmit", "cancelSubmit"}) {
+            assertThat(read(attempts.path(name)).presentationId()).isNotNull();
+        }
     }
 
     @Test
-    void sharedMultipleChoiceAndPairCheckFixtureExecutesTheCanonicalCommands() throws Exception {
-        Path root = Path.of("").toAbsolutePath();
-        while (!Files.exists(root.resolve("contracts/study/choice-and-pairs.json"))) root = root.getParent();
-        JsonNode document = JSON.readTree(Files.readString(root.resolve("contracts/study/choice-and-pairs.json")));
-        AttemptCommand command = read(document.path("multipleSubmit"));
-        assertThat(((AttemptCommand.ChoiceResponse) command.response()).optionIds()).hasSize(2);
-        PairCheckCommand pair = PairCheckCommand.read(new ByteArrayInputStream(
-                document.path("pairCheck").toString().getBytes(StandardCharsets.UTF_8)));
-        assertThat(pair.presentationId()).isEqualTo(command.presentationId());
+    void hintsAndAuthorityFieldsAreUnknownFields() {
+        for (String field : new String[] {"hintsUsed", "mode", "bindings", "correctAnswer", "deckRevisionId"}) {
+            ObjectNode body = submit("freeResponse");
+            body.putArray(field);
+            assertInvalid(body);
+        }
+        assertInvalid(mutate("freeResponse", body -> body.remove("confidence")));
+        assertInvalid(mutate("freeResponse", body -> body.put("durationMs", 3_600_001)));
+        assertInvalid(mutate("freeResponse", body -> body.put("durationMs", -1)));
+        assertInvalid(mutate("freeResponse", body -> body.put("durationMs", "1")));
+        assertInvalid(mutate("freeResponse", body -> body.put("confidence", "SURE")));
+        assertInvalid(mutate("freeResponse", body -> body.put("nonce", "short")));
+        assertInvalid(mutate("freeResponse", body -> body.put("attemptId", "bad")));
+        assertInvalid(mutate("freeResponse", body -> body.put("presentationId", UUID.randomUUID().toString().toUpperCase())));
     }
 
     @Test
-    void rejectsUnknownFieldsDuplicateHintsAndUnboundedDiagnostics() {
-        ObjectNode authority = fixture.path("typedSubmit").deepCopy();
-        authority.put("mode", "SCHEDULED");
-        assertThatThrownBy(() -> read(authority)).isInstanceOf(InvalidRequestException.class);
-        ObjectNode duplicate = fixture.path("typedSubmit").deepCopy();
-        duplicate.withArray("hintsUsed").add("REVEAL").add("REVEAL");
-        assertThatThrownBy(() -> read(duplicate)).isInstanceOf(InvalidRequestException.class);
-        ObjectNode duration = fixture.path("typedSubmit").deepCopy();
-        duration.put("durationMs", 3_600_001);
-        assertThatThrownBy(() -> read(duration)).isInstanceOf(InvalidRequestException.class);
+    void textAndSelfCheckResponsesAreStrict() {
+        assertInvalid(mutate("freeResponse", body -> response(body).put("text", "x".repeat(4_097))));
+        assertInvalid(mutate("freeResponse", body -> response(body).put("extra", 1)));
+        assertInvalid(mutate("freeResponse", body -> response(body).put("kind", "SPEECH")));
+        assertInvalid(mutate("freeResponse", body -> response(body).put("kind", "TYPED")));
+        assertInvalid(mutate("selfCheck", body -> response(body).put("rating", "GREAT")));
+        assertInvalid(mutate("cancel", body -> response(body).put("reason", "tired")));
+        assertThat(read(mutate("freeResponse", body -> response(body).put("text", ""))).response())
+                .isEqualTo(new AttemptCommand.TextResponse(""));
     }
 
     @Test
-    void choiceResponseRejectsEmptyDuplicateAndLegacyScalarSelections() {
-        ObjectNode root = fixture.path("choiceSubmit").deepCopy();
-        ObjectNode response = root.withObject("response");
-        response.withArray("optionIds").removeAll();
-        assertThatThrownBy(() -> read(root)).isInstanceOf(InvalidRequestException.class);
-        String id = java.util.UUID.randomUUID().toString();
-        response.withArray("optionIds").add(id).add(id);
-        assertThatThrownBy(() -> read(root)).isInstanceOf(InvalidRequestException.class);
-        response.remove("optionIds"); response.put("optionId", id);
-        assertThatThrownBy(() -> read(root)).isInstanceOf(InvalidRequestException.class);
+    void clozeResponsesNeedUniqueBlankIdsAndBoundedText() {
+        assertInvalid(mutate("cloze", body -> response(body).withArray("blanks").removeAll()));
+        assertInvalid(mutate("cloze", body -> ((ObjectNode) response(body).withArray("blanks").get(1))
+                .put("blankId", response(body).path("blanks").get(0).path("blankId").textValue())));
+        assertInvalid(mutate("cloze", body -> ((ObjectNode) response(body).withArray("blanks").get(0)).put("text", "x".repeat(1_025))));
+        assertInvalid(mutate("cloze", body -> ((ObjectNode) response(body).withArray("blanks").get(0)).put("hinted", true)));
+        assertInvalid(mutate("cloze", body -> ((ObjectNode) response(body).withArray("blanks").get(0)).remove("text")));
+        assertInvalid(mutate("cloze", body -> {
+            ArrayNode blanks = response(body).withArray("blanks");
+            for (int index = 0; index < 10; index++) blanks.addObject().put("blankId", UUID.randomUUID().toString()).put("text", "x");
+        }));
+        assertInvalid(mutate("cloze", body -> response(body).put("kind", "CLOZE_SINGLE")));
     }
 
-    private static AttemptCommand read(JsonNode value) {
-        return AttemptCommand.read(new ByteArrayInputStream(value.toString().getBytes(StandardCharsets.UTF_8)));
+    @Test
+    void choiceResponsesRejectEmptyDuplicateOversizedAndScalarSelections() {
+        assertThat(((AttemptCommand.ChoiceResponse) read(submit("choice")).response()).optionIds()).hasSize(2);
+        assertInvalid(mutate("choice", body -> response(body).withArray("optionIds").removeAll()));
+        assertInvalid(mutate("choice", body -> response(body).withArray("optionIds").add(
+                response(body).path("optionIds").get(0).textValue())));
+        assertInvalid(mutate("choice", body -> {
+            response(body).remove("optionIds");
+            response(body).put("optionId", UUID.randomUUID().toString());
+        }));
+        assertInvalid(mutate("choice", body -> {
+            ArrayNode ids = response(body).withArray("optionIds");
+            for (int index = 0; index < 11; index++) ids.add(UUID.randomUUID().toString());
+        }));
+    }
+
+    @Test
+    void matchResponsesNeedTwoToSixDistinctPairsWithTheNewSideNames() {
+        assertThat(((AttemptCommand.MatchResponse) read(submit("match")).response()).pairs()).hasSize(4);
+        assertInvalid(mutate("match", body -> ((ObjectNode) response(body).withArray("pairs").get(0)).put("rightId",
+                response(body).path("pairs").get(1).path("rightId").textValue())));
+        assertInvalid(mutate("match", body -> ((ObjectNode) response(body).withArray("pairs").get(0)).put("leftId",
+                response(body).path("pairs").get(1).path("leftId").textValue())));
+        assertInvalid(mutate("match", body -> drop(response(body).withArray("pairs"), 3, 2, 1)));
+        assertInvalid(mutate("match", body -> {
+            ArrayNode pairs = response(body).withArray("pairs");
+            for (int index = 0; index < 3; index++) {
+                pairs.addObject().put("leftId", UUID.randomUUID().toString()).put("rightId", UUID.randomUUID().toString());
+            }
+        }));
+        assertInvalid(mutate("match", body -> {
+            ObjectNode pair = (ObjectNode) response(body).withArray("pairs").get(0);
+            pair.put("cueId", pair.remove("leftId").textValue());
+        }));
+        assertInvalid(mutate("match", body -> {
+            ObjectNode pair = (ObjectNode) response(body).withArray("pairs").get(0);
+            pair.put("optionId", pair.remove("rightId").textValue());
+        }));
+    }
+
+    @Test
+    void oversizedAndMalformedBodiesAreInvalid() {
+        assertThatThrownBy(() -> AttemptCommand.read(new java.io.ByteArrayInputStream("[]".getBytes())))
+                .isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> AttemptCommand.read(new java.io.ByteArrayInputStream(new byte[0])))
+                .isInstanceOf(InvalidRequestException.class);
+    }
+
+    private static ObjectNode submit(String name) {
+        return (ObjectNode) fixture("mechanics.json").path("submits").path(name).deepCopy();
+    }
+
+    private static ObjectNode mutate(String name, Consumer<ObjectNode> change) {
+        ObjectNode body = submit(name);
+        change.accept(body);
+        return body;
+    }
+
+    private static ObjectNode response(ObjectNode body) { return body.withObject("response"); }
+
+    private static AttemptCommand read(JsonNode value) { return AttemptCommand.read(bytes(value)); }
+
+    private static void assertInvalid(JsonNode value) {
+        assertThatThrownBy(() -> read(value)).as(value.toString()).isInstanceOf(InvalidRequestException.class);
+    }
+
+    private static void drop(com.fasterxml.jackson.databind.node.ArrayNode array, int... indexes) {
+        for (int index : indexes) array.remove(index);
     }
 }

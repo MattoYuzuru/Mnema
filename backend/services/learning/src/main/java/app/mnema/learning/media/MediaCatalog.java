@@ -18,6 +18,9 @@ import java.util.UUID;
 /** Transactional identities, references and owner authorization; object transfer lives outside this boundary. */
 @Service
 public class MediaCatalog {
+    /** Upper bound of distinct assets one exercise revision may pin. */
+    public static final int MAX_EXERCISE_ASSETS = 32;
+
     private final JdbcClient jdbc;
     private final MediaSettings settings;
 
@@ -83,16 +86,16 @@ public class MediaCatalog {
                 .param("node", reference.nodeId()).param("owner", actor).param("asset", reference.assetId()).update();
     }
 
-    /** Pin direct audio cues atomically with one immutable exercise revision. */
+    /** Pin every media block of every slot atomically with one immutable exercise revision. */
     @Transactional(propagation = Propagation.MANDATORY)
     public void attachExerciseRevision(UUID actor, UUID deck, UUID exercise, UUID revision,
-                                       Collection<UUID> assetIds) {
+                                       Collection<ExerciseAsset> assets) {
         UuidPolicy.requireEntityId(actor, "actor");
         UuidPolicy.requireEntityId(deck, "deckId");
         UuidPolicy.requireEntityId(exercise, "exerciseId");
         UuidPolicy.requireEntityId(revision, "revisionId");
-        if (assetIds == null || assetIds.isEmpty() || assetIds.size() > 6
-                || assetIds.stream().anyMatch(java.util.Objects::isNull)) {
+        if (assets == null || assets.isEmpty() || assets.size() > MAX_EXERCISE_ASSETS
+                || assets.stream().anyMatch(java.util.Objects::isNull)) {
             throw new InvalidRequestException();
         }
         if (!jdbc.sql("SELECT 1 FROM app_learning.exercise_revision r "
@@ -103,23 +106,30 @@ public class MediaCatalog {
                 .param("owner", actor).query(Integer.class).optional().isPresent()) {
             throw new ResourceNotFoundException();
         }
-        var unique = new TreeSet<>(assetIds);
-        validateAssets(actor, unique);
-        for (UUID asset : unique) jdbc.sql("INSERT INTO app_learning.exercise_media_ref "
-                        + "(deck_id,exercise_id,exercise_revision_id,owner_id,asset_id) "
-                        + "VALUES (:deck,:exercise,:revision,:owner,:asset)")
+        var kinds = new java.util.TreeMap<UUID, Kind>();
+        for (ExerciseAsset asset : assets) {
+            // One logical asset has one kind inside an exercise revision.
+            if (kinds.putIfAbsent(asset.assetId(), asset.kind()) != null) throw new InvalidRequestException();
+        }
+        validateAssets(actor, kinds.keySet());
+        kinds.forEach((asset, kind) -> jdbc.sql("INSERT INTO app_learning.exercise_media_ref "
+                        + "(deck_id,exercise_id,exercise_revision_id,owner_id,asset_id,media_kind) "
+                        + "VALUES (:deck,:exercise,:revision,:owner,:asset,:kind)")
                 .param("deck", deck).param("exercise", exercise).param("revision", revision)
-                .param("owner", actor).param("asset", asset).update();
+                .param("owner", actor).param("asset", asset).param("kind", kind.column()).update());
     }
 
-    /** An issued listening cue can be assessed only while every pinned asset is ready. */
+    /**
+     * An issued presentation can be assessed only while every pinned asset is READY and its verified
+     * source really is the declared kind; a READY image must never become an audio cue.
+     */
     @Transactional(readOnly = true)
-    public boolean exerciseReady(UUID actor, UUID deck, UUID exercise, UUID revision) {
+    public boolean exerciseMediaReady(UUID actor, UUID deck, UUID exercise, UUID revision) {
         UuidPolicy.requireEntityId(actor, "actor");
         UuidPolicy.requireEntityId(deck, "deckId");
         UuidPolicy.requireEntityId(exercise, "exerciseId");
         UuidPolicy.requireEntityId(revision, "revisionId");
-        return jdbc.sql("SELECT app_learning.exercise_audio_ready(:owner,:deck,:exercise,:revision)")
+        return jdbc.sql("SELECT app_learning.exercise_media_ready(:owner,:deck,:exercise,:revision)")
                 .param("deck", deck).param("exercise", exercise).param("revision", revision)
                 .param("owner", actor).query(Boolean.class).single();
     }
@@ -282,4 +292,19 @@ public class MediaCatalog {
     private record Reservation(UUID assetId, String origin) { }
 
     public enum Origin { UPLOAD, RECORDING, IMPORT }
+
+    /** What an author declares an asset to be; readiness verifies the stored source agrees. */
+    public enum Kind {
+        IMAGE, AUDIO, VIDEO;
+
+        String column() { return name().toLowerCase(java.util.Locale.ROOT); }
+    }
+
+    /** A media block's asset and declared kind inside one exercise revision. */
+    public record ExerciseAsset(UUID assetId, Kind kind) {
+        public ExerciseAsset {
+            UuidPolicy.requireEntityId(assetId, "assetId");
+            java.util.Objects.requireNonNull(kind, "kind");
+        }
+    }
 }

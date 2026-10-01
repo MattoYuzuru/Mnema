@@ -77,13 +77,19 @@ class AttemptControllerTest {
         mvc.perform(post("/decks/" + deck + "/study-sessions/" + session + "/attempts")
                         .contentType(MediaType.APPLICATION_JSON).content(body.toString()))
                 .andExpect(status().isBadRequest());
+        // hint use is a server record: a client claim is an unknown field
+        ObjectNode claimed = (ObjectNode) JSON.readTree(body());
+        claimed.putArray("hintsUsed");
+        mvc.perform(post("/decks/" + deck + "/study-sessions/" + session + "/attempts")
+                        .contentType(MediaType.APPLICATION_JSON).content(claimed.toString()))
+                .andExpect(status().isBadRequest());
         verifyNoInteractions(service);
     }
 
     private String body() {
         ObjectNode body = JSON.createObjectNode().put("attemptId", UUID.randomUUID().toString())
                 .put("presentationId", presentation.toString()).put("nonce", "1234567890123456");
-        body.putObject("response").put("kind", "CANCEL"); body.putArray("hintsUsed");
+        body.putObject("response").put("kind", "CANCEL");
         body.putNull("confidence"); body.put("durationMs", 0);
         return body.toString();
     }
