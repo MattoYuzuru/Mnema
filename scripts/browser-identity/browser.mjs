@@ -2,6 +2,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
+import { runMechanics } from './mechanics.mjs';
 
 const config = JSON.parse(await readFile(process.argv[2], 'utf8'));
 const results = [];
@@ -69,6 +70,8 @@ const record = (scenario, details = {}) => results.push({ scenario, ...details }
 let cdp;
 const tabs = [];
 let step = 'startup';
+let mechanicsFailures = [];
+let mechanicsFindings = [];
 let diagnostics = () => ({});
 async function openTab() {
   const response = await fetch(`http://127.0.0.1:${config.debugPort}/json/new?about:blank`,
@@ -100,14 +103,15 @@ try {
   const challenges = new Set();
   const loadedDocuments = new Set();
   const asyncWork = new Set();
-  let asynchronousFailure = false;
+  let asynchronousFailure = false, firstAsynchronousFailure = null;
   let actorAfterLogout = null, otherAfterLogout = null;
   diagnostics = () => ({ networkRequests, identityRequests, tokenExchanges, browserErrors, externalRequests,
-    asynchronousFailure, eventFailed: tabs.some(tab => tab.eventFailed), actorAfterLogout, otherAfterLogout,
+    asynchronousFailure, firstAsynchronousFailure, eventFailed: tabs.some(tab => tab.eventFailed), actorAfterLogout, otherAfterLogout,
     authoringResponses, mediaResponses, mediaFailures, mediaApiResponses, browseMediaState });
   const run = promise => {
     asyncWork.add(promise);
-    promise.catch(() => { asynchronousFailure = true; }).finally(() => asyncWork.delete(promise));
+    promise.catch(error => { asynchronousFailure = true; firstAsynchronousFailure ??= error?.message ?? 'unknown'; })
+      .finally(() => asyncWork.delete(promise));
   };
   function watchTab(tab) {
     const tokenRequests = new Set();
@@ -120,7 +124,7 @@ try {
       networkRequests++;
       if (url.origin === config.identity) identityRequests++;
       // Authoring exercises several full navigations and their local assets; keep a finite request budget.
-      if (networkRequests > (config.media ? 950 : config.authoring ? 750 : 500)
+      if (networkRequests > (config.mechanics ? 3000 : config.media ? 950 : config.authoring ? 750 : 500)
           || identityRequests > 150) asynchronousFailure = true;
       if (!allowed.has(url.origin) || asynchronousFailure) {
         externalRequests++;
@@ -579,6 +583,7 @@ try {
     const requestsBeforeAuthoring = networkRequests;
     const deckTitle = 'Северный архив';
     let uploadedAudioAssetId = null;
+    let freeResponseEditPath = null;
     const capturedText = 'سلام · 日本語 · <img src=x onerror="globalThis.__mnemaXss=true">';
     const editedText = 'Долговечный материал — עברית, русский и 日本語';
     await navigate('/decks/new', second);
@@ -851,6 +856,7 @@ try {
         'exercise save action absent');
       await until(async () => /^\/decks\/[0-9a-f-]{36}\/exercises\/[0-9a-f-]{36}\/edit/.test(
         await sanitizedLocation(second)), 'audio-prompt exercise was not saved through authoring UI');
+      freeResponseEditPath = await sanitizedLocation(second);
       studyFixture = { ready: true };
     } else studyFixture = await second.callFunction(`async function(base, authorization, deckPath, materialPath) {
       const headers = { Authorization: authorization };
@@ -939,6 +945,18 @@ try {
       authoredAudioLoaded: Boolean(config.media), keyboardStart: true,
       feedbackFocus: true, widths: [1440, 390, 320], deviceScaleFactor: 2,
       reducedMotion: true, noHorizontalOverflow: true, primaryActionMinimumPx: 44 });
+    if (config.mechanics) {
+      // Close the base flow's one-exercise session so the mechanics baseline starts a fresh standard session.
+      step = 'mechanics_prepare';
+      require(await clickText('.feedback-card button.primary', 'Продолжить', second), 'Study continue action absent');
+      await until(() => exists('.completion', second), 'base Study session did not complete');
+      const outcome = await runMechanics({
+        tab: second, config, record, SafeFailure, until, exists, bodyIncludes, sanitizedLocation, navigate, click,
+        saveScreenshot, saveFullScreenshot, run, mediaTrace: () => ({ api: mediaApiResponses.slice(-10), store: mediaResponses.slice(-10), failures: mediaFailures.slice(-5) }), setStep: value => { step = value; },
+        deckPath, materialPath, freeResponseEditPath, materialText: editedText });
+      mechanicsFailures = outcome.failures;
+      mechanicsFindings = outcome.findings;
+    }
   }
   require(await authenticated(), 'first tab lost its independent profile');
   require(await cdp.callFunction(`async function(firstUrl, firstAuthorization, secondUrl, secondAuthorization, sessionUrl) {
@@ -1003,16 +1021,19 @@ try {
   require(browserErrors === 0 && !asynchronousFailure && !tabs.some(tab => tab.eventFailed), 'browser runtime errors');
   const screenshot = await cdp.call('Page.captureScreenshot', { format: 'png' });
   await writeFile(join(config.output, 'login.png'), Buffer.from(screenshot.data, 'base64'));
-  const evidence = { state: 'passed', scenarios: results, tokenExchanges, networkRequests, identityRequests,
+  const evidence = { state: mechanicsFailures.length === 0 ? 'passed' : 'failed',
+    ...(config.mechanics ? { mechanicsFailures, mechanicsFindings, syntheticMicrophone: true, realDeviceMicrophone: false } : {}),
+    scenarios: results, tokenExchanges, networkRequests, identityRequests,
     externalRequestsBlocked: externalRequests,
     browserRuntimeErrors: browserErrors, transport: 'real HTTPS, exact ephemeral SPKI allowlist, same-site cross-origin loopback',
     browser: (await cdp.call('Browser.getVersion')).product };
   await writeFile(join(config.output, 'browser.json'), JSON.stringify(evidence, null, 2));
+  if (mechanicsFailures.length > 0) process.exitCode = 1;
 } catch (error) {
   // No caught exception, URL, DOM, response body or stack may reveal a credential.
   await writeFile(join(config.output, 'browser.json'), JSON.stringify({ state: 'failed', step,
     reason: error instanceof SafeFailure ? error.message : 'driver_failure', completedScenarios: results.length,
-    counts: diagnostics() }));
+    ...(config.mechanics ? { scenarios: results } : {}), counts: diagnostics() }));
   process.exitCode = 1;
 } finally {
   for (const tab of tabs) tab.close();

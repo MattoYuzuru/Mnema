@@ -44,6 +44,23 @@ def static_path(dist, request_path):
     return candidate if candidate.suffix else dist / "index.html"
 
 
+def chrome_arguments(chrome, profile, spki, mechanics):
+    """Headless Chrome flags. Chrome is always muted: audio is verified through media element state, not sound.
+    Only the mechanics baseline adds Chrome's SYNTHETIC media-stream devices.
+
+    The fake device and auto-accepted permission prompt exercise the recording UI state machine; they are
+    never a real-microphone test.
+    """
+    arguments = [chrome, "--headless=new", "--no-first-run", "--no-default-browser-check",
+                 "--disable-background-networking", "--disable-component-update", "--disable-sync",
+                 "--no-proxy-server", "--mute-audio",
+                 "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0",
+                 "--user-data-dir=" + str(profile), "--ignore-certificate-errors-spki-list=" + spki]
+    if mechanics:
+        arguments += ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"]
+    return arguments + ["about:blank"]
+
+
 def complete_browser_evidence(result, requests):
     """A passing browser driver alone cannot overrule failed real-wire assertions."""
     result = {**result, "logoutWire": {"requests": len(requests),
@@ -312,12 +329,7 @@ class Fixture(BASE.Fixture):
             threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True).start()
             self.running_servers.append(server)
         profile = self.tmp / "chrome-profile"
-        self.launch_group([self.args.chrome, "--headless=new", "--no-first-run", "--no-default-browser-check",
-                           "--disable-background-networking", "--disable-component-update", "--disable-sync",
-                           "--no-proxy-server",
-                           "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0",
-                           "--user-data-dir=" + str(profile), "--ignore-certificate-errors-spki-list=" + spki,
-                           "about:blank"], "chrome")
+        self.launch_group(chrome_arguments(self.args.chrome, profile, spki, self.args.mechanics), "chrome")
         active = profile / "DevToolsActivePort"
         deadline = time.monotonic() + 15
         while not active.is_file():
@@ -328,7 +340,8 @@ class Fixture(BASE.Fixture):
                   "output": str(self.args.output), "login": "browser_fixture", "email": "browser_fixture@example.invalid",
                   "password": BASE.PASSWORD, "readySelector": self.args.ready_selector,
                   "logoutSelector": self.args.logout_selector, "errorSelector": self.args.error_selector,
-                  "authoring": self.args.authoring, "media": self.args.media,
+                  "authoring": self.args.authoring, "media": self.args.media, "mechanics": self.args.mechanics,
+                  "diagnosticsDir": str(self.tmp) if self.args.mechanics and self.args.keep_on_failure else None,
                   "mediaOrigin": self.media_origin, "mediaClips": media_clips}
         private_config = self.tmp / "browser.json"
         private_config.write_text(json.dumps(config))
@@ -340,7 +353,7 @@ class Fixture(BASE.Fixture):
                 digest.update(hashlib.sha256(asset.read_bytes()).digest())
         evidence = {"fixture": self.results, "frontend_tree_sha256": digest.hexdigest(),
                     "scripts": {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
-                                for name in ("run.py", "browser.mjs")}}
+                                for name in ("run.py", "browser.mjs", "mechanics.mjs")}}
         (self.args.output / "fixture.json").write_text(json.dumps(evidence, indent=2))
         runner = self.launch_group([self.args.node, str(Path(__file__).with_name("browser.mjs")), str(private_config)], "browser")
         self.control("browser_running")
@@ -436,13 +449,23 @@ def main():
                         help="also verify the real Deck, Capture, draft, publication and Browse loop")
     parser.add_argument("--media", action="store_true",
                         help="local MinIO and worker proof for browser media upload (implies --authoring)")
-    parser.add_argument("--timeout", type=int, choices=range(30, 301), default=180)
+    parser.add_argument("--mechanics", action="store_true",
+                        help="after authoring, create/save/reopen/study all five exercise mechanics through the real UI "
+                             "(requires --authoring --media; uses Chrome's synthetic microphone, not a real device)")
+    parser.add_argument("--timeout", type=int, default=None, metavar="SECONDS",
+                        help="global deadline, 30-900 seconds (default 180, or 600 with --mechanics)")
     parser.add_argument("--keep-on-failure", action="store_true",
                         help="keep mode-0700 private logs/keys for local debugging")
     parser.add_argument("--control-file", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.media and not args.authoring:
         parser.error("--media requires --authoring")
+    if args.mechanics and not (args.authoring and args.media):
+        parser.error("--mechanics requires --authoring --media")
+    if args.timeout is None:
+        args.timeout = 600 if args.mechanics else 180
+    if not 30 <= args.timeout <= 900:
+        parser.error("--timeout must be between 30 and 900 seconds")
     args.dist = args.dist.resolve()
     BASE.require((args.dist / "index.html").is_file(), "missing built frontend index")
     args.output = Path(tempfile.mkdtemp(prefix="mnema-browser-evidence-"))
