@@ -8,6 +8,8 @@ import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
 import app.mnema.learning.study.progress.StudyProgressService;
+import app.mnema.learning.study.restart.StudyRestartCommand;
+import app.mnema.learning.study.restart.StudyRestartService;
 import app.mnema.learning.study.retention.StudyRetentionService;
 import app.mnema.learning.study.session.StudyHintCommand;
 import app.mnema.learning.study.session.StudySessionService;
@@ -49,6 +51,7 @@ class StudyMechanicsIntegrationTest extends PostgresIntegrationTest {
     @Autowired private AttemptService attempts;
     @Autowired private StudySessionService sessions;
     @Autowired private StudyProgressService progress;
+    @Autowired private StudyRestartService restarts;
     @Autowired private StudyRetentionService retention;
     @Autowired private DeckService decks;
     @Autowired private ItemService items;
@@ -470,6 +473,42 @@ class StudyMechanicsIntegrationTest extends PostgresIntegrationTest {
         Issued replay = fixtures.issue(material, "REPLAY", issued.session()).getFirst();
         assertThat(replay.content().path("left")).as("replay copies the left column").isEqualTo(issued.content().path("left"));
         assertThat(replay.content().path("right")).as("replay copies the right column").isEqualTo(issued.content().path("right"));
+    }
+
+    @Test
+    void replayAfterARestartLeavesStateAndProgressExactlyAsTheRestartLeftThem() {
+        Material material = fixtures.material();
+        fixtures.publish(material, fixtures.freeResponse(material, blocks(text("Q")), blocks(), "memory"));
+        Issued scheduled = fixtures.issueOne(material);
+        attempts.submit(material.actor(), material.deck(), scheduled.session(), attempt(scheduled, textResponse("memory")));
+        ObjectNode command = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString());
+        command.putArray("memberKeys").add(material.member().toString());
+        restarts.restart(material.actor(), material.deck(), StudyRestartCommand.read(
+                new java.io.ByteArrayInputStream(command.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+        JsonNode restarted = progress.read(material.actor(), material.deck(), 20, null).path("items").get(0);
+        String stateBefore = stateRow(material);
+        long historyBefore = count("study_transition", "account_id", material.actor())
+                + count("study_evidence", "account_id", material.actor());
+        assertThat(restarted.path("state").textValue()).isEqualTo("DUE");
+
+        Issued replay = fixtures.issue(material, "REPLAY", scheduled.session()).getFirst();
+        JsonNode outcome = attempts.submit(material.actor(), material.deck(), replay.session(),
+                attempt(replay, textResponse("memory"))).outcome();
+        assertThat(outcome.path("canonicalEffects").booleanValue()).isFalse();
+
+        assertThat(stateRow(material)).as("study_state row").isEqualTo(stateBefore);
+        assertThat(count("study_transition", "account_id", material.actor())
+                + count("study_evidence", "account_id", material.actor())).isEqualTo(historyBefore);
+        JsonNode after = progress.read(material.actor(), material.deck(), 20, null).path("items").get(0);
+        assertThat(after).as("progress item after replay").isEqualTo(restarted);
+    }
+
+    private String stateRow(Material material) {
+        return jdbc.sql("""
+                SELECT concat_ws('|',learning_epoch,level,correct_streak,lapse_count,last_assessed_at,next_due,
+                       transition_sequence,row_version,updated_at)
+                  FROM app_learning.study_state WHERE account_id=:actor AND deck_id=:deck
+                """).param("actor", material.actor()).param("deck", material.deck()).query(String.class).single();
     }
 
     private JsonNode hint(Material material, Issued presentation, UUID blank) {

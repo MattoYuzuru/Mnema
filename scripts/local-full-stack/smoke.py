@@ -504,7 +504,8 @@ def submit_attempt(web, access, deck_id, session_id, payload):
     )
 
 
-def progress_snapshot(web, access, deck_id, member):
+def progress_read(web, access, deck_id, member):
+    """Returns the material progress item and the server `asOf` instant it was computed for."""
     status, headers, page = web.request(
         "GET", f"/api/decks/{deck_id}/study-progress?limit=100", bearer=access
     )
@@ -516,7 +517,28 @@ def progress_snapshot(web, access, deck_id, member):
     item = matches[0]
     fields = {"memberKey", "itemRevisionId", "state", "objectiveCoverage", "lastAssessedAt", "nextDue", "title"}
     require(set(item) == fields, "invalid Study progress shape")
-    return item
+    return item, page.get("asOf")
+
+
+def progress_snapshot(web, access, deck_id, member):
+    return progress_read(web, access, deck_id, member)[0]
+
+
+def progress_diff(before, after):
+    """Field-level difference of two progress items (ids and timestamps only, no learner content)."""
+    return {key: {"before": before.get(key), "after": after.get(key)}
+            for key in sorted(set(before) | set(after)) if before.get(key) != after.get(key)}
+
+
+def require_progress_unchanged(web, access, deck_id, member, before, before_as_of, label):
+    after, after_as_of = progress_read(web, access, deck_id, member)
+    # Progress `state` compares nextDue with the server read clock; a clock that steps backwards between two reads
+    # can turn DUE into LEARNING without any write. Report that cause explicitly instead of a generic diff.
+    require(not (isinstance(before_as_of, str) and isinstance(after_as_of, str) and after_as_of < before_as_of),
+            f"server clock moved backwards between progress reads: {before_as_of} -> {after_as_of}")
+    diff = progress_diff(before, after)
+    require(not diff, f"Study {label} changed canonical progress: "
+            + json.dumps({"diff": diff, "beforeAsOf": before_as_of, "afterAsOf": after_as_of}, sort_keys=True))
 
 
 def require_feedback_only(outcome, mode):
@@ -597,7 +619,7 @@ def study_smoke(web, access, account, state_file):
             "completed scheduled session is not replayable")
 
     restart = restart_material(web, access, deck_id, member)
-    restarted = progress_snapshot(web, access, deck_id, member)
+    restarted, restarted_as_of = progress_read(web, access, deck_id, member)
     require(restarted.get("state") == "DUE" and restarted.get("lastAssessedAt") is None,
             "Study restart did not reset current progress")
 
@@ -608,8 +630,7 @@ def study_smoke(web, access, account, state_file):
     require_private(headers, "Study replay attempt")
     require_feedback_only(replay_outcome, "REPLAY")
     verify_complete(web, access, deck_id, replay["sessionId"], "REPLAY")
-    require(progress_snapshot(web, access, deck_id, member) == restarted,
-            "Study replay changed canonical progress")
+    require_progress_unchanged(web, access, deck_id, member, restarted, restarted_as_of, "replay")
 
     practice = start_session(web, access, deck_id, "PRACTICE")
     practice_payload = attempt_payload(presentation(practice, "PRACTICE"), "wrong")
@@ -620,8 +641,7 @@ def study_smoke(web, access, account, state_file):
     require_private(headers, "Study practice attempt")
     require_feedback_only(practice_outcome, "PRACTICE")
     verify_complete(web, access, deck_id, practice["sessionId"], "PRACTICE")
-    require(progress_snapshot(web, access, deck_id, member) == restarted,
-            "Study practice changed canonical progress")
+    require_progress_unchanged(web, access, deck_id, member, restarted, restarted_as_of, "practice")
     return {
         "scheduled": "ASSESSED", "progress": "observed",
         "restartEpoch": restart["learningEpochs"][0]["learningEpoch"],
