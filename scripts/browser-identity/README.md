@@ -38,6 +38,44 @@ temporary browser state. The ordinary `--authoring` mode additionally waits
 through the visible 45-second deck polling interval; `--media` checks immediate
 focus refresh and skips that long timer wait.
 
+### Exercise mechanics baseline (`--mechanics`)
+
+`--authoring --media --mechanics` (the flag requires both others; default deadline 600 s, `--timeout`
+accepts 30-900) runs `mechanics.mjs` after the base authoring and Study flow, on a 1440 px desktop
+viewport, through the real Angular UI against the real Identity/Learning jars, with CDP keyboard and mouse
+input where the interaction is natural. It records one `mechanics_*` result per step and fails the run
+(`state: "failed"`, `mechanicsFailures`, a `failure-<step>.png` screenshot and the UI's own reason) when a step
+breaks. It never works around a defective control; a broken step is a finding for the product, not a harness fix.
+
+Create, save, reopen (full page reload of the edit route) and assert restored values, then Study:
+
+| Mechanic | Authoring and reopen | Study |
+|---|---|---|
+| `SELF_CHECK` | prompt, reference text plus a material fragment chosen with the keyboard | reference hidden until revealed, reveal and rate with the keyboard |
+| `FREE_RESPONSE` | the base flow's audio-prompt exercise is reopened: accepted answer, audio block, disabled AI switch and its reason | answered by the base flow |
+| `CLOZE` | two blanks of the same repeated word through select-range and "Сделать пропуском"; first-letter hint on blank 1 only | hint requested by keyboard (one server request, one letter), both blanks filled, per-blank feedback including "с подсказкой", `MEDIUM` evidence class from the real attempt response |
+| `CHOICE` multiple | two correct marks, one option with an uploaded audio file; switching to SINGLE with two marks shows the fix-required error and keeps both marks | clicking the option's player controls does not select; keyboard selection and submit |
+| `CHOICE` single | one correct mark | radio semantics, keyboard selection and submit |
+| `MATCH` | text-text pair, text to uploaded audio (through the slot media picker), text plus a recording on one side | one deliberate wrong pair, then correct pairs; playing audio neither pairs nor sends a pair check; `PARTIAL` with the retry notice and `PAIR_RETRY` |
+
+Study uses one standard session (five new objectives) and dispatches on what the UI presents.
+Screenshots: `mechanics-edit-*-1440.png` (full-page reopened editors), `mechanics-study-*-1440.png` and
+`*-feedback-1440.png` for every mechanic, and `mechanics-study-cloze-390.png` / `mechanics-study-match-390.png`
+(horizontal overflow at 390 px is recorded as a finding).
+
+**Microphone.** In this mode Chrome starts with `--use-fake-ui-for-media-stream
+--use-fake-device-for-media-stream`, so "Записать аудио" -> stop -> "Загрузить запись" -> READY -> "Добавить в
+упражнение" runs against Chrome's SYNTHETIC audio device and an auto-accepted permission prompt. Its result is
+labelled `syntheticMicrophone: true, realDeviceMicrophone: false`. It proves the recorder state machine, the
+upload of a recorded WebM and media processing; it is **not** a real-device microphone test, and a real
+permission prompt, hardware, OS routing and Safari/Firefox recording remain uncovered.
+
+Not covered by this mode: other browsers, touch input, screen readers, the 320 px layout of these screens,
+editing an existing exercise's media, AI evaluation and speech input (disabled by the server in this fixture),
+and the hint/recording flows of mechanics other than those listed above. Study answers were chosen to
+exercise partial results (a wrong cloze blank, a wrong first match pair), so a green run says nothing about
+a fully correct cloze or match attempt.
+
 Use `--chrome` for another existing Chrome executable. The page contract defaults to
 `[data-testid="identity-profile"]`, `[data-testid="logout"]`, and `[role="alert"]`;
 matching CLI selector options are available. Registration uses `#email`, `#username`,
@@ -83,9 +121,9 @@ Two synthetic accounts and two same-profile browser tabs exercise:
   These automated checks do not claim physical-device or AT coverage.
 
 The PKCE verifier is checked against the observed S256 challenge. Network interception
-blocks page requests outside the two exact origins (plus the local MinIO origin in media mode); at most 500 page requests in the base mode, 600 in authoring or 850 in media mode (allowing the local brand font and mark on repeated full navigations), and
+blocks page requests outside the two exact origins (plus the local MinIO origin in media mode); at most 500 page requests in the base mode, 750 in authoring, 950 in media or 3000 in mechanics mode (allowing the local brand font and mark on repeated full navigations), and
 150 Identity requests are allowed (full SPA navigations reload several bundled assets).
-Global deadline 180 seconds (CLI 30–300), individual CDP/HTTP/readiness deadlines, 1 MiB proxy
+Global deadline 180 seconds, 600 with `--mechanics` (CLI 30–900), individual CDP/HTTP/readiness deadlines, 1 MiB proxy
 request/response cap, 16 MiB static asset cap. Database has a 512 MiB/two-CPU limit; each JVM
 has a 384 MiB heap cap. This is behavioral smoke evidence, not load/soak evidence.
 

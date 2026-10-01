@@ -245,6 +245,41 @@ module.main()
                           {"bearer": False, "cookie": True, "csrf": True}], fixture.logout_requests)
         self.assertNotIn("synthetic", json.dumps(fixture.logout_requests))
 
+    def test_mechanics_flag_is_wired_and_requires_authoring_and_media(self):
+        for arguments in (["--mechanics"], ["--authoring", "--mechanics"]):
+            with self.subTest(arguments=arguments), patch.object(sys, "argv", ["run.py", "--dist", str(self.dist), *arguments]), \
+                    contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as exit_code:
+                HARNESS.main()
+            self.assertEqual(2, exit_code.exception.code)
+        runner = Path(__file__).with_name("run.py").read_text()
+        driver = Path(__file__).with_name("browser.mjs").read_text()
+        self.assertIn('"mechanics": self.args.mechanics', runner)
+        self.assertIn("import { runMechanics } from './mechanics.mjs'", driver)
+        self.assertIn("if (config.mechanics)", driver)
+        self.assertTrue(Path(__file__).with_name("mechanics.mjs").is_file())
+
+    def test_synthetic_microphone_flags_only_for_mechanics_baseline(self):
+        profile, spki = self.directory / "profile", "spki"
+        default = HARNESS.chrome_arguments("chrome", profile, spki, False)
+        mechanics = HARNESS.chrome_arguments("chrome", profile, spki, True)
+        fake = {"--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"}
+        self.assertIn("--mute-audio", default)
+        self.assertIn("--mute-audio", mechanics)
+        self.assertFalse(fake & set(default))
+        self.assertTrue(fake <= set(mechanics))
+        self.assertEqual("about:blank", mechanics[-1])
+
+    def test_mechanics_driver_is_syntactically_valid_and_never_claims_a_real_microphone(self):
+        source = Path(__file__).with_name("mechanics.mjs").read_text()
+        self.assertNotIn("${JSON.stringify", source)
+        self.assertIn("syntheticMicrophone: true", source)
+        self.assertIn("realDeviceMicrophone: false", source)
+        self.assertNotIn("realDeviceMicrophone: true", source)
+        node = shutil.which("node")
+        if node is not None:
+            result = subprocess.run([node, "--check", str(Path(__file__).with_name("mechanics.mjs"))], capture_output=True)
+            self.assertEqual(0, result.returncode)
+
 
 if __name__ == "__main__":
     unittest.main()
