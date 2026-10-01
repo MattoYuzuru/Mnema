@@ -3,11 +3,11 @@
     {
       "id": "F-AUTHOR-P0",
       "preconditions": ["owner has a current deck/item revision and stable selected node IDs"],
-      "event": "publish one SELF_CHECK, TYPED, CLOZE_SINGLE or SINGLE_CHOICE exercise",
-      "requestFixture": "authoring.json#/createTyped",
-      "persistedEffect": "one stable objective, immutable objective/exercise revisions, bindings and a new deck exercise root commit atomically",
+      "event": "publish one SELF_CHECK, FREE_RESPONSE, CLOZE, CHOICE or MATCH exercise with typed content slots, an answer key and an objective title",
+      "requestFixture": "mechanics.json#/createSelfCheck",
+      "persistedEffect": "one stable objective, immutable objective/exercise revisions, server-derived bindings, media references for every media block and a new deck exercise root commit atomically",
       "responseFixture": "authoring.json#/acknowledgement",
-      "errorOrRecovery": "foreign resources are opaque 404; stale pins are VERSION_CONFLICT; reload and republish"
+      "errorOrRecovery": "foreign resources are opaque 404; stale pins are VERSION_CONFLICT; a disabled or provider-less capability is CAPABILITY_UNAVAILABLE; reload and republish"
     },
     {
       "id": "F-START-SCHEDULED",
@@ -21,8 +21,8 @@
     {
       "id": "F-SUBMIT-SCHEDULED",
       "preconditions": ["active scheduled presentation and current learning epoch"],
-      "event": "submit typed, cloze, self-check or choice response",
-      "requestFixture": "attempts.json#/typedSubmit",
+      "event": "submit a free-response, cloze, self-check, choice or match response",
+      "requestFixture": "attempts.json#/freeResponseSubmit",
       "persistedEffect": "terminal receipt, normalized evidence, one reducer transition and 30-day raw child row commit atomically",
       "responseFixture": "attempts.json#/scheduledOutcome",
       "errorOrRecovery": "exact retry returns stored outcome; conflict or expiry never adds a transition"
@@ -89,6 +89,24 @@
       "persistedEffect": "objective locks in UUID order, epoch increment and zeroed current state; history retained",
       "responseFixture": "restart.json#/response",
       "errorOrRecovery": "exact retry returns stored response; old presentations become NOT_ASSESSED"
+    },
+    {
+      "id": "F-HINT",
+      "preconditions": ["pending unexpired CLOZE presentation owned by the caller", "the blank has firstLetterHint=true"],
+      "event": "reveal the first letter of one blank",
+      "requestFixture": "mechanics.json#/hintCommand",
+      "persistedEffect": "one append-only study_hint_reveal row (idempotent); evidence later records FIRST_LETTER:<blankId> and may be capped at MEDIUM",
+      "responseFixture": "mechanics.json#/hintResponse",
+      "errorOrRecovery": "a blank without firstLetterHint or a non-CLOZE presentation is INVALID_REQUEST; foreign or stale presentations are opaque 404"
+    },
+    {
+      "id": "F-CAPABILITY",
+      "preconditions": ["AI assessment or speech-to-text flag is false, or true without a provider"],
+      "event": "publish a FREE_RESPONSE exercise with the ai-semantic evaluator or TEXT_OR_SPEECH input",
+      "requestFixture": "mechanics.json#/rejectedAiAssessment",
+      "persistedEffect": "none; no exercise, objective or media reference is written",
+      "responseFixture": "mechanics.json#/capabilityUnavailableProblem",
+      "errorOrRecovery": "read GET /api/capabilities, publish the deterministic variant instead"
     }
   ]
 }

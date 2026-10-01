@@ -4,7 +4,7 @@ artifact:
   type: navigator
   title: "Mnema documentation"
   status: current
-  updated_at: "2026-09-28"
+  updated_at: "2026-09-29"
   owners: ["project-owner"]
   evidence_revision: "d7fd1b1d509a0ab598976f87af88101bfc3945ac"
 ---
@@ -21,7 +21,7 @@ artifact:
 1. **Current:** корневой [`AGENTS.md`](../AGENTS.md) — нормативные engineering,
    UX, security, quality и delivery rules. Других нормативных agent-guides нет.
 2. **Current:** [System overview](./system-overview.md) — что реально работает после
-   #74/#75 и что остаётся legacy.
+   #74–#76 и текущий replacement boundary.
 3. **Current:** [Repository guide](./engineering/repository-guide.md) — версии,
    каталоги, runtime boundaries, harnesses и полный gate.
 4. **Current:** [Local-only delivery](./operations/local-development-delivery.md) —
@@ -32,7 +32,7 @@ artifact:
    [принятый refinement](./engineering/epic-75-refinement.md) и исполняемый
    [`contracts/study`](../contracts/study/README.md).
 7. **Media:** [refinement Epic #76](./engineering/epic-76-refinement.md) — принятый
-   scope, архитектурные границы и задачи; production media ещё не реализовано.
+   scope, архитектурные границы и задачи.
 
 ## Product
 
@@ -40,6 +40,8 @@ artifact:
 |---|---|---|
 | accepted | [Owner decisions](./decisions/owner-decisions-2026-08.md) | Решения владельца и явно открытые вопросы. |
 | accepted | [Authoring and Study workflows](./product/authoring-and-study-workflows.md) | Product contract для authoring, Capture, exercises и режимов практики; P0 реализован в #74/#75. |
+| accepted | [UX refinement 2026-09-29](./product/ux-improvements-2026-09-29.md) | Приёмочные сценарии текущей доработки редактора, упражнений и основных экранов. |
+| accepted | [Final polish 2026-09-29](./product/final-polish-2026-09-29.md) | Удаление, заметки «На потом», пропуски и режимы проверки текста. |
 | accepted | [Exercise catalog](./product/exercise-catalog-v2.md) | Принятые mechanics, attempt/evidence, reducer и retention boundaries для #75. |
 | proposed | [Product direction](./product/product-direction-v2.md) | Product hypotheses, roadmap и метрики. |
 | proposed | [Launch economics](./product/russia-launch-economics-2026.md) | Коммерческие гипотезы. |
@@ -56,14 +58,16 @@ artifact:
 | current | [Counted-page contract](./architecture/counted-page-contract.md) | Реализованные counted-page/structural invariants. |
 | current | [Identity & Account guide](../backend/services/identity-account/guide.md) | Текущий identity runtime. |
 | current | [Learning API guide](../backend/services/learning/guide.md) | Текущий content, exercise и Study runtime. |
-| legacy | [`core`, `media`, `import`, `ai` guides](#legacy-и-superseded) | Replacement input; не шаблон для #75/#76. |
+| historical | [`v1-apache-final`](https://github.com/MattoYuzuru/Mnema/tree/v1-apache-final) | Последний полный срез старых сервисов и миграций. |
 
 ## Frontend
 
 | Статус | Документ | Назначение |
 |---|---|---|
+| current | [Mnema brand and UI contract](./frontend/mnema-brand-and-ui-contract.md) | Канонические правила оформления и проверки изменений в действующем Angular UI. |
 | accepted | [Design and experience](./frontend/design-and-experience-2026-09.md) | Выбранное paper/antiquity/indigo направление и a11y boundaries. |
 | historical | [Epic #74 UI evidence](./engineering/evidence/README.md#frontend-и-browser) | Снимки, browser и component evidence завершённого этапа. |
+| current | [Frontend brand restoration evidence](./engineering/evidence/frontend-brand-2026-09-28/README.md) | Снимки production Angular на desktop/mobile и результат реального HTTPS-сценария. |
 | superseded | [Experience audit 2026-08](./frontend/experience-audit-2026-08.md) | Findings сохранены, Liquid Glass/Focused Study Desk direction отклонено. |
 | historical | [Interactive prototype](../design/prototype/README.md) | Design evidence, не production architecture. |
 
@@ -122,7 +126,7 @@ infrastructure task; никакие прошлые staging результаты 
 - `docs/services/{auth,user,core,media,import,ai}-service.md` — **legacy** v1;
 - `docs/services/frontend.md` — **legacy** UI overview;
 - `docs/deploy/selfhost-public.md` и `docs/deploy/model-matrix.md` — **legacy** v1;
-- historical section в [local self-host guide](./deploy/selfhost-local.md) —
+- historical pointer в [local self-host guide](./deploy/selfhost-local.md) —
   ссылка на Apache-срез, не исполняемый путь текущего checkout;
 - `docs/engineering/agent-guide.md` — **superseded**, тонкий pointer на `AGENTS.md`.
 

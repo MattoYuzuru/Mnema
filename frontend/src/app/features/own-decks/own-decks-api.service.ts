@@ -78,6 +78,16 @@ export class OwnDecksApiService {
         }));
     }
 
+    delete(deck: OwnDeck): Observable<void> {
+        return this.http.delete(`${this.baseUrl}/decks/${encodeURIComponent(requireEntityId(deck.deckId))}`, {
+            headers: new HttpHeaders({ 'If-Match': expectedEtag(deck.rowVersion) }),
+            observe: 'response', responseType: 'text'
+        }).pipe(map(response => {
+            requireStatus(response, 204);
+            requirePrivateNoStore(response.headers);
+        }));
+    }
+
     private parseWrite(
         response: HttpResponse<unknown>,
         command: DeckCommand,

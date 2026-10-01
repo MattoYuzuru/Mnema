@@ -40,7 +40,7 @@ const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
 const TYPE = /^[a-z][a-z0-9_]{0,63}$/;
 const KNOWN_TYPES = new Set([
     'doc', 'paragraph', 'heading', 'blockquote', 'bullet_list', 'ordered_list',
-    'list_item', 'text', 'ruby', 'link', 'divider', 'image', 'audio', 'video', 'mermaid', 'table'
+    'list_item', 'text', 'ruby', 'link', 'divider', 'image', 'audio', 'video', 'youtube', 'mermaid', 'table'
 ]);
 const textIdentityKey = new PluginKey('mnema-text-identity');
 
@@ -94,6 +94,7 @@ const nodes: Record<string, NodeSpec> = {
         description: { default: null } }, 'Изображение'),
     audio: richAtom('audio', { ...commonAttrs, assetId: {}, title: {}, transcript: { default: null } }, 'Аудио'),
     video: richAtom('video', { ...commonAttrs, assetId: {}, title: {}, transcript: { default: null } }, 'Видео'),
+    youtube: richAtom('youtube', { ...commonAttrs, videoId: {}, title: {}, transcript: { default: null } }, 'YouTube'),
     mermaid: richAtom('mermaid', { ...commonAttrs, source: {}, title: {}, description: {} }, 'Схема Mermaid'),
     table: richAtom('table', { ...commonAttrs, caption: {}, summary: { default: null }, columns: {}, rows: {} },
         'Таблица'),
@@ -312,6 +313,9 @@ function importNode(node: NativeNode, slot: NativeSlot): ProseMirrorNode {
         case 'video':
             return nativeEditorSchema.node(node.type, { ...metadata, assetId: node.attrs['assetId'],
                 title: node.attrs['title'], transcript: node.attrs['transcript'] ?? null });
+        case 'youtube':
+            return nativeEditorSchema.node('youtube', { ...metadata, videoId: node.attrs['videoId'],
+                title: node.attrs['title'], transcript: node.attrs['transcript'] ?? null });
         case 'mermaid':
             return nativeEditorSchema.node('mermaid', { ...metadata, source: node.attrs['source'],
                 title: node.attrs['title'], description: node.attrs['description'] });
@@ -365,6 +369,11 @@ function exportNode(node: ProseMirrorNode): NativeNode {
         case 'audio':
         case 'video':
             attrs['assetId'] = String(node.attrs['assetId']);
+            attrs['title'] = String(node.attrs['title']);
+            addOptional(attrs, node.attrs, 'transcript');
+            break;
+        case 'youtube':
+            attrs['videoId'] = String(node.attrs['videoId']);
             attrs['title'] = String(node.attrs['title']);
             addOptional(attrs, node.attrs, 'transcript');
             break;

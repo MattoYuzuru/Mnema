@@ -74,6 +74,23 @@ describe('OwnDecksStore', () => {
         expect(store.canGoBack()).toBeFalse();
     });
 
+    it('refreshes the visible page without changing its cursor or discarding confirmed rows on failure', () => {
+        const newer = { ...fixtureDeck, deckId: '33333333-3333-4333-8333-333333333333' };
+        api.list.and.returnValues(
+            of({ items: [fixtureDeck], nextCursor: 'older-page' }),
+            of({ items: [newer], nextCursor: 'older-page' }),
+            throwError(() => new HttpErrorResponse({ status: 503 }))
+        );
+
+        store.loadList();
+        store.refreshVisibleList();
+        expect(store.listState().items.map(deck => deck.deckId)).toEqual([newer.deckId]);
+        store.refreshVisibleList();
+        expect(store.listState().phase).toBe('ready');
+        expect(store.listState().items.map(deck => deck.deckId)).toEqual([newer.deckId]);
+        expect(api.list.calls.allArgs()).toEqual([[null], [null], [null]]);
+    });
+
     it('retries an unknown create outcome with the exact same command', () => {
         api.create.and.returnValues(
             throwError(() => new HttpErrorResponse({ status: 0 })),

@@ -3,6 +3,7 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 
 import { DeckMetadata, validateDeckMetadata } from './own-deck.models';
+import { DeckDescriptionComponent } from './deck-description.component';
 import { DeckRecoveryContext, OwnDeckRecoveryService } from './own-deck-recovery.service';
 import {
     OwnDecksStore,
@@ -15,7 +16,7 @@ import {
 
 @Component({
     selector: 'app-own-deck-create-page',
-    imports: [ReactiveFormsModule, RouterLink],
+    imports: [ReactiveFormsModule, RouterLink, DeckDescriptionComponent],
     providers: [OwnDecksStore],
     templateUrl: './own-deck-create-page.component.html',
     styleUrl: './own-decks-page.css',

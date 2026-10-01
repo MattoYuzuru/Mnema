@@ -1,9 +1,16 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
-import { timer } from 'rxjs';
+import { map, timer } from 'rxjs';
 
+import { ChoiceListComponent } from '../../content/exercise/choice-list.component';
+import { ClozeBlankVerdict, ClozePassageComponent } from '../../content/exercise/cloze-passage.component';
+import { ExclusivePlaybackDirective } from '../../content/exercise/exclusive-playback.directive';
+import { Mechanic } from '../../content/exercise/exercise-content.models';
+import { LearnerBlocksComponent } from '../../content/exercise/learner-blocks.component';
+import { MnemaSelectComponent, MnemaSelectOption } from '../../core/controls/mnema-select.component';
+import { LearnerExerciseComponent, PairChecker } from './learner-exercise.component';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { OwnDeck } from '../own-decks/own-deck.models';
 import { StudyApiService } from './study-api.service';
@@ -16,10 +23,14 @@ import {
     ReplaySource,
     ScheduledStudyPreset,
     SelfRating,
-    StudyPresentation,
     StudyResponse,
     StudySession,
-    StudyStartIntent
+    StudyStartIntent,
+    isChoiceFeedback,
+    isClozeFeedback,
+    isFreeResponseFeedback,
+    isMatchFeedback,
+    isUnassessed
 } from './study.models';
 import { StudyRecoveryService } from './study-recovery.service';
 
@@ -28,36 +39,79 @@ type Phase = 'setup' | 'loading' | 'preparing' | 'answering' | 'revealed' | 'sub
 
 @Component({
     selector: 'app-study-session-page',
-    imports: [RouterLink],
+    imports: [RouterLink, MnemaSelectComponent, LearnerExerciseComponent, LearnerBlocksComponent, ClozePassageComponent,
+        ChoiceListComponent, ExclusivePlaybackDirective],
     templateUrl: './study-session-page.component.html',
     styleUrl: './study-session-page.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class StudySessionPageComponent {
+    readonly practiceOrderOptions: readonly MnemaSelectOption[] = [
+        { value: 'SEEDED', label: 'Случайно' }, { value: 'WEAKEST_FIRST', label: 'Сначала трудные' }
+    ];
     readonly deck = signal<OwnDeck | null>(null);
     readonly session = signal<ReadyStudySession | null>(null);
     readonly phase = signal<Phase>('loading');
-    readonly typedAnswer = signal('');
-    readonly selectedOptionId = signal<string | null>(null);
-    readonly clozeHintUsed = signal(false);
+    /** The response committed for the current presentation; feedback is shown next to it. */
+    readonly submitted = signal<StudyResponse | null>(null);
+    /** True while the answer surface holds input that would be lost by leaving. */
+    readonly answerDirty = signal(false);
+    readonly transcriptLoading = signal(false);
+    readonly hintPending = signal<string | null>(null);
     readonly feedback = signal<AttemptOutcome | null>(null);
     readonly message = signal<string | null>(null);
     readonly pending = signal<AttemptCommand | null>(null);
     readonly progress = signal<readonly MaterialProgress[]>([]);
     readonly progressNextCursor = signal<string | null>(null);
     readonly progressUnavailable = signal(false);
+    readonly progressLoading = signal(false);
+    readonly progressMoreError = signal(false);
+    readonly progressSentinel = viewChild<ElementRef<HTMLElement>>('progressSentinel');
     readonly replaySources = signal<readonly ReplaySource[]>([]);
+    readonly replayOptions = computed<readonly MnemaSelectOption[]>(() => this.replaySources().map(source => ({
+        value: source.sessionId,
+        label: `${this.formatDate(source.completedAt)} · ${source.presentationCount} заданий`
+    })));
     readonly selectedReplayId = signal<string | null>(null);
     readonly includeNewPractice = signal(false);
     readonly practiceOrder = signal<PracticeOrder>('SEEDED');
     readonly scheduledPreset = signal<ScheduledStudyPreset>('STANDARD');
     readonly supportLoading = signal(true);
     readonly current = computed(() => this.session()?.presentations[0] ?? null);
+    readonly hints = computed<Readonly<Record<string, string>>>(() => Object.fromEntries(
+        (this.current()?.hints ?? []).map(hint => [hint.blankId, hint.firstLetter])));
+    /** Pair checks go to the server; the board never decides correctness itself. */
+    readonly pairChecker = computed<PairChecker | null>(() => {
+        const presentation = this.current();
+        const session = this.session();
+        if (presentation === null || session === null) return null;
+        return pair => this.api.checkPair(this.deckId, session.sessionId, presentation.presentationId,
+            presentation.nonce, pair.leftId, pair.rightId).pipe(map(result => result.correct));
+    });
+    readonly clozeContent = computed(() => { const value = this.current(); return value?.type === 'CLOZE' ? value.content : null; });
+    readonly choiceContent = computed(() => { const value = this.current(); return value?.type === 'CHOICE' ? value.content : null; });
+    readonly matchContent = computed(() => { const value = this.current(); return value?.type === 'MATCH' ? value.content : null; });
+    readonly clozeFeedback = computed(() => { const value = this.feedback()?.feedback; return value && isClozeFeedback(value) ? value : null; });
+    readonly choiceFeedback = computed(() => { const value = this.feedback()?.feedback; return value && isChoiceFeedback(value) ? value : null; });
+    readonly matchFeedback = computed(() => { const value = this.feedback()?.feedback; return value && isMatchFeedback(value) ? value : null; });
+    readonly freeResponseFeedback = computed(() => { const value = this.feedback()?.feedback; return value && isFreeResponseFeedback(value) ? value : null; });
+    readonly unassessed = computed(() => { const value = this.feedback()?.feedback; return value && isUnassessed(value) ? value : null; });
+    readonly clozeVerdicts = computed<Readonly<Record<string, ClozeBlankVerdict>> | null>(() => {
+        const feedback = this.clozeFeedback();
+        return feedback === null ? null : Object.fromEntries(feedback.blanks.map(blank => [blank.blankId,
+            { correct: blank.correct, hinted: blank.hinted, reference: blank.reference }]));
+    });
+    readonly submittedText = computed(() => { const value = this.submitted(); return value?.kind === 'TEXT' ? value.text : ''; });
+    readonly submittedClozeValues = computed<Readonly<Record<string, string>>>(() => {
+        const value = this.submitted();
+        return value?.kind === 'CLOZE' ? Object.fromEntries(value.blanks.map(blank => [blank.blankId, blank.text])) : {};
+    });
+    readonly submittedOptionIds = computed(() => { const value = this.submitted(); return value?.kind === 'CHOICE' ? value.optionIds : []; });
+    readonly submittedRating = computed(() => { const value = this.submitted(); return value?.kind === 'SELF_CHECK' ? value.rating : null; });
     readonly position = computed(() => {
         const current = this.current();
         const session = this.session();
-        return current === null || session === null ? null
-            : `${current.ordinal + 1} из максимум ${session.budget.maxPresentations}`;
+        return current === null || session === null ? null : `Задание ${current.ordinal + 1}`;
     });
 
     private readonly route = inject(ActivatedRoute);
@@ -73,6 +127,16 @@ export class StudySessionPageComponent {
     private pollCount = 0;
 
     constructor() {
+        effect(onCleanup => {
+            const sentinel = this.progressSentinel()?.nativeElement;
+            const cursor = this.progressNextCursor();
+            if (!sentinel || !cursor || this.progressLoading() || this.progressMoreError()) return;
+            const observer = new IntersectionObserver(entries => {
+                if (entries.some(entry => entry.isIntersecting)) this.loadMoreProgress();
+            }, { rootMargin: '0px 0px 700px 0px' });
+            observer.observe(sentinel);
+            onCleanup(() => observer.disconnect());
+        });
         const deckId = this.route.snapshot.paramMap.get('deckId');
         if (deckId === null) throw new Error('Study route requires deckId.');
         this.deckId = deckId.toLowerCase();
@@ -85,50 +149,70 @@ export class StudySessionPageComponent {
         if (recovered === null) this.phase.set('setup');
         else {
             this.pending.set(recovered.pending);
-            if (recovered.pending?.response.kind === 'TEXT') this.typedAnswer.set(recovered.pending.response.text);
-            if (recovered.pending?.response.kind === 'CHOICE') {
-                this.selectedOptionId.set(recovered.pending.response.optionId);
-            }
-            this.clozeHintUsed.set(recovered.pending?.hintsUsed.includes('REVEAL_FIRST_GRAPHEME') ?? false);
+            this.submitted.set(recovered.pending?.response ?? null);
             this.resume(recovered.sessionId, recovered.pending !== null);
         }
     }
 
-    setTypedAnswer(value: string): void { this.typedAnswer.set(value); }
-
-    reveal(): void {
-        if (this.phase() !== 'answering' || this.current()?.type !== 'SELF_CHECK') return;
-        this.phase.set('revealed');
-        this.focusAfterRender('[data-first-rating]');
+    /** Commits the learner's response for the current presentation. */
+    answer(response: StudyResponse): void {
+        if (this.phase() !== 'answering') return;
+        this.submit(response);
     }
 
-    submitTyped(): void {
-        const type = this.current()?.type;
-        if (this.phase() !== 'answering' || (type !== 'TYPED' && type !== 'CLOZE_SINGLE')) return;
-        this.submit({ kind: 'TEXT', text: this.typedAnswer() },
-            type === 'CLOZE_SINGLE' && this.clozeHintUsed() ? ['REVEAL_FIRST_GRAPHEME'] : []);
+    setAnswerDirty(value: boolean): void { this.answerDirty.set(value); }
+
+    /** Asks the server for one blank's first letter; the letter is never derived in the browser. */
+    requestHint(blankId: string): void {
+        const current = this.current();
+        const session = this.session();
+        if (this.phase() !== 'answering' || current?.type !== 'CLOZE' || session === null || this.hintPending() !== null
+            || this.hints()[blankId] !== undefined) return;
+        this.hintPending.set(blankId);
+        this.api.hint(this.deckId, session.sessionId, current.presentationId, current.nonce, blankId)
+            .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+                next: result => {
+                    this.hintPending.set(null);
+                    this.session.update(value => value === null ? null : { ...value,
+                        presentations: value.presentations.map(item => item.presentationId === result.presentationId
+                            ? { ...item, hints: [...item.hints.filter(hint => hint.blankId !== result.blankId),
+                                { blankId: result.blankId, firstLetter: result.firstLetter }] } : item) });
+                },
+                error: () => {
+                    this.hintPending.set(null);
+                    this.message.set('Не удалось получить подсказку. Попробуйте ещё раз.');
+                }
+            });
     }
 
-    showClozeHint(): void {
-        if (this.phase() === 'answering' && this.current()?.type === 'CLOZE_SINGLE') this.clozeHintUsed.set(true);
+    revealTranscript(): void {
+        const current = this.current();
+        const session = this.session();
+        if (this.phase() !== 'answering' || current === null || session === null
+            || current.transcriptRevealed || this.transcriptLoading()) return;
+        this.transcriptLoading.set(true);
+        this.api.revealTranscript(this.deckId, session.sessionId, current.presentationId, current.nonce, current.type)
+            .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+                next: reveal => {
+                    this.session.update(value => value === null ? null : { ...value,
+                        presentations: value.presentations.map(item => item.presentationId === reveal.presentationId
+                            ? { ...item, ...reveal.content, transcriptRevealed: true } : item) });
+                    this.transcriptLoading.set(false);
+                },
+                error: () => { this.transcriptLoading.set(false);
+                    this.message.set('Не удалось открыть транскрипт. Попробуйте ещё раз.'); }
+            });
     }
 
-    firstGrapheme(value: string): string {
-        const first = new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(value)[Symbol.iterator]().next();
-        return first.done ? '' : first.value.segment;
+    heading(type: Mechanic): string {
+        return ({ SELF_CHECK: 'Вспомните, затем сверьтесь', FREE_RESPONSE: 'Напишите ответ', CLOZE: 'Заполните пропуски',
+            CHOICE: 'Выберите ответ', MATCH: 'Соедините пары' })[type];
     }
 
-    selectOption(optionId: string): void { this.selectedOptionId.set(optionId); }
-
-    submitChoice(): void {
-        const optionId = this.selectedOptionId();
-        if (this.phase() !== 'answering' || this.current()?.type !== 'SINGLE_CHOICE' || optionId === null) return;
-        this.submit({ kind: 'CHOICE', optionId }, []);
-    }
-
-    rate(rating: SelfRating): void {
-        if (this.phase() !== 'revealed' || this.current()?.type !== 'SELF_CHECK') return;
-        this.submit({ kind: 'SELF_CHECK', rating }, ['REVEAL']);
+    /** Item of the issued MATCH content, used to show a pair's media again in feedback. */
+    matchItem(side: 'left' | 'right', itemId: string) {
+        const content = this.matchContent();
+        return (side === 'left' ? content?.left : content?.right)?.find(item => item.itemId === itemId) ?? null;
     }
 
     retryPending(): void {
@@ -147,9 +231,7 @@ export class StudySessionPageComponent {
         const session = this.session();
         if (session === null || this.phase() !== 'feedback') return;
         this.feedback.set(null);
-        this.typedAnswer.set('');
-        this.selectedOptionId.set(null);
-        this.clozeHintUsed.set(false);
+        this.resetAnswer();
         const remaining = session.presentations.slice(1);
         if (remaining.length === 0) {
             this.phase.set('loading');
@@ -202,8 +284,10 @@ export class StudySessionPageComponent {
 
     loadMoreProgress(): void {
         const cursor = this.progressNextCursor();
-        if (cursor !== null) this.loadProgress(cursor, true);
+        if (cursor !== null && !this.progressLoading()) this.loadProgress(cursor, true);
     }
+
+    loadMoreProgressRetry(): void { this.loadProgress(); }
 
     progressLabel(state: MaterialProgress['state']): string {
         return ({ NOT_STARTED: 'Не начат', LEARNING: 'В изучении', DUE: 'Пора повторить',
@@ -217,7 +301,7 @@ export class StudySessionPageComponent {
     }
 
     canLeave(): boolean {
-        if (this.phase() !== 'submitting' && this.phase() !== 'unknown' && this.typedAnswer().length === 0) return true;
+        if (this.phase() !== 'submitting' && this.phase() !== 'unknown' && !this.answerDirty()) return true;
         return window.confirm('Сессия сохранена в этой вкладке. Выйти и продолжить её позже?');
     }
 
@@ -226,11 +310,16 @@ export class StudySessionPageComponent {
             NOT_ASSESSED: 'Без оценки', UNAVAILABLE: 'Проверка недоступна' })[outcome.feedback.result];
     }
 
-    ruleName(rule: string): string {
-        return ({ UNICODE_NFC: 'единая форма Unicode', TRIM: 'пробелы по краям не учитываются',
-            CASE_FOLD: 'регистр не учитывается', SINGLE_BLANK: 'проверен один пропуск',
-            SERVER_ISSUED_OPTION: 'выбран серверный вариант', SELF_REPORT: 'самооценка после показа ответа'
-        } as Record<string, string>)[rule] ?? rule;
+    progressMessage(outcome: AttemptOutcome): string {
+        const transition = outcome.transition;
+        if (!transition) return 'Дополнительная практика помогает закрепить материал.';
+        const delta = transition.afterLevel - transition.beforeLevel;
+        if (delta < 0) return 'К этому материалу стоит вернуться: повторение поможет его закрепить.';
+        if (delta > 1) return 'Заметный прогресс — вы всё увереннее вспоминаете этот материал.';
+        if (delta > 0) return 'Есть прогресс — материал запоминается лучше.';
+        return outcome.feedback.result === 'CORRECT'
+            ? 'Вы закрепили материал. Уровень пока не изменился.'
+            : 'Уровень пока не изменился. Дайте себе время и повторите материал.';
     }
 
     ratingLabel(rating: SelfRating): string {
@@ -243,6 +332,8 @@ export class StudySessionPageComponent {
         this.pending.set(null);
         this.feedback.set(null);
         this.session.set(null);
+        this.resetAnswer();
+        this.pollCount = 0;
         this.phase.set('loading');
         this.message.set(null);
         const commandId = crypto.randomUUID();
@@ -280,17 +371,25 @@ export class StudySessionPageComponent {
                 if (reconciling && pending !== null
                     && !session.presentations.some(item => item.presentationId === pending.presentationId)) {
                     this.pending.set(null);
+                    this.resetAnswer();
                     this.recovery.save({ deckId: this.deckId, sessionId, pending: null });
-                    this.message.set('Сервер уже принял предыдущую попытку. Результат не восстановлен, но прогресс не будет записан повторно.');
+                    this.message.set('Предыдущий ответ уже учтён. Его результат пока недоступен, но прогресс не будет записан повторно.');
                 }
                 this.apply(session, reconciling && this.pending() !== null);
             },
             error: error => {
                 if (this.errorCode(error) === 'SESSION_EXPIRED') {
                     this.phase.set('expired'); this.recovery.clear();
-                } else this.handle(error, 'Не удалось восстановить Study-сессию.');
+                } else this.handle(error, 'Не удалось вернуться к занятию.');
             }
         });
+    }
+
+    private resetAnswer(): void {
+        this.submitted.set(null);
+        this.answerDirty.set(false);
+        this.hintPending.set(null);
+        this.transcriptLoading.set(false);
     }
 
     private apply(session: ReadyStudySession, pendingUnknown: boolean): void {
@@ -304,30 +403,30 @@ export class StudySessionPageComponent {
         }
         if (session.presentations.length === 0) {
             this.phase.set('unavailable');
-            this.message.set('Текущая порция завершена, но сервер ещё не выдал продолжение. Попробуйте восстановить сессию.');
+            this.message.set('Пока не удалось продолжить занятие. Попробуйте восстановить его.');
             return;
         }
         this.recovery.save({ deckId: this.deckId, sessionId: session.sessionId, pending: this.pending() });
         if (pendingUnknown) {
             this.phase.set('unknown');
-            this.message.set('Исход предыдущего запроса неизвестен. Повторите ровно ту же попытку или сверьтесь с сервером.');
+            this.message.set('Результат предыдущего ответа пока неизвестен. Повторите отправку того же ответа или проверьте занятие.');
             return;
         }
-        const type = session.presentations[0].type;
         this.phase.set('answering');
         this.focusAfterRender('[data-answer-control]');
     }
 
-    private submit(response: StudyResponse, hintsUsed: readonly string[]): void {
+    private submit(response: StudyResponse): void {
         const presentation = this.current();
         const session = this.session();
         if (presentation === null || session === null) return;
         const command: AttemptCommand = {
             attemptId: crypto.randomUUID(), presentationId: presentation.presentationId, nonce: presentation.nonce,
-            response, hintsUsed, confidence: null,
+            response, confidence: null,
             durationMs: Math.min(3_600_000, Math.max(0, this.recovery.now() - this.presentedAt))
         };
         this.pending.set(command);
+        this.submitted.set(response);
         this.recovery.save({ deckId: this.deckId, sessionId: session.sessionId, pending: command });
         this.send(session.sessionId, command);
     }
@@ -347,13 +446,13 @@ export class StudySessionPageComponent {
                 const code = this.errorCode(error);
                 if (error instanceof HttpErrorResponse && error.status === 0) {
                     this.phase.set('unknown');
-                    this.message.set('Связь оборвалась после отправки. Не меняйте ответ: безопасно повторите ту же попытку.');
+                    this.message.set('Связь оборвалась после отправки. Повторите отправку того же ответа.');
                 } else if (code === 'IDEMPOTENCY_CONFLICT') {
                     this.phase.set('conflict');
-                    this.message.set('Эта карточка уже завершена другой попыткой. Сверьтесь с сервером — новый ответ не отправлен.');
+                    this.message.set('На это задание уже ответили. Проверьте занятие: новый ответ не отправлен.');
                 } else if (code === 'SESSION_EXPIRED' || code === 'PRESENTATION_EXPIRED') {
                     this.phase.set('expired'); this.recovery.clear();
-                } else this.handle(error, 'Сервер отклонил попытку. Ответ сохранён в этой вкладке.');
+                } else this.handle(error, 'Не удалось принять ответ. Он остался в этой вкладке.');
             }
         });
     }
@@ -385,16 +484,20 @@ export class StudySessionPageComponent {
     }
 
     private loadProgress(cursor: string | null = null, append = false): void {
-        this.api.progress(this.deckId, 100, cursor).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        this.progressLoading.set(true);
+        this.progressMoreError.set(false);
+        this.api.progress(this.deckId, 20, cursor).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
             next: page => {
                 this.progress.set(append ? [...this.progress(), ...page.items] : page.items);
                 this.progressNextCursor.set(page.nextCursor);
                 this.progressUnavailable.set(false);
+                this.progressLoading.set(false);
             },
             error: () => {
                 if (!append) this.progress.set([]);
-                this.progressNextCursor.set(null);
-                this.progressUnavailable.set(true);
+                if (append) this.progressMoreError.set(true);
+                else this.progressUnavailable.set(true);
+                this.progressLoading.set(false);
             }
         });
     }

@@ -31,7 +31,8 @@ Learning runtime. Production deployment и native offline apps здесь отс
 
 ## Принятые продуктовые решения
 
-1. Первый upload-набор: JPEG, PNG, WebP, GIF; MP3, M4A; MP4. Для короткого
+1. Первый upload-набор: JPEG, PNG, WebP, GIF; MP3, M4A, WebM/Opus как вход
+   браузерной аудиозаписи; MP4. Для короткого
    телефонного видео и браузерной записи дополнительно принимаются MOV/HEVC и
    WebM как **вход**. Обязательные fixture-профили: MOV/MP4 с HEVC Main и Main10
    (включая orientation/HDR metadata), WebM с VP8/Opus и VP9/Opus, MP4 с
@@ -82,6 +83,9 @@ media_asset   = stable assetId + owner, provenance, generation, state, source bl
 media_variant = source asset + purpose/format/dimensions + derived immutable blob
 content_ref   = item revision + stable nodeId + authorized assetId
 ```
+
+Транспортный API, состояния и scoped policy описаны в
+[media upload transport](media-upload-transport.md).
 
 `assetId` выдаётся при `upload-intent` до получения байтов. Номер `generation`
 ограждает ассет от запоздалого завершения прежней попытки. Новая попытка
@@ -200,6 +204,11 @@ refinement не принят, и затем In progress до integrated acceptan
 
 ## Общие acceptance gates
 
+Локальное интеграционное evidence для #242: [browser/Study](evidence/epic-76/integrated-browser/README.md),
+[five-minute phone-derived worker](evidence/epic-76/phone-worker.md),
+[component visual checks](evidence/epic-76/media-visual/README.md),
+[offline manifest](media-offline-manifest.md) и [physical GC](media-gc.md).
+
 - Пользователь проходит весь путь upload/record → draft → publish → Browse →
   media Study → retry/replay без ручного refresh и без потери текста/asset ref.
 - Недоступный файл не оценивается как неверный ответ. Истёкшая ссылка обновляется
@@ -221,6 +230,22 @@ refinement не принят, и затем In progress до integrated acceptan
 - Backend `quality`, frontend `lint`, `test`, `build` и hosted quality checks
   проходят на точном PR head до merge. Protected squash создаёт новый SHA;
   integrated main checks повторяются после merge. Нет требования деплоя.
+
+## Граница legacy media для #73/#146/#147
+
+Новый Learning path использует `backend/services/learning` и
+`/api/media-assets`; он не обращается к v1 `backend/services/media`,
+`backend/services/core` media resolve client/cache или старому Angular
+`core/services/media-api.service.ts`. Эти v1 файлы, модуль
+`backend/services/media`, PostgreSQL schema `app_media`, legacy `/api/media`
+routes, `MEDIA_BASE_URL`/`MEDIA_INTERNAL_TOKEN` и исторический bucket,
+подставляемый через `AWS_BUCKET_NAME` (в старых dev/prod defaults
+`mnema-media`), являются **целями read-only inventory** задачи #73/#146/#147.
+Имя bucket не является разрешением на удаление: manifest purge обязан получить
+точные endpoint, bucket, version IDs, delete markers и multipart IDs из
+фактической среды и явно сохранить все новые Learning объекты. Удаление
+legacy schema/service/objects и запуск purge не входят в #76; до
+авторизованного cutover эти исходники остаются в дереве для аудита.
 
 ## Источники для реализации
 

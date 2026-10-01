@@ -212,8 +212,8 @@ grep -Fq 'STAGING_POSTBOX_ACCESS_KEY' "$STAGING_RUNBOOK"
 grep -Fq 'live outbound delivery is not claimed by the maintenance smoke' "$STAGING_RUNBOOK"
 grep -Fq 'path: /' "$REPO_ROOT/k8s/auth-ingress.yaml"
 if grep -R -E 'UserApiClient|USER_BASE_URL|app\.user\.base-url' \
-  "$REPO_ROOT/backend/services/core/src/main" >/dev/null; then
-  echo 'Production sources must not call the deleted standalone user runtime' >&2
+  "$REPO_ROOT/backend/services/learning/src/main" "$REPO_ROOT/backend/services/identity-account/src/main" >/dev/null; then
+  echo 'Replacement production sources must not call the deleted standalone user runtime' >&2
   exit 1
 fi
 
@@ -432,10 +432,8 @@ import json
 import os
 from pathlib import Path
 import re
-import shutil
 import subprocess
 import sys
-import tempfile
 
 root = Path(sys.argv[1])
 compose = root / "docker-compose.yml"
@@ -490,31 +488,19 @@ assert identity_mount["read_only"] is True
 source = compose.read_text()
 assert all(name.startswith("MNEMA_LOCAL_") for name in re.findall(r"\$\{([A-Z_]+)", source))
 
-# Execute retired Bash entrypoints only in a disposable tree. Any old mkdir or
-# Docker call fails the test; no existing local stack or config can be touched.
-with tempfile.TemporaryDirectory() as directory:
-    sandbox = Path(directory)
-    (sandbox / "scripts").mkdir()
-    (sandbox / "bin").mkdir()
-    docker = sandbox / "bin/docker"
-    docker.write_text("#!/bin/sh\nprintf 'called' > \"$MNEMA_TEST_DOCKER_MARKER\"\nexit 1\n")
-    docker.chmod(0o700)
-    for name in ("mnema-local", "mnema-public"):
-        script = sandbox / "scripts" / (name + ".sh")
-        shutil.copy2(root / "scripts" / script.name, script)
-        child_env = {**environment, "PATH": str(sandbox / "bin") + os.pathsep + os.environ["PATH"],
-                     "MNEMA_TEST_DOCKER_MARKER": str(sandbox / "docker-called")}
-        refused = subprocess.run(["bash", str(script)], cwd=sandbox, env=child_env,
-                                 capture_output=True, text=True, timeout=10, check=False)
-        assert refused.returncode == 64 and "retired" in refused.stderr
-        assert not (sandbox / ".mnema").exists()
-        assert not (sandbox / "docker-called").exists()
-        # PowerShell may not be installed on CI; its refusal must precede all
-        # legacy path resolution, file creation and stack-stop commands.
-        powershell = (root / "scripts" / (name + ".ps1")).read_text()
-        prefix = powershell.split("exit 64", 1)[0]
-        assert "[Console]::Error.WriteLine(" in prefix and "retired" in prefix
-        assert len(prefix.splitlines()) == 2
+# Superseded launchers and their deployable source are absent, not merely gated.
+for service in ("core", "media", "import", "ai"):
+    assert not (root / "backend/services" / service).exists()
+    assert f'"services:{service}"' not in (root / "backend/settings.gradle.kts").read_text()
+for launcher in ("mnema-local", "mnema-public"):
+    for suffix in (".sh", ".ps1"):
+        assert not (root / "scripts" / (launcher + suffix)).exists()
+routes = (root / "frontend/src/app/app.routes.ts").read_text()
+runtime_config = (root / "frontend/src/app/app.config.ts").read_text()
+for old_route in ("my-study", "public-decks", "settings", "admin"):
+    assert f"path: '{old_route}'" not in routes
+for old_api in ("/api/core", "/api/media", "/api/import", "/api/ai", "/api/user"):
+    assert old_api not in runtime_config
 print("local_replacement_contract=ok")
 PY_LOCAL_COMPOSE
 

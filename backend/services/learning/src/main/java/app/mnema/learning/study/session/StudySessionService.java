@@ -1,7 +1,10 @@
 package app.mnema.learning.study.session;
 
-import app.mnema.learning.catalog.content.storage.NativeSnapshotDecoder;
+import app.mnema.learning.capability.LearningCapabilities;
+import app.mnema.learning.catalog.content.NativeNodeIndex;
 import app.mnema.learning.catalog.content.storage.NativeStorageBatches;
+import app.mnema.learning.catalog.exercise.AnswerKey;
+import app.mnema.learning.catalog.exercise.ExerciseType;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.id.UuidPolicy;
@@ -17,13 +20,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.ByteBuffer;
+import java.security.SecureRandom;
+import java.util.random.RandomGenerator;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
-import java.util.ArrayDeque;
 import java.util.Base64;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.List;
 import java.util.UUID;
 
@@ -34,12 +40,16 @@ public class StudySessionService {
     private final StudySessionRepository repository;
     private final CommandReceiptService receipts;
     private final NativeStorageBatches nativeBatches;
+    private final LearningCapabilities capabilities;
+    // MATCH order must not be reproducible from identifiers a client holds.
+    private final RandomGenerator shuffle = new SecureRandom();
 
     public StudySessionService(StudySessionRepository repository, CommandReceiptService receipts,
-                               ImmutableStorage storage) {
+                               ImmutableStorage storage, LearningCapabilities capabilities) {
         this.repository = repository;
         this.receipts = receipts;
         this.nativeBatches = new NativeStorageBatches(storage);
+        this.capabilities = capabilities;
     }
 
     @Transactional(timeout = 10)
@@ -129,6 +139,60 @@ public class StudySessionService {
         return response(session);
     }
 
+    /** Records a deliberate accessibility accommodation before disclosing pinned transcript text. */
+    @Transactional(timeout = 10)
+    public ObjectNode revealTranscript(UUID actor, UUID deckId, UUID sessionId, UUID presentationId, String nonce) {
+        StudySessionRepository.Presentation row = pendingForReveal(actor, deckId, sessionId, presentationId, nonce);
+        if (!LearnerContent.hasTranscript(row.content())) throw new InvalidRequestException();
+        repository.recordAccommodation(actor, sessionId, presentationId, repository.now());
+        return JsonNodeFactory.instance.objectNode().put("presentationId", presentationId.toString())
+                .put("transcriptRevealed", true).set("content", LearnerContent.view(row.content(), true));
+    }
+
+    /**
+     * Records a first-letter hint on one blank before disclosing it. The server is the only authority on
+     * hint use: evidence later reads these rows, never a client claim. A repeat returns the same letter.
+     */
+    @Transactional(timeout = 10)
+    public ObjectNode revealHint(UUID actor, UUID deckId, UUID sessionId, UUID presentationId,
+                                 StudyHintCommand command) {
+        StudySessionRepository.Presentation row = pendingForReveal(actor, deckId, sessionId, presentationId,
+                command.nonce());
+        if (!row.type().equals(ExerciseType.CLOZE.name())) throw new InvalidRequestException();
+        String letter = hintableBlanks(row).get(command.blankId());
+        if (letter == null) throw new InvalidRequestException();
+        repository.recordHint(actor, sessionId, presentationId, command.blankId(), repository.now());
+        return JsonNodeFactory.instance.objectNode().put("presentationId", presentationId.toString())
+                .put("blankId", command.blankId().toString()).put("firstLetter", letter);
+    }
+
+    private StudySessionRepository.Presentation pendingForReveal(UUID actor, UUID deckId, UUID sessionId,
+                                                                 UUID presentationId, String nonce) {
+        own(actor, deckId);
+        StudySessionRepository.Session session = repository.sessionForUpdate(actor, deckId, sessionId)
+                .orElseThrow(ResourceNotFoundException::new);
+        Instant now = repository.now();
+        requireCurrent(session, now);
+        if (!session.status().equals("ACTIVE")) throw new ResourceNotFoundException();
+        return repository.pendingForReveal(actor, deckId, sessionId, presentationId, nonce, now)
+                .orElseThrow(ResourceNotFoundException::new);
+    }
+
+    /** Blank id to first letter, for blanks whose author enabled a first-letter hint. */
+    private static Map<UUID, String> hintableBlanks(StudySessionRepository.Presentation row) {
+        AnswerKey.Cloze key = (AnswerKey.Cloze) AnswerKey.parse(ExerciseType.CLOZE, row.answerKey());
+        Map<UUID, String> keyed = new HashMap<>();
+        key.blanks().forEach(blank -> keyed.put(blank.blankId(), LearnerContent.firstLetter(blank.rule().accepted().getFirst())));
+        Map<UUID, String> result = new HashMap<>();
+        for (JsonNode segment : row.content().path("passage")) {
+            if (segment.path("kind").textValue().equals("BLANK") && segment.path("firstLetterHint").booleanValue()) {
+                UUID blankId = UUID.fromString(segment.path("blankId").textValue());
+                result.put(blankId, keyed.get(blankId));
+            }
+        }
+        return result;
+    }
+
     @Transactional(readOnly = true, timeout = 10)
     public ObjectNode replaySources(UUID actor, UUID deckId, String trustedTimezone) {
         own(actor, deckId);
@@ -190,14 +254,18 @@ public class StudySessionService {
         int start = session.issuedCount() == 0 ? Math.floorMod(session.seed(), generation.candidateCount())
                 : session.scanCursor();
         List<StudySessionRepository.Candidate> candidates = repository.eligibleCandidates(session, start,
-                target * BoundedCandidatePlanner.SCAN_MULTIPLIER, now);
+                target * BoundedCandidatePlanner.SCAN_MULTIPLIER, now,
+                capabilities.aiAssessment().available());
         int batch = 0;
         int newObjectives = 0;
+        // One decoded snapshot per pinned item revision for the whole batch.
+        LearnerContent.TextSource texts = materialText(session.deckId());
         int scanSize = Math.min(generation.candidateCount(), target * BoundedCandidatePlanner.SCAN_MULTIPLIER);
         int cursor = (int) (((long) start + scanSize) % generation.candidateCount());
         for (StudySessionRepository.Candidate candidate : candidates) {
-            insert(session, candidate, session.issuedCount() + batch++, now);
-            if (!candidate.introduced()) newObjectives++;
+            insert(session, candidate, session.issuedCount() + batch++, now, texts);
+            // Only scheduled sessions have a new-objective budget; practice may include unseen material freely.
+            if (session.mode() == StudySessionCommand.Mode.SCHEDULED && !candidate.introduced()) newObjectives++;
             if (batch == target) break;
         }
         if (batch == 0) {
@@ -236,80 +304,33 @@ public class StudySessionService {
     }
 
     private void insert(StudySessionRepository.Session session, StudySessionRepository.Candidate candidate,
-                        int ordinal, Instant now) {
-        List<JsonNode> bindingRows = repository.bindings(session.deckId(), candidate.exerciseId(),
-                candidate.exerciseRevisionId());
-        ArrayNode bindings = JsonNodeFactory.instance.arrayNode();
-        bindingRows.forEach(binding -> bindings.add(binding.deepCopy()));
-        ObjectNode prompt = resolvePrompt(session.deckId(), candidate.prompt());
-        ArrayNode options = JsonNodeFactory.instance.arrayNode();
-        if (candidate.type().equals("SINGLE_CHOICE")) {
-            bindingRows.stream().filter(binding -> binding.path("role").textValue().equals("OPTION"))
-                    .forEach(binding -> options.addObject().put("optionId", binding.path("bindingId").textValue())
-                            .put("text", resolveBindingText(session.deckId(), binding)));
-        }
+                        int ordinal, Instant now, LearnerContent.TextSource texts) {
+        ExerciseType type = ExerciseType.fromWire(candidate.type()).orElseThrow(IllegalStateException::new);
+        UUID presentation = UUID.randomUUID();
+        // Resolved and shuffled once: reads and replays return exactly what was persisted here.
+        LearnerContent.Resolved learner = LearnerContent.issue(type, candidate.content(),
+                AnswerKey.parse(type, candidate.answerKey()), shuffle, texts);
         long epoch = session.mode() == StudySessionCommand.Mode.SCHEDULED
                 ? repository.ensureState(session.accountId(), session.deckId(), candidate.objectiveId(),
                         session.configId(), now)
                 : repository.stateEpoch(session.accountId(), session.deckId(), candidate.objectiveId()).orElse(0L);
-        UUID presentation = UUID.randomUUID();
         repository.insertPresentation(session.accountId(), session.sessionId(), session.deckId(),
-                session.generationId(), candidate, presentation, ordinal, nonce(), epoch, prompt, options, bindings,
-                now, now.plus(SESSION_LIFETIME));
+                session.generationId(), candidate, presentation, ordinal, nonce(), epoch, learner.content(),
+                learner.reveal(), now, now.plus(SESSION_LIFETIME));
         if (session.mode() == StudySessionCommand.Mode.SCHEDULED) {
             repository.insertExposure(session.accountId(), session.sessionId(), presentation, session.deckId(),
                     candidate.objectiveId(), epoch, now);
         }
     }
 
-    private ObjectNode resolvePrompt(UUID deck, JsonNode spec) {
-        if (spec.path("kind").textValue().equals("CUSTOM_TEXT")) {
-            return JsonNodeFactory.instance.objectNode().put("kind", "TEXT").put("text", spec.path("text").textValue());
-        }
-        String text = resolveNodeText(deck, UUID.fromString(spec.path("memberKey").textValue()),
-                UUID.fromString(spec.path("itemRevisionId").textValue()),
-                UUID.fromString(spec.path("nodeId").textValue()));
-        return JsonNodeFactory.instance.objectNode().put("kind", "TEXT").put("text", text);
-    }
-
-    private String resolveBindingText(UUID deck, JsonNode binding) {
-        JsonNode ids = binding.path("nodeIds");
-        if (ids.isArray() && !ids.isEmpty()) {
-            return resolveNodeText(deck, UUID.fromString(binding.path("memberKey").textValue()),
-                    UUID.fromString(binding.path("itemRevisionId").textValue()),
-                    UUID.fromString(ids.get(0).textValue()));
-        }
-        return binding.path("display").path("text").asText("");
-    }
-
-    private String resolveNodeText(UUID deck, UUID member, UUID revision, UUID nodeId) {
-        StudySessionRepository.Material material = repository.material(deck, member, revision)
-                .orElseThrow(IllegalStateException::new);
-        NativeSnapshotDecoder decoder = new NativeSnapshotDecoder(new ObjectRef(material.scopeId(), material.contentRootId()));
-        while (!decoder.isComplete()) nativeBatches.readNext(decoder);
-        ArrayDeque<JsonNode> pending = new ArrayDeque<>();
-        pending.add(decoder.snapshot().document().toJson().path("root"));
-        while (!pending.isEmpty()) {
-            JsonNode node = pending.removeLast();
-            if (node.path("id").textValue().equals(nodeId.toString())) return textContent(node).strip();
-            node.path("content").forEach(pending::add);
-        }
-        throw new IllegalStateException("Pinned node is missing");
-    }
-
-    private static String textContent(JsonNode root) {
-        StringBuilder result = new StringBuilder();
-        ArrayDeque<JsonNode> pending = new ArrayDeque<>();
-        pending.add(root);
-        while (!pending.isEmpty()) {
-            JsonNode node = pending.removeFirst();
-            if (node.path("type").textValue().equals("text") && node.path("attrs").path("text").isTextual()) {
-                if (!result.isEmpty()) result.append(' ');
-                result.append(node.path("attrs").path("text").textValue());
-            }
-            node.path("content").forEach(pending::addLast);
-        }
-        return result.toString();
+    /** Quoted material text comes from the pinned item revision; each snapshot is read at most once. */
+    private LearnerContent.TextSource materialText(UUID deck) {
+        Map<List<UUID>, NativeNodeIndex> indexes = new HashMap<>();
+        return material -> indexes.computeIfAbsent(List.of(material.memberKey(), material.itemRevisionId()), key -> {
+            StudySessionRepository.Material pinned = repository.material(deck, material.memberKey(),
+                    material.itemRevisionId()).orElseThrow(IllegalStateException::new);
+            return NativeNodeIndex.load(nativeBatches, new ObjectRef(pinned.scopeId(), pinned.contentRootId()));
+        }).text(material.nodeId()).orElseThrow(() -> new IllegalStateException("Pinned node is missing"));
     }
 
     private ObjectNode response(StudySessionRepository.Session session) {
@@ -342,27 +363,25 @@ public class StudySessionService {
         return result;
     }
 
+    /** The only learner-facing projection: no key, no accepted text, no titles, no unrevealed transcripts. */
     private static ObjectNode presentation(StudySessionRepository.Presentation row) {
         ObjectNode result = JsonNodeFactory.instance.objectNode().put("presentationId", row.presentationId().toString())
                 .put("nonce", row.nonce()).put("ordinal", row.ordinal())
                 .put("exerciseRevisionId", row.exerciseRevisionId().toString()).put("type", row.type())
                 .put("objectiveId", row.objectiveId().toString())
                 .put("objectiveRevisionId", row.objectiveRevisionId().toString())
-                .put("learningEpoch", Long.toString(row.learningEpoch()))
-                .put("reference", reference(row.answerContract()));
-        result.set("prompt", row.prompt().deepCopy());
-        result.set("options", row.options().deepCopy());
-        result.set("bindings", row.bindings().deepCopy());
-        result.set("evaluator", row.evaluator().deepCopy());
-        return result;
-    }
-
-    private static String reference(JsonNode answerContract) {
-        JsonNode accepted = answerContract.path("accepted");
-        if (!accepted.isArray() || accepted.isEmpty() || !accepted.get(0).isTextual()) {
-            throw new IllegalStateException("Pinned answer contract has no reference answer");
+                .put("learningEpoch", Long.toString(row.learningEpoch()));
+        result.set("content", LearnerContent.view(row.content(), row.transcriptRevealed()));
+        result.put("transcriptRevealed", row.transcriptRevealed());
+        ArrayNode hints = result.putArray("hints");
+        if (!row.hintedBlanks().isEmpty()) {
+            Map<UUID, String> letters = hintableBlanks(row);
+            row.hintedBlanks().forEach(blank -> hints.addObject().put("blankId", blank.toString())
+                    .put("firstLetter", letters.get(blank)));
         }
-        return accepted.get(0).textValue();
+        result.set("evaluator", JsonNodeFactory.instance.objectNode().put("id", row.evaluator().path("id").textValue())
+                .put("version", row.evaluator().path("version").textValue()));
+        return result;
     }
 
     private void requireCurrent(StudySessionRepository.Session session, Instant now) {

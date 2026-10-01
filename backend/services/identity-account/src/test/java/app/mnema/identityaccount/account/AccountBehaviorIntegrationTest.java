@@ -10,6 +10,9 @@ import app.mnema.identityaccount.moderation.Moderation;
 import app.mnema.identityaccount.avatar.*;
 import app.mnema.identityaccount.support.PostgresIntegrationTest;
 import com.fasterxml.jackson.databind.*;
+import com.nimbusds.jose.*;
+import com.nimbusds.jose.crypto.RSASSASigner;
+import com.nimbusds.jwt.*;
 import com.sun.net.httpserver.*;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,6 +26,7 @@ import javax.imageio.ImageIO;
 import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -227,11 +231,38 @@ class AccountBehaviorIntegrationTest extends PostgresIntegrationTest {
     AvatarStorage avatarStorage;
     @Autowired
     ObjectMapper json;
+    @Autowired
+    org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository clients;
+    @Autowired
+    org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService authorizations;
     final String password = "correct-horse-battery-42";
 
     AccountAccess account() {
         String key = UUID.randomUUID().toString();
         return local.register(key + "@example.test", key, password, null, key);
+    }
+
+    String bearer(AccountAccess access) throws Exception {
+        Instant expires = Instant.now().plusSeconds(120);
+        var jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(SIGNING_KEY.getKeyID())
+                        .type(new JOSEObjectType("at+jwt")).build(),
+                new JWTClaimsSet.Builder().subject(access.accountId().toString())
+                        .issuer("https://identity.mnema.test").audience("mnema-api")
+                        .issueTime(Date.from(Instant.now().minusSeconds(5))).expirationTime(Date.from(expires))
+                        .claim("generation", Long.toString(access.generation()))
+                        .claim("scope", "account.read account.write").build());
+        jwt.sign(new RSASSASigner(SIGNING_KEY));
+        String token = jwt.serialize();
+        authorizations.save(org.springframework.security.oauth2.server.authorization.OAuth2Authorization
+                .withRegisteredClient(clients.findByClientId("mnema-web"))
+                .principalName(access.accountId().toString())
+                .authorizationGrantType(org.springframework.security.oauth2.core.AuthorizationGrantType.AUTHORIZATION_CODE)
+                .attribute("generation", Long.toString(access.generation()))
+                .accessToken(new org.springframework.security.oauth2.core.OAuth2AccessToken(
+                        org.springframework.security.oauth2.core.OAuth2AccessToken.TokenType.BEARER, token,
+                        Instant.now().minusSeconds(5), expires, Set.of("account.read", "account.write")))
+                .build());
+        return token;
     }
 
     @BeforeEach
@@ -364,6 +395,22 @@ class AccountBehaviorIntegrationTest extends PostgresIntegrationTest {
                         .content(json.writeValueAsString(Map.of("email", UUID.randomUUID() + "@example.test"))))
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isAccepted())
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().string(""));
+    }
+
+    @Test
+    void nativeProfileAvatarUploadAcceptsCookieFreeBearer() throws Exception {
+        var access = account();
+        byte[] image = png(6, 6).bytes();
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .multipart("/api/accounts/me/avatar")
+                        .file(new org.springframework.mock.web.MockMultipartFile("file", "profile.png", "image/png", image))
+                        .with(request -> { request.setMethod("PUT"); return request; })
+                        .secure(true).header("Authorization", "Bearer " + bearer(access)))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isNoContent());
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .get("/api/accounts/profiles/" + access.accountId() + "/avatar"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().bytes(image));
     }
 
     @Test

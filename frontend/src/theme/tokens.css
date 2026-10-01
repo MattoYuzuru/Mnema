@@ -1,0 +1,48 @@
+/* Canonical Mnema UI tokens. See docs/frontend/mnema-brand-and-ui-contract.md. */
+@font-face {
+    font-family: "Mnema Cormorant";
+    src: url("/assets/brand/cormorant-garamond-latin-cyrillic.woff2") format("woff2");
+    font-style: normal;
+    font-weight: 300 700;
+    font-display: swap;
+}
+
+:root {
+    color-scheme: light;
+
+    --mn-paper: #f4f0e5;
+    --mn-sheet: #fbf8ef;
+    --mn-ink: #281378;
+    --mn-body: #342e44;
+    --mn-muted: #625c70;
+    --mn-rule: #c9c0ce;
+    --mn-soft: #e8e1ed;
+    --mn-field-border: #625c70;
+    --mn-on-ink: #fbf8ef;
+    --mn-positive: #326443;
+    --mn-danger: #962b31;
+    --mn-caution: #8a5700;
+    --mn-focus: #281378;
+    --mn-hint: #7651a6;
+    --mn-selection: rgb(142 108 192 / 24%);
+    --mn-wave-duration: .65s;
+    --mn-list-wave-duration: .95s;
+    --mn-workspace-width: 62rem;
+
+    --mn-font-display: "Mnema Cormorant", Georgia, "Times New Roman", serif;
+    --mn-font-body: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --mn-font-mono: ui-monospace, "SFMono-Regular", "SF Mono", monospace;
+
+    --mn-space-1: 0.25rem;
+    --mn-space-2: 0.5rem;
+    --mn-space-3: 0.75rem;
+    --mn-space-4: 1rem;
+    --mn-space-5: 1.5rem;
+    --mn-space-6: 2rem;
+    --mn-space-7: 3rem;
+    --mn-space-8: 4rem;
+    --mn-radius: 2px;
+    --mn-touch-min: 2.75rem;
+    --mn-page-width: 81.25rem;
+    --mn-page-gutter: clamp(1.125rem, 4.4vw, 2.75rem);
+}

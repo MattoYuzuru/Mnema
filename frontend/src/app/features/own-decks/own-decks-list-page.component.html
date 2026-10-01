@@ -1,9 +1,9 @@
-<section class="page" aria-labelledby="own-decks-title">
+<section class="page deck-list-page" aria-labelledby="own-decks-title">
   <header class="page-heading">
     <div>
       <p class="eyebrow">Личная библиотека</p>
       <h1 id="own-decks-title" tabindex="-1">Мои колоды</h1>
-      <p class="lede">Небольшие собрания материалов, которые видны только вам.</p>
+      <p class="lede">Ваши материалы по темам: языки, науки и всё, что вы хотите выучить.</p>
     </div>
     <a class="button primary" routerLink="/decks/new">Создать колоду</a>
   </header>
@@ -25,10 +25,6 @@
       <a class="text-link" routerLink="/decks/new">Создать первую колоду</a>
     </section>
   } @else {
-    <div class="list-toolbar">
-      <button class="text-button" type="button" (click)="store.loadList()"
-        [disabled]="state.phase === 'loading'">Обновить список</button>
-    </div>
     <ol class="deck-list">
       @for (deck of state.items; track deck.deckId) {
         <li>
@@ -36,7 +32,7 @@
             <span class="deck-copy">
               <strong>{{ deck.metadata.title }}</strong>
               @if (deck.metadata.description) {
-                <span class="deck-description">{{ deck.metadata.description }}</span>
+                <app-deck-description class="deck-description" [text]="deck.metadata.description" />
               } @else {
                 <span class="deck-description muted">Без описания</span>
               }

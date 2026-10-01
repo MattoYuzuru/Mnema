@@ -25,6 +25,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 
@@ -154,6 +155,9 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
         mvc.perform(get("/api/accounts/session").secure(true).cookie(before)).andExpect(status().isUnauthorized());
         assertThat(jdbc.sql("SELECT count(*) FROM app_identity.spring_session WHERE principal_name=:id")
                 .param("id", account.accountId().toString()).query(Long.class).single()).isEqualTo(1);
+        assertThat(jdbc.sql("SELECT max_inactive_interval FROM app_identity.spring_session WHERE principal_name=:id")
+                .param("id", account.accountId().toString()).query(Integer.class).single())
+                .isEqualTo(Math.toIntExact(Duration.ofDays(3).toSeconds()));
         mvc.perform(options("/api/accounts/me").header("Origin", "https://evil.test")
                 .header("Access-Control-Request-Method", "PUT")).andExpect(status().isForbidden());
         mvc.perform(options("/api/accounts/me").header("Origin", "https://mnema.app")
@@ -262,10 +266,14 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
                         .param("code_verifier", verifier)).andExpect(status().isOk()).andReturn();
         JsonNode tokens = json.readTree(result.getResponse().getContentAsString());
         assertThat(tokens.has("refresh_token")).isFalse();
+        assertThat(tokens.path("expires_in").asLong())
+                .isBetween(Duration.ofDays(3).minusSeconds(10).toSeconds(), Duration.ofDays(3).toSeconds());
         String access = tokens.get("access_token").asText();
+        var decoded = decoder.decode(access);
+        assertThat(Duration.between(decoded.getIssuedAt(), decoded.getExpiresAt()))
+                .isEqualTo(Duration.ofDays(3));
         assertThat(authorizations.findByToken(access,
                 org.springframework.security.oauth2.server.authorization.OAuth2TokenType.ACCESS_TOKEN)).isNotNull();
-        decoder.decode(access);
         mvc.perform(get("/api/accounts/me").header("Authorization", "Bearer " + access)).andExpect(status().isOk());
         mvc.perform(post("/oauth2/token").param("grant_type", "authorization_code").param("client_id", "mnema-web")
                 .param("redirect_uri", "https://mnema.app/auth/callback").param("code", code)
@@ -462,6 +470,37 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
                 .andExpect(status().isNoContent());
         mvc.perform(post("/api/accounts/password-reset/confirm").with(csrf()).contentType("application/json")
                 .content(body(Map.of("token", "unknown", "newPassword", password)))).andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void bearerEditsUseTokenIdentityAndInvalidBearerCannotFallBackToCookie() throws Exception {
+        var account = account();
+        String access = token(account, "mnema-api", "https://identity.mnema.test", "at+jwt",
+                Instant.now().plusSeconds(120));
+        String edit = body(Map.of("profileUsername", "native-profile", "displayName", "Native profile",
+                "bio", "Bearer-only write"));
+        mvc.perform(put("/api/accounts/me").secure(true).header("Authorization", "Bearer " + access)
+                        .contentType("application/json").content(edit))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.bio").value("Bearer-only write"));
+
+        var other = account();
+        var cookie = login(other);
+        String blocked = body(Map.of("profileUsername", "forbidden-name", "displayName", "Forbidden", "bio", "No"));
+        mvc.perform(put("/api/accounts/me").secure(true).cookie(cookie).contentType("application/json")
+                        .content(blocked)).andExpect(status().isForbidden());
+        mvc.perform(put("/api/accounts/me").secure(true).cookie(cookie)
+                        .header("Cookie", cookie.getName() + "=" + cookie.getValue())
+                        .header("Authorization", "Bearer " + access).contentType("application/json")
+                        .content(blocked)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.accountId").value(account.accountId().toString()));
+        mvc.perform(put("/api/accounts/me").secure(true).cookie(cookie)
+                        .header("Authorization", "Bearer invalid")
+                        .contentType("application/json").content(blocked)).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/accounts/me").secure(true).header("Authorization", "Bearer " + access))
+                .andExpect(jsonPath("$.profileUsername").value("forbidden-name"));
+        mvc.perform(get("/api/accounts/me").secure(true).cookie(cookie))
+                .andExpect(jsonPath("$.accountId").value(other.accountId().toString()))
+                .andExpect(jsonPath("$.profileUsername").value(org.hamcrest.Matchers.not("forbidden-name")));
     }
 
     @Test

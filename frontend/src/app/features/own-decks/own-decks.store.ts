@@ -100,12 +100,14 @@ export class OwnDecksStore {
     private mutationEpoch = 0;
     private deckContextEpoch = 0;
     private listSubscription: Subscription | null = null;
+    private listRefreshSubscription: Subscription | null = null;
     private detailSubscription: Subscription | null = null;
     private mutationSubscription: Subscription | null = null;
 
     constructor() {
         this.destroyRef.onDestroy(() => {
             this.listSubscription?.unsubscribe();
+            this.listRefreshSubscription?.unsubscribe();
             this.detailSubscription?.unsubscribe();
             this.mutationSubscription?.unsubscribe();
         });
@@ -113,6 +115,21 @@ export class OwnDecksStore {
 
     loadList(): void {
         this.requestList(null, 'replace');
+    }
+
+    /** Recheck the visible page without moving the pagination cursor or hiding its rows. */
+    refreshVisibleList(): void {
+        if (this.listSignal().phase !== 'ready' || this.listRefreshSubscription?.closed === false) return;
+        const epoch = this.listEpoch;
+        const cursor = this.listCursors[this.listCursorIndex];
+        this.listRefreshSubscription = this.api.list(cursor).subscribe({
+            next: page => {
+                if (epoch !== this.listEpoch || this.listSignal().phase !== 'ready') return;
+                this.listSignal.set({ phase: 'ready', items: page.items, nextCursor: page.nextCursor,
+                    operation: null, failure: null });
+            },
+            error: () => { /* Keep the last confirmed page; the next visible recheck retries. */ }
+        });
     }
 
     loadMore(): void {
@@ -230,6 +247,7 @@ export class OwnDecksStore {
     private requestList(cursor: string | null, operation: 'replace' | 'next' | 'previous'): void {
         const epoch = ++this.listEpoch;
         this.listSubscription?.unsubscribe();
+        this.listRefreshSubscription?.unsubscribe();
         const previous = this.listSignal();
         this.listSignal.set({
             phase: 'loading',
@@ -397,14 +415,14 @@ export function failureOf(error: unknown): DeckFailure {
 }
 
 export function deckFailureMessage(failure: DeckFailure): string {
-    if (failure.kind === 'network') return 'Ответ сервера не получен. Введённые данные остаются на этой странице.';
-    if (failure.kind === 'protocol') return 'Сервер вернул неожиданный ответ. Мы не применили его к странице.';
+    if (failure.kind === 'network') return 'Нет связи. Введённые данные остаются на этой странице.';
+    if (failure.kind === 'protocol') return 'Не удалось проверить результат. Попробуйте снова.';
     switch (failure.status) {
-        case 400: return 'Проверьте название и описание: сервер не принял данные.';
+        case 400: return 'Проверьте название и описание.';
         case 401: return 'Сессия завершилась. Войдите снова, чтобы продолжить.';
         case 403: return 'У этой сессии недостаточно прав для действия.';
         case 404: return 'Колода не найдена или больше недоступна.';
-        case 409: return 'Идентификатор команды уже использован для другого действия.';
+        case 409: return 'Это действие уже изменилось. Обновите страницу и попробуйте снова.';
         case 412: return 'Колода изменилась в другой вкладке.';
         case 428: return 'Не удалось подтвердить версию колоды. Обновите страницу.';
         case 503: return 'Сервис временно недоступен. Попробуйте ещё раз.';

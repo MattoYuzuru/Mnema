@@ -13,18 +13,18 @@ class StudyProgressRepository {
 
     StudyProgressRepository(JdbcClient jdbc) { this.jdbc = jdbc; }
 
-    record Material(UUID memberKey, UUID itemRevisionId, int enabled, int introduced, int assessed,
+    record Material(UUID memberKey, UUID itemRevisionId, UUID scopeId, UUID contentRootId, int enabled, int introduced, int assessed,
                     boolean due, boolean allOnTrack, Instant lastAssessedAt, Instant nextDue) { }
 
     boolean ownsDeck(UUID actor, UUID deck) {
-        return jdbc.sql("SELECT EXISTS(SELECT 1 FROM app_learning.deck WHERE owner_id=:actor AND deck_id=:deck)")
+        return jdbc.sql("SELECT EXISTS(SELECT 1 FROM app_learning.deck WHERE owner_id=:actor AND deck_id=:deck AND deleted_at IS NULL)")
                 .param("actor", actor).param("deck", deck).query(Boolean.class).single();
     }
 
     List<Material> page(UUID actor, UUID deck, UUID after, int limit, Instant asOf) {
         String cursor = after == null ? "" : " AND item.member_key > :after";
         var query = jdbc.sql("""
-                SELECT item.member_key,item.revision_id,
+                SELECT item.member_key,item.revision_id,revision.reuse_scope_id,revision.content_root_id,
                        COALESCE(progress.enabled,0) AS enabled,
                        COALESCE(progress.introduced,0) AS introduced,
                        COALESCE(progress.assessed,0) AS assessed,
@@ -32,6 +32,8 @@ class StudyProgressRepository {
                        COALESCE(progress.all_on_track,FALSE) AS all_on_track,
                        progress.last_assessed_at,progress.next_due
                   FROM app_learning.deck_head_item item
+                  JOIN app_learning.item_revision revision ON revision.deck_id=item.deck_id
+                   AND revision.member_key=item.member_key AND revision.revision_id=item.revision_id
                   LEFT JOIN LATERAL (
                        SELECT count(*)::integer AS enabled,
                               count(state.objective_id)::integer AS introduced,
@@ -63,6 +65,7 @@ class StudyProgressRepository {
         if (after != null) query.param("after", after);
         return query.query((row, ignored) -> new Material(
                 row.getObject("member_key", UUID.class), row.getObject("revision_id", UUID.class),
+                row.getObject("reuse_scope_id", UUID.class), row.getObject("content_root_id", UUID.class),
                 row.getInt("enabled"), row.getInt("introduced"), row.getInt("assessed"),
                 row.getBoolean("due"), row.getBoolean("all_on_track"),
                 row.getTimestamp("last_assessed_at") == null ? null : row.getTimestamp("last_assessed_at").toInstant(),

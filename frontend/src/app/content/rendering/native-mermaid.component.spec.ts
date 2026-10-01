@@ -33,6 +33,17 @@ describe('NativeMermaidComponent', () => {
         expect(host.querySelector('img')?.getAttribute('alt')).toBe('Схема запроса');
         expect(host.querySelector('svg, script, foreignObject')).toBeNull();
 
+        const zoom = host.querySelector<HTMLButtonElement>('.diagram-zoom')!;
+        zoom.click();
+        fixture.detectChanges();
+        const dialog = host.querySelector<HTMLDialogElement>('.diagram-dialog')!;
+        expect(dialog.open).toBeTrue();
+        expect(dialog.querySelector('img')?.getAttribute('alt')).toBe('Схема запроса');
+        host.querySelector<HTMLButtonElement>('.diagram-close')!.click();
+        await fixture.whenStable();
+        expect(dialog.open).toBeFalse();
+        expect(document.activeElement).toBe(zoom);
+
         fixture.componentRef.setInput('source', 'flowchart LR\nClient -->');
         fixture.detectChanges();
         await waitFor(() => fixture.componentInstance.failed());

@@ -19,10 +19,10 @@ replacement runtime содержит:
 - PostgreSQL 18 integration tests, real Identity/Learning security composition и
   локальный HTTPS browser harness для authoring-пути.
 
-Модули `core`, `media`, `import` и `ai`, а также часть старых frontend-компонентов
-остаются в дереве как legacy replacement input. Они не задают архитектуру новой
-Study-системы и удаляются только в границах
-[#146](https://github.com/MattoYuzuru/Mnema/issues/146) после готовности #74–#76.
+После #146 shipping Gradle graph и Angular routes содержат только replacement
+runtime. Исходники v1 доступны в теге
+[`v1-apache-final`](https://github.com/MattoYuzuru/Mnema/tree/v1-apache-final)
+и Git history; текущий checkout не собирает старые сервисы.
 
 Deck-scoped Study из [Epic #75](https://github.com/MattoYuzuru/Mnema/issues/75)
 реализован: четыре P0-механики, versioned objectives/exercises, объяснимое

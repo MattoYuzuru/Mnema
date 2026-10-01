@@ -23,6 +23,18 @@ class StudyRetentionRepository {
                 """).param("asOf", java.sql.Timestamp.from(asOf)).param("limit", limit).update();
     }
 
+    int purgePairInteractions(Instant asOf, int limit) {
+        return jdbc.sql("""
+                DELETE FROM app_learning.study_pair_interaction interaction
+                 WHERE (interaction.account_id,interaction.session_id,interaction.presentation_id,interaction.left_id,interaction.right_id) IN (
+                       SELECT candidate.account_id,candidate.session_id,candidate.presentation_id,candidate.left_id,candidate.right_id
+                         FROM app_learning.study_pair_interaction candidate
+                        WHERE candidate.expires_at<=:asOf
+                        ORDER BY candidate.expires_at LIMIT :limit FOR UPDATE SKIP LOCKED
+                 )
+                """).param("asOf", java.sql.Timestamp.from(asOf)).param("limit", limit).update();
+    }
+
     int expireCompactOutcomes(Instant asOf, int limit) {
         return jdbc.sql("""
                 UPDATE app_learning.study_attempt_tombstone receipt SET outcome=NULL

@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, DestroyRef, HostListener, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, HostListener, inject, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subject, debounceTime, forkJoin, of } from 'rxjs';
@@ -8,30 +8,34 @@ import { NativeDocument } from '../../content/native-document';
 import { createEmptyNativeDocument } from '../../content/editing/native-editor-adapter';
 import { NativeEditorComponent } from '../../content/editing/native-editor.component';
 import { NativeStructuralEdit, planNativeStructuralEdits } from '../../content/editing/native-structural-edits';
-import { NativeDocumentRendererComponent } from '../../content/rendering/native-document-renderer.component';
+import { NativeMediaSurfaceComponent } from '../../content/rendering/native-media-surface.component';
 import { OwnDeck } from '../own-decks/own-deck.models';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { AuthoringApiService } from './authoring-api.service';
 import { DraftDetail, DraftSummary, ItemDetail, ItemWriteResult, newCommandId } from './authoring.models';
 import { ItemApiService } from './item-api.service';
+import { NativeMediaUploadComponent } from './native-media-upload.component';
 
 type EditorPhase = 'loading' | 'ready' | 'saving-draft' | 'publishing' | 'conflict' | 'rejected' | 'error';
 
 @Component({
     selector: 'app-item-editor-page',
-    imports: [RouterLink, NativeEditorComponent, NativeDocumentRendererComponent],
+    imports: [RouterLink, NativeEditorComponent, NativeMediaSurfaceComponent, NativeMediaUploadComponent],
     templateUrl: './item-editor-page.component.html',
     styleUrl: './authoring-page.css',
     changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ItemEditorPageComponent {
+    readonly mobilePanel = signal<'material' | 'preview' | 'exercises'>('material');
+    readonly previewExpanded = signal(false);
+    private readonly editor = viewChild(NativeEditorComponent);
+    private readonly uploader = viewChild(NativeMediaUploadComponent);
     readonly deck = signal<OwnDeck | null>(null);
     readonly item = signal<ItemDetail | null>(null);
     readonly draft = signal<DraftDetail | null>(null);
     readonly document = signal<NativeDocument | null>(null);
     readonly phase = signal<EditorPhase>('loading');
     readonly dirty = signal(false);
-    readonly restored = signal(false);
     readonly message = signal<string | null>(null);
     readonly conflict = signal<'draft' | 'publication' | null>(null);
 
@@ -77,7 +81,6 @@ export class ItemEditorPageComponent {
         this.document.set(null);
         this.draft.set(null);
         this.item.set(null);
-        this.restored.set(false);
         this.conflict.set(null);
         this.dirty.set(false);
         this.pendingDraft = null;
@@ -97,7 +100,7 @@ export class ItemEditorPageComponent {
                     if (matching === null) this.createDraft(result.deck, item);
                     else this.openDraft(matching);
                 },
-                error: () => this.fail('Не удалось загрузить материал и серверные черновики.')
+                error: () => this.fail('Не удалось открыть материал. Попробуйте ещё раз.')
             });
     }
 
@@ -107,6 +110,22 @@ export class ItemEditorPageComponent {
         this.message.set(null);
         if (this.phase() === 'error' || this.phase() === 'rejected') this.phase.set('ready');
         this.changes.next(document);
+    }
+
+    togglePreview(): void {
+        const expanded = !this.previewExpanded();
+        this.previewExpanded.set(expanded);
+        this.mobilePanel.set(expanded ? 'preview' : 'material');
+        if (!expanded) requestAnimationFrame(() => this.editor()?.focusContent());
+    }
+
+    prepareMedia(kind: 'image' | 'audio' | 'video', assetId: string): void {
+        this.mobilePanel.set('material');
+        queueMicrotask(() => this.editor()?.prepareMedia(kind, assetId));
+    }
+
+    uploadFromEditor(files: readonly File[]): void {
+        this.uploader()?.onFiles(files);
     }
 
     saveDraft(retry = false): void {
@@ -131,7 +150,7 @@ export class ItemEditorPageComponent {
                     const isCurrent = this.document() === pending.document;
                     this.dirty.set(!isCurrent);
                     this.phase.set('ready');
-                    this.message.set(isCurrent ? 'Черновик подтверждён сервером.' : null);
+                    this.message.set(null);
                     if (!isCurrent || this.queuedSave) {
                         this.queuedSave = false;
                         queueMicrotask(() => this.saveDraft());
@@ -144,10 +163,10 @@ export class ItemEditorPageComponent {
                     this.conflict.set(stale ? 'draft' : null);
                     this.phase.set(stale ? 'conflict' : uncertain ? 'error' : 'rejected');
                     this.message.set(stale
-                        ? 'Черновик изменён в другой вкладке. Ваш ввод остался в этой вкладке.'
+                        ? 'Черновик изменился в другой вкладке. Ваши правки пока здесь.'
                         : uncertain
-                            ? 'Сервер не подтвердил черновик. Безопасно повторите ту же команду.'
-                            : 'Черновик отклонён сервером. Исправьте материал и сохраните его новой командой.');
+                            ? 'Не удалось подтвердить сохранение. Повторите попытку.'
+                            : 'Не удалось сохранить черновик. Измените материал, чтобы попробовать снова.');
                 }
             });
     }
@@ -169,7 +188,7 @@ export class ItemEditorPageComponent {
                 edits = planNativeStructuralEdits(item.document, document);
             } catch {
                 this.phase.set('rejected');
-                this.message.set('Структурная правка слишком велика для одной публикации. Сократите изменение и повторите.');
+                this.message.set('Слишком много изменений для одной публикации. Сократите правки и повторите.');
                 return;
             }
         }
@@ -186,7 +205,7 @@ export class ItemEditorPageComponent {
                 const memberKey = result.acknowledgement.changes[0]?.memberKey;
                 const ordinal = result.acknowledgement.changes[0]?.ordinal;
                 if (memberKey === undefined || ordinal === null || ordinal === undefined) {
-                    this.fail('Сервер вернул неполное подтверждение публикации.');
+                    this.fail('Не удалось подтвердить публикацию. Повторите попытку.');
                     return;
                 }
                 if (result.replayed) {
@@ -202,10 +221,10 @@ export class ItemEditorPageComponent {
                 this.conflict.set(stale ? 'publication' : null);
                 this.phase.set(stale ? 'conflict' : uncertain ? 'error' : 'rejected');
                 this.message.set(stale
-                    ? 'Колода или материал изменились. Ваш серверный черновик сохранён; загрузите свежую основу.'
+                    ? 'Колода или материал изменились. Черновик сохранён; вернитесь к списку материалов и откройте его снова.'
                     : uncertain
-                        ? 'Публикация не подтверждена. Безопасно повторите ту же команду.'
-                        : 'Публикация отклонена сервером. Исправьте материал и отправьте новую команду.');
+                        ? 'Не удалось подтвердить публикацию. Повторите попытку.'
+                        : 'Не удалось опубликовать материал. Проверьте его и попробуйте снова.');
             }
         });
     }
@@ -221,7 +240,7 @@ export class ItemEditorPageComponent {
     }
 
     reload(): void {
-        if (!this.dirty() || window.confirm('Заменить неподтверждённый ввод серверной версией?')) this.load();
+        if (!this.dirty() || window.confirm('Заменить несохранённые изменения сохранённой версией?')) this.load();
     }
 
     resolveDraftConflict(keepLocal: boolean): void {
@@ -238,15 +257,16 @@ export class ItemEditorPageComponent {
                 this.dirty.set(keepLocal);
                 this.phase.set('ready');
                 this.message.set(keepLocal
-                    ? 'Свежая основа получена. Ваш ввод готов к явному сохранению поверх неё.'
-                    : 'Загружена подтверждённая серверная версия.');
+                    ? 'Сохраняем ваши изменения в свежий черновик.'
+                    : 'Открыта последняя сохранённая версия.');
+                if (keepLocal) this.changes.next(local);
             },
-            error: () => this.fail('Не удалось получить свежую версию черновика.')
+            error: () => this.fail('Не удалось открыть последнюю версию черновика.')
         });
     }
 
     confirmLeave(): boolean {
-        return !this.dirty() || window.confirm('Черновик ещё не подтверждён сервером. Покинуть страницу?');
+        return !this.dirty() || window.confirm('Изменения ещё не сохранены. Покинуть страницу?');
     }
 
     @HostListener('window:beforeunload', ['$event'])
@@ -260,10 +280,9 @@ export class ItemEditorPageComponent {
                 this.draft.set(draft);
                 this.document.set(draft.document);
                 this.dirty.set(false);
-                this.restored.set(true);
                 this.phase.set('ready');
             },
-            error: () => this.fail('Не удалось открыть серверный черновик.')
+            error: () => this.fail('Не удалось открыть черновик.')
         });
     }
 
@@ -290,8 +309,8 @@ export class ItemEditorPageComponent {
                     const uncertain = isUncertain(failure);
                     if (!uncertain) this.pendingDraftCreation = null;
                     this.fail(uncertain
-                        ? 'Создание черновика не подтверждено. Безопасно повторите ту же команду.'
-                        : 'Не удалось создать серверный черновик.');
+                        ? 'Не удалось подтвердить создание черновика. Повторите попытку.'
+                        : 'Не удалось создать черновик.');
                 }
             });
     }
@@ -305,13 +324,13 @@ export class ItemEditorPageComponent {
                 if (!sameJson(current.document, pending.document)) {
                     this.conflict.set('draft');
                     this.phase.set('conflict');
-                    this.message.set('Серверный черновик уже продолжили в другом месте. Ваш ввод не потерян; выберите свежую версию.');
+                    this.message.set('Черновик изменился в другом месте. Ваши правки пока здесь; выберите нужную версию.');
                     return;
                 }
                 const isCurrent = this.document() === pending.document;
                 this.dirty.set(!isCurrent);
                 this.phase.set('ready');
-                this.message.set(isCurrent ? 'Повтор команды подтверждён и сверен с сервером.' : null);
+                this.message.set(null);
                 if (!isCurrent || this.queuedSave) {
                     this.queuedSave = false;
                     queueMicrotask(() => this.saveDraft());
@@ -319,7 +338,7 @@ export class ItemEditorPageComponent {
             },
             error: () => {
                 this.phase.set('error');
-                this.message.set('Команда подтверждена повтором, но свежую версию черновика получить не удалось.');
+                this.message.set('Изменения сохранены, но не удалось открыть свежий черновик. Повторите попытку.');
             }
         });
     }
@@ -334,14 +353,14 @@ export class ItemEditorPageComponent {
                     this.pendingPublication = null;
                     this.conflict.set('publication');
                     this.phase.set('conflict');
-                    this.message.set('Публикация подтверждена, но колода уже изменилась. Черновик сохранён; вернитесь в актуальный Browse.');
+                    this.message.set('Материал опубликован, но колода уже изменилась. Черновик сохранён; вернитесь к списку материалов.');
                     return;
                 }
                 this.finishPublication(deck, draft, memberKey, ordinal);
             },
             error: () => {
                 this.phase.set('error');
-                this.message.set('Повтор публикации подтверждён, но актуальную серверную версию проверить не удалось.');
+                this.message.set('Материал опубликован, но не удалось открыть свежую версию. Повторите попытку.');
             }
         });
     }
@@ -367,7 +386,7 @@ export class ItemEditorPageComponent {
                         return;
                     }
                     this.phase.set('error');
-                    this.message.set('Материал опубликован, но удаление исходного черновика не подтверждено. Повторите очистку.');
+                    this.message.set('Материал опубликован. Не удалось убрать старый черновик — повторите попытку.');
                 }
             });
     }

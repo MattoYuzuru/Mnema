@@ -18,10 +18,15 @@ import uuid
 LEGACY_ACCOUNT_KEYS = {"email", "login", "password", "deckId", "captureId"}
 ACCOUNT_KEYS = LEGACY_ACCOUNT_KEYS | {
     "schemaVersion", "studyMemberKey", "studyItemRevisionId", "studyAnswerNodeId", "studyExerciseId",
-    "p0Mechanics",
+    "mechanics",
 }
-ADDITIONAL_MECHANICS = ("SELF_CHECK", "CLOZE_SINGLE", "SINGLE_CHOICE")
-MECHANIC_STATE_KEYS = {"deckId", "memberKey", "itemRevisionId", "answerNodeId", "distractorNodeId", "exerciseId"}
+ACCOUNT_SCHEMA = 4
+# FREE_RESPONSE is the primary Study fixture; these cover the remaining canonical #266 mechanics.
+ADDITIONAL_MECHANICS = ("SELF_CHECK", "CLOZE", "CHOICE", "MATCH")
+MECHANIC_STATE_KEYS = {"deckId", "memberKey", "itemRevisionId", "answerNodeId", "distractorNodeId", "exerciseId",
+                       "ids"}
+PRIVATE_PRESENTATION_KEYS = {"answerKey", "accepted", "correctOptionIds", "pairs", "bindings", "reference",
+                             "title", "transcript"}
 
 
 def require(condition, message):
@@ -82,22 +87,24 @@ class Client:
 def load_or_create_account(path):
     if path.exists():
         value = json.loads(path.read_text())
-        if set(value) == LEGACY_ACCOUNT_KEYS:
+        version = value.get("schemaVersion")
+        if set(value) == LEGACY_ACCOUNT_KEYS or version in (2, 3):
+            # Exercise fixtures from earlier schemas used retired mechanics; keep only credentials and
+            # the authoring Deck/Capture identities. #266 itself requires a fresh local database.
+            value = {key: value[key] for key in LEGACY_ACCOUNT_KEYS}
             value.update({
-                "schemaVersion": 2, "studyMemberKey": None, "studyItemRevisionId": None,
-                "studyAnswerNodeId": None, "studyExerciseId": None,
+                "schemaVersion": ACCOUNT_SCHEMA, "studyMemberKey": None, "studyItemRevisionId": None,
+                "studyAnswerNodeId": None, "studyExerciseId": None, "mechanics": {},
             })
-        if value.get("schemaVersion") == 2 and set(value) == ACCOUNT_KEYS - {"p0Mechanics"}:
-            value["schemaVersion"] = 3
-            value["p0Mechanics"] = {}
-        require(set(value) == ACCOUNT_KEYS and value["schemaVersion"] == 3, "invalid smoke account state")
-        mechanics = value["p0Mechanics"]
+        require(set(value) == ACCOUNT_KEYS and value["schemaVersion"] == ACCOUNT_SCHEMA,
+                "invalid smoke account state")
+        mechanics = value["mechanics"]
         require(isinstance(mechanics, dict) and set(mechanics) <= set(ADDITIONAL_MECHANICS),
-                "invalid P0 mechanic state")
+                "invalid mechanic fixture state")
         for mechanic, fixture in mechanics.items():
             require(isinstance(fixture, dict) and set(fixture) == MECHANIC_STATE_KEYS,
                     f"invalid {mechanic} fixture state")
-            require(all(item is None or isinstance(item, str) for item in fixture.values()),
+            require(all(item is None or isinstance(item, (str, dict)) for item in fixture.values()),
                     f"invalid {mechanic} fixture identity")
         fixture_values = [value[key] for key in (
             "studyMemberKey", "studyItemRevisionId", "studyAnswerNodeId"
@@ -109,7 +116,7 @@ def load_or_create_account(path):
         return value, False
     suffix = secrets.token_hex(8)
     return {
-        "schemaVersion": 3,
+        "schemaVersion": ACCOUNT_SCHEMA,
         "email": f"local-smoke-{suffix}@example.invalid",
         "login": f"local_smoke_{suffix}",
         "password": secrets.token_urlsafe(32),
@@ -119,7 +126,7 @@ def load_or_create_account(path):
         "studyItemRevisionId": None,
         "studyAnswerNodeId": None,
         "studyExerciseId": None,
-        "p0Mechanics": {},
+        "mechanics": {},
     }, True
 
 
@@ -199,13 +206,109 @@ def study_document(answer_node, distractor_node=None):
     }
 
 
+def text_block(text):
+    return {"kind": "TEXT", "text": text}
+
+
+def material_block(member, revision, node):
+    return {"kind": "MATERIAL", "memberKey": member, "itemRevisionId": revision, "nodeId": node}
+
+
+def text_key(*accepted):
+    return {"kind": "TEXT", "accepted": list(accepted), "normalization": ["UNICODE_NFC", "TRIM", "CASE_FOLD"],
+            "matchingMode": "STRICT"}
+
+
+def mechanic_exercise(mechanic, member, revision, answer_node, distractor_node, ids):
+    """Builds one text-only #266 exercise; media combinations are covered by service tests and the browser run."""
+    subject = {"memberKey": member, "itemRevisionId": revision}
+    if mechanic == "SELF_CHECK":
+        content = {"prompt": [text_block("Recall the retained smoke concept")],
+                   "reference": [material_block(member, revision, answer_node)]}
+        key, evaluator = {"kind": "SELF_REPORT"}, "self-check"
+    elif mechanic == "FREE_RESPONSE":
+        content = {"prompt": [text_block("Type the retained smoke answer")], "reference": [],
+                   "responseInput": "TEXT"}
+        key, evaluator = text_key("memory", "long-term memory"), "deterministic-text"
+    elif mechanic == "CLOZE":
+        first, second = ids["blanks"]
+        content = {"prompt": [text_block("Fill both blanks")], "passage": [
+            text_block("Working "),
+            {"kind": "BLANK", "blankId": first, "size": {"mode": "ANSWER_LENGTH"}, "firstLetterHint": True},
+            text_block(" is short;\nlong-term "),
+            {"kind": "BLANK", "blankId": second, "size": {"mode": "FIXED", "length": 8}, "firstLetterHint": False},
+            text_block(" is durable."),
+        ]}
+        key = {"kind": "CLOZE", "blanks": [
+            {"blankId": blank, "accepted": ["memory"], "normalization": ["UNICODE_NFC", "TRIM", "CASE_FOLD"],
+             "matchingMode": "STRICT"} for blank in (first, second)
+        ]}
+        evaluator = "deterministic-cloze"
+    elif mechanic == "CHOICE":
+        memory, forgetting, recall = ids["options"]
+        content = {"prompt": [text_block("Which words name retention?")], "selectionMode": "MULTIPLE", "options": [
+            {"optionId": memory, "blocks": [material_block(member, revision, answer_node)]},
+            {"optionId": forgetting, "blocks": [material_block(member, revision, distractor_node)]},
+            {"optionId": recall, "blocks": [text_block("recall")]},
+        ]}
+        key, evaluator = {"kind": "CHOICE", "correctOptionIds": [memory, recall]}, "deterministic-choice"
+    elif mechanic == "MATCH":
+        left, right = ids["left"], ids["right"]
+        content = {"prompt": [text_block("Match the translations")],
+                   "left": [{"itemId": left[0], "blocks": [text_block("der Hund")]},
+                            {"itemId": left[1], "blocks": [text_block("die Katze")]}],
+                   "right": [{"itemId": right[0], "blocks": [text_block("dog")]},
+                             {"itemId": right[1], "blocks": [material_block(member, revision, answer_node)]}]}
+        key = {"kind": "MATCH", "pairs": [{"leftId": left[0], "rightId": right[0]},
+                                          {"leftId": left[1], "rightId": right[1]}]}
+        evaluator = "deterministic-match"
+    else:
+        raise AssertionError(f"unknown mechanic {mechanic}")
+    return {"type": mechanic, "schemaVersion": 2, "enabled": True, "subject": subject, "content": content,
+            "answerKey": key, "evaluatorPolicy": {"id": evaluator, "version": "1"}}
+
+
+def mechanic_ids(mechanic):
+    if mechanic == "CLOZE":
+        return {"blanks": [str(uuid.uuid4()) for _ in range(2)]}
+    if mechanic == "CHOICE":
+        return {"options": [str(uuid.uuid4()) for _ in range(3)]}
+    if mechanic == "MATCH":
+        return {"left": [str(uuid.uuid4()) for _ in range(2)], "right": [str(uuid.uuid4()) for _ in range(2)]}
+    return {}
+
+
+def publish_exercise(web, access, deck_id, title, exercise, label):
+    deck = deck_head(web, access, deck_id)
+    status, headers, acknowledgement = web.request(
+        "POST", f"/api/decks/{deck_id}/exercises", {
+            "commandId": str(uuid.uuid4()), "expectedDeckRevisionId": deck["revisionId"],
+            "objective": {"operation": "create", "title": title}, "exercise": exercise,
+        }, bearer=access, headers={"If-Match": f'"{deck["rowVersion"]}"'},
+    )
+    require(status == 201 and isinstance(acknowledgement, dict) and acknowledgement.get("enabled") is True,
+            f"{label} exercise publication failed: {status}")
+    require_private(headers, f"{label} exercise")
+    return acknowledgement["exerciseId"]
+
+
+def read_exercise(web, access, deck_id, exercise_id, mechanic):
+    status, headers, exercise = web.request("GET", f"/api/decks/{deck_id}/exercises/{exercise_id}", bearer=access)
+    require(status == 200 and isinstance(exercise, dict) and exercise.get("type") == mechanic
+            and exercise.get("schemaVersion") == 2 and exercise.get("enabled") is True
+            and isinstance(exercise.get("answerKey"), dict) and isinstance(exercise.get("content"), dict),
+            f"{mechanic} exercise did not survive restart")
+    require_private(headers, f"{mechanic} exercise")
+    return exercise
+
+
 def provision_additional_mechanic(web, access, account, state_file, mechanic):
-    fixtures = account["p0Mechanics"]
+    fixtures = account["mechanics"]
     fixture = fixtures.setdefault(mechanic, dict.fromkeys(MECHANIC_STATE_KEYS))
     if fixture["deckId"] is None:
         status, _, result = web.request("POST", "/api/decks", {
             "commandId": str(uuid.uuid4()),
-            "metadata": {"title": f"P0 {mechanic} smoke", "description": "Persistent Study acceptance fixture"},
+            "metadata": {"title": f"{mechanic} smoke", "description": "Persistent Study acceptance fixture"},
         }, bearer=access)
         require(status == 201 and isinstance(result, dict), f"{mechanic} Deck create failed")
         fixture["deckId"] = result["deck"]["deckId"]
@@ -214,7 +317,7 @@ def provision_additional_mechanic(web, access, account, state_file, mechanic):
     if fixture["memberKey"] is None:
         deck = deck_head(web, access, deck_id)
         answer_node = str(uuid.uuid4())
-        distractor_node = str(uuid.uuid4()) if mechanic == "SINGLE_CHOICE" else None
+        distractor_node = str(uuid.uuid4())
         status, headers, acknowledgement = web.request(
             "POST", f"/api/decks/{deck_id}/items", {
                 "commandId": str(uuid.uuid4()), "expectedDeckRevisionId": deck["revisionId"],
@@ -237,50 +340,50 @@ def provision_additional_mechanic(web, access, account, state_file, mechanic):
     require(status == 200 and isinstance(material, dict), f"{mechanic} material did not survive restart")
     require_private(headers, f"{mechanic} material")
     if fixture["exerciseId"] is None:
-        deck = deck_head(web, access, deck_id)
-        member, revision, answer_node = (fixture[key] for key in ("memberKey", "itemRevisionId", "answerNodeId"))
-        bindings = [{
-            "bindingId": str(uuid.uuid4()), "role": "ASSESSED", "memberKey": member,
-            "itemRevisionId": revision, "nodeIds": [answer_node],
-            "display": {"kind": "NODE_TEXT"}, "ordinal": 0,
-        }]
-        if mechanic == "SINGLE_CHOICE":
-            for ordinal, node in enumerate((answer_node, fixture["distractorNodeId"]), 1):
-                bindings.append({
-                    "bindingId": str(uuid.uuid4()), "role": "OPTION", "memberKey": member,
-                    "itemRevisionId": revision, "nodeIds": [node],
-                    "display": {"kind": "NODE_TEXT"}, "ordinal": ordinal,
-                })
-        evaluator = ("self-check" if mechanic == "SELF_CHECK" else
-                     "deterministic-choice" if mechanic == "SINGLE_CHOICE" else "deterministic-text")
-        status, headers, acknowledgement = web.request(
-            "POST", f"/api/decks/{deck_id}/exercises", {
-                "commandId": str(uuid.uuid4()), "expectedDeckRevisionId": deck["revisionId"],
-                "objective": {
-                    "operation": "create",
-                    "answerContract": {"schemaVersion": 1,
-                                       "normalization": ["UNICODE_NFC", "TRIM", "CASE_FOLD"],
-                                       "accepted": ["memory"]},
-                },
-                "exercise": {
-                    "type": mechanic, "schemaVersion": 1, "enabled": True,
-                    "prompt": {"kind": "CUSTOM_TEXT", "text": f"P0 {mechanic} smoke prompt"},
-                    "bindings": bindings,
-                    "evaluatorPolicy": {"id": evaluator, "version": "1"},
-                },
-            }, bearer=access, headers={"If-Match": f'"{deck["rowVersion"]}"'},
-        )
-        require(status == 201 and isinstance(acknowledgement, dict), f"{mechanic} exercise publication failed")
-        require_private(headers, f"{mechanic} exercise")
-        fixture["exerciseId"] = acknowledgement["exerciseId"]
+        fixture["ids"] = mechanic_ids(mechanic)
+        exercise = mechanic_exercise(mechanic, fixture["memberKey"], fixture["itemRevisionId"],
+                                     fixture["answerNodeId"], fixture["distractorNodeId"], fixture["ids"])
+        fixture["exerciseId"] = publish_exercise(web, access, deck_id, f"{mechanic} smoke objective",
+                                                 exercise, mechanic)
         persist_account(state_file, account)
-    status, headers, exercise = web.request(
-        "GET", f"/api/decks/{deck_id}/exercises/{fixture['exerciseId']}", bearer=access,
-    )
-    require(status == 200 and isinstance(exercise, dict) and exercise.get("type") == mechanic
-            and exercise.get("enabled") is True, f"{mechanic} exercise did not survive restart")
-    require_private(headers, f"{mechanic} exercise")
+    read_exercise(web, access, deck_id, fixture["exerciseId"], mechanic)
     return fixture
+
+
+def capability_smoke(web, access, account):
+    status, headers, capabilities = web.request("GET", "/api/capabilities", bearer=access)
+    require(status == 200 and capabilities == {
+        "aiAssessment": {"available": False, "reason": "DISABLED"},
+        "speechToText": {"available": False, "reason": "DISABLED"},
+    }, f"AI capabilities must default to disabled: {capabilities}")
+    require_private(headers, "capabilities")
+    member, revision = account["studyMemberKey"], account["studyItemRevisionId"]
+    base = mechanic_exercise("FREE_RESPONSE", member, revision, account["studyAnswerNodeId"], None, {})
+    ai = json.loads(json.dumps(base))
+    ai["evaluatorPolicy"] = {"id": "ai-semantic", "version": "1", "rubric": {
+        "referenceAnswer": "Memory retains learned information.",
+        "criteria": [{"criterionId": str(uuid.uuid4()), "description": "Mentions retention", "critical": True}],
+        "levels": [{"level": "COMPLETE", "description": "All criteria"},
+                   {"level": "PARTIAL", "description": "Critical criteria only"},
+                   {"level": "INSUFFICIENT", "description": "A critical criterion is missing"}],
+    }}
+    speech = json.loads(json.dumps(base))
+    speech["content"]["responseInput"] = "TEXT_OR_SPEECH"
+    legacy = json.loads(json.dumps(base))
+    legacy["type"] = "TYPED"
+    for label, exercise, expected, code in (("ai-semantic", ai, 409, "CAPABILITY_UNAVAILABLE"),
+                                            ("speech input", speech, 409, "CAPABILITY_UNAVAILABLE"),
+                                            ("retired type", legacy, 400, "INVALID_REQUEST")):
+        deck = deck_head(web, access, account["deckId"])
+        status, _, problem = web.request("POST", f"/api/decks/{account['deckId']}/exercises", {
+            "commandId": str(uuid.uuid4()), "expectedDeckRevisionId": deck["revisionId"],
+            "objective": {"operation": "create", "title": "Rejected capability probe"}, "exercise": exercise,
+        }, bearer=access, headers={"If-Match": f'"{deck["rowVersion"]}"'})
+        require(status == expected and isinstance(problem, dict) and problem.get("code") == code,
+                f"{label} publication must be rejected with {code}: {status}")
+        require(deck_head(web, access, account["deckId"])["rowVersion"] == deck["rowVersion"],
+                f"rejected {label} publication advanced the Deck")
+    return {"aiAssessment": "DISABLED", "speechToText": "DISABLED", "bypassRejected": True}
 
 
 def provision_study_fixture(web, access, account, state_file):
@@ -319,43 +422,12 @@ def provision_study_fixture(web, access, account, state_file):
 
     exercise_id = account["studyExerciseId"]
     if exercise_id is None:
-        deck = deck_head(web, access, deck_id)
-        status, headers, acknowledgement = web.request(
-            "POST", f"/api/decks/{deck_id}/exercises", {
-                "commandId": str(uuid.uuid4()), "expectedDeckRevisionId": deck["revisionId"],
-                "objective": {
-                    "operation": "create",
-                    "answerContract": {
-                        "schemaVersion": 1, "normalization": ["UNICODE_NFC", "TRIM", "CASE_FOLD"],
-                        "accepted": ["memory"],
-                    },
-                },
-                "exercise": {
-                    "type": "TYPED", "schemaVersion": 1, "enabled": True,
-                    "prompt": {"kind": "CUSTOM_TEXT", "text": "Type the retained smoke answer"},
-                    "bindings": [{
-                        "bindingId": str(uuid.uuid4()), "role": "ASSESSED", "memberKey": member,
-                        "itemRevisionId": item_revision, "nodeIds": [answer_node],
-                        "display": {"kind": "NODE_TEXT"}, "ordinal": 0,
-                    }],
-                    "evaluatorPolicy": {"id": "deterministic-text", "version": "1"},
-                },
-            }, bearer=access, headers={"If-Match": f'"{deck["rowVersion"]}"'}
-        )
-        require(status == 201 and isinstance(acknowledgement, dict), "Study exercise publication failed")
-        require_private(headers, "Study exercise")
-        exercise_id = acknowledgement.get("exerciseId")
-        require(isinstance(exercise_id, str) and acknowledgement.get("enabled") is True,
-                "invalid Study exercise acknowledgement")
+        exercise = mechanic_exercise("FREE_RESPONSE", member, item_revision, answer_node, None, {})
+        exercise_id = publish_exercise(web, access, deck_id, "Retained smoke answer", exercise, "Study")
         account["studyExerciseId"] = exercise_id
         persist_account(state_file, account)
-    status, headers, exercise = web.request(
-        "GET", f"/api/decks/{deck_id}/exercises/{exercise_id}", bearer=access
-    )
-    require(status == 200 and isinstance(exercise, dict), "persistent Study exercise did not survive restart")
-    require_private(headers, "Study exercise")
-    require(exercise.get("exerciseId") == exercise_id and exercise.get("type") == "TYPED"
-            and exercise.get("enabled") is True, "Study exercise identity changed")
+    exercise = read_exercise(web, access, deck_id, exercise_id, "FREE_RESPONSE")
+    require(exercise.get("exerciseId") == exercise_id, "Study exercise identity changed")
     return member
 
 
@@ -391,21 +463,38 @@ def start_session(web, access, deck_id, mode, source=None):
     return session
 
 
-def presentation(session, mode, exercise_type="TYPED"):
+def private_keys(value, path=""):
+    """Learner presentations must not contain answer keys, author media labels or bindings."""
+    found = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            allowed_reference = key == "reference" and path.endswith("SELF_CHECK.content")
+            if key in PRIVATE_PRESENTATION_KEYS and not allowed_reference:
+                found.append(f"{path}.{key}")
+            found.extend(private_keys(child, f"{path}.{key}"))
+    elif isinstance(value, list):
+        for child in value:
+            found.extend(private_keys(child, path))
+    return found
+
+
+def presentation(session, mode, exercise_type="FREE_RESPONSE"):
     values = session.get("presentations")
     require(session.get("status") == "ACTIVE" and isinstance(values, list) and len(values) == 1,
             f"{mode} Study session did not issue one presentation")
     value = values[0]
     require(value.get("type") == exercise_type and isinstance(value.get("presentationId"), str)
-            and isinstance(value.get("nonce"), str), f"invalid {mode} presentation")
+            and isinstance(value.get("nonce"), str) and isinstance(value.get("content"), dict),
+            f"invalid {mode} presentation")
+    leaked = private_keys({exercise_type: value})
+    require(not leaked, f"{exercise_type} presentation leaked private fields: {leaked}")
     return value
 
 
 def attempt_payload(value, answer="memory"):
     return {
         "attemptId": str(uuid.uuid4()), "presentationId": value["presentationId"], "nonce": value["nonce"],
-        "response": {"kind": "TEXT", "text": answer}, "hintsUsed": [],
-        "confidence": "KNEW", "durationMs": 1,
+        "response": {"kind": "TEXT", "text": answer}, "confidence": "KNEW", "durationMs": 1,
     }
 
 
@@ -425,7 +514,7 @@ def progress_snapshot(web, access, deck_id, member):
     matches = [item for item in page["items"] if item.get("memberKey") == member]
     require(len(matches) == 1, "Study material is missing from progress")
     item = matches[0]
-    fields = {"memberKey", "itemRevisionId", "state", "objectiveCoverage", "lastAssessedAt", "nextDue"}
+    fields = {"memberKey", "itemRevisionId", "state", "objectiveCoverage", "lastAssessedAt", "nextDue", "title"}
     require(set(item) == fields, "invalid Study progress shape")
     return item
 
@@ -541,8 +630,54 @@ def study_smoke(web, access, account, state_file):
     }
 
 
-def additional_p0_smoke(web, access, account, state_file):
-    evidence_classes = {"SELF_CHECK": "LOW", "CLOZE_SINGLE": "MEDIUM", "SINGLE_CHOICE": "LOW"}
+def mechanic_response(web, access, deck_id, session_id, mechanic, shown, ids):
+    """Returns the response plus mechanic-specific server interactions performed before submit."""
+    base = f"/api/decks/{deck_id}/study-sessions/{session_id}"
+    content = shown["content"]
+    if mechanic == "SELF_CHECK":
+        require(content.get("reference") == [text_block("memory")], "self-check reference was not resolved")
+        return {"kind": "SELF_CHECK", "rating": "FULL"}
+    if mechanic == "CLOZE":
+        blanks = [part for part in content.get("passage", []) if part.get("kind") == "BLANK"]
+        require([part["blankId"] for part in blanks] == ids["blanks"], "cloze blanks were not pinned")
+        require(blanks[0]["size"] == {"mode": "ANSWER_LENGTH", "length": 6}, "cloze answer length mismatch")
+        hint_path = f"{base}/presentations/{shown['presentationId']}/hints"
+        hints = []
+        for _ in range(2):
+            status, headers, hint = web.request("POST", hint_path, {"nonce": shown["nonce"],
+                                                                   "blankId": ids["blanks"][0]}, bearer=access)
+            require(status == 200 and hint == {"presentationId": shown["presentationId"],
+                                               "blankId": ids["blanks"][0], "firstLetter": "m"},
+                    f"cloze first-letter hint failed: {status} {hint}")
+            require_private(headers, "cloze hint")
+            hints.append(hint)
+        status, _, _ = web.request("POST", hint_path, {"nonce": shown["nonce"], "blankId": ids["blanks"][1]},
+                                   bearer=access)
+        require(status == 400, "hint must be refused for a blank without first-letter hints")
+        return {"kind": "CLOZE", "blanks": [{"blankId": blank, "text": " Memory "} for blank in ids["blanks"]]}
+    if mechanic == "CHOICE":
+        options = content.get("options")
+        require(isinstance(options, list) and [option["optionId"] for option in options] == ids["options"]
+                and options[0]["blocks"] == [text_block("memory")], "choice options were not resolved")
+        require(content.get("selectionMode") == "MULTIPLE", "choice selection mode missing")
+        return {"kind": "CHOICE", "optionIds": [ids["options"][2], ids["options"][0]]}
+    if mechanic == "MATCH":
+        left = [item["itemId"] for item in content.get("left", [])]
+        right = [item["itemId"] for item in content.get("right", [])]
+        require(sorted(left) == sorted(ids["left"]) and sorted(right) == sorted(ids["right"]),
+                "match sides were not issued")
+        wrong = {"presentationId": shown["presentationId"], "nonce": shown["nonce"],
+                 "leftId": ids["left"][0], "rightId": ids["right"][1]}
+        for _ in range(2):
+            status, _, checked = web.request("POST", f"{base}/pair-checks", wrong, bearer=access)
+            require(status == 200 and checked == {"correct": False}, "wrong pair check was not durable")
+        return {"kind": "MATCH", "pairs": [{"leftId": l, "rightId": r} for l, r in zip(ids["left"], ids["right"])]}
+    raise AssertionError(f"unknown mechanic {mechanic}")
+
+
+def additional_mechanics_smoke(web, access, account, state_file):
+    expected = {"SELF_CHECK": ("CORRECT", "LOW"), "CLOZE": ("CORRECT", "MEDIUM"),
+                "CHOICE": ("CORRECT", "LOW"), "MATCH": ("PARTIAL", "LOW")}
     for mechanic in ADDITIONAL_MECHANICS:
         fixture = provision_additional_mechanic(web, access, account, state_file, mechanic)
         deck_id, member = fixture["deckId"], fixture["memberKey"]
@@ -553,30 +688,26 @@ def additional_p0_smoke(web, access, account, state_file):
         shown = presentation(scheduled, "SCHEDULED", mechanic)
         attempt = attempt_payload(shown)
         attempt["confidence"] = None
-        if mechanic == "SELF_CHECK":
-            attempt["response"] = {"kind": "SELF_CHECK", "rating": "FULL"}
-            attempt["hintsUsed"] = ["REVEAL"]
-        elif mechanic == "CLOZE_SINGLE":
-            attempt["hintsUsed"] = ["REVEAL_FIRST_GRAPHEME"]
-        else:
-            options = shown.get("options")
-            require(isinstance(options, list) and len(options) == 2, "single choice options missing")
-            correct = [option for option in options if option.get("text", "").strip() == "memory"]
-            require(len(correct) == 1 and isinstance(correct[0].get("optionId"), str),
-                    "single choice correct option is ambiguous")
-            attempt["response"] = {"kind": "CHOICE", "optionId": correct[0]["optionId"]}
+        attempt["response"] = mechanic_response(web, access, deck_id, scheduled["sessionId"], mechanic, shown,
+                                                fixture["ids"])
         status, headers, outcome = submit_attempt(web, access, deck_id, scheduled["sessionId"], attempt)
         require(status == 200 and isinstance(outcome, dict), f"{mechanic} scheduled attempt failed")
         require_private(headers, f"{mechanic} Study attempt")
         evidence = outcome.get("evidence")
+        result, evidence_class = expected[mechanic]
         require(outcome.get("status") == "ASSESSED"
-                and isinstance(evidence, dict) and evidence.get("result") == "CORRECT"
-                and evidence.get("evidenceClass") == evidence_classes[mechanic]
+                and isinstance(evidence, dict) and evidence.get("result") == result
+                and evidence.get("evidenceClass") == evidence_class
                 and isinstance(outcome.get("transition"), dict),
                 f"{mechanic} unexpected evidence: status={outcome.get('status')}, "
                 f"result={evidence.get('result') if isinstance(evidence, dict) else None}, "
                 f"class={evidence.get('evidenceClass') if isinstance(evidence, dict) else None}, "
                 f"canonical={outcome.get('canonicalEffects')}")
+        if mechanic == "MATCH":
+            require("PAIR_RETRY" in evidence.get("reasonCodes", []), "earlier wrong pair was erased")
+        if mechanic == "CLOZE":
+            blanks = outcome.get("feedback", {}).get("blanks", [])
+            require([blank.get("hinted") for blank in blanks] == [True, False], "per-blank hint evidence missing")
         retry_status, retry_headers, retry = submit_attempt(web, access, deck_id, scheduled["sessionId"], attempt)
         require(retry_status == 200 and retry_headers.get("idempotency-replayed") == "true"
                 and retry == outcome, f"{mechanic} retry changed the result")
@@ -621,7 +752,8 @@ def full_smoke(web, identity, state_file):
     status, _, _ = web.request("GET", f"/api/capture-notes/{account['captureId']}", bearer=access)
     require(status == 200, "persistent Capture did not survive restart")
     study = study_smoke(web, access, account, state_file)
-    study["additionalP0"] = additional_p0_smoke(web, access, account, state_file)
+    study["mechanics"] = ["FREE_RESPONSE", *additional_mechanics_smoke(web, access, account, state_file)]
+    study["capabilities"] = capability_smoke(web, access, account)
     persist_account(state_file, account)
     print(json.dumps({
         "state": "passed", "https": True, "pkce": True, "sameOriginLearning": True,

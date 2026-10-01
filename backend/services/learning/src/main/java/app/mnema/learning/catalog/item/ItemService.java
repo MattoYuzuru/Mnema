@@ -1,6 +1,7 @@
 package app.mnema.learning.catalog.item;
 
 import app.mnema.learning.catalog.content.NativeDocument;
+import app.mnema.learning.catalog.content.ItemPreviews;
 import app.mnema.learning.catalog.content.NativeMediaReferences;
 import app.mnema.learning.catalog.content.pages.CountedPages;
 import app.mnema.learning.catalog.content.pages.CountedPageTypes.Entry;
@@ -49,10 +50,11 @@ import java.util.UUID;
 
 @Service
 public class ItemService {
-    private static final int MAX_MEMBERS = 100_000;
+    static final int MAX_MEMBERS = 100_000;
     private static final Duration PREPARATION_LEASE = Duration.ofMinutes(1);
 
     private final ItemRepository repository;
+    private final ItemPreviews previews;
     private final CommandReceiptService receipts;
     private final CompareAndSetExecutor cas;
     private final ImmutableStorage storage;
@@ -65,8 +67,9 @@ public class ItemService {
     private final TransactionTemplate cleanupTransaction;
 
     public ItemService(ItemRepository repository, CommandReceiptService receipts, CompareAndSetExecutor cas,
-                       ImmutableStorage storage, MediaCatalog mediaCatalog, PlatformTransactionManager transactions) {
+                       ImmutableStorage storage, MediaCatalog mediaCatalog, PlatformTransactionManager transactions, ItemPreviews previews) {
         this.repository = repository;
+        this.previews = previews;
         this.receipts = receipts;
         this.cas = cas;
         this.storage = storage;
@@ -105,7 +108,8 @@ public class ItemService {
             if (row == null || !row.descriptorRootId().equals(entries.get(index).target().objectId())) {
                 throw new IllegalStateException("Member projection is inconsistent");
             }
-            items.add(row.summary(start + index));
+            items.add(row.summary(start + index).put("title", previews.title(deckId, row.memberKey(),
+                    row.revisionId(), row.scopeId(), row.contentRootId())));
         }
         if (start + entries.size() < deck.memberCount()) {
             result.put("nextCursor", new ItemCursor(deck.revisionId(), start + entries.size()).encode());
@@ -121,8 +125,12 @@ public class ItemService {
                 : repository.revision(actor, deckId, memberKey, revisionId)).orElseThrow(ResourceNotFoundException::new);
         UUID selectedDeckRevision = revisionId == null ? deck.revisionId() : item.publishedDeckRevisionId();
         long selectedDeckVersion = revisionId == null ? deck.version() : item.publishedDeckVersion();
-        return item.detail(selectedDeckRevision, selectedDeckVersion,
+        Integer ordinal = revisionId == null ? repository.currentOrdinal(deck, item).orElseThrow(VersionConflictException::new)
+                : item.ordinal();
+        ObjectNode result = item.detail(selectedDeckRevision, selectedDeckVersion,
                 decode(item.scopeId(), item.contentRootId()).document());
+        result.put("ordinal", ordinal);
+        return result;
     }
 
     public WriteResult publish(UUID actor, UUID deckId, long expectedDeckVersion, ItemPublicationCommand command) {

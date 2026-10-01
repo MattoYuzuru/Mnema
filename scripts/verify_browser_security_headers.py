@@ -17,14 +17,14 @@ from urllib.request import Request, urlopen
 from frontend_release_assets import hashed_assets
 
 
-JSON_LD_HASH = "sha256-dPpiNzPhacWONZyOECmbuE9hUJqG63dY8JOD/zBnn5Q="
+JSON_LD_HASH = "sha256-Fp5GJnYMl9gcleSNB+7ZRLuuxVyhm4juel5fT2zlUrU="
 BASELINE_CSP = "base-uri 'self'; object-src 'none'; frame-ancestors 'none'"
 COMMON_HEADERS = {
     "x-content-type-options": "nosniff",
     "referrer-policy": "strict-origin-when-cross-origin",
     "permissions-policy": (
-        "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), "
-        "microphone=(), payment=(), usb=()"
+        "accelerometer=(), camera=(self), geolocation=(), gyroscope=(), magnetometer=(), "
+        "microphone=(self), payment=(), usb=()"
     ),
 }
 
@@ -48,11 +48,12 @@ def full_policy(auth_origin: str, storage_origin: str) -> str:
         "script-src-attr 'none'; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; "
-        f"img-src 'self' data: blob: {storage_origin} https://lh3.googleusercontent.com "
+        f"img-src 'self' data: blob: {auth_origin} {storage_origin} https://lh3.googleusercontent.com "
         "https://avatars.githubusercontent.com https://github.com https://avatars.yandex.net; "
         f"media-src 'self' blob: {storage_origin}; "
         f"connect-src 'self' {auth_origin} {storage_origin} https://challenges.cloudflare.com; "
-        "frame-src https://challenges.cloudflare.com; worker-src 'self' blob:; manifest-src 'self'"
+        "frame-src https://challenges.cloudflare.com https://www.youtube-nocookie.com; "
+        "worker-src 'self' blob:; manifest-src 'self'"
     )
 
 
@@ -186,7 +187,7 @@ def verify_hosted(args: argparse.Namespace) -> None:
         ("/", 200, "public, max-age=0, must-revalidate"),
         ("/login", 200, "public, max-age=0, must-revalidate"),
         ("/app-config.js", 200, "no-store"),
-        ("/api/ai", 503, "no-store"),
+        ("/api/ai", 404, "no-store"),
         ("/missing-browser-security-contract.js", 404, None),
     ]
 

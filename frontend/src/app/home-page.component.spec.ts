@@ -23,13 +23,34 @@ describe('HomePageComponent', () => {
         fixture.detectChanges();
     });
 
-    it('offers only implemented own-deck actions without fake study or catalog state', () => {
+    it('keeps the landing actions on implemented routes and the feature links on real sections', () => {
         const root = fixture.nativeElement as HTMLElement;
-        const links = Array.from(root.querySelectorAll<HTMLAnchorElement>('a')).map(link => link.getAttribute('href'));
+        const routes = Array.from(root.querySelectorAll<HTMLAnchorElement>('a[href^="/decks"]'))
+            .map(link => link.getAttribute('href'));
+        const sections = Array.from(root.querySelectorAll<HTMLAnchorElement>('.feature-strip a'))
+            .map(link => link.hash);
 
-        expect(links).toEqual(['/decks', '/decks/new']);
+        expect(routes).toContain('/decks');
+        expect(routes).toContain('/decks/new');
+        expect(sections).toEqual(['#materials', '#exercises', '#rhythm']);
+        expect(root.querySelectorAll('h1').length).toBe(1);
+        expect(root.querySelector('picture img')?.getAttribute('width')).toBe('1024');
         expect(root.textContent).not.toContain('Прогресс');
-        expect(root.textContent).not.toContain('Начать обучение');
         expect(root.querySelectorAll('[role="progressbar"]').length).toBe(0);
+        expect(root.textContent).toContain('Повторяйте с интервалами');
+        expect(root.textContent).toContain('изображения, произношение, диаграммы');
+        expect(root.textContent).toContain('больше шаблонов упражнений');
+    });
+
+    it('offers login instead of a protected deck route to an anonymous visitor', () => {
+        fixture.destroy();
+        auth.status.and.returnValue('anonymous');
+        fixture = TestBed.createComponent(HomePageComponent);
+        fixture.detectChanges();
+
+        const root = fixture.nativeElement as HTMLElement;
+        const primaryAction = root.querySelector<HTMLAnchorElement>('.hero-actions .primary');
+        expect(primaryAction?.getAttribute('href')).toBe('/login');
+        expect(root.querySelectorAll('a[href^="/decks"]').length).toBe(0);
     });
 });

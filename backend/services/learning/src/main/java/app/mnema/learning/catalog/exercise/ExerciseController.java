@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -65,6 +66,14 @@ public class ExerciseController {
         ExerciseService.WriteResult result = service.publish(id(identity.getSubject()), id(deckId), id(exerciseId),
                 ExercisePrecondition.read(request.getHeaders(HttpHeaders.IF_MATCH)), ExerciseCommand.readUpdate(body));
         return write(result, HttpStatus.OK).body(result.acknowledgement());
+    }
+
+    @DeleteMapping("/{exerciseId}")
+    ResponseEntity<Void> delete(@AuthenticationPrincipal Jwt identity, @PathVariable String deckId,
+                                @PathVariable String exerciseId, HttpServletRequest request) {
+        service.delete(id(identity.getSubject()), id(deckId), id(exerciseId),
+                ExercisePrecondition.read(request.getHeaders(HttpHeaders.IF_MATCH)));
+        return ResponseEntity.noContent().headers(privateHeaders()).build();
     }
 
     private static ResponseEntity.BodyBuilder write(ExerciseService.WriteResult result, HttpStatus status) {

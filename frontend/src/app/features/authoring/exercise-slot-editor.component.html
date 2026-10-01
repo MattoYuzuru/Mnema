@@ -1,0 +1,99 @@
+<fieldset class="slot" [attr.aria-describedby]="idPrefix() + '-limits' + (error() ? ' ' + idPrefix() + '-error' : '')">
+  <legend>{{ label() }}</legend>
+  <p class="hint" [id]="idPrefix() + '-limits'">{{ limits() }}@if (hint()) { {{ ' ' + hint() }}}</p>
+
+  <ol class="block-list">
+    @for (block of blocks(); track $index; let index = $index; let first = $first; let last = $last) {
+      <li class="block" [attr.data-block]="index">
+        <div class="block-head">
+          <strong>{{ index + 1 }}. {{ kindLabel(block.kind) }}</strong>
+          <span class="block-actions">
+            <button type="button" class="button small" data-move [disabled]="first" (click)="move(index, -1)"
+                    [attr.aria-label]="'Поднять блок ' + (index + 1) + ' выше'">↑</button>
+            <button type="button" class="button small" data-move [disabled]="last" (click)="move(index, 1)"
+                    [attr.aria-label]="'Опустить блок ' + (index + 1) + ' ниже'">↓</button>
+            <button type="button" class="button small" (click)="remove(index)"
+                    [attr.aria-label]="'Удалить блок ' + (index + 1)">Удалить</button>
+          </span>
+        </div>
+
+        @switch (block.kind) {
+          @case ('TEXT') {
+            <label [for]="idPrefix() + '-text-' + index">Текст блока {{ index + 1 }}</label>
+            <textarea [id]="idPrefix() + '-text-' + index" [rows]="spec().profile === 'COMPACT' ? 2 : 4" spellcheck="true"
+                      [value]="block.text" [attr.aria-invalid]="problem(block) ? 'true' : null"
+                      (input)="patch(index, { text: $any($event.target).value })"></textarea>
+            <p class="counter" [class.over]="block.text.length > rules().textLimit">{{ block.text.length }} / {{ rules().textLimit }}</p>
+          }
+          @case ('MATERIAL') {
+            <label [for]="idPrefix() + '-material-' + index">Фрагмент материала для блока {{ index + 1 }}</label>
+            <app-mnema-select [controlId]="idPrefix() + '-material-' + index" label="Фрагмент материала"
+              [options]="projectionOptions()" [value]="resolved(block) === null ? '' : block.nodeId"
+              [invalid]="!!problem(block)" (valueChange)="patch(index, { nodeId: $event })" />
+            @if (isStale(block)) {
+              <p class="notice warning" role="status">Фрагмент закреплён за прежней версией материала. Ученик увидит его текст из той версии; выберите фрагмент снова, чтобы обновить.</p>
+            }
+            @if (resolved(block); as text) {
+              <p class="preview-text">{{ text }}</p>
+              <p class="counter" [class.over]="text.length > rules().textLimit">{{ text.length }} / {{ rules().textLimit }}</p>
+            }
+          }
+          @case ('IMAGE') {
+            <p class="hint">Файл выбран.</p>
+            <label [for]="idPrefix() + '-alt-' + index">Описание изображения для блока {{ index + 1 }} <span class="hint">обязательно: его услышит скринридер</span></label>
+            <input type="text" [id]="idPrefix() + '-alt-' + index" [value]="block.alt" autocomplete="off"
+                   [attr.aria-invalid]="problem(block) ? 'true' : null" (input)="patch(index, { alt: $any($event.target).value })" />
+          }
+          @case ('AUDIO') {
+            <p class="hint">Файл выбран.</p>
+            <label [for]="idPrefix() + '-title-' + index">Название аудио <span class="hint">обязательно, видите только вы</span></label>
+            <input type="text" [id]="idPrefix() + '-title-' + index" [value]="block.title" autocomplete="off"
+                   [attr.aria-invalid]="problem(block) ? 'true' : null" (input)="patch(index, { title: $any($event.target).value })" />
+            <label [for]="idPrefix() + '-transcript-' + index">Расшифровка <span class="hint">необязательно; ученик откроет её сам</span></label>
+            <textarea [id]="idPrefix() + '-transcript-' + index" rows="2" [value]="block.transcript ?? ''"
+                      (input)="setTranscript(index, $any($event.target).value)"></textarea>
+          }
+          @case ('VIDEO') {
+            <p class="hint">Файл выбран.</p>
+            <label [for]="idPrefix() + '-title-' + index">Название видео <span class="hint">обязательно, видите только вы</span></label>
+            <input type="text" [id]="idPrefix() + '-title-' + index" [value]="block.title" autocomplete="off"
+                   [attr.aria-invalid]="problem(block) ? 'true' : null" (input)="patch(index, { title: $any($event.target).value })" />
+            <label [for]="idPrefix() + '-transcript-' + index">Расшифровка <span class="hint">необязательно; ученик откроет её сам</span></label>
+            <textarea [id]="idPrefix() + '-transcript-' + index" rows="2" [value]="block.transcript ?? ''"
+                      (input)="setTranscript(index, $any($event.target).value)"></textarea>
+          }
+          @case ('YOUTUBE') {
+            <label [for]="idPrefix() + '-youtube-' + index">Ссылка или идентификатор YouTube</label>
+            <input type="text" [id]="idPrefix() + '-youtube-' + index" [value]="block.videoId" autocomplete="off" inputmode="url"
+                   [attr.aria-invalid]="problem(block) ? 'true' : null" (input)="setYoutube(index, $any($event.target).value)" />
+            <label [for]="idPrefix() + '-youtube-title-' + index">Название ролика</label>
+            <input type="text" [id]="idPrefix() + '-youtube-title-' + index" [value]="block.title" autocomplete="off"
+                   [attr.aria-invalid]="problem(block) ? 'true' : null" (input)="patch(index, { title: $any($event.target).value })" />
+          }
+        }
+        @if (problem(block); as message) { <p class="field-error">{{ message }}</p> }
+      </li>
+    }
+  </ol>
+
+  <div class="add-row" role="group" [attr.aria-label]="'Добавить блок: ' + label()">
+    <button type="button" class="button" data-add [disabled]="!canAdd('TEXT')" (click)="add('TEXT')">+ Текст</button>
+    <button type="button" class="button" data-add [disabled]="!canAdd('MATERIAL') || context().projections.length === 0"
+            (click)="add('MATERIAL')">+ Фрагмент материала</button>
+    <button type="button" class="button" data-add [attr.aria-expanded]="pickerOpen()" [disabled]="!canAddMedia()"
+            (click)="togglePicker()">+ Изображение, аудио или видео</button>
+    @if (canAddYoutube()) {
+      <button type="button" class="button" data-add [disabled]="!canAdd('YOUTUBE')" (click)="add('YOUTUBE')">+ YouTube</button>
+    }
+  </div>
+
+  @if (pickerMounted()) {
+    <div class="media-picker" [hidden]="!pickerOpen()">
+      <p class="hint">Выберите файл из материала, загрузите новый или запишите аудио. Микрофон включится только после нажатия «Записать аудио».</p>
+      <app-native-media-upload [document]="context().document" chooseLabel="Добавить в упражнение" (chooseAsset)="onAsset($event)" />
+      <button type="button" class="button" (click)="pickerOpen.set(false)">Закрыть выбор файла</button>
+    </div>
+  }
+  @if (notice(); as message) { <p class="field-error" role="alert">{{ message }}</p> }
+  @if (error(); as message) { <p class="field-error" role="alert" [id]="idPrefix() + '-error'">{{ message }}</p> }
+</fieldset>

@@ -1,0 +1,67 @@
+[
+  {
+    "name": "media-320.png",
+    "zoom": 1,
+    "width": 320,
+    "innerWidth": 320,
+    "scrollWidth": 320,
+    "scrollHeight": 1102,
+    "cards": 3,
+    "playerButtons": 5,
+    "imageWidth": 253.984375,
+    "imageRight": 286.984375,
+    "focusable": 15
+  },
+  {
+    "name": "media-390.png",
+    "zoom": 1,
+    "width": 390,
+    "innerWidth": 390,
+    "scrollWidth": 390,
+    "scrollHeight": 1118,
+    "cards": 3,
+    "playerButtons": 5,
+    "imageWidth": 323.984375,
+    "imageRight": 356.984375,
+    "focusable": 15
+  },
+  {
+    "name": "media-768.png",
+    "zoom": 1,
+    "width": 768,
+    "innerWidth": 768,
+    "scrollWidth": 768,
+    "scrollHeight": 1418,
+    "cards": 3,
+    "playerButtons": 5,
+    "imageWidth": 687.90625,
+    "imageRight": 727.9375,
+    "focusable": 15
+  },
+  {
+    "name": "media-1440.png",
+    "zoom": 1,
+    "width": 1440,
+    "innerWidth": 1440,
+    "scrollWidth": 1440,
+    "scrollHeight": 925,
+    "cards": 3,
+    "playerButtons": 5,
+    "imageWidth": 623.5625,
+    "imageRight": 800.5625,
+    "focusable": 15
+  },
+  {
+    "name": "media-768-zoom200.png",
+    "zoom": 2,
+    "width": 768,
+    "innerWidth": 768,
+    "scrollWidth": 768,
+    "scrollHeight": 2373,
+    "cards": 3,
+    "playerButtons": 5,
+    "imageWidth": 607.8125,
+    "imageRight": 687.890625,
+    "focusable": 15
+  }
+]

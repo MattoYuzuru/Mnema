@@ -35,12 +35,15 @@ describe('CapturePageComponent', () => {
         noteId: id('3'), deckId: deck.deckId, rowVersion: '0', source: 'manual', text: 'Мысль', contentBytes: 12,
         archived: false, createdAt: '2026-09-19T10:00:00Z', updatedAt: '2026-09-19T10:00:00Z', conversion: null
     };
+    const originalObserver = window.IntersectionObserver;
+
+    afterEach(() => { window.IntersectionObserver = originalObserver; });
 
     beforeEach(async () => {
         api = jasmine.createSpyObj<AuthoringApiService>('AuthoringApiService', [
-            'listCaptures', 'createCapture', 'convertCapture'
+            'listDeckCaptures', 'createCapture', 'convertCapture', 'deleteCapture'
         ]);
-        api.listCaptures.and.returnValue(of({ items: [], nextCursor: null }));
+        api.listDeckCaptures.and.returnValue(of({ items: [], nextCursor: null, total: 0 }));
         const decks = jasmine.createSpyObj<OwnDecksApiService>('OwnDecksApiService', ['detail']);
         decks.detail.and.returnValue(of(deck));
         await TestBed.configureTestingModule({
@@ -74,5 +77,54 @@ describe('CapturePageComponent', () => {
         expect(api.createCapture.calls.argsFor(1)).toEqual(original);
         expect(fixture.componentInstance.notes()).toEqual([capture]);
         expect(fixture.componentInstance.recovery()).toBeNull();
+    });
+
+    it('removes a note after a confirmed response and decrements the remaining count', () => {
+        fixture.componentInstance.notes.set([capture]);
+        fixture.componentInstance.total.set(1);
+        api.deleteCapture.and.returnValue(of(void 0));
+        fixture.componentInstance.deleteNote(capture);
+        fixture.detectChanges();
+
+        expect(api.deleteCapture).toHaveBeenCalledOnceWith(capture);
+        expect(fixture.componentInstance.notes()).toEqual([]);
+        expect(fixture.componentInstance.total()).toBe(0);
+    });
+
+    it('keeps a note visible if deletion is not confirmed', () => {
+        fixture.componentInstance.notes.set([capture]);
+        fixture.componentInstance.total.set(1);
+        api.deleteCapture.and.returnValue(throwError(() => new HttpErrorResponse({ status: 412 })));
+        fixture.componentInstance.deleteNote(capture);
+
+        expect(fixture.componentInstance.notes()).toEqual([capture]);
+        expect(fixture.componentInstance.total()).toBe(1);
+        expect(fixture.componentInstance.recovery()).toBe('reload');
+    });
+
+    it('prefetches the next deck-scoped note page before the end of the list', () => {
+        let onIntersection: IntersectionObserverCallback = () => undefined;
+        window.IntersectionObserver = class {
+            constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
+                onIntersection = callback;
+                expect(options?.rootMargin).toBe('0px 0px 800px 0px');
+            }
+            observe(): void { /* Triggered explicitly below. */ }
+            disconnect(): void { /* Nothing to release in the test. */ }
+        } as unknown as typeof IntersectionObserver;
+        const nextNote = { ...capture, noteId: id('8'), text: 'Вторая мысль' };
+        api.listDeckCaptures.and.returnValues(
+            of({ items: [capture], nextCursor: 'page-two', total: 2 }),
+            of({ items: [nextNote], nextCursor: null, total: 2 })
+        );
+
+        fixture.componentInstance.load();
+        fixture.detectChanges();
+        onIntersection([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+        fixture.detectChanges();
+
+        expect(api.listDeckCaptures.calls.mostRecent().args).toEqual([deck.deckId, 'page-two']);
+        expect(fixture.componentInstance.notes().map(note => note.noteId)).toEqual([capture.noteId, nextNote.noteId]);
+        expect(fixture.nativeElement.textContent).not.toContain('Показать ещё');
     });
 });

@@ -91,24 +91,67 @@ capacity evidence.
 ## Content and authoring contract
 
 - `/api/decks` owns private Deck creation, bounded listing/detail and CAS metadata
-  updates with global command receipts.
+  updates with global command receipts. `DELETE /api/decks/{deckId}` requires a
+  strong `If-Match` deck version and returns 204. It tombstones the deck: current
+  deck-scoped API reads return 404, while immutable revisions, study evidence and
+  account-owned media remain for retention/history. Physical purge is separate.
 - `/api/decks/{deckId}/items` owns deck-local logical identity, immutable revisions,
   current/historical reads and atomic publication.
 - `/api/decks/{deckId}/exercises` owns owner-only bounded reads and atomic
-  publication of stable objectives, immutable answer/exercise revisions, exact
-  current item/node pins and one assessed binding. Supported P0 types are
-  `SELF_CHECK`, `TYPED`, `CLOZE_SINGLE` and `SINGLE_CHOICE`. The optional
+  publication of stable objectives and immutable exercise revisions. There are
+  five mechanics (`SELF_CHECK`, `FREE_RESPONSE`, `CLOZE`, `CHOICE`, `MATCH`);
+  media kind is content, never a mechanic. A revision stores independent
+  `content` (typed slots of `TEXT`, `MATERIAL`, `IMAGE`, `AUDIO`, `VIDEO`,
+  `YOUTUBE` blocks), a private `answerKey` and an `evaluatorPolicy`; the
+  objective is a stable identity plus a human `title` and never holds an answer
+  key. Every object has an exact field set, schema version 2 and UTF-16 length
+  limits; slot profiles (`PROMPT`, `REFERENCE`, `COMPACT`) bound block kinds,
+  block counts and text per block (`contracts/study/mechanics.json` is the wire
+  contract). The server derives bindings (the `ASSESSED` subject and one
+  `CONTEXT` row per quoted material revision), validates `MATERIAL` nodes against
+  the pinned current item revision, and pins every `IMAGE`/`AUDIO`/`VIDEO` asset
+  with its declared kind in `exercise_media_ref` (at most 32 media blocks).
+  A foreign or stale member/revision is an opaque 404, an absent node or an
+  over-long quoted text is 400. `ai-semantic` evaluation and `TEXT_OR_SPEECH`
+  input are rejected with 409 `CAPABILITY_UNAVAILABLE` unless the capability is
+  available (see `GET /api/capabilities`). The optional
   `memberKey` list filter remains cursor-bounded and returns each current
   exercise with its current objective summary so authoring clients can reuse a
   direction without scanning every exercise or exposing identifiers for input.
+  `DELETE /api/decks/{deckId}/exercises/{exerciseId}` requires the strong deck
+  version in `If-Match`, returns 204, removes the current roster entry and
+  compacts ordinals. Historical revisions and completed attempts remain.
+  A stale version yields 412; an unknown/removed or foreign resource yields 404.
+  Text rules (`FREE_RESPONSE` and each `CLOZE` blank) set `matchingMode` to
+  `STRICT` or `SOFT`. Strict uses the stored NFC/trim/case rules. Soft also
+  removes canonical Unicode combining marks, punctuation, Unicode spaces and
+  dashes before exact comparison; this intentionally treats some distinct
+  spellings as equivalent without accepting arbitrary typos. Soft answers that
+  become empty are rejected at authoring and never count as correct. A `CLOZE`
+  blank is `FIXED` (5..20) or `ANSWER_LENGTH`, which requires every accepted answer
+  of that blank to have the same NFC code-point length; the presentation supplies
+  the length and neither mode limits input.
+- `GET /api/capabilities` (authenticated, `private, no-store`) reports
+  `aiAssessment` and `speechToText` as `{available, reason}`. A capability is
+  available only when `learning.features.ai-assessment.enabled` /
+  `learning.features.speech-to-text.enabled` is true **and** a
+  `SemanticAssessmentProvider` / `SpeechToTextProvider` bean exists; there is no
+  implementation today, so both stay unavailable (`DISABLED` or
+  `PROVIDER_NOT_CONFIGURED`). Candidates whose evaluator needs an unavailable
+  capability are never issued and an `ai-semantic` answer is `UNAVAILABLE`, never
+  exact-matched.
 - `/api/decks/{deckId}/study-sessions` starts and resumes owner-only
   `SCHEDULED`, `REPLAY` and `PRACTICE` snapshots. Candidate preparation reads at
   most 500 exercise rows per poll, selection scans at most 80 candidates and a
   response contains at most 20 immutable presentations. The authenticated
   `zoneinfo` claim determines the local study date; invalid or absent values fall
   back to UTC, and clients cannot submit a timezone. Resume returns only
-  presentations without a terminal attempt and each presentation carries the
-  answer-contract reference needed by the accessible Study feedback flow.
+  presentations without a terminal attempt. A presentation carries learner
+  `content` resolved once at issue time (`MATERIAL` becomes `TEXT`, `MATCH` sides
+  are shuffled deterministically from the presentation id) and never an answer key,
+  accepted strings, media titles, unrevealed transcripts or bindings.
+  `POST .../presentations/{id}/transcript` and `.../hints` (CLOZE blanks with
+  `firstLetterHint`) are server-recorded, idempotent reveals that evidence reads.
   A scheduled snapshot pins total and new-objective limits; the current presets are
   quick 10/2 and standard 20/5. Selection uses the same reducer and attempt path for
   both, prioritizing due, then introduced, then allowed new objectives.
@@ -118,12 +161,17 @@ capacity evidence.
   defaults to already introduced objectives, supports deterministic seeded or
   weakest-first order, and admits new objectives only when explicitly requested.
 - `/api/decks/{deckId}/study-sessions/{sessionId}/attempts` terminalizes one
-  server-issued presentation. All four P0 evaluators are deterministic;
+  server-issued presentation. All five evaluators are deterministic;
   only `SCHEDULED` writes evidence and one versioned `mnema-baseline-v1`
-  transition. `TYPED` and single-blank `CLOZE_SINGLE` normalize the pinned answer
-  contract; a first-grapheme hint caps only a correct result at `MEDIUM`.
-  `SINGLE_CHOICE` accepts only a server-issued `OPTION` binding matching the pinned
-  focal target and always produces `LOW` recognition evidence. Exact retries
+  transition, for the single subject objective (`CONTEXT` materials never gain
+  exposure, evidence or state). `FREE_RESPONSE` and each `CLOZE` blank normalize
+  against the private answer key; a recorded first-letter hint caps a non-incorrect
+  cloze at `MEDIUM`, a revealed transcript caps any result at `LOW`. `CHOICE` and
+  `MATCH` accept only ids that were issued and always produce `LOW` recognition
+  evidence; a `MATCH` completed after a wrong pair check is `PARTIAL` with
+  `PAIR_RETRY`. The client sends no hint list: hint use is a server record. A pinned
+  asset that is not READY (or whose verified source is not the declared kind)
+  gives `NOT_ASSESSED`/`MEDIA_NOT_READY` and no transition. Exact retries
   return the durable outcome, conflicting attempt IDs
   never add transitions, and raw scheduled response JSON expires separately after
   30 days. The first terminal receipt atomically removes that presentation from
@@ -142,12 +190,17 @@ capacity evidence.
 - `/api/editing-drafts` owns bounded acknowledged server drafts; autosave never
   publishes.
 - `/api/capture-notes` owns durable quick notes and idempotent conversion while
-  retaining source/provenance.
+  retaining source/provenance. `GET /api/capture-notes?deckId=...&limit=...&cursor=...`
+  returns an owner-checked, cursor-bounded page of unarchived, unconverted notes
+  with `total` for the whole deck. `DELETE /api/capture-notes/{noteId}` requires
+  the note's strong `If-Match` version and returns 204. The account-wide list
+  retains its prior response shape, without `total`.
 - Native document v1, immutable block/page storage and counted structural edits
   back both material and exercise membership roots. Exercise writes advance the
   Deck CAS and receipt in the same transaction.
 
-Fresh Learning migrations V1–V9 are the database source of truth. Do not append
+Fresh Learning migrations V1–V21 are the database source of truth. V21 (unified exercise
+mechanics) fails closed when pre-#266 exercise data exists: use a fresh local database. Do not append
 Study tables to legacy `core` migrations or port old review algorithms.
 
 Sources: [Spring Security 6.5 JWT](https://docs.spring.io/spring-security/reference/6.5/servlet/oauth2/resource-server/jwt.html)
@@ -155,4 +208,8 @@ for signature/claims/scope boundaries; the exact 6.5.11 source establishes claim
 conversion behavior; [Java 21 HTTP](https://docs.oracle.com/en/java/javase/21/docs/api/java.net.http/java/net/http/HttpRequest.Builder.html)
 for request deadlines, supplemented by explicit bounded body completion/cancellation;
 [Spring scheduling](https://docs.spring.io/spring-framework/reference/integration/scheduling.html)
-for the enabled fixed-delay retention worker and duration-based configuration.
+for the enabled fixed-delay retention worker and duration-based configuration;
+[Java 21 Normalizer](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/text/Normalizer.html)
+and [Unicode UAX #15](https://www.unicode.org/reports/tr15/) for canonical
+decomposition in soft text matching; [PostgreSQL constraints](https://www.postgresql.org/docs/18/sql-createtable.html)
+for the deferred ordinal uniqueness during transactional roster compaction.

@@ -11,6 +11,8 @@ Prerequisites: existing Java 21 on `PATH`, Node 22, Chrome, OpenSSL with `req -a
 with a locally cached `postgres:18`, built backend `bootJar`s and the built Angular browser
 directory. Build/gates belong to the implementation workflow; this harness does not build
 or download dependencies/images. On Colima set the existing local `DOCKER_HOST` normally.
+The optional media mode also needs cached pinned MinIO and
+`mnema-media-worker:local` images, AWS CLI and FFmpeg on `PATH`.
 
 ```sh
 python3 -m unittest discover -s scripts/browser-identity -p 'test_*.py' -v
@@ -25,6 +27,16 @@ that the retained Capture source/conversion can be read from the real Learning A
 It publishes a typed exercise through the same authenticated API, starts short Study
 with a real keyboard Space event, verifies answer/feedback focus and a server transition,
 and captures 1440/390/320 CSS px Study views (320 at DPR 2) with reduced motion.
+
+Pass `--authoring --media` for the complete local media path. The runner starts
+an isolated MinIO bucket and the configured worker, drops a generated PNG, MP3
+and MP4 in the editor, waits for READY, publishes native media with Mermaid and
+a YouTube consent card, and checks loaded Browse players. It then creates a
+`FREE_RESPONSE` exercise with an audio prompt through the UI from the uploaded audio
+and answers it in Study. It writes a full-page Browse capture and removes its local bucket and
+temporary browser state. The ordinary `--authoring` mode additionally waits
+through the visible 45-second deck polling interval; `--media` checks immediate
+focus refresh and skips that long timer wait.
 
 Use `--chrome` for another existing Chrome executable. The page contract defaults to
 `[data-testid="identity-profile"]`, `[data-testid="logout"]`, and `[role="alert"]`;
@@ -57,6 +69,10 @@ Two synthetic accounts and two same-profile browser tabs exercise:
 - Replaying a consumed callback is rejected client-side without another token exchange.
 - A fresh account sees the own-deck empty state, creates Unicode/RTL metadata through the
   real API, lands on the canonical detail route, reloads it and saves another revision.
+- The same account edits its native Identity profile with a bearer token and reloads
+  to prove persistence. In `--media` mode it also uploads an 8×8 PNG avatar through
+  the profile UI and reloads to prove the public avatar renders. Desktop, 390px and
+  320px captures check the profile layout for horizontal overflow.
 - Two separately authenticated same-account tabs start from the same deck revision. The
   stale tab receives a real `412`, keeps its exact draft read-only, and publishes it only
   after the user explicitly chooses to reapply over the refreshed server version.
@@ -67,7 +83,7 @@ Two synthetic accounts and two same-profile browser tabs exercise:
   These automated checks do not claim physical-device or AT coverage.
 
 The PKCE verifier is checked against the observed S256 challenge. Network interception
-blocks page requests outside the two exact origins; at most 500 page requests and
+blocks page requests outside the two exact origins (plus the local MinIO origin in media mode); at most 500 page requests in the base mode, 600 in authoring or 850 in media mode (allowing the local brand font and mark on repeated full navigations), and
 150 Identity requests are allowed (full SPA navigations reload several bundled assets).
 Global deadline 180 seconds (CLI 30–300), individual CDP/HTTP/readiness deadlines, 1 MiB proxy
 request/response cap, 16 MiB static asset cap. Database has a 512 MiB/two-CPU limit; each JVM
@@ -93,7 +109,7 @@ owned resource identifiers for manual recovery. Never kill unrelated resources.
 Private TLS key, signing JWK, Chrome cookies/profile, token/callback data and child logs are
 never exported and are removed by default. The separate 0700 evidence directory contains
 sanitized scenario/count results, artifact SHA-256 fingerprints, the empty login-form
-screenshot and synthetic own-deck responsive captures. It intentionally remains for reviewer inspection. Failure
+screenshot and synthetic profile/own-deck responsive captures. It intentionally remains for reviewer inspection. Failure
 evidence contains only controlled failure/scenario labels and counts, not response bodies,
 console logs, URLs, credentials or stack traces. `--control-file` is a private optional
 cancellation-test synchronization file; do not publish it.

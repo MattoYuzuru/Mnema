@@ -1,0 +1,92 @@
+<div class="exercise" appExclusivePlayback>
+  @if (prompt().length > 0) {
+    <section class="exercise-prompt" aria-label="Условие">
+      <app-learner-blocks [blocks]="prompt()" nameSuffix=" в вопросе" />
+    </section>
+  }
+
+  @if (transcriptOffered()) {
+    <div class="transcript-offer">
+      <button class="button secondary" type="button" [disabled]="transcriptLoading() || busy()"
+              (click)="transcriptRequested.emit()">{{ transcriptLoading() ? 'Открываем…' : 'Показать транскрипт' }}</button>
+      <p class="hint">Транскрипт помогает понять запись, поэтому после его показа ответ слабее влияет на прогресс.</p>
+    </div>
+  }
+
+  @if (selfCheck(); as content) {
+    @if (!revealed()) {
+      <button class="button primary" data-answer-control type="button" (click)="reveal()">Показать ответ</button>
+    } @else {
+      <section class="reference" [attr.aria-labelledby]="idPrefix() + '-reference'">
+        <p class="eyebrow" [id]="idPrefix() + '-reference'">Эталон</p>
+        <app-learner-blocks [blocks]="content.reference" nameSuffix=" в эталоне" />
+      </section>
+      @if (canSubmit()) {
+        <fieldset [disabled]="busy()">
+          <legend>Как получилось на самом деле?</legend>
+          <div class="ratings">
+            @for (rating of ratings; track rating; let first = $first) {
+              <button class="button secondary" type="button" [attr.data-first-rating]="first ? '' : null"
+                      (click)="rate(rating)">{{ ratingLabel(rating) }}</button>
+            }
+          </div>
+        </fieldset>
+      } @else {
+        <p class="hint">В предпросмотре оценка не отправляется.</p>
+      }
+    }
+  }
+
+  @if (freeResponse()) {
+    <form (submit)="$event.preventDefault(); submit()" novalidate>
+      <label [for]="idPrefix() + '-answer'">Ваш ответ</label>
+      <textarea [id]="idPrefix() + '-answer'" data-answer-control rows="4" autocomplete="off" autocapitalize="off"
+                [value]="text()" [readOnly]="busy()" (input)="text.set($any($event.target).value)"></textarea>
+      <div class="voice">
+        <button class="button secondary" type="button" disabled [attr.aria-describedby]="idPrefix() + '-voice-reason'">
+          Ответить голосом
+        </button>
+        <p class="hint" [id]="idPrefix() + '-voice-reason'">{{ voiceReason }}</p>
+      </div>
+      @if (canSubmit()) {
+        <button class="button primary" type="submit" data-submit [disabled]="busy()">{{ busy() ? 'Проверяем…' : 'Проверить ответ' }}</button>
+      }
+    </form>
+  }
+
+  @if (cloze(); as content) {
+    <form (submit)="$event.preventDefault(); submit()" novalidate>
+      <app-cloze-passage [passage]="content.passage" [values]="clozeValues()" [hints]="hints()"
+        [hintPending]="hintPending()" [readOnly]="busy()" [idPrefix]="idPrefix() + '-blank'"
+        (valueChange)="setClozeValue($event)" (hintRequested)="hintRequested.emit($event)" />
+      @if (canSubmit()) {
+        <button class="button primary" type="submit" data-submit [disabled]="busy()">{{ busy() ? 'Проверяем…' : 'Проверить ответ' }}</button>
+      }
+    </form>
+  }
+
+  @if (choice(); as content) {
+    <form (submit)="$event.preventDefault(); submit()">
+      <app-choice-list [options]="content.options" [selectionMode]="content.selectionMode" [selected]="selectedOptionIds()"
+        [disabled]="busy()" [idPrefix]="idPrefix() + '-choice'" (selectedChange)="toggleOption($event)" />
+      @if (canSubmit()) {
+        <button class="button primary" type="submit" data-submit [disabled]="busy() || selectedOptionIds().length === 0">
+          {{ busy() ? 'Проверяем…' : 'Подтвердить выбор' }}</button>
+      }
+    </form>
+  }
+
+  @if (match(); as content) {
+    <form (submit)="$event.preventDefault(); submit()">
+      <app-match-board [left]="content.left" [right]="content.right" [matches]="matches()" [wrongPair]="wrongPair()"
+        [busy]="pairChecking() || busy()" (pairSelected)="checkPair($event)" />
+      @if (pairError()) {
+        <p class="notice error" role="alert">Не удалось проверить пару. Выберите её ещё раз.</p>
+      }
+      @if (canSubmit()) {
+        <button class="button primary" type="submit" data-submit [disabled]="busy() || pairChecking() || !matchComplete()">
+          {{ busy() ? 'Проверяем…' : 'Проверить пары' }}</button>
+      }
+    </form>
+  }
+</div>

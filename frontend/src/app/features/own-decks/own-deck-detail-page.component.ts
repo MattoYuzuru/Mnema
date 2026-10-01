@@ -1,13 +1,18 @@
-import { ChangeDetectionStrategy, Component, ElementRef, computed, effect, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { AuthoringApiService } from '../authoring/authoring-api.service';
 
 import { DeckMetadata, OwnDeck, validateDeckMetadata } from './own-deck.models';
+import { DeckDescriptionComponent } from './deck-description.component';
+import { OwnDecksApiService } from './own-decks-api.service';
+import { HoldToDeleteButtonComponent } from '../../shared/hold-to-delete-button.component';
 import { DeckRecoveryContext, OwnDeckRecoveryService } from './own-deck-recovery.service';
 import {
     OwnDecksStore,
+    DeckMutationState,
     canStartNewMutation,
     deckFailureMessage,
     mayRetrySameCommand,
@@ -17,7 +22,7 @@ import {
 
 @Component({
     selector: 'app-own-deck-detail-page',
-    imports: [DatePipe, ReactiveFormsModule, RouterLink],
+    imports: [DatePipe, ReactiveFormsModule, RouterLink, DeckDescriptionComponent, HoldToDeleteButtonComponent],
     providers: [OwnDecksStore],
     templateUrl: './own-deck-detail-page.component.html',
     styleUrl: './own-decks-page.css',
@@ -33,12 +38,21 @@ export class OwnDeckDetailPageComponent {
     readonly validation = computed(() => validateDeckMetadata(this.draft()));
     readonly submitted = signal(false);
     readonly recovered = signal(false);
+    readonly captureCount = signal<number | null>(null);
+    readonly deleting = signal(false);
+    readonly deleteError = signal<string | null>(null);
     readonly failureMessage = deckFailureMessage;
     readonly mayRetrySameCommand = mayRetrySameCommand;
     readonly mutationLocksDraft = mutationLocksDraft;
     readonly canStartNewMutation = canStartNewMutation;
+    readonly canDelete = (mutation: DeckMutationState): boolean => mutation.phase === 'completed'
+        || canStartNewMutation(mutation);
 
     private readonly route = inject(ActivatedRoute);
+    private readonly authoring = inject(AuthoringApiService);
+    private readonly decksApi = inject(OwnDecksApiService);
+    private readonly router = inject(Router);
+    private readonly destroyRef = inject(DestroyRef);
     private readonly element: ElementRef<HTMLElement> = inject(ElementRef);
     private readonly recovery = inject(OwnDeckRecoveryService);
     private recoveryContext: DeckRecoveryContext | null = null;
@@ -50,6 +64,12 @@ export class OwnDeckDetailPageComponent {
             const deckId = params.get('deckId');
             if (deckId === null) return;
             const normalizedDeckId = deckId.toLowerCase();
+            this.captureCount.set(null);
+            this.authoring.listDeckCaptures(normalizedDeckId, null, 1)
+                .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+                    next: page => this.captureCount.set(page.total),
+                    error: () => this.captureCount.set(null)
+                });
             this.recoveryContext = { operation: 'save', deckId: normalizedDeckId };
             this.recoveredDeckId = null;
             this.recovered.set(false);
@@ -116,6 +136,22 @@ export class OwnDeckDetailPageComponent {
     retryMutation(): void {
         this.store.retryMutation();
         this.persistRecovery();
+    }
+
+    deleteDeck(deck: OwnDeck): void {
+        if (this.deleting() || !this.canDelete(this.store.mutationState())) return;
+        this.deleting.set(true);
+        this.deleteError.set(null);
+        this.decksApi.delete(deck).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+            next: () => {
+                if (this.recoveryContext !== null) this.recovery.clear(this.recoveryContext);
+                void this.router.navigate(['/decks']);
+            },
+            error: () => {
+                this.deleteError.set('Не удалось удалить колоду. Возможно, она уже изменилась — обновите страницу и попробуйте снова.');
+                this.deleting.set(false);
+            }
+        });
     }
 
     retryAsNewCommand(): void {

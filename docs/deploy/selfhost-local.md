@@ -7,14 +7,17 @@ controlled devices. Shared or organizational use needs a
 ## Supported full-stack launcher — #220
 
 The supported personal-development path is `scripts/mnema-local-full-stack.sh` plus
-`compose.local-full-stack.yml`. It builds the production Angular image and the real
-Identity and Learning images, starts PostgreSQL 18 with a retained named volume, and
-publishes only two loopback TLS listeners:
+`compose.local-full-stack.yml`. It builds the production Angular image, the real
+Identity and Learning images and the local media worker image, starts PostgreSQL 18
+and MinIO with retained named volumes, and publishes only three loopback TLS
+listeners (see [Full local stack with media](#full-local-stack-with-media)):
 
 - `https://localhost:3443` — the URL to open; static production frontend and
   same-origin `/api` Learning traffic;
 - `https://localhost:3444` — the separate OAuth/OIDC issuer required by the browser
-  PKCE boundary. Identity and Learning themselves have no host HTTP ports.
+  PKCE boundary. Identity and Learning themselves have no host HTTP ports;
+- `https://storage.mnema.localhost:3445` — S3-compatible object storage for avatars
+  and Learning media uploads.
 
 The Learning-to-Identity call also uses TLS. Its private truststore contains only the
 generated local CA; the launcher never enables the test-only plaintext transport.
@@ -35,8 +38,9 @@ the repository root:
 
 `start` invokes the bounded bootstrap automatically. Running `bootstrap` separately
 is optional when you want to inspect/trust the CA before building images. Bootstrap
-creates a random PostgreSQL password, RSA Identity signing JWKSet, local
-CA, localhost/server certificate and Learning truststore under ignored
+creates a random PostgreSQL password, random object-storage keys, RSA Identity
+signing JWKSet, local CA, localhost/server and storage certificates and Learning
+truststore under ignored
 `.mnema/local-full-stack/`. Private files are owner-only and are reused on ordinary
 starts. A missing, partial, permissive, mismatched or expiring set fails before
 Compose is invoked; there is no HTTP or anonymous-signing fallback.
@@ -52,11 +56,12 @@ Ports can be selected during the first bootstrap and are then retained with the
 local security/database configuration:
 
 ```bash
-MNEMA_LOCAL_WEB_PORT=4443 MNEMA_LOCAL_IDENTITY_PORT=4444 \
+MNEMA_LOCAL_WEB_PORT=4443 MNEMA_LOCAL_IDENTITY_PORT=4444 MNEMA_LOCAL_STORAGE_PORT=4445 \
   ./scripts/mnema-local-full-stack.sh bootstrap
 ```
 
-The retained OAuth redirect and issuer then use those ports.
+The retained OAuth redirect and issuer then use those ports. The three ports must
+differ; the object-storage port is part of every signed URL, so it is also retained.
 
 ### Verify, stop and restart
 
@@ -73,24 +78,35 @@ The smoke creates one private random local account, completes real S256 PKCE thr
 the HTTPS issuer, and creates/reloads a Deck and Capture through the frontend's
 same-origin `/api`. Its owner-only credentials remain beside the other local state so
 the second smoke proves restart persistence. It also publishes one retained native
-material and typed exercise, completes a real scheduled attempt and observes material
-progress. The smoke then restarts that material and runs replay plus introduced-only
-practice, requiring both feedback-only modes to report `canonicalEffects: false` and
-leave the restarted progress projection unchanged. Three additional retained fixture
-Decks exercise `SELF_CHECK`, `CLOZE_SINGLE` and `SINGLE_CHOICE` through real scheduled
-API attempts, exact retries and progress reads; the original Deck covers `TYPED`.
-Conservative self-check/choice evidence may leave progress in `LEARNING`. Anonymous
+material and `FREE_RESPONSE` exercise, completes a real scheduled attempt and observes
+material progress. The smoke then restarts that material and runs replay plus
+introduced-only practice, requiring both feedback-only modes to report
+`canonicalEffects: false` and leave the restarted progress projection unchanged. Four
+additional retained fixture Decks exercise `SELF_CHECK`, multi-blank `CLOZE` with a
+server-issued first-letter hint, `MULTIPLE` `CHOICE` and `MATCH` with a durable wrong
+pair check through real scheduled API attempts, exact retries and progress reads; every
+issued presentation is checked for leaked answer keys, bindings, media titles or
+transcripts. The smoke also requires both AI capabilities to report `DISABLED` and
+direct publication of `ai-semantic` or speech-input exercises to fail with
+`CAPABILITY_UNAVAILABLE`. Conservative self-check/choice/matching evidence may leave
+progress in `LEARNING`. Anonymous
 Study start still has to fail closed with `401`.
 
-`stop` retains PostgreSQL, accounts, content, JWK and certificates. A clean data reset
-is destructive and requires the exact opt-in:
+`stop` retains PostgreSQL, uploaded objects, accounts, content, JWK and certificates.
+A clean data reset is destructive and requires the exact opt-in:
 
 ```bash
 ./scripts/mnema-local-full-stack.sh reset --confirm-delete-local-data
 ```
 
-It deletes only the `mnema-local-v2` containers/volume and the synthetic smoke-account
-state; local certificates and signing JWK remain. Local certificate rotation is
+Issue #266 replaced the exercise mechanics without compatibility readers: Learning
+migration `V21` refuses to start over a database that already contains exercises from an
+earlier build. Run this reset once before the first start of a #266 build (only after
+confirming the local data is disposable).
+
+It deletes only this Compose project's containers, PostgreSQL and object-storage
+volumes, media scratch files and the synthetic smoke-account state files; local
+certificates and signing JWK remain. Local certificate rotation is
 separate and preserves the database credentials, Identity signing key and smoke
 account:
 
@@ -99,7 +115,110 @@ account:
 ```
 
 Stop the stack first, remove the old CA from browser/OS trust, and trust the newly
-printed CA path. Neither reset touches legacy v1 projects or hosted infrastructure.
+printed CA path. The storage certificate is reissued from the same new CA. Neither
+reset touches legacy v1 projects or hosted infrastructure. The same command repairs a
+state directory whose certificates were issued without key identifiers (the launcher
+reports this): strict TLS clients such as Python 3.13+ reject a leaf certificate
+without an Authority Key Identifier, and OpenSSL 4 no longer adds one by default.
+
+<!-- BEGIN full-local-stack-with-media -->
+## Full local stack with media
+
+One command brings up every service needed to test Mnema by hand, including uploaded
+media. This is **local development tooling only**: it is not a production or staging
+path, shares nothing with `k8s/`, and must not be copied into a deployment.
+
+### Prerequisites
+
+Everything listed under [First start](#first-start), plus:
+
+- a Docker daemon that can bind-mount this checkout (Colima shares paths under your
+  home directory; Docker Desktop shares it by default). The state directory must be an
+  absolute path inside that shared area.
+- the pinned official MinIO image `quay.io/minio/minio@sha256:14cea493...` in the
+  local image store. MinIO no longer serves it from Docker Hub or Quay, so a fresh
+  machine cannot pull it. The repository already pins the same digest for staging
+  (`k8s/staging/data.yaml`), and
+  [the image-environment evidence](../engineering/evidence/epic-74/verification/image-environment.md)
+  describes how it was imported into the local cache. If it is missing, `start`
+  fails at the image pull; restore it by that procedure rather than substituting an
+  unverified mirror.
+
+### Commands
+
+```bash
+./scripts/mnema-local-full-stack.sh start        # build, start, wait for health
+./scripts/mnema-local-full-stack.sh smoke        # account/Study smoke, then media smoke
+./scripts/mnema-local-full-stack.sh smoke-media  # avatar + media upload/processing only
+./scripts/mnema-local-full-stack.sh status
+./scripts/mnema-local-full-stack.sh logs 100
+./scripts/mnema-local-full-stack.sh stop
+./scripts/mnema-local-full-stack.sh reset --confirm-delete-local-data
+```
+
+The first `start` builds the backend images, the frontend and
+`mnema-media-worker:local` from `backend/media-worker/Dockerfile.local` (later starts
+reuse the Docker build cache). `MNEMA_LOCAL_PROJECT_NAME`, `MNEMA_LOCAL_STATE_DIR` and
+`MNEMA_LOCAL_MEDIA_WORKER_IMAGE` override the Compose project name (default
+`mnema-local-v2`), the state directory and the worker image tag; use them to run a
+second isolated copy next to the default one.
+
+### What runs
+
+| Service | Role |
+| --- | --- |
+| `postgres` | PostgreSQL 18, named volume `local_postgres_data` |
+| `minio` | Official MinIO, TLS on the storage port, named volume `local_object_data` |
+| `minio-init` | One-shot, idempotent: creates `mnema-local-avatars` (versioned) and `mnema-local-media` |
+| `identity-account` | Identity, writes avatars to MinIO |
+| `learning` | Browser-facing Learning API; issues signed upload URLs, no Docker access |
+| `media-processor` | A second Learning instance with media processing enabled and no published port |
+| `frontend` | Production Angular build and local TLS proxy |
+
+The `media-worker-image` Compose entry only builds the worker image
+(`--profile worker-image`); the processor starts that image once per job.
+
+Signed upload and playback URLs use `https://storage.mnema.localhost:<port>`. The name
+resolves to MinIO inside Compose and to loopback in browsers, so the browser PUT works
+without mixed content; the certificate for that name is signed by the same local CA
+(trust it once, as above). MinIO allows CORS only from the local web origin.
+
+`smoke-media` registers its own synthetic account (kept in an owner-only state file),
+uploads a generated avatar PNG, a generated PNG and a generated MP3 through the real
+API and signed URLs, waits for the processor to mark both media assets `READY`,
+downloads the processed WebP and M4A variants and compares the original. A processing
+failure ends the run with the asset state and a pointer to the processor logs.
+
+### Docker socket trade-off
+
+The existing worker gateway starts every FFmpeg job with `docker run` (no network,
+read-only root, all capabilities dropped, 3 GiB / 2 CPUs, non-root UID). The processor
+therefore needs a Docker client and the daemon socket, which is equivalent to root on
+the Docker host (or inside its VM). Containment:
+
+- only the `media-processor` service mounts `/var/run/docker.sock`, and only its image
+  target (`learning-media-processor-runtime`) contains the `docker` client; the
+  browser-facing `learning` service has neither;
+- the processor has no published port and listens on its container loopback; its
+  container runs as root with every capability dropped, a read-only root filesystem
+  and `no-new-privileges`;
+- its scratch directory is `.mnema/local-full-stack/media-processing/` (mode 700), mounted
+  at the same absolute path so the daemon can bind it into worker containers;
+  completed jobs are deleted.
+
+Run this stack only on a machine you trust with a personal Docker daemon. A narrower
+design (a Docker-API proxy or a dedicated rootless daemon) would need a new image and
+was not adopted for a local-only convenience stack.
+
+### Reset semantics and state
+
+`reset --confirm-delete-local-data` removes only the selected project's containers and
+its `local_postgres_data` and `local_object_data` volumes, the media scratch directory
+and the two smoke state files. The CA, signing JWK, truststore and credentials stay.
+`stop`/`start` keep every volume; the bucket step is idempotent. State created before
+object storage existed is upgraded in place by `start`/`bootstrap` without rotating
+the signing key, database password or CA.
+<!-- END full-local-stack-with-media -->
 
 `docker-compose.yml` remains the backend-only maintenance runtime from #143. Use it
 only when frontend/HTTPS login is intentionally unnecessary. PostgreSQL 18 mounts
@@ -111,233 +230,7 @@ and private files are mounted through Compose
 
 ## Historical v1 self-host reference
 
-The instructions below describe `v1-apache-final`, not the current checkout.
-Use a separate checkout of that historical tag to consult its matching launcher
-and Compose implementation. Current `mnema-local.sh` / `.ps1` and `mnema-public.sh`
-/ `.ps1` refuse before filesystem or container mutation; #146 owns removal of their
-remaining historical bodies. Hosted replacement requirements do not include v1
-self-host compatibility.
-
-Этот режим предназначен для запуска Mnema на одной машине без внешних облачных сервисов.
-
-## Что поднимается
-
-- `postgres`
-- `redis`
-- `minio` + `minio-init` (автосоздание bucket `mnema-local`)
-- `ollama`
-- `local-ai-gateway` (OpenAI-compatible шлюз для локальных backends)
-- backend сервисы (`auth`, `user`, `core`, `media`, `import`, `ai`)
-- `frontend`
-
-## Быстрый запуск
-
-### Linux/macOS
-
-```bash
-./scripts/mnema-local.sh
-```
-
-### Windows (PowerShell)
-
-```powershell
-.\scripts\mnema-local.ps1
-```
-
-## Prerequisites
-
-Перед запуском убедитесь, что доступны:
-
-- Docker Engine + Docker Compose plugin (`docker compose version`)
-- если хотите GPU для Ollama и local TTS backends (`Qwen3-TTS`, `Kokoro`): Docker GPU runtime (`docker run --rm --gpus all nvidia/cuda:12.3.2-base-ubuntu22.04 nvidia-smi`)
-
-### Linux (NVIDIA)
-
-- Ubuntu/Debian: установите `nvidia-container-toolkit` из официального репозитория NVIDIA, затем `sudo nvidia-ctk runtime configure --runtime=docker` и перезапуск Docker.
-- Fedora/RHEL: аналогично, через RPM repo NVIDIA + `nvidia-container-toolkit`, затем `sudo nvidia-ctk runtime configure --runtime=docker` и перезапуск Docker.
-
-Если GPU runtime недоступен, bootstrap скрипт автоматически оставит Ollama на CPU и выведет предупреждение.
-
-Скрипт:
-- спрашивает минимальные креды для `Postgres` и `MinIO`;
-- интерактивно (стрелками) выбирает:
-  - primary/secondary text model;
-  - optional vision model;
-  - local TTS providers (`Piper`, `Qwen3-TTS`, `Kokoro`);
-  - optional image model;
-  - GPU device для Ollama при нескольких GPU;
-- спрашивает режимы backend-ов:
-  - audio: `local` (default, multi-provider TTS) / `ollama` (experimental) / `custom` / `none`;
-  - image: `ollama` (experimental, default) / `diffusers` / `custom` / `none`;
-- заполняет `OPENAI_*` модели и gateway-переменные (`REMOTE_OPENAI_BASE_URL`, `OLLAMA_AUDIO_EXPERIMENTAL`, `OLLAMA_IMAGE_EXPERIMENTAL`);
-- автоматически проверяет доступность Docker GPU runtime и включает `gpus: all` для `ollama` (fallback на CPU с предупреждением, если runtime недоступен);
-- генерирует `.env.local`;
-- генерирует `.mnema/compose.ports.yml`;
-- запускает `docker compose pull`, поднимает `ollama + local-ai-gateway` и выбранные local gateway dependencies;
-- делает `ollama pull` только для Ollama text/vision/image моделей; `local-audio-gateway` сам подкачивает дефолтные local TTS assets при старте и догружает новые voices/model assets при первом реальном использовании;
-- затем поднимает весь стек;
-- включает профиль `SPRING_PROFILES_ACTIVE=dev,selfhost-local` для backend сервисов.
-- в конце печатает команды для ручного управления моделями (`ollama list/pull/run`, `curl /api/tags`).
-
-Для проверки без запуска контейнеров:
-
-```bash
-MNEMA_DRY_RUN=1 ./scripts/mnema-local.sh
-```
-
-## Что происходит при занятых портах
-
-Скрипт проверяет порты по умолчанию:
-- `3005` (frontend)
-- `5432` (postgres)
-- `6379` (redis)
-- `8083-8088` (backend)
-- `9000` / `9001` (MinIO API/console)
-- `11434` (Ollama)
-- `8090` (Local AI Gateway)
-- `8091` (Local Audio Gateway, если выбран `local`)
-- `8092` (Local Image Gateway, если выбран `diffusers`)
-
-Если порт занят, выбирается следующий свободный (`+1`, `+2`, ...). В консоль выводится, какой порт заменен.
-
-## Поведение selfhost-local профиля
-
-- `auth` сервис:
-  - `app.auth.features.federated-enabled=false`
-  - `app.auth.features.require-email-verification=false`
-  - `turnstile` отключен (пустые ключи)
-- frontend на `localhost`:
-  - скрывает OAuth-блок на странице логина;
-  - скрывает warning про `email_verified`.
-
-- `ai` сервис:
-  - системный provider mode (`user keys` не обязателен);
-  - default provider для self-host: `ollama`;
-  - OpenAI-compatible base URL указывает на `local-ai-gateway` (`OPENAI_BASE_URL=http://local-ai-gateway:8089`);
-  - text/chat/vision идут через Ollama;
-  - TTS идет через `local-audio-gateway` на локальные провайдеры (`Piper`, `Qwen3-TTS`, `Kokoro`), если выбран режим `local`;
-  - image идет через Ollama OpenAI-compatible endpoint или через `local-image-gateway`, если выбран режим `diffusers`;
-  - STT/video проксируются gateway в соответствующие локальные backends при их настройке;
-  - персональные provider keys остаются доступны в UI (можно использовать одновременно system provider и внешние ключи).
-  - runtime discovery endpoint: `GET /api/ai/runtime/capabilities`.
-
-## Local AI Gateway
-
-Gateway поднимается вместе со стеком и дает единый OpenAI-compatible endpoint для Mnema AI сервиса.
-
-Локальные переменные в `.env.local`:
-
-- `LOCAL_AUDIO_BASE_URL` — backend для `/v1/audio/*` (например встроенный `local-audio-gateway` или внешний OpenAI-compatible audio service)
-- `LOCAL_AUDIO_MODELS` — локальные TTS model ids для встроенного `local-audio-gateway` (`piper-tts,qwen3-tts,kokoro-82m`)
-- `LOCAL_AUDIO_PRELOAD` — preload дефолтных local TTS assets при старте gateway (`true` по умолчанию)
-- `LOCAL_AUDIO_PIPER_VOICES` — дефолтные Piper voices, которые будут поставлены при старте и показаны в UI
-- `LOCAL_AUDIO_QWEN_VOICES` — дефолтные Qwen speakers, которые будут показаны в UI после preload модели
-- `LOCAL_AUDIO_KOKORO_VOICES` — дефолтные Kokoro voices, которые будут поставлены при старте
-- `LOCAL_IMAGE_BASE_URL` — backend для `/v1/images/*` (если хотите вынести image отдельно)
-- `LOCAL_IMAGE_DEFAULT_MODEL` — default model для встроенного `local-image-gateway`
-- `LOCAL_VIDEO_BASE_URL` — backend для `/v1/videos*`
-- `LOCAL_TTS_VOICES` — fallback список голосов через запятую, если audio backend не отдает `/v1/audio/voices`
-- `LOCAL_AI_GATEWAY_TIMEOUT_SECONDS` — timeout для upstream запросов gateway (по умолчанию `600`)
-- `REMOTE_OPENAI_BASE_URL` — внешний OpenAI endpoint (по умолчанию `https://api.openai.com`), используется gateway при наличии Bearer API key;
-- `OLLAMA_AUDIO_EXPERIMENTAL` — включает fallback `/v1/audio/*` в Ollama (experimental, используется только если gateway подтвердил доступность Ollama `/v1/audio` endpoint-ов);
-- `OLLAMA_IMAGE_EXPERIMENTAL` — включает fallback `/v1/images/*` в Ollama (experimental).
-
-Если `LOCAL_*_BASE_URL` пустой, gateway пытается использовать Ollama для этого типа запросов.
-
-Примечание: по официальной документации Ollama OpenAI-compat гарантирован для chat/responses/completions и experimental image endpoint; audio endpoint-ы остаются experimental/ограниченными в зависимости от сборки и моделей.
-
-Для Linux-host audio backend используется `host.docker.internal` через `extra_hosts` в `local-ai-gateway`. Если после старта видите warning про недоступный audio backend, проверьте `LOCAL_AUDIO_BASE_URL` и что backend действительно слушает указанный порт.
-
-## Local Audio Gateway
-
-Режим `local` поднимает `local-audio-gateway` и выставляет `LOCAL_AUDIO_BASE_URL=http://local-audio-gateway:8091`.
-
-Gateway реализует минимальный OpenAI-compatible контур:
-- `GET /v1/models` возвращает локальные TTS models (`piper-tts`, `qwen3-tts`, `kokoro-82m`);
-- `GET /v1/audio/voices` возвращает уже установленные / preload voices для UI;
-- `POST /v1/audio/speech` генерирует `wav`, `mp3` или `ogg`.
-
-Assets хранятся в volume `mnema_audio_data`. Первый старт preload-ит дефолтные assets, а любые новые voices/model assets догружаются лениво в момент первой генерации и затем переиспользуются из кеша.
-
-Практический UX:
-- в bootstrap-скрипте выбираются только local TTS providers, а не конкретные voices;
-- в UI пользователь выбирает `TTS model`, а при необходимости вводит `custom voice` вручную;
-- если voice еще не установлен, gateway сам пытается скачать/подготовить его при первом `POST /v1/audio/speech`, после чего voice появляется в `/v1/audio/voices` как локально доступный.
-
-Проверка после запуска:
-
-```bash
-curl http://localhost:8090/v1/audio/voices
-curl -sS http://localhost:8090/v1/audio/speech \
-  -H 'Content-Type: application/json' \
-  -d '{"model":"piper-tts","voice":"ru_RU-irina-medium","input":"Проверка локального синтеза речи.","response_format":"wav"}' \
-  --output mnema-tts-sample.wav
-```
-
-## Local Image Gateway
-
-Режим `diffusers` поднимает `local-image-gateway` и выставляет `LOCAL_IMAGE_BASE_URL=http://local-image-gateway:8092`.
-Это простой fallback backend для `/v1/images/generations` на Diffusers/SD Turbo. По умолчанию image generation остается в режиме `ollama`, потому что Diffusers backend существенно тяжелее по Docker image, RAM/VRAM и времени первого скачивания модели.
-
-## Оценка ресурсов (приблизительно)
-
-## RAM
-
-- Базовый стек Mnema + DB/Cache/Storage: `~4-7 GB`
-- Ollama idle: `~0.5-1 GB`
-- Ollama с активной моделью 7B/8B (quantized): `+4-8 GB`
-- Video/GIF generation worker (если подключен): обычно `+8-24+ GB VRAM` и заметный рост CPU/RAM/IO
-
-## Disk
-
-- Docker images базового стека (без веса моделей): `~8-15 GB`
-- Ollama модели: `~2-8+ GB` на модель (крупные модели значительно больше)
-- Рабочие данные (`Postgres`, `MinIO`, импорты/медиа): зависит от объема контента
-
-## Рекомендованные параметры хоста
-
-- CPU: `8 vCPU` или выше
-- RAM: `16 GB` (лучше `24+ GB`, если несколько AI задач одновременно)
-- Disk: `60+ GB` свободного места
-
-Для video/gif сценариев:
-- GPU: `16+ GB VRAM` (минимально рабочий уровень)
-- предпочтительно отдельный GPU worker и отдельная очередь задач
-
-## Проверка фактической нагрузки
-
-```bash
-docker stats
-docker system df
-```
-
-## Управление моделями Ollama вручную
-
-После старта скрипт печатает команды вида:
-
-```bash
-docker compose --env-file .env.local -f docker-compose.yml -f .mnema/compose.ports.yml exec -T ollama ollama list
-docker compose --env-file .env.local -f docker-compose.yml -f .mnema/compose.ports.yml exec -T ollama ollama pull <model>
-docker compose --env-file .env.local -f docker-compose.yml -f .mnema/compose.ports.yml exec -T ollama ollama run <model>
-curl http://localhost:11434/api/tags
-curl http://localhost:8090/v1/models
-curl http://localhost:8090/v1/audio/voices
-```
-
-Если порт `11434` был занят, используйте фактический порт, который показал bootstrap скрипт.
-Аналогично для gateway (`8090` по умолчанию).
-
-Модельная матрица и рекомендации по modality:
-- [Local AI Model Matrix](./model-matrix.md)
-
-## Остановка и очистка
-
-```bash
-docker compose --env-file .env.local -f docker-compose.yml -f .mnema/compose.ports.yml down
-```
-
-Полная очистка с удалением volumes:
-
-```bash
-docker compose --env-file .env.local -f docker-compose.yml -f .mnema/compose.ports.yml down -v
-```
+The old local and public launchers were removed from this checkout in #146. Their
+matching source, Compose files and runbooks remain available in the
+[`v1-apache-final`](https://github.com/MattoYuzuru/Mnema/tree/v1-apache-final)
+tag and Git history. They are not supported by the replacement runtime.

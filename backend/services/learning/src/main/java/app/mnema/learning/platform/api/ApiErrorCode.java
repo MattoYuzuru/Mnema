@@ -13,6 +13,13 @@ enum ApiErrorCode {
             "Idempotency conflict",
             "The command identifier was already used for a different command."
     ),
+    CAPABILITY_UNAVAILABLE(
+            HttpStatus.CONFLICT,
+            "Capability unavailable",
+            "The requested learning capability is not available."
+    ),
+    MEDIA_UPLOAD_CONFLICT(HttpStatus.CONFLICT, "Media upload conflict", "The upload state or parts do not match the command."),
+    MEDIA_STORAGE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "Media storage unavailable", "Media storage is temporarily unavailable."),
     VERSION_CONFLICT(
             HttpStatus.PRECONDITION_FAILED,
             "Version conflict",

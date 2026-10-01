@@ -4,9 +4,9 @@ artifact:
   type: architecture-overview
   title: "Mnema current system overview"
   status: current
-  updated_at: "2026-09-24"
+  updated_at: "2026-09-28"
   owners: ["project-owner"]
-  evidence_revision: "d7fd1b1d509a0ab598976f87af88101bfc3945ac"
+  evidence_revision: "1879d9ae0cadde67bf8a0ccc74fbccb53f2acee5"
 ---
 
 # Mnema: текущий обзор системы
@@ -18,7 +18,8 @@ snapshots, deterministic attempts, baseline scheduler state и production exerci
 inspector. Канонический Study runner уже проводит все четыре scheduled P0-механики:
 self-check, typed, single-blank cloze и single choice, показывает progress и даёт
 replay/practice и явные session budgets. Persistent local HTTPS runtime также
-реализован. Media lifecycle относится к #76.
+реализован. Epic #76 добавил native media lifecycle, playback, аудирование,
+offline manifest и безопасный GC в Learning.
 
 ## Shipping и local replacement boundary
 
@@ -60,6 +61,8 @@ Identity и Learning — отдельные deployables без Gradle dependency
 - due-first scheduled selection, replay выбранной завершённой сессии текущего
   локального дня и practice по уже введённым objective с явным opt-in новых;
 - единый scheduled scheduler с server-pinned quick 10/2 и standard 20/5 budgets;
+- owner-scoped media assets, upload/finalize, worker processing, playback и
+  три механики аудирования; offline manifest и объектный GC;
 - cursor-bounded material progress без фиктивного mastery percentage, exact restart
   нового learning epoch и bounded retention raw/compact attempt payloads;
 - UUID, canonical JSON, command receipts, RFC 9457 Problem Details, row-version CAS;
@@ -73,8 +76,12 @@ tombstones сохраняют retry/conflict semantics после очистки
 ## Frontend boundary
 
 Replacement routes `/decks`, `/decks/:deckId`, deck-scoped
-`/decks/:deckId/materials/...`, `/decks/:deckId/capture` и editor реализуют выбранное
-paper/antiquity/indigo направление. Отдельный lazy exercise inspector позволяет
+`/decks/:deckId/materials/...`, `/decks/:deckId/capture` и editor используют
+выбранное paper/antiquity/indigo оформление. Главная `/` включает гравюру
+Мнемозины и композицию принятого макета с реальными маршрутами и русским текстом.
+Семантические CSS-токены находятся в `frontend/src/theme/tokens.css`, правила
+оформления и проверки — в [бренд-контракте](./frontend/mnema-brand-and-ui-contract.md).
+Прототип остаётся визуальным свидетельством, не Angular runtime. Отдельный lazy exercise inspector позволяет
 выбрать актуальные node projections или короткий prompt, создать/переиспользовать/
 изменить одну явную objective, настроить четыре P0 mechanics и preview без работы с
 UUID/JSON. Native editor state не является persisted format; frontend валидирует
@@ -91,17 +98,14 @@ completion/expiry/error и account-bound recovery точной pending attempt �
 Перед scheduled start пользователь выбирает короткую или стандартную границу, видит
 её во время сессии и не получает ложной гарантии длительности по часам.
 
-В исходниках всё ещё есть legacy components/services для public decks, old review,
-templates, import, media и AI. Их наличие не делает поведение текущим и не разрешает
-переиспользовать old card/template/scheduler boundaries в #75. Runtime-wide removal
-остаётся задачей #146.
+Legacy public-deck, template, old review, import, media и AI Angular routes и
+клиенты удалены в #146. Профиль использует native Identity & Account API.
 
-## Legacy build boundary
+## Историческая граница
 
-Gradle graph всё ещё содержит `core`, `media`, `import` и `ai`, чтобы полный gate
-проверял не удалённый пока код. Старые `auth` и `user` modules уже заменены единым
-Identity & Account. Legacy migrations и service docs сохраняются как evidence до
-#146/#147; они не запускаются Learning и не являются rollback architecture.
+Gradle graph содержит только `identity-account` и `learning`; legacy migration
+chains и сервисные исходники отсутствуют в текущем checkout. Исторический код
+доступен через тег `v1-apache-final` и Git history, а service docs помечены legacy.
 
 ## Проверка
 
@@ -125,8 +129,6 @@ Acceptance #74: [integrated main evidence](./engineering/evidence/epic-74/verifi
 
 ## Следующие этапы
 
-1. #76 — отдельный greenfield media lifecycle.
-2. #146 — удаление оставшегося legacy runtime/build wiring после #74–#76.
-3. #147 — отдельный production cutover/purge gate; сейчас не разрешён и не готов.
+1. #147 — отдельный production cutover/purge gate; сейчас не разрешён и не готов.
 
 Интеграционная проверка #75 и её пределы: [acceptance evidence](./engineering/evidence/epic-75/verification/integrated-main-2026-09-24.md).

@@ -15,6 +15,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
@@ -40,6 +41,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import jakarta.servlet.http.HttpServletRequest;
 
 import java.net.URI;
 import java.time.Clock;
@@ -47,6 +49,15 @@ import java.util.List;
 
 @Configuration(proxyBeanMethods = false)
 public class SecurityConfiguration {
+    /** Browser cookie writes require CSRF; explicit bearer writes must pass JWT authentication. */
+    private static boolean requiresAccountCsrf(HttpServletRequest request) {
+        if (List.of("GET", "HEAD", "OPTIONS", "TRACE").contains(request.getMethod())) return false;
+        String authorization = request.getHeader(HttpHeaders.AUTHORIZATION);
+        boolean bearer = authorization != null && authorization.length() > 7
+                && authorization.regionMatches(true, 0, "Bearer ", 0, 7);
+        return !bearer;
+    }
+
     private static AuthorizationDecision scope(Authentication auth, String scope) {
         boolean authenticated =
                 auth != null && auth.isAuthenticated() && !(auth instanceof AnonymousAuthenticationToken);
@@ -101,6 +112,7 @@ public class SecurityConfiguration {
                                         FederationSuccess success, ProviderUsers users, Clock clock,
                                         AccountErrors errors) throws Exception {
         http.cors(Customizer.withDefaults()).csrf(c -> c.csrfTokenRepository(new HttpSessionCsrfTokenRepository())
+                        .requireCsrfProtectionMatcher(SecurityConfiguration::requiresAccountCsrf)
                         .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler()))
                 .authorizeHttpRequests(
                         a -> a.requestMatchers("/api/actuator/health/**", "/api/actuator/info", "/error", "/login",

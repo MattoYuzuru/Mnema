@@ -20,6 +20,21 @@ public abstract class PostgresIntegrationTest {
         POSTGRES.start();
     }
 
+    /** A second, empty database on the shared container, for tests that drive Flyway themselves. */
+    protected static String createDatabase(String name) {
+        try (var connection = java.sql.DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(),
+                POSTGRES.getPassword()); var statement = connection.createStatement()) {
+            statement.execute("CREATE DATABASE " + name);
+        } catch (java.sql.SQLException exception) {
+            throw new IllegalStateException(exception);
+        }
+        return POSTGRES.getJdbcUrl().replace("/" + POSTGRES.getDatabaseName(), "/" + name);
+    }
+
+    protected static String username() { return POSTGRES.getUsername(); }
+
+    protected static String password() { return POSTGRES.getPassword(); }
+
     @DynamicPropertySource
     static void configurePostgres(DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
