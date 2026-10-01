@@ -1,7 +1,7 @@
 # Import Service (`backend/services/import`)
 
-> **Status: legacy.** Retained as v1 replacement/deletion evidence; it is not part
-> of the first replacement runtime.
+> **Status: legacy.** The module was removed from the checkout in #146 (source in the
+> [`v1-apache-final`](https://github.com/MattoYuzuru/Mnema/tree/v1-apache-final) tag); it is not part of the replacement runtime.
 
 ## Назначение
 

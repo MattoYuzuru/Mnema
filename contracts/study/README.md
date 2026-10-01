@@ -29,6 +29,7 @@ Deck/Item contracts.
 | Read exercise | `GET /api/decks/{deckId}/exercises/{exerciseId}[?revisionId=...]` | 200, exact immutable revision |
 | Create exercise and objective | `POST /api/decks/{deckId}/exercises` + `If-Match` | 201, publication acknowledgement |
 | Revise/re-enable exercise | `PUT /api/decks/{deckId}/exercises/{exerciseId}` + `If-Match` | 200, publication acknowledgement |
+| Remove exercise | `DELETE /api/decks/{deckId}/exercises/{exerciseId}` + `If-Match` | 204; history and attempts retained |
 
 The write command is atomic. `objective.operation=create` allocates a stable
 objective plus its first revision; `reuse` pins an existing exact revision;

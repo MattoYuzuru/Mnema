@@ -1,6 +1,6 @@
 # Legacy core entity map (v1)
 
-**Status: legacy / approximate.** This diagram explains the original v1 model; it is not the schema source of truth. In particular, scheduling fields were moved out of `USER_CARDS` by `V6__move_scheduling_fields_to_sr_card_states.sql`, and later migrations changed templates, identity and moderation. Use ordered migrations under `backend/services/core/src/main/resources/db/migration` for current behavior. The proposed replacement is [Content and study platform v2](./architecture/content-platform-v2.md).
+**Status: legacy / approximate.** This diagram explains the original v1 model; it is not the schema source of truth. In particular, scheduling fields were moved out of `USER_CARDS` by `V6__move_scheduling_fields_to_sr_card_states.sql`, and later migrations changed templates, identity and moderation. The `core` module and its migrations were removed from the checkout in #146; the exact v1 source is in the [`v1-apache-final`](https://github.com/MattoYuzuru/Mnema/tree/v1-apache-final) tag (`backend/services/core/src/main/resources/db/migration`). The replacement is implemented in `backend/services/learning` (see the [Learning guide](../backend/services/learning/guide.md) and [Content and study platform v2](./architecture/content-platform-v2.md)).
 
 ```mermaid
 ---

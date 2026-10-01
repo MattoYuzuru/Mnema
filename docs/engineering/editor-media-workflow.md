@@ -3,9 +3,9 @@ artifact:
   id: editor-media-workflow
   type: engineering-standard
   title: "Learning editor media workflow"
-  status: proposed
+  status: current
   created_at: "2026-09-28"
-  updated_at: "2026-09-28"
+  updated_at: "2026-10-01"
   owners: ["project-owner"]
   source_tasks: ["GitHub #238"]
 ---

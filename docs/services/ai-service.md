@@ -1,6 +1,8 @@
 # AI Service (`backend/services/ai`)
 
-> **Status: legacy.** Retained as v1 replacement input; AI is deferred to Epic #77.
+> **Status: legacy.** The module was removed from the checkout in #146 (source in the
+> [`v1-apache-final`](https://github.com/MattoYuzuru/Mnema/tree/v1-apache-final) tag). AI is deferred to Epic #77; Learning only exposes disabled capabilities
+> (`GET /api/capabilities`).
 
 ## Назначение
 

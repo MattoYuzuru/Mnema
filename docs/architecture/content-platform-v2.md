@@ -469,6 +469,15 @@ retains previous attempts.
 
 ### Multi-item attempt semantics
 
+> **Implementation note (#266/#268).** The shipped runtime is narrower than the model
+> below: an exercise assesses exactly one objective of its subject item; options, pairs,
+> blanks, order items and categories are exercise content with their own IDs, not
+> bindings, and the server derives only an `ASSESSED` subject binding plus `CONTEXT`
+> bindings for quoted materials. `MATCH`, `ORDER` and `CATEGORIZE` return one composite
+> result with per-part feedback and never per-item credit. Per-objective multi-target
+> submissions described below stay a deferred design. Wire contract:
+> [`contracts/study`](../../contracts/study/README.md).
+
 - Candidate bindings come only from one pinned effective personal deck snapshot. `OPTION`/`CONTEXT` exposure never changes progress.
 - A focal matching exercise may pin one `ASSESSED` item plus several options. A group matching submission may return several `ATTEMPT_EVIDENCE` rows, but each row needs an observable response for its own objective.
 - Aggregate `4/4` feedback is not copied to all items. If a mechanic cannot produce valid per-objective evidence, it is feedback-only and rejected as scheduler-affecting.

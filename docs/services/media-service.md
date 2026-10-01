@@ -1,7 +1,9 @@
 # Media Service (`backend/services/media`)
 
-> **Status: legacy.** Retained as v1 replacement/deletion evidence; Epic #76 owns
-> the greenfield media lifecycle.
+> **Status: legacy.** The module was removed from the checkout in #146 (source in the
+> [`v1-apache-final`](https://github.com/MattoYuzuru/Mnema/tree/v1-apache-final) tag). The greenfield media lifecycle lives in Learning
+> (Epic #76): [upload transport](../engineering/media-upload-transport.md) and
+> [playback](../engineering/media-playback.md).
 
 ## Назначение
 

@@ -142,6 +142,13 @@ community release; обещание готового большого катал
 
 ## Roadmap by product evidence
 
+> **Delivery status (2026-10).** Gate 0 and the P0 loop are implemented (#74, #75, #76).
+> From the P1 list, multiple select, matching, ordering, categorization, multi-blank cloze
+> and listening (as an audio prompt of a free response) shipped through #266/#268 as seven
+> mechanics ([contract](../../contracts/study/README.md#exercise-mechanics-266)); the
+> lists below keep the original sequencing rationale. Coauthors, forks, catalog, payments,
+> multi-value recall, image occlusion and AI remain unbuilt.
+
 ### Gate 0 — foundation and destructive-migration approval
 
 - approve content/exercise contracts and fresh account-only reset;

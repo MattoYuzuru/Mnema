@@ -5,15 +5,17 @@ artifact:
   title: "Own-deck authoring, exercise projections and practice modes"
   status: accepted
   created_at: "2026-09-06"
-  updated_at: "2026-09-29"
+  updated_at: "2026-10-01"
   owners: ["project-owner"]
 ---
 
 # Материалы, черновики и обучение
 
 Источник — подробные ответы владельца 2026-09-06. Продуктовое поведение ниже
-принято как input. Authoring subset реализован в #74; Study/exercise engineering
-остаётся input для refinement #75, media — для #76. Этот документ конкретизирует
+принято как input. Реализовано: authoring (#74), Study и упражнения (#75, затем #266/#268
+с семью механиками), медиа (#76). Что именно работает сейчас — в
+[system overview](../system-overview.md) и [`contracts/study`](../../contracts/study/README.md).
+Этот документ конкретизирует
 [owner decisions](../decisions/owner-decisions-2026-08.md) и
 [каталог упражнений](exercise-catalog-v2.md).
 
@@ -119,7 +121,10 @@ link, загруженное видео и два варианта произн�
 
 Exercise имеет собственную identity/revision, M:N bindings материалов и собственный
 набор отображаемых проекций. Binding указывает deck-local item identity, точную
-revision, выбранные node IDs/semantic spans, роль и display projection. Пользователь
+revision, выбранные node IDs/semantic spans, роль и display projection. В реализации
+(#266) клиент не присылает роли: сервер выводит их из слотов контента — один
+оцениваемый subject и контекст для каждого процитированного материала, а ключ ответа
+хранится на ревизии упражнения. Пользователь
 может задать короткую подпись, которая принадлежит упражнению; её изменение не
 переписывает исходный материал. Проверяемый ответ и видимая подпись — разные поля
 контракта упражнения, а не пользовательская field schema всей колоды.
@@ -127,8 +132,10 @@ revision, выбранные node IDs/semantic spans, роль и display projec
 Для упражнений с вводом текста или самостоятельной проверкой автор может указать
 свой эталон и до 20 допустимых формулировок. Первая формулировка показывается после
 ответа; остальные принимаются по тем же правилам нормализации. Упражнения с выбором
-варианта и сопоставлением продолжают опираться на реальные фрагменты материала,
-чтобы каждый показанный вариант имел однозначный источник. Свободная оценка AI
+варианта и сопоставлением в решении владельца опирались на реальные фрагменты материала,
+чтобы каждый показанный вариант имел однозначный источник. С #266 слот допускает и
+собственный короткий текст/медиа упражнения — это осознанное решение владельца
+(Epic #265, решение 3; #266 §3): автор может брать фрагмент материала или писать своё. Свободная оценка AI
 не подразумевается. Это уточнение владельца от 2026-09-29;
 [критерии UI](./ux-improvements-2026-09-29.md) описывают его проверку.
 
@@ -309,12 +316,10 @@ archive/trash/copies, число лимитов, цена и состав под
 
 ## Осталось проверить
 
-Editor engine, storage representation и измеренные лимиты, cohort calibration,
-multi-device ordering и долгосрочное архивирование compact evidence — последующая
-инженерная работа. Точные P0 schemas, material progress, reducer, replay/practice
-policy и live-row retention реализованы по
-[Epic #75 refinement](../engineering/epic-75-refinement.md); интегрированная
-browser-проверка replacement loop остаётся acceptance slice #221. Matching — обязательная
-целевая механика и часть prototype проверки; перенос из P1 в первый production slice
-не подразумевается автоматически одним наличием в макете. Community и paid packaging
-получают отдельный refinement после полезного own-deck loop.
+Измеренные лимиты на реальных данных, cohort calibration, multi-device ordering и
+долгосрочное архивирование compact evidence — последующая инженерная работа. Editor
+engine (#74), точные schemas, material progress, reducer, replay/practice policy,
+live-row retention и интегрированная browser-проверка (#221) реализованы по
+[Epic #75 refinement](../engineering/epic-75-refinement.md); `MATCH`, `ORDER` и
+`CATEGORIZE` вошли в #266/#268. Community и paid packaging получают отдельный
+refinement после полезного own-deck loop.

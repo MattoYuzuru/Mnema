@@ -33,7 +33,7 @@ active draft. List pages contain metadata; the full document is restored separat
 
 | Operation | Request | Success |
 |---|---|---|
-| List notes | `GET /api/capture-notes?limit=20&cursor=...` | 200 bounded page |
+| List notes | `GET /api/capture-notes?[deckId=...&]limit=20&cursor=...` | 200 bounded page; with `deckId`, unarchived unconverted notes of that deck plus `total` |
 | Read note | `GET /api/capture-notes/{noteId}` | 200 and ETag |
 | Capture | `POST /api/capture-notes` | 201 acknowledgement, Location and ETag |
 | Edit | `PUT /api/capture-notes/{noteId}` + `If-Match` | 200 and new ETag |
