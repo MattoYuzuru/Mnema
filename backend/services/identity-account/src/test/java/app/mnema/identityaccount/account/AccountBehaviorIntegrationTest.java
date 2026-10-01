@@ -587,6 +587,52 @@ class AccountBehaviorIntegrationTest extends PostgresIntegrationTest {
         }
     }
 
+    /**
+     * A database clock that steps backwards makes the next transaction see rows created "in the future".
+     * Profile, login, password and verification writes must stay monotonic for the unchanged CHECK constraints.
+     */
+    @Test
+    void accountWritesStayMonotonicWhenRowsAreAheadOfTheDatabaseClock() {
+        String key = UUID.randomUUID().toString();
+        var access = local.register(key + "@example.test", key, password, null, key);
+        placeAccountAhead(access.accountId());
+        jdbc.sql("UPDATE app_identity.local_credential SET created_at=statement_timestamp() + interval '1 hour',"
+                + "updated_at=statement_timestamp() + interval '1 hour' WHERE account_id=:id")
+                .param("id", access.accountId()).update();
+
+        profiles.update(access, "ahead-" + key.substring(0, 8), "Display", "Bio");
+        local.login(key, password, key);
+        local.replacePassword(access.accountId(), "replacement-password-77");
+        var current = accounts.get(access.accountId(), false).access();
+        var proof = tx.execute(s -> proofs.issue(current, OwnershipProofs.Purpose.VERIFY_EMAIL));
+        recovery.confirmVerification(proof.token());
+
+        assertThat(jdbc.sql("SELECT updated_at >= created_at AND profile_created_at >= created_at "
+                        + "AND last_login_at >= created_at AND created_at > statement_timestamp() "
+                        + "FROM app_identity.account WHERE account_id=:id")
+                .param("id", access.accountId()).query(Boolean.class).single()).isTrue();
+        assertThat(jdbc.sql("SELECT updated_at >= created_at AND created_at > statement_timestamp() "
+                        + "FROM app_identity.local_credential WHERE account_id=:id")
+                .param("id", access.accountId()).query(Boolean.class).single()).isTrue();
+
+        var external = new FederatedAccounts.External("github", "ahead-" + key, key + "@provider.test", true);
+        var federated = federation.complete(external, null);
+        placeAccountAhead(federated.accountId());
+        jdbc.sql("UPDATE app_identity.external_identity SET linked_at=statement_timestamp() + interval '1 hour',last_login_at=NULL "
+                + "WHERE account_id=:id").param("id", federated.accountId()).update();
+        federation.complete(external, null);
+        assertThat(jdbc.sql("SELECT a.last_login_at >= a.created_at AND i.last_login_at >= i.linked_at "
+                        + "AND i.linked_at > statement_timestamp() FROM app_identity.account a "
+                        + "JOIN app_identity.external_identity i USING (account_id) WHERE account_id=:id")
+                .param("id", federated.accountId()).query(Boolean.class).single()).isTrue();
+    }
+
+    private void placeAccountAhead(UUID accountId) {
+        jdbc.sql("UPDATE app_identity.account SET created_at=statement_timestamp() + interval '1 hour',"
+                + "updated_at=statement_timestamp() + interval '1 hour',profile_created_at=NULL,last_login_at=NULL "
+                + "WHERE account_id=:id").param("id", accountId).update();
+    }
+
     @Test
     void explicitLinkNeedsOneUseProofAndUnlinkRevokesOnlyOwnedAccount() {
         var a = account();

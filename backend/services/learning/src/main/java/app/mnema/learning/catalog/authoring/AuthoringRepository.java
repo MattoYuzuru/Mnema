@@ -102,11 +102,12 @@ class AuthoringRepository {
     int updateDraft(UUID actor, UUID id, long expected, JsonNode document, Instant time) {
         return jdbc.sql("""
                 UPDATE app_learning.editing_draft SET row_version=row_version+1,document=CAST(:document AS jsonb),
-                    acknowledged_at=:time,expires_at=:expires
+                    acknowledged_at=GREATEST(:time,acknowledged_at),
+                    expires_at=GREATEST(:time,acknowledged_at)+(:window * interval '1 second')
                  WHERE owner_id=:actor AND draft_id=:id AND row_version=:expected
                    AND expires_at>statement_timestamp()
                 """).param("document", write(document)).param("time", Timestamp.from(time))
-                .param("expires", Timestamp.from(time.plus(settings.draftRecoveryWindow()))).param("actor", actor)
+                .param("window", settings.draftRecoveryWindow().toSeconds()).param("actor", actor)
                 .param("id", id).param("expected", expected).update();
     }
 
@@ -181,7 +182,8 @@ class AuthoringRepository {
     int updateCapture(UUID actor, UUID id, long expected, String source, String text, Instant time) {
         return jdbc.sql("""
                 UPDATE app_learning.capture_note SET row_version=row_version+1,source=:source,note_text=:text,
-                    updated_at=:time WHERE owner_id=:actor AND note_id=:id AND row_version=:expected
+                    updated_at=GREATEST(:time,updated_at)
+                 WHERE owner_id=:actor AND note_id=:id AND row_version=:expected
                     AND conversion_command_id IS NULL
                 """).param("source", source).param("text", text).param("time", Timestamp.from(time))
                 .param("actor", actor).param("id", id).param("expected", expected).update();
@@ -189,7 +191,7 @@ class AuthoringRepository {
 
     int archiveCapture(UUID actor, UUID id, long expected, boolean archived, Instant time) {
         return jdbc.sql("""
-                UPDATE app_learning.capture_note SET row_version=row_version+1,archived=:archived,updated_at=:time
+                UPDATE app_learning.capture_note SET row_version=row_version+1,archived=:archived,updated_at=GREATEST(:time,updated_at)
                  WHERE owner_id=:actor AND note_id=:id AND row_version=:expected
                 """).param("archived", archived).param("time", Timestamp.from(time)).param("actor", actor)
                 .param("id", id).param("expected", expected).update();
@@ -254,9 +256,9 @@ class AuthoringRepository {
     int convertCapture(UUID actor, UUID id, long expected, UUID command, byte[] hash,
                        UUID member, UUID revision, JsonNode result, Instant time) {
         return jdbc.sql("""
-                UPDATE app_learning.capture_note SET row_version=row_version+1,updated_at=:time,
+                UPDATE app_learning.capture_note SET row_version=row_version+1,updated_at=GREATEST(:time,updated_at),
                     conversion_command_id=:command,conversion_payload_hash=:hash,converted_member_key=:member,
-                    converted_revision_id=:revision,converted_at=:time,conversion_result=CAST(:result AS jsonb)
+                    converted_revision_id=:revision,converted_at=GREATEST(:time,updated_at),conversion_result=CAST(:result AS jsonb)
                  WHERE owner_id=:actor AND note_id=:id AND row_version=:expected AND conversion_command_id IS NULL
                 """).param("time", Timestamp.from(time)).param("command", command).param("hash", hash)
                 .param("member", member).param("revision", revision).param("result", write(result))

@@ -102,11 +102,11 @@ class MediaGcRepository {
         } else if (state.equals("TRACKED")) {
             jdbc.sql("UPDATE app_learning.media_gc_object SET state='FIRST',"
                             + "first_scan_at=CURRENT_TIMESTAMP,first_scan_epoch=:epoch,"
-                            + "updated_at=CURRENT_TIMESTAMP WHERE object_key=:key")
+                            + "updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) WHERE object_key=:key")
                     .param("epoch", epoch).param("key", key).update();
         } else if (state.equals("FIRST") && firstEpoch < epoch) {
             jdbc.sql("UPDATE app_learning.media_gc_object SET state='SECOND',"
-                            + "second_scan_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP "
+                            + "second_scan_at=CURRENT_TIMESTAMP,updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) "
                             + "WHERE object_key=:key AND first_scan_at<=CURRENT_TIMESTAMP "
                             + "- (:gap * interval '1 second')")
                     .param("key", key).param("gap", settings.scanGap.toSeconds()).update();
@@ -143,7 +143,7 @@ class MediaGcRepository {
         jdbc.sql("UPDATE app_learning.media_gc_object SET state='DELETING',delete_token=:token,"
                         + "lease_until=CURRENT_TIMESTAMP + (:lease * interval '1 second'),"
                         + "next_attempt_at=NULL,delete_attempts=delete_attempts+1,"
-                        + "updated_at=CURRENT_TIMESTAMP WHERE object_key=:key")
+                        + "updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) WHERE object_key=:key")
                 .param("token", token).param("lease", settings.deleteLease.toSeconds())
                 .param("key", key).update();
         return new Deletion(key, token);
@@ -165,14 +165,14 @@ class MediaGcRepository {
             jdbc.sql("DELETE FROM app_learning.media_variant v USING app_learning.media_asset a "
                             + "WHERE v.asset_id=a.asset_id AND v.blob_id=:blob AND a.state='DELETED'")
                     .param("blob", blob).update();
-            jdbc.sql("UPDATE app_learning.media_asset SET source_blob_id=NULL,updated_at=CURRENT_TIMESTAMP "
+            jdbc.sql("UPDATE app_learning.media_asset SET source_blob_id=NULL,updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) "
                             + "WHERE source_blob_id=:blob AND state='DELETED'")
                     .param("blob", blob).update();
             jdbc.sql("DELETE FROM app_learning.media_blob WHERE blob_id=:blob")
                     .param("blob", blob).update();
         }
         jdbc.sql("UPDATE app_learning.media_gc_object SET state='DELETED',delete_token=NULL,lease_until=NULL,"
-                        + "next_attempt_at=NULL,deleted_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP "
+                        + "next_attempt_at=NULL,deleted_at=CURRENT_TIMESTAMP,updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) "
                         + "WHERE object_key=:key AND delete_token=:token")
                 .param("key", deletion.key()).param("token", deletion.token()).update();
         return true;
@@ -183,7 +183,7 @@ class MediaGcRepository {
     void deferDeletion(Deletion deletion, String code) {
         jdbc.sql("UPDATE app_learning.media_gc_object SET lease_until=CURRENT_TIMESTAMP "
                         + "+ (:retry * interval '1 second'),next_attempt_at=CURRENT_TIMESTAMP "
-                        + "+ (:retry * interval '1 second'),last_error_code=:code,updated_at=CURRENT_TIMESTAMP "
+                        + "+ (:retry * interval '1 second'),last_error_code=:code,updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) "
                         + "WHERE object_key=:key AND delete_token=:token AND state='DELETING'")
                 .param("retry", settings.retryDelay.toSeconds()).param("code", code)
                 .param("key", deletion.key()).param("token", deletion.token()).update();
@@ -240,7 +240,7 @@ class MediaGcRepository {
     private void reset(String key) {
         jdbc.sql("UPDATE app_learning.media_gc_object SET state='TRACKED',first_scan_at=NULL,"
                         + "first_scan_epoch=NULL,second_scan_at=NULL,next_attempt_at=NULL,"
-                        + "updated_at=CURRENT_TIMESTAMP WHERE object_key=:key AND state IN ('FIRST','SECOND')")
+                        + "updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) WHERE object_key=:key AND state IN ('FIRST','SECOND')")
                 .param("key", key).update();
     }
 

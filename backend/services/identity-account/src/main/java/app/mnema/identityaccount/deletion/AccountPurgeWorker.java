@@ -76,7 +76,7 @@ public class AccountPurgeWorker {
                             """).query(UUID.class).optional();
             if (accountId.isEmpty()) return null;
             jdbcClient.sql("""
-                            UPDATE app_identity.account SET deletion_state='PURGING',updated_at=transaction_timestamp(),
+                            UPDATE app_identity.account SET deletion_state='PURGING',updated_at=GREATEST(transaction_timestamp(),updated_at),
                                 row_version=row_version+1
                             WHERE account_id=:account AND deletion_state IN ('PENDING_DELETION','PURGING')
                             """).param("account", accountId.get()).update();
@@ -158,7 +158,7 @@ public class AccountPurgeWorker {
                             SET email=NULL,email_verified=false,profile_username=NULL,display_name=NULL,bio=NULL,
                                 is_admin=false,admin_granted_by=NULL,admin_granted_at=NULL,ban_reason=NULL,
                                 profile_created_at=NULL,last_login_at=NULL,deletion_state='PURGED',
-                                security_generation=security_generation+1,updated_at=transaction_timestamp(),
+                                security_generation=security_generation+1,updated_at=GREATEST(transaction_timestamp(),updated_at),
                                 row_version=row_version+1
                             WHERE account_id=:account AND deletion_state='PURGING'
                             """).param("account", lease.accountId()).update();
