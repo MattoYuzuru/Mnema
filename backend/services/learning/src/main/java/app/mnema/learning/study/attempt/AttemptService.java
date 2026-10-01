@@ -94,11 +94,11 @@ public class AttemptService {
         }
 
         // Media is checked for every mechanic: an unavailable asset must never turn into a wrong answer.
-        AttemptEvaluation evaluation = !(command.response() instanceof AttemptCommand.CancelResponse)
-                && !mediaCatalog.exerciseMediaReady(actor, deck, presentation.exerciseId(),
-                        presentation.exerciseRevisionId())
-                ? AttemptEvaluation.mediaNotReady()
-                : AttemptEvaluation.evaluate(subject(presentation), command.response());
+        // The response shape is validated first inside the evaluation, so a malformed response consumes nothing.
+        boolean mediaReady = command.response() instanceof AttemptCommand.CancelResponse
+                || mediaCatalog.exerciseMediaReady(actor, deck, presentation.exerciseId(),
+                        presentation.exerciseRevisionId());
+        AttemptEvaluation evaluation = AttemptEvaluation.evaluate(subject(presentation), command.response(), mediaReady);
         if (presentation.exerciseType().equals(ExerciseType.MATCH.name())
                 && evaluation.result() == AttemptEvaluation.Result.CORRECT
                 && repository.hasPairMistakes(actor, session, command.presentationId())) {

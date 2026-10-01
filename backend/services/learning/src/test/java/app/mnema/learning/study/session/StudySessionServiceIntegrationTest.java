@@ -353,7 +353,7 @@ class StudySessionServiceIntegrationTest extends PostgresIntegrationTest {
                 blocks(audio(sound, "Voice", null), text("Type it")), blocks(), "x"));
         assertThat(published.path("exerciseRevisionId").textValue()).isNotBlank();
         assertThat(fixtures.issue(material, "SCHEDULED", null)).isEmpty();
-        // READY but really an image: a listening cue must not be an image
+        // READY but really an image: audio must not be an image
         fixtures.ready(sound, "image/png");
         assertThat(fixtures.issue(material, "SCHEDULED", null)).isEmpty();
 

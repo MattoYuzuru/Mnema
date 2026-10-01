@@ -17,7 +17,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Random;
+import java.util.random.RandomGenerator;
 import java.util.UUID;
 import java.util.stream.IntStream;
 
@@ -26,8 +26,9 @@ import java.util.stream.IntStream;
  *
  * <p>MATERIAL becomes TEXT from the pinned revision; author labels (media titles), answer keys and
  * accepted strings never enter the result. Transcripts stay inside the stored content and are filtered
- * by {@link #view} until the learner reveals them. MATCH sides are shuffled here, deterministically from
- * the presentation id, so a replayed read returns the same order.
+ * by {@link #view} until the learner reveals them. MATCH sides are shuffled here with an unpredictable
+ * source and the result is persisted, so reads and replays return the same order; the order is deliberately
+ * not derivable from any identifier a client holds.
  */
 final class LearnerContent {
     private static final JsonNodeFactory JSON = JsonNodeFactory.instance;
@@ -43,7 +44,7 @@ final class LearnerContent {
     /** {@code content} is shown while answering; {@code reveal} only after the answer is final. */
     record Resolved(ObjectNode content, ObjectNode reveal) { }
 
-    static Resolved issue(ExerciseType type, JsonNode stored, AnswerKey key, UUID presentationId, TextSource text) {
+    static Resolved issue(ExerciseType type, JsonNode stored, AnswerKey key, RandomGenerator random, TextSource text) {
         ExerciseContent model = ExerciseContent.parse(type, stored);
         ObjectNode content = JSON.objectNode();
         ObjectNode reveal = JSON.objectNode();
@@ -55,7 +56,8 @@ final class LearnerContent {
             case ExerciseContent.FreeResponse response -> {
                 content.set("prompt", blocks(response.prompt(), text));
                 content.put("responseInput", response.responseInput());
-                reveal.set("reference", blocks(response.reference(), text));
+                // Feedback is stored in receipts, so it carries availability but never transcript text.
+                reveal.set("reference", view(blocks(response.reference(), text), false));
             }
             case ExerciseContent.Cloze cloze -> {
                 content.set("prompt", blocks(cloze.prompt(), text));
@@ -70,15 +72,15 @@ final class LearnerContent {
             }
             case ExerciseContent.Match match -> {
                 content.set("prompt", blocks(match.prompt(), text));
-                shuffledSides(match, (AnswerKey.Match) key, presentationId, content, text);
+                shuffledSides(match, (AnswerKey.Match) key, random, content, text);
             }
         }
         return new Resolved(content, reveal);
     }
 
     /** The learner's view of stored content: transcripts are present only once revealed. */
-    static ObjectNode view(JsonNode stored, boolean revealed) {
-        ObjectNode copy = stored.deepCopy();
+    static <T extends JsonNode> T view(T stored, boolean revealed) {
+        T copy = stored.deepCopy();
         if (!revealed) strip(copy);
         return copy;
     }
@@ -92,12 +94,22 @@ final class LearnerContent {
         return false;
     }
 
-    /** First extended grapheme cluster of the NFC form: one visible character, even for emoji or combining marks. */
+    /**
+     * First extended grapheme cluster of the NFC form after leading whitespace: one visible character, even for
+     * emoji or combining marks, and never whitespace itself.
+     */
     static String firstLetter(String accepted) {
         String canonical = Normalizer.normalize(accepted, Normalizer.Form.NFC);
+        int start = 0;
+        while (start < canonical.length()) {
+            int point = canonical.codePointAt(start);
+            if (!Character.isWhitespace(point) && !Character.isSpaceChar(point)) break;
+            start += Character.charCount(point);
+        }
         BreakIterator graphemes = BreakIterator.getCharacterInstance(Locale.ROOT);
         graphemes.setText(canonical);
-        return canonical.substring(0, graphemes.next());
+        int end = graphemes.following(start);
+        return canonical.substring(start, end == BreakIterator.DONE ? canonical.length() : end);
     }
 
     private static void strip(JsonNode node) {
@@ -160,12 +172,12 @@ final class LearnerContent {
         return result;
     }
 
-    private static void shuffledSides(ExerciseContent.Match match, AnswerKey.Match key, UUID presentationId,
+    private static void shuffledSides(ExerciseContent.Match match, AnswerKey.Match key, RandomGenerator random,
                                       ObjectNode content, TextSource text) {
         List<ExerciseContent.Item> left = new ArrayList<>(match.left());
         List<ExerciseContent.Item> right = new ArrayList<>(match.right());
-        Collections.shuffle(left, new Random(presentationId.getMostSignificantBits()));
-        Collections.shuffle(right, new Random(presentationId.getLeastSignificantBits()));
+        Collections.shuffle(left, random);
+        Collections.shuffle(right, random);
         Map<UUID, UUID> partner = new HashMap<>();
         key.pairs().forEach(pair -> partner.put(pair.leftId(), pair.rightId()));
         // A column that happens to line up with its partners would hand out the answer.

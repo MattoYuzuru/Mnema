@@ -35,23 +35,78 @@ record AttemptEvaluation(Status status, Result result, EvidenceClass evidenceCla
     }
 
     static AttemptEvaluation evaluate(Subject subject, AttemptCommand.Response response) {
+        return evaluate(subject, response, true);
+    }
+
+    /**
+     * The response must fit the issued presentation (kind, ids, blank and pair sets) before anything else:
+     * a malformed response is a 400 that consumes nothing, even when the media or the evaluator is unavailable.
+     * Only an explicit CANCEL bypasses that check and the media check.
+     */
+    static AttemptEvaluation evaluate(Subject subject, AttemptCommand.Response response, boolean mediaReady) {
         if (response instanceof AttemptCommand.CancelResponse) return notAssessed();
+        requireShape(subject, response);
+        if (!mediaReady) return mediaNotReady();
         JsonNode evaluator = subject.evaluator();
         // The semantic evaluator has no runtime: never fall back to exact matching, never blame the learner.
         if (!"1".equals(evaluator.path("version").asText())
                 || !subject.type().evaluatorId().equals(evaluator.path("id").asText())) return unavailable();
         AnswerKey key = AnswerKey.parse(subject.type(), subject.answerKey());
         return switch (subject.type()) {
-            case SELF_CHECK -> selfCheck(response);
-            case FREE_RESPONSE -> freeResponse((AnswerKey.Text) key, subject, response);
-            case CLOZE -> cloze((AnswerKey.Cloze) key, subject, response);
-            case CHOICE -> choice((AnswerKey.Choice) key, subject, response);
-            case MATCH -> match((AnswerKey.Match) key, subject, response);
+            case SELF_CHECK -> selfCheck((AttemptCommand.SelfCheckResponse) response);
+            case FREE_RESPONSE -> freeResponse((AnswerKey.Text) key, subject, (AttemptCommand.TextResponse) response);
+            case CLOZE -> cloze((AnswerKey.Cloze) key, subject, (AttemptCommand.ClozeResponse) response);
+            case CHOICE -> choice((AnswerKey.Choice) key, subject, (AttemptCommand.ChoiceResponse) response);
+            case MATCH -> match((AnswerKey.Match) key, subject, (AttemptCommand.MatchResponse) response);
         };
     }
 
-    private static AttemptEvaluation selfCheck(AttemptCommand.Response response) {
-        if (!(response instanceof AttemptCommand.SelfCheckResponse self)) throw new InvalidRequestException();
+    private static void requireShape(Subject subject, AttemptCommand.Response response) {
+        boolean fits = switch (subject.type()) {
+            case SELF_CHECK -> response instanceof AttemptCommand.SelfCheckResponse;
+            case FREE_RESPONSE -> response instanceof AttemptCommand.TextResponse;
+            case CLOZE -> response instanceof AttemptCommand.ClozeResponse cloze && blanksMatch(subject, cloze);
+            case CHOICE -> response instanceof AttemptCommand.ChoiceResponse choice && optionsMatch(subject, choice);
+            case MATCH -> response instanceof AttemptCommand.MatchResponse match && pairsMatch(subject, match);
+        };
+        if (!fits) throw new InvalidRequestException();
+    }
+
+    private static boolean blanksMatch(Subject subject, AttemptCommand.ClozeResponse cloze) {
+        Set<UUID> issued = new HashSet<>();
+        subject.content().path("passage").forEach(segment -> {
+            if (segment.path("kind").textValue().equals("BLANK")) {
+                issued.add(UUID.fromString(segment.path("blankId").textValue()));
+            }
+        });
+        Set<UUID> supplied = new HashSet<>();
+        cloze.blanks().forEach(blank -> supplied.add(blank.blankId()));
+        return supplied.size() == cloze.blanks().size() && supplied.equals(issued);
+    }
+
+    private static boolean optionsMatch(Subject subject, AttemptCommand.ChoiceResponse choice) {
+        Set<UUID> issued = new HashSet<>();
+        subject.content().path("options")
+                .forEach(option -> issued.add(UUID.fromString(option.path("optionId").textValue())));
+        Set<UUID> selected = new HashSet<>(choice.optionIds());
+        boolean single = subject.content().path("selectionMode").textValue().equals("SINGLE");
+        return selected.size() == choice.optionIds().size() && issued.containsAll(selected)
+                && (!single || selected.size() == 1);
+    }
+
+    /** An exact bijection of the issued ids: nothing missing, nothing foreign, nothing used twice. */
+    private static boolean pairsMatch(Subject subject, AttemptCommand.MatchResponse match) {
+        Set<UUID> lefts = new HashSet<>();
+        Set<UUID> rights = new HashSet<>();
+        subject.content().path("left").forEach(item -> lefts.add(UUID.fromString(item.path("itemId").textValue())));
+        subject.content().path("right").forEach(item -> rights.add(UUID.fromString(item.path("itemId").textValue())));
+        Map<UUID, UUID> supplied = new HashMap<>();
+        match.pairs().forEach(pair -> supplied.put(pair.leftId(), pair.rightId()));
+        return supplied.size() == match.pairs().size() && supplied.keySet().equals(lefts)
+                && new HashSet<>(supplied.values()).equals(rights);
+    }
+
+    private static AttemptEvaluation selfCheck(AttemptCommand.SelfCheckResponse self) {
         Result result = switch (self.rating()) {
             case FULL -> Result.CORRECT;
             case PARTIAL, HINTED -> Result.PARTIAL;
@@ -64,8 +119,7 @@ record AttemptEvaluation(Status status, Result result, EvidenceClass evidenceCla
     }
 
     private static AttemptEvaluation freeResponse(AnswerKey.Text key, Subject subject,
-                                                  AttemptCommand.Response response) {
-        if (!(response instanceof AttemptCommand.TextResponse text)) throw new InvalidRequestException();
+                                                  AttemptCommand.TextResponse text) {
         boolean correct = key.rule().matches(text.text());
         Result result = correct ? Result.CORRECT : Result.INCORRECT;
         ObjectNode feedback = JsonNodeFactory.instance.objectNode().put("result", result.name());
@@ -78,8 +132,7 @@ record AttemptEvaluation(Status status, Result result, EvidenceClass evidenceCla
                         "PRODUCTION"), feedback);
     }
 
-    private static AttemptEvaluation cloze(AnswerKey.Cloze key, Subject subject, AttemptCommand.Response response) {
-        if (!(response instanceof AttemptCommand.ClozeResponse cloze)) throw new InvalidRequestException();
+    private static AttemptEvaluation cloze(AnswerKey.Cloze key, Subject subject, AttemptCommand.ClozeResponse cloze) {
         List<UUID> issued = new ArrayList<>();
         subject.content().path("passage").forEach(segment -> {
             if (segment.path("kind").textValue().equals("BLANK")) {
@@ -88,9 +141,6 @@ record AttemptEvaluation(Status status, Result result, EvidenceClass evidenceCla
         });
         Map<UUID, String> supplied = new HashMap<>();
         cloze.blanks().forEach(blank -> supplied.put(blank.blankId(), blank.text()));
-        if (supplied.size() != cloze.blanks().size() || !supplied.keySet().equals(new HashSet<>(issued))) {
-            throw new InvalidRequestException();
-        }
         Map<UUID, TextRule> rules = new HashMap<>();
         key.blanks().forEach(blank -> rules.put(blank.blankId(), blank.rule()));
         ArrayNode blanks = JsonNodeFactory.instance.arrayNode();
@@ -118,15 +168,8 @@ record AttemptEvaluation(Status status, Result result, EvidenceClass evidenceCla
                         "DETERMINISTIC", "PRODUCTION"), feedback);
     }
 
-    private static AttemptEvaluation choice(AnswerKey.Choice key, Subject subject, AttemptCommand.Response response) {
-        if (!(response instanceof AttemptCommand.ChoiceResponse choice)) throw new InvalidRequestException();
-        Set<UUID> issued = new HashSet<>();
-        subject.content().path("options")
-                .forEach(option -> issued.add(UUID.fromString(option.path("optionId").textValue())));
+    private static AttemptEvaluation choice(AnswerKey.Choice key, Subject subject, AttemptCommand.ChoiceResponse choice) {
         Set<UUID> selected = new HashSet<>(choice.optionIds());
-        boolean single = subject.content().path("selectionMode").textValue().equals("SINGLE");
-        if (selected.size() != choice.optionIds().size() || !issued.containsAll(selected)
-                || (single && selected.size() != 1)) throw new InvalidRequestException();
         Result result = selected.equals(new HashSet<>(key.correctOptionIds())) ? Result.CORRECT : Result.INCORRECT;
         ObjectNode feedback = JsonNodeFactory.instance.objectNode().put("result", result.name());
         feedback.putArray("appliedRules").add("SERVER_ISSUED_OPTION").add("EXACT_OPTION_SET");
@@ -137,17 +180,9 @@ record AttemptEvaluation(Status status, Result result, EvidenceClass evidenceCla
                         subject.transcriptRevealed() ? "TRANSCRIPT_ACCOMMODATION" : "PRODUCTION"), feedback);
     }
 
-    private static AttemptEvaluation match(AnswerKey.Match key, Subject subject, AttemptCommand.Response response) {
-        if (!(response instanceof AttemptCommand.MatchResponse match)) throw new InvalidRequestException();
-        Set<UUID> lefts = new HashSet<>();
-        Set<UUID> rights = new HashSet<>();
-        subject.content().path("left").forEach(item -> lefts.add(UUID.fromString(item.path("itemId").textValue())));
-        subject.content().path("right").forEach(item -> rights.add(UUID.fromString(item.path("itemId").textValue())));
+    private static AttemptEvaluation match(AnswerKey.Match key, Subject subject, AttemptCommand.MatchResponse match) {
         Map<UUID, UUID> supplied = new HashMap<>();
         match.pairs().forEach(pair -> supplied.put(pair.leftId(), pair.rightId()));
-        // An exact bijection of the issued ids: nothing missing, nothing foreign, nothing used twice.
-        if (supplied.size() != match.pairs().size() || !supplied.keySet().equals(lefts)
-                || !new HashSet<>(supplied.values()).equals(rights)) throw new InvalidRequestException();
         ArrayNode pairs = JsonNodeFactory.instance.arrayNode();
         int correct = 0;
         for (AnswerKey.Pair pair : key.pairs()) {

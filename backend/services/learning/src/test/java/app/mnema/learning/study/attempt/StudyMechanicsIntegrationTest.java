@@ -427,6 +427,51 @@ class StudyMechanicsIntegrationTest extends PostgresIntegrationTest {
         }
     }
 
+    @Test
+    void aMalformedResponseIsRejectedBeforeMediaChecksAndDoesNotConsumeThePresentation() {
+        Material material = fixtures.material();
+        UUID asset = fixtures.readyAsset(material.actor(), "audio/mpeg");
+        fixtures.publish(material, fixtures.freeResponse(material, blocks(audio(asset, "Label", null), text("Q")), blocks(), "memory"));
+        Issued presentation = fixtures.issueOne(material);
+        jdbc.sql("UPDATE app_learning.media_asset SET state='DELETED',updated_at=CURRENT_TIMESTAMP WHERE asset_id=:asset")
+                .param("asset", asset).update();
+        assertThatThrownBy(() -> attempts.submit(material.actor(), material.deck(), presentation.session(),
+                attempt(presentation, choice(UUID.randomUUID())))).isInstanceOf(InvalidRequestException.class);
+        assertThat(count("study_attempt_tombstone", "account_id", material.actor())).isZero();
+        // the presentation is still pending: a well-formed answer now gets the media outcome
+        JsonNode outcome = attempts.submit(material.actor(), material.deck(), presentation.session(),
+                attempt(presentation, textResponse("memory"))).outcome();
+        assertThat(outcome.path("feedback").path("reasonCodes").get(0).textValue()).isEqualTo("MEDIA_NOT_READY");
+    }
+
+    @Test
+    void issuedMatchOrderIsNotReproducibleFromThePresentationId() {
+        int predicted = 0;
+        int total = 0;
+        for (int round = 0; round < 6; round++) {
+            Material material = fixtures.material();
+            UUID[] left = new UUID[6], right = new UUID[6];
+            ArrayNode lefts = blocks(), rights = blocks();
+            UUID[][] pairs = new UUID[6][];
+            for (int index = 0; index < 6; index++) {
+                left[index] = UUID.randomUUID();
+                right[index] = UUID.randomUUID();
+                lefts.add(item(left[index], text("l" + index)));
+                rights.add(item(right[index], text("r" + index)));
+                pairs[index] = new UUID[] {left[index], right[index]};
+            }
+            fixtures.publish(material, fixtures.match(material, blocks(), lefts, rights, pairs));
+            Issued presentation = fixtures.issueOne(material);
+            List<UUID> authored = new java.util.ArrayList<>(List.of(left));
+            java.util.Collections.shuffle(authored, new java.util.Random(presentation.id().getMostSignificantBits()));
+            List<UUID> issued = new java.util.ArrayList<>();
+            presentation.content().path("left").forEach(value -> issued.add(UUID.fromString(value.path("itemId").textValue())));
+            total++;
+            if (issued.equals(authored)) predicted++;
+        }
+        assertThat(predicted).as("id-seeded prediction of %d issues", total).isLessThan(total);
+    }
+
     private JsonNode hint(Material material, Issued presentation, UUID blank) {
         return sessions.revealHint(material.actor(), material.deck(), presentation.session(), presentation.id(),
                 command(presentation.nonce(), blank));

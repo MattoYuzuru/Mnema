@@ -221,6 +221,32 @@ class AttemptEvaluationTest {
         assertThat(media.feedback()).isEqualTo(feedback("mediaNotReady"));
     }
 
+    @Test
+    void aMalformedResponseIsInvalidBeforeMediaOrEvaluatorShortCircuits() {
+        AttemptEvaluation.Subject semantic = new AttemptEvaluation.Subject(ExerciseType.FREE_RESPONSE,
+                mechanic("rejectedAiAssessment").path("exercise").path("evaluatorPolicy"),
+                mechanic("rejectedAiAssessment").path("exercise").path("answerKey"),
+                presentation("freeResponse").path("content"), reveal(), Set.of(), false);
+        for (boolean mediaReady : new boolean[] {true, false}) {
+            assertThatThrownBy(() -> AttemptEvaluation.evaluate(semantic, new AttemptCommand.SelfCheckResponse(
+                    AttemptCommand.SelfRating.FULL), mediaReady)).isInstanceOf(InvalidRequestException.class);
+            assertThatThrownBy(() -> AttemptEvaluation.evaluate(choice(false), text("x"), mediaReady))
+                    .isInstanceOf(InvalidRequestException.class);
+            assertThatThrownBy(() -> AttemptEvaluation.evaluate(cloze(Set.of(), false), options(CHOICE_1), mediaReady)).isInstanceOf(InvalidRequestException.class);
+            assertThatThrownBy(() -> AttemptEvaluation.evaluate(match(false), new AttemptCommand.MatchResponse(
+                    List.of()), mediaReady)).isInstanceOf(InvalidRequestException.class);
+            assertThatThrownBy(() -> AttemptEvaluation.evaluate(choice(false), options(CHOICE_1, UUID.randomUUID().toString()),
+                    mediaReady)).isInstanceOf(InvalidRequestException.class);
+        }
+        // a well-formed response with unavailable media is not assessed, a cancel is never a media problem
+        assertThat(AttemptEvaluation.evaluate(freeResponse(false), text("erinnerung"), false).reasonCodes())
+                .containsExactly("MEDIA_NOT_READY");
+        assertThat(AttemptEvaluation.evaluate(freeResponse(false), new AttemptCommand.CancelResponse(), false).reasonCodes())
+                .isEmpty();
+        assertThat(AttemptEvaluation.evaluate(semantic, text("x"), true).status())
+                .isEqualTo(AttemptEvaluation.Status.UNAVAILABLE);
+    }
+
     // ---- subjects built from the wire fixtures ----
 
     private static AttemptEvaluation.Subject freeResponse(boolean transcript) {

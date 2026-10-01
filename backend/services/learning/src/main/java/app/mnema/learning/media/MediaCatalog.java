@@ -112,6 +112,7 @@ public class MediaCatalog {
             if (kinds.putIfAbsent(asset.assetId(), asset.kind()) != null) throw new InvalidRequestException();
         }
         validateAssets(actor, kinds.keySet());
+        kinds.forEach((asset, kind) -> requireDeclaredKind(asset, kind));
         kinds.forEach((asset, kind) -> jdbc.sql("INSERT INTO app_learning.exercise_media_ref "
                         + "(deck_id,exercise_id,exercise_revision_id,owner_id,asset_id,media_kind) "
                         + "VALUES (:deck,:exercise,:revision,:owner,:asset,:kind)")
@@ -120,8 +121,20 @@ public class MediaCatalog {
     }
 
     /**
+     * A READY asset whose verified source is not the declared kind is rejected at publication. Assets that are
+     * still uploading stay allowed: readiness is re-checked at selection, pair-check and submit.
+     */
+    private void requireDeclaredKind(UUID asset, Kind kind) {
+        String mime = jdbc.sql("SELECT b.mime_type FROM app_learning.media_asset a "
+                        + "JOIN app_learning.media_blob b ON b.blob_id=a.source_blob_id "
+                        + "WHERE a.asset_id=:asset AND a.state='READY'")
+                .param("asset", asset).query(String.class).optional().orElse(null);
+        if (mime != null && !mime.startsWith(kind.column() + "/")) throw new InvalidRequestException();
+    }
+
+    /**
      * An issued presentation can be assessed only while every pinned asset is READY and its verified
-     * source really is the declared kind; a READY image must never become an audio cue.
+     * source really is the declared kind; a READY image must never be played as audio.
      */
     @Transactional(readOnly = true)
     public boolean exerciseMediaReady(UUID actor, UUID deck, UUID exercise, UUID revision) {

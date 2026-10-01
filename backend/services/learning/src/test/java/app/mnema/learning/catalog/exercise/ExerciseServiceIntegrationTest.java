@@ -245,6 +245,30 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void aReadyAssetOfAnotherKindIsRejectedAtPublicationWhilePendingOnesStayAllowed() {
+        Material material = fixtures.material();
+        UUID picture = fixtures.readyAsset(material.actor(), "image/png");
+        UUID sound = fixtures.readyAsset(material.actor(), "audio/mpeg");
+        UUID pending = fixtures.pendingAsset(material.actor());
+        long before = fixtures.deckVersion(material);
+        assertThatThrownBy(() -> fixtures.publish(material,
+                fixtures.freeResponse(material, blocks(audio(picture, "Not audio", null), text("Q")), blocks(), "x")))
+                .isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> fixtures.publish(material,
+                fixtures.freeResponse(material, blocks(image(sound, "Not an image"), text("Q")), blocks(), "x")))
+                .isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> fixtures.publish(material,
+                fixtures.freeResponse(material, blocks(video(sound, "Not a video", null), text("Q")), blocks(), "x")))
+                .isInstanceOf(InvalidRequestException.class);
+        assertThat(fixtures.deckVersion(material)).isEqualTo(before);
+        assertThat(count("exercise_media_ref", "deck_id", material.deck())).isZero();
+        fixtures.publish(material, fixtures.freeResponse(material,
+                blocks(audio(sound, "Audio", null), image(picture, "Image"), text("Q")), blocks(), "x"));
+        fixtures.publish(material, fixtures.freeResponse(material, blocks(audio(pending, "Pending", null), text("Q2")), blocks(), "x"));
+        assertThat(ExerciseCommand.MAX_MEDIA_BLOCKS).isEqualTo(MediaCatalog.MAX_EXERCISE_ASSETS);
+    }
+
+    @Test
     void materialBlocksQuoteOnlyExistingTextNodesOfThisDecksCurrentRevisions() {
         Material material = fixtures.material();
         Material other = fixtures.material();

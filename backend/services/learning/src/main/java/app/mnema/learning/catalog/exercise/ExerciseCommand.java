@@ -32,7 +32,7 @@ import static app.mnema.learning.catalog.exercise.StrictJson.nonBlank;
 public record ExerciseCommand(UUID commandId, UUID expectedDeckRevisionId, UUID expectedExerciseRevisionId,
                               Objective objective, Exercise exercise, ObjectNode payload) {
     public static final int SCHEMA_VERSION = 2;
-    public static final int MAX_MEDIA_BLOCKS = 32;
+    public static final int MAX_MEDIA_BLOCKS = MediaCatalog.MAX_EXERCISE_ASSETS;
     public static final int MAX_TITLE = 160;
     private static final int MAX_BYTES = 262_144;
     private static final ContentJsonReader JSON = new ContentJsonReader(MAX_BYTES, 32, 20_000);

@@ -20,6 +20,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.ByteBuffer;
+import java.security.SecureRandom;
+import java.util.random.RandomGenerator;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -39,6 +41,8 @@ public class StudySessionService {
     private final CommandReceiptService receipts;
     private final NativeStorageBatches nativeBatches;
     private final LearningCapabilities capabilities;
+    // MATCH order must not be reproducible from identifiers a client holds.
+    private final RandomGenerator shuffle = new SecureRandom();
 
     public StudySessionService(StudySessionRepository repository, CommandReceiptService receipts,
                                ImmutableStorage storage, LearningCapabilities capabilities) {
@@ -254,10 +258,12 @@ public class StudySessionService {
                 capabilities.aiAssessment().available());
         int batch = 0;
         int newObjectives = 0;
+        // One decoded snapshot per pinned item revision for the whole batch.
+        LearnerContent.TextSource texts = materialText(session.deckId());
         int scanSize = Math.min(generation.candidateCount(), target * BoundedCandidatePlanner.SCAN_MULTIPLIER);
         int cursor = (int) (((long) start + scanSize) % generation.candidateCount());
         for (StudySessionRepository.Candidate candidate : candidates) {
-            insert(session, candidate, session.issuedCount() + batch++, now);
+            insert(session, candidate, session.issuedCount() + batch++, now, texts);
             // Only scheduled sessions have a new-objective budget; practice may include unseen material freely.
             if (session.mode() == StudySessionCommand.Mode.SCHEDULED && !candidate.introduced()) newObjectives++;
             if (batch == target) break;
@@ -298,12 +304,12 @@ public class StudySessionService {
     }
 
     private void insert(StudySessionRepository.Session session, StudySessionRepository.Candidate candidate,
-                        int ordinal, Instant now) {
+                        int ordinal, Instant now, LearnerContent.TextSource texts) {
         ExerciseType type = ExerciseType.fromWire(candidate.type()).orElseThrow(IllegalStateException::new);
         UUID presentation = UUID.randomUUID();
         // Resolved and shuffled once: reads and replays return exactly what was persisted here.
         LearnerContent.Resolved learner = LearnerContent.issue(type, candidate.content(),
-                AnswerKey.parse(type, candidate.answerKey()), presentation, materialText(session.deckId()));
+                AnswerKey.parse(type, candidate.answerKey()), shuffle, texts);
         long epoch = session.mode() == StudySessionCommand.Mode.SCHEDULED
                 ? repository.ensureState(session.accountId(), session.deckId(), candidate.objectiveId(),
                         session.configId(), now)
