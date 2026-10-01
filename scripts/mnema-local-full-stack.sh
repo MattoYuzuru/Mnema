@@ -10,15 +10,24 @@ CA_CERT_FILE="$STATE_DIR/local-ca.crt"
 CA_KEY_FILE="$STATE_DIR/local-ca.key"
 TLS_CERT_FILE="$STATE_DIR/localhost.crt"
 TLS_KEY_FILE="$STATE_DIR/localhost.key"
+STORAGE_CERT_FILE="$STATE_DIR/storage.crt"
+STORAGE_KEY_FILE="$STATE_DIR/storage.key"
 TRUSTSTORE_FILE="$STATE_DIR/learning-truststore.p12"
+MEDIA_WORK_ROOT="$STATE_DIR/media-processing"
 SMOKE_STATE_FILE="$STATE_DIR/smoke-account.json"
-PROJECT_NAME="mnema-local-v2"
+MEDIA_SMOKE_STATE_FILE="$STATE_DIR/media-smoke.json"
+PROJECT_NAME="${MNEMA_LOCAL_PROJECT_NAME:-mnema-local-v2}"
+MEDIA_WORKER_IMAGE="${MNEMA_LOCAL_MEDIA_WORKER_IMAGE:-mnema-media-worker:local}"
 TRUSTSTORE_PASSWORD="changeit"
 
 fail() {
   printf '[error] %s\n' "$1" >&2
   exit 1
 }
+
+[[ "$STATE_DIR" == /* ]] || fail "MNEMA_LOCAL_STATE_DIR must be an absolute path"
+[[ "$PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]{0,62}$ ]] || fail "MNEMA_LOCAL_PROJECT_NAME must be a lowercase Compose project name"
+[[ "$MEDIA_WORKER_IMAGE" =~ ^[a-zA-Z0-9][a-zA-Z0-9._:/@-]{0,255}$ ]] || fail "MNEMA_LOCAL_MEDIA_WORKER_IMAGE is not a valid image reference"
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || fail "$1 is required; see docs/deploy/selfhost-local.md"
@@ -38,7 +47,10 @@ validate_port() {
   (( value >= 1024 && value <= 65535 )) || fail "$label must be between 1024 and 65535"
 }
 
+# Reads the owner-only runtime state. Without "upgradeable", the object-storage keys
+# are required; bootstrap passes it once to add them to state created before storage.
 load_runtime() {
+  local mode="${1:-}"
   [[ -f "$RUNTIME_FILE" ]] || fail "missing $RUNTIME_FILE; run '$0 bootstrap'"
   private_mode "$RUNTIME_FILE" || fail "$RUNTIME_FILE must not be accessible by group or other users"
   local key value unknown=0
@@ -47,6 +59,9 @@ load_runtime() {
   MNEMA_LOCAL_POSTGRES_USER_VALUE=""
   MNEMA_LOCAL_WEB_PORT_VALUE=""
   MNEMA_LOCAL_IDENTITY_PORT_VALUE=""
+  MNEMA_LOCAL_STORAGE_PORT_VALUE=""
+  MNEMA_LOCAL_S3_ACCESS_KEY_VALUE=""
+  MNEMA_LOCAL_S3_SECRET_KEY_VALUE=""
   while IFS='=' read -r key value || [[ -n "$key$value" ]]; do
     case "$key" in
       MNEMA_LOCAL_POSTGRES_PASSWORD) MNEMA_LOCAL_POSTGRES_PASSWORD_VALUE="$value" ;;
@@ -54,6 +69,9 @@ load_runtime() {
       MNEMA_LOCAL_POSTGRES_USER) MNEMA_LOCAL_POSTGRES_USER_VALUE="$value" ;;
       MNEMA_LOCAL_WEB_PORT) MNEMA_LOCAL_WEB_PORT_VALUE="$value" ;;
       MNEMA_LOCAL_IDENTITY_PORT) MNEMA_LOCAL_IDENTITY_PORT_VALUE="$value" ;;
+      MNEMA_LOCAL_STORAGE_PORT) MNEMA_LOCAL_STORAGE_PORT_VALUE="$value" ;;
+      MNEMA_LOCAL_S3_ACCESS_KEY) MNEMA_LOCAL_S3_ACCESS_KEY_VALUE="$value" ;;
+      MNEMA_LOCAL_S3_SECRET_KEY) MNEMA_LOCAL_S3_SECRET_KEY_VALUE="$value" ;;
       '') ;;
       *) unknown=1 ;;
     esac
@@ -65,18 +83,32 @@ load_runtime() {
   validate_port MNEMA_LOCAL_WEB_PORT "$MNEMA_LOCAL_WEB_PORT_VALUE"
   validate_port MNEMA_LOCAL_IDENTITY_PORT "$MNEMA_LOCAL_IDENTITY_PORT_VALUE"
   [[ "$MNEMA_LOCAL_WEB_PORT_VALUE" != "$MNEMA_LOCAL_IDENTITY_PORT_VALUE" ]] || fail "web and Identity ports must differ"
+  if [[ "$mode" == upgradeable && -z "$MNEMA_LOCAL_S3_ACCESS_KEY_VALUE$MNEMA_LOCAL_S3_SECRET_KEY_VALUE$MNEMA_LOCAL_STORAGE_PORT_VALUE" ]]; then
+    return
+  fi
+  [[ "$MNEMA_LOCAL_S3_ACCESS_KEY_VALUE" =~ ^[0-9a-f]{32}$ ]] \
+    || fail "local object-storage access key state is missing or invalid; run '$0 bootstrap'"
+  [[ "$MNEMA_LOCAL_S3_SECRET_KEY_VALUE" =~ ^[0-9a-f]{64}$ ]] \
+    || fail "local object-storage secret key state is missing or invalid; run '$0 bootstrap'"
+  validate_port MNEMA_LOCAL_STORAGE_PORT "$MNEMA_LOCAL_STORAGE_PORT_VALUE"
+  [[ "$MNEMA_LOCAL_STORAGE_PORT_VALUE" != "$MNEMA_LOCAL_WEB_PORT_VALUE" \
+    && "$MNEMA_LOCAL_STORAGE_PORT_VALUE" != "$MNEMA_LOCAL_IDENTITY_PORT_VALUE" ]] \
+    || fail "web, Identity and object-storage ports must differ"
 }
 
+# With "rotating" only the private files and the CA are checked, so reset-certificates
+# can replace certificates that are expired or otherwise rejected here.
 validate_material() {
-  local file
-  for file in "$JWK_FILE" "$CA_KEY_FILE" "$TLS_KEY_FILE" "$TRUSTSTORE_FILE"; do
+  local file rotating="${1:-}"
+  for file in "$JWK_FILE" "$CA_KEY_FILE" "$TLS_KEY_FILE" "$STORAGE_KEY_FILE" "$TRUSTSTORE_FILE"; do
     [[ -s "$file" ]] || fail "missing local private material: $file; run '$0 bootstrap'"
     private_mode "$file" || fail "$file must not be accessible by group or other users"
   done
-  for file in "$CA_CERT_FILE" "$TLS_CERT_FILE"; do
+  for file in "$CA_CERT_FILE" "$TLS_CERT_FILE" "$STORAGE_CERT_FILE"; do
     [[ -s "$file" ]] || fail "missing local certificate: $file; run '$0 bootstrap'"
   done
   grep -q '"kid":"blackbox"' "$JWK_FILE" || fail "local Identity JWKSet does not contain active kid blackbox"
+  [[ "$rotating" != rotating ]] || return 0
   openssl verify -CAfile "$CA_CERT_FILE" "$TLS_CERT_FILE" >/dev/null 2>&1 \
     || fail "local TLS certificate is not signed by the retained local CA; run '$0 reset-certificates --confirm'"
   openssl x509 -checkend 604800 -noout -in "$TLS_CERT_FILE" >/dev/null 2>&1 \
@@ -85,8 +117,65 @@ validate_material() {
     || fail "local TLS certificate does not cover localhost"
   openssl x509 -checkhost frontend -noout -in "$TLS_CERT_FILE" >/dev/null 2>&1 \
     || fail "local TLS certificate does not cover the internal TLS proxy name"
+  for file in "$TLS_CERT_FILE" "$STORAGE_CERT_FILE"; do
+    # Python 3.13+ and other strict verifiers reject leaves without an Authority Key Identifier;
+    # certificates issued by OpenSSL 4 only carry one when requested explicitly.
+    [[ "$(openssl x509 -noout -ext authorityKeyIdentifier -in "$file" 2>/dev/null)" == *"Authority Key Identifier"* ]] \
+      || fail "$file lacks an Authority Key Identifier required by strict TLS clients; run '$0 reset-certificates --confirm'"
+  done
+  openssl verify -CAfile "$CA_CERT_FILE" "$STORAGE_CERT_FILE" >/dev/null 2>&1 \
+    || fail "local storage TLS certificate is not signed by the retained local CA; run '$0 reset-certificates --confirm'"
+  openssl x509 -checkend 604800 -noout -in "$STORAGE_CERT_FILE" >/dev/null 2>&1 \
+    || fail "local storage TLS certificate expires within seven days; run '$0 reset-certificates --confirm'"
+  openssl x509 -checkhost storage.mnema.localhost -noout -in "$STORAGE_CERT_FILE" >/dev/null 2>&1 \
+    || fail "local storage TLS certificate does not cover storage.mnema.localhost"
   keytool -list -keystore "$TRUSTSTORE_FILE" -storetype PKCS12 -storepass "$TRUSTSTORE_PASSWORD" \
     -alias mnema-local-ca >/dev/null 2>&1 || fail "Learning local truststore is invalid"
+}
+
+# Issues the object-storage leaf from the CA in $2 (the retained CA unless rotating).
+generate_storage_certificate() {
+  local destination="$1" ca_dir="$2"
+  openssl req -new -newkey rsa:2048 -sha256 -nodes -subj '/CN=storage.mnema.localhost' \
+    -keyout "$destination/storage.key" -out "$destination/storage.csr" >/dev/null 2>&1
+  printf '%s\n' \
+    'basicConstraints=critical,CA:FALSE' \
+    'keyUsage=critical,digitalSignature,keyEncipherment' \
+    'extendedKeyUsage=serverAuth' \
+    'subjectKeyIdentifier=hash' 'authorityKeyIdentifier=keyid:always' \
+    'subjectAltName=DNS:storage.mnema.localhost' > "$destination/storage.ext"
+  openssl x509 -req -sha256 -days 825 -in "$destination/storage.csr" \
+    -CA "$ca_dir/local-ca.crt" -CAkey "$ca_dir/local-ca.key" -CAcreateserial \
+    -extfile "$destination/storage.ext" -out "$destination/storage.crt" >/dev/null 2>&1
+}
+
+# Adds object-storage credentials, port and certificate to state created before the
+# media stack existed, without rotating the signing key, database password or CA.
+ensure_storage_state() {
+  local temporary
+  if [[ -z "$MNEMA_LOCAL_S3_ACCESS_KEY_VALUE" ]]; then
+    local storage_port="${MNEMA_LOCAL_STORAGE_PORT:-3445}"
+    validate_port MNEMA_LOCAL_STORAGE_PORT "$storage_port"
+    temporary="$(mktemp "$STATE_DIR/runtime.XXXXXX")"
+    cp "$RUNTIME_FILE" "$temporary"
+    printf 'MNEMA_LOCAL_STORAGE_PORT=%s\nMNEMA_LOCAL_S3_ACCESS_KEY=%s\nMNEMA_LOCAL_S3_SECRET_KEY=%s\n' \
+      "$storage_port" "$(openssl rand -hex 16)" "$(openssl rand -hex 32)" >> "$temporary"
+    chmod 600 "$temporary"
+    mv "$temporary" "$RUNTIME_FILE"
+    load_runtime
+  fi
+  if [[ -e "$STORAGE_CERT_FILE" || -e "$STORAGE_KEY_FILE" ]]; then
+    [[ -e "$STORAGE_CERT_FILE" && -e "$STORAGE_KEY_FILE" ]] \
+      || fail "partial local storage certificate state in $STATE_DIR; use reset-certificates"
+    return
+  fi
+  temporary="$(mktemp -d "$STATE_DIR/storage.XXXXXX")"
+  generate_storage_certificate "$temporary" "$STATE_DIR"
+  chmod 600 "$temporary/storage.key"
+  chmod 644 "$temporary/storage.crt"
+  mv "$temporary/storage.key" "$STORAGE_KEY_FILE"
+  mv "$temporary/storage.crt" "$STORAGE_CERT_FILE"
+  rm -rf "$temporary"
 }
 
 generate_certificate_material() {
@@ -95,6 +184,7 @@ generate_certificate_material() {
     -subj '/CN=Mnema Local Development CA' \
     -addext 'basicConstraints=critical,CA:TRUE' \
     -addext 'keyUsage=critical,keyCertSign,cRLSign' \
+    -addext 'subjectKeyIdentifier=hash' \
     -keyout "$destination/local-ca.key" -out "$destination/local-ca.crt" >/dev/null 2>&1
   openssl req -new -newkey rsa:2048 -sha256 -nodes -subj '/CN=localhost' \
     -keyout "$destination/localhost.key" -out "$destination/localhost.csr" >/dev/null 2>&1
@@ -102,10 +192,12 @@ generate_certificate_material() {
     'basicConstraints=critical,CA:FALSE' \
     'keyUsage=critical,digitalSignature,keyEncipherment' \
     'extendedKeyUsage=serverAuth' \
+    'subjectKeyIdentifier=hash' 'authorityKeyIdentifier=keyid:always' \
     'subjectAltName=DNS:localhost,DNS:frontend,IP:127.0.0.1,IP:::1' > "$destination/localhost.ext"
   openssl x509 -req -sha256 -days 825 -in "$destination/localhost.csr" \
     -CA "$destination/local-ca.crt" -CAkey "$destination/local-ca.key" -CAcreateserial \
     -extfile "$destination/localhost.ext" -out "$destination/localhost.crt" >/dev/null 2>&1
+  generate_storage_certificate "$destination" "$destination"
   keytool -importcert -noprompt -storetype PKCS12 -alias mnema-local-ca \
     -file "$destination/local-ca.crt" -keystore "$destination/learning-truststore.p12" \
     -storepass "$TRUSTSTORE_PASSWORD" >/dev/null 2>&1
@@ -122,8 +214,10 @@ bootstrap() {
     [[ -e "$file" ]] && present=$((present + 1))
   done
   if (( present == 7 )); then
-    load_runtime
+    load_runtime upgradeable
+    ensure_storage_state
     validate_material
+    install -d -m 700 "$MEDIA_WORK_ROOT"
     printf '[ok] Reusing retained local credentials and certificates in %s\n' "$STATE_DIR"
     return
   fi
@@ -132,28 +226,39 @@ bootstrap() {
   local web_port="${MNEMA_LOCAL_WEB_PORT:-3443}"
   local identity_port="${MNEMA_LOCAL_IDENTITY_PORT:-3444}"
   validate_port MNEMA_LOCAL_WEB_PORT "$web_port"
+  local storage_port="${MNEMA_LOCAL_STORAGE_PORT:-3445}"
   validate_port MNEMA_LOCAL_IDENTITY_PORT "$identity_port"
-  [[ "$web_port" != "$identity_port" ]] || fail "web and Identity ports must differ"
+  validate_port MNEMA_LOCAL_STORAGE_PORT "$storage_port"
+  [[ "$web_port" != "$identity_port" && "$web_port" != "$storage_port" && "$identity_port" != "$storage_port" ]] \
+    || fail "web, Identity and object-storage ports must differ"
   local temporary
   temporary="$(mktemp -d "$STATE_DIR/bootstrap.XXXXXX")"
   trap 'rm -rf "$temporary"' EXIT HUP INT TERM
   generate_certificate_material "$temporary"
   java "$ROOT_DIR/scripts/learning-security/FixtureKey.java" "$temporary/identity-signing-jwk-set.json"
-  printf 'MNEMA_LOCAL_POSTGRES_PASSWORD=%s\nMNEMA_LOCAL_POSTGRES_DB=mnema\nMNEMA_LOCAL_POSTGRES_USER=mnema\nMNEMA_LOCAL_WEB_PORT=%s\nMNEMA_LOCAL_IDENTITY_PORT=%s\n' \
-    "$(openssl rand -hex 32)" "$web_port" "$identity_port" > "$temporary/runtime.env"
+  printf '%s\n' \
+    "MNEMA_LOCAL_POSTGRES_PASSWORD=$(openssl rand -hex 32)" \
+    'MNEMA_LOCAL_POSTGRES_DB=mnema' 'MNEMA_LOCAL_POSTGRES_USER=mnema' \
+    "MNEMA_LOCAL_WEB_PORT=$web_port" "MNEMA_LOCAL_IDENTITY_PORT=$identity_port" \
+    "MNEMA_LOCAL_STORAGE_PORT=$storage_port" \
+    "MNEMA_LOCAL_S3_ACCESS_KEY=$(openssl rand -hex 16)" "MNEMA_LOCAL_S3_SECRET_KEY=$(openssl rand -hex 32)" \
+    > "$temporary/runtime.env"
   chmod 600 "$temporary"/*
-  chmod 644 "$temporary/local-ca.crt" "$temporary/localhost.crt"
+  chmod 644 "$temporary/local-ca.crt" "$temporary/localhost.crt" "$temporary/storage.crt"
   mv "$temporary/runtime.env" "$RUNTIME_FILE"
   mv "$temporary/identity-signing-jwk-set.json" "$JWK_FILE"
   mv "$temporary/local-ca.crt" "$CA_CERT_FILE"
   mv "$temporary/local-ca.key" "$CA_KEY_FILE"
   mv "$temporary/localhost.crt" "$TLS_CERT_FILE"
   mv "$temporary/localhost.key" "$TLS_KEY_FILE"
+  mv "$temporary/storage.crt" "$STORAGE_CERT_FILE"
+  mv "$temporary/storage.key" "$STORAGE_KEY_FILE"
   mv "$temporary/learning-truststore.p12" "$TRUSTSTORE_FILE"
   rm -rf "$temporary"
   trap - EXIT HUP INT TERM
   load_runtime
   validate_material
+  install -d -m 700 "$MEDIA_WORK_ROOT"
   printf '[ok] Generated retained local-only credentials in %s (nothing is committed).\n' "$STATE_DIR"
 }
 
@@ -168,25 +273,60 @@ compose() {
   MNEMA_LOCAL_POSTGRES_USER="$MNEMA_LOCAL_POSTGRES_USER_VALUE" \
   MNEMA_LOCAL_WEB_PORT="$MNEMA_LOCAL_WEB_PORT_VALUE" \
   MNEMA_LOCAL_IDENTITY_PORT="$MNEMA_LOCAL_IDENTITY_PORT_VALUE" \
+  MNEMA_LOCAL_STORAGE_PORT="$MNEMA_LOCAL_STORAGE_PORT_VALUE" \
+  MNEMA_LOCAL_S3_ACCESS_KEY="$MNEMA_LOCAL_S3_ACCESS_KEY_VALUE" \
+  MNEMA_LOCAL_S3_SECRET_KEY="$MNEMA_LOCAL_S3_SECRET_KEY_VALUE" \
+  MNEMA_LOCAL_MEDIA_WORK_ROOT="$MEDIA_WORK_ROOT" \
+  MNEMA_LOCAL_MEDIA_WORKER_IMAGE="$MEDIA_WORKER_IMAGE" \
   MNEMA_LOCAL_BUILD_ID="$build_id" \
   MNEMA_LOCAL_IDENTITY_SIGNING_JWK_SET_FILE="$JWK_FILE" \
   MNEMA_LOCAL_TLS_CERT_FILE="$TLS_CERT_FILE" \
   MNEMA_LOCAL_TLS_KEY_FILE="$TLS_KEY_FILE" \
+  MNEMA_LOCAL_STORAGE_TLS_CERT_FILE="$STORAGE_CERT_FILE" \
+  MNEMA_LOCAL_STORAGE_TLS_KEY_FILE="$STORAGE_KEY_FILE" \
+  MNEMA_LOCAL_CA_CERT_FILE="$CA_CERT_FILE" \
   MNEMA_LOCAL_TRUSTSTORE_FILE="$TRUSTSTORE_FILE" \
     docker compose --project-name "$PROJECT_NAME" --file "$COMPOSE_FILE" "$@"
 }
 
-smoke() {
-  require_command python3
-  if [[ -e "$SMOKE_STATE_FILE" ]]; then
-    [[ -f "$SMOKE_STATE_FILE" ]] || fail "$SMOKE_STATE_FILE must be a regular file"
-    private_mode "$SMOKE_STATE_FILE" \
-      || fail "$SMOKE_STATE_FILE contains local credentials and must not be accessible by group or other users"
-  fi
+require_private_state() {
+  local file
+  for file in "$@"; do
+    [[ -e "$file" ]] || continue
+    [[ -f "$file" && ! -L "$file" ]] || fail "$file must be a regular file"
+    private_mode "$file" || fail "$file contains local credentials and must not be accessible by group or other users"
+  done
+}
+
+account_smoke() {
   python3 "$ROOT_DIR/scripts/local-full-stack/smoke.py" \
     --web-origin "https://localhost:$MNEMA_LOCAL_WEB_PORT_VALUE" \
     --identity-origin "https://localhost:$MNEMA_LOCAL_IDENTITY_PORT_VALUE" \
     --ca "$CA_CERT_FILE" --state-file "$SMOKE_STATE_FILE" "$@"
+}
+
+media_smoke() {
+  python3 "$ROOT_DIR/scripts/local-full-stack/media_smoke.py" \
+    --web-origin "https://localhost:$MNEMA_LOCAL_WEB_PORT_VALUE" \
+    --identity-origin "https://localhost:$MNEMA_LOCAL_IDENTITY_PORT_VALUE" \
+    --storage-port "$MNEMA_LOCAL_STORAGE_PORT_VALUE" \
+    --ca "$CA_CERT_FILE" --state-file "$MEDIA_SMOKE_STATE_FILE"
+}
+
+# "smoke" runs the account/Study checks and the media upload/processing check
+# independently and fails if either fails; "smoke-media" runs only the latter.
+smoke() {
+  require_command python3
+  require_private_state "$SMOKE_STATE_FILE" "$MEDIA_SMOKE_STATE_FILE"
+  local status=0
+  account_smoke "$@" || status=1
+  # Readiness-only runs (used by start) skip the slower upload/processing round trip.
+  local argument
+  for argument in "$@"; do
+    [[ "$argument" != --readiness-only ]] || return "$status"
+  done
+  media_smoke || status=1
+  return "$status"
 }
 
 start() {
@@ -196,6 +336,8 @@ start() {
   require_command python3
   require_command curl
   bootstrap
+  # The processor starts this image per job through Docker; it is never a compose service.
+  compose --profile worker-image build media-worker-image
   if ! compose up --detach --build --wait --wait-timeout 300; then
     printf '[error] local stack failed readiness; inspect bounded status/logs below\n' >&2
     compose ps >&2 || true
@@ -205,23 +347,27 @@ start() {
     exit 1
   fi
   smoke --readiness-only
-  printf '[ok] Mnema is ready at https://localhost:%s\n' "$MNEMA_LOCAL_WEB_PORT_VALUE"
+  printf '[ok] Mnema and local media processing are ready at https://localhost:%s\n' "$MNEMA_LOCAL_WEB_PORT_VALUE"
   if ! curl --silent --fail "https://localhost:$MNEMA_LOCAL_WEB_PORT_VALUE/" >/dev/null 2>&1; then
     printf '[action] Trust this local CA in your browser/OS, then reopen Mnema: %s\n' "$CA_CERT_FILE"
   fi
-  printf '[info] Run %s smoke for PKCE + persistent authoring verification.\n' "$0"
+  printf '[info] Run %s smoke for PKCE, authoring, Study and media upload/processing verification.\n' "$0"
 }
 
 reset_data() {
   [[ "${1:-}" == "--confirm-delete-local-data" ]] \
-    || fail "reset deletes the mnema-local-v2 PostgreSQL volume; rerun with --confirm-delete-local-data"
+    || fail "reset deletes the $PROJECT_NAME PostgreSQL and object-storage volumes; rerun with --confirm-delete-local-data"
   require_command openssl
   require_command keytool
   load_runtime
   validate_material
   compose down --volumes --remove-orphans
-  rm -f "$SMOKE_STATE_FILE"
-  printf '[ok] Deleted only the mnema-local-v2 containers and PostgreSQL volume; retained local CA/JWK material.\n'
+  rm -f "$SMOKE_STATE_FILE" "$MEDIA_SMOKE_STATE_FILE"
+  if [[ -d "$MEDIA_WORK_ROOT" && ! -L "$MEDIA_WORK_ROOT" ]]; then
+    rm -rf "$MEDIA_WORK_ROOT" || printf '[warn] could not remove %s; delete it manually\n' "$MEDIA_WORK_ROOT" >&2
+    install -d -m 700 "$MEDIA_WORK_ROOT"
+  fi
+  printf '[ok] Deleted only the %s containers, PostgreSQL and object-storage volumes and smoke state; retained local CA/JWK material.\n' "$PROJECT_NAME"
 }
 
 reset_certificates() {
@@ -229,18 +375,20 @@ reset_certificates() {
   require_command openssl
   require_command keytool
   load_runtime
-  validate_material
+  validate_material rotating
   compose down --remove-orphans >/dev/null 2>&1 || true
   local temporary
   temporary="$(mktemp -d "$STATE_DIR/certificates.XXXXXX")"
   trap 'rm -rf "$temporary"' EXIT HUP INT TERM
   generate_certificate_material "$temporary"
   chmod 600 "$temporary"/*
-  chmod 644 "$temporary/local-ca.crt" "$temporary/localhost.crt"
+  chmod 644 "$temporary/local-ca.crt" "$temporary/localhost.crt" "$temporary/storage.crt"
   mv "$temporary/local-ca.crt" "$CA_CERT_FILE"
   mv "$temporary/local-ca.key" "$CA_KEY_FILE"
   mv "$temporary/localhost.crt" "$TLS_CERT_FILE"
   mv "$temporary/localhost.key" "$TLS_KEY_FILE"
+  mv "$temporary/storage.crt" "$STORAGE_CERT_FILE"
+  mv "$temporary/storage.key" "$STORAGE_KEY_FILE"
   mv "$temporary/learning-truststore.p12" "$TRUSTSTORE_FILE"
   rm -rf "$temporary"
   trap - EXIT HUP INT TERM
@@ -257,7 +405,10 @@ case "$command" in
   status) load_runtime; compose ps ;;
   logs) load_runtime; compose logs --tail="${1:-100}" ;;
   smoke) require_command openssl; require_command keytool; load_runtime; validate_material; smoke ;;
+  smoke-media)
+    require_command openssl; require_command keytool; require_command python3
+    load_runtime; validate_material; require_private_state "$MEDIA_SMOKE_STATE_FILE"; media_smoke ;;
   reset) reset_data "$@" ;;
   reset-certificates) reset_certificates "$@" ;;
-  *) fail "usage: $0 {bootstrap|start|stop|status|logs [lines]|smoke|reset --confirm-delete-local-data|reset-certificates --confirm}" ;;
+  *) fail "usage: $0 {bootstrap|start|stop|status|logs [lines]|smoke|smoke-media|reset --confirm-delete-local-data|reset-certificates --confirm}" ;;
 esac

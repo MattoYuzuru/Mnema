@@ -119,7 +119,8 @@ try {
       const url = new URL(event.request.url);
       networkRequests++;
       if (url.origin === config.identity) identityRequests++;
-      if (networkRequests > (config.media ? 750 : config.authoring ? 600 : 500)
+      // Authoring exercises several full navigations and their local assets; keep a finite request budget.
+      if (networkRequests > (config.media ? 950 : config.authoring ? 750 : 500)
           || identityRequests > 150) asynchronousFailure = true;
       if (!allowed.has(url.origin) || asynchronousFailure) {
         externalRequests++;
@@ -385,8 +386,7 @@ try {
   await fill('#detail-title', savedTitle);
   await submit();
   await until(() => cdp.callFunction(`function(expected) {
-    return document.querySelector('h1')?.textContent?.trim() === expected
-      && document.body.innerText.includes('Сервер подтвердил текущую версию колоды.');
+    return document.querySelector('h1')?.textContent?.trim() === expected;
   }`, [savedTitle]), 'real deck metadata save was not acknowledged');
   record('real_own_deck_save_reload', { persistedAfterReload: true });
 
@@ -407,7 +407,7 @@ try {
   await fill('#detail-title', 'Изменение из первой вкладки');
   await submit();
   await until(() => cdp.callFunction(`function() {
-    return document.body.innerText.includes('Сервер подтвердил текущую версию колоды.');
+    return document.querySelector('h1')?.textContent?.trim() === 'Изменение из первой вкладки';
   }`), 'first concurrent save was not acknowledged');
   await fill('#detail-title', 'Изменение из второй вкладки', conflictTab);
   await submit(conflictTab);
@@ -419,7 +419,7 @@ try {
   }`), 'conflict did not preserve and lock the exact local draft');
   require(await click('.notice.conflict .button.primary', conflictTab), 'conflict reapply action absent');
   await until(() => conflictTab.callFunction(`function() {
-    return document.body.innerText.includes('Сервер подтвердил текущую версию колоды.');
+    return document.querySelector('h1')?.textContent?.trim() === 'Изменение из второй вкладки';
   }`), 'explicit conflict reapply did not publish a fresh command');
   await navigate(deckPath);
   await until(() => cdp.callFunction(`function() {
@@ -615,12 +615,12 @@ try {
       return true;
     }`), 'native editor could not be selected');
     await second.call('Input.insertText', { text: editedText });
-    await until(() => bodyIncludes('Черновик подтверждён сервером.', second), 'draft acknowledgement absent');
+    await until(() => bodyIncludes('Все изменения сохранены', second), 'draft acknowledgement absent');
     const editorPath = await sanitizedLocation(second);
     await second.call('Page.reload', { ignoreCache: true });
     await until(async () => (await sanitizedLocation(second)) === editorPath
       && (await bodyIncludes(editedText, second))
-      && (await bodyIncludes('Открыт последний серверный черновик', second)),
+      && (await bodyIncludes('Все изменения сохранены', second)),
     'acknowledged draft did not restore after reload');
     await second.call('Emulation.setDeviceMetricsOverride',
       { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
@@ -635,12 +635,13 @@ try {
       { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
 
     step = 'authoring_rich_diagram_and_youtube';
-    require(await click('.rich-tools summary', second), 'rich content controls absent');
+    require(await clickText('.editor-toolbar button', 'Медиа', second), 'rich content controls absent');
     require(await clickText('.rich-kind-picker button', 'Схема', second), 'Mermaid editor action absent');
     await fill('.rich-fields input[type="text"]', 'Схема API', second);
     await fill('.rich-fields textarea[rows="3"]', 'Клиент обращается к API', second);
     await fill('.rich-fields textarea[rows="6"]', 'flowchart LR\nA[Клиент] --> B[API]', second);
     require(await click('.rich-apply', second), 'Mermaid insertion action absent');
+    require(await clickText('.editor-toolbar button', 'Медиа', second), 'YouTube controls absent');
     require(await clickText('.rich-kind-picker button', 'YouTube', second), 'YouTube editor action absent');
     await fill('.rich-fields input[type="url"]', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', second);
     await fill('.rich-fields input[type="text"]', 'Видео о сервисе', second);
@@ -650,6 +651,8 @@ try {
 
     if (config.media) {
       step = 'browser_media_upload';
+      require(await clickText('.editor-toolbar button', 'Медиа', second), 'media controls absent');
+      require(await clickText('.rich-kind-picker button', 'Изображение', second), 'image controls absent');
       await until(() => exists('app-native-media-upload .media-drop', second), 'media upload surface absent');
       require(await second.callFunction(`async function() {
         const canvas = document.createElement('canvas');
@@ -669,18 +672,18 @@ try {
       await until(() => second.callFunction(`function() {
         return [...document.querySelectorAll('.media-row')].some(row =>
           row.textContent.includes('browser-diagram.png')
-          && [...row.querySelectorAll('button')].some(button => button.textContent.trim() === 'Вставить'));
+          && [...row.querySelectorAll('button')].some(button => button.textContent.trim() === 'Выбрать для материала'));
       }`), 'media intent did not become insertable');
       await until(() => second.callFunction(`function() {
         const row = [...document.querySelectorAll('.media-row')]
           .find(item => item.textContent.includes('browser-diagram.png'));
         return row?.querySelector('.media-status')?.textContent?.includes('Готов к просмотру');
       }`), 'uploaded PNG did not become READY in the editor', 30_000);
-      require(await clickText('.media-row button', 'Вставить', second), 'media insert action absent');
+      require(await clickText('.media-row button', 'Выбрать для материала', second), 'media selection action absent');
       require(await second.callFunction(`function() {
-        return /^[0-9a-f-]{36}$/i.test(document.querySelector('.rich-fields input[autocomplete="off"]')?.value ?? '');
-      }`), 'media insert did not preserve the server asset ID');
-      await fill('.rich-fields input[type="text"]:not([autocomplete])', 'Загруженная схема API', second);
+        return document.querySelector('.rich-fields .editor-note')?.textContent?.includes('Файл выбран');
+      }`), 'media selection did not reach the editor');
+      await fill('.rich-fields input[type="text"]', 'Загруженная схема API', second);
       require(await click('.rich-apply', second), 'image node insertion action absent');
       await until(() => exists('.ProseMirror [data-native-kind="image"]', second),
         'uploaded image did not enter the editor document');
@@ -688,6 +691,9 @@ try {
         { kind: 'audio', name: 'browser-audio.mp3', mime: 'audio/mpeg', title: 'Звуковое объяснение' },
         { kind: 'video', name: 'browser-video.mp4', mime: 'video/mp4', title: 'Видеопример' }
       ]) {
+        require(await clickText('.editor-toolbar button', 'Медиа', second), `${clip.kind} controls absent`);
+        require(await clickText('.rich-kind-picker button', clip.kind === 'audio' ? 'Аудио' : 'Видео', second),
+          `${clip.kind} kind absent`);
         require(await second.callFunction(`function(encoded, name, mime) {
           const bytes = Uint8Array.from(atob(encoded), value => value.charCodeAt(0));
           const transfer = new DataTransfer();
@@ -706,17 +712,18 @@ try {
           const row = [...document.querySelectorAll('.media-row')]
             .find(item => item.textContent.includes(name));
           const insert = [...(row?.querySelectorAll('button') ?? [])]
-            .find(button => button.textContent.trim() === 'Вставить');
+            .find(button => button.textContent.trim() === 'Выбрать для материала');
           if (!(insert instanceof HTMLButtonElement)) return false;
           insert.click(); return true;
         }`, [clip.name]), `${clip.kind} insert action absent`);
         if (clip.kind === 'audio') {
-          uploadedAudioAssetId = await second.callFunction(`function() {
-            return document.querySelector('.rich-fields input[autocomplete="off"]')?.value ?? null;
-          }`);
-          require(/^[0-9a-f-]{36}$/i.test(uploadedAudioAssetId ?? ''), 'audio asset ID was not exposed');
+          uploadedAudioAssetId = await second.callFunction(`function(name) {
+            return [...document.querySelectorAll('.media-row')]
+              .find(row => row.textContent.includes(name))?.getAttribute('data-asset-id') ?? null;
+          }`, [clip.name]);
+          require(/^[0-9a-f-]{36}$/i.test(uploadedAudioAssetId ?? ''), 'audio asset was not selected');
         }
-        await fill('.rich-fields input[type="text"]:not([autocomplete])', clip.title, second);
+        await fill('.rich-fields input[type="text"]', clip.title, second);
         await fill('.rich-fields textarea[rows="3"]', 'Текстовая версия записи', second);
         require(await click('.rich-apply', second), `${clip.kind} node insertion action absent`);
         await until(() => exists(`.ProseMirror [data-native-kind="${clip.kind}"]`, second),
@@ -793,27 +800,57 @@ try {
     step = 'study_browser_provision';
     let studyFixture = { ready: false };
     if (config.media) {
-      require(uploadedAudioAssetId !== null, 'listening exercise has no uploaded audio');
+      require(uploadedAudioAssetId !== null, 'audio-prompt exercise has no uploaded audio');
       await navigate(materialPath + '/exercises/new', second);
-      await until(() => exists('input[name="type"][value="LISTEN_TYPE"]', second),
-        'listening authoring page did not load');
-      require(await click('input[name="type"][value="LISTEN_TYPE"]', second),
-        'listening type could not be selected');
-      await fill('#audio-instruction', 'Прослушайте запись и напишите ответ', second);
-      await fill('#audio-asset', uploadedAudioAssetId, second);
-      await fill('#audio-title', 'Звуковое объяснение', second);
+      await until(() => exists('input[name="mechanic"][value="FREE_RESPONSE"]', second),
+        'exercise authoring page did not load');
+      require(await click('input[name="mechanic"][value="FREE_RESPONSE"]', second),
+        'free-response mechanic could not be selected');
+      await until(() => exists('#free-response-prompt-text-0', second), 'free-response prompt slot absent');
+      await fill('#free-response-prompt-text-0', 'Прослушайте запись и напишите ответ', second);
       require(await second.callFunction(`function() {
-        const select = document.querySelector('#answer-node');
-        const choice = [...(select?.options ?? [])].find(option => option.textContent.includes('Долговечный материал'));
-        if (!(select instanceof HTMLSelectElement) || !choice) return false;
-        select.value = choice.value;
-        select.dispatchEvent(new Event('change', { bubbles: true }));
+        const slot = document.querySelector('#free-response-prompt-text-0')?.closest('app-exercise-slot-editor');
+        const add = [...(slot?.querySelectorAll('button[data-add]') ?? [])]
+          .find(button => button.textContent.includes('Изображение, аудио или видео'));
+        if (!(add instanceof HTMLButtonElement)) return false;
+        add.click(); return true;
+      }`), 'prompt media picker could not be opened');
+      await until(() => exists('app-exercise-slot-editor app-native-media-upload .media-drop', second),
+        'prompt media picker did not render');
+      require(await second.callFunction(`function(encoded) {
+        const bytes = Uint8Array.from(atob(encoded), value => value.charCodeAt(0));
+        const transfer = new DataTransfer();
+        transfer.items.add(new File([bytes], 'exercise-audio.mp3', { type: 'audio/mpeg' }));
+        const drop = document.querySelector('app-exercise-slot-editor app-native-media-upload .media-drop');
+        if (!(drop instanceof HTMLElement)) return false;
+        drop.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }));
         return true;
-      }`), 'listening answer node unavailable');
+      }`, [config.mediaClips.audio]), 'exercise audio upload absent');
+      await until(() => second.callFunction(`function() {
+        const row = [...document.querySelectorAll('app-exercise-slot-editor .media-row')]
+          .find(item => item.textContent.includes('exercise-audio.mp3'));
+        return row?.querySelector('.media-status')?.textContent?.includes('Готов к просмотру');
+      }`), 'exercise audio did not become ready', 30_000);
+      require(await second.callFunction(`function() {
+        const row = [...document.querySelectorAll('app-exercise-slot-editor .media-row')]
+          .find(item => item.textContent.includes('exercise-audio.mp3'));
+        const choice = [...(row?.querySelectorAll('button') ?? [])]
+          .find(button => button.textContent.trim() === 'Добавить в упражнение');
+        if (!(choice instanceof HTMLButtonElement)) return false;
+        choice.click(); return true;
+      }`), 'exercise audio could not be attached to the prompt');
+      await until(() => exists('#free-response-prompt-title-1', second), 'attached audio block absent');
+      await fill('#free-response-prompt-title-1', 'Звуковое объяснение', second);
+      require(await second.callFunction(`function() {
+        const input = document.querySelector('app-text-answer-editor input[type="text"]');
+        if (!(input instanceof HTMLInputElement)) return false;
+        input.focus(); return document.activeElement === input;
+      }`), 'accepted answer field absent');
+      await second.call('Input.insertText', { text: editedText });
       require(await clickText('button', 'Создать упражнение', second),
-        'listening exercise save action absent');
+        'exercise save action absent');
       await until(async () => /^\/decks\/[0-9a-f-]{36}\/exercises\/[0-9a-f-]{36}\/edit/.test(
-        await sanitizedLocation(second)), 'listening exercise was not saved through authoring UI');
+        await sanitizedLocation(second)), 'audio-prompt exercise was not saved through authoring UI');
       studyFixture = { ready: true };
     } else studyFixture = await second.callFunction(`async function(base, authorization, deckPath, materialPath) {
       const headers = { Authorization: authorization };
@@ -831,13 +868,14 @@ try {
           'If-Match': deck.headers.get('etag') },
         body: JSON.stringify({
           commandId: crypto.randomUUID(), expectedDeckRevisionId: deckBody.revisionId,
-          objective: { operation: 'create', answerContract: { schemaVersion: 1,
-            normalization: ['UNICODE_NFC', 'TRIM', 'CASE_FOLD'], accepted: ['memory'] } },
-          exercise: { type: 'TYPED', schemaVersion: 1, enabled: true,
-            prompt: { kind: 'CUSTOM_TEXT', text: 'Введите memory' },
-            bindings: [{ bindingId: crypto.randomUUID(), role: 'ASSESSED',
-              memberKey: itemBody.memberKey, itemRevisionId: itemBody.itemRevisionId,
-              nodeIds: [node.id], display: { kind: 'NODE_TEXT' }, ordinal: 0 }],
+          objective: { operation: 'create', title: 'Слово memory' },
+          exercise: { type: 'FREE_RESPONSE', schemaVersion: 2, enabled: true,
+            subject: { memberKey: itemBody.memberKey, itemRevisionId: itemBody.itemRevisionId },
+            content: { prompt: [{ kind: 'TEXT', text: 'Введите английское слово «память»' }],
+              reference: [{ kind: 'MATERIAL', memberKey: itemBody.memberKey,
+                itemRevisionId: itemBody.itemRevisionId, nodeId: node.id }], responseInput: 'TEXT' },
+            answerKey: { kind: 'TEXT', accepted: ['memory'],
+              normalization: ['UNICODE_NFC', 'TRIM', 'CASE_FOLD'], matchingMode: 'STRICT' },
             evaluatorPolicy: { id: 'deterministic-text', version: '1' } }
         })
       });
@@ -855,21 +893,22 @@ try {
       return document.activeElement === button;
     }`), 'Study preset cannot receive keyboard focus');
     await pressKey(' ', 'Space', 32, 0, second);
-    await until(async () => await exists('#typed-answer', second) || await exists('.completion', second)
+    await until(async () => await exists('#study-0-answer', second) || await exists('.completion', second)
       || await exists('.notice.error', second), 'keyboard did not change Study state');
-    require(await exists('#typed-answer', second), 'keyboard Study start reached empty or error state');
+    require(await exists('#study-0-answer', second), 'keyboard Study start reached empty or error state');
     if (config.media) {
       await until(() => second.callFunction(`function() {
-        const player = document.querySelector('.study-card app-native-media-player audio');
+        const player = document.querySelector('.study-card app-learner-media app-native-media-player audio');
         return player instanceof HTMLAudioElement && player.readyState >= 1;
       }`), 'listening Study did not load its audio in the shared player');
       require(await bodyIncludes('Прослушайте запись и напишите ответ', second),
         'Study did not present the authored listening instruction');
     }
     await until(() => second.callFunction(`function() {
-      return document.activeElement?.id === 'typed-answer';
+      return document.activeElement?.id === 'study-0-answer';
     }`), 'Study answer did not receive focus');
-    require(!(await bodyIncludes('Эталон: memory', second)), 'Study leaked the reference before an accepted answer');
+    require(!(await bodyIncludes(config.media ? editedText : 'memory', second)),
+      'Study leaked the reference before an accepted answer');
     await second.call('Emulation.setEmulatedMedia',
       { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
     for (const [width, height, dpr, name] of [
@@ -887,15 +926,16 @@ try {
     }
     await second.call('Emulation.setDeviceMetricsOverride',
       { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
-    await fill('#typed-answer', config.media ? editedText : 'memory', second);
+    await fill('#study-0-answer', config.media ? editedText : 'memory', second);
     require(await clickText('button', 'Проверить ответ', second), 'Study submit action absent');
     await until(() => exists('#feedback-title', second), 'Study feedback did not arrive from the real API');
     require(await second.callFunction(`function() {
       return document.activeElement?.id === 'feedback-title'
-        && document.body.innerText.includes('Следующее повторение назначено сервером.');
+        && (document.querySelector('.progress-note')?.textContent ?? '').trim().length > 0
+        && document.querySelector('.feedback-card.correct') !== null;
     }`), 'Study feedback focus or canonical transition missing');
     await saveScreenshot('study-feedback-1440.png', second);
-    record('real_https_study_browser', { scheduled: config.media ? 'LISTEN_TYPE' : 'TYPED',
+    record('real_https_study_browser', { scheduled: 'FREE_RESPONSE', audioPrompt: Boolean(config.media),
       authoredAudioLoaded: Boolean(config.media), keyboardStart: true,
       feedbackFocus: true, widths: [1440, 390, 320], deviceScaleFactor: 2,
       reducedMotion: true, noHorizontalOverflow: true, primaryActionMinimumPx: 44 });

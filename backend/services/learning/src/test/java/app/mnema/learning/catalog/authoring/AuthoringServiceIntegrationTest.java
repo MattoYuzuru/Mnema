@@ -147,6 +147,56 @@ class AuthoringServiceIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void deckScopedCapturePageAndCountExcludeOtherDecksArchivedAndDeletedNotes() {
+        UUID actor = UUID.randomUUID();
+        DeckHead first = createDeck(actor);
+        DeckHead second = createDeck(actor);
+        Instant base = repository.now().minusSeconds(60);
+        for (int index = 0; index < 25; index++) {
+            repository.insertCapture(UUID.randomUUID(), actor,
+                    captureCreate(second.id(), "other", "note " + index), base.plusSeconds(index));
+        }
+        UUID oldest = UUID.randomUUID(), middle = UUID.randomUUID(), newest = UUID.randomUUID();
+        repository.insertCapture(oldest, actor, captureCreate(first.id(), "first", "oldest"), base.plusSeconds(26));
+        repository.insertCapture(middle, actor, captureCreate(first.id(), "first", "middle"), base.plusSeconds(27));
+        repository.insertCapture(newest, actor, captureCreate(first.id(), "first", "newest"), base.plusSeconds(28));
+        captures.archive(actor, middle, 0, new AuthoringCommands.CaptureArchive(true));
+
+        JsonNode page = captures.list(actor, first.id().toString(), "1", null);
+        assertThat(page.path("total").longValue()).isEqualTo(2);
+        assertThat(page.path("items")).hasSize(1);
+        assertThat(page.path("items").get(0).path("noteId").textValue()).isEqualTo(newest.toString());
+        JsonNode next = captures.list(actor, first.id().toString(), "1", page.path("nextCursor").textValue());
+        assertThat(next.path("items").get(0).path("noteId").textValue()).isEqualTo(oldest.toString());
+        assertThat(next.path("nextCursor").isNull()).isTrue();
+        assertThat(captures.list(actor, "1", null).path("total").isMissingNode()).isTrue();
+        assertThatThrownBy(() -> captures.list(UUID.randomUUID(), first.id().toString(), "1", null))
+                .isInstanceOf(ResourceNotFoundException.class);
+        captures.delete(actor, newest, 0);
+        assertThat(captures.list(actor, first.id().toString(), "1", null).path("total").longValue()).isOne();
+    }
+
+    @Test
+    void deletedDeckHidesItsNotesAndDraftsButPreservesTheirRows() {
+        UUID actor = UUID.randomUUID();
+        DeckHead deck = createDeck(actor);
+        UUID note = capture(actor, captures.create(actor,
+                captureCreate(deck.id(), "book", "keep history")).acknowledgement()).noteId();
+        UUID draft = draft(actor, drafts.create(actor,
+                draftCreate(deck.id(), null, null, nativeDocument("unfinished"))).acknowledgement()).draftId();
+
+        decks.delete(actor, deck.id(), 0);
+        assertThatThrownBy(() -> captures.read(actor, note)).isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> drafts.read(actor, draft)).isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> captures.list(actor, deck.id().toString(), "20", null))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThat(captures.list(actor, "20", null).path("items")).isEmpty();
+        assertThat(drafts.list(actor, "20", null).path("items")).isEmpty();
+        assertThat(count("capture_note", "note_id", note)).isOne();
+        assertThat(count("editing_draft", "draft_id", draft)).isOne();
+    }
+
+    @Test
     void conversionIsAtomicIdempotentPreservesSourceAndLeavesRecoverableStateOnFailure() {
         UUID actor = UUID.randomUUID();
         DeckHead deck = createDeck(actor);
@@ -162,6 +212,7 @@ class AuthoringServiceIntegrationTest extends PostgresIntegrationTest {
         CaptureService.WriteResult retry = captures.convert(actor, note.noteId(), 0, conversion);
         assertThat(retry.replayed()).isTrue();
         assertThat(retry.acknowledgement()).isEqualTo(first.acknowledgement());
+        assertThat(captures.list(actor, deck.id().toString(), "20", null).path("total").longValue()).isZero();
         assertThat(count("learning_item", "deck_id", deck.id())).isOne();
         JsonNode preserved = captures.read(actor, note.noteId());
         assertThat(preserved.path("source").textValue()).isEqualTo("Видео 12:30");

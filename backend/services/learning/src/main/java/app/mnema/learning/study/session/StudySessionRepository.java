@@ -18,6 +18,33 @@ import java.util.UUID;
 @Repository
 class StudySessionRepository {
     private static final JsonMapper JSON = JsonMapper.builder().build();
+    // Current membership gates new issuance; immutable bindings and issued presentations remain valid.
+    private static final String CURRENT_MATERIALS = """
+            AND NOT EXISTS (
+                SELECT 1 FROM app_learning.exercise_content_binding binding
+                 WHERE binding.deck_id=selected.deck_id AND binding.exercise_id=selected.exercise_id
+                   AND binding.exercise_revision_id=selected.revision_id
+                   AND NOT EXISTS (
+                       SELECT 1 FROM app_learning.deck_head_item item
+                        WHERE item.deck_id=binding.deck_id AND item.member_key=binding.member_key
+                   )
+            )
+            """;
+    // A revision is issuable only while its media is ready and its evaluator's capability is available.
+    private static final String ISSUABLE_REVISION = CURRENT_MATERIALS + """
+            AND app_learning.exercise_media_ready(:actor,selected.deck_id,selected.exercise_id,selected.revision_id)
+            AND (selected.evaluator_policy ->> 'id' <> 'ai-semantic' OR :aiAvailable)
+            """;
+    private static final String PRESENTATION_SELECT = """
+            SELECT p.*, EXISTS(SELECT 1 FROM app_learning.study_transcript_accommodation a
+                    WHERE a.account_id=p.account_id AND a.session_id=p.session_id
+                      AND a.presentation_id=p.presentation_id) AS transcript_revealed,
+                   COALESCE((SELECT jsonb_agg(h.blank_id::text ORDER BY h.revealed_at,h.blank_id)
+                               FROM app_learning.study_hint_reveal h
+                              WHERE h.account_id=p.account_id AND h.session_id=p.session_id
+                                AND h.presentation_id=p.presentation_id),'[]'::jsonb) AS hinted_blanks
+              FROM app_learning.study_presentation p
+            """;
     private final JdbcClient jdbc;
 
     StudySessionRepository(JdbcClient jdbc) { this.jdbc = jdbc; }
@@ -30,8 +57,8 @@ class StudySessionRepository {
     record SourceExercise(UUID exerciseId, UUID exerciseRevisionId, boolean enabled, UUID objectiveId,
                           UUID objectiveRevisionId, UUID memberKey) { }
     record Candidate(int ordinal, UUID exerciseId, UUID exerciseRevisionId, String type, UUID objectiveId,
-                     UUID objectiveRevisionId, UUID memberKey, JsonNode prompt, JsonNode evaluator,
-                     JsonNode answerContract, boolean introduced) { }
+                     UUID objectiveRevisionId, UUID memberKey, JsonNode content, JsonNode evaluator,
+                     JsonNode answerKey, boolean introduced) { }
     record Session(UUID accountId, UUID sessionId, UUID deckId, StudySessionCommand.Mode mode, String status,
                    String timezone, LocalDate localStudyDate, UUID deckRevisionId, long deckSequence,
                    UUID generationId, String policyVersion, UUID configId, String reducerId, String reducerVersion,
@@ -39,11 +66,12 @@ class StudySessionRepository {
                    int issuedNewObjectives, int batchStart, int batchSize, int scanCursor, boolean wrapped,
                    boolean includeNew, String practiceOrder, UUID sourceSessionId, long rowVersion,
                    Instant createdAt, Instant expiresAt, Instant completedAt) { }
+    /** {@code content} is learner-resolved and may carry transcripts; clients see them only after a reveal. */
     record Presentation(UUID presentationId, int ordinal, String nonce, int candidateOrdinal,
                         UUID exerciseId, UUID exerciseRevisionId, String type, UUID objectiveId,
-                        UUID objectiveRevisionId, long learningEpoch, JsonNode prompt, JsonNode options,
-                        JsonNode bindings, JsonNode evaluator, JsonNode answerContract, boolean transcriptRevealed,
-                        Instant issuedAt, Instant expiresAt) { }
+                        UUID objectiveRevisionId, long learningEpoch, JsonNode content, JsonNode reveal,
+                        JsonNode evaluator, JsonNode answerKey, boolean transcriptRevealed,
+                        List<UUID> hintedBlanks, Instant issuedAt, Instant expiresAt) { }
     record Material(UUID memberKey, UUID itemRevisionId, UUID scopeId, UUID contentRootId) { }
     record ReplaySource(UUID sessionId, Instant completedAt, int presentationCount) { }
 
@@ -76,9 +104,9 @@ class StudySessionRepository {
             row.getInt("candidate_ordinal"), row.getObject("exercise_id", UUID.class),
             row.getObject("exercise_revision_id", UUID.class), row.getString("exercise_type"),
             row.getObject("objective_id", UUID.class), row.getObject("objective_revision_id", UUID.class),
-            row.getLong("learning_epoch"), json(row.getString("prompt")), json(row.getString("options")),
-            json(row.getString("bindings")), json(row.getString("evaluator")),
-            json(row.getString("answer_contract")), row.getBoolean("transcript_revealed"),
+            row.getLong("learning_epoch"), json(row.getString("content")), json(row.getString("reveal")),
+            json(row.getString("evaluator")), json(row.getString("answer_key")),
+            row.getBoolean("transcript_revealed"), blankIds(json(row.getString("hinted_blanks"))),
             row.getTimestamp("issued_at").toInstant(),
             row.getTimestamp("expires_at").toInstant());
 
@@ -87,7 +115,7 @@ class StudySessionRepository {
                 SELECT d.deck_id,d.owner_id,d.head_revision_id,d.row_version,r.exercises_root_id,r.exercise_count
                   FROM app_learning.deck d JOIN app_learning.deck_revision r
                     ON r.deck_id=d.deck_id AND r.revision_id=d.head_revision_id
-                 WHERE d.owner_id=:actor AND d.deck_id=:deck
+                 WHERE d.owner_id=:actor AND d.deck_id=:deck AND d.deleted_at IS NULL
                 """).param("actor", actor).param("deck", deck).query(DECK).optional();
     }
 
@@ -218,7 +246,7 @@ class StudySessionRepository {
                 .param("expires", Timestamp.from(expires)).update();
     }
 
-    List<Candidate> eligibleCandidates(Session session, int start, int limit, Instant asOf) {
+    List<Candidate> eligibleCandidates(Session session, int start, int limit, Instant asOf, boolean aiAvailable) {
         if (limit < 1 || limit > BoundedCandidatePlanner.PRESENTATION_LIMIT
                 * BoundedCandidatePlanner.SCAN_MULTIPLIER) {
             throw new IllegalArgumentException("Candidate scan limit is outside the bounded window");
@@ -265,9 +293,7 @@ class StudySessionRepository {
                               ON selected.deck_id=:deck AND selected.exercise_id=choice.exercise_id
                              AND selected.revision_id=choice.exercise_revision_id
                            WHERE choice.generation_id=:generation AND choice.objective_id=state.objective_id
-                             AND (selected.exercise_type NOT IN ('LISTEN_CHOICE','AUDIO_TEXT_MATCH','LISTEN_TYPE')
-                                  OR app_learning.exercise_audio_ready(:actor,:deck,choice.exercise_id,
-                                      choice.exercise_revision_id))
+                             %s
                            ORDER BY choice.candidate_ordinal LIMIT 1
                       ) candidate ON TRUE
                      WHERE :scheduled AND state.account_id=:actor AND state.deck_id=:deck
@@ -289,9 +315,7 @@ class StudySessionRepository {
                               ON selected.deck_id=:deck AND selected.exercise_id=choice.exercise_id
                              AND selected.revision_id=choice.exercise_revision_id
                            WHERE choice.generation_id=:generation AND choice.objective_id=state.objective_id
-                             AND (selected.exercise_type NOT IN ('LISTEN_CHOICE','AUDIO_TEXT_MATCH','LISTEN_TYPE')
-                                  OR app_learning.exercise_audio_ready(:actor,:deck,choice.exercise_id,
-                                      choice.exercise_revision_id))
+                             %s
                            ORDER BY choice.candidate_ordinal LIMIT 1
                       ) candidate ON TRUE
                      WHERE :scheduled AND state.account_id=:actor AND state.deck_id=:deck
@@ -311,9 +335,8 @@ class StudySessionRepository {
                     JOIN app_learning.exercise_revision selected ON selected.deck_id=:deck
                      AND selected.exercise_id=candidate.exercise_id
                      AND selected.revision_id=candidate.exercise_revision_id
-                    WHERE selected.exercise_type NOT IN ('LISTEN_CHOICE','AUDIO_TEXT_MATCH','LISTEN_TYPE')
-                       OR app_learning.exercise_audio_ready(:actor,:deck,candidate.exercise_id,
-                           candidate.exercise_revision_id)
+                    WHERE TRUE
+                       %s
                 ), chosen AS (
                     SELECT DISTINCT ON (candidate.objective_id)
                            candidate.candidate_ordinal,candidate.exercise_id,candidate.exercise_revision_id,
@@ -323,7 +346,7 @@ class StudySessionRepository {
                 ), eligible AS (
                     SELECT chosen.candidate_ordinal,chosen.exercise_id,chosen.exercise_revision_id,
                            revision.exercise_type,chosen.objective_id,chosen.objective_revision_id,chosen.member_key,
-                           revision.prompt_spec,revision.evaluator_policy,objective.answer_contract,
+                           revision.content,revision.evaluator_policy,revision.answer_key,
                            state.objective_id IS NOT NULL AS introduced,state.level,state.lapse_count,state.next_due,
                            state.transition_sequence,
                            row_number() OVER (PARTITION BY (state.objective_id IS NULL)
@@ -332,9 +355,6 @@ class StudySessionRepository {
                       JOIN app_learning.exercise_revision revision
                         ON revision.deck_id=:deck AND revision.exercise_id=chosen.exercise_id
                        AND revision.revision_id=chosen.exercise_revision_id
-                      JOIN app_learning.objective_revision objective
-                        ON objective.deck_id=:deck AND objective.objective_id=chosen.objective_id
-                       AND objective.revision_id=chosen.objective_revision_id
                       LEFT JOIN app_learning.study_state state
                         ON state.account_id=:actor AND state.deck_id=:deck AND state.objective_id=chosen.objective_id
                      WHERE NOT EXISTS (
@@ -344,33 +364,23 @@ class StudySessionRepository {
                      )
                 )
                 SELECT candidate_ordinal,exercise_id,exercise_revision_id,exercise_type,objective_id,
-                       objective_revision_id,member_key,prompt_spec,evaluator_policy,answer_contract,introduced
+                       objective_revision_id,member_key,content,evaluator_policy,answer_key,introduced
                   FROM eligible
                  WHERE (:scheduled=FALSE OR introduced OR novelty_rank<=:newRemaining)
-                """ + eligibility + " ORDER BY " + order + " LIMIT :limit")
+                """.formatted(ISSUABLE_REVISION, ISSUABLE_REVISION, ISSUABLE_REVISION)
+                + eligibility + " ORDER BY " + order + " LIMIT :limit")
                 .param("generation", session.generationId()).param("deck", session.deckId())
                 .param("actor", session.accountId()).param("session", session.sessionId())
                 .param("asOf", Timestamp.from(asOf)).param("start", start).param("limit", limit)
                 .param("scheduled", session.mode() == StudySessionCommand.Mode.SCHEDULED)
+                .param("aiAvailable", aiAvailable)
                 .param("newRemaining", Math.max(0, session.maxNewObjectives() - session.issuedNewObjectives()))
                 .query((row, ignored) -> new Candidate(row.getInt("candidate_ordinal"),
                         row.getObject("exercise_id", UUID.class), row.getObject("exercise_revision_id", UUID.class),
                         row.getString("exercise_type"), row.getObject("objective_id", UUID.class),
                         row.getObject("objective_revision_id", UUID.class), row.getObject("member_key", UUID.class),
-                        json(row.getString("prompt_spec")), json(row.getString("evaluator_policy")),
-                        json(row.getString("answer_contract")), row.getBoolean("introduced"))).list();
-    }
-
-    List<JsonNode> bindings(UUID deck, UUID exercise, UUID revision) {
-        return jdbc.sql("""
-                SELECT jsonb_build_object('bindingId',binding_id::text,'role',role,'memberKey',member_key::text,
-                           'itemRevisionId',item_revision_id::text,'ordinal',binding_ordinal,
-                           'nodeIds',to_jsonb(node_ids),'display',display_spec) AS binding
-                  FROM app_learning.exercise_content_binding
-                 WHERE deck_id=:deck AND exercise_id=:exercise AND exercise_revision_id=:revision
-                 ORDER BY binding_ordinal
-                """).param("deck", deck).param("exercise", exercise).param("revision", revision)
-                .query((row, ignored) -> json(row.getString("binding"))).list();
+                        json(row.getString("content")), json(row.getString("evaluator_policy")),
+                        json(row.getString("answer_key")), row.getBoolean("introduced"))).list();
     }
 
     Optional<Material> material(UUID deck, UUID member, UUID revision) {
@@ -384,25 +394,25 @@ class StudySessionRepository {
     }
 
     void insertPresentation(UUID actor, UUID session, UUID deck, UUID generation, Candidate candidate, UUID id,
-                            int ordinal, String nonce, long learningEpoch, JsonNode prompt, JsonNode options, JsonNode bindings,
+                            int ordinal, String nonce, long learningEpoch, JsonNode content, JsonNode reveal,
                             Instant now, Instant expires) {
         jdbc.sql("""
                 INSERT INTO app_learning.study_presentation(account_id,session_id,presentation_id,presentation_ordinal,
                     nonce,deck_id,generation_id,candidate_ordinal,exercise_id,exercise_revision_id,exercise_type,
-                    objective_id,objective_revision_id,learning_epoch,prompt,options,bindings,evaluator,answer_contract,
+                    objective_id,objective_revision_id,learning_epoch,content,reveal,evaluator,answer_key,
                     issued_at,expires_at)
                 VALUES (:actor,:session,:id,:ordinal,:nonce,:deck,:generation,:candidateOrdinal,:exercise,
-                    :exerciseRevision,:type,:objective,:objectiveRevision,:epoch,CAST(:prompt AS jsonb),CAST(:options AS jsonb),
-                    CAST(:bindings AS jsonb),CAST(:evaluator AS jsonb),CAST(:answer AS jsonb),:now,:expires)
+                    :exerciseRevision,:type,:objective,:objectiveRevision,:epoch,CAST(:content AS jsonb),
+                    CAST(:reveal AS jsonb),CAST(:evaluator AS jsonb),CAST(:answerKey AS jsonb),:now,:expires)
                 """).param("actor", actor).param("session", session).param("id", id).param("ordinal", ordinal)
                 .param("nonce", nonce).param("deck", deck).param("generation", generation)
                 .param("candidateOrdinal", candidate.ordinal()).param("exercise", candidate.exerciseId())
                 .param("exerciseRevision", candidate.exerciseRevisionId()).param("type", candidate.type())
                 .param("objective", candidate.objectiveId()).param("objectiveRevision", candidate.objectiveRevisionId())
                 .param("epoch", learningEpoch)
-                .param("prompt", prompt.toString()).param("options", options.toString())
-                .param("bindings", bindings.toString()).param("evaluator", candidate.evaluator().toString())
-                .param("answer", candidate.answerContract().toString()).param("now", Timestamp.from(now))
+                .param("content", content.toString()).param("reveal", reveal.toString())
+                .param("evaluator", evaluatorIdentity(candidate.evaluator()).toString())
+                .param("answerKey", candidate.answerKey().toString()).param("now", Timestamp.from(now))
                 .param("expires", Timestamp.from(expires)).update();
     }
 
@@ -453,28 +463,24 @@ class StudySessionRepository {
         jdbc.sql("""
                 INSERT INTO app_learning.study_presentation(account_id,session_id,presentation_id,presentation_ordinal,
                     nonce,deck_id,generation_id,candidate_ordinal,exercise_id,exercise_revision_id,exercise_type,
-                    objective_id,objective_revision_id,learning_epoch,prompt,options,bindings,evaluator,answer_contract,
+                    objective_id,objective_revision_id,learning_epoch,content,reveal,evaluator,answer_key,
                     issued_at,expires_at)
                 VALUES (:actor,:target,:id,:ordinal,:nonce,:deck,:generation,:candidate,:exercise,:exerciseRevision,
-                    :type,:objective,:objectiveRevision,:epoch,CAST(:prompt AS jsonb),CAST(:options AS jsonb),
-                    CAST(:bindings AS jsonb),CAST(:evaluator AS jsonb),CAST(:answer AS jsonb),:now,:expires)
+                    :type,:objective,:objectiveRevision,:epoch,CAST(:content AS jsonb),CAST(:reveal AS jsonb),
+                    CAST(:evaluator AS jsonb),CAST(:answerKey AS jsonb),:now,:expires)
                 """).param("actor", actor).param("target", targetSession).param("id", id).param("ordinal", ordinal)
                 .param("nonce", nonce).param("deck", deck).param("generation", generation)
                 .param("candidate", source.candidateOrdinal()).param("exercise", source.exerciseId())
                 .param("exerciseRevision", source.exerciseRevisionId()).param("type", source.type())
                 .param("objective", source.objectiveId()).param("objectiveRevision", source.objectiveRevisionId())
-                .param("epoch", source.learningEpoch()).param("prompt", source.prompt().toString())
-                .param("options", source.options().toString()).param("bindings", source.bindings().toString())
-                .param("evaluator", source.evaluator().toString()).param("answer", source.answerContract().toString())
+                .param("epoch", source.learningEpoch()).param("content", source.content().toString())
+                .param("reveal", source.reveal().toString()).param("evaluator", source.evaluator().toString())
+                .param("answerKey", source.answerKey().toString())
                 .param("now", Timestamp.from(now)).param("expires", Timestamp.from(expires)).update();
     }
 
     List<Presentation> presentations(UUID actor, UUID session, int start, int limit) {
-        return jdbc.sql("""
-                SELECT p.*, EXISTS(SELECT 1 FROM app_learning.study_audio_accommodation a
-                    WHERE a.account_id=p.account_id AND a.session_id=p.session_id
-                      AND a.presentation_id=p.presentation_id) AS transcript_revealed
-                  FROM app_learning.study_presentation p
+        return jdbc.sql(PRESENTATION_SELECT + """
                  WHERE p.account_id=:actor AND p.session_id=:session AND p.presentation_ordinal>=:start
                  ORDER BY p.presentation_ordinal LIMIT :limit
                 """).param("actor", actor).param("session", session).param("start", start).param("limit", limit)
@@ -482,11 +488,7 @@ class StudySessionRepository {
     }
 
     List<Presentation> pendingPresentations(UUID actor, UUID session, int start, int limit) {
-        return jdbc.sql("""
-                SELECT p.*, EXISTS(SELECT 1 FROM app_learning.study_audio_accommodation a
-                    WHERE a.account_id=p.account_id AND a.session_id=p.session_id
-                      AND a.presentation_id=p.presentation_id) AS transcript_revealed
-                  FROM app_learning.study_presentation p
+        return jdbc.sql(PRESENTATION_SELECT + """
                  WHERE p.account_id=:actor AND p.session_id=:session AND p.presentation_ordinal>=:start
                    AND NOT EXISTS (
                        SELECT 1 FROM app_learning.study_attempt_tombstone t
@@ -498,16 +500,12 @@ class StudySessionRepository {
                 .query(PRESENTATION).list();
     }
 
-    Optional<Presentation> pendingForAccommodation(UUID actor, UUID deck, UUID session, UUID presentation,
-                                                   String nonce, Instant now) {
-        return jdbc.sql("""
-                SELECT p.*, EXISTS(SELECT 1 FROM app_learning.study_audio_accommodation a
-                    WHERE a.account_id=p.account_id AND a.session_id=p.session_id
-                      AND a.presentation_id=p.presentation_id) AS transcript_revealed
-                  FROM app_learning.study_presentation p
+    /** An unexpired, unanswered presentation of this owner and nonce: the precondition of any reveal. */
+    Optional<Presentation> pendingForReveal(UUID actor, UUID deck, UUID session, UUID presentation,
+                                            String nonce, Instant now) {
+        return jdbc.sql(PRESENTATION_SELECT + """
                  WHERE p.account_id=:actor AND p.deck_id=:deck AND p.session_id=:session
                    AND p.presentation_id=:presentation AND p.nonce=:nonce AND p.expires_at>:now
-                   AND p.exercise_type IN ('LISTEN_CHOICE','AUDIO_TEXT_MATCH','LISTEN_TYPE')
                    AND NOT EXISTS (SELECT 1 FROM app_learning.study_attempt_tombstone t
                        WHERE t.account_id=p.account_id AND t.session_id=p.session_id
                          AND t.presentation_id=p.presentation_id)
@@ -518,12 +516,22 @@ class StudySessionRepository {
 
     void recordAccommodation(UUID actor, UUID session, UUID presentation, Instant now) {
         jdbc.sql("""
-                INSERT INTO app_learning.study_audio_accommodation
+                INSERT INTO app_learning.study_transcript_accommodation
                     (account_id,session_id,presentation_id,revealed_at)
                 VALUES (:actor,:session,:presentation,:now)
                 ON CONFLICT DO NOTHING
                 """).param("actor", actor).param("session", session).param("presentation", presentation)
                 .param("now", Timestamp.from(now)).update();
+    }
+
+    /** Append-only and idempotent: a repeated hint request keeps the first reveal row. */
+    void recordHint(UUID actor, UUID session, UUID presentation, UUID blank, Instant now) {
+        jdbc.sql("""
+                INSERT INTO app_learning.study_hint_reveal(account_id,session_id,presentation_id,blank_id,revealed_at)
+                VALUES (:actor,:session,:presentation,:blank,:now)
+                ON CONFLICT DO NOTHING
+                """).param("actor", actor).param("session", session).param("presentation", presentation)
+                .param("blank", blank).param("now", Timestamp.from(now)).update();
     }
 
     List<ReplaySource> replaySources(UUID actor, UUID deck, LocalDate localDate, int limit) {
@@ -565,6 +573,18 @@ class StudySessionRepository {
     }
 
     Instant now() { return jdbc.sql("SELECT statement_timestamp()").query(Timestamp.class).single().toInstant(); }
+
+    /** Only the evaluator identity is persisted with a presentation: a rubric is never needed at issue. */
+    private static JsonNode evaluatorIdentity(JsonNode evaluator) {
+        return JSON.createObjectNode().put("id", evaluator.path("id").textValue())
+                .put("version", evaluator.path("version").textValue());
+    }
+
+    private static List<UUID> blankIds(JsonNode values) {
+        List<UUID> result = new java.util.ArrayList<>();
+        values.forEach(value -> result.add(UUID.fromString(value.textValue())));
+        return List.copyOf(result);
+    }
 
     private static JsonNode json(String value) {
         try { return JSON.readTree(value); }

@@ -32,14 +32,16 @@ class AuthoringRepository {
     }
 
     boolean ownsDeck(UUID actor, UUID deck) {
-        return jdbc.sql("SELECT EXISTS(SELECT 1 FROM app_learning.deck WHERE owner_id=:actor AND deck_id=:deck)")
+        return jdbc.sql("SELECT EXISTS(SELECT 1 FROM app_learning.deck WHERE owner_id=:actor AND deck_id=:deck AND deleted_at IS NULL)")
                 .param("actor", actor).param("deck", deck).query(Boolean.class).single();
     }
 
     boolean ownsBase(UUID actor, UUID deck, UUID member, UUID revision) {
         return jdbc.sql("""
                 SELECT EXISTS(SELECT 1 FROM app_learning.item_revision r
-                    WHERE r.owner_id=:actor AND r.deck_id=:deck AND r.member_key=:member AND r.revision_id=:revision)
+                    JOIN app_learning.deck d ON d.deck_id=r.deck_id
+                    WHERE r.owner_id=:actor AND r.deck_id=:deck AND r.member_key=:member AND r.revision_id=:revision
+                      AND d.deleted_at IS NULL)
                 """).param("actor", actor).param("deck", deck).param("member", member).param("revision", revision)
                 .query(Boolean.class).single();
     }
@@ -50,8 +52,9 @@ class AuthoringRepository {
     }
 
     long activeDraftCount(UUID actor) {
-        return jdbc.sql("SELECT count(*) FROM app_learning.editing_draft WHERE owner_id=:actor "
-                        + "AND expires_at>statement_timestamp()")
+        return jdbc.sql("SELECT count(*) FROM app_learning.editing_draft draft WHERE owner_id=:actor "
+                        + "AND expires_at>statement_timestamp() AND EXISTS "
+                        + "(SELECT 1 FROM app_learning.deck d WHERE d.deck_id=draft.deck_id AND d.deleted_at IS NULL)")
                 .param("actor", actor).query(Long.class).single();
     }
 
@@ -63,14 +66,17 @@ class AuthoringRepository {
 
     long activeDraftBytes(UUID actor, UUID except) {
         if (except == null) {
-            return jdbc.sql("SELECT COALESCE(sum(content_bytes),0) FROM app_learning.editing_draft "
-                            + "WHERE owner_id=:actor AND expires_at>statement_timestamp()")
+            return jdbc.sql("SELECT COALESCE(sum(content_bytes),0) FROM app_learning.editing_draft draft "
+                            + "WHERE owner_id=:actor AND expires_at>statement_timestamp() AND EXISTS "
+                            + "(SELECT 1 FROM app_learning.deck d WHERE d.deck_id=draft.deck_id AND d.deleted_at IS NULL)")
                     .param("actor", actor).query(Long.class).single();
         }
         return jdbc.sql("""
-                SELECT COALESCE(sum(content_bytes),0) FROM app_learning.editing_draft
+                SELECT COALESCE(sum(content_bytes),0) FROM app_learning.editing_draft draft
                  WHERE owner_id=:actor AND expires_at>statement_timestamp()
                    AND draft_id<>:except
+                   AND EXISTS (SELECT 1 FROM app_learning.deck d
+                               WHERE d.deck_id=draft.deck_id AND d.deleted_at IS NULL)
                 """).param("actor", actor).param("except", except)
                 .query(Long.class).single();
     }
@@ -116,6 +122,8 @@ class AuthoringRepository {
                        created_at,acknowledged_at,expires_at
                   FROM app_learning.editing_draft
                  WHERE owner_id=:actor AND draft_id=:id AND expires_at>statement_timestamp()
+                   AND EXISTS (SELECT 1 FROM app_learning.deck d
+                               WHERE d.deck_id=editing_draft.deck_id AND d.deleted_at IS NULL)
                 """).param("actor", actor).param("id", id).query(this::draft).optional();
     }
 
@@ -127,6 +135,8 @@ class AuthoringRepository {
                        created_at,acknowledged_at,expires_at
                   FROM app_learning.editing_draft
                  WHERE owner_id=:actor AND expires_at>statement_timestamp()
+                   AND EXISTS (SELECT 1 FROM app_learning.deck d
+                               WHERE d.deck_id=editing_draft.deck_id AND d.deleted_at IS NULL)
                    AND (created_at<:time OR (created_at=:time AND draft_id<:id))
                  ORDER BY created_at DESC,draft_id DESC LIMIT :limit
                 """).param("actor", actor).param("time", Timestamp.from(time)).param("id", id)
@@ -134,17 +144,28 @@ class AuthoringRepository {
     }
 
     long captureCount(UUID actor) {
-        return jdbc.sql("SELECT count(*) FROM app_learning.capture_note WHERE owner_id=:actor")
+        return jdbc.sql("SELECT count(*) FROM app_learning.capture_note note WHERE owner_id=:actor "
+                        + "AND EXISTS (SELECT 1 FROM app_learning.deck d "
+                        + "WHERE d.deck_id=note.deck_id AND d.deleted_at IS NULL)")
                 .param("actor", actor).query(Long.class).single();
+    }
+
+    long activeCaptureCount(UUID actor, UUID deck) {
+        return jdbc.sql("SELECT count(*) FROM app_learning.capture_note WHERE owner_id=:actor AND deck_id=:deck "
+                        + "AND NOT archived AND conversion_command_id IS NULL")
+                .param("actor", actor).param("deck", deck).query(Long.class).single();
     }
 
     long captureBytes(UUID actor, UUID except) {
         if (except == null) {
-            return jdbc.sql("SELECT COALESCE(sum(content_bytes),0) FROM app_learning.capture_note WHERE owner_id=:actor")
+            return jdbc.sql("SELECT COALESCE(sum(content_bytes),0) FROM app_learning.capture_note note "
+                            + "WHERE owner_id=:actor AND EXISTS (SELECT 1 FROM app_learning.deck d "
+                            + "WHERE d.deck_id=note.deck_id AND d.deleted_at IS NULL)")
                     .param("actor", actor).query(Long.class).single();
         }
-        return jdbc.sql("SELECT COALESCE(sum(content_bytes),0) FROM app_learning.capture_note "
-                        + "WHERE owner_id=:actor AND note_id<>:except")
+        return jdbc.sql("SELECT COALESCE(sum(content_bytes),0) FROM app_learning.capture_note note "
+                        + "WHERE owner_id=:actor AND note_id<>:except AND EXISTS "
+                        + "(SELECT 1 FROM app_learning.deck d WHERE d.deck_id=note.deck_id AND d.deleted_at IS NULL)")
                 .param("actor", actor).param("except", except).query(Long.class).single();
     }
 
@@ -194,6 +215,8 @@ class AuthoringRepository {
                        conversion_command_id,conversion_payload_hash,converted_member_key,converted_revision_id,
                        converted_at,conversion_result::text
                   FROM app_learning.capture_note WHERE owner_id=:actor AND note_id=:id
+                   AND EXISTS (SELECT 1 FROM app_learning.deck d
+                               WHERE d.deck_id=capture_note.deck_id AND d.deleted_at IS NULL)
                 """ + lock).param("actor", actor).param("id", id).query(this::capture).optional();
     }
 
@@ -205,9 +228,26 @@ class AuthoringRepository {
                        conversion_command_id,conversion_payload_hash,converted_member_key,converted_revision_id,
                        converted_at,conversion_result::text
                   FROM app_learning.capture_note WHERE owner_id=:actor
+                   AND EXISTS (SELECT 1 FROM app_learning.deck d
+                               WHERE d.deck_id=capture_note.deck_id AND d.deleted_at IS NULL)
                    AND (created_at<:time OR (created_at=:time AND note_id<:id))
                  ORDER BY created_at DESC,note_id DESC LIMIT :limit
                 """).param("actor", actor).param("time", Timestamp.from(time)).param("id", id)
+                .param("limit", limit + 1).query(this::capture).list();
+    }
+
+    List<CaptureRecord> activeCaptures(UUID actor, UUID deck, AuthoringCursor cursor, int limit) {
+        Instant time = cursor == null ? Instant.parse("9999-12-31T23:59:59.999999Z") : cursor.createdAt();
+        UUID id = cursor == null ? new UUID(-1L, -1L) : cursor.id();
+        return jdbc.sql("""
+                SELECT note_id,owner_id,deck_id,row_version,source,note_text,content_bytes,archived,created_at,updated_at,
+                       conversion_command_id,conversion_payload_hash,converted_member_key,converted_revision_id,
+                       converted_at,conversion_result::text
+                  FROM app_learning.capture_note
+                 WHERE owner_id=:actor AND deck_id=:deck AND NOT archived AND conversion_command_id IS NULL
+                   AND (created_at<:time OR (created_at=:time AND note_id<:id))
+                 ORDER BY created_at DESC,note_id DESC LIMIT :limit
+                """).param("actor", actor).param("deck", deck).param("time", Timestamp.from(time)).param("id", id)
                 .param("limit", limit + 1).query(this::capture).list();
     }
 

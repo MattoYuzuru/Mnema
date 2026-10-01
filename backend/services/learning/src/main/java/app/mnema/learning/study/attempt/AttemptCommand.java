@@ -17,15 +17,16 @@ import java.util.UUID;
 
 /** Strict attempt envelope; all assessment authority remains in the stored presentation. */
 public record AttemptCommand(UUID attemptId, UUID presentationId, String nonce, Response response,
-                             List<String> hintsUsed, String confidence, int durationMs, ObjectNode payload) {
-    private static final int MAX_BYTES = 8_192;
-    private static final ContentJsonReader JSON = new ContentJsonReader(MAX_BYTES, 8, 200);
+                             String confidence, int durationMs, ObjectNode payload) {
+    private static final int MAX_BYTES = 262_144;
+    private static final ContentJsonReader JSON = new ContentJsonReader(MAX_BYTES, 8, 20_000);
     private static final Set<String> CONFIDENCE = Set.of("KNEW", "UNSURE", "GUESSED");
+    private static final int MAX_BLANKS = 12;
+    private static final int MAX_OPTIONS = 12;
 
     public AttemptCommand {
         attemptId = UuidPolicy.requireCommandId(attemptId);
         presentationId = UuidPolicy.requireEntityId(presentationId, "presentationId");
-        hintsUsed = List.copyOf(hintsUsed);
         payload = payload.deepCopy();
     }
 
@@ -40,25 +41,17 @@ public record AttemptCommand(UUID attemptId, UUID presentationId, String nonce, 
     public static AttemptCommand read(InputStream input) {
         try {
             JsonNode body = JSON.read(input.readNBytes(MAX_BYTES + 1));
-            fields(body, Set.of("attemptId", "presentationId", "nonce", "response", "hintsUsed",
-                    "confidence", "durationMs"));
+            // Hint use is recorded by the server; a client claim is an unknown field.
+            fields(body, Set.of("attemptId", "presentationId", "nonce", "response", "confidence", "durationMs"));
             String nonce = text(body.path("nonce"), 100, false);
             if (nonce.length() < 16) throw invalid();
-            if (!body.path("hintsUsed").isArray() || body.path("hintsUsed").size() > 8) throw invalid();
-            List<String> hints = new ArrayList<>();
-            Set<String> distinct = new HashSet<>();
-            body.path("hintsUsed").forEach(value -> {
-                String hint = text(value, 64, false);
-                if (!distinct.add(hint)) throw invalid();
-                hints.add(hint);
-            });
             String confidence = body.path("confidence").isNull() ? null : text(body.path("confidence"), 16, false);
             if (confidence != null && !CONFIDENCE.contains(confidence)) throw invalid();
             JsonNode duration = body.path("durationMs");
             if (!duration.isIntegralNumber() || !duration.canConvertToInt()
                     || duration.intValue() < 0 || duration.intValue() > 3_600_000) throw invalid();
             return new AttemptCommand(id(body.path("attemptId"), true), id(body.path("presentationId"), false),
-                    nonce, response(body.path("response")), hints, confidence, duration.intValue(), (ObjectNode) body);
+                    nonce, response(body.path("response")), confidence, duration.intValue(), (ObjectNode) body);
         } catch (IOException | IllegalArgumentException exception) { throw invalid(); }
     }
 
@@ -74,23 +67,46 @@ public record AttemptCommand(UUID attemptId, UUID presentationId, String nonce, 
                 try { yield new SelfCheckResponse(SelfRating.valueOf(text(value.path("rating"), 32, false))); }
                 catch (IllegalArgumentException exception) { throw invalid(); }
             }
+            case "CLOZE" -> {
+                fields(value, Set.of("kind", "blanks"));
+                JsonNode blanks = value.path("blanks");
+                if (!blanks.isArray() || blanks.isEmpty() || blanks.size() > MAX_BLANKS) throw invalid();
+                List<BlankText> result = new ArrayList<>();
+                Set<UUID> distinct = new HashSet<>();
+                for (JsonNode blank : blanks) {
+                    fields(blank, Set.of("blankId", "text"));
+                    UUID blankId = id(blank.path("blankId"), false);
+                    if (!distinct.add(blankId)) throw invalid();
+                    result.add(new BlankText(blankId, text(blank.path("text"), 1_024, true)));
+                }
+                yield new ClozeResponse(List.copyOf(result));
+            }
             case "CHOICE" -> {
-                fields(value, Set.of("kind", "optionId"));
-                yield new ChoiceResponse(id(value.path("optionId"), false));
+                fields(value, Set.of("kind", "optionIds"));
+                JsonNode options = value.path("optionIds");
+                if (!options.isArray() || options.isEmpty() || options.size() > MAX_OPTIONS) throw invalid();
+                List<UUID> ids = new ArrayList<>();
+                Set<UUID> distinct = new HashSet<>();
+                for (JsonNode option : options) {
+                    UUID optionId = id(option, false);
+                    if (!distinct.add(optionId)) throw invalid();
+                    ids.add(optionId);
+                }
+                yield new ChoiceResponse(ids);
             }
             case "MATCH" -> {
                 fields(value, Set.of("kind", "pairs"));
                 JsonNode pairs = value.path("pairs");
                 if (!pairs.isArray() || pairs.size() < 2 || pairs.size() > 6) throw invalid();
                 List<MatchPair> result = new ArrayList<>();
-                Set<UUID> cues = new HashSet<>();
-                Set<UUID> options = new HashSet<>();
+                Set<UUID> lefts = new HashSet<>();
+                Set<UUID> rights = new HashSet<>();
                 for (JsonNode pair : pairs) {
-                    fields(pair, Set.of("cueId", "optionId"));
-                    UUID cue = id(pair.path("cueId"), false);
-                    UUID option = id(pair.path("optionId"), false);
-                    if (!cues.add(cue) || !options.add(option)) throw invalid();
-                    result.add(new MatchPair(cue, option));
+                    fields(pair, Set.of("leftId", "rightId"));
+                    UUID left = id(pair.path("leftId"), false);
+                    UUID right = id(pair.path("rightId"), false);
+                    if (!lefts.add(left) || !rights.add(right)) throw invalid();
+                    result.add(new MatchPair(left, right));
                 }
                 yield new MatchResponse(List.copyOf(result));
             }
@@ -125,12 +141,18 @@ public record AttemptCommand(UUID attemptId, UUID presentationId, String nonce, 
 
     private static InvalidRequestException invalid() { return new InvalidRequestException(); }
 
-    public sealed interface Response permits TextResponse, SelfCheckResponse, ChoiceResponse, MatchResponse,
-            CancelResponse { }
+    public sealed interface Response permits TextResponse, SelfCheckResponse, ClozeResponse, ChoiceResponse,
+            MatchResponse, CancelResponse { }
     public record TextResponse(String text) implements Response { }
     public record SelfCheckResponse(SelfRating rating) implements Response { }
-    public record ChoiceResponse(UUID optionId) implements Response { }
-    public record MatchPair(UUID cueId, UUID optionId) { }
+    public record BlankText(UUID blankId, String text) { }
+    public record ClozeResponse(List<BlankText> blanks) implements Response {
+        public ClozeResponse { blanks = List.copyOf(blanks); }
+    }
+    public record ChoiceResponse(List<UUID> optionIds) implements Response {
+        public ChoiceResponse { optionIds = List.copyOf(optionIds); }
+    }
+    public record MatchPair(UUID leftId, UUID rightId) { }
     public record MatchResponse(List<MatchPair> pairs) implements Response { }
     public record CancelResponse() implements Response { }
     public enum SelfRating { NOT_RECALLED, HINTED, PARTIAL, FULL }

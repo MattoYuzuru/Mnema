@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -22,8 +22,19 @@ export class CapturePageComponent {
     readonly form = new FormGroup({ text: new FormControl('', { nonNullable: true, validators: [captureTextValidator] }) });
     readonly deck = signal<OwnDeck | null>(null);
     readonly notes = signal<readonly CaptureNote[]>([]);
+    readonly total = signal(0);
+    readonly totalLabel = computed(() => {
+        const count = this.total();
+        const ending = count % 100;
+        const word = ending >= 11 && ending <= 14 ? 'заметок' : count % 10 === 1 ? 'заметка'
+            : count % 10 >= 2 && count % 10 <= 4 ? 'заметки' : 'заметок';
+        return `${count} ${word}`;
+    });
     readonly loading = signal(true);
     readonly nextCursor = signal<string | null>(null);
+    readonly loadingMore = signal(false);
+    readonly moreError = signal(false);
+    readonly loadSentinel = viewChild<ElementRef<HTMLElement>>('loadSentinel');
     readonly busy = signal(false);
     readonly error = signal<string | null>(null);
     readonly recovery = signal<'reload' | 'retry' | null>(null);
@@ -38,7 +49,18 @@ export class CapturePageComponent {
         readonly commandId: string; readonly note: CaptureNote; readonly document: NativeDocument;
     } | null = null;
 
-    constructor() { this.load(); }
+    constructor() {
+        this.load();
+        effect(onCleanup => {
+            const sentinel = this.loadSentinel()?.nativeElement;
+            if (!sentinel || !this.nextCursor() || this.loading() || this.loadingMore() || this.moreError()) return;
+            const observer = new IntersectionObserver(entries => {
+                if (entries.some(entry => entry.isIntersecting)) this.loadMore();
+            }, { rootMargin: '0px 0px 800px 0px' });
+            observer.observe(sentinel);
+            onCleanup(() => observer.disconnect());
+        });
+    }
 
     load(): void {
         const deckId = this.route.snapshot.paramMap.get('deckId');
@@ -48,11 +70,13 @@ export class CapturePageComponent {
         this.recovery.set(null);
         this.loading.set(true);
         this.error.set(null);
-        forkJoin({ deck: this.decks.detail(deckId), captures: this.api.listCaptures() })
+        this.moreError.set(false);
+        forkJoin({ deck: this.decks.detail(deckId), captures: this.api.listDeckCaptures(deckId) })
             .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
                 next: result => {
                     this.deck.set(result.deck);
-                    this.notes.set(result.captures.items.filter(note => note.deckId === result.deck.deckId && !note.archived));
+                    this.notes.set(result.captures.items);
+                    this.total.set(result.captures.total);
                     this.nextCursor.set(result.captures.nextCursor);
                     this.loading.set(false);
                 },
@@ -63,16 +87,18 @@ export class CapturePageComponent {
     loadMore(): void {
         const deck = this.deck();
         const cursor = this.nextCursor();
-        if (deck === null || cursor === null || this.loading()) return;
-        this.loading.set(true);
-        this.api.listCaptures(cursor).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        if (deck === null || cursor === null || this.loading() || this.loadingMore()) return;
+        this.loadingMore.set(true);
+        this.moreError.set(false);
+        this.api.listDeckCaptures(deck.deckId, cursor).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
             next: result => {
-                this.notes.update(notes => [...notes,
-                    ...result.items.filter(note => note.deckId === deck.deckId && !note.archived)]);
+                this.notes.update(notes => [...notes, ...result.items.filter(note =>
+                    !notes.some(existing => existing.noteId === note.noteId))]);
+                this.total.set(result.total);
                 this.nextCursor.set(result.nextCursor);
-                this.loading.set(false);
+                this.loadingMore.set(false);
             },
-            error: () => { this.error.set('Не удалось загрузить следующую страницу.'); this.loading.set(false); }
+            error: () => { this.moreError.set(true); this.loadingMore.set(false); }
         });
     }
 
@@ -90,7 +116,10 @@ export class CapturePageComponent {
             .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
                 next: result => {
                     this.pendingCapture = null;
-                    this.notes.update(notes => [result.acknowledgement.capture, ...notes]);
+                    const created = result.acknowledgement.capture;
+                    const alreadyVisible = this.notes().some(note => note.noteId === created.noteId);
+                    this.notes.update(notes => [created, ...notes.filter(note => note.noteId !== created.noteId)]);
+                    if (!alreadyVisible) this.total.update(total => total + 1);
                     this.form.reset();
                     this.busy.set(false);
                 },
@@ -99,8 +128,8 @@ export class CapturePageComponent {
                     if (!uncertain) this.pendingCapture = null;
                     this.recovery.set(uncertain ? 'retry' : 'reload');
                     this.error.set(uncertain
-                        ? 'Сервер не подтвердил заметку. Безопасно повторите ту же команду.'
-                        : 'Заметка не сохранена. Обновите серверные данные.');
+                        ? 'Не удалось проверить, сохранилась ли заметка. Попробуйте ещё раз.'
+                        : 'Заметка не сохранена. Обновите список и попробуйте снова.');
                     this.busy.set(false);
                 }
             });
@@ -124,7 +153,7 @@ export class CapturePageComponent {
                     const memberKey = result.publication.changes[0]?.memberKey;
                     const ordinal = result.publication.changes[0]?.ordinal;
                     if (memberKey === undefined || ordinal === null || ordinal === undefined) {
-                        this.error.set('Сервер вернул неполный результат.');
+                        this.error.set('Не удалось открыть созданный материал. Обновите список и попробуйте снова.');
                         this.recovery.set('reload');
                         this.busy.set(false);
                         return;
@@ -138,8 +167,8 @@ export class CapturePageComponent {
                     if (!uncertain) this.pendingConversion = null;
                     this.recovery.set(uncertain ? 'retry' : 'reload');
                     this.error.set(uncertain
-                        ? 'Преобразование не подтверждено. Безопасно повторите ту же команду.'
-                        : 'Колода или заметка изменилась. Обновите серверные данные.');
+                        ? 'Не удалось проверить результат. Попробуйте ещё раз.'
+                        : 'Колода или заметка изменилась. Обновите страницу и попробуйте снова.');
                     this.busy.set(false);
                 }
             });
@@ -149,6 +178,24 @@ export class CapturePageComponent {
         if (this.pendingConversion !== null) this.convert(this.pendingConversion.note, true);
         else if (this.pendingCapture !== null) this.capture(true);
         else this.load();
+    }
+
+    deleteNote(note: CaptureNote): void {
+        if (this.busy() || this.recovery() === 'retry') return;
+        this.busy.set(true);
+        this.error.set(null);
+        this.api.deleteCapture(note).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+            next: () => {
+                this.notes.update(notes => notes.filter(item => item.noteId !== note.noteId));
+                this.total.update(total => Math.max(0, total - 1));
+                this.busy.set(false);
+            },
+            error: () => {
+                this.error.set('Не удалось убрать заметку. Обновите список и попробуйте снова.');
+                this.recovery.set('reload');
+                this.busy.set(false);
+            }
+        });
     }
 }
 

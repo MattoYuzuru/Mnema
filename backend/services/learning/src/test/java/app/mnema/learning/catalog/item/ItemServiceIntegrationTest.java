@@ -59,6 +59,19 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void materialListsProjectFirstTextAndReuseTheImmutableRevisionPreview() {
+        UUID actor = UUID.randomUUID(); UUID deck = createDeck(actor);
+        service.publish(actor, deck, 0, create(UUID.randomUUID(), decks.read(actor, deck), nativeDocument, null));
+        var first = service.list(actor, deck, "20", null).path("items").get(0);
+        assertThat(first.path("title").textValue()).isEqualTo("Память, письмо и проверяемые знания");
+        assertThat(first.has("document")).isFalse();
+        assertThat(service.list(actor, deck, "20", null).path("items").get(0).path("title"))
+                .isEqualTo(first.path("title"));
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.item_preview WHERE deck_id=:deck")
+                .param("deck", deck).query(Integer.class).single()).isEqualTo(1);
+    }
+
+    @Test
     void publicationPinsOnlySupportedOwnedMediaInTheSameTransaction() {
         UUID actor = UUID.randomUUID();
         UUID deck = createDeck(actor);
@@ -218,6 +231,79 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
         assertThat(jdbc.sql("SELECT pin_id,root_id,owner_kind,owner_id,expires_at FROM app_learning.storage_pin "
                         + "WHERE pin_kind='staging' AND actor_id=:actor ORDER BY pin_id")
                 .param("actor", actor).query().listOfRows()).isEmpty();
+    }
+
+    @Test
+    void singleDeleteChecksOwnerAndSnapshotAndReplaysAfterRemovingTheCurrentMember() {
+        UUID actor = UUID.randomUUID(); UUID deck = createDeck(actor);
+        var created = service.publish(actor, deck, 0,
+                create(UUID.randomUUID(), decks.read(actor, deck), nativeDocument, null));
+        JsonNode item = created.acknowledgement().path("changes").get(0);
+        UUID member = UUID.fromString(item.path("memberKey").asText());
+        UUID revision = UUID.fromString(item.path("itemRevisionId").asText());
+        JsonNode snapshot = decks.read(actor, deck); UUID commandId = UUID.randomUUID();
+        ArrayNode changes = JSON.createArrayNode().add(change("delete", member, revision, 0, null, null));
+        ItemPublicationCommand command = bulk(commandId, snapshot, changes);
+        assertThatThrownBy(() -> service.publish(UUID.randomUUID(), deck, 1, command))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> service.publish(actor, deck, 0, command))
+                .isInstanceOf(VersionConflictException.class);
+        assertThatThrownBy(() -> service.publish(actor, deck, 1, bulk(UUID.randomUUID(), snapshot,
+                JSON.createArrayNode().add(change("delete", member, revision, 1, null, null)))))
+                .isInstanceOf(VersionConflictException.class);
+        assertThatThrownBy(() -> service.publish(actor, deck, 1, bulk(UUID.randomUUID(), snapshot,
+                JSON.createArrayNode().add(change("delete", member, UUID.randomUUID(), 0, null, null)))))
+                .isInstanceOf(VersionConflictException.class);
+        assertThat(service.list(actor, deck, null, null).path("items")).hasSize(1);
+        var result = service.publish(actor, deck, 1, command);
+        assertThat(result.replayed()).isFalse();
+        assertThat(result.acknowledgement().path("memberCount").asInt()).isZero();
+        assertThat(result.acknowledgement().path("changes").get(0).path("itemRevisionId").isNull()).isTrue();
+        assertThat(result.acknowledgement().path("changes").get(0).path("ordinal").isNull()).isTrue();
+        var replay = service.publish(actor, deck, 1, command);
+        assertThat(replay.replayed()).isTrue();
+        assertThat(replay.acknowledgement()).isEqualTo(result.acknowledgement());
+        assertThatThrownBy(() -> service.publish(UUID.randomUUID(), deck, 1, command))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> service.publish(actor, deck, 0, command))
+                .isInstanceOf(IdempotencyConflictException.class);
+        assertThat(service.list(actor, deck, null, null).path("items")).isEmpty();
+        assertNative(service.read(actor, deck, member, revision).path("document"), nativeDocument);
+        assertThat(count("deck_revision", "deck_id", deck)).isEqualTo(3);
+    }
+
+    @Test
+    void directCurrentOrdinalUsesCountedSnapshotAcrossMovesDeletesAndContentRevisions() {
+        UUID actor = UUID.randomUUID(); UUID deck = createDeck(actor);
+        ArrayNode creates = JSON.createArrayNode(); List<UUID> members = new ArrayList<>();
+        for (int index = 0; index < 40; index++) {
+            UUID member = UUID.randomUUID(); members.add(member);
+            creates.add(change("create", member, null, null, nativeDocument, null));
+        }
+        var created = service.publish(actor, deck, 0, bulk(UUID.randomUUID(), decks.read(actor, deck), creates));
+        UUID selected = members.get(20);
+        UUID revision = UUID.fromString(created.acknowledgement().path("changes").get(20).path("itemRevisionId").asText());
+        assertThat(service.read(actor, deck, selected, null).path("ordinal").asInt()).isEqualTo(20);
+        ItemRepository.DeckHead initial = repository.deck(actor, deck).orElseThrow();
+        service.publish(actor, deck, 1, bulk(UUID.randomUUID(), decks.read(actor, deck),
+                JSON.createArrayNode().add(change("reorder", selected, revision, 20, null, 2))));
+        assertThat(service.read(actor, deck, selected, null).path("ordinal").asInt()).isEqualTo(2);
+        UUID firstRevision = UUID.fromString(created.acknowledgement().path("changes").get(0).path("itemRevisionId").asText());
+        service.publish(actor, deck, 2, bulk(UUID.randomUUID(), decks.read(actor, deck),
+                JSON.createArrayNode().add(change("delete", members.get(0), firstRevision, 0, null, null))));
+        JsonNode direct = service.read(actor, deck, selected, null);
+        assertThat(direct.path("ordinal").asInt()).isEqualTo(1);
+        assertThat(direct.path("deckVersion").asText()).isEqualTo("3");
+        assertThat(service.read(actor, deck, selected, revision).path("ordinal").asInt()).isEqualTo(20);
+        assertThat(repository.currentOrdinal(initial, repository.headItem(actor, deck, selected).orElseThrow())).contains(20);
+        ObjectNode changed = nativeDocument.deepCopy();
+        ((ObjectNode) changed.path("root").path("content").get(0).path("content").get(0).path("attrs"))
+                .put("text", "Current content changed");
+        service.publish(actor, deck, 3, bulk(UUID.randomUUID(), decks.read(actor, deck),
+                JSON.createArrayNode().add(change("save", selected, revision, 1, changed, null))));
+        assertThat(repository.currentOrdinal(initial, repository.headItem(actor, deck, selected).orElseThrow())).isEmpty();
+        assertThat(service.read(actor, deck, selected, null).path("ordinal").asInt()).isEqualTo(1);
+        assertThat(count("item_preview", "deck_id", deck)).isZero();
     }
 
     @Test

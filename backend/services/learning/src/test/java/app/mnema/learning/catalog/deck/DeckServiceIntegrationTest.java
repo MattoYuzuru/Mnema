@@ -68,6 +68,22 @@ class DeckServiceIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void tombstoneHidesDeckWithoutBreakingImmutableHistory() {
+        UUID actor = UUID.randomUUID();
+        UUID deck = id(service.create(actor, command("Удалить")));
+        assertThatThrownBy(() -> service.delete(actor, deck, 1)).isInstanceOf(VersionConflictException.class);
+        assertThatThrownBy(() -> service.delete(UUID.randomUUID(), deck, 0))
+                .isInstanceOf(ResourceNotFoundException.class);
+        service.delete(actor, deck, 0);
+        assertThat(service.list(actor, null, null).path("items").toString()).doesNotContain(deck.toString());
+        assertThatThrownBy(() -> service.read(actor, deck)).isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> service.delete(actor, deck, 0)).isInstanceOf(ResourceNotFoundException.class);
+        assertThat(jdbc.sql("SELECT deleted_at IS NOT NULL FROM app_learning.deck WHERE deck_id=:deck")
+                .param("deck", deck).query(Boolean.class).single()).isTrue();
+        assertThat(count("deck_revision", "deck_id", deck)).isOne();
+    }
+
+    @Test
     void replaysOriginalAcknowledgementAfterNewerPublicationButNeverBypassesCurrentAcl() {
         UUID actor = UUID.randomUUID();
         UUID deck = id(service.create(actor, command("create")));

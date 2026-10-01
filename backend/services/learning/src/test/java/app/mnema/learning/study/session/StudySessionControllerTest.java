@@ -85,4 +85,34 @@ class StudySessionControllerTest {
                 .andExpect(status().isBadRequest());
         verifyNoInteractions(service);
     }
+
+    @Test
+    void hintAndTranscriptRoutesAreStrictPrivateCommands() throws Exception {
+        UUID presentation = UUID.randomUUID();
+        UUID blank = UUID.randomUUID();
+        ObjectNode hint = JSON.createObjectNode().put("presentationId", presentation.toString())
+                .put("blankId", blank.toString()).put("firstLetter", "m");
+        when(service.revealHint(eq(actor), eq(deck), eq(session), eq(presentation), any())).thenReturn(hint);
+        String url = "/api/decks/" + deck + "/study-sessions/" + session + "/presentations/" + presentation + "/hints";
+        mvc.perform(post(url).contextPath("/api").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"nonce\":\"1234567890123456\",\"blankId\":\"" + blank + "\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.firstLetter").value("m"))
+                .andExpect(header().string("Cache-Control", "private, no-store"));
+        for (String body : new String[] {"{}", "{\"nonce\":\"short\",\"blankId\":\"" + blank + "\"}",
+                "{\"nonce\":\"1234567890123456\",\"blankId\":\"bad\"}",
+                "{\"nonce\":\"1234567890123456\",\"blankId\":\"" + blank.toString().toUpperCase() + "\"}",
+                "{\"nonce\":\"1234567890123456\",\"blankId\":\"" + blank + "\",\"hintsUsed\":1}",
+                "{\"nonce\":\"1234567890123456\"}", "[]", "{"}) {
+            mvc.perform(post("/decks/" + deck + "/study-sessions/" + session + "/presentations/" + presentation + "/hints")
+                            .contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isBadRequest());
+        }
+        mvc.perform(post("/decks/" + deck + "/study-sessions/bad/presentations/" + presentation + "/hints")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"nonce\":\"1234567890123456\",\"blankId\":\"" + blank + "\"}"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(post("/decks/" + deck + "/study-sessions/" + session + "/presentations/" + presentation + "/transcript")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"nonce\":\"short\"}"))
+                .andExpect(status().isBadRequest());
+    }
 }

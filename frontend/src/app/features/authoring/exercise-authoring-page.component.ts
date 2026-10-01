@@ -5,46 +5,57 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 
+import {
+    ExerciseSpec, LIMITS, MECHANICS, Mechanic, ObjectiveCommand, authoringSlots, isBlank
+} from '../../content/exercise/exercise-content.models';
 import { NativeMediaSurfaceComponent } from '../../content/rendering/native-media-surface.component';
+import { MnemaSelectComponent, MnemaSelectOption } from '../../core/controls/mnema-select.component';
+import { HoldToDeleteButtonComponent } from '../../shared/hold-to-delete-button.component';
 import { OwnDeck } from '../own-decks/own-deck.models';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
-import { newCommandId } from './authoring.models';
+import { AuthoringProtocolError, ItemDetail, newCommandId } from './authoring.models';
+import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService, LearningCapabilities } from './capabilities-api.service';
 import { ExerciseApiService } from './exercise-api.service';
 import {
-    AnswerContract, ExerciseDetail, ExerciseObjective, ExercisePage, ExerciseProjection, ExerciseType,
-    ExerciseWriteResult, textProjections
+    ChoiceDraft, ClozeDraft, DraftErrors, ExerciseDrafts, FreeResponseDraft, MatchDraft, SelfCheckDraft, SlotContext,
+    buildSpec, draftsFromDetail, emptyDrafts, materialText, validateDraft
+} from './exercise-draft';
+import { ExercisePreviewComponent } from './exercise-preview.component';
+import {
+    ExerciseDetail, ExerciseObjective, ExercisePage, ExerciseWriteResult, textProjections
 } from './exercise.models';
 import { ItemApiService } from './item-api.service';
-import { ItemDetail } from './authoring.models';
-import { NativeMediaUploadComponent } from './native-media-upload.component';
-import { NativeMediaKind } from './native-media-upload.api';
+import {
+    ChoiceEditorComponent, ClozeEditorComponent, FreeResponseEditorComponent, MatchEditorComponent, SelfCheckEditorComponent
+} from './mechanic-editors';
 
 type Phase = 'loading' | 'ready' | 'saving' | 'saved' | 'conflict' | 'rejected' | 'error';
 type ObjectiveMode = 'create' | 'reuse' | 'revise';
-type PromptMode = 'node' | 'custom';
 
 interface PendingWrite {
     readonly commandId: string;
-    readonly objective: Record<string, unknown>;
-    readonly exercise: Record<string, unknown>;
+    readonly objective: ObjectiveCommand;
+    readonly exercise: ExerciseSpec;
 }
 
-interface MatchRow {
-    readonly cueId: string;
-    readonly assetId: string;
-    readonly title: string;
-    readonly transcript: string;
-    readonly optionNodeId: string;
-}
+const MECHANIC_NAMES: Readonly<Record<Mechanic, { readonly name: string; readonly example: string }>> = {
+    SELF_CHECK: { name: 'Вспомнить и сверить', example: 'Вспомните ответ, откройте эталон и честно оцените себя.' },
+    FREE_RESPONSE: { name: 'Ввести ответ', example: 'Напишите ответ; подойдёт любая из допустимых формулировок.' },
+    CLOZE: { name: 'Заполнить пропуски', example: 'Вставьте пропуски в текст или код.' },
+    CHOICE: { name: 'Выбрать ответ', example: 'Один или несколько правильных вариантов.' },
+    MATCH: { name: 'Соединить пары', example: 'Сопоставьте слова, записи, картинки или видео.' }
+};
 
 @Component({
     selector: 'app-exercise-authoring-page',
-    imports: [RouterLink, NativeMediaSurfaceComponent, NativeMediaUploadComponent],
+    imports: [RouterLink, NativeMediaSurfaceComponent, MnemaSelectComponent, HoldToDeleteButtonComponent, ExercisePreviewComponent,
+        SelfCheckEditorComponent, FreeResponseEditorComponent, ClozeEditorComponent, ChoiceEditorComponent, MatchEditorComponent],
     templateUrl: './exercise-authoring-page.component.html',
     styleUrl: './exercise-authoring-page.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ExerciseAuthoringPageComponent {
+    readonly mechanics = MECHANICS;
     readonly deck = signal<OwnDeck | null>(null);
     readonly item = signal<ItemDetail | null>(null);
     readonly exercise = signal<ExerciseDetail | null>(null);
@@ -52,39 +63,47 @@ export class ExerciseAuthoringPageComponent {
     readonly phase = signal<Phase>('loading');
     readonly dirty = signal(false);
     readonly message = signal<string | null>(null);
-    readonly fieldErrors = signal<Record<string, string>>({});
+    readonly fieldErrors = signal<DraftErrors>({});
+    /** Set after the first failed save so untouched new blocks are not flagged while the author is still typing. */
+    readonly showProblems = signal(false);
+    readonly capabilities = signal<LearningCapabilities>(CAPABILITIES_UNAVAILABLE);
 
-    readonly type = signal<ExerciseType>('TYPED');
+    readonly type = signal<Mechanic>('FREE_RESPONSE');
     readonly enabled = signal(true);
-    readonly promptMode = signal<PromptMode>('node');
-    readonly promptNodeId = signal<string | null>(null);
-    readonly customPrompt = signal('');
-    readonly answerNodeId = signal<string | null>(null);
-    readonly aliasesText = signal('');
-    readonly optionNodeIds = signal<readonly string[]>([]);
-    readonly audioAssetId = signal('');
-    readonly audioTitle = signal('');
-    readonly audioInstruction = signal('');
-    readonly audioTranscript = signal('');
-    readonly matchRows = signal<readonly MatchRow[]>([newMatchRow(), newMatchRow()]);
-    readonly audioTargetIndex = signal(0);
+    readonly drafts = signal<ExerciseDrafts>(emptyDrafts());
     readonly objectiveMode = signal<ObjectiveMode>('create');
     readonly selectedObjectiveId = signal<string | null>(null);
+    readonly objectiveTitle = signal('');
+    private readonly titleEdited = signal(false);
 
     readonly projections = computed(() => this.item() === null ? [] : textProjections(this.item()!.document));
+    readonly context = computed<SlotContext | null>(() => {
+        const item = this.item();
+        return item === null ? null : { document: item.document, memberKey: item.memberKey,
+            itemRevisionId: item.itemRevisionId, projections: this.projections() };
+    });
     readonly objectives = computed(() => uniqueObjectives(this.page()?.exercises.map(value => value.objective) ?? []));
+    readonly objectiveOptions = computed<readonly MnemaSelectOption[]>(() => [
+        { value: '', label: 'Выберите цель' },
+        ...this.objectives().map(objective => ({ value: objective.objectiveId, label: objective.title }))
+    ]);
     readonly selectedObjective = computed(() => this.objectives()
         .find(value => value.objectiveId === this.selectedObjectiveId()) ?? null);
-    readonly previewPrompt = computed(() => this.isListening() ? this.audioInstruction().trim() || 'Прослушайте запись'
-        : this.promptMode() === 'custom'
-        ? this.customPrompt().trim() : this.projection(this.promptNodeId())?.text ?? 'Выберите фрагмент вопроса');
-    readonly previewAnswer = computed(() => this.projection(this.answerNodeId())?.text ?? 'Выберите проверяемый ответ');
+    /** First line of the question: a sensible default name for a new learning objective. */
+    readonly suggestedTitle = computed(() => suggestTitle(this.type(), this.drafts(), this.context()));
+    readonly effectiveTitle = computed(() => {
+        if (this.titleEdited()) return this.objectiveTitle();
+        return this.objectiveMode() === 'create' ? this.suggestedTitle() : this.selectedObjective()?.title ?? '';
+    });
+    readonly errorSummary = computed(() => Object.values(this.fieldErrors()).filter((text): text is string => text !== undefined));
     readonly staleProjection = computed(() => {
         const detail = this.exercise();
         const item = this.item();
-        if (detail === null || item === null) return false;
-        return detail.bindings.some(binding => binding.memberKey === item.memberKey
-            && binding.itemRevisionId !== item.itemRevisionId);
+        if (item === null) return false;
+        const stale = (revision: string) => revision !== item.itemRevisionId;
+        return (detail !== null && stale(detail.subject.itemRevisionId))
+            || authoringSlots(buildSpec(this.type(), this.drafts(), { memberKey: item.memberKey, itemRevisionId: item.itemRevisionId }, true))
+                .flat().some(block => block.kind === 'MATERIAL' && block.memberKey === item.memberKey && stale(block.itemRevisionId));
     });
 
     private readonly route = inject(ActivatedRoute);
@@ -93,10 +112,18 @@ export class ExerciseAuthoringPageComponent {
     private readonly decks = inject(OwnDecksApiService);
     private readonly items = inject(ItemApiService);
     private readonly exercises = inject(ExerciseApiService);
+    private readonly capabilityApi = inject(CapabilitiesApiService);
     private readonly destroyRef = inject(DestroyRef);
     private pending: PendingWrite | null = null;
 
-    constructor() { this.load(); }
+    constructor() {
+        this.load();
+        // Fail closed: until the server answers, AI and speech are unavailable.
+        this.capabilityApi.read().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+            next: value => this.capabilities.set(value),
+            error: () => this.capabilities.set(CAPABILITIES_UNAVAILABLE)
+        });
+    }
 
     load(): void {
         const deckId = this.route.snapshot.paramMap.get('deckId');
@@ -147,106 +174,57 @@ export class ExerciseAuthoringPageComponent {
             });
     }
 
-    setType(value: ExerciseType): void {
-        if (value === 'AUDIO_TEXT_MATCH' && this.type() !== value) {
-            this.objectiveMode.set('create');
-            this.selectedObjectiveId.set(null);
-        }
-        this.type.set(value); this.changed();
-    }
+    /** Switching only changes which draft is shown: everything typed for the other mechanics is kept. */
+    setType(value: Mechanic): void { this.type.set(value); this.changed(); }
     setEnabled(value: boolean): void { this.enabled.set(value); this.changed(); }
-    setPromptMode(value: PromptMode): void { this.promptMode.set(value); this.changed(); }
-    setPromptNode(value: string): void { this.promptNodeId.set(value); this.changed(); }
-    setCustomPrompt(value: string): void { this.customPrompt.set(value); this.changed(); }
-    setAnswerNode(value: string): void {
-        const previous = this.answerNodeId();
-        this.answerNodeId.set(value);
-        if (this.type() === 'SINGLE_CHOICE' || this.type() === 'LISTEN_CHOICE') {
-            this.optionNodeIds.update(options => [...new Set(options.filter(id => id !== previous).concat(value))]);
-        } else if (this.type() === 'AUDIO_TEXT_MATCH' && this.matchRows()[0].optionNodeId === '') {
-            this.matchRows.update(rows => rows.map((row, index) => index === 0
-                ? { ...row, optionNodeId: value } : row));
-        }
-        const projection = this.projection(value);
-        if (projection !== null && this.objectiveMode() !== 'reuse') this.aliasesText.set(projection.text);
-        this.changed();
-    }
-    setAliases(value: string): void { this.aliasesText.set(value); this.changed(); }
-    isListening(): boolean { return this.type() === 'LISTEN_CHOICE' || this.type() === 'LISTEN_TYPE'
-        || this.type() === 'AUDIO_TEXT_MATCH'; }
-    setAudio(field: 'assetId' | 'title' | 'instruction' | 'transcript', value: string): void {
-        ({ assetId: this.audioAssetId, title: this.audioTitle, instruction: this.audioInstruction,
-            transcript: this.audioTranscript })[field].set(value);
-        this.changed();
-    }
-    setMatchRow(index: number, field: 'assetId' | 'title' | 'transcript' | 'optionNodeId', value: string): void {
-        this.matchRows.update(rows => rows.map((row, position) => position === index ? { ...row, [field]: value } : row));
-        this.changed();
-    }
-    selectAudioTarget(index: number): void { this.audioTargetIndex.set(index); }
-    chooseUploadedAudio(selection: { kind: NativeMediaKind; assetId: string }): void {
-        if (selection.kind !== 'audio') {
-            this.message.set('Для аудирования выберите аудиофайл или запись с микрофона.');
-            return;
-        }
-        if (this.type() === 'AUDIO_TEXT_MATCH') {
-            const index = Math.min(this.audioTargetIndex(), this.matchRows().length - 1);
-            this.setMatchRow(index, 'assetId', selection.assetId);
-            if (!this.matchRows()[index].title.trim()) this.setMatchRow(index, 'title', `Запись ${index + 1}`);
-        } else {
-            this.setAudio('assetId', selection.assetId);
-            if (!this.audioTitle().trim()) this.setAudio('title', 'Аудиозапись');
-        }
-        this.message.set('Аудио привязано к упражнению. Сохраните редакцию, чтобы закрепить связь.');
-    }
-    addMatchRow(): void {
-        if (this.matchRows().length < 6) { this.matchRows.update(rows => [...rows, newMatchRow()]); this.changed(); }
-    }
-    removeMatchRow(index: number): void {
-        if (this.matchRows().length > 2) { this.matchRows.update(rows => rows.filter((_, position) => position !== index));
-            this.changed(); }
-    }
+
+    setSelfCheck(draft: SelfCheckDraft): void { this.setDraft('SELF_CHECK', draft); }
+    setFreeResponse(draft: FreeResponseDraft): void { this.setDraft('FREE_RESPONSE', draft); }
+    setCloze(draft: ClozeDraft): void { this.setDraft('CLOZE', draft); }
+    setChoice(draft: ChoiceDraft): void { this.setDraft('CHOICE', draft); }
+    setMatch(draft: MatchDraft): void { this.setDraft('MATCH', draft); }
 
     setObjectiveMode(value: ObjectiveMode): void {
         this.objectiveMode.set(value);
-        if (value === 'reuse' || value === 'revise') {
+        if (value !== 'create') {
             const selected = this.selectedObjective() ?? this.objectives()[0] ?? null;
             this.selectedObjectiveId.set(selected?.objectiveId ?? null);
-            if (selected?.answerContract.schemaVersion === 1) this.aliasesText.set(selected.answerContract.accepted.join('\n'));
         }
         this.changed();
     }
 
     selectObjective(value: string): void {
-        this.selectedObjectiveId.set(value);
-        const selected = this.objectives().find(objective => objective.objectiveId === value);
-        if (selected?.answerContract.schemaVersion === 1) this.aliasesText.set(selected.answerContract.accepted.join('\n'));
+        this.selectedObjectiveId.set(value === '' ? null : value);
+        this.titleEdited.set(false);
         this.changed();
     }
 
-    toggleOption(nodeId: string, checked: boolean): void {
-        this.optionNodeIds.update(values => checked
-            ? [...new Set([...values, nodeId])] : values.filter(value => value !== nodeId));
+    setObjectiveTitle(value: string): void {
+        this.objectiveTitle.set(value);
+        this.titleEdited.set(true);
         this.changed();
     }
 
     save(retry = false): void {
         const deck = this.deck();
         const item = this.item();
+        const context = this.context();
         const current = this.exercise();
-        if (deck === null || item === null || this.phase() === 'saving') return;
+        if (deck === null || item === null || context === null || this.phase() === 'saving') return;
         let pending = retry ? this.pending : null;
         if (pending === null) {
-            const errors = this.validate();
+            const errors = this.validate(context);
             this.fieldErrors.set(errors);
+            this.showProblems.set(true);
             if (Object.keys(errors).length > 0) {
                 this.phase.set('rejected');
                 this.message.set('Исправьте отмеченные поля. Введённые данные сохранены в этой вкладке.');
-                queueMicrotask(() => this.focusFirstError());
+                queueMicrotask(() => this.focusErrors());
                 return;
             }
-            const exercise = this.exercisePayload(item);
-            pending = { commandId: newCommandId(), objective: this.objectivePayload(exercise), exercise };
+            const exercise = buildSpec(this.type(), this.drafts(), { memberKey: item.memberKey, itemRevisionId: item.itemRevisionId },
+                this.enabled());
+            pending = { commandId: newCommandId(), objective: this.objectiveCommand(), exercise };
             this.pending = pending;
         }
         this.phase.set('saving');
@@ -267,64 +245,58 @@ export class ExerciseAuthoringPageComponent {
         else this.save(true);
     }
 
+    resetChanges(): void {
+        const deck = this.deck(); const item = this.item(); const page = this.page(); const detail = this.exercise();
+        if (!this.dirty() || this.phase() === 'saving' || !deck || !item || !page || !detail) return;
+        this.openExisting(deck, item, page, detail);
+        this.phase.set('ready'); this.message.set('Изменения отменены.'); this.fieldErrors.set({});
+    }
+
+    deleteExercise(): void {
+        const deck = this.deck(); const detail = this.exercise();
+        if (!deck || !detail || this.phase() === 'saving') return;
+        this.phase.set('saving'); this.message.set(null);
+        this.exercises.delete(deck.deckId, detail.exerciseId, deck.rowVersion)
+            .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+                next: () => { this.dirty.set(false); void this.router.navigate(['/decks', deck.deckId, 'materials', detail.objective.memberKey]); },
+                error: error => {
+                    const response = error instanceof HttpErrorResponse ? error : null;
+                    this.phase.set(response?.status === 409 || response?.status === 412 ? 'conflict' : 'error');
+                    this.message.set(response?.status === 409 || response?.status === 412
+                        ? 'Упражнение изменилось. Загрузите его снова перед удалением.'
+                        : 'Не удалось удалить упражнение. Попробуйте ещё раз.');
+                }
+            });
+    }
+
     canLeave(): boolean {
         return !this.dirty() || window.confirm('Уйти и потерять неподтверждённые настройки упражнения?');
     }
 
-    exerciseName(type: ExerciseType): string {
-        const names: Record<ExerciseType, string> = { SELF_CHECK: 'Вспомнить и сверить', TYPED: 'Ввести ответ', CLOZE_SINGLE: 'Заполнить пропуск',
-            SINGLE_CHOICE: 'Выбрать один вариант', LISTEN_CHOICE: 'Аудирование · выбор',
-            AUDIO_TEXT_MATCH: 'Аудирование · пары', LISTEN_TYPE: 'Аудирование · написать' };
-        return names[type];
-    }
+    mechanicName(type: Mechanic): string { return MECHANIC_NAMES[type].name; }
+    mechanicExample(type: Mechanic): string { return MECHANIC_NAMES[type].example; }
 
-    objectiveName(objective: ExerciseObjective): string {
-        return objective.answerContract.schemaVersion === 1 ? objective.answerContract.accepted[0] ?? 'Цель без подписи'
-            : 'Соотнесение записей и текста';
-    }
-
-    projection(id: string | null): ExerciseProjection | null {
-        return this.projections().find(value => value.nodeId === id) ?? null;
+    private setDraft<T extends Mechanic>(type: T, draft: ExerciseDrafts[T]): void {
+        this.drafts.update(current => ({ ...current, [type]: draft }));
+        this.changed();
     }
 
     private openNew(deck: OwnDeck, item: ItemDetail, page: ExercisePage): void {
         this.deck.set(deck); this.item.set(item); this.page.set(page); this.exercise.set(null);
-        this.type.set('TYPED'); this.enabled.set(true); this.promptMode.set('node');
-        this.promptNodeId.set(null); this.customPrompt.set(''); this.answerNodeId.set(null);
-        this.aliasesText.set(''); this.optionNodeIds.set([]); this.objectiveMode.set('create');
-        this.audioAssetId.set(''); this.audioTitle.set(''); this.audioInstruction.set(''); this.audioTranscript.set('');
-        this.matchRows.set([newMatchRow(), newMatchRow()]);
-        this.selectedObjectiveId.set(null); this.pending = null; this.dirty.set(false); this.phase.set('ready');
+        this.type.set('FREE_RESPONSE'); this.enabled.set(true); this.drafts.set(emptyDrafts());
+        this.objectiveMode.set('create'); this.selectedObjectiveId.set(null);
+        this.objectiveTitle.set(''); this.titleEdited.set(false);
+        this.pending = null; this.dirty.set(false); this.showProblems.set(false); this.phase.set('ready');
     }
 
     private openExisting(deck: OwnDeck, item: ItemDetail, page: ExercisePage, detail: ExerciseDetail): void {
         this.deck.set(deck); this.item.set(item); this.page.set(page); this.exercise.set(detail);
-        this.type.set(detail.type); this.enabled.set(detail.enabled);
-        if (detail.prompt.kind === 'AUDIO_ASSET') {
-            this.audioAssetId.set(detail.prompt.assetId); this.audioTitle.set(detail.prompt.title);
-            this.audioInstruction.set(detail.prompt.instruction); this.audioTranscript.set(detail.prompt.transcript);
-        } else if (detail.prompt.kind === 'AUDIO_MATCH') {
-            this.audioInstruction.set(detail.prompt.instruction);
-            const pairs = detail.objective.answerContract.schemaVersion === 2 ? detail.objective.answerContract.pairs : [];
-            this.matchRows.set(detail.prompt.cues.map(cue => ({ ...cue, optionNodeId: detail.bindings
-                .find(binding => binding.bindingId === pairs.find(pair => pair.cueId === cue.cueId)?.optionId)
-                ?.nodeIds[0] ?? '' })));
-        } else if (detail.prompt.kind === 'CUSTOM_TEXT') {
-            this.promptMode.set('custom'); this.customPrompt.set(detail.prompt.text); this.promptNodeId.set(null);
-        } else {
-            this.promptMode.set('node'); this.promptNodeId.set(detail.prompt.nodeId); this.customPrompt.set('');
-        }
-        const assessed = detail.bindings.find(binding => binding.role === 'ASSESSED');
-        this.answerNodeId.set(assessed?.nodeIds[0] ?? null);
-        this.optionNodeIds.set(detail.bindings.filter(binding => binding.role === 'OPTION')
-            .flatMap(binding => binding.nodeIds));
-        this.aliasesText.set(detail.objective.answerContract.schemaVersion === 1
-            ? detail.objective.answerContract.accepted.join('\n') : '');
-        this.objectiveMode.set(detail.type === 'AUDIO_TEXT_MATCH' ? 'revise' : 'reuse');
-        this.selectedObjectiveId.set(detail.objective.objectiveId);
-        this.pending = null; this.dirty.set(false); this.phase.set('ready');
+        this.type.set(detail.type); this.enabled.set(detail.enabled); this.drafts.set(draftsFromDetail(detail));
+        this.objectiveMode.set('reuse'); this.selectedObjectiveId.set(detail.objective.objectiveId);
+        this.objectiveTitle.set(detail.objective.title); this.titleEdited.set(false);
+        this.pending = null; this.dirty.set(false); this.showProblems.set(false); this.phase.set('ready');
         if (this.route.snapshot.queryParamMap.get('saved') === '1') {
-            this.phase.set('saved'); this.message.set('Упражнение подтверждено сервером.');
+            this.phase.set('saved'); this.message.set('Упражнение сохранено.');
         }
     }
 
@@ -333,135 +305,41 @@ export class ExerciseAuthoringPageComponent {
         if (this.phase() !== 'loading' && this.phase() !== 'saving') this.phase.set('ready');
     }
 
-    private validate(): Record<string, string> {
-        const errors: Record<string, string> = {};
-        if (this.isListening()) {
-            if (!this.audioInstruction().trim() || [...this.audioInstruction()].length > 80) {
-                errors['prompt'] = 'Добавьте инструкцию до 80 символов.';
+    private validate(context: SlotContext): DraftErrors {
+        const errors: Record<string, string | undefined> = { ...validateDraft(this.type(), this.drafts(), context) };
+        const mode = this.objectiveMode();
+        if (mode !== 'create' && this.selectedObjective() === null) errors['objective'] = 'Выберите существующую цель.';
+        const title = this.effectiveTitle();
+        if (mode !== 'reuse' && (isBlank(title) || title.length > LIMITS.objectiveTitle)) {
+            errors['objective-title'] = `Назовите цель: от 1 до ${LIMITS.objectiveTitle} знаков.`;
+        }
+        // Never send AI checking or voice input while the server reports them unavailable.
+        const spec = buildSpec(this.type(), this.drafts(), { memberKey: context.memberKey, itemRevisionId: context.itemRevisionId }, true);
+        if (spec.type === 'FREE_RESPONSE') {
+            const capabilities = this.capabilities();
+            if (spec.evaluatorPolicy.id === 'ai-semantic' && !capabilities.aiAssessment.available) {
+                errors['capability'] = 'Проверка смысла с ИИ сейчас недоступна, поэтому такое упражнение сохранить нельзя.';
             }
-            const cues = this.type() === 'AUDIO_TEXT_MATCH' ? this.matchRows() : [{ assetId: this.audioAssetId(),
-                title: this.audioTitle(), transcript: this.audioTranscript() }];
-            if (cues.some(cue => !validUuid(cue.assetId) || !cue.title.trim()
-                || new TextEncoder().encode(cue.title).length > 1024
-                || new TextEncoder().encode(cue.transcript).length > 16384)
-                || new Set(cues.map(cue => cue.assetId)).size !== cues.length) {
-                errors['audio'] = 'Укажите разные ID доступных записей, названия и допустимые транскрипты.';
-            }
-            if (this.type() === 'AUDIO_TEXT_MATCH') {
-                const rows = this.matchRows();
-                if (rows.length < 2 || rows.length > 6 || rows.some(row => this.projection(row.optionNodeId) === null)
-                    || new Set(rows.map(row => row.optionNodeId)).size !== rows.length
-                    || !rows.some(row => row.optionNodeId === this.answerNodeId())) {
-                    errors['options'] = 'Соотнесите 2–6 разных записей с разными фрагментами, включая проверяемый.';
-                }
-                if (this.objectiveMode() === 'reuse') errors['objective'] = 'Для пар создайте или обновите цель.';
-            }
-        } else {
-        const prompt = this.promptMode() === 'node' ? this.projection(this.promptNodeId()) : null;
-        if (this.promptMode() === 'node' && prompt === null) errors['prompt'] = 'Выберите актуальный фрагмент вопроса.';
-        else if (prompt !== null && [...prompt.text].length > 80) {
-            errors['prompt'] = 'Фрагмент вопроса слишком длинный; выберите короткий узел или свой текст.';
-        }
-        if (this.promptMode() === 'custom') {
-            const text = this.customPrompt().trim();
-            if (text.length === 0) errors['prompt'] = 'Введите короткий вопрос.';
-            else if ([...text].length > 80) errors['prompt'] = 'Сократите вопрос до 80 символов.';
-        }
-        }
-        const answer = this.projection(this.answerNodeId());
-        if (answer === null) errors['answer'] = 'Выберите актуальный проверяемый фрагмент.';
-        else if ([...answer.text].length > 80) errors['answer'] = 'Ответ слишком длинный; выберите более короткий фрагмент.';
-        const aliases = this.aliases();
-        if (this.type() !== 'AUDIO_TEXT_MATCH' && this.objectiveMode() !== 'reuse' && aliases.length === 0) errors['aliases'] = 'Добавьте хотя бы один допустимый ответ.';
-        if (this.type() !== 'AUDIO_TEXT_MATCH' && aliases.length > 20) errors['aliases'] = 'Допустимо не более 20 вариантов ответа.';
-        if (this.type() !== 'AUDIO_TEXT_MATCH' && aliases.some(value => new TextEncoder().encode(value).length > 512)) {
-            errors['aliases'] = 'Один из ответов слишком длинный.';
-        }
-        if (this.type() !== 'AUDIO_TEXT_MATCH' && answer !== null && this.objectiveMode() !== 'reuse'
-            && !aliases.some(value => normalized(value) === normalized(answer.text))) {
-            errors['aliases'] = 'Допустимые ответы должны включать текст выбранного правильного фрагмента.';
-        }
-        if ((this.objectiveMode() === 'reuse' || this.objectiveMode() === 'revise') && this.selectedObjective() === null) {
-            errors['objective'] = 'Выберите существующую цель.';
-        }
-        const existingAnswer = this.selectedObjective()?.answerContract;
-        if (answer !== null && this.objectiveMode() === 'reuse' && existingAnswer !== undefined
-            && (existingAnswer.schemaVersion !== 1
-                || !existingAnswer.accepted.some(value => normalized(value) === normalized(answer.text)))) {
-            errors['objective'] = 'Этот фрагмент не соответствует сохранённому ответу цели. Обновите цель или создайте отдельную.';
-        }
-        if (this.type() === 'SINGLE_CHOICE' || this.type() === 'LISTEN_CHOICE') {
-            const options = this.optionNodeIds().map(id => this.projection(id)).filter(value => value !== null);
-            if (options.length < 2 || options.length > 6) errors['options'] = 'Выберите от 2 до 6 вариантов.';
-            if (answer !== null && !options.some(value => value.nodeId === answer.nodeId)) {
-                errors['options'] = 'Правильный ответ должен входить в список вариантов.';
-            }
-            const normalized = options.map(value => value.text.normalize('NFC').trim().toLowerCase());
-            if (new Set(normalized).size !== normalized.length) errors['options'] = 'Варианты не должны повторяться.';
-            if (options.some(value => [...value.text].length > 80)) {
-                errors['options'] = 'Для варианта ответа выберите фрагмент не длиннее 80 символов.';
+            if (spec.content.responseInput === 'TEXT_OR_SPEECH' && !capabilities.speechToText.available) {
+                errors['capability'] = 'Голосовой ответ сейчас недоступен, поэтому такое упражнение сохранить нельзя.';
             }
         }
         return errors;
     }
 
-    private aliases(): readonly string[] {
-        return [...new Set(this.aliasesText().split(/\r?\n/u).map(value => value.trim()).filter(Boolean))];
-    }
-
-    private answerContract(exercise: Record<string, unknown>): AnswerContract {
-        if (this.type() === 'AUDIO_TEXT_MATCH') {
-            const bindings = exercise['bindings'] as Record<string, unknown>[];
-            return { schemaVersion: 2, pairs: this.matchRows().map((row, index) => ({ cueId: row.cueId,
-                optionId: bindings[index + 1]['bindingId'] as string })) };
-        }
-        return { schemaVersion: 1, normalization: ['UNICODE_NFC', 'TRIM', 'CASE_FOLD'], accepted: this.aliases() };
-    }
-
-    private objectivePayload(exercise: Record<string, unknown>): Record<string, unknown> {
+    private objectiveCommand(): ObjectiveCommand {
         const selected = this.selectedObjective();
-        if (this.objectiveMode() === 'reuse') return {
-            operation: 'reuse', objectiveId: selected!.objectiveId, objectiveRevisionId: selected!.objectiveRevisionId
-        };
-        if (this.objectiveMode() === 'revise') return {
-            operation: 'revise', objectiveId: selected!.objectiveId,
-            expectedObjectiveRevisionId: selected!.objectiveRevisionId, answerContract: this.answerContract(exercise)
-        };
-        return { operation: 'create', answerContract: this.answerContract(exercise) };
-    }
-
-    private exercisePayload(item: ItemDetail): Record<string, unknown> {
-        const prompt = this.type() === 'AUDIO_TEXT_MATCH'
-            ? { kind: 'AUDIO_MATCH', instruction: this.audioInstruction().trim(), cues: this.matchRows().map(row => ({
-                cueId: row.cueId, assetId: row.assetId.trim(), title: row.title.trim(), transcript: row.transcript
-            })) }
-            : this.isListening() ? { kind: 'AUDIO_ASSET', assetId: this.audioAssetId().trim(),
-                title: this.audioTitle().trim(), instruction: this.audioInstruction().trim(),
-                transcript: this.audioTranscript() }
-            : this.promptMode() === 'custom'
-            ? { kind: 'CUSTOM_TEXT', text: this.customPrompt().trim() }
-            : { kind: 'NODE_TEXT', memberKey: item.memberKey, itemRevisionId: item.itemRevisionId,
-                nodeId: this.promptNodeId()! };
-        const bindings: Record<string, unknown>[] = [{ bindingId: crypto.randomUUID(), role: 'ASSESSED',
-            memberKey: item.memberKey, itemRevisionId: item.itemRevisionId, nodeIds: [this.answerNodeId()!],
-            display: { kind: 'NODE_TEXT' }, ordinal: 0 }];
-        const optionNodes = this.type() === 'AUDIO_TEXT_MATCH' ? this.matchRows().map(row => row.optionNodeId)
-            : this.optionNodeIds();
-        if (this.type() === 'SINGLE_CHOICE' || this.type() === 'LISTEN_CHOICE'
-            || this.type() === 'AUDIO_TEXT_MATCH') optionNodes.forEach((nodeId, index) => bindings.push({
-            bindingId: crypto.randomUUID(), role: 'OPTION', memberKey: item.memberKey,
-            itemRevisionId: item.itemRevisionId, nodeIds: [nodeId], display: { kind: 'NODE_TEXT' }, ordinal: index + 1
-        }));
-        const evaluator = this.type() === 'SELF_CHECK' ? 'self-check'
-            : this.type() === 'SINGLE_CHOICE' || this.type() === 'LISTEN_CHOICE' ? 'deterministic-choice'
-            : this.type() === 'AUDIO_TEXT_MATCH' ? 'deterministic-audio-match' : 'deterministic-text';
-        return { type: this.type(), schemaVersion: 1, enabled: this.enabled(), prompt, bindings,
-            evaluatorPolicy: { id: evaluator, version: '1' } };
+        switch (this.objectiveMode()) {
+            case 'reuse': return { operation: 'reuse', objectiveId: selected!.objectiveId, objectiveRevisionId: selected!.objectiveRevisionId };
+            case 'revise': return { operation: 'revise', objectiveId: selected!.objectiveId,
+                expectedObjectiveRevisionId: selected!.objectiveRevisionId, title: this.effectiveTitle() };
+            case 'create': return { operation: 'create', title: this.effectiveTitle() };
+        }
     }
 
     private saved(result: ExerciseWriteResult): void {
         this.pending = null; this.dirty.set(false); this.phase.set('saved');
-        this.message.set('Упражнение подтверждено сервером.');
+        this.message.set('Упражнение сохранено.');
         const deck = this.deck();
         if (deck === null) return;
         void this.router.navigate(['/decks', deck.deckId, 'exercises', result.acknowledgement.exerciseId, 'edit'],
@@ -469,24 +347,37 @@ export class ExerciseAuthoringPageComponent {
     }
 
     private writeFailed(error: unknown): void {
+        if (error instanceof AuthoringProtocolError) {
+            this.pending = null;
+            this.phase.set('rejected');
+            this.message.set('Упражнение не прошло проверку формата. Проверьте все поля; введённые данные сохранены в этой вкладке.');
+            return;
+        }
         const response = error instanceof HttpErrorResponse ? error : null;
         if (response === null || response.status === 0 || response.status >= 500) {
             this.phase.set('error');
-            this.message.set('Сервер не подтвердил результат. Безопасно повторите ту же команду.');
+            this.message.set('Не удалось проверить сохранение. Повторите попытку.');
             return;
         }
         this.pending = null;
-        if (response.status === 412) {
+        const code = typeof response.error === 'object' && response.error !== null
+            ? (response.error as Record<string, unknown>)['code'] : null;
+        if (code === 'CAPABILITY_UNAVAILABLE') {
+            this.phase.set('rejected');
+            this.message.set('Эта возможность сейчас недоступна на сервере. Уберите проверку с ИИ или голосовой ввод и сохраните снова.');
+            return;
+        }
+        if (response.status === 412 || response.status === 409) {
             this.phase.set('conflict');
             this.message.set('Колода или цель изменились в другой вкладке. Ваш ввод сохранён здесь; загрузите свежую основу.');
             return;
         }
         this.phase.set('rejected');
-        this.message.set('Сервер отклонил проекцию. Проверьте актуальность фрагментов и настройки ответа.');
+        this.message.set('Не удалось сохранить упражнение. Проверьте фрагменты материала и настройки ответа.');
     }
 
-    private focusFirstError(): void {
-        this.browserDocument.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+    private focusErrors(): void {
+        this.browserDocument.querySelector<HTMLElement>('#exercise-errors')?.focus();
     }
 
     private fail(message: string): void { this.phase.set('error'); this.message.set(message); }
@@ -502,14 +393,18 @@ function uniqueObjectives(values: readonly ExerciseObjective[]): readonly Exerci
     return [...result.values()];
 }
 
-function normalized(value: string): string {
-    return value.normalize('NFC').trim().toLowerCase();
-}
-
-function newMatchRow(): MatchRow {
-    return { cueId: crypto.randomUUID(), assetId: '', title: '', transcript: '', optionNodeId: '' };
-}
-
-function validUuid(value: string): boolean {
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u.test(value.trim());
+/** First readable line of the question, at most 160 UTF-16 units and never ending inside a surrogate pair. */
+function suggestTitle(type: Mechanic, drafts: ExerciseDrafts, context: SlotContext | null): string {
+    const prompt = drafts[type].prompt;
+    let source = '';
+    for (const block of prompt) {
+        const text = block.kind === 'TEXT' ? block.text : context === null ? null : materialText(block, context);
+        if (text !== null && !isBlank(text)) { source = text; break; }
+    }
+    if (source === '' && type === 'CLOZE') source = drafts.CLOZE.texts.find(text => !isBlank(text)) ?? '';
+    const line = source.replace(/\s+/gu, ' ').trim();
+    if (line.length <= LIMITS.objectiveTitle) return line;
+    const cut = line.slice(0, LIMITS.objectiveTitle - 1);
+    const safe = /[\uD800-\uDBFF]$/u.test(cut) ? cut.slice(0, -1) : cut;
+    return `${safe}…`;
 }

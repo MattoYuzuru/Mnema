@@ -44,12 +44,32 @@ command. An exact retry returns the original acknowledgement with
 409. Fresh results include the new Deck ETag. Clients reconcile any retry with GET.
 Foreign or absent Deck/member/revision tuples share the opaque 404 boundary.
 
+Deleting one material uses the same publication route with one `delete` change.
+Its acknowledgement has `itemRevisionId: null` and `ordinal: null`; exact retries
+keep the original receipt even though the current item is no longer present.
+The material disappears from Browse and current progress. Exercises bound to any
+removed material are excluded when issuing new Scheduled/Practice presentations,
+including refill of an existing session; other materials are unaffected. Exercise
+definitions, immutable material revisions and prior study history are retained.
+Already issued presentations and explicit replay of completed sessions keep their
+pinned snapshots. Direct current-item reads include the current ordinal tied to
+the returned Deck version/revision. Clients use that complete snapshot and
+reconcile a stale response before creating a new command.
+
 The immutable counted member root is the canonical order and serves bounded Browse
 pages directly. The current SQL projection contains only the changed item heads, so
 front insert/delete/reorder never renumbers an entire Deck. `expectedOrdinal` lets
 the counted tree validate a member in logarithmic bounded work; Browse summaries
-and publication acknowledgements expose ordinals, while direct current-item reads
-return `ordinal: null` because they do not scan the tree to locate a key.
+and publication acknowledgements expose ordinals. A direct current-item read uses
+one server query rooted at the selected immutable member root to locate its key
+and exact descriptor. The bounded traversal reads membership pages/counts only;
+it never loads other item documents or preview titles and needs no client list
+scan, dense ordinal projection or new storage index. Its cost is O(member-page
+count), bounded by the 100,000-member profile; it is not an O(log N) key lookup.
+Current reads require a non-null ordinal. Historical reads retain their original
+publication ordinal (nullable), independent of later reorder/delete. If a concurrent
+save produces a descriptor outside the selected root, current read returns 412
+rather than mixing a Deck snapshot with newer item content.
 The current projection is rebuildable from the immutable member root.
 Historical item reads decode the exact content root directly; neither current nor
 historical reads replay prior revisions. A Deck metadata-only save reuses member
@@ -70,3 +90,15 @@ changes the native-v1 preservation or opaque-node rule.
 Exact examples are in `publication.json`. The full multilingual/RTL/ruby/future-node
 golden document remains `contracts/content/native-v1/valid/mixed.json` and is used
 by the PostgreSQL round-trip integration test.
+
+## Readable summaries
+
+Browse summaries include required `title`: the first nonempty heading/paragraph
+in native document order, normalized to one line and bounded to 240 Unicode code
+points. Ruby contributes its base text; opaque and media payloads contribute no
+text. An empty string means the material has no readable text. The private,
+rebuildable `item_preview` projection is keyed by Deck/member/exact revision and
+populated lazily after ownership is checked. Both Browse and Study progress use
+this projection; clients never fetch complete documents just to label a list.
+CSS ellipsis fits the available row width while preserving the full accessible
+name. Direct document reads and publication acknowledgements are unchanged.

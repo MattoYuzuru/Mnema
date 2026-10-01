@@ -32,8 +32,8 @@ Pass `--authoring --media` for the complete local media path. The runner starts
 an isolated MinIO bucket and the configured worker, drops a generated PNG, MP3
 and MP4 in the editor, waits for READY, publishes native media with Mermaid and
 a YouTube consent card, and checks loaded Browse players. It then creates a
-`LISTEN_TYPE` exercise through the UI from the uploaded audio and answers it in
-Study. It writes a full-page Browse capture and removes its local bucket and
+`FREE_RESPONSE` exercise with an audio prompt through the UI from the uploaded audio
+and answers it in Study. It writes a full-page Browse capture and removes its local bucket and
 temporary browser state. The ordinary `--authoring` mode additionally waits
 through the visible 45-second deck polling interval; `--media` checks immediate
 focus refresh and skips that long timer wait.
@@ -83,7 +83,7 @@ Two synthetic accounts and two same-profile browser tabs exercise:
   These automated checks do not claim physical-device or AT coverage.
 
 The PKCE verifier is checked against the observed S256 challenge. Network interception
-blocks page requests outside the two exact origins (plus the local MinIO origin in media mode); at most 500 page requests in the base mode, 600 in authoring or 750 in media mode, and
+blocks page requests outside the two exact origins (plus the local MinIO origin in media mode); at most 500 page requests in the base mode, 600 in authoring or 850 in media mode (allowing the local brand font and mark on repeated full navigations), and
 150 Identity requests are allowed (full SPA navigations reload several bundled assets).
 Global deadline 180 seconds (CLI 30–300), individual CDP/HTTP/readiness deadlines, 1 MiB proxy
 request/response cap, 16 MiB static asset cap. Database has a 512 MiB/two-CPU limit; each JVM

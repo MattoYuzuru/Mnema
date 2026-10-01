@@ -1,6 +1,7 @@
 package app.mnema.learning.study.progress;
 
 import app.mnema.learning.platform.api.InvalidRequestException;
+import app.mnema.learning.catalog.content.ItemPreviews;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.id.UuidPolicy;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
@@ -22,9 +23,13 @@ public class StudyProgressService {
 
     private final StudyProgressRepository repository;
 
-    public StudyProgressService(StudyProgressRepository repository) { this.repository = repository; }
+    private final ItemPreviews previews;
 
-    @Transactional(readOnly = true, timeout = 10)
+    public StudyProgressService(StudyProgressRepository repository, ItemPreviews previews) {
+        this.repository = repository; this.previews = previews;
+    }
+
+    @Transactional(timeout = 10)
     public ObjectNode read(UUID actor, UUID deck, Integer requestedLimit, String cursor) {
         UuidPolicy.requireEntityId(actor, "actor");
         UuidPolicy.requireEntityId(deck, "deckId");
@@ -42,7 +47,9 @@ public class StudyProgressService {
         page.forEach(material -> {
             ObjectNode item = items.addObject().put("memberKey", material.memberKey().toString())
                     .put("itemRevisionId", material.itemRevisionId().toString())
-                    .put("state", state(material));
+                    .put("state", state(material))
+                    .put("title", previews.title(deck, material.memberKey(), material.itemRevisionId(),
+                            material.scopeId(), material.contentRootId()));
             item.putObject("objectiveCoverage").put("enabled", material.enabled())
                     .put("introduced", material.introduced()).put("assessed", material.assessed());
             nullable(item, "lastAssessedAt", material.lastAssessedAt());

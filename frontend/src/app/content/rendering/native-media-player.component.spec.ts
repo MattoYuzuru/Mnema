@@ -40,6 +40,42 @@ describe('NativeMediaPlayerComponent', () => {
         fixture.destroy();
     });
 
+    it('changes playback speed through the custom dropdown', () => {
+        const fixture = TestBed.createComponent(NativeMediaPlayerComponent);
+        fixture.componentRef.setInput('kind', 'audio');
+        fixture.componentRef.setInput('title', 'Фраза');
+        fixture.componentRef.setInput('source', 'https://storage.example/playback.m4a');
+        fixture.detectChanges();
+
+        const trigger = fixture.nativeElement.querySelector('[role="combobox"]') as HTMLButtonElement;
+        expect(trigger.getAttribute('aria-label')).toContain('Скорость');
+        trigger.click();
+        fixture.detectChanges();
+        (fixture.nativeElement.querySelector('[role="option"]:last-child') as HTMLElement).click();
+        fixture.detectChanges();
+
+        expect(fixture.componentInstance.speed()).toBe(2);
+        expect((fixture.nativeElement.querySelector('audio') as HTMLAudioElement).playbackRate).toBe(2);
+        fixture.destroy();
+    });
+
+    it('reaches both timeline endpoints for a short fractional recording', () => {
+        const fixture = TestBed.createComponent(NativeMediaPlayerComponent);
+        fixture.componentRef.setInput('kind', 'audio'); fixture.componentRef.setInput('title', 'Короткая запись');
+        fixture.componentRef.setInput('source', '/audio.mp3'); fixture.detectChanges();
+        const media = fixture.nativeElement.querySelector('audio') as HTMLAudioElement;
+        Object.defineProperty(media, 'duration', { configurable: true, value: 2.73 });
+        media.dispatchEvent(new Event('loadedmetadata')); fixture.detectChanges();
+        const slider = fixture.nativeElement.querySelector('input[type=range]') as HTMLInputElement;
+        expect(slider.max).toBe('2.73'); expect(slider.step).toBe('any');
+        fixture.componentInstance.seek('2.73'); fixture.detectChanges();
+        expect(slider.value).toBe('2.73');
+        fixture.componentInstance.seek('0'); fixture.detectChanges(); expect(slider.value).toBe('0');
+        fixture.componentInstance.toggleMute(); fixture.detectChanges();
+        expect(fixture.nativeElement.querySelector('button[aria-label="Включить звук"] svg')).not.toBeNull();
+        fixture.destroy();
+    });
+
     it('clears a signed-source failure once renewed media loads', () => {
         const fixture = TestBed.createComponent(NativeMediaPlayerComponent);
         fixture.componentRef.setInput('kind', 'audio');

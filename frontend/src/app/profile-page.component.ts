@@ -20,7 +20,7 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
         <header>
           <p class="eyebrow">Личный кабинет</p>
           <h1 id="profile-title" tabindex="-1">Профиль</h1>
-          <p>Имя и аватар видны там, где вы делитесь материалами.</p>
+          <p>Расскажите о себе — так вас увидят другие, когда вы поделитесь материалами.</p>
         </header>
 
         @if (loading()) {
@@ -29,33 +29,35 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
           @if (showEmailWarning && !account.emailVerified) {
             <p class="notice" role="status">Почта ещё не подтверждена. Проверьте письмо для подтверждения, чтобы сохранить доступ к аккаунту.</p>
           }
-          <div class="profile-grid">
-            <section class="sheet" aria-labelledby="avatar-heading">
-              <h2 id="avatar-heading">Аватар</h2>
-              <div class="avatar-preview">
-                @if (account.avatarPresent && avatarUrl()) {
-                  <img [src]="avatarUrl()" alt="Ваш аватар" width="112" height="112" />
-                } @else {
-                  <span aria-hidden="true">{{ (account.displayName || account.profileUsername || account.email).charAt(0).toUpperCase() }}</span>
-                }
-              </div>
+          <div class="profile-layout">
+            <section class="sheet profile-sheet" aria-labelledby="details-heading">
+              <div class="profile-intro">
               <input id="avatar-file" class="file-input" type="file" accept="image/png,image/jpeg,image/webp"
                      aria-describedby="avatar-hint"
                      (change)="uploadAvatar($event)" [disabled]="avatarBusy()" />
-              <label for="avatar-file" class="file-label">Выбрать изображение</label>
-              <p id="avatar-hint" class="hint">PNG, JPEG или WebP, до 10 МБ и 1024 × 1024 пикселей.</p>
+              <label for="avatar-file" class="avatar-action" [class.is-busy]="avatarBusy()" aria-label="Изменить аватар">
+                <span class="avatar-preview">
+                  @if (account.avatarPresent && avatarUrl()) {
+                    <img [src]="avatarUrl()" alt="" width="112" height="112" draggable="false" />
+                  } @else {
+                    <span aria-hidden="true">{{ (account.displayName || account.profileUsername || account.email).charAt(0).toUpperCase() }}</span>
+                  }
+                </span>
+                <span class="avatar-overlay" aria-hidden="true"><span>✎</span>{{ account.avatarPresent ? 'Изменить' : 'Добавить фото' }}</span>
+              </label>
+              <div><h2 id="details-heading">О вас</h2><p class="email">{{ account.email }}</p><p id="avatar-hint" class="hint">Нажмите на аватар, чтобы выбрать фото. Лучше подходит квадратное изображение.</p></div>
+              </div>
               @if (avatarBusy()) { <p role="status">Сохраняем аватар…</p> }
               @if (avatarError()) { <p class="error" role="alert">{{ avatarError() }}</p> }
-            </section>
-
-            <section class="sheet" aria-labelledby="details-heading">
-              <h2 id="details-heading">О вас</h2>
-              <p class="email">{{ account.email }}</p>
               <form [formGroup]="form" (ngSubmit)="save()">
                 <label for="profile-username">Имя пользователя</label>
                 <input id="profile-username" formControlName="profileUsername" autocomplete="nickname"
-                       aria-describedby="username-hint" />
-                <p id="username-hint" class="hint">3–50 символов: латинские буквы, цифры, точка, дефис или подчёркивание.</p>
+                       [attr.aria-describedby]="form.controls.profileUsername.touched && form.controls.profileUsername.invalid ? 'username-hint username-error' : 'username-hint'"
+                       [attr.aria-invalid]="form.controls.profileUsername.touched && form.controls.profileUsername.invalid" />
+                <p id="username-hint" class="hint">Такое имя будет в ссылке на ваш профиль.</p>
+                @if (form.controls.profileUsername.touched && form.controls.profileUsername.invalid) {
+                  <p id="username-error" class="error field-error" role="alert">Введите имя пользователя из 3–50 допустимых символов.</p>
+                }
                 <label for="display-name">Отображаемое имя</label>
                 <input id="display-name" formControlName="displayName" autocomplete="name" maxlength="200" />
                 <label for="profile-bio">О себе</label>
@@ -65,7 +67,6 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
                 <button type="submit" [disabled]="form.invalid || saving()">{{ saving() ? 'Сохраняем…' : 'Сохранить профиль' }}</button>
               </form>
             </section>
-          </div>
           @if (account.hasPassword) {
             <section class="sheet password-sheet" aria-labelledby="password-heading">
               <h2 id="password-heading">Пароль</h2>
@@ -75,10 +76,11 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
                 <input id="current-password" type="password" formControlName="currentPassword" autocomplete="current-password" />
                 <label for="new-password">Новый пароль</label>
                 <input id="new-password" type="password" formControlName="newPassword" autocomplete="new-password"
-                       aria-describedby="password-hint" [attr.aria-invalid]="passwordForm.controls.newPassword.touched && passwordForm.controls.newPassword.invalid" />
-                <p id="password-hint" class="hint">От 12 до 128 символов, не более 72 байт UTF-8.</p>
+                       [attr.aria-describedby]="passwordForm.controls.newPassword.touched && passwordForm.controls.newPassword.invalid ? 'password-hint password-error' : 'password-hint'"
+                       [attr.aria-invalid]="passwordForm.controls.newPassword.touched && passwordForm.controls.newPassword.invalid" />
+                <p id="password-hint" class="hint">Не менее 12 символов.</p>
                 @if (passwordForm.controls.newPassword.touched && passwordForm.controls.newPassword.invalid) {
-                  <p class="error" role="alert">Новый пароль: минимум 12 символов и максимум 72 байта UTF-8.</p>
+                  <p id="password-error" class="error field-error" role="alert">Новый пароль слишком короткий или длинный.</p>
                 }
                 <label for="confirm-password">Повторите новый пароль</label>
                 <input id="confirm-password" type="password" formControlName="confirmPassword" autocomplete="new-password" />
@@ -87,6 +89,7 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
               </form>
             </section>
           }
+          </div>
         } @else {
           <p class="error" role="alert">{{ loadError() || 'Не удалось открыть профиль.' }}</p>
           <button type="button" (click)="load()">Повторить</button>
@@ -94,46 +97,47 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
       </section>
     `,
     styles: [`
-      :host { display: block; color: #342e44; }
-      .profile-page { max-width: 72rem; margin: 0 auto; padding: clamp(1.25rem, 4vw, 3rem); }
-      .back-link { color: #281378; text-underline-offset: .2em; }
-      header { max-width: 42rem; padding-block: 1.7rem 2rem; }
-      .eyebrow { margin: 0; color: #655b80; font-size: .8rem; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
-      h1, h2 { color: #281378; font-family: Georgia, 'Times New Roman', serif; }
-      h1 { margin: .35rem 0 .75rem; font-size: clamp(2.4rem, 6vw, 4rem); }
-      h2 { margin: 0 0 1.5rem; font-size: 1.55rem; }
-      .profile-grid { display: grid; grid-template-columns: minmax(15rem, .75fr) minmax(0, 1.5fr); gap: 1rem; align-items: start; }
-      .sheet { min-width: 0; padding: clamp(1.25rem, 3vw, 2rem); border: 1px solid #c9c0ce; background: #fbf8ef; }
-      .password-sheet { margin-top: 1rem; max-width: 40rem; }
-      .avatar-preview { display: grid; place-items: center; width: 7rem; height: 7rem; margin-bottom: 1.25rem;
-        border: 1px solid #c9c0ce; border-radius: 50%; overflow: hidden; background: #e8e1ed; color: #281378;
-        font: 3rem Georgia, serif; }
-      .avatar-preview img { display: block; width: 100%; height: 100%; object-fit: cover; }
-      label:not(.file-label) { display: block; margin-bottom: .4rem; font-weight: 650; }
-      .file-input { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-        overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
-      .file-label { display: inline-flex; align-items: center; min-height: 2.75rem; margin-bottom: .4rem;
-        padding: .65rem 1rem; border: 1px solid #281378; border-radius: .25rem;
-        color: #281378; background: #fffdf8; font-weight: 650; cursor: pointer; }
-      .file-label:hover { background: #e8e1ed; }
-      .file-input:focus-visible + .file-label { outline: 3px solid #6c55b8; outline-offset: 3px; }
-      .file-input:disabled + .file-label { opacity: .55; cursor: wait; }
-      input:not([type=file]), textarea { box-sizing: border-box; width: 100%; min-height: 2.75rem; padding: .65rem .75rem; margin-bottom: 1rem;
-        border: 1px solid #9788aa; border-radius: .3rem; background: #fffdf8; color: #342e44; font: inherit; }
+      :host { display: block; min-inline-size: 0; color: var(--mn-body); }
+      * { box-sizing: border-box; }
+      .profile-page { inline-size: min(100%, var(--mn-workspace-width)); margin-inline: auto; padding: clamp(1.5rem, 3vw, 2.5rem) clamp(1.125rem, 5vw, 3rem); }
+      .back-link { display: inline-flex; align-items: center; min-block-size: var(--mn-touch-min, 46px); color: var(--mn-ink); text-underline-offset: .22em; }
+      header { max-inline-size: 45rem; padding-block: clamp(1.25rem, 3vw, 2rem); }
+      .eyebrow { margin: 0 0 .45rem; color: var(--mn-ink); font: 700 .75rem/1.4 var(--mn-font-mono, ui-monospace, monospace); letter-spacing: .12em; text-transform: uppercase; }
+      h1, h2 { color: var(--mn-ink); font-family: var(--mn-font-display, Georgia, serif); font-weight: 500; overflow-wrap: anywhere; }
+      h1 { margin: .35rem 0 .75rem; font-size: clamp(2.7rem, 7vw, 5rem); line-height: .98; }
+      h2 { margin: 0 0 1.5rem; font-size: clamp(1.8rem, 3vw, 2.25rem); line-height: 1.05; }
+      header > p:last-child { max-inline-size: 52ch; color: var(--mn-muted); }
+      .profile-layout { display: grid; gap: clamp(1.5rem, 4vw, 3rem); }
+      .profile-intro { display: grid; grid-template-columns: 7rem minmax(0, 1fr); align-items: center; gap: clamp(1.25rem, 4vw, 2.5rem); margin-block-end: 1.5rem; }
+      .sheet { min-inline-size: 0; border-block-start: 1px solid var(--mn-ink); border-block-end: 1px solid var(--mn-rule); padding: clamp(1.25rem, 3vw, 2rem); background: var(--mn-sheet); }
+      .password-sheet { margin-block-start: 0; }
+      .avatar-action { position: relative; display: block; inline-size: 7rem; block-size: 7rem; border-radius: 50%; cursor: pointer; overflow: hidden; }
+      .avatar-preview { display: grid; place-items: center; inline-size: 100%; block-size: 100%; border: 1px solid var(--mn-field-border); border-radius: 50%; overflow: hidden; background: var(--mn-soft); color: var(--mn-ink); font: 3rem var(--mn-font-display, Georgia, serif); }
+      .avatar-preview img { display: block; inline-size: 100%; block-size: 100%; object-fit: cover; }
+      .avatar-overlay { position: absolute; inset: 0; display: grid; place-content: center; gap: .1rem; border-radius: 50%; background: rgb(33 20 96 / 82%); color: white; font: 600 .76rem/1.2 var(--mn-font-body, system-ui, sans-serif); text-align: center; opacity: 0; transition: opacity .18s ease; }
+      .avatar-overlay span { font-size: 1.35rem; }
+      .avatar-action:hover .avatar-overlay, .file-input:focus-visible + .avatar-action .avatar-overlay { opacity: 1; }
+      .avatar-action.is-busy { cursor: wait; opacity: .6; }
+      label:not(.avatar-action) { display: block; margin-block-end: .4rem; font-weight: 650; }
+      .file-input { position: absolute; inline-size: 1px; block-size: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+      .file-input:focus-visible + .avatar-action { outline: 3px solid var(--mn-focus); outline-offset: 3px; }
+      input:not([type=file]), textarea { inline-size: 100%; min-inline-size: 0; min-block-size: var(--mn-touch-min, 46px); margin-block-end: 1rem; border: 1px solid var(--mn-field-border); border-radius: var(--mn-radius, 2px); padding: .65rem .75rem; background: var(--mn-sheet); color: var(--mn-body); font: 1rem/1.5 var(--mn-font-body, system-ui, sans-serif); }
       textarea { resize: vertical; }
-      input:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible { outline: 3px solid #6c55b8; outline-offset: 3px; }
-      button { min-height: 2.75rem; padding: .65rem 1.25rem; border: 1px solid #281378; border-radius: .25rem;
-        background: #281378; color: white; font: inherit; font-weight: 650; cursor: pointer; }
-      button:hover:not(:disabled) { background: #442a9c; }
-      button:disabled { opacity: .55; cursor: not-allowed; }
-      .hint, .email { color: #625c70; font-size: .9rem; }
-      .hint { margin: .25rem 0 1.3rem; }
-      .email { margin: -.6rem 0 1.5rem; }
-      .error { color: #9b1b30; }
-      .success { color: #236149; }
-      .notice { padding: 1rem 1.25rem; margin: 0 0 1.5rem; border-inline-start: 4px solid #b68428;
-        background: #fff4d9; color: #4f3b1a; }
-      @media (max-width: 45rem) { .profile-grid { grid-template-columns: minmax(0, 1fr); } }
+      input[aria-invalid=true] { border: 2px solid var(--mn-danger); }
+      input:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible { outline: 3px solid var(--mn-focus); outline-offset: 3px; }
+      button { min-block-size: var(--mn-touch-min, 46px); border: 1px solid var(--mn-ink); border-radius: var(--mn-radius, 2px); padding: .65rem 1.25rem; background: var(--mn-ink); color: var(--mn-on-ink); font: 650 1rem/1.4 var(--mn-font-body, system-ui, sans-serif); cursor: pointer; }
+      button:disabled { opacity: .65; cursor: not-allowed; }
+      .hint, .email { color: var(--mn-muted); font-size: .9rem; }
+      .hint { margin: .25rem 0 1.25rem; }
+      .email { margin: -.6rem 0 .75rem; overflow-wrap: anywhere; }
+      .error { color: var(--mn-danger); }
+      .field-error { margin: -.7rem 0 1rem; }
+      .success { color: var(--mn-positive); }
+      .notice { margin: 0 0 1.5rem; border-inline-start: 3px solid var(--mn-caution); padding: 1rem 1.25rem; background: var(--mn-sheet); color: var(--mn-body); }
+      @media (max-width: 36rem) { .profile-intro { grid-template-columns: 1fr; } }
+      @media (max-width: 36rem) { .sheet { padding-inline: 0; background: transparent; } }
+      @media (prefers-reduced-motion: reduce) { .avatar-overlay { transition: none; } }
+      @media (forced-colors: active) { .sheet, .avatar-preview, button, .notice { border-color: CanvasText; } input:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible, .file-input:focus-visible + .avatar-action { outline-color: Highlight; } .avatar-overlay { color: CanvasText; background: Canvas; } }
     `],
     changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -199,8 +203,12 @@ export class ProfilePageComponent implements OnInit {
         input.value = '';
         if (!file || this.avatarBusy()) return;
         this.avatarError.set(null);
-        if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 10 * 1024 * 1024 || !file.size) {
-            this.avatarError.set('Выберите PNG, JPEG или WebP размером до 10 МБ.');
+        if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+            this.avatarError.set('Выберите изображение PNG, JPEG или WebP.');
+            return;
+        }
+        if (file.size > 10 * 1024 * 1024 || !file.size) {
+            this.avatarError.set('Изображение слишком большое или пустое. Выберите другое.');
             return;
         }
         this.avatarBusy.set(true);
@@ -229,7 +237,7 @@ export class ProfilePageComponent implements OnInit {
             this.passwordForm.reset();
         } catch (error) {
             this.passwordError.set(error instanceof HttpErrorResponse && error.status === 400
-                ? 'Новый пароль должен содержать 12–128 символов и не более 72 байт UTF-8.'
+                ? 'Новый пароль слишком короткий или длинный.'
                 : 'Не удалось сменить пароль. Проверьте текущий пароль и соединение.');
         }
         finally { this.passwordBusy.set(false); }

@@ -93,6 +93,30 @@ describe('AuthoringApiService', () => {
         expect((await converted).publication.changes[0]?.memberKey).toBe(memberKey);
     });
 
+    it('reads a deck-scoped pending capture count and deletes with the note version', async () => {
+        const page = firstValueFrom(api.listDeckCaptures(deckId, null, 1));
+        const request = http.expectOne(req => req.url === '/api/capture-notes'
+            && req.params.get('deckId') === deckId && req.params.get('limit') === '1');
+        expect(request.request.method).toBe('GET');
+        request.flush({ items: [capture], nextCursor: 'later', total: 25 }, { headers });
+        expect(await page).toEqual({ items: [capture], nextCursor: 'later', total: 25 });
+
+        const removed = firstValueFrom(api.deleteCapture(capture));
+        const deletion = http.expectOne(`/api/capture-notes/${noteId}`);
+        expect(deletion.request.method).toBe('DELETE');
+        expect(deletion.request.headers.get('If-Match')).toBe('"0"');
+        deletion.flush('', { status: 204, statusText: 'No Content', headers });
+        await removed;
+    });
+
+    it('rejects unrelated or converted notes in a deck-scoped page', async () => {
+        const page = firstValueFrom(api.listDeckCaptures(deckId));
+        http.expectOne(req => req.url === '/api/capture-notes').flush({
+            items: [{ ...capture, deckId: id('9') }], nextCursor: null, total: 1
+        }, { headers });
+        await expectAsync(page).toBeRejectedWithError(AuthoringProtocolError);
+    });
+
     it('rejects cacheable private data and unexpected fields', async () => {
         const page = firstValueFrom(api.listCaptures());
         http.expectOne('/api/capture-notes?limit=20').flush({ items: [], nextCursor: null, leaked: true });

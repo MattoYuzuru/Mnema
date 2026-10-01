@@ -4,7 +4,7 @@ artifact:
   type: navigator
   title: "Mnema documentation"
   status: current
-  updated_at: "2026-09-28"
+  updated_at: "2026-09-29"
   owners: ["project-owner"]
   evidence_revision: "d7fd1b1d509a0ab598976f87af88101bfc3945ac"
 ---
@@ -40,6 +40,8 @@ artifact:
 |---|---|---|
 | accepted | [Owner decisions](./decisions/owner-decisions-2026-08.md) | Решения владельца и явно открытые вопросы. |
 | accepted | [Authoring and Study workflows](./product/authoring-and-study-workflows.md) | Product contract для authoring, Capture, exercises и режимов практики; P0 реализован в #74/#75. |
+| accepted | [UX refinement 2026-09-29](./product/ux-improvements-2026-09-29.md) | Приёмочные сценарии текущей доработки редактора, упражнений и основных экранов. |
+| accepted | [Final polish 2026-09-29](./product/final-polish-2026-09-29.md) | Удаление, заметки «На потом», пропуски и режимы проверки текста. |
 | accepted | [Exercise catalog](./product/exercise-catalog-v2.md) | Принятые mechanics, attempt/evidence, reducer и retention boundaries для #75. |
 | proposed | [Product direction](./product/product-direction-v2.md) | Product hypotheses, roadmap и метрики. |
 | proposed | [Launch economics](./product/russia-launch-economics-2026.md) | Коммерческие гипотезы. |
@@ -62,8 +64,10 @@ artifact:
 
 | Статус | Документ | Назначение |
 |---|---|---|
+| current | [Mnema brand and UI contract](./frontend/mnema-brand-and-ui-contract.md) | Канонические правила оформления и проверки изменений в действующем Angular UI. |
 | accepted | [Design and experience](./frontend/design-and-experience-2026-09.md) | Выбранное paper/antiquity/indigo направление и a11y boundaries. |
 | historical | [Epic #74 UI evidence](./engineering/evidence/README.md#frontend-и-browser) | Снимки, browser и component evidence завершённого этапа. |
+| current | [Frontend brand restoration evidence](./engineering/evidence/frontend-brand-2026-09-28/README.md) | Снимки production Angular на desktop/mobile и результат реального HTTPS-сценария. |
 | superseded | [Experience audit 2026-08](./frontend/experience-audit-2026-08.md) | Findings сохранены, Liquid Glass/Focused Study Desk direction отклонено. |
 | historical | [Interactive prototype](../design/prototype/README.md) | Design evidence, не production architecture. |
 

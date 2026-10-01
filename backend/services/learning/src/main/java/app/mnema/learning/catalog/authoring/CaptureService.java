@@ -41,9 +41,18 @@ public class CaptureService {
 
     @Transactional(readOnly = true, timeout = 10)
     public ObjectNode list(UUID actor, String limit, String cursor) {
+        return list(actor, null, limit, cursor);
+    }
+
+    @Transactional(readOnly = true, timeout = 10)
+    public ObjectNode list(UUID actor, String deckId, String limit, String cursor) {
         actor(actor);
+        UUID deck = deckId == null ? null : AuthoringIds.entity(deckId);
+        if (deck != null) ownDeck(actor, deck);
         int size = AuthoringCursor.pageSize(limit);
-        List<CaptureRecord> rows = repository.captures(actor, AuthoringCursor.decode(cursor), size);
+        List<CaptureRecord> rows = deck == null
+                ? repository.captures(actor, AuthoringCursor.decode(cursor), size)
+                : repository.activeCaptures(actor, deck, AuthoringCursor.decode(cursor), size);
         ObjectNode result = JsonNodeFactory.instance.objectNode();
         var items = result.putArray("items");
         rows.stream().limit(size).forEach(row -> items.add(row.summary()));
@@ -51,6 +60,7 @@ public class CaptureService {
             CaptureRecord last = rows.get(size - 1);
             result.put("nextCursor", new AuthoringCursor(last.createdAt(), last.noteId()).encode());
         } else result.putNull("nextCursor");
+        if (deck != null) result.put("total", repository.activeCaptureCount(actor, deck));
         return result;
     }
 

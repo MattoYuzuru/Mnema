@@ -35,7 +35,16 @@ export function identityErrorMessage(error: unknown): string {
           <a class="primary-action" routerLink="/decks">Мои колоды →</a>
           <button class="text-action" type="button" data-testid="logout" [disabled]="busy()" (click)="logout()">Выйти из аккаунта</button>
         } @else {
-          <p class="intro">{{ registering ? 'Создайте аккаунт, чтобы собирать и сохранять свои материалы.' : 'Войдите с логином или почтой, указанными при регистрации.' }}</p>
+          <p class="intro">{{ registering ? 'Создайте аккаунт, чтобы собирать и сохранять свои материалы.' : 'Войдите с логином или почтой. Вход через сервисы появится позже.' }}</p>
+          <div class="provider-options" role="group" aria-label="Вход через сервисы — в работе">
+            @for (provider of providers; track provider.name) {
+              <button class="provider-placeholder" type="button" disabled [attr.aria-label]="provider.name + ', вход в работе'">
+                <img [src]="provider.icon" width="32" height="32" alt="" />
+                <strong>{{ provider.name }}</strong><span>В работе</span>
+              </button>
+            }
+          </div>
+          <p class="password-divider">{{ registering ? 'Или зарегистрируйтесь с почтой' : 'Или войдите с логином или почтой' }}</p>
           <form #form="ngForm" (ngSubmit)="submit(form)" novalidate>
             @if (registering) {
               <label for="email">Электронная почта</label>
@@ -50,7 +59,7 @@ export function identityErrorMessage(error: unknown): string {
             <label for="password">Пароль</label>
             <input id="password" name="password" type="password" [attr.autocomplete]="registering ? 'new-password' : 'current-password'" [minlength]="registering ? 12 : 1" maxlength="128" [(ngModel)]="password" required [attr.aria-describedby]="registering ? 'password-help' : null" [disabled]="busy()" />
             @if (registering) {
-              <p class="field-help" id="password-help">От 12 до 128 символов, не более 72 байт UTF-8. Русские буквы и эмодзи занимают несколько байт.</p>
+              <p class="field-help" id="password-help">Не менее 12 символов. Если пароль окажется слишком длинным, попробуйте сократить его.</p>
             }
             <button class="primary-action" type="submit" [disabled]="busy()">{{ busy() ? 'Подтверждаем…' : (registering ? 'Создать аккаунт →' : 'Войти →') }}</button>
           </form>
@@ -60,14 +69,19 @@ export function identityErrorMessage(error: unknown): string {
         }
         @if (error()) { <p class="identity-error" role="alert" tabindex="-1">{{ error() }}</p> }
         @if (auth.logoutUnconfirmed()) {
-          <p class="identity-error" role="status">Локальный доступ удалён, но завершение сессии на сервере не подтверждено.</p>
-          <button class="text-action" type="button" [disabled]="busy()" (click)="logout()">Повторить завершение сессии на сервере</button>
+          <p class="identity-error" role="status">На этом устройстве вы вышли. Повторите выход, чтобы завершить сессию полностью.</p>
+          <button class="text-action" type="button" [disabled]="busy()" (click)="logout()">Повторить выход</button>
         }
-        <p class="identity-status" role="status">{{ busy() ? 'Ожидаем подтверждения сервиса аккаунтов.' : '' }}</p>
+        <p class="identity-status" role="status">{{ busy() ? 'Проверяем данные…' : '' }}</p>
       </section>
     `
 })
 export class LoginPageComponent implements OnDestroy {
+    readonly providers = [
+        { name: 'Google', icon: '/assets/brand/providers/google.svg' },
+        { name: 'Яндекс', icon: '/assets/brand/providers/yandex.svg' },
+        { name: 'GitHub', icon: '/assets/brand/providers/github.png' }
+    ] as const;
     readonly auth = inject(AuthService);
     private readonly route = inject(ActivatedRoute);
     private readonly element = inject<ElementRef<HTMLElement>>(ElementRef);
@@ -110,7 +124,7 @@ export class LoginPageComponent implements OnDestroy {
         this.busy.set(true);
         this.error.set('');
         try { await this.auth.logout(); }
-        catch { if (!this.destroyed) this.error.set('В этом окне вы вышли, но сервер не подтвердил завершение сессии. Повторите выход, когда соединение восстановится.'); }
+        catch { if (!this.destroyed) this.error.set('На этом устройстве вы вышли. Повторите выход, когда связь восстановится.'); }
         finally { if (!this.destroyed) this.busy.set(false); }
     }
 

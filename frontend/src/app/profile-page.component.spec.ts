@@ -44,7 +44,7 @@ describe('ProfilePageComponent', () => {
         Object.defineProperty(input, 'files', { value: [file] });
         await component.uploadAvatar({ target: input } as unknown as Event);
         expect(api.uploadAvatar).not.toHaveBeenCalled();
-        expect(component.avatarError()).toContain('10 МБ');
+        expect(component.avatarError()).toBe('Изображение слишком большое или пустое. Выберите другое.');
     });
 
     it('requires password confirmation before contacting Identity', async () => {
@@ -76,6 +76,35 @@ describe('ProfilePageComponent', () => {
         fixture.detectChanges();
         expect(passwordButton.disabled).toBeTrue();
         expect(newPassword.getAttribute('aria-invalid')).toBe('true');
-        expect(root.querySelector('.password-sheet .error')?.textContent).toContain('72 байта');
+        expect(newPassword.getAttribute('aria-describedby')).toBe('password-hint password-error');
+        expect(root.querySelector('.password-sheet .error')?.textContent).toContain('слишком короткий или длинный');
+    });
+
+    it('associates an invalid profile username with its field guidance', async () => {
+        const fixture = TestBed.createComponent(ProfilePageComponent);
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.componentInstance.form.controls.profileUsername.setValue('!');
+        fixture.componentInstance.form.controls.profileUsername.markAsTouched();
+        fixture.detectChanges();
+
+        const root = fixture.nativeElement as HTMLElement;
+        const input = root.querySelector<HTMLInputElement>('#profile-username')!;
+        expect(input.getAttribute('aria-invalid')).toBe('true');
+        expect(input.getAttribute('aria-describedby')).toBe('username-hint username-error');
+        expect(root.querySelector('#username-error')?.textContent).toContain('3–50');
+        expect(root.querySelector<HTMLButtonElement>('.profile-layout button[type=submit]')?.disabled).toBeTrue();
+    });
+
+    it('uses the avatar itself as the keyboard accessible file trigger', async () => {
+        const fixture = TestBed.createComponent(ProfilePageComponent);
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.detectChanges();
+        const root = fixture.nativeElement as HTMLElement;
+        expect(root.querySelector('.profile-sheet .avatar-action')?.getAttribute('for')).toBe('avatar-file');
+        expect(root.querySelector('.profile-sheet .avatar-action')?.getAttribute('aria-label')).toBe('Изменить аватар');
+        expect(root.querySelector('.profile-sheet .file-input')?.getAttribute('type')).toBe('file');
+        expect(root.querySelector('.file-label')).toBeNull();
     });
 });

@@ -1,21 +1,7 @@
 import { NativeDocument, NativeNode } from '../../content/native-document';
+import { ExerciseSpec, Mechanic } from '../../content/exercise/exercise-content.models';
 
 export const EXERCISE_PAGE_SIZE = 20;
-
-export type ExerciseType = 'SELF_CHECK' | 'TYPED' | 'CLOZE_SINGLE' | 'SINGLE_CHOICE'
-    | 'LISTEN_CHOICE' | 'AUDIO_TEXT_MATCH' | 'LISTEN_TYPE';
-export type BindingRole = 'ASSESSED' | 'CUE' | 'OPTION' | 'CONTEXT';
-
-export interface TextAnswerContract {
-    readonly schemaVersion: 1;
-    readonly normalization: readonly ('UNICODE_NFC' | 'TRIM' | 'CASE_FOLD')[];
-    readonly accepted: readonly string[];
-}
-export interface MatchAnswerContract {
-    readonly schemaVersion: 2;
-    readonly pairs: readonly { readonly cueId: string; readonly optionId: string }[];
-}
-export type AnswerContract = TextAnswerContract | MatchAnswerContract;
 
 export interface ExerciseObjective {
     readonly objectiveId: string;
@@ -23,7 +9,8 @@ export interface ExerciseObjective {
     readonly objectiveRevisionId: string;
     readonly objectiveVersion: string;
     readonly memberKey: string;
-    readonly answerContract: AnswerContract;
+    /** Author-facing name of the single assessed objective. */
+    readonly title: string;
 }
 
 export interface ExerciseSummary {
@@ -31,9 +18,9 @@ export interface ExerciseSummary {
     readonly exerciseRevisionId: string;
     readonly exerciseVersion: string;
     readonly ordinal: number;
-    readonly type: ExerciseType;
+    readonly type: Mechanic;
     readonly enabled: boolean;
-    readonly schemaVersion: 1;
+    readonly schemaVersion: 2;
     readonly createdAt: string;
     readonly updatedAt: string;
     readonly objective: ExerciseObjective;
@@ -48,48 +35,21 @@ export interface ExercisePage {
     readonly nextCursor: string | null;
 }
 
-export interface NodePrompt {
-    readonly kind: 'NODE_TEXT';
-    readonly memberKey: string;
-    readonly itemRevisionId: string;
-    readonly nodeId: string;
-}
-
-export interface CustomPrompt { readonly kind: 'CUSTOM_TEXT'; readonly text: string; }
-export interface AudioAssetPrompt {
-    readonly kind: 'AUDIO_ASSET';
-    readonly assetId: string;
-    readonly title: string;
-    readonly instruction: string;
-    readonly transcript: string;
-}
-export interface AudioMatchPrompt {
-    readonly kind: 'AUDIO_MATCH';
-    readonly instruction: string;
-    readonly cues: readonly {
-        readonly cueId: string; readonly assetId: string; readonly title: string; readonly transcript: string;
-    }[];
-}
-export type ExercisePrompt = NodePrompt | CustomPrompt | AudioAssetPrompt | AudioMatchPrompt;
-
-export interface ExerciseBinding {
-    readonly bindingId: string;
-    readonly role: BindingRole;
-    readonly memberKey: string;
-    readonly itemRevisionId: string;
-    readonly nodeIds: readonly string[];
-    readonly display: { readonly kind: string };
+export interface ExerciseEnvelope {
+    readonly exerciseId: string;
+    readonly exerciseRevisionId: string;
+    readonly exerciseVersion: string;
     readonly ordinal: number;
-}
-
-export interface ExerciseDetail extends ExerciseSummary {
+    readonly createdAt: string;
+    readonly updatedAt: string;
+    readonly objective: ExerciseObjective;
     readonly deckId: string;
     readonly deckRevisionId: string;
     readonly deckVersion: string;
-    readonly prompt: ExercisePrompt;
-    readonly evaluatorPolicy: { readonly id: string; readonly version: '1' };
-    readonly bindings: readonly ExerciseBinding[];
 }
+
+/** The persisted exercise: identity and deck pins plus the typed mechanic-specific specification. */
+export type ExerciseDetail = ExerciseEnvelope & ExerciseSpec;
 
 export interface ExerciseAcknowledgement {
     readonly commandId: string;
@@ -118,9 +78,11 @@ export interface ExerciseProjection {
 export function textProjections(document: NativeDocument): readonly ExerciseProjection[] {
     const projections: ExerciseProjection[] = [];
     const visit = (node: NativeNode): void => {
-        const text = nodeText(node).replace(/\s+/gu, ' ').trim();
-        if (node.type !== 'text' && text.length > 0) {
-            projections.push({ nodeId: node.id, text, label: text.length <= 80 ? text : `${text.slice(0, 77)}…` });
+        // Code keeps its line breaks and indentation; prose is collapsed for compact labels.
+        const raw = nodeText(node);
+        const text = node.type === 'code_block' ? raw.replace(/^\s*\n|\s+$/gu, '') : raw.replace(/\s+/gu, ' ').trim();
+        if ((node.type === 'paragraph' || node.type === 'heading' || node.type === 'code_block') && text.length > 0) {
+            projections.push({ nodeId: node.id, text, label: oneLine(text) });
         }
         node.content.forEach(visit);
     };
@@ -133,4 +95,9 @@ export function textProjections(document: NativeDocument): readonly ExerciseProj
 export function nodeText(node: NativeNode): string {
     if (node.type === 'text' && typeof node.attrs['text'] === 'string') return node.attrs['text'];
     return node.content.map(nodeText).filter(Boolean).join(' ');
+}
+
+function oneLine(text: string): string {
+    const collapsed = text.replace(/\s+/gu, ' ').trim();
+    return collapsed.length <= 80 ? collapsed : `${collapsed.slice(0, 77)}…`;
 }

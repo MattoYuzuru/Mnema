@@ -31,7 +31,7 @@ public class CaptureController {
     @GetMapping
     ResponseEntity<JsonNode> list(@AuthenticationPrincipal Jwt identity, HttpServletRequest request) {
         return ResponseEntity.ok().headers(privateHeaders()).body(service.list(actor(identity),
-                parameter(request, "limit"), parameter(request, "cursor")));
+                parameter(request, "deckId"), parameter(request, "limit"), parameter(request, "cursor")));
     }
 
     @GetMapping("/{noteId}")

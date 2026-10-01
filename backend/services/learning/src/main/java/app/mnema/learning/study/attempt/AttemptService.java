@@ -1,6 +1,9 @@
 package app.mnema.learning.study.attempt;
 
+import app.mnema.learning.catalog.exercise.AnswerKey;
+import app.mnema.learning.catalog.exercise.ExerciseType;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
+import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.id.UuidPolicy;
 import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
 import app.mnema.learning.platform.json.CanonicalJsonHasher;
@@ -8,15 +11,19 @@ import app.mnema.learning.media.MediaCatalog;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.UUID;
 
 @Service
 public class AttemptService {
+    private static final Logger LOG = LoggerFactory.getLogger(AttemptService.class);
     private static final Duration RAW_RETENTION = Duration.ofDays(30);
     private static final Duration COMPACT_RECEIPT_RETENTION = Duration.ofHours(24);
     private final AttemptRepository repository;
@@ -28,6 +35,39 @@ public class AttemptService {
         this.repository = repository;
         this.hasher = hasher;
         this.mediaCatalog = mediaCatalog;
+    }
+
+    @Transactional(timeout = 10)
+    public boolean checkPair(UUID actor, UUID deck, UUID session, PairCheckCommand command) {
+        UuidPolicy.requireEntityId(actor, "actor");
+        UuidPolicy.requireEntityId(deck, "deckId");
+        UuidPolicy.requireEntityId(session, "sessionId");
+        if (!repository.ownsDeck(actor, deck)) throw new ResourceNotFoundException();
+        repository.lockSession(actor, deck, session);
+        AttemptRepository.Presentation presentation = repository.presentationForUpdate(actor, deck, session,
+                command.presentationId()).orElseThrow(ResourceNotFoundException::new);
+        if (!presentation.nonce().equals(command.nonce())) throw new ResourceNotFoundException();
+        var previous = repository.pairInteraction(actor, session, command);
+        if (previous.isPresent()) return previous.orElseThrow();
+        if (!presentation.expiresAt().isAfter(repository.now())) throw new PresentationExpiredException();
+        if (repository.terminal(actor, session, command.presentationId()).isPresent()) throw new IdempotencyConflictException();
+        if (!presentation.exerciseType().equals(ExerciseType.MATCH.name())) throw new InvalidRequestException();
+        if (!mediaCatalog.exerciseMediaReady(actor, deck, presentation.exerciseId(), presentation.exerciseRevisionId())) {
+            throw new InvalidRequestException();
+        }
+        // Both ids must be sides the learner was actually issued; the answer key decides correctness.
+        var lefts = new HashSet<UUID>();
+        var rights = new HashSet<UUID>();
+        presentation.content().path("left").forEach(item -> lefts.add(UUID.fromString(item.path("itemId").textValue())));
+        presentation.content().path("right").forEach(item -> rights.add(UUID.fromString(item.path("itemId").textValue())));
+        if (!lefts.contains(command.leftId()) || !rights.contains(command.rightId())) throw new InvalidRequestException();
+        AnswerKey.Match key = (AnswerKey.Match) AnswerKey.parse(ExerciseType.MATCH, presentation.answerKey());
+        UUID expected = key.pairs().stream().filter(pair -> pair.leftId().equals(command.leftId()))
+                .map(AnswerKey.Pair::rightId).findFirst().orElseThrow(InvalidRequestException::new);
+        boolean correct = expected.equals(command.rightId());
+        repository.insertPairInteraction(actor, session, command, correct,
+                presentation.expiresAt().plus(COMPACT_RECEIPT_RETENTION));
+        return correct;
     }
 
     @Transactional(timeout = 10)
@@ -53,12 +93,23 @@ public class AttemptService {
             throw new IdempotencyConflictException();
         }
 
-        AttemptEvaluation evaluation = isListening(presentation.exerciseType())
-                && !mediaCatalog.exerciseReady(actor, deck, presentation.exerciseId(), presentation.exerciseRevisionId())
-                ? AttemptEvaluation.mediaNotReady()
-                : AttemptEvaluation.evaluate(presentation.exerciseType(), presentation.evaluator(),
-                        presentation.answerContract(), presentation.bindings(), command,
-                        presentation.transcriptRevealed());
+        // Media is checked for every mechanic: an unavailable asset must never turn into a wrong answer.
+        // The response shape is validated first inside the evaluation, so a malformed response consumes nothing.
+        boolean mediaReady = command.response() instanceof AttemptCommand.CancelResponse
+                || mediaCatalog.exerciseMediaReady(actor, deck, presentation.exerciseId(),
+                        presentation.exerciseRevisionId());
+        AttemptEvaluation evaluation = AttemptEvaluation.evaluate(subject(presentation), command.response(), mediaReady);
+        if (presentation.exerciseType().equals(ExerciseType.MATCH.name())
+                && evaluation.result() == AttemptEvaluation.Result.CORRECT
+                && repository.hasPairMistakes(actor, session, command.presentationId())) {
+            evaluation = evaluation.withPairRetry();
+        }
+        LOG.debug("Study answer evaluated attemptId={} presentationId={} exerciseRevisionId={} "
+                        + "evaluatorId={} evaluatorVersion={} appliedRules={} reasonCodes={} result={}",
+                command.attemptId(), command.presentationId(), presentation.exerciseRevisionId(),
+                presentation.evaluator().path("id").asText(), presentation.evaluator().path("version").asText(),
+                evaluation.feedback().path("appliedRules"), evaluation.reasonCodes(),
+                evaluation.feedback().path("result").asText());
         if (!presentation.mode().equals("SCHEDULED")) {
             ObjectNode outcome = feedbackOnly(command, presentation, evaluation);
             repository.insertReceipt(command, actor, deck, session, hash, presentation.mode(),
@@ -108,8 +159,11 @@ public class AttemptService {
         return new SubmitResult(receipt.outcome(), true);
     }
 
-    private static boolean isListening(String type) {
-        return type.equals("LISTEN_CHOICE") || type.equals("AUDIO_TEXT_MATCH") || type.equals("LISTEN_TYPE");
+    private static AttemptEvaluation.Subject subject(AttemptRepository.Presentation presentation) {
+        return new AttemptEvaluation.Subject(
+                ExerciseType.fromWire(presentation.exerciseType()).orElseThrow(IllegalStateException::new),
+                presentation.evaluator(), presentation.answerKey(), presentation.content(), presentation.reveal(),
+                new HashSet<>(presentation.hintedBlanks()), presentation.transcriptRevealed());
     }
 
     private static ObjectNode assessed(AttemptCommand command, AttemptRepository.Presentation presentation,
