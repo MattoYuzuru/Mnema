@@ -19,7 +19,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.random.RandomGenerator;
 import java.util.UUID;
-import java.util.stream.IntStream;
 
 /**
  * Resolves authored content into what a learner may see, once, when a presentation is issued.
@@ -72,7 +71,7 @@ final class LearnerContent {
             }
             case ExerciseContent.Match match -> {
                 content.set("prompt", blocks(match.prompt(), text));
-                shuffledSides(match, (AnswerKey.Match) key, random, content, text);
+                shuffledSides(match, random, content, text);
             }
         }
         return new Resolved(content, reveal);
@@ -172,19 +171,17 @@ final class LearnerContent {
         return result;
     }
 
-    private static void shuffledSides(ExerciseContent.Match match, AnswerKey.Match key, RandomGenerator random,
-                                      ObjectNode content, TextSource text) {
+    /**
+     * Both columns are shuffled independently by the issue-time source and persisted. The answer key is
+     * deliberately not consulted: correcting a permutation that happens to line rows up would itself leak
+     * the key (with two pairs it would always cross them), so every arrangement stays possible.
+     */
+    private static void shuffledSides(ExerciseContent.Match match, RandomGenerator random, ObjectNode content,
+                                      TextSource text) {
         List<ExerciseContent.Item> left = new ArrayList<>(match.left());
         List<ExerciseContent.Item> right = new ArrayList<>(match.right());
         Collections.shuffle(left, random);
         Collections.shuffle(right, random);
-        Map<UUID, UUID> partner = new HashMap<>();
-        key.pairs().forEach(pair -> partner.put(pair.leftId(), pair.rightId()));
-        // A column that happens to line up with its partners would hand out the answer.
-        if (IntStream.range(0, left.size()).allMatch(index ->
-                partner.get(left.get(index).itemId()).equals(right.get(index).itemId()))) {
-            Collections.rotate(right, 1);
-        }
         content.set("left", items(left, text));
         content.set("right", items(right, text));
     }

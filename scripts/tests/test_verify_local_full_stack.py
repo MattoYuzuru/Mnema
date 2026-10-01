@@ -264,6 +264,13 @@ class LocalFullStackTest(unittest.TestCase):
         self.assertEqual([".CHOICE.content.options.correctOptionIds"], module.private_keys(
             {"CHOICE": {"content": {"options": [{"correctOptionIds": []}]}}}))
 
+    def test_progress_diff_reports_only_changed_fields(self):
+        module = load_smoke_module()
+        before = {"memberKey": "m", "state": "DUE", "nextDue": "2026-10-01T00:00:00Z", "title": "t"}
+        after = dict(before, state="LEARNING")
+        self.assertEqual({}, module.progress_diff(before, dict(before)))
+        self.assertEqual({"state": {"before": "DUE", "after": "LEARNING"}}, module.progress_diff(before, after))
+
     def test_launcher_keeps_bounded_failure_diagnostics(self):
         launcher = LAUNCHER.read_text()
         self.assertIn("compose logs --tail=80", launcher)

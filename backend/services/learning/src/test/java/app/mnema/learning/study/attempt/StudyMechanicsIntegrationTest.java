@@ -8,6 +8,8 @@ import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
 import app.mnema.learning.study.progress.StudyProgressService;
+import app.mnema.learning.study.restart.StudyRestartCommand;
+import app.mnema.learning.study.restart.StudyRestartService;
 import app.mnema.learning.study.retention.StudyRetentionService;
 import app.mnema.learning.study.session.StudyHintCommand;
 import app.mnema.learning.study.session.StudySessionService;
@@ -49,6 +51,7 @@ class StudyMechanicsIntegrationTest extends PostgresIntegrationTest {
     @Autowired private AttemptService attempts;
     @Autowired private StudySessionService sessions;
     @Autowired private StudyProgressService progress;
+    @Autowired private StudyRestartService restarts;
     @Autowired private StudyRetentionService retention;
     @Autowired private DeckService decks;
     @Autowired private ItemService items;
@@ -445,31 +448,67 @@ class StudyMechanicsIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
-    void issuedMatchOrderIsNotReproducibleFromThePresentationId() {
-        int predicted = 0;
-        int total = 0;
-        for (int round = 0; round < 6; round++) {
-            Material material = fixtures.material();
-            UUID[] left = new UUID[6], right = new UUID[6];
-            ArrayNode lefts = blocks(), rights = blocks();
-            UUID[][] pairs = new UUID[6][];
-            for (int index = 0; index < 6; index++) {
-                left[index] = UUID.randomUUID();
-                right[index] = UUID.randomUUID();
-                lefts.add(item(left[index], text("l" + index)));
-                rights.add(item(right[index], text("r" + index)));
-                pairs[index] = new UUID[] {left[index], right[index]};
-            }
-            fixtures.publish(material, fixtures.match(material, blocks(), lefts, rights, pairs));
-            Issued presentation = fixtures.issueOne(material);
-            List<UUID> authored = new java.util.ArrayList<>(List.of(left));
-            java.util.Collections.shuffle(authored, new java.util.Random(presentation.id().getMostSignificantBits()));
-            List<UUID> issued = new java.util.ArrayList<>();
-            presentation.content().path("left").forEach(value -> issued.add(UUID.fromString(value.path("itemId").textValue())));
-            total++;
-            if (issued.equals(authored)) predicted++;
+    void theIssuedMatchOrderIsPersistedForReadsAndReplayedVerbatim() {
+        Material material = fixtures.material();
+        UUID[] left = new UUID[4], right = new UUID[4];
+        ArrayNode lefts = blocks(), rights = blocks();
+        UUID[][] pairs = new UUID[4][];
+        for (int index = 0; index < 4; index++) {
+            left[index] = UUID.randomUUID();
+            right[index] = UUID.randomUUID();
+            lefts.add(item(left[index], text("l" + index)));
+            rights.add(item(right[index], text("r" + index)));
+            pairs[index] = new UUID[] {left[index], right[index]};
         }
-        assertThat(predicted).as("id-seeded prediction of %d issues", total).isLessThan(total);
+        fixtures.publish(material, fixtures.match(material, blocks(), lefts, rights, pairs));
+        Issued issued = fixtures.issueOne(material);
+        JsonNode reread = sessions.read(material.actor(), material.deck(), issued.session()).path("presentations").get(0);
+        assertThat(reread.path("content")).as("read/resume keeps the issued order").isEqualTo(issued.content());
+
+        ObjectNode response = JSON.createObjectNode().put("kind", "MATCH");
+        for (UUID[] pair : pairs) {
+            response.withArray("pairs").addObject().put("leftId", pair[0].toString()).put("rightId", pair[1].toString());
+        }
+        attempts.submit(material.actor(), material.deck(), issued.session(), attempt(issued, response));
+        Issued replay = fixtures.issue(material, "REPLAY", issued.session()).getFirst();
+        assertThat(replay.content().path("left")).as("replay copies the left column").isEqualTo(issued.content().path("left"));
+        assertThat(replay.content().path("right")).as("replay copies the right column").isEqualTo(issued.content().path("right"));
+    }
+
+    @Test
+    void replayAfterARestartLeavesStateAndProgressExactlyAsTheRestartLeftThem() {
+        Material material = fixtures.material();
+        fixtures.publish(material, fixtures.freeResponse(material, blocks(text("Q")), blocks(), "memory"));
+        Issued scheduled = fixtures.issueOne(material);
+        attempts.submit(material.actor(), material.deck(), scheduled.session(), attempt(scheduled, textResponse("memory")));
+        ObjectNode command = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString());
+        command.putArray("memberKeys").add(material.member().toString());
+        restarts.restart(material.actor(), material.deck(), StudyRestartCommand.read(
+                new java.io.ByteArrayInputStream(command.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+        JsonNode restarted = progress.read(material.actor(), material.deck(), 20, null).path("items").get(0);
+        String stateBefore = stateRow(material);
+        long historyBefore = count("study_transition", "account_id", material.actor())
+                + count("study_evidence", "account_id", material.actor());
+        assertThat(restarted.path("state").textValue()).isEqualTo("DUE");
+
+        Issued replay = fixtures.issue(material, "REPLAY", scheduled.session()).getFirst();
+        JsonNode outcome = attempts.submit(material.actor(), material.deck(), replay.session(),
+                attempt(replay, textResponse("memory"))).outcome();
+        assertThat(outcome.path("canonicalEffects").booleanValue()).isFalse();
+
+        assertThat(stateRow(material)).as("study_state row").isEqualTo(stateBefore);
+        assertThat(count("study_transition", "account_id", material.actor())
+                + count("study_evidence", "account_id", material.actor())).isEqualTo(historyBefore);
+        JsonNode after = progress.read(material.actor(), material.deck(), 20, null).path("items").get(0);
+        assertThat(after).as("progress item after replay").isEqualTo(restarted);
+    }
+
+    private String stateRow(Material material) {
+        return jdbc.sql("""
+                SELECT concat_ws('|',learning_epoch,level,correct_streak,lapse_count,last_assessed_at,next_due,
+                       transition_sequence,row_version,updated_at)
+                  FROM app_learning.study_state WHERE account_id=:actor AND deck_id=:deck
+                """).param("actor", material.actor()).param("deck", material.deck()).query(String.class).single();
     }
 
     private JsonNode hint(Material material, Issued presentation, UUID blank) {
