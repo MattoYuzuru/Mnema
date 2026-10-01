@@ -514,7 +514,7 @@ def progress_snapshot(web, access, deck_id, member):
     matches = [item for item in page["items"] if item.get("memberKey") == member]
     require(len(matches) == 1, "Study material is missing from progress")
     item = matches[0]
-    fields = {"memberKey", "itemRevisionId", "state", "objectiveCoverage", "lastAssessedAt", "nextDue"}
+    fields = {"memberKey", "itemRevisionId", "state", "objectiveCoverage", "lastAssessedAt", "nextDue", "title"}
     require(set(item) == fields, "invalid Study progress shape")
     return item
 
