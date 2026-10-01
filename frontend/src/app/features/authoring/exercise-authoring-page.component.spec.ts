@@ -953,11 +953,11 @@ describe('ExerciseAuthoringPageComponent', () => {
         refresh();
         expect(getUserMedia).not.toHaveBeenCalled();
         const slots = root.querySelectorAll('app-match-editor [data-pair] app-exercise-slot-editor');
-        buttonByText('+ Изображение, аудио или видео', slots[1]).click(); refresh();
+        buttonByText('Добавить аудио', slots[1]).click(); refresh();
         expect(slots[1].querySelector('app-native-media-upload')).not.toBeNull();
         expect(slots[0].querySelector('app-native-media-upload')).toBeNull();
         const before = JSON.stringify(component().drafts());
-        buttonByText('Записать аудио', slots[1]).click();
+        buttonByText('Записать аудио', slots[1]).click(); refresh();
         await fixture.whenStable(); refresh();
         expect(getUserMedia).toHaveBeenCalledTimes(1);
         expect(slots[1].textContent).toContain('Доступ к микрофону запрещён');
@@ -970,8 +970,8 @@ describe('ExerciseAuthoringPageComponent', () => {
         configure();
         select('MATCH');
         const slots = page().querySelectorAll('app-match-editor [data-pair] app-exercise-slot-editor');
-        buttonByText('+ Изображение, аудио или видео', slots[2]).click(); refresh();
-        buttonByText('+ Изображение, аудио или видео', slots[0]).click(); refresh();
+        buttonByText('Добавить аудио', slots[2]).click(); refresh();
+        buttonByText('Добавить аудио', slots[0]).click(); refresh();
         const upload = slots[2].querySelector('app-native-media-upload')!;
         const instance = fixture.debugElement.queryAll(el => el.nativeElement === upload)[0].componentInstance;
         const scrolled = scroll.calls.count();

@@ -151,7 +151,7 @@ export async function runMechanics(ctx) {
     return { ready: row.querySelector('.media-status')?.textContent?.includes('Готов к просмотру') === true,
       error: row.querySelector('.media-status[role="alert"]')?.textContent.trim() ?? null };`, slot, name);
   async function uploadIntoSlot(slot, name, label, upload) {
-    await realClick({ ...slot, css: 'button[data-add]', includes: 'Изображение, аудио или видео' });
+    await realClick({ ...slot, css: 'button[data-add]', includes: 'Добавить аудио' });
     await waitFor(() => has({ ...slot, css: 'app-native-media-upload .media-drop' }), label + ': picker did not render');
     await upload();
     await waitFor(async () => {
@@ -543,9 +543,8 @@ export async function runMechanics(ctx) {
     // Pair 3, left side: its text plus a recording from the SYNTHETIC microphone (Chrome fake device flags).
     const recordSide = pair(2, 0);
     try {
-      await realClick({ ...recordSide, css: 'button[data-add]', includes: 'Изображение, аудио или видео' });
-      await waitFor(() => slotButton(recordSide, 'Записать аудио'), 'record control absent');
-      await keys.Enter();
+      // «Записать аудио» opens the picker in recording mode and starts the recorder on that click.
+      await realClick({ ...recordSide, css: 'button[data-record]', text: 'Записать аудио' });
       await waitFor(() => slotButton(recordSide, 'Остановить запись'), 'recording did not start with the fake microphone', 15_000);
       await new Promise(resolve => setTimeout(resolve, 1800));
       await keys.Enter();

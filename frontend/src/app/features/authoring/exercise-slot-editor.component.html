@@ -80,18 +80,24 @@
     <button type="button" class="button" data-add [disabled]="!canAdd('TEXT')" (click)="add('TEXT')">+ Текст</button>
     <button type="button" class="button" data-add [disabled]="!canAdd('MATERIAL') || context().projections.length === 0"
             (click)="add('MATERIAL')">+ Фрагмент материала</button>
-    <button type="button" class="button" data-add [attr.aria-expanded]="pickerOpen()" [disabled]="!canAddMedia()"
-            (click)="togglePicker()">+ Изображение, аудио или видео</button>
+    <button type="button" class="button" data-add [attr.aria-expanded]="pickerShows('image')" [disabled]="!canAddMedia('image')"
+            (click)="openPicker('image', $any($event.currentTarget))">Добавить изображение</button>
+    <button type="button" class="button" data-add [attr.aria-expanded]="pickerShows('audio')" [disabled]="!canAddMedia('audio')"
+            (click)="openPicker('audio', $any($event.currentTarget))">Добавить аудио</button>
+    <button type="button" class="button" data-add [attr.aria-expanded]="pickerShows('video')" [disabled]="!canAddMedia('video')"
+            (click)="openPicker('video', $any($event.currentTarget))">Добавить видео</button>
+    <button type="button" class="button" data-add data-record [attr.aria-expanded]="pickerShows('audio', true)" [disabled]="!canAddMedia('audio')"
+            (click)="openPicker('audio', $any($event.currentTarget), true)">Записать аудио</button>
     @if (canAddYoutube()) {
       <button type="button" class="button" data-add [disabled]="!canAdd('YOUTUBE')" (click)="add('YOUTUBE')">+ YouTube</button>
     }
   </div>
 
   @if (pickerMounted()) {
-    <div class="media-picker" [hidden]="!pickerOpen()">
-      <p class="hint">Выберите файл из материала, загрузите новый или запишите аудио. Микрофон включится только после нажатия «Записать аудио».</p>
-      <app-native-media-upload [document]="context().document" chooseLabel="Добавить в упражнение" (chooseAsset)="onAsset($event)" />
-      <button type="button" class="button" (click)="pickerOpen.set(false)">Закрыть выбор файла</button>
+    <div class="media-picker" [hidden]="!pickerOpen()" tabindex="-1" role="group" aria-label="Выбор файла для блока">
+      <p class="hint">Выберите файл из материала или загрузите новый.@if (pickerKind() === 'audio') { Микрофон включится только после нажатия «Записать аудио».}</p>
+      <app-native-media-upload [document]="context().document" [kind]="pickerKind()" chooseLabel="Добавить в упражнение" (chooseAsset)="onAsset($event)" />
+      <button type="button" class="button" (click)="closePicker()">Закрыть выбор файла</button>
     </div>
   }
   @if (notice(); as message) { <p class="field-error" role="alert">{{ message }}</p> }

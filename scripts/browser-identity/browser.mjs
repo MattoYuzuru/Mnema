@@ -816,7 +816,7 @@ try {
       require(await second.callFunction(`function() {
         const slot = document.querySelector('#free-response-prompt-text-0')?.closest('app-exercise-slot-editor');
         const add = [...(slot?.querySelectorAll('button[data-add]') ?? [])]
-          .find(button => button.textContent.includes('Изображение, аудио или видео'));
+          .find(button => button.textContent.trim() === 'Добавить аудио');
         if (!(add instanceof HTMLButtonElement)) return false;
         add.click(); return true;
       }`), 'prompt media picker could not be opened');
