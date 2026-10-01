@@ -60,7 +60,7 @@ public class MediaCatalog {
         UuidPolicy.requireEntityId(verifiedBlob, "blobId");
         return jdbc.sql("UPDATE app_learning.media_asset SET state='READY', source_blob_id=:blob, "
                         + "owner_hold_until=CURRENT_TIMESTAMP + (:holdSeconds * interval '1 second'), "
-                        + "updated_at=CURRENT_TIMESTAMP "
+                        + "updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) "
                         + "WHERE asset_id=:asset AND generation=:generation "
                         + "AND state IN ('VERIFYING','PROCESSING')")
                 .param("asset", asset).param("generation", generation).param("blob", verifiedBlob)
@@ -252,7 +252,7 @@ public class MediaCatalog {
                         + "ORDER BY a.owner_hold_until,a.asset_id LIMIT :limit FOR UPDATE OF a SKIP LOCKED")
                 .param("limit", limit).query(UUID.class).list();
         for (UUID candidate : candidates) {
-            jdbc.sql("UPDATE app_learning.media_asset SET state='DELETED',updated_at=CURRENT_TIMESTAMP "
+            jdbc.sql("UPDATE app_learning.media_asset SET state='DELETED',updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) "
                             + "WHERE asset_id=:asset AND state='READY'")
                     .param("asset", candidate).update();
         }

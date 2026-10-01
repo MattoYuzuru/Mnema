@@ -79,7 +79,7 @@ public class PasswordRecovery {
             var access = proofs.identify(token);
             proofs.consume(access, token, OwnershipProofs.Purpose.VERIFY_EMAIL);
             jdbcClient.sql(
-                            "UPDATE app_identity.account SET email_verified=true,updated_at=statement_timestamp() WHERE account_id=:id")
+                            "UPDATE app_identity.account SET email_verified=true,updated_at=GREATEST(statement_timestamp(),updated_at) WHERE account_id=:id")
                     .param("id", access.accountId()).update();
         });
     }

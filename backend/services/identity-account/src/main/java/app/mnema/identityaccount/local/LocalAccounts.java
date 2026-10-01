@@ -105,7 +105,7 @@ public class LocalAccounts {
                             "UPDATE app_identity.local_credential SET failed_login_attempts=0,locked_until=NULL WHERE account_id=:id")
                     .param("id", a.accountId()).update();
             if (!recoveryOnly && !deletionProof)
-                jdbcClient.sql("UPDATE app_identity.account SET last_login_at=statement_timestamp() WHERE account_id=:id")
+                jdbcClient.sql("UPDATE app_identity.account SET last_login_at=GREATEST(statement_timestamp(),created_at) WHERE account_id=:id")
                         .param("id", a.accountId()).update();
             return new Authentication(a.access(), recoveryOnly);
         });
@@ -133,7 +133,7 @@ public class LocalAccounts {
         validatePassword(next);
         accounts.get(id, true);
         jdbcClient.sql(
-                        "UPDATE app_identity.local_credential SET password_hash=:hash,failed_login_attempts=0,locked_until=NULL,updated_at=statement_timestamp() WHERE account_id=:id")
+                        "UPDATE app_identity.local_credential SET password_hash=:hash,failed_login_attempts=0,locked_until=NULL,updated_at=GREATEST(statement_timestamp(),updated_at) WHERE account_id=:id")
                 .param("hash", passwords.encode(next)).param("id", id).update();
         accounts.revoke(id);
     }

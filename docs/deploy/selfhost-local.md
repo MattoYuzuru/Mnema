@@ -218,6 +218,28 @@ and the two smoke state files. The CA, signing JWK, truststore and credentials s
 `stop`/`start` keep every volume; the bucket step is idempotent. State created before
 object storage existed is upgraded in place by `start`/`bootstrap` without rotating
 the signing key, database password or CA.
+### Colima clock
+
+**Symptom.** Sporadic HTTP 500 (for example on `POST /api/media-assets/{id}/upload/finalize`)
+or a flaky `AuthoringServiceIntegrationTest`, with a `DataIntegrityViolationException` on a
+`updated_at >= created_at` style CHECK. The Colima VM clock, and therefore PostgreSQL's
+`CURRENT_TIMESTAMP`, stepped backwards by roughly 100-150 ms every ~10 s because two time
+syncs fought each other. The application now keeps such row timestamps monotonic, so a small
+backwards step no longer fails requests, but the VM clock should still be fixed at the source.
+
+**Fix.** `lima-guestagent` must be the only time source in the Colima VM. Disable the second one:
+
+```bash
+colima ssh -- sudo systemctl disable --now systemd-timesyncd
+```
+
+**Verify.** `colima ssh -- journalctl | grep SyncTime` must not show recurring corrections of
+100 ms or more.
+
+**Rollback.** `colima ssh -- sudo systemctl enable --now systemd-timesyncd`.
+
+`colima delete` recreates the VM, so repeat the fix after every recreation.
+
 <!-- END full-local-stack-with-media -->
 
 `docker-compose.yml` remains the backend-only maintenance runtime from #143. Use it

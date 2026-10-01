@@ -58,7 +58,7 @@ class MediaUploadRepository {
         }
         quota(owner, length);
         int updated = jdbc.sql("UPDATE app_learning.media_asset SET generation=generation+1,state='PENDING_UPLOAD',"
-                        + "source_blob_id=NULL,owner_hold_until=NULL,updated_at=CURRENT_TIMESTAMP "
+                        + "source_blob_id=NULL,owner_hold_until=NULL,updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) "
                         + "WHERE asset_id=:asset AND owner_id=:owner AND generation=:generation")
                 .param("asset", asset).param("owner", owner).param("generation", current.generation()).update();
         if (updated != 1) throw new MediaUploadConflictException();
@@ -98,14 +98,14 @@ class MediaUploadRepository {
     @Transactional
     boolean claimInitiation(UUID sessionId) {
         return jdbc.sql("UPDATE app_learning.media_upload_session SET lease_until=CURRENT_TIMESTAMP + interval '5 minutes',"
-                        + "updated_at=CURRENT_TIMESTAMP WHERE session_id=:session AND state='INITIATING' "
+                        + "updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) WHERE session_id=:session AND state='INITIATING' "
                         + "AND (lease_until IS NULL OR lease_until<CURRENT_TIMESTAMP)")
                 .param("session", sessionId).update() == 1;
     }
 
     @Transactional
     void releaseInitiation(UUID sessionId) {
-        jdbc.sql("UPDATE app_learning.media_upload_session SET lease_until=NULL,updated_at=CURRENT_TIMESTAMP "
+        jdbc.sql("UPDATE app_learning.media_upload_session SET lease_until=NULL,updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) "
                         + "WHERE session_id=:session AND state='INITIATING'")
                 .param("session", sessionId).update();
     }
@@ -113,7 +113,7 @@ class MediaUploadRepository {
     @Transactional
     Session open(UUID sessionId, String storageUploadId) {
         int updated = jdbc.sql("UPDATE app_learning.media_upload_session SET state='OPEN',storage_upload_id=:storage,"
-                        + "lease_until=NULL,updated_at=CURRENT_TIMESTAMP WHERE session_id=:session AND state='INITIATING'")
+                        + "lease_until=NULL,updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) WHERE session_id=:session AND state='INITIATING'")
                 .param("storage", storageUploadId).param("session", sessionId).update();
         if (updated != 1) throw new MediaUploadConflictException();
         return byId(sessionId);
@@ -126,7 +126,7 @@ class MediaUploadRepository {
                 || !session.expiresAt().isAfter(Instant.now())) throw new MediaUploadConflictException();
         int updated = jdbc.sql("UPDATE app_learning.media_upload_session SET "
                         + "issued_until=GREATEST(issued_until,:signedExpiry),"
-                        + "updated_at=CURRENT_TIMESTAMP WHERE session_id=:session AND state='OPEN' "
+                        + "updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) WHERE session_id=:session AND state='OPEN' "
                         + "AND expires_at>CURRENT_TIMESTAMP")
                 .param("signedExpiry", java.sql.Timestamp.from(signedExpiry.plusSeconds(1)))
                 .param("session", session.sessionId()).update();
@@ -151,7 +151,7 @@ class MediaUploadRepository {
         if (session.state().equals("FINALIZING") && session.leaseUntil() != null
                 && session.leaseUntil().isAfter(Instant.now())) return new Claim(session, false);
         jdbc.sql("UPDATE app_learning.media_upload_session SET state='FINALIZING',finalize_command_id=:command,"
-                        + "lease_until=CURRENT_TIMESTAMP + (:lease * interval '1 second'),updated_at=CURRENT_TIMESTAMP "
+                        + "lease_until=CURRENT_TIMESTAMP + (:lease * interval '1 second'),updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) "
                         + "WHERE session_id=:session")
                 .param("command", command).param("session", session.sessionId())
                 .param("lease", settings.finalizeLease.toSeconds()).update();
@@ -161,7 +161,7 @@ class MediaUploadRepository {
     @Transactional
     void releaseIncomplete(UUID sessionId, UUID command) {
         jdbc.sql("UPDATE app_learning.media_upload_session SET state='OPEN',lease_until=NULL,"
-                        + "updated_at=CURRENT_TIMESTAMP WHERE session_id=:session AND state='FINALIZING' "
+                        + "updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) WHERE session_id=:session AND state='FINALIZING' "
                         + "AND finalize_command_id=:command")
                 .param("session", sessionId).param("command", command).update();
     }
@@ -169,7 +169,7 @@ class MediaUploadRepository {
     @Transactional
     boolean claimCopy(UUID sessionId, UUID command) {
         return jdbc.sql("UPDATE app_learning.media_upload_session SET copy_started_at=CURRENT_TIMESTAMP,"
-                        + "updated_at=CURRENT_TIMESTAMP WHERE session_id=:session AND state='FINALIZING' "
+                        + "updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) WHERE session_id=:session AND state='FINALIZING' "
                         + "AND finalize_command_id=:command AND copy_started_at IS NULL")
                 .param("session", sessionId).param("command", command).update() == 1;
     }
@@ -177,7 +177,7 @@ class MediaUploadRepository {
     @Transactional
     void rejectedCopyPrecondition(UUID sessionId, UUID command) {
         jdbc.sql("UPDATE app_learning.media_upload_session SET copy_started_at=NULL,state='OPEN',lease_until=NULL,"
-                        + "updated_at=CURRENT_TIMESTAMP WHERE session_id=:session AND state='FINALIZING' "
+                        + "updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) WHERE session_id=:session AND state='FINALIZING' "
                         + "AND finalize_command_id=:command")
                 .param("session", sessionId).param("command", command).update();
     }
@@ -187,9 +187,9 @@ class MediaUploadRepository {
         Session session = byIdForUpdate(sessionId);
         if (!session.state().equals("FINALIZING") || !command.equals(session.finalizeCommandId())) return;
         jdbc.sql("UPDATE app_learning.media_upload_session SET state='FAILED',lease_until=NULL,"
-                        + "updated_at=CURRENT_TIMESTAMP WHERE session_id=:session")
+                        + "updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) WHERE session_id=:session")
                 .param("session", sessionId).update();
-        jdbc.sql("UPDATE app_learning.media_asset SET state='FAILED_RETRYABLE',updated_at=CURRENT_TIMESTAMP "
+        jdbc.sql("UPDATE app_learning.media_asset SET state='FAILED_RETRYABLE',updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) "
                         + "WHERE asset_id=:asset AND owner_id=:owner AND generation=:generation "
                         + "AND state='PENDING_UPLOAD'")
                 .param("asset", session.assetId()).param("owner", session.ownerId())
@@ -203,14 +203,14 @@ class MediaUploadRepository {
         if (!session.state().equals("FINALIZING") || !command.equals(session.finalizeCommandId())) {
             throw new MediaUploadConflictException();
         }
-        int updated = jdbc.sql("UPDATE app_learning.media_asset SET state='VERIFYING',updated_at=CURRENT_TIMESTAMP "
+        int updated = jdbc.sql("UPDATE app_learning.media_asset SET state='VERIFYING',updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) "
                         + "WHERE asset_id=:asset AND owner_id=:owner AND generation=:generation "
                         + "AND state='PENDING_UPLOAD'")
                 .param("asset", session.assetId()).param("owner", session.ownerId())
                 .param("generation", session.generation()).update();
         if (updated != 1) throw new MediaUploadConflictException();
         jdbc.sql("UPDATE app_learning.media_upload_session SET state='SEALED',lease_until=NULL,"
-                        + "updated_at=CURRENT_TIMESTAMP WHERE session_id=:session")
+                        + "updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) WHERE session_id=:session")
                 .param("session", sessionId).update();
     }
 
@@ -222,9 +222,9 @@ class MediaUploadRepository {
         }
         if (!session.state().equals("ABORTING") && !session.state().equals("ABORTED")) {
             jdbc.sql("UPDATE app_learning.media_upload_session SET state='ABORTING',lease_until=NULL,"
-                            + "updated_at=CURRENT_TIMESTAMP WHERE session_id=:session")
+                            + "updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) WHERE session_id=:session")
                     .param("session", session.sessionId()).update();
-            jdbc.sql("UPDATE app_learning.media_asset SET state='FAILED_RETRYABLE',updated_at=CURRENT_TIMESTAMP "
+            jdbc.sql("UPDATE app_learning.media_asset SET state='FAILED_RETRYABLE',updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) "
                             + "WHERE asset_id=:asset AND owner_id=:owner AND generation=:generation "
                             + "AND state='PENDING_UPLOAD'")
                     .param("asset", asset).param("owner", owner).param("generation", generation).update();
@@ -234,14 +234,14 @@ class MediaUploadRepository {
 
     @Transactional
     List<Session> cleanupCandidates(int limit) {
-        jdbc.sql("UPDATE app_learning.media_upload_session SET state='EXPIRED',updated_at=CURRENT_TIMESTAMP "
+        jdbc.sql("UPDATE app_learning.media_upload_session SET state='EXPIRED',updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) "
                         + "WHERE state='FINALIZING' AND expires_at<CURRENT_TIMESTAMP "
                         + "AND lease_until<CURRENT_TIMESTAMP")
                 .update();
-        jdbc.sql("UPDATE app_learning.media_upload_session SET state='EXPIRED',updated_at=CURRENT_TIMESTAMP "
+        jdbc.sql("UPDATE app_learning.media_upload_session SET state='EXPIRED',updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) "
                         + "WHERE state IN ('INITIATING','OPEN') AND expires_at<CURRENT_TIMESTAMP")
                 .update();
-        jdbc.sql("UPDATE app_learning.media_asset a SET state='FAILED_RETRYABLE',updated_at=CURRENT_TIMESTAMP "
+        jdbc.sql("UPDATE app_learning.media_asset a SET state='FAILED_RETRYABLE',updated_at=GREATEST(CURRENT_TIMESTAMP,a.updated_at) "
                         + "FROM app_learning.media_upload_session s WHERE s.asset_id=a.asset_id "
                         + "AND s.generation=a.generation AND s.state='EXPIRED' AND a.state='PENDING_UPLOAD'")
                 .update();
@@ -257,7 +257,7 @@ class MediaUploadRepository {
     void cleaned(UUID sessionId) {
         jdbc.sql("UPDATE app_learning.media_upload_session SET cleanup_done_at=CURRENT_TIMESTAMP,"
                         + "state=CASE WHEN state='ABORTING' THEN 'ABORTED' ELSE state END,"
-                        + "updated_at=CURRENT_TIMESTAMP WHERE session_id=:session AND cleanup_done_at IS NULL")
+                        + "updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) WHERE session_id=:session AND cleanup_done_at IS NULL")
                 .param("session", sessionId).update();
     }
 

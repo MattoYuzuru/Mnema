@@ -93,7 +93,7 @@ public class AccountDeletions {
                             UPDATE app_identity.account
                             SET deletion_state='PENDING_DELETION',deletion_generation=:generation,
                                 is_admin=false,admin_granted_by=NULL,admin_granted_at=NULL,
-                                updated_at=transaction_timestamp(),row_version=row_version+1
+                                updated_at=GREATEST(transaction_timestamp(),updated_at),row_version=row_version+1
                             WHERE account_id=:account
                             """).param("generation", generation).param("account", account.accountId()).update();
             if (updated != 1) throw new AccountFailure(409, "deletion_state_conflict");
@@ -121,7 +121,7 @@ public class AccountDeletions {
             if (deleted != 1) throw AccountFailure.forbidden();
             int restored = jdbcClient.sql("""
                             UPDATE app_identity.account
-                            SET deletion_state='ACTIVE',updated_at=transaction_timestamp(),row_version=row_version+1
+                            SET deletion_state='ACTIVE',updated_at=GREATEST(transaction_timestamp(),updated_at),row_version=row_version+1
                             WHERE account_id=:account AND deletion_state='PENDING_DELETION'
                             """).param("account", access.accountId()).update();
             if (restored != 1) throw AccountFailure.forbidden();

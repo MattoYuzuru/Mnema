@@ -46,12 +46,12 @@ class MediaProcessingRepository {
                 .optional().orElse(null);
         if (candidate == null) return null;
         if (candidate.attempts() >= settings.maxAttempts) {
-            jdbc.sql("UPDATE app_learning.media_asset SET state='FAILED_RETRYABLE',updated_at=CURRENT_TIMESTAMP "
+            jdbc.sql("UPDATE app_learning.media_asset SET state='FAILED_RETRYABLE',updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) "
                             + "WHERE asset_id=:asset AND generation=:generation AND state IN ('VERIFYING','PROCESSING')")
                     .param("asset", candidate.assetId()).param("generation", candidate.generation()).update();
             jdbc.sql("UPDATE app_learning.media_upload_session SET processing_token=NULL,lease_until=NULL,"
                             + "processing_next_attempt_at=NULL,processing_error_code='processing_interrupted',"
-                            + "updated_at=CURRENT_TIMESTAMP WHERE session_id=:session")
+                            + "updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) WHERE session_id=:session")
                     .param("session", candidate.sessionId()).update();
             return null;
         }
@@ -60,10 +60,10 @@ class MediaProcessingRepository {
                         + "processing_attempts=processing_attempts+1,"
                         + "processing_next_attempt_at=NULL,processing_error_code=NULL,"
                         + "lease_until=CURRENT_TIMESTAMP + (:lease * interval '1 second'),"
-                        + "updated_at=CURRENT_TIMESTAMP WHERE session_id=:session")
+                        + "updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) WHERE session_id=:session")
                 .param("token", token).param("lease", settings.lease.toSeconds())
                 .param("session", candidate.sessionId()).update();
-        jdbc.sql("UPDATE app_learning.media_asset SET state='PROCESSING',updated_at=CURRENT_TIMESTAMP "
+        jdbc.sql("UPDATE app_learning.media_asset SET state='PROCESSING',updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) "
                         + "WHERE asset_id=:asset AND generation=:generation AND state IN ('VERIFYING','PROCESSING')")
                 .param("asset", candidate.assetId()).param("generation", candidate.generation()).update();
         return new Claim(candidate.sessionId(), candidate.assetId(), candidate.generation(),
@@ -74,7 +74,7 @@ class MediaProcessingRepository {
     boolean heartbeat(Claim claim) {
         return jdbc.sql("UPDATE app_learning.media_upload_session s SET "
                         + "lease_until=CURRENT_TIMESTAMP + (:lease * interval '1 second'),"
-                        + "updated_at=CURRENT_TIMESTAMP FROM app_learning.media_asset a "
+                        + "updated_at=GREATEST(CURRENT_TIMESTAMP,s.updated_at) FROM app_learning.media_asset a "
                         + "WHERE s.session_id=:session AND s.processing_token=:token "
                         + "AND s.lease_until>CURRENT_TIMESTAMP AND s.state='SEALED' "
                         + "AND a.asset_id=s.asset_id AND a.generation=s.generation "
@@ -102,7 +102,7 @@ class MediaProcessingRepository {
             throw new IllegalStateException("Media asset changed during publication");
         }
         jdbc.sql("UPDATE app_learning.media_upload_session SET processing_token=NULL,lease_until=NULL,"
-                        + "processing_next_attempt_at=NULL,processing_error_code=NULL,updated_at=CURRENT_TIMESTAMP "
+                        + "processing_next_attempt_at=NULL,processing_error_code=NULL,updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) "
                         + "WHERE session_id=:session AND processing_token=:token")
                 .param("session", claim.sessionId()).param("token", claim.token()).update();
         return true;
@@ -111,7 +111,7 @@ class MediaProcessingRepository {
     @Transactional
     boolean rejected(Claim claim, String code) {
         if (!current(claim)) return false;
-        jdbc.sql("UPDATE app_learning.media_asset SET state='REJECTED',updated_at=CURRENT_TIMESTAMP "
+        jdbc.sql("UPDATE app_learning.media_asset SET state='REJECTED',updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) "
                         + "WHERE asset_id=:asset AND generation=:generation AND state='PROCESSING'")
                 .param("asset", claim.assetId()).param("generation", claim.generation()).update();
         release(claim, code, null);
@@ -122,7 +122,7 @@ class MediaProcessingRepository {
     boolean retryable(Claim claim, String code) {
         if (!current(claim)) return false;
         if (claim.attempt() >= settings.maxAttempts) {
-            jdbc.sql("UPDATE app_learning.media_asset SET state='FAILED_RETRYABLE',updated_at=CURRENT_TIMESTAMP "
+            jdbc.sql("UPDATE app_learning.media_asset SET state='FAILED_RETRYABLE',updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) "
                             + "WHERE asset_id=:asset AND generation=:generation AND state='PROCESSING'")
                     .param("asset", claim.assetId()).param("generation", claim.generation()).update();
             release(claim, code, null);
@@ -144,9 +144,9 @@ class MediaProcessingRepository {
                 .query(UUID.class).optional().orElseThrow(ResourceNotFoundException::new);
         jdbc.sql("UPDATE app_learning.media_upload_session SET processing_attempts=0,"
                         + "processing_token=NULL,lease_until=NULL,processing_next_attempt_at=NULL,"
-                        + "processing_error_code=NULL,updated_at=CURRENT_TIMESTAMP WHERE session_id=:session")
+                        + "processing_error_code=NULL,updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) WHERE session_id=:session")
                 .param("session", session).update();
-        jdbc.sql("UPDATE app_learning.media_asset SET state='VERIFYING',updated_at=CURRENT_TIMESTAMP "
+        jdbc.sql("UPDATE app_learning.media_asset SET state='VERIFYING',updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) "
                         + "WHERE asset_id=:asset AND generation=:generation")
                 .param("asset", asset).param("generation", generation).update();
     }
@@ -168,7 +168,7 @@ class MediaProcessingRepository {
         jdbc.sql("UPDATE app_learning.media_upload_session SET processing_token=NULL,lease_until=NULL,"
                         + "processing_next_attempt_at=CASE WHEN CAST(:delay AS bigint) IS NULL THEN NULL "
                         + "ELSE CURRENT_TIMESTAMP + (CAST(:delay AS bigint) * interval '1 second') END,"
-                        + "processing_error_code=:code,updated_at=CURRENT_TIMESTAMP "
+                        + "processing_error_code=:code,updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) "
                         + "WHERE session_id=:session AND processing_token=:token")
                 .param("delay", delay == null ? null : delay.toSeconds())
                 .param("code", code).param("session", claim.sessionId())
@@ -196,7 +196,7 @@ class MediaProcessingRepository {
         if ("FIRST".equals(state) || "SECOND".equals(state)) {
             jdbc.sql("UPDATE app_learning.media_gc_object SET state='TRACKED',first_scan_at=NULL,"
                             + "first_scan_epoch=NULL,second_scan_at=NULL,next_attempt_at=NULL,"
-                            + "updated_at=CURRENT_TIMESTAMP WHERE object_key=:key")
+                            + "updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) WHERE object_key=:key")
                     .param("key", existing.objectKey()).update();
         }
         return existing.id();
