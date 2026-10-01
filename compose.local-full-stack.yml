@@ -1,5 +1,53 @@
 name: mnema-local-v2
 
+# Local development stack only: PostgreSQL, Identity, Learning, MinIO object storage,
+# the Learning media processor and the Angular frontend behind a local HTTPS proxy.
+# This is not a deployment definition. The launcher (scripts/mnema-local-full-stack.sh)
+# supplies every variable; see docs/deploy/selfhost-local.md, "Full local stack with media".
+
+x-backend-build: &backend-build
+  context: ./backend
+  dockerfile: ../deploy/local-full-stack/backend-runtime.Dockerfile
+
+x-hardened-runtime: &hardened-runtime
+  read_only: true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=128m,uid=10001,gid=10001
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  restart: unless-stopped
+
+# Local CA trust for Java clients that call Identity or the HTTPS object store.
+x-local-truststore: &local-truststore
+  JAVA_TOOL_OPTIONS: >-
+    -Djavax.net.ssl.trustStore=/run/secrets/mnema_local_truststore
+    -Djavax.net.ssl.trustStorePassword=changeit
+    -Djavax.net.ssl.trustStoreType=PKCS12
+
+x-database: &database
+  SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${MNEMA_LOCAL_POSTGRES_DB:-mnema}
+  SPRING_DATASOURCE_USERNAME: ${MNEMA_LOCAL_POSTGRES_USER:-mnema}
+  SPRING_DATASOURCE_PASSWORD: ${MNEMA_LOCAL_POSTGRES_PASSWORD:?Local launcher did not provide its PostgreSQL password}
+
+# Shared by both Learning instances (browser-facing and processor). The signed-URL
+# host and port are the same inside Compose and in the browser.
+x-learning-environment: &learning-environment
+  <<: [*local-truststore, *database]
+  APP_ENV: local-full-stack
+  MNEMA_BUILD_ID: ${MNEMA_LOCAL_BUILD_ID:?Local launcher did not provide a build id}
+  MNEMA_IDENTITY_ISSUER: https://localhost:${MNEMA_LOCAL_IDENTITY_PORT:-3444}
+  LEARNING_IDENTITY_TRANSPORT_BASE: https://frontend:8444
+  LEARNING_MEDIA_UPLOAD_ENDPOINT: https://storage.mnema.localhost:${MNEMA_LOCAL_STORAGE_PORT:-3445}
+  LEARNING_MEDIA_UPLOAD_REGION: us-east-1
+  LEARNING_MEDIA_UPLOAD_BUCKET: mnema-local-media
+  LEARNING_MEDIA_UPLOAD_ACCESS_KEY: ${MNEMA_LOCAL_S3_ACCESS_KEY:?Local launcher did not provide its object-storage access key}
+  LEARNING_MEDIA_UPLOAD_SECRET_KEY: ${MNEMA_LOCAL_S3_SECRET_KEY:?Local launcher did not provide its object-storage secret key}
+
+# Official MinIO image, pinned by the digest the repository already uses for staging
+# (k8s/staging/data.yaml). MinIO no longer serves it from Docker Hub or Quay, so it
+# must already be in the local image store; see the runbook. The image ships `mc`.
+x-minio-image: &minio-image quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+
 services:
   postgres:
     image: postgres:18@sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941
@@ -16,12 +64,63 @@ services:
       retries: 30
     restart: unless-stopped
 
+  minio:
+    image: *minio-image
+    command: ["server", "/data", "--address", ":${MNEMA_LOCAL_STORAGE_PORT:-3445}", "--certs-dir", "/run/secrets"]
+    environment:
+      MINIO_ROOT_USER: ${MNEMA_LOCAL_S3_ACCESS_KEY:?Local launcher did not provide its object-storage access key}
+      MINIO_ROOT_PASSWORD: ${MNEMA_LOCAL_S3_SECRET_KEY:?Local launcher did not provide its object-storage secret key}
+      MINIO_API_CORS_ALLOW_ORIGIN: https://localhost:${MNEMA_LOCAL_WEB_PORT:-3443}
+    networks:
+      default:
+        aliases: [storage.mnema.localhost]
+    ports:
+      - "127.0.0.1:${MNEMA_LOCAL_STORAGE_PORT:-3445}:${MNEMA_LOCAL_STORAGE_PORT:-3445}"
+    volumes:
+      - local_object_data:/data
+    secrets:
+      - source: mnema_local_storage_tls_cert
+        target: public.crt
+      - source: mnema_local_storage_tls_key
+        target: private.key
+      - source: mnema_local_ca_cert
+        target: local-ca.crt
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl --fail --silent --cacert /run/secrets/local-ca.crt https://storage.mnema.localhost:${MNEMA_LOCAL_STORAGE_PORT:-3445}/minio/health/ready >/dev/null
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  # One-shot and idempotent: creates the buckets (and avatar versioning) on every start.
+  minio-init:
+    image: *minio-image
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        mc alias set local https://storage.mnema.localhost:${MNEMA_LOCAL_STORAGE_PORT:-3445} "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        mc mb --ignore-existing local/mnema-local-avatars
+        mc mb --ignore-existing local/mnema-local-media
+        mc version enable local/mnema-local-avatars
+    environment:
+      MINIO_ROOT_USER: ${MNEMA_LOCAL_S3_ACCESS_KEY:?Local launcher did not provide its object-storage access key}
+      MINIO_ROOT_PASSWORD: ${MNEMA_LOCAL_S3_SECRET_KEY:?Local launcher did not provide its object-storage secret key}
+      SSL_CERT_FILE: /run/secrets/local-ca.crt
+    secrets:
+      - source: mnema_local_ca_cert
+        target: local-ca.crt
+    depends_on:
+      minio: {condition: service_healthy}
+    restart: "no"
+
   identity-account:
     build:
-      context: ./backend
-      dockerfile: ../deploy/local-full-stack/backend-runtime.Dockerfile
+      <<: *backend-build
       target: identity-account-runtime
     environment:
+      <<: [*local-truststore, *database]
       PORT: "8081"
       APP_ENV: local-full-stack
       MNEMA_BUILD_ID: ${MNEMA_LOCAL_BUILD_ID:?Local launcher did not provide a build id}
@@ -31,47 +130,84 @@ services:
       MNEMA_IDENTITY_TRUSTED_PROXY_CIDRS: 127.0.0.0/8,::1/128
       MNEMA_IDENTITY_SIGNING_JWK_SET_FILE: /run/secrets/mnema_identity_signing_jwk
       MNEMA_IDENTITY_SIGNING_ACTIVE_KID: blackbox
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${MNEMA_LOCAL_POSTGRES_DB:-mnema}
-      SPRING_DATASOURCE_USERNAME: ${MNEMA_LOCAL_POSTGRES_USER:-mnema}
-      SPRING_DATASOURCE_PASSWORD: ${MNEMA_LOCAL_POSTGRES_PASSWORD:?Local launcher did not provide its PostgreSQL password}
+      MNEMA_AVATAR_ENDPOINT: https://storage.mnema.localhost:${MNEMA_LOCAL_STORAGE_PORT:-3445}
+      MNEMA_AVATAR_REGION: us-east-1
+      MNEMA_AVATAR_BUCKET: mnema-local-avatars
+      MNEMA_AVATAR_ACCESS_KEY: ${MNEMA_LOCAL_S3_ACCESS_KEY:?Local launcher did not provide its object-storage access key}
+      MNEMA_AVATAR_SECRET_KEY: ${MNEMA_LOCAL_S3_SECRET_KEY:?Local launcher did not provide its object-storage secret key}
     depends_on:
       postgres: {condition: service_healthy}
+      minio-init: {condition: service_completed_successfully}
     secrets:
       - mnema_identity_signing_jwk
-    read_only: true
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,size=128m,uid=10001,gid=10001
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-    restart: unless-stopped
+      - mnema_local_truststore
+    <<: *hardened-runtime
 
   learning:
     build:
-      context: ./backend
-      dockerfile: ../deploy/local-full-stack/backend-runtime.Dockerfile
+      <<: *backend-build
       target: learning-runtime
-    environment:
-      APP_ENV: local-full-stack
-      MNEMA_BUILD_ID: ${MNEMA_LOCAL_BUILD_ID:?Local launcher did not provide a build id}
-      MNEMA_IDENTITY_ISSUER: https://localhost:${MNEMA_LOCAL_IDENTITY_PORT:-3444}
-      LEARNING_IDENTITY_TRANSPORT_BASE: https://frontend:8444
-      JAVA_TOOL_OPTIONS: >-
-        -Djavax.net.ssl.trustStore=/run/secrets/mnema_local_truststore
-        -Djavax.net.ssl.trustStorePassword=changeit
-        -Djavax.net.ssl.trustStoreType=PKCS12
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${MNEMA_LOCAL_POSTGRES_DB:-mnema}
-      SPRING_DATASOURCE_USERNAME: ${MNEMA_LOCAL_POSTGRES_USER:-mnema}
-      SPRING_DATASOURCE_PASSWORD: ${MNEMA_LOCAL_POSTGRES_PASSWORD:?Local launcher did not provide its PostgreSQL password}
+    environment: *learning-environment
     depends_on:
       postgres: {condition: service_healthy}
+      minio-init: {condition: service_completed_successfully}
     secrets:
       - mnema_local_truststore
+    <<: *hardened-runtime
+
+  # A second Learning instance that only drains the media queue. It is the one service
+  # that gets the Docker socket, because the existing worker gateway starts each
+  # FFmpeg job with `docker run`. That is host-root-equivalent: see the runbook.
+  # It has no published port and listens on its own container loopback only.
+  media-processor:
+    build:
+      <<: *backend-build
+      target: learning-media-processor-runtime
+    environment:
+      <<: *learning-environment
+      PORT: "8082"
+      SERVER_ADDRESS: 127.0.0.1
+      LEARNING_MEDIA_PROCESSING_ENABLED: "true"
+      LEARNING_MEDIA_PROCESSING_WORK_ROOT: ${MNEMA_LOCAL_MEDIA_WORK_ROOT:?Local launcher did not provide its media work root}
+      LEARNING_MEDIA_PROCESSING_IMAGE: ${MNEMA_LOCAL_MEDIA_WORKER_IMAGE:-mnema-media-worker:local}
+    depends_on:
+      postgres: {condition: service_healthy}
+      minio-init: {condition: service_completed_successfully}
+    volumes:
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+      # The Docker daemon resolves worker bind-mount sources on the host, so the work
+      # root is mounted at the identical absolute path.
+      - type: bind
+        source: ${MNEMA_LOCAL_MEDIA_WORK_ROOT:?Local launcher did not provide its media work root}
+        target: ${MNEMA_LOCAL_MEDIA_WORK_ROOT}
+    secrets:
+      - mnema_local_truststore
+    # Root is needed to use the daemon socket and to write the work root across the
+    # VM file-sharing boundary; every capability is dropped regardless.
+    user: "0:0"
     read_only: true
     tmpfs:
-      - /tmp:rw,noexec,nosuid,size=128m,uid=10001,gid=10001
+      - /tmp:rw,noexec,nosuid,size=128m
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://127.0.0.1:8082/api/actuator/health/readiness >/dev/null"]
+      interval: 3s
+      timeout: 3s
+      retries: 60
+      start_period: 20s
     restart: unless-stopped
+
+  # Build-only definition of the existing worker image; the launcher builds it with
+  # `--profile worker-image` and the processor starts it per job through Docker.
+  media-worker-image:
+    profiles: [worker-image]
+    build:
+      context: ./backend/media-worker
+      dockerfile: Dockerfile.local
+    image: ${MNEMA_LOCAL_MEDIA_WORKER_IMAGE:-mnema-media-worker:local}
 
   frontend:
     build:
@@ -90,6 +226,7 @@ services:
     depends_on:
       identity-account: {condition: service_started}
       learning: {condition: service_started}
+      media-processor: {condition: service_healthy}
     ports:
       - "127.0.0.1:${MNEMA_LOCAL_WEB_PORT:-3443}:8443"
       - "127.0.0.1:${MNEMA_LOCAL_IDENTITY_PORT:-3444}:8444"
@@ -118,6 +255,13 @@ secrets:
     file: ${MNEMA_LOCAL_TLS_KEY_FILE:?Local TLS private key path is required}
   mnema_local_truststore:
     file: ${MNEMA_LOCAL_TRUSTSTORE_FILE:?Local Learning truststore path is required}
+  mnema_local_storage_tls_cert:
+    file: ${MNEMA_LOCAL_STORAGE_TLS_CERT_FILE:?Local object-storage TLS certificate path is required}
+  mnema_local_storage_tls_key:
+    file: ${MNEMA_LOCAL_STORAGE_TLS_KEY_FILE:?Local object-storage TLS private key path is required}
+  mnema_local_ca_cert:
+    file: ${MNEMA_LOCAL_CA_CERT_FILE:?Local CA certificate path is required}
 
 volumes:
   local_postgres_data:
+  local_object_data:
