@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, NgZone, effect, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, effect, inject, input, signal } from '@angular/core';
 import { Subscription } from 'rxjs';
 
 import { MEDIA_PLAYBACK_RESOLVER } from '../../features/study/media-playback-resolver';
@@ -50,7 +50,6 @@ export class LearnerMediaComponent {
 
     private readonly resolver = inject(MEDIA_PLAYBACK_RESOLVER);
     private readonly destroyRef = inject(DestroyRef);
-    private readonly zone = inject(NgZone);
     private subscription: Subscription | null = null;
     private timer: ReturnType<typeof setTimeout> | null = null;
     private epoch = 0;
@@ -93,10 +92,10 @@ export class LearnerMediaComponent {
         const delay = value === null || !Number.isFinite(expiry) ? RETRY_MS
             : Math.max(MIN_RENEW_MS, Math.min(MAX_RENEW_MS, expiry));
         const epoch = this.epoch;
-        // A renewal timer must not keep the Angular zone busy: it is not application work in flight.
-        this.timer = this.zone.runOutsideAngular(() => setTimeout(() => {
-            if (epoch === this.epoch) this.zone.run(() => this.refresh());
-        }, delay));
+        // Zoneless: a plain timer is not application work in flight, and the signal writes in refresh() schedule rendering.
+        this.timer = setTimeout(() => {
+            if (epoch === this.epoch) this.refresh();
+        }, delay);
     }
 
     private cancel(): void {

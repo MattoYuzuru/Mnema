@@ -50,7 +50,6 @@ module.exports = defineConfig(
   },
   {
     files: [
-      "src/app/app.component.ts",
       "src/app/core/layout/app-shell.component.ts",
       "src/app/features/admin/admin-panel.component.ts",
       "src/app/features/decks/add-cards-modal.component.ts",
