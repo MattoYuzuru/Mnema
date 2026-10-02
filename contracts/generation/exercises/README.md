@@ -126,6 +126,8 @@ Findings are stable codes in [`lint.json`](lint.json) (`{code, path?}`, never ec
 | `CATEGORIZE` | at least 2 non-empty categories, each item in exactly one | `CATEGORIZE_UNKNOWN_CATEGORY`, `CATEGORIZE_TOO_FEW_NON_EMPTY_CATEGORIES` (exactly-one is structural: `category` is a single field) |
 | all | handles and local IDs are consistent | `REF_UNKNOWN_HANDLE`, `REF_UNKNOWN_OBJECTIVE`, `DUPLICATE_LOCAL_ID` |
 
+**Lint semantics are executed by AI-13** ([#291](https://github.com/MattoYuzuru/Mnema/issues/291)): the committed tests check that the fixtures are well formed, that every `expectedLint` code exists in `lint.json` and that every non-exempt code has a fixture; they do not run the lint. The self-evaluation probes below **are** executed by `ExerciseSelfEvaluationFixtureTest`.
+
 ### Self-evaluation probes
 
 `expectedSelfEvaluation` is `[{probe, response, expectedResult}]`; `response` has the shape of the Study submit
@@ -164,7 +166,7 @@ cases must name codes of `lint.json`, and every non-exempt code has a fixture.
 
 - The `ai-semantic` rubric (CORE/DETAIL/TERM, misconceptions) for FREE_RESPONSE: AI-13/AI-20 (#291, #292).
 - Media blocks, material-valued options and tiles, and `CHOICE` `MULTIPLE` fixtures beyond the lint cases.
-- The planner and per-material quantity: spec shape in [`http.json`](../http.json).
+- The planner and per-target quantity (at most 20 targets, 1..10 per target, 60 per session, no silent clamp): spec shape in [`http.json`](../http.json).
 - The optional critic pass ("Detailed") and the `STALE` re-pin.
 
 ## Open questions
