@@ -12,6 +12,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -43,6 +45,7 @@ class GenerationContractFixtureTest {
     private static final Path PROMPTS = ROOT.resolve("backend/services/learning/src/main/resources/ai/prompts");
     private static final ContentJsonReader JSON = new ContentJsonReader(4_194_304, 64, 2_000_000);
     private static final NativeDocumentReader NATIVE = new NativeDocumentReader();
+    private static final String RESERVED_ROOT = "00000000-0000-4000-8000-000000000000";
     private static final Pattern PLACEHOLDER = Pattern.compile("\\{\\{([^{}]*)}}");
     private static final Pattern PLACEHOLDER_SYNTAX = Pattern.compile("[a-z][a-z_]*(\\.[a-z][a-z_]*)*(\\|\"[^\"{}]*\")?");
 
@@ -84,16 +87,22 @@ class GenerationContractFixtureTest {
             int slots = metadata.path("expected").path("slots").size();
             assertThat(NativeMediaReferences.from(document)).as(name + " media references").hasSize(slots);
 
+            boolean edit = "EDIT".equals(metadata.path("input").path("mode").stringValue(null));
             Set<String> preserved = new HashSet<>();
             metadata.path("input").path("handles").properties()
                     .forEach(handle -> preserved.add(handle.getValue().path("nodeId").stringValue(null)));
             List<String> ids = new ArrayList<>();
             List<String> assets = new ArrayList<>();
             preOrder(json(nativeFile).path("root"), ids, assets, nodeTypes);
-            int counter = 0;
-            for (String id : ids) {
-                if (preserved.contains(id)) continue;
-                assertThat(id).as(name + " allocator order").isEqualTo(sequential("8000", ++counter));
+            assertThat(ids.get(0)).as(name + " root id").isEqualTo(edit ? RESERVED_ROOT : sequential("8000", 1));
+            int counter = edit ? 0 : 1;
+            for (int index = 1; index < ids.size(); index++) {
+                if (preserved.contains(ids.get(index))) continue;
+                assertThat(ids.get(index)).as(name + " allocator order").isEqualTo(sequential("8000", ++counter));
+            }
+            assertMbmStructure(name, Files.readString(mbm, StandardCharsets.UTF_8), json(nativeFile), slots);
+            for (JsonNode warning : metadata.path("expected").path("warnings")) {
+                assertThat(warning.path("line").intValue()).as(name + " warning line").isBetween(0, sourceLines(Files.readString(mbm, StandardCharsets.UTF_8)).size());
             }
             for (int index = 0; index < assets.size(); index++) {
                 assertThat(assets.get(index)).as(name + " asset order").isEqualTo(sequential("a000", index + 1));
@@ -128,7 +137,7 @@ class GenerationContractFixtureTest {
                 usedErrors.add(code);
                 long line = error.path("line").longValue();
                 long column = error.has("column") ? error.path("column").longValue() : 0;
-                assertThat(line).as(name + " line").isGreaterThanOrEqualTo(1);
+                assertThat(line).as(name + " line").isBetween(1L, (long) sourceLines(Files.readString(mbm, StandardCharsets.UTF_8)).size());
                 assertThat(line > previousLine || (line == previousLine && column >= previousColumn))
                         .as(name + " findings are ordered by line then column").isTrue();
                 previousLine = line;
@@ -169,6 +178,7 @@ class GenerationContractFixtureTest {
     @Test
     void exerciseFixturesMatchTheOutputSchemaAndTheSharedPublicationParser() throws IOException {
         JsonNode schema = json(EXERCISES.resolve("output.schema.json"));
+        assertKnownKeywords(schema, "$");
         JsonNode lint = json(EXERCISES.resolve("lint.json"));
         Set<String> lintCodes = new TreeSet<>();
         Set<String> exempt = new TreeSet<>();
@@ -337,6 +347,38 @@ class GenerationContractFixtureTest {
         }
         errors.properties().forEach(entry -> assertThat(entry.getValue().path("type").stringValue(null))
                 .isEqualTo("urn:mnema:problem:" + entry.getKey().toLowerCase().replace('_', '-')));
+
+        // every code lists exactly the operations that list it (generic codes are marked [all])
+        Map<String, Set<String>> listedBy = new LinkedHashMap<>();
+        operations.forEach((operation, endpoint) -> endpoint.path("errors").forEach(error ->
+                listedBy.computeIfAbsent(error.path("code").stringValue(null), key -> new TreeSet<>()).add(operation)));
+        errors.properties().forEach(entry -> {
+            Set<String> declared = new TreeSet<>(strings(entry.getValue().path("endpoints")));
+            if (declared.equals(Set.of("all"))) return;
+            assertThat(listedBy.getOrDefault(entry.getKey(), Set.of())).as(entry.getKey() + " endpoints").isEqualTo(declared);
+        });
+        assertThat(operations.get("listActiveSessions").path("path").stringValue(null)).isEqualTo("/api/generation-sessions");
+
+        // every non-initial state is reachable from an initial state
+        for (String machine : List.of("session", "artifact", "step", "turn", "mediaSlot")) {
+            JsonNode definition = states.path(machine);
+            Set<String> reached = new HashSet<>();
+            definition.path("initial").forEach(initial -> reached.add(initial.isString() ? initial.stringValue(null) : initial.path("state").stringValue(null)));
+            for (JsonNode transition : definition.path("transitions")) {
+                if (transition.path("from").isNull() || transition.path("from").isMissingNode()) reached.add(transition.path("to").stringValue(null));
+            }
+            boolean changed = true;
+            while (changed) {
+                changed = false;
+                for (JsonNode transition : definition.path("transitions")) {
+                    String from = transition.path("from").stringValue(null);
+                    if (from != null && reached.contains(from)) changed |= reached.add(transition.path("to").stringValue(null));
+                }
+            }
+            Set<String> all = new TreeSet<>();
+            definition.path("states").propertyNames().forEach(all::add);
+            assertThat(reached).as(machine + " reachability").containsAll(all);
+        }
     }
 
     @Test
@@ -345,7 +387,8 @@ class GenerationContractFixtureTest {
         Set<String> types = new TreeSet<>();
         long previous = 0;
         for (JsonNode event : events.path("envelope").path("example").path("events")) {
-            long id = Long.parseLong(event.path("eventId").stringValue(null));
+            long id = Long.parseLong(event.path("seq").stringValue(null));
+            assertThat(event.has("eventId")).isFalse();
             assertThat(id).isGreaterThan(previous);
             previous = id;
             types.add(event.path("type").stringValue(null));
@@ -358,6 +401,7 @@ class GenerationContractFixtureTest {
             assertThat(block.path("type").isString()).isTrue();
         }
         assertThat(events.path("types").size()).isEqualTo(5);
+        assertThat(events.path("description").stringValue(null)).contains("bigserial").contains("row lock");
     }
 
     @Test
@@ -388,35 +432,61 @@ class GenerationContractFixtureTest {
             assertThat(cells.get(2)).as(id + " availability").isEqualTo(operation.path("availability").stringValue(null));
         }
         assertThat(rows.keySet()).as("README rows are exactly the rate card operations").isEqualTo(operations);
-        // the product weights, verbatim
-        Map<String, Integer> product = Map.of("MATERIAL_SHORT", 4, "MATERIAL_MEDIUM", 10, "MATERIAL_DETAILED", 22, "EXERCISES_PER_MATERIAL", 8,
-                "EDIT_SELECTION", 4, "SMART_PLAN_FLASH", 20, "SMART_PLAN_PRO", 75, "TTS_CLIP_30S", 10, "PODCAST_3MIN", 75, "IMAGE_SEARCH", 1);
-        product.forEach((id, weight) -> card.path("operations").forEach(operation -> {
-            if (id.equals(operation.path("id").stringValue(null))) assertThat(operation.path("credits").intValue()).as(id).isEqualTo(weight);
-        }));
-
         Map<String, List<String>> plans = tableRows(readme, "| Plan |");
-        Map<String, int[]> product2 = Map.of("FREE", new int[] {0, 50}, "PLUS", new int[] {449, 360}, "PRO", new int[] {990, 820}, "MAX", new int[] {1900, 1780});
-        assertThat(plans.keySet()).isEqualTo(product2.keySet());
-        product2.forEach((plan, values) -> {
-            JsonNode node = allowances.path("plans").path(plan);
-            assertThat(node.path("priceRubPerMonth").intValue()).as(plan).isEqualTo(values[0]);
-            assertThat(node.path("monthlyCredits").intValue()).as(plan).isEqualTo(values[1]);
+        assertThat(plans.keySet()).isEqualTo(Set.of("FREE", "PLUS", "PRO", "MAX"));
+        allowances.path("plans").properties().forEach(entry -> {
+            String plan = entry.getKey();
+            JsonNode node = entry.getValue();
             List<String> cells = plans.get(plan);
-            assertThat(cells.get(0)).isEqualTo(Integer.toString(values[0]));
-            assertThat(cells.get(1)).isEqualTo(Integer.toString(values[1]));
-            assertThat(cells.get(4)).as(plan + " podcasts").isEqualTo(Integer.toString(node.path("caps").path("podcasts").intValue()));
-            assertThat(cells.get(5)).as(plan + " quality images").isEqualTo(Integer.toString(node.path("caps").path("qualityImages").intValue()));
-            assertThat(cells.get(6)).as(plan + " high fact check").isEqualTo(Integer.toString(node.path("caps").path("highFactcheck").intValue()));
+            JsonNode stt = node.path("stt");
+            String expectedStt = stt.path("minutesPerMonth").isNull()
+                    ? "unlimited (velocity " + stt.path("velocityMinutesPerDay").intValue() + "/day)"
+                    : stt.path("minutesPerMonth").intValue() + " (" + stt.path("minutesPerDay").intValue() + ")";
+            JsonNode smart = node.path("smartPlan");
+            String expectedSmart = smart.isNull() ? "none" : smart.has("perMonth") ? smart.path("perMonth").intValue() + " / month"
+                    : smart.has("proPlansPerMonth") ? "weekly + " + smart.path("proPlansPerMonth").intValue() + " Pro" : "weekly";
+            assertThat(cells).as(plan).containsExactly(Integer.toString(node.path("priceRubPerMonth").intValue()),
+                    Integer.toString(node.path("monthlyCredits").intValue()), expectedStt,
+                    node.path("assessment").path("answersPerMonth").intValue() + " (" + node.path("assessment").path("answersPerDay").intValue() + ")",
+                    Integer.toString(node.path("caps").path("podcasts").intValue()), Integer.toString(node.path("caps").path("qualityImages").intValue()),
+                    Integer.toString(node.path("caps").path("highFactcheck").intValue()), expectedSmart);
         });
-        // balance arithmetic of the examples
-        JsonNode credits = usage.path("usageResponse").path("credits");
-        assertThat(credits.path("remaining").intValue()).isEqualTo(credits.path("unlocked").intValue() - credits.path("used").intValue() - credits.path("reserved").intValue());
-        JsonNode estimate = usage.path("estimateResponse");
-        int total = 0;
-        for (JsonNode line : estimate.path("breakdown")) total += line.path("credits").intValue();
-        assertThat(estimate.path("credits").path("p95").intValue()).isEqualTo(total);
-        assertThat(estimate.path("credits").path("p50").intValue()).isLessThanOrEqualTo(total);
+        JsonNode free = allowances.path("plans").path("FREE").path("creditSchedule");
+        int portions = 0;
+        for (JsonNode portion : free.path("portions")) portions += portion.intValue();
+        assertThat(portions).as("Free portions sum to the bar").isEqualTo(allowances.path("plans").path("FREE").path("monthlyCredits").intValue());
+        assertThat(allowances.path("calendar").path("zone").stringValue(null)).isEqualTo("Europe/Moscow");
+        assertThat(card.path("capBuckets").propertyNames()).contains("smartPlan", "stt", "assessment");
+        card.path("operations").forEach(operation -> {
+            if (!operation.path("cap").isNull()) assertThat(card.path("capBuckets").has(operation.path("cap").stringValue(null))).as(operation.path("id").stringValue(null)).isTrue();
+        });
+
+        // balance and percent arithmetic of the examples (holds included)
+        for (String example : List.of("usageResponse", "usageResponseFree")) {
+            JsonNode credits = usage.path(example).path("credits");
+            int used = credits.path("used").intValue();
+            int reserved = credits.path("reserved").intValue();
+            assertThat(credits.path("remaining").intValue()).as(example).isEqualTo(credits.path("unlocked").intValue() - used - reserved);
+            assertThat(credits.path("percentUsed").intValue()).as(example).isEqualTo((int) Math.round((used + reserved) * 100.0 / credits.path("total").intValue()));
+        }
+        for (String example : List.of("estimateResponse", "estimateResponseShortfall", "estimateResponseFreeBlocked")) {
+            JsonNode estimate = usage.path(example);
+            int total = 0;
+            for (JsonNode line : estimate.path("breakdown")) total += line.path("credits").intValue();
+            assertThat(estimate.path("credits").path("p95").intValue()).as(example).isEqualTo(total);
+            assertThat(estimate.path("credits").path("p50").intValue()).as(example + " p50 = ceil(0.6 x weights)").isEqualTo((int) Math.ceil(total * 0.6 - 1e-9));
+            assertThat(estimate.path("canStart").booleanValue()).as(example).isEqualTo(estimate.path("blockingBuckets").isEmpty());
+        }
+        JsonNode reservation = usage.path("reservation");
+        assertThat(reservation.path("scopes").propertyNames()).containsExactlyInAnyOrder("SESSION", "TURN", "STEP");
+        assertThat(reservation.path("states").propertyNames()).containsExactlyInAnyOrder("ACTIVE", "SETTLED", "RELEASED", "EXPIRED");
+        assertThat(reservation.path("example").path("periodId").stringValue(null)).isEqualTo(usage.path("usageResponse").path("period").path("periodId").stringValue(null));
+        assertThat(reservation.path("neverNegative").stringValue(null)).contains("available >= :hold");
+        for (String example : List.of("example", "exampleFreeWeek", "exampleNotOffered")) {
+            JsonNode problem = usage.path("errors").path("USAGE_LIMIT_REACHED").path(example);
+            assertThat(problem.propertyNames()).contains("bucket", "window", "unit", "limit", "used", "required", "offered", "renewsAt", "fitsAfterRenewal");
+        }
+        assertThat(usage.path("usageResponseMaxFairUse").path("stt").path("limit").isNull()).isTrue();
     }
 
     @Test
@@ -441,14 +511,30 @@ class GenerationContractFixtureTest {
             JsonNode example = definition.path("example");
             assertThat(example.path("kind").stringValue(null)).isEqualTo(kind);
             assertThat(example.path("severity").stringValue(null)).isEqualTo(definition.path("severity").stringValue(null));
-            assertThat(example.path("route").stringValue(null)).isEqualTo(definition.path("route").stringValue(null));
+            if ("DYNAMIC".equals(definition.path("route").stringValue(null))) {
+                assertThat(List.of("WORKSHOP", "DECK", "NONE")).contains(example.path("route").stringValue(null));
+            } else {
+                assertThat(example.path("route").stringValue(null)).isEqualTo(definition.path("route").stringValue(null));
+            }
+            assertThat(Instant.parse(example.path("expiresAt").stringValue(null)))
+                    .as(kind + " expiresAt = createdAt + 30 days").isEqualTo(Instant.parse(example.path("createdAt").stringValue(null)).plus(30, ChronoUnit.DAYS));
             Set<String> given = new TreeSet<>();
             example.path("params").propertyNames().forEach(given::add);
             assertThat(given).as(kind + " example params").isEqualTo(declared);
             assertThat(example.path("params").toString().getBytes(StandardCharsets.UTF_8).length).isLessThan(4096);
         });
-        assertThat(kinds).containsExactlyInAnyOrder("GENERATION_READY", "GENERATION_PARTIAL", "GENERATION_FAILED", "USAGE_LOW",
-                "USAGE_EXHAUSTED", "GENERATION_SESSION_EXPIRING", "MEDIA_PROCESSING_FAILED");
+        assertThat(kinds).containsExactlyInAnyOrder("GENERATION_PLAN_READY", "GENERATION_READY", "GENERATION_PARTIAL", "GENERATION_FAILED",
+                "USAGE_LOW", "USAGE_EXHAUSTED", "GENERATION_SESSION_EXPIRING", "MEDIA_PROCESSING_FAILED");
+        for (String list : List.of("listResponse", "listResponseAfter")) {
+            long previous = list.equals("listResponse") ? Long.MAX_VALUE : 0;
+            for (JsonNode item : notifications.path(list).path("items")) {
+                long seq = Long.parseLong(item.path("seq").stringValue(null));
+                assertThat(list.equals("listResponse") ? seq < previous : seq > previous).as(list + " order").isTrue();
+                previous = seq;
+                assertThat(Instant.parse(item.path("expiresAt").stringValue(null)))
+                        .isEqualTo(Instant.parse(item.path("createdAt").stringValue(null)).plus(30, ChronoUnit.DAYS));
+            }
+        }
         assertThat(rows.keySet()).isEqualTo(kinds);
         assertThat(notifications.path("model").path("fields").path("params").stringValue(null)).contains("No server-rendered prose");
     }
@@ -496,6 +582,35 @@ class GenerationContractFixtureTest {
     }
 
     // ---------------------------------------------------------------- helpers
+
+    private static List<String> sourceLines(String source) {
+        List<String> lines = new ArrayList<>(List.of(source.replace("\r\n", "\n").replace('\r', '\n').split("\n", -1)));
+        if (!lines.isEmpty() && lines.get(lines.size() - 1).isEmpty()) lines.remove(lines.size() - 1);
+        return lines;
+    }
+
+    /** Directive lines equal the slots, heading lines (plus the one a sources directive adds) equal the heading nodes. */
+    private static void assertMbmStructure(String name, String source, JsonNode document, int slots) {
+        Pattern media = Pattern.compile("^(\\[\\[[a-z][0-9]+]] )?::(audio|image|video)\\{.*");
+        Pattern heading = Pattern.compile("^(\\[\\[[a-z][0-9]+]] )?#{1,3} .*");
+        int mediaLines = 0;
+        int headingLines = 0;
+        boolean sources = false;
+        for (String line : sourceLines(source)) {
+            if (media.matcher(line).matches()) mediaLines++;
+            if (heading.matcher(line).matches()) headingLines++;
+            if (line.startsWith("::sources")) sources = true;
+        }
+        assertThat(mediaLines).as(name + " media directive lines vs slots").isEqualTo(slots);
+        int[] headings = {0};
+        countType(document.path("root"), "heading", headings);
+        assertThat(headings[0]).as(name + " heading lines vs heading nodes").isEqualTo(headingLines + (sources ? 1 : 0));
+    }
+
+    private static void countType(JsonNode node, String type, int[] count) {
+        if (type.equals(node.path("type").stringValue(null))) count[0]++;
+        node.path("content").forEach(child -> countType(child, type, count));
+    }
 
     private static void preOrder(JsonNode node, List<String> ids, List<String> assets, Set<String> types) {
         ids.add(node.path("id").stringValue(null));
@@ -630,6 +745,26 @@ class GenerationContractFixtureTest {
 
     // A strict subset of JSON Schema 2020-12: the keywords output.schema.json uses; unknown keywords are ignored by design
     // and the schema file stays within this subset (the same approach as StudyContractFixtureTest).
+    private static final Set<String> KNOWN_KEYWORDS = Set.of("$schema", "$id", "$defs", "$ref", "title", "description", "type", "properties",
+            "required", "additionalProperties", "items", "minItems", "maxItems", "uniqueItems", "minLength", "maxLength", "pattern",
+            "minimum", "maximum", "enum", "const", "oneOf", "anyOf");
+
+    /** Fails loudly on a keyword the mini-validator does not implement, instead of silently ignoring a constraint. */
+    private static void assertKnownKeywords(JsonNode schema, String path) {
+        if (!schema.isObject()) return;
+        schema.propertyNames().forEach(keyword -> {
+            if (!KNOWN_KEYWORDS.contains(keyword)) throw new IllegalStateException("Unsupported schema keyword " + keyword + " at " + path);
+        });
+        for (String container : List.of("properties", "$defs")) {
+            schema.path(container).properties().forEach(entry -> assertKnownKeywords(entry.getValue(), path + "/" + container + "/" + entry.getKey()));
+        }
+        assertKnownKeywords(schema.path("items"), path + "/items");
+        for (String combinator : List.of("oneOf", "anyOf")) {
+            int index = 0;
+            for (JsonNode branch : schema.path(combinator)) assertKnownKeywords(branch, path + "/" + combinator + "/" + index++);
+        }
+    }
+
     private static void validate(JsonNode value, JsonNode schema, JsonNode root, String path) {
         if (schema.has("$ref")) {
             validate(value, root.at(schema.path("$ref").stringValue(null).substring(1)), root, path);
