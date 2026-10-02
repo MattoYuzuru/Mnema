@@ -113,6 +113,12 @@ class LearningSecurityHttpIntegrationTest extends PostgresIntegrationTest {
     @Autowired
     private JdbcClient jdbc;
 
+    @Autowired
+    private app.mnema.learning.notification.NotificationPublisher notifications;
+
+    @Autowired
+    private org.springframework.transaction.PlatformTransactionManager transactions;
+
     @DynamicPropertySource
     static void identityProperties(DynamicPropertyRegistry registry) {
         registry.add("learning.identity.issuer", () -> ISSUER);
@@ -294,6 +300,63 @@ class LearningSecurityHttpIntegrationTest extends PostgresIntegrationTest {
         assertThat(response.headers().firstValue("cache-control")).contains("private, no-store");
         assertThat(response.body()).isEqualTo("{\"aiAssessment\":{\"available\":false,\"reason\":\"DISABLED\"},"
                 + "\"speechToText\":{\"available\":false,\"reason\":\"DISABLED\"}}");
+    }
+
+    @Test
+    void notificationsUseReadForTheListAndWriteForReadCursorAndDismissAndAreOwnerScoped() throws Exception {
+        String read = token("learning.read", c -> { });
+        String write = token("learning.write", c -> { });
+        assertProblem(request("GET", "/notifications", null), 401, "AUTHENTICATION_REQUIRED");
+        assertProblem(request("GET", "/notifications", write), 403, "ACCESS_DENIED");
+        assertProblem(request("PUT", "/notifications/read-cursor", read), 403, "ACCESS_DENIED");
+        assertProblem(request("DELETE", "/notifications/" + UUID.randomUUID(), read), 403, "ACCESS_DENIED");
+        assertThat(CALLS).hasValue(0);
+
+        new org.springframework.transaction.support.TransactionTemplate(transactions).executeWithoutResult(status ->
+                notifications.publish(UUID.fromString(ACTOR), app.mnema.learning.notification.NotificationKind.USAGE_EXHAUSTED,
+                        "usage:CREDITS:" + UUID.randomUUID() + ":exhausted", usageParams(),
+                        app.mnema.learning.notification.NotificationRoute.PLANS));
+        var listed = request("GET", "/notifications", read);
+        assertThat(listed.statusCode()).isEqualTo(200);
+        assertThat(listed.headers().firstValue("cache-control")).contains("private, no-store");
+        String etag = listed.headers().firstValue("etag").orElseThrow();
+        var items = ContractFixtures.JSON.readTree(listed.body()).path("items");
+        assertThat(items).hasSize(1);
+        assertThat(items.get(0).path("kind").stringValue(null)).isEqualTo("USAGE_EXHAUSTED");
+
+        var notModified = CLIENT.send(HttpRequest.newBuilder(uri("/notifications")).header("Authorization", "Bearer " + read)
+                .header("If-None-Match", etag).GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertThat(notModified.statusCode()).isEqualTo(304);
+        assertThat(notModified.body()).isEmpty();
+        assertThat(notModified.headers().firstValue("etag")).contains(etag);
+
+        var cursor = CLIENT.send(HttpRequest.newBuilder(uri("/notifications/read-cursor"))
+                .header("Authorization", "Bearer " + write).header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString("{\"readUpto\":\"1\"}")).build(), HttpResponse.BodyHandlers.ofString());
+        assertThat(cursor.statusCode()).isEqualTo(200);
+        assertThat(ContractFixtures.JSON.readTree(cursor.body()).path("unreadCount").intValue()).isZero();
+        var beyond = CLIENT.send(HttpRequest.newBuilder(uri("/notifications/read-cursor"))
+                .header("Authorization", "Bearer " + write).header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString("{\"readUpto\":\"2\"}")).build(), HttpResponse.BodyHandlers.ofString());
+        assertInvalidRequest(beyond);
+
+        String id = items.get(0).path("notificationId").stringValue(null);
+        assertThat(request("DELETE", "/notifications/" + id, write).statusCode()).isEqualTo(204);
+        assertThat(request("DELETE", "/notifications/" + id, write).statusCode()).isEqualTo(204);
+        var absent = request("DELETE", "/notifications/" + UUID.randomUUID(), write);
+        assertThat(absent.statusCode()).isEqualTo(404);
+        assertThat(absent.headers().firstValue("cache-control")).contains("private, no-store");
+        assertThat(absent.body()).contains("\"code\":\"RESOURCE_NOT_FOUND\"");
+        assertThat(ContractFixtures.JSON.readTree(request("GET", "/notifications", read).body()).path("items")).isEmpty();
+    }
+
+    private static Map<String, Object> usageParams() {
+        Map<String, Object> params = new java.util.HashMap<>();
+        params.put("bucket", "CREDITS");
+        params.put("window", "WEEK");
+        params.put("renewsAt", null);
+        params.put("plan", "FREE");
+        return params;
     }
 
     @Test

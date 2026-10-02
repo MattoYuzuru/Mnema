@@ -283,7 +283,7 @@
         "status": 200,
         "headers": {
           "ETag": "strong quoted opaque validator over (latest seq, readUpto, dismissal changes, activeWork, earliest expiry boundary)",
-          "Cache-Control": "private, no-cache"
+          "Cache-Control": "private, no-store"
         },
         "body": "listResponse"
       },
