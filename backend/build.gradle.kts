@@ -1,9 +1,6 @@
 plugins {
     id("org.springframework.boot") apply false
     id("io.spring.dependency-management") apply false
-    kotlin("jvm") apply false
-    kotlin("plugin.spring") apply false
-    kotlin("plugin.jpa") apply false
     id("jacoco")
 }
 
@@ -21,16 +18,7 @@ subprojects {
     extra["tomcat.version"] = "10.1.59"
 
     extensions.configure<org.gradle.testing.jacoco.plugins.JacocoPluginExtension> {
-        toolVersion = "0.8.11"
-    }
-
-    plugins.withId("org.jetbrains.kotlin.jvm") {
-        extensions.configure<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension> {
-            jvmToolchain(21)
-            compilerOptions {
-                freeCompilerArgs.add("-Xjsr305=strict")
-            }
-        }
+        toolVersion = "0.8.15"
     }
 
     tasks.withType<Test>().configureEach {
@@ -65,7 +53,7 @@ tasks.register("quality") {
     description = "Runs backend compilation, tests, and aggregate coverage reporting."
     dependsOn(
         subprojects.flatMap { project ->
-            project.tasks.matching { it.name in setOf("compileJava", "compileKotlin", "compileTestJava", "compileTestKotlin") }.toList()
+            project.tasks.matching { it.name in setOf("compileJava", "compileTestJava") }.toList()
         },
         subprojects.flatMap { it.tasks.withType<Test>() },
         subprojects.flatMap { project ->
