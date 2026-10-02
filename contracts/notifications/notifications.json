@@ -1,0 +1,363 @@
+{
+  "contract": "notifications-v1",
+  "description": "Durable notification center shared by generation, usage and media. Authority: docs/architecture/ai-generation-platform.md section 12 and docs/product/ai-layer-2026-10.md section 4. The center is general, not AI-specific. Conventions (private/no-store, decimal-string versions, quoted ETag, RFC 9457) follow contracts/decks and contracts/items.",
+  "model": {
+    "fields": {
+      "notificationId": "uuid",
+      "seq": "Decimal string, strictly increasing per owner; the order and the read watermark use it.",
+      "kind": "One of the kinds below. A client ignores unknown kinds (shows nothing, still counts them unread).",
+      "severity": "INFO | WARNING | ERROR: drives the glyph and toast duration, never the only signal (the text always names the outcome).",
+      "params": "Object of at most 4 KiB; the fields per kind below. No server-rendered prose and no personal data: no email, name, titles, note or material text, only identifiers, counts, enums and timestamps. The client builds the sentence from kind and params and fetches titles itself.",
+      "route": "WORKSHOP (params.deckId, params.sessionId) | DECK (params.deckId) | PLANS | NONE. The client maps the key to its own URL; the server never sends a URL.",
+      "createdAt": "UTC RFC 3339.",
+      "expiresAt": "created + 30 days."
+    },
+    "storage": "notification(notification_id, owner_id, kind, severity, params, route, dedupe_key, created_at, dismissed_at, expires_at) with UNIQUE(owner_id, dedupe_key); notification_cursor(owner_id, read_upto). Dismissed and expired rows are absent from reads.",
+    "producer": "NotificationPublisher.publish(...) runs in the same transaction as the domain change. A second publish with an existing (owner, dedupeKey) is a no-op: the first one stands and is never refreshed.",
+    "retention": {
+      "days": 30,
+      "maxPerAccount": 200,
+      "eviction": "Publishing the 201st evicts the oldest."
+    }
+  },
+  "kinds": {
+    "GENERATION_READY": {
+      "severity": "INFO",
+      "route": "WORKSHOP",
+      "producer": "generation (AI-05, #288)",
+      "when": "Every artifact of the session is out of QUEUED and GENERATING and none FAILED.",
+      "params": {
+        "deckId": "uuid",
+        "sessionId": "uuid",
+        "sessionKind": "MATERIALS | EXERCISES | REVISE_ITEM | REVISE_EXERCISE",
+        "artifactCount": "integer >= 1",
+        "readyCount": "integer: artifacts PROPOSED, equals artifactCount"
+      },
+      "dedupeKey": "generation:{sessionId}:ready",
+      "example": {
+        "notificationId": "0a000000-0000-4000-8000-000000000029",
+        "seq": "41",
+        "kind": "GENERATION_READY",
+        "severity": "INFO",
+        "params": {
+          "deckId": "11111111-1111-4111-8111-111111111111",
+          "sessionId": "5e550000-0000-4000-8000-000000000001",
+          "sessionKind": "MATERIALS",
+          "artifactCount": 5,
+          "readyCount": 5
+        },
+        "route": "WORKSHOP",
+        "createdAt": "2026-10-02T09:41:00Z",
+        "expiresAt": "2026-11-01T09:00:00Z"
+      }
+    },
+    "GENERATION_PARTIAL": {
+      "severity": "WARNING",
+      "route": "WORKSHOP",
+      "producer": "generation (AI-05, #288)",
+      "when": "The session reached REVIEW with at least one PROPOSED and at least one FAILED artifact.",
+      "params": {
+        "deckId": "uuid",
+        "sessionId": "uuid",
+        "sessionKind": "MATERIALS | EXERCISES | REVISE_ITEM | REVISE_EXERCISE",
+        "readyCount": "integer >= 1",
+        "failedCount": "integer >= 1"
+      },
+      "dedupeKey": "generation:{sessionId}:partial",
+      "example": {
+        "notificationId": "0a000000-0000-4000-8000-00000000002a",
+        "seq": "42",
+        "kind": "GENERATION_PARTIAL",
+        "severity": "WARNING",
+        "params": {
+          "deckId": "11111111-1111-4111-8111-111111111111",
+          "sessionId": "5e550000-0000-4000-8000-000000000001",
+          "sessionKind": "MATERIALS",
+          "readyCount": 7,
+          "failedCount": 1
+        },
+        "route": "WORKSHOP",
+        "createdAt": "2026-10-02T09:42:00Z",
+        "expiresAt": "2026-11-01T09:00:00Z"
+      }
+    },
+    "GENERATION_FAILED": {
+      "severity": "ERROR",
+      "route": "WORKSHOP",
+      "producer": "generation (AI-05, #288)",
+      "when": "The session ended with no PROPOSED artifact, or the PLAN step failed.",
+      "params": {
+        "deckId": "uuid",
+        "sessionId": "uuid",
+        "sessionKind": "MATERIALS | EXERCISES | REVISE_ITEM | REVISE_EXERCISE",
+        "errorCode": "artifact error code (generation/states.json artifact.errorCodes)"
+      },
+      "dedupeKey": "generation:{sessionId}:failed",
+      "example": {
+        "notificationId": "0a000000-0000-4000-8000-00000000002b",
+        "seq": "43",
+        "kind": "GENERATION_FAILED",
+        "severity": "ERROR",
+        "params": {
+          "deckId": "11111111-1111-4111-8111-111111111111",
+          "sessionId": "5e550000-0000-4000-8000-000000000001",
+          "sessionKind": "MATERIALS",
+          "errorCode": "PROVIDER_UNAVAILABLE"
+        },
+        "route": "WORKSHOP",
+        "createdAt": "2026-10-02T09:43:00Z",
+        "expiresAt": "2026-11-01T09:00:00Z"
+      }
+    },
+    "USAGE_LOW": {
+      "severity": "WARNING",
+      "route": "PLANS",
+      "producer": "usage (AI-01, #281)",
+      "when": "credits.percentUsed first exceeds 80 in the period. Once per period.",
+      "params": {
+        "percentUsed": "integer 80..99",
+        "remainingCredits": "integer",
+        "renewsAt": "UTC RFC 3339",
+        "plan": "FREE | PLUS | PRO | MAX"
+      },
+      "dedupeKey": "usage:{periodStart}:low",
+      "example": {
+        "notificationId": "0a000000-0000-4000-8000-00000000002c",
+        "seq": "44",
+        "kind": "USAGE_LOW",
+        "severity": "WARNING",
+        "params": {
+          "percentUsed": 82,
+          "remainingCredits": 65,
+          "renewsAt": "2026-11-01T00:00:00Z",
+          "plan": "PLUS"
+        },
+        "route": "PLANS",
+        "createdAt": "2026-10-02T09:44:00Z",
+        "expiresAt": "2026-11-01T09:00:00Z"
+      }
+    },
+    "USAGE_EXHAUSTED": {
+      "severity": "WARNING",
+      "route": "PLANS",
+      "producer": "usage (AI-01, #281)",
+      "when": "A bucket reaches 0 remaining. Once per bucket and period.",
+      "params": {
+        "bucket": "CREDITS | STT | ASSESSMENT | PODCASTS | QUALITY_IMAGES | HIGH_FACTCHECK | SMART_PLAN",
+        "renewsAt": "UTC RFC 3339",
+        "plan": "FREE | PLUS | PRO | MAX"
+      },
+      "dedupeKey": "usage:{periodStart}:exhausted:{bucket}",
+      "example": {
+        "notificationId": "0a000000-0000-4000-8000-00000000002d",
+        "seq": "45",
+        "kind": "USAGE_EXHAUSTED",
+        "severity": "WARNING",
+        "params": {
+          "bucket": "CREDITS",
+          "renewsAt": "2026-11-01T00:00:00Z",
+          "plan": "PLUS"
+        },
+        "route": "PLANS",
+        "createdAt": "2026-10-02T09:45:00Z",
+        "expiresAt": "2026-11-01T09:00:00Z"
+      }
+    },
+    "GENERATION_SESSION_EXPIRING": {
+      "severity": "WARNING",
+      "route": "WORKSHOP",
+      "producer": "generation retention (AI-05, #288)",
+      "when": "Three days before expires_at while unpublished artifacts remain. Once per session.",
+      "params": {
+        "deckId": "uuid",
+        "sessionId": "uuid",
+        "expiresAt": "UTC RFC 3339",
+        "pendingCount": "integer >= 1: unpublished artifacts that would be deleted"
+      },
+      "dedupeKey": "generation:{sessionId}:expiring",
+      "example": {
+        "notificationId": "0a000000-0000-4000-8000-00000000002e",
+        "seq": "46",
+        "kind": "GENERATION_SESSION_EXPIRING",
+        "severity": "WARNING",
+        "params": {
+          "deckId": "11111111-1111-4111-8111-111111111111",
+          "sessionId": "5e550000-0000-4000-8000-000000000001",
+          "expiresAt": "2026-11-01T09:00:42Z",
+          "pendingCount": 4
+        },
+        "route": "WORKSHOP",
+        "createdAt": "2026-10-02T09:46:00Z",
+        "expiresAt": "2026-11-01T09:00:00Z"
+      }
+    },
+    "MEDIA_PROCESSING_FAILED": {
+      "severity": "ERROR",
+      "route": "DECK",
+      "producer": "media processing (AI-07, #284)",
+      "when": "The media pipeline moves an asset to a terminal failure the user can act on (FAILED_PERMANENT or exhausted retries).",
+      "params": {
+        "assetId": "uuid",
+        "mediaKind": "IMAGE | AUDIO | VIDEO",
+        "deckId": "uuid | null",
+        "sessionId": "uuid | null: set when the asset belongs to a generation slot"
+      },
+      "dedupeKey": "media:{assetId}:failed",
+      "example": {
+        "notificationId": "0a000000-0000-4000-8000-00000000002f",
+        "seq": "47",
+        "kind": "MEDIA_PROCESSING_FAILED",
+        "severity": "ERROR",
+        "params": {
+          "assetId": "00000000-0000-4000-a000-000000000001",
+          "mediaKind": "AUDIO",
+          "deckId": "11111111-1111-4111-8111-111111111111",
+          "sessionId": "5e550000-0000-4000-8000-000000000001"
+        },
+        "route": "DECK",
+        "createdAt": "2026-10-02T09:47:00Z",
+        "expiresAt": "2026-11-01T09:00:00Z"
+      }
+    }
+  },
+  "endpoints": [
+    {
+      "operationId": "listNotifications",
+      "method": "GET",
+      "path": "/api/notifications",
+      "query": {
+        "limit": "1..100, default 20",
+        "after": "decimal seq: only notifications with seq greater than it (incremental poll)",
+        "cursor": "opaque: next older page (extension to the architecture's after-only list)"
+      },
+      "requestHeaders": {
+        "If-None-Match": "the last ETag"
+      },
+      "success": {
+        "status": 200,
+        "headers": {
+          "ETag": "strong quoted opaque validator over (latest seq, readUpto, dismissal changes, activeWork)",
+          "Cache-Control": "private, no-cache"
+        },
+        "body": "listResponse"
+      },
+      "notModified": {
+        "status": 304,
+        "when": "If-None-Match matches: no body"
+      },
+      "errors": [
+        {
+          "status": 400,
+          "code": "INVALID_REQUEST"
+        },
+        {
+          "status": 401,
+          "code": "AUTHENTICATION_REQUIRED"
+        }
+      ]
+    },
+    {
+      "operationId": "setReadCursor",
+      "method": "PUT",
+      "path": "/api/notifications/read-cursor",
+      "requestBody": {
+        "readUpto": "decimal seq the client has displayed"
+      },
+      "success": {
+        "status": 200,
+        "body": "readCursorResponse"
+      },
+      "errors": [
+        {
+          "status": 400,
+          "code": "INVALID_REQUEST",
+          "when": "readUpto is malformed or greater than the latest seq (it could mark future notifications read)"
+        }
+      ],
+      "notes": [
+        "Monotonic maximum: a value not above the stored one changes nothing and returns the stored one. Idempotent, so no If-Match or commandId."
+      ]
+    },
+    {
+      "operationId": "dismissNotification",
+      "method": "DELETE",
+      "path": "/api/notifications/{notificationId}",
+      "success": {
+        "status": 204
+      },
+      "errors": [
+        {
+          "status": 404,
+          "code": "RESOURCE_NOT_FOUND",
+          "when": "foreign or absent"
+        }
+      ],
+      "notes": [
+        "Sets dismissed_at; repeating it is 204."
+      ]
+    }
+  ],
+  "listResponse": {
+    "items": [
+      {
+        "notificationId": "0a000000-0000-4000-8000-00000000002a",
+        "seq": "42",
+        "kind": "GENERATION_PARTIAL",
+        "severity": "WARNING",
+        "params": {
+          "deckId": "11111111-1111-4111-8111-111111111111",
+          "sessionId": "5e550000-0000-4000-8000-000000000001",
+          "sessionKind": "MATERIALS",
+          "readyCount": 7,
+          "failedCount": 1
+        },
+        "route": "WORKSHOP",
+        "createdAt": "2026-10-02T09:42:00Z",
+        "expiresAt": "2026-11-01T09:00:00Z"
+      },
+      {
+        "notificationId": "0a000000-0000-4000-8000-000000000029",
+        "seq": "41",
+        "kind": "GENERATION_READY",
+        "severity": "INFO",
+        "params": {
+          "deckId": "11111111-1111-4111-8111-111111111111",
+          "sessionId": "5e550000-0000-4000-8000-000000000001",
+          "sessionKind": "MATERIALS",
+          "artifactCount": 5,
+          "readyCount": 5
+        },
+        "route": "WORKSHOP",
+        "createdAt": "2026-10-02T09:41:00Z",
+        "expiresAt": "2026-11-01T09:00:00Z"
+      }
+    ],
+    "unreadCount": 2,
+    "readUpto": "40",
+    "activeWork": 1,
+    "nextCursor": null
+  },
+  "listResponseFields": {
+    "items": "Newest first (seq descending), not dismissed, not expired.",
+    "unreadCount": "Number of items in the whole center (not just this page) with seq greater than readUpto. The bell shows 99+ above 99.",
+    "readUpto": "The stored read watermark.",
+    "activeWork": "Integer: the owner's generation sessions in PLANNING or RUNNING. Greater than 0 switches the client to the fast poll.",
+    "nextCursor": "null on the last page."
+  },
+  "readCursorResponse": {
+    "readUpto": "42",
+    "unreadCount": 0
+  },
+  "notModifiedExample": {
+    "status": 304,
+    "headers": {
+      "ETag": "\"n-42-40-0-1\""
+    }
+  },
+  "polling": {
+    "idleSeconds": "30-60",
+    "activeWorkSeconds": 10,
+    "backgroundTab": "paused or at the idle interval",
+    "rule": "Send If-None-Match with the last ETag; a 304 costs no body. Study shows toasts only at natural pauses (client setting)."
+  }
+}

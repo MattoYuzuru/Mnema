@@ -1,0 +1,151 @@
+{
+  "contract": "usage-v1",
+  "rateCardVersion": "rc-v1",
+  "source": "docs/product/ai-layer-2026-10.md section 5 (values copied verbatim).",
+  "periodRules": {
+    "rollover": false,
+    "paidBar": "The whole monthly bar is available at once; spending in one day is limited to dailyBurstMaxFraction of the bar.",
+    "freeBar": "A quarter of the bar unlocks every Monday and does not accumulate.",
+    "boost": "A +50% boost is planned after recurring payments exist; it is not part of v1."
+  },
+  "guarantee": "The sum of all caps stays at most 25% of the price after income tax (NPD 4%) and acquiring (about 3%). After two cohorts the bar is re-based on measured p95 (x1.35-1.5).",
+  "plans": {
+    "FREE": {
+      "priceRubPerMonth": 0,
+      "status": "AVAILABLE",
+      "monthlyCredits": 50,
+      "creditSchedule": {
+        "kind": "WEEKLY_UNLOCK",
+        "unlockDay": "MONDAY",
+        "unlockFraction": "1/4",
+        "accumulates": false
+      },
+      "stt": {
+        "minutesPerMonth": 60,
+        "minutesPerDay": 10
+      },
+      "assessment": {
+        "answersPerMonth": 50,
+        "answersPerDay": 5
+      },
+      "caps": {
+        "podcasts": 0,
+        "qualityImages": 0,
+        "highFactcheck": 0
+      },
+      "factcheckLow": true,
+      "smartPlan": null,
+      "displayHint": {
+        "approxMaterialsWithFiveExercisesPerMonth": 2
+      },
+      "images": "SEARCH_ONLY"
+    },
+    "PLUS": {
+      "priceRubPerMonth": 449,
+      "status": "AVAILABLE",
+      "monthlyCredits": 360,
+      "creditSchedule": {
+        "kind": "MONTHLY_BAR",
+        "dailyBurstMaxFraction": "0.35"
+      },
+      "stt": {
+        "minutesPerMonth": 300,
+        "minutesPerDay": 30
+      },
+      "assessment": {
+        "answersPerMonth": 500,
+        "answersPerDay": 40
+      },
+      "caps": {
+        "podcasts": 2,
+        "qualityImages": 0,
+        "highFactcheck": 2
+      },
+      "factcheckLow": true,
+      "smartPlan": {
+        "perMonth": 4
+      },
+      "displayHint": {
+        "approxMaterialsWithFiveExercisesPerMonth": {
+          "min": 12,
+          "max": 17
+        }
+      },
+      "images": "SEARCH_GENERATION_LATER"
+    },
+    "PRO": {
+      "priceRubPerMonth": 990,
+      "status": "AVAILABLE",
+      "monthlyCredits": 820,
+      "creditSchedule": {
+        "kind": "MONTHLY_BAR",
+        "dailyBurstMaxFraction": "0.35"
+      },
+      "stt": {
+        "minutesPerMonth": 600,
+        "minutesPerDay": 60
+      },
+      "assessment": {
+        "answersPerMonth": 1000,
+        "answersPerDay": 80
+      },
+      "caps": {
+        "podcasts": 6,
+        "qualityImages": 10,
+        "highFactcheck": 5
+      },
+      "factcheckLow": true,
+      "smartPlan": {
+        "cadence": "WEEKLY"
+      },
+      "displayHint": {
+        "approxMaterialsWithFiveExercisesPerMonth": {
+          "min": 29,
+          "max": 39
+        }
+      },
+      "images": "SEARCH_PLUS_QUALITY_LATER"
+    },
+    "MAX": {
+      "priceRubPerMonth": 1900,
+      "status": "TEASER",
+      "monthlyCredits": 1780,
+      "creditSchedule": {
+        "kind": "MONTHLY_BAR",
+        "dailyBurstMaxFraction": "0.35"
+      },
+      "stt": {
+        "unlimitedWithinFairUse": true,
+        "velocityLimitMinutesPerDay": 120
+      },
+      "assessment": {
+        "answersPerMonth": 1500,
+        "answersPerDay": 120
+      },
+      "caps": {
+        "podcasts": 15,
+        "qualityImages": 25,
+        "highFactcheck": 12
+      },
+      "factcheckLow": true,
+      "smartPlan": {
+        "cadence": "WEEKLY",
+        "proPlansPerMonth": 4
+      },
+      "displayHint": {
+        "approxMaterialsWithFiveExercisesPerMonth": {
+          "min": 63,
+          "max": 85
+        }
+      },
+      "featureToggle": "Shown as 'in progress' with teasers behind a feature toggle until TTS and images are ready",
+      "images": "SEARCH_PLUS_QUALITY_LATER"
+    }
+  },
+  "notes": [
+    "Plan identifiers are stable wire values: FREE, PLUS, PRO, MAX.",
+    "caps.qualityImages is a count of quality generated images per month: 0 on FREE and PLUS (generation arrives later), 10 on PRO, 25 on MAX. `images` states what the plan offers; image generation itself is availability LATER in the rate card.",
+    "caps.podcasts and caps.highFactcheck are counts per month; a cap of 0 means the operation is not offered on the plan.",
+    "FREE unlocks 1/4 of the 50-credit bar each Monday. 50 / 4 is 12.5: the rounding rule for the weekly unlock is an open question (README), not decided here."
+  ]
+}

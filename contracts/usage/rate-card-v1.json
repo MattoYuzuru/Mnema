@@ -1,0 +1,257 @@
+{
+  "contract": "usage-v1",
+  "rateCardVersion": "rc-v1",
+  "source": "docs/product/ai-layer-2026-10.md section 5 (weights copied verbatim); planning inputs, not a tariff contract.",
+  "creditUnit": {
+    "rubPerCredit": "0.10",
+    "description": "1 credit = 0.10 RUB of p95 cost. An internal cost-weighted unit: the user sees percentages and approximate counts, never credits as money."
+  },
+  "revisionPolicy": "Weights are revised after 14 days of measurements. A revision publishes a new rateCardVersion; it never applies retroactively to ledger entries or reservations that already carry rc-v1.",
+  "pricingKinds": {
+    "CREDITS": "Debited from the credit bar at the listed weight.",
+    "FAIR_USE": "Not debited from the bar; counted in a separate bucket with per-month and per-day limits (allowances-v1.json)."
+  },
+  "capBuckets": {
+    "podcasts": "Count cap on 3-minute podcasts",
+    "qualityImages": "Count cap on quality generated images",
+    "highFactcheck": "Count cap on high-effort fact checks",
+    "video": "Count cap on video clips (deferred)"
+  },
+  "availability": {
+    "AVAILABLE": "In the first AI release.",
+    "LATER": "Planned after the first paid launch (image generation).",
+    "DEFERRED": "Cut from the first release (video)."
+  },
+  "operations": [
+    {
+      "id": "MATERIAL_SHORT",
+      "name": "Short material",
+      "unit": "material",
+      "pricing": "CREDITS",
+      "credits": 4,
+      "cap": null,
+      "availability": "AVAILABLE",
+      "worstCaseCostRub": {
+        "min": 0.4,
+        "max": 0.4
+      }
+    },
+    {
+      "id": "MATERIAL_MEDIUM",
+      "name": "Medium material",
+      "unit": "material",
+      "pricing": "CREDITS",
+      "credits": 10,
+      "cap": null,
+      "availability": "AVAILABLE",
+      "worstCaseCostRub": {
+        "min": 0.95,
+        "max": 0.95
+      }
+    },
+    {
+      "id": "MATERIAL_DETAILED",
+      "name": "Detailed material",
+      "unit": "material",
+      "pricing": "CREDITS",
+      "credits": 22,
+      "cap": null,
+      "availability": "AVAILABLE",
+      "worstCaseCostRub": {
+        "min": 2.16,
+        "max": 2.16
+      }
+    },
+    {
+      "id": "EXERCISES_PER_MATERIAL",
+      "name": "Five exercises for one material",
+      "unit": "material with 5 exercises",
+      "pricing": "CREDITS",
+      "credits": 8,
+      "cap": null,
+      "availability": "AVAILABLE",
+      "worstCaseCostRub": {
+        "min": 0.72,
+        "max": 0.72
+      }
+    },
+    {
+      "id": "EDIT_SELECTION",
+      "name": "Edit by selection or chat turn",
+      "unit": "edit",
+      "pricing": "CREDITS",
+      "credits": 4,
+      "cap": null,
+      "availability": "AVAILABLE",
+      "worstCaseCostRub": {
+        "min": 0.36,
+        "max": 0.36
+      }
+    },
+    {
+      "id": "ASSESSMENT_ANSWER",
+      "name": "AI check of one answer",
+      "unit": "answer",
+      "pricing": "FAIR_USE",
+      "credits": null,
+      "cap": "assessment",
+      "availability": "AVAILABLE",
+      "worstCaseCostRub": {
+        "min": 0.05,
+        "max": 0.09
+      }
+    },
+    {
+      "id": "SMART_PLAN_FLASH",
+      "name": "Smart plan (Flash with thinking)",
+      "unit": "plan",
+      "pricing": "CREDITS",
+      "credits": 20,
+      "cap": null,
+      "availability": "AVAILABLE",
+      "worstCaseCostRub": {
+        "min": 1.98,
+        "max": 1.98
+      }
+    },
+    {
+      "id": "SMART_PLAN_PRO",
+      "name": "Smart plan (Pro with thinking)",
+      "unit": "plan",
+      "pricing": "CREDITS",
+      "credits": 75,
+      "cap": null,
+      "availability": "AVAILABLE",
+      "worstCaseCostRub": {
+        "min": 7.52,
+        "max": 7.52
+      }
+    },
+    {
+      "id": "STT_MINUTE",
+      "name": "One minute of speech-to-text",
+      "unit": "minute",
+      "pricing": "FAIR_USE",
+      "credits": null,
+      "cap": "stt",
+      "availability": "AVAILABLE",
+      "worstCaseCostRub": {
+        "min": 0.07,
+        "max": 0.13
+      },
+      "note": "Cost range is the external API case; self-host is a fixed cost."
+    },
+    {
+      "id": "TTS_CLIP_30S",
+      "name": "Text-to-speech clip of 30 seconds (about 400 characters)",
+      "unit": "clip",
+      "pricing": "CREDITS",
+      "credits": 10,
+      "cap": null,
+      "availability": "AVAILABLE",
+      "worstCaseCostRub": {
+        "min": 1.1,
+        "max": 2.4
+      },
+      "note": "0 credits on a cache hit: credits are charged only on a cache miss."
+    },
+    {
+      "id": "PODCAST_3MIN",
+      "name": "Podcast of 3 minutes",
+      "unit": "podcast",
+      "pricing": "CREDITS",
+      "credits": 75,
+      "cap": "podcasts",
+      "availability": "AVAILABLE",
+      "worstCaseCostRub": {
+        "min": 7,
+        "max": 15
+      }
+    },
+    {
+      "id": "IMAGE_SEARCH",
+      "name": "Licensed image search",
+      "unit": "search",
+      "pricing": "CREDITS",
+      "credits": 1,
+      "cap": null,
+      "availability": "AVAILABLE",
+      "worstCaseCostRub": {
+        "min": 0.05,
+        "max": 0.05
+      }
+    },
+    {
+      "id": "IMAGE_GENERATE_ECONOMY",
+      "name": "Economy generated image",
+      "unit": "image",
+      "pricing": "CREDITS",
+      "credits": 15,
+      "cap": null,
+      "availability": "LATER",
+      "worstCaseCostRub": {
+        "min": 0.7,
+        "max": 1.4
+      }
+    },
+    {
+      "id": "IMAGE_GENERATE_QUALITY",
+      "name": "Quality generated image",
+      "unit": "image",
+      "pricing": "CREDITS",
+      "credits": 60,
+      "cap": "qualityImages",
+      "availability": "LATER",
+      "worstCaseCostRub": {
+        "min": 3,
+        "max": 7
+      }
+    },
+    {
+      "id": "FACTCHECK_LOW",
+      "name": "Fact check, low effort (15 queries)",
+      "unit": "fact check",
+      "pricing": "CREDITS",
+      "credits": 15,
+      "cap": null,
+      "availability": "AVAILABLE",
+      "worstCaseCostRub": {
+        "min": 0.8,
+        "max": 1.6
+      }
+    },
+    {
+      "id": "FACTCHECK_HIGH",
+      "name": "Fact check, high effort (15 queries)",
+      "unit": "fact check",
+      "pricing": "CREDITS",
+      "credits": 120,
+      "cap": "highFactcheck",
+      "availability": "AVAILABLE",
+      "worstCaseCostRub": {
+        "min": 3.7,
+        "max": 16
+      }
+    },
+    {
+      "id": "VIDEO_5S",
+      "name": "Video clip of 5 seconds",
+      "unit": "clip",
+      "pricing": "CREDITS",
+      "credits": {
+        "min": 250,
+        "max": 500
+      },
+      "cap": "video",
+      "availability": "DEFERRED",
+      "worstCaseCostRub": {
+        "min": 15,
+        "max": 50
+      }
+    }
+  ],
+  "estimation": {
+    "note": "The rate card prices a session, not a call: the first two artifacts of a session are priced at prefix-cache miss, the rest at cache hit. Estimates return p50 and p95; the reservation holds p95.",
+    "reservationBasis": "p95"
+  }
+}
