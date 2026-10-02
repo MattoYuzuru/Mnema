@@ -1,7 +1,7 @@
 package app.mnema.learning.media;
 
 import app.mnema.learning.platform.json.ContentJsonReader;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -48,9 +48,9 @@ final class MediaWorkerResult {
             JsonNode root = new ContentJsonReader(MAX_JSON_BYTES, 8, 200)
                     .read(Files.readAllBytes(manifest));
             if (!fields(root, ROOT) || !integer(root.path("formatVersion"), 1, 1)
-                    || !assetId.toString().equals(root.path("assetId").textValue())
+                    || !assetId.toString().equals(root.path("assetId").stringValue(null))
                     || !integer(root.path("generation"), generation, generation)
-                    || !kind.equals(root.path("kind").textValue())
+                    || !kind.equals(root.path("kind").stringValue(null))
                     || !fields(root.path("source"), SOURCE)
                     || !root.path("variants").isArray()) throw invalid();
             JsonNode source = root.path("source");
@@ -76,9 +76,9 @@ final class MediaWorkerResult {
                 String name = text(item.path("profile"));
                 Profile profile = PROFILES.get(name);
                 if (profile == null || !expected.contains(name) || !seen.add(name)
-                        || !profile.purpose().equals(item.path("purpose").textValue())
-                        || !profile.mimeType().equals(item.path("mimeType").textValue())
-                        || !(name + "." + profile.extension()).equals(item.path("path").textValue())) {
+                        || !profile.purpose().equals(item.path("purpose").stringValue(null))
+                        || !profile.mimeType().equals(item.path("mimeType").stringValue(null))
+                        || !(name + "." + profile.extension()).equals(item.path("path").stringValue(null))) {
                     throw invalid();
                 }
                 long length = number(item.path("byteLength"), 1, MAX_VARIANT_BYTES - 1);
@@ -130,8 +130,8 @@ final class MediaWorkerResult {
     }
 
     private static String text(JsonNode node) {
-        if (!node.isTextual()) throw invalid();
-        return node.textValue();
+        if (!node.isString()) throw invalid();
+        return node.stringValue(null);
     }
 
     private static String sha(JsonNode node) {

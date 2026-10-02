@@ -17,9 +17,9 @@ import app.mnema.learning.support.PostgresIntegrationTest;
 import app.mnema.learning.support.StudyFixtures;
 import app.mnema.learning.support.StudyFixtures.Issued;
 import app.mnema.learning.support.StudyFixtures.Material;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -100,11 +100,11 @@ class StudyMechanicsIntegrationTest extends PostgresIntegrationTest {
         answers.addObject().put("blankId", repeated.toString()).put("text", "MAP");
         JsonNode outcome = attempts.submit(material.actor(), material.deck(), presentation.session(),
                 attempt(presentation, response)).outcome();
-        assertThat(outcome.path("feedback").path("result").textValue()).isEqualTo("PARTIAL");
-        assertThat(outcome.path("evidence").path("evidenceClass").textValue()).isEqualTo("MEDIUM");
+        assertThat(outcome.path("feedback").path("result").stringValue(null)).isEqualTo("PARTIAL");
+        assertThat(outcome.path("evidence").path("evidenceClass").stringValue(null)).isEqualTo("MEDIUM");
         assertThat(outcome.path("evidence").path("reasonCodes").toString()).isEqualTo("[\"HINTED\",\"DETERMINISTIC\",\"PRODUCTION\"]");
-        assertThat(outcome.path("feedback").path("blanks").findValuesAsText("hinted")).containsExactly("true", "false", "false");
-        assertThat(outcome.path("feedback").path("blanks").findValuesAsText("correct")).containsExactly("true", "false", "true");
+        assertThat(outcome.path("feedback").path("blanks").findValuesAsString("hinted")).containsExactly("true", "false", "false");
+        assertThat(outcome.path("feedback").path("blanks").findValuesAsString("correct")).containsExactly("true", "false", "true");
         assertThat(jdbc.sql("SELECT hints_used::text FROM app_learning.study_evidence WHERE account_id=:actor")
                 .param("actor", material.actor()).query(String.class).single())
                 .isEqualTo("[\"FIRST_LETTER:" + hinted + "\"]");
@@ -122,8 +122,8 @@ class StudyMechanicsIntegrationTest extends PostgresIntegrationTest {
         ObjectNode response = JSON.createObjectNode().put("kind", "CLOZE");
         response.putArray("blanks").addObject().put("blankId", blank.toString()).put("text", "memory");
         JsonNode outcome = attempts.submit(material.actor(), material.deck(), cloze.session(), attempt(cloze, response)).outcome();
-        assertThat(outcome.path("evidence").path("evidenceClass").textValue()).isEqualTo("HIGH");
-        assertThat(outcome.path("evidence").path("reasonCodes").get(0).textValue()).isEqualTo("UNHINTED");
+        assertThat(outcome.path("evidence").path("evidenceClass").stringValue(null)).isEqualTo("HIGH");
+        assertThat(outcome.path("evidence").path("reasonCodes").get(0).stringValue(null)).isEqualTo("UNHINTED");
 
         Material choiceMaterial = fixtures.material();
         UUID correct = UUID.randomUUID();
@@ -146,9 +146,9 @@ class StudyMechanicsIntegrationTest extends PostgresIntegrationTest {
                 blankKey(accent, decomposed), blankKey(emoji, Character.toString(0x1F600) + " smile"),
                 blankKey(group, family + " family")));
         Issued presentation = fixtures.issueOne(material);
-        assertThat(hint(material, presentation, accent).path("firstLetter").textValue()).isEqualTo("é");
-        assertThat(hint(material, presentation, emoji).path("firstLetter").textValue()).isEqualTo(Character.toString(0x1F600));
-        assertThat(hint(material, presentation, group).path("firstLetter").textValue()).isEqualTo(family);
+        assertThat(hint(material, presentation, accent).path("firstLetter").stringValue(null)).isEqualTo("é");
+        assertThat(hint(material, presentation, emoji).path("firstLetter").stringValue(null)).isEqualTo(Character.toString(0x1F600));
+        assertThat(hint(material, presentation, group).path("firstLetter").stringValue(null)).isEqualTo(family);
         // ANSWER_LENGTH counts the same normalized characters: e + combining acute is one
         assertThat(presentation.content().path("passage").get(1).path("size").path("length").intValue())
                 .isEqualTo("éclair".length());
@@ -167,8 +167,8 @@ class StudyMechanicsIntegrationTest extends PostgresIntegrationTest {
                     .param("asset", asset).update();
             JsonNode outcome = attempts.submit(material.actor(), material.deck(), presentation.session(),
                     attempt(presentation, textResponse("memory"))).outcome();
-            assertThat(outcome.path("status").textValue()).as(kind).isEqualTo("NOT_ASSESSED");
-            assertThat(outcome.path("feedback").path("reasonCodes").get(0).textValue()).isEqualTo("MEDIA_NOT_READY");
+            assertThat(outcome.path("status").stringValue(null)).as(kind).isEqualTo("NOT_ASSESSED");
+            assertThat(outcome.path("feedback").path("reasonCodes").get(0).stringValue(null)).isEqualTo("MEDIA_NOT_READY");
             assertThat(outcome.path("transition").isNull()).isTrue();
             assertThat(outcome.path("evidence").isNull()).isTrue();
             assertThat(count("study_evidence", "account_id", material.actor())).isZero();
@@ -222,10 +222,10 @@ class StudyMechanicsIntegrationTest extends PostgresIntegrationTest {
         pairs.addObject().put("leftId", leftTwo.toString()).put("rightId", rightTwo.toString());
         AttemptCommand submitted = attempt(presentation, response);
         JsonNode result = attempts.submit(material.actor(), material.deck(), presentation.session(), submitted).outcome();
-        assertThat(result.path("feedback").path("result").textValue()).isEqualTo("PARTIAL");
+        assertThat(result.path("feedback").path("result").stringValue(null)).isEqualTo("PARTIAL");
         assertThat(result.path("feedback").path("appliedRules").toString()).contains("PAIR_RETRY");
-        assertThat(result.path("evidence").path("result").textValue()).isEqualTo("PARTIAL");
-        assertThat(result.path("evidence").path("evidenceClass").textValue()).isEqualTo("LOW");
+        assertThat(result.path("evidence").path("result").stringValue(null)).isEqualTo("PARTIAL");
+        assertThat(result.path("evidence").path("evidenceClass").stringValue(null)).isEqualTo("LOW");
         assertThat(result.path("evidence").path("reasonCodes").toString())
                 .isEqualTo("[\"MATCHING\",\"DETERMINISTIC\",\"RECOGNITION\",\"PAIR_RETRY\"]");
         assertThat(attempts.submit(material.actor(), material.deck(), presentation.session(), submitted).replayed()).isTrue();
@@ -254,7 +254,7 @@ class StudyMechanicsIntegrationTest extends PostgresIntegrationTest {
         response.putArray("pairs").addObject().put("leftId", leftTwo.toString()).put("rightId", rightTwo.toString());
         response.withArray("pairs").addObject().put("leftId", leftOne.toString()).put("rightId", rightOne.toString());
         JsonNode outcome = attempts.submit(material.actor(), material.deck(), presentation.session(), attempt(presentation, response)).outcome();
-        assertThat(outcome.path("feedback").path("result").textValue()).isEqualTo("CORRECT");
+        assertThat(outcome.path("feedback").path("result").stringValue(null)).isEqualTo("CORRECT");
         assertThat(outcome.path("feedback").path("pairs")).hasSize(2);
         assertThat(outcome.path("evidence").path("reasonCodes").toString()).doesNotContain("PAIR_RETRY");
 
@@ -283,8 +283,8 @@ class StudyMechanicsIntegrationTest extends PostgresIntegrationTest {
 
         AttemptCommand answer = attempt(presentation, choice(wrong));
         JsonNode first = attempts.submit(material.actor(), material.deck(), presentation.session(), answer).outcome();
-        assertThat(first.path("feedback").path("result").textValue()).isEqualTo("INCORRECT");
-        assertThat(first.path("feedback").path("correctOptionIds").get(0).textValue()).isEqualTo(correct.toString());
+        assertThat(first.path("feedback").path("result").stringValue(null)).isEqualTo("INCORRECT");
+        assertThat(first.path("feedback").path("correctOptionIds").get(0).stringValue(null)).isEqualTo(correct.toString());
         assertThat(attempts.submit(material.actor(), material.deck(), presentation.session(), answer).replayed()).isTrue();
         assertThatThrownBy(() -> attempts.submit(material.actor(), material.deck(), presentation.session(),
                 attempt(presentation, choice(correct)))).isInstanceOf(IdempotencyConflictException.class);
@@ -308,8 +308,8 @@ class StudyMechanicsIntegrationTest extends PostgresIntegrationTest {
         JsonNode revealed = sessions.revealTranscript(material.actor(), material.deck(), presentation.session(),
                 presentation.id(), presentation.nonce());
         assertThat(revealed.path("transcriptRevealed").booleanValue()).isTrue();
-        assertThat(revealed.path("presentationId").textValue()).isEqualTo(presentation.id().toString());
-        assertThat(revealed.path("content").path("options").get(0).path("blocks").get(0).path("transcript").textValue())
+        assertThat(revealed.path("presentationId").stringValue(null)).isEqualTo(presentation.id().toString());
+        assertThat(revealed.path("content").path("options").get(0).path("blocks").get(0).path("transcript").stringValue(null))
                 .isEqualTo("SECRET-OPTION-TRANSCRIPT");
         assertThat(sessions.revealTranscript(material.actor(), material.deck(), presentation.session(),
                 presentation.id(), presentation.nonce())).isEqualTo(revealed);
@@ -320,7 +320,7 @@ class StudyMechanicsIntegrationTest extends PostgresIntegrationTest {
 
         JsonNode outcome = attempts.submit(material.actor(), material.deck(), presentation.session(),
                 attempt(presentation, choice(correct))).outcome();
-        assertThat(outcome.path("evidence").path("evidenceClass").textValue()).isEqualTo("LOW");
+        assertThat(outcome.path("evidence").path("evidenceClass").stringValue(null)).isEqualTo("LOW");
         assertThat(outcome.path("evidence").path("reasonCodes").toString())
                 .isEqualTo("[\"RECOGNITION\",\"DETERMINISTIC\",\"TRANSCRIPT_ACCOMMODATION\"]");
 
@@ -351,30 +351,30 @@ class StudyMechanicsIntegrationTest extends PostgresIntegrationTest {
                 blocks(text("Using"), quote(context, context.node())),
                 blocks().add(option(correct, quote(subject, subject.node()))).add(option(UUID.randomUUID(), quote(context, context.distractor()))),
                 correct));
-        UUID revision = UUID.fromString(published.path("exerciseRevisionId").textValue());
+        UUID revision = UUID.fromString(published.path("exerciseRevisionId").stringValue(null));
         assertThat(jdbc.sql("SELECT role||':'||member_key FROM app_learning.exercise_content_binding "
                 + "WHERE exercise_revision_id=:revision ORDER BY binding_ordinal").param("revision", revision)
                 .query(String.class).list()).containsExactlyInAnyOrder("ASSESSED:" + subject.member(),
                 "CONTEXT:" + subject.member(), "CONTEXT:" + context.member());
         Issued presentation = fixtures.issueOne(subject);
-        assertThat(presentation.content().path("prompt").get(1).path("text").textValue()).isEqualTo("context fact");
+        assertThat(presentation.content().path("prompt").get(1).path("text").stringValue(null)).isEqualTo("context fact");
         JsonNode outcome = attempts.submit(subject.actor(), subject.deck(), presentation.session(),
                 attempt(presentation, choice(correct))).outcome();
-        assertThat(outcome.path("evidence").path("objectiveId").textValue()).isEqualTo(published.path("objectiveId").textValue());
+        assertThat(outcome.path("evidence").path("objectiveId").stringValue(null)).isEqualTo(published.path("objectiveId").stringValue(null));
         assertThat(count("study_exposure", "account_id", subject.actor())).isOne();
         assertThat(count("study_evidence", "account_id", subject.actor())).isOne();
         assertThat(count("study_transition", "account_id", subject.actor())).isOne();
         assertThat(count("study_state", "account_id", subject.actor())).isOne();
         assertThat(jdbc.sql("SELECT objective_id FROM app_learning.study_state WHERE account_id=:actor")
                 .param("actor", subject.actor()).query(UUID.class).single().toString())
-                .isEqualTo(published.path("objectiveId").textValue());
+                .isEqualTo(published.path("objectiveId").stringValue(null));
         JsonNode page = progress.read(subject.actor(), subject.deck(), 20, null);
         for (JsonNode row : page.path("items")) {
-            if (row.path("memberKey").textValue().equals(context.member().toString())) {
-                assertThat(row.path("state").textValue()).isEqualTo("NOT_STARTED");
+            if (row.path("memberKey").stringValue(null).equals(context.member().toString())) {
+                assertThat(row.path("state").stringValue(null)).isEqualTo("NOT_STARTED");
                 assertThat(row.path("objectiveCoverage").path("enabled").intValue()).isZero();
             } else {
-                assertThat(row.path("state").textValue()).isEqualTo("LEARNING");
+                assertThat(row.path("state").stringValue(null)).isEqualTo("LEARNING");
             }
         }
     }
@@ -444,7 +444,7 @@ class StudyMechanicsIntegrationTest extends PostgresIntegrationTest {
         // the presentation is still pending: a well-formed answer now gets the media outcome
         JsonNode outcome = attempts.submit(material.actor(), material.deck(), presentation.session(),
                 attempt(presentation, textResponse("memory"))).outcome();
-        assertThat(outcome.path("feedback").path("reasonCodes").get(0).textValue()).isEqualTo("MEDIA_NOT_READY");
+        assertThat(outcome.path("feedback").path("reasonCodes").get(0).stringValue(null)).isEqualTo("MEDIA_NOT_READY");
     }
 
     @Test
@@ -489,7 +489,7 @@ class StudyMechanicsIntegrationTest extends PostgresIntegrationTest {
         String stateBefore = stateRow(material);
         long historyBefore = count("study_transition", "account_id", material.actor())
                 + count("study_evidence", "account_id", material.actor());
-        assertThat(restarted.path("state").textValue()).isEqualTo("DUE");
+        assertThat(restarted.path("state").stringValue(null)).isEqualTo("DUE");
 
         Issued replay = fixtures.issue(material, "REPLAY", scheduled.session()).getFirst();
         JsonNode outcome = attempts.submit(material.actor(), material.deck(), replay.session(),

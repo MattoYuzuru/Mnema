@@ -12,10 +12,10 @@ import app.mnema.learning.platform.idempotency.CommandIdentity;
 import app.mnema.learning.platform.idempotency.CommandReceiptService;
 import app.mnema.learning.storage.ImmutableStorage;
 import app.mnema.learning.storage.StorageTypes.ObjectRef;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -63,7 +63,7 @@ public class StudySessionService {
         var replay = receipts.replay(identity, envelope);
         if (replay.isPresent()) {
             JsonNode response = replay.orElseThrow();
-            return new StartResult(response, true, "PREPARING".equals(response.path("status").textValue()));
+            return new StartResult(response, true, "PREPARING".equals(response.path("status").stringValue(null)));
         }
         boolean[] applied = {false};
         JsonNode response = receipts.execute(identity, envelope, () -> {
@@ -96,7 +96,7 @@ public class StudySessionService {
             }
             return response(inserted);
         });
-        return new StartResult(response, !applied[0], "PREPARING".equals(response.path("status").textValue()));
+        return new StartResult(response, !applied[0], "PREPARING".equals(response.path("status").stringValue(null)));
     }
 
     @Transactional(timeout = 10)
@@ -370,8 +370,8 @@ public class StudySessionService {
             row.hintedBlanks().forEach(blank -> hints.addObject().put("blankId", blank.toString())
                     .put("firstLetter", letters.get(blank)));
         }
-        result.set("evaluator", JsonNodeFactory.instance.objectNode().put("id", row.evaluator().path("id").textValue())
-                .put("version", row.evaluator().path("version").textValue()));
+        result.set("evaluator", JsonNodeFactory.instance.objectNode().put("id", row.evaluator().path("id").stringValue(null))
+                .put("version", row.evaluator().path("version").stringValue(null)));
         return result;
     }
 

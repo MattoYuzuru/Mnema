@@ -1,7 +1,7 @@
 package app.mnema.learning.catalog.exercise;
 
 import app.mnema.learning.media.MediaCatalog;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -22,7 +22,7 @@ public record ExerciseDefinition(ExerciseType type, ExerciseContent model, Answe
     /** Strict exact-field parse of the four parts; any failure is an {@code INVALID_REQUEST}. */
     public static ExerciseDefinition read(JsonNode type, JsonNode content, JsonNode answerKey,
                                           JsonNode evaluatorPolicy) {
-        ExerciseType mechanic = ExerciseType.fromWire(type.textValue()).orElseThrow(StrictJson::invalid);
+        ExerciseType mechanic = ExerciseType.fromWire(type.stringValue(null)).orElseThrow(StrictJson::invalid);
         ExerciseContent model = ExerciseContent.parse(mechanic, content);
         AnswerKey key = AnswerKey.parse(mechanic, answerKey);
         AnswerKey.requireConsistent(model, key);

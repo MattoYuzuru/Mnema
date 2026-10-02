@@ -2,10 +2,11 @@ package app.mnema.learning.storage;
 
 import app.mnema.learning.platform.json.CanonicalJsonHasher;
 import app.mnema.learning.platform.json.ContentJsonReader;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
@@ -38,7 +39,8 @@ final class StorageEncoding {
             byte[] bytes = output.bytes();
             reader.read(bytes);
             return new String(bytes, StandardCharsets.UTF_8);
-        } catch (IOException exception) {
+        } catch (JacksonException exception) {
+            // Includes the bounded output's I/O overflow, which Jackson wraps.
             throw new IllegalArgumentException("Invalid physical storage JSON");
         }
     }
@@ -51,11 +53,11 @@ final class StorageEncoding {
             AtDepth current = pending.removeLast();
             JsonNode node = current.node();
             if (current.depth() > 128) throw new IllegalArgumentException("Invalid physical storage JSON");
-            if (node.isContainerNode()) {
+            if (node.isContainer()) {
                 if (node.size() > 32_768 - nodes) throw new IllegalArgumentException("Invalid physical storage JSON");
                 nodes += node.size();
                 node.forEach(child -> pending.add(new AtDepth(child, current.depth() + 1)));
-            } else if (!(node.isTextual() || node.isNumber() || node.isBoolean() || node.isNull())
+            } else if (!(node.isString() || node.isNumber() || node.isBoolean() || node.isNull())
                     || ((node.isDouble() || node.isFloat()) && !Double.isFinite(node.doubleValue()))) {
                 // POJO, binary and missing nodes are not JSON scalars. Jackson can silently coerce them.
                 throw new IllegalArgumentException("Invalid physical storage JSON");

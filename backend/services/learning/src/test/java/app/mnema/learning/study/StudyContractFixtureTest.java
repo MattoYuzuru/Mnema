@@ -1,9 +1,9 @@
 package app.mnema.learning.study;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
@@ -46,7 +46,7 @@ class StudyContractFixtureTest {
         });
         JsonNode presentation = session.path("active").path("presentations").get(0);
         assertThat(presentation.has("bindings")).isFalse();
-        assertThat(presentation.path("objectiveId").isTextual()).isTrue();
+        assertThat(presentation.path("objectiveId").isString()).isTrue();
 
         JsonNode submit = attempts.path("freeResponseSubmit");
         assertThat(submit.has("mode")).isFalse();
@@ -82,27 +82,27 @@ class StudyContractFixtureTest {
         definitions.forEach((file, definition) -> validate(fixtureUnchecked(file),
                 schema.path("$defs").path(definition), schema, "$"));
 
-        ObjectNode unknown = fixture("authoring.json").deepCopy();
+        ObjectNode unknown = (ObjectNode) fixture("authoring.json").deepCopy();
         unknown.put("clientAuthority", true);
         assertThatThrownBy(() -> validate(unknown, schema.path("$defs").path("authoringDocument"), schema, "$"))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("unknown property");
 
-        ObjectNode missing = fixture("attempts.json").deepCopy();
+        ObjectNode missing = (ObjectNode) fixture("attempts.json").deepCopy();
         missing.withObject("freeResponseSubmit").remove("attemptId");
         assertThatThrownBy(() -> validate(missing, schema.path("$defs").path("attemptsDocument"), schema, "$"))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("attemptId");
 
-        ObjectNode nestedUnknown = fixture("attempts.json").deepCopy();
+        ObjectNode nestedUnknown = (ObjectNode) fixture("attempts.json").deepCopy();
         nestedUnknown.withObject("freeResponseSubmit").withObject("response").put("correctAnswer", "spoofed");
         assertThatThrownBy(() -> validate(nestedUnknown, schema.path("$defs").path("attemptsDocument"), schema, "$"))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("must match exactly one schema");
 
-        ObjectNode invalidMode = fixture("session.json").deepCopy();
+        ObjectNode invalidMode = (ObjectNode) fixture("session.json").deepCopy();
         invalidMode.withObject("startReplay").remove("sourceSessionId");
         assertThatThrownBy(() -> validate(invalidMode, schema.path("$defs").path("sessionDocument"), schema, "$"))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("must match exactly one schema");
 
-        ObjectNode forgedEffect = fixture("attempts.json").deepCopy();
+        ObjectNode forgedEffect = (ObjectNode) fixture("attempts.json").deepCopy();
         forgedEffect.withObject("practiceOutcome").put("mode", "SCHEDULED");
         assertThatThrownBy(() -> validate(forgedEffect, schema.path("$defs").path("attemptsDocument"), schema, "$"))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("must match exactly one schema");
@@ -160,7 +160,7 @@ class StudyContractFixtureTest {
                 root -> root.withObject("pairCheckResult").put("feedback", "x"),
                 root -> root.put("clientAuthority", true),
                 root -> root.remove("aiSemanticResult"))) {
-            ObjectNode broken = fixture("preview.json").deepCopy();
+            ObjectNode broken = (ObjectNode) fixture("preview.json").deepCopy();
             corrupt.accept(broken);
             assertThatThrownBy(() -> validate(broken, definition, schema, "$"))
                     .isInstanceOf(IllegalArgumentException.class);
@@ -220,7 +220,7 @@ class StudyContractFixtureTest {
                 root -> root.withObject("capabilities").withObject("aiAssessment").putNull("reason"),
                 root -> root.withObject("capabilities").withObject("aiAssessment").put("available", true),
                 root -> root.withObject("capabilityUnavailableProblem").put("status", 400))) {
-            ObjectNode broken = fixture("mechanics.json").deepCopy();
+            ObjectNode broken = (ObjectNode) fixture("mechanics.json").deepCopy();
             corrupt.accept(broken);
             assertThatThrownBy(() -> validate(broken, definition, schema, "$"))
                     .isInstanceOf(IllegalArgumentException.class);
@@ -235,9 +235,9 @@ class StudyContractFixtureTest {
 
         Set<String> combinations = new HashSet<>();
         for (JsonNode transition : reducer.path("transitions")) {
-            assertThat(transition.path("evidenceClass").textValue()).isNotEqualTo("NONE");
-            combinations.add(transition.path("result").textValue() + ":"
-                    + transition.path("evidenceClass").textValue());
+            assertThat(transition.path("evidenceClass").stringValue(null)).isNotEqualTo("NONE");
+            combinations.add(transition.path("result").stringValue(null) + ":"
+                    + transition.path("evidenceClass").stringValue(null));
         }
         assertThat(combinations).hasSize(12);
 
@@ -245,7 +245,7 @@ class StudyContractFixtureTest {
             JsonNode transition = matchingTransition(reducer.path("transitions"), golden);
             int before = golden.path("beforeLevel").intValue();
             int levels = transition.path("levels").intValue();
-            int after = switch (transition.path("operation").textValue()) {
+            int after = switch (transition.path("operation").stringValue(null)) {
                 case "ADD" -> Math.max(before,
                         Math.min(before + levels, transition.path("cap").intValue()));
                 case "SUBTRACT" -> Math.max(0, before - levels);
@@ -253,9 +253,9 @@ class StudyContractFixtureTest {
                 default -> throw new IllegalStateException("Unknown reducer operation");
             };
             assertThat(after).isEqualTo(golden.path("afterLevel").intValue());
-            Instant due = Instant.parse(golden.path("acceptedAt").textValue())
-                    .plus(Duration.parse(reducer.path("intervals").get(after).textValue()));
-            assertThat(due).isEqualTo(Instant.parse(golden.path("nextDue").textValue()));
+            Instant due = Instant.parse(golden.path("acceptedAt").stringValue(null))
+                    .plus(Duration.parse(reducer.path("intervals").get(after).stringValue(null)));
+            assertThat(due).isEqualTo(Instant.parse(golden.path("nextDue").stringValue(null)));
         }
 
         ObjectNode projection = JSON.createObjectNode();
@@ -266,17 +266,17 @@ class StudyContractFixtureTest {
         projection.set("transitions", reducer.path("transitions"));
         String hash = "sha256:" + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
                 .digest(JSON.writeValueAsBytes(canonical(projection))));
-        assertThat(fixture("session.json").path("active").path("reducer").path("configHash").textValue())
+        assertThat(fixture("session.json").path("active").path("reducer").path("configHash").stringValue(null))
                 .isEqualTo(hash);
         assertThat(fixture("attempts.json").path("scheduledOutcome").path("transition")
-                .path("configHash").textValue()).isEqualTo(hash);
+                .path("configHash").stringValue(null)).isEqualTo(hash);
     }
 
     @Test
     void adversarialSuitePinsCriticalIsolationAndIdempotencyCases() throws Exception {
         JsonNode cases = fixture("adversarial.json").path("cases");
         Set<String> ids = new HashSet<>();
-        for (JsonNode testCase : cases) ids.add(testCase.path("id").textValue());
+        for (JsonNode testCase : cases) ids.add(testCase.path("id").stringValue(null));
 
         assertThat(cases).hasSize(24);
         assertThat(ids).hasSize(24).contains("A-01", "A-03", "A-05", "A-10", "A-11", "A-15",
@@ -293,48 +293,48 @@ class StudyContractFixtureTest {
         JsonNode flows = fixture("flows.json").path("flows");
         assertThat(flows).hasSize(12);
         for (JsonNode flow : flows) {
-            assertThat(resolveFixturePointer(flow.path("requestFixture").textValue()).isMissingNode()).isFalse();
-            assertThat(resolveFixturePointer(flow.path("responseFixture").textValue()).isMissingNode()).isFalse();
+            assertThat(resolveFixturePointer(flow.path("requestFixture").stringValue(null)).isMissingNode()).isFalse();
+            assertThat(resolveFixturePointer(flow.path("responseFixture").stringValue(null)).isMissingNode()).isFalse();
         }
         JsonNode sessions = fixture("session.json");
-        assertThat(sessions.path("startScheduled").path("mode").textValue()).isEqualTo("SCHEDULED");
-        assertThat(sessions.path("active").path("mode").textValue()).isEqualTo("SCHEDULED");
-        assertThat(sessions.path("startReplay").path("mode").textValue()).isEqualTo("REPLAY");
-        assertThat(sessions.path("activeReplay").path("mode").textValue()).isEqualTo("REPLAY");
-        assertThat(sessions.path("startPractice").path("mode").textValue()).isEqualTo("PRACTICE");
-        assertThat(sessions.path("activePractice").path("mode").textValue()).isEqualTo("PRACTICE");
+        assertThat(sessions.path("startScheduled").path("mode").stringValue(null)).isEqualTo("SCHEDULED");
+        assertThat(sessions.path("active").path("mode").stringValue(null)).isEqualTo("SCHEDULED");
+        assertThat(sessions.path("startReplay").path("mode").stringValue(null)).isEqualTo("REPLAY");
+        assertThat(sessions.path("activeReplay").path("mode").stringValue(null)).isEqualTo("REPLAY");
+        assertThat(sessions.path("startPractice").path("mode").stringValue(null)).isEqualTo("PRACTICE");
+        assertThat(sessions.path("activePractice").path("mode").stringValue(null)).isEqualTo("PRACTICE");
         JsonNode progress = fixture("progress.json");
-        assertThat(progress.path("response").path("items").get(0).path("state").textValue())
+        assertThat(progress.path("response").path("items").get(0).path("state").stringValue(null))
                 .isEqualTo("ON_TRACK");
-        assertThat(progress.path("response").path("items").get(1).path("state").textValue())
+        assertThat(progress.path("response").path("items").get(1).path("state").stringValue(null))
                 .isEqualTo("NOT_STARTED");
         assertThat(progress.path("response").has("percentage")).isFalse();
 
         JsonNode replaySources = fixture("replay-sources.json");
         assertThat(replaySources.path("response").path("items")).hasSize(1);
-        assertThat(replaySources.path("response").path("localStudyDate").textValue())
+        assertThat(replaySources.path("response").path("localStudyDate").stringValue(null))
                 .isEqualTo("2026-09-20");
         assertThat(replaySources.path("emptyResponse").path("items")).isEmpty();
 
         JsonNode restart = fixture("restart.json");
-        assertThat(restart.path("precondition").path("objectiveStates").get(0).path("learningEpoch").textValue())
+        assertThat(restart.path("precondition").path("objectiveStates").get(0).path("learningEpoch").stringValue(null))
                 .isEqualTo("0");
-        assertThat(restart.path("persistedEffect").path("objectiveStates").get(0).path("learningEpoch").textValue())
+        assertThat(restart.path("persistedEffect").path("objectiveStates").get(0).path("learningEpoch").stringValue(null))
                 .isEqualTo("1");
         assertThat(restart.path("persistedEffect").path("historyRowsDeleted").intValue()).isZero();
     }
 
     private static JsonNode matchingTransition(JsonNode transitions, JsonNode golden) {
         for (JsonNode candidate : transitions) {
-            if (golden.path("result").textValue().equals(candidate.path("result").textValue())
-                    && golden.path("evidenceClass").textValue()
-                    .equals(candidate.path("evidenceClass").textValue())) return candidate;
+            if (golden.path("result").stringValue(null).equals(candidate.path("result").stringValue(null))
+                    && golden.path("evidenceClass").stringValue(null)
+                    .equals(candidate.path("evidenceClass").stringValue(null))) return candidate;
         }
         throw new IllegalArgumentException("Missing reducer row for golden case");
     }
 
     private static JsonNode find(JsonNode cases, String id) {
-        for (JsonNode testCase : cases) if (id.equals(testCase.path("id").textValue())) return testCase;
+        for (JsonNode testCase : cases) if (id.equals(testCase.path("id").stringValue(null))) return testCase;
         throw new IllegalArgumentException("Missing adversarial case " + id);
     }
 
@@ -342,7 +342,7 @@ class StudyContractFixtureTest {
         if (value.isObject()) {
             ObjectNode sorted = JSON.createObjectNode();
             TreeSet<String> names = new TreeSet<>();
-            value.fieldNames().forEachRemaining(names::add);
+            value.propertyNames().forEach(names::add);
             names.forEach(name -> sorted.set(name, canonical(value.path(name))));
             return sorted;
         }
@@ -369,7 +369,7 @@ class StudyContractFixtureTest {
             return;
         }
         if (schema.has("$ref")) {
-            String reference = schema.path("$ref").textValue();
+            String reference = schema.path("$ref").stringValue(null);
             validate(value, root.at(reference.substring(1)), root, path);
             return;
         }
@@ -380,10 +380,10 @@ class StudyContractFixtureTest {
             if (!found) invalid(path, "is not in enum");
         }
         if (schema.has("type") && !matchesType(value, schema.path("type"))) invalid(path, "has wrong type");
-        if (value.isTextual() && schema.has("minLength") && value.textValue().length() < schema.path("minLength").intValue()) {
+        if (value.isString() && schema.has("minLength") && value.stringValue(null).length() < schema.path("minLength").intValue()) {
             invalid(path, "too short");
         }
-        if (value.isTextual() && schema.has("maxLength") && value.textValue().length() > schema.path("maxLength").intValue()) {
+        if (value.isString() && schema.has("maxLength") && value.stringValue(null).length() > schema.path("maxLength").intValue()) {
             invalid(path, "too long");
         }
         if (value.isIntegralNumber() && schema.has("minimum") && value.longValue() < schema.path("minimum").longValue()) {
@@ -392,23 +392,23 @@ class StudyContractFixtureTest {
         if (value.isIntegralNumber() && schema.has("maximum") && value.longValue() > schema.path("maximum").longValue()) {
             invalid(path, "above maximum");
         }
-        if (schema.has("pattern") && value.isTextual()
-                && !value.textValue().matches(schema.path("pattern").textValue())) invalid(path, "does not match pattern");
+        if (schema.has("pattern") && value.isString()
+                && !value.stringValue(null).matches(schema.path("pattern").stringValue(null))) invalid(path, "does not match pattern");
         if (value.isObject()) {
             for (JsonNode required : schema.path("required")) {
-                if (!value.has(required.textValue())) invalid(path, "missing required " + required.textValue());
+                if (!value.has(required.stringValue(null))) invalid(path, "missing required " + required.stringValue(null));
             }
             JsonNode properties = schema.path("properties");
-            value.fieldNames().forEachRemaining(name -> {
+            value.propertyNames().forEach(name -> {
                 if (properties.has(name)) validate(value.path(name), properties.path(name), root, path + "." + name);
                 else if (schema.path("additionalProperties").isBoolean()
-                        && !schema.path("additionalProperties").booleanValue()) invalid(path, "unknown property " + name);
+                        && !schema.path("additionalProperties").booleanValue(false)) invalid(path, "unknown property " + name);
             });
         }
         if (value.isArray()) {
             if (schema.has("minItems") && value.size() < schema.path("minItems").intValue()) invalid(path, "too few items");
             if (schema.has("maxItems") && value.size() > schema.path("maxItems").intValue()) invalid(path, "too many items");
-            if (schema.path("uniqueItems").booleanValue() && new HashSet<>(java.util.stream.StreamSupport
+            if (schema.path("uniqueItems").booleanValue(false) && new HashSet<>(java.util.stream.StreamSupport
                     .stream(value.spliterator(), false).toList()).size() != value.size()) invalid(path, "duplicate items");
             if (schema.has("items")) for (int index = 0; index < value.size(); index++)
                 validate(value.get(index), schema.path("items"), root, path + "[" + index + "]");
@@ -420,10 +420,10 @@ class StudyContractFixtureTest {
             for (JsonNode candidate : type) if (matchesType(value, candidate)) return true;
             return false;
         }
-        return switch (type.textValue()) {
+        return switch (type.stringValue(null)) {
             case "object" -> value.isObject();
             case "array" -> value.isArray();
-            case "string" -> value.isTextual();
+            case "string" -> value.isString();
             case "integer" -> value.isIntegralNumber();
             case "boolean" -> value.isBoolean();
             case "null" -> value.isNull();
@@ -455,7 +455,7 @@ class StudyContractFixtureTest {
         return JSON.readTree(Files.readString(root.resolve("contracts/study/" + name)));
     }
 
-    private static void drop(com.fasterxml.jackson.databind.node.ArrayNode array, int... indexes) {
+    private static void drop(tools.jackson.databind.node.ArrayNode array, int... indexes) {
         for (int index : indexes) array.remove(index);
     }
 }

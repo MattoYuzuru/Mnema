@@ -9,7 +9,7 @@ import app.mnema.identityaccount.profile.Profiles;
 import app.mnema.identityaccount.moderation.Moderation;
 import app.mnema.identityaccount.avatar.*;
 import app.mnema.identityaccount.support.PostgresIntegrationTest;
-import com.fasterxml.jackson.databind.*;
+import tools.jackson.databind.*;
 import com.nimbusds.jose.*;
 import com.nimbusds.jose.crypto.RSASSASigner;
 import com.nimbusds.jwt.*;
@@ -33,7 +33,7 @@ import java.util.concurrent.*;
 import static org.assertj.core.api.Assertions.*;
 
 @SpringBootTest
-@org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc(print = org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint.NONE)
+@org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc(print = org.springframework.boot.webmvc.test.autoconfigure.MockMvcPrint.NONE)
 class AccountBehaviorIntegrationTest extends PostgresIntegrationTest {
     static final HttpServer SERVER;
     static final Map<String, byte[]> OBJECTS = new ConcurrentHashMap<>();
@@ -494,7 +494,7 @@ class AccountBehaviorIntegrationTest extends PostgresIntegrationTest {
                         .contentType("application/json").content(json.writeValueAsString(Map.of("email", email))))
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isAccepted())
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().string(""));
-        String message = json.readTree(delivered).at("/Content/Simple/Body/Text/Data").asText();
+        String message = json.readTree(delivered).at("/Content/Simple/Body/Text/Data").asString();
         assertThat(message).contains("https://mnema.app/verify-email#token=");
         String token = message.split("#token=")[1];
         assertThatThrownBy(() -> recovery.confirm(token, "new-password-666"))
@@ -525,13 +525,13 @@ class AccountBehaviorIntegrationTest extends PostgresIntegrationTest {
         recovery.request(email, "reset-fixture");
         assertThat(delivered).isNotNull();
         JsonNode mail = json.readTree(delivered);
-        assertThat(mail.get("FromEmailAddress").asText()).isEqualTo("noreply@mnema.app");
+        assertThat(mail.get("FromEmailAddress").asString()).isEqualTo("noreply@mnema.app");
         assertThat(MAIL_HEADERS.getFirst().entrySet()).anySatisfy(e -> {
             assertThat(e.getKey()).isEqualToIgnoringCase("Authorization");
             assertThat(e.getValue().getFirst()).startsWith("AWS4-HMAC-SHA256 Credential=synthetic-postbox-access/")
                     .contains("/ru-central1/ses/aws4_request");
         });
-        String token = mail.at("/Content/Simple/Body/Text/Data").asText().split("#token=")[1];
+        String token = mail.at("/Content/Simple/Body/Text/Data").asString().split("#token=")[1];
         assertThat(jdbc.sql("SELECT secret_hash FROM app_identity.ownership_challenge WHERE account_id=:id")
                 .param("id", a.accountId()).query(String.class).single()).isEqualTo(Secrets.hash(token))
                 .isNotEqualTo(token);

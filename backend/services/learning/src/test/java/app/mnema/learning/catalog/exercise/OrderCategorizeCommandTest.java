@@ -2,9 +2,9 @@ package app.mnema.learning.catalog.exercise;
 
 import app.mnema.learning.media.MediaCatalog;
 import app.mnema.learning.platform.api.InvalidRequestException;
-import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -64,7 +64,7 @@ class OrderCategorizeCommandTest {
 
         // the key must be exactly the item ids: missing, foreign, duplicated, extra, ids of a stale item
         assertInvalid("createOrder", body -> sequence(body).remove(5));
-        assertInvalid("createOrder", body -> sequence(body).set(0, JSON.getNodeFactory().textNode(UUID.randomUUID().toString())));
+        assertInvalid("createOrder", body -> sequence(body).set(0, JSON.getNodeFactory().stringNode(UUID.randomUUID().toString())));
         assertInvalid("createOrder", body -> sequence(body).set(1, sequence(body).get(0)));
         assertInvalid("createOrder", body -> sequence(body).add(UUID.randomUUID().toString()));
         assertInvalid("createOrder", body -> sequence(body).add(sequence(body).get(0)));
@@ -72,9 +72,9 @@ class OrderCategorizeCommandTest {
         assertInvalid("createOrder", body -> answerKey(body).remove("sequence"));
         // item identifiers are unique and canonical
         assertInvalid("createOrder", body -> ((ObjectNode) items(content(body)).get(1)).put("itemId",
-                items(content(body)).get(0).path("itemId").textValue()));
+                items(content(body)).get(0).path("itemId").stringValue(null)));
         assertInvalid("createOrder", body -> ((ObjectNode) items(content(body)).get(1)).put("itemId",
-                items(content(body)).get(1).path("itemId").textValue().toUpperCase()));
+                items(content(body)).get(1).path("itemId").stringValue(null).toUpperCase()));
         // any permutation of the ids is a valid explicit key
         ExerciseCommand.readCreate(bytes(patched("createOrder", body -> {
             ArrayNode sequence = sequence(body);
@@ -90,7 +90,7 @@ class OrderCategorizeCommandTest {
         String code = "for (;;) {\n    x++;\n}\n" + "y".repeat(970);
         ExerciseCommand command = ExerciseCommand.readCreate(bytes(patched("createOrder",
                 body -> itemText(body, 0, code))));
-        assertThat(command.exercise().content().path("items").get(0).path("blocks").get(0).path("text").textValue())
+        assertThat(command.exercise().content().path("items").get(0).path("blocks").get(0).path("text").stringValue(null))
                 .isEqualTo(code);
         ExerciseCommand.readCreate(bytes(patched("createOrder", body -> itemText(body, 0, "x".repeat(1_000)))));
         assertInvalid("createOrder", body -> itemText(body, 0, "x".repeat(1_001)));
@@ -161,7 +161,7 @@ class OrderCategorizeCommandTest {
         ExerciseCommand.readCreate(bytes(patched("createCategorize", body -> label(body, 0, "Глагол 2"))));
         // identifiers are unique
         assertInvalid("createCategorize", body -> ((ObjectNode) categories(content(body)).get(1)).put("categoryId",
-                categories(content(body)).get(0).path("categoryId").textValue()));
+                categories(content(body)).get(0).path("categoryId").stringValue(null)));
         assertInvalid("createCategorize", body -> ((ObjectNode) categories(content(body)).get(0)).put("color", "red"));
         assertInvalid("createCategorize", body -> ((ObjectNode) categories(content(body)).get(0)).remove("label"));
         assertInvalid("createCategorize", body -> ((ObjectNode) categories(content(body)).get(0)).put("label", 5));
@@ -188,7 +188,7 @@ class OrderCategorizeCommandTest {
             label(body, 0, " Stra\u00dfe\u00a0");
             label(body, 1, "Other");
         })));
-        assertThat(stored.exercise().content().path("categories").get(0).path("label").textValue())
+        assertThat(stored.exercise().content().path("categories").get(0).path("label").stringValue(null))
                 .isEqualTo(" Stra\u00dfe\u00a0");
         // a label that shows nothing is blank: whitespace, NBSP, ideographic space, zero-width and format characters
         for (String invisible : new String[] {"\u00a0", "\u3000", "\u200b", "\u2060\ufeff", " \u200b\t\u00a0", "\u00ad"}) {
@@ -202,7 +202,7 @@ class OrderCategorizeCommandTest {
         assertInvalid("createOrder", body -> {
             for (int index = 0; index < items(content(body)).size(); index++) {
                 items(content(body)).set(index, item(UUID.fromString(items(content(body)).get(index)
-                        .path("itemId").textValue()), Blocks.text("очень")));
+                        .path("itemId").stringValue(null)), Blocks.text("очень")));
             }
         });
         assertInvalid("createOrder", body -> {
@@ -236,19 +236,19 @@ class OrderCategorizeCommandTest {
         // incomplete, duplicated, foreign and extra assignments
         assertInvalid("createCategorize", body -> assignments(body).remove(3));
         assertInvalid("createCategorize", body -> ((ObjectNode) assignments(body).get(1)).put("itemId",
-                assignments(body).get(0).path("itemId").textValue()));
+                assignments(body).get(0).path("itemId").stringValue(null)));
         assertInvalid("createCategorize", body -> ((ObjectNode) assignments(body).get(1)).put("itemId",
                 UUID.randomUUID().toString()));
         assertInvalid("createCategorize", body -> assignments(body).addObject()
                 .put("itemId", UUID.randomUUID().toString())
-                .put("categoryId", categories(content(body)).get(0).path("categoryId").textValue()));
+                .put("categoryId", categories(content(body)).get(0).path("categoryId").stringValue(null)));
         assertInvalid("createCategorize", body -> assignments(body).add(assignments(body).get(0)));
         assertInvalid("createCategorize", body -> ((ObjectNode) assignments(body).get(0)).put("weight", 1));
         assertInvalid("createCategorize", body -> answerKey(body).put("kind", "ORDER"));
         assertInvalid("createCategorize", body -> evaluator(body).put("id", "deterministic-order"));
         // identifiers are unique
         assertInvalid("createCategorize", body -> ((ObjectNode) items(content(body)).get(1)).put("itemId",
-                items(content(body)).get(0).path("itemId").textValue()));
+                items(content(body)).get(0).path("itemId").stringValue(null)));
         assertInvalid("createCategorize", body -> ((ObjectNode) items(content(body)).get(0)).put("categoryId", "x"));
     }
 
@@ -256,7 +256,7 @@ class OrderCategorizeCommandTest {
     void categoryOrderLabelsAndEmptyGroupsDoNotChangeWhatIsAKeyForTheItems() {
         // several items in one category and an empty distractor category are valid
         ExerciseCommand.readCreate(bytes(patched("createCategorize", body -> {
-            String only = categories(content(body)).get(0).path("categoryId").textValue();
+            String only = categories(content(body)).get(0).path("categoryId").stringValue(null);
             assignments(body).forEach(assignment -> ((ObjectNode) assignment).put("categoryId", only));
         })));
         // reversing the category list and renaming labels keeps the same key valid: ids are canonical
@@ -305,10 +305,10 @@ class OrderCategorizeCommandTest {
         // keep the last items assigned to the first categories only
         while (categories(content(body)).size() > count) {
             String removed = categories(content(body)).remove(categories(content(body)).size() - 1)
-                    .path("categoryId").textValue();
-            String kept = categories(content(body)).get(0).path("categoryId").textValue();
+                    .path("categoryId").stringValue(null);
+            String kept = categories(content(body)).get(0).path("categoryId").stringValue(null);
             assignments(body).forEach(assignment -> {
-                if (assignment.path("categoryId").textValue().equals(removed)) ((ObjectNode) assignment).put("categoryId", kept);
+                if (assignment.path("categoryId").stringValue(null).equals(removed)) ((ObjectNode) assignment).put("categoryId", kept);
             });
         }
     }
@@ -328,7 +328,7 @@ class OrderCategorizeCommandTest {
     }
 
     private static void growCategorizeItems(ObjectNode body, int count) {
-        String category = categories(content(body)).get(0).path("categoryId").textValue();
+        String category = categories(content(body)).get(0).path("categoryId").stringValue(null);
         while (items(content(body)).size() < count) {
             UUID id = UUID.randomUUID();
             items(content(body)).add(item(id, Blocks.text("extra " + id)));

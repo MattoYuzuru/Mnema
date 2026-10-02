@@ -13,8 +13,8 @@ import app.mnema.learning.study.session.StudySessionService;
 import app.mnema.learning.support.PostgresIntegrationTest;
 import app.mnema.learning.support.StudyFixtures;
 import app.mnema.learning.support.StudyFixtures.Material;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -63,8 +63,8 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
         for (int index = 0; index < ids.length; index++) {
             JsonNode result = fixtures.publish(material, fixtures.freeResponse(material, blocks(text("Q" + index)),
                     blocks(), "answer"));
-            ids[index] = UUID.fromString(result.path("exerciseId").textValue());
-            revisions[index] = UUID.fromString(result.path("exerciseRevisionId").textValue());
+            ids[index] = UUID.fromString(result.path("exerciseId").stringValue(null));
+            revisions[index] = UUID.fromString(result.path("exerciseRevisionId").stringValue(null));
         }
         assertThat(service.list(material.actor(), material.deck(), null, null, null).path("exercises")).hasSize(3);
         long version = fixtures.deckVersion(material);
@@ -76,13 +76,13 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
 
         JsonNode current = service.list(material.actor(), material.deck(), null, null, null);
         assertThat(current.path("total").intValue()).isEqualTo(2);
-        assertThat(current.path("exercises").get(0).path("exerciseId").textValue()).isEqualTo(ids[0].toString());
-        assertThat(current.path("exercises").get(1).path("exerciseId").textValue()).isEqualTo(ids[2].toString());
+        assertThat(current.path("exercises").get(0).path("exerciseId").stringValue(null)).isEqualTo(ids[0].toString());
+        assertThat(current.path("exercises").get(1).path("exerciseId").stringValue(null)).isEqualTo(ids[2].toString());
         assertThat(current.path("exercises").get(1).path("ordinal").intValue()).isEqualTo(1);
         assertThatThrownBy(() -> service.read(material.actor(), material.deck(), ids[1], null))
                 .isInstanceOf(ResourceNotFoundException.class);
         assertThat(service.read(material.actor(), material.deck(), ids[1], revisions[1])
-                .path("exerciseRevisionId").textValue()).isEqualTo(revisions[1].toString());
+                .path("exerciseRevisionId").stringValue(null)).isEqualTo(revisions[1].toString());
         assertThat(count("exercise_revision", "deck_id", material.deck())).isEqualTo(3);
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.deck_exercise_change "
                         + "WHERE deck_id=:deck AND revision_id IS NULL")
@@ -138,23 +138,23 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
         long[] contexts = {1, 0, 0, 1, 0, 1, 0};
         for (int index = 0; index < exercises.size(); index++) {
             ObjectNode exercise = exercises.get(index);
-            String type = exercise.path("type").textValue();
+            String type = exercise.path("type").stringValue(null);
             JsonNode created = fixtures.publish(material, exercise, "Objective " + type);
-            UUID exerciseId = UUID.fromString(created.path("exerciseId").textValue());
-            UUID firstRevision = UUID.fromString(created.path("exerciseRevisionId").textValue());
-            UUID objective = UUID.fromString(created.path("objectiveId").textValue());
-            UUID firstObjectiveRevision = UUID.fromString(created.path("objectiveRevisionId").textValue());
+            UUID exerciseId = UUID.fromString(created.path("exerciseId").stringValue(null));
+            UUID firstRevision = UUID.fromString(created.path("exerciseRevisionId").stringValue(null));
+            UUID objective = UUID.fromString(created.path("objectiveId").stringValue(null));
+            UUID firstObjectiveRevision = UUID.fromString(created.path("objectiveRevisionId").stringValue(null));
 
             JsonNode detail = service.read(material.actor(), material.deck(), exerciseId, null);
-            assertThat(detail.path("type").textValue()).isEqualTo(type);
+            assertThat(detail.path("type").stringValue(null)).isEqualTo(type);
             assertThat(detail.path("schemaVersion").intValue()).isEqualTo(2);
             assertThat(detail.path("content")).isEqualTo(exercise.path("content"));
             assertThat(detail.path("answerKey")).isEqualTo(exercise.path("answerKey"));
             assertThat(detail.path("evaluatorPolicy")).isEqualTo(exercise.path("evaluatorPolicy"));
-            assertThat(detail.path("subject").path("memberKey").textValue()).isEqualTo(material.member().toString());
-            assertThat(detail.path("subject").path("itemRevisionId").textValue()).isEqualTo(material.itemRevision().toString());
-            assertThat(detail.path("objective").path("title").textValue()).isEqualTo("Objective " + type);
-            assertThat(detail.path("objective").path("memberKey").textValue()).isEqualTo(material.member().toString());
+            assertThat(detail.path("subject").path("memberKey").stringValue(null)).isEqualTo(material.member().toString());
+            assertThat(detail.path("subject").path("itemRevisionId").stringValue(null)).isEqualTo(material.itemRevision().toString());
+            assertThat(detail.path("objective").path("title").stringValue(null)).isEqualTo("Objective " + type);
+            assertThat(detail.path("objective").path("memberKey").stringValue(null)).isEqualTo(material.member().toString());
             assertThat(detail.has("bindings")).isFalse();
             assertThat(detail.has("prompt")).isFalse();
             assertThat(detail.path("objective").has("answerContract")).isFalse();
@@ -165,9 +165,9 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
 
             JsonNode listed = service.list(material.actor(), material.deck(), material.member(), "100", null);
             JsonNode row = java.util.stream.StreamSupport.stream(listed.path("exercises").spliterator(), false)
-                    .filter(value -> value.path("exerciseId").textValue().equals(exerciseId.toString())).findFirst().orElseThrow();
-            assertThat(row.path("type").textValue()).isEqualTo(type);
-            assertThat(row.path("objective").path("title").textValue()).isEqualTo("Objective " + type);
+                    .filter(value -> value.path("exerciseId").stringValue(null).equals(exerciseId.toString())).findFirst().orElseThrow();
+            assertThat(row.path("type").stringValue(null)).isEqualTo(type);
+            assertThat(row.path("objective").path("title").stringValue(null)).isEqualTo("Objective " + type);
             assertThat(row.has("content")).isFalse();
 
             // revise: new exercise revision and new objective revision with the stable identity retained
@@ -179,11 +179,11 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
             revised.put("expectedExerciseRevisionId", firstRevision.toString());
             JsonNode second2 = service.publish(material.actor(), material.deck(), exerciseId, fixtures.deckVersion(material),
                     ExerciseCommand.readUpdate(bytes(revised))).acknowledgement();
-            UUID secondRevision = UUID.fromString(second2.path("exerciseRevisionId").textValue());
-            UUID secondObjectiveRevision = UUID.fromString(second2.path("objectiveRevisionId").textValue());
-            assertThat(second2.path("objectiveId").textValue()).isEqualTo(objective.toString());
+            UUID secondRevision = UUID.fromString(second2.path("exerciseRevisionId").stringValue(null));
+            UUID secondObjectiveRevision = UUID.fromString(second2.path("objectiveRevisionId").stringValue(null));
+            assertThat(second2.path("objectiveId").stringValue(null)).isEqualTo(objective.toString());
             assertThat(secondObjectiveRevision).isNotEqualTo(firstObjectiveRevision);
-            assertThat(service.read(material.actor(), material.deck(), exerciseId, null).path("objective").path("title").textValue())
+            assertThat(service.read(material.actor(), material.deck(), exerciseId, null).path("objective").path("title").stringValue(null))
                     .isEqualTo("Renamed " + type);
 
             // reuse: a third exercise revision pins the second objective revision unchanged
@@ -193,14 +193,14 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
             reused.put("expectedExerciseRevisionId", secondRevision.toString());
             JsonNode third = service.publish(material.actor(), material.deck(), exerciseId, fixtures.deckVersion(material),
                     ExerciseCommand.readUpdate(bytes(reused))).acknowledgement();
-            assertThat(third.path("objectiveRevisionId").textValue()).isEqualTo(secondObjectiveRevision.toString());
+            assertThat(third.path("objectiveRevisionId").stringValue(null)).isEqualTo(secondObjectiveRevision.toString());
             assertThat(count("objective_revision", "objective_id", objective)).isEqualTo(2);
             assertThat(count("exercise_revision", "exercise_id", exerciseId)).isEqualTo(3);
 
             // immutable history: the first revision still reads with its own objective revision and title
             JsonNode history = service.read(material.actor(), material.deck(), exerciseId, firstRevision);
-            assertThat(history.path("objective").path("objectiveRevisionId").textValue()).isEqualTo(firstObjectiveRevision.toString());
-            assertThat(history.path("objective").path("title").textValue()).isEqualTo("Objective " + type);
+            assertThat(history.path("objective").path("objectiveRevisionId").stringValue(null)).isEqualTo(firstObjectiveRevision.toString());
+            assertThat(history.path("objective").path("title").stringValue(null)).isEqualTo("Objective " + type);
         }
         assertThat(decks.read(material.actor(), material.deck()).path("exerciseCount").intValue()).isEqualTo(7);
     }
@@ -211,8 +211,8 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
         UUID sound = fixtures.pendingAsset(material.actor()), otherSound = fixtures.pendingAsset(material.actor());
         UUID picture = fixtures.pendingAsset(material.actor()), otherPicture = fixtures.pendingAsset(material.actor());
         UUID clip = fixtures.pendingAsset(material.actor());
-        record Combination(String name, com.fasterxml.jackson.databind.node.ObjectNode left,
-                           com.fasterxml.jackson.databind.node.ObjectNode right, long refs) { }
+        record Combination(String name, tools.jackson.databind.node.ObjectNode left,
+                           tools.jackson.databind.node.ObjectNode right, long refs) { }
         List<Combination> combinations = List.of(
                 new Combination("text-text", text("A"), text("a"), 0),
                 new Combination("audio-text", audio(sound, "Sound", "A"), text("a"), 1),
@@ -230,9 +230,9 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
                     StudyFixtures.blocks().add(item(right, combination.right())).add(item(rightTwo, text("second right"))),
                     new UUID[][] {{left, right}, {leftTwo, rightTwo}});
             JsonNode created = fixtures.publish(material, exercise, combination.name());
-            UUID revision = UUID.fromString(created.path("exerciseRevisionId").textValue());
+            UUID revision = UUID.fromString(created.path("exerciseRevisionId").stringValue(null));
             assertThat(count("exercise_media_ref", "exercise_revision_id", revision)).as(combination.name()).isEqualTo(combination.refs());
-            assertThat(service.read(material.actor(), material.deck(), UUID.fromString(created.path("exerciseId").textValue()), null)
+            assertThat(service.read(material.actor(), material.deck(), UUID.fromString(created.path("exerciseId").stringValue(null)), null)
                     .path("content")).isEqualTo(exercise.path("content"));
         }
         // the pinned kind is the declared kind of each block
@@ -350,7 +350,7 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
         ObjectNode wrongRevision = fixtures.createBody(material, fixtures.freeResponse(material, blocks(text("Q3")), blocks(), "x"), "Q3");
         wrongRevision.put("expectedExerciseRevisionId", UUID.randomUUID().toString());
         assertThatThrownBy(() -> service.publish(material.actor(), material.deck(),
-                UUID.fromString(first.path("exerciseId").textValue()), fixtures.deckVersion(material),
+                UUID.fromString(first.path("exerciseId").stringValue(null)), fixtures.deckVersion(material),
                 ExerciseCommand.readUpdate(bytes(wrongRevision)))).isInstanceOf(VersionConflictException.class);
         assertThatThrownBy(() -> service.publish(material.actor(), material.deck(), UUID.randomUUID(), fixtures.deckVersion(material),
                 ExerciseCommand.readUpdate(bytes(wrongRevision)))).isInstanceOf(ResourceNotFoundException.class);
@@ -362,7 +362,7 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
         long before = fixtures.deckVersion(material);
         // the same fixtures the architect pinned, retargeted at this deck's real material
         for (String name : new String[] {"rejectedAiAssessment", "rejectedSpeechInput"}) {
-            ObjectNode command = fixtures.createBody(material, mechanic(name).path("exercise").deepCopy(), "Capability");
+            ObjectNode command = fixtures.createBody(material, (ObjectNode) mechanic(name).path("exercise").deepCopy(), "Capability");
             ObjectNode exercise = command.withObject("exercise");
             exercise.set("subject", JSON.createObjectNode().put("memberKey", material.member().toString())
                     .put("itemRevisionId", material.itemRevision().toString()));
@@ -374,7 +374,7 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
         assertThat(count("memory_objective", "deck_id", material.deck())).isZero();
 
         // a broken rubric is a 400 before any capability question
-        ObjectNode broken = fixtures.createBody(material, mechanic("rejectedAiAssessment").path("exercise").deepCopy(), "Broken");
+        ObjectNode broken = fixtures.createBody(material, (ObjectNode) mechanic("rejectedAiAssessment").path("exercise").deepCopy(), "Broken");
         broken.withObject("exercise").withObject("evaluatorPolicy").withObject("rubric").withArray("criteria").removeAll();
         assertThatThrownBy(() -> ExerciseCommand.readCreate(bytes(broken))).isInstanceOf(InvalidRequestException.class);
         // a deterministic free response with typed input needs no capability
@@ -386,8 +386,8 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
         Material material = fixtures.material();
         Material second = fixtures.addMaterial(material.actor(), material.deck(), "other", "another");
         JsonNode created = fixtures.publish(material, fixtures.freeResponse(material, blocks(text("Q")), blocks(), "a"), "Title");
-        UUID objective = UUID.fromString(created.path("objectiveId").textValue());
-        UUID revision = UUID.fromString(created.path("objectiveRevisionId").textValue());
+        UUID objective = UUID.fromString(created.path("objectiveId").stringValue(null));
+        UUID revision = UUID.fromString(created.path("objectiveRevisionId").stringValue(null));
 
         // an objective belongs to the material that owns it: reuse and revise from another material are 400
         for (String operation : new String[] {"reuse", "revise"}) {
@@ -442,8 +442,8 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
         assertThatThrownBy(() -> service.read(material.actor(), material.deck(), UUID.randomUUID(), null))
                 .isInstanceOf(ResourceNotFoundException.class);
 
-        UUID objective = UUID.fromString(first.acknowledgement().path("objectiveId").textValue());
-        UUID exercise = UUID.fromString(first.acknowledgement().path("exerciseId").textValue());
+        UUID objective = UUID.fromString(first.acknowledgement().path("objectiveId").stringValue(null));
+        UUID exercise = UUID.fromString(first.acknowledgement().path("exerciseId").stringValue(null));
         assertThatThrownBy(() -> jdbc.sql("UPDATE app_learning.memory_objective SET created_at=created_at "
                         + "WHERE deck_id=:deck AND objective_id=:objective")
                 .param("deck", material.deck()).param("objective", objective).update())
@@ -485,7 +485,7 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
     void anEmptyDeckListsNoExercisesAndForeignDecksAreOpaque() {
         UUID actor = UUID.randomUUID();
         UUID deck = UUID.fromString(decks.create(actor, new DeckCommand(UUID.randomUUID(), "Empty", "Deck"))
-                .acknowledgement().path("deck").path("deckId").textValue());
+                .acknowledgement().path("deck").path("deckId").stringValue(null));
         assertThat(service.list(actor, deck, null, null).path("exercises")).isEmpty();
         assertThat(service.list(actor, deck, null, null).path("total").intValue()).isZero();
     }

@@ -24,8 +24,8 @@ The default `java` and `node` are newer than the repository baseline. Set these 
 the defaults are not the baseline.
 
 ```bash
-# Backend: JDK 21 (default java here is 26 and is not the baseline)
-export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
+# Backend: JDK 25 (default java here is 26 and is not the baseline)
+export JAVA_HOME=/opt/homebrew/opt/openjdk@25/libexec/openjdk.jdk/Contents/Home
 export PATH="$JAVA_HOME/bin:$PATH"   # run.py and the local launcher call plain `java`/`keytool`
 
 # Testcontainers on Colima: host socket for discovery, VM socket for mounts, no Ryuk reaper
@@ -73,7 +73,7 @@ python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend \
   --node "$NODE24" --authoring --media --mechanics
 ```
 
-- Needs: JDK 21 first on `PATH` (the harness starts `java -jar`), built `bootJar`s, Chrome, cached `postgres:18`, and for
+- Needs: JDK 25 first on `PATH` (the harness starts `java -jar`), built `bootJar`s, Chrome, cached `postgres:18`, and for
   `--media` the cached pinned MinIO image plus `mnema-media-worker:local`. It builds and pulls nothing.
 - Flags: `--authoring` (Deck/Capture/draft/publish/Browse + one Study interaction), `--media`
   (needs `--authoring`), `--mechanics` (needs both; default deadline 600 s). Scope and
@@ -114,8 +114,8 @@ scripts/mnema-local-full-stack.sh reset-certificates --confirm
 
 | Item | State |
 |---|---|
-| `JAVA_HOME` path exists, reports JDK 21.0.12; default `java` is 26.0.2 | verified |
-| `./gradlew quality --dry-run` under JDK 21 resolves the task graph | verified |
+| `JAVA_HOME` path exists, reports JDK 25.0.4.1 (Temurin-compatible OpenJDK); default `java` is 26.0.2 | verified |
+| `./gradlew clean quality` under JDK 25 with Gradle 9.8.0 and Spring Boot 4.1.1 passes with the coverage floors | verified |
 | Colima socket present, `docker version` answers (29.5.2) with that `DOCKER_HOST` | verified |
 | Testcontainers env above: `:services:identity-account:test --tests '*AccountTransferIntegrationTest'` ran 4 tests, 0 skipped, passed | verified |
 | `/opt/homebrew/opt/node@24/bin/node` is v24.21.0 (npm 11.19.0); default `node` is 26.9 | verified |

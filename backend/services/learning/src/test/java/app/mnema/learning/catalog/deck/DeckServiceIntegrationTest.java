@@ -5,7 +5,7 @@ import app.mnema.learning.platform.concurrency.VersionConflictException;
 import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
 import app.mnema.learning.storage.ImmutableStorage;
 import app.mnema.learning.support.PostgresIntegrationTest;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -37,12 +37,12 @@ class DeckServiceIntegrationTest extends PostgresIntegrationTest {
         DeckCommand create = command("Первая");
         var result = service.create(actor, create);
         JsonNode first = result.acknowledgement().path("deck");
-        UUID deck = UUID.fromString(first.path("deckId").textValue());
+        UUID deck = UUID.fromString(first.path("deckId").stringValue(null));
         DeckRecord before = repository.find(actor, deck).orElseThrow();
         assertThat(result.replayed()).isFalse();
         assertThat(service.read(actor, deck)).isEqualTo(first);
-        assertThat(first.path("visibility").textValue()).isEqualTo("private");
-        assertThat(first.path("rowVersion").textValue()).isEqualTo("0");
+        assertThat(first.path("visibility").stringValue(null)).isEqualTo("private");
+        assertThat(first.path("rowVersion").stringValue(null)).isEqualTo("0");
         assertThat(first.toString()).doesNotContain("reuseScope", "rootId", "pinId");
         assertThat(count("storage_object", "reuse_scope_id", before.scopeId())).isEqualTo(2);
         assertThat(service.create(actor, create).acknowledgement()).isEqualTo(result.acknowledgement());
@@ -93,7 +93,7 @@ class DeckServiceIntegrationTest extends PostgresIntegrationTest {
         var replay = service.save(actor, deck, 0, edit);
         assertThat(replay.replayed()).isTrue();
         assertThat(replay.acknowledgement()).isEqualTo(first.acknowledgement());
-        assertThat(service.read(actor, deck).path("rowVersion").textValue()).isEqualTo("2");
+        assertThat(service.read(actor, deck).path("rowVersion").stringValue(null)).isEqualTo("2");
         assertThatThrownBy(() -> service.save(actor, deck, 1, edit)).isInstanceOf(IdempotencyConflictException.class);
         assertThatThrownBy(() -> service.save(actor, deck, 0, new DeckCommand(edit.commandId(), "different", "")))
                 .isInstanceOf(IdempotencyConflictException.class);
@@ -119,7 +119,7 @@ class DeckServiceIntegrationTest extends PostgresIntegrationTest {
                 .isInstanceOf(IdempotencyConflictException.class);
         assertThatThrownBy(() -> service.create(UUID.randomUUID(), command)).isInstanceOf(IdempotencyConflictException.class);
         JsonNode copy = retry.acknowledgement();
-        ((com.fasterxml.jackson.databind.node.ObjectNode) copy).put("privateMutation", true);
+        ((tools.jackson.databind.node.ObjectNode) copy).put("privateMutation", true);
         assertThat(retry.acknowledgement().has("privateMutation")).isFalse();
     }
 
@@ -179,15 +179,15 @@ class DeckServiceIntegrationTest extends PostgresIntegrationTest {
         UUID foreignDeck = id(service.create(foreign, command("foreign")));
         JsonNode first = service.list(actor, "2", null);
         assertThat(first.path("items").size()).isEqualTo(2);
-        String cursor = first.path("nextCursor").textValue();
-        UUID selected = UUID.fromString(first.path("items").get(1).path("deckId").textValue());
+        String cursor = first.path("nextCursor").stringValue(null);
+        UUID selected = UUID.fromString(first.path("items").get(1).path("deckId").stringValue(null));
         service.save(actor, selected, 0, command("changed"));
         JsonNode second = service.list(actor, "2", cursor);
-        JsonNode third = service.list(actor, "2", second.path("nextCursor").textValue());
+        JsonNode third = service.list(actor, "2", second.path("nextCursor").stringValue(null));
         assertThat(third.path("items").size()).isEqualTo(1);
         assertThat(third.path("nextCursor").isNull()).isTrue();
         var ids = new java.util.HashSet<String>();
-        for (JsonNode page : List.of(first, second, third)) page.path("items").forEach(row -> assertThat(ids.add(row.path("deckId").textValue())).isTrue());
+        for (JsonNode page : List.of(first, second, third)) page.path("items").forEach(row -> assertThat(ids.add(row.path("deckId").stringValue(null))).isTrue());
         assertThat(ids).hasSize(5).doesNotContain(foreignDeck.toString());
         assertThat(service.list(UUID.randomUUID(), null, cursor).path("items").isEmpty()).isTrue();
         assertThat(service.list(actor, "100", new DeckCursor(Instant.parse("9999-01-01T00:00:00Z"), foreignDeck).encode()).path("items").size()).isEqualTo(5);
@@ -220,7 +220,7 @@ class DeckServiceIntegrationTest extends PostgresIntegrationTest {
         catch (VersionConflictException expected) { return "conflict"; }
     }
     private static DeckCommand command(String title) { return new DeckCommand(UUID.randomUUID(), title, "описание"); }
-    private static UUID id(DeckService.WriteResult result) { return UUID.fromString(result.acknowledgement().path("deck").path("deckId").textValue()); }
+    private static UUID id(DeckService.WriteResult result) { return UUID.fromString(result.acknowledgement().path("deck").path("deckId").stringValue(null)); }
     private long count(String table, String column, UUID value) {
         // Test-owned fixed identifiers only; application queries never interpolate request input.
         return jdbc.sql("SELECT count(*) FROM app_learning." + table + " WHERE " + column + " = :value")

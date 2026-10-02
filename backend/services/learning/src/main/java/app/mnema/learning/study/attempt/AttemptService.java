@@ -8,9 +8,9 @@ import app.mnema.learning.platform.id.UuidPolicy;
 import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
 import app.mnema.learning.platform.json.CanonicalJsonHasher;
 import app.mnema.learning.media.MediaCatalog;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -58,8 +58,8 @@ public class AttemptService {
         // Both ids must be sides the learner was actually issued; the answer key decides correctness.
         var lefts = new HashSet<UUID>();
         var rights = new HashSet<UUID>();
-        presentation.content().path("left").forEach(item -> lefts.add(UUID.fromString(item.path("itemId").textValue())));
-        presentation.content().path("right").forEach(item -> rights.add(UUID.fromString(item.path("itemId").textValue())));
+        presentation.content().path("left").forEach(item -> lefts.add(UUID.fromString(item.path("itemId").stringValue(null))));
+        presentation.content().path("right").forEach(item -> rights.add(UUID.fromString(item.path("itemId").stringValue(null))));
         if (!lefts.contains(command.leftId()) || !rights.contains(command.rightId())) throw new InvalidRequestException();
         AnswerKey.Match key = (AnswerKey.Match) AnswerKey.parse(ExerciseType.MATCH, presentation.answerKey());
         UUID expected = key.pairs().stream().filter(pair -> pair.leftId().equals(command.leftId()))
@@ -107,9 +107,9 @@ public class AttemptService {
         LOG.debug("Study answer evaluated attemptId={} presentationId={} exerciseRevisionId={} "
                         + "evaluatorId={} evaluatorVersion={} appliedRules={} reasonCodes={} result={}",
                 command.attemptId(), command.presentationId(), presentation.exerciseRevisionId(),
-                presentation.evaluator().path("id").asText(), presentation.evaluator().path("version").asText(),
+                presentation.evaluator().path("id").asString(""), presentation.evaluator().path("version").asString(""),
                 evaluation.feedback().path("appliedRules"), evaluation.reasonCodes(),
-                evaluation.feedback().path("result").asText());
+                evaluation.feedback().path("result").asString(""));
         if (!presentation.mode().equals("SCHEDULED")) {
             ObjectNode outcome = feedbackOnly(command, presentation, evaluation);
             repository.insertReceipt(command, actor, deck, session, hash, presentation.mode(),

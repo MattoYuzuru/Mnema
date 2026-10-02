@@ -1,7 +1,7 @@
 package app.mnema.learning.study.attempt;
 
 import app.mnema.learning.platform.api.ApiExceptionHandler;
-import com.fasterxml.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

@@ -116,7 +116,7 @@ accepted strings; UI may offer an explicit conversion before submission.
   are LDH, 1..63 characters, whole host at most 253, without empty/trailing labels.
   Numeric-ending hosts must be canonical four-octet decimal IPv4, not octal/hex/short
   forms. IPv6 literals have no zone identifier. Ports are absent or 1..65535.
-  A-labels must survive Java 21's conservative IDN decode/re-encode round trip;
+  A-labels must survive the JDK's conservative `java.net.IDN` decode/re-encode round trip (verified on Java 25);
   this is a subset, **not** a claim of full browser UTS46/IDNA2008 equivalence.
   Unicode host/path input needs explicit punycode/percent-encoding before submission.
 

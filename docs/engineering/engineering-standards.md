@@ -24,13 +24,13 @@ verbatim from the previous `AGENTS.md` sections 1 (stack lists), 3, 4.2, 4.3, 5,
 
 Backend:
 
-- Spring Boot **3.x+**, **Java 21**
+- Spring Boot **4.x**, **Java 25**
 - Prefer **Virtual Threads** where appropriate (I/O-heavy concurrency)
 - Use modern Java: Records, Pattern Matching, sealed types, etc.
 
 Languages:
 
-- Primarily Java 21
+- Primarily Java 25
 - Use **Kotlin** only in places consistent with the existing codebase (follow current package/module boundaries)
 
 Frontend:

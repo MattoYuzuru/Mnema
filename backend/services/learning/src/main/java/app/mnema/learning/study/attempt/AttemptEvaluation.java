@@ -6,10 +6,10 @@ import app.mnema.learning.catalog.exercise.MappingRules;
 import app.mnema.learning.catalog.exercise.OrderEquivalence;
 import app.mnema.learning.catalog.exercise.TextRule;
 import app.mnema.learning.platform.api.InvalidRequestException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -51,8 +51,8 @@ record AttemptEvaluation(Status status, Result result, EvidenceClass evidenceCla
         if (!mediaReady) return mediaNotReady();
         JsonNode evaluator = subject.evaluator();
         // The semantic evaluator has no runtime: never fall back to exact matching, never blame the learner.
-        if (!"1".equals(evaluator.path("version").asText())
-                || !subject.type().evaluatorId().equals(evaluator.path("id").asText())) return unavailable();
+        if (!"1".equals(evaluator.path("version").asString(""))
+                || !subject.type().evaluatorId().equals(evaluator.path("id").asString(""))) return unavailable();
         AnswerKey key = AnswerKey.parse(subject.type(), subject.answerKey());
         return switch (subject.type()) {
             case SELF_CHECK -> selfCheck((AttemptCommand.SelfCheckResponse) response);
@@ -83,8 +83,8 @@ record AttemptEvaluation(Status status, Result result, EvidenceClass evidenceCla
     private static boolean blanksMatch(Subject subject, AttemptCommand.ClozeResponse cloze) {
         Set<UUID> issued = new HashSet<>();
         subject.content().path("passage").forEach(segment -> {
-            if (segment.path("kind").textValue().equals("BLANK")) {
-                issued.add(UUID.fromString(segment.path("blankId").textValue()));
+            if (segment.path("kind").stringValue(null).equals("BLANK")) {
+                issued.add(UUID.fromString(segment.path("blankId").stringValue(null)));
             }
         });
         Set<UUID> supplied = new HashSet<>();
@@ -95,9 +95,9 @@ record AttemptEvaluation(Status status, Result result, EvidenceClass evidenceCla
     private static boolean optionsMatch(Subject subject, AttemptCommand.ChoiceResponse choice) {
         Set<UUID> issued = new HashSet<>();
         subject.content().path("options")
-                .forEach(option -> issued.add(UUID.fromString(option.path("optionId").textValue())));
+                .forEach(option -> issued.add(UUID.fromString(option.path("optionId").stringValue(null))));
         Set<UUID> selected = new HashSet<>(choice.optionIds());
-        boolean single = subject.content().path("selectionMode").textValue().equals("SINGLE");
+        boolean single = subject.content().path("selectionMode").stringValue(null).equals("SINGLE");
         return selected.size() == choice.optionIds().size() && issued.containsAll(selected)
                 && (!single || selected.size() == 1);
     }
@@ -124,7 +124,7 @@ record AttemptEvaluation(Status status, Result result, EvidenceClass evidenceCla
 
     private static Set<UUID> ids(JsonNode array, String field) {
         Set<UUID> ids = new HashSet<>();
-        array.forEach(node -> ids.add(UUID.fromString(node.path(field).textValue())));
+        array.forEach(node -> ids.add(UUID.fromString(node.path(field).stringValue(null))));
         return ids;
     }
 
@@ -157,8 +157,8 @@ record AttemptEvaluation(Status status, Result result, EvidenceClass evidenceCla
     private static AttemptEvaluation cloze(AnswerKey.Cloze key, Subject subject, AttemptCommand.ClozeResponse cloze) {
         List<UUID> issued = new ArrayList<>();
         subject.content().path("passage").forEach(segment -> {
-            if (segment.path("kind").textValue().equals("BLANK")) {
-                issued.add(UUID.fromString(segment.path("blankId").textValue()));
+            if (segment.path("kind").stringValue(null).equals("BLANK")) {
+                issued.add(UUID.fromString(segment.path("blankId").stringValue(null)));
             }
         });
         Map<UUID, String> supplied = new HashMap<>();

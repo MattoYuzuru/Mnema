@@ -1,6 +1,6 @@
 package app.mnema.learning.catalog.content;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 
 import java.util.Set;
 
@@ -15,8 +15,8 @@ public final class NativeDocumentPreview {
     }
 
     private static String first(JsonNode node) {
-        if (!NativeNodeSchema.supports(node.path("type").asText(), node.path("version").asInt())) return "";
-        if (TEXT_BLOCKS.contains(node.path("type").asText())) {
+        if (!NativeNodeSchema.supports(node.path("type").asString(""), node.path("version").asInt(0))) return "";
+        if (TEXT_BLOCKS.contains(node.path("type").asString(""))) {
             StringBuilder text = new StringBuilder();
             appendText(node, text);
             String normalized = text.toString().strip().replaceAll("\\s+", " ");
@@ -33,9 +33,9 @@ public final class NativeDocumentPreview {
     }
 
     private static void appendText(JsonNode node, StringBuilder text) {
-        if (!NativeNodeSchema.supports(node.path("type").asText(), node.path("version").asInt())) return;
-        if ("text".equals(node.path("type").asText())) text.append(node.path("attrs").path("text").asText());
-        if ("ruby".equals(node.path("type").asText())) text.append(node.path("attrs").path("base").asText());
+        if (!NativeNodeSchema.supports(node.path("type").asString(""), node.path("version").asInt(0))) return;
+        if ("text".equals(node.path("type").asString(""))) text.append(node.path("attrs").path("text").asString(""));
+        if ("ruby".equals(node.path("type").asString(""))) text.append(node.path("attrs").path("base").asString(""));
         for (JsonNode child : node.path("content")) appendText(child, text);
     }
 }

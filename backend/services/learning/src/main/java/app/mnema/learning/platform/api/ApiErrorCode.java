@@ -31,7 +31,7 @@ enum ApiErrorCode {
             "A current resource version is required for this command."
     ),
     RESOURCE_LIMIT_EXCEEDED(
-            HttpStatus.UNPROCESSABLE_ENTITY,
+            HttpStatus.UNPROCESSABLE_CONTENT,
             "Resource limit exceeded",
             "The account or resource limit would be exceeded."
     ),

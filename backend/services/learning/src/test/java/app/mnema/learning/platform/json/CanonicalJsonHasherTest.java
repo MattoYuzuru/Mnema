@@ -1,10 +1,10 @@
 package app.mnema.learning.platform.json;
 
-import com.fasterxml.jackson.core.json.JsonWriteFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.fasterxml.jackson.databind.node.BinaryNode;
-import com.fasterxml.jackson.databind.node.DoubleNode;
+import tools.jackson.core.json.JsonWriteFeature;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.BinaryNode;
+import tools.jackson.databind.node.DoubleNode;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
@@ -30,6 +30,45 @@ class CanonicalJsonHasherTest {
                 .isEqualTo("{\"a\":\"text\",\"z\":[true,null,{\"a\":1,\"b\":2}]}"
                         .getBytes(StandardCharsets.UTF_8));
         assertThat(hasher.hash(first).sha256()).isEqualTo(hasher.hash(second).sha256());
+    }
+
+    /**
+     * Command receipts persist these digests, so the canonical bytes are a storage contract that
+     * must survive library upgrades. The expectation was derived independently of the hasher.
+     * Supplementary characters (the emoji below) are persisted as escaped surrogate pairs by the
+     * generator that produced every existing receipt; that quirk is part of the contract.
+     */
+    @Test
+    void goldenDigestAndBytesStayStableForAFixedPayload() {
+        var payload = new ContentJsonReader(4_096, 16, 512).read(("""
+                {"z":[true,null,{"b":2,"a":1.0}],"a":"text","unicode":"é日本🎓",\
+                "esc":"line\\n\\\"q\\\"\\\\\\u0001",\
+                "num":{"big":9007199254740991,"neg":-12,"dec":0.1234567890123456,"exp":1e-7,"zero":-0.0,"trail":2.50},\
+                "empty":{},"arr":[]}
+                """).getBytes(StandardCharsets.UTF_8));
+        String expected = "{\"a\":\"text\",\"arr\":[],\"empty\":{},"
+                + "\"esc\":\"line\\n\\\"q\\\"\\\\\\u0001\","
+                + "\"num\":{\"big\":9007199254740991,\"dec\":0.1234567890123456,\"exp\":0.0000001,"
+                + "\"neg\":-12,\"trail\":2.5,\"zero\":0},"
+                + "\"unicode\":\"é日本\\uD83C\\uDF93\",\"z\":[true,null,{\"a\":1,\"b\":2}]}";
+
+        assertThat(hasher.canonicalBytes(payload)).isEqualTo(expected.getBytes(StandardCharsets.UTF_8));
+        var digest = hasher.hash(payload);
+        assertThat(digest.byteLength()).isEqualTo(226);
+        assertThat(java.util.HexFormat.of().formatHex(digest.sha256()))
+                .isEqualTo("c2af06c8fe21a65877bbe882d92c7f271fd8867fcb049f5569e4dfa797c01631");
+    }
+
+    /** Escape rules are part of the stored-digest contract: only these characters are ever escaped. */
+    @Test
+    void escapesOnlyQuoteBackslashControlsAndSurrogatesInStringsAndKeys() {
+        var factory = tools.jackson.databind.node.JsonNodeFactory.instance;
+        String value = "\"\\\b\t\n\f\r\u0000\u001f\u007f\u0080\u2028\uffff/\ud83c\udf93\ud800";
+        var node = factory.objectNode().put("k" + value, value);
+
+        String escaped = "\\\"\\\\\\b\\t\\n\\f\\r\\u0000\\u001F\u007f\u0080\u2028\uffff/\\uD83C\\uDF93\\uD800";
+        assertThat(new String(hasher.canonicalBytes(node), StandardCharsets.UTF_8))
+                .isEqualTo("{\"k" + escaped + "\":\"" + escaped + "\"}");
     }
 
     @Test

@@ -101,11 +101,9 @@ public class ProviderUsers implements OAuth2UserService<OAuth2UserRequest, OAuth
     public OAuth2AccessTokenResponseClient<OAuth2AuthorizationCodeGrantRequest> tokenClient() {
         var client = new RestClientAuthorizationCodeTokenResponseClient();
         client.setRestClient(RestClient.builder().requestFactory(requestFactory)
-                .messageConverters(converters -> {
-                    converters.clear();
-                    converters.add(new FormHttpMessageConverter());
-                    converters.add(new OAuth2AccessTokenResponseHttpMessageConverter());
-                })
+                .configureMessageConverters(converters -> converters.disableDefaults()
+                        .addCustomConverter(new FormHttpMessageConverter())
+                        .addCustomConverter(new OAuth2AccessTokenResponseHttpMessageConverter()))
                 .defaultStatusHandler(new OAuth2ErrorResponseErrorHandler())
                 .build());
         return client;

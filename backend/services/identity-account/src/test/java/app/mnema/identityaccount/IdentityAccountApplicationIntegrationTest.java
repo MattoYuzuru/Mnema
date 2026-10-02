@@ -8,7 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.actuate.info.InfoEndpoint;
 import org.springframework.boot.info.BuildProperties;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -51,6 +51,19 @@ class IdentityAccountApplicationIntegrationTest extends PostgresIntegrationTest 
     @Autowired
     @Qualifier("requestMappingHandlerMapping")
     private RequestMappingHandlerMapping requestMappings;
+
+    @Autowired
+    @SuppressWarnings("rawtypes")
+    private org.springframework.session.SessionRepository sessionRepository;
+
+    @Autowired
+    private org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService authorizations;
+
+    @Autowired
+    private org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository clients;
+
+    @Autowired
+    private app.mnema.identityaccount.local.LocalAccounts localAccounts;
 
     @Test
     void bootsFreshIdentityMigrationWithoutLegacyHistoryOrSchemas() {
@@ -132,6 +145,65 @@ class IdentityAccountApplicationIntegrationTest extends PostgresIntegrationTest 
                 .andExpect(jsonPath("$.release.runtime").value("identity-account"))
                 .andExpect(jsonPath("$.release.mode").value("maintenance"))
                 .andExpect(jsonPath("$.release.topology").value("identity-learning"));
+    }
+
+    /** Without the JDBC session store, sessions would silently fall back to Tomcat memory. */
+    @Test
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    void browserSessionsAreStoredInThePostgresSessionTable() {
+        assertThat(sessionRepository).isInstanceOf(org.springframework.session.jdbc.JdbcIndexedSessionRepository.class);
+        var session = sessionRepository.createSession();
+        session.setAttribute("characterization", "kept");
+        sessionRepository.save(session);
+        try {
+            assertThat(jdbcClient.sql("SELECT count(*) FROM app_identity.spring_session WHERE session_id = :id")
+                    .param("id", session.getId()).query(Long.class).single()).isEqualTo(1L);
+            assertThat(jdbcClient.sql("""
+                            SELECT count(*) FROM app_identity.spring_session_attributes a
+                            JOIN app_identity.spring_session s ON s.primary_id = a.session_primary_id
+                            WHERE s.session_id = :id AND a.attribute_name = 'characterization'""")
+                    .param("id", session.getId()).query(Long.class).single()).isEqualTo(1L);
+            var found = sessionRepository.findById(session.getId());
+            assertThat((String) found.getAttribute("characterization")).isEqualTo("kept");
+        } finally {
+            sessionRepository.deleteById(session.getId());
+        }
+    }
+
+    @Test
+    void oauth2AuthorizationsRoundTripThroughThePostgresTable() {
+        String key = java.util.UUID.randomUUID().toString();
+        var access = localAccounts.register(key + "@example.test", key, "correct-horse-battery-42", null, key);
+        String token = "round-trip-" + key;
+        var issued = java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
+        var saved = org.springframework.security.oauth2.server.authorization.OAuth2Authorization
+                .withRegisteredClient(clients.findByClientId("mnema-web"))
+                .principalName(access.accountId().toString())
+                .authorizationGrantType(org.springframework.security.oauth2.core.AuthorizationGrantType.AUTHORIZATION_CODE)
+                .attribute("generation", Long.toString(access.generation()))
+                .accessToken(new org.springframework.security.oauth2.core.OAuth2AccessToken(
+                        org.springframework.security.oauth2.core.OAuth2AccessToken.TokenType.BEARER, token,
+                        issued, issued.plusSeconds(120), java.util.Set.of("account.read", "account.write")))
+                .build();
+
+        authorizations.save(saved);
+
+        assertThat(jdbcClient.sql("SELECT count(*) FROM app_identity.oauth2_authorization WHERE id = :id")
+                .param("id", saved.getId()).query(Long.class).single()).isEqualTo(1L);
+        for (var found : java.util.List.of(authorizations.findById(saved.getId()),
+                authorizations.findByToken(token,
+                        org.springframework.security.oauth2.server.authorization.OAuth2TokenType.ACCESS_TOKEN))) {
+            assertThat(found).isNotNull();
+            assertThat(found.getPrincipalName()).isEqualTo(access.accountId().toString());
+            assertThat(found.getRegisteredClientId()).isEqualTo(saved.getRegisteredClientId());
+            assertThat(found.<String>getAttribute("generation")).isEqualTo(Long.toString(access.generation()));
+            var stored = found.getAccessToken();
+            assertThat(stored.getToken().getTokenValue()).isEqualTo(token);
+            assertThat(stored.getToken().getScopes()).containsExactlyInAnyOrder("account.read", "account.write");
+            assertThat(stored.getToken().getExpiresAt()).isEqualTo(issued.plusSeconds(120));
+        }
+        authorizations.remove(saved);
+        assertThat(authorizations.findById(saved.getId())).isNull();
     }
 
     @Test

@@ -56,25 +56,25 @@ class VerifyProductionImagePinsTest(unittest.TestCase):
     def test_tag_only_backend_build_image_is_rejected(self):
         self.replace(
             "backend/Dockerfile",
-            "gradle:8.14.5-jdk21@sha256:94452354d9218922457d82e85a343391bab351e7f518f6f5ab1db996967d238b",
-            "gradle:8.14.5-jdk21",
+            "gradle:9.8.0-jdk25@sha256:7086a4cd10d568b35cafd6d5d30323865f3ce1f23ccddc9570ff3e3c9c8cd6e9",
+            "gradle:9.8.0-jdk25",
         )
         self.assertTrue(any("Dockerfile FROM" in finding.message for finding in self.findings()))
 
     def test_platform_qualified_tag_only_build_image_is_rejected(self):
         self.replace(
             "backend/Dockerfile",
-            "FROM gradle:8.14.5-jdk21@sha256:94452354d9218922457d82e85a343391bab351e7f518f6f5ab1db996967d238b AS build",
-            "FROM --platform=linux/amd64 gradle:8.14.5-jdk21 AS build",
+            "FROM gradle:9.8.0-jdk25@sha256:7086a4cd10d568b35cafd6d5d30323865f3ce1f23ccddc9570ff3e3c9c8cd6e9 AS build",
+            "FROM --platform=linux/amd64 gradle:9.8.0-jdk25 AS build",
         )
         self.assertTrue(any("Dockerfile FROM" in finding.message for finding in self.findings()))
 
     def test_platform_qualified_pinned_build_image_is_accepted(self):
         self.replace(
             "backend/Dockerfile",
-            "FROM gradle:8.14.5-jdk21@sha256:94452354d9218922457d82e85a343391bab351e7f518f6f5ab1db996967d238b AS build",
+            "FROM gradle:9.8.0-jdk25@sha256:7086a4cd10d568b35cafd6d5d30323865f3ce1f23ccddc9570ff3e3c9c8cd6e9 AS build",
             "FROM --platform=linux/amd64 "
-            "gradle:8.14.5-jdk21@sha256:94452354d9218922457d82e85a343391bab351e7f518f6f5ab1db996967d238b "
+            "gradle:9.8.0-jdk25@sha256:7086a4cd10d568b35cafd6d5d30323865f3ce1f23ccddc9570ff3e3c9c8cd6e9 "
             "AS build",
         )
         self.assertEqual([], self.findings())

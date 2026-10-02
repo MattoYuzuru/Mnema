@@ -1,8 +1,8 @@
 package app.mnema.learning.platform.idempotency;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import org.springframework.dao.DataRetrievalFailureException;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -80,7 +80,7 @@ class CommandReceiptRepository {
     private String writeJson(JsonNode value) {
         try {
             return objectMapper.writeValueAsString(value);
-        } catch (JsonProcessingException exception) {
+        } catch (JacksonException exception) {
             throw new IllegalArgumentException("Command result cannot be serialized", exception);
         }
     }
@@ -88,7 +88,7 @@ class CommandReceiptRepository {
     private JsonNode readJson(String value) {
         try {
             return objectMapper.readTree(value);
-        } catch (JsonProcessingException exception) {
+        } catch (JacksonException exception) {
             throw new DataRetrievalFailureException("Stored command result is not valid JSON", exception);
         }
     }

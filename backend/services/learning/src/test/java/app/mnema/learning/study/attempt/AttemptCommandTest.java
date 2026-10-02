@@ -1,10 +1,10 @@
 package app.mnema.learning.study.attempt;
 
 import app.mnema.learning.platform.api.InvalidRequestException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -79,7 +79,7 @@ class AttemptCommandTest {
     void clozeResponsesNeedUniqueBlankIdsAndBoundedText() {
         assertInvalid(mutate("cloze", body -> response(body).withArray("blanks").removeAll()));
         assertInvalid(mutate("cloze", body -> ((ObjectNode) response(body).withArray("blanks").get(1))
-                .put("blankId", response(body).path("blanks").get(0).path("blankId").textValue())));
+                .put("blankId", response(body).path("blanks").get(0).path("blankId").stringValue(null))));
         assertInvalid(mutate("cloze", body -> ((ObjectNode) response(body).withArray("blanks").get(0)).put("text", "x".repeat(1_025))));
         assertInvalid(mutate("cloze", body -> ((ObjectNode) response(body).withArray("blanks").get(0)).put("hinted", true)));
         assertInvalid(mutate("cloze", body -> ((ObjectNode) response(body).withArray("blanks").get(0)).remove("text")));
@@ -95,7 +95,7 @@ class AttemptCommandTest {
         assertThat(((AttemptCommand.ChoiceResponse) read(submit("choice")).response()).optionIds()).hasSize(2);
         assertInvalid(mutate("choice", body -> response(body).withArray("optionIds").removeAll()));
         assertInvalid(mutate("choice", body -> response(body).withArray("optionIds").add(
-                response(body).path("optionIds").get(0).textValue())));
+                response(body).path("optionIds").get(0).stringValue(null))));
         assertInvalid(mutate("choice", body -> {
             response(body).remove("optionIds");
             response(body).put("optionId", UUID.randomUUID().toString());
@@ -110,9 +110,9 @@ class AttemptCommandTest {
     void matchResponsesNeedTwoToSixDistinctPairsWithTheNewSideNames() {
         assertThat(((AttemptCommand.MatchResponse) read(submit("match")).response()).pairs()).hasSize(4);
         assertInvalid(mutate("match", body -> ((ObjectNode) response(body).withArray("pairs").get(0)).put("rightId",
-                response(body).path("pairs").get(1).path("rightId").textValue())));
+                response(body).path("pairs").get(1).path("rightId").stringValue(null))));
         assertInvalid(mutate("match", body -> ((ObjectNode) response(body).withArray("pairs").get(0)).put("leftId",
-                response(body).path("pairs").get(1).path("leftId").textValue())));
+                response(body).path("pairs").get(1).path("leftId").stringValue(null))));
         assertInvalid(mutate("match", body -> drop(response(body).withArray("pairs"), 3, 2, 1)));
         assertInvalid(mutate("match", body -> {
             ArrayNode pairs = response(body).withArray("pairs");
@@ -122,11 +122,11 @@ class AttemptCommandTest {
         }));
         assertInvalid(mutate("match", body -> {
             ObjectNode pair = (ObjectNode) response(body).withArray("pairs").get(0);
-            pair.put("cueId", pair.remove("leftId").textValue());
+            pair.put("cueId", pair.remove("leftId").stringValue(null));
         }));
         assertInvalid(mutate("match", body -> {
             ObjectNode pair = (ObjectNode) response(body).withArray("pairs").get(0);
-            pair.put("optionId", pair.remove("rightId").textValue());
+            pair.put("optionId", pair.remove("rightId").stringValue(null));
         }));
     }
 
@@ -138,7 +138,7 @@ class AttemptCommandTest {
         assertInvalid(mutate("order", body -> response(body).withArray("sequence").set(1,
                 response(body).path("sequence").get(0))));
         assertInvalid(mutate("order", body -> response(body).withArray("sequence").add(
-                response(body).path("sequence").get(0).textValue())));
+                response(body).path("sequence").get(0).stringValue(null))));
         assertInvalid(mutate("order", body -> drop(response(body).withArray("sequence"), 5, 4, 3, 2, 1)));
         assertInvalid(mutate("order", body -> response(body).withArray("sequence").removeAll()));
         assertInvalid(mutate("order", body -> {
@@ -146,7 +146,7 @@ class AttemptCommandTest {
             while (sequence.size() < 13) sequence.add(UUID.randomUUID().toString());
         }));
         assertInvalid(mutate("order", body -> response(body).put("positions", 1)));
-        assertInvalid(mutate("order", body -> response(body).withArray("sequence").set(0, JsonNodeFactory.instance.textNode("x"))));
+        assertInvalid(mutate("order", body -> response(body).withArray("sequence").set(0, JsonNodeFactory.instance.stringNode("x"))));
         assertInvalid(mutate("order", body -> response(body).put("sequence", "not-an-array")));
         assertInvalid(mutate("order", body -> response(body).put("kind", "SEQUENCE")));
         assertInvalid(mutate("order", body -> response(body).remove("sequence")));
@@ -165,7 +165,7 @@ class AttemptCommandTest {
         assertThat(categorize.assignments().stream().map(AttemptCommand.CategoryAssignment::categoryId).distinct())
                 .hasSizeLessThan(categorize.assignments().size());
         assertInvalid(mutate("categorize", body -> ((ObjectNode) response(body).withArray("assignments").get(1))
-                .put("itemId", response(body).path("assignments").get(0).path("itemId").textValue())));
+                .put("itemId", response(body).path("assignments").get(0).path("itemId").stringValue(null))));
         assertInvalid(mutate("categorize", body -> drop(response(body).withArray("assignments"), 3, 2, 1)));
         assertInvalid(mutate("categorize", body -> {
             ArrayNode assignments = response(body).withArray("assignments");
@@ -180,7 +180,7 @@ class AttemptCommandTest {
                 .remove("categoryId")));
         assertInvalid(mutate("categorize", body -> {
             ObjectNode assignment = (ObjectNode) response(body).withArray("assignments").get(0);
-            assignment.put("optionId", assignment.remove("categoryId").textValue());
+            assignment.put("optionId", assignment.remove("categoryId").stringValue(null));
         }));
         assertInvalid(mutate("categorize", body -> ((ObjectNode) response(body).withArray("assignments").get(0))
                 .put("categoryId", "not-a-uuid")));
@@ -214,7 +214,7 @@ class AttemptCommandTest {
         assertThatThrownBy(() -> read(value)).as(value.toString()).isInstanceOf(InvalidRequestException.class);
     }
 
-    private static void drop(com.fasterxml.jackson.databind.node.ArrayNode array, int... indexes) {
+    private static void drop(tools.jackson.databind.node.ArrayNode array, int... indexes) {
         for (int index : indexes) array.remove(index);
     }
 }

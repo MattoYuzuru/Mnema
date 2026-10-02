@@ -1,13 +1,9 @@
 package app.mnema.learning.platform.json;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonGenerator;
-import com.fasterxml.jackson.core.json.JsonWriteFeature;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import org.springframework.stereotype.Component;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.math.BigDecimal;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -17,19 +13,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-/** Produces the stable payload bytes used by command idempotency. */
+/**
+ * Produces the stable payload bytes used by command idempotency.
+ *
+ * <p>The bytes are serialized here rather than by a JSON library: persisted command receipts store
+ * their digest, so the exact byte layout is a storage contract that must not depend on library
+ * defaults. Keys are sorted by UTF-16 code units, numbers are plain normalized decimals, and strings
+ * escape the quote, the backslash, control characters and every UTF-16 surrogate (short escapes for
+ * backspace, tab, line feed, form feed and carriage return, upper-case four-digit hexadecimal escapes
+ * otherwise); all other characters are written as UTF-8.
+ */
 @Component
 public final class CanonicalJsonHasher {
 
     private static final String HASH_ALGORITHM = "SHA-256";
-
-    private final JsonFactory jsonFactory;
-
-    public CanonicalJsonHasher() {
-        this.jsonFactory = JsonFactory.builder()
-                .disable(JsonWriteFeature.ESCAPE_NON_ASCII)
-                .build();
-    }
+    private static final char[] HEX = "0123456789ABCDEF".toCharArray();
 
     public CanonicalPayload hash(JsonNode payload) {
         byte[] bytes = canonicalBytes(payload);
@@ -42,43 +40,44 @@ public final class CanonicalJsonHasher {
 
     public byte[] canonicalBytes(JsonNode payload) {
         Objects.requireNonNull(payload, "payload");
-        try (var output = new ByteArrayOutputStream();
-             JsonGenerator generator = jsonFactory.createGenerator(output)) {
-            writeCanonical(generator, payload);
-            generator.flush();
-            return output.toByteArray();
-        } catch (IOException exception) {
-            throw new IllegalArgumentException("Payload cannot be canonicalized", exception);
-        }
+        var output = new StringBuilder();
+        writeCanonical(output, payload);
+        return output.toString().getBytes(StandardCharsets.UTF_8);
     }
 
-    private void writeCanonical(JsonGenerator generator, JsonNode node) throws IOException {
+    private void writeCanonical(StringBuilder output, JsonNode node) {
         if (node.isObject()) {
-            generator.writeStartObject();
-            List<Map.Entry<String, JsonNode>> fields = new ArrayList<>();
-            fields.addAll(node.properties());
+            output.append('{');
+            List<Map.Entry<String, JsonNode>> fields = new ArrayList<>(node.properties());
             fields.sort(Map.Entry.comparingByKey(Comparator.naturalOrder()));
+            boolean first = true;
             for (Map.Entry<String, JsonNode> field : fields) {
-                generator.writeFieldName(field.getKey());
-                writeCanonical(generator, field.getValue());
+                if (!first) output.append(',');
+                first = false;
+                writeString(output, field.getKey());
+                output.append(':');
+                writeCanonical(output, field.getValue());
             }
-            generator.writeEndObject();
+            output.append('}');
             return;
         }
         if (node.isArray()) {
-            generator.writeStartArray();
+            output.append('[');
+            boolean first = true;
             for (JsonNode element : node) {
-                writeCanonical(generator, element);
+                if (!first) output.append(',');
+                first = false;
+                writeCanonical(output, element);
             }
-            generator.writeEndArray();
+            output.append(']');
             return;
         }
-        if (node.isTextual()) {
-            generator.writeString(node.textValue());
+        if (node.isString()) {
+            writeString(output, node.stringValue());
             return;
         }
         if (node.isIntegralNumber()) {
-            generator.writeNumber(node.bigIntegerValue());
+            output.append(node.bigIntegerValue());
             return;
         }
         if (node.isFloatingPointNumber()) {
@@ -86,18 +85,43 @@ public final class CanonicalJsonHasher {
                 throw new IllegalArgumentException("Non-finite JSON numbers are not supported");
             }
             BigDecimal value = node.decimalValue().stripTrailingZeros();
-            generator.writeNumber(value.signum() == 0 ? "0" : value.toPlainString());
+            output.append(value.signum() == 0 ? "0" : value.toPlainString());
             return;
         }
         if (node.isBoolean()) {
-            generator.writeBoolean(node.booleanValue());
+            output.append(node.booleanValue());
             return;
         }
         if (node.isNull()) {
-            generator.writeNull();
+            output.append("null");
             return;
         }
         throw new IllegalArgumentException("Unsupported JSON node type: " + node.getNodeType());
+    }
+
+    private static void writeString(StringBuilder output, String value) {
+        output.append('"');
+        for (int i = 0; i < value.length(); i++) {
+            char current = value.charAt(i);
+            switch (current) {
+                case '"' -> output.append("\\\"");
+                case '\\' -> output.append("\\\\");
+                case '\b' -> output.append("\\b");
+                case '\t' -> output.append("\\t");
+                case '\n' -> output.append("\\n");
+                case '\f' -> output.append("\\f");
+                case '\r' -> output.append("\\r");
+                default -> {
+                    if (current < 0x20 || Character.isSurrogate(current)) {
+                        output.append("\\u").append(HEX[current >> 12]).append(HEX[(current >> 8) & 0xF])
+                                .append(HEX[(current >> 4) & 0xF]).append(HEX[current & 0xF]);
+                    } else {
+                        output.append(current);
+                    }
+                }
+            }
+        }
+        output.append('"');
     }
 
     public record CanonicalPayload(byte[] sha256, int byteLength) {

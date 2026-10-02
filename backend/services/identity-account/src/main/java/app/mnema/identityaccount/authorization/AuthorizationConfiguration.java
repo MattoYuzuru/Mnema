@@ -29,7 +29,8 @@ import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.core.oidc.OidcScopes;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
-import org.springframework.security.oauth2.jwt.JwtValidators;
+import org.springframework.security.oauth2.jwt.JwtIssuerValidator;
+import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationConsentService;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationService;
@@ -137,8 +138,11 @@ public class AuthorizationConfiguration {
         processor.setJWSKeySelector(new JWSVerificationKeySelector<>(JWSAlgorithm.RS256,
                 (selector, context) -> selector.select(keys.toPublicJWKSet())));
         var decoder = new NimbusJwtDecoder(processor);
+        // Deliberately not JwtValidators.createDefaultWithIssuer: Security 7's default adds a typ=JWT check that
+        // rejects at+jwt (enforced by the JOSE type verifier above) and a certificate-thumbprint check that
+        // has nothing to bind here because Mnema issues no certificate-bound (cnf) tokens.
         decoder.setJwtValidator(
-                new DelegatingOAuth2TokenValidator<>(JwtValidators.createDefaultWithIssuer(issuer.issuer()), jwt -> {
+                new DelegatingOAuth2TokenValidator<>(new JwtTimestampValidator(), new JwtIssuerValidator(issuer.issuer()), jwt -> {
                     try {
                         if (!jwt.getAudience().contains("mnema-api") ||
                                 !(jwt.getClaim("generation") instanceof String gen) ||

@@ -2,10 +2,10 @@ package app.mnema.learning.study.attempt;
 
 import app.mnema.learning.catalog.exercise.ExerciseType;
 import app.mnema.learning.platform.api.InvalidRequestException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
@@ -84,7 +84,7 @@ class AttemptEvaluationTest {
         assertThat(hinted.evidenceClass()).isEqualTo(AttemptEvaluation.EvidenceClass.MEDIUM);
         assertThat(hinted.reasonCodes()).containsExactlyElementsOf(strings(evidenceFixture("clozeHinted").path("reasonCodes")));
         assertThat(hinted.feedback()).isEqualTo(feedback("cloze"));
-        assertThat(evidenceFixture("clozeHinted").path("evidenceClass").textValue()).isEqualTo("MEDIUM");
+        assertThat(evidenceFixture("clozeHinted").path("evidenceClass").stringValue(null)).isEqualTo("MEDIUM");
 
         AttemptEvaluation unhinted = evaluate(cloze(Set.of(), false), answers);
         assertThat(unhinted.evidenceClass()).isEqualTo(AttemptEvaluation.EvidenceClass.HIGH);
@@ -157,7 +157,7 @@ class AttemptEvaluationTest {
         assertThat(retry.result()).isEqualTo(AttemptEvaluation.Result.PARTIAL);
         assertThat(retry.reasonCodes()).containsExactly("MATCHING", "DETERMINISTIC", "RECOGNITION", "PAIR_RETRY");
         assertThat(retry.feedback()).isEqualTo(feedback("match"));
-        assertThat(correct.feedback().path("result").textValue()).isEqualTo("CORRECT");
+        assertThat(correct.feedback().path("result").stringValue(null)).isEqualTo("CORRECT");
 
         List<AttemptCommand.MatchPair> pairs = ((AttemptCommand.MatchResponse) response("match")).pairs();
         // swapping two rights makes exactly two pairs wrong; a rotation of all rights makes every pair wrong
@@ -198,20 +198,20 @@ class AttemptEvaluationTest {
         assertThat(misplaced.evidenceClass()).isEqualTo(AttemptEvaluation.EvidenceClass.MEDIUM);
         assertThat(misplaced.status()).isEqualTo(AttemptEvaluation.Status.ASSESSED);
         assertThat(misplaced.feedback()).isEqualTo(feedback("order"));
-        assertThat(evidenceFixture("orderIncorrect").path("result").textValue()).isEqualTo("INCORRECT");
-        assertThat(evidenceFixture("orderIncorrect").path("evidenceClass").textValue()).isEqualTo("MEDIUM");
+        assertThat(evidenceFixture("orderIncorrect").path("result").stringValue(null)).isEqualTo("INCORRECT");
+        assertThat(evidenceFixture("orderIncorrect").path("evidenceClass").stringValue(null)).isEqualTo("MEDIUM");
 
         // the key order itself and the reverse order; a partial count of right positions is still INCORRECT
         assertThat(evaluate(order(false), orderOf(ORDER_KEY)).result()).isEqualTo(AttemptEvaluation.Result.CORRECT);
         AttemptEvaluation reversed = evaluate(order(false), orderOf(List.of(ORDER_KEY.get(5), ORDER_KEY.get(4),
                 ORDER_KEY.get(3), ORDER_KEY.get(2), ORDER_KEY.get(1), ORDER_KEY.get(0))));
         assertThat(reversed.result()).isEqualTo(AttemptEvaluation.Result.INCORRECT);
-        assertThat(reversed.feedback().path("positions").findValuesAsText("correct"))
+        assertThat(reversed.feedback().path("positions").findValuesAsString("correct"))
                 .containsExactly("false", "false", "false", "false", "false", "false");
         AttemptEvaluation oneOff = evaluate(order(false), orderOf(List.of(ORDER_KEY.get(1), ORDER_KEY.get(0),
                 ORDER_KEY.get(2), ORDER_KEY.get(3), ORDER_KEY.get(4), ORDER_KEY.get(5))));
         assertThat(oneOff.result()).isEqualTo(AttemptEvaluation.Result.INCORRECT);
-        assertThat(oneOff.feedback().path("positions").findValuesAsText("correct"))
+        assertThat(oneOff.feedback().path("positions").findValuesAsString("correct"))
                 .containsExactly("false", "false", "true", "true", "true", "true");
         assertThat(evaluate(order(true), response("orderEquivalent")).reasonCodes())
                 .containsExactly("SEQUENCING", "DETERMINISTIC", "TRANSCRIPT_ACCOMMODATION");
@@ -220,16 +220,16 @@ class AttemptEvaluationTest {
     @Test
     void onlyIdenticalBlocksAreInterchangeableInAnOrder() {
         // «очень» vs «Очень» are different tiles: swapping them is an error, and ids alone decide nothing
-        ObjectNode content = presentation("order").path("content").deepCopy();
+        ObjectNode content = (ObjectNode) presentation("order").path("content").deepCopy();
         ((ObjectNode) content.withArray("items").get(2).withArray("blocks").get(0)).put("text", "Очень");
         AttemptEvaluation.Subject subject = orderSubject(content);
         assertThat(evaluate(subject, response("orderEquivalent")).result()).isEqualTo(AttemptEvaluation.Result.INCORRECT);
         assertThat(evaluate(subject, orderOf(ORDER_KEY)).result()).isEqualTo(AttemptEvaluation.Result.CORRECT);
 
         // author-only audio titles are not visible to the learner: the same asset with another title is identical
-        ObjectNode titled = presentation("order").path("content").deepCopy();
+        ObjectNode titled = (ObjectNode) presentation("order").path("content").deepCopy();
         for (JsonNode item : titled.withArray("items")) {
-            String id = item.path("itemId").textValue();
+            String id = item.path("itemId").stringValue(null);
             if (id.equals(ORDER_KEY.get(1).toString()) || id.equals(ORDER_KEY.get(2).toString())) {
                 ArrayNode blocks = ((ObjectNode) item).withArray("blocks");
                 blocks.removeAll();
@@ -241,16 +241,16 @@ class AttemptEvaluationTest {
                 .isEqualTo(AttemptEvaluation.Result.CORRECT);
         // a different media asset makes the tile distinguishable
         for (JsonNode item : titled.withArray("items")) {
-            if (item.path("itemId").textValue().equals(ORDER_KEY.get(2).toString())) {
+            if (item.path("itemId").stringValue(null).equals(ORDER_KEY.get(2).toString())) {
                 ((ObjectNode) item.withArray("blocks").get(0)).put("assetId", "aaaaaaaa-0000-4000-8000-000000000008");
             }
         }
         assertThat(evaluate(orderSubject(titled), response("orderEquivalent")).result())
                 .isEqualTo(AttemptEvaluation.Result.INCORRECT);
         // an extra picture on one of two identical captions separates them as well
-        ObjectNode distinct = presentation("order").path("content").deepCopy();
+        ObjectNode distinct = (ObjectNode) presentation("order").path("content").deepCopy();
         for (JsonNode item : distinct.withArray("items")) {
-            if (item.path("itemId").textValue().equals(ORDER_KEY.get(2).toString())) {
+            if (item.path("itemId").stringValue(null).equals(ORDER_KEY.get(2).toString())) {
                 ((ObjectNode) item).withArray("blocks").addObject().put("kind", "IMAGE")
                         .put("assetId", "aaaaaaaa-0000-4000-8000-000000000008").put("alt", "x");
             }
@@ -283,7 +283,7 @@ class AttemptEvaluationTest {
         assertThat(partial.reasonCodes()).containsExactlyElementsOf(
                 strings(evidenceFixture("categorizePartial").path("reasonCodes")));
         assertThat(partial.feedback()).isEqualTo(feedback("categorize"));
-        assertThat(evidenceFixture("categorizePartial").path("result").textValue()).isEqualTo("PARTIAL");
+        assertThat(evidenceFixture("categorizePartial").path("result").stringValue(null)).isEqualTo("PARTIAL");
 
         List<AttemptCommand.CategoryAssignment> key = keyAssignments();
         assertThat(evaluate(categorize(false), new AttemptCommand.CategorizeResponse(key)).result())
@@ -293,14 +293,14 @@ class AttemptEvaluationTest {
         AttemptEvaluation none = evaluate(categorize(false), new AttemptCommand.CategorizeResponse(key.stream()
                 .map(item -> new AttemptCommand.CategoryAssignment(item.itemId(), distractor)).toList()));
         assertThat(none.result()).isEqualTo(AttemptEvaluation.Result.INCORRECT);
-        assertThat(none.feedback().path("assignments").findValuesAsText("correct"))
+        assertThat(none.feedback().path("assignments").findValuesAsString("correct"))
                 .containsExactly("false", "false", "false", "false");
         // several items in one group are fine; an item may be in a group the key never uses
         UUID noun = UUID.fromString(CATEGORY_1);
         AttemptEvaluation oneGroup = evaluate(categorize(false), new AttemptCommand.CategorizeResponse(key.stream()
                 .map(item -> new AttemptCommand.CategoryAssignment(item.itemId(), noun)).toList()));
         assertThat(oneGroup.result()).isEqualTo(AttemptEvaluation.Result.PARTIAL);
-        assertThat(oneGroup.feedback().path("assignments").findValuesAsText("correct"))
+        assertThat(oneGroup.feedback().path("assignments").findValuesAsString("correct"))
                 .containsExactly("true", "false", "true", "false");
         assertThat(evaluate(categorize(true), response("categorize")).reasonCodes())
                 .containsExactly("CATEGORIZING", "DETERMINISTIC", "TRANSCRIPT_ACCOMMODATION");
@@ -309,7 +309,7 @@ class AttemptEvaluationTest {
     @Test
     void categorizeKeepsTheKeyWhenLabelsAndCategoryOrderChange() {
         // labels and category order are display data: the same ids give the same result
-        ObjectNode content = presentation("categorize").path("content").deepCopy();
+        ObjectNode content = (ObjectNode) presentation("categorize").path("content").deepCopy();
         ArrayNode categories = content.withArray("categories");
         ((ObjectNode) categories.get(0)).put("label", "Что угодно");
         ObjectNode first = (ObjectNode) categories.remove(0);
@@ -454,7 +454,7 @@ class AttemptEvaluationTest {
     private static AttemptEvaluation.Subject choice(boolean transcript) { return choice(transcript, content -> { }); }
 
     private static AttemptEvaluation.Subject choice(boolean transcript, Consumer<ObjectNode> change) {
-        ObjectNode content = presentation("choice").path("content").deepCopy();
+        ObjectNode content = (ObjectNode) presentation("choice").path("content").deepCopy();
         change.accept(content);
         return new AttemptEvaluation.Subject(ExerciseType.CHOICE, evaluator("deterministic-choice"),
                 mechanic("createChoiceVideoMultiple").path("exercise").path("answerKey"), content,
@@ -490,8 +490,8 @@ class AttemptEvaluationTest {
     private static List<AttemptCommand.CategoryAssignment> keyAssignments() {
         List<AttemptCommand.CategoryAssignment> result = new java.util.ArrayList<>();
         mechanic("createCategorize").path("exercise").path("answerKey").path("assignments").forEach(assignment ->
-                result.add(new AttemptCommand.CategoryAssignment(UUID.fromString(assignment.path("itemId").textValue()),
-                        UUID.fromString(assignment.path("categoryId").textValue()))));
+                result.add(new AttemptCommand.CategoryAssignment(UUID.fromString(assignment.path("itemId").stringValue(null)),
+                        UUID.fromString(assignment.path("categoryId").stringValue(null)))));
         return result;
     }
 
@@ -510,7 +510,7 @@ class AttemptEvaluationTest {
     private static JsonNode evidenceFixture(String name) { return fixture("mechanics.json").path("evidence").path(name); }
 
     private static List<String> strings(JsonNode array) {
-        return java.util.stream.StreamSupport.stream(array.spliterator(), false).map(JsonNode::textValue).toList();
+        return java.util.stream.StreamSupport.stream(array.spliterator(), false).map(JsonNode::stringValue).toList();
     }
 
     private static AttemptCommand.Response response(String name) {

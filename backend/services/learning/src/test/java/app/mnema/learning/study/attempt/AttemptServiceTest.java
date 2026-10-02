@@ -2,7 +2,7 @@ package app.mnema.learning.study.attempt;
 
 import app.mnema.learning.platform.json.CanonicalJsonHasher;
 import app.mnema.learning.media.MediaCatalog;
-import com.fasterxml.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;

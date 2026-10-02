@@ -4,7 +4,7 @@ Runs both real Spring Boot applications against one disposable PostgreSQL 18 ins
 
 ## Run
 
-Prerequisites: Java 21, Python 3 stdlib, running Docker/Colima, locally cached `postgres:18`, and both boot JARs. The fixture does not install dependencies or pull images. Build the JARs using the ordinary repository gate/build workflow first:
+Prerequisites: Java 25, Python 3 stdlib, running Docker/Colima, locally cached `postgres:18`, and both boot JARs. The fixture does not install dependencies or pull images. Build the JARs using the ordinary repository gate/build workflow first:
 
 ```sh
 cd backend

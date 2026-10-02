@@ -1,4 +1,4 @@
-FROM gradle:8.14.5-jdk21@sha256:94452354d9218922457d82e85a343391bab351e7f518f6f5ab1db996967d238b AS build
+FROM gradle:9.8.0-jdk25@sha256:7086a4cd10d568b35cafd6d5d30323865f3ce1f23ccddc9570ff3e3c9c8cd6e9 AS build
 WORKDIR /workspace
 
 COPY gradlew settings.gradle.kts build.gradle.kts ./
@@ -7,7 +7,7 @@ COPY services ./services
 RUN chmod +x gradlew
 RUN ./gradlew :services:identity-account:bootJar :services:learning:bootJar --no-daemon -x test
 
-FROM eclipse-temurin:21.0.12_8-jre-resolute@sha256:097b5c0e8b5c9cc402e871a87a35f20e9413af9159410db2b1bdd8b78dcca7ed AS backend-runtime
+FROM eclipse-temurin:25.0.4.1_1-jre-resolute@sha256:628f28c18211e8633d02cefb9698489abcbd43337c61fba67837e4ffb86d50d6 AS backend-runtime
 RUN rm -f /usr/bin/pebble
 WORKDIR /app
 USER 10001:10001

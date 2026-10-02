@@ -32,10 +32,10 @@ class StudyProgressServiceTest {
         when(repository.page(actor, deck, null, 2, now)).thenReturn(List.of(firstRow, secondRow));
 
         var page = service.read(actor, deck, 1, null);
-        String cursor = page.path("nextCursor").textValue();
+        String cursor = page.path("nextCursor").stringValue(null);
         assertThat(cursor).doesNotContain(first.toString());
         when(repository.page(actor, deck, first, 2, now)).thenReturn(List.of(secondRow));
-        assertThat(service.read(actor, deck, 1, cursor).path("items").get(0).path("memberKey").textValue())
+        assertThat(service.read(actor, deck, 1, cursor).path("items").get(0).path("memberKey").stringValue(null))
                 .isEqualTo(second.toString());
         verify(repository).page(actor, deck, first, 2, now);
     }

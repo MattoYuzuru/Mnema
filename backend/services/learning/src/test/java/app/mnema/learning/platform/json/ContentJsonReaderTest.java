@@ -22,7 +22,7 @@ class ContentJsonReaderTest {
                 "integer":9007199254740991,"null":null,"bool":true},"content":[]}
                 """);
 
-        assertThat(tree.path("attrs").path("text").textValue()).isEqualTo("Русский 日本語 العربية 🎓");
+        assertThat(tree.path("attrs").path("text").stringValue(null)).isEqualTo("Русский 日本語 العربية 🎓");
         assertThat(tree.path("attrs").path("precise").decimalValue())
                 .isEqualByComparingTo(new BigDecimal("0.1234567890123456"));
         assertThat(tree.path("attrs").path("integer").bigIntegerValue().toString()).isEqualTo("9007199254740991");
@@ -50,7 +50,7 @@ class ContentJsonReaderTest {
     @Test
     void enforcesUtf8BytesDepthTokensAndNumberLimits() {
         byte[] exact = "{\"s\":\"я\"}".getBytes(StandardCharsets.UTF_8);
-        assertThat(new ContentJsonReader(exact.length, 4, 20).read(exact).path("s").textValue()).isEqualTo("я");
+        assertThat(new ContentJsonReader(exact.length, 4, 20).read(exact).path("s").stringValue(null)).isEqualTo("я");
         assertThatThrownBy(() -> new ContentJsonReader(exact.length - 1, 4, 20).read(exact))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new ContentJsonReader(1024, 2, 100).read(bytes("{\"a\":[{}]}")))
@@ -64,9 +64,16 @@ class ContentJsonReaderTest {
     }
 
     @Test
+    void normalizesTrailingZerosOfDecimalNumbersBeforeScaleChecks() {
+        assertThat(read("{\"a\":1.50,\"b\":2.0,\"c\":100.0,\"d\":0.10}").toString())
+                .isEqualTo("{\"a\":1.5,\"b\":2,\"c\":1E+2,\"d\":0.1}");
+        assertThat(read("{\"a\":1." + "0".repeat(200) + "}").toString()).isEqualTo("{\"a\":1}");
+    }
+
+    @Test
     void acceptsBoundaryNumbersAndSurrogatePairs() {
         var tree = read("{\"a\":9007199254740991,\"b\":1e-128,\"c\":\"\\ud83c\\udf93\",\"d\":0.1}");
-        assertThat(tree.path("c").textValue()).isEqualTo("🎓");
+        assertThat(tree.path("c").stringValue(null)).isEqualTo("🎓");
         assertThat(new CanonicalJsonHasher().canonicalBytes(tree).length).isLessThan(300);
         assertThat(new CanonicalJsonHasher().canonicalBytes(read("{\"zero\":-0.0}")))
                 .isEqualTo(bytes("{\"zero\":0}"));
@@ -80,7 +87,7 @@ class ContentJsonReaderTest {
         assertThatThrownBy(() -> reader.read(null)).isInstanceOf(NullPointerException.class);
     }
 
-    private com.fasterxml.jackson.databind.JsonNode read(String input) {
+    private tools.jackson.databind.JsonNode read(String input) {
         return reader.read(bytes(input));
     }
 

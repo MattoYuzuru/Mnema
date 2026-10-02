@@ -169,7 +169,7 @@ class MediaClockStepIntegrationTest extends PostgresIntegrationTest {
     void manifestPinResetsAnAheadGcObjectThroughTheDatabaseTrigger() {
         UUID owner = UUID.randomUUID();
         UUID deck = UUID.fromString(decks.create(owner, new DeckCommand(UUID.randomUUID(), "Deck", "Description"))
-                .acknowledgement().path("deck").path("deckId").textValue());
+                .acknowledgement().path("deck").path("deckId").stringValue(null));
         UUID revision = jdbc.sql("SELECT revision_id FROM app_learning.deck_revision WHERE deck_id=:deck "
                 + "ORDER BY sequence DESC LIMIT 1").param("deck", deck).query(UUID.class).single();
         UUID blob = UUID.randomUUID();

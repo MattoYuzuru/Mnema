@@ -3,8 +3,8 @@ package app.mnema.learning.study.restart;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.id.UuidPolicy;
 import app.mnema.learning.platform.json.ContentJsonReader;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -51,11 +51,11 @@ public record StudyRestartCommand(UUID commandId, List<UUID> memberKeys, ObjectN
     }
 
     private static UUID id(JsonNode value, boolean command) {
-        if (!value.isTextual() || value.textValue().length() != 36) throw invalid();
+        if (!value.isString() || value.stringValue(null).length() != 36) throw invalid();
         try {
-            UUID id = UUID.fromString(value.textValue());
+            UUID id = UUID.fromString(value.stringValue(null));
             id = command ? UuidPolicy.requireCommandId(id) : UuidPolicy.requireEntityId(id, "id");
-            if (!id.toString().equals(value.textValue())) throw invalid();
+            if (!id.toString().equals(value.stringValue(null))) throw invalid();
             return id;
         } catch (IllegalArgumentException exception) { throw invalid(); }
     }

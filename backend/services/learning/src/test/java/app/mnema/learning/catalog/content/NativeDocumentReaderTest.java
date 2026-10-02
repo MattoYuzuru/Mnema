@@ -2,10 +2,10 @@ package app.mnema.learning.catalog.content;
 
 import app.mnema.learning.platform.json.CanonicalJsonHasher;
 import app.mnema.learning.platform.json.ContentJsonReader;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -83,7 +83,7 @@ class NativeDocumentReaderTest {
             ObjectNode document = (ObjectNode) new ContentJsonReader(1_048_576, 128, 250_000)
                     .read(Files.readAllBytes(contractRoot().resolve("valid/rich.json")));
             ((ObjectNode) document.path("root").path("content").get(0).path("attrs"))
-                    .put("alt", vector.path("value").textValue());
+                    .put("alt", vector.path("value").stringValue(null));
             if (vector.path("valid").booleanValue()) assertThat(read(document).nodeCount()).isEqualTo(6);
             else invalid(document);
         }
@@ -247,7 +247,7 @@ class NativeDocumentReaderTest {
         ObjectNode first = paragraph(2);
         first.put("id", "abcdefab-abcd-4abc-abcd-abcdefabcdef");
         ObjectNode second = first.deepCopy();
-        second.put("id", first.path("id").textValue().toUpperCase(Locale.ROOT));
+        second.put("id", first.path("id").stringValue(null).toUpperCase(Locale.ROOT));
         invalid(document(first, second));
         invalid(document(node(2, "future", paragraph(2))));
         for (String id : new String[]{"1-1-4-8-1", "00000000-0000-0000-0000-000000000000",
@@ -341,9 +341,9 @@ class NativeDocumentReaderTest {
                 for (JsonNode vector : vectors.path(field).path(outcome)) {
                     ObjectNode paragraph = paragraph(2);
                     if (field.equals("lang")) {
-                        paragraph.withObject("attrs").put("lang", vector.textValue());
+                        paragraph.withObject("attrs").put("lang", vector.stringValue(null));
                     } else {
-                        children(paragraph).add(link(3, vector.textValue(), text(4, "link")));
+                        children(paragraph).add(link(3, vector.stringValue(null), text(4, "link")));
                     }
                     if (outcome.equals("accept")) {
                         assertSemanticEquality(read(document(paragraph)).toJson(), document(paragraph));

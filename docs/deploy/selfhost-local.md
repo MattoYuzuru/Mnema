@@ -26,7 +26,7 @@ keep their own temporary processes, database and keys and do not consume this vo
 
 ### First start
 
-Prerequisites are Docker Engine with the Compose plugin, Java/JDK 21 (`java` and
+Prerequisites are Docker Engine with the Compose plugin, Java/JDK 25 (`java` and
 `keytool`), OpenSSL, Python 3 and curl. The local backend Dockerfile mirrors the
 pinned release build/runtime stages without its optional BuildKit cache mount, so the
 workflow also works with a Compose installation that has no buildx plugin. Run from
@@ -103,6 +103,21 @@ Issue #266 replaced the exercise mechanics without compatibility readers: Learni
 migration `V21` refuses to start over a database that already contains exercises from an
 earlier build. Run this reset once before the first start of a #266 build (only after
 confirming the local data is disposable).
+
+Issue #278 moved the backend to Java 25, Spring Boot 4.1, Spring Security 7 and Spring Session 4.
+Flyway history and schema are unchanged, and no manual step is required: a browser session
+created by an earlier build is ended at the authorization endpoint (the user is sent to sign in
+again), and an unredeemed authorization code from an earlier session answers `invalid_grant`
+instead of failing. Serialized OAuth2 rows from earlier builds are otherwise not guaranteed to
+be readable, so clearing them once is optional hygiene (everyone signs in again); it is not a
+full data reset:
+
+```sql
+-- psql against the Identity database
+DELETE FROM app_identity.oauth2_authorization;
+DELETE FROM app_identity.oauth2_authorization_consent;
+DELETE FROM app_identity.spring_session; -- spring_session_attributes cascades
+```
 
 It deletes only this Compose project's containers, PostgreSQL and object-storage
 volumes, media scratch files and the synthetic smoke-account state files; local

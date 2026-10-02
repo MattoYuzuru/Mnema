@@ -1,8 +1,8 @@
 package app.mnema.learning.catalog.exercise;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.json.JsonMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -344,7 +344,7 @@ class ExerciseRepository {
 
     private static JsonNode json(String value) {
         try { return JSON.readTree(value); }
-        catch (JsonProcessingException exception) { throw new IllegalStateException("Invalid persisted JSON", exception); }
+        catch (JacksonException exception) { throw new IllegalStateException("Invalid persisted JSON", exception); }
     }
 
     /** The objective revision payload: identity text only, no answer key. */

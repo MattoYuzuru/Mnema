@@ -1,8 +1,8 @@
 package app.mnema.learning.platform.idempotency;
 
 import app.mnema.learning.support.PostgresIntegrationTest;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -60,7 +60,7 @@ class CommandReceiptServiceIntegrationTest extends PostgresIntegrationTest {
         });
 
         assertThat(first).isEqualTo(duplicate);
-        assertThat(duplicate.path("receipt").textValue()).isEqualTo("stored");
+        assertThat(duplicate.path("receipt").stringValue(null)).isEqualTo("stored");
         assertThat(service.replay(identity, reorderedPayload)).contains(first);
         assertThat(service.replay(identity(), reorderedPayload)).isEmpty();
         assertThat(calls).hasValue(1);
@@ -177,7 +177,7 @@ class CommandReceiptServiceIntegrationTest extends PostgresIntegrationTest {
             return objectMapper.createObjectNode().put("status", "committed");
         });
 
-        assertThat(retried.path("status").textValue()).isEqualTo("committed");
+        assertThat(retried.path("status").stringValue(null)).isEqualTo("committed");
         assertThat(receiptCount(identity.commandId())).isOne();
         assertThat(effectCount(effectId)).isOne();
     }

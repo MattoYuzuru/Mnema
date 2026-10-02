@@ -13,9 +13,9 @@ import app.mnema.learning.study.session.StudyHintCommand;
 import app.mnema.learning.study.session.StudySessionService;
 import app.mnema.learning.support.PostgresIntegrationTest;
 import app.mnema.learning.support.StudyFixtures;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -62,16 +62,16 @@ class AttemptServiceIntegrationTest extends PostgresIntegrationTest {
 
         AttemptService.SubmitResult submitted = service.submit(fixture.actor(), fixture.deck(), first.session(), correct);
         assertThat(submitted.replayed()).isFalse();
-        assertThat(submitted.outcome().path("status").textValue()).isEqualTo("ASSESSED");
-        assertThat(submitted.outcome().path("evidence").path("result").textValue()).isEqualTo("CORRECT");
-        assertThat(submitted.outcome().path("evidence").path("evidenceClass").textValue()).isEqualTo("HIGH");
+        assertThat(submitted.outcome().path("status").stringValue(null)).isEqualTo("ASSESSED");
+        assertThat(submitted.outcome().path("evidence").path("result").stringValue(null)).isEqualTo("CORRECT");
+        assertThat(submitted.outcome().path("evidence").path("evidenceClass").stringValue(null)).isEqualTo("HIGH");
         assertThat(submitted.outcome().path("transition").path("afterLevel").intValue()).isEqualTo(2);
         assertThat(service.submit(fixture.actor(), fixture.deck(), first.session(), correct).replayed()).isTrue();
         assertThat(count("study_transition", "account_id", fixture.actor())).isOne();
         assertThat(count("study_evidence", "account_id", fixture.actor())).isOne();
         assertThat(rawCount(fixture.actor())).isOne();
         JsonNode completed = sessions.read(fixture.actor(), fixture.deck(), first.session());
-        assertThat(completed.path("status").textValue()).isEqualTo("COMPLETE");
+        assertThat(completed.path("status").stringValue(null)).isEqualTo("COMPLETE");
         assertThat(completed.path("presentations")).isEmpty();
 
         AttemptCommand changedReuse = attempt(attempt, first, "TEXT", "wrong", "KNEW");
@@ -84,7 +84,7 @@ class AttemptServiceIntegrationTest extends PostgresIntegrationTest {
         StudyRestartCommand restart = restart(UUID.randomUUID(), fixture.member());
         StudyRestartService.Result restarted = restarts.restart(fixture.actor(), fixture.deck(), restart);
         assertThat(restarted.acknowledgement().path("objectiveCount").intValue()).isOne();
-        assertThat(restarted.acknowledgement().path("learningEpochs").get(0).path("learningEpoch").textValue())
+        assertThat(restarted.acknowledgement().path("learningEpochs").get(0).path("learningEpoch").stringValue(null))
                 .isEqualTo("1");
         assertThat(restarts.restart(fixture.actor(), fixture.deck(), restart).replayed()).isTrue();
         assertThat(count("study_transition", "account_id", fixture.actor())).isOne();
@@ -92,7 +92,7 @@ class AttemptServiceIntegrationTest extends PostgresIntegrationTest {
 
         JsonNode old = service.submit(fixture.actor(), fixture.deck(), beforeRestart.session(),
                 attempt(UUID.randomUUID(), beforeRestart, "TEXT", "memory", null)).outcome();
-        assertThat(old.path("status").textValue()).isEqualTo("NOT_ASSESSED");
+        assertThat(old.path("status").stringValue(null)).isEqualTo("NOT_ASSESSED");
         assertThat(old.path("transition").isNull()).isTrue();
         assertThat(count("study_transition", "account_id", fixture.actor())).isOne();
         assertThat(jdbc.sql("SELECT learning_epoch FROM app_learning.study_state WHERE account_id=:actor")
@@ -105,14 +105,14 @@ class AttemptServiceIntegrationTest extends PostgresIntegrationTest {
         Presentation cancelPresentation = presentation(fixture, "SCHEDULED");
         JsonNode cancelled = service.submit(fixture.actor(), fixture.deck(), cancelPresentation.session(),
                 attempt(UUID.randomUUID(), cancelPresentation, "CANCEL", null, null)).outcome();
-        assertThat(cancelled.path("status").textValue()).isEqualTo("NOT_ASSESSED");
+        assertThat(cancelled.path("status").stringValue(null)).isEqualTo("NOT_ASSESSED");
 
         Presentation practice = presentation(fixture, "PRACTICE");
         JsonNode practiced = service.submit(fixture.actor(), fixture.deck(), practice.session(),
                 attempt(UUID.randomUUID(), practice, "TEXT", "memory", "GUESSED")).outcome();
-        assertThat(practiced.path("status").textValue()).isEqualTo("ASSESSED");
+        assertThat(practiced.path("status").stringValue(null)).isEqualTo("ASSESSED");
         assertThat(practiced.path("canonicalEffects").booleanValue()).isFalse();
-        assertThat(practiced.path("feedback").path("result").textValue()).isEqualTo("CORRECT");
+        assertThat(practiced.path("feedback").path("result").stringValue(null)).isEqualTo("CORRECT");
         assertThat(count("study_evidence", "account_id", fixture.actor())).isZero();
         assertThat(count("study_transition", "account_id", fixture.actor())).isZero();
         assertThat(rawCount(fixture.actor())).isZero();
@@ -127,12 +127,12 @@ class AttemptServiceIntegrationTest extends PostgresIntegrationTest {
         UUID blank = UUID.fromString(cloze.blank());
         // hint use is recorded by the server, never claimed by the client
         assertThat(sessions.revealHint(clozeFixture.actor(), clozeFixture.deck(), cloze.session(), cloze.id(),
-                StudyHintCommand.read(bytes(hintCommand(cloze.nonce(), blank)))).path("firstLetter").textValue()).isEqualTo("m");
+                StudyHintCommand.read(bytes(hintCommand(cloze.nonce(), blank)))).path("firstLetter").stringValue(null)).isEqualTo("m");
         JsonNode clozeOutcome = service.submit(clozeFixture.actor(), clozeFixture.deck(), cloze.session(),
                 attempt(UUID.randomUUID(), cloze, "CLOZE", " MEMORY ", null))
                 .outcome();
-        assertThat(clozeOutcome.path("evidence").path("result").textValue()).isEqualTo("CORRECT");
-        assertThat(clozeOutcome.path("evidence").path("evidenceClass").textValue()).isEqualTo("MEDIUM");
+        assertThat(clozeOutcome.path("evidence").path("result").stringValue(null)).isEqualTo("CORRECT");
+        assertThat(clozeOutcome.path("evidence").path("evidenceClass").stringValue(null)).isEqualTo("MEDIUM");
         assertThat(clozeOutcome.path("transition").path("afterLevel").intValue()).isOne();
 
         Fixture choiceFixture = fixture("CHOICE");
@@ -145,8 +145,8 @@ class AttemptServiceIntegrationTest extends PostgresIntegrationTest {
         JsonNode choiceOutcome = service.submit(choiceFixture.actor(), choiceFixture.deck(), choice.session(),
                 attempt(UUID.randomUUID(), choice, "CHOICE", choice.options().get(0).toString(), null))
                 .outcome();
-        assertThat(choiceOutcome.path("evidence").path("result").textValue()).isEqualTo("CORRECT");
-        assertThat(choiceOutcome.path("evidence").path("evidenceClass").textValue()).isEqualTo("LOW");
+        assertThat(choiceOutcome.path("evidence").path("result").stringValue(null)).isEqualTo("CORRECT");
+        assertThat(choiceOutcome.path("evidence").path("evidenceClass").stringValue(null)).isEqualTo("LOW");
         assertThat(choiceOutcome.path("transition").path("afterLevel").intValue()).isOne();
         assertThat(count("study_state", "account_id", choiceFixture.actor())).isOne();
         assertThat(count("study_transition", "account_id", choiceFixture.actor())).isOne();
@@ -163,8 +163,8 @@ class AttemptServiceIntegrationTest extends PostgresIntegrationTest {
 
         JsonNode outcome = service.submit(fixture.actor(), fixture.deck(), presentation.session(),
                 AttemptCommand.read(bytes(body))).outcome();
-        assertThat(outcome.path("evidence").path("result").textValue()).isEqualTo("CORRECT");
-        assertThat(outcome.path("evidence").path("evidenceClass").textValue()).isEqualTo("LOW");
+        assertThat(outcome.path("evidence").path("result").stringValue(null)).isEqualTo("CORRECT");
+        assertThat(outcome.path("evidence").path("evidenceClass").stringValue(null)).isEqualTo("LOW");
         assertThat(outcome.path("transition").path("afterLevel").intValue()).isOne();
 
         StudyRestartCommand concurrentRestart = restart(UUID.randomUUID(), fixture.member());
@@ -227,25 +227,25 @@ class AttemptServiceIntegrationTest extends PostgresIntegrationTest {
     void progressIsExplainableAndRawRetentionPreservesDurableRetryEvidence() {
         Fixture fixture = fixture("FREE_RESPONSE");
         JsonNode fresh = progress.read(fixture.actor(), fixture.deck(), 20, null).path("items").get(0);
-        assertThat(fresh.path("state").textValue()).isEqualTo("NOT_STARTED");
+        assertThat(fresh.path("state").stringValue(null)).isEqualTo("NOT_STARTED");
         assertThat(fresh.path("objectiveCoverage").toString())
                 .isEqualTo("{\"enabled\":1,\"introduced\":0,\"assessed\":0}");
 
         Presentation presentation = presentation(fixture, "SCHEDULED");
         JsonNode introduced = progress.read(fixture.actor(), fixture.deck(), 20, null).path("items").get(0);
-        assertThat(introduced.path("state").textValue()).isEqualTo("LEARNING");
+        assertThat(introduced.path("state").stringValue(null)).isEqualTo("LEARNING");
         AttemptCommand command = attempt(UUID.randomUUID(), presentation, "TEXT", "memory", null);
         service.submit(fixture.actor(), fixture.deck(), presentation.session(), command);
 
         JsonNode onTrack = progress.read(fixture.actor(), fixture.deck(), 20, null).path("items").get(0);
-        assertThat(onTrack.path("state").textValue()).isEqualTo("ON_TRACK");
+        assertThat(onTrack.path("state").stringValue(null)).isEqualTo("ON_TRACK");
         assertThat(onTrack.path("objectiveCoverage").path("assessed").intValue()).isOne();
         jdbc.sql("""
                 UPDATE app_learning.study_state SET next_due=statement_timestamp()-INTERVAL '1 second'
                  WHERE account_id=:actor AND deck_id=:deck
                 """).param("actor", fixture.actor()).param("deck", fixture.deck()).update();
         assertThat(progress.read(fixture.actor(), fixture.deck(), 20, null).path("items").get(0)
-                .path("state").textValue()).isEqualTo("DUE");
+                .path("state").stringValue(null)).isEqualTo("DUE");
         jdbc.sql("""
                 UPDATE app_learning.study_raw_response raw
                    SET expires_at=statement_timestamp()-INTERVAL '1 second'
@@ -316,10 +316,10 @@ class AttemptServiceIntegrationTest extends PostgresIntegrationTest {
     private Presentation presentation(Fixture fixture, String mode, UUID sourceSession) {
         StudyFixtures.Issued issued = fixtures.issue(fixture.material(), mode, sourceSession).getFirst();
         List<UUID> options = new java.util.ArrayList<>();
-        issued.content().path("options").forEach(option -> options.add(UUID.fromString(option.path("optionId").textValue())));
+        issued.content().path("options").forEach(option -> options.add(UUID.fromString(option.path("optionId").stringValue(null))));
         String blank = null;
         for (JsonNode segment : issued.content().path("passage")) {
-            if (segment.path("kind").textValue().equals("BLANK")) blank = segment.path("blankId").textValue();
+            if (segment.path("kind").stringValue(null).equals("BLANK")) blank = segment.path("blankId").stringValue(null);
         }
         return new Presentation(issued.session(), issued.id(), issued.nonce(), List.copyOf(options), blank);
     }

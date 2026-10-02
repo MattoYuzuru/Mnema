@@ -4,9 +4,9 @@ import app.mnema.learning.platform.api.ApiExceptionHandler;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.concurrency.VersionConflictException;
 import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -39,7 +39,7 @@ class DeckControllerTest {
     @BeforeEach
     void setUp() throws Exception {
         fixture = JsonMapper.builder().build().readTree(Files.readString(Path.of("../../../contracts/decks/metadata.json")));
-        deck = UUID.fromString(fixture.path("detail").path("deckId").textValue());
+        deck = UUID.fromString(fixture.path("detail").path("deckId").stringValue(null));
         acknowledgement = JsonMapper.builder().build().createObjectNode();
         acknowledgement.set("commandId", fixture.path("command").path("commandId"));
         acknowledgement.set("deck", fixture.path("detail"));
@@ -108,6 +108,21 @@ class DeckControllerTest {
         when(service.create(eq(actor), any())).thenThrow(new IdempotencyConflictException());
         mvc.perform(post("/decks").contentType(MediaType.APPLICATION_JSON).content(fixture.path("command").toString()))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("IDEMPOTENCY_CONFLICT"));
+    }
+
+    @Test
+    void malformedJsonIsAStableBadRequestProblemWithoutLeakingInputOrReachingTheService() throws Exception {
+        for (var body : app.mnema.learning.support.MalformedJsonBodies.all()) {
+            var response = mvc.perform(post("/decks").contentType(MediaType.APPLICATION_JSON).content(body.bytes()))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+                    .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                    .andExpect(header().string("Cache-Control", "private, no-store"))
+                    .andReturn().getResponse().getContentAsString();
+            org.assertj.core.api.Assertions.assertThat(response).as(body.toString())
+                    .doesNotContain("commandId").doesNotContain("JsonParse").doesNotContain("Duplicate");
+        }
+        verifyNoInteractions(service);
     }
 
     @Test

@@ -31,9 +31,9 @@ import app.mnema.learning.storage.StorageTypes.ObjectRef;
 import app.mnema.learning.storage.StorageTypes.PinOwner;
 import app.mnema.learning.storage.StorageTypes.StageBatch;
 import app.mnema.learning.storage.StorageTypes.StagedRoot;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -394,7 +394,7 @@ public class ItemService {
 
     private TreeRoot tree(UUID scope, UUID root, int expectedCount) {
         NewObject page = storage.readBatch(scope, List.of(root)).getFirst().value();
-        if (!page.payload().path("role").isTextual() || !page.payload().path("role").textValue().equals("members")
+        if (!page.payload().path("role").isString() || !page.payload().path("role").stringValue(null).equals("members")
                 || !page.payload().path("treeHeight").canConvertToInt()) throw new IllegalStateException("Invalid member root");
         return new TreeRoot(new ObjectRef(scope, root), page.payload().path("treeHeight").intValue(), expectedCount);
     }

@@ -3,8 +3,8 @@ package app.mnema.learning.catalog.deck;
 import app.mnema.learning.storage.ImmutableStorage;
 import app.mnema.learning.storage.StorageTypes.*;
 import app.mnema.learning.support.PostgresIntegrationTest;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.JsonNodeFactory;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -45,17 +45,17 @@ class DeckConstraintIntegrationTest extends PostgresIntegrationTest {
 
         JsonNode first = service.list(actor, "2", null);
         assertThat(ids(first)).containsExactly(upper.row().deckId(), high.row().deckId());
-        DeckCursor cursor = DeckCursor.decode(first.path("nextCursor").textValue());
+        DeckCursor cursor = DeckCursor.decode(first.path("nextCursor").stringValue(null));
         assertThat(cursor.createdAt()).isEqualTo(TIME);
         assertThat(cursor.createdAt().getNano()).isEqualTo(123_456_000);
         assertThat(cursor.deckId()).isEqualTo(high.row().deckId());
         service.save(actor, high.row().deckId(), 0, command("already returned"));
         service.save(actor, middle.row().deckId(), 0, command("not yet returned"));
 
-        JsonNode second = service.list(actor, "2", first.path("nextCursor").textValue());
-        JsonNode third = service.list(actor, "2", second.path("nextCursor").textValue());
+        JsonNode second = service.list(actor, "2", first.path("nextCursor").stringValue(null));
+        JsonNode third = service.list(actor, "2", second.path("nextCursor").stringValue(null));
         assertThat(ids(second)).containsExactly(middle.row().deckId(), low.row().deckId());
-        assertThat(second.path("items").get(0).path("metadata").path("title").textValue()).isEqualTo("not yet returned");
+        assertThat(second.path("items").get(0).path("metadata").path("title").stringValue(null)).isEqualTo("not yet returned");
         assertThat(ids(third)).containsExactly(lower.row().deckId());
         assertThat(third.path("nextCursor").isNull()).isTrue();
         assertThat(repository.find(actor, middle.row().deckId()).orElseThrow().createdAt()).isEqualTo(TIME);
@@ -261,7 +261,7 @@ class DeckConstraintIntegrationTest extends PostgresIntegrationTest {
     }
     private static List<UUID> ids(JsonNode page) {
         var result = new ArrayList<UUID>();
-        page.path("items").forEach(row -> result.add(UUID.fromString(row.path("deckId").textValue())));
+        page.path("items").forEach(row -> result.add(UUID.fromString(row.path("deckId").stringValue(null))));
         return result;
     }
     private static UUID id(int value) { return new UUID(0xabcdefab00004000L, 0x8000000000000000L + value); }

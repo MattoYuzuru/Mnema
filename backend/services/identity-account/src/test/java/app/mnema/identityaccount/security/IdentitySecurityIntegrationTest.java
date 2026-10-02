@@ -7,14 +7,14 @@ import app.mnema.identityaccount.profile.Profiles;
 import app.mnema.identityaccount.moderation.Moderation;
 import app.mnema.identityaccount.federation.FederatedAccounts;
 import app.mnema.identityaccount.support.PostgresIntegrationTest;
-import com.fasterxml.jackson.databind.*;
+import tools.jackson.databind.*;
 import com.nimbusds.jose.*;
 import com.nimbusds.jose.crypto.RSASSASigner;
 import com.nimbusds.jwt.*;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -28,6 +28,7 @@ import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
+import java.util.function.BiFunction;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -35,7 +36,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @SpringBootTest
-@AutoConfigureMockMvc(print = org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint.NONE)
+@AutoConfigureMockMvc(print = org.springframework.boot.webmvc.test.autoconfigure.MockMvcPrint.NONE)
 class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
     @Autowired
     MockMvc mvc;
@@ -65,6 +66,8 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
     org.springframework.security.crypto.password.PasswordEncoder passwords;
     @Autowired
     org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService authorizations;
+    @Autowired
+    org.springframework.session.jdbc.JdbcIndexedSessionRepository sessions;
     final String password = "correct-horse-battery-42";
 
     AccountAccess account() {
@@ -139,7 +142,7 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
         var account = account();
         var initial = mvc.perform(get("/api/accounts/csrf").secure(true)).andExpect(status().isOk()).andReturn();
         Cookie before = initial.getResponse().getCookie("SESSION");
-        String token = json.readTree(initial.getResponse().getContentAsString()).get("token").asText();
+        String token = json.readTree(initial.getResponse().getContentAsString()).get("token").asString();
         mvc.perform(post("/api/accounts/login").secure(true).cookie(before).contentType("application/json")
                         .content(body(Map.of("login", accounts.get(account.accountId(), false).email(), "password", password))))
                 .andExpect(status().isForbidden());
@@ -268,7 +271,7 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
         assertThat(tokens.has("refresh_token")).isFalse();
         assertThat(tokens.path("expires_in").asLong())
                 .isBetween(Duration.ofDays(3).minusSeconds(10).toSeconds(), Duration.ofDays(3).toSeconds());
-        String access = tokens.get("access_token").asText();
+        String access = tokens.get("access_token").asString();
         var decoded = decoder.decode(access);
         assertThat(Duration.between(decoded.getIssuedAt(), decoded.getExpiresAt()))
                 .isEqualTo(Duration.ofDays(3));
@@ -306,15 +309,15 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
                         .param("code", code).param("code_verifier", verifier))
                 .andExpect(status().isOk()).andReturn();
         var tokens = json.readTree(result.getResponse().getContentAsString());
-        String bearer = "Bearer " + tokens.path("access_token").asText();
+        String bearer = "Bearer " + tokens.path("access_token").asString();
 
-        assertThat(tokens.path("scope").asText().split(" "))
+        assertThat(tokens.path("scope").asString().split(" "))
                 .containsExactlyInAnyOrder("openid", "learning.read", "learning.write");
         mvc.perform(get("/userinfo").header("Authorization", bearer))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.sub").value(account.accountId().toString()));
         mvc.perform(get("/api/accounts/me").header("Authorization", bearer))
                 .andExpect(status().isForbidden());
-        mvc.perform(get("/userinfo").header("Authorization", "Bearer " + tokens.path("id_token").asText()))
+        mvc.perform(get("/userinfo").header("Authorization", "Bearer " + tokens.path("id_token").asString()))
                 .andExpect(status().isUnauthorized());
 
         tx.executeWithoutResult(status -> {
@@ -335,7 +338,7 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
                         .param("client_id", "mnema-web").param("redirect_uri", "https://mnema.app/auth/callback")
                         .param("code", code).param("code_verifier", verifier))
                 .andExpect(status().isOk()).andReturn();
-        String accessToken = json.readTree(result.getResponse().getContentAsString()).path("access_token").asText();
+        String accessToken = json.readTree(result.getResponse().getContentAsString()).path("access_token").asString();
         var grant = authorizations.findByToken(accessToken,
                 org.springframework.security.oauth2.server.authorization.OAuth2TokenType.ACCESS_TOKEN);
         assertThat(grant).isNotNull();
@@ -421,9 +424,9 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
         var tokens = json.readTree(result.getResponse().getContentAsString());
         String outstanding = authorize(cookie, verifier);
         mvc.perform(post("/connect/logout").secure(true).cookie(cookie).with(csrf())
-                        .param("id_token_hint", tokens.get("id_token").asText()).param("client_id", "mnema-web"))
+                        .param("id_token_hint", tokens.get("id_token").asString()).param("client_id", "mnema-web"))
                 .andExpect(status().is3xxRedirection());
-        mvc.perform(get("/api/accounts/me").header("Authorization", "Bearer " + tokens.get("access_token").asText()))
+        mvc.perform(get("/api/accounts/me").header("Authorization", "Bearer " + tokens.get("access_token").asString()))
                 .andExpect(status().isUnauthorized());
         mvc.perform(post("/oauth2/token").param("grant_type", "authorization_code").param("client_id", "mnema-web")
                 .param("redirect_uri", "https://mnema.app/auth/callback").param("code", outstanding)
@@ -437,7 +440,7 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
                 .content(body(Map.of("email", key + "@example.test", "loginName", key, "password", password,
                         "profileUsername", key)))).andExpect(status().isCreated()).andReturn();
         UUID id = UUID.fromString(
-                json.readTree(registered.getResponse().getContentAsString()).get("accountId").asText());
+                json.readTree(registered.getResponse().getContentAsString()).get("accountId").asString());
         var access = accounts.get(id, false).access();
         var cookie = login(access);
         mvc.perform(post("/api/accounts/register").with(csrf()).contentType("application/json")
@@ -470,6 +473,93 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
                 .andExpect(status().isNoContent());
         mvc.perform(post("/api/accounts/password-reset/confirm").with(csrf()).contentType("application/json")
                 .content(body(Map.of("token", "unknown", "newPassword", password)))).andExpect(status().isBadRequest());
+    }
+
+    /** A session created before sessions carried the browser-session factor cannot finish a code exchange. */
+    private org.springframework.security.authentication.UsernamePasswordAuthenticationToken legacyBrowserAuthentication(
+            AccountAccess access) {
+        var legacy = org.springframework.security.authentication.UsernamePasswordAuthenticationToken.authenticated(
+                org.springframework.security.core.userdetails.User.withUsername(access.accountId().toString())
+                        .password("").authorities("ACCOUNT").build(), null,
+                java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ACCOUNT")));
+        legacy.setDetails(Long.toString(access.generation()));
+        return legacy;
+    }
+
+    @Test
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    void preUpgradeBrowserSessionWithoutTheFactorIsEndedAndSignsInAgainInsteadOfFailing() throws Exception {
+        var account = account();
+        var cookie = login(account);
+        String sessionId = new String(Base64.getDecoder().decode(cookie.getValue()), StandardCharsets.UTF_8);
+        org.springframework.session.Session session = sessions.findById(sessionId);
+        var context = org.springframework.security.core.context.SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(legacyBrowserAuthentication(account));
+        session.setAttribute("SPRING_SECURITY_CONTEXT", context);
+        ((org.springframework.session.SessionRepository) sessions).save(session);
+        mvc.perform(get("/api/accounts/me").secure(true).cookie(cookie)).andExpect(status().isOk());
+
+        String challenge = Base64.getUrlEncoder().withoutPadding().encodeToString(MessageDigest.getInstance("SHA-256")
+                .digest("synthetic-pkce-verifier-0123456789-abcdefghijklmnopqrstuvwxyz".getBytes(StandardCharsets.US_ASCII)));
+        var authorize = mvc.perform(get("/oauth2/authorize").secure(true).cookie(cookie).accept("text/html")
+                        .queryParam("response_type", "code").queryParam("client_id", "mnema-web")
+                        .queryParam("redirect_uri", "https://mnema.app/auth/callback")
+                        .queryParam("scope", "openid profile account.read").queryParam("state", "fixture-state")
+                        .queryParam("code_challenge", challenge).queryParam("code_challenge_method", "S256"))
+                .andExpect(status().is3xxRedirection()).andReturn();
+        assertThat(authorize.getResponse().getRedirectedUrl()).endsWith("/login").doesNotContain("code=");
+        assertThat(sessions.findById(sessionId)).isNull();
+        mvc.perform(get("/api/accounts/me").secure(true).cookie(cookie)).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void authorizationCodeIssuedToAPreUpgradeSessionIsInvalidGrantNotAServerError() throws Exception {
+        var account = account();
+        var now = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
+        var client = clients.findByClientId("mnema-web");
+        BiFunction<String, org.springframework.security.core.Authentication,
+                org.springframework.security.oauth2.server.authorization.OAuth2Authorization> issue =
+                (code, principal) -> org.springframework.security.oauth2.server.authorization.OAuth2Authorization
+                        .withRegisteredClient(client).principalName(account.accountId().toString())
+                        .authorizationGrantType(org.springframework.security.oauth2.core.AuthorizationGrantType.AUTHORIZATION_CODE)
+                        .attribute("generation", Long.toString(account.generation()))
+                        .attribute(java.security.Principal.class.getName(), principal)
+                        .token(new org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationCode(
+                                code, now, now.plusSeconds(120))).build();
+        String legacyCode = "legacy-code-" + UUID.randomUUID();
+        authorizations.save(issue.apply(legacyCode, legacyBrowserAuthentication(account)));
+
+        assertThat(authorizations.findByToken(legacyCode,
+                new org.springframework.security.oauth2.server.authorization.OAuth2TokenType("code"))).isNull();
+        mvc.perform(post("/oauth2/token").param("grant_type", "authorization_code").param("client_id", "mnema-web")
+                        .param("redirect_uri", "https://mnema.app/auth/callback").param("code", legacyCode)
+                        .param("code_verifier", "synthetic-pkce-verifier-0123456789-abcdefghijklmnopqrstuvwxyz"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error").value("invalid_grant"));
+
+        var current = org.springframework.security.authentication.UsernamePasswordAuthenticationToken.authenticated(
+                legacyBrowserAuthentication(account).getPrincipal(), null, java.util.List.of(
+                        new org.springframework.security.core.authority.SimpleGrantedAuthority("ACCOUNT"),
+                        org.springframework.security.core.authority.FactorGrantedAuthority
+                                .withFactor("BROWSER_SESSION").issuedAt(now).build()));
+        current.setDetails(Long.toString(account.generation()));
+        String currentCode = "current-code-" + UUID.randomUUID();
+        authorizations.save(issue.apply(currentCode, current));
+        assertThat(authorizations.findByToken(currentCode,
+                new org.springframework.security.oauth2.server.authorization.OAuth2TokenType("code"))).isNotNull();
+    }
+
+    /** Timestamps and the response key set are wire contract; the serializer must not change them. */
+    @Test
+    void ownershipProofResponseKeepsItsKeySetAndIsoInstantExpiry() throws Exception {
+        var cookie = login(account());
+        mvc.perform(post("/api/accounts/me/proofs").secure(true).cookie(cookie).with(csrf())
+                        .contentType("application/json")
+                        .content(body(Map.of("password", password, "purpose", "DELETE_ACCOUNT"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$.token").isString())
+                .andExpect(jsonPath("$.expiresAt").value(
+                        org.hamcrest.Matchers.matchesPattern("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z")));
     }
 
     @Test
@@ -544,12 +634,12 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
                                 clientId, "fixture-secret")).param("grant_type", "authorization_code")
                 .param("redirect_uri", "https://mnema.app/auth/callback").param("code", code)
                 .param("code_verifier", verifier)).andExpect(status().isOk()).andReturn();
-        String refresh = json.readTree(result.getResponse().getContentAsString()).get("refresh_token").asText();
+        String refresh = json.readTree(result.getResponse().getContentAsString()).get("refresh_token").asString();
         var rotated = mvc.perform(post("/oauth2/token").with(
                         org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic(
                                 clientId, "fixture-secret")).param("grant_type", "refresh_token")
                 .param("refresh_token", refresh)).andExpect(status().isOk()).andReturn();
-        String next = json.readTree(rotated.getResponse().getContentAsString()).get("refresh_token").asText();
+        String next = json.readTree(rotated.getResponse().getContentAsString()).get("refresh_token").asString();
         assertThat(next).isNotEqualTo(refresh);
         mvc.perform(post("/oauth2/token").with(
                         org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic(

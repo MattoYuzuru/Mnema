@@ -13,8 +13,8 @@ import app.mnema.learning.support.PostgresIntegrationTest;
 import app.mnema.learning.support.StudyFixtures;
 import app.mnema.learning.support.StudyFixtures.Issued;
 import app.mnema.learning.support.StudyFixtures.Material;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -70,7 +70,7 @@ class CapabilityProviderIntegrationTest extends PostgresIntegrationTest {
         StudyFixtures fixtures = new StudyFixtures(decks, items, exercises, sessions, media, jdbc);
         Material material = fixtures.material();
         for (String name : new String[] {"rejectedSpeechInput", "rejectedAiAssessment"}) {
-            ObjectNode command = fixtures.createBody(material, mechanic(name).path("exercise").deepCopy(), name);
+            ObjectNode command = fixtures.createBody(material, (ObjectNode) mechanic(name).path("exercise").deepCopy(), name);
             command.withObject("exercise").set("subject", JSON.createObjectNode()
                     .put("memberKey", material.member().toString()).put("itemRevisionId", material.itemRevision().toString()));
             exercises.publish(material.actor(), material.deck(), null, fixtures.deckVersion(material),
@@ -80,18 +80,18 @@ class CapabilityProviderIntegrationTest extends PostgresIntegrationTest {
         assertThat(session.path("presentations")).hasSize(2);
         Issued semantic = null;
         for (JsonNode presentation : session.path("presentations")) {
-            if (presentation.path("evaluator").path("id").textValue().equals("ai-semantic")) {
-                semantic = new Issued(UUID.fromString(session.path("sessionId").textValue()), presentation);
+            if (presentation.path("evaluator").path("id").stringValue(null).equals("ai-semantic")) {
+                semantic = new Issued(UUID.fromString(session.path("sessionId").stringValue(null)), presentation);
             }
         }
         assertThat(semantic).isNotNull();
         // the rubric is author data: the learner sees only the evaluator identity
         assertThat(session.toString()).doesNotContain("Инерция —", "rubric", "referenceAnswer");
-        assertThat(semantic.json().path("content").path("responseInput").textValue()).isEqualTo("TEXT");
+        assertThat(semantic.json().path("content").path("responseInput").stringValue(null)).isEqualTo("TEXT");
         JsonNode outcome = attempts.submit(material.actor(), material.deck(), semantic.session(),
                 attempt(semantic, textResponse("свойство тела сохранять скорость"))).outcome();
-        assertThat(outcome.path("status").textValue()).isEqualTo("UNAVAILABLE");
-        assertThat(outcome.path("feedback").path("reasonCodes").get(0).textValue()).isEqualTo("EVALUATOR_UNAVAILABLE");
+        assertThat(outcome.path("status").stringValue(null)).isEqualTo("UNAVAILABLE");
+        assertThat(outcome.path("feedback").path("reasonCodes").get(0).stringValue(null)).isEqualTo("EVALUATOR_UNAVAILABLE");
         assertThat(outcome.path("evidence").isNull()).isTrue();
         assertThat(outcome.path("transition").isNull()).isTrue();
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.study_transition WHERE account_id=:actor")
@@ -108,6 +108,6 @@ class CapabilityProviderIntegrationTest extends PostgresIntegrationTest {
         var withheld = repository.eligibleCandidates(fresh, 0, 20, Instant.now(), false);
         assertThat(available).hasSize(2);
         assertThat(withheld).hasSize(1);
-        assertThat(withheld.getFirst().evaluator().path("id").textValue()).isEqualTo("deterministic-text");
+        assertThat(withheld.getFirst().evaluator().path("id").stringValue(null)).isEqualTo("deterministic-text");
     }
 }

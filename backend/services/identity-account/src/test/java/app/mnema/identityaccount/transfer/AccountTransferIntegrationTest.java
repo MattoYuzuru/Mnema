@@ -8,7 +8,7 @@ import app.mnema.identityaccount.recovery.PasswordRecovery;
 import app.mnema.identityaccount.security.OwnershipProofs;
 import app.mnema.identityaccount.security.RateLimits;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,7 +19,7 @@ import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
@@ -57,11 +57,11 @@ class AccountTransferIntegrationTest {
     private static final String TOKEN = "forbidden-access-token-value";
 
     @Container
-    private static final PostgreSQLContainer<?> SOURCE = new PostgreSQLContainer<>(DockerImageName.parse("postgres:16-alpine"))
+    private static final PostgreSQLContainer SOURCE = new PostgreSQLContainer(DockerImageName.parse("postgres:16-alpine"))
             .withDatabaseName("legacy").withUsername("mnema").withPassword("mnema");
 
     @Container
-    private static final PostgreSQLContainer<?> TARGET = new PostgreSQLContainer<>(DockerImageName.parse("postgres:18"))
+    private static final PostgreSQLContainer TARGET = new PostgreSQLContainer(DockerImageName.parse("postgres:18"))
             .withDatabaseName("fresh").withUsername("mnema").withPassword("mnema");
 
     @TempDir
@@ -281,7 +281,7 @@ class AccountTransferIntegrationTest {
         return new AccountTransferCodec(new byte[32]);
     }
 
-    private static DataSource dataSource(PostgreSQLContainer<?> postgres) {
+    private static DataSource dataSource(PostgreSQLContainer postgres) {
         return new DriverManagerDataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
     }
 

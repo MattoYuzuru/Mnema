@@ -1,9 +1,6 @@
 plugins {
     id("org.springframework.boot") apply false
     id("io.spring.dependency-management") apply false
-    kotlin("jvm") apply false
-    kotlin("plugin.spring") apply false
-    kotlin("plugin.jpa") apply false
     id("jacoco")
 }
 
@@ -15,26 +12,28 @@ allprojects {
 
 subprojects {
     apply(plugin = "jacoco")
-    extra["netty.version"] = "4.1.137.Final"
-    extra["postgresql.version"] = "42.7.13"
-    // Boot 3.5.16 manages 10.1.55; Apache's August 2026 fixes ship in 10.1.59.
-    extra["tomcat.version"] = "10.1.59"
+    // Boot 4.1.1 manages Tomcat 11.0.24; 11.0.25 and 11.0.26 carry Apache security fixes
+    // (https://tomcat.apache.org/security-11.html). Remove once the Boot BOM catches up.
+    extra["tomcat.version"] = "11.0.26"
 
     extensions.configure<org.gradle.testing.jacoco.plugins.JacocoPluginExtension> {
-        toolVersion = "0.8.11"
+        toolVersion = "0.8.15"
     }
 
-    plugins.withId("org.jetbrains.kotlin.jvm") {
-        extensions.configure<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension> {
-            jvmToolchain(21)
-            compilerOptions {
-                freeCompilerArgs.add("-Xjsr305=strict")
-            }
-        }
+    // Mockito's inline mock maker needs its agent at JVM start; loading it dynamically is
+    // deprecated since JDK 21 and prints a warning (https://javadoc.io/doc/org.mockito/mockito-core/latest/org.mockito/org/mockito/Mockito.html#0.3).
+    val mockitoAgent = configurations.create("mockitoAgent")
+    dependencies {
+        add("mockitoAgent", "org.mockito:mockito-core") { isTransitive = false }
+    }
+
+    tasks.withType<JavaCompile>().configureEach {
+        options.compilerArgs.addAll(listOf("-Xlint:all", "-Werror"))
     }
 
     tasks.withType<Test>().configureEach {
         useJUnitPlatform()
+        jvmArgumentProviders.add(CommandLineArgumentProvider { listOf("-javaagent:${mockitoAgent.asPath}") })
         finalizedBy("jacocoTestReport")
     }
 
@@ -65,7 +64,7 @@ tasks.register("quality") {
     description = "Runs backend compilation, tests, and aggregate coverage reporting."
     dependsOn(
         subprojects.flatMap { project ->
-            project.tasks.matching { it.name in setOf("compileJava", "compileKotlin", "compileTestJava", "compileTestKotlin") }.toList()
+            project.tasks.matching { it.name in setOf("compileJava", "compileTestJava") }.toList()
         },
         subprojects.flatMap { it.tasks.withType<Test>() },
         subprojects.flatMap { project ->

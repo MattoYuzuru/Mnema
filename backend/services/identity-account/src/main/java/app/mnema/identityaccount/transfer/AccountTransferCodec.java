@@ -1,11 +1,13 @@
 package app.mnema.identityaccount.transfer;
 
-import com.fasterxml.jackson.core.StreamReadFeature;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.MapperFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.databind.json.JsonMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.StreamReadFeature;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.cfg.DateTimeFeature;
+import tools.jackson.databind.MapperFeature;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.SerializationFeature;
+import tools.jackson.databind.json.JsonMapper;
 
 import javax.crypto.Cipher;
 import javax.crypto.CipherOutputStream;
@@ -44,9 +46,14 @@ final class AccountTransferCodec {
             .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
             .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
             .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+            // Record components are creator properties, which Jackson 3 would otherwise emit first in
+            // declaration order; the projection must stay fully alphabetical.
             .enable(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY)
+            .disable(MapperFeature.SORT_CREATOR_PROPERTIES_FIRST)
             .enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS)
-            .findAndAddModules()
+            // Instants stay numeric seconds.nanos: the projection bytes and its digest are the
+            // reconciliation evidence, and Jackson 3 would otherwise switch to ISO-8601 strings.
+            .enable(DateTimeFeature.WRITE_DATES_AS_TIMESTAMPS)
             .build();
 
     AccountTransferCodec(byte[] encryptionKey) {
@@ -161,7 +168,7 @@ final class AccountTransferCodec {
     byte[] canonicalProjection(AccountTransferBundle bundle) {
         try {
             return json.writeValueAsBytes(bundle);
-        } catch (IOException exception) {
+        } catch (JacksonException exception) {
             throw new AccountTransferFailure("projection_encode_failed", exception);
         }
     }
@@ -169,7 +176,7 @@ final class AccountTransferCodec {
     byte[] evidence(AccountTransferEvidence evidence) {
         try {
             return json.writeValueAsBytes(evidence);
-        } catch (IOException exception) {
+        } catch (JacksonException exception) {
             throw new AccountTransferFailure("evidence_encode_failed", exception);
         }
     }

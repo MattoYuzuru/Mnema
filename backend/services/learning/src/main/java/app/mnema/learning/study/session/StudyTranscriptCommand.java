@@ -2,7 +2,7 @@ package app.mnema.learning.study.session;
 
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.json.ContentJsonReader;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -18,9 +18,9 @@ final class StudyTranscriptCommand {
         try {
             JsonNode value = JSON.read(input.readNBytes(MAX_BYTES + 1));
             if (!value.isObject() || value.size() != 1 || !value.has("nonce")
-                    || !value.path("nonce").isTextual() || value.path("nonce").textValue().length() < 16
-                    || value.path("nonce").textValue().length() > 100) throw new InvalidRequestException();
-            return value.path("nonce").textValue();
+                    || !value.path("nonce").isString() || value.path("nonce").stringValue(null).length() < 16
+                    || value.path("nonce").stringValue(null).length() > 100) throw new InvalidRequestException();
+            return value.path("nonce").stringValue(null);
         } catch (IOException | IllegalArgumentException failure) { throw new InvalidRequestException(); }
     }
 }

@@ -10,10 +10,10 @@ import app.mnema.learning.media.MediaCatalog;
 import app.mnema.learning.study.attempt.AttemptCommand;
 import app.mnema.learning.study.session.StudySessionCommand;
 import app.mnema.learning.study.session.StudySessionService;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
 import java.util.List;
@@ -53,8 +53,8 @@ public final class StudyFixtures {
 
     /** An issued presentation as a learner reads it. */
     public record Issued(UUID session, JsonNode json) {
-        public UUID id() { return UUID.fromString(json.path("presentationId").textValue()); }
-        public String nonce() { return json.path("nonce").textValue(); }
+        public UUID id() { return UUID.fromString(json.path("presentationId").stringValue(null)); }
+        public String nonce() { return json.path("nonce").stringValue(null); }
         public JsonNode content() { return json.path("content"); }
     }
 
@@ -62,7 +62,7 @@ public final class StudyFixtures {
 
     public Material material(UUID actor) {
         UUID deck = UUID.fromString(decks.create(actor, new DeckCommand(UUID.randomUUID(), "Deck", "Description"))
-                .acknowledgement().path("deck").path("deckId").textValue());
+                .acknowledgement().path("deck").path("deckId").stringValue(null));
         return addMaterial(actor, deck, "memory", "forgetting");
     }
 
@@ -84,12 +84,12 @@ public final class StudyFixtures {
         divider.putObject("attrs");
         divider.putArray("content");
         ObjectNode body = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString())
-                .put("expectedDeckRevisionId", head.path("revisionId").textValue());
+                .put("expectedDeckRevisionId", head.path("revisionId").stringValue(null));
         body.set("document", document);
-        JsonNode item = items.publish(actor, deck, Long.parseLong(head.path("rowVersion").textValue()),
+        JsonNode item = items.publish(actor, deck, Long.parseLong(head.path("rowVersion").stringValue(null)),
                 ItemPublicationCommand.readCreate(bytes(body))).acknowledgement().path("changes").get(0);
-        return new Material(actor, deck, UUID.fromString(item.path("memberKey").textValue()),
-                UUID.fromString(item.path("itemRevisionId").textValue()), answerNode, distractorNode, dividerNode, rootNode);
+        return new Material(actor, deck, UUID.fromString(item.path("memberKey").stringValue(null)),
+                UUID.fromString(item.path("itemRevisionId").stringValue(null)), answerNode, distractorNode, dividerNode, rootNode);
     }
 
     private static void paragraph(ArrayNode parent, UUID id, String value) {
@@ -271,14 +271,14 @@ public final class StudyFixtures {
     /** A create command pinned to the deck's current head. */
     public ObjectNode createBody(Material material, ObjectNode exercise, String title) {
         ObjectNode body = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString())
-                .put("expectedDeckRevisionId", decks.read(material.actor(), material.deck()).path("revisionId").textValue());
+                .put("expectedDeckRevisionId", decks.read(material.actor(), material.deck()).path("revisionId").stringValue(null));
         body.putObject("objective").put("operation", "create").put("title", title);
         body.set("exercise", exercise);
         return body;
     }
 
     public long deckVersion(Material material) {
-        return Long.parseLong(decks.read(material.actor(), material.deck()).path("rowVersion").textValue());
+        return Long.parseLong(decks.read(material.actor(), material.deck()).path("rowVersion").stringValue(null));
     }
 
     public JsonNode publish(Material material, ObjectNode exercise) {
@@ -334,14 +334,14 @@ public final class StudyFixtures {
     public JsonNode session(Material material, String mode, UUID sourceSession) {
         StudySessionService.StartResult started = sessions.start(material.actor(), material.deck(), "UTC",
                 start(mode, sourceSession));
-        UUID id = UUID.fromString(started.body().path("sessionId").textValue());
+        UUID id = UUID.fromString(started.body().path("sessionId").stringValue(null));
         return started.preparing() ? sessions.read(material.actor(), material.deck(), id) : started.body();
     }
 
     /** The presentations of a fresh scheduled session, in issue order. */
     public List<Issued> issue(Material material, String mode, UUID sourceSession) {
         JsonNode session = session(material, mode, sourceSession);
-        UUID id = UUID.fromString(session.path("sessionId").textValue());
+        UUID id = UUID.fromString(session.path("sessionId").stringValue(null));
         List<Issued> result = new java.util.ArrayList<>();
         session.path("presentations").forEach(value -> result.add(new Issued(id, value)));
         return List.copyOf(result);

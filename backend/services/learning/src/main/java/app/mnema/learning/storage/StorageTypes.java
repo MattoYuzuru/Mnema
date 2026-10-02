@@ -1,7 +1,7 @@
 package app.mnema.learning.storage;
 
 import app.mnema.learning.platform.id.UuidPolicy;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 
 import java.time.Instant;
 import java.util.List;

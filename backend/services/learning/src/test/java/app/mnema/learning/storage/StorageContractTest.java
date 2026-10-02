@@ -2,7 +2,7 @@ package app.mnema.learning.storage;
 
 import app.mnema.learning.platform.concurrency.CompareAndSetExecutor;
 import app.mnema.learning.platform.json.CanonicalJsonHasher;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.JsonNodeFactory;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -27,12 +27,24 @@ class StorageContractTest {
     private final JsonNodeFactory json = JsonNodeFactory.instance;
 
     @Test
+    void physicalPayloadsKeepTheirTextAndOverTheByteLimitAreInvalidStorageJson() {
+        var encoding = new StorageEncoding(new CanonicalJsonHasher());
+        var small = JsonNodeFactory.instance.objectNode().put("text", "x");
+        assertThat(encoding.validatePayload(small)).isEqualTo("{\"text\":\"x\"}");
+
+        var oversized = JsonNodeFactory.instance.objectNode().put("text", "x".repeat(StorageEncoding.MAX_PAYLOAD_BYTES));
+        assertThatThrownBy(() -> encoding.validatePayload(oversized))
+                .isExactlyInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Invalid physical storage JSON");
+    }
+
+    @Test
     void payloadAndListsAreDefensiveSnapshots() {
         var payload = json.objectNode().put("value", 1);
         var edges = new ArrayList<NewEdge>();
         var object = new NewObject(id, ObjectKind.BLOCK, (short) 1, (short) 0, payload, edges);
         payload.put("value", 2);
-        ((com.fasterxml.jackson.databind.node.ObjectNode) object.payload()).put("value", 3);
+        ((tools.jackson.databind.node.ObjectNode) object.payload()).put("value", 3);
         assertThat(object.payload().path("value").intValue()).isOne();
         assertThatThrownBy(() -> object.edges().add(new NewEdge(0, null, new ObjectRef(scope, id))))
                 .isInstanceOf(UnsupportedOperationException.class);

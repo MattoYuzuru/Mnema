@@ -2,8 +2,8 @@ package app.mnema.learning.study.attempt;
 
 import app.mnema.learning.catalog.exercise.ExerciseType;
 import app.mnema.learning.platform.api.InvalidRequestException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
@@ -144,10 +144,10 @@ class ExercisePreviewCommandTest {
                 pairCheck("1e000000-0000-4000-8000-000000000001", "bad"),
                 pairCheck("bad", "7e000000-0000-4000-8000-000000000001"),
                 pairCheck("1E000000-0000-4000-8000-000000000001", "7e000000-0000-4000-8000-000000000001"),
-                (ObjectNode) pairCheck("1e000000-0000-4000-8000-000000000001",
+                pairCheck("1e000000-0000-4000-8000-000000000001",
                         "7e000000-0000-4000-8000-000000000001").put("presentationId", "x"),
-                hint("bad"), (ObjectNode) hint(BLANK_1).put("nonce", "n"),
-                (ObjectNode) JSON.createObjectNode().put("kind", "RESET")}) {
+                hint("bad"), hint(BLANK_1).put("nonce", "n"),
+                JSON.createObjectNode().put("kind", "RESET")}) {
             assertInvalid(request(exercise.deepCopy(), action));
         }
     }

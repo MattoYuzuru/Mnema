@@ -1,8 +1,8 @@
 package app.mnema.learning.catalog.authoring;
 
 import app.mnema.learning.platform.api.InvalidRequestException;
-import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
@@ -93,7 +93,7 @@ class AuthoringCommandsTest {
         return document;
     }
 
-    static ByteArrayInputStream bytes(com.fasterxml.jackson.databind.JsonNode value) {
+    static ByteArrayInputStream bytes(tools.jackson.databind.JsonNode value) {
         return stream(value.toString());
     }
 

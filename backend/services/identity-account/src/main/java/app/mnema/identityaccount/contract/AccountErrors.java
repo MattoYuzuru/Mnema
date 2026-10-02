@@ -1,6 +1,6 @@
 package app.mnema.identityaccount.contract;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatusCode;
@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.io.IOException;
+import java.net.URI;
 
 @RestControllerAdvice
 public class AccountErrors {
@@ -49,6 +50,8 @@ public class AccountErrors {
 
     public static ProblemDetail problem(int status, String code) {
         var result = ProblemDetail.forStatusAndDetail(HttpStatusCode.valueOf(status), code);
+        // Spring 7 omits the default problem type from the body; the wire contract keeps it explicit.
+        result.setType(URI.create("about:blank"));
         result.setProperty("code", code);
         return result;
     }

@@ -1,6 +1,6 @@
 package app.mnema.learning.catalog.content;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 
 /** A validated semantic snapshot, not an authorization or publication receipt. */
 public final class NativeDocument {

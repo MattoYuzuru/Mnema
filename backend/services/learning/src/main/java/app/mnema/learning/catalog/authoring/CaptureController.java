@@ -1,7 +1,7 @@
 package app.mnema.learning.catalog.authoring;
 
 import app.mnema.learning.platform.api.InvalidRequestException;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -37,7 +37,7 @@ public class CaptureController {
     @GetMapping("/{noteId}")
     ResponseEntity<JsonNode> read(@AuthenticationPrincipal Jwt identity, @PathVariable String noteId) {
         JsonNode result = service.read(actor(identity), AuthoringIds.entity(noteId));
-        return ResponseEntity.ok().headers(privateHeaders()).eTag(result.path("rowVersion").textValue()).body(result);
+        return ResponseEntity.ok().headers(privateHeaders()).eTag(result.path("rowVersion").stringValue(null)).body(result);
     }
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -45,9 +45,9 @@ public class CaptureController {
                                     HttpServletRequest request) {
         CaptureService.WriteResult result = service.create(actor(identity), AuthoringCommands.captureCreate(body));
         var response = write(result, HttpStatus.CREATED,
-                result.acknowledgement().path("capture").path("rowVersion").textValue());
+                result.acknowledgement().path("capture").path("rowVersion").stringValue(null));
         response.location(URI.create(request.getContextPath() + "/capture-notes/"
-                + result.acknowledgement().path("capture").path("noteId").textValue()));
+                + result.acknowledgement().path("capture").path("noteId").stringValue(null)));
         return response.body(result.acknowledgement());
     }
 
@@ -57,7 +57,7 @@ public class CaptureController {
         JsonNode result = service.update(actor(identity), AuthoringIds.entity(noteId),
                 AuthoringPrecondition.read(request.getHeaders(HttpHeaders.IF_MATCH)),
                 AuthoringCommands.captureUpdate(body));
-        return ResponseEntity.ok().headers(privateHeaders()).eTag(result.path("rowVersion").textValue()).body(result);
+        return ResponseEntity.ok().headers(privateHeaders()).eTag(result.path("rowVersion").stringValue(null)).body(result);
     }
 
     @PostMapping(value = "/{noteId}/archive", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -66,7 +66,7 @@ public class CaptureController {
         JsonNode result = service.archive(actor(identity), AuthoringIds.entity(noteId),
                 AuthoringPrecondition.read(request.getHeaders(HttpHeaders.IF_MATCH)),
                 AuthoringCommands.captureArchive(body));
-        return ResponseEntity.ok().headers(privateHeaders()).eTag(result.path("rowVersion").textValue()).body(result);
+        return ResponseEntity.ok().headers(privateHeaders()).eTag(result.path("rowVersion").stringValue(null)).body(result);
     }
 
     @PostMapping(value = "/{noteId}/conversions", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -75,7 +75,7 @@ public class CaptureController {
         CaptureService.WriteResult result = service.convert(actor(identity), AuthoringIds.entity(noteId),
                 AuthoringPrecondition.read(request.getHeaders(HttpHeaders.IF_MATCH)),
                 AuthoringCommands.captureConvert(body));
-        return write(result, HttpStatus.OK, result.acknowledgement().path("noteVersion").textValue())
+        return write(result, HttpStatus.OK, result.acknowledgement().path("noteVersion").stringValue(null))
                 .body(result.acknowledgement());
     }
 

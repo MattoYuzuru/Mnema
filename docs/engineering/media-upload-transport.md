@@ -103,7 +103,7 @@ HTTP client does not supply SigV4 presigning or S3 multipart protocol; this is
 the same pinned SDK version already used by the identity-account avatar service.
 No module or legacy media runtime is reused.
 
-Local protocol check: from `backend/`, use Java 21 and an available Docker
+Local protocol check: from `backend/`, use Java 25 and an available Docker
 daemon, then run
 `./gradlew :services:learning:test --tests 'app.mnema.learning.media.MediaUploadIntegrationTest'`.
 The fixture uses PostgreSQL 18 and the repository-pinned MinIO image. It covers

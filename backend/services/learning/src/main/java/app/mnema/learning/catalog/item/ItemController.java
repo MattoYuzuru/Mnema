@@ -1,7 +1,7 @@
 package app.mnema.learning.catalog.item;
 
 import app.mnema.learning.platform.api.InvalidRequestException;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -33,7 +33,7 @@ public class ItemController {
                                   HttpServletRequest request) {
         JsonNode page = service.list(ItemIds.entity(identity.getSubject()), ItemIds.entity(deckId),
                 parameter(request, "limit"), parameter(request, "cursor"));
-        return ResponseEntity.ok().headers(privateHeaders()).eTag(page.path("deckVersion").textValue()).body(page);
+        return ResponseEntity.ok().headers(privateHeaders()).eTag(page.path("deckVersion").stringValue(null)).body(page);
     }
 
     @GetMapping("/{memberKey}")
@@ -42,7 +42,7 @@ public class ItemController {
         String revision = parameter(request, "revisionId");
         JsonNode item = service.read(ItemIds.entity(identity.getSubject()), ItemIds.entity(deckId),
                 ItemIds.entity(memberKey), revision == null ? null : ItemIds.entity(revision));
-        return ResponseEntity.ok().headers(privateHeaders()).eTag(item.path("deckVersion").textValue()).body(item);
+        return ResponseEntity.ok().headers(privateHeaders()).eTag(item.path("deckVersion").stringValue(null)).body(item);
     }
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -53,7 +53,7 @@ public class ItemController {
                 ItemPrecondition.read(request.getHeaders(HttpHeaders.IF_MATCH)), ItemPublicationCommand.readCreate(body));
         var response = write(result, HttpStatus.CREATED);
         response.location(URI.create(request.getContextPath() + "/decks/" + deck + "/items/"
-                + result.acknowledgement().path("changes").get(0).path("memberKey").textValue()));
+                + result.acknowledgement().path("changes").get(0).path("memberKey").stringValue(null)));
         return response.body(result.acknowledgement());
     }
 
@@ -77,7 +77,7 @@ public class ItemController {
     private static ResponseEntity.BodyBuilder write(ItemService.WriteResult result, HttpStatus status) {
         var response = ResponseEntity.status(status).headers(privateHeaders());
         if (result.replayed()) response.header("Idempotency-Replayed", "true");
-        else response.eTag(result.acknowledgement().path("deckVersion").textValue());
+        else response.eTag(result.acknowledgement().path("deckVersion").stringValue(null));
         return response;
     }
 

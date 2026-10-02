@@ -1,6 +1,6 @@
 package app.mnema.learning.catalog.content;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -53,7 +53,7 @@ final class NativeNodeSchema {
     }
 
     static Slot validate(JsonNode node, Slot parentSlot, boolean insideLink) {
-        String type = node.path("type").textValue();
+        String type = node.path("type").stringValue(null);
         JsonNode attrs = node.path("attrs");
         if (attrs.properties().stream().anyMatch(property -> !ATTRIBUTES.get(type).contains(property.getKey())
                     && !LANGUAGE_ATTRIBUTES.contains(property.getKey()))
@@ -76,7 +76,7 @@ final class NativeNodeSchema {
                 || ((children == Slot.BLOCK || children == Slot.LIST_ITEM || "link".equals(type))
                     && node.path("content").isEmpty())
                 || ("list_item".equals(type)
-                    && !"paragraph".equals(node.path("content").path(0).path("type").textValue()))) {
+                    && !"paragraph".equals(node.path("content").path(0).path("type").stringValue(null)))) {
             throw NativeDocumentReader.invalid();
         }
         switch (type) {
@@ -99,7 +99,7 @@ final class NativeNodeSchema {
                         throw NativeDocumentReader.invalid();
                     }
                     for (JsonNode mark : marks) {
-                        if (!mark.isTextual() || !MARKS.contains(mark.textValue()) || !seen.add(mark.textValue())) {
+                        if (!mark.isString() || !MARKS.contains(mark.stringValue(null)) || !seen.add(mark.stringValue(null))) {
                             throw NativeDocumentReader.invalid();
                         }
                     }
@@ -127,7 +127,7 @@ final class NativeNodeSchema {
             }
             case "youtube" -> {
                 JsonNode videoId = attrs.path("videoId");
-                if (!videoId.isTextual() || !YOUTUBE_VIDEO_ID.matcher(videoId.textValue()).matches()) {
+                if (!videoId.isString() || !YOUTUBE_VIDEO_ID.matcher(videoId.stringValue(null)).matches()) {
                     throw NativeDocumentReader.invalid();
                 }
                 requireBoundedText(attrs.path("title"), 1_024);
@@ -145,19 +145,19 @@ final class NativeNodeSchema {
     }
 
     private static void requireText(JsonNode node) {
-        if (!node.isTextual() || node.textValue().isEmpty()) {
+        if (!node.isString() || node.stringValue(null).isEmpty()) {
             throw NativeDocumentReader.invalid();
         }
     }
 
     private static void requireAsset(JsonNode value) {
-        if (!value.isTextual() || !NativeDocumentReader.uuidV4(value.textValue())) {
+        if (!value.isString() || !NativeDocumentReader.uuidV4(value.stringValue(null))) {
             throw NativeDocumentReader.invalid();
         }
     }
 
     private static void requireBoundedText(JsonNode value, int maxCharacters) {
-        if (!value.isTextual() || value.textValue().isBlank() || value.textValue().length() > maxCharacters) {
+        if (!value.isString() || value.stringValue(null).isBlank() || value.stringValue(null).length() > maxCharacters) {
             throw NativeDocumentReader.invalid();
         }
     }
@@ -177,7 +177,7 @@ final class NativeNodeSchema {
         for (JsonNode row : rows) {
             if (!row.isArray() || row.size() != columns.size()) throw NativeDocumentReader.invalid();
             row.forEach(cell -> {
-                if (!cell.isTextual() || cell.textValue().length() > 4_096) {
+                if (!cell.isString() || cell.stringValue(null).length() > 4_096) {
                     throw NativeDocumentReader.invalid();
                 }
             });
@@ -185,16 +185,16 @@ final class NativeNodeSchema {
     }
 
     private static void languageAndDirection(JsonNode attrs) {
-        if (attrs.has("dir") && (!attrs.path("dir").isTextual() || !DIRECTIONS.contains(attrs.path("dir").textValue()))) {
+        if (attrs.has("dir") && (!attrs.path("dir").isString() || !DIRECTIONS.contains(attrs.path("dir").stringValue(null)))) {
             throw NativeDocumentReader.invalid();
         }
         if (attrs.has("lang")) {
             JsonNode lang = attrs.path("lang");
-            if (!lang.isTextual() || lang.textValue().length() > 64 || !LANGUAGE.matcher(lang.textValue()).matches()) {
+            if (!lang.isString() || lang.stringValue(null).length() > 64 || !LANGUAGE.matcher(lang.stringValue(null)).matches()) {
                 throw NativeDocumentReader.invalid();
             }
             var variants = new HashSet<String>();
-            for (String subtag : lang.textValue().split("-")) {
+            for (String subtag : lang.stringValue(null).split("-")) {
                 boolean variant = subtag.length() >= 5 || (subtag.length() == 4 && Character.isDigit(subtag.charAt(0)));
                 if (variant && !variants.add(subtag.toLowerCase(Locale.ROOT))) {
                     throw NativeDocumentReader.invalid();
@@ -204,12 +204,12 @@ final class NativeNodeSchema {
     }
 
     private static boolean safeHttps(JsonNode value) {
-        if (!value.isTextual() || value.textValue().length() > 2048
-                || value.textValue().chars().anyMatch(character -> character <= 32 || character >= 127)) {
+        if (!value.isString() || value.stringValue(null).length() > 2048
+                || value.stringValue(null).chars().anyMatch(character -> character <= 32 || character >= 127)) {
             return false;
         }
         try {
-            URI uri = new URI(value.textValue()).parseServerAuthority();
+            URI uri = new URI(value.stringValue(null)).parseServerAuthority();
             return "https".equalsIgnoreCase(uri.getScheme()) && uri.getHost() != null
                     && safeHost(uri.getHost()) && !uri.getRawAuthority().endsWith(":")
                     && uri.getRawUserInfo() == null && uri.getPort() != 0 && uri.getPort() <= 65_535;

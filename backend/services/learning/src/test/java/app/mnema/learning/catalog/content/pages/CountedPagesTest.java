@@ -1,7 +1,7 @@
 package app.mnema.learning.catalog.content.pages;
 
 import app.mnema.learning.storage.StorageTypes.*;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.JsonNodeFactory;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -134,8 +134,8 @@ class CountedPagesTest {
         TreeRoot root = keep(pages.build(scope, entries));
         NewObject original = objects.get(root.ref().objectId());
         var payload = original.payload().deepCopy();
-        ((com.fasterxml.jackson.databind.node.ArrayNode) payload.path("counts")).set(0, JsonNodeFactory.instance.numberNode(19));
-        ((com.fasterxml.jackson.databind.node.ArrayNode) payload.path("counts")).set(1, JsonNodeFactory.instance.numberNode(21));
+        ((tools.jackson.databind.node.ArrayNode) payload.path("counts")).set(0, JsonNodeFactory.instance.numberNode(19));
+        ((tools.jackson.databind.node.ArrayNode) payload.path("counts")).set(1, JsonNodeFactory.instance.numberNode(21));
         objects.put(original.objectId(), new NewObject(original.objectId(), original.kind(), original.encodingVersion(), original.dagRank(), payload, original.edges()));
         assertThatThrownBy(() -> pages.read(root, 0, 1)).isInstanceOf(CountedPageFailure.class);
         objects.put(original.objectId(), new NewObject(original.objectId(), original.kind(), original.encodingVersion(), (short) 12, original.payload(), original.edges()));

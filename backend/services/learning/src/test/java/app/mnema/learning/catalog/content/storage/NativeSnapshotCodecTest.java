@@ -2,9 +2,9 @@ package app.mnema.learning.catalog.content.storage;
 
 import app.mnema.learning.catalog.content.NativeDocumentReader;
 import app.mnema.learning.storage.StorageTypes.ObjectKind;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
@@ -29,7 +29,7 @@ class NativeSnapshotCodecTest {
         var original = new NativeDocumentReader().read(Files.readAllBytes(root.resolve("contracts/content/native-v1/valid/mixed.json")));
         assertThat(decode(codec.encode(scope, original)).document().toJson()).isEqualTo(original.toJson());
         ObjectNode future = node(2, "future", node(3, "text"));
-        future.put("id", future.path("id").textValue().toUpperCase(Locale.ROOT)).put("extra", true);
+        future.put("id", future.path("id").stringValue(null).toUpperCase(Locale.ROOT)).put("extra", true);
         future.withObject("attrs").put("lang", "uninterpreted").putArray("marks").add("b").add("a");
         ((ObjectNode) future.path("content").get(0)).withObject("attrs").put("opaque", 0.1);
         var nativeValue = read(document(future));
@@ -42,7 +42,7 @@ class NativeSnapshotCodecTest {
     void scalarAndPropertyNameBoundaryAndJsonDepthRemainIndependentOfPhysicalDepth() {
         ObjectNode future = node(2, "future");
         future.withObject("attrs").put("я".repeat(16_384), "🌿".repeat(8192));
-        JsonNode nested = JsonNodeFactory.instance.textNode("preserved");
+        JsonNode nested = JsonNodeFactory.instance.stringNode("preserved");
         for (int i = 0; i < 123; i++) nested = JsonNodeFactory.instance.arrayNode().add(nested);
         future.withObject("attrs").set("deep", nested);
         assertRoundTripAndBounds(document(future));
@@ -86,8 +86,8 @@ class NativeSnapshotCodecTest {
         assertThat(decode(replacement).document().toJson()).isEqualTo(read(doc).toJson());
         assertThat(replacement.additions().stream().filter(value -> value.kind() == ObjectKind.FRAGMENT)).hasSize(1);
         assertThat(replacement.additions()).hasSizeLessThan(8);
-        long originalPages = original.snapshot().objects().values().stream().filter(value -> value.payload().path("role").asText().equals("nodes")).count();
-        long newPages = replacement.additions().stream().filter(value -> value.payload().path("role").asText().equals("nodes")).count();
+        long originalPages = original.snapshot().objects().values().stream().filter(value -> value.payload().path("role").asString().equals("nodes")).count();
+        long newPages = replacement.additions().stream().filter(value -> value.payload().path("role").asString().equals("nodes")).count();
         assertThat(newPages).isLessThan(originalPages);
         text.withObject("attrs").put("text", changed.replace("702 日本語", "702 Ω🌿 日本語"));
         var insertion = codec.replace(decode(replacement), read(doc));
@@ -105,7 +105,7 @@ class NativeSnapshotCodecTest {
                 document(node(2, "future"), node(3, "future", node(4, "future"))));
         for (ObjectNode value : changed) assertThatThrownBy(() -> codec.replace(before.snapshot(), read(value)))
                 .isInstanceOfSatisfying(NativeStorageFailure.class, failure -> assertThat(failure.code()).isEqualTo(NativeStorageFailure.Code.STRUCTURE_CHANGED));
-        ((ObjectNode) doc.path("root").path("content").get(0)).put("id", doc.path("root").path("content").get(0).path("id").asText().toUpperCase(Locale.ROOT));
+        ((ObjectNode) doc.path("root").path("content").get(0)).put("id", doc.path("root").path("content").get(0).path("id").asString().toUpperCase(Locale.ROOT));
         assertThat(decode(codec.replace(before.snapshot(), read(doc))).document().toJson()).isEqualTo(read(doc).toJson());
     }
 

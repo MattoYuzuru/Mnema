@@ -3,7 +3,7 @@ package app.mnema.learning.media;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.id.UuidPolicy;
 import app.mnema.learning.platform.json.ContentJsonReader;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -68,8 +68,8 @@ final class MediaUploadCommand {
     }
 
     private static String text(JsonNode body, String field) {
-        if (!body.path(field).isTextual()) throw new InvalidRequestException();
-        return body.path(field).textValue();
+        if (!body.path(field).isString()) throw new InvalidRequestException();
+        return body.path(field).stringValue(null);
     }
 
     private static long number(JsonNode body, String field) {

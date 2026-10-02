@@ -3,7 +3,7 @@ package app.mnema.learning.catalog.content.storage;
 import app.mnema.learning.storage.ImmutableStorage;
 import app.mnema.learning.storage.StorageTypes.StagedRoot;
 import app.mnema.learning.support.PostgresIntegrationTest;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -32,7 +32,7 @@ class NativeStructuralIntegrationTest extends PostgresIntegrationTest {
         ((ObjectNode) next.path("root")).withArray("content").insert(30, node(101, "paragraph", text(102, "日本語 🌿")));
         var plan = new NativeStructuralEditor().apply(initial.snapshot(), read(next),
                 List.of(new NativeStructuralEdit.Insert(UUID.fromString(next.path("root").path("content").get(30)
-                                .path("id").asText()), UUID.fromString(doc.path("root").path("id").asText()), 30)));
+                                .path("id").asString()), UUID.fromString(doc.path("root").path("id").asString()), 30)));
         var prepared = adapter.begin(plan, actor, Duration.ofMinutes(5), first.root());
         while (!prepared.complete()) adapter.stageNext(prepared);
         assertThat(readStored(adapter, prepared.root()).document().toJson()).isEqualTo(read(next).toJson());

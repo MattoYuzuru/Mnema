@@ -1,6 +1,6 @@
 package app.mnema.learning.catalog.exercise;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 
 import java.util.HashSet;
 import java.util.List;
@@ -27,9 +27,9 @@ public record EvaluatorPolicy(String id, String version) {
     public boolean semantic() { return SEMANTIC.equals(id); }
 
     static EvaluatorPolicy parse(ExerciseType type, JsonNode value) {
-        if (!value.isObject() || !"1".equals(value.path("version").textValue())
-                || !value.path("id").isTextual()) throw invalid();
-        String id = value.path("id").textValue();
+        if (!value.isObject() || !"1".equals(value.path("version").stringValue(null))
+                || !value.path("id").isString()) throw invalid();
+        String id = value.path("id").stringValue(null);
         if (type == ExerciseType.FREE_RESPONSE && SEMANTIC.equals(id)) {
             fields(value, "id", "version", "rubric");
             rubric(value.path("rubric"));
@@ -53,7 +53,7 @@ public record EvaluatorPolicy(String id, String version) {
         List<JsonNode> levels = array(rubric.path("levels"), LEVELS.size(), LEVELS.size());
         for (int index = 0; index < levels.size(); index++) {
             fields(levels.get(index), "level", "description");
-            if (!LEVELS.get(index).equals(levels.get(index).path("level").textValue())) throw invalid();
+            if (!LEVELS.get(index).equals(levels.get(index).path("level").stringValue(null))) throw invalid();
             nonBlank(levels.get(index).path("description"), 500);
         }
     }

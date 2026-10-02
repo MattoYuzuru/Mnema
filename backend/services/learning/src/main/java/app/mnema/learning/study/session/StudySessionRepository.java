@@ -1,8 +1,8 @@
 package app.mnema.learning.study.session;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.json.JsonMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -576,18 +576,18 @@ class StudySessionRepository {
 
     /** Only the evaluator identity is persisted with a presentation: a rubric is never needed at issue. */
     private static JsonNode evaluatorIdentity(JsonNode evaluator) {
-        return JSON.createObjectNode().put("id", evaluator.path("id").textValue())
-                .put("version", evaluator.path("version").textValue());
+        return JSON.createObjectNode().put("id", evaluator.path("id").stringValue(null))
+                .put("version", evaluator.path("version").stringValue(null));
     }
 
     private static List<UUID> blankIds(JsonNode values) {
         List<UUID> result = new java.util.ArrayList<>();
-        values.forEach(value -> result.add(UUID.fromString(value.textValue())));
+        values.forEach(value -> result.add(UUID.fromString(value.stringValue(null))));
         return List.copyOf(result);
     }
 
     private static JsonNode json(String value) {
         try { return JSON.readTree(value); }
-        catch (JsonProcessingException exception) { throw new IllegalStateException("Invalid persisted JSON", exception); }
+        catch (JacksonException exception) { throw new IllegalStateException("Invalid persisted JSON", exception); }
     }
 }

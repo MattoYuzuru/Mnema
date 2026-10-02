@@ -5,7 +5,7 @@ import app.mnema.learning.storage.StorageTypes.NewObject;
 import app.mnema.learning.storage.StorageTypes.ObjectKind;
 import app.mnema.learning.storage.StorageTypes.ObjectRef;
 import app.mnema.learning.storage.StorageTypes.StoredObject;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -64,10 +64,10 @@ class NativeSnapshotDecoderTest {
 
     @Test
     void malformedPageCountsHeightAndLeafKeysAreRejected() {
-        NewObject page = plan.snapshot().objects().values().stream().filter(value -> value.payload().path("role").asText().equals("nodes")).findFirst().orElseThrow();
+        NewObject page = plan.snapshot().objects().values().stream().filter(value -> value.payload().path("role").asString().equals("nodes")).findFirst().orElseThrow();
         assertInvalid(page.objectId(), json -> json.put("treeHeight", 1));
         assertInvalid(page.objectId(), json -> json.putArray("counts").add(1));
-        assertInvalid(page.objectId(), json -> json.withArray("counts").set(0, com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.numberNode(2)));
+        assertInvalid(page.objectId(), json -> json.withArray("counts").set(0, tools.jackson.databind.node.JsonNodeFactory.instance.numberNode(2)));
         var objects = new HashMap<>(plan.snapshot().objects());
         List<NewEdge> edges = page.edges().stream().map(edge -> new NewEdge(edge.ordinal(), null, edge.child())).toList();
         objects.put(page.objectId(), new NewObject(page.objectId(), page.kind(), (short) 1, page.dagRank(), page.payload(), edges));
@@ -77,15 +77,15 @@ class NativeSnapshotDecoderTest {
     @Test
     void malformedRecordJsonUnicodeLengthIdentityAndPreorderAreRejectedWithoutPayloadLeak() {
         NewObject record = plan.snapshot().objects().values().stream().filter(value -> value.kind() == ObjectKind.BLOCK
-                && value.payload().path("data").asText().contains("Private fixture")).findFirst().orElseThrow();
+                && value.payload().path("data").asString().contains("Private fixture")).findFirst().orElseThrow();
         for (String invalid : List.of("{bad Private fixture}", "\ud800", "a".repeat(2049),
-                record.payload().path("data").asText() + " ",
-                record.payload().path("data").asText().replace("\"c\":0", "\"c\":1"),
-                record.payload().path("data").asText().replace("Private fixture", ""))) {
+                record.payload().path("data").asString() + " ",
+                record.payload().path("data").asString().replace("\"c\":0", "\"c\":1"),
+                record.payload().path("data").asString().replace("Private fixture", ""))) {
             assertInvalid(record.objectId(), json -> json.put("data", invalid));
         }
-        String oldId = node(3, "text").path("id").asText();
-        assertInvalid(record.objectId(), json -> json.put("data", json.path("data").asText().replace(oldId, node(4, "text").path("id").asText())));
+        String oldId = node(3, "text").path("id").asString();
+        assertInvalid(record.objectId(), json -> json.put("data", json.path("data").asString().replace(oldId, node(4, "text").path("id").asString())));
     }
 
     @Test

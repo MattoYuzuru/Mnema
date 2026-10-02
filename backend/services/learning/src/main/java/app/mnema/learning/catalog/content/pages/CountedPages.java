@@ -4,8 +4,8 @@ import app.mnema.learning.storage.StorageTypes.NewEdge;
 import app.mnema.learning.storage.StorageTypes.NewObject;
 import app.mnema.learning.storage.StorageTypes.ObjectKind;
 import app.mnema.learning.storage.StorageTypes.ObjectRef;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.JsonNodeFactory;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -145,8 +145,8 @@ public final class CountedPages {
             JsonNode data = object.payload();
             check(object.kind() == ObjectKind.PAGE && object.encodingVersion() == 1 && data.size() == 4
                     && data.has("codec") && data.has("role") && data.has("treeHeight") && data.has("counts")
-                    && number(data.path("codec"), 1, 1) == 1 && data.path("role").isTextual()
-                    && data.path("role").textValue().equals(profile.role()), INVALID_PAGE);
+                    && number(data.path("codec"), 1, 1) == 1 && data.path("role").isString()
+                    && data.path("role").stringValue(null).equals(profile.role()), INVALID_PAGE);
             int height = number(data.path("treeHeight"), 0, 32 - profile.leafRank());
             check(object.dagRank() == profile.leafRank() + height && data.path("counts").isArray()
                     && data.path("counts").size() == object.edges().size(), INVALID_PAGE);

@@ -2,8 +2,8 @@ package app.mnema.learning.study.attempt;
 
 import app.mnema.learning.catalog.exercise.ExerciseType;
 import app.mnema.learning.platform.api.InvalidRequestException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -92,10 +92,10 @@ class ExercisePreviewServiceTest {
         exercise.withObject("content").withArray("reference").addObject().put("kind", "TEXT").put("text", "Explanation");
         JsonNode feedback = service.evaluate(ExercisePreviewCommand.read(bytes(request(exercise,
                 submit(JSON.createObjectNode().put("kind", "TEXT").put("text", "wrong")))))).path("feedback");
-        assertThat(feedback.path("result").textValue()).isEqualTo("INCORRECT");
+        assertThat(feedback.path("result").stringValue(null)).isEqualTo("INCORRECT");
         assertThat(feedback.path("referenceContent")).isEmpty();
         assertThat(feedback.path("referenceContent").isArray()).isTrue();
-        assertThat(feedback.path("reference").textValue()).isEqualTo("Erinnerung");
+        assertThat(feedback.path("reference").stringValue(null)).isEqualTo("Erinnerung");
     }
 
     @Test
@@ -122,9 +122,9 @@ class ExercisePreviewServiceTest {
         JsonNode match = previewFixture("submitMatchAfterMistake").path("action").path("response");
         for (String create : new String[] {"createSelfCheck", "createFreeResponseAudio", "createCloze",
                 "createChoiceVideoMultiple", "createMatchMixed"}) {
-            ExerciseType type = ExerciseType.valueOf(mechanicExercise(create).path("type").textValue());
+            ExerciseType type = ExerciseType.valueOf(mechanicExercise(create).path("type").stringValue(null));
             for (JsonNode response : new JsonNode[] {text, cloze, choice, match}) {
-                boolean fits = switch (response.path("kind").textValue()) {
+                boolean fits = switch (response.path("kind").stringValue(null)) {
                     case "TEXT" -> type == ExerciseType.FREE_RESPONSE;
                     case "CLOZE" -> type == ExerciseType.CLOZE;
                     case "CHOICE" -> type == ExerciseType.CHOICE;
@@ -149,7 +149,7 @@ class ExercisePreviewServiceTest {
         single.withObject("exercise").withObject("answerKey").withArray("correctOptionIds").remove(1);
         assertInvalid(single);
         assertThat(service.evaluate(ExercisePreviewCommand.read(bytes(withResponse("submitChoice",
-                r -> r.withArray("optionIds").remove(1))))).path("feedback").path("result").textValue())
+                r -> r.withArray("optionIds").remove(1))))).path("feedback").path("result").stringValue(null))
                 .isEqualTo("INCORRECT");
     }
 
@@ -171,12 +171,12 @@ class ExercisePreviewServiceTest {
         }).path("action").path("response");
         JsonNode wrong = service.evaluate(ExercisePreviewCommand.read(bytes(request(
                 previewFixture("submitOrder").withObject("exercise"), submit(misplaced))))).path("feedback");
-        assertThat(wrong.path("result").textValue()).isEqualTo("INCORRECT");
+        assertThat(wrong.path("result").stringValue(null)).isEqualTo("INCORRECT");
         assertThat(wrong.path("positions").get(0).path("correct").booleanValue()).isFalse();
         // unknown, missing, duplicate and foreign ids are a 400, never a wrong answer
         assertInvalid(withResponse("submitOrder", r -> r.withArray("sequence").remove(0)));
         assertInvalid(withResponse("submitOrder", r -> r.withArray("sequence").set(0,
-                JSON.getNodeFactory().textNode(UUID.randomUUID().toString()))));
+                JSON.getNodeFactory().stringNode(UUID.randomUUID().toString()))));
         assertInvalid(withResponse("submitOrder", r -> r.withArray("sequence").set(1, r.withArray("sequence").get(0))));
         assertInvalid(withResponse("submitOrder", r -> r.withArray("sequence").add(UUID.randomUUID().toString())));
         assertInvalid(withResponse("submitCategorize", r -> r.withArray("assignments").remove(0)));
@@ -185,7 +185,7 @@ class ExercisePreviewServiceTest {
         assertInvalid(withResponse("submitCategorize", r -> ((ObjectNode) r.withArray("assignments").get(0))
                 .put("itemId", UUID.randomUUID().toString())));
         assertInvalid(withResponse("submitCategorize", r -> ((ObjectNode) r.withArray("assignments").get(1))
-                .put("itemId", r.withArray("assignments").get(0).path("itemId").textValue())));
+                .put("itemId", r.withArray("assignments").get(0).path("itemId").stringValue(null))));
         // the responses of the other mechanics do not fit
         assertInvalid(request(previewFixture("submitOrder").withObject("exercise"),
                 submit(previewFixture("submitCategorize").path("action").path("response"))));
@@ -207,7 +207,7 @@ class ExercisePreviewServiceTest {
     }
 
     private String feedbackResult(ObjectNode body) {
-        return service.evaluate(ExercisePreviewCommand.read(bytes(body))).path("feedback").path("result").textValue();
+        return service.evaluate(ExercisePreviewCommand.read(bytes(body))).path("feedback").path("result").stringValue(null);
     }
 
     @Test
@@ -218,10 +218,10 @@ class ExercisePreviewServiceTest {
         assertInvalid(withAction("submitChoice", a -> a.withArray("hintedBlankIds").add(BLANK_1)));
         JsonNode withExtraHint = service.evaluate(ExercisePreviewCommand.read(bytes(
                 withAction("submitCloze", a -> a.withArray("hintedBlankIds").add(BLANK_1))))).path("feedback");
-        assertThat(withExtraHint.path("blanks").findValuesAsText("hinted")).containsExactly("true", "false", "true");
+        assertThat(withExtraHint.path("blanks").findValuesAsString("hinted")).containsExactly("true", "false", "true");
         JsonNode unhinted = service.evaluate(ExercisePreviewCommand.read(bytes(
                 withAction("submitCloze", a -> a.withArray("hintedBlankIds").removeAll())))).path("feedback");
-        assertThat(unhinted.path("blanks").findValuesAsText("hinted")).containsExactly("false", "false", "false");
+        assertThat(unhinted.path("blanks").findValuesAsString("hinted")).containsExactly("false", "false", "false");
         // transcriptRevealed and pairMistakes are accepted for every type and never alter other mechanics
         JsonNode choice = service.evaluate(ExercisePreviewCommand.read(bytes(withAction("submitChoice", a -> {
             a.put("transcriptRevealed", true);
@@ -235,7 +235,7 @@ class ExercisePreviewServiceTest {
         // mistakes + perfect map => PARTIAL / PAIR_RETRY (the fixture); no mistakes => CORRECT
         ObjectNode clean = withAction("submitMatchAfterMistake", a -> a.put("pairMistakes", false));
         JsonNode correct = service.evaluate(ExercisePreviewCommand.read(bytes(clean))).path("feedback");
-        assertThat(correct.path("result").textValue()).isEqualTo("CORRECT");
+        assertThat(correct.path("result").stringValue(null)).isEqualTo("CORRECT");
         assertThat(correct.path("appliedRules").toString()).doesNotContain("PAIR_RETRY");
         // mistakes + a wrong final map stays INCORRECT/PARTIAL without the retry rule
         ObjectNode wrong = withResponse("submitMatchAfterMistake", r -> {
@@ -243,7 +243,7 @@ class ExercisePreviewServiceTest {
             ((ObjectNode) r.withArray("pairs").get(1)).put("rightId", RIGHT_1);
         });
         JsonNode partial = service.evaluate(ExercisePreviewCommand.read(bytes(wrong))).path("feedback");
-        assertThat(partial.path("result").textValue()).isEqualTo("PARTIAL");
+        assertThat(partial.path("result").stringValue(null)).isEqualTo("PARTIAL");
         assertThat(partial.path("appliedRules").toString()).doesNotContain("PAIR_RETRY");
     }
 
@@ -265,7 +265,7 @@ class ExercisePreviewServiceTest {
     void hintRevealsTheFirstGraphemeWithoutLeadingWhitespaceOnlyWhereTheAuthorEnabledIt() {
         ObjectNode exercise = previewFixture("submitCloze").withObject("exercise");
         assertThat(hintOf(exercise, BLANK_1)).isEqualTo(fixture("preview.json").path("hintResult"));
-        assertThat(hintOf(exercise, BLANK_3).path("firstLetter").textValue()).isEqualTo("m");
+        assertThat(hintOf(exercise, BLANK_3).path("firstLetter").stringValue(null)).isEqualTo("m");
         assertInvalid(request(exercise.deepCopy(), hint(BLANK_2)));
         assertInvalid(request(exercise.deepCopy(), hint(UUID.randomUUID().toString())));
         assertInvalid(request(previewFixture("submitChoice").withObject("exercise"), hint(BLANK_1)));
@@ -285,7 +285,7 @@ class ExercisePreviewServiceTest {
             // the first blank is ANSWER_LENGTH: give it a fixed width so any reference length is valid
             ((ObjectNode) variant.withObject("content").withArray("passage").get(1)).putObject("size")
                     .put("mode", "FIXED").put("length", 8);
-            assertThat(hintOf(variant, BLANK_1).path("firstLetter").textValue()).isEqualTo(accepted[1]);
+            assertThat(hintOf(variant, BLANK_1).path("firstLetter").stringValue(null)).isEqualTo(accepted[1]);
         }
     }
 
@@ -318,7 +318,7 @@ class ExercisePreviewServiceTest {
     private static List<UUID> hinted(JsonNode golden) {
         Set<UUID> ids = new HashSet<>();
         golden.path("blanks").forEach(blank -> {
-            if (blank.path("hinted").booleanValue()) ids.add(UUID.fromString(blank.path("blankId").textValue()));
+            if (blank.path("hinted").booleanValue()) ids.add(UUID.fromString(blank.path("blankId").stringValue(null)));
         });
         return List.copyOf(ids);
     }

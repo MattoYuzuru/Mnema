@@ -9,9 +9,9 @@ import app.mnema.learning.platform.concurrency.CompareAndSetExecutor;
 import app.mnema.learning.platform.id.UuidPolicy;
 import app.mnema.learning.platform.idempotency.CommandIdentity;
 import app.mnema.learning.platform.idempotency.CommandReceiptService;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -80,7 +80,7 @@ public class DraftService {
             return result;
         });
         ObjectNode acknowledgement = withDocument(stored, command.document().toJson());
-        UUID id = UUID.fromString(acknowledgement.path("draft").path("draftId").textValue());
+        UUID id = UUID.fromString(acknowledgement.path("draft").path("draftId").stringValue(null));
         own(actor, id);
         return new WriteResult(acknowledgement, !applied[0]);
     }

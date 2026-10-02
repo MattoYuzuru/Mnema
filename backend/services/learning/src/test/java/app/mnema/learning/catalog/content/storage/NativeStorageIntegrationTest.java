@@ -4,7 +4,7 @@ import app.mnema.learning.storage.ImmutableStorage;
 import app.mnema.learning.storage.StorageTypes.PinOwner;
 import app.mnema.learning.storage.StorageTypes.StagedRoot;
 import app.mnema.learning.support.PostgresIntegrationTest;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;

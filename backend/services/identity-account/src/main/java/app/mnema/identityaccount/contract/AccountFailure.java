@@ -1,6 +1,8 @@
 package app.mnema.identityaccount.contract;
 
 public final class AccountFailure extends RuntimeException {
+    private static final long serialVersionUID = 1L;
+
     private final int status;
     private final String code;
 

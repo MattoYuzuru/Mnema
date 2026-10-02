@@ -1,7 +1,7 @@
 package app.mnema.learning.catalog.content;
 
 import app.mnema.learning.media.MediaCatalog;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -21,12 +21,12 @@ public final class NativeMediaReferences {
         pending.add(document.toJson().path("root"));
         while (!pending.isEmpty()) {
             JsonNode node = pending.removeLast();
-            String type = node.path("type").textValue();
-            int version = node.path("version").intValue();
+            String type = node.path("type").stringValue(null);
+            int version = node.path("version").intValue(0);
             if (!NativeNodeSchema.supports(type, version)) continue;
             if (MEDIA_TYPES.contains(type)) {
-                references.add(new MediaCatalog.Reference(UUID.fromString(node.path("id").textValue()),
-                        UUID.fromString(node.path("attrs").path("assetId").textValue())));
+                references.add(new MediaCatalog.Reference(UUID.fromString(node.path("id").stringValue(null)),
+                        UUID.fromString(node.path("attrs").path("assetId").stringValue(null))));
             }
             node.path("content").forEach(pending::add);
         }

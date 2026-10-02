@@ -7,9 +7,9 @@ import app.mnema.learning.catalog.item.ItemService;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
 import app.mnema.learning.support.PostgresIntegrationTest;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -234,7 +234,7 @@ class MediaCatalogIntegrationTest extends PostgresIntegrationTest {
         assertThat(manifests.read(owner, deck, pending.id()).body()).isEqualTo(pending.body());
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.media_manifest_blob_ref WHERE manifest_id=:manifest")
                 .param("manifest", ready.id()).query(Long.class).single()).isOne();
-        long deckVersion = Long.parseLong(decks.read(owner, deck).path("rowVersion").textValue());
+        long deckVersion = Long.parseLong(decks.read(owner, deck).path("rowVersion").stringValue(null));
         decks.save(owner, deck, deckVersion, new DeckCommand(UUID.randomUUID(), "Renamed", "Description"));
         var revised = manifests.current(owner, deck);
         assertThat(revised.version()).isEqualTo(3);
@@ -527,7 +527,7 @@ class MediaCatalogIntegrationTest extends PostgresIntegrationTest {
 
     private UUID deck(UUID owner) {
         return UUID.fromString(decks.create(owner, new DeckCommand(UUID.randomUUID(), "Deck", "Description"))
-                .acknowledgement().path("deck").path("deckId").textValue());
+                .acknowledgement().path("deck").path("deckId").stringValue(null));
     }
 
     private void attach(UUID owner, UUID deck, UUID member, UUID revision,
@@ -551,11 +551,11 @@ class MediaCatalogIntegrationTest extends PostgresIntegrationTest {
         while (!Files.exists(root.resolve("contracts/content/native-v1/valid/mixed.json"))) root = root.getParent();
         JsonNode document = JSON.readTree(Files.readString(root.resolve("contracts/content/native-v1/valid/mixed.json")));
         ObjectNode body = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString())
-                .put("expectedDeckRevisionId", before.path("revisionId").textValue());
+                .put("expectedDeckRevisionId", before.path("revisionId").stringValue(null));
         body.set("document", document);
         var result = items.publish(owner, deck, 0,
                 ItemPublicationCommand.readCreate(new ByteArrayInputStream(JSON.writeValueAsBytes(body))));
-        return UUID.fromString(result.acknowledgement().path("changes").get(0).path("itemRevisionId").textValue());
+        return UUID.fromString(result.acknowledgement().path("changes").get(0).path("itemRevisionId").stringValue(null));
     }
 
     private UUID verifiedBlob() {

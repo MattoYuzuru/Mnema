@@ -4,8 +4,8 @@ import app.mnema.learning.catalog.exercise.ExerciseContent;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.id.UuidPolicy;
 import app.mnema.learning.platform.json.ContentJsonReader;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -58,8 +58,8 @@ public record AttemptCommand(UUID attemptId, UUID presentationId, String nonce, 
 
     /** The response union shared with the stateless author preview; CANCEL is a Study-only terminal command. */
     static Response response(JsonNode value) {
-        if (!value.path("kind").isTextual()) throw invalid();
-        return switch (value.path("kind").textValue()) {
+        if (!value.path("kind").isString()) throw invalid();
+        return switch (value.path("kind").stringValue(null)) {
             case "TEXT" -> {
                 fields(value, Set.of("kind", "text"));
                 yield new TextResponse(text(value.path("text"), 4_096, true));
@@ -150,17 +150,17 @@ public record AttemptCommand(UUID attemptId, UUID presentationId, String nonce, 
     }
 
     private static String text(JsonNode value, int maxBytes, boolean blank) {
-        if (!value.isTextual() || (!blank && value.textValue().isBlank())
-                || value.textValue().getBytes(StandardCharsets.UTF_8).length > maxBytes) throw invalid();
-        return value.textValue();
+        if (!value.isString() || (!blank && value.stringValue(null).isBlank())
+                || value.stringValue(null).getBytes(StandardCharsets.UTF_8).length > maxBytes) throw invalid();
+        return value.stringValue(null);
     }
 
     static UUID id(JsonNode value, boolean command) {
-        if (!value.isTextual() || value.textValue().length() != 36) throw invalid();
+        if (!value.isString() || value.stringValue(null).length() != 36) throw invalid();
         try {
-            UUID id = UUID.fromString(value.textValue());
+            UUID id = UUID.fromString(value.stringValue(null));
             id = command ? UuidPolicy.requireCommandId(id) : UuidPolicy.requireEntityId(id, "id");
-            if (!id.toString().equals(value.textValue())) throw invalid();
+            if (!id.toString().equals(value.stringValue(null))) throw invalid();
             return id;
         } catch (IllegalArgumentException exception) { throw invalid(); }
     }
