@@ -43,6 +43,7 @@ public class DeckInsightsService {
     public ObjectNode read(UUID actor, UUID deckId, String accountZone) {
         UuidPolicy.requireEntityId(actor, "actor");
         UuidPolicy.requireEntityId(deckId, "deckId");
+        repository.preferSetJoins();
         DeckInsightsRepository.Head head = repository.head(actor, deckId).orElseThrow(ResourceNotFoundException::new);
         Instant asOf = repository.now();
         ZoneId zone = zone(accountZone);

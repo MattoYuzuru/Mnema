@@ -38,6 +38,13 @@ class DeckInsightsRepository {
                 .optional();
     }
 
+    /**
+     * Every statement here aggregates the WHOLE Deck, so only hash or merge joins are appropriate. On tables that were
+     * just bulk-loaded the planner has no statistics, estimates one row per CTE and picks a nested loop that rescans a
+     * materialized set once per outer row (measured: 2.1 s for 10 000 materials, quadratic in Deck size). Transaction-local.
+     */
+    void preferSetJoins() { jdbc.sql("SET LOCAL enable_nestloop = off").update(); }
+
     Instant now() { return jdbc.sql("SELECT statement_timestamp()").query(Timestamp.class).single().toInstant(); }
 
     List<MaterialGroup> materials(UUID actor, UUID deck, Instant asOf, String zone, LocalDate today) {
