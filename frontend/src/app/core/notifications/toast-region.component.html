@@ -2,7 +2,7 @@
 
 <section #region class="toast-region" popover="manual" aria-label="Уведомления"
          (pointerenter)="pointerEntered()" (pointerleave)="pointerLeft()"
-         (focusin)="focusEntered()" (focusout)="focusLeft($event)" (keydown.escape)="escape($event)">
+         (focusin)="focusEntered($event)" (focusout)="focusLeft($event)" (keydown.escape)="escape($event)">
   <ul class="stack">
     @for (toast of toasts.visible(); track toast.id) {
       <li class="toast" [attr.data-toast-id]="toast.id" [attr.data-severity]="toast.severity"

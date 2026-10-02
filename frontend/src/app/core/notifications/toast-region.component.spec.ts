@@ -80,6 +80,36 @@ describe('ToastRegionComponent', () => {
         expect(document.activeElement).toBe(older.querySelector('.close'));
     });
 
+    it('hands focus back to where it came from when the last toast is closed, or to main as a fallback', async () => {
+        const before = document.createElement('a');
+        before.href = '#before';
+        const main = document.createElement('main');
+        main.id = 'main-content';
+        main.tabIndex = -1;
+        document.body.append(before, main);
+        toasts.notify('a', 'Первое', 'ERROR', null);
+        await render();
+        const close = items()[0].querySelector<HTMLButtonElement>('.close')!;
+        before.focus();
+        close.focus();
+        region().dispatchEvent(new FocusEvent('focusin', { bubbles: true, relatedTarget: before }));
+        close.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+        await render();
+        expect(items()).toHaveLength(0);
+        expect(document.activeElement).toBe(before);
+
+        // Without a known origin (or one that is gone) focus lands on main, not on <body>.
+        toasts.notify('b', 'Второе', 'ERROR', null);
+        await render();
+        before.remove();
+        const next = items()[0].querySelector<HTMLButtonElement>('.close')!;
+        next.focus();
+        next.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+        await render();
+        expect(document.activeElement).toBe(main);
+        main.remove();
+    });
+
     it('does not react to Esc from outside the region', async () => {
         toasts.notify('a', 'Первое', 'ERROR', null);
         await render();

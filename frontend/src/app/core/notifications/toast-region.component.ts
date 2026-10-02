@@ -31,6 +31,7 @@ export class ToastRegionComponent {
     private readonly injector = inject(Injector);
     private readonly region = viewChild<ElementRef<HTMLElement>>('region');
     private drag: Drag | null = null;
+    private returnTo: HTMLElement | null = null;
 
     constructor() {
         effect(() => {
@@ -42,7 +43,14 @@ export class ToastRegionComponent {
 
     protected pointerEntered(): void { this.toasts.setHovered(true); }
     protected pointerLeft(): void { this.toasts.setHovered(false); }
-    protected focusEntered(): void { this.toasts.setFocused(true); }
+    protected focusEntered(event: FocusEvent): void {
+        const region = this.region()?.nativeElement;
+        // Where focus came from, so closing the toast that holds it can hand focus back instead of dropping it on the page.
+        if (event.relatedTarget instanceof HTMLElement && region !== undefined && !region.contains(event.relatedTarget)) {
+            this.returnTo = event.relatedTarget;
+        }
+        this.toasts.setFocused(true);
+    }
 
     protected focusLeft(event: FocusEvent): void {
         const region = this.region()?.nativeElement;
@@ -61,15 +69,20 @@ export class ToastRegionComponent {
 
     protected close(id: string): void { this.closeKeepingFocus(id); }
 
-    /** Closing the toast that holds focus would drop focus to the page; hand it to a neighbour instead. */
+    /** Closing the toast that holds focus would drop focus to the page; hand it to a neighbour or back to where it came from. */
     private closeKeepingFocus(id: string): void {
         const region = this.region()?.nativeElement;
         const toast = region?.querySelector<HTMLElement>(`[data-toast-id="${CSS.escape(id)}"]`);
         const hadFocus = toast?.contains(document.activeElement) === true;
         const neighbour = toast?.nextElementSibling ?? toast?.previousElementSibling ?? null;
         this.toasts.close(id);
-        if (hadFocus && neighbour instanceof HTMLElement) {
+        if (!hadFocus) return;
+        if (neighbour instanceof HTMLElement) {
             afterNextRender(() => neighbour.querySelector<HTMLElement>('button, a')?.focus(), { injector: this.injector });
+        } else {
+            // Last toast: back to where the learner was, or to the page's main landmark; never to <body>.
+            const target = this.returnTo?.isConnected === true ? this.returnTo : document.querySelector<HTMLElement>('#main-content');
+            target?.focus();
         }
     }
 
