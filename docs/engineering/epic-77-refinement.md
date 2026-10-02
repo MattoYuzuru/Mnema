@@ -64,12 +64,21 @@ AI-14} → {AI-10, AI-09, AI-15, AI-18} → {AI-17, AI-19, AI-21}`. AI-20 тре
 | Прогон | Статус | Evidence |
 |---|---|---|
 | 1 | Done 2026-10-02: #278 (#306, #308), #279; #280 — у владельца | [run-1](./evidence/epic-77/run-1/README.md) |
+| 2 | Done 2026-10-03: #286 (#312), #283 (#313), #284 (#314, #317), #285 (#316, #318, #321), #303 (#315), #281 (#319), #282 (#320) | [run-2](./evidence/epic-77/run-2/README.md) |
 
 Изменено относительно плана: стек поднят двумя PR (frontend, backend) вместо семи; решения
 владельца по usage (2026-10-02) записаны в [AI layer contract](../product/ai-layer-2026-10.md)
 и [`contracts/usage`](../../contracts/usage/README.md); в контракте генерации упражнений лимит
 сессии — 60 упражнений при 20 материалах (см. «Known doc conflicts» в
 [`contracts/generation`](../../contracts/generation/README.md)).
+
+Прогон 2 изменил относительно плана: `MEDIA_READY` не вводился (нет в контракте уведомлений); prompt
+library v1 (`system.md`, `skills/code.md`) разрешает блоки кода — изменена на месте до первого
+использования, заморозка v1 — с первой ревизии AI-04; в контракт usage добавлены `UsageLedger.renew`
+(сессионный резерв для шагов, отложенных daily burst), вид окна в dedupe-ключе `USAGE_EXHAUSTED` и
+`503 USAGE_UNAVAILABLE`; AUTO-усилие в estimate оценивается по худшему случаю (Free не стартует AUTO-сессию в
+первую неделю — вопрос для AI-04/AI-06); массовое удаление больше 100 материалов идёт чанками с честным
+`PARTIAL` (лимит 500); `ProblemExtension` в `platform.api` — общий механизм extension members.
 
 ## Delivery slices
 
