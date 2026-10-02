@@ -7,6 +7,6 @@
 .button.quiet { border-color: transparent; text-decoration: underline; text-underline-offset: .22em; }
 .button:focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 2px; }
 .hint { flex-basis: 100%; margin: 0; color: var(--mn-muted); font-size: .88rem; }
-app-hold-to-delete-button { min-inline-size: 12rem; max-inline-size: 22rem; }
+app-hold-to-delete-button { min-inline-size: 16rem; max-inline-size: 24rem; }
 @media (max-width: 42rem) { .actions { inline-size: 100%; } .actions > * { flex: 1 1 100%; } app-hold-to-delete-button { max-inline-size: none; } }
 @media (forced-colors: active) { .bar { border-color: CanvasText; box-shadow: none; } .button:focus-visible { outline-color: Highlight; } }
