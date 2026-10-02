@@ -29,10 +29,9 @@ exercise mechanics into the seven below. Epic #76 added the greenfield media lif
 - Database: fresh Flyway history at `classpath:db/learning/migration`, owned schema
   `app_learning`, `baseline-on-migrate=false`. It never scans a legacy migration
   directory.
-- AI layer (Epic #77): the notification center and the usage ledger (`app.mnema.learning.usage`, below) are implemented;
-  generation still exists only as a contract — [`contracts/generation`](../../../contracts/generation/README.md) — plus the
-  versioned prompt sections in `src/main/resources/ai/prompts/` (resources, not loaded by any code yet). Run-2 tasks
-  (#282, #285, #303) add the rest.
+- AI layer (Epic #77): run 2 delivered the notification center, the usage ledger (`app.mnema.learning.usage`), the MBM
+  compiler (`generation.mbm`), the `code_block` node and the provider foundation (`app.mnema.learning.ai`, below); generation
+  sessions, steps and approval (`contracts/generation`) start with AI-04 (#287) in run 3.
 - MBM compiler (#283): `app.mnema.learning.generation.mbm` is a pure package (no Spring, I/O or clock; identifiers come from
   the injected `IdAllocator`) that compiles MBM v1 to a native-v1 document and renders native-v1 back to MBM.
   `MbmCompiler.compile(source, MbmOptions, IdAllocator)` returns `MbmResult.Success` (document already read by

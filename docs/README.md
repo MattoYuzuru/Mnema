@@ -46,7 +46,8 @@ artifact:
 8. **AI (Epic #77):** [product contract](./product/ai-layer-2026-10.md),
    [architecture](./architecture/ai-generation-platform.md),
    [refinement](./engineering/epic-77-refinement.md) и
-   [промпты прогонов](./engineering/prompts/epic-77-ai-layer.md),
+   [промпты прогонов](./engineering/prompts/epic-77-ai-layer.md), evidence
+   [прогона 1](./engineering/evidence/epic-77/run-1/README.md) и [прогона 2](./engineering/evidence/epic-77/run-2/README.md),
    исполняемые контракты — [generation](../contracts/generation/README.md),
    [usage](../contracts/usage/README.md), [notifications](../contracts/notifications/README.md).
 
