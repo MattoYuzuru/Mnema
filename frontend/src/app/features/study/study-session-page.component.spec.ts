@@ -4,6 +4,7 @@ import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
 import { Subject, of, throwError } from 'rxjs';
 
 import metadataFixture from '../../../../../contracts/decks/metadata.json';
+import { QuietZone } from '../../core/notifications/quiet-zone';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { OwnDeck } from '../own-decks/own-deck.models';
 import { StudyApiService } from './study-api.service';
@@ -85,6 +86,29 @@ describe('StudySessionPageComponent', () => {
         expect(command.response).toEqual({ kind: 'SELF_CHECK', rating: 'PARTIAL' });
         expect(Object.keys(command)).not.toContain('hintsUsed');
         expect(root.querySelector('#feedback-title')).not.toBeNull();
+    });
+
+    it('marks a quiet zone while a task is open and releases it at the feedback pause and on leaving', () => {
+        const quiet = TestBed.inject(QuietZone);
+        startWith('selfCheck');
+        fixture.detectChanges();
+        expect(quiet.active()).toBe(true);
+        click('[data-answer-control]');
+        expect(quiet.active()).toBe(true);
+
+        api.submit.mockReturnValue(of({ value: outcome('selfCheck'), replayed: false }));
+        ratingButton('Вспомнил частично').click();
+        fixture.detectChanges();
+        fixture.detectChanges();
+        expect(page().querySelector('#feedback-title')).not.toBeNull();
+        expect(quiet.active()).toBe(false);
+
+        // Leaving while a task is open must never leave the rest of the app muted.
+        startWith('freeResponse');
+        fixture.detectChanges();
+        expect(quiet.active()).toBe(true);
+        fixture.destroy();
+        expect(quiet.active()).toBe(false);
     });
 
     it('submits the exact free-response text and never starts the voice path from the disabled microphone', () => {

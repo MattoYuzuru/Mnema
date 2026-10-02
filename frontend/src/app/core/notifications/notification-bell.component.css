@@ -1,0 +1,99 @@
+:host { display: inline-flex; min-inline-size: 0; }
+
+.bell {
+    position: relative;
+    display: inline-grid;
+    place-content: center;
+    min-inline-size: var(--mn-touch-min, 2.75rem);
+    min-block-size: var(--mn-touch-min, 2.75rem);
+    margin: 0;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: var(--mn-ink);
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+.bell:focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: -3px; }
+.bell[aria-expanded=true] svg { background: var(--mn-soft); border-radius: 50%; }
+
+.badge {
+    position: absolute;
+    inset-block-start: .2rem;
+    inset-inline-end: .1rem;
+    min-inline-size: 1.25rem;
+    border-radius: 1rem;
+    padding: .05rem .3rem;
+    background: var(--mn-ink);
+    color: var(--mn-on-ink);
+    font: 700 .68rem/1.25 var(--mn-font-mono, ui-monospace, monospace);
+    text-align: center;
+}
+
+.panel {
+    inline-size: min(26rem, calc(100vw - 2rem));
+    max-block-size: min(32rem, calc(100dvh - 6rem));
+    margin: auto;
+    border: 1px solid var(--mn-ink);
+    border-radius: var(--mn-radius, 2px);
+    padding: 1rem 1.125rem 1.125rem;
+    background: var(--mn-sheet);
+    color: var(--mn-body);
+    font: .9rem/1.5 var(--mn-font-body, system-ui, sans-serif);
+    box-shadow: 0 .25rem 1rem rgb(40 19 120 / 18%);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+/* Under the bell where anchor positioning exists; otherwise the browser centres the popover in the viewport. */
+@supports (position-area: block-end) {
+    .panel { inset: auto; margin: .25rem 0 0; position-area: block-end span-inline-start; position-try-fallbacks: flip-inline, flip-block; }
+}
+
+.title { margin: 0 0 .75rem; font: 500 1.6rem/1.1 var(--mn-font-display, Georgia, serif); }
+.empty { margin: 0; color: var(--mn-muted); overflow-wrap: anywhere; }
+.problem { margin: 0 0 .75rem; color: var(--mn-danger); }
+.list { display: grid; margin: 0; padding: 0; list-style: none; }
+
+.entry {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: start;
+    gap: .6rem;
+    border-block-start: 1px solid var(--mn-rule);
+    padding-block: .75rem;
+}
+
+.entry:first-child { border-block-start-color: var(--mn-ink); }
+.entry app-notification-glyph { margin-block-start: .15rem; }
+.body { display: grid; gap: .15rem; min-inline-size: 0; }
+.text { color: var(--mn-body); overflow-wrap: anywhere; }
+a.text { color: var(--mn-ink); text-underline-offset: .22em; }
+a.text:focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 3px; }
+.fresh { color: var(--mn-ink); font: 700 .68rem/1.4 var(--mn-font-mono, ui-monospace, monospace); letter-spacing: .08em; text-transform: uppercase; }
+.when { color: var(--mn-muted); font-size: .78rem; }
+
+.dismiss, .more {
+    min-inline-size: var(--mn-touch-min, 2.75rem);
+    min-block-size: var(--mn-touch-min, 2.75rem);
+    margin: 0;
+    border: 0;
+    border-radius: var(--mn-radius, 2px);
+    padding: 0;
+    background: transparent;
+    color: var(--mn-ink);
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+.dismiss { font-size: 1.4rem; line-height: 1; margin-block-start: -.6rem; margin-inline-end: -.6rem; }
+.more { display: block; inline-size: 100%; border: 1px solid var(--mn-ink); margin-block-start: .75rem; padding-inline: 1rem; font: 600 .85rem/1.25 var(--mn-font-mono, ui-monospace, monospace); }
+.more:disabled { opacity: .65; cursor: progress; }
+.dismiss:focus-visible, .more:focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: -3px; }
+
+@media (forced-colors: active) {
+    .panel, .more { border-color: CanvasText; box-shadow: none; }
+    .badge { border: 1px solid CanvasText; background: Canvas; color: CanvasText; }
+    .bell { color: ButtonText; }
+}

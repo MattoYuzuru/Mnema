@@ -7,7 +7,7 @@ artifact:
   created_at: "2026-09-28"
   updated_at: "2026-10-02"
   owners: ["learning-api", "web"]
-  source_tasks: ["GitHub Issue #241", "GitHub Epic #76"]
+  source_tasks: ["GitHub Issue #241", "GitHub Epic #76", "GitHub Issue #284"]
 ---
 
 # Изменяемые политики Learning
@@ -63,6 +63,10 @@ namespaces.
 | `learning.media.gc.scan-batch` / `delete-batch` | Число ledger keys на скан и удалений за проход | Count; `32` (1–100) / `4` (1–20) |
 | `learning.media.gc.delete-lease` | Время владения claim физического удаления | Duration; `PT15M`; 15–60 минут |
 | `learning.media.gc.retry-delay` | Повтор после неопределённого результата S3 DELETE | Duration; `PT1H`; 15 минут–1 день |
+| `learning.notifications.retention` | Центр уведомлений: срок жизни уведомления; фиксируется в `expires_at` при публикации | Duration; `P30D`; 1–90 дней, целое число секунд |
+| `learning.notifications.max-per-account` | Центр уведомлений: лимит на аккаунт; публикация N+1 вытесняет самое старое | Count; `200`; 10–1000 |
+| `learning.notifications.params-max-bytes` | Центр уведомлений: размер `params` одного уведомления (таблица дополнительно держит 4096) | Bytes; `4096`; 256–4096 |
+| `learning.notifications.cleanup-initial-delay` / `cleanup-interval` | Центр уведомлений: частота удаления истёкших строк (до 20 пачек по 500 за запуск) | Duration; `PT5M` / `PT1H`; положительное значение Spring scheduler |
 
 S3 endpoint, region, bucket и credentials находятся в том же namespace
 `learning.media.upload`, но относятся к подключению, а не к пользовательским
@@ -125,8 +129,6 @@ Manifest и GC contracts описаны в
 | `learning.usage.low-threshold-percent` | Порог `USAGE_LOW` и подсказки fair-use; **contract only — AI-01 (#281)** | Percent; `80`; диапазон — AI-01 |
 | `learning.usage.reservation-ttl` | TTL осиротевшей reservation; фактический срок = min(TTL, конец периода); **contract only — AI-01 (#281)** | Duration; значение определит AI-01 |
 | `learning.usage.entitlement.source` | `EntitlementSource`: конфигурация до billing (#79); **contract only — AI-01 (#281)** | Enum; `config`; диапазон — AI-01 |
-| `learning.notifications.retention` / `max-per-account` | Хранение уведомлений и лимит на аккаунт; **contract only — AI-07 (#284)** | Duration / Count; `P30D` / `200`; диапазон — AI-07 |
-| `learning.notifications.params-max-bytes` | Размер `params` одного уведомления; **contract only — AI-07 (#284)** | Bytes; `4096`; диапазон — AI-07 |
 
 Секреты провайдеров не являются policy: только имена env из архитектуры (§9), значения — в окружении `worker`.
 Клиентские интервалы опроса (события сессии 1 с / 5–15 с, уведомления 30–60 с / 10 с) — client policy

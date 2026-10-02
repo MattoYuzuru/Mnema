@@ -1,26 +1,38 @@
 package app.mnema.learning.media;
 
+import app.mnema.learning.notification.NotificationKind;
+import app.mnema.learning.notification.NotificationPublisher;
+import app.mnema.learning.notification.NotificationRoute;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 /** Durable claim, fencing, and one-transaction publication of verified media. */
 @Repository
 class MediaProcessingRepository {
+    /** Stable reasons of MEDIA_PROCESSING_FAILED (contracts/notifications). */
+    private static final String VERIFICATION_REJECTED = "VERIFICATION_REJECTED";
+    private static final String PROCESSING_FAILED = "PROCESSING_FAILED";
+
     private final JdbcClient jdbc;
     private final MediaCatalog catalog;
     private final MediaProcessingSettings settings;
+    private final NotificationPublisher notifications;
 
-    MediaProcessingRepository(JdbcClient jdbc, MediaCatalog catalog, MediaProcessingSettings settings) {
+    MediaProcessingRepository(JdbcClient jdbc, MediaCatalog catalog, MediaProcessingSettings settings,
+                              NotificationPublisher notifications) {
         this.jdbc = jdbc;
         this.catalog = catalog;
         this.settings = settings;
+        this.notifications = notifications;
     }
 
     @Transactional
@@ -53,6 +65,7 @@ class MediaProcessingRepository {
                             + "processing_next_attempt_at=NULL,processing_error_code='processing_interrupted',"
                             + "updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) WHERE session_id=:session")
                     .param("session", candidate.sessionId()).update();
+            notifyFailed(candidate.assetId(), candidate.kind(), PROCESSING_FAILED);
             return null;
         }
         UUID token = UUID.randomUUID();
@@ -115,6 +128,7 @@ class MediaProcessingRepository {
                         + "WHERE asset_id=:asset AND generation=:generation AND state='PROCESSING'")
                 .param("asset", claim.assetId()).param("generation", claim.generation()).update();
         release(claim, code, null);
+        notifyFailed(claim.assetId(), claim.kind(), VERIFICATION_REJECTED);
         return true;
     }
 
@@ -126,6 +140,7 @@ class MediaProcessingRepository {
                             + "WHERE asset_id=:asset AND generation=:generation AND state='PROCESSING'")
                     .param("asset", claim.assetId()).param("generation", claim.generation()).update();
             release(claim, code, null);
+            notifyFailed(claim.assetId(), claim.kind(), PROCESSING_FAILED);
         } else {
             release(claim, code, settings.delay(claim.attempt()));
         }
@@ -149,6 +164,26 @@ class MediaProcessingRepository {
         jdbc.sql("UPDATE app_learning.media_asset SET state='VERIFYING',updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) "
                         + "WHERE asset_id=:asset AND generation=:generation")
                 .param("asset", asset).param("generation", generation).update();
+    }
+
+    /**
+     * Tells the owner that an asset reached a terminal failure, in the transaction of the state change that made it
+     * terminal (so the notification exists exactly when the failure is committed). The pipeline does not know a deck or
+     * a generation session, hence those params are null and the route NONE; a repeat for the same asset is a no-op.
+     */
+    private void notifyFailed(UUID assetId, String kind, String reason) {
+        UUID owner = jdbc.sql("SELECT owner_id FROM app_learning.media_asset WHERE asset_id=:asset")
+                .param("asset", assetId).query(UUID.class).single();
+        var params = new HashMap<String, Object>();
+        params.put("assetId", assetId);
+        params.put("mediaKind", kind.toUpperCase(Locale.ROOT));
+        params.put("deckId", null);
+        params.put("sessionId", null);
+        params.put("artifactId", null);
+        params.put("slotKey", null);
+        params.put("reason", reason);
+        notifications.publish(owner, NotificationKind.MEDIA_PROCESSING_FAILED, "media:" + assetId + ":failed", params,
+                NotificationRoute.NONE);
     }
 
     private boolean current(Claim claim) {

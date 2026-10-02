@@ -1,9 +1,10 @@
 import { Component } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
-import { BehaviorSubject, of } from 'rxjs';
+import { BehaviorSubject, NEVER, of } from 'rxjs';
 
 import { AuthService, AuthStatus } from '../../auth.service';
+import { NotificationsApiService } from '../notifications/notifications-api.service';
 import { AppShellComponent } from './app-shell.component';
 import { spyObj, type SpyObj } from '../../../testing/mocks';
 
@@ -44,7 +45,9 @@ describe('AppShellComponent', () => {
                     { path: '', component: TestPageComponent },
                     { path: 'login', component: TestPageComponent }
                 ]),
-                { provide: AuthService, useValue: auth }
+                { provide: AuthService, useValue: auth },
+                // The center polls for a signed-in account; this spec is about the shell, not the wire.
+                { provide: NotificationsApiService, useValue: { list: () => NEVER } }
             ]
         }).compileComponents();
         fixture = TestBed.createComponent(AppShellComponent);
@@ -61,6 +64,17 @@ describe('AppShellComponent', () => {
         expect(Array.from(root.querySelectorAll('.primary-nav a')).map(link => link.getAttribute('href')))
             .toEqual(['/decks', '/decks/new', '/profile']);
         expect(root.textContent).not.toContain('Начать обучение');
+    });
+
+    it('puts the bell in the session area and the toast landmark after main, for a signed-in account only', () => {
+        const root = fixture.nativeElement as HTMLElement;
+        expect(root.querySelector('.session app-notification-bell button[aria-controls]')).not.toBeNull();
+        const region = root.querySelector('section.toast-region[aria-label="Уведомления"]')!;
+        expect(region.compareDocumentPosition(root.querySelector('main')!) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+
+        status.next('anonymous');
+        fixture.detectChanges();
+        expect(root.querySelector('app-notification-bell')).toBeNull();
     });
 
     it('moves focus to the activated page heading without initializing auth', async () => {

@@ -280,6 +280,20 @@ module.main()
             result = subprocess.run([node, "--check", str(Path(__file__).with_name("mechanics.mjs"))], capture_output=True)
             self.assertEqual(0, result.returncode)
 
+    def test_notifications_scenario_is_wired_and_syntactically_valid(self):
+        driver = Path(__file__).with_name("browser.mjs").read_text()
+        source = Path(__file__).with_name("notifications.mjs").read_text()
+        self.assertIn("import { runNotifications } from './notifications.mjs'", driver)
+        self.assertIn("record('notifications_center_real_media_failure'", source)
+        # The producer is the real worker rejecting a corrupt upload: nothing is stubbed or injected.
+        self.assertNotIn("Fetch.fulfillRequest", source)
+        self.assertNotIn("route.fulfill", source)
+        self.assertIn('"notifications.mjs"', Path(__file__).with_name("run.py").read_text())
+        node = shutil.which("node")
+        if node is not None:
+            result = subprocess.run([node, "--check", str(Path(__file__).with_name("notifications.mjs"))], capture_output=True)
+            self.assertEqual(0, result.returncode)
+
 
 if __name__ == "__main__":
     unittest.main()

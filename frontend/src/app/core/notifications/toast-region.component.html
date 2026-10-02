@@ -1,0 +1,27 @@
+<div class="visually-hidden" role="status">{{ toasts.announcement() }}</div>
+
+<section #region class="toast-region" popover="manual" aria-label="Уведомления"
+         (pointerenter)="pointerEntered()" (pointerleave)="pointerLeft()"
+         (focusin)="focusEntered($event)" (focusout)="focusLeft($event)" (keydown.escape)="escape($event)">
+  <ul class="stack">
+    @for (toast of toasts.visible(); track toast.id) {
+      <li class="toast" [attr.data-toast-id]="toast.id" [attr.data-severity]="toast.severity"
+          (pointerdown)="swipeStart($event, toast.id)" (pointermove)="swipeMove($event)"
+          (pointerup)="swipeEnd($event)" (pointercancel)="swipeCancel($event)">
+        <app-notification-glyph [severity]="toast.severity" />
+        <div class="body">
+          <p class="text">{{ toast.text }}</p>
+          @if (toast.link; as link) {
+            <a class="action" [routerLink]="link.commands" (click)="close(toast.id)">{{ link.label }}</a>
+          }
+        </div>
+        <button type="button" class="close" aria-label="Закрыть уведомление" (click)="close(toast.id)">
+          <span aria-hidden="true">×</span>
+        </button>
+      </li>
+    }
+  </ul>
+  @if (toasts.queuedCount() > 0) {
+    <p class="more">Ещё {{ toasts.queuedCount() }} — во «Входящих»</p>
+  }
+</section>
