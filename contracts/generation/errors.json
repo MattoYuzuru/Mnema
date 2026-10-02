@@ -1,0 +1,290 @@
+{
+  "contract": "generation-v1",
+  "description": "RFC 9457 problem codes used by generation, usage and notifications. `origin: existing` codes already exist in Learning (ApiErrorCode) with this status, title, detail and type; `origin: new` codes are added by the AI tasks. Extension members are additive and never echo content, titles or notes. Every problem is application/problem+json, Cache-Control: private, no-store, with type, title, status, detail, instance and code.",
+  "shape": {
+    "type": "urn:mnema:problem:<kebab-case code>",
+    "title": "string",
+    "status": "int",
+    "detail": "string, generic",
+    "instance": "request path",
+    "code": "UPPER_SNAKE code"
+  },
+  "codes": {
+    "INVALID_REQUEST": {
+      "status": 400,
+      "type": "urn:mnema:problem:invalid-request",
+      "title": "Invalid request",
+      "detail": "The request is invalid or cannot be read.",
+      "origin": "existing",
+      "when": "Strict-JSON, field, UUID, version, cursor, limit or enum violations; also an AI edit target that MBM cannot express.",
+      "endpoints": [
+        "all"
+      ]
+    },
+    "AUTHENTICATION_REQUIRED": {
+      "status": 401,
+      "type": "urn:mnema:problem:authentication-required",
+      "title": "Authentication required",
+      "detail": "Valid authentication is required.",
+      "origin": "existing",
+      "when": "No valid token.",
+      "endpoints": [
+        "all"
+      ]
+    },
+    "RESOURCE_NOT_FOUND": {
+      "status": 404,
+      "type": "urn:mnema:problem:resource-not-found",
+      "title": "Resource not found",
+      "detail": "The requested resource does not exist.",
+      "origin": "existing",
+      "when": "Foreign or absent deck, session, artifact, revision, notification, or purged events.",
+      "endpoints": [
+        "all"
+      ]
+    },
+    "VERSION_CONFLICT": {
+      "status": 412,
+      "type": "urn:mnema:problem:version-conflict",
+      "title": "Version conflict",
+      "detail": "The resource changed after the supplied version was read.",
+      "origin": "existing",
+      "when": "Stale If-Match, expectedArtifactVersion, expectedRevisionId or expectedDeckRevisionId. Read the resource again and retry with a new commandId.",
+      "endpoints": [
+        "approveArtifact",
+        "approveArtifacts",
+        "editArtifact",
+        "revertArtifact",
+        "rejectArtifact",
+        "cancelSession",
+        "deleteSession"
+      ]
+    },
+    "PRECONDITION_REQUIRED": {
+      "status": 428,
+      "type": "urn:mnema:problem:precondition-required",
+      "title": "Precondition required",
+      "detail": "A current resource version is required for this command.",
+      "origin": "existing",
+      "when": "Missing If-Match where the endpoint requires it.",
+      "endpoints": [
+        "approveArtifact",
+        "approveArtifacts",
+        "cancelSession",
+        "deleteSession",
+        "undoRejectArtifact"
+      ]
+    },
+    "IDEMPOTENCY_CONFLICT": {
+      "status": 409,
+      "type": "urn:mnema:problem:idempotency-conflict",
+      "title": "Idempotency conflict",
+      "detail": "The command identifier was already used for a different command.",
+      "origin": "existing",
+      "when": "commandId reused with a different body, target or expected versions. An exact retry is not an error: the stored response is replayed with Idempotency-Replayed: true.",
+      "endpoints": [
+        "every POST command"
+      ]
+    },
+    "RESOURCE_LIMIT_EXCEEDED": {
+      "status": 422,
+      "type": "urn:mnema:problem:resource-limit-exceeded",
+      "title": "Resource limit exceeded",
+      "detail": "The account or resource limit would be exceeded.",
+      "origin": "existing",
+      "when": "More than 3 active sessions, more than 20 artifacts in a session, EditingDraft quota on hand-off, more than 50 turns or 30 revisions on one artifact.",
+      "endpoints": [
+        "createSession",
+        "handoffArtifact",
+        "editArtifact"
+      ],
+      "extensionMembers": {
+        "limit": "ACTIVE_SESSIONS | ARTIFACTS_PER_SESSION | EDITING_DRAFTS | TURNS_PER_ARTIFACT | REVISIONS_PER_ARTIFACT"
+      },
+      "example": {
+        "type": "urn:mnema:problem:resource-limit-exceeded",
+        "title": "Resource limit exceeded",
+        "status": 422,
+        "detail": "The account or resource limit would be exceeded.",
+        "instance": "/api/decks/11111111-1111-4111-8111-111111111111/generation-sessions",
+        "code": "RESOURCE_LIMIT_EXCEEDED",
+        "limit": "ACTIVE_SESSIONS"
+      }
+    },
+    "CAPABILITY_UNAVAILABLE": {
+      "status": 409,
+      "type": "urn:mnema:problem:capability-unavailable",
+      "title": "Capability unavailable",
+      "detail": "The requested learning capability is not available.",
+      "origin": "existing",
+      "when": "A capability the operation needs is off: flag disabled, adapter not configured, or temporarily unavailable.",
+      "endpoints": [
+        "estimateGeneration",
+        "createSession",
+        "editArtifact",
+        "AI-15/AI-20 endpoints"
+      ],
+      "extensionMembers": {
+        "capability": "aiGeneration | textToSpeech | imageSearch | imageGeneration | videoGeneration | webSearch | speechToText | aiAssessment",
+        "reason": "DISABLED | PROVIDER_NOT_CONFIGURED | TEMPORARILY_UNAVAILABLE"
+      },
+      "example": {
+        "type": "urn:mnema:problem:capability-unavailable",
+        "title": "Capability unavailable",
+        "status": 409,
+        "detail": "The requested learning capability is not available.",
+        "instance": "/api/decks/11111111-1111-4111-8111-111111111111/generation-sessions",
+        "code": "CAPABILITY_UNAVAILABLE",
+        "capability": "textToSpeech",
+        "reason": "PROVIDER_NOT_CONFIGURED"
+      },
+      "notes": [
+        "Today the problem carries no capability or reason members; they are additive and the same reason codes appear in GET /api/capabilities. TEMPORARILY_UNAVAILABLE is new (circuit open or global budget)."
+      ]
+    },
+    "USAGE_LIMIT_REACHED": {
+      "status": 409,
+      "type": "urn:mnema:problem:usage-limit-reached",
+      "title": "Usage limit reached",
+      "detail": "The remaining AI budget does not cover this operation.",
+      "origin": "new",
+      "when": "A reservation or debit does not fit the credit bar, the daily burst, or a count cap (podcasts, quality images, high fact check, smart plan), or a fair-use bucket (speech-to-text, answer checks) is exhausted. The button is never disabled in advance; pressing it shows this outcome with the options (wait, change the plan, reduce the scope).",
+      "endpoints": [
+        "createSession",
+        "editArtifact",
+        "retryArtifact",
+        "AI-15/AI-20 endpoints"
+      ],
+      "extensionMembers": {
+        "bucket": "CREDITS | DAILY_BURST | STT | ASSESSMENT | PODCASTS | QUALITY_IMAGES | HIGH_FACTCHECK | SMART_PLAN",
+        "requiredCredits": "integer, for CREDITS and DAILY_BURST",
+        "remainingCredits": "integer",
+        "renewsAt": "UTC RFC 3339 of the next allowance refresh or weekly unlock",
+        "plan": "FREE | PLUS | PRO | MAX"
+      },
+      "example": {
+        "type": "urn:mnema:problem:usage-limit-reached",
+        "title": "Usage limit reached",
+        "status": 409,
+        "detail": "The remaining AI budget does not cover this operation.",
+        "instance": "/api/decks/11111111-1111-4111-8111-111111111111/generation-sessions",
+        "code": "USAGE_LIMIT_REACHED",
+        "bucket": "CREDITS",
+        "requiredCredits": 44,
+        "remainingCredits": 12,
+        "renewsAt": "2026-11-01T00:00:00Z",
+        "plan": "PLUS"
+      }
+    },
+    "EDIT_IN_PROGRESS": {
+      "status": 409,
+      "type": "urn:mnema:problem:edit-in-progress",
+      "title": "Edit in progress",
+      "detail": "Another edit of this artifact is still running.",
+      "origin": "new",
+      "when": "editArtifact while a turn of this artifact is QUEUED or RUNNING (artifact state REVISING). One edit per artifact at a time.",
+      "endpoints": [
+        "editArtifact"
+      ],
+      "extensionMembers": {
+        "turnId": "the running turn"
+      },
+      "example": {
+        "type": "urn:mnema:problem:edit-in-progress",
+        "title": "Edit in progress",
+        "status": 409,
+        "detail": "Another edit of this artifact is still running.",
+        "instance": "/api/decks/11111111-1111-4111-8111-111111111111/generation-sessions",
+        "code": "EDIT_IN_PROGRESS",
+        "turnId": "7a7a0000-0000-4000-8000-000000000001"
+      }
+    },
+    "SOURCE_UNAVAILABLE": {
+      "status": 409,
+      "type": "urn:mnema:problem:source-unavailable",
+      "title": "Source unavailable",
+      "detail": "A pinned source is no longer available.",
+      "origin": "new",
+      "when": "At session creation: a pinned note or material is gone or its version differs from the pin. During a run the same condition is not an HTTP error: the artifact becomes FAILED(SOURCE_UNAVAILABLE) or STALE.",
+      "endpoints": [
+        "createSession"
+      ],
+      "extensionMembers": {
+        "sources": "[{type: NOTE|ITEM, id}] identifiers of the unavailable pins; ids are the client's own, no titles or text"
+      },
+      "example": {
+        "type": "urn:mnema:problem:source-unavailable",
+        "title": "Source unavailable",
+        "status": 409,
+        "detail": "A pinned source is no longer available.",
+        "instance": "/api/decks/11111111-1111-4111-8111-111111111111/generation-sessions",
+        "code": "SOURCE_UNAVAILABLE",
+        "sources": [
+          {
+            "type": "NOTE",
+            "id": "20700000-0000-4000-8000-000000000001"
+          }
+        ]
+      }
+    },
+    "GENERATION_STATE_CONFLICT": {
+      "status": 409,
+      "type": "urn:mnema:problem:generation-state-conflict",
+      "title": "Generation state conflict",
+      "detail": "The operation is not allowed in the current state.",
+      "origin": "new",
+      "when": "A command that states.json allowedOperations does not permit in the current session or artifact state (for example approve on a REJECTED artifact, cancel of a CLOSED session), or approval while a media slot is neither READY nor REMOVED. Decision beyond the architecture: it names no code for illegal transitions, and 412 is reserved for stale versions.",
+      "endpoints": [
+        "cancelSession",
+        "approveArtifact",
+        "approveArtifacts",
+        "rejectArtifact",
+        "undoRejectArtifact",
+        "handoffArtifact",
+        "editArtifact",
+        "revertArtifact",
+        "retryArtifact"
+      ],
+      "extensionMembers": {
+        "reason": "ILLEGAL_STATE | MEDIA_NOT_READY",
+        "artifactIds": "for bulk approval: the artifacts that block it"
+      },
+      "example": {
+        "type": "urn:mnema:problem:generation-state-conflict",
+        "title": "Generation state conflict",
+        "status": 409,
+        "detail": "The operation is not allowed in the current state.",
+        "instance": "/api/decks/11111111-1111-4111-8111-111111111111/generation-sessions",
+        "code": "GENERATION_STATE_CONFLICT",
+        "reason": "MEDIA_NOT_READY",
+        "artifactIds": [
+          "a7a70000-0000-4000-8000-000000000001"
+        ]
+      }
+    },
+    "INTERNAL_ERROR": {
+      "status": 500,
+      "type": "urn:mnema:problem:internal-error",
+      "title": "Internal error",
+      "detail": "The request could not be completed.",
+      "origin": "existing",
+      "when": "Unexpected failure; the cause is logged, never returned.",
+      "endpoints": [
+        "all"
+      ]
+    }
+  },
+  "notFoundBoundary": "A foreign owner and an absent ID are indistinguishable (404 RESOURCE_NOT_FOUND). USAGE_LIMIT_REACHED and CAPABILITY_UNAVAILABLE are 409 because the request is valid and the state of the account or the server decides.",
+  "artifactErrorCodes": {
+    "$ref": "states.json#/artifact/errorCodes",
+    "note": "Non-HTTP codes stored on a FAILED artifact or step and carried in ARTIFACT_STATE.errorCode."
+  },
+  "mbmCodes": {
+    "$ref": "mbm-v1/codes.json",
+    "note": "Compile findings are returned inside artifact validation, never as an HTTP problem."
+  },
+  "exerciseLintCodes": {
+    "$ref": "exercises/lint.json",
+    "note": "Exercise validation findings; stored in revision.validation, never an HTTP problem."
+  }
+}
