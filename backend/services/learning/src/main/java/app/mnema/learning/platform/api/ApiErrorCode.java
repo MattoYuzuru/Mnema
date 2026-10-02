@@ -35,6 +35,16 @@ enum ApiErrorCode {
             "Resource limit exceeded",
             "The account or resource limit would be exceeded."
     ),
+    EXEMPLAR_LIMIT_REACHED(
+            HttpStatus.UNPROCESSABLE_CONTENT,
+            "Exemplar limit reached",
+            "The deck already has the maximum number of exemplars."
+    ),
+    BULK_SELECTION_TOO_LARGE(
+            HttpStatus.UNPROCESSABLE_CONTENT,
+            "Bulk selection too large",
+            "The selection exceeds the bulk operation limit."
+    ),
     INVALID_REQUEST(
             HttpStatus.BAD_REQUEST,
             "Invalid request",

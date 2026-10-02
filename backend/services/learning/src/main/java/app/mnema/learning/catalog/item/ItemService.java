@@ -32,6 +32,7 @@ import app.mnema.learning.storage.StorageTypes.PinOwner;
 import app.mnema.learning.storage.StorageTypes.StageBatch;
 import app.mnema.learning.storage.StorageTypes.StagedRoot;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.JsonNodeFactory;
 import tools.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Service;
@@ -44,8 +45,10 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -87,35 +90,87 @@ public class ItemService {
 
     @Transactional(timeout = 10)
     public ObjectNode list(UUID actor, UUID deckId, String limit, String cursor) {
+        return list(actor, deckId, limit, cursor, null, null);
+    }
+
+    /**
+     * One Browse page. {@code sort=ordinal} (default) reads the counted member root; {@code sort=exerciseCount} orders
+     * by enabled assessed exercises ascending (materials without exercises first), ties by ordinal. Every entry carries its
+     * true ordinal, the deck-local {@code exemplar} flag and, on request, {@code exerciseCount} without a per-item query.
+     */
+    @Transactional(timeout = 10)
+    public ObjectNode list(UUID actor, UUID deckId, String limit, String cursor, String sort, String include) {
+        ItemListOptions options = ItemListOptions.parse(sort, include);
         ItemRepository.DeckHead deck = own(actor, deckId);
+        int size = ItemCursor.pageSize(limit);
+        ObjectNode result = JsonNodeFactory.instance.objectNode().put("deckId", deckId.toString())
+                .put("deckRevisionId", deck.revisionId().toString()).put("deckVersion", Long.toString(deck.version()))
+                .put("total", deck.memberCount());
+        Set<UUID> exemplars = new HashSet<>(repository.exemplars(deckId));
+        result.putObject("exemplars").put("count", exemplars.size()).put("limit", ItemExemplarService.MAX_EXEMPLARS);
+        ArrayNode items = result.putArray("items");
+        String next = options.sort() == ItemListOptions.Sort.ORDINAL
+                ? ordinalPage(actor, deck, size, cursor, options, exemplars, items)
+                : exerciseCountPage(actor, deck, size, cursor, exemplars, items);
+        if (next != null) result.put("nextCursor", next); else result.putNull("nextCursor");
+        return result;
+    }
+
+    private String ordinalPage(UUID actor, ItemRepository.DeckHead deck, int size, String cursor,
+                               ItemListOptions options, Set<UUID> exemplars, ArrayNode items) {
         ItemCursor position = ItemCursor.decode(cursor);
         if (position != null && !position.deckRevisionId().equals(deck.revisionId())) throw new VersionConflictException();
-        int size = ItemCursor.pageSize(limit);
         int start = position == null ? 0 : position.nextOrdinal();
         if (start > deck.memberCount()) throw new InvalidRequestException();
         TreeRoot membership = tree(deck.scopeId(), deck.membersRootId(), deck.memberCount());
         List<Entry> entries = start == deck.memberCount() ? List.of()
                 : memberPages().read(membership, start, Math.min(size, deck.memberCount() - start));
         Map<UUID, ItemRecord> rows = new HashMap<>();
-        repository.heads(actor, deckId, entries.stream().map(Entry::key).toList())
+        repository.heads(actor, deck.deckId(), entries.stream().map(Entry::key).toList())
                 .forEach(row -> rows.put(row.memberKey(), row));
-        ObjectNode result = JsonNodeFactory.instance.objectNode().put("deckId", deckId.toString())
-                .put("deckRevisionId", deck.revisionId().toString()).put("deckVersion", Long.toString(deck.version()))
-                .put("total", deck.memberCount());
-        var items = result.putArray("items");
+        Map<UUID, Integer> counts = options.exerciseCount()
+                ? repository.exerciseCounts(deck.deckId(), rows.keySet()) : Map.of();
         for (int index = 0; index < entries.size(); index++) {
             ItemRecord row = rows.get(entries.get(index).key());
             if (row == null || !row.descriptorRootId().equals(entries.get(index).target().objectId())) {
                 throw new IllegalStateException("Member projection is inconsistent");
             }
-            items.add(row.summary(start + index).put("title", previews.title(deckId, row.memberKey(),
-                    row.revisionId(), row.scopeId(), row.contentRootId())));
+            items.add(listed(row, start + index, deck.deckId(), options.exerciseCount() ? counts.getOrDefault(row.memberKey(), 0) : null,
+                    exemplars));
         }
-        if (start + entries.size() < deck.memberCount()) {
-            result.put("nextCursor", new ItemCursor(deck.revisionId(), start + entries.size()).encode());
+        return start + entries.size() < deck.memberCount()
+                ? new ItemCursor(deck.revisionId(), start + entries.size()).encode() : null;
+    }
+
+    private String exerciseCountPage(UUID actor, ItemRepository.DeckHead deck, int size, String cursor,
+                                     Set<UUID> exemplars, ArrayNode items) {
+        ItemSortCursor position = ItemSortCursor.decode(cursor);
+        if (position != null && !position.deckRevisionId().equals(deck.revisionId())) throw new VersionConflictException();
+        if (deck.memberCount() == 0) return null;
+        List<ItemRepository.SortedMember> page = repository.sortedMembers(deck,
+                position == null ? null : position.exerciseCount(), position == null ? null : position.ordinal(), size + 1);
+        boolean more = page.size() > size;
+        List<ItemRepository.SortedMember> members = more ? page.subList(0, size) : page;
+        Map<UUID, ItemRecord> rows = new HashMap<>();
+        repository.heads(actor, deck.deckId(), members.stream().map(ItemRepository.SortedMember::memberKey).toList())
+                .forEach(row -> rows.put(row.memberKey(), row));
+        for (ItemRepository.SortedMember member : members) {
+            ItemRecord row = rows.get(member.memberKey());
+            if (row == null || !row.descriptorRootId().equals(member.descriptorRootId())) {
+                throw new IllegalStateException("Member projection is inconsistent");
+            }
+            items.add(listed(row, member.ordinal(), deck.deckId(), member.exerciseCount(), exemplars));
         }
-        else result.putNull("nextCursor");
-        return result;
+        if (!more) return null;
+        ItemRepository.SortedMember last = members.getLast();
+        return new ItemSortCursor(deck.revisionId(), last.exerciseCount(), last.ordinal()).encode();
+    }
+
+    private ObjectNode listed(ItemRecord row, int ordinal, UUID deckId, Integer exerciseCount, Set<UUID> exemplars) {
+        ObjectNode item = row.summary(ordinal).put("title", previews.title(deckId, row.memberKey(), row.revisionId(),
+                row.scopeId(), row.contentRootId()));
+        if (exerciseCount != null) item.put("exerciseCount", exerciseCount);
+        return item.put("exemplar", exemplars.contains(row.memberKey()));
     }
 
     @Transactional(timeout = 10)
@@ -130,6 +185,7 @@ public class ItemService {
         ObjectNode result = item.detail(selectedDeckRevision, selectedDeckVersion,
                 decode(item.scopeId(), item.contentRootId()).document());
         result.put("ordinal", ordinal);
+        result.put("exemplar", repository.exemplars(deckId).contains(memberKey));
         return result;
     }
 
@@ -409,6 +465,28 @@ public class ItemService {
         NativeSnapshotDecoder decoder = new NativeSnapshotDecoder(new ObjectRef(scope, root));
         while (!decoder.isComplete()) nativeBatches.readNext(decoder);
         return decoder.snapshot();
+    }
+
+    /** The current head of an owned Deck (404 when absent, foreign or tombstoned). */
+    ItemRepository.DeckHead head(UUID actor, UUID deckId) { return own(actor, deckId); }
+
+    /** The Deck as it was at one exact revision (404 when the revision is not one of this Deck's). */
+    ItemRepository.DeckHead deckAt(UUID actor, UUID deckId, UUID revisionId) {
+        UuidPolicy.requireEntityId(actor, "actor");
+        UuidPolicy.requireEntityId(deckId, "deckId");
+        return repository.deckAtRevision(actor, deckId, revisionId).orElseThrow(ResourceNotFoundException::new);
+    }
+
+    /** Every member of the Deck at {@code at}, in ordinal order, read from its immutable member root in pages of 100. */
+    List<Entry> membersAt(ItemRepository.DeckHead at) {
+        if (at.memberCount() == 0) return List.of();
+        TreeRoot membership = tree(at.scopeId(), at.membersRootId(), at.memberCount());
+        CountedPages pages = memberPages();
+        List<Entry> result = new ArrayList<>(at.memberCount());
+        for (int start = 0; start < at.memberCount(); start += 100) {
+            result.addAll(pages.read(membership, start, Math.min(100, at.memberCount() - start)));
+        }
+        return result;
     }
 
     private ItemRepository.DeckHead own(UUID actor, UUID deck) {

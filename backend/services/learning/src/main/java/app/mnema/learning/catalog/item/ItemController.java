@@ -32,7 +32,8 @@ public class ItemController {
     ResponseEntity<JsonNode> list(@AuthenticationPrincipal Jwt identity, @PathVariable String deckId,
                                   HttpServletRequest request) {
         JsonNode page = service.list(ItemIds.entity(identity.getSubject()), ItemIds.entity(deckId),
-                parameter(request, "limit"), parameter(request, "cursor"));
+                parameter(request, "limit"), parameter(request, "cursor"),
+                parameter(request, "sort"), parameter(request, "include"));
         return ResponseEntity.ok().headers(privateHeaders()).eTag(page.path("deckVersion").stringValue(null)).body(page);
     }
 
