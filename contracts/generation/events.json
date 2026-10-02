@@ -1,29 +1,35 @@
 {
   "contract": "generation-v1",
-  "description": "Progress events of a session: an append-only log read by adaptive polling. Authority: docs/architecture/ai-generation-platform.md section 5. No token streaming, EventSource or WebSocket in v1; if a streaming endpoint is added later (p50 time to first block above 5 s), the event contract does not change.",
+  "description": "Progress events of a session: an append-only log read by adaptive polling. Each event has a per-session `seq` (a decimal string) allocated under the session row lock, so the cursor never skips an event: `UPDATE generation_session SET last_event_seq = last_event_seq + 1 ... RETURNING last_event_seq` inside the transaction that writes the event, with UNIQUE (session_id, seq). A global bigserial would NOT work: its values are assigned before commit, so a transaction that took a lower value can commit after a poller already read a higher one and the event would be missed forever. Authority: docs/architecture/ai-generation-platform.md section 5. No token streaming, EventSource or WebSocket in v1; if a streaming endpoint is added later (p50 time to first block above 5 s), the event contract does not change.",
   "request": {
     "method": "GET",
     "path": "/api/decks/{deckId}/generation-sessions/{sessionId}/events",
     "query": {
-      "after": "decimal cursor, default 0",
+      "after": "decimal seq cursor, default 0",
       "limit": "1..100, default 100"
     }
   },
+  "storage": {
+    "column": "generation_session.last_event_seq",
+    "unique": "(session_id, seq)",
+    "allocation": "UPDATE generation_session SET last_event_seq = last_event_seq + 1 WHERE session_id = :id RETURNING last_event_seq, in the transaction that appends the event; the row lock serializes concurrent writers of one session",
+    "whyNotBigserial": "bigserial values are assigned before commit, so commit order can differ from value order and a poller could pass an uncommitted lower value"
+  },
   "envelope": {
     "fields": {
-      "events": "Events with eventId > after, ascending, at most limit.",
-      "cursor": "Decimal string: eventId of the last returned event, or the request's after when events is empty. The client sends it as the next after.",
+      "events": "Events with seq > after, ascending, at most limit.",
+      "cursor": "Decimal string: seq of the last returned event, or the request's after when events is empty. The client sends it as the next after.",
       "session": "{state, rowVersion}: the session now, independent of the events returned, so a poll can stop on a terminal state.",
       "activeSteps": "Steps currently READY, RUNNING or WAITING_EXTERNAL: {stepId, artifactId|null, kind, state, startedAt|null}. Drives 'writing' indicators; empty when nothing is active."
     },
     "example": {
       "events": [
         {
-          "eventId": "101",
+          "seq": "1",
           "type": "ARTIFACT_STATE",
           "sessionId": "5e550000-0000-4000-8000-000000000001",
           "artifactId": "a7a70000-0000-4000-8000-000000000001",
-          "occurredAt": "2026-10-02T09:00:41Z",
+          "occurredAt": "2026-10-02T09:00:01Z",
           "payload": {
             "state": "PROPOSED",
             "artifactVersion": "4",
@@ -33,11 +39,11 @@
           }
         },
         {
-          "eventId": "102",
+          "seq": "2",
           "type": "BLOCKS_APPENDED",
           "sessionId": "5e550000-0000-4000-8000-000000000001",
           "artifactId": "a7a70000-0000-4000-8000-000000000002",
-          "occurredAt": "2026-10-02T09:00:42Z",
+          "occurredAt": "2026-10-02T09:00:02Z",
           "payload": {
             "generation": 1,
             "startIndex": 2,
@@ -64,11 +70,11 @@
           }
         },
         {
-          "eventId": "103",
+          "seq": "3",
           "type": "MEDIA_SLOT_STATE",
           "sessionId": "5e550000-0000-4000-8000-000000000001",
           "artifactId": "a7a70000-0000-4000-8000-000000000001",
-          "occurredAt": "2026-10-02T09:00:43Z",
+          "occurredAt": "2026-10-02T09:00:03Z",
           "payload": {
             "slotKey": "a1",
             "kind": "AUDIO",
@@ -78,23 +84,24 @@
           }
         },
         {
-          "eventId": "104",
+          "seq": "4",
           "type": "USAGE_UPDATED",
           "sessionId": "5e550000-0000-4000-8000-000000000001",
           "artifactId": null,
-          "occurredAt": "2026-10-02T09:00:44Z",
+          "occurredAt": "2026-10-02T09:00:04Z",
           "payload": {
             "reservedCredits": 21,
             "spentCredits": 11,
-            "balanceRemainingCredits": 297
+            "balanceRemainingCredits": 297,
+            "deferredUntil": null
           }
         },
         {
-          "eventId": "105",
+          "seq": "5",
           "type": "SESSION_STATE",
           "sessionId": "5e550000-0000-4000-8000-000000000001",
           "artifactId": null,
-          "occurredAt": "2026-10-02T09:00:45Z",
+          "occurredAt": "2026-10-02T09:00:05Z",
           "payload": {
             "state": "RUNNING",
             "rowVersion": "12",
@@ -112,7 +119,7 @@
           }
         }
       ],
-      "cursor": "105",
+      "cursor": "5",
       "session": {
         "state": "RUNNING",
         "rowVersion": "12"
@@ -129,7 +136,7 @@
     },
     "emptyExample": {
       "events": [],
-      "cursor": "105",
+      "cursor": "5",
       "session": {
         "state": "REVIEW",
         "rowVersion": "13"
@@ -138,7 +145,7 @@
     }
   },
   "eventFields": {
-    "eventId": "Decimal string from a bigserial; strictly increasing, not dense (other sessions share the sequence). Never reused.",
+    "seq": "Decimal string, per session, strictly increasing and gap-free in commit order because it is allocated under the session row lock; the cursor is this value. Never reused.",
     "type": "ARTIFACT_STATE | BLOCKS_APPENDED | MEDIA_SLOT_STATE | USAGE_UPDATED | SESSION_STATE. A client ignores unknown types.",
     "sessionId": "Always the requested session.",
     "artifactId": "null for session-level events.",
@@ -157,11 +164,11 @@
       },
       "clientRule": "On PROPOSED (and on any change of currentRevisionId) re-read the artifact with getArtifact.",
       "example": {
-        "eventId": "101",
+        "seq": "1",
         "type": "ARTIFACT_STATE",
         "sessionId": "5e550000-0000-4000-8000-000000000001",
         "artifactId": "a7a70000-0000-4000-8000-000000000001",
-        "occurredAt": "2026-10-02T09:00:41Z",
+        "occurredAt": "2026-10-02T09:00:01Z",
         "payload": {
           "state": "PROPOSED",
           "artifactVersion": "4",
@@ -174,17 +181,17 @@
     "BLOCKS_APPENDED": {
       "emittedBy": "TEXT_DRAFT checkpoints, at most every 750 ms or at a block boundary",
       "payload": {
-        "generation": "Integer attempt number of the drafting step. A higher generation than the one the client holds means the draft restarted (retry or repair): discard earlier blocks.",
+        "generation": "Artifact-scoped monotonic counter (not the step attempt): it increases whenever the draft restarts for any reason (retry, repair, regenerate). A higher generation than the one the client holds means: discard earlier blocks.",
         "startIndex": "0-based index of blocks[0] among the draft's top-level blocks.",
         "blocks": "Already compiled native-v1 top-level block nodes, at most 32 KiB."
       },
       "clientRule": "Draft blocks are a preview: their node IDs are provisional and can differ from the stored revision. The truth is getArtifact after ARTIFACT_STATE=PROPOSED. Reveal blocks with an ink animation of at most 600 ms; no event is a live region.",
       "example": {
-        "eventId": "102",
+        "seq": "2",
         "type": "BLOCKS_APPENDED",
         "sessionId": "5e550000-0000-4000-8000-000000000001",
         "artifactId": "a7a70000-0000-4000-8000-000000000002",
-        "occurredAt": "2026-10-02T09:00:42Z",
+        "occurredAt": "2026-10-02T09:00:02Z",
         "payload": {
           "generation": 1,
           "startIndex": 2,
@@ -218,15 +225,15 @@
         "kind": "AUDIO | IMAGE | VIDEO",
         "state": "slot state",
         "assetId": "uuid pre-allocated by the compiler",
-        "errorCode": "null or error code"
+        "errorCode": "null or one of states.json artifact.mediaSlotErrorCodes"
       },
       "clientRule": "READY: the renderer resolves the asset through the media APIs; until then it shows the paper placeholder frame.",
       "example": {
-        "eventId": "103",
+        "seq": "3",
         "type": "MEDIA_SLOT_STATE",
         "sessionId": "5e550000-0000-4000-8000-000000000001",
         "artifactId": "a7a70000-0000-4000-8000-000000000001",
-        "occurredAt": "2026-10-02T09:00:43Z",
+        "occurredAt": "2026-10-02T09:00:03Z",
         "payload": {
           "slotKey": "a1",
           "kind": "AUDIO",
@@ -239,20 +246,22 @@
     "USAGE_UPDATED": {
       "emittedBy": "every committed DEBIT or RELEASE of the session's reservation",
       "payload": {
-        "reservedCredits": "hold of the session",
+        "reservedCredits": "ACTIVE holds of the session",
         "spentCredits": "debited so far",
-        "balanceRemainingCredits": "account credits.remaining now"
+        "balanceRemainingCredits": "account credits.remaining now",
+        "deferredUntil": "null, or the UTC instant (next day start in Europe/Moscow) until which steps wait because the daily burst of debits is reached"
       },
       "example": {
-        "eventId": "104",
+        "seq": "4",
         "type": "USAGE_UPDATED",
         "sessionId": "5e550000-0000-4000-8000-000000000001",
         "artifactId": null,
-        "occurredAt": "2026-10-02T09:00:44Z",
+        "occurredAt": "2026-10-02T09:00:04Z",
         "payload": {
           "reservedCredits": 21,
           "spentCredits": 11,
-          "balanceRemainingCredits": 297
+          "balanceRemainingCredits": 297,
+          "deferredUntil": null
         }
       }
     },
@@ -264,11 +273,11 @@
         "artifactCounts": "one integer per artifact state"
       },
       "example": {
-        "eventId": "105",
+        "seq": "5",
         "type": "SESSION_STATE",
         "sessionId": "5e550000-0000-4000-8000-000000000001",
         "artifactId": null,
-        "occurredAt": "2026-10-02T09:00:45Z",
+        "occurredAt": "2026-10-02T09:00:05Z",
         "payload": {
           "state": "RUNNING",
           "rowVersion": "12",
@@ -289,8 +298,8 @@
   },
   "polling": {
     "clientCadence": "One loop per open session: 1 s while the tab is visible and a step is active; 5-15 s in the background; immediately on visibilitychange; stop when session.state is CLOSED, CANCELLED or EXPIRED.",
-    "retention": "Events are kept until the session is closed plus one day. A request after that, or for a deleted session, is answered like any absent resource (404) and the client reconciles with getSession/listSessions.",
-    "ordering": "Per session, eventId order is commit order; two events of one transaction share a transaction but have distinct IDs.",
+    "retention": "Events are kept until the session is closed (or cancelled or expired) plus one day (architecture section 5) and are deleted with the session when the retention worker purges it. A request after that, or for a deleted session, is a 404 and the client reconciles with listSessions.",
+    "ordering": "Per session, seq order is the order in which the row-locking transactions committed (the lock serializes writers); two events of one transaction have consecutive seq values.",
     "idempotentReads": "Reading the same cursor twice returns the same events (no consumer state on the server)."
   }
 }

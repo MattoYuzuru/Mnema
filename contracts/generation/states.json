@@ -1,6 +1,6 @@
 {
   "contract": "generation-v1",
-  "description": "State machines of the generation domain. Every state change commits in the same transaction as the row version bump and the event it emits (events.json). `actor` is USER (HTTP command), WORKER (step execution), SERVER (derived or detected inside a command or the worker) or RETENTION (retention worker). `from: null` is creation. Authority: docs/architecture/ai-generation-platform.md sections 3 and 4.",
+  "description": "State machines of the generation domain. Every state change commits in the same transaction as the row version bump and the event it emits (events.json). `actor` is USER (HTTP command), WORKER (step execution), SERVER (derived or detected inside a command or the worker) or RETENTION (retention worker). `from: null` is creation. Authority: docs/architecture/ai-generation-platform.md sections 3 and 4. Reads (getSession, getArtifact, listEvents, listActiveSessions) never change state: a source drift is detected by the worker or by approve, never by a GET.",
   "session": {
     "kinds": [
       "MATERIALS",
@@ -8,6 +8,20 @@
       "REVISE_ITEM",
       "REVISE_EXERCISE"
     ],
+    "kindSupport": {
+      "MATERIALS": "AI-04",
+      "EXERCISES": "AI-13",
+      "REVISE_ITEM": "AI-16 (createSession answers 422 SPEC_NOT_SUPPORTED until then)",
+      "REVISE_EXERCISE": "AI-16 (createSession answers 422 SPEC_NOT_SUPPORTED until then)"
+    },
+    "endReason": {
+      "values": [
+        "USER_CANCELLED",
+        "PLAN_FAILED",
+        "EXPIRED"
+      ],
+      "meaning": "Session-level field set when a session enters CANCELLED (USER_CANCELLED, PLAN_FAILED) or EXPIRED; null otherwise. A cancelled session that later becomes CLOSED keeps USER_CANCELLED."
+    },
     "states": {
       "PLANNING": {
         "terminal": false,
@@ -23,25 +37,25 @@
       },
       "REVIEW": {
         "terminal": false,
-        "description": "No artifact is QUEUED or GENERATING; the user reviews, edits and approves. Artifacts in REVISING keep the session in REVIEW."
+        "description": "No artifact is QUEUED or GENERATING and at least one is PROPOSED, REVISING or STALE; the user reviews, edits and approves."
       },
       "CLOSED": {
         "terminal": true,
-        "description": "Every artifact is PUBLISHED or HANDED_OFF. Terminal; the client offers to archive used notes (N)."
+        "description": "No artifact is PROPOSED, REVISING, STALE, QUEUED or GENERATING: the rest is PUBLISHED, HANDED_OFF, REJECTED or FAILED. Terminal; the client offers to archive used notes (N). REJECTED and FAILED leftovers do not keep a session open."
       },
       "CANCELLED": {
         "terminal": false,
-        "description": "The user stopped the session or the PLAN step failed. Not a final state: it only ends when the retention worker expires it or the user deletes it. Waiting steps are CANCELLED, unfinished artifacts are FAILED with errorCode CANCELLED; artifacts already PROPOSED can still be approved, rejected, handed off or reverted, but nothing new is generated."
+        "description": "The user stopped the session or the PLAN step failed (endReason). Waiting steps are CANCELLED, unfinished artifacts (QUEUED or GENERATING) are FAILED with errorCode CANCELLED; artifacts already PROPOSED can still be approved, rejected, handed off or stripped of media, but nothing new is generated. Ends as CLOSED when no PROPOSED, REVISING or STALE artifact remains."
       },
       "EXPIRED": {
         "terminal": true,
-        "description": "expires_at (last activity + learning.generation.session-retention) passed. The retention worker deletes unpublished rows; published content stays in the catalog."
+        "description": "expires_at (last activity + learning.generation.session-retention) passed while the session was not closed. Readable until the retention worker purges it, then 404."
       }
     },
     "initial": [
       {
         "state": "PLANNING",
-        "when": "spec.settings.planFirst is true and the aiPlanner path is enabled"
+        "when": "spec.settings.planFirst is true and the planner path is enabled"
       },
       {
         "state": "RUNNING",
@@ -82,7 +96,7 @@
       {
         "from": "PLANNING",
         "to": "CANCELLED",
-        "trigger": "user cancellation, or PLAN step FAILED (errorCode PLAN_FAILED)",
+        "trigger": "user cancellation (endReason USER_CANCELLED), or PLAN step FAILED (endReason PLAN_FAILED)",
         "actor": "USER|WORKER",
         "emits": [
           "SESSION_STATE"
@@ -104,7 +118,7 @@
       {
         "from": "PLAN_READY",
         "to": "CANCELLED",
-        "trigger": "user cancellation",
+        "trigger": "user cancellation (endReason USER_CANCELLED)",
         "actor": "USER",
         "emits": [
           "SESSION_STATE"
@@ -113,7 +127,7 @@
       {
         "from": "RUNNING",
         "to": "REVIEW",
-        "trigger": "no artifact is QUEUED or GENERATING",
+        "trigger": "no artifact is QUEUED or GENERATING and at least one is PROPOSED, REVISING or STALE",
         "actor": "SERVER",
         "emits": [
           "SESSION_STATE"
@@ -130,8 +144,18 @@
       },
       {
         "from": "RUNNING",
+        "to": "CLOSED",
+        "trigger": "no artifact is QUEUED or GENERATING and none is PROPOSED, REVISING or STALE",
+        "actor": "SERVER",
+        "emits": [
+          "SESSION_STATE"
+        ],
+        "note": "Reached when every finished artifact failed or was rejected; evaluated at the same moment as RUNNING to REVIEW."
+      },
+      {
+        "from": "RUNNING",
         "to": "CANCELLED",
-        "trigger": "user cancellation",
+        "trigger": "user cancellation (endReason USER_CANCELLED)",
         "actor": "USER",
         "emits": [
           "SESSION_STATE",
@@ -141,7 +165,7 @@
       {
         "from": "REVIEW",
         "to": "CANCELLED",
-        "trigger": "user cancellation (stops running edits)",
+        "trigger": "user cancellation (stops running edits; endReason USER_CANCELLED)",
         "actor": "USER",
         "emits": [
           "SESSION_STATE",
@@ -151,18 +175,27 @@
       {
         "from": "REVIEW",
         "to": "CLOSED",
-        "trigger": "every artifact is PUBLISHED or HANDED_OFF",
+        "trigger": "no artifact is PROPOSED, REVISING or STALE (after approval, hand-off, rejection or a failed leftover)",
         "actor": "SERVER",
-        "guard": "evaluated after approval or handoff",
+        "guard": "evaluated after every artifact transition",
         "emits": [
           "SESSION_STATE"
-        ],
-        "note": "A session whose remaining artifacts are REJECTED stays in REVIEW until deleted or expired."
+        ]
+      },
+      {
+        "from": "CANCELLED",
+        "to": "CLOSED",
+        "trigger": "no artifact is PROPOSED, REVISING or STALE",
+        "actor": "SERVER",
+        "guard": "evaluated after approval, hand-off or rejection in a cancelled session",
+        "emits": [
+          "SESSION_STATE"
+        ]
       },
       {
         "from": "PLAN_READY",
         "to": "EXPIRED",
-        "trigger": "expires_at reached",
+        "trigger": "expires_at reached (endReason EXPIRED)",
         "actor": "RETENTION",
         "emits": [
           "SESSION_STATE"
@@ -171,7 +204,7 @@
       {
         "from": "RUNNING",
         "to": "EXPIRED",
-        "trigger": "expires_at reached",
+        "trigger": "expires_at reached (endReason EXPIRED)",
         "actor": "RETENTION",
         "emits": [
           "SESSION_STATE"
@@ -180,32 +213,34 @@
       {
         "from": "REVIEW",
         "to": "EXPIRED",
-        "trigger": "expires_at reached",
-        "actor": "RETENTION",
-        "emits": [
-          "SESSION_STATE"
-        ]
-      },
-      {
-        "from": "CANCELLED",
-        "to": "EXPIRED",
-        "trigger": "expires_at reached",
+        "trigger": "expires_at reached (endReason EXPIRED)",
         "actor": "RETENTION",
         "emits": [
           "SESSION_STATE"
         ]
       }
     ],
+    "retention": {
+      "expiresAt": "last_activity_at + learning.generation.session-retention (P30D), for every state.",
+      "purge": "At expires_at the retention worker deletes the unpublished rows of any session (CLOSED, CANCELLED, EXPIRED or still active): artifacts, revisions, turns, slots, media holds. Published refs stay in the catalog.",
+      "events": "generation_event rows are kept until the session is closed (or cancelled or expired) plus P1D (architecture section 5), then deleted.",
+      "afterPurge": "getSession, getArtifact, listEvents and deleteSession answer 404. An EXPIRED session is readable only until the worker purges it."
+    },
     "limits": {
       "maxActiveSessionsPerAccount": 3,
-      "maxArtifactsPerSession": 20,
       "activeStates": [
         "PLANNING",
         "PLAN_READY",
         "RUNNING",
         "REVIEW"
-      ]
+      ],
+      "maxArtifactsPerSession": {
+        "MATERIALS": 20,
+        "EXERCISES": 60
+      },
+      "note": "Only PLANNING, PLAN_READY, RUNNING and REVIEW count toward the active-session limit. The 60 for EXERCISES is owner decision 2026-10-02 (see README); the architecture says 20 per session."
     },
+    "versioning": "session rowVersion bumps on every row change (state, pointers, last activity). It is exposed as ETag for reads; no session command uses it as a precondition.",
     "allowedOperations": {
       "PLANNING": [
         "getSession",
@@ -266,13 +301,20 @@
         "rejectArtifact",
         "undoRejectArtifact",
         "handoffArtifact",
-        "revertArtifact",
+        "editArtifact",
         "deleteSession"
       ],
       "EXPIRED": [
         "getSession",
+        "listEvents",
+        "getArtifact",
         "deleteSession"
       ]
+    },
+    "operationNotes": {
+      "editArtifact": "In a CANCELLED session only action REMOVE_MEDIA is accepted (no new steps).",
+      "cancelSession": "State-idempotent and needs no If-Match: cancelling a CANCELLED session answers 200 with the current state; a CLOSED or EXPIRED one answers 409 GENERATION_STATE_CONFLICT.",
+      "deleteSession": "Needs no If-Match; the first call answers 204, later calls 404."
     }
   },
   "artifact": {
@@ -291,7 +333,7 @@
       },
       "PROPOSED": {
         "terminal": false,
-        "description": "A valid revision is the current proposal; the user can approve, edit, reject or hand off."
+        "description": "A valid revision is the current proposal; the user can approve (when every slot is READY or REMOVED), edit, reject or hand off."
       },
       "REVISING": {
         "terminal": false,
@@ -299,15 +341,15 @@
       },
       "FAILED": {
         "terminal": false,
-        "description": "Retries are exhausted or the failure is not retryable; errorCode explains. The user can retry."
+        "description": "Retries are exhausted or the failure is not retryable; errorCode explains. The user can retry unless the errorCode is REFUSAL."
       },
       "REJECTED": {
         "terminal": false,
-        "description": "Disapproved by the user; reversible by undo."
+        "description": "Disapproved by the user; reversible by undo while the session is not CLOSED."
       },
       "STALE": {
         "terminal": false,
-        "description": "A pinned source changed after generation. The server re-pins by stable node IDs without a model call; if nodes vanished the user decides (repinStatus NEEDS_USER_DECISION)."
+        "description": "A pinned source changed after generation (reason SOURCE_STALE). The server re-pins by stable node IDs without a model call; if nodes vanished the user decides: reject, hand off (edit the stale proposal oneself) or retry (regenerate against the new source revision). There is no 'keep anyway' approve."
       },
       "PUBLISHED": {
         "terminal": true,
@@ -323,13 +365,23 @@
     ],
     "errorCodes": {
       "INVALID_OUTPUT": "Output failed compiler or lint after one repair and the strong route.",
-      "REFUSAL": "The model refused; not retried.",
+      "REFUSAL": "The model refused; not retried and not retryable by the user.",
       "SOURCE_UNAVAILABLE": "A pinned note or material is gone.",
       "PROVIDER_UNAVAILABLE": "Transient failures exhausted all routes, or the circuit is open.",
-      "BUDGET_EXHAUSTED": "The reservation cannot cover the call; no provider call was made.",
+      "USAGE_LIMIT": "The user's limit (credit bar, cap or daily burst) cannot cover the call; no provider call was made. Waiting or a plan change helps.",
+      "ESTIMATE_EXCEEDED": "The call would exceed the reservation made from the estimate (under-reservation); no provider call was made. A retry reserves again.",
       "DEADLINE_EXCEEDED": "The step deadline passed.",
-      "CANCELLED": "The session was cancelled before the artifact finished.",
-      "PLAN_FAILED": "Session-level: the PLAN step failed."
+      "CANCELLED": "The session was cancelled before the artifact finished (also for artifacts that were still QUEUED).",
+      "PLAN_FAILED": "Session-level: the PLAN step failed (see endReason)."
+    },
+    "mediaSlotErrorCodes": {
+      "PROVIDER_UNAVAILABLE": "Provider failures exhausted all routes.",
+      "NO_RESULT": "A search returned nothing usable (no licensed image found).",
+      "VERIFICATION_REJECTED": "The media pipeline (#76) rejected the staged bytes.",
+      "DEADLINE_EXCEEDED": "The step deadline passed.",
+      "USAGE_LIMIT": "The user's limit does not cover the redo.",
+      "ESTIMATE_EXCEEDED": "The redo would exceed its reservation.",
+      "CANCELLED": "The session was cancelled."
     },
     "transitions": [
       {
@@ -351,6 +403,16 @@
         ]
       },
       {
+        "from": "QUEUED",
+        "to": "FAILED",
+        "trigger": "session cancelled before the step was claimed",
+        "actor": "SERVER",
+        "emits": [
+          "ARTIFACT_STATE"
+        ],
+        "note": "errorCode CANCELLED."
+      },
+      {
         "from": "GENERATING",
         "to": "PROPOSED",
         "trigger": "valid revision stored",
@@ -363,7 +425,7 @@
       {
         "from": "GENERATING",
         "to": "FAILED",
-        "trigger": "retries exhausted or non-retryable failure or cancellation",
+        "trigger": "retries exhausted, non-retryable failure, or session cancelled",
         "actor": "WORKER|USER",
         "emits": [
           "ARTIFACT_STATE"
@@ -375,17 +437,18 @@
         "to": "QUEUED",
         "trigger": "user retry",
         "actor": "USER",
-        "guard": "session is RUNNING or REVIEW; reservation can cover the retry",
+        "guard": "session is RUNNING or REVIEW; errorCode is not REFUSAL; a new reservation fits (else 409 USAGE_LIMIT_REACHED before any state change); sources still exist",
         "emits": [
           "ARTIFACT_STATE"
-        ]
+        ],
+        "note": "Cancels any QUEUED or RUNNING turn of the artifact."
       },
       {
         "from": "PROPOSED",
         "to": "REVISING",
         "trigger": "edit or media redo accepted",
         "actor": "USER",
-        "guard": "no other edit in progress on this artifact (else EDIT_IN_PROGRESS)",
+        "guard": "no other edit in progress on this artifact (else EDIT_IN_PROGRESS); a chargeable edit reserved its own small reservation at admission",
         "emits": [
           "ARTIFACT_STATE"
         ]
@@ -398,7 +461,7 @@
         "emits": [
           "ARTIFACT_STATE"
         ],
-        "note": "A failed edit leaves currentRevisionId unchanged and marks the turn FAILED."
+        "note": "A failed edit leaves currentRevisionId unchanged and marks the turn FAILED with an errorCode."
       },
       {
         "from": "PROPOSED",
@@ -414,6 +477,7 @@
         "to": "PROPOSED",
         "trigger": "user undoes the rejection",
         "actor": "USER",
+        "guard": "session is not CLOSED",
         "emits": [
           "ARTIFACT_STATE"
         ]
@@ -423,7 +487,7 @@
         "to": "STALE",
         "trigger": "a pinned source changed",
         "actor": "SERVER",
-        "guard": "detected when the source is published or lazily on read or approve",
+        "guard": "detected by the worker or the re-pin job, or by approve in its own short transaction before the publish transaction; never by a GET",
         "emits": [
           "ARTIFACT_STATE"
         ]
@@ -445,14 +509,37 @@
         "emits": [
           "ARTIFACT_STATE"
         ],
-        "note": "Extension: the architecture diagram leaves a STALE artifact with vanished nodes without a user exit; this transition gives one."
+        "note": "Extension: the architecture diagram has only STALE to PROPOSED."
+      },
+      {
+        "from": "STALE",
+        "to": "HANDED_OFF",
+        "trigger": "open the stale proposal in the editor",
+        "actor": "USER",
+        "guard": "creates an EditingDraft from the current revision",
+        "emits": [
+          "ARTIFACT_STATE",
+          "SESSION_STATE"
+        ],
+        "note": "Extension: lets the user fix the proposal oneself."
+      },
+      {
+        "from": "STALE",
+        "to": "QUEUED",
+        "trigger": "user retry: regenerate against the new source revision",
+        "actor": "USER",
+        "guard": "as for FAILED to QUEUED",
+        "emits": [
+          "ARTIFACT_STATE"
+        ],
+        "note": "Extension. Cancels any pending turn."
       },
       {
         "from": "PROPOSED",
         "to": "PUBLISHED",
         "trigger": "approve",
         "actor": "USER",
-        "guard": "every media slot is READY or REMOVED; CAS on artifact version, revision and deck revision; one transaction with the catalog command",
+        "guard": "every media slot is READY or REMOVED; CAS on artifact version, revision and deck revision; one transaction with the catalog command; session not CLOSED",
         "emits": [
           "ARTIFACT_STATE",
           "SESSION_STATE"
@@ -499,7 +586,9 @@
       ],
       "STALE": [
         "getArtifact",
-        "rejectArtifact"
+        "rejectArtifact",
+        "handoffArtifact",
+        "retryArtifact"
       ],
       "PUBLISHED": [
         "getArtifact"
@@ -508,7 +597,7 @@
         "getArtifact"
       ]
     },
-    "note": "An operation is allowed only when both the artifact state (here) and the session state (session.allowedOperations) allow it; otherwise the response is 409 GENERATION_STATE_CONFLICT, except editArtifact on a REVISING artifact, which is 409 EDIT_IN_PROGRESS."
+    "note": "An operation is allowed only when both the artifact state (here) and the session state (session.allowedOperations) allow it; otherwise the response is 409 GENERATION_STATE_CONFLICT, except editArtifact on a REVISING artifact, which is 409 EDIT_IN_PROGRESS, and an approval of a STALE artifact, which is 409 GENERATION_STATE_CONFLICT with reason SOURCE_STALE."
   },
   "step": {
     "kinds": [
@@ -530,7 +619,7 @@
       },
       "READY": {
         "terminal": false,
-        "description": "Claimable when next_attempt_at <= now and a capability slot is free."
+        "description": "Claimable when next_attempt_at <= now and a capability slot is free. A step deferred by the daily burst sits here with next_attempt_at at the next day start."
       },
       "RUNNING": {
         "terminal": false,
@@ -538,7 +627,7 @@
       },
       "WAITING_EXTERNAL": {
         "terminal": false,
-        "description": "A provider job id is stored; the step is polled until the external job ends."
+        "description": "A provider job id is stored; the step is polled until the external job ends or its deadline passes. Polling increments poll_count, never attempts."
       },
       "SUCCEEDED": {
         "terminal": true,
@@ -552,6 +641,10 @@
         "terminal": true,
         "description": "Cancelled before or during execution."
       }
+    },
+    "counters": {
+      "attempts": "Incremented by every claim (READY to RUNNING); bounds retries.",
+      "poll_count": "Incremented by every poll of a WAITING_EXTERNAL step; bounded by the step deadline, not by the attempt cap."
     },
     "initial": [
       "WAITING_DEPENDENCIES",
@@ -600,10 +693,10 @@
       {
         "from": "RUNNING",
         "to": "READY",
-        "trigger": "retryable error (429 with Retry-After, transient, invalid output before the strong route) or lease expired",
+        "trigger": "retryable error (429 with Retry-After, transient, invalid output before the strong route), lease expired, or the daily burst defers the next step",
         "actor": "WORKER|SERVER",
         "guard": "attempts below the cap",
-        "note": "next_attempt_at is set by backoff."
+        "note": "next_attempt_at is set by backoff, or to the next day start for a deferral."
       },
       {
         "from": "RUNNING",
@@ -615,7 +708,8 @@
         "from": "WAITING_EXTERNAL",
         "to": "READY",
         "trigger": "poll due",
-        "actor": "SERVER"
+        "actor": "SERVER",
+        "note": "Does not increment attempts; poll_count is incremented."
       },
       {
         "from": "WAITING_EXTERNAL",
@@ -626,7 +720,7 @@
       {
         "from": "RUNNING",
         "to": "FAILED",
-        "trigger": "non-retryable error, retries exhausted, refusal, budget exhausted, source gone",
+        "trigger": "non-retryable error, retries exhausted, refusal, user limit or estimate exceeded, source gone",
         "actor": "WORKER"
       },
       {
@@ -650,7 +744,7 @@
     ]
   },
   "turn": {
-    "description": "generation_artifact_turn: one user instruction on an artifact (at most 2000 characters, text or speech transcript; at most 50 per artifact).",
+    "description": "generation_artifact_turn: one user instruction on an artifact (at most 2000 characters, text or speech transcript; at most 50 per artifact). REMOVE_MEDIA is also recorded as a turn (cause MEDIA, creates a revision) but does not count toward the 50.",
     "states": {
       "QUEUED": {
         "terminal": false,
@@ -666,11 +760,11 @@
       },
       "FAILED": {
         "terminal": true,
-        "description": "No new revision; the artifact returned to PROPOSED."
+        "description": "No new revision; the artifact returned to PROPOSED. errorCode is one of artifact.errorCodes."
       },
       "CANCELLED": {
         "terminal": true,
-        "description": "Stopped by cancellation, reject or revert."
+        "description": "Stopped by a session cancellation or by a retry of the artifact. Reject and revert are not allowed while a turn is running, so they never cancel one."
       }
     },
     "initial": [
@@ -685,6 +779,16 @@
         "guard": "no other turn QUEUED or RUNNING on the artifact",
         "emits": [
           "ARTIFACT_STATE"
+        ]
+      },
+      {
+        "from": null,
+        "to": "APPLIED",
+        "trigger": "REMOVE_MEDIA accepted (applied before the response)",
+        "actor": "USER",
+        "emits": [
+          "ARTIFACT_STATE",
+          "MEDIA_SLOT_STATE"
         ]
       },
       {
@@ -714,19 +818,19 @@
       {
         "from": "QUEUED",
         "to": "CANCELLED",
-        "trigger": "cancellation",
+        "trigger": "session cancellation or artifact retry",
         "actor": "USER|SERVER"
       },
       {
         "from": "RUNNING",
         "to": "CANCELLED",
-        "trigger": "cancellation",
+        "trigger": "session cancellation or artifact retry",
         "actor": "USER|SERVER"
       }
     ]
   },
   "mediaSlot": {
-    "description": "generation_media_slot: one media directive of the document. The slot key is stable across revisions of an artifact.",
+    "description": "generation_media_slot: one media directive of the document. The slot key is stable across revisions of an artifact. errorCode is one of artifact.mediaSlotErrorCodes.",
     "states": {
       "PENDING": {
         "terminal": false,
@@ -825,6 +929,7 @@
         "to": "PENDING",
         "trigger": "user redo",
         "actor": "USER",
+        "guard": "a new reservation fits",
         "emits": [
           "MEDIA_SLOT_STATE"
         ]
@@ -834,6 +939,7 @@
         "to": "PENDING",
         "trigger": "user redo (regenerate audio, find similar, create)",
         "actor": "USER",
+        "guard": "a new reservation fits",
         "emits": [
           "MEDIA_SLOT_STATE"
         ]
