@@ -1,0 +1,25 @@
+:host { display: block; min-inline-size: 0; max-inline-size: 100%; }
+.segmented { min-inline-size: 0; margin: 0; border: 0; padding: 0; }
+legend { padding: 0 0 .4rem; color: var(--mn-ink); font: 700 .95rem/1.3 var(--mn-font-body, system-ui, sans-serif); }
+.row { display: flex; flex-wrap: wrap; gap: .25rem .75rem; align-items: center; }
+/* Negative margins collapse the shared borders, also when the segments wrap onto a second line. */
+.segments { display: flex; flex-wrap: wrap; min-inline-size: 0; padding: 0 1px 1px 0; }
+.segment { position: relative; display: inline-flex; gap: .5rem; align-items: center; min-block-size: var(--mn-touch-min, 2.75rem); margin: 0 -1px -1px 0; border: 1px solid var(--mn-field-border); padding: .35rem 1rem; background: var(--mn-sheet); color: var(--mn-ink); font: 650 .95rem/1.25 var(--mn-font-body, system-ui, sans-serif); cursor: pointer; overflow-wrap: anywhere; }
+/* The native radio stays the only control: it covers the whole segment and is invisible, the mark is decoration. */
+.segment input { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; min-block-size: 0; margin: 0; border: 0; border-radius: 0; opacity: 0; cursor: inherit; }
+.mark { flex: none; box-sizing: border-box; inline-size: .85rem; block-size: .85rem; border: 1.5px solid currentColor; border-radius: 50%; }
+.segment:has(:checked) { z-index: 1; border-color: var(--mn-ink); background: var(--mn-ink); color: var(--mn-on-ink); }
+.segment:has(:checked) .mark { background: var(--mn-on-ink); box-shadow: inset 0 0 0 2px var(--mn-ink); }
+.segment:not(:has(:checked), :has(:disabled)):hover { z-index: 1; border-color: var(--mn-ink); background: var(--mn-soft); }
+.segment:has(:focus-visible) { z-index: 2; outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 2px; }
+.segment:has(:disabled) { border-color: var(--mn-rule); color: var(--mn-muted); cursor: not-allowed; }
+.hint { margin: .5rem 0 0; color: var(--mn-muted); font-size: .9rem; line-height: 1.5; overflow-wrap: anywhere; }
+.hint:empty { margin: 0; }
+@media (max-width: 25rem) { .segments { inline-size: 100%; } .segment { flex: 1 1 auto; } }
+@media (forced-colors: active) {
+  .segment { border-color: ButtonText; background: Canvas; color: ButtonText; }
+  .segment:has(:checked) { outline: 2px solid Highlight; background: Highlight; color: HighlightText; }
+  .segment:has(:checked) .mark { border-color: HighlightText; background: HighlightText; box-shadow: none; }
+  .segment:has(:focus-visible) { outline-color: Highlight; }
+  .segment:has(:disabled) { border-color: GrayText; color: GrayText; }
+}
