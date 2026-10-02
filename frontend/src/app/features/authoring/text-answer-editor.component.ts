@@ -1,6 +1,8 @@
 import { ChangeDetectionStrategy, Component, input, model } from '@angular/core';
 
 import { NORMALIZATION_RULES, NormalizationRule, MatchingMode } from '../../content/exercise/exercise-content.models';
+import { SegmentedChoiceComponent, SegmentedOption } from '../../shared/segmented-choice.component';
+import { ToggletipComponent } from '../../shared/toggletip.component';
 import { AliasRow, TextAnswerDraft, newId } from './exercise-draft';
 
 const RULE_LABELS: Readonly<Record<NormalizationRule, string>> = {
@@ -9,6 +11,12 @@ const RULE_LABELS: Readonly<Record<NormalizationRule, string>> = {
     CASE_FOLD: 'Не различать заглавные и строчные буквы'
 };
 
+const MODE_OPTIONS: readonly SegmentedOption<MatchingMode>[] = [
+    { value: 'STRICT', label: 'Строго', hint: 'После выбранных преобразований текст должен совпасть полностью.' },
+    { value: 'SOFT', label: 'Мягко',
+        hint: 'Дополнительно не учитываются знаки препинания, диакритика, дефисы и пробелы. Это не проверка смысла: другая формулировка засчитана не будет.' }
+];
+
 /**
  * Accepted answers with explicit comparison rules. One matching alternative is enough: the list is not a
  * set of answers the learner must all type. Soft matching is still deterministic text comparison, never a
@@ -16,6 +24,7 @@ const RULE_LABELS: Readonly<Record<NormalizationRule, string>> = {
  */
 @Component({
     selector: 'app-text-answer-editor',
+    imports: [SegmentedChoiceComponent, ToggletipComponent],
     templateUrl: './text-answer-editor.component.html',
     styleUrl: './exercise-fields.css',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -30,6 +39,7 @@ export class TextAnswerEditorComponent {
     readonly length = input(512);
 
     readonly rules = NORMALIZATION_RULES;
+    readonly modeOptions = MODE_OPTIONS;
 
     ruleLabel(rule: NormalizationRule): string { return RULE_LABELS[rule]; }
 
@@ -53,5 +63,7 @@ export class TextAnswerEditorComponent {
             .filter(candidate => candidate === rule ? checked : current.normalization.includes(candidate)) }));
     }
 
-    setMode(matchingMode: MatchingMode): void { this.answer.update(current => ({ ...current, matchingMode })); }
+    onMode(value: MatchingMode | null): void {
+        if (value !== null) this.answer.update(current => ({ ...current, matchingMode: value }));
+    }
 }

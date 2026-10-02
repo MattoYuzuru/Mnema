@@ -24,12 +24,13 @@
       <label class="check-line"><input type="checkbox" [checked]="answer().normalization.includes(rule)"
         (change)="toggleRule(rule, $any($event.target).checked)" /> {{ ruleLabel(rule) }}</label>
     }
-    <label class="radio-line"><input type="radio" [name]="idPrefix() + '-mode'" [checked]="answer().matchingMode === 'STRICT'"
-      (change)="setMode('STRICT')" /> Строго</label>
-    <p class="hint">После выбранных преобразований текст должен совпасть полностью.</p>
-    <label class="radio-line"><input type="radio" [name]="idPrefix() + '-mode'" [checked]="answer().matchingMode === 'SOFT'"
-      (change)="setMode('SOFT')" /> Мягко</label>
-    <p class="hint">Дополнительно не учитываются знаки препинания, диакритика, дефисы и пробелы. Это не проверка смысла: другая формулировка засчитана не будет.</p>
+    <app-segmented-choice legend="Насколько строго" [options]="modeOptions" [name]="idPrefix() + '-mode'"
+      [value]="answer().matchingMode" (valueChange)="onMode($event)">
+      <app-toggletip topic="режимы сравнения ответа">
+        <p><strong>Строго</strong> подходит, когда важна каждая деталь: слово, формула, код.</p>
+        <p><strong>Мягко</strong> прощает знаки препинания, диакритику, дефисы и пробелы. Это не проверка смысла: другая формулировка засчитана не будет.</p>
+      </app-toggletip>
+    </app-segmented-choice>
   </fieldset>
   @if (error(); as message) { <p class="field-error" role="alert" [id]="idPrefix() + '-error'">{{ message }}</p> }
 </fieldset>

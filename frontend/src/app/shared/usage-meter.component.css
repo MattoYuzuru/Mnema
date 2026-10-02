@@ -1,0 +1,17 @@
+:host { display: block; min-inline-size: 0; max-inline-size: 100%; }
+.label { margin: 0 0 .4rem; color: var(--mn-ink); font: 700 .95rem/1.3 var(--mn-font-body, system-ui, sans-serif); }
+/* The bar is decoration: every figure it carries is repeated in the sentence below. */
+.bar { position: relative; block-size: .75rem; margin-block: .35rem; border: 1px solid var(--mn-field-border); background: var(--mn-sheet); }
+.bar > span { position: absolute; inset-block: 0; }
+.used { inset-inline-start: 0; background: var(--mn-ink); }
+.reserved { background: repeating-linear-gradient(135deg, var(--mn-ink) 0 2px, transparent 2px 5px); }
+.locked { inset-inline-end: 0; border-inline-start: 1px dashed var(--mn-muted); background: var(--mn-soft); }
+.tick { inset-block: -.3rem; inline-size: 2px; margin-inline-start: -1px; background: var(--mn-muted); }
+.summary { margin: .35rem 0 0; color: var(--mn-body); font-size: .9rem; line-height: 1.5; overflow-wrap: anywhere; }
+@media (forced-colors: active) {
+  .bar { border-color: CanvasText; background: Canvas; }
+  .used { background: Highlight; }
+  .reserved { border: 2px dashed Highlight; background: Canvas; }
+  .locked { border-inline-start-color: GrayText; background: Canvas; }
+  .tick { background: CanvasText; }
+}

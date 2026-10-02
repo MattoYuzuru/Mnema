@@ -65,6 +65,23 @@ describe('TextAnswerEditorComponent', () => {
         expect(fixture.componentInstance.answer().matchingMode).toBe('STRICT');
     });
 
+    it('offers the matching mode as a labelled segmented choice with a live hint and a toggletip', () => {
+        const fixture = create();
+        const root = fixture.nativeElement as HTMLElement;
+        const group = root.querySelector('app-segmented-choice fieldset')!;
+        expect(group.querySelector('legend')?.textContent?.trim()).toBe('Насколько строго');
+        const radios = group.querySelectorAll<HTMLInputElement>('input[type="radio"]');
+        expect([...radios].map(radio => radio.name)).toEqual(['answer-mode', 'answer-mode']);
+        const hint = root.querySelector<HTMLElement>(`#${group.getAttribute('aria-describedby')}`)!;
+        expect(hint.textContent).toContain('должен совпасть полностью');
+        radios[1].click();
+        fixture.detectChanges();
+        expect(hint.textContent).toContain('Это не проверка смысла');
+        const trigger = root.querySelector('app-toggletip button')!;
+        expect(trigger.getAttribute('aria-label')).toBe('Подробнее: режимы сравнения ответа');
+        expect(root.querySelector(`#${trigger.getAttribute('popovertarget')}`)?.getAttribute('popover')).toBe('auto');
+    });
+
     it('announces its error and marks the inputs invalid', () => {
         const root = create(answer, 'Заполните ответы').nativeElement as HTMLElement;
         expect(root.querySelector('[role="alert"]')?.textContent).toContain('Заполните ответы');

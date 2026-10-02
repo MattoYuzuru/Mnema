@@ -1,0 +1,16 @@
+:host { display: inline-flex; min-inline-size: 0; }
+.trigger { display: inline-grid; place-content: center; min-inline-size: var(--mn-touch-min, 2.75rem); min-block-size: var(--mn-touch-min, 2.75rem); margin: 0; border: 0; padding: 0; background: transparent; color: var(--mn-ink); cursor: pointer; touch-action: manipulation; }
+.trigger:hover { color: var(--mn-body); }
+.trigger:focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: -3px; }
+.trigger:has(+ .bubble:popover-open) svg { background: var(--mn-soft); border-radius: 50%; }
+.bubble { inline-size: min(22rem, calc(100vw - 2rem)); margin: auto; border: 1px solid var(--mn-ink); border-radius: var(--mn-radius, 2px); padding: .75rem 1rem; background: var(--mn-sheet); color: var(--mn-body); font: .9rem/1.5 var(--mn-font-body, system-ui, sans-serif); box-shadow: 0 .25rem 1rem rgb(40 19 120 / 18%); overflow-wrap: anywhere; }
+.bubble :where(p) { margin: 0; }
+.bubble :where(p + p) { margin-block-start: .5rem; }
+/* Next to the button where anchor positioning exists; otherwise the browser centres the popover in the viewport. */
+@supports (position-area: block-end) {
+  .bubble { inset: auto; margin: .25rem 0 0; position-area: block-end span-inline-end; position-try-fallbacks: flip-inline, flip-block; }
+}
+@media (forced-colors: active) {
+  .bubble { border-color: CanvasText; box-shadow: none; }
+  .trigger { color: ButtonText; }
+}
