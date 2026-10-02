@@ -2,12 +2,12 @@
 
 `run.py` composes the **built** Angular frontend, real Identity Account and Learning JARs,
 a disposable PostgreSQL18 database, two loopback HTTPS proxies, and an isolated headless
-Chrome profile. `browser.mjs` uses Node 22's built-in WebSocket and Chrome DevTools Protocol;
+Chrome profile. `browser.mjs` uses Node 24's built-in WebSocket and Chrome DevTools Protocol;
 there is no Playwright/npm/pip dependency or package installation.
 
 ## Run
 
-Prerequisites: existing Java 21 on `PATH`, Node 22, Chrome, OpenSSL with `req -addext`, Docker
+Prerequisites: existing Java 21 on `PATH`, Node 24, Chrome, OpenSSL with `req -addext`, Docker
 with a locally cached `postgres:18`, built backend `bootJar`s and the built Angular browser
 directory. Build/gates belong to the implementation workflow; this harness does not build
 or download dependencies/images. On Colima set the existing local `DOCKER_HOST` normally.
@@ -17,7 +17,7 @@ The optional media mode also needs cached pinned MinIO and
 ```sh
 python3 -m unittest discover -s scripts/browser-identity -p 'test_*.py' -v
 node --check scripts/browser-identity/browser.mjs
-python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend --node /absolute/path/to/node22
+python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend --node /absolute/path/to/node24
 ```
 
 Pass `--authoring` to extend the same real HTTPS composition through Deck creation,

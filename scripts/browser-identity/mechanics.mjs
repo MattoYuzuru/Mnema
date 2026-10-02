@@ -1,6 +1,6 @@
 // Real-browser baseline of the seven exercise mechanics: create -> preview -> save -> reopen -> study.
 // Runs only with `--authoring --media --mechanics`, after the base authoring flow, through the real Angular UI on a
-// desktop viewport with real CDP keyboard/mouse input where the interaction is natural. Node22 built-ins only.
+// desktop viewport with real CDP keyboard/mouse input where the interaction is natural. Node 24 built-ins only.
 //
 // This is evidence, not a product fix: nothing here works around a defective control. A broken step is recorded
 // as a failed scenario with its screenshot and the UI's own reason, and the run is reported as failed.

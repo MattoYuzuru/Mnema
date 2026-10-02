@@ -1,6 +1,6 @@
 # Production image inventory
 
-Status: **current**. Last registry verification: **2026-08-30**.
+Status: **current**. Last registry verification: **2026-10-02**.
 
 Every external image used to build Mnema or applied by the hosted production workflow has a readable version tag and an immutable OCI index digest. The tag explains the intended version during review; the digest is the runtime identity. Kubernetes accepts `tag@digest` and resolves by digest, so a later tag move cannot change the deployed bytes.
 
@@ -26,8 +26,8 @@ The pinned digest is a multi-platform OCI index. The final column proves that it
 | --- | --- | --- | --- | --- |
 | Backend build | `backend/Dockerfile` | `gradle:8.14.5-jdk21` | `sha256:94452354d9218922457d82e85a343391bab351e7f518f6f5ab1db996967d238b` | `sha256:1bc1e5f75910f1af39a110d78abdf47e5ff7fd07d074b737e02b0d8a6a9b91a5` |
 | Backend runtime stages | `backend/Dockerfile` | `eclipse-temurin:21.0.12_8-jre-resolute` | `sha256:097b5c0e8b5c9cc402e871a87a35f20e9413af9159410db2b1bdd8b78dcca7ed` | `sha256:d1d7f43094ea37e9ae77ea3ca40026bc1de1bf1dc2cad37b08d66b9a016a2ea6` |
-| Frontend build | `frontend/Dockerfile` | `node:22.23.2-alpine` | `sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32` | `sha256:76789712cd1ae89a1225eac9077010d68987a423588042dac30446f502f1858c` |
-| Frontend runtime | `frontend/Dockerfile` | `nginx:1.31.4-alpine` | `sha256:db35bfc6b2951e7f8a72db5db120288c127ffaeeb4a6d4b95a26fead017d5913` | `sha256:1f25fedd50aec27413031afb3a4f8ee4effcc9d843f6a76e81bfa92245ac5c06` |
+| Frontend build | `frontend/Dockerfile` | `node:24.21.0-alpine` | `sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1` | `sha256:83f1c388c31fb2e51f7cbd4dea949b96260798c98f206e8e4696bc93bd964e3a` |
+| Frontend runtime | `frontend/Dockerfile` | `nginx:1.31.6-alpine` | `sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2` | `sha256:0530961ff0592b58c10f767535cc0abdfccf9e389ff7cc90f87320c1bc7e8506` |
 
 ## Verified production support images
 

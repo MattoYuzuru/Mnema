@@ -1,4 +1,4 @@
-// Node22 built-in WebSocket/CDP only. All credentials remain in this process's memory.
+// Node 24 built-in WebSocket/CDP only. All credentials remain in this process's memory.
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -89,7 +89,7 @@ async function openTab() {
   return tab;
 }
 try {
-  require(process.versions.node.split('.')[0] === '22', 'Node22 is required');
+  require(process.versions.node.split('.')[0] === '24', 'Node 24 is required');
   cdp = await openTab();
   const allowed = new Set([config.frontend, config.identity, ...(config.media ? [config.mediaOrigin] : [])]);
   let externalRequests = 0, tokenExchanges = 0, registrationStatus = 0, loginStatus = 0, logoutStatus = 0;
