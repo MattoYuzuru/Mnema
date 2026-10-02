@@ -174,7 +174,7 @@
         "reason": "PROVIDER_NOT_CONFIGURED"
       },
       "notes": [
-        "Today the problem carries no capability or reason members; they are additive and the same reason codes appear in GET /api/capabilities. TEMPORARILY_UNAVAILABLE is new (circuit open or global budget)."
+        "The members are additive (AI-02, #282: LearningCapabilities.require* adds them) and the same reason codes appear in GET /api/capabilities. TEMPORARILY_UNAVAILABLE is new (circuit open or global budget)."
       ]
     },
     "USAGE_LIMIT_REACHED": {

@@ -1,0 +1,4 @@
+data: {"id":"chatcmpl-s7","object":"chat.completion.chunk","model":"deepseek-flash","choices":[{"index":0,"delta":{"content":"Ответ без usage."},"finish_reason":"stop"}]}
+
+data: [DONE]
+

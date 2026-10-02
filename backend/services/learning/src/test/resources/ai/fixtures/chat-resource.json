@@ -1,0 +1,1 @@
+{"id":"chatcmpl-9a13","object":"chat.completion","model":"deepseek-flash","choices":[{"index":0,"message":{"role":"assistant","content":"частичный"},"finish_reason":"insufficient_system_resource"}]}

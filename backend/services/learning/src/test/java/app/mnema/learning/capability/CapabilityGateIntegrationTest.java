@@ -28,7 +28,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** Both flags on, but no provider implementation exists: the gate must stay closed. */
 @SpringBootTest(properties = {"learning.features.ai-assessment.enabled=true",
-        "learning.features.speech-to-text.enabled=true"})
+        "learning.features.speech-to-text.enabled=true", "learning.features.ai-generation.enabled=true",
+        // hermetic: a key exported in the developer's shell must never reach this context
+        "learning.ai.providers.deepseek.api-key=", "learning.ai.providers.gigachat.auth-key=",
+        "learning.ai.providers.openrouter.api-key=", "learning.ai.provider=", "spring.datasource.hikari.maximum-pool-size=2"})
 class CapabilityGateIntegrationTest extends PostgresIntegrationTest {
     @Autowired private LearningCapabilities capabilities;
     @Autowired private CapabilityController controller;
@@ -51,6 +54,17 @@ class CapabilityGateIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void aiGenerationNeedsAnAdapterBeyondItsFlagAndTheFullKeySetIsServed() {
+        assertThat(capabilities.aiGeneration()).isEqualTo(new LearningCapabilities.Status(false,
+                LearningCapabilities.Reason.PROVIDER_NOT_CONFIGURED));
+        JsonNode body = JSON.valueToTree(controller.read().getBody());
+        assertThat(body.propertyNames()).containsExactlyInAnyOrder("aiAssessment", "speechToText", "aiGeneration", "textToSpeech",
+                "imageSearch", "imageGeneration", "videoGeneration", "webSearch");
+        assertThat(body.path("aiGeneration").path("reason").stringValue()).isEqualTo("PROVIDER_NOT_CONFIGURED");
+        assertThat(body.path("textToSpeech").path("reason").stringValue()).isEqualTo("DISABLED");
+    }
+
+    @Test
     void publicationOfAnAiOrSpeechDependentExerciseIsAConflictEvenWithTheFlagsOn() {
         StudyFixtures fixtures = new StudyFixtures(decks, items, exercises, sessions, media, jdbc);
         StudyFixtures.Material material = fixtures.material();
@@ -60,7 +74,10 @@ class CapabilityGateIntegrationTest extends PostgresIntegrationTest {
             command.withObject("exercise").set("subject", JSON.createObjectNode()
                     .put("memberKey", material.member().toString()).put("itemRevisionId", material.itemRevision().toString()));
             assertThatThrownBy(() -> exercises.publish(material.actor(), material.deck(), null, before,
-                    ExerciseCommand.readCreate(bytes(command)))).as(name).isInstanceOf(CapabilityUnavailableException.class);
+                    ExerciseCommand.readCreate(bytes(command)))).as(name).isInstanceOfSatisfying(CapabilityUnavailableException.class,
+                    exception -> assertThat(exception.extension().members()).containsEntry("capability",
+                            name.equals("rejectedAiAssessment") ? "aiAssessment" : "speechToText")
+                            .containsEntry("reason", "PROVIDER_NOT_CONFIGURED"));
         }
         assertThat(fixtures.deckVersion(material)).isEqualTo(before);
         // structural errors are reported before any capability question

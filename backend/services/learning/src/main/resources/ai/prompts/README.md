@@ -1,8 +1,9 @@
-# Prompt library (skeleton, prompt_version v1)
+# Prompt library (prompt_version v1)
 
-Versioned prompt sections for the AI layer. **Skeleton only:** these are resource files; the loader, the
-renderer and the provider calls belong to AI-02 ([#282](https://github.com/MattoYuzuru/Mnema/issues/282)). Nothing
-here runs yet. Architecture: [AI generation platform §8](../../../../../../../../docs/architecture/ai-generation-platform.md);
+Versioned prompt sections for the AI layer. These are resource files read by `app.mnema.learning.ai.prompt`
+(AI-02, [#282](https://github.com/MattoYuzuru/Mnema/issues/282)): `PromptLibrary` loads and validates them, `PromptRenderer`
+renders the placeholders as specified below, `PromptAssembler` orders the layers and enforces the budgets. Generation
+sessions that call them belong to AI-04. Architecture: [AI generation platform §8](../../../../../../../../docs/architecture/ai-generation-platform.md);
 the text is distilled from the
 [context and quality research](../../../../../../../../docs/reviews/ai-layer-research-2026-10/context-and-quality.md) §4 and
 adapted to the accepted contracts: [MBM v1](../../../../../../../../contracts/generation/mbm-v1/README.md) and the

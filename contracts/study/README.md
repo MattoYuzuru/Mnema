@@ -154,8 +154,10 @@ Both are server-owned, disabled-by-default capabilities
 (`learning.features.ai-assessment.enabled`, `learning.features.speech-to-text.enabled`). A
 capability is available only when its flag is true **and** a provider is configured; no provider
 exists, so a mistakenly enabled flag yields `PROVIDER_NOT_CONFIGURED`, never a fake result.
-`GET /api/capabilities` returns `{aiAssessment, speechToText}` as `{available, reason}` with
-`reason ∈ DISABLED | PROVIDER_NOT_CONFIGURED` (null when available) and no provider details.
+`GET /api/capabilities` returns eight keys (`aiAssessment`, `speechToText` and the AI-layer capabilities `aiGeneration`,
+`textToSpeech`, `imageSearch`, `imageGeneration`, `videoGeneration`, `webSearch`, see the
+[generation contract](../generation/http.json) `getCapabilities`) as `{available, reason}` with
+`reason ∈ DISABLED | PROVIDER_NOT_CONFIGURED | TEMPORARILY_UNAVAILABLE` (null when available) and no provider details.
 
 `FREE_RESPONSE` may declare `evaluatorPolicy {id:"ai-semantic", version:"1", rubric}` with a
 typed rubric (`referenceAnswer`; 1..10 `criteria {criterionId, description, critical}`; exactly

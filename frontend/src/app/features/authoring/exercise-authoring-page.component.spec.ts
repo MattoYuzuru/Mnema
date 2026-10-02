@@ -569,7 +569,7 @@ describe('ExerciseAuthoringPageComponent', () => {
         });
 
         it('shows the voice input and the semantic AI check as unavailable with a reason and never inside the demo', () => {
-            configure(null, { aiAssessment: { available: false, reason: 'DISABLED' }, speechToText: { available: false, reason: 'DISABLED' }, aiGeneration: { available: false, reason: 'DISABLED' } });
+            configure(null, { ...CAPABILITIES_UNAVAILABLE });
             select('FREE_RESPONSE');
             const voice = preview()!.querySelector<HTMLButtonElement>('.voice button')!;
             expect(voice.disabled).toBe(true);
@@ -1019,7 +1019,7 @@ describe('ExerciseAuthoringPageComponent', () => {
     });
 
     it('shows the AI switch disabled with its badge and reason and never sends ai-semantic', () => {
-        configure(null, { aiAssessment: { available: false, reason: 'PROVIDER_NOT_CONFIGURED' }, speechToText: { available: false, reason: 'DISABLED' }, aiGeneration: { available: false, reason: 'DISABLED' } });
+        configure(null, { ...CAPABILITIES_UNAVAILABLE, aiAssessment: { available: false, reason: 'PROVIDER_NOT_CONFIGURED' } });
         select('FREE_RESPONSE');
         const root = page();
         const toggle = root.querySelector<HTMLInputElement>('app-free-response-editor input[role="switch"]')!;

@@ -1,0 +1,2 @@
+data: {"id":"chatcmpl-s2","object":"chat.completion.chunk","model":"deepseek-flash","choices":[{"index":0,"delta":{"content":"начало"},"finish_reason":null}]}
+

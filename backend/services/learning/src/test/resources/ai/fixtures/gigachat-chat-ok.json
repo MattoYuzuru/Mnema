@@ -1,0 +1,1 @@
+{"choices":[{"message":{"content":"Ответ GigaChat","role":"assistant"},"index":0,"finish_reason":"stop"}],"created":1790000000,"model":"GigaChat-2:2.0.28.2","object":"chat.completion","usage":{"prompt_tokens":1000,"completion_tokens":50,"precached_prompt_tokens":600,"total_tokens":1050}}
