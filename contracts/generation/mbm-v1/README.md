@@ -3,7 +3,7 @@
 MBM is the **only** output format a model writes for materials. A deterministic compiler
 turns it into a [native-v1](../../content/native-v1/README.md) document that the same
 `NativeDocumentReader` accepts as for any published material. MBM adds no node types: it
-is a Markdown subset plus six directives that map one-to-one onto native-v1 and the
+is a Markdown subset (with fenced code) plus six directives that map one-to-one onto native-v1 and the
 Epic #76 rich nodes. Architecture: [AI generation platform §6](../../../docs/architecture/ai-generation-platform.md).
 Status: implemented by the compiler in `app.mnema.learning.generation.mbm`
 ([#283](https://github.com/MattoYuzuru/Mnema/issues/283)); these fixtures are its acceptance suite and the prompt source for
@@ -72,7 +72,7 @@ Inline text is parsed per block, after joining lines (below).
 
 ```ebnf
 document      = { blank-line | block } ;
-block         = [ handle ] ( heading | divider | blockquote | list | directive | paragraph ) ;
+block         = [ handle ] ( heading | divider | blockquote | list | code-fence | directive | paragraph ) ;
 handle        = "[[" letter digit { digit } "]]" " " ;               (* e.g. [[b3]]; start of the block's first line *)
 
 heading       = ( "#" | "##" | "###" ) " " inline EOL ;                 (* "####" or deeper: MBM_HEADING_LEVEL *)
@@ -86,6 +86,7 @@ ordered-item  = digit { digit } ". " inline EOL ;
 item-line     = line-that-is-not-a-block-start EOL ;                   (* continuation of the previous item *)
 paragraph     = line { line } ;                                        (* lines up to a blank line or a block start; each line is trimmed *)
 
+code-fence    = backtick-run [ language ] EOL { line } backtick-run EOL ;   (* 3+ backticks; the closing run is at least as long; language is not "mermaid" *)
 directive     = "::" name [ attributes ] [ " " text ] EOL [ directive-body ] ;
 name          = "table" | "mermaid" | "audio" | "image" | "video" | "sources" ;
 attributes    = "{" { space } [ attribute { space attribute } ] { space } "}" ;
@@ -115,7 +116,7 @@ escape        = "\" ascii-punctuation ;                                 (* yield
 | `- ` / `1. ` | `bullet_list` / `ordered_list` + `list_item` (one `paragraph` each) | Consecutive items of the same kind form ONE list, also when single blank lines separate them (fixture `loose-list`); two blank lines, a block start or another marker kind end the list. An item is always one paragraph. One level only; an indented list marker is `MBM_NESTED_LIST`. Ordered lists keep only the first number: `order` is set when it is not 1 (a first number of 0 leaves it unset, as native-v1 requires a positive `order`); later numbers are ignored. |
 | `> …` | `blockquote` of `paragraph`s | Only paragraphs: other markers inside a quote are literal text. |
 | `---` | `divider` | Exactly three hyphens. |
-| a fenced block outside `::mermaid` | — | `MBM_CODE_BLOCK_UNSUPPORTED`. |
+| a fenced block outside `::mermaid` | `code_block` | The info string (after trimming) is empty or one language identifier `[a-z0-9][a-z0-9+#.-]{0,31}` and becomes `lang` (`MBM_CODE_LANGUAGE_INVALID` otherwise; `mermaid` is reserved for `::mermaid`). The source is the lines between the fences joined with `\n`: indentation, tabs, trailing spaces and inner blank lines are data. It must contain a nonblank line (`MBM_EMPTY_CODE_BLOCK`) and be at most 16384 UTF-16 units (`MBM_VALUE_TOO_LONG`). The closing fence is a line of only backticks at least as long as the opening one; an unclosed fence is `MBM_UNTERMINATED_FENCE`. The renderer writes a fence longer than any backtick run at the start of a source line (fixture `code-block`). |
 
 ### Inline
 
@@ -234,7 +235,8 @@ repair URLs. The model never decides which URLs are trusted (OWASP LLM01/05). Fi
 | `MBM_DOCUMENT_TOO_LARGE` | ERROR | document | The source is larger than 256 KiB, or the compiled document is rejected by a NativeDocumentReader size limit (1 MiB, 10,000 nodes, depth 32), or the source is too deeply nested or too complex to parse. No fixture: it needs a source over 256 KiB. |
 | `MBM_HEADING_LEVEL` | ERROR | block | Headings are # to ### only; split the topic or use a paragraph. |
 | `MBM_NESTED_LIST` | ERROR | block | Lists are one level; write nested items as separate paragraphs or a table. |
-| `MBM_CODE_BLOCK_UNSUPPORTED` | ERROR | block | Fenced code blocks are not part of MBM v1; use inline code or describe the code in prose (code_block is planned in #303). |
+| `MBM_CODE_LANGUAGE_INVALID` | ERROR | block | The info string of a fenced code block is empty or one lowercase identifier such as sql, python or c++ (at most 32 characters of a-z, 0-9, + # . -); a diagram is ::mermaid, not ```mermaid. |
+| `MBM_EMPTY_CODE_BLOCK` | ERROR | block | A fenced code block needs at least one nonblank line of code between its fences. |
 | `MBM_UNTERMINATED_FENCE` | ERROR | block | Every opening fence needs a closing fence on its own line. |
 | `MBM_NESTED_LINK` | ERROR | inline | A link label cannot contain another link. |
 | `MBM_UNKNOWN_DIRECTIVE` | ERROR | directive | Only ::table, ::mermaid, ::audio, ::image, ::video and ::sources exist. |
@@ -245,7 +247,7 @@ repair URLs. The model never decides which URLs are trusted (OWASP LLM01/05). Fi
 | `MBM_ATTRIBUTE_SYNTAX` | ERROR | directive | Attributes are {key="value" ...} with double-quoted values; escape \" and \\ only. |
 | `MBM_DIRECTIVE_BODY_MISSING` | ERROR | directive | The directive needs its body: text after the brace (audio, image, video), a pipe table (table), a fenced source (mermaid) or [n] URL lines (sources). |
 | `MBM_UNEXPECTED_DIRECTIVE_TEXT` | ERROR | directive | Text after the brace is allowed only for ::audio, ::image and ::video. |
-| `MBM_VALUE_TOO_LONG` | ERROR | directive | An attribute or body exceeds the bound (alt 4096, title and caption 1024, description 8192, mermaid source 16384, table cell 4096, image or video query or prompt 300 UTF-16 code units). |
+| `MBM_VALUE_TOO_LONG` | ERROR | directive | An attribute or body exceeds the bound (alt 4096, title and caption 1024, description 8192, mermaid or code source 16384, table cell 4096, image or video query or prompt 300 UTF-16 code units). |
 | `MBM_INVALID_SLOT_KEY` | ERROR | directive | A slot key matches `[a-z][a-z0-9_]{0,31}`. |
 | `MBM_DUPLICATE_SLOT` | ERROR | directive | A slot key is unique in the document and among the slots outside an edited range. |
 | `MBM_CAPABILITY_OFF` | ERROR | directive | The capability behind this directive or mode (videoGeneration, imageGeneration) is not enabled for the session. |
@@ -290,6 +292,7 @@ Node coverage — every native-v1 and #76 node a compiler can emit appears in at
 | `link` | `link-allowed`, `link-not-allowed`, `link-profile-rejected`, `ruby-in-link`, `sources`, `lesson-vocabulary` |
 | `table` | `table`, `edit-range` |
 | `mermaid` | `mermaid` |
+| `code_block` | `code-block` |
 | `audio` | `audio`, `lesson-vocabulary` |
 | `image` | `image-search`, `image-generate`, `lesson-vocabulary` |
 | `video` | `video` (capability on) |
@@ -303,14 +306,13 @@ have a valid fixture and, where an attribute or body can be wrong, an invalid on
 
 ## Planned extensions and open questions
 
-- **`code_block`** is **not** in MBM v1. [CONTENT-01 (#303)](https://github.com/MattoYuzuru/Mnema/issues/303)
-  adds the native node and the directive/fence for MBM; until then a fenced block is
-  `MBM_CODE_BLOCK_UNSUPPORTED` and technical skills must describe code with inline `code`. No fixture
-  exists for the extension.
+- **`code_block`** is part of MBM v1 since [CONTENT-01 (#303)](https://github.com/MattoYuzuru/Mnema/issues/303): a fenced
+  block outside `::mermaid` (fixtures `code-block`, `code-language-invalid`, `code-block-empty`). `math` stays outside MBM:
+  a formula is written as text until a separate KaTeX/MathML decision (not scheduled).
 - `::verify` (a block listing statements the model is unsure of), drafted in the context research, is
   **not** in v1; the system prompt does not mention it.
 - Native → MBM serialization (the edit context) is specified only through the handle rule above. Nodes that
-  MBM cannot express (`youtube`, opaque `code_block`/`math`, future versions) cannot be inside an AI
+  MBM cannot express (`youtube`, opaque `math`, a retained `code_block` that is not valid v1, future versions) cannot be inside an AI
   edit target; AI-11 must refuse such a target before any model call. Whether they appear as read-only
   placeholders in context is open.
 - Media blocks with handles: a rewritten media block keeps its node ID, but whether its `assetId` is kept

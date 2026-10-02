@@ -28,10 +28,16 @@
       "rule": "Lists are one level; write nested items as separate paragraphs or a table."
     },
     {
-      "code": "MBM_CODE_BLOCK_UNSUPPORTED",
+      "code": "MBM_CODE_LANGUAGE_INVALID",
       "severity": "ERROR",
       "scope": "block",
-      "rule": "Fenced code blocks are not part of MBM v1; use inline code or describe the code in prose (code_block is planned in #303)."
+      "rule": "The info string of a fenced code block is empty or one lowercase identifier such as sql, python or c++ (at most 32 characters of a-z, 0-9, + # . -); a diagram is ::mermaid, not ```mermaid."
+    },
+    {
+      "code": "MBM_EMPTY_CODE_BLOCK",
+      "severity": "ERROR",
+      "scope": "block",
+      "rule": "A fenced code block needs at least one nonblank line of code between its fences."
     },
     {
       "code": "MBM_UNTERMINATED_FENCE",
@@ -97,7 +103,7 @@
       "code": "MBM_VALUE_TOO_LONG",
       "severity": "ERROR",
       "scope": "directive",
-      "rule": "An attribute or body exceeds the bound (alt 4096, title and caption 1024, description 8192, mermaid source 16384, table cell 4096, image or video query or prompt 300 UTF-16 code units)."
+      "rule": "An attribute or body exceeds the bound (alt 4096, title and caption 1024, description 8192, mermaid or code source 16384, table cell 4096, image or video query or prompt 300 UTF-16 code units)."
     },
     {
       "code": "MBM_INVALID_SLOT_KEY",

@@ -16,8 +16,8 @@ import java.util.stream.Collectors;
  * number of lines, so the parser needs no recursion and its cost is linear in the source. Inline text goes to
  * {@link InlineParser}. All findings are collected; nothing here throws for bad input.
  *
- * <p>Fenced blocks are scanned in one place ({@link #fence}); adding a fenced {@code code_block} (#303) means
- * replacing the {@code MBM_CODE_BLOCK_UNSUPPORTED} branch in {@link #block} with a node emitted from that scan.
+ * <p>Fenced blocks are scanned in one place ({@link #fence}); a fence outside {@code ::mermaid} is a
+ * {@code code_block}.
  */
 final class BlockParser {
 
@@ -29,11 +29,14 @@ final class BlockParser {
     private static final int MAX_TITLE = 1_024;
     private static final int MAX_DESCRIPTION = 8_192;
     private static final int MAX_MERMAID_SOURCE = 16_384;
+    private static final int MAX_CODE_SOURCE = 16_384;
     private static final int MAX_CELL = 4_096;
     private static final int MAX_ORDER_DIGITS = 9;
 
     private static final Pattern HANDLE = Pattern.compile("\\[\\[([A-Za-z][0-9]+)]](?: (.*))?", Pattern.DOTALL);
     private static final Pattern FENCE_OPEN = Pattern.compile("(`{3,})[^`]*");
+    /** The info string of a code fence: the native-v1 {@code code_block} language identifier. */
+    private static final Pattern CODE_LANGUAGE = Pattern.compile("[a-z0-9][a-z0-9+#.-]{0,31}");
     private static final Pattern MERMAID_OPEN = Pattern.compile("(`{3,})[ \t]*mermaid[ \t]*");
     private static final Pattern SLOT_KEY = Pattern.compile("[a-z][a-z0-9_]{0,31}");
     private static final Pattern SOURCE_LINE = Pattern.compile("\\[([0-9]{1,9})] (\\S+)");
@@ -113,7 +116,7 @@ final class BlockParser {
             case QUOTE -> quote(i, kept);
             case BULLET, ORDERED -> list(i, kind, kept);
             case DIRECTIVE -> directive(i, head, kept);
-            case FENCE -> unsupportedCodeBlock(i, line);
+            case FENCE -> codeBlock(i, kept);
             case INDENTED_MARKER -> nestedList(i);
             default -> paragraph(i, kept);
         };
@@ -124,9 +127,34 @@ final class BlockParser {
         return next;
     }
 
-    private int unsupportedCodeBlock(int i, String line) {
-        findings.error(i + 1, 1, MbmCode.MBM_CODE_BLOCK_UNSUPPORTED, null);
-        return fence(i, FENCE_OPEN.matcher(line)).end();
+    /**
+     * A fenced block outside {@code ::mermaid}. The info string is empty or one language identifier (a diagram needs
+     * {@code ::mermaid}: its title and description are mandatory). The source is the lines between the fences joined
+     * with LF; leading, trailing and inner whitespace is kept.
+     */
+    private int codeBlock(int i, UUID kept) {
+        int line = i + 1;
+        Matcher opening = FENCE_OPEN.matcher(lines[i]);
+        String info = opening.matches() ? lines[i].substring(opening.group(1).length()).strip() : "";
+        Fence fence = fence(i, opening);
+        if (!fence.closed()) {
+            findings.error(line, 1, MbmCode.MBM_UNTERMINATED_FENCE, null);
+            return fence.end();
+        }
+        int errorsBefore = findings.errorCount();
+        if (!info.isEmpty() && (!CODE_LANGUAGE.matcher(info).matches() || info.equals("mermaid"))) {
+            findings.error(line, 1, MbmCode.MBM_CODE_LANGUAGE_INVALID, "lang");
+        }
+        String source = String.join("\n", java.util.Arrays.asList(lines).subList(fence.bodyStart(), fence.bodyEnd()));
+        if (source.isBlank()) {
+            findings.error(line, 1, MbmCode.MBM_EMPTY_CODE_BLOCK, null);
+        } else if (source.length() > MAX_CODE_SOURCE) {
+            findings.error(line, 1, MbmCode.MBM_VALUE_TOO_LONG, null);
+        }
+        if (findings.errorCount() == errorsBefore) {
+            blocks.add(new Block.Code(line, kept, info, source));
+        }
+        return fence.end();
     }
 
     private int nestedList(int i) {
@@ -139,6 +167,7 @@ final class BlockParser {
             case HEADING -> "heading";
             case DIVIDER -> "divider";
             case QUOTE -> "blockquote";
+            case FENCE -> "code_block";
             case BULLET -> "bullet_list";
             case ORDERED -> "ordered_list";
             case TEXT, HANDLE -> "paragraph";

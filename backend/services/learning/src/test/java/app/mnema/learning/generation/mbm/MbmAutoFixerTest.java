@@ -36,6 +36,18 @@ class MbmAutoFixerTest {
     }
 
     @Test
+    void codeFencesKeepTheirContentAndOnlyTheLanguageCaseIsFixed() {
+        String source = "```SQL\n#### keep   \n\n\n\n\n\tx  \n```\n[[b2]] ````C++\n```\n  y  \n````\n#### fix  \n";
+        MbmAutoFixer.Fixed fixed = MbmAutoFixer.fix(source);
+        assertThat(fixed.text()).isEqualTo("```sql\n#### keep   \n\n\n\n\n\tx  \n```\n[[b2]] ````c++\n```\n  y  \n````\n### fix\n");
+        assertThat(fixed.applied()).containsExactlyInAnyOrder(MbmAutoFixer.Fix.CODE_LANGUAGE_CASE, MbmAutoFixer.Fix.HEADING_LEVEL,
+                MbmAutoFixer.Fix.TRAILING_SPACES);
+        assertThat(MbmAutoFixer.fix("```sql\nx\n```\n").applied()).isEmpty();
+        // not an identifier: left for the compiler to report
+        assertThat(MbmAutoFixer.fix("```SQL Server\nx\n```\n").text()).isEqualTo("```SQL Server\nx\n```\n");
+    }
+
+    @Test
     void emptyAndBlankInputBecomeEmpty() {
         assertThat(MbmAutoFixer.fix("").text()).isEmpty();
         assertThat(MbmAutoFixer.fix(" \n\n").text()).isEmpty();

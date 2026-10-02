@@ -149,6 +149,27 @@ class MbmRendererTest {
     }
 
     @Test
+    void codeBlocksRoundTripWithTabsBlankLinesTrailingSpacesAndFencesLongerThanTheirBackticks() {
+        MbmRendering rendering = roundTrip(
+                node("code_block", "{\"lang\":\"sql\",\"source\":\"SELECT 1;\\n\\n\\tFROM t   \\n\"}"),
+                node("code_block", "{\"source\":\"  indented\\n# not a heading\\n[[b9]] ::table{\"}"),
+                node("code_block", "{\"lang\":\"\",\"source\":\"empty language is no language\"}"),
+                node("code_block", "{\"lang\":\"markdown\",\"source\":\"```sql\\nSELECT 1;\\n```\\n`````\\nmore\"}"),
+                node("code_block", "{\"lang\":\"c++\",\"source\":\"``` trailing\\n```  \\n\"}"));
+        assertThat(rendering.text()).contains("[[b1]] ```sql\nSELECT 1;\n\n\tFROM t   \n\n```")
+                .contains("[[b4]] ``````markdown\n```sql");
+    }
+
+    @Test
+    void codeBlocksTheCompilerWouldRejectOrChangeAreRefused() {
+        assertRefused(node("code_block", "{\"lang\":\"SQL\",\"source\":\"secret\"}"));
+        assertRefused(node("code_block", "{\"language\":\"sql\",\"source\":\"secret\"}"));
+        assertRefused(node("code_block", "{\"dir\":\"ltr\",\"source\":\"secret\"}"));
+        assertRefused(node("code_block", "{\"source\":\"   \"}"));
+        assertRefused(node("code_block", "{\"source\":\"secret\"}", paragraph("child")));
+    }
+
+    @Test
     void textThatLooksLikeMarkupIsEscapedAndSurvives() {
         roundTrip(paragraph("# not a heading"), paragraph("> not a quote"), paragraph("- not a list"),
                 paragraph("12. not a list"), paragraph(":: not a directive"), paragraph("--- not a divider"),

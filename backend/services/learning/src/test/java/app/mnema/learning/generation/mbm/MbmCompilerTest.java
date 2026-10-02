@@ -117,11 +117,64 @@ class MbmCompilerTest {
     }
 
     @Test
-    void fencedBlocksAreUnsupportedWhateverTheInfoStringAndSkipTheirContent() {
-        assertThat(errors("```mermaid\ngraph\n```\ntext")).containsExactly("1:1:CODE_BLOCK_UNSUPPORTED");
-        assertThat(errors("````sql\nSELECT 1;\n```\n````")).containsExactly("1:1:CODE_BLOCK_UNSUPPORTED");
-        assertThat(errors("```\nnever closed\n# deep\n#### x")).containsExactly("1:1:CODE_BLOCK_UNSUPPORTED");
+    void aFenceOutsideMermaidIsACodeBlockWhoseSourceIsKeptVerbatim() {
+        MbmResult.Success success = success("```sql\nSELECT 1;\n\n\tFROM t   \n```\ntext", MbmOptions.create());
+        assertThat(texts(success)).isEqualTo("doc|code_block|paragraph|text=text[]");
+        JsonNode code = success.document().path("root").path("content").get(0);
+        assertThat(code.path("attrs").path("lang").stringValue()).isEqualTo("sql");
+        assertThat(code.path("attrs").path("source").stringValue()).isEqualTo("SELECT 1;\n\n\tFROM t   ");
+
+        JsonNode bare = success("```\n  x\n```", MbmOptions.create()).document().path("root").path("content").get(0);
+        assertThat(bare.path("attrs").has("lang")).isFalse();
+        assertThat(bare.path("attrs").path("source").stringValue()).isEqualTo("  x");
+        // a fence interrupts a paragraph and needs no blank line after it
+        assertThat(texts(success("before\n```c++\nint x;\n```\nafter", MbmOptions.create())))
+                .isEqualTo("doc|paragraph|text=before[]|code_block|paragraph|text=after[]");
+        // a longer fence closes only with at least as many backticks; the markers inside are code
+        JsonNode nested = success("````text\n```\n# not a heading\n[[b1]] ::table\n````  \nafter", MbmOptions.create())
+                .document().path("root").path("content").get(0);
+        assertThat(nested.path("attrs").path("source").stringValue()).isEqualTo("```\n# not a heading\n[[b1]] ::table");
         assertThat(texts(success("```inline``` code on one line\n", MbmOptions.create()))).contains("text=");
+    }
+
+    @Test
+    void codeFenceInfoStringIsOneLowercaseIdentifierAndMermaidBelongsToItsDirective() {
+        assertThat(errors("```mermaid\ngraph\n```\ntext")).containsExactly("1:1:CODE_LANGUAGE_INVALID:lang");
+        assertThat(errors("```SQL\nx\n```")).containsExactly("1:1:CODE_LANGUAGE_INVALID:lang");
+        assertThat(errors("```sql server\nx\n```")).containsExactly("1:1:CODE_LANGUAGE_INVALID:lang");
+        assertThat(errors("```" + "a".repeat(33) + "\nx\n```")).containsExactly("1:1:CODE_LANGUAGE_INVALID:lang");
+        assertThat(errors("```-a\nx\n```")).containsExactly("1:1:CODE_LANGUAGE_INVALID:lang");
+        for (String lang : List.of("c#", "c++", "objective-c.2", "a".repeat(32), "0")) {
+            JsonNode code = success("```" + lang + "\nx\n```", MbmOptions.create()).document().path("root").path("content").get(0);
+            assertThat(code.path("attrs").path("lang").stringValue()).isEqualTo(lang);
+        }
+        // spaces around the info string are not part of it
+        assertThat(success("```  sql  \nx\n```", MbmOptions.create()).document().path("root").path("content").get(0)
+                .path("attrs").path("lang").stringValue()).isEqualTo("sql");
+    }
+
+    @Test
+    void codeBlocksNeedCodeAClosingFenceAndFitTheBound() {
+        assertThat(errors("```sql\n \n\t\n```")).containsExactly("1:1:EMPTY_CODE_BLOCK");
+        assertThat(errors("```\n```")).containsExactly("1:1:EMPTY_CODE_BLOCK");
+        assertThat(errors("```\nnever closed\n# deep\n#### x")).containsExactly("1:1:UNTERMINATED_FENCE");
+        assertThat(errors("````sql\nSELECT 1;\n```")).containsExactly("1:1:UNTERMINATED_FENCE");
+        assertThat(errors("```\n" + "x".repeat(16385) + "\n```")).containsExactly("1:1:VALUE_TOO_LONG");
+        assertThat(success("```\n" + "x".repeat(16384) + "\n```", MbmOptions.create()).document().path("root")
+                .path("content").get(0).path("attrs").path("source").stringValue()).hasSize(16384);
+        // every finding of every block is reported; the code block's content is skipped
+        assertThat(errors("```x y\n#### deep\n```\n#### z")).containsExactly("1:1:CODE_LANGUAGE_INVALID:lang", "4:1:HEADING_LEVEL");
+    }
+
+    @Test
+    void aHandleKeepsTheNodeIdOfACodeBlockAndATypeChangeIsAWarning() {
+        MbmOptions options = MbmOptions.edit(Map.of("b1", new MbmOptions.Handle(KEPT_3, "code_block")));
+        MbmResult.Success kept = success("[[b1]] ```sql\nSELECT 1;\n```", options);
+        assertThat(kept.document().path("root").path("content").get(0).path("id").stringValue()).isEqualTo(KEPT_3.toString());
+        assertThat(kept.warnings()).isEmpty();
+        MbmOptions changed = MbmOptions.edit(Map.of("b1", new MbmOptions.Handle(KEPT_3, "paragraph")));
+        assertThat(success("[[b1]] ```sql\nSELECT 1;\n```", changed).warnings()).extracting(MbmFinding::code)
+                .containsExactly(MbmCode.MBM_HANDLE_TYPE_CHANGED);
     }
 
     @Test
@@ -296,8 +349,8 @@ class MbmCompilerTest {
     @Test
     void mermaidFencesNeedTheExactInfoStringAndAClosingFenceOfEnoughBackticks() {
         String head = "::mermaid{title=\"t\" description=\"d\"}\n";
-        assertThat(errors(head + "```sql\nx\n```")).containsExactly("1:1:DIRECTIVE_BODY_MISSING", "2:1:CODE_BLOCK_UNSUPPORTED");
-        assertThat(errors(head + "\n```mermaid\nx\n```")).containsExactly("1:1:DIRECTIVE_BODY_MISSING", "3:1:CODE_BLOCK_UNSUPPORTED");
+        assertThat(errors(head + "```sql\nx\n```")).containsExactly("1:1:DIRECTIVE_BODY_MISSING");
+        assertThat(errors(head + "\n```mermaid\nx\n```")).containsExactly("1:1:DIRECTIVE_BODY_MISSING", "3:1:CODE_LANGUAGE_INVALID:lang");
         assertThat(errors(head + "```mermaid\n   \n```")).containsExactly("1:1:DIRECTIVE_BODY_MISSING");
         assertThat(errors(head + "```mermaid\n" + "x".repeat(16385) + "\n```")).containsExactly("1:1:VALUE_TOO_LONG");
         assertThat(errors(head + "````mermaid\n```\n")).containsExactly("2:1:UNTERMINATED_FENCE");

@@ -32,6 +32,10 @@ sealed interface Block {
     record Mermaid(int line, UUID keptId, String source, String title, String description) implements Block {
     }
 
+    /** A fenced code block; {@code lang} is empty or a validated language identifier. */
+    record Code(int line, UUID keptId, String lang, String source) implements Block {
+    }
+
     /** An audio, image or video directive; {@code label} is the title (audio, video) or the alt text (image). */
     record Media(int line, UUID keptId, MbmSlot.Kind kind, String slotKey, String label, String lang, String voice,
                  String mode, String text) implements Block {
