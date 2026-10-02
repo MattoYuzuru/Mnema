@@ -11,7 +11,7 @@ artifact:
   base_revision: "origin/main 9d462f7b (#274) for code facts"
   assumptions:
     - "Primary storage, Identity, payments and learning history stay in Russian hosting; a stateless AI gateway abroad is optional and needs a legal decision."
-    - "The backend platform upgrade (Java 25, Gradle 9.8.0, Spring Boot 4.1.1, #278) is delivered; the frontend half (Angular/Node) is tracked separately. AI code is written to be portable."
+    - "The backend platform upgrade (Java 25, Gradle 9.8.0, Spring Boot 4.1.1, #278) and the frontend upgrade (Angular 22.2.1, Node 24 LTS, Vitest, zoneless, #306) are delivered. AI code is written to be portable."
     - "The seven exercise mechanics come from the server registry; ORDER/CATEGORIZE (#268) may land after the first AI slices."
   unresolved_questions:
     - "TTS vendor accessible to a Russian sole proprietor with quality close to Google; Yandex SpeechKit needs an explicit owner exception."
@@ -490,9 +490,9 @@ ETag/304 раз в 30–60 s, раз в 10 s при `activeWork > 0`. Первы
 Backend (#278, доставлено): Java 25 LTS (Temurin 25.0.4.1), Gradle 9.8.0, Spring Boot 4.1.1
 (Framework 7.0.9, Security 7.1.1 с Authorization Server внутри, Session 4.1.1, Jackson 3.1.5,
 JUnit 6.0.3, Testcontainers 2.0.5, Flyway 12.4.0; Tomcat закреплён на 11.0.26 поверх 11.0.24 из
-BOM ради исправлений безопасности), JaCoCo 0.8.15, `-Xlint:all -Werror`. Фронтенд-часть
-актуализации стека — Angular 22.2.x (TypeScript остаётся 6.0.x), Node 24 LTS, Docker/CI images —
-ведётся отдельным PR. Разобранные риски backend — семантика Jackson 3 (`JacksonException`
+BOM ради исправлений безопасности), JaCoCo 0.8.15, `-Xlint:all -Werror`. Frontend (#278, доставлено
+в #306): Angular 22.2.1 zoneless (TypeScript 6.0.x), Node 24.21.0 LTS, ESLint 10, unit-тесты на
+Vitest 5 + jsdom (геометрия — в browser harness). Разобранные риски backend — семантика Jackson 3 (`JacksonException`
 unchecked, строгие `JsonNode`-аксессоры), стартеры Flyway/Session JDBC; факты и тесты — в
 [platform research](../reviews/ai-layer-research-2026-10/platform-speech-search.md) и
 [repository guide](../engineering/repository-guide.md#platform-baseline).
