@@ -9,7 +9,8 @@ import { LearnerCategorizeItem, LearnerCategory } from './exercise-content.model
 const item = (n: number) => `9a000000-0000-4000-8000-${n.toString().padStart(12, '0')}`;
 const group = (n: number) => `ca000000-0000-4000-8000-${n.toString().padStart(12, '0')}`;
 const CATEGORIES: LearnerCategory[] = [
-    { categoryId: group(1), label: 'Существительное' }, { categoryId: group(2), label: 'Глагол' }, { categoryId: group(3), label: 'Наречие' }];
+    { categoryId: group(1), label: 'Существительное' }, { categoryId: group(2), label: 'Глагол' }, { categoryId: group(3), label: 'Наречие' }
+];
 const ITEMS: LearnerCategorizeItem[] = [
     { itemId: item(3), blocks: [{ kind: 'TEXT', text: 'река' }] },
     { itemId: item(4), blocks: [{ kind: 'AUDIO', assetId: 'aaaaaaaa-0000-4000-8000-000000000004', transcriptAvailable: false }] },
@@ -65,13 +66,15 @@ describe('CategorizeBoardComponent', () => {
     });
 
     it('assigns with the keyboard only: select an item, then a group button; several items can share a group', () => {
-        expect([1, 2, 3].every(n => place(n).disabled)).toBeTrue();
-        select(1).click(); fixture.detectChanges();
+        expect([1, 2, 3].every(n => place(n).disabled)).toBe(true);
+        select(1).click();
+        fixture.detectChanges();
         expect(select(1).getAttribute('aria-pressed')).toBe('true');
-        expect(place(1).disabled).toBeFalse();
+        expect(place(1).disabled).toBe(false);
         expect(place(1).getAttribute('aria-label')).toBe('Поместить «дом» в группу «Существительное»');
         expect(status()).toBe('Выбран элемент «дом». Теперь выберите группу.');
-        place(1).click(); fixture.detectChanges();
+        place(1).click();
+        fixture.detectChanges();
         put(3, 1);
         expect(host().assignments()).toEqual({ [item(1)]: group(1), [item(3)]: group(1) });
         expect(inGroup(1).sort()).toEqual([item(1), item(3)].sort());
@@ -83,31 +86,38 @@ describe('CategorizeBoardComponent', () => {
     it('lets the learner change a decision until submit: re-assign to another group or return the item to the list', () => {
         put(2, 2);
         expect(inGroup(2)).toEqual([item(2)]);
-        select(2).click(); fixture.detectChanges();
-        expect(place(2).disabled).toBeTrue();                  // already there
-        place(3).click(); fixture.detectChanges();
+        select(2).click();
+        fixture.detectChanges();
+        expect(place(2).disabled).toBe(true); // already there
+        place(3).click();
+        fixture.detectChanges();
         expect(inGroup(2)).toEqual([]);
         expect(inGroup(3)).toEqual([item(2)]);
-        select(2).click(); fixture.detectChanges();
-        root().querySelector<HTMLButtonElement>('[data-unassign]')!.click(); fixture.detectChanges();
+        select(2).click();
+        fixture.detectChanges();
+        root().querySelector<HTMLButtonElement>('[data-unassign]')!.click();
+        fixture.detectChanges();
         expect(host().assignments()).toEqual({});
         expect(status()).toContain('возвращён в список');
         expect(root().querySelector('[data-pool] h3')?.textContent).toContain('Осталось распределить: 4');
     });
 
     it('announces completion and keeps changing possible when everything is assigned', () => {
-        for (const [n, g] of [[1, 1], [2, 2], [3, 1], [4, 2]]) put(n, g);
+        for (const [n, g] of [[1, 1], [2, 2], [3, 1], [4, 2]])
+            put(n, g);
         expect(root().querySelector('[data-pool] .empty')?.textContent).toContain('Все элементы распределены');
         expect(status()).toContain('Все элементы распределены');
-        expect(select(4).disabled).toBeFalse();
+        expect(select(4).disabled).toBe(false);
     });
 
     it('never assigns when a media control is pressed: players are siblings of the select and group buttons', () => {
-        spyOn(HTMLMediaElement.prototype, 'play').and.resolveTo();   // a real play would load the clip after this test ends
-        select(1).click(); fixture.detectChanges();
+        vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(); // a real play would load the clip after this test ends
+        select(1).click();
+        fixture.detectChanges();
         const audio = root().querySelector(`[data-item-id="${item(4)}"] .item-content`)!;
         expect(audio.querySelector('button[data-select]')).toBeNull();
-        for (const control of audio.querySelectorAll<HTMLElement>('button, audio')) control.click();
+        for (const control of audio.querySelectorAll<HTMLElement>('button, audio'))
+            control.click();
         audio.dispatchEvent(new MouseEvent('click', { bubbles: true }));
         fixture.detectChanges();
         expect(host().events).toEqual([]);
@@ -123,21 +133,23 @@ describe('CategorizeBoardComponent', () => {
         await fixture.whenStable();
         expect(document.activeElement).toBe(select(4));
         board.keyboard = false;
-        select(4).focus(); put(4, 2);
+        select(4).focus();
+        put(4, 2);
         await fixture.whenStable();
         expect(document.activeElement).not.toBe(select(1));
         expect(host().events.map(event => event.keyboard)).toEqual([true, false]);
     });
 
-    it('drops a selection whose item disappeared and stacks the groups in one column on a narrow screen', () => {
-        select(1).click(); fixture.detectChanges();
+    // Stacking the groups in one column on a narrow screen is layout jsdom cannot compute; the browser harness owns it
+    // (scripts/browser-identity, scenario mechanics-study-categorize-390 / categorize_study_390_columns).
+    it('drops a selection whose item disappeared', () => {
+        select(1).click();
+        fixture.detectChanges();
         host().items.set(ITEMS.filter(entry => entry.itemId !== item(1)));
-        fixture.detectChanges(); fixture.detectChanges();
+        fixture.detectChanges();
+        fixture.detectChanges();
         const board = fixture.debugElement.children[0].componentInstance as CategorizeBoardComponent;
         expect(board.items().length).toBe(3);
         expect(board.selected()).toBeNull();
-        root().style.display = 'block'; root().style.width = '320px';
-        const columns = getComputedStyle(root().querySelector('.groups')!).gridTemplateColumns.split(' ').length;
-        expect(columns).toBe(1);
     });
 });

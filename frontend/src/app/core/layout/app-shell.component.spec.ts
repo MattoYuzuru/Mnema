@@ -5,19 +5,25 @@ import { BehaviorSubject, of } from 'rxjs';
 
 import { AuthService, AuthStatus } from '../../auth.service';
 import { AppShellComponent } from './app-shell.component';
+import { spyObj, type SpyObj } from '../../../testing/mocks';
 
 @Component({ template: '<h1 tabindex="-1">Мои колоды</h1>' })
-class TestPageComponent {}
+class TestPageComponent {
+}
 
 describe('AppShellComponent', () => {
     let fixture: ComponentFixture<AppShellComponent>;
-    let auth: jasmine.SpyObj<AuthService>;
+    let auth: SpyObj<AuthService>;
     let status: BehaviorSubject<AuthStatus>;
 
     beforeEach(async () => {
-        auth = jasmine.createSpyObj<AuthService>('AuthService', ['status', 'user', 'logout']);
+        auth = spyObj<AuthService>({
+            status: vi.fn().mockName("AuthService.status"),
+            user: vi.fn().mockName("AuthService.user"),
+            logout: vi.fn().mockName("AuthService.logout")
+        });
         status = new BehaviorSubject<AuthStatus>('authenticated');
-        auth.status.and.returnValue('authenticated');
+        auth.status.mockReturnValue('authenticated');
         const user = {
             accountId: '11111111-1111-4111-8111-111111111111',
             email: 'reader@example.test',
@@ -27,8 +33,8 @@ describe('AppShellComponent', () => {
             hasPassword: true,
             name: 'Читатель'
         };
-        auth.user.and.returnValue(user);
-        auth.logout.and.resolveTo();
+        auth.user.mockReturnValue(user);
+        auth.logout.mockResolvedValue();
         Object.defineProperty(auth, 'status$', { value: status.asObservable() });
         Object.defineProperty(auth, 'user$', { value: of(user) });
         await TestBed.configureTestingModule({
@@ -97,8 +103,8 @@ describe('AppShellComponent', () => {
         const link = (fixture.nativeElement as HTMLElement).querySelector<HTMLAnchorElement>('.skip-link')!;
         const event = new MouseEvent('click', { bubbles: true, cancelable: true });
 
-        expect(link.dispatchEvent(event)).toBeFalse();
-        expect(event.defaultPrevented).toBeTrue();
+        expect(link.dispatchEvent(event)).toBe(false);
+        expect(event.defaultPrevented).toBe(true);
         expect(document.activeElement?.id).toBe('main-content');
         expect(TestBed.inject(Router).url).toBe('/');
     });
@@ -122,7 +128,7 @@ describe('AppShellComponent', () => {
     });
 
     it('opens login recovery when server logout is not confirmed', async () => {
-        auth.logout.and.rejectWith(new Error('server unavailable'));
+        auth.logout.mockRejectedValue(new Error('server unavailable'));
 
         await fixture.componentInstance.logout();
 

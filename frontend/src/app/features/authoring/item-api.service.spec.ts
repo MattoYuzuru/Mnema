@@ -52,8 +52,7 @@ describe('ItemApiService', () => {
 
     it('publishes one exact item with deck and item revision preconditions', async () => {
         const edits = [{ type: 'insert' as const, nodeId: id('78'), parentId: id('79'), childIndex: 1 }];
-        const result = firstValueFrom(api.save(deckId, memberKey, '8', deckRevisionId, revisionId, 4,
-            document, commandId, edits));
+        const result = firstValueFrom(api.save(deckId, memberKey, '8', deckRevisionId, revisionId, 4, document, commandId, edits));
         const request = http.expectOne(`/api/decks/${deckId}/items/${memberKey}`);
         expect(request.request.method).toBe('PUT');
         expect(request.request.headers.get('If-Match')).toBe('"8"');
@@ -72,7 +71,7 @@ describe('ItemApiService', () => {
         http.expectOne(`/api/decks/${deckId}/items?limit=20`).flush({
             deckId, deckRevisionId, deckVersion: '8', total: 0, items: [], nextCursor: null, secret: true
         }, { headers: { ETag: '"8"' } });
-        await expectAsync(page).toBeRejectedWithError(AuthoringProtocolError);
+        await expect(page).rejects.toThrowError(AuthoringProtocolError);
     });
 
     it('requires a current ordinal but allows nullable historical locations', async () => {
@@ -80,7 +79,7 @@ describe('ItemApiService', () => {
         http.expectOne(`/api/decks/${deckId}/items/${memberKey}`).flush({
             ...summary, ordinal: null, deckId, deckRevisionId, deckVersion: '8', document
         }, { headers: { ...headers, ETag: '"8"' } });
-        await expectAsync(detail).toBeRejectedWithError(AuthoringProtocolError);
+        await expect(detail).rejects.toThrowError(AuthoringProtocolError);
         const history = firstValueFrom(api.read(deckId, memberKey, revisionId));
         http.expectOne(`/api/decks/${deckId}/items/${memberKey}?revisionId=${revisionId}`).flush({
             ...summary, ordinal: null, deckId, deckRevisionId, deckVersion: '7', document
@@ -99,7 +98,7 @@ describe('ItemApiService', () => {
             expect(request.request.body).toEqual({ commandId, expectedDeckRevisionId: deckRevisionId,
                 changes: [{ operation: 'delete', memberKey, expectedItemRevisionId: revisionId, expectedOrdinal: 4 }] });
             request.flush(acknowledgement, { headers: replayed
-                ? { ...headers, 'Idempotency-Replayed': 'true' } : { ...headers, ETag: '"9"' } });
+                    ? { ...headers, 'Idempotency-Replayed': 'true' } : { ...headers, ETag: '"9"' } });
             expect(await result).toEqual({ acknowledgement, replayed });
         }
     });
@@ -116,14 +115,13 @@ describe('ItemApiService', () => {
             http.expectOne(`/api/decks/${deckId}/items/publications`).flush({
                 commandId, deckId, deckRevisionId: id('76'), deckVersion: '9', memberCount: 4, changes: [change]
             }, { headers: { ...headers, ETag: '"9"' } });
-            await expectAsync(result).toBeRejectedWithError(AuthoringProtocolError);
+            await expect(result).rejects.toThrowError(AuthoringProtocolError);
         }
     });
 
     it('passes deletion precondition failures through for snapshot reconciliation', async () => {
         const result = firstValueFrom(api.delete(deckId, memberKey, '8', deckRevisionId, revisionId, 4, commandId));
-        http.expectOne(`/api/decks/${deckId}/items/publications`).flush({ code: 'VERSION_CONFLICT' },
-            { status: 412, statusText: 'Precondition Failed' });
-        await expectAsync(result).toBeRejectedWith(jasmine.objectContaining({ status: 412 }));
+        http.expectOne(`/api/decks/${deckId}/items/publications`).flush({ code: 'VERSION_CONFLICT' }, { status: 412, statusText: 'Precondition Failed' });
+        await expect(result).rejects.toEqual(expect.objectContaining({ status: 412 }));
     });
 });

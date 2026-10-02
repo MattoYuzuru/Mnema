@@ -1,5 +1,5 @@
 import { Component } from '@angular/core';
-import { TestBed, fakeAsync, tick } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { Subject, of, throwError } from 'rxjs';
 
 import { MEDIA_PLAYBACK_RESOLVER, MediaPlaybackResolver } from '../../features/study/media-playback-resolver';
@@ -7,15 +7,24 @@ import { SILENT_WAV, fakePlayback } from '../../features/study/study-test-data';
 import { LearnerBlock } from './exercise-content.models';
 import { LearnerBlocksComponent, mediaName } from './learner-blocks.component';
 import { LearnerMediaComponent } from './learner-media.component';
+import { type SpyObj } from '../../../testing/mocks';
 
 describe('Learner blocks', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+    });
+    afterEach(() => {
+        vi.useRealTimers();
+    });
     const asset = (suffix: string) => `aaaaaaaa-0000-4000-8000-${suffix.padStart(12, '0')}`;
-    let resolver: jasmine.SpyObj<MediaPlaybackResolver>;
+    let resolver: SpyObj<MediaPlaybackResolver>;
     const wav = (label: string) => `${SILENT_WAV}#${label}`;
 
     beforeEach(() => {
-        resolver = jasmine.createSpyObj<MediaPlaybackResolver>('MediaPlaybackResolver', ['resolve']);
-        resolver.resolve.and.callFake(fakePlayback);
+        resolver = {
+            resolve: vi.fn().mockName("MediaPlaybackResolver.resolve")
+        };
+        resolver.resolve.mockImplementation(fakePlayback);
         TestBed.configureTestingModule({ providers: [{ provide: MEDIA_PLAYBACK_RESOLVER, useValue: resolver }] });
     });
 
@@ -69,50 +78,57 @@ describe('Learner blocks', () => {
 
     describe('media loading', () => {
         @Component({ imports: [LearnerMediaComponent], template: '<app-learner-media kind="audio" [assetId]="assetId" name="Аудио в вопросе" />' })
-        class Host { assetId = asset('9'); }
+        class Host {
+            assetId = asset('9');
+        }
 
         it('shows a retryable status while the file is not ready and resolves again on request', () => {
-            resolver.resolve.and.returnValue(of(null));
+            resolver.resolve.mockReturnValue(of(null));
             const fixture = TestBed.createComponent(Host);
             fixture.detectChanges();
             const root = fixture.nativeElement as HTMLElement;
             expect(root.querySelector('[role="status"]')?.textContent).toContain('Аудио в вопросе: файл пока недоступен');
-            resolver.resolve.and.returnValue(of({ url: wav('ready'), expiresAt: '2999-01-01T00:00:00Z', mimeType: 'audio/mp4' }));
-            root.querySelector<HTMLButtonElement>('.media-retry')!.click(); fixture.detectChanges();
+            resolver.resolve.mockReturnValue(of({ url: wav('ready'), expiresAt: '2999-01-01T00:00:00Z', mimeType: 'audio/mp4' }));
+            root.querySelector<HTMLButtonElement>('.media-retry')!.click();
+            fixture.detectChanges();
             expect(root.querySelector('audio')?.getAttribute('src')).toBe(wav('ready'));
             expect(resolver.resolve).toHaveBeenCalledTimes(2);
         });
 
-        it('polls an unready asset, renews a signed URL before it expires and stops when destroyed', fakeAsync(() => {
-            resolver.resolve.and.returnValues(of(null),
-                of({ url: wav('first'), expiresAt: new Date(Date.now() + 120_000).toISOString(), mimeType: 'audio/mp4' }),
-                of({ url: wav('second'), expiresAt: '2999-01-01T00:00:00Z', mimeType: 'audio/mp4' }));
+        it('polls an unready asset, renews a signed URL before it expires and stops when destroyed', async () => {
+            resolver.resolve.mockReturnValueOnce(of(null)).mockReturnValueOnce(of({ url: wav('first'), expiresAt: new Date(Date.now() + 120000).toISOString(), mimeType: 'audio/mp4' })).mockReturnValueOnce(of({ url: wav('second'), expiresAt: '2999-01-01T00:00:00Z', mimeType: 'audio/mp4' }));
             const fixture = TestBed.createComponent(Host);
             fixture.detectChanges();
             const root = fixture.nativeElement as HTMLElement;
             expect(root.querySelector('audio')).toBeNull();
-            tick(4_000); fixture.detectChanges();
+            await vi.advanceTimersByTimeAsync(4000);
+            fixture.detectChanges();
             expect(root.querySelector('audio')?.getAttribute('src')).toBe(wav('first'));
-            tick(60_000); fixture.detectChanges();
+            await vi.advanceTimersByTimeAsync(60000);
+            fixture.detectChanges();
             expect(root.querySelector('audio')?.getAttribute('src')).toBe(wav('second'));
             fixture.destroy();
-            tick(20 * 60_000);
+            await vi.advanceTimersByTimeAsync(20 * 60000);
             expect(resolver.resolve).toHaveBeenCalledTimes(3);
-        }));
+        });
 
-        it('retries after a resolver failure and ignores a late answer for a replaced asset', fakeAsync(() => {
-            const late = new Subject<{ url: string; expiresAt: string; mimeType: string } | null>();
-            resolver.resolve.and.returnValues(throwError(() => new Error('offline')), late);
+        it('retries after a resolver failure and ignores a late answer for a replaced asset', async () => {
+            const late = new Subject<{
+                url: string;
+                expiresAt: string;
+                mimeType: string;
+            } | null>();
+            resolver.resolve.mockReturnValueOnce(throwError(() => new Error('offline'))).mockReturnValueOnce(late);
             const fixture = TestBed.createComponent(Host);
             fixture.detectChanges();
-            tick(4_000);
+            await vi.advanceTimersByTimeAsync(4000);
             fixture.componentInstance.assetId = asset('8');
             fixture.componentRef.changeDetectorRef.detectChanges();
-            resolver.resolve.and.returnValue(of({ url: wav('new'), expiresAt: '2999-01-01T00:00:00Z', mimeType: 'audio/mp4' }));
+            resolver.resolve.mockReturnValue(of({ url: wav('new'), expiresAt: '2999-01-01T00:00:00Z', mimeType: 'audio/mp4' }));
             fixture.destroy();
             late.next({ url: wav('stale'), expiresAt: '2999-01-01T00:00:00Z', mimeType: 'audio/mp4' });
-            tick(20 * 60_000);
+            await vi.advanceTimersByTimeAsync(20 * 60000);
             expect(resolver.resolve).toHaveBeenCalledTimes(2);
-        }));
+        });
     });
 });

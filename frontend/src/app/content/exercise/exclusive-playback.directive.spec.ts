@@ -6,7 +6,8 @@ import { ExclusivePlaybackDirective } from './exclusive-playback.directive';
 describe('ExclusivePlaybackDirective', () => {
     @Component({ imports: [ExclusivePlaybackDirective], template: `
       <div appExclusivePlayback><audio id="a"></audio><video id="b"></video></div><audio id="outside"></audio>` })
-    class Host {}
+    class Host {
+    }
 
     it('pauses the other media inside the host when one starts and leaves foreign media alone', () => {
         const fixture = TestBed.createComponent(Host);
@@ -16,8 +17,8 @@ describe('ExclusivePlaybackDirective', () => {
         const second = root.querySelector<HTMLVideoElement>('#b')!;
         const outside = root.querySelector<HTMLAudioElement>('#outside')!;
         const pauses = [first, second, outside].map(media => {
-            spyOnProperty(media, 'paused').and.returnValue(false);
-            return spyOn(media, 'pause');
+            vi.spyOn(media, 'paused', 'get').mockReturnValue(false);
+            return vi.spyOn(media, 'pause').mockReturnValue(undefined);
         });
         second.dispatchEvent(new Event('play'));
         expect(pauses[0]).toHaveBeenCalledTimes(1);

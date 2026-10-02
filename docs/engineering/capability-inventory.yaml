@@ -17,9 +17,9 @@ capabilities:
     kind: command-set
     location: frontend/package.json
     invoke: "cd frontend && npm ci && npm run lint && npm run test && npm run build"
-    effects: [dependency-install, lint, browser-unit-test, production-build]
+    effects: [dependency-install, lint, jsdom-unit-test, production-build]
     status: configured
-    requirements: [node-22.23.2, chrome-or-chromium]
+    requirements: [node-24.21.0]
 
   - id: docs-validation
     kind: deterministic-check
@@ -39,7 +39,7 @@ capabilities:
   - id: browser-identity-authoring
     kind: local-browser-e2e-harness
     location: scripts/browser-identity
-    invoke: "python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend --node /opt/homebrew/opt/node@22/bin/node --authoring --media --mechanics"
+    invoke: "python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend --node /opt/homebrew/opt/node@24/bin/node --authoring --media --mechanics"
     effects: [disposable-services, local-https, real-chrome, evidence-output]
     status: configured
 

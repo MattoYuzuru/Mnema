@@ -16,7 +16,9 @@ describe('ExerciseSlotEditorComponent', () => {
         memberKey: member, itemRevisionId: revision, projections: [{ nodeId: node, label: 'Ядро', text: 'Ядро хранит ДНК' }]
     };
 
-    beforeEach(() => TestBed.configureTestingModule({ providers: [{ provide: NativeMediaUploadApi, useValue: jasmine.createSpyObj('api', ['policy']) }] }));
+    beforeEach(() => TestBed.configureTestingModule({ providers: [{ provide: NativeMediaUploadApi, useValue: {
+                    policy: vi.fn().mockName("api.policy")
+                } }] }));
 
     function create(blocks: AuthoringBlock[], spec = PROMPT_SLOTS.CHOICE, error: string | null = null, showProblems = false) {
         const fixture = TestBed.createComponent(ExerciseSlotEditorComponent);
@@ -47,21 +49,26 @@ describe('ExerciseSlotEditorComponent', () => {
         const root = fixture.nativeElement as HTMLElement;
         const blocks = () => fixture.componentInstance.blocks();
         const text = root.querySelector<HTMLTextAreaElement>('#slot-text-0')!;
-        text.value = '  отступ\n\tкод '; text.dispatchEvent(new Event('input'));
+        text.value = '  отступ\n\tкод ';
+        text.dispatchEvent(new Event('input'));
         expect(blocks()[0]).toEqual({ kind: 'TEXT', text: '  отступ\n\tкод ' });
 
         const transcript = root.querySelector<HTMLTextAreaElement>('#slot-transcript-1')!;
-        transcript.value = 'Слово'; transcript.dispatchEvent(new Event('input'));
+        transcript.value = 'Слово';
+        transcript.dispatchEvent(new Event('input'));
         expect(blocks()[1]).toEqual({ kind: 'AUDIO', assetId: asset, title: 'Слово', transcript: 'Слово' });
-        transcript.value = ''; transcript.dispatchEvent(new Event('input'));
+        transcript.value = '';
+        transcript.dispatchEvent(new Event('input'));
         expect(Object.keys(blocks()[1])).not.toContain('transcript');
 
         const title = root.querySelector<HTMLInputElement>('#slot-title-2')!;
-        title.value = 'Новое'; title.dispatchEvent(new Event('input'));
-        expect(blocks()[2]).toEqual(jasmine.objectContaining({ title: 'Новое' }));
+        title.value = 'Новое';
+        title.dispatchEvent(new Event('input'));
+        expect(blocks()[2]).toEqual(expect.objectContaining({ title: 'Новое' }));
         const alt = root.querySelector<HTMLInputElement>('#slot-alt-3')!;
-        alt.value = 'Схема'; alt.dispatchEvent(new Event('input'));
-        expect(blocks()[3]).toEqual(jasmine.objectContaining({ alt: 'Схема' }));
+        alt.value = 'Схема';
+        alt.dispatchEvent(new Event('input'));
+        expect(blocks()[3]).toEqual(expect.objectContaining({ alt: 'Схема' }));
     });
 
     it('moves and removes blocks and keeps focus on a control that still exists', async () => {
@@ -69,14 +76,19 @@ describe('ExerciseSlotEditorComponent', () => {
         document.body.appendChild(fixture.nativeElement);
         try {
             const root = fixture.nativeElement as HTMLElement;
-            root.querySelector<HTMLButtonElement>('button[aria-label="Опустить блок 1 ниже"]')!.click(); fixture.detectChanges();
+            root.querySelector<HTMLButtonElement>('button[aria-label="Опустить блок 1 ниже"]')!.click();
+            fixture.detectChanges();
             expect(fixture.componentInstance.blocks().map(block => block.kind === 'TEXT' ? block.text : '')).toEqual(['two', 'one', 'three']);
-            expect(root.querySelector<HTMLButtonElement>('button[aria-label="Поднять блок 1 выше"]')?.disabled).toBeTrue();
-            root.querySelector<HTMLButtonElement>('button[aria-label="Удалить блок 3"]')!.click(); fixture.detectChanges();
+            expect(root.querySelector<HTMLButtonElement>('button[aria-label="Поднять блок 1 выше"]')?.disabled).toBe(true);
+            root.querySelector<HTMLButtonElement>('button[aria-label="Удалить блок 3"]')!.click();
+            fixture.detectChanges();
             await fixture.whenStable();
             expect(fixture.componentInstance.blocks().length).toBe(2);
             expect(document.activeElement).not.toBe(document.body);
-        } finally { fixture.nativeElement.remove(); }
+        }
+        finally {
+            fixture.nativeElement.remove();
+        }
     });
 
     it('selects a material fragment, resolves its text and flags a block pinned to an older revision', () => {
@@ -97,7 +109,8 @@ describe('ExerciseSlotEditorComponent', () => {
         const root = fixture.nativeElement as HTMLElement;
         expect(root.querySelector('[role="alert"]')?.textContent).toContain('Нужно исправить');
         expect(root.querySelector('.field-error:not([role])')).toBeNull();
-        fixture.componentRef.setInput('showProblems', true); fixture.detectChanges();
+        fixture.componentRef.setInput('showProblems', true);
+        fixture.detectChanges();
         expect(root.querySelector('textarea')?.getAttribute('aria-invalid')).toBe('true');
         expect(root.textContent).toContain('Введите текст блока или удалите его');
 
@@ -112,7 +125,7 @@ describe('ExerciseSlotEditorComponent', () => {
         const eight = Array.from({ length: 8 }, (_, index): AuthoringBlock => ({ kind: 'TEXT', text: String(index) }));
         const fixture = create(eight);
         const root = fixture.nativeElement as HTMLElement;
-        expect([...root.querySelectorAll<HTMLButtonElement>('.add-row button')].every(button => button.disabled)).toBeTrue();
+        expect([...root.querySelectorAll<HTMLButtonElement>('.add-row button')].every(button => button.disabled)).toBe(true);
         fixture.componentInstance.add('TEXT');
         expect(fixture.componentInstance.blocks().length).toBe(8);
         fixture.componentInstance.onAsset({ kind: 'video', assetId: asset });
@@ -127,11 +140,13 @@ describe('ExerciseSlotEditorComponent', () => {
         const fixture = create([{ kind: 'TEXT', text: 'a' }]);
         const root = fixture.nativeElement as HTMLElement;
         expect(root.querySelector('app-native-media-upload')).toBeNull();
-        button(root, 'Добавить аудио').click(); fixture.detectChanges();
-        expect(root.querySelector('.media-picker')?.hasAttribute('hidden')).toBeFalse();
+        button(root, 'Добавить аудио').click();
+        fixture.detectChanges();
+        expect(root.querySelector('.media-picker')?.hasAttribute('hidden')).toBe(false);
         expect(root.querySelector('app-native-media-upload')).not.toBeNull();
-        fixture.componentInstance.onAsset({ kind: 'audio', assetId: asset }); fixture.detectChanges();
-        expect(root.querySelector('.media-picker')?.hasAttribute('hidden')).toBeTrue();
+        fixture.componentInstance.onAsset({ kind: 'audio', assetId: asset });
+        fixture.detectChanges();
+        expect(root.querySelector('.media-picker')?.hasAttribute('hidden')).toBe(true);
         expect(fixture.componentInstance.blocks()[1]).toEqual({ kind: 'AUDIO', assetId: asset, title: 'Аудио' });
     });
 
@@ -144,18 +159,23 @@ describe('ExerciseSlotEditorComponent', () => {
             const root = fixture.nativeElement as HTMLElement;
             document.body.appendChild(root);
             const image = button(root, 'Добавить изображение');
-            image.focus(); image.click(); fixture.detectChanges();
+            image.focus();
+            image.click();
+            fixture.detectChanges();
             const instance = () => fixture.debugElement.query(el => el.name === 'app-native-media-upload').componentInstance;
             expect(instance().kind()).toBe('image');
             expect(image.getAttribute('aria-expanded')).toBe('true');
             expect(root.querySelectorAll('app-native-media-upload').length).toBe(1);
-            button(root, 'Добавить видео').click(); fixture.detectChanges();
+            button(root, 'Добавить видео').click();
+            fixture.detectChanges();
             expect(instance().kind()).toBe('video');
             expect(root.querySelectorAll('app-native-media-upload').length).toBe(1);
             expect(image.getAttribute('aria-expanded')).toBe('false');
             const video = button(root, 'Добавить видео');
-            video.focus(); video.click(); fixture.detectChanges();
-            expect(root.querySelector('.media-picker')?.hasAttribute('hidden')).toBeTrue();
+            video.focus();
+            video.click();
+            fixture.detectChanges();
+            expect(root.querySelector('.media-picker')?.hasAttribute('hidden')).toBe(true);
             expect(document.activeElement).toBe(video);
             root.remove();
         });
@@ -164,11 +184,14 @@ describe('ExerciseSlotEditorComponent', () => {
             const fixture = create([{ kind: 'TEXT', text: 'a' }]);
             const root = fixture.nativeElement as HTMLElement;
             document.body.appendChild(root);
-            button(root, 'Добавить изображение').click(); fixture.detectChanges(); fixture.detectChanges();
+            button(root, 'Добавить изображение').click();
+            fixture.detectChanges();
+            fixture.detectChanges();
             expect(document.activeElement).toBe(root.querySelector('.media-picker'));
             expect(root.querySelector('.media-picker')?.textContent).not.toContain('Записать аудио');
             expect(root.querySelector('.media-picker')?.textContent).toContain('Открыть камеру');
-            button(root, 'Добавить аудио').click(); fixture.detectChanges();
+            button(root, 'Добавить аудио').click();
+            fixture.detectChanges();
             expect(root.querySelector('.media-picker')?.textContent).toContain('Записать аудио');
             expect(root.querySelector('.media-picker')?.textContent).not.toContain('Открыть камеру');
             root.remove();
@@ -177,24 +200,28 @@ describe('ExerciseSlotEditorComponent', () => {
         it('«Записать аудио» opens the picker in recording mode and starts the recorder on that click only', () => {
             const fixture = create([{ kind: 'TEXT', text: 'a' }]);
             const root = fixture.nativeElement as HTMLElement;
-            const getUserMedia = spyOn(navigator.mediaDevices, 'getUserMedia').and.rejectWith(new DOMException('no', 'NotAllowedError'));
-            button(root, 'Добавить аудио').click(); fixture.detectChanges(); fixture.detectChanges();
+            const getUserMedia = vi.spyOn(navigator.mediaDevices, 'getUserMedia').mockRejectedValue(new DOMException('no', 'NotAllowedError'));
+            button(root, 'Добавить аудио').click();
+            fixture.detectChanges();
+            fixture.detectChanges();
             expect(getUserMedia).not.toHaveBeenCalled();
-            button(root, 'Записать аудио').click(); fixture.detectChanges(); fixture.detectChanges();
+            button(root, 'Записать аудио').click();
+            fixture.detectChanges();
+            fixture.detectChanges();
             expect(getUserMedia).toHaveBeenCalledTimes(1);
             expect(fixture.componentInstance.pickerKind()).toBe('audio');
-            expect(fixture.componentInstance.recordMode()).toBeTrue();
+            expect(fixture.componentInstance.recordMode()).toBe(true);
         });
 
         it('respects the slot profile: a COMPACT slot with a media block offers no further media or recording', () => {
             const compact = create([{ kind: 'TEXT', text: 'a' }, { kind: 'AUDIO', assetId: asset, title: 'x' }], COMPACT_SLOT);
             const root = compact.nativeElement as HTMLElement;
             for (const label of ['Добавить изображение', 'Добавить аудио', 'Добавить видео', 'Записать аудио']) {
-                expect(button(root, label).disabled).withContext(label).toBeTrue();
+                expect(button(root, label).disabled, label).toBe(true);
             }
             const open = create([{ kind: 'TEXT', text: 'a' }], COMPACT_SLOT);
             for (const label of ['Добавить изображение', 'Добавить аудио', 'Добавить видео', 'Записать аудио']) {
-                expect(button(open.nativeElement, label).disabled).withContext(label).toBeFalse();
+                expect(button(open.nativeElement, label).disabled, label).toBe(false);
             }
         });
     });

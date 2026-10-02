@@ -45,7 +45,7 @@ describe('OwnDecksApiService', () => {
         http.expectOne(`/api/decks/${deck.deckId}`).flush({ ...deck, rowVersion: '01' }, {
             headers: { ...privateHeaders, ETag: '"01"' }
         });
-        await expectAsync(invalid).toBeRejectedWithError(OwnDeckProtocolError);
+        await expect(invalid).rejects.toThrowError(OwnDeckProtocolError);
     });
 
     it('accepts and normalizes canonical uppercase route identities', async () => {
@@ -107,12 +107,12 @@ describe('OwnDecksApiService', () => {
                 'Idempotency-Replayed': 'true'
             }
         });
-        await expectAsync(replay).toBeRejectedWithError(OwnDeckProtocolError);
+        await expect(replay).rejects.toThrowError(OwnDeckProtocolError);
 
         const page = firstValueFrom(api.list());
         http.expectOne(req => req.urlWithParams === '/api/decks?limit=20').flush({
             items: [], nextCursor: null, privatePayload: true
         }, { headers: privateHeaders });
-        await expectAsync(page).toBeRejectedWithError(OwnDeckProtocolError);
+        await expect(page).rejects.toThrowError(OwnDeckProtocolError);
     });
 });

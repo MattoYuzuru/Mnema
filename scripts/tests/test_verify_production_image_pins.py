@@ -106,8 +106,8 @@ class VerifyProductionImagePinsTest(unittest.TestCase):
     def test_tag_only_frontend_runtime_image_is_rejected(self):
         self.replace(
             "frontend/Dockerfile",
-            "nginx:1.31.4-alpine@sha256:db35bfc6b2951e7f8a72db5db120288c127ffaeeb4a6d4b95a26fead017d5913",
-            "nginx:1.31.4-alpine",
+            "nginx:1.31.6-alpine@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2",
+            "nginx:1.31.6-alpine",
         )
         self.assertTrue(any("Dockerfile FROM" in finding.message for finding in self.findings()))
 

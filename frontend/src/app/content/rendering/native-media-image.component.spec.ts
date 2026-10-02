@@ -20,12 +20,12 @@ describe('NativeMediaImageComponent', () => {
         fixture.nativeElement.querySelector('.image-open').click();
         fixture.detectChanges();
         const dialog = fixture.nativeElement.querySelector('dialog') as HTMLDialogElement;
-        expect(dialog.open).toBeTrue();
+        expect(dialog.open).toBe(true);
         fixture.nativeElement.querySelector('button[aria-label="Увеличить"]').click();
         fixture.detectChanges();
         expect(dialog.querySelector('.image-canvas img')?.getAttribute('style')).toContain('width: 125%');
         fixture.nativeElement.querySelector('.image-actions button:last-child').click();
-        expect(dialog.open).toBeFalse();
+        expect(dialog.open).toBe(false);
         fixture.destroy();
     });
 });

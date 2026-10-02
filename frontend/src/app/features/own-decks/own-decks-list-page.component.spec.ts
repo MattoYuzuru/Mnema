@@ -1,15 +1,22 @@
 import { signal } from '@angular/core';
-import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 
 import metadataFixture from '../../../../../contracts/decks/metadata.json';
 import { OwnDeck } from './own-deck.models';
 import { DeckListState, OwnDecksStore } from './own-decks.store';
 import { OwnDecksListPageComponent } from './own-decks-list-page.component';
+import { spyObj, type SpyObj } from '../../../testing/mocks';
 
 describe('OwnDecksListPageComponent', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+    });
+    afterEach(() => {
+        vi.useRealTimers();
+    });
     let fixture: ComponentFixture<OwnDecksListPageComponent>;
-    let store: jasmine.SpyObj<OwnDecksStore>;
+    let store: SpyObj<OwnDecksStore>;
     const state = signal<DeckListState>({
         phase: 'ready', items: [metadataFixture.detail as unknown as OwnDeck], nextCursor: null,
         operation: null, failure: null
@@ -20,9 +27,13 @@ describe('OwnDecksListPageComponent', () => {
             phase: 'ready', items: [metadataFixture.detail as unknown as OwnDeck], nextCursor: null,
             operation: null, failure: null
         });
-        store = jasmine.createSpyObj<OwnDecksStore>('OwnDecksStore', [
-            'loadList', 'loadMore', 'loadPrevious', 'retryList', 'refreshVisibleList'
-        ]);
+        store = spyObj<OwnDecksStore>({
+            loadList: vi.fn().mockName("OwnDecksStore.loadList"),
+            loadMore: vi.fn().mockName("OwnDecksStore.loadMore"),
+            loadPrevious: vi.fn().mockName("OwnDecksStore.loadPrevious"),
+            retryList: vi.fn().mockName("OwnDecksStore.retryList"),
+            refreshVisibleList: vi.fn().mockName("OwnDecksStore.refreshVisibleList")
+        });
         Object.defineProperty(store, 'listState', { value: state.asReadonly() });
         Object.defineProperty(store, 'canGoBack', { value: signal(false).asReadonly() });
         await TestBed.configureTestingModule({
@@ -59,26 +70,26 @@ describe('OwnDecksListPageComponent', () => {
         expect(fixture.nativeElement.textContent).toContain('Нет связи');
     });
 
-    it('rechecks a visible library on focus and on its bounded timer, then stops on teardown', fakeAsync(() => {
+    it('rechecks a visible library on focus and on its bounded timer, then stops on teardown', async () => {
         window.dispatchEvent(new Event('focus'));
         expect(store.refreshVisibleList).toHaveBeenCalledTimes(1);
-        tick(10_000);
+        await vi.advanceTimersByTimeAsync(10000);
         expect(store.refreshVisibleList).toHaveBeenCalledTimes(2);
         fixture.destroy();
-        tick(20_000);
+        await vi.advanceTimersByTimeAsync(20000);
         expect(store.refreshVisibleList).toHaveBeenCalledTimes(2);
-    }));
+    });
 
-    it('pauses background checks and rechecks as soon as the library becomes visible', fakeAsync(() => {
-        const visibility = spyOnProperty(document, 'visibilityState', 'get').and.returnValue('hidden');
+    it('pauses background checks and rechecks as soon as the library becomes visible', async () => {
+        const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
         document.dispatchEvent(new Event('visibilitychange'));
-        tick(20_000);
+        await vi.advanceTimersByTimeAsync(20000);
         expect(store.refreshVisibleList).not.toHaveBeenCalled();
 
-        visibility.and.returnValue('visible');
+        visibility.mockReturnValue('visible');
         document.dispatchEvent(new Event('visibilitychange'));
         expect(store.refreshVisibleList).toHaveBeenCalledTimes(1);
-        tick(10_000);
+        await vi.advanceTimersByTimeAsync(10000);
         expect(store.refreshVisibleList).toHaveBeenCalledTimes(2);
-    }));
+    });
 });

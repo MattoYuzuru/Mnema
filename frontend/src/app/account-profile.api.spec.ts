@@ -20,11 +20,11 @@ describe('AccountProfileApi', () => {
 
     beforeEach(() => {
         TestBed.configureTestingModule({ providers: [
-            provideHttpClient(withInterceptors([authInterceptor])), provideHttpClientTesting(),
-            { provide: BROWSER_IDENTITY_CONFIG, useValue: identity },
-            { provide: AUTH_BROWSER, useValue: { origin: 'https://mnema.test' } },
-            { provide: AuthService, useValue: { accessToken: () => 'owner-token', expireSession: () => undefined } }
-        ] });
+                provideHttpClient(withInterceptors([authInterceptor])), provideHttpClientTesting(),
+                { provide: BROWSER_IDENTITY_CONFIG, useValue: identity },
+                { provide: AUTH_BROWSER, useValue: { origin: 'https://mnema.test' } },
+                { provide: AuthService, useValue: { accessToken: () => 'owner-token', expireSession: () => undefined } }
+            ] });
         api = TestBed.inject(AccountProfileApi);
         http = TestBed.inject(HttpTestingController);
     });
@@ -34,7 +34,7 @@ describe('AccountProfileApi', () => {
     it('sends account reads and edits only to the validated Identity origin with bearer and no cookies', () => {
         api.load().subscribe(profile => expect(profile.accountId).toBe(response.accountId));
         const read = http.expectOne('https://identity.mnema.test/api/accounts/me');
-        expect(read.request.withCredentials).toBeFalse();
+        expect(read.request.withCredentials).toBe(false);
         expect(read.request.headers.get('Authorization')).toBe('Bearer owner-token');
         read.flush(response);
 
@@ -42,7 +42,7 @@ describe('AccountProfileApi', () => {
             .subscribe(profile => expect(profile.bio).toBe('new'));
         const edit = http.expectOne('https://identity.mnema.test/api/accounts/me');
         expect(edit.request.method).toBe('PUT');
-        expect(edit.request.withCredentials).toBeFalse();
+        expect(edit.request.withCredentials).toBe(false);
         expect(edit.request.headers.get('Authorization')).toBe('Bearer owner-token');
         edit.flush({ ...response, bio: 'new' });
     });
@@ -51,9 +51,9 @@ describe('AccountProfileApi', () => {
         api.uploadAvatar(new File(['image'], 'me.png', { type: 'image/png' })).subscribe();
         const upload = http.expectOne('https://identity.mnema.test/api/accounts/me/avatar');
         expect(upload.request.method).toBe('PUT');
-        expect(upload.request.withCredentials).toBeFalse();
+        expect(upload.request.withCredentials).toBe(false);
         expect(upload.request.headers.get('Authorization')).toBe('Bearer owner-token');
-        expect(upload.request.body instanceof FormData).toBeTrue();
+        expect(upload.request.body instanceof FormData).toBe(true);
         upload.flush(null);
     });
 });

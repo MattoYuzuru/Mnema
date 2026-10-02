@@ -1,6 +1,6 @@
 // Real-browser baseline of the seven exercise mechanics: create -> preview -> save -> reopen -> study.
 // Runs only with `--authoring --media --mechanics`, after the base authoring flow, through the real Angular UI on a
-// desktop viewport with real CDP keyboard/mouse input where the interaction is natural. Node22 built-ins only.
+// desktop viewport with real CDP keyboard/mouse input where the interaction is natural. Node 24 built-ins only.
 //
 // This is evidence, not a product fix: nothing here works around a defective control. A broken step is recorded
 // as a failed scenario with its screenshot and the UI's own reason, and the run is reported as failed.
@@ -127,11 +127,16 @@ export async function runMechanics(ctx) {
     if (!(e instanceof HTMLElement) || e.matches(':disabled')) return false;
     e.scrollIntoView({ block: 'center', behavior: 'instant' }); e.focus(); return document.activeElement === e;`, spec),
   'target could not take keyboard focus: ' + (spec.label ?? spec.text ?? spec.includes ?? spec.css)));
+  // Angular renders zoneless: a state change made by an event is painted on the next frame, not synchronously. After
+  // every real input wait two animation frames in the page so the DOM that follows reflects the action.
+  const renderSettled = () => tab.callFunction(`function() { return new Promise(resolve =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)))); }`, []);
   const press = async (key, code, virtualKeyCode, keyText) => {
     const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, nativeVirtualKeyCode: virtualKeyCode };
     await tab.call('Input.dispatchKeyEvent', keyText === undefined
       ? { type: 'rawKeyDown', ...event } : { type: 'keyDown', text: keyText, unmodifiedText: keyText, ...event });
     await tab.call('Input.dispatchKeyEvent', { type: 'keyUp', ...event });
+    await renderSettled();
   };
   const keys = {
     Tab: () => press('Tab', 'Tab', 9), ArrowDown: () => press('ArrowDown', 'ArrowDown', 40),
@@ -141,6 +146,7 @@ export async function runMechanics(ctx) {
     await focusEl(spec);
     await call(`const e = ${pick}; if ('select' in e) e.select(); return true;`, spec);
     await tab.call('Input.insertText', { text: content });
+    await renderSettled();
   };
   // The app sets `scroll-behavior: smooth` and also scrolls smoothly to a step it just opened. A click aimed at a rect
   // read while such an animation is still running lands elsewhere, so wait until the page position has been still for
@@ -160,6 +166,7 @@ export async function runMechanics(ctx) {
     await tab.call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y });
     await tab.call('Input.dispatchMouseEvent', { type: 'mousePressed', x: point.x, y: point.y, button: 'left', clickCount: 1 });
     await tab.call('Input.dispatchMouseEvent', { type: 'mouseReleased', x: point.x, y: point.y, button: 'left', clickCount: 1 });
+    await renderSettled();
   };
   const activate = async spec => { await focusEl(spec); await keys.Space(); };
   const submitKey = async spec => { await focusEl(spec); await keys.Enter(); };
@@ -374,6 +381,141 @@ export async function runMechanics(ctx) {
     need(!wide, 'the editor overflows horizontally at 390 px');
     return { initialStateOnlyTypeChoice: true, demoPlayable: true, previewEndpointOnly: true, draftModeShowsOwnContent: true,
       submitBlockedWithReason: true, reducedMotionInstantJump: true, noHorizontalOverflow390: true, viewports: ['1440x900', '390x844'] };
+  });
+
+  // =================================================================================================================
+  // 0b. Real-geometry checks that jsdom unit tests cannot make (they own none of this): reflow, containment, decoration
+  // =================================================================================================================
+  // No horizontal overflow of the editor in any mechanic with a long unbroken string, at 320 and 390 px.
+  await scenario('mechanics_editor_reflow', async () => {
+    const long = 'я'.repeat(300);
+    const kinds = ['SELF_CHECK', 'FREE_RESPONSE', 'CLOZE', 'CHOICE', 'MATCH', 'ORDER', 'CATEGORIZE'];
+    for (const mechanic of kinds) {
+      await openEditor(mechanic);
+      // Some mechanics open on a step without a text field (MATCH: optional instruction); add a text block first.
+      const field = root + ' textarea, ' + root + ' input[type="text"]';
+      const usable = () => call(`return [...document.querySelectorAll(args[0])].some(e => e.offsetParent !== null && !e.disabled && !e.readOnly);`, field);
+      if (!(await usable())) {
+        await realClick({ css: root + ' button[data-add]', includes: '+ Текст' });
+        await waitFor(usable, mechanic + ' offered no text field for the long string');
+      }
+      need(await call(`const e = [...document.querySelectorAll(args[0])].find(x => x.offsetParent !== null && !x.disabled && !x.readOnly);
+        e.scrollIntoView({ block: 'center', behavior: 'instant' }); e.focus(); if ('select' in e) e.select(); return document.activeElement === e;`, field),
+      mechanic + ' text field could not take focus');
+      await tab.call('Input.insertText', { text: long });
+      await renderSettled();
+      for (const width of [320, 390]) {
+        await metrics({ width, height: 844, deviceScaleFactor: 1, mobile: false });
+        await renderSettled();
+        need(!(await overflowing()), `${mechanic} editor overflows horizontally at ${width} px with a 300-character string`);
+      }
+      await ctx.saveScreenshot(`mechanics-editor-reflow-${mechanic.toLowerCase()}-320.png`, tab);
+    }
+    await desktop();
+    return { mechanics: kinds, widths: [320, 390], longUnbrokenString: 300, noHorizontalOverflow: true };
+  });
+
+  // The native renderer contains long Russian and unbreakable text at 320 px, with 2x root text and at 200% zoom.
+  await scenario('mechanics_renderer_reflow', async () => {
+    need(ctx.materialPath, 'base flow did not provide the material route');
+    await desktop();
+    await ctx.navigate(ctx.materialPath, tab);
+    await waitFor(() => has({ css: 'app-native-document-renderer article p' }), 'the published material did not render');
+    // Cloned blocks keep the renderer's scoped-style attributes, so the real stylesheet applies to the long content.
+    need(await call(`const article = document.querySelector('app-native-document-renderer article');
+      const paragraph = article?.querySelector('p');
+      if (!article || !paragraph) return false;
+      const heading = article.querySelector('h1, h2, h3');
+      const long = paragraph.cloneNode(true); long.textContent = 'A'.repeat(512); article.append(long);
+      if (heading) { const clone = heading.cloneNode(true);
+        clone.textContent = 'Длинный русский заголовок о памяти и осмысленном обучении'; article.prepend(clone); }
+      return true;`), 'long content could not be added to the rendered material');
+    const contained = () => call(`const sheet = document.querySelector('app-native-document-renderer').closest('.sheet')
+      ?? document.querySelector('app-native-document-renderer').parentElement;
+      const limit = sheet.getBoundingClientRect().right + 1;
+      const wide = [...sheet.querySelectorAll('*')].filter(e => e.getBoundingClientRect().right > limit)
+        .map(e => e.tagName.toLowerCase() + (e.className && typeof e.className === 'string' ? '.' + e.className.trim().split(' ')[0] : '')).slice(0, 4).join(' ');
+      const blocks = [...document.querySelectorAll('app-native-document-renderer article p, app-native-document-renderer article h1, app-native-document-renderer article h2, app-native-document-renderer article h3')];
+      return { wide, text: blocks.length >= 2 && blocks.every(e => e.scrollWidth <= e.clientWidth + 1 && e.getBoundingClientRect().right <= limit),
+        sheet: sheet.scrollWidth <= sheet.clientWidth, page: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+        font: parseFloat(getComputedStyle(document.querySelector('app-native-document-renderer article')).fontSize) };`);
+    // The sheet also holds media players whose controls are outside this scenario's contract (long text containment);
+    // sheet-level overflow is recorded as an observation in the evidence, not as a failure of the text check.
+    const observed = [];
+    const widths = {};
+    for (const width of [320, 390, 1440]) {
+      await metrics({ width, height: 844, deviceScaleFactor: 1, mobile: false });
+      await renderSettled();
+      const result = await contained();
+      need(result.text, `long text overflows the material at ${width} px`);
+      if (!result.sheet) observed.push(`${width}px: ${result.wide}`);
+      widths[width] = result.page;
+    }
+    await metrics({ width: 320, height: 844, deviceScaleFactor: 1, mobile: false });
+    await renderSettled();
+    const base = (await contained()).font;
+    await call(`document.documentElement.style.fontSize = '32px'; return true;`);
+    await renderSettled();
+    const doubled = await contained();
+    await ctx.saveScreenshot('mechanics-renderer-reflow-320-2x-text.png', tab);
+    await call(`document.documentElement.style.fontSize = ''; return true;`);
+    need(doubled.font >= base * 1.9, `2x root text did not scale the material (${base}px -> ${doubled.font}px)`);
+    need(doubled.text, 'long text overflows the material at 320 px with 2x root text');
+    if (!doubled.sheet) observed.push('320px at 2x root text: ' + doubled.wide);
+    // 200% browser zoom on a 320 px window is a 160 CSS-pixel layout viewport.
+    await metrics({ width: 160, height: 844, deviceScaleFactor: 2, mobile: false });
+    await renderSettled();
+    const zoomed = await contained();
+    await ctx.saveScreenshot('mechanics-renderer-reflow-200-zoom.png', tab);
+    await desktop();
+    need(zoomed.text, 'long text overflows the material at 200% zoom on a 320 px window');
+    if (!zoomed.sheet) observed.push('200% zoom on 320px: ' + zoomed.wide);
+    return { widths: [320, 390, 1440], rootTextScale: 2, zoomPercent: 200, longUnbrokenString: 512, longTextContained: true,
+      sheetOverflowObservations: observed };
+  });
+
+  // The decorative constellation: scattered, clear of the content and of each other on a wide page; omitted on a narrow one.
+  await scenario('mechanics_constellation_geometry', async () => {
+    need(ctx.deckPath, 'base flow did not provide the deck route');
+    await metrics({ width: 1600, height: 1000, deviceScaleFactor: 1, mobile: false });
+    await ctx.navigate(ctx.deckPath, tab);
+    await waitFor(() => has({ css: 'app-deck-constellation .rail span' }), 'the constellation did not appear on a wide deck page', 20_000);
+    const geometry = await call(`const main = document.querySelector('main#main-content');
+      const page = main.lastElementChild?.firstElementChild;
+      const edge = main.getBoundingClientRect(); const content = page.getBoundingClientRect(); const pad = getComputedStyle(page);
+      const left = content.left + parseFloat(pad.paddingLeft); const right = content.right - parseFloat(pad.paddingRight);
+      const stars = [...document.querySelectorAll('app-deck-constellation .rail span')].map(e => e.getBoundingClientRect());
+      const apart = (a, b) => a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top;
+      return { count: stars.length,
+        insideMargin: stars.every(s => s.top >= edge.top + edge.height * .05 && s.bottom <= edge.bottom - edge.height * .05
+          && s.left >= edge.left + edge.width * .05 && s.right <= edge.right - edge.width * .05),
+        clearOfContent: stars.every(s => s.right <= left || s.left >= right),
+        overlapping: stars.some((s, i) => stars.slice(i + 1).some(o => !apart(s, o))) };`);
+    need(geometry.count >= 6, `expected at least 6 stars on a wide page, got ${geometry.count}`);
+    need(geometry.insideMargin, 'stars leave the 5% margin of the page');
+    need(geometry.clearOfContent, 'a star overlaps the page content');
+    need(!geometry.overlapping, 'two stars overlap');
+    await ctx.saveScreenshot('mechanics-constellation-1600.png', tab);
+    await phone();
+    await waitFor(async () => !(await has({ css: 'app-deck-constellation .rail' })), 'the decoration was not omitted when the safe area cannot fit it');
+    await ctx.saveScreenshot('mechanics-constellation-omitted-390.png', tab);
+    await desktop();
+    return { wideViewport: '1600x1000', stars: geometry.count, clearOfContentAndEachOther: true, omittedAt390: true };
+  });
+
+  // The hold-to-delete button keeps its box when the longer countdown label replaces its label (arming only; no delete).
+  await scenario('mechanics_hold_to_delete_geometry', async () => {
+    await desktop();
+    await ctx.navigate(ctx.deckPath, tab);
+    const hold = { css: 'app-hold-to-delete-button button.hold-button', includes: 'Удалить колоду' };
+    await waitFor(() => has(hold), 'the deck delete button did not render');
+    const box = () => call(`const r = ${pick}.getBoundingClientRect(); return [r.width, r.height].map(Math.round).join('x');`, hold);
+    const before = await box();
+    await realClick(hold);
+    await waitFor(() => call(`return ${pick}.getAttribute('aria-pressed') === 'true';`, hold), 'the button did not arm');
+    need((await box()) === before, `the hold-to-delete button changed size when its countdown label appeared (${before} -> ${await box()})`);
+    await keys.Tab();   // leaving the control disarms it (blur)
+    return { geometryUnchangedWhenArmed: true };
   });
 
   // =================================================================================================================

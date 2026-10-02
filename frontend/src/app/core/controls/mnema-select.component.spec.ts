@@ -22,7 +22,7 @@ describe('MnemaSelectComponent', () => {
 
     it('exposes selected value and navigates without committing until Enter', () => {
         const { fixture, trigger } = setup();
-        const emitted = spyOn(fixture.componentInstance.valueChange, 'emit');
+        const emitted = vi.spyOn(fixture.componentInstance.valueChange, 'emit').mockReturnValue(undefined);
         expect(trigger.textContent).toContain('Один');
         expect(trigger.getAttribute('aria-expanded')).toBe('false');
 
@@ -37,14 +37,15 @@ describe('MnemaSelectComponent', () => {
 
         trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
         fixture.detectChanges();
-        expect(emitted).toHaveBeenCalledOnceWith('two');
+        expect(emitted).toHaveBeenCalledTimes(1);
+        expect(emitted).toHaveBeenCalledWith('two');
         expect(trigger.getAttribute('aria-expanded')).toBe('false');
         fixture.destroy();
     });
 
     it('skips disabled options, supports Home/End and cancels with Escape', () => {
         const { fixture, trigger } = setup();
-        const emitted = spyOn(fixture.componentInstance.valueChange, 'emit');
+        const emitted = vi.spyOn(fixture.componentInstance.valueChange, 'emit').mockReturnValue(undefined);
         trigger.click();
         trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
         fixture.detectChanges();
@@ -61,12 +62,13 @@ describe('MnemaSelectComponent', () => {
 
     it('supports typeahead, pointer selection, outside dismissal, and disabled state', () => {
         const { fixture, trigger } = setup();
-        const emitted = spyOn(fixture.componentInstance.valueChange, 'emit');
+        const emitted = vi.spyOn(fixture.componentInstance.valueChange, 'emit').mockReturnValue(undefined);
         trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'д', bubbles: true }));
         fixture.detectChanges();
         expect(trigger.getAttribute('aria-activedescendant')).toBe('sample-choice-option-2');
         (fixture.nativeElement.querySelector('#sample-choice-option-2') as HTMLElement).click();
-        expect(emitted).toHaveBeenCalledOnceWith('two');
+        expect(emitted).toHaveBeenCalledTimes(1);
+        expect(emitted).toHaveBeenCalledWith('two');
 
         trigger.click();
         document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }));
@@ -75,7 +77,7 @@ describe('MnemaSelectComponent', () => {
 
         fixture.componentRef.setInput('disabled', true);
         fixture.detectChanges();
-        expect(trigger.disabled).toBeTrue();
+        expect(trigger.disabled).toBe(true);
         trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
         fixture.detectChanges();
         expect(trigger.getAttribute('aria-expanded')).toBe('false');

@@ -70,11 +70,11 @@ describe('Study shared contract fixtures', () => {
     it('keeps assessment authority in the server-issued presentation', () => {
         const presentation = session.active.presentations[0] as unknown as JsonObject;
         for (const field of ['answerKey', 'bindings', 'reference', 'options', 'prompt']) {
-            expect(presentation[field]).withContext(field).toBeUndefined();
+            expect(presentation[field], field).toBeUndefined();
         }
         const submit = attempts.freeResponseSubmit as unknown as JsonObject;
         for (const field of ['mode', 'deckRevisionId', 'exerciseRevisionId', 'bindings', 'correctAnswer', 'hintsUsed']) {
-            expect(submit[field]).withContext(field).toBeUndefined();
+            expect(submit[field], field).toBeUndefined();
         }
     });
 
@@ -82,7 +82,7 @@ describe('Study shared contract fixtures', () => {
         const combinations = reducer.transitions.map(row => `${row.result}:${row.evidenceClass}`);
         expect(combinations.length).toBe(12);
         expect(new Set(combinations).size).toBe(12);
-        expect(combinations.some(value => value.endsWith(':NONE'))).toBeFalse();
+        expect(combinations.some(value => value.endsWith(':NONE'))).toBe(false);
         expect(reducer.intervals.length).toBe(8);
 
         const projection = {
@@ -114,7 +114,7 @@ describe('Study shared contract fixtures', () => {
         expect(restart.persistedEffect.objectiveStates[0].learningEpoch).toBe('1');
         expect(restart.persistedEffect.historyRowsDeleted).toBe(0);
 
-        expect(attempts.practiceOutcome.canonicalEffects).toBeFalse();
+        expect(attempts.practiceOutcome.canonicalEffects).toBe(false);
         expect(attempts.practiceOutcome.evidence).toBeNull();
         expect(attempts.practiceOutcome.transition).toBeNull();
         expect(attempts.notAssessedOutcome.transition).toBeNull();
@@ -125,7 +125,7 @@ describe('Study shared contract fixtures', () => {
         expect(effect('A-03')['transitions']).toBe(1);
         expect(effect('A-05')['transitions']).toBe(0);
         expect(effect('A-11')['stateTransitions']).toBe(0);
-        expect(effect('A-13')['fullScan']).toBeFalse();
+        expect(effect('A-13')['fullScan']).toBe(false);
         expect(effect('A-20')['evaluationRuns']).toBe(0);
     });
 });

@@ -25,7 +25,7 @@ describe('NativeEditorComponent', () => {
         TestBed.flushEffects();
         expect(surface.getAttribute('contenteditable')).toBe('false');
         const controls = Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[];
-        expect(controls.filter(control => !control.closest('[hidden]')).every(control => control.disabled)).toBeTrue();
+        expect(controls.filter(control => !control.closest('[hidden]')).every(control => control.disabled)).toBe(true);
     });
 
     it('shows a pencil only while the document is empty', () => {
@@ -34,11 +34,10 @@ describe('NativeEditorComponent', () => {
         fixture.componentRef.setInput('document', createEmptyNativeDocument());
         fixture.detectChanges();
         const host = fixture.nativeElement.querySelector('.editor-host') as HTMLElement;
-        expect(host.classList.contains('is-empty')).toBeTrue();
-        fixture.componentInstance['editorView']!.dispatch(
-            fixture.componentInstance['editorView']!.state.tr.insertText('А'));
+        expect(host.classList.contains('is-empty')).toBe(true);
+        fixture.componentInstance['editorView']!.dispatch(fixture.componentInstance['editorView']!.state.tr.insertText('А'));
         fixture.detectChanges();
-        expect(host.classList.contains('is-empty')).toBeFalse();
+        expect(host.classList.contains('is-empty')).toBe(false);
     });
 
     it('replaces stale editor state when the acknowledged server document changes', () => {
@@ -50,14 +49,17 @@ describe('NativeEditorComponent', () => {
 
         const replacement = structuredClone(initial);
         const text = replacement.root.content[0]?.content[0];
-        if (text === undefined) throw new Error('Fixture text is absent.');
-        (text.attrs as { text: string }).text = 'Свежая версия сервера';
+        if (text === undefined)
+            throw new Error('Fixture text is absent.');
+        (text.attrs as {
+            text: string;
+        }).text = 'Свежая версия сервера';
         fixture.componentRef.setInput('document', replacement);
         fixture.detectChanges();
         TestBed.flushEffects();
 
         const surface = fixture.nativeElement.querySelector('[role="textbox"]') as HTMLElement;
-        expect(surface.innerText).toContain('Свежая версия сервера');
+        expect(surface.textContent).toContain('Свежая версия сервера');
     });
 
     it('inserts a validated Mermaid block and rejects incomplete media references', () => {
@@ -83,7 +85,7 @@ describe('NativeEditorComponent', () => {
         fixture.detectChanges();
 
         expect(emitted.length).toBe(1);
-        expect(emitted[0]?.root.content.some(node => node.type === 'mermaid')).toBeTrue();
+        expect(emitted[0]?.root.content.some(node => node.type === 'mermaid')).toBe(true);
         expect(fixture.nativeElement.querySelector('.mnema-rich-atom')?.textContent).toContain('Путь запроса');
         expect(fixture.nativeElement.querySelector('[role="alert"]')).toBeNull();
     });
@@ -97,14 +99,13 @@ describe('NativeEditorComponent', () => {
         const view = editor['editorView']!;
 
         view.dispatch(view.state.tr.insertText('-'));
-        expect(editor['handleMarkdownShortcut'](view, 2, 2, ' ')).toBeTrue();
+        expect(editor['handleMarkdownShortcut'](view, 2, 2, ' ')).toBe(true);
         expect(view.state.doc.firstChild?.type.name).toBe('bullet_list');
         expect(view.state.doc.textContent).toBe('');
 
         editor.undo();
-        view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size,
-            nativeEditorSchema.nodes['paragraph']!.create(undefined, nativeEditorSchema.text('--'))));
-        expect(editor['handleMarkdownShortcut'](view, 3, 3, '-')).toBeTrue();
+        view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, nativeEditorSchema.nodes['paragraph']!.create(undefined, nativeEditorSchema.text('--'))));
+        expect(editor['handleMarkdownShortcut'](view, 3, 3, '-')).toBe(true);
         expect(view.state.doc.firstChild?.type.name).toBe('divider');
         expect(view.state.doc.textContent).toBe('');
 
@@ -113,8 +114,9 @@ describe('NativeEditorComponent', () => {
         const list = nativeEditorSchema.nodes['bullet_list']!.create(undefined, listItem);
         view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, list));
         let markerEnd = -1;
-        view.state.doc.descendants((node, position) => { if (node.isText) markerEnd = position + node.nodeSize; });
-        expect(editor['handleMarkdownShortcut'](view, markerEnd, markerEnd, '-')).toBeTrue();
+        view.state.doc.descendants((node, position) => { if (node.isText)
+            markerEnd = position + node.nodeSize; });
+        expect(editor['handleMarkdownShortcut'](view, markerEnd, markerEnd, '-')).toBe(true);
         expect(view.state.doc.firstChild?.firstChild?.child(1).type.name).toBe('divider');
         expect(view.state.doc.textContent).toBe('');
     });
@@ -162,7 +164,7 @@ describe('NativeEditorComponent', () => {
         const host = fixture.nativeElement as HTMLElement;
         expect(host.querySelectorAll('.mnema-table-node th').length).toBe(2);
         expect(host.querySelectorAll('.mnema-table-node tbody tr').length).toBe(2);
-        expect(editor.mediaInspectorOpen()).toBeFalse();
+        expect(editor.mediaInspectorOpen()).toBe(false);
         const edit = (selector: string, value: string) => {
             const input = host.querySelector<HTMLInputElement | HTMLTextAreaElement>(selector)!;
             input.value = value;
@@ -240,7 +242,7 @@ describe('NativeEditorComponent', () => {
         fixture.componentRef.setInput('document', createEmptyNativeDocument());
         fixture.detectChanges();
         const editor = fixture.componentInstance;
-        expect(editor.mediaInspectorOpen()).toBeFalse();
+        expect(editor.mediaInspectorOpen()).toBe(false);
         editor.openMediaTools();
         editor.selectRichKind('mermaid');
         editor.richTitle.set('Схема');
@@ -248,15 +250,15 @@ describe('NativeEditorComponent', () => {
         editor.richSource.set('flowchart LR\nA --> B');
         fixture.detectChanges();
         const tools = fixture.nativeElement.querySelector('.rich-tools') as HTMLElement;
-        expect(tools.hidden).toBeFalse();
+        expect(tools.hidden).toBe(false);
         const source = tools.querySelector('textarea[spellcheck="false"]') as HTMLTextAreaElement;
         source.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true }));
-        expect(tools.hidden).toBeFalse();
+        expect(tools.hidden).toBe(false);
         const plainEnter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
         source.dispatchEvent(plainEnter);
         fixture.detectChanges();
-        expect(plainEnter.defaultPrevented).toBeTrue();
-        expect(tools.hidden).toBeTrue();
+        expect(plainEnter.defaultPrevented).toBe(true);
+        expect(tools.hidden).toBe(true);
         expect(editor['editorView']!.state.doc.firstChild?.type.name).toBe('mermaid');
     });
 
@@ -271,15 +273,15 @@ describe('NativeEditorComponent', () => {
         editor.filesAdded.subscribe(files => received.push(files));
         const file = new File(['image'], 'photo.png', { type: 'image/png' });
         const fileEvent = { clipboardData: { files: [file], getData: () => '' } } as unknown as ClipboardEvent;
-        expect(editor['handlePaste'](view, fileEvent)).toBeTrue();
+        expect(editor['handlePaste'](view, fileEvent)).toBe(true);
         expect(received[0]).toEqual([file]);
         const dropEvent = { dataTransfer: { files: [file] }, clientX: 0, clientY: 0 } as unknown as DragEvent;
-        expect(editor['handleDrop'](view, dropEvent)).toBeTrue();
+        expect(editor['handleDrop'](view, dropEvent)).toBe(true);
         expect(received[1]).toEqual([file]);
 
         const url = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
         const linkEvent = { clipboardData: { files: [], getData: () => url } } as unknown as ClipboardEvent;
-        expect(editor['handlePaste'](view, linkEvent)).toBeTrue();
+        expect(editor['handlePaste'](view, linkEvent)).toBe(true);
         expect(view.state.doc.firstChild?.type.name).toBe('youtube');
         expect(view.state.doc.firstChild?.attrs['videoId']).toBe('dQw4w9WgXcQ');
         expect(editor.richKind()).toBe('youtube');
@@ -298,7 +300,7 @@ describe('NativeEditorComponent', () => {
         editor.insertRuby();
         const originalId = view.state.doc.firstChild?.firstChild?.attrs['id'];
         view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, 1)));
-        expect(editor.rubySelected()).toBeTrue();
+        expect(editor.rubySelected()).toBe(true);
         editor.rubyReading.set('ハン');
         editor.insertRuby();
 

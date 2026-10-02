@@ -17,7 +17,7 @@ describe('MatchBoardComponent', () => {
     ];
 
     beforeEach(() => TestBed.configureTestingModule({ providers: [{ provide: MEDIA_PLAYBACK_RESOLVER,
-        useValue: { resolve: fakePlayback } }] }));
+                useValue: { resolve: fakePlayback } }] }));
 
     function create() {
         const fixture = TestBed.createComponent(MatchBoardComponent);
@@ -44,13 +44,17 @@ describe('MatchBoardComponent', () => {
         expect(leftButtons[0].getAttribute('aria-label')).toBe('Выбрать: der Hund');
         expect(rightButtons[1].getAttribute('aria-label')).toBe('Выбрать: Собака');
 
-        rightButtons[1].click(); fixture.detectChanges();
+        rightButtons[1].click();
+        fixture.detectChanges();
         expect(root.querySelector('[role="status"]')?.textContent).toContain('Сначала выберите элемент слева');
-        leftButtons[0].click(); fixture.detectChanges();
+        leftButtons[0].click();
+        fixture.detectChanges();
         expect(leftButtons[0].getAttribute('aria-pressed')).toBe('true');
-        leftButtons[0].click(); fixture.detectChanges();
+        leftButtons[0].click();
+        fixture.detectChanges();
         expect(leftButtons[0].getAttribute('aria-pressed')).toBe('false');
-        leftButtons[0].click(); rightButtons[1].click();
+        leftButtons[0].click();
+        rightButtons[1].click();
         expect(pairs).toEqual([{ leftId: left[0].itemId, rightId: right[1].itemId }]);
     });
 
@@ -59,24 +63,31 @@ describe('MatchBoardComponent', () => {
         document.body.appendChild(fixture.nativeElement);
         try {
             const root = fixture.nativeElement as HTMLElement;
-            fixture.componentRef.setInput('busy', true); fixture.detectChanges();
+            fixture.componentRef.setInput('busy', true);
+            fixture.detectChanges();
             expect(root.querySelector('[role="status"]')?.textContent).toContain('Проверяем пару');
-            root.querySelector<HTMLButtonElement>('button[data-side="left"]')!.click(); fixture.detectChanges();
+            root.querySelector<HTMLButtonElement>('button[data-side="left"]')!.click();
+            fixture.detectChanges();
             expect(fixture.componentInstance.selectedLeft()).toBeNull();
-            fixture.componentRef.setInput('busy', false); fixture.detectChanges();
+            fixture.componentRef.setInput('busy', false);
+            fixture.detectChanges();
 
             fixture.componentInstance.selectedLeft.set(left[0].itemId);
-            fixture.componentRef.setInput('matches', { [left[0].itemId]: right[1].itemId }); fixture.detectChanges();
+            fixture.componentRef.setInput('matches', { [left[0].itemId]: right[1].itemId });
+            fixture.detectChanges();
             await fixture.whenStable();
             const lefts = root.querySelectorAll<HTMLButtonElement>('button[data-side="left"]');
             const rights = root.querySelectorAll<HTMLButtonElement>('button[data-side="right"]');
-            expect(lefts[0].disabled).toBeTrue();
-            expect(rights[1].disabled).toBeTrue();
+            expect(lefts[0].disabled).toBe(true);
+            expect(rights[1].disabled).toBe(true);
             expect(lefts[0].textContent?.trim()).toBe('Пара 1 найдена');
             expect(rights[1].getAttribute('aria-label')).toBe('Собака: пара 1 найдена');
             expect(document.activeElement).toBe(lefts[1]);
             expect(root.querySelector('[role="status"]')?.textContent).toContain('Пара найдена');
-        } finally { fixture.nativeElement.remove(); }
+        }
+        finally {
+            fixture.nativeElement.remove();
+        }
     });
 
     it('highlights the wrong pair on both sides', () => {

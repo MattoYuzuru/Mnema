@@ -59,8 +59,7 @@ describe('Mechanics wire contract (contracts/study/mechanics.json)', () => {
         expect(parseObjectiveCommand(mechanics['reviseObjective'])).toEqual(mechanics['reviseObjective']);
         expect(parseObjectiveCommand(mechanics['reuseObjective'])).toEqual(mechanics['reuseObjective']);
         const create = mechanics['createCloze'];
-        exercises.update(deckId, '88888888-8888-4888-8888-888888888881', '6', create.expectedDeckRevisionId,
-            '88888888-8888-4888-8888-888888888882', mechanics['reviseObjective'], create.exercise, create.commandId).subscribe();
+        exercises.update(deckId, '88888888-8888-4888-8888-888888888881', '6', create.expectedDeckRevisionId, '88888888-8888-4888-8888-888888888882', mechanics['reviseObjective'], create.exercise, create.commandId).subscribe();
         const request = http.expectOne(`/api/decks/${deckId}/exercises/88888888-8888-4888-8888-888888888881`);
         expect(request.request.body).toEqual({ commandId: create.commandId, expectedDeckRevisionId: create.expectedDeckRevisionId,
             expectedExerciseRevisionId: '88888888-8888-4888-8888-888888888882', objective: mechanics['reviseObjective'],
@@ -84,7 +83,10 @@ describe('Mechanics wire contract (contracts/study/mechanics.json)', () => {
         const reading = firstValueFrom(study.read(deckId, ids.sessionId));
         http.expectOne(`/api/decks/${deckId}/study-sessions/${ids.sessionId}`).flush(readySession(plain), { headers: privateHeaders });
         const session = await reading;
-        if (session.status === 'PREPARING') { fail('Expected a ready session.'); return; }
+        if (session.status === 'PREPARING') {
+            expect.fail('Expected a ready session.');
+            return;
+        }
         expect(session.presentations).toEqual(plain);
         expect(session.presentations.map(item => item.type)).toEqual([...MECHANICS]);
 
@@ -92,21 +94,20 @@ describe('Mechanics wire contract (contracts/study/mechanics.json)', () => {
         http.expectOne(`/api/decks/${deckId}/study-sessions/${ids.sessionId}`)
             .flush(readySession([fixtures['freeResponseTranscriptRevealed']]), { headers: privateHeaders });
         const revealed = await revealedReading;
-        if (revealed.status !== 'PREPARING') expect(revealed.presentations[0]).toEqual(fixtures['freeResponseTranscriptRevealed']);
+        if (revealed.status !== 'PREPARING')
+            expect(revealed.presentations[0]).toEqual(fixtures['freeResponseTranscriptRevealed']);
     });
 
     it('reveals a transcript and records a hint exactly as fixtured', async () => {
         const presentation = mechanics['presentations']['freeResponse'];
-        const reveal = firstValueFrom(study.revealTranscript(deckId, ids.sessionId, presentation.presentationId,
-            mechanics['transcriptRevealCommand'].nonce, 'FREE_RESPONSE'));
+        const reveal = firstValueFrom(study.revealTranscript(deckId, ids.sessionId, presentation.presentationId, mechanics['transcriptRevealCommand'].nonce, 'FREE_RESPONSE'));
         const request = http.expectOne(`/api/decks/${deckId}/study-sessions/${ids.sessionId}/presentations/${presentation.presentationId}/transcript`);
         expect(request.request.body).toEqual(mechanics['transcriptRevealCommand']);
         request.flush(mechanics['transcriptRevealResponse'], { headers: privateHeaders });
         expect((await reveal).content).toEqual({ type: 'FREE_RESPONSE', content: mechanics['transcriptRevealResponse'].content });
 
         const cloze = mechanics['presentations']['cloze'];
-        const hint = firstValueFrom(study.hint(deckId, ids.sessionId, cloze.presentationId,
-            mechanics['hintCommand'].nonce, mechanics['hintCommand'].blankId));
+        const hint = firstValueFrom(study.hint(deckId, ids.sessionId, cloze.presentationId, mechanics['hintCommand'].nonce, mechanics['hintCommand'].blankId));
         const hintRequest = http.expectOne(`/api/decks/${deckId}/study-sessions/${ids.sessionId}/presentations/${cloze.presentationId}/hints`);
         expect(hintRequest.request.body).toEqual(mechanics['hintCommand']);
         hintRequest.flush(mechanics['hintResponse'], { headers: privateHeaders });
@@ -115,8 +116,7 @@ describe('Mechanics wire contract (contracts/study/mechanics.json)', () => {
 
     it('checks a pair with the left and right ids and nothing else', async () => {
         const fixture = mechanics['pairCheck'];
-        const checking = firstValueFrom(study.checkPair(deckId, ids.sessionId, fixture.presentationId, fixture.nonce,
-            fixture.leftId, fixture.rightId));
+        const checking = firstValueFrom(study.checkPair(deckId, ids.sessionId, fixture.presentationId, fixture.nonce, fixture.leftId, fixture.rightId));
         const request = http.expectOne(`/api/decks/${deckId}/study-sessions/${ids.sessionId}/pair-checks`);
         expect(request.request.body).toEqual(fixture);
         request.flush(mechanics['pairCheckResult'], { headers: privateHeaders });
@@ -163,26 +163,32 @@ describe('Mechanics wire contract (contracts/study/mechanics.json)', () => {
         }
         const cacheable = firstValueFrom(capabilities.read());
         http.expectOne('/api/capabilities').flush(mechanics['capabilities']);
-        await expectAsync(cacheable).toBeRejectedWithError(AuthoringProtocolError);
+        await expect(cacheable).rejects.toThrowError(AuthoringProtocolError);
     });
 
     it('keeps the capability-unavailable problem on a stable code', () => {
-        expect(mechanics['capabilityUnavailableProblem']).toEqual(jasmine.objectContaining({
-            status: 409, code: 'CAPABILITY_UNAVAILABLE' }));
+        expect(mechanics['capabilityUnavailableProblem']).toEqual(expect.objectContaining({
+            status: 409, code: 'CAPABILITY_UNAVAILABLE'
+        }));
     });
 
     describe('rejects what the contract forbids', () => {
         it('legacy mechanic names, unknown fields and answer leaks in the exercise', () => {
             const base = mechanics['createChoiceVideoMultiple'].exercise;
-            const legacy = clone(base); legacy.type = removed.singleChoice;
+            const legacy = clone(base);
+            legacy.type = removed.singleChoice;
             expect(() => parseExerciseSpec(legacy)).toThrowError(ExerciseContentError);
-            const extra = clone(base); extra.bindings = [];
+            const extra = clone(base);
+            extra.bindings = [];
             expect(() => parseExerciseSpec(extra)).toThrowError(ExerciseContentError);
-            const block = clone(base); block.content.prompt[1].html = '<b>x</b>';
+            const block = clone(base);
+            block.content.prompt[1].html = '<b>x</b>';
             expect(() => parseExerciseSpec(block)).toThrowError(ExerciseContentError);
-            const v1 = clone(base); v1.schemaVersion = 1;
+            const v1 = clone(base);
+            v1.schemaVersion = 1;
             expect(() => parseExerciseSpec(v1)).toThrowError(ExerciseContentError);
-            const mismatch = clone(base); mismatch.evaluatorPolicy = { id: 'deterministic-match', version: '1' };
+            const mismatch = clone(base);
+            mismatch.evaluatorPolicy = { id: 'deterministic-match', version: '1' };
             expect(() => parseExerciseSpec(mismatch)).toThrowError(ExerciseContentError);
         });
 
@@ -208,25 +214,27 @@ describe('Mechanics wire contract (contracts/study/mechanics.json)', () => {
 
         it('ORDER and CATEGORIZE keys, items and groups that break their rules', () => {
             const order = (change: (spec: any) => void) => {
-                const spec = clone(mechanics['createOrder'].exercise); change(spec);
+                const spec = clone(mechanics['createOrder'].exercise);
+                change(spec);
                 expect(() => parseExerciseSpec(spec)).toThrowError(ExerciseContentError);
             };
-            order(spec => { spec.answerKey.sequence.pop(); });                                   // missing item
-            order(spec => { spec.answerKey.sequence[1] = spec.answerKey.sequence[0]; });         // duplicate item
+            order(spec => { spec.answerKey.sequence.pop(); }); // missing item
+            order(spec => { spec.answerKey.sequence[1] = spec.answerKey.sequence[0]; }); // duplicate item
             order(spec => { spec.answerKey.sequence[0] = '0d000000-0000-4000-8000-0000000000ff'; }); // foreign item
             order(spec => { spec.content.items.pop(); spec.content.items.pop(); spec.content.items.pop(); spec.content.items.pop(); spec.content.items.pop(); }); // one item
-            order(spec => { spec.content.items[1].itemId = spec.content.items[0].itemId; });     // duplicate id
+            order(spec => { spec.content.items[1].itemId = spec.content.items[0].itemId; }); // duplicate id
             order(spec => { spec.content.items[0].blocks = [{ kind: 'TEXT', text: 'x'.repeat(1001) }]; }); // SEQUENCE bound
             order(spec => { spec.content.items[0].blocks = [{ kind: 'YOUTUBE', videoId: 'dQw4w9WgXcQ', title: 'x' }]; });
             order(spec => { spec.evaluatorPolicy = { id: 'deterministic-match', version: '1' }; });
             const categorize = (change: (spec: any) => void) => {
-                const spec = clone(mechanics['createCategorize'].exercise); change(spec);
+                const spec = clone(mechanics['createCategorize'].exercise);
+                change(spec);
                 expect(() => parseExerciseSpec(spec)).toThrowError(ExerciseContentError);
             };
-            categorize(spec => { spec.answerKey.assignments.pop(); });                           // item without a group
+            categorize(spec => { spec.answerKey.assignments.pop(); }); // item without a group
             categorize(spec => { spec.answerKey.assignments[0].categoryId = 'ca000000-0000-4000-8000-0000000000ff'; }); // dangling group
             categorize(spec => { spec.answerKey.assignments[1].itemId = spec.answerKey.assignments[0].itemId; }); // twice
-            categorize(spec => { spec.content.categories[1].label = ' СУЩЕСТВИТЕЛЬНОЕ '; });    // same after trim and case fold
+            categorize(spec => { spec.content.categories[1].label = ' СУЩЕСТВИТЕЛЬНОЕ '; }); // same after trim and case fold
             categorize(spec => { spec.content.categories[0].label = 'я'.repeat(81); });
             categorize(spec => { spec.content.categories.splice(2, 1); spec.content.categories.splice(1, 1); }); // one group
             categorize(spec => { spec.content.categories.push(...[4, 5, 6, 7].map(n => ({ categoryId: `ca000000-0000-4000-8000-00000000000${n}`, label: `Г${n}` }))); });
@@ -237,7 +245,7 @@ describe('Mechanics wire contract (contracts/study/mechanics.json)', () => {
             const bad = clone(mechanics['createCloze']);
             bad.exercise.answerKey.blanks[0].accepted = ['map', 'map'];
             const writing = firstValueFrom(exercises.create(deckId, '6', bad.expectedDeckRevisionId, bad.objective, bad.exercise, bad.commandId));
-            await expectAsync(writing).toBeRejectedWithError(AuthoringProtocolError);
+            await expect(writing).rejects.toThrowError(AuthoringProtocolError);
             http.expectNone(`/api/decks/${deckId}/exercises`);
         });
 
@@ -246,19 +254,25 @@ describe('Mechanics wire contract (contracts/study/mechanics.json)', () => {
                 const reading = firstValueFrom(study.read(deckId, ids.sessionId));
                 http.expectOne(`/api/decks/${deckId}/study-sessions/${ids.sessionId}`)
                     .flush(readySession([value]), { headers: privateHeaders });
-                await expectAsync(reading).toBeRejectedWithError(StudyProtocolError);
+                await expect(reading).rejects.toThrowError(StudyProtocolError);
             };
-            const choice = clone(mechanics['presentations']['choice']); choice.correctOptionIds = [];
+            const choice = clone(mechanics['presentations']['choice']);
+            choice.correctOptionIds = [];
             await read(choice);
-            const bindings = clone(mechanics['presentations']['choice']); bindings.bindings = [];
+            const bindings = clone(mechanics['presentations']['choice']);
+            bindings.bindings = [];
             await read(bindings);
-            const title = clone(mechanics['presentations']['freeResponse']); title.content.prompt[0].title = 'Слово 12';
+            const title = clone(mechanics['presentations']['freeResponse']);
+            title.content.prompt[0].title = 'Слово 12';
             await read(title);
-            const transcript = clone(mechanics['presentations']['freeResponse']); transcript.content.prompt[0].transcript = 'Erinnerung';
+            const transcript = clone(mechanics['presentations']['freeResponse']);
+            transcript.content.prompt[0].transcript = 'Erinnerung';
             await read(transcript);
-            const legacy = clone(mechanics['presentations']['selfCheck']); legacy.type = removed.typed;
+            const legacy = clone(mechanics['presentations']['selfCheck']);
+            legacy.type = removed.typed;
             await read(legacy);
-            const hint = clone(mechanics['presentations']['cloze']); hint.hints = [{ blankId: 'b1a00000-0000-4000-8000-000000000002', firstLetter: 't' }];
+            const hint = clone(mechanics['presentations']['cloze']);
+            hint.hints = [{ blankId: 'b1a00000-0000-4000-8000-000000000002', firstLetter: 't' }];
             await read(hint); // blank 2 has no first-letter hint
         });
 
@@ -267,18 +281,22 @@ describe('Mechanics wire contract (contracts/study/mechanics.json)', () => {
                 const reading = firstValueFrom(study.read(deckId, ids.sessionId));
                 http.expectOne(`/api/decks/${deckId}/study-sessions/${ids.sessionId}`)
                     .flush(readySession([value]), { headers: privateHeaders });
-                await expectAsync(reading).toBeRejectedWithError(StudyProtocolError);
+                await expect(reading).rejects.toThrowError(StudyProtocolError);
             };
             const duplicate = clone(mechanics['presentations']['order']);
             duplicate.content.items[1].itemId = duplicate.content.items[0].itemId;
             await read(duplicate);
-            const leak = clone(mechanics['presentations']['order']); leak.content.sequence = [];
+            const leak = clone(mechanics['presentations']['order']);
+            leak.content.sequence = [];
             await read(leak);
-            const wrongEvaluator = clone(mechanics['presentations']['categorize']); wrongEvaluator.evaluator.id = 'deterministic-order';
+            const wrongEvaluator = clone(mechanics['presentations']['categorize']);
+            wrongEvaluator.evaluator.id = 'deterministic-order';
             await read(wrongEvaluator);
-            const keyed = clone(mechanics['presentations']['categorize']); keyed.content.items[0].categoryId = keyed.content.categories[0].categoryId;
+            const keyed = clone(mechanics['presentations']['categorize']);
+            keyed.content.items[0].categoryId = keyed.content.categories[0].categoryId;
             await read(keyed);
-            const labelClash = clone(mechanics['presentations']['categorize']); labelClash.content.categories[1].label = 'существительное';
+            const labelClash = clone(mechanics['presentations']['categorize']);
+            labelClash.content.categories[1].label = 'существительное';
             await read(labelClash);
         });
 
@@ -293,34 +311,36 @@ describe('Mechanics wire contract (contracts/study/mechanics.json)', () => {
                 { ...categorize, response: { kind: 'CATEGORIZE', assignments: [categorize.response['assignments'][0], categorize.response['assignments'][0]] } },
                 { ...categorize, response: { kind: 'CATEGORIZE', assignments: categorize.response['assignments'].map((entry: object) => ({ ...entry, label: 'x' })) } }
             ];
-            for (const command of broken) await expectAsync(firstValueFrom(study.submit(deckId, ids.sessionId, command))).toBeRejectedWithError(StudyProtocolError);
+            for (const command of broken)
+                await expect(firstValueFrom(study.submit(deckId, ids.sessionId, command))).rejects.toThrowError(StudyProtocolError);
             http.expectNone(`/api/decks/${deckId}/study-sessions/${ids.sessionId}/attempts`);
         });
 
         it('ORDER and CATEGORIZE feedback that contradicts its own verdict or ids is a protocol error', async () => {
             const submit = async (name: string, change: (feedback: any) => void) => {
                 const command = mechanics['submits'][name] as AttemptCommand;
-                const feedback = clone(mechanics['feedback'][name]); change(feedback);
+                const feedback = clone(mechanics['feedback'][name]);
+                change(feedback);
                 const submitting = firstValueFrom(study.submit(deckId, ids.sessionId, command));
                 http.expectOne(`/api/decks/${deckId}/study-sessions/${ids.sessionId}/attempts`)
                     .flush(assessedOutcome(command, feedback), { headers: privateHeaders });
-                await expectAsync(submitting).toBeRejectedWithError(StudyProtocolError);
+                await expect(submitting).rejects.toThrowError(StudyProtocolError);
             };
-            await submit('order', feedback => { feedback.result = 'PARTIAL'; });                      // ORDER is binary
-            await submit('order', feedback => { feedback.result = 'CORRECT'; });                      // wrong positions exist
+            await submit('order', feedback => { feedback.result = 'PARTIAL'; }); // ORDER is binary
+            await submit('order', feedback => { feedback.result = 'CORRECT'; }); // wrong positions exist
             await submit('order', feedback => { feedback.positions[2].position = 7; });
             await submit('order', feedback => { feedback.correctSequence.pop(); });
             await submit('order', feedback => { feedback.positions[0].selectedItemId = feedback.positions[1].selectedItemId; });
-            await submit('categorize', feedback => { feedback.result = 'CORRECT'; });                 // one assignment is wrong
-            await submit('categorize', feedback => { feedback.result = 'INCORRECT'; });               // three are right
+            await submit('categorize', feedback => { feedback.result = 'CORRECT'; }); // one assignment is wrong
+            await submit('categorize', feedback => { feedback.result = 'INCORRECT'; }); // three are right
             await submit('categorize', feedback => { feedback.assignments[1].itemId = feedback.assignments[0].itemId; });
         });
 
         it('an attempt carrying legacy fields or the wrong response shape', async () => {
             const spoof = { ...mechanics['submits']['freeResponse'], hintsUsed: [] };
-            await expectAsync(firstValueFrom(study.submit(deckId, ids.sessionId, spoof))).toBeRejectedWithError(StudyProtocolError);
+            await expect(firstValueFrom(study.submit(deckId, ids.sessionId, spoof))).rejects.toThrowError(StudyProtocolError);
             const speech = { ...mechanics['submits']['freeResponse'], response: { kind: 'SPEECH', audio: 'x' } };
-            await expectAsync(firstValueFrom(study.submit(deckId, ids.sessionId, speech))).toBeRejectedWithError(StudyProtocolError);
+            await expect(firstValueFrom(study.submit(deckId, ids.sessionId, speech))).rejects.toThrowError(StudyProtocolError);
             http.expectNone(`/api/decks/${deckId}/study-sessions/${ids.sessionId}/attempts`);
         });
     });

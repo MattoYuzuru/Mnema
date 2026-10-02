@@ -10,6 +10,7 @@ import { createEmptyNativeDocument } from '../../content/editing/native-editor-a
 import { BrowsePageComponent } from './browse-page.component';
 import { ItemApiService } from './item-api.service';
 import { AuthoringApiService } from './authoring-api.service';
+import { spyObj, type SpyObj } from '../../../testing/mocks';
 
 describe('BrowsePageComponent', () => {
     const deckId = '00000000-0000-4000-8000-000000000001';
@@ -23,7 +24,7 @@ describe('BrowsePageComponent', () => {
     const first: ItemPage = { deckId, deckRevisionId: revisionId, deckVersion: '1', total: 2,
         items: [item(0)], nextCursor: 'next-page' };
     const second: ItemPage = { ...first, items: [item(1)], nextCursor: null };
-    let api: jasmine.SpyObj<ItemApiService>;
+    let api: SpyObj<ItemApiService>;
     let fixture: ComponentFixture<BrowsePageComponent>;
     let onIntersection: IntersectionObserverCallback;
     const originalObserver = window.IntersectionObserver;
@@ -31,38 +32,46 @@ describe('BrowsePageComponent', () => {
     afterEach(() => { window.IntersectionObserver = originalObserver; });
 
     beforeEach(() => {
-        api = jasmine.createSpyObj<ItemApiService>('ItemApiService', ['list', 'read', 'delete']);
-        const decks = jasmine.createSpyObj<OwnDecksApiService>('OwnDecksApiService', ['detail']);
-        decks.detail.and.returnValue(of(deck));
-        const authoring = jasmine.createSpyObj<AuthoringApiService>('AuthoringApiService', ['listDeckCaptures']);
-        authoring.listDeckCaptures.and.returnValue(of({ items: [], nextCursor: null, total: 3 }));
+        api = spyObj<ItemApiService>({
+            list: vi.fn().mockName("ItemApiService.list"),
+            read: vi.fn().mockName("ItemApiService.read"),
+            delete: vi.fn().mockName("ItemApiService.delete")
+        });
+        const decks = {
+            detail: vi.fn().mockName("OwnDecksApiService.detail")
+        };
+        decks.detail.mockReturnValue(of(deck));
+        const authoring = {
+            listDeckCaptures: vi.fn().mockName("AuthoringApiService.listDeckCaptures")
+        };
+        authoring.listDeckCaptures.mockReturnValue(of({ items: [], nextCursor: null, total: 3 }));
         window.IntersectionObserver = class {
             constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
                 onIntersection = callback;
                 expect(options?.rootMargin).toBe('0px 0px 800px 0px');
             }
-            observe(): void { /* Observed through the saved callback below. */ }
-            disconnect(): void { /* No browser resource is allocated in this test. */ }
+            observe(): void { }
+            disconnect(): void { }
         } as unknown as typeof IntersectionObserver;
         TestBed.configureTestingModule({ providers: [
-            provideRouter([]), provideHttpClient(),
-            { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ deckId }),
-                queryParamMap: convertToParamMap({}) } } },
-            { provide: OwnDecksApiService, useValue: decks },
-            { provide: AuthoringApiService, useValue: authoring },
-            { provide: ItemApiService, useValue: api }
-        ] });
+                provideRouter([]), provideHttpClient(),
+                { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ deckId }),
+                            queryParamMap: convertToParamMap({}) } } },
+                { provide: OwnDecksApiService, useValue: decks },
+                { provide: AuthoringApiService, useValue: authoring },
+                { provide: ItemApiService, useValue: api }
+            ] });
     });
 
     function openMaterial() {
         const current = item(1);
         const detail: ItemDetail = { ...current, deckId, deckRevisionId: revisionId, deckVersion: '1',
-            ordinal: 99_999, document: createEmptyNativeDocument() };
+            ordinal: 99999, document: createEmptyNativeDocument() };
         TestBed.overrideProvider(ActivatedRoute, { useValue: { snapshot: {
-            paramMap: convertToParamMap({ deckId, memberKey: detail.memberKey }),
-            queryParamMap: convertToParamMap({ ordinal: '999' })
-        } } });
-        api.read.and.returnValue(of(detail));
+                    paramMap: convertToParamMap({ deckId, memberKey: detail.memberKey }),
+                    queryParamMap: convertToParamMap({ ordinal: '999' })
+                } } });
+        api.read.mockReturnValue(of(detail));
         fixture = TestBed.createComponent(BrowsePageComponent);
         fixture.detectChanges();
         return { detail, component: fixture.componentInstance };
@@ -70,39 +79,42 @@ describe('BrowsePageComponent', () => {
 
     it('resolves a server ordinal and retries uncertain deletion with exactly the same command', () => {
         const { detail, component } = openMaterial();
-        expect(component.selectedOrdinal()).toBe(99_999);
+        expect(component.selectedOrdinal()).toBe(99999);
         expect(api.list).not.toHaveBeenCalled();
-        const navigate = spyOn(TestBed.inject(Router), 'navigate').and.resolveTo(true);
-        api.delete.and.returnValues(throwError(() => new HttpErrorResponse({ status: 0 })), of({
+        const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+        api.delete.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 0 }))).mockReturnValueOnce(of({
             replayed: true, acknowledgement: { commandId: revisionId, deckId, deckRevisionId: revisionId,
                 deckVersion: '2', memberCount: 1, changes: [] }
         }));
         component.deleteItem();
         expect(component.deleteMessage()).toContain('та же команда');
         component.deleteItem();
-        const command = api.delete.calls.first().args;
-        expect(command.slice(0, 6)).toEqual([deckId, detail.memberKey, '1', revisionId, detail.itemRevisionId, 99_999]);
-        expect(api.delete.calls.mostRecent().args).toEqual(command);
+        const command = vi.mocked(api.delete).mock.calls[0];
+        expect(command.slice(0, 6)).toEqual([deckId, detail.memberKey, '1', revisionId, detail.itemRevisionId, 99999]);
+        expect(vi.mocked(api.delete).mock.lastCall).toEqual(command);
         expect(navigate).toHaveBeenCalledWith(['/decks', deckId, 'materials']);
         fixture.destroy();
     });
 
     it('blocks repeated deletion after a stale snapshot until it is refreshed', () => {
         const { component } = openMaterial();
-        api.delete.and.returnValue(throwError(() => new HttpErrorResponse({ status: 412 })));
-        component.deleteItem(); component.deleteItem(); fixture.detectChanges();
+        api.delete.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 412 })));
+        component.deleteItem();
+        component.deleteItem();
+        fixture.detectChanges();
         expect(api.delete).toHaveBeenCalledTimes(1);
         expect(component.selectedOrdinal()).toBeNull();
-        expect(component.positionError()).toBeTrue();
-        expect(fixture.nativeElement.querySelector('app-hold-to-delete-button button').disabled).toBeTrue();
+        expect(component.positionError()).toBe(true);
+        expect(fixture.nativeElement.querySelector('app-hold-to-delete-button button').disabled).toBe(true);
         fixture.destroy();
     });
 
     it('never trusts a route position when the server position is unavailable', () => {
         const { detail, component } = openMaterial();
-        api.read.and.returnValue(of({ ...detail, ordinal: null }));
-        component.load(); component.deleteItem();
-        expect(component.positionError()).toBeTrue();
+        api.read.mockReturnValue(of({ ...detail, ordinal: null }));
+        component.load();
+        component.deleteItem();
+        expect(component.positionError()).toBe(true);
         expect(component.selectedOrdinal()).toBeNull();
         expect(api.list).not.toHaveBeenCalled();
         expect(api.delete).not.toHaveBeenCalled();
@@ -111,15 +123,15 @@ describe('BrowsePageComponent', () => {
 
     it('prefetches the next page while preserving the visible first page', () => {
         const nextPage = new Subject<ItemPage>();
-        api.list.and.returnValues(of(first), nextPage.asObservable());
+        api.list.mockReturnValueOnce(of(first)).mockReturnValueOnce(nextPage.asObservable());
         fixture = TestBed.createComponent(BrowsePageComponent);
         fixture.detectChanges();
         onIntersection([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
         fixture.detectChanges();
-        expect(api.list.calls.count()).toBe(2);
+        expect(vi.mocked(api.list).mock.calls.length).toBe(2);
         expect(fixture.nativeElement.textContent).toContain('Париж — столица Франции');
         expect((fixture.nativeElement as HTMLElement).querySelector('.capture-badge')?.textContent?.trim()).toBe('3');
-        fixture.componentInstance.captureCount.set(1_000);
+        fixture.componentInstance.captureCount.set(1000);
         fixture.detectChanges();
         expect((fixture.nativeElement as HTMLElement).querySelector('.capture-badge')?.textContent?.trim()).toBe('999+');
         expect(fixture.nativeElement.textContent).toContain('Загружаем следующие материалы');
@@ -132,7 +144,7 @@ describe('BrowsePageComponent', () => {
     });
 
     it('keeps loaded materials and offers retry after a later page fails', () => {
-        api.list.and.returnValues(of(first), throwError(() => new Error('offline')));
+        api.list.mockReturnValueOnce(of(first)).mockReturnValueOnce(throwError(() => new Error('offline')));
         fixture = TestBed.createComponent(BrowsePageComponent);
         fixture.detectChanges();
         onIntersection([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);

@@ -6,14 +6,20 @@ import metadataFixture from '../../../../../contracts/decks/metadata.json';
 import { DeckCommand, DeckWriteResult, OwnDeck, OwnDeckPage } from './own-deck.models';
 import { OwnDecksApiService } from './own-decks-api.service';
 import { OwnDecksStore, mayRetrySameCommand } from './own-decks.store';
+import { spyObj, type SpyObj } from '../../../testing/mocks';
 
 describe('OwnDecksStore', () => {
     let store: OwnDecksStore;
-    let api: jasmine.SpyObj<OwnDecksApiService>;
+    let api: SpyObj<OwnDecksApiService>;
     const fixtureDeck = metadataFixture.detail as unknown as OwnDeck;
 
     beforeEach(() => {
-        api = jasmine.createSpyObj<OwnDecksApiService>('OwnDecksApiService', ['list', 'detail', 'create', 'save']);
+        api = spyObj<OwnDecksApiService>({
+            list: vi.fn().mockName("OwnDecksApiService.list"),
+            detail: vi.fn().mockName("OwnDecksApiService.detail"),
+            create: vi.fn().mockName("OwnDecksApiService.create"),
+            save: vi.fn().mockName("OwnDecksApiService.save")
+        });
         TestBed.configureTestingModule({
             providers: [OwnDecksStore, { provide: OwnDecksApiService, useValue: api }]
         });
@@ -21,14 +27,14 @@ describe('OwnDecksStore', () => {
     });
 
     it('treats rejected successful-response parsing and server failures as unknown outcomes', () => {
-        expect(mayRetrySameCommand({ kind: 'protocol', status: 0, code: null })).toBeTrue();
-        expect(mayRetrySameCommand({ kind: 'http', status: 500, code: null })).toBeTrue();
-        expect(mayRetrySameCommand({ kind: 'http', status: 400, code: 'INVALID_REQUEST' })).toBeFalse();
+        expect(mayRetrySameCommand({ kind: 'protocol', status: 0, code: null })).toBe(true);
+        expect(mayRetrySameCommand({ kind: 'http', status: 500, code: null })).toBe(true);
+        expect(mayRetrySameCommand({ kind: 'http', status: 400, code: 'INVALID_REQUEST' })).toBe(false);
     });
 
     it('ignores a stale list response even when its transport does not honor unsubscribe', () => {
         const observers: Observer<OwnDeckPage>[] = [];
-        api.list.and.callFake(() => stubbornObservable(observers));
+        api.list.mockImplementation(() => stubbornObservable(observers));
         const newer = { ...fixtureDeck, deckId: '33333333-3333-4333-8333-333333333333' };
 
         store.loadList();
@@ -40,7 +46,7 @@ describe('OwnDecksStore', () => {
     });
 
     it('keeps only one bounded server page after extended cursor navigation', () => {
-        api.list.and.callFake(cursor => {
+        api.list.mockImplementation(cursor => {
             const page = cursor == null ? 0 : Number(cursor.replace('page-', ''));
             const items = Array.from({ length: 20 }, (_, offset) => ({
                 ...fixtureDeck,
@@ -50,37 +56,30 @@ describe('OwnDecksStore', () => {
         });
 
         store.loadList();
-        for (let page = 1; page < 100; page += 1) store.loadMore();
+        for (let page = 1; page < 100; page += 1)
+            store.loadMore();
 
         expect(store.listState().items.length).toBe(20);
     });
 
     it('navigates back with a retained cursor without accumulating both pages', () => {
         const older = { ...fixtureDeck, deckId: '33333333-3333-4333-8333-333333333333' };
-        api.list.and.returnValues(
-            of({ items: [fixtureDeck], nextCursor: 'older-page' }),
-            of({ items: [older], nextCursor: null }),
-            of({ items: [fixtureDeck], nextCursor: 'older-page' })
-        );
+        api.list.mockReturnValueOnce(of({ items: [fixtureDeck], nextCursor: 'older-page' })).mockReturnValueOnce(of({ items: [older], nextCursor: null })).mockReturnValueOnce(of({ items: [fixtureDeck], nextCursor: 'older-page' }));
 
         store.loadList();
         store.loadMore();
         expect(store.listState().items.map(deck => deck.deckId)).toEqual([older.deckId]);
-        expect(store.canGoBack()).toBeTrue();
+        expect(store.canGoBack()).toBe(true);
 
         store.loadPrevious();
-        expect(api.list.calls.argsFor(2)[0]).toBeNull();
+        expect(vi.mocked(api.list).mock.calls[2][0]).toBeNull();
         expect(store.listState().items.map(deck => deck.deckId)).toEqual([fixtureDeck.deckId]);
-        expect(store.canGoBack()).toBeFalse();
+        expect(store.canGoBack()).toBe(false);
     });
 
     it('refreshes the visible page without changing its cursor or discarding confirmed rows on failure', () => {
         const newer = { ...fixtureDeck, deckId: '33333333-3333-4333-8333-333333333333' };
-        api.list.and.returnValues(
-            of({ items: [fixtureDeck], nextCursor: 'older-page' }),
-            of({ items: [newer], nextCursor: 'older-page' }),
-            throwError(() => new HttpErrorResponse({ status: 503 }))
-        );
+        api.list.mockReturnValueOnce(of({ items: [fixtureDeck], nextCursor: 'older-page' })).mockReturnValueOnce(of({ items: [newer], nextCursor: 'older-page' })).mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
 
         store.loadList();
         store.refreshVisibleList();
@@ -88,27 +87,25 @@ describe('OwnDecksStore', () => {
         store.refreshVisibleList();
         expect(store.listState().phase).toBe('ready');
         expect(store.listState().items.map(deck => deck.deckId)).toEqual([newer.deckId]);
-        expect(api.list.calls.allArgs()).toEqual([[null], [null], [null]]);
+        expect(vi.mocked(api.list).mock.calls).toEqual([[null], [null], [null]]);
     });
 
     it('retries an unknown create outcome with the exact same command', () => {
-        api.create.and.returnValues(
-            throwError(() => new HttpErrorResponse({ status: 0 })),
-            of(writeResult(fixtureDeck, false))
-        );
+        api.create.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 0 }))).mockReturnValueOnce(of(writeResult(fixtureDeck, false)));
 
         store.startCreate(fixtureDeck.metadata);
-        const firstCommand = api.create.calls.argsFor(0)[0];
+        const firstCommand = vi.mocked(api.create).mock.calls[0][0];
         expect(store.mutationState().phase).toBe('error');
         store.startCreate({ title: 'Второй щелчок', description: '' });
         expect(api.create).toHaveBeenCalledTimes(1);
         expect(store.mutationState().phase).toBe('error');
         store.retryMutation();
 
-        expect(api.create.calls.argsFor(1)[0]).toEqual(firstCommand);
+        expect(vi.mocked(api.create).mock.calls[1][0]).toEqual(firstCommand);
         const completed = store.mutationState();
         expect(completed.phase).toBe('completed');
-        if (completed.phase === 'completed') expect(completed.confirmation).toBe('fresh');
+        if (completed.phase === 'completed')
+            expect(completed.confirmation).toBe('fresh');
     });
 
     it('restores an unresolved command without sending it until explicit retry', () => {
@@ -119,41 +116,42 @@ describe('OwnDecksStore', () => {
                 metadata: { title: 'Восстановленный ввод', description: 'не терять' }
             }
         };
-        api.create.and.returnValue(of(writeResult(fixtureDeck, false)));
+        api.create.mockReturnValue(of(writeResult(fixtureDeck, false)));
 
         store.recoverMutation(pending);
         expect(api.create).not.toHaveBeenCalled();
         store.retryMutation();
 
-        expect(api.create).toHaveBeenCalledOnceWith(pending.command);
+        expect(api.create).toHaveBeenCalledTimes(1);
+
+        expect(api.create).toHaveBeenCalledWith(pending.command);
     });
 
     it('admits only one create while its first transport is still pending', () => {
         const observers: Observer<DeckWriteResult>[] = [];
-        api.create.and.callFake(() => stubbornObservable(observers));
+        api.create.mockImplementation(() => stubbornObservable(observers));
 
         store.startCreate({ title: 'Первый замысел', description: '' });
-        const firstCommand = api.create.calls.argsFor(0)[0];
+        const firstCommand = vi.mocked(api.create).mock.calls[0][0];
         store.startCreate({ title: 'Двойной щелчок', description: '' });
 
         expect(api.create).toHaveBeenCalledTimes(1);
         const state = store.mutationState();
         expect(state.phase).toBe('pending');
-        if (state.phase === 'pending') expect(state.pending.command).toEqual(firstCommand);
+        if (state.phase === 'pending')
+            expect(state.pending.command).toEqual(firstCommand);
     });
 
     it('keeps a replay-refresh draft owned by its original command until exact GET retry succeeds', () => {
         const current = { ...fixtureDeck, rowVersion: '2', sequence: '2' };
-        api.create.and.returnValue(of(writeResult(fixtureDeck, true)));
-        api.detail.and.returnValues(
-            throwError(() => new HttpErrorResponse({ status: 0 })),
-            of(current)
-        );
+        api.create.mockReturnValue(of(writeResult(fixtureDeck, true)));
+        api.detail.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 0 }))).mockReturnValueOnce(of(current));
 
         store.startCreate({ title: 'Исходный ввод', description: 'точный' });
         const failed = store.mutationState();
         expect(failed.phase).toBe('error');
-        if (failed.phase === 'error') expect(failed.replayRefreshFailed).toBeTrue();
+        if (failed.phase === 'error')
+            expect(failed.replayRefreshFailed).toBe(true);
         store.startCreate({ title: 'Новый ввод', description: '' });
         expect(api.create).toHaveBeenCalledTimes(1);
 
@@ -162,13 +160,14 @@ describe('OwnDecksStore', () => {
         expect(api.detail).toHaveBeenCalledTimes(2);
         const completed = store.mutationState();
         expect(completed.phase).toBe('completed');
-        if (completed.phase === 'completed') expect(completed.confirmation).toBe('refreshed-after-replay');
+        if (completed.phase === 'completed')
+            expect(completed.confirmation).toBe('refreshed-after-replay');
     });
 
     it('refreshes a replay before exposing completion and never applies its old acknowledgement', () => {
         const current = { ...fixtureDeck, rowVersion: '2', sequence: '2', metadata: { title: 'Новое', description: '' } };
-        api.create.and.returnValue(of(writeResult(fixtureDeck, true)));
-        api.detail.and.returnValue(of(current));
+        api.create.mockReturnValue(of(writeResult(fixtureDeck, true)));
+        api.detail.mockReturnValue(of(current));
 
         store.startCreate(fixtureDeck.metadata);
 
@@ -184,14 +183,11 @@ describe('OwnDecksStore', () => {
     it('keeps the draft on 412, loads latest, and reapplies only after explicit choice', () => {
         const latest = { ...fixtureDeck, rowVersion: '1', sequence: '1', metadata: { title: 'Другая вкладка', description: '' } };
         const reapplied = { ...latest, rowVersion: '2', sequence: '2', metadata: { title: 'Мой ввод', description: '  точно  ' } };
-        api.detail.and.returnValues(of(fixtureDeck), of(latest));
-        api.save.and.returnValues(
-            throwError(() => new HttpErrorResponse({
-                status: 412,
-                error: { code: 'VERSION_CONFLICT' }
-            })),
-            of(writeResult(reapplied, false))
-        );
+        api.detail.mockReturnValueOnce(of(fixtureDeck)).mockReturnValueOnce(of(latest));
+        api.save.mockReturnValueOnce(throwError(() => new HttpErrorResponse({
+            status: 412,
+            error: { code: 'VERSION_CONFLICT' }
+        }))).mockReturnValueOnce(of(writeResult(reapplied, false)));
         store.openDeck(fixtureDeck.deckId);
         const draft = reapplied.metadata;
 
@@ -204,34 +200,31 @@ describe('OwnDecksStore', () => {
         }
 
         store.reapplyConflict();
-        expect(api.save.calls.argsFor(1)[1]).toBe('1');
-        expect(api.save.calls.argsFor(1)[2].commandId).not.toBe(api.save.calls.argsFor(0)[2].commandId);
+        expect(vi.mocked(api.save).mock.calls[1][1]).toBe('1');
+        expect(vi.mocked(api.save).mock.calls[1][2].commandId).not.toBe(vi.mocked(api.save).mock.calls[0][2].commandId);
         expect(store.detailState().deck?.metadata).toEqual(draft);
     });
 
     it('does not replace an unresolved save command with a newer local draft', () => {
         const saved = { ...fixtureDeck, rowVersion: '1', sequence: '1', metadata: { title: 'Первый ввод', description: '' } };
-        api.detail.and.returnValue(of(fixtureDeck));
-        api.save.and.returnValues(
-            throwError(() => new HttpErrorResponse({ status: 0 })),
-            of(writeResult(saved, false))
-        );
+        api.detail.mockReturnValue(of(fixtureDeck));
+        api.save.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 0 }))).mockReturnValueOnce(of(writeResult(saved, false)));
         store.openDeck(fixtureDeck.deckId);
 
         store.startSave(fixtureDeck, saved.metadata);
-        const original = api.save.calls.argsFor(0)[2];
+        const original = vi.mocked(api.save).mock.calls[0][2];
         store.startSave(fixtureDeck, { title: 'Второй ввод', description: '' });
         expect(api.save).toHaveBeenCalledTimes(1);
 
         store.retryMutation();
-        expect(api.save.calls.argsFor(1)[2]).toEqual(original);
+        expect(vi.mocked(api.save).mock.calls[1][2]).toEqual(original);
         expect(store.detailState().deck?.metadata.title).toBe('Первый ввод');
     });
 
     it('ignores a save acknowledgement after navigating to another deck context', () => {
         const observers: Observer<DeckWriteResult>[] = [];
-        api.detail.and.returnValue(stubbornObservable<OwnDeck>([]));
-        api.save.and.callFake(() => stubbornObservable(observers));
+        api.detail.mockReturnValue(stubbornObservable<OwnDeck>([]));
+        api.save.mockImplementation(() => stubbornObservable(observers));
         store.openDeck(fixtureDeck.deckId);
         store.startSave(fixtureDeck, { title: 'Поздний ответ', description: '' });
         store.openDeck('33333333-3333-4333-8333-333333333333');

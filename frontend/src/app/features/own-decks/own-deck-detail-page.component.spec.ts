@@ -10,12 +10,13 @@ import { OwnDeckDetailPageComponent } from './own-deck-detail-page.component';
 import { OwnDeckRecoveryService } from './own-deck-recovery.service';
 import { AuthoringApiService } from '../authoring/authoring-api.service';
 import { OwnDecksApiService } from './own-decks-api.service';
+import { spyObj, type SpyObj } from '../../../testing/mocks';
 
 describe('OwnDeckDetailPageComponent', () => {
     let fixture: ComponentFixture<OwnDeckDetailPageComponent>;
-    let store: jasmine.SpyObj<OwnDecksStore>;
-    let recovery: jasmine.SpyObj<OwnDeckRecoveryService>;
-    let decksApi: jasmine.SpyObj<OwnDecksApiService>;
+    let store: SpyObj<OwnDecksStore>;
+    let recovery: SpyObj<OwnDeckRecoveryService>;
+    let decksApi: SpyObj<OwnDecksApiService>;
     const deck = metadataFixture.detail as unknown as OwnDeck;
     const detail = signal<DeckDetailState>({ phase: 'ready', deckId: deck.deckId, deck, failure: null });
     const mutation = signal<DeckMutationState>({ phase: 'idle' });
@@ -23,21 +24,36 @@ describe('OwnDeckDetailPageComponent', () => {
     beforeEach(async () => {
         detail.set({ phase: 'ready', deckId: deck.deckId, deck, failure: null });
         mutation.set({ phase: 'idle' });
-        store = jasmine.createSpyObj<OwnDecksStore>('OwnDecksStore', [
-            'openDeck', 'retryDetail', 'startSave', 'retryMutation', 'retryAsNewCommand',
-            'useServerVersion', 'reapplyConflict', 'clearMutation', 'recoverMutation'
-        ]);
-        recovery = jasmine.createSpyObj<OwnDeckRecoveryService>('OwnDeckRecoveryService', ['restore', 'save', 'clear']);
-        recovery.restore.and.returnValue(null);
-        const authoring = jasmine.createSpyObj<AuthoringApiService>('AuthoringApiService', ['listDeckCaptures']);
-        authoring.listDeckCaptures.and.returnValue(of({ items: [], nextCursor: null, total: 2 }));
-        decksApi = jasmine.createSpyObj<OwnDecksApiService>('OwnDecksApiService', ['delete']);
+        store = spyObj<OwnDecksStore>({
+            openDeck: vi.fn().mockName("OwnDecksStore.openDeck"),
+            retryDetail: vi.fn().mockName("OwnDecksStore.retryDetail"),
+            startSave: vi.fn().mockName("OwnDecksStore.startSave"),
+            retryMutation: vi.fn().mockName("OwnDecksStore.retryMutation"),
+            retryAsNewCommand: vi.fn().mockName("OwnDecksStore.retryAsNewCommand"),
+            useServerVersion: vi.fn().mockName("OwnDecksStore.useServerVersion"),
+            reapplyConflict: vi.fn().mockName("OwnDecksStore.reapplyConflict"),
+            clearMutation: vi.fn().mockName("OwnDecksStore.clearMutation"),
+            recoverMutation: vi.fn().mockName("OwnDecksStore.recoverMutation")
+        });
+        recovery = spyObj<OwnDeckRecoveryService>({
+            restore: vi.fn().mockName("OwnDeckRecoveryService.restore"),
+            save: vi.fn().mockName("OwnDeckRecoveryService.save"),
+            clear: vi.fn().mockName("OwnDeckRecoveryService.clear")
+        });
+        recovery.restore.mockReturnValue(null);
+        const authoring = {
+            listDeckCaptures: vi.fn().mockName("AuthoringApiService.listDeckCaptures")
+        };
+        authoring.listDeckCaptures.mockReturnValue(of({ items: [], nextCursor: null, total: 2 }));
+        decksApi = spyObj<OwnDecksApiService>({
+            delete: vi.fn().mockName("OwnDecksApiService.delete")
+        });
         Object.defineProperty(store, 'detailState', { value: detail.asReadonly() });
         Object.defineProperty(store, 'mutationState', { value: mutation.asReadonly() });
         await TestBed.configureTestingModule({
             imports: [OwnDeckDetailPageComponent],
             providers: [
-                provideRouter([]),
+                provideRouter([{ path: '**', children: [] }]),
                 { provide: OwnDeckRecoveryService, useValue: recovery },
                 { provide: AuthoringApiService, useValue: authoring },
                 { provide: OwnDecksApiService, useValue: decksApi },
@@ -51,18 +67,17 @@ describe('OwnDeckDetailPageComponent', () => {
     });
 
     it('opens the route identity and saves exact edited metadata against the loaded deck', () => {
-        expect(store.openDeck).toHaveBeenCalledOnceWith(deck.deckId);
+        expect(store.openDeck).toHaveBeenCalledTimes(1);
+        expect(store.openDeck).toHaveBeenCalledWith(deck.deckId);
         fixture.componentInstance.form.setValue({ title: '  Точное имя  ', description: 'строка 1\nстрока 2' });
         fixture.componentInstance.save(deck);
 
-        expect(store.startSave).toHaveBeenCalledOnceWith(deck, {
+        expect(store.startSave).toHaveBeenCalledTimes(1);
+
+        expect(store.startSave).toHaveBeenCalledWith(deck, {
             title: '  Точное имя  ', description: 'строка 1\nстрока 2'
         });
-        expect(recovery.save).toHaveBeenCalledWith(
-            { operation: 'save', deckId: deck.deckId },
-            { title: '  Точное имя  ', description: 'строка 1\nстрока 2' },
-            null
-        );
+        expect(recovery.save).toHaveBeenCalledWith({ operation: 'save', deckId: deck.deckId }, { title: '  Точное имя  ', description: 'строка 1\nстрока 2' }, null);
     });
 
     it('shows both explicit 412 choices and keeps the local draft in the form', () => {
@@ -82,7 +97,7 @@ describe('OwnDeckDetailPageComponent', () => {
         expect(root.textContent).toContain('Оставить текущую версию');
         expect(root.textContent).toContain('Применить мой прежний ввод поверх неё');
         expect(fixture.componentInstance.form.getRawValue()).toEqual({ title: 'Мой ввод', description: 'мой текст' });
-        expect(root.querySelector<HTMLTextAreaElement>('#detail-title')?.readOnly).toBeTrue();
+        expect(root.querySelector<HTMLTextAreaElement>('#detail-title')?.readOnly).toBe(true);
     });
 
     it('makes an unknown-outcome save draft read-only until exact-command reconciliation', () => {
@@ -103,7 +118,7 @@ describe('OwnDeckDetailPageComponent', () => {
         fixture.detectChanges();
 
         expect((fixture.nativeElement as HTMLElement)
-            .querySelector<HTMLTextAreaElement>('#detail-title')?.readOnly).toBeTrue();
+            .querySelector<HTMLTextAreaElement>('#detail-title')?.readOnly).toBe(true);
     });
 
     it('makes Study the primary action inside the selected deck', () => {
@@ -116,19 +131,21 @@ describe('OwnDeckDetailPageComponent', () => {
     });
 
     it('deletes only the opened deck after the hold control confirms', () => {
-        decksApi.delete.and.returnValue(of(void 0));
+        decksApi.delete.mockReturnValue(of(void 0));
         fixture.componentInstance.deleteDeck(deck);
 
-        expect(decksApi.delete).toHaveBeenCalledOnceWith(deck);
+        expect(decksApi.delete).toHaveBeenCalledTimes(1);
+
+        expect(decksApi.delete).toHaveBeenCalledWith(deck);
         expect(recovery.clear).toHaveBeenCalledWith({ operation: 'save', deckId: deck.deckId });
     });
 
     it('keeps the deck open when its delete request fails', () => {
-        decksApi.delete.and.returnValue(throwError(() => new Error('offline')));
+        decksApi.delete.mockReturnValue(throwError(() => new Error('offline')));
         fixture.componentInstance.deleteDeck(deck);
         fixture.detectChanges();
 
-        expect(fixture.componentInstance.deleting()).toBeFalse();
+        expect(fixture.componentInstance.deleting()).toBe(false);
         expect(fixture.componentInstance.deleteError()).toContain('Не удалось удалить колоду');
         expect((fixture.nativeElement as HTMLElement).textContent).toContain(deck.metadata.title);
     });

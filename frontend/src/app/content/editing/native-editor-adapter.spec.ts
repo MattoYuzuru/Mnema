@@ -6,14 +6,7 @@ import mixedDocumentJson from '../../../../../contracts/content/native-v1/valid/
 import richDocumentJson from '../../../../../contracts/content/native-v1/valid/rich.json';
 import youtubeDocumentJson from '../../../../../contracts/content/native-v1/valid/youtube.json';
 import { NativeDocument, NativeNode } from '../native-document';
-import {
-    exportNativeDocument,
-    importNativeDocument,
-    nativeEditorSchema,
-    nativeTextIdentityPlugin,
-    parseSafePastedHtml,
-    sanitizePastedHtml
-} from './native-editor-adapter';
+import { exportNativeDocument, importNativeDocument, nativeEditorSchema, nativeTextIdentityPlugin, parseSafePastedHtml, sanitizePastedHtml } from './native-editor-adapter';
 
 describe('native ProseMirror adapter', () => {
     const mixed = mixedDocumentJson as unknown as NativeDocument;
@@ -21,7 +14,7 @@ describe('native ProseMirror adapter', () => {
     it('round-trips the shared golden fixture without exposing ProseMirror state', () => {
         const imported = importNativeDocument(mixed);
 
-        expect(imported.editable).toBeTrue();
+        expect(imported.editable).toBe(true);
         expect(imported.document).not.toBeNull();
         const exported = exportNativeDocument(imported.document!);
         expect(exported).toEqual(mixed);
@@ -33,7 +26,7 @@ describe('native ProseMirror adapter', () => {
         const rich = richDocumentJson as unknown as NativeDocument;
         const imported = importNativeDocument(rich);
 
-        expect(imported.editable).toBeTrue();
+        expect(imported.editable).toBe(true);
         expect(imported.document?.childCount).toBe(5);
         expect(exportNativeDocument(imported.document!)).toEqual(rich);
         expect(imported.document!.toString()).not.toContain('object-storage');
@@ -42,7 +35,7 @@ describe('native ProseMirror adapter', () => {
     it('round-trips a YouTube block as an inert provider ID', () => {
         const youtube = youtubeDocumentJson as unknown as NativeDocument;
         const imported = importNativeDocument(youtube);
-        expect(imported.editable).toBeTrue();
+        expect(imported.editable).toBe(true);
         expect(exportNativeDocument(imported.document!)).toEqual(youtube);
         expect(imported.document!.toString()).not.toContain('iframe');
     });
@@ -99,11 +92,13 @@ describe('native ProseMirror adapter', () => {
 
     it('opens a future root read-only and retains the complete source', () => {
         const future: NativeDocument = structuredClone(mixed);
-        (future.root as { version: number }).version = 2;
+        (future.root as {
+            version: number;
+        }).version = 2;
 
         const imported = importNativeDocument(future);
 
-        expect(imported.editable).toBeFalse();
+        expect(imported.editable).toBe(false);
         expect(imported.document).toBeNull();
         expect(imported.source).toEqual(future);
     });
@@ -129,7 +124,11 @@ describe('native ProseMirror adapter', () => {
 
     it('rejects overlong scalars even when hidden inside an opaque node', () => {
         const document = simpleDocument('safe');
-        const opaque = document.root.content[0]! as { type: string; version: number; attrs: Record<string, unknown> };
+        const opaque = document.root.content[0]! as {
+            type: string;
+            version: number;
+            attrs: Record<string, unknown>;
+        };
         opaque.type = 'future_block';
         opaque.version = 7;
         opaque.attrs = { payload: 'x'.repeat(32 * 1024 + 1) };
@@ -145,7 +144,9 @@ describe('native ProseMirror adapter', () => {
             plugins: [nativeTextIdentityPlugin]
         });
         const opaque = state.doc.content.content.find(node => node.type.name === 'unsupported_block'
-            && (node.attrs['payload'] as { type?: string }).type === 'table')!;
+            && (node.attrs['payload'] as {
+                type?: string;
+            }).type === 'table')!;
         state = state.applyTransaction(state.tr.insert(state.doc.content.size, opaque)).state;
 
         const exported = exportNativeDocument(state.doc);
@@ -164,21 +165,23 @@ function simpleDocument(text: string): NativeDocument {
         root: {
             id: '00000000-0000-4000-8000-000000000101', type: 'doc', version: 1, attrs: {},
             content: [{
-                id: '00000000-0000-4000-8000-000000000102', type: 'paragraph', version: 1, attrs: {},
-                content: [{
-                    id: '00000000-0000-4000-8000-000000000103', type: 'text', version: 1,
-                    attrs: { text, marks: [] }, content: []
+                    id: '00000000-0000-4000-8000-000000000102', type: 'paragraph', version: 1, attrs: {},
+                    content: [{
+                            id: '00000000-0000-4000-8000-000000000103', type: 'text', version: 1,
+                            attrs: { text, marks: [] }, content: []
+                        }]
                 }]
-            }]
         }
     };
 }
 
 function findNative(node: NativeNode, type: string): NativeNode | null {
-    if (node.type === type) return node;
+    if (node.type === type)
+        return node;
     for (const child of node.content) {
         const found = findNative(child, type);
-        if (found !== null) return found;
+        if (found !== null)
+            return found;
     }
     return null;
 }

@@ -8,20 +8,21 @@ describe('canonical authentication guard', () => {
         let resolve!: () => void;
         let authenticated = false;
         TestBed.configureTestingModule({ providers: [provideRouter([]), { provide: AuthService, useValue: {
-            restore: () => new Promise<void>(done => { resolve = done; }),
-            status: () => authenticated ? 'authenticated' : 'pending', accessToken: () => authenticated ? 'token' : null
-        } }] });
+                        restore: () => new Promise<void>(done => { resolve = done; }),
+                        status: () => authenticated ? 'authenticated' : 'pending', accessToken: () => authenticated ? 'token' : null
+                    } }] });
         const result = TestBed.runInInjectionContext(() => authGuard({} as ActivatedRouteSnapshot, { url: '/decks/123' } as RouterStateSnapshot));
-        authenticated = true; resolve();
-        expect(await result).toBeTrue();
+        authenticated = true;
+        resolve();
+        expect(await result).toBe(true);
     });
 
     it('returns an internal login UrlTree with preserved deep link rather than navigating imperatively', async () => {
         TestBed.configureTestingModule({ providers: [provideRouter([]), { provide: AuthService, useValue: {
-            restore: async () => {}, status: () => 'anonymous', accessToken: () => null
-        } }] });
+                        restore: async () => { }, status: () => 'anonymous', accessToken: () => null
+                    } }] });
         const router = TestBed.inject(Router);
-        const navigate = spyOn(router, 'navigate');
+        const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(false);
         const result = await TestBed.runInInjectionContext(() => authGuard({} as ActivatedRouteSnapshot, { url: '/decks/123' } as RouterStateSnapshot));
         expect(result).toEqual(router.createUrlTree(['/login'], { queryParams: { returnUrl: '/decks/123' } }));
         expect(navigate).not.toHaveBeenCalled();

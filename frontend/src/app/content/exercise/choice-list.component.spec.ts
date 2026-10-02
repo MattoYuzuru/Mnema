@@ -15,7 +15,7 @@ describe('ChoiceListComponent', () => {
     ];
 
     beforeEach(() => TestBed.configureTestingModule({ providers: [{ provide: MEDIA_PLAYBACK_RESOLVER,
-        useValue: { resolve: fakePlayback } }] }));
+                useValue: { resolve: fakePlayback } }] }));
 
     it('names options by text, image description or a generated neutral label', () => {
         expect(options.map((option, index) => optionLabel(option, index))).toEqual(['Текст', 'Аудио, вариант 2', 'Видео, вариант 3', 'Осадок']);
@@ -39,7 +39,7 @@ describe('ChoiceListComponent', () => {
         fixture.detectChanges();
         expect(root.querySelectorAll('input[type="checkbox"]').length).toBe(4);
         expect(root.querySelector('legend')?.textContent).toBe('Выберите все подходящие варианты');
-        expect(root.querySelector('fieldset')?.disabled).toBeTrue();
+        expect(root.querySelector('fieldset')?.disabled).toBe(true);
     });
 
     it('marks correct options after evaluation and keeps every player outside its label', () => {

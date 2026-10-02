@@ -69,7 +69,7 @@ describe('AuthoringApiService', () => {
         request.flush({ commandId, draft: { ...draft, rowVersion: '3' } }, {
             headers: { ...headers, 'Idempotency-Replayed': 'true' }
         });
-        expect((await result).replayed).toBeTrue();
+        expect((await result).replayed).toBe(true);
     });
 
     it('creates and converts a capture with both note and deck preconditions', async () => {
@@ -114,12 +114,12 @@ describe('AuthoringApiService', () => {
         http.expectOne(req => req.url === '/api/capture-notes').flush({
             items: [{ ...capture, deckId: id('9') }], nextCursor: null, total: 1
         }, { headers });
-        await expectAsync(page).toBeRejectedWithError(AuthoringProtocolError);
+        await expect(page).rejects.toThrowError(AuthoringProtocolError);
     });
 
     it('rejects cacheable private data and unexpected fields', async () => {
         const page = firstValueFrom(api.listCaptures());
         http.expectOne('/api/capture-notes?limit=20').flush({ items: [], nextCursor: null, leaked: true });
-        await expectAsync(page).toBeRejectedWithError(AuthoringProtocolError);
+        await expect(page).rejects.toThrowError(AuthoringProtocolError);
     });
 });

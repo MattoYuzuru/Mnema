@@ -1,9 +1,10 @@
 // @ts-check
+const { defineConfig } = require("eslint/config");
 const eslint = require("@eslint/js");
 const tseslint = require("typescript-eslint");
 const angular = require("angular-eslint");
 
-module.exports = tseslint.config(
+module.exports = defineConfig(
   {
     files: ["src/**/*.ts"],
     extends: [
@@ -49,7 +50,6 @@ module.exports = tseslint.config(
   },
   {
     files: [
-      "src/app/app.component.ts",
       "src/app/core/layout/app-shell.component.ts",
       "src/app/features/admin/admin-panel.component.ts",
       "src/app/features/decks/add-cards-modal.component.ts",

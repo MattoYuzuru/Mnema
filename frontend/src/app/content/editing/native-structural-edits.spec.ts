@@ -13,7 +13,9 @@ describe('planNativeStructuralEdits', () => {
     it('does not invent structural intent for text and attribute changes', () => {
         const before = document([node('2', [node('3')])]);
         const after = structuredClone(before);
-        (after.root.content[0]!.attrs as { label?: string }).label = 'changed';
+        (after.root.content[0]!.attrs as {
+            label?: string;
+        }).label = 'changed';
         expect(planNativeStructuralEdits(before, after)).toEqual([]);
     });
 

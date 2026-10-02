@@ -5,19 +5,27 @@ import { provideRouter, Router } from '@angular/router';
 import { DeckMutationState, OwnDecksStore } from './own-decks.store';
 import { OwnDeckCreatePageComponent } from './own-deck-create-page.component';
 import { OwnDeckRecoveryService } from './own-deck-recovery.service';
+import { spyObj, type SpyObj } from '../../../testing/mocks';
 
 describe('OwnDeckCreatePageComponent', () => {
     let fixture: ComponentFixture<OwnDeckCreatePageComponent>;
-    let store: jasmine.SpyObj<OwnDecksStore>;
-    let recovery: jasmine.SpyObj<OwnDeckRecoveryService>;
+    let store: SpyObj<OwnDecksStore>;
+    let recovery: SpyObj<OwnDeckRecoveryService>;
     let mutation: WritableSignal<DeckMutationState>;
 
     beforeEach(async () => {
-        store = jasmine.createSpyObj<OwnDecksStore>('OwnDecksStore', [
-            'startCreate', 'retryMutation', 'retryAsNewCommand', 'recoverMutation'
-        ]);
-        recovery = jasmine.createSpyObj<OwnDeckRecoveryService>('OwnDeckRecoveryService', ['restore', 'save', 'clear']);
-        recovery.restore.and.returnValue(null);
+        store = spyObj<OwnDecksStore>({
+            startCreate: vi.fn().mockName("OwnDecksStore.startCreate"),
+            retryMutation: vi.fn().mockName("OwnDecksStore.retryMutation"),
+            retryAsNewCommand: vi.fn().mockName("OwnDecksStore.retryAsNewCommand"),
+            recoverMutation: vi.fn().mockName("OwnDecksStore.recoverMutation")
+        });
+        recovery = spyObj<OwnDeckRecoveryService>({
+            restore: vi.fn().mockName("OwnDeckRecoveryService.restore"),
+            save: vi.fn().mockName("OwnDeckRecoveryService.save"),
+            clear: vi.fn().mockName("OwnDeckRecoveryService.clear")
+        });
+        recovery.restore.mockReturnValue(null);
         mutation = signal<DeckMutationState>({ phase: 'idle' });
         Object.defineProperty(store, 'mutationState', { value: mutation.asReadonly() });
         await TestBed.configureTestingModule({
@@ -44,14 +52,12 @@ describe('OwnDeckCreatePageComponent', () => {
         fixture.componentInstance.form.setValue({ title: '  Моя колода  ', description: ' первая\nвторая ' });
         fixture.componentInstance.submit();
 
-        expect(store.startCreate).toHaveBeenCalledOnceWith({
+        expect(store.startCreate).toHaveBeenCalledTimes(1);
+
+        expect(store.startCreate).toHaveBeenCalledWith({
             title: '  Моя колода  ', description: ' первая\nвторая '
         });
-        expect(recovery.save).toHaveBeenCalledWith(
-            { operation: 'create' },
-            { title: '  Моя колода  ', description: ' первая\nвторая ' },
-            null
-        );
+        expect(recovery.save).toHaveBeenCalledWith({ operation: 'create' }, { title: '  Моя колода  ', description: ' первая\nвторая ' }, null);
     });
 
     it('preserves a title newline entered through the real DOM control', () => {
@@ -81,7 +87,7 @@ describe('OwnDeckCreatePageComponent', () => {
         fixture.detectChanges();
 
         const root = fixture.nativeElement as HTMLElement;
-        expect(root.querySelector<HTMLTextAreaElement>('#create-title')?.readOnly).toBeTrue();
+        expect(root.querySelector<HTMLTextAreaElement>('#create-title')?.readOnly).toBe(true);
         expect(root.textContent).toContain('Создание не подтверждено');
         expect(root.textContent).not.toContain('Колода не создана');
     });

@@ -10,6 +10,7 @@ import { AuthoringApiService } from './authoring-api.service';
 import { DraftDetail } from './authoring.models';
 import { ItemEditorPageComponent } from './item-editor-page.component';
 import { ItemApiService } from './item-api.service';
+import { spyObj, type SpyObj } from '../../../testing/mocks';
 
 describe('ItemEditorPageComponent recovery', () => {
     const id = (suffix: string) => `00000000-0000-4000-8000-${suffix.padStart(12, '0')}`;
@@ -21,55 +22,69 @@ describe('ItemEditorPageComponent recovery', () => {
     };
 
     function configure(memberKey: string | null = null, ordinal: string | null = null): {
-        readonly decks: jasmine.SpyObj<OwnDecksApiService>;
-        readonly items: jasmine.SpyObj<ItemApiService>;
-        readonly authoring: jasmine.SpyObj<AuthoringApiService>;
-        readonly router: jasmine.SpyObj<Router>;
+        readonly decks: SpyObj<OwnDecksApiService>;
+        readonly items: SpyObj<ItemApiService>;
+        readonly authoring: SpyObj<AuthoringApiService>;
+        readonly router: SpyObj<Router>;
     } {
-        const decks = jasmine.createSpyObj<OwnDecksApiService>('OwnDecksApiService', ['detail']);
-        const items = jasmine.createSpyObj<ItemApiService>('ItemApiService', ['read', 'create', 'save']);
-        const authoring = jasmine.createSpyObj<AuthoringApiService>('AuthoringApiService', [
-            'listAllDrafts', 'createDraft', 'readDraft', 'updateDraft', 'deleteDraft'
-        ]);
-        const router = jasmine.createSpyObj<Router>('Router', ['navigate']);
-        decks.detail.and.returnValue(of(deck));
+        const decks = spyObj<OwnDecksApiService>({
+            detail: vi.fn().mockName("OwnDecksApiService.detail")
+        });
+        const items = spyObj<ItemApiService>({
+            read: vi.fn().mockName("ItemApiService.read"),
+            create: vi.fn().mockName("ItemApiService.create"),
+            save: vi.fn().mockName("ItemApiService.save")
+        });
+        const authoring = spyObj<AuthoringApiService>({
+            listAllDrafts: vi.fn().mockName("AuthoringApiService.listAllDrafts"),
+            createDraft: vi.fn().mockName("AuthoringApiService.createDraft"),
+            readDraft: vi.fn().mockName("AuthoringApiService.readDraft"),
+            updateDraft: vi.fn().mockName("AuthoringApiService.updateDraft"),
+            deleteDraft: vi.fn().mockName("AuthoringApiService.deleteDraft")
+        });
+        const router = spyObj<Router>({
+            navigate: vi.fn().mockName("Router.navigate")
+        });
+        decks.detail.mockReturnValue(of(deck));
         TestBed.configureTestingModule({ providers: [
-            { provide: ActivatedRoute, useValue: {
-                snapshot: {
-                    paramMap: convertToParamMap(memberKey === null
-                        ? { deckId: deck.deckId } : { deckId: deck.deckId, memberKey }),
-                    queryParamMap: convertToParamMap(ordinal === null ? {} : { ordinal })
-                }
-            } },
-            { provide: Router, useValue: router },
-            { provide: OwnDecksApiService, useValue: decks },
-            { provide: ItemApiService, useValue: items },
-            { provide: AuthoringApiService, useValue: authoring }
-        ] });
+                { provide: ActivatedRoute, useValue: {
+                        snapshot: {
+                            paramMap: convertToParamMap(memberKey === null
+                                ? { deckId: deck.deckId } : { deckId: deck.deckId, memberKey }),
+                            queryParamMap: convertToParamMap(ordinal === null ? {} : { ordinal })
+                        }
+                    } },
+                { provide: Router, useValue: router },
+                { provide: OwnDecksApiService, useValue: decks },
+                { provide: ItemApiService, useValue: items },
+                { provide: AuthoringApiService, useValue: authoring }
+            ] });
         return { decks, items, authoring, router };
     }
 
     it('retries unknown-outcome draft creation exactly and reconciles a replay with GET', () => {
         const { authoring } = configure();
-        authoring.listAllDrafts.and.returnValue(of({ items: [], nextCursor: null }));
+        authoring.listAllDrafts.mockReturnValue(of({ items: [], nextCursor: null }));
         let attempt = 0;
-        authoring.createDraft.and.callFake((_deckId, document, _memberKey, _baseRevisionId, commandId) => {
-            if (attempt++ === 0) return throwError(() => new HttpErrorResponse({ status: 0 }));
+        authoring.createDraft.mockImplementation((_deckId, document, _memberKey, _baseRevisionId, commandId) => {
+            if (attempt++ === 0)
+                return throwError(() => new HttpErrorResponse({ status: 0 }));
             const draft: DraftDetail = {
                 draftId: id('3'), deckId: deck.deckId, memberKey: null, baseRevisionId: null, rowVersion: '0',
                 contentBytes: 100, createdAt: '2026-09-19T10:00:00Z', acknowledgedAt: '2026-09-19T10:00:00Z',
                 expiresAt: '2026-10-19T10:00:00Z', document
             };
-            authoring.readDraft.and.returnValue(of(draft));
+            authoring.readDraft.mockReturnValue(of(draft));
             return of({ acknowledgement: { commandId, draft }, replayed: true });
         });
         const component = TestBed.runInInjectionContext(() => new ItemEditorPageComponent());
-        const original = authoring.createDraft.calls.argsFor(0);
+        const original = vi.mocked(authoring.createDraft).mock.calls[0];
         expect(component.phase()).toBe('error');
         component.retry();
 
-        expect(authoring.createDraft.calls.argsFor(1)).toEqual(original);
-        expect(authoring.readDraft).toHaveBeenCalledOnceWith(id('3'));
+        expect(vi.mocked(authoring.createDraft).mock.calls[1]).toEqual(original);
+        expect(authoring.readDraft).toHaveBeenCalledTimes(1);
+        expect(authoring.readDraft).toHaveBeenCalledWith(id('3'));
         expect(component.phase()).toBe('ready');
         expect(component.draft()?.draftId).toBe(id('3'));
     });
@@ -82,23 +97,20 @@ describe('ItemEditorPageComponent recovery', () => {
             contentBytes: 100, createdAt: '2026-09-19T10:00:00Z', acknowledgedAt: '2026-09-19T10:00:00Z',
             expiresAt: '2026-10-19T10:00:00Z', document
         };
-        authoring.listAllDrafts.and.returnValue(of({ items: [draft], nextCursor: null }));
-        authoring.readDraft.and.returnValue(of(draft));
-        authoring.updateDraft.and.returnValues(
-            throwError(() => new HttpErrorResponse({ status: 422 })),
-            of({ acknowledgement: { commandId: id('5'), draft: { ...draft, rowVersion: '1' } }, replayed: false })
-        );
+        authoring.listAllDrafts.mockReturnValue(of({ items: [draft], nextCursor: null }));
+        authoring.readDraft.mockReturnValue(of(draft));
+        authoring.updateDraft.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 422 }))).mockReturnValueOnce(of({ acknowledgement: { commandId: id('5'), draft: { ...draft, rowVersion: '1' } }, replayed: false }));
         const component = TestBed.runInInjectionContext(() => new ItemEditorPageComponent());
 
         component.changeDocument(document);
         component.saveDraft();
-        const rejectedCommand = authoring.updateDraft.calls.argsFor(0)[3];
+        const rejectedCommand = vi.mocked(authoring.updateDraft).mock.calls[0][3];
         expect(component.phase()).toBe('rejected');
 
         component.changeDocument(document);
         expect(component.phase()).toBe('ready');
         component.saveDraft();
-        expect(authoring.updateDraft.calls.argsFor(1)[3]).not.toBe(rejectedCommand);
+        expect(vi.mocked(authoring.updateDraft).mock.calls[1][3]).not.toBe(rejectedCommand);
         expect(component.phase()).toBe('ready');
     });
 
@@ -111,9 +123,9 @@ describe('ItemEditorPageComponent recovery', () => {
             contentBytes: 100, createdAt: '2026-09-19T10:00:00Z', acknowledgedAt: '2026-09-19T10:00:00Z',
             expiresAt: '2026-10-19T10:00:00Z', document
         };
-        authoring.listAllDrafts.and.returnValue(of({ items: [draft], nextCursor: null }));
-        authoring.readDraft.and.returnValues(of(draft), of({ ...draft, rowVersion: '1', document: serverDocument }));
-        authoring.updateDraft.and.returnValue(of({
+        authoring.listAllDrafts.mockReturnValue(of({ items: [draft], nextCursor: null }));
+        authoring.readDraft.mockReturnValueOnce(of(draft)).mockReturnValueOnce(of({ ...draft, rowVersion: '1', document: serverDocument }));
+        authoring.updateDraft.mockReturnValue(of({
             acknowledgement: { commandId: id('5'), draft: { ...draft, rowVersion: '1' } }, replayed: true
         }));
         const component = TestBed.runInInjectionContext(() => new ItemEditorPageComponent());

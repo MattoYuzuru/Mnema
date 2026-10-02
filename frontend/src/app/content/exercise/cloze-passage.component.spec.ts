@@ -38,7 +38,8 @@ describe('ClozePassageComponent', () => {
         fixture.componentInstance.valueChange.subscribe(value => events.push(value));
         fixture.componentInstance.hintRequested.subscribe(value => events.push(value));
         const input = root.querySelector<HTMLInputElement>('input')!;
-        input.value = 'map'; input.dispatchEvent(new Event('input'));
+        input.value = 'map';
+        input.dispatchEvent(new Event('input'));
         root.querySelector<HTMLButtonElement>('.cloze-hint')!.click();
         expect(events).toEqual([{ blankId: 'b1a00000-0000-4000-8000-000000000001', text: 'map' },
             'b1a00000-0000-4000-8000-000000000001']);
@@ -56,13 +57,13 @@ describe('ClozePassageComponent', () => {
         fixture.componentRef.setInput('hintPending', 'b1a00000-0000-4000-8000-000000000001');
         fixture.detectChanges();
         const root = fixture.nativeElement as HTMLElement;
-        expect(root.querySelector<HTMLButtonElement>('.cloze-hint')?.disabled).toBeTrue();
+        expect(root.querySelector<HTMLButtonElement>('.cloze-hint')?.disabled).toBe(true);
         fixture.componentRef.setInput('readOnly', true);
         fixture.componentRef.setInput('values', { 'b1a00000-0000-4000-8000-000000000001': 'map' });
         fixture.componentRef.setInput('verdicts', { 'b1a00000-0000-4000-8000-000000000001': { correct: false, hinted: true, reference: 'map' } });
         fixture.detectChanges();
         expect(root.querySelector('.cloze-hint')).toBeNull();
-        expect(root.querySelector<HTMLInputElement>('input')?.readOnly).toBeTrue();
+        expect(root.querySelector<HTMLInputElement>('input')?.readOnly).toBe(true);
         expect(root.querySelector('.is-wrong .cloze-verdict')?.textContent?.replace(/\s+/g, ' ')).toContain('Неверно, ответ: map, с подсказкой');
     });
 });

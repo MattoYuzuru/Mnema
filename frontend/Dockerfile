@@ -1,5 +1,5 @@
 # --- build stage ---
-FROM node:22.23.2-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS build
+FROM node:24.21.0-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS build
 WORKDIR /app
 
 # Dependency resolution must match the tested lockfile exactly.
@@ -13,7 +13,7 @@ COPY . .
 RUN npm run build
 
 # --- serve stage ---
-FROM nginx:1.31.4-alpine@sha256:db35bfc6b2951e7f8a72db5db120288c127ffaeeb4a6d4b95a26fead017d5913
+FROM nginx:1.31.6-alpine@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2
 
 # Retain the reviewed nginx base while requiring at least the first fixed Alpine OpenSSL build.
 # A floor (not an exact pin) keeps rebuilds working when Alpine ships a newer security patch and

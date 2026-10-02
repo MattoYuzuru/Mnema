@@ -3,10 +3,17 @@ import { segmentLines, segmentWords, wordSegmentationAvailable } from './order-s
 describe('ORDER segmentation helpers', () => {
     /** Runs `body` as if the browser had no `Intl.Segmenter`, then restores it. */
     function withoutSegmenter(body: () => void): void {
-        const intl = Intl as unknown as { Segmenter?: unknown };
+        const intl = Intl as unknown as {
+            Segmenter?: unknown;
+        };
         const original = intl.Segmenter;
         intl.Segmenter = undefined;
-        try { body(); } finally { intl.Segmenter = original; }
+        try {
+            body();
+        }
+        finally {
+            intl.Segmenter = original;
+        }
     }
 
     describe('words', () => {
@@ -34,7 +41,7 @@ describe('ORDER segmentation helpers', () => {
             const chinese = segmentWords('我喜欢学习中文。', 'zh')!;
             expect(chinese.length).toBeGreaterThan(2);
             expect(chinese.join('')).toBe('我喜欢学习中文。');
-            expect(chinese.at(-1)!.endsWith('。')).toBeTrue();
+            expect(chinese.at(-1)!.endsWith('。')).toBe(true);
             const japanese = segmentWords('私は日本語を勉強します。', 'ja')!;
             expect(japanese.length).toBeGreaterThan(2);
             expect(japanese.join('')).toBe('私は日本語を勉強します。');
@@ -46,9 +53,9 @@ describe('ORDER segmentation helpers', () => {
         });
 
         it('reports that it cannot split words and returns null, without throwing, when Intl.Segmenter is missing', () => {
-            expect(wordSegmentationAvailable()).toBeTrue();
+            expect(wordSegmentationAvailable()).toBe(true);
             withoutSegmenter(() => {
-                expect(wordSegmentationAvailable()).toBeFalse();
+                expect(wordSegmentationAvailable()).toBe(false);
                 expect(segmentWords('Это очень важно.')).toBeNull();
             });
             expect(segmentWords('Это важно.')).toEqual(['Это', 'важно.']);

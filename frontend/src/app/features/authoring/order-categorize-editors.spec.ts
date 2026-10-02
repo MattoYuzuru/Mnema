@@ -3,9 +3,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { NativeDocument } from '../../content/native-document';
 import { CategorizeItemsEditorComponent, CategoryGroupsEditorComponent } from './categorize-editors.component';
-import {
-    CategorizeDraft, OrderDraft, SlotContext, buildSpec, emptyDrafts, newCategorizeItem, newCategory, newOrderItem, validateDraft
-} from './exercise-draft';
+import { CategorizeDraft, OrderDraft, SlotContext, buildSpec, emptyDrafts, newCategorizeItem, newCategory, newOrderItem, validateDraft } from './exercise-draft';
 import { NativeMediaUploadApi } from './native-media-upload.api';
 import { OrderEditorComponent } from './order-editor.component';
 
@@ -15,7 +13,9 @@ const context: SlotContext = {
 };
 
 function setup<T>(host: Type<T>): ComponentFixture<T> {
-    TestBed.configureTestingModule({ providers: [{ provide: NativeMediaUploadApi, useValue: jasmine.createSpyObj('api', ['policy']) }] });
+    TestBed.configureTestingModule({ providers: [{ provide: NativeMediaUploadApi, useValue: {
+                    policy: vi.fn().mockName("api.policy")
+                } }] });
     const fixture = TestBed.createComponent(host);
     document.body.appendChild(fixture.nativeElement);
     fixture.detectChanges();
@@ -37,9 +37,12 @@ describe('OrderEditorComponent', () => {
     const refresh = () => { fixture.detectChanges(); fixture.detectChanges(); };
     const click = (selector: string, index = 0) => { root().querySelectorAll<HTMLElement>(selector)[index].click(); refresh(); };
     const source = (value: string) => {
-        const details = root().querySelector('details')!; details.open = true;
+        const details = root().querySelector('details')!;
+        details.open = true;
         const area = root().querySelector<HTMLTextAreaElement>('#order-source')!;
-        area.value = value; area.dispatchEvent(new Event('input')); refresh();
+        area.value = value;
+        area.dispatchEvent(new Event('input'));
+        refresh();
     };
     const note = () => root().querySelector('[data-helper-note]')?.textContent?.trim() ?? null;
 
@@ -102,30 +105,37 @@ describe('OrderEditorComponent', () => {
 
     it('stays a whole, working form without Intl.Segmenter: words are disabled with the reason, lines and manual editing work', () => {
         fixture.destroy();
-        const intl = Intl as unknown as { Segmenter?: unknown };
+        const intl = Intl as unknown as {
+            Segmenter?: unknown;
+        };
         const original = intl.Segmenter;
         intl.Segmenter = undefined;
         try {
             TestBed.resetTestingModule();
             fixture = setup(Host);
             source('Привет мир');
-            expect(root().querySelector<HTMLButtonElement>('[data-split-words]')!.disabled).toBeTrue();
+            expect(root().querySelector<HTMLButtonElement>('[data-split-words]')!.disabled).toBe(true);
             expect(root().querySelector('[data-no-segmenter]')?.textContent).toContain('нет разбиения на слова');
             expect(root().querySelector('[data-split-words]')!.getAttribute('aria-describedby')).toBe('order-no-segmenter');
-            expect(root().querySelector<HTMLButtonElement>('[data-split-lines]')!.disabled).toBeFalse();
+            expect(root().querySelector<HTMLButtonElement>('[data-split-lines]')!.disabled).toBe(false);
             click('[data-add-item]');
             expect(items().length).toBe(3);
-            fixture.componentInstance.draft.set({ prompt: [], items: [newOrderItem('Привет мир'), newOrderItem('ещё')] }); refresh();
+            fixture.componentInstance.draft.set({ prompt: [], items: [newOrderItem('Привет мир'), newOrderItem('ещё')] });
+            refresh();
             const area = root().querySelector<HTMLTextAreaElement>('[data-item] textarea')!;
-            area.value = 'Привет'; area.dispatchEvent(new Event('input')); refresh();
+            area.value = 'Привет';
+            area.dispatchEvent(new Event('input'));
+            refresh();
             expect(texts()[0]).toBe('Привет');
-        } finally {
+        }
+        finally {
             intl.Segmenter = original;
         }
     });
 
     it('moves items with the arrows, keeps the authored order as the key and returns focus to the moved item', async () => {
-        fixture.componentInstance.draft.set({ prompt: [], items: ['а', 'б', 'в'].map(value => newOrderItem(value)) }); refresh();
+        fixture.componentInstance.draft.set({ prompt: [], items: ['а', 'б', 'в'].map(value => newOrderItem(value)) });
+        refresh();
         const ids = items().map(item => item.itemId);
         click('[data-item] [data-move="down"]');
         expect(texts()).toEqual(['б', 'а', 'в']);
@@ -134,25 +144,28 @@ describe('OrderEditorComponent', () => {
         const spec = buildSpec('ORDER', { ...emptyDrafts(), ORDER: fixture.componentInstance.draft() }, { memberKey: context.memberKey, itemRevisionId: context.itemRevisionId }, true);
         expect(spec.type === 'ORDER' && spec.answerKey.sequence).toEqual([ids[1], ids[0], ids[2]]);
         expect(root().querySelector('[data-move-note]')?.textContent).toContain('позицию 2 из 3');
-        expect(root().querySelector<HTMLButtonElement>('[data-item] [data-move="up"]')!.disabled).toBeTrue();
+        expect(root().querySelector<HTMLButtonElement>('[data-item] [data-move="up"]')!.disabled).toBe(true);
     });
 
     it('merges a text item with the next one (a space, or a line break for multi-line text) and splits at the cursor', () => {
-        fixture.componentInstance.draft.set({ prompt: [], items: ['Hello,', 'world!', 'for (;;) {\n    x++;', '}'].map(value => newOrderItem(value)) }); refresh();
+        fixture.componentInstance.draft.set({ prompt: [], items: ['Hello,', 'world!', 'for (;;) {\n    x++;', '}'].map(value => newOrderItem(value)) });
+        refresh();
         click('[data-merge]', 0);
         expect(texts()).toEqual(['Hello, world!', 'for (;;) {\n    x++;', '}']);
         click('[data-merge]', 1);
         expect(texts()).toEqual(['Hello, world!', 'for (;;) {\n    x++;\n}']);
-        expect(root().querySelectorAll<HTMLButtonElement>('[data-merge]')[1].disabled).toBeTrue();   // last item
-        expect(root().querySelectorAll<HTMLButtonElement>('[data-merge]')[0].disabled).toBeTrue();   // only two left: nothing may go below 2
+        expect(root().querySelectorAll<HTMLButtonElement>('[data-merge]')[1].disabled).toBe(true); // last item
+        expect(root().querySelectorAll<HTMLButtonElement>('[data-merge]')[0].disabled).toBe(true); // only two left: nothing may go below 2
 
-        fixture.componentInstance.draft.set({ prompt: [], items: [newOrderItem('Hello, world!'), newOrderItem('Bye')] }); refresh();
+        fixture.componentInstance.draft.set({ prompt: [], items: [newOrderItem('Hello, world!'), newOrderItem('Bye')] });
+        refresh();
         const area = root().querySelector<HTMLTextAreaElement>('[data-item] textarea')!;
-        expect(root().querySelector<HTMLButtonElement>('[data-split]')!.disabled).toBeTrue();       // no cursor yet
-        area.focus(); area.setSelectionRange(6, 6);
+        expect(root().querySelector<HTMLButtonElement>('[data-split]')!.disabled).toBe(true); // no cursor yet
+        area.focus();
+        area.setSelectionRange(6, 6);
         area.dispatchEvent(new Event('select', { bubbles: true }));
         refresh();
-        expect(root().querySelector<HTMLButtonElement>('[data-split]')!.disabled).toBeFalse();
+        expect(root().querySelector<HTMLButtonElement>('[data-split]')!.disabled).toBe(false);
         click('[data-split]');
         expect(texts()).toEqual(['Hello,', 'world!', 'Bye']);
         const ids = items().map(item => item.itemId);
@@ -161,14 +174,20 @@ describe('OrderEditorComponent', () => {
 
     it('refuses to split at the very start or end, and to merge or split media items without losing them', () => {
         const media = { itemId: newOrderItem().itemId, blocks: [{ kind: 'IMAGE' as const, assetId: 'aaaaaaaa-0000-4000-8000-000000000003', alt: 'Кадр' }] };
-        fixture.componentInstance.draft.set({ prompt: [], items: [newOrderItem('Слово'), media, newOrderItem('Хвост')] }); refresh();
+        fixture.componentInstance.draft.set({ prompt: [], items: [newOrderItem('Слово'), media, newOrderItem('Хвост')] });
+        refresh();
         const merges = [...root().querySelectorAll<HTMLButtonElement>('[data-merge]')];
         expect(merges.map(button => button.disabled)).toEqual([true, true, true]);
         const area = root().querySelector<HTMLTextAreaElement>('[data-item] textarea')!;
-        area.focus(); area.setSelectionRange(0, 0); area.dispatchEvent(new Event('select', { bubbles: true })); refresh();
-        expect(root().querySelector<HTMLButtonElement>('[data-split]')!.disabled).toBeTrue();
-        area.setSelectionRange(5, 5); area.dispatchEvent(new Event('select', { bubbles: true })); refresh();
-        expect(root().querySelector<HTMLButtonElement>('[data-split]')!.disabled).toBeTrue();
+        area.focus();
+        area.setSelectionRange(0, 0);
+        area.dispatchEvent(new Event('select', { bubbles: true }));
+        refresh();
+        expect(root().querySelector<HTMLButtonElement>('[data-split]')!.disabled).toBe(true);
+        area.setSelectionRange(5, 5);
+        area.dispatchEvent(new Event('select', { bubbles: true }));
+        refresh();
+        expect(root().querySelector<HTMLButtonElement>('[data-split]')!.disabled).toBe(true);
         expect(items()[1]).toEqual(media);
     });
 
@@ -183,20 +202,26 @@ describe('OrderEditorComponent', () => {
         // Nothing is piled on top of a field problem that already explains the situation.
         expect(check({ prompt: [], items: [newOrderItem(''), newOrderItem('')] })['items']).toBeUndefined();
         const message = 'Добавьте хотя бы два разных элемента';
-        fixture.componentInstance.draft.set(same); fixture.componentInstance.errors.set({ items: message + ' — одинаковые плитки взаимозаменяемы.' }); refresh();
+        fixture.componentInstance.draft.set(same);
+        fixture.componentInstance.errors.set({ items: message + ' — одинаковые плитки взаимозаменяемы.' });
+        refresh();
         expect(root().querySelector('.field-error[role="alert"]')?.textContent).toContain(message);
     });
 
     it('keeps 2 to 12 items, marks identical items as interchangeable and shows slot problems', () => {
-        for (let index = 0; index < 10; index++) click('[data-add-item]');
+        for (let index = 0; index < 10; index++)
+            click('[data-add-item]');
         expect(items().length).toBe(12);
-        expect(root().querySelector<HTMLButtonElement>('[data-add-item]')!.disabled).toBeTrue();
-        for (let index = 0; index < 10; index++) click('[data-remove]');
+        expect(root().querySelector<HTMLButtonElement>('[data-add-item]')!.disabled).toBe(true);
+        for (let index = 0; index < 10; index++)
+            click('[data-remove]');
         expect(items().length).toBe(2);
-        expect(root().querySelector<HTMLButtonElement>('[data-remove]')!.disabled).toBeTrue();
-        fixture.componentInstance.draft.set({ prompt: [], items: ['очень', 'очень', 'важно'].map(value => newOrderItem(value)) }); refresh();
+        expect(root().querySelector<HTMLButtonElement>('[data-remove]')!.disabled).toBe(true);
+        fixture.componentInstance.draft.set({ prompt: [], items: ['очень', 'очень', 'важно'].map(value => newOrderItem(value)) });
+        refresh();
         expect(root().querySelectorAll('[data-duplicate]').length).toBe(2);
-        fixture.componentInstance.errors.set({ items: 'Нужно от 2 до 12 элементов.', ['item:' + items()[0].itemId]: 'Блок 1: Введите текст блока или удалите его.' }); refresh();
+        fixture.componentInstance.errors.set({ items: 'Нужно от 2 до 12 элементов.', ['item:' + items()[0].itemId]: 'Блок 1: Введите текст блока или удалите его.' });
+        refresh();
         expect(root().textContent).toContain('Нужно от 2 до 12 элементов.');
         expect(root().textContent).toContain('Введите текст блока');
     });
@@ -222,7 +247,10 @@ describe('CATEGORIZE editors', () => {
     const groupCard = (categoryId: string) => root().querySelector<HTMLElement>(`[data-category="${categoryId}"]`)!;
     const labels = () => draft().categories.map(group => group.label);
 
-    function seed(): { groups: string[]; items: string[] } {
+    function seed(): {
+        groups: string[];
+        items: string[];
+    } {
         const groups = [newCategory('Существительное'), newCategory('Глагол'), newCategory('Наречие')];
         const items = [newCategorizeItem(groups[0].categoryId), newCategorizeItem(groups[1].categoryId), newCategorizeItem(groups[0].categoryId)];
         fixture.componentInstance.draft.set({ prompt: [], categories: groups,
@@ -236,22 +264,27 @@ describe('CATEGORIZE editors', () => {
     afterEach(() => fixture.nativeElement.remove());
 
     it('adds, renames and reorders groups within 2 to 6 and shows the label counter and conflicts', () => {
-        for (let index = 0; index < 6; index++) click('[data-add-category]');
+        for (let index = 0; index < 6; index++)
+            click('[data-add-category]');
         expect(draft().categories.length).toBe(6);
-        expect(root().querySelector<HTMLButtonElement>('[data-add-category]')!.disabled).toBeTrue();
+        expect(root().querySelector<HTMLButtonElement>('[data-add-category]')!.disabled).toBe(true);
         const first = draft().categories[0].categoryId;
         const input = root().querySelector<HTMLInputElement>(`#groups-label-${first}`)!;
-        input.value = 'Глагол'; input.dispatchEvent(new Event('input')); refresh();
+        input.value = 'Глагол';
+        input.dispatchEvent(new Event('input'));
+        refresh();
         expect(labels()[0]).toBe('Глагол');
         expect(groupCard(first).querySelector('.counter')?.textContent?.trim()).toBe('6 / 80');
-        fixture.componentInstance.errors.set({ ['category:' + first]: 'Это название уже занято другой группой: у групп должны быть разные названия.' }); refresh();
+        fixture.componentInstance.errors.set({ ['category:' + first]: 'Это название уже занято другой группой: у групп должны быть разные названия.' });
+        refresh();
         expect(groupCard(first).querySelector('[role="alert"]')?.textContent).toContain('уже занято');
         expect(input.getAttribute('aria-invalid')).toBe('true');
         click('[data-category] [data-move="down"]');
         expect(draft().categories[1].categoryId).toBe(first);
-        for (let index = 0; index < 4; index++) click('[data-category] [data-remove]');
+        for (let index = 0; index < 4; index++)
+            click('[data-category] [data-remove]');
         expect(draft().categories.length).toBe(2);
-        expect(root().querySelector<HTMLButtonElement>('[data-category] [data-remove]')!.disabled).toBeTrue();
+        expect(root().querySelector<HTMLButtonElement>('[data-category] [data-remove]')!.disabled).toBe(true);
     });
 
     it('removes an empty group at once', () => {
@@ -269,7 +302,7 @@ describe('CATEGORIZE editors', () => {
         expect(panel.textContent).toContain('В группе «Существительное» элементов: 2');
         expect(labels()).toEqual(['Существительное', 'Глагол', 'Наречие']);
         expect(draft().items.length).toBe(3);
-        expect(panel.querySelector<HTMLButtonElement>('[data-reassign]')!.disabled).toBeTrue();   // a target is required
+        expect(panel.querySelector<HTMLButtonElement>('[data-reassign]')!.disabled).toBe(true); // a target is required
         // Cancel keeps everything and returns to the button.
         click(`[data-category="${groups[0]}"] [data-cancel-removal]`);
         expect(groupCard(groups[0]).querySelector('.removal')).toBeNull();
@@ -282,16 +315,18 @@ describe('CATEGORIZE editors', () => {
         click(`[data-category="${groups[0]}"] [data-remove]`);
         const trigger = groupCard(groups[0]).querySelector<HTMLButtonElement>('.removal [role="combobox"]')!;
         const options = () => [...document.querySelectorAll('[role="option"]')].map(option => option.textContent);
-        trigger.click(); refresh();
-        expect(options()).toEqual(['Выберите группу', 'Глагол', 'Наречие']);   // never the group being removed
-        (document.querySelectorAll('[role="option"]')[2] as HTMLElement).click(); refresh();
+        trigger.click();
+        refresh();
+        expect(options()).toEqual(['Выберите группу', 'Глагол', 'Наречие']); // never the group being removed
+        (document.querySelectorAll('[role="option"]')[2] as HTMLElement).click();
+        refresh();
         click(`[data-category="${groups[0]}"] [data-reassign]`);
         expect(labels()).toEqual(['Глагол', 'Наречие']);
         expect(draft().items.length).toBe(3);
         expect(assignedTo(items[0])).toBe(groups[2]);
         expect(assignedTo(items[2])).toBe(groups[2]);
         expect(assignedTo(items[1])).toBe(groups[1]);
-        expect(draft().items.every(item => draft().categories.some(group => group.categoryId === item.categoryId))).toBeTrue();
+        expect(draft().items.every(item => draft().categories.some(group => group.categoryId === item.categoryId))).toBe(true);
         expect(root().querySelector('[data-note]')?.textContent).toContain('элементы (2) перенесены в «Наречие»');
     });
 
@@ -308,12 +343,15 @@ describe('CATEGORIZE editors', () => {
     it('assigns an item to exactly one group with the group select and keeps an unassigned item visible as such', () => {
         const { groups, items } = seed();
         expect(root().querySelectorAll('[data-item] [role="combobox"]').length).toBe(3);
-        fixture.componentInstance.draft.update(current => ({ ...current, items: [...current.items, newCategorizeItem()] })); refresh();
+        fixture.componentInstance.draft.update(current => ({ ...current, items: [...current.items, newCategorizeItem()] }));
+        refresh();
         const fresh = draft().items[3];
         const trigger = root().querySelector<HTMLButtonElement>(`#items-group-${fresh.itemId}`)!;
         expect(trigger.textContent).toContain('Выберите группу');
-        trigger.click(); refresh();
-        (document.querySelectorAll('[role="option"]')[2] as HTMLElement).click(); refresh();
+        trigger.click();
+        refresh();
+        (document.querySelectorAll('[role="option"]')[2] as HTMLElement).click();
+        refresh();
         expect(assignedTo(fresh.itemId)).toBe(groups[1]);
         expect(assignedTo(items[0])).toBe(groups[0]);
         const spec = buildSpec('CATEGORIZE', { ...emptyDrafts(), CATEGORIZE: draft() }, { memberKey: context.memberKey, itemRevisionId: context.itemRevisionId }, true);
@@ -322,13 +360,15 @@ describe('CATEGORIZE editors', () => {
 
     it('adds, reorders and removes items within 2 to 12', () => {
         seed();
-        for (let index = 0; index < 9; index++) click('[data-add-item]');
+        for (let index = 0; index < 9; index++)
+            click('[data-add-item]');
         expect(draft().items.length).toBe(12);
-        expect(root().querySelector<HTMLButtonElement>('[data-add-item]')!.disabled).toBeTrue();
+        expect(root().querySelector<HTMLButtonElement>('[data-add-item]')!.disabled).toBe(true);
         const firstId = draft().items[0].itemId;
         click('[data-item] [data-move="down"]');
         expect(draft().items[1].itemId).toBe(firstId);
-        for (let index = 0; index < 10; index++) click('[data-item] [data-remove]');
+        for (let index = 0; index < 10; index++)
+            click('[data-item] [data-remove]');
         expect(draft().items.length).toBe(2);
     });
 
@@ -337,7 +377,8 @@ describe('CATEGORIZE editors', () => {
         const check = () => validateDraft('CATEGORIZE', { ...emptyDrafts(), CATEGORIZE: draft() }, { ...context, projections: [] });
         expect(check()).toEqual({});
         fixture.componentInstance.draft.update(current => ({ ...current,
-            categories: current.categories.map((group, index) => index === 1 ? { ...group, label: '  СУЩЕСТВИТЕЛЬНОЕ ' } : group) })); refresh();
+            categories: current.categories.map((group, index) => index === 1 ? { ...group, label: '  СУЩЕСТВИТЕЛЬНОЕ ' } : group) }));
+        refresh();
         expect(check()['category:' + groups[1]]).toContain('уже занято');
         fixture.componentInstance.draft.update(current => ({ ...current,
             categories: current.categories.map((group, index) => index === 1 ? { ...group, label: 'я'.repeat(81) } : group) }));
@@ -352,7 +393,7 @@ describe('CATEGORIZE editors', () => {
             const [first, second] = clash.split('|');
             fixture.componentInstance.draft.update(current => ({ ...current,
                 categories: current.categories.map((group, index) => index === 0 ? { ...group, label: first } : index === 1 ? { ...group, label: second } : group) }));
-            expect(check()['category:' + groups[1]]).withContext(clash).toContain('уже занято');
+            expect(check()['category:' + groups[1]], clash).toContain('уже занято');
         }
         fixture.componentInstance.draft.update(current => ({ ...current,
             items: current.items.map(item => item.itemId === items[0] ? { ...item, categoryId: null } : item) }));
@@ -361,6 +402,6 @@ describe('CATEGORIZE editors', () => {
             items: current.items.map(item => item.itemId === items[1] ? { ...item, categoryId: 'ca000000-0000-4000-8000-0000000000ff' } : item) }));
         expect(check()['assignment:' + items[1]]).toBe('Выберите группу для этого элемента.');
         // An empty distractor group is fine: the third group has no items and produced no error.
-        expect(Object.keys(check()).some(key => key.includes(groups[2]))).toBeFalse();
+        expect(Object.keys(check()).some(key => key.includes(groups[2]))).toBe(false);
     });
 });

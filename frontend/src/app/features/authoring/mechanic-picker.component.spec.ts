@@ -26,18 +26,20 @@ describe('MechanicPickerComponent', () => {
         expect(root.querySelector('fieldset > legend')?.textContent).toBe('1. Тип упражнения');
         expect(root.querySelectorAll('label.tile input[type="radio"][name="mechanic"]').length).toBe(MECHANIC_CATALOG.length);
         expect(root.querySelector('label.tile')?.textContent).toContain(MECHANIC_CATALOG[0].description);
-        expect([...root.querySelectorAll<HTMLInputElement>('input')].some(input => input.checked)).toBeFalse();
+        expect([...root.querySelectorAll<HTMLInputElement>('input')].some(input => input.checked)).toBe(false);
     });
 
     it('marks the selected tile and shows a pending one as chosen until the author decides', () => {
         create('CHOICE');
-        expect(radio('CHOICE').checked).toBeTrue();
-        fixture.componentRef.setInput('pending', 'MATCH'); fixture.detectChanges();
-        expect(radio('MATCH').checked).toBeTrue();
-        expect(radio('CHOICE').checked).toBeFalse();
-        fixture.componentRef.setInput('pending', null); fixture.detectChanges();
-        expect(radio('CHOICE').checked).toBeTrue();
-        expect(radio('MATCH').checked).toBeFalse();
+        expect(radio('CHOICE').checked).toBe(true);
+        fixture.componentRef.setInput('pending', 'MATCH');
+        fixture.detectChanges();
+        expect(radio('MATCH').checked).toBe(true);
+        expect(radio('CHOICE').checked).toBe(false);
+        fixture.componentRef.setInput('pending', null);
+        fixture.detectChanges();
+        expect(radio('CHOICE').checked).toBe(true);
+        expect(radio('MATCH').checked).toBe(false);
     });
 
     it('reports a pointer or Space activation as deliberate and an arrow key as not', () => {
