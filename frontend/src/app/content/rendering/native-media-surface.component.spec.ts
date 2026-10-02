@@ -6,7 +6,7 @@ import { NativeMediaSurfaceComponent } from './native-media-surface.component';
 
 describe('NativeMediaSurfaceComponent', () => {
     beforeEach(() => {
-        vi.useFakeTimers({ advanceTimeDelta: 1, shouldAdvanceTime: true });
+        vi.useFakeTimers();
     });
     afterEach(() => {
         vi.useRealTimers();

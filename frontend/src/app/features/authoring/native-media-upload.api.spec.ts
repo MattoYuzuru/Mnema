@@ -6,7 +6,7 @@ import { NativeMediaUploadApi, UploadView } from './native-media-upload.api';
 
 describe('NativeMediaUploadApi', () => {
     beforeEach(() => {
-        vi.useFakeTimers({ advanceTimeDelta: 1, shouldAdvanceTime: true });
+        vi.useFakeTimers();
     });
     afterEach(() => {
         vi.useRealTimers();

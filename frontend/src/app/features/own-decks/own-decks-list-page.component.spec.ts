@@ -10,7 +10,7 @@ import { spyObj, type SpyObj } from '../../../testing/mocks';
 
 describe('OwnDecksListPageComponent', () => {
     beforeEach(() => {
-        vi.useFakeTimers({ advanceTimeDelta: 1, shouldAdvanceTime: true });
+        vi.useFakeTimers();
     });
     afterEach(() => {
         vi.useRealTimers();

@@ -11,7 +11,7 @@ import { type SpyObj } from '../../../testing/mocks';
 
 describe('Learner blocks', () => {
     beforeEach(() => {
-        vi.useFakeTimers({ advanceTimeDelta: 1, shouldAdvanceTime: true });
+        vi.useFakeTimers();
     });
     afterEach(() => {
         vi.useRealTimers();

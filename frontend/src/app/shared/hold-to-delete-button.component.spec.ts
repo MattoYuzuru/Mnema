@@ -4,7 +4,7 @@ import { HoldToDeleteButtonComponent } from './hold-to-delete-button.component';
 
 describe('HoldToDeleteButtonComponent', () => {
     beforeEach(() => {
-        vi.useFakeTimers({ advanceTimeDelta: 1, shouldAdvanceTime: true });
+        vi.useFakeTimers();
     });
     afterEach(() => {
         vi.useRealTimers();

@@ -8,7 +8,7 @@ import { lastCall } from '../../../testing/mocks';
 
 describe('NativeMediaUploadComponent', () => {
     beforeEach(() => {
-        vi.useFakeTimers({ advanceTimeDelta: 1, shouldAdvanceTime: true });
+        vi.useFakeTimers();
     });
     afterEach(() => {
         vi.useRealTimers();
