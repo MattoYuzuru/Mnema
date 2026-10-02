@@ -57,7 +57,8 @@ export function describeUsage(usage: UsageSnapshot): UsageView {
     const month = Number(new Intl.DateTimeFormat('en-US', { month: 'numeric', timeZone: CALENDAR_ZONE })
         .format(Date.parse(usage.period.start)));
     let cumulative = 0;
-    const ticks = weeklyUnlock === null || credits.total <= 0 ? [] : weeklyUnlock.portions.map(portion => {
+    // Nothing is left to unlock when the grants already cover the bar (also after a downgrade), so no ticks.
+    const ticks = weeklyUnlock === null || credits.total <= 0 || credits.unlocked >= credits.total ? [] : weeklyUnlock.portions.map(portion => {
         cumulative += portion;
         return cumulative / credits.total;
     }).filter(fraction => fraction > 0 && fraction < 1);

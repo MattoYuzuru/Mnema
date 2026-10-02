@@ -68,6 +68,19 @@ describe('UsageBudgetComponent', () => {
         expect(root.querySelector('.fair-use')?.getAttribute('aria-labelledby')).toBe('fair-use-heading');
     });
 
+    it('renders a bar whose unlocked credits exceed it after a downgrade: full width at most, text still truthful', async () => {
+        const body = freeUsage();
+        body['credits'] = { total: 50, unlocked: 360, used: 400, reserved: 0, remaining: 0, percentUsed: 100 };
+        const root = await render(body);
+        expect(summary(root)).toBe(`Использовано 100${NBSP}%, хватит на ≈${NBSP}0${NBSP}материалов, обновится 1 ноября.`);
+        expect(root.querySelector<HTMLElement>('.used')?.style.inlineSize).toBe('100%');
+        expect(root.querySelector('.locked')).toBeNull();
+        expect(root.querySelectorAll('.tick')).toHaveLength(0);
+        const paid = freeUsage();
+        paid['credits'] = { total: 50, unlocked: 360, used: 8, reserved: 0, remaining: 352, percentUsed: 16 };
+        expect(summary(await render(paid))).toContain(`хватит на ≈${NBSP}35${NBSP}материалов`);
+    });
+
     it('hides the fair-use counters until the server flags a bucket above 80 %', async () => {
         const body = freeUsage();
         body['fairUse']['stt']['warn'] = false;

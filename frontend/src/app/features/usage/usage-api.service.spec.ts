@@ -46,6 +46,14 @@ describe('UsageApiService', () => {
         expect(await load(body)).toMatchObject({ weeklyUnlock: { unlockedPortions: 4, nextUnlockAt: null } });
     });
 
+    it('accepts unlocked credits above the bar left by a mid-period downgrade', async () => {
+        const body = freeUsage();
+        body['credits'] = { total: 50, unlocked: 360, used: 8, reserved: 0, remaining: 352, percentUsed: 16 };
+        expect(await load(body)).toMatchObject({ plan: 'FREE', credits: { total: 50, unlocked: 360, remaining: 352 } });
+        body['credits']['remaining'] = 361;
+        expect(await load(body).then(() => null, (error: unknown) => error)).toBeInstanceOf(UsageProtocolError);
+    });
+
     it('rejects a response that could be cached or has an unexpected status', async () => {
         expect(await load(plusUsage(), { 'Cache-Control': 'public' }).then(() => null, (error: unknown) => error))
             .toBeInstanceOf(UsageProtocolError);
@@ -63,7 +71,6 @@ describe('UsageApiService', () => {
             'a fractional credit': body => { body['credits']['used'] = 4.5; },
             'a negative credit': body => { body['credits']['remaining'] = -1; },
             'a percent above 100': body => { body['credits']['percentUsed'] = 101; },
-            'unlocked above the bar': body => { body['credits']['unlocked'] = 361; },
             'remaining above unlocked': body => { body['credits']['remaining'] = 361; },
             'a credits extra field': body => { body['credits']['extra'] = 1; },
             'a string credit': body => { body['credits']['total'] = '360'; },

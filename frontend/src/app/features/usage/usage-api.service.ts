@@ -92,7 +92,8 @@ function parseUsage(value: unknown): UsageSnapshot {
         reserved: integer(credits['reserved']), remaining: integer(credits['remaining']),
         percentUsed: integer(credits['percentUsed'], 100)
     };
-    if (parsed.unlocked > parsed.total || parsed.remaining > parsed.unlocked) throw protocol('Inconsistent credits.');
+    // `unlocked` may exceed `total`: grants are never clawed back, so a mid-period downgrade (FREE, 50, unlocked 360) keeps them.
+    if (parsed.remaining > parsed.unlocked) throw protocol('Inconsistent credits.');
     const caps = exact(body['caps'], ['podcasts', 'qualityImages', 'highFactcheck', 'smartPlan']);
     Object.values(caps).forEach(cap => {
         const entry = exact(cap, ['used', 'limit', 'window']);
