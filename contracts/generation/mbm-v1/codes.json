@@ -12,7 +12,7 @@
       "code": "MBM_DOCUMENT_TOO_LARGE",
       "severity": "ERROR",
       "scope": "document",
-      "rule": "The source is larger than 256 KiB, or the compiled document is rejected by a NativeDocumentReader size limit (1 MiB, 10,000 nodes, depth 32).",
+      "rule": "The source is larger than 256 KiB, or the compiled document is rejected by a NativeDocumentReader size limit (1 MiB, 10,000 nodes, depth 32), or the source is too deeply nested or too complex to parse.",
       "fixtureExempt": true
     },
     {

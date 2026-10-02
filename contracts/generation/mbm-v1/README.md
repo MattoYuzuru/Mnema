@@ -5,8 +5,8 @@ turns it into a [native-v1](../../content/native-v1/README.md) document that the
 `NativeDocumentReader` accepts as for any published material. MBM adds no node types: it
 is a Markdown subset plus six directives that map one-to-one onto native-v1 and the
 Epic #76 rich nodes. Architecture: [AI generation platform §6](../../../docs/architecture/ai-generation-platform.md).
-Status: **contract only** — the compiler is AI-03 ([#283](https://github.com/MattoYuzuru/Mnema/issues/283));
-these fixtures are its acceptance suite and the prompt source for
+Status: implemented by the compiler in `app.mnema.learning.generation.mbm`
+([#283](https://github.com/MattoYuzuru/Mnema/issues/283)); these fixtures are its acceptance suite and the prompt source for
 [`prompts/v1/system.md`](../../../backend/services/learning/src/main/resources/ai/prompts/v1/system.md).
 
 ```text
@@ -112,7 +112,7 @@ escape        = "\" ascii-punctuation ;                                 (* yield
 |---|---|---|
 | `# …` to `### …` | `heading` `level` 1..3 | Deeper levels are `MBM_HEADING_LEVEL`. `#` without a following space is paragraph text. |
 | paragraph | `paragraph` | Each line is trimmed of leading and trailing spaces and the lines are joined with a single space (soft break). There is no hard break. |
-| `- ` / `1. ` | `bullet_list` / `ordered_list` + `list_item` (one `paragraph` each) | Consecutive items of the same kind form ONE list, also when single blank lines separate them (fixture `loose-list`); two blank lines, a block start or another marker kind end the list. An item is always one paragraph. One level only; an indented list marker is `MBM_NESTED_LIST`. Ordered lists keep only the first number: `order` is set when it is not 1; later numbers are ignored. |
+| `- ` / `1. ` | `bullet_list` / `ordered_list` + `list_item` (one `paragraph` each) | Consecutive items of the same kind form ONE list, also when single blank lines separate them (fixture `loose-list`); two blank lines, a block start or another marker kind end the list. An item is always one paragraph. One level only; an indented list marker is `MBM_NESTED_LIST`. Ordered lists keep only the first number: `order` is set when it is not 1 (a first number of 0 leaves it unset, as native-v1 requires a positive `order`); later numbers are ignored. |
 | `> …` | `blockquote` of `paragraph`s | Only paragraphs: other markers inside a quote are literal text. |
 | `---` | `divider` | Exactly three hyphens. |
 | a fenced block outside `::mermaid` | — | `MBM_CODE_BLOCK_UNSUPPORTED`. |
@@ -231,7 +231,7 @@ repair URLs. The model never decides which URLs are trusted (OWASP LLM01/05). Fi
 | Code | Severity | Scope | Rule (the line shown by the repair prompt) |
 |---|---|---|---|
 | `MBM_EMPTY_DOCUMENT` | ERROR | document | The document contains no block. |
-| `MBM_DOCUMENT_TOO_LARGE` | ERROR | document | The source is larger than 256 KiB, or the compiled document is rejected by a NativeDocumentReader size limit (1 MiB, 10,000 nodes, depth 32). No fixture: it needs a source over 256 KiB. |
+| `MBM_DOCUMENT_TOO_LARGE` | ERROR | document | The source is larger than 256 KiB, or the compiled document is rejected by a NativeDocumentReader size limit (1 MiB, 10,000 nodes, depth 32), or the source is too deeply nested or too complex to parse. No fixture: it needs a source over 256 KiB. |
 | `MBM_HEADING_LEVEL` | ERROR | block | Headings are # to ### only; split the topic or use a paragraph. |
 | `MBM_NESTED_LIST` | ERROR | block | Lists are one level; write nested items as separate paragraphs or a table. |
 | `MBM_CODE_BLOCK_UNSUPPORTED` | ERROR | block | Fenced code blocks are not part of MBM v1; use inline code or describe the code in prose (code_block is planned in #303). |
