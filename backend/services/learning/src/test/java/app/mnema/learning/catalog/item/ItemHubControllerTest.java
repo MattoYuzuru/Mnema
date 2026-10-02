@@ -146,7 +146,7 @@ class ItemHubControllerTest {
             org.assertj.core.api.Assertions.assertThatThrownBy(() -> new ProblemExtension(Map.of(name, 1L)))
                     .isInstanceOf(IllegalArgumentException.class);
         }
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new ProblemExtension(Map.of("limit", "ten")))
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new ProblemExtension(Map.of("limit", 1.5)))
                 .isInstanceOf(IllegalArgumentException.class);
         org.assertj.core.api.Assertions.assertThat(new ProblemExtension(Map.of("flag", true)).members()).containsEntry("flag", true);
     }

@@ -9,7 +9,7 @@ import java.util.Objects;
  * An admission or consumption does not fit a bucket: {@code 409 USAGE_LIMIT_REACHED}. Thrown before any state change;
  * the transaction of the caller rolls back with it.
  */
-public final class UsageLimitReachedException extends RuntimeException {
+public final class UsageLimitReachedException extends RuntimeException implements ProblemExtension.ProblemExtensionSource {
     private static final long serialVersionUID = 1L;
 
     /**
@@ -50,6 +50,7 @@ public final class UsageLimitReachedException extends RuntimeException {
     }
 
     /** The problem's extension members. */
+    @Override
     public ProblemExtension extension() {
         return block.toExtension();
     }

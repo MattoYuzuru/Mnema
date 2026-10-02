@@ -145,7 +145,8 @@ fair-use buckets, `GET /api/usage` and the estimate. Migration `V26__usage_ledge
   and `INTERNAL_ERROR`; the AI layer adds `USAGE_LIMIT_REACHED` (409) and `SPEC_NOT_SUPPORTED` (422). Public details
   never contain exception messages, SQL or stored command data. A code keeps its fixed status, title and detail; the
   extension members a contract lists for it (`bucket`, `limit`, `limits`, `capability`, `kind` ...) travel in a typed
-  `ProblemExtension` (`platform.api`): a small insertion-ordered map of strings, booleans, integers, instants, enums and
+  `ProblemExtension` (`platform.api`; the exception implements `ProblemExtension.ProblemExtensionSource` and the handler writes the
+  members for every code, deck-hub `limit` included as a number): a small insertion-ordered map of strings, booleans, integers, instants, enums and
   lists or maps of those, whose names can never replace `type`, `title`, `status`, `detail`, `instance` or `code`.
 
 PostgreSQL integration tests are fail-closed: Docker absence or container startup
@@ -384,11 +385,12 @@ code adds.
   of attempts (`PROCESSING_FAILED`). Retryable attempts notify nobody. There is deliberately no "media ready" kind.
 - Keys are listed in the [runtime policy index](../../../docs/engineering/runtime-policy-index.md).
 
-Fresh Learning migrations V1–V25 are the database source of truth. V21 (unified exercise
+Fresh Learning migrations V1–V26 are the database source of truth. V21 (unified exercise
 mechanics) fails closed when pre-#266 exercise data exists: use a fresh local database. V23
 only widens the exercise type and answer-key kind constraints for `ORDER` and `CATEGORIZE`
 (no data rewrite); V24 adds the notification tables; V25 adds `deck_item_exemplar` and two indexes (assessed-binding by
-member, open captures per Deck) and rewrites nothing. Do not append
+member, open captures per Deck) and rewrites nothing; V26 adds the usage ledger tables (`usage_allowance`,
+`usage_balance`, `usage_reservation`, `usage_ledger_entry`, `usage_counter`, `entitlement_inbox`) and rewrites nothing. Do not append
 Study tables to legacy `core` migrations or port old review algorithms.
 
 Sources: [Spring Security 7.1 JWT](https://docs.spring.io/spring-security/reference/7.1/servlet/oauth2/resource-server/jwt.html)

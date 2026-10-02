@@ -95,7 +95,7 @@ Identity `/userinfo`; it never reads Identity tables.
 ### Learning
 
 Read [its guide](../../backend/services/learning/guide.md). Fresh migrations
-(`src/main/resources/db/learning/migration`, V1–V23 at this revision; Identity V1–V3) own
+(`src/main/resources/db/learning/migration`, V1–V26 at this revision; Identity V1–V3) own
 platform/storage, private Deck, deck-local LearningItem, EditingDraft, CaptureNote,
 immutable objective/exercise authoring, bounded Study session snapshots, the media
 lifecycle and the unified exercise mechanics (V21, V23). API paths are canonical

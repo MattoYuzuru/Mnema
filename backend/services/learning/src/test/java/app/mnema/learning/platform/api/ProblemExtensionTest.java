@@ -49,6 +49,28 @@ class ProblemExtensionTest {
     }
 
     @Test
+    void theRecordConstructorAndTheNumericLimitShortcutAgreeWithTheBuilder() {
+        assertThat(ProblemExtension.limit(20)).isEqualTo(ProblemExtension.builder().put("limit", 20L).build());
+        assertThat(ProblemExtension.limit(20).members()).containsEntry("limit", 20L);
+        assertThat(new ProblemExtension(Map.of("flag", true)).members()).containsEntry("flag", true);
+        assertThatThrownBy(() -> new ProblemExtension(Map.of("code", 1L))).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new ProblemExtension(Map.of("x-y", 1L))).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new ProblemExtension(Map.of("limit", 1.5))).isInstanceOf(IllegalArgumentException.class);
+        ProblemExtension.ProblemExtensionSource source = ProblemExtension::none;
+        assertThat(source.extension().members()).isEmpty();
+    }
+
+    @Test
+    void everyExceptionWithMembersExposesThemThroughTheSameSource() {
+        List<ProblemExtension.ProblemExtensionSource> sources = List.of(new ResourceLimitExceededException(),
+                new CapabilityUnavailableException(), new SpecNotSupportedException("REVISE_ITEM"),
+                new UsageLimitReachedException(new UsageLimitReachedException.Block(Bucket.CREDITS, Window.MONTH,
+                        Unit.CREDITS, 1L, 1, 1, true, null, false, Plan.FREE)));
+        assertThat(sources).extracting(source -> source.extension().members().isEmpty())
+                .containsExactly(true, true, false, false);
+    }
+
+    @Test
     void reservedMalformedDuplicateAndUnsupportedMembersAreProducerBugs() {
         for (String reserved : List.of("type", "title", "status", "detail", "instance", "code")) {
             assertThatThrownBy(() -> ProblemExtension.builder().put(reserved, "x")).isInstanceOf(IllegalArgumentException.class);

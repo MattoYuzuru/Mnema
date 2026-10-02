@@ -20,7 +20,7 @@ import java.util.regex.Pattern;
  * as RFC 3339), enums (written by name), {@code null} and lists or maps of those. Callers pass identifiers, counts and
  * tokens, never exception text or user content.
  */
-public final class ProblemExtension {
+public record ProblemExtension(Map<String, Object> members) {
     private static final Pattern NAME = Pattern.compile("[a-z][A-Za-z0-9]{0,31}");
     private static final Set<String> RESERVED = Set.of("type", "title", "status", "detail", "instance", "code");
     private static final int MAX_MEMBERS = 16;
@@ -28,10 +28,22 @@ public final class ProblemExtension {
     private static final int MAX_DEPTH = 3;
     private static final ProblemExtension NONE = new ProblemExtension(Map.of());
 
-    private final Map<String, Object> members;
-
-    private ProblemExtension(Map<String, Object> members) {
-        this.members = members;
+    /**
+     * Validates and copies the members, keeping their order.
+     *
+     * @throws IllegalArgumentException a reserved or malformed name, too many members or an unsupported value
+     */
+    public ProblemExtension {
+        Objects.requireNonNull(members, "members");
+        if (members.size() > MAX_MEMBERS) throw new IllegalArgumentException("Too many problem members");
+        Map<String, Object> copy = new LinkedHashMap<>();
+        members.forEach((name, value) -> {
+            if (name == null || !NAME.matcher(name).matches() || RESERVED.contains(name)) {
+                throw new IllegalArgumentException("Invalid problem member name");
+            }
+            copy.put(name, normalize(value, 0));
+        });
+        members = Collections.unmodifiableMap(copy);
     }
 
     /** No members: the plain problem. */
@@ -44,7 +56,7 @@ public final class ProblemExtension {
         return builder().put("limit", limit).build();
     }
 
-    /** Implemented by exceptions whose Problem Detail carries extension members. */
+    /** Implemented by exceptions whose Problem Detail carries extension members; the handler reads it for every code. */
     public interface ProblemExtensionSource {
         ProblemExtension extension();
     }
@@ -53,30 +65,23 @@ public final class ProblemExtension {
         return new Builder();
     }
 
-    /** The members in insertion order; unmodifiable. */
-    public Map<String, Object> members() {
-        return members;
-    }
-
     /** Collects members in the order the contract lists them. */
     public static final class Builder {
         private final Map<String, Object> members = new LinkedHashMap<>();
 
         private Builder() { }
 
-        /** @throws IllegalArgumentException for a reserved or malformed name, a duplicate or an unsupported value */
+        /** @throws IllegalArgumentException for a duplicate, a reserved or malformed name, or an unsupported value */
         public Builder put(String name, Object value) {
-            Objects.requireNonNull(name, "name");
-            if (!NAME.matcher(name).matches() || RESERVED.contains(name) || members.containsKey(name)
-                    || members.size() >= MAX_MEMBERS) {
-                throw new IllegalArgumentException("Invalid problem member name");
-            }
-            members.put(name, normalize(value, 0));
+            if (members.containsKey(name)) throw new IllegalArgumentException("Duplicate problem member");
+            members.put(name, value);
+            // Validate eagerly so the producer bug surfaces at the call that made it.
+            new ProblemExtension(members);
             return this;
         }
 
         public ProblemExtension build() {
-            return members.isEmpty() ? NONE : new ProblemExtension(Collections.unmodifiableMap(new LinkedHashMap<>(members)));
+            return members.isEmpty() ? NONE : new ProblemExtension(members);
         }
     }
 

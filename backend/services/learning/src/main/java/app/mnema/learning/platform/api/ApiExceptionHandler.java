@@ -40,20 +40,17 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(CapabilityUnavailableException.class)
     ResponseEntity<Object> handleCapabilityUnavailable(CapabilityUnavailableException exception,
                                                         HttpServletRequest request) {
-        return response(ApiErrorCode.CAPABILITY_UNAVAILABLE, request.getRequestURI(), new HttpHeaders(),
-                exception.extension());
+        return response(ApiErrorCode.CAPABILITY_UNAVAILABLE, request, exception);
     }
 
     @ExceptionHandler(UsageLimitReachedException.class)
     ResponseEntity<Object> handleUsageLimitReached(UsageLimitReachedException exception, HttpServletRequest request) {
-        return response(ApiErrorCode.USAGE_LIMIT_REACHED, request.getRequestURI(), new HttpHeaders(),
-                exception.extension());
+        return response(ApiErrorCode.USAGE_LIMIT_REACHED, request, exception);
     }
 
     @ExceptionHandler(SpecNotSupportedException.class)
     ResponseEntity<Object> handleSpecNotSupported(SpecNotSupportedException exception, HttpServletRequest request) {
-        return response(ApiErrorCode.SPEC_NOT_SUPPORTED, request.getRequestURI(), new HttpHeaders(),
-                exception.extension());
+        return response(ApiErrorCode.SPEC_NOT_SUPPORTED, request, exception);
     }
 
     @ExceptionHandler(MediaUploadConflictException.class)
@@ -113,21 +110,18 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
             ResourceLimitExceededException exception,
             HttpServletRequest request
     ) {
-        return response(ApiErrorCode.RESOURCE_LIMIT_EXCEEDED, request.getRequestURI(), new HttpHeaders(),
-                exception.extension());
+        return response(ApiErrorCode.RESOURCE_LIMIT_EXCEEDED, request, exception);
     }
 
     @ExceptionHandler(ExemplarLimitReachedException.class)
     ResponseEntity<Object> handleExemplarLimit(ExemplarLimitReachedException exception, HttpServletRequest request) {
-        return response(ApiErrorCode.EXEMPLAR_LIMIT_REACHED, request.getRequestURI(), new HttpHeaders(),
-                exception.extension());
+        return response(ApiErrorCode.EXEMPLAR_LIMIT_REACHED, request, exception);
     }
 
     @ExceptionHandler(BulkSelectionTooLargeException.class)
     ResponseEntity<Object> handleBulkSelectionTooLarge(BulkSelectionTooLargeException exception,
                                                        HttpServletRequest request) {
-        return response(ApiErrorCode.BULK_SELECTION_TOO_LARGE, request.getRequestURI(), new HttpHeaders(),
-                exception.extension());
+        return response(ApiErrorCode.BULK_SELECTION_TOO_LARGE, request, exception);
     }
 
     @ExceptionHandler(Exception.class)
@@ -162,23 +156,14 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return response(code, status, requestUri, headers, ProblemExtension.none());
     }
 
+    /** A problem whose exception carries extension members: the one way every such code is written. */
+    private ResponseEntity<Object> response(ApiErrorCode code, HttpServletRequest request,
+                                            ProblemExtension.ProblemExtensionSource source) {
+        return response(code, code.status(), request.getRequestURI(), new HttpHeaders(), source.extension());
+    }
+
     private ResponseEntity<Object> response(ApiErrorCode code, String requestUri, HttpHeaders headers) {
         return response(code, code.status(), requestUri, headers, ProblemExtension.none());
-    }
-
-    private ResponseEntity<Object> response(ApiErrorCode code, String requestUri, HttpHeaders headers,
-                                            ProblemExtension extension) {
-        return response(code, code.status(), requestUri, headers, extension);
-    }
-
-    private ResponseEntity<Object> response(
-            ApiErrorCode code,
-            HttpStatusCode responseStatus,
-            String requestUri,
-            HttpHeaders headers,
-            ProblemExtension extension
-    ) {
-        return response(code, responseStatus, requestUri, headers, ProblemExtension.none());
     }
 
     private ResponseEntity<Object> response(
