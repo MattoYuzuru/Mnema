@@ -54,6 +54,11 @@ export class NotificationCenter {
     private running = false;
     private epoch = 0;
     private chain: Promise<unknown> = Promise.resolve();
+    /**
+     * Ids dismissed in this session. A list response that was already in flight when the learner dismissed (the panel
+     * reload on open, a poll) may still contain the item; it must not reappear.
+     */
+    private readonly dismissed = new Set<string>();
     private pollQueued = false;
     private timer: ReturnType<typeof setTimeout> | null = null;
     private lastSeq: string | null = null;
@@ -96,7 +101,7 @@ export class NotificationCenter {
             const result = await firstValueFrom(this.api.list({ limit: PAGE_SIZE, cursor }));
             if (epoch !== this.epoch || result.kind !== 'page') return;
             const known = new Set(this.items().map(item => item.notificationId));
-            this.items.update(list => [...list, ...result.page.items.filter(item => !known.has(item.notificationId))]);
+            this.items.update(list => [...list, ...result.page.items.filter(item => !known.has(item.notificationId) && !this.dismissed.has(item.notificationId))]);
             this.olderCursor.set(result.page.nextCursor);
         } catch {
             if (epoch === this.epoch) this.panelError.set('Не удалось загрузить остальные уведомления. Попробуйте ещё раз.');
@@ -108,10 +113,12 @@ export class NotificationCenter {
         const item = this.items().find(candidate => candidate.notificationId === notificationId);
         if (item === undefined) return;
         const epoch = this.epoch;
+        this.dismissed.add(notificationId);
         try {
             await firstValueFrom(this.api.dismiss(notificationId));
         } catch (error) {
             if (!(error instanceof HttpErrorResponse && error.status === 404)) {
+                this.dismissed.delete(notificationId);
                 if (epoch === this.epoch) this.panelError.set('Не удалось убрать уведомление. Попробуйте ещё раз.');
                 return;
             }
@@ -137,6 +144,7 @@ export class NotificationCenter {
         this.clearTimer();
         this.lastSeq = null;
         this.etag = null;
+        this.dismissed.clear();
         this.items.set([]);
         this.unreadCount.set(0);
         this.readUpto.set('0');
@@ -182,7 +190,7 @@ export class NotificationCenter {
         const result = await firstValueFrom(this.api.list({ limit: PAGE_SIZE }));
         if (epoch !== this.epoch || result.kind !== 'page') return;
         const page = result.page;
-        this.items.set(sortNewestFirst(page.items));
+        this.items.set(sortNewestFirst(page.items.filter(item => !this.dismissed.has(item.notificationId))));
         this.olderCursor.set(page.nextCursor);
         this.lastSeq = page.items.reduce((max, item) => compareSeq(item.seq, max) > 0 ? item.seq : max, '0');
         this.etag = result.etag;
@@ -205,7 +213,7 @@ export class NotificationCenter {
         this.etag = first.etag;
         this.lastSeq = arrived.reduce((max, item) => compareSeq(item.seq, max) > 0 ? item.seq : max, after);
         const known = new Set(this.items().map(item => item.notificationId));
-        const added = arrived.filter(item => !known.has(item.notificationId));
+        const added = arrived.filter(item => !known.has(item.notificationId) && !this.dismissed.has(item.notificationId));
         if (added.length > 0) this.items.set(sortNewestFirst([...added, ...this.items()]).slice(0, RETENTION));
         this.applyCounters(page.unreadCount, page.readUpto, page.activeWork);
         // The panel is open, or the item was already read elsewhere: nothing to interrupt with.
