@@ -57,6 +57,9 @@ class DeckHubScaleIntegrationTest extends PostgresIntegrationTest {
     private UUID actor;
     private UUID wide;
     private UUID real;
+    private long coldInsightsMs;
+    private long coldFirstSortedPageMs;
+    private int previewsAfterFirstPage;
 
     @BeforeAll
     void buildDecks() {
@@ -77,6 +80,11 @@ class DeckHubScaleIntegrationTest extends PostgresIntegrationTest {
         });
         System.out.printf("hub-scale: %d materials / %d exercises seeded set-based in %d ms%n", MATERIALS,
                 COVERED * PER_MATERIAL, (System.nanoTime() - started) / 1_000_000);
+        // The very first read of freshly bulk-loaded tables: no planner statistics yet (autovacuum has not run), which is
+        // when a statistics-dependent plan degrades. Measured before anything warms the pool, plans or previews.
+        started = System.nanoTime();
+        insights.read(actor, wide, "Europe/Moscow");
+        coldInsightsMs = (System.nanoTime() - started) / 1_000_000;
 
         real = fixtures.deck(actor);
         started = System.nanoTime();
@@ -88,11 +96,25 @@ class DeckHubScaleIntegrationTest extends PostgresIntegrationTest {
             jdbc.sql("SET LOCAL session_replication_role = replica").update();
             cloneExercises(real);
         });
+        started = System.nanoTime();
+        items.list(actor, real, "25", null, "exerciseCount", null);
+        coldFirstSortedPageMs = (System.nanoTime() - started) / 1_000_000;
+        previewsAfterFirstPage = jdbc.sql("SELECT count(*) FROM app_learning.item_preview WHERE deck_id=:deck")
+                .param("deck", real).query(Integer.class).single();
+    }
+
+    @Test
+    void theFirstReadOfFreshlyLoadedTablesIsBoundedWithoutPlannerStatistics() {
+        System.out.printf("hub-scale: cold (no statistics) insights %d ms, first sorted page %d ms, previews filled %d%n",
+                coldInsightsMs, coldFirstSortedPageMs, previewsAfterFirstPage);
+        assertThat(coldInsightsMs).isLessThan(BUDGET_MS);
+        assertThat(coldFirstSortedPageMs).isLessThan(BUDGET_MS);
+        // The first sorted page lazily fills previews for its own 25 entries only, never for the whole deck.
+        assertThat(previewsAfterFirstPage).isEqualTo(25);
     }
 
     @Test
     void insightsAnswerWithinTheBudgetAndEqualTheSums() {
-        insights.read(actor, wide, "Europe/Moscow");   // warm the plan cache and the pool
         long best = Long.MAX_VALUE;
         JsonNode result = null;
         for (int run = 0; run < 3; run++) {
@@ -119,13 +141,6 @@ class DeckHubScaleIntegrationTest extends PostgresIntegrationTest {
 
     @Test
     void sortedPagesStayInsideTheBudgetAndAFullScanHasNoDuplicatesOrGaps() {
-        // First scan lazily fills the item_preview projection (an expense of the first read of any Browse page). It uses
-        // the client's page size: one 100-item cold page can exceed the 10 s transaction timeout on a slow CI runner.
-        String warm = null;
-        do {
-            JsonNode page = items.list(actor, real, "25", warm, "exerciseCount", null);
-            warm = page.path("nextCursor").stringValue(null);
-        } while (warm != null);
         var head = repository.deck(actor, real).orElseThrow();
         long sql = Long.MAX_VALUE;
         for (int run = 0; run < 3; run++) {
