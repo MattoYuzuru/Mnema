@@ -1,8 +1,8 @@
 # Notifications contract v1 (`notifications-v1`)
 
 The durable notification center ("Inbox" and toasts). It is **general**, not AI-specific: generation, usage and media are its
-first producers. **Status: contract only** — AI-07 ([#284](https://github.com/MattoYuzuru/Mnema/issues/284)) implements the
-API, the bell and the toasts; AI-01 (#281), AI-05 ([#288](https://github.com/MattoYuzuru/Mnema/issues/288)) and AI-14
+first producers. **Status: implemented by AI-07** ([#284](https://github.com/MattoYuzuru/Mnema/issues/284)): the API, the bell,
+the inbox panel and the toasts; AI-01 (#281), AI-05 ([#288](https://github.com/MattoYuzuru/Mnema/issues/288)) and AI-14
 ([#295](https://github.com/MattoYuzuru/Mnema/issues/295)) are producers.
 
 Authority: [AI generation platform §12](../../docs/architecture/ai-generation-platform.md) and the notification part of
