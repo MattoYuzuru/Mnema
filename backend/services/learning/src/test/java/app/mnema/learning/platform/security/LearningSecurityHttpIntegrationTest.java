@@ -350,6 +350,33 @@ class LearningSecurityHttpIntegrationTest extends PostgresIntegrationTest {
         assertThat(ContractFixtures.JSON.readTree(request("GET", "/notifications", read).body()).path("items")).isEmpty();
     }
 
+    @Test
+    void usageIsAuthenticatedReadOnlyPrivateAndTheEstimateIsAWriteThatNeverEscapesTheOwner() throws Exception {
+        String read = token("learning.read", c -> { });
+        String write = token("learning.write", c -> { });
+        assertProblem(request("GET", "/usage", null), 401, "AUTHENTICATION_REQUIRED");
+        assertProblem(request("GET", "/usage", write), 403, "ACCESS_DENIED");
+        assertProblem(request("POST", "/usage", read), 403, "ACCESS_DENIED");
+        String estimate = "/decks/" + UUID.randomUUID() + "/generation-estimates";
+        assertProblem(post(estimate, null, "{}"), 401, "AUTHENTICATION_REQUIRED");
+        assertProblem(post(estimate, read, "{}"), 403, "ACCESS_DENIED");
+        assertThat(CALLS).hasValue(0);
+
+        var usage = request("GET", "/usage", read);
+        assertThat(usage.statusCode()).isEqualTo(200);
+        assertThat(usage.headers().firstValue("cache-control")).contains("private, no-store");
+        var body = ContractFixtures.JSON.readTree(usage.body());
+        assertThat(body.path("plan").stringValue(null)).isEqualTo("FREE");
+        assertThat(body.path("rateCardVersion").stringValue(null)).isEqualTo("rc-v1");
+        assertThat(body.path("entitlement").path("source").stringValue(null)).isEqualTo("CONFIG");
+
+        // The account owns no such deck: the opaque 404, whatever the body says.
+        var absent = post(estimate, write, "{\"spec\":{\"kind\":\"MATERIALS\",\"prompt\":\"p\"}}");
+        assertThat(absent.statusCode()).isEqualTo(404);
+        assertThat(absent.headers().firstValue("cache-control")).contains("private, no-store");
+        assertThat(absent.body()).contains("\"code\":\"RESOURCE_NOT_FOUND\"");
+    }
+
     private static Map<String, Object> usageParams() {
         Map<String, Object> params = new java.util.HashMap<>();
         params.put("bucket", "CREDITS");
