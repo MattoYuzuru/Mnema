@@ -34,6 +34,16 @@ exercise mechanics into the seven below. Epic #76 added the greenfield media lif
   [`contracts/notifications`](../../../contracts/notifications/README.md) and the versioned prompt
   sections in `src/main/resources/ai/prompts/` (resources, not loaded by any code yet). No
   generation, usage or notification endpoint is implemented; run-2 tasks (#281–#286, #303) add them.
+- MBM compiler (#283): `app.mnema.learning.generation.mbm` is a pure package (no Spring, I/O or clock; identifiers come from
+  the injected `IdAllocator`) that compiles MBM v1 to a native-v1 document and renders native-v1 back to MBM.
+  `MbmCompiler.compile(source, MbmOptions, IdAllocator)` returns `MbmResult.Success` (document already read by
+  `NativeDocumentReader`, media `MbmSlot`s, warnings) or `MbmResult.Failure` (at most 20 errors, no document); the
+  `href`/`lang` profile is the reader itself (`NativeProfile` probes it), so there is no second validator.
+  `MbmRenderer` writes `[[bN]]` handles and is lossless or refuses (`MbmUnsupportedContentException`: it re-compiles every
+  block and compares). `MbmAutoFixer` repairs harmless slips before compiling, `MbmRepairList` formats errors for the repair
+  prompt, `MbmLint` is the hook for the copy lint. Inline scanning has a linear work budget and a nesting bound that report
+  `MBM_DOCUMENT_TOO_LARGE`. Fenced `code_block` stays `MBM_CODE_BLOCK_UNSUPPORTED` until #303 (the single fence scan in
+  `BlockParser` is where it plugs in). The executable contract is `contracts/generation/mbm-v1`.
 
 ## Shared platform contracts
 
