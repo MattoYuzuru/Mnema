@@ -159,6 +159,25 @@ scenario fails and names where the main thread is stuck.
 Honest limits: Chrome only; no touch input, screen reader or Safari/Firefox; the AI button is checked absent, not present;
 partial (`PARTIAL`) bulk results need a concurrent foreign publication and are covered by the component and backend tests, not here.
 
+### Profile AI budget (`--authoring`)
+
+`usage.mjs` runs last among the authoring scenarios (after the code block) on the signed-in account's tab, under
+`prefers-reduced-motion: reduce`, and records one result, `usage_profile_ai_budget_real_api` (`state: "failed"` with the step
+`usage_<stage>` and `failure-usage-<stage>.png`/`.txt` on a broken stage). Nothing is stubbed: the page's «ИИ-бюджет» block
+(`/profile`, `section#ai-budget`) is compared with the real `GET /api/usage` fetched with the page's own bearer, so no number
+is fixed; whatever the earlier flows consumed, the text must agree with the API.
+
+| Stage | Assertions |
+|---|---|
+| `block_matches_api` | the response is `200` and `no-store`, the fixture account is Free; the section is labelled by its «ИИ-бюджет» heading; the plan line reads «Тариф Free»; the sentence says the API's rounded percent, «≈ N материалов» (remaining credits ÷ 10, rounded down), the renewal date formatted by the harness in `ru-RU` / `Europe/Moscow`, the locked share and the next unlock date; the bar is `aria-hidden`, has no role and no text; the weekly ticks are three unless every portion is open; fair-use counters appear exactly for the buckets the API flags `warn`; no credits shown as a unit; the other profile sections are still there |
+| `responsive_and_screenshots` | no horizontal overflow at 1440, 390 and 320 CSS px at DPR 2, and the block stays inside the viewport; element screenshots (CDP clip of the section) `usage-budget-1440.png`, `usage-budget-390.png`, `usage-budget-320-at-200-percent.png` |
+| `fragment_same_document` | what a notification link does while the profile is open: a browser navigation to `/profile#ai-budget` changes only the fragment (a marker proves the document was not reloaded); the heading takes focus and is in view; an unrelated fragment does not move focus |
+| `fragment_fresh_load` | `/decks`, then a fresh load of `/profile#ai-budget`: the heading is focused and in view and the text still equals the API (`usage-budget-fragment-1440.png`) |
+
+Honest limits: Chrome only; no screen reader; the plan is Free by default (the scenario fails if it is not, rather than
+guessing); fair-use counters are asserted consistent with the API, not forced above 80 %; the link is a browser navigation
+to the URL, not a click on a bell or toast entry (that component is covered by the notifications scenario and unit specs).
+
 Use `--chrome` for another existing Chrome executable. The page contract defaults to
 `[data-testid="identity-profile"]`, `[data-testid="logout"]`, and `[role="alert"]`;
 matching CLI selector options are available. Registration uses `#email`, `#username`,
@@ -204,7 +223,7 @@ Two synthetic accounts and two same-profile browser tabs exercise:
   These automated checks do not claim physical-device or AT coverage.
 
 The PKCE verifier is checked against the observed S256 challenge. Network interception
-blocks page requests outside the two exact origins (plus the local MinIO origin in media mode); at most 500 page requests in the base mode, 900 in authoring, 1150 in media or 3000 in mechanics mode (allowing the local brand font and mark on repeated full navigations), and
+blocks page requests outside the two exact origins (plus the local MinIO origin in media mode); at most 500 page requests in the base mode, 1000 in authoring (the profile AI budget scenario adds a few full loads), 1250 in media or 3000 in mechanics mode (allowing the local brand font and mark on repeated full navigations), and
 150 Identity requests are allowed (full SPA navigations reload several bundled assets).
 Global deadline 180 seconds, 600 with `--mechanics` (CLI 30–900), individual CDP/HTTP/readiness deadlines, 1 MiB proxy
 request/response cap, 16 MiB static asset cap. Database has a 512 MiB/two-CPU limit; each JVM
