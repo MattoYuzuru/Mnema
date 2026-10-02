@@ -174,6 +174,93 @@ html body h1[tabindex="-1"]:focus-visible {
     --mn-wave-fill: var(--mn-sheet);
 }
 
+/*
+ * Generate call to action: an indigo button whose border carries a short "snake" (three laps, about 5 s) on hover or
+ * keyboard focus only. Self-contained: apply it alone (`<button class="generate-cta">`), not together with `.button`.
+ * Use it at most once per screen (docs/frontend/mnema-brand-and-ui-contract.md). The snake lives in the border-box
+ * background layer because `.button::before` is taken by the hover wave. A button that is out of budget but still
+ * clickable sets `aria-disabled="true"`, which also keeps the snake off.
+ */
+@property --mn-snake-angle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+@property --mn-snake-head { syntax: "<color>"; inherits: false; initial-value: #281378; } /* = --mn-ink */
+@property --mn-snake-tail { syntax: "<color>"; inherits: false; initial-value: #281378; }
+
+.generate-cta {
+    --mn-snake-width: 2px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .5rem;
+    min-block-size: var(--mn-touch-min);
+    margin: 0;
+    border: var(--mn-snake-width) solid transparent;
+    border-radius: var(--mn-radius);
+    padding: .5rem 1.25rem;
+    color: var(--mn-on-ink);
+    font: 700 1rem/1.2 var(--mn-font-body);
+    text-align: center;
+    text-decoration: none;
+    cursor: pointer;
+    /* At rest head and tail are ink: the ring blends into the button. */
+    background:
+        linear-gradient(var(--mn-ink) 0 0) padding-box,
+        conic-gradient(from var(--mn-snake-angle),
+            var(--mn-ink) 0 55%,
+            color-mix(in oklab, var(--mn-snake-tail) 35%, var(--mn-ink)) 74%,
+            var(--mn-snake-tail) 90%,
+            var(--mn-snake-head) 97%,
+            var(--mn-ink) 99.5%) border-box;
+    transition: --mn-snake-head .25s ease, --mn-snake-tail .25s ease;
+}
+
+.generate-cta:disabled {
+    cursor: not-allowed;
+    opacity: .55;
+}
+
+.generate-cta:is(:hover, :focus-visible):not(:disabled, [aria-disabled='true']) {
+    --mn-snake-head: var(--mn-sheet);
+    --mn-snake-tail: var(--mn-hint);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .generate-cta:is(:hover, :focus-visible):not(:disabled, [aria-disabled='true']) {
+        animation: mn-snake 1.6s linear 3 forwards;
+    }
+}
+
+@keyframes mn-snake {
+    to { --mn-snake-angle: 1turn; }
+}
+
+/* Reduced motion: no lap, a static highlight keeps hover and focus visible. */
+@media (prefers-reduced-motion: reduce) {
+    .generate-cta:is(:hover, :focus-visible):not(:disabled, [aria-disabled='true']) {
+        --mn-snake-angle: 40deg;
+    }
+}
+
+/* Forced colors compute gradient backgrounds to none: the border is set from system colors instead. */
+@media (forced-colors: active) {
+    .generate-cta {
+        border-color: ButtonText;
+        background: ButtonFace;
+        color: ButtonText;
+        animation: none;
+    }
+
+    .generate-cta:is(:hover, :focus-visible):not(:disabled, [aria-disabled='true']) {
+        border-color: Highlight;
+        animation: none;
+    }
+
+    .generate-cta:disabled {
+        border-color: GrayText;
+        color: GrayText;
+        opacity: 1;
+    }
+}
+
 @media (prefers-reduced-motion: reduce) {
     html {
         scroll-behavior: auto;
