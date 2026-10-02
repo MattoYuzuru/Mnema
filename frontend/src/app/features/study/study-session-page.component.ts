@@ -5,6 +5,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { map, timer } from 'rxjs';
 
 import { Mechanic } from '../../content/exercise/exercise-content.models';
+import { QuietZone } from '../../core/notifications/quiet-zone';
 import { MnemaSelectComponent, MnemaSelectOption } from '../../core/controls/mnema-select.component';
 import { LearnerExerciseComponent, PairChecker } from './learner-exercise.component';
 import { LearnerFeedbackComponent, feedbackTitle } from './learner-feedback.component';
@@ -27,6 +28,8 @@ import { StudyRecoveryService } from './study-recovery.service';
 
 type Phase = 'setup' | 'loading' | 'preparing' | 'answering' | 'revealed' | 'submitting' | 'feedback'
     | 'unknown' | 'conflict' | 'empty' | 'complete' | 'expired' | 'unavailable' | 'error';
+
+const TASK_OPEN: readonly Phase[] = ['answering', 'revealed', 'submitting'];
 
 @Component({
     selector: 'app-study-session-page',
@@ -89,6 +92,7 @@ export class StudySessionPageComponent {
     private readonly decks = inject(OwnDecksApiService);
     private readonly api = inject(StudyApiService);
     private readonly recovery = inject(StudyRecoveryService);
+    private readonly quietZone = inject(QuietZone);
     private readonly destroyRef = inject(DestroyRef);
     private readonly injector = inject(Injector);
     private readonly element: ElementRef<HTMLElement> = inject(ElementRef);
@@ -97,6 +101,10 @@ export class StudySessionPageComponent {
     private pollCount = 0;
 
     constructor() {
+        // A task is open (answering, revealing, sending): new toasts wait. Feedback, the end of the session and
+        // leaving the page are the natural pauses where they may show.
+        effect(() => this.quietZone.set(TASK_OPEN.includes(this.phase())));
+        this.destroyRef.onDestroy(() => this.quietZone.set(false));
         effect(onCleanup => {
             const sentinel = this.progressSentinel()?.nativeElement;
             const cursor = this.progressNextCursor();
