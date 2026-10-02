@@ -57,6 +57,10 @@ A reservation is a hold on the balance, scoped to one admission (`SESSION`, `TUR
 - **Every later chargeable action** (an edit turn, `retryArtifact`, a media redo, `AUDIO_REGENERATE`, an `IMAGE_SEARCH` edit)
   creates **its own small reservation** at admission. If it does not fit, the answer is `409 USAGE_LIMIT_REACHED` **before any state
   change**. `REMOVE_MEDIA` is free and needs none.
+- **Renewal.** `UsageLedger.renew(owner, reservationId)` keeps a live hold alive: it sets `expiresAt = min(now + learning.usage.reservation-ttl,
+  period end)`, never shortens it and never moves it past its period, so repeating it is harmless. The step scheduler (AI-04) calls it for
+  a session whose steps are deferred by the daily burst or still running; on a hold that has ended it fails with
+  `ReservationNotActiveException`. A hold the scheduler stops renewing expires by the sweep as an orphan.
 - A reservation carries `periodId`; its debits draw from that period; it never outlives its period
   (`expiresAt = min(learning.usage.reservation-ttl, period end)`); at period rollover every `ACTIVE` hold is released and the remaining
   steps re-reserve in the new period. A session that is `CLOSED`, `CANCELLED`, `EXPIRED` or deleted after at least one debit settles
@@ -64,6 +68,9 @@ A reservation is a hold on the balance, scoped to one admission (`SESSION`, `TUR
 - **Never negative.** Admission is one conditional update on `usage_balance` inside the admission transaction
   (`UPDATE … SET reserved = reserved + :hold, row_version = row_version + 1 WHERE available >= :hold AND row_version = :v`); zero rows
   updated is `409`. Two concurrent admissions cannot both pass.
+- Refusals the caller must handle are not all alike: `USAGE_LIMIT_REACHED` rolls the admission transaction back (nothing may change), while the
+  over-run (`EstimateExceededException`) and a debit on an ended hold (`ReservationNotActiveException`) are thrown before any write and leave
+  the caller's transaction usable, so it can record the failure and commit.
 - An over-run of the hold fails the artifact with `ESTIMATE_EXCEEDED` (a retry re-reserves); a limit that cannot cover the call fails
   with `USAGE_LIMIT`. A provider-side failure is not debited; a repair inside a successful step is.
 

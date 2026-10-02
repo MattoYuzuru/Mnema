@@ -5,18 +5,19 @@ import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.ProblemExtension;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.id.UuidPolicy;
+import app.mnema.learning.platform.json.ContentJsonReader;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.Supplier;
 
 /**
  * The preflight cost of a spec or of one edit: a pure function of the spec, the rate card and the current balance. It
@@ -27,6 +28,9 @@ class EstimateService {
     private static final Set<String> EDIT_ACTIONS = Set.of("REWRITE", "IMAGE_SEARCH", "IMAGE_GENERATE", "AUDIO_REGENERATE",
             "FREE", "REMOVE_MEDIA");
     private static final int MAX_TARGET_NODES = 50;
+    /** Request bodies are strict JSON of at most 64 KiB and none of them carries a document. */
+    static final int MAX_BODY_BYTES = 65_536;
+    private static final ContentJsonReader READER = new ContentJsonReader(MAX_BODY_BYTES, 8, 4_096);
 
     private final UsageRepository repository;
     private final UsageState state;
@@ -44,19 +48,20 @@ class EstimateService {
     }
 
     EstimateView estimate(UUID owner, UUID deckId, JsonNode body) {
-        return estimate(owner, deckId, () -> body);
+        return estimate(owner, deckId, body.toString().getBytes(StandardCharsets.UTF_8));
     }
 
     /**
-     * @param request supplies the parsed body, exactly one of {@code spec} or {@code edit}; it is called only after
-     *                the deck is known to be the owner's, so a stranger learns nothing from how a body fails
+     * @param raw the request bytes, already read from the client (at most {@code MAX_BODY_BYTES + 1}): the controller
+     *            never holds a database connection while a slow client sends its body. They are parsed only after the
+     *            deck is known to be the owner's, so a stranger learns nothing from how a body fails.
      * @throws ResourceNotFoundException a foreign or absent deck, indistinguishable
-     * @throws InvalidRequestException   a malformed body or spec
+     * @throws InvalidRequestException   a malformed body (exactly one of {@code spec} or {@code edit}) or spec
      */
     @Transactional(readOnly = true)
-    EstimateView estimate(UUID owner, UUID deckId, Supplier<JsonNode> request) {
+    EstimateView estimate(UUID owner, UUID deckId, byte[] raw) {
         if (!repository.deckOwned(owner, deckId)) throw new ResourceNotFoundException();
-        JsonNode body = request.get();
+        JsonNode body = parse(raw);
         if (body.size() != 1 || body.has("spec") == body.has("edit")) throw new InvalidRequestException();
 
         Instant now = clock.now();
@@ -66,6 +71,14 @@ class EstimateService {
                 ? interpreter.interpret(owner, deckId, body.get("spec"), credits.remaining())
                 : new GenerationSpecInterpreter.Interpretation(editLines(body.get("edit")), null, List.of());
         return price(resolved, credits, interpretation, now);
+    }
+
+    private static JsonNode parse(byte[] raw) {
+        try {
+            return READER.read(raw);
+        } catch (IllegalArgumentException failure) {
+            throw new InvalidRequestException();
+        }
     }
 
     EstimateView price(UsageState.Resolved resolved, UsageState.Credits credits,

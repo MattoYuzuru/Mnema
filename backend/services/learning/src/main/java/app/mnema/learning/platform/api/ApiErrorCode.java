@@ -23,6 +23,11 @@ enum ApiErrorCode {
             "Usage limit reached",
             "The remaining AI budget does not cover this operation."
     ),
+    USAGE_UNAVAILABLE(
+            HttpStatus.SERVICE_UNAVAILABLE,
+            "Usage unavailable",
+            "The usage budget is busy; retry the request."
+    ),
     SPEC_NOT_SUPPORTED(
             HttpStatus.UNPROCESSABLE_CONTENT,
             "Spec not supported",

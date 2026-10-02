@@ -2,7 +2,6 @@ package app.mnema.learning.usage;
 
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.id.UuidPolicy;
-import app.mnema.learning.platform.json.ContentJsonReader;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -11,7 +10,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import tools.jackson.databind.JsonNode;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -25,10 +23,6 @@ import java.util.UUID;
 @RestController
 @RequestMapping(value = "/decks/{deckId}/generation-estimates", produces = MediaType.APPLICATION_JSON_VALUE)
 public final class EstimateController {
-    /** Request bodies are strict JSON of at most 64 KiB and none of them carries a document. */
-    private static final int MAX_BODY_BYTES = 65_536;
-    private static final ContentJsonReader READER = new ContentJsonReader(MAX_BODY_BYTES, 8, 4_096);
-
     private final EstimateService estimates;
 
     EstimateController(EstimateService estimates) {
@@ -40,13 +34,15 @@ public final class EstimateController {
                                           InputStream body) {
         UUID owner = UsageController.owner(identity);
         UUID deck = deck(deckId);
-        return ResponseEntity.ok().header("Cache-Control", "private, no-store").body(estimates.estimate(owner, deck, () -> read(body)));
+        // Read the (bounded) bytes here, before any transaction: a slow client must not hold a connection.
+        byte[] raw = read(body);
+        return ResponseEntity.ok().header("Cache-Control", "private, no-store").body(estimates.estimate(owner, deck, raw));
     }
 
-    private static JsonNode read(InputStream input) {
+    private static byte[] read(InputStream input) {
         try {
-            return READER.read(input.readNBytes(MAX_BODY_BYTES + 1));
-        } catch (IOException | IllegalArgumentException failure) {
+            return input.readNBytes(EstimateService.MAX_BODY_BYTES + 1);
+        } catch (IOException failure) {
             throw new InvalidRequestException();
         }
     }

@@ -22,7 +22,7 @@ import java.util.regex.Pattern;
  * <p>Interpretation of the declarative parts, all worst-case ("what a reservation holds"):
  * <ul>
  *   <li>MATERIALS: one artifact per NOTE source (one when notes are merged or there are none), priced by effort
- *       ({@code AUTO} is priced as medium: the planner chooses later); declared media are one audio clip and one image
+ *       ({@code AUTO} is priced as detailed: a hold covers the worst case the planner may choose); declared media are one audio clip and one image
  *       search per artifact; a fact check is one low-effort check per artifact and is not run for the short effort
  *       (architecture section 14: short does no research); {@code planFirst} is priced by the planner (AI-14).</li>
  *   <li>EXERCISES: {@code EXACT} is targets x perTarget; {@code AUTO} is five per target, fewer when targets x five
@@ -140,8 +140,8 @@ final class StandardSpecInterpreter implements GenerationSpecInterpreter {
         List<Line> lines = new ArrayList<>();
         lines.add(new Line(switch (effort) {
             case "SHORT" -> "MATERIAL_SHORT";
-            case "DETAILED" -> "MATERIAL_DETAILED";
-            default -> "MATERIAL_MEDIUM";
+            case "MEDIUM" -> "MATERIAL_MEDIUM";
+            default -> "MATERIAL_DETAILED";
         }, artifacts));
         if (audio) lines.add(new Line("TTS_CLIP_30S", artifacts));
         if (imageSearch) lines.add(new Line("IMAGE_SEARCH", artifacts));

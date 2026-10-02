@@ -25,8 +25,19 @@ import java.util.regex.Pattern;
  * hold, once per idempotency key; {@link #release} ends the hold and returns the unspent remainder; {@link #expireDue}
  * ends orphaned holds. The balance never goes negative: admission is one conditional update on the balance row.
  *
- * <p>Call these as late in the transaction as possible: a debit or consumption that crosses a threshold publishes a
- * notification, which takes the owner's notification cursor lock until the caller commits.
+ * <p><strong>Rule for callers: lock order.</strong> The writers lock in a fixed order: reservation, then balance, then the
+ * owner's notification cursor ({@code settle}, {@code release}, {@code renew}, {@code expireDue}); balance, then the new
+ * reservation ({@code reserve}); counters in window order (day, week, month), then the notification cursor
+ * ({@code consume}). A debit or consumption that crosses a threshold publishes a notification, and that takes the
+ * owner's cursor lock until the caller commits. So call these methods <em>before</em> publishing the caller's own
+ * notifications in the same transaction, and as late as the domain write allows, so the cursor lock is held briefly and
+ * two transactions never wait on each other in opposite orders.
+ *
+ * <p><strong>Refusals and rollback.</strong> {@code USAGE_LIMIT_REACHED} (from {@code reserve} and {@code consume})
+ * rolls the caller's transaction back: the contract's "409 before any state change", so let it propagate.
+ * {@link EstimateExceededException} and {@link ReservationNotActiveException} are thrown before anything is written and
+ * do <em>not</em> mark the transaction rollback-only, so the caller can catch them, record the artifact failure and
+ * commit.
  */
 @Service
 public class UsageLedger {
@@ -120,7 +131,7 @@ public class UsageLedger {
                 return reservation;
             }
         }
-        throw new IllegalStateException("Usage admission lost its balance row repeatedly");
+        throw new UsageContentionException();
     }
 
     /** Writes the period's allowance when it is absent or the entitlement changed; returns the one in force. */
@@ -161,9 +172,11 @@ public class UsageLedger {
      *
      * @throws EstimateExceededException   the debit exceeds what the reservation still holds; the call must not be made
      * @throws ReservationNotActiveException the reservation has ended
-     * @throws IllegalArgumentException    the key was used for a different debit, or the reservation does not exist
+     * @throws IllegalArgumentException    the key was used for a different debit (another owner, reservation, operation,
+     *                                     credits, cost or reference), or the reservation does not exist
      */
-    @Transactional(propagation = Propagation.MANDATORY)
+    @Transactional(propagation = Propagation.MANDATORY,
+            noRollbackFor = {EstimateExceededException.class, ReservationNotActiveException.class})
     public Settlement settle(UUID owner, Debit debit) {
         UuidPolicy.requireEntityId(owner, "owner");
         validateKey(debit.idempotencyKey());
@@ -178,8 +191,10 @@ public class UsageLedger {
         Optional<UsageRepository.LedgerRow> existing = repository.ledgerByKey(debit.idempotencyKey());
         if (existing.isPresent()) {
             var row = existing.get();
-            if (!row.kind().equals("DEBIT") || row.credits() != -debit.credits()
-                    || !debit.reservationId().equals(row.reservationId())) {
+            if (!owner.equals(row.ownerId()) || !row.kind().equals("DEBIT") || row.bucket() != null
+                    || row.credits() != -debit.credits() || !debit.reservationId().equals(row.reservationId())
+                    || !debit.operation().equals(row.operation()) || !Objects.equals(debit.costMicros(), row.costMicros())
+                    || !Objects.equals(debit.reference(), row.reference())) {
                 throw new IllegalArgumentException("Idempotency key reused for a different debit");
             }
             return new Settlement(true, reservation);
@@ -218,7 +233,8 @@ public class UsageLedger {
      * Ends a hold: it becomes {@code SETTLED} when it recorded at least one debit and {@code RELEASED} otherwise, and
      * the unspent remainder returns to the balance. Ending an ended reservation is a no-op.
      */
-    @Transactional(propagation = Propagation.MANDATORY)
+    @Transactional(propagation = Propagation.MANDATORY,
+            noRollbackFor = {EstimateExceededException.class, ReservationNotActiveException.class})
     public Reservation release(UUID owner, UUID reservationId) {
         UuidPolicy.requireEntityId(owner, "owner");
         Reservation reservation = repository.lockReservation(reservationId).filter(found -> found.ownerId().equals(owner))
@@ -226,6 +242,32 @@ public class UsageLedger {
         if (reservation.state() != ReservationState.ACTIVE) return reservation;
         end(reservation, reservation.debitedCredits() > 0 ? ReservationState.SETTLED : ReservationState.RELEASED,
                 clock.now());
+        return repository.reservation(reservationId).orElseThrow();
+    }
+
+    // -------------------------------------------------------------------- renew
+
+    /**
+     * Keeps a live hold alive: sets its {@code expiresAt} to {@code min(now + learning.usage.reservation-ttl, end of its
+     * period)}. It never shortens a hold and never moves it past its period, so repeating it is harmless. The step
+     * scheduler (AI-04) calls it for a session whose steps are deferred by the daily burst or still running, so the
+     * expiry sweep does not take a hold that is still in use. A hold whose period has already ended is returned
+     * unchanged and ends at the next sweep: its steps re-reserve in the new period.
+     *
+     * @throws ReservationNotActiveException the reservation has ended
+     * @throws IllegalArgumentException      the reservation does not exist or is another owner's
+     */
+    @Transactional(propagation = Propagation.MANDATORY, noRollbackFor = ReservationNotActiveException.class)
+    public Reservation renew(UUID owner, UUID reservationId) {
+        UuidPolicy.requireEntityId(owner, "owner");
+        Reservation reservation = repository.lockReservation(reservationId).filter(found -> found.ownerId().equals(owner))
+                .orElseThrow(() -> new IllegalArgumentException("Unknown reservation"));
+        if (reservation.state() != ReservationState.ACTIVE) throw new ReservationNotActiveException(reservation.state());
+        Instant renewed = clock.now().plus(policy.reservationTtl);
+        Instant periodEnd = calendar.period(reservation.periodId()).end();
+        if (renewed.isAfter(periodEnd)) renewed = periodEnd;
+        if (!renewed.isAfter(reservation.expiresAt())) return reservation;
+        repository.extend(reservationId, renewed);
         return repository.reservation(reservationId).orElseThrow();
     }
 
@@ -268,6 +310,7 @@ public class UsageLedger {
      * @param idempotencyKey unique per consumption; include the account so keys of different accounts never collide
      * @param reference      an opaque call id, null for none
      * @throws UsageLimitReachedException the amount does not fit a window (a plan without the bucket has a limit of 0)
+     * @throws IllegalArgumentException   the key was used for a different consumption (another owner, bucket or units)
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public Consumption consume(UUID owner, Bucket bucket, long amount, String idempotencyKey, String reference) {
@@ -290,7 +333,15 @@ public class UsageLedger {
         for (int i = 0; i < used.length; i++) {
             used[i] = repository.lockCounter(owner, bucket, limits.get(i).window(), calendar.windowStart(limits.get(i).window(), now));
         }
-        if (repository.ledgerByKey(idempotencyKey).isPresent()) return new Consumption(true);
+        Optional<UsageRepository.LedgerRow> existing = repository.ledgerByKey(idempotencyKey);
+        if (existing.isPresent()) {
+            var row = existing.get();
+            if (!owner.equals(row.ownerId()) || !row.kind().equals("DEBIT") || !bucket.name().equals(row.bucket())
+                    || !Long.valueOf(amount).equals(row.units())) {
+                throw new IllegalArgumentException("Idempotency key reused for a different consumption");
+            }
+            return new Consumption(true);
+        }
 
         int violated = -1;
         for (int i = 0; i < used.length; i++) {

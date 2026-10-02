@@ -8,6 +8,7 @@ import app.mnema.learning.media.MediaUploadConflictException;
 import app.mnema.learning.platform.concurrency.VersionPreconditionRequiredException;
 import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
 import app.mnema.learning.usage.SpecNotSupportedException;
+import app.mnema.learning.usage.UsageContentionException;
 import app.mnema.learning.usage.UsageLimitReachedException;
 import app.mnema.learning.study.session.StudySessionExpiredException;
 import app.mnema.learning.study.attempt.PresentationExpiredException;
@@ -46,6 +47,11 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(UsageLimitReachedException.class)
     ResponseEntity<Object> handleUsageLimitReached(UsageLimitReachedException exception, HttpServletRequest request) {
         return response(ApiErrorCode.USAGE_LIMIT_REACHED, request, exception);
+    }
+
+    @ExceptionHandler(UsageContentionException.class)
+    ResponseEntity<Object> handleUsageContention(UsageContentionException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.USAGE_UNAVAILABLE, request.getRequestURI(), new HttpHeaders());
     }
 
     @ExceptionHandler(SpecNotSupportedException.class)

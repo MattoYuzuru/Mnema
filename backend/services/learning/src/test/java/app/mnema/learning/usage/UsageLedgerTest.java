@@ -366,6 +366,182 @@ class UsageLedgerTest extends UsageIntegrationTest {
                 .param("o", owner).update()).isInstanceOf(DataAccessException.class);
     }
 
+    @Test
+    void aReplayedSettleMustBeTheSameDebitInEveryField() {
+        UUID owner = owner(Plan.PLUS);
+        Reservation held = reserve(owner, 20);
+        var original = new UsageLedger.Debit(held.reservationId(), "debit:same:" + owner, "MATERIAL_MEDIUM", 5, 100L, "step:a");
+        assertThat(inTx(() -> ledger.settle(owner, original)).replayed()).isFalse();
+        assertThat(inTx(() -> ledger.settle(owner, original)).replayed()).isTrue();
+
+        for (UsageLedger.Debit changed : List.of(
+                new UsageLedger.Debit(held.reservationId(), original.idempotencyKey(), "EDIT_SELECTION", 5, 100L, "step:a"),
+                new UsageLedger.Debit(held.reservationId(), original.idempotencyKey(), "MATERIAL_MEDIUM", 5, 101L, "step:a"),
+                new UsageLedger.Debit(held.reservationId(), original.idempotencyKey(), "MATERIAL_MEDIUM", 5, null, "step:a"),
+                new UsageLedger.Debit(held.reservationId(), original.idempotencyKey(), "MATERIAL_MEDIUM", 5, 100L, "step:b"),
+                new UsageLedger.Debit(held.reservationId(), original.idempotencyKey(), "MATERIAL_MEDIUM", 5, 100L, null),
+                new UsageLedger.Debit(held.reservationId(), original.idempotencyKey(), "MATERIAL_MEDIUM", 6, 100L, "step:a"))) {
+            assertThatThrownBy(() -> inTx(() -> ledger.settle(owner, changed))).isInstanceOf(IllegalArgumentException.class);
+        }
+        // Another account holding the key's reservation cannot reach it at all.
+        UUID stranger = owner(Plan.PLUS);
+        assertThatThrownBy(() -> inTx(() -> ledger.settle(stranger, original))).isInstanceOf(IllegalArgumentException.class);
+        assertThat(balance(owner)).containsExactly(360, 5, 15);
+    }
+
+    @Test
+    void renewExtendsALiveHoldNeverShortensItAndTheSweepLeavesItAlone() {
+        UUID owner = owner(Plan.PLUS);
+        Reservation held = reserve(owner, 30);
+        assertThat(held.expiresAt()).isEqualTo(Instant.parse("2026-10-02T11:00:42Z"));
+
+        clock.set("2026-10-02T10:30:00Z");
+        Reservation renewed = inTx(() -> ledger.renew(owner, held.reservationId()));
+        assertThat(renewed.expiresAt()).isEqualTo(Instant.parse("2026-10-02T12:30:00Z"));
+        assertThat(renewed.state()).isEqualTo(ReservationState.ACTIVE);
+        // Repeating it at the same instant changes nothing; an earlier clock never shortens the hold.
+        assertThat(inTx(() -> ledger.renew(owner, held.reservationId())).expiresAt()).isEqualTo(renewed.expiresAt());
+        clock.set("2026-10-02T09:30:00Z");
+        assertThat(inTx(() -> ledger.renew(owner, held.reservationId())).expiresAt()).isEqualTo(renewed.expiresAt());
+
+        clock.set("2026-10-02T11:30:00Z");
+        assertThat(inTx(() -> ledger.expireDue(100))).isZero();
+        assertThat(balance(owner)).containsExactly(360, 0, 30);
+        clock.set("2026-10-02T12:30:00Z");
+        assertThat(inTx(() -> ledger.expireDue(100))).isOne();
+        assertThat(repository.reservation(held.reservationId()).orElseThrow().state()).isEqualTo(ReservationState.EXPIRED);
+    }
+
+    @Test
+    void renewNeverMovesAHoldPastItsPeriod() {
+        UUID owner = owner(Plan.PLUS);
+        clock.set("2026-10-31T19:30:00Z");
+        Reservation held = reserve(owner, 10);
+        assertThat(held.expiresAt()).isEqualTo(Instant.parse("2026-10-31T21:00:00Z"));
+        clock.set("2026-10-31T20:30:00Z");
+        assertThat(inTx(() -> ledger.renew(owner, held.reservationId())).expiresAt())
+                .isEqualTo(Instant.parse("2026-10-31T21:00:00Z"));
+
+        // After the period ended the hold is returned unchanged and the next sweep ends it.
+        clock.set("2026-10-31T21:00:00Z");
+        assertThat(inTx(() -> ledger.renew(owner, held.reservationId())).expiresAt())
+                .isEqualTo(Instant.parse("2026-10-31T21:00:00Z"));
+        assertThat(inTx(() -> ledger.expireDue(100))).isOne();
+    }
+
+    @Test
+    void renewNeedsALiveHoldOfTheSameOwnerAndLeavesTheCallersTransactionUsable() {
+        UUID owner = owner(Plan.PLUS);
+        Reservation held = reserve(owner, 10);
+        inTx(() -> ledger.release(owner, held.reservationId()));
+
+        assertThatThrownBy(() -> inTx(() -> ledger.renew(owner, held.reservationId())))
+                .isInstanceOfSatisfying(ReservationNotActiveException.class,
+                        failure -> assertThat(failure.state()).isEqualTo(ReservationState.RELEASED));
+        assertThatThrownBy(() -> inTx(() -> ledger.renew(owner(Plan.PLUS), held.reservationId())))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> inTx(() -> ledger.renew(owner, UUID.randomUUID()))).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> ledger.renew(owner, held.reservationId()))
+                .isInstanceOf(org.springframework.transaction.IllegalTransactionStateException.class);
+
+        // The caller records the failure and commits: the transaction was not marked rollback-only.
+        Reservation live = reserve(owner, 10);
+        String state = inTx(() -> {
+            try {
+                ledger.renew(owner, held.reservationId());
+            } catch (ReservationNotActiveException expected) {
+                // fall through: the artifact failure is recorded by the caller
+            }
+            return ledger.release(owner, live.reservationId()).state().name();
+        });
+        assertThat(state).isEqualTo("RELEASED");
+    }
+
+    @Test
+    void anExpectedSettleRefusalDoesNotPoisonTheCallersTransactionButALimitRefusalDoes() {
+        UUID owner = owner(Plan.PLUS);
+        Reservation held = reserve(owner, 10);
+
+        // ESTIMATE_EXCEEDED: the caller fails the artifact and still commits its own writes.
+        Reservation after = inTx(() -> {
+            try {
+                ledger.settle(owner, debit(held.reservationId(), "debit:nr:1", 11));
+            } catch (EstimateExceededException expected) {
+                // recorded by the caller
+            }
+            return ledger.release(owner, held.reservationId());
+        });
+        assertThat(after.state()).isEqualTo(ReservationState.RELEASED);
+
+        // The hold has ended: a late debit is refused the same way, and the caller commits all the same.
+        inTx(() -> {
+            try {
+                ledger.settle(owner, debit(held.reservationId(), "debit:nr:2", 1));
+            } catch (ReservationNotActiveException expected) {
+                // recorded by the caller
+            }
+            return ledger.release(owner, held.reservationId());
+        });
+
+        // USAGE_LIMIT_REACHED keeps its rollback semantics: catching it inside the transaction cannot commit.
+        assertThatThrownBy(() -> inTx(() -> {
+            try {
+                ledger.reserve(owner, ReservationScope.TURN, null, null, 1_000);
+            } catch (UsageLimitReachedException expected) {
+                // swallowed on purpose
+            }
+            return "committed";
+        })).isInstanceOf(org.springframework.transaction.UnexpectedRollbackException.class);
+    }
+
+    @Test
+    void twoSettlesOfTheSameKeyInParallelDebitOnce() throws Exception {
+        UUID owner = owner(Plan.PLUS);
+        Reservation held = reserve(owner, 20);
+        CountDownLatch go = new CountDownLatch(1);
+        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+            List<Future<UsageLedger.Settlement>> results = new ArrayList<>();
+            for (int i = 0; i < 2; i++) {
+                results.add(pool.submit(() -> {
+                    await(go);
+                    return inTx(() -> ledger.settle(owner, debit(held.reservationId(), "debit:par:" + owner, 7)));
+                }));
+            }
+            go.countDown();
+            List<Boolean> replayed = List.of(results.get(0).get().replayed(), results.get(1).get().replayed());
+            assertThat(replayed).containsExactlyInAnyOrder(false, true);
+        }
+        assertThat(balance(owner)).containsExactly(360, 7, 13);
+        assertThat(countOf("usage_ledger_entry", owner)).isEqualTo(2);
+    }
+
+    @Test
+    void aSettleThatHoldsTheReservationIsSkippedByTheSweepAndTheHoldSurvives() throws Exception {
+        UUID owner = owner(Plan.PLUS);
+        Reservation held = reserve(owner, 20);
+        clock.set("2026-10-02T11:00:42Z");
+        CountDownLatch settled = new CountDownLatch(1);
+        CountDownLatch swept = new CountDownLatch(1);
+        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+            Future<?> settling = pool.submit(() -> inTx(() -> {
+                ledger.settle(owner, debit(held.reservationId(), "debit:sweep:" + owner, 8));
+                settled.countDown();
+                await(swept);
+                return null;
+            }));
+            await(settled);
+            int ended = inTx(() -> ledger.expireDue(100));
+            swept.countDown();
+            settling.get();
+            assertThat(ended).isZero();
+        }
+        // The debit committed and the hold is still live: the next sweep, not this one, ends it.
+        assertThat(repository.reservation(held.reservationId()).orElseThrow().state()).isEqualTo(ReservationState.ACTIVE);
+        assertThat(balance(owner)).containsExactly(360, 8, 12);
+        assertThat(inTx(() -> ledger.expireDue(100))).isOne();
+        assertThat(balance(owner)).containsExactly(360, 8, 0);
+    }
+
     // ------------------------------------------------------------------ helpers
 
     private UsageLedger.Debit debit(UUID reservationId, String key, int credits) {

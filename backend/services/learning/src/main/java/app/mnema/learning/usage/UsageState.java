@@ -28,7 +28,8 @@ final class UsageState {
      *
      * @param window               the window the bar is currently limited by: WEEK while Free portions are still to
      *                             unlock, MONTH otherwise
-     * @param windowStart          the start of that window instance (the key of {@code USAGE_EXHAUSTED})
+     * @param windowStart          the start of that window instance (with the window kind, the key of
+     *                             {@code USAGE_EXHAUSTED}); on Free the last unlock, never the period start twice
      * @param renewsAt             the next unlock (Free) or the end of the period
      * @param availableAfterRenewal credits spendable right after {@code renewsAt}
      */
@@ -100,8 +101,10 @@ final class UsageState {
                 return new Credits(allowance.plan(), allowance.credits(), unlocked, used, reserved, Window.WEEK,
                         unlocks.get(opened - 1), unlocks.get(opened), Math.max(0, afterNext - used - reserved));
             }
+            // After the last unlock the window instance starts at that unlock, not at the period start: the first
+            // week of the month would otherwise share its start (and its USAGE_EXHAUSTED key) with this one.
             return new Credits(allowance.plan(), allowance.credits(), unlocked, used, reserved, Window.MONTH,
-                    period.start(), period.end(), allowance.portions().getFirst());
+                    unlocks.getLast(), period.end(), allowance.portions().getFirst());
         }
         return new Credits(allowance.plan(), allowance.credits(), unlocked, used, reserved, Window.MONTH, period.start(),
                 period.end(), allowance.credits());

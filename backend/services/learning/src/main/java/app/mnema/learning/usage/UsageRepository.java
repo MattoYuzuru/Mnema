@@ -50,7 +50,8 @@ class UsageRepository {
                        String reference, Bucket bucket, Long units, Instant createdAt) { }
 
     /** The part of a ledger row a repeated write is checked against. */
-    record LedgerRow(String kind, int credits, UUID reservationId, String periodId) { }
+    record LedgerRow(UUID ownerId, String kind, int credits, UUID reservationId, String periodId, String operation,
+                     Long costMicros, String reference, String bucket, Long units) { }
 
     private final JdbcClient jdbc;
 
@@ -217,6 +218,13 @@ class UsageRepository {
                 .param("credits", credits).param("id", reservationId).update();
     }
 
+    /** Moves the expiry of a live hold later; never earlier. */
+    void extend(UUID reservationId, Instant expiresAt) {
+        jdbc.sql("UPDATE app_learning.usage_reservation SET expires_at=:expires WHERE reservation_id=:id "
+                        + "AND state='ACTIVE' AND expires_at<:expires")
+                .param("expires", time(expiresAt)).param("id", reservationId).update();
+    }
+
     void end(UUID reservationId, ReservationState state, Instant now) {
         jdbc.sql("UPDATE app_learning.usage_reservation SET state=:state,ended_at=:now "
                         + "WHERE reservation_id=:id AND state='ACTIVE'")
@@ -247,10 +255,12 @@ class UsageRepository {
     }
 
     Optional<LedgerRow> ledgerByKey(String idempotencyKey) {
-        return jdbc.sql("SELECT kind,credits,reservation_id,period_id FROM app_learning.usage_ledger_entry "
-                        + "WHERE idempotency_key=:key").param("key", idempotencyKey)
-                .query((row, number) -> new LedgerRow(row.getString("kind"), row.getInt("credits"),
-                        row.getObject("reservation_id", UUID.class), row.getString("period_id"))).optional();
+        return jdbc.sql("SELECT owner_id,kind,credits,reservation_id,period_id,operation,cost_micros,reference,bucket,units "
+                        + "FROM app_learning.usage_ledger_entry WHERE idempotency_key=:key").param("key", idempotencyKey)
+                .query((row, number) -> new LedgerRow(row.getObject("owner_id", UUID.class), row.getString("kind"),
+                        row.getInt("credits"), row.getObject("reservation_id", UUID.class), row.getString("period_id"),
+                        row.getString("operation"), row.getObject("cost_micros", Long.class), row.getString("reference"),
+                        row.getString("bucket"), row.getObject("units", Long.class))).optional();
     }
 
     /** Credits debited by {@code owner} in {@code [from, to)}: the input of the daily burst. */

@@ -3,6 +3,7 @@ package app.mnema.learning.usage;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -177,7 +178,7 @@ class UsageConsumptionTest extends UsageIntegrationTest {
         assertThat(notifications(owner, "USAGE_EXHAUSTED")).isOne();
         assertThat(jdbc.sql("SELECT dedupe_key||' '||params::text FROM app_learning.notification "
                 + "WHERE owner_id=:o AND kind='USAGE_EXHAUSTED'").param("o", owner).query(String.class).single())
-                .startsWith("usage:CREDITS:2026-09-30T21:00:00Z:exhausted").contains("\"window\": \"WEEK\"")
+                .startsWith("usage:CREDITS:WEEK:2026-09-30T21:00:00Z:exhausted").contains("\"window\": \"WEEK\"")
                 .contains("\"renewsAt\": \"2026-10-04T21:00:00Z\"");
 
         clock.set("2026-10-05T09:00:00Z");
@@ -186,6 +187,76 @@ class UsageConsumptionTest extends UsageIntegrationTest {
         assertThat(notifications(owner, "USAGE_EXHAUSTED")).isEqualTo(2);
         // The low-usage notices are keyed by the month: week two repeats none of week one's.
         assertThat(notifications(owner, "USAGE_LOW")).isOne();
+    }
+
+    @Test
+    void theLastFreeWindowExhaustsAgainEvenThoughItsLabelIsTheMonth() {
+        UUID owner = owner(Plan.FREE);
+        settle(owner, reserve(owner, 13), "debit:last:1", 13);
+        assertThat(notifications(owner, "USAGE_EXHAUSTED")).isOne();
+
+        // 19 October 00:00 in Moscow: the fourth portion opens and the whole bar (50) is unlocked.
+        clock.set("2026-10-18T21:00:00Z");
+        settle(owner, reserve(owner, 37), "debit:last:2", 37);
+
+        assertThat(notifications(owner, "USAGE_EXHAUSTED")).isEqualTo(2);
+        assertThat(jdbc.sql("SELECT dedupe_key FROM app_learning.notification WHERE owner_id=:o AND kind='USAGE_EXHAUSTED' "
+                + "ORDER BY seq").param("o", owner).query(String.class).list()).containsExactly(
+                "usage:CREDITS:WEEK:2026-09-30T21:00:00Z:exhausted", "usage:CREDITS:MONTH:2026-10-18T21:00:00Z:exhausted");
+        assertThat(jdbc.sql("SELECT params::text FROM app_learning.notification WHERE owner_id=:o AND kind='USAGE_EXHAUSTED' "
+                + "ORDER BY seq DESC LIMIT 1").param("o", owner).query(String.class).single())
+                .contains("\"window\": \"MONTH\"").contains("\"renewsAt\": \"2026-10-31T21:00:00Z\"");
+    }
+
+    @Test
+    void aConsumptionReplayMustBeTheSameConsumption() {
+        UUID owner = owner(Plan.PLUS);
+        UUID other = owner(Plan.PLUS);
+        String key = "pod-replay:" + owner;
+        inTx(() -> ledger.consume(owner, Bucket.PODCASTS, 1, key, null));
+
+        assertThat(inTx(() -> ledger.consume(owner, Bucket.PODCASTS, 1, key, null)).replayed()).isTrue();
+        assertThatThrownBy(() -> inTx(() -> ledger.consume(other, Bucket.PODCASTS, 1, key, null)))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> inTx(() -> ledger.consume(owner, Bucket.HIGH_FACTCHECK, 1, key, null)))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> inTx(() -> ledger.consume(owner, Bucket.PODCASTS, 2, key, null)))
+                .isInstanceOf(IllegalArgumentException.class);
+        // A debit of the bar is not a consumption either.
+        Reservation held = reserve(owner, 5);
+        settle(owner, held, "debit:not-a-consumption:" + owner, 5);
+        assertThatThrownBy(() -> inTx(() -> ledger.consume(owner, Bucket.PODCASTS, 1, "debit:not-a-consumption:" + owner, null)))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(usage.read(owner).caps().podcasts().used()).isOne();
+        assertThat(usage.read(other).caps().podcasts().used()).isZero();
+    }
+
+    @Test
+    void concurrentConsumptionsOfOneCapNeverExceedIt() throws Exception {
+        UUID owner = owner(Plan.PLUS);
+        int racers = 10;
+        java.util.concurrent.CountDownLatch go = new java.util.concurrent.CountDownLatch(1);
+        List<java.util.concurrent.Future<Boolean>> results = new java.util.ArrayList<>();
+        try (var pool = java.util.concurrent.Executors.newFixedThreadPool(racers)) {
+            for (int i = 0; i < racers; i++) {
+                String key = "pod-race-" + i + ":" + owner;
+                results.add(pool.submit(() -> {
+                    go.await();
+                    try {
+                        inTx(() -> ledger.consume(owner, Bucket.PODCASTS, 1, key, null));
+                        return true;
+                    } catch (UsageLimitReachedException refused) {
+                        return false;
+                    }
+                }));
+            }
+            go.countDown();
+            long granted = 0;
+            for (var result : results) if (result.get()) granted++;
+            assertThat(granted).isEqualTo(2);
+        }
+        assertThat(usage.read(owner).caps().podcasts().used()).isEqualTo(2);
+        assertThat(countOf("usage_ledger_entry", owner)).isEqualTo(2);
     }
 
     @Test

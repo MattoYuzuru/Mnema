@@ -64,7 +64,7 @@ final class UsageNotifier {
             params.put("renewsAt", crossing.renewsAt());
             params.put("plan", crossing.plan().name());
             publisher.publish(crossing.owner(), NotificationKind.USAGE_EXHAUSTED,
-                    "usage:" + crossing.bucket() + ":" + crossing.windowStart() + ":exhausted", params,
+                    "usage:" + crossing.bucket() + ":" + crossing.window() + ":" + crossing.windowStart() + ":exhausted", params,
                     NotificationRoute.PLANS);
         }
     }

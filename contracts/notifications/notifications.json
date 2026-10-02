@@ -186,7 +186,7 @@
         "renewsAt": "UTC RFC 3339 or null when waiting will not help",
         "plan": "FREE | PLUS | PRO | MAX"
       },
-      "dedupeKey": "usage:{bucket}:{windowStart}:exhausted",
+      "dedupeKey": "usage:{bucket}:{window}:{windowStart}:exhausted",
       "example": {
         "notificationId": "0a000000-0000-4000-8000-00000000002d",
         "seq": "45",
