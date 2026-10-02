@@ -377,10 +377,20 @@ def provision_additional_mechanic(web, access, account, state_file, mechanic):
 
 def capability_smoke(web, access, account):
     status, headers, capabilities = web.request("GET", "/api/capabilities", bearer=access)
-    require(status == 200 and capabilities == {
-        "aiAssessment": {"available": False, "reason": "DISABLED"},
-        "speechToText": {"available": False, "reason": "DISABLED"},
-    }, f"AI capabilities must default to disabled: {capabilities}")
+    # Eight capability keys (#282). Every flag is off by default; only aiGeneration may be switched on for the local stack
+    # (LEARNING_FEATURES_AI_GENERATION_ENABLED, passed by the launcher), and then it is either usable or names why not.
+    disabled = {"available": False, "reason": "DISABLED"}
+    expected = {key: disabled for key in ("aiAssessment", "speechToText", "aiGeneration", "textToSpeech", "imageSearch",
+                                          "imageGeneration", "videoGeneration", "webSearch")}
+    actual = dict(capabilities) if isinstance(capabilities, dict) else capabilities
+    if os.environ.get("LEARNING_FEATURES_AI_GENERATION_ENABLED", "").lower() == "true" and isinstance(actual, dict):
+        generation = actual.pop("aiGeneration", None)
+        expected.pop("aiGeneration")
+        require(generation in ({"available": True, "reason": None}, {"available": True},
+                               {"available": False, "reason": "PROVIDER_NOT_CONFIGURED"},
+                               {"available": False, "reason": "TEMPORARILY_UNAVAILABLE"}),
+                f"enabled aiGeneration must be available or name its reason: {generation}")
+    require(status == 200 and actual == expected, f"AI capabilities must default to disabled: {capabilities}")
     require_private(headers, "capabilities")
     member, revision = account["studyMemberKey"], account["studyItemRevisionId"]
     base = mechanic_exercise("FREE_RESPONSE", member, revision, account["studyAnswerNodeId"], None, {})
