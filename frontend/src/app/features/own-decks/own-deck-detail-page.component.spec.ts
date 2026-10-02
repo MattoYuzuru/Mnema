@@ -3,12 +3,18 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { of, throwError } from 'rxjs';
 
+import hubFixture from '../../../../../contracts/decks/hub.json';
 import metadataFixture from '../../../../../contracts/decks/metadata.json';
 import { OwnDeck } from './own-deck.models';
 import { DeckDetailState, DeckMutationState, OwnDecksStore } from './own-decks.store';
 import { OwnDeckDetailPageComponent } from './own-deck-detail-page.component';
 import { OwnDeckRecoveryService } from './own-deck-recovery.service';
 import { AuthoringApiService } from '../authoring/authoring-api.service';
+import { ItemPage } from '../authoring/authoring.models';
+import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService, LearningCapabilities } from '../authoring/capabilities-api.service';
+import { ItemApiService } from '../authoring/item-api.service';
+import { DeckHubApiService } from './hub/deck-hub-api.service';
+import { DeckInsights } from './hub/deck-hub.models';
 import { OwnDecksApiService } from './own-decks-api.service';
 import { spyObj, type SpyObj } from '../../../testing/mocks';
 
@@ -17,6 +23,11 @@ describe('OwnDeckDetailPageComponent', () => {
     let store: SpyObj<OwnDecksStore>;
     let recovery: SpyObj<OwnDeckRecoveryService>;
     let decksApi: SpyObj<OwnDecksApiService>;
+    let hub: SpyObj<DeckHubApiService>;
+    let items: SpyObj<ItemApiService>;
+    let capabilities: SpyObj<CapabilitiesApiService>;
+    const insights = hubFixture.insights.response as unknown as DeckInsights;
+    const orderedPage = { ...hubFixture.items.orderedPageWithCounts.response, items: hubFixture.items.sortedPage.items } as unknown as ItemPage;
     const deck = metadataFixture.detail as unknown as OwnDeck;
     const detail = signal<DeckDetailState>({ phase: 'ready', deckId: deck.deckId, deck, failure: null });
     const mutation = signal<DeckMutationState>({ phase: 'idle' });
@@ -48,6 +59,12 @@ describe('OwnDeckDetailPageComponent', () => {
         decksApi = spyObj<OwnDecksApiService>({
             delete: vi.fn().mockName("OwnDecksApiService.delete")
         });
+        hub = spyObj<DeckHubApiService>({ insights: vi.fn().mockName('DeckHubApiService.insights') });
+        hub.insights.mockReturnValue(of(insights));
+        items = spyObj<ItemApiService>({ list: vi.fn().mockName('ItemApiService.list') });
+        items.list.mockReturnValue(of(orderedPage));
+        capabilities = spyObj<CapabilitiesApiService>({ read: vi.fn().mockName('CapabilitiesApiService.read') });
+        capabilities.read.mockReturnValue(of(CAPABILITIES_UNAVAILABLE));
         Object.defineProperty(store, 'detailState', { value: detail.asReadonly() });
         Object.defineProperty(store, 'mutationState', { value: mutation.asReadonly() });
         await TestBed.configureTestingModule({
@@ -57,6 +74,9 @@ describe('OwnDeckDetailPageComponent', () => {
                 { provide: OwnDeckRecoveryService, useValue: recovery },
                 { provide: AuthoringApiService, useValue: authoring },
                 { provide: OwnDecksApiService, useValue: decksApi },
+                { provide: DeckHubApiService, useValue: hub },
+                { provide: ItemApiService, useValue: items },
+                { provide: CapabilitiesApiService, useValue: capabilities },
                 { provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ deckId: deck.deckId })) } }
             ]
         }).overrideComponent(OwnDeckDetailPageComponent, {
@@ -148,5 +168,92 @@ describe('OwnDeckDetailPageComponent', () => {
         expect(fixture.componentInstance.deleting()).toBe(false);
         expect(fixture.componentInstance.deleteError()).toContain('Не удалось удалить колоду');
         expect((fixture.nativeElement as HTMLElement).textContent).toContain(deck.metadata.title);
+    });
+
+    describe('hub', () => {
+        const root = () => fixture.nativeElement as HTMLElement;
+        const link = (text: string) => [...root().querySelectorAll<HTMLAnchorElement>('a')].find(a => a.textContent?.trim().startsWith(text));
+
+        it('reads first: the description and the four actions, with the form hidden behind «Изменить»', () => {
+            expect(root().querySelector('app-deck-description')).not.toBeNull();
+            expect(link('Учить')?.getAttribute('href')).toBe(`/decks/${deck.deckId}/study`);
+            expect(link('Добавить материал')?.getAttribute('href')).toBe(`/decks/${deck.deckId}/materials/new`);
+            expect(link('На потом')?.getAttribute('href')).toBe(`/decks/${deck.deckId}/capture`);
+            const edit = [...root().querySelectorAll('button')].find(button => button.textContent?.trim() === 'Изменить')!;
+            expect(edit.getAttribute('aria-expanded')).toBe('false');
+            expect(root().querySelector('#detail-title')).toBeNull();
+            expect(root().querySelector('app-deck-insights')).not.toBeNull();
+            expect(root().querySelector('app-deck-materials')).not.toBeNull();
+            // The old separate list route is gone from the hub.
+            expect(root().innerHTML).not.toContain('/materials"');
+        });
+
+        it('opens the form from «Изменить», focuses the title, and closes on Esc keeping the draft', async () => {
+            const edit = [...root().querySelectorAll('button')].find(button => button.textContent?.trim() === 'Изменить')!;
+            document.body.append(root());
+            edit.click();
+            fixture.detectChanges();
+            await Promise.resolve();
+            expect(edit.getAttribute('aria-expanded')).toBe('true');
+            expect(edit.getAttribute('aria-controls')).toBe('deck-editor');
+            const title = root().querySelector<HTMLTextAreaElement>('#detail-title')!;
+            expect(document.activeElement).toBe(title);
+            fixture.componentInstance.form.patchValue({ title: 'Черновик' });
+            fixture.componentInstance.syncDraft();
+            title.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+            fixture.detectChanges();
+            await Promise.resolve();
+            expect(root().querySelector('#detail-title')).toBeNull();
+            expect(document.activeElement).toBe(edit);
+            expect(fixture.componentInstance.form.getRawValue().title).toBe('Черновик');
+            root().remove();
+        });
+
+        it('opens the form by itself when a draft was restored or a save needs a decision', () => {
+            mutation.set({
+                phase: 'error',
+                pending: { operation: 'save', deckId: deck.deckId, expectedVersion: deck.rowVersion,
+                    command: { commandId: '123e4567-e89b-42d3-a456-426614174000', metadata: { title: 'x', description: '' } } },
+                failure: { kind: 'http', status: 400, code: null }, replayRefreshFailed: false, replayDeckId: null, conflictRefreshFailed: false
+            });
+            fixture.detectChanges();
+            expect(fixture.componentInstance.editing()).toBe(true);
+        });
+
+        it('keeps the deck, the actions and the list usable when statistics fail, and retries on request', () => {
+            hub.insights.mockReturnValueOnce(throwError(() => new Error('offline')));
+            fixture.componentInstance.loadInsights();
+            fixture.detectChanges();
+            expect(root().textContent).toContain('Статистика сейчас недоступна');
+            expect(root().textContent).toContain(deck.metadata.title);
+            expect(link('Учить')).toBeDefined();
+            expect(root().querySelectorAll('app-selectable-material-list li').length).toBeGreaterThan(0);
+            const retry = [...root().querySelectorAll<HTMLButtonElement>('app-deck-insights button')].find(button => button.textContent?.trim() === 'Повторить')!;
+            retry.click();
+            fixture.detectChanges();
+            expect(fixture.componentInstance.insights().phase).toBe('ready');
+            expect(hub.insights).toHaveBeenCalledTimes(3);
+        });
+
+        it('shows the generation capability only when the server offers it, and fails closed on a failed read', () => {
+            expect(fixture.componentInstance.generationAvailable()).toBe(false);
+            const available: LearningCapabilities = { ...CAPABILITIES_UNAVAILABLE, aiGeneration: { available: true, reason: null } };
+            capabilities.read.mockReturnValue(of(available));
+            const second = TestBed.createComponent(OwnDeckDetailPageComponent);
+            second.detectChanges();
+            expect(second.componentInstance.generationAvailable()).toBe(true);
+            capabilities.read.mockReturnValue(throwError(() => new Error('offline')));
+            const third = TestBed.createComponent(OwnDeckDetailPageComponent);
+            third.detectChanges();
+            expect(third.componentInstance.generationAvailable()).toBe(false);
+        });
+
+        it('lists materials without exercises first when a statistics widget asks for them', () => {
+            const withoutExercises = [...root().querySelectorAll<HTMLButtonElement>('app-deck-insights button')]
+                .find(button => button.textContent?.includes('Показать материалы без упражнений'))!;
+            withoutExercises.click();
+            fixture.detectChanges();
+            expect(items.list).toHaveBeenLastCalledWith(deck.deckId, { sort: 'exerciseCount', exerciseCount: true });
+        });
     });
 });

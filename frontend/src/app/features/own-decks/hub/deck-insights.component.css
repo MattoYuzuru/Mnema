@@ -1,0 +1,86 @@
+:host { display: block; min-inline-size: 0; color: var(--mn-body); font-family: var(--mn-font-body, system-ui, sans-serif); }
+* { box-sizing: border-box; }
+
+.insights { margin-block: 2.5rem 0; }
+.insights-title { margin: 0 0 1rem; color: var(--mn-ink); font: 500 1.35rem/1.2 var(--mn-font-display, Georgia, serif); }
+.defs { position: absolute; inline-size: 0; block-size: 0; overflow: hidden; }
+.sr-only { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+.note { max-inline-size: 48ch; margin: 0; border-inline-start: 4px solid var(--mn-ink); padding: .9rem 1.1rem; background: var(--mn-soft); }
+.note.error { border-color: var(--mn-danger); background: var(--mn-sheet); }
+.note p { margin: 0 0 .75rem; }
+.note p:last-child { margin: 0; }
+.note .button { min-block-size: var(--mn-touch-min, 2.75rem); border: 1px solid var(--mn-ink); border-radius: var(--mn-radius, 2px); padding: .5rem 1rem; color: var(--mn-ink); background: transparent; font: 600 .95rem/1.2 var(--mn-font-body, system-ui, sans-serif); cursor: pointer; }
+
+/* Desktop: a wrapping grid. Phone: one horizontal strip that snaps, reachable and scrollable from the keyboard. */
+.widgets { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: 1rem; }
+.widgets:focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 3px; }
+.widget { display: flex; flex-direction: column; gap: .75rem; min-inline-size: 0; border: 1px solid var(--mn-rule); padding: 1rem 1.1rem 1.1rem; background: var(--mn-sheet); }
+.widget h3 { margin: 0; color: var(--mn-ink); font: 700 .78rem/1.3 var(--mn-font-mono, ui-monospace, monospace); letter-spacing: .09em; text-transform: uppercase; }
+.widget figure { display: grid; gap: .6rem; margin: 0; min-inline-size: 0; }
+.widget svg { display: block; color: var(--mn-ink); }
+figcaption { color: var(--mn-body); font-size: .92rem; line-height: 1.5; overflow-wrap: anywhere; }
+figcaption .hint { display: block; color: var(--mn-muted); }
+.plot-placeholder { block-size: 8.5rem; border: 1px dashed var(--mn-rule); }
+
+/* Every mark has an outline, so a state reads without its fill colour or hatching. */
+.arc, .segment, .column, .sheet, .ring-edge { stroke: currentColor; }
+.arc { stroke-linecap: butt; }
+.ring-edge { stroke-width: 1; }
+.segment, .column, .sheet { stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.baseline { stroke: var(--mn-rule); stroke-width: 1; vector-effect: non-scaling-stroke; }
+
+.donut, .sheets { position: relative; inline-size: min(9rem, 100%); margin-inline: auto; }
+.donut svg { inline-size: 100%; block-size: auto; }
+.sheets svg { inline-size: 100%; block-size: auto; }
+.donut-number { position: absolute; inset: 0; display: grid; place-content: center; margin: 0; text-align: center; line-height: 1.1; }
+.donut-number strong { color: var(--mn-ink); font: 500 2.1rem/1 var(--mn-font-display, Georgia, serif); }
+.donut-number span { color: var(--mn-muted); font: 600 .72rem/1.3 var(--mn-font-mono, ui-monospace, monospace); }
+.sheets .donut-number { inset-inline-start: auto; inset-inline-end: -.25rem; inset-block-start: auto; inset-block-end: -.25rem; padding: .1rem .4rem; background: var(--mn-sheet); }
+
+.bar { inline-size: 100%; block-size: 2.75rem; }
+.legend { display: grid; gap: .3rem; margin: .7rem 0 0; padding: 0; list-style: none; font-size: .9rem; }
+.legend li { display: flex; align-items: center; gap: .5rem; }
+.swatch { flex: none; inline-size: 1rem; block-size: 1rem; }
+
+.columns { inline-size: 100%; block-size: 5rem; }
+.day-labels { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); margin: .35rem 0 0; padding: 0; list-style: none; text-align: center; }
+.day-labels li { display: grid; gap: .1rem; min-inline-size: 0; }
+.day-labels strong { color: var(--mn-ink); font-size: .95rem; }
+.day-labels span { color: var(--mn-muted); font-size: .68rem; line-height: 1.2; overflow-wrap: anywhere; }
+
+.mechanics { display: grid; grid-template-columns: minmax(0, 1fr) minmax(3rem, 38%); gap: .5rem; align-items: start; }
+.mechanics svg { inline-size: 100%; block-size: calc(7 * 1.8rem); }
+.mechanic-labels { display: grid; grid-auto-rows: 1.8rem; margin: 0; padding: 0; list-style: none; font-size: .78rem; }
+.mechanic-labels li { display: flex; align-items: center; justify-content: space-between; gap: .4rem; min-inline-size: 0; }
+.mechanic-labels span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mechanic-labels strong { color: var(--mn-ink); }
+
+details { border-block-start: 1px solid var(--mn-rule); padding-block-start: .5rem; }
+summary { display: inline-flex; align-items: center; min-block-size: var(--mn-touch-min, 2.75rem); color: var(--mn-ink); font-size: .88rem; font-weight: 600; cursor: pointer; text-underline-offset: .2em; }
+summary:focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 3px; }
+table { inline-size: 100%; border-collapse: collapse; font-size: .85rem; }
+th, td { border-block-end: 1px solid var(--mn-rule); padding: .4rem .25rem; text-align: start; overflow-wrap: anywhere; }
+td { text-align: end; font-variant-numeric: tabular-nums; }
+thead th { color: var(--mn-muted); font-weight: 600; }
+tbody th { font-weight: 500; }
+
+.action { margin: auto 0 0; padding-block-start: .25rem; }
+.text-action { display: inline-flex; align-items: center; min-block-size: var(--mn-touch-min, 2.75rem); border: 0; padding: 0; color: var(--mn-ink); background: transparent; font: 700 .95rem/1.25 var(--mn-font-body, system-ui, sans-serif); text-decoration: underline; text-underline-offset: .22em; text-align: start; cursor: pointer; }
+.text-action:focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 3px; }
+
+@media (max-width: 42rem) {
+    .widgets { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; overscroll-behavior-inline: contain; padding-block-end: .5rem; }
+    .widget { flex: 0 0 min(85%, 18rem); scroll-snap-align: start; }
+}
+
+@media (forced-colors: active) {
+    .widget, .note, details { border-color: CanvasText; }
+    .widget svg { color: CanvasText; forced-color-adjust: auto; }
+    .arc, .segment, .column, .sheet, .ring-edge, .baseline { stroke: CanvasText; }
+    .widgets:focus-visible, summary:focus-visible, .text-action:focus-visible { outline-color: Highlight; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .widgets { scroll-behavior: auto; }
+}

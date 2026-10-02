@@ -1,0 +1,63 @@
+<div class="list-head">
+  <label class="select-all">
+    <input type="checkbox" [checked]="headerState() === 'checked'" [indeterminate]="headerState() === 'mixed'"
+      [disabled]="items().length === 0" (change)="selection().toggleLoaded(keys())" />
+    <span>Выбрать все</span>
+  </label>
+  <p class="budget" [id]="uid + '-budget'">
+    Эталонов: {{ exemplars().count }} из {{ exemplars().limit }}.
+    @if (atLimit()) { Лимит достигнут: снимите звёздочку с другого материала. }
+  </p>
+</div>
+
+@if (headerState() === 'checked' && !selection().allInDeck() && remaining() > 0) {
+  <p class="escalate">
+    Выбрано загруженных: {{ items().length }}.
+    <button class="text-action" type="button" (click)="selection().selectAllInDeck()">Выбрать все {{ total() }} в колоде?</button>
+  </p>
+} @else if (selection().allInDeck()) {
+  <p class="escalate">
+    Выбраны все {{ materialsText(total()) }} колоды{{ selection().count() === total() ? '' : ', кроме ' + (total() - selection().count()) }}.
+    <button class="text-action" type="button" (click)="selection().clear()">Снять выбор</button>
+  </p>
+}
+
+<ul class="item-list">
+  @for (item of items(); track item.memberKey) {
+    <li class="item-row" [class.selected]="selection().isSelected(item.memberKey)">
+      <label class="check">
+        <input type="checkbox" [checked]="selection().isSelected(item.memberKey)" [attr.aria-label]="'Выбрать «' + titleOf(item) + '»'"
+          (click)="pick(item, $event)" />
+      </label>
+      <span class="folio" aria-hidden="true">{{ item.ordinal + 1 }}</span>
+      <div class="copy">
+        <a class="row-link" [routerLink]="['/decks', deckId(), 'materials', item.memberKey]">{{ titleOf(item) }}</a>
+        @if (item.exerciseCount === 0) {
+          <span class="count missing">
+            <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M8 1.5 15 14H1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" /><path d="M8 6v4M8 11.7v.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
+            нет упражнений
+          </span>
+        } @else if (item.exerciseCount !== null) {
+          <span class="count">{{ exercisesText(item.exerciseCount) }}</span>
+        }
+      </div>
+      <button class="star" type="button" [attr.aria-pressed]="item.exemplar" [attr.aria-label]="'Эталон: ' + titleOf(item)"
+        [attr.aria-disabled]="starBlocked(item) ? 'true' : null" [attr.aria-describedby]="starBlocked(item) ? uid + '-budget' : null"
+        [attr.aria-busy]="starPending().has(item.memberKey) ? 'true' : null" (click)="star(item)">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false">
+          <path d="m12 2.8 2.7 5.8 6.3.8-4.6 4.4 1.2 6.3L12 17.1l-5.6 3 1.2-6.3L3 9.4l6.3-.8z" [attr.fill]="item.exemplar ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+        </svg>
+      </button>
+      <time class="date" [attr.datetime]="item.updatedAt">{{ item.updatedAt | date:'dd.MM.y' }}</time>
+    </li>
+  }
+</ul>
+
+@if (hasMore()) {
+  <div class="more">
+    <button class="button secondary" type="button" [disabled]="loadingMore()" (click)="loadMore.emit()">
+      {{ loadingMore() ? 'Загружаем…' : 'Показать ещё' + (remaining() > 0 ? ' (' + remaining() + ')' : '') }}
+    </button>
+    @if (moreError()) { <p class="problem">Не удалось загрузить следующие материалы. Загруженные остались на месте.</p> }
+  </div>
+}

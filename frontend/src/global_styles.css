@@ -162,7 +162,9 @@ html body h1[tabindex="-1"]:focus-visible {
     transition: clip-path var(--mn-wave-duration) cubic-bezier(.22, .61, .36, 1);
 }
 
-:is(.button, .quiet-action, .primary-action, .profile-page button, .file-label, .feature-strip a, .item-row, .deck-row):is(:hover, :focus-visible):not(:disabled)::before {
+:is(.button, .quiet-action, .primary-action, .profile-page button, .file-label, .feature-strip a, .item-row, .deck-row):is(:hover, :focus-visible):not(:disabled)::before,
+/* A list row is an <li>: it never takes focus itself, so its focusable children drive the wave. */
+.item-row:has(:focus-visible)::before {
     clip-path: circle(150% at var(--mn-wave-x, 50%) var(--mn-wave-y, 50%));
 }
 
@@ -291,6 +293,8 @@ html body h1[tabindex="-1"]:focus-visible {
 }
 
 :is(.item-row, .deck-row) { --mn-wave-duration: var(--mn-list-wave-duration); }
+/* The bulk action bar reserves its height here, so a focused row is never hidden under it (WCAG 2.4.11). */
+html { scroll-padding-block-end: var(--mn-bulk-bar-height, 0px); }
 /* The ruled caret is the cloze field's focus indicator, including programmatic focus. */
 html body input.cloze-field:focus-visible { outline: none; }
 html body input.cloze-field { outline: none; }

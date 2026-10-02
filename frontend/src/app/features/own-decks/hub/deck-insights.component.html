@@ -1,0 +1,219 @@
+<section class="insights">
+  <h2 class="insights-title" [id]="uid + '-title'">Статистика колоды</h2>
+
+  @switch (state().phase) {
+    @case ('loading') { <p class="note" role="status">Считаем статистику…</p> }
+    @case ('error') {
+      <div class="note error" role="status">
+        <p>Статистика сейчас недоступна. Колода и материалы работают как обычно.</p>
+        <button class="button secondary" type="button" (click)="retry.emit()">Повторить</button>
+      </div>
+    }
+    @default {
+      @if (view(); as v) {
+        <!-- Shared hatching: one definition per page; strokes follow the text colour, so forced colors keeps them visible. -->
+        <svg class="defs" width="0" height="0" aria-hidden="true" focusable="false">
+          <defs>
+            <pattern [id]="uid + '-diag'" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+              <line x1="0" y1="0" x2="0" y2="6" stroke="currentColor" stroke-width="1.6" />
+            </pattern>
+            <pattern [id]="uid + '-cross'" width="6" height="6" patternUnits="userSpaceOnUse">
+              <path d="M0 0L6 6M6 0L0 6" stroke="currentColor" stroke-width="1.1" fill="none" />
+            </pattern>
+          </defs>
+        </svg>
+
+        <div class="widgets" role="region" aria-label="Статистика колоды" tabindex="0">
+          <article class="widget" [attr.aria-labelledby]="uid + '-coverage-title'">
+            <h3 [id]="uid + '-coverage-title'">Покрытие упражнениями</h3>
+            <figure>
+              @defer (on viewport) {
+                <div class="donut">
+                  <svg viewBox="0 0 120 120" role="img" [attr.aria-labelledby]="uid + '-coverage-caption'">
+                    <circle class="ring-edge" cx="60" cy="60" r="53" fill="none" />
+                    <circle class="ring-edge" cx="60" cy="60" r="35" fill="none" />
+                    <circle cx="60" cy="60" r="44" fill="none" stroke-width="18" [attr.stroke]="'url(#' + uid + '-diag)'" />
+                    <circle class="arc" cx="60" cy="60" r="44" fill="none" stroke-width="18" pathLength="100"
+                      [attr.stroke-dasharray]="v.arc + ' ' + (100 - v.arc)" stroke-dashoffset="25" />
+                  </svg>
+                  <p class="donut-number" aria-hidden="true"><strong>{{ v.insights.coverage.withExercises }}</strong><span>из {{ v.insights.coverage.total }}</span></p>
+                </div>
+              } @placeholder { <div class="plot-placeholder" aria-hidden="true"></div> }
+              <figcaption [id]="uid + '-coverage-caption'">{{ v.coverageCaption }} <span class="hint">{{ v.coverageHint }}</span></figcaption>
+            </figure>
+            <details>
+              <summary>Показать таблицей</summary>
+              <table>
+                <caption class="sr-only">Покрытие упражнениями</caption>
+                <thead><tr><th scope="col">Материалы</th><th scope="col">Число</th></tr></thead>
+                <tbody>
+                  <tr><th scope="row">С упражнениями</th><td>{{ v.insights.coverage.withExercises }}</td></tr>
+                  <tr><th scope="row">Без упражнений</th><td>{{ v.insights.coverage.withoutExercises }}</td></tr>
+                  <tr><th scope="row">Всего</th><td>{{ v.insights.coverage.total }}</td></tr>
+                </tbody>
+              </table>
+            </details>
+            <p class="action">
+              @if (v.missing) { <button class="text-action" type="button" (click)="showMissing.emit()">Показать материалы без упражнений</button> }
+              @else { <a class="text-action" [routerLink]="['/decks', deckId(), 'materials', 'new']">Добавить материал</a> }
+            </p>
+          </article>
+
+          <article class="widget" [attr.aria-labelledby]="uid + '-states-title'">
+            <h3 [id]="uid + '-states-title'">Где вы сейчас</h3>
+            <figure>
+              @defer (on viewport) {
+                <svg class="bar" [attr.viewBox]="'0 0 ' + stateBarWidth + ' 44'" role="img" [attr.aria-labelledby]="uid + '-states-caption'" preserveAspectRatio="none">
+                  @if (v.segments.length === 0) {
+                    <rect class="segment" x="1" y="4" [attr.width]="stateBarWidth - 2" height="36" fill="none" stroke-dasharray="4 3" />
+                  }
+                  @for (segment of v.segments; track segment.state) {
+                    <rect class="segment" [attr.x]="segment.x + 1" y="4" [attr.width]="segment.width - 2" height="36"
+                      [attr.fill]="segment.state === 'ON_TRACK' ? 'currentColor' : segment.state === 'LEARNING' ? 'url(#' + uid + '-diag)'
+                        : segment.state === 'DUE' ? 'url(#' + uid + '-cross)' : 'none'" />
+                  }
+                </svg>
+                <ul class="legend">
+                  @for (state of states; track state) {
+                    <li>
+                      <svg class="swatch" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                        <rect x="1" y="1" width="14" height="14" class="segment"
+                          [attr.fill]="state === 'ON_TRACK' ? 'currentColor' : state === 'LEARNING' ? 'url(#' + uid + '-diag)'
+                            : state === 'DUE' ? 'url(#' + uid + '-cross)' : 'none'" />
+                      </svg>
+                      <span>{{ stateLabels[state] }} <strong>{{ v.insights.states[state] }}</strong></span>
+                    </li>
+                  }
+                </ul>
+              } @placeholder { <div class="plot-placeholder" aria-hidden="true"></div> }
+              <figcaption [id]="uid + '-states-caption'">{{ v.statesCaption }}</figcaption>
+            </figure>
+            <details>
+              <summary>Показать таблицей</summary>
+              <table>
+                <caption class="sr-only">Материалы по состояниям</caption>
+                <thead><tr><th scope="col">Состояние</th><th scope="col">Материалов</th></tr></thead>
+                <tbody>
+                  @for (state of states; track state) { <tr><th scope="row">{{ stateLabels[state] }}</th><td>{{ v.insights.states[state] }}</td></tr> }
+                </tbody>
+              </table>
+            </details>
+            <p class="action">
+              @if (v.studyLabel) { <a class="text-action" [routerLink]="['/decks', deckId(), 'study']">{{ v.studyLabel }}</a> }
+              @else { <a class="text-action" [routerLink]="['/decks', deckId(), 'materials', 'new']">Добавить материал</a> }
+            </p>
+          </article>
+
+          <article class="widget" [attr.aria-labelledby]="uid + '-due-title'">
+            <h3 [id]="uid + '-due-title'">Ближайшие повторения</h3>
+            <figure>
+              @defer (on viewport) {
+                <svg class="columns" [attr.viewBox]="'0 0 ' + dueColumn * 7 + ' ' + duePlotHeight" role="img" [attr.aria-labelledby]="uid + '-due-caption'" preserveAspectRatio="none">
+                  <line class="baseline" x1="0" [attr.x2]="dueColumn * 7" [attr.y1]="duePlotHeight - 1" [attr.y2]="duePlotHeight - 1" />
+                  @for (bar of v.bars; track bar.date) {
+                    <rect class="column" [attr.x]="bar.x" [attr.y]="duePlotHeight - 2 - bar.height" [attr.width]="dueColumn - 16" [attr.height]="bar.height"
+                      [attr.fill]="bar.materials === 0 ? 'none' : 'currentColor'" />
+                  }
+                </svg>
+                <ol class="day-labels">
+                  @for (bar of v.bars; track bar.date) { <li><strong>{{ bar.materials }}</strong><span>{{ bar.label }}</span></li> }
+                </ol>
+              } @placeholder { <div class="plot-placeholder" aria-hidden="true"></div> }
+              <figcaption [id]="uid + '-due-caption'">{{ v.dueCaption }}</figcaption>
+            </figure>
+            <details>
+              <summary>Показать таблицей</summary>
+              <table>
+                <caption class="sr-only">Повторения по дням</caption>
+                <thead><tr><th scope="col">День</th><th scope="col">Материалов</th></tr></thead>
+                <tbody>
+                  @for (bar of v.bars; track bar.date) {
+                    <tr><th scope="row"><time [attr.datetime]="bar.date">{{ bar.tableLabel }}</time></th><td>{{ bar.materials }}</td></tr>
+                  }
+                </tbody>
+              </table>
+            </details>
+            <p class="action"><a class="text-action" [routerLink]="['/decks', deckId(), 'study']">{{ v.dueLabel }}</a></p>
+          </article>
+
+          <article class="widget" [attr.aria-labelledby]="uid + '-mechanics-title'">
+            <h3 [id]="uid + '-mechanics-title'">Разнообразие упражнений</h3>
+            <figure>
+              @defer (on viewport) {
+                <div class="mechanics">
+                  <ul class="mechanic-labels">
+                    @for (bar of v.mechanics; track bar.mechanic) { <li><span>{{ bar.label }}</span><strong>{{ bar.count }}</strong></li> }
+                  </ul>
+                  <svg [attr.viewBox]="'0 0 ' + mechanicWidth + ' ' + mechanicRow * 7" preserveAspectRatio="none" role="img" [attr.aria-labelledby]="uid + '-mechanics-caption'">
+                    @for (bar of v.mechanics; track bar.mechanic; let row = $index) {
+                      <line class="baseline" x1="0" [attr.x2]="mechanicWidth" [attr.y1]="row * mechanicRow + mechanicRow - .5" [attr.y2]="row * mechanicRow + mechanicRow - .5" />
+                      @if (bar.count > 0) {
+                        <rect class="column" x="0" [attr.y]="row * mechanicRow + 2" [attr.width]="bar.width" [attr.height]="mechanicRow - 4" fill="currentColor" />
+                      } @else {
+                        <rect class="column" x="0" [attr.y]="row * mechanicRow + 2" width="2" [attr.height]="mechanicRow - 4" fill="none" />
+                      }
+                    }
+                  </svg>
+                </div>
+              } @placeholder { <div class="plot-placeholder" aria-hidden="true"></div> }
+              <figcaption [id]="uid + '-mechanics-caption'">{{ v.mechanicsCaption }}</figcaption>
+            </figure>
+            <details>
+              <summary>Показать таблицей</summary>
+              <table>
+                <caption class="sr-only">Упражнения по механикам</caption>
+                <thead><tr><th scope="col">Механика</th><th scope="col">Упражнений</th></tr></thead>
+                <tbody>
+                  @for (bar of v.mechanics; track bar.mechanic) { <tr><th scope="row">{{ bar.label }}</th><td>{{ bar.count }}</td></tr> }
+                </tbody>
+              </table>
+            </details>
+            <p class="action">
+              @if (v.mechanicsAction === 'pick') { <button class="text-action" type="button" (click)="showMissing.emit()">Выбрать материал для упражнения</button> }
+              @else { <a class="text-action" [routerLink]="['/decks', deckId(), 'study']">Учить</a> }
+            </p>
+          </article>
+
+          <article class="widget" [attr.aria-labelledby]="uid + '-captures-title'">
+            <h3 [id]="uid + '-captures-title'">Неразобранные заметки</h3>
+            <figure>
+              @defer (on viewport) {
+                <div class="sheets">
+                  <svg viewBox="0 0 96 72" role="img" [attr.aria-labelledby]="uid + '-captures-caption'">
+                    @if (v.sheets.length === 0) {
+                      <rect class="sheet empty" x="24" y="10" width="44" height="54" fill="none" stroke-dasharray="4 3" />
+                    }
+                    @for (sheet of v.sheets; track sheet) {
+                      <rect class="sheet" [attr.x]="14 + sheet * 7" [attr.y]="14 - sheet * 2" width="44" height="54"
+                        [attr.fill]="sheet === v.sheets.length - 1 ? 'url(#' + uid + '-diag)' : 'none'" />
+                    }
+                  </svg>
+                  <p class="donut-number" aria-hidden="true"><strong>{{ v.insights.captures.open }}</strong></p>
+                </div>
+              } @placeholder { <div class="plot-placeholder" aria-hidden="true"></div> }
+              <figcaption [id]="uid + '-captures-caption'">{{ v.capturesCaption }}</figcaption>
+            </figure>
+            <details>
+              <summary>Показать таблицей</summary>
+              <table>
+                <caption class="sr-only">Неразобранные заметки</caption>
+                <thead><tr><th scope="col">Показатель</th><th scope="col">Значение</th></tr></thead>
+                <tbody>
+                  <tr><th scope="row">Ждут разбора</th><td>{{ v.insights.captures.open }}</td></tr>
+                  <tr>
+                    <th scope="row">Самая давняя</th>
+                    <td>
+                      @if (v.insights.captures.oldestOpenCreatedAt; as oldest) { <time [attr.datetime]="oldest">{{ oldest | date:'dd.MM.y' }}</time> }
+                      @else { нет }
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </details>
+            <p class="action"><a class="text-action" [routerLink]="['/decks', deckId(), 'capture']">{{ v.insights.captures.open > 0 ? 'Разобрать заметки' : 'Открыть «На потом»' }}</a></p>
+          </article>
+        </div>
+      }
+    }
+  }
+</section>
