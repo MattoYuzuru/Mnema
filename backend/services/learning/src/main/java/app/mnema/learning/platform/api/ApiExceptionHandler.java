@@ -7,6 +7,8 @@ import app.mnema.learning.media.MediaStorageUnavailableException;
 import app.mnema.learning.media.MediaUploadConflictException;
 import app.mnema.learning.platform.concurrency.VersionPreconditionRequiredException;
 import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
+import app.mnema.learning.usage.SpecNotSupportedException;
+import app.mnema.learning.usage.UsageLimitReachedException;
 import app.mnema.learning.study.session.StudySessionExpiredException;
 import app.mnema.learning.study.attempt.PresentationExpiredException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -38,7 +40,20 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(CapabilityUnavailableException.class)
     ResponseEntity<Object> handleCapabilityUnavailable(CapabilityUnavailableException exception,
                                                         HttpServletRequest request) {
-        return response(ApiErrorCode.CAPABILITY_UNAVAILABLE, request.getRequestURI(), new HttpHeaders());
+        return response(ApiErrorCode.CAPABILITY_UNAVAILABLE, request.getRequestURI(), new HttpHeaders(),
+                exception.extension());
+    }
+
+    @ExceptionHandler(UsageLimitReachedException.class)
+    ResponseEntity<Object> handleUsageLimitReached(UsageLimitReachedException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.USAGE_LIMIT_REACHED, request.getRequestURI(), new HttpHeaders(),
+                exception.extension());
+    }
+
+    @ExceptionHandler(SpecNotSupportedException.class)
+    ResponseEntity<Object> handleSpecNotSupported(SpecNotSupportedException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.SPEC_NOT_SUPPORTED, request.getRequestURI(), new HttpHeaders(),
+                exception.extension());
     }
 
     @ExceptionHandler(MediaUploadConflictException.class)
@@ -98,7 +113,8 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
             ResourceLimitExceededException exception,
             HttpServletRequest request
     ) {
-        return response(ApiErrorCode.RESOURCE_LIMIT_EXCEEDED, request.getRequestURI(), new HttpHeaders());
+        return response(ApiErrorCode.RESOURCE_LIMIT_EXCEEDED, request.getRequestURI(), new HttpHeaders(),
+                exception.extension());
     }
 
     @ExceptionHandler(ExemplarLimitReachedException.class)
@@ -143,7 +159,7 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         String requestUri = request instanceof ServletWebRequest servletRequest
                 ? servletRequest.getRequest().getRequestURI()
                 : "/";
-        return response(code, status, requestUri, headers);
+        return response(code, status, requestUri, headers, ProblemExtension.none());
     }
 
     private ResponseEntity<Object> response(ApiErrorCode code, String requestUri, HttpHeaders headers) {
@@ -159,7 +175,8 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
             ApiErrorCode code,
             HttpStatusCode responseStatus,
             String requestUri,
-            HttpHeaders headers
+            HttpHeaders headers,
+            ProblemExtension extension
     ) {
         return response(code, responseStatus, requestUri, headers, ProblemExtension.none());
     }

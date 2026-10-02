@@ -18,6 +18,16 @@ enum ApiErrorCode {
             "Capability unavailable",
             "The requested learning capability is not available."
     ),
+    USAGE_LIMIT_REACHED(
+            HttpStatus.CONFLICT,
+            "Usage limit reached",
+            "The remaining AI budget does not cover this operation."
+    ),
+    SPEC_NOT_SUPPORTED(
+            HttpStatus.UNPROCESSABLE_CONTENT,
+            "Spec not supported",
+            "The generation spec is valid but not supported yet."
+    ),
     MEDIA_UPLOAD_CONFLICT(HttpStatus.CONFLICT, "Media upload conflict", "The upload state or parts do not match the command."),
     MEDIA_STORAGE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "Media storage unavailable", "Media storage is temporarily unavailable."),
     VERSION_CONFLICT(
