@@ -265,8 +265,16 @@ input[readonly], textarea[readonly] { background: var(--mn-soft); }
 }
 
 @media (forced-colors: active) {
-    .deck-row:hover, .deck-row:focus-visible, .metadata-form, .notice, .button, .empty { border-color: CanvasText; }
+    .deck-row:hover, .deck-row:focus-visible, .metadata-form, .notice, .button, .empty, .editor-panel { border-color: CanvasText; }
     :where(a, button, input, textarea):focus-visible { outline-color: Highlight; }
 }
 
 .form-actions > .actions { align-items: flex-start; }
+
+/* Deck hub: the description is read first; the metadata form is a panel the user opens with «Изменить». */
+.hub-heading { margin-block-end: 1.5rem; }
+.hub-description { max-inline-size: 65ch; margin-block-start: 1rem; color: var(--mn-body); line-height: 1.6; }
+.hub-actions { margin-block-end: 1rem; }
+.editor-panel { margin-block: 1.5rem; border: 1px solid var(--mn-ink); padding: 1.25rem clamp(1rem, 3vw, 1.75rem) 1.5rem; background: var(--mn-sheet); }
+.editor-panel > h2 { margin-block: 0 1rem; font-size: clamp(1.4rem, 2.5vw, 1.8rem); }
+.deck-detail-page .editor-panel .metadata-form { padding-block-start: 0; }

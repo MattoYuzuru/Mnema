@@ -1,5 +1,5 @@
 <section class="page" aria-labelledby="editor-title">
-  @if (deck(); as currentDeck) { <a class="back-link" [routerLink]="['/decks', currentDeck.deckId, 'materials']">← К материалам</a> }
+  @if (deck(); as currentDeck) { <a class="back-link" [routerLink]="['/decks', currentDeck.deckId]">← К колоде</a> }
   <header class="page-heading"><div><p class="eyebrow">{{ item() ? 'Редактирование' : 'Новый материал' }}</p><h1 id="editor-title" tabindex="-1">{{ deck()?.metadata?.title ?? 'Материал' }}</h1><p class="lede">Изменения сохраняются автоматически. Когда материал будет готов, опубликуйте его.</p></div>
     @if (item(); as currentItem) { <a class="button" [routerLink]="['/decks', deck()?.deckId, 'materials', currentItem.memberKey, 'exercises', 'new']">Настроить упражнения</a> }
   </header>
@@ -9,7 +9,7 @@
       @if (phase() === 'error') { <button class="button" type="button" (click)="retry()">Повторить</button> }
       @if (phase() === 'conflict' && conflict() === 'draft') {
         <div class="actions"><button class="button" type="button" (click)="resolveDraftConflict(false)">Открыть сохранённую версию</button><button class="button primary" type="button" (click)="resolveDraftConflict(true)">Оставить мой ввод</button></div>
-      } @else if (phase() === 'conflict' && conflict() === 'publication') { <a class="button" [routerLink]="['/decks', deck()?.deckId, 'materials']">К списку материалов</a> }
+      } @else if (phase() === 'conflict' && conflict() === 'publication') { <a class="button" [routerLink]="['/decks', deck()?.deckId]">К материалам колоды</a> }
     </section>
   }
   @if (phase() === 'loading') { <p class="notice" role="status">Готовим черновик…</p> }

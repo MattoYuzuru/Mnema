@@ -92,4 +92,57 @@ describe('HoldToDeleteButtonComponent', () => {
         expect(component.armed()).toBe(true);
         fixture.destroy();
     });
+
+    describe('consequence', () => {
+        function withConsequence(text: string) {
+            const setupResult = setup();
+            setupResult.fixture.componentRef.setInput('consequence', text);
+            setupResult.fixture.detectChanges();
+            return setupResult;
+        }
+
+        it('is the button\'s description at all times and visible only while the button is armed', () => {
+            const { fixture, button } = withConsequence('Удалит 7 материалов и 15 упражнений. История занятий сохранится.');
+            const note = fixture.nativeElement.querySelector('.consequence') as HTMLElement;
+            expect(button.getAttribute('aria-describedby')).toBe(note.id);
+            expect(note.hidden).toBe(true);
+            button.click();
+            fixture.detectChanges();
+            expect(note.hidden).toBe(false);
+            expect(note.textContent).toContain('15 упражнений');
+            fixture.destroy();
+        });
+
+        it('adds nothing when no consequence is given', () => {
+            const { fixture, button } = setup();
+            expect(button.hasAttribute('aria-describedby')).toBe(false);
+            expect(fixture.nativeElement.querySelector('.consequence')).toBeNull();
+            fixture.destroy();
+        });
+    });
+
+    describe('Escape', () => {
+        it('disarms an armed button and stays there, so a surrounding selection is not cleared at the same time', () => {
+            const { fixture, component, button } = setup();
+            let reached = 0;
+            fixture.nativeElement.addEventListener('keydown', () => reached++);
+            button.click();
+            expect(component.armed()).toBe(true);
+            button.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+            expect(component.armed()).toBe(false);
+            expect(reached).toBe(0);
+            fixture.destroy();
+        });
+
+        it('bubbles to the surroundings when the button is not armed', () => {
+            const { fixture, button } = setup();
+            let reached = 0;
+            fixture.nativeElement.addEventListener('keydown', () => reached++);
+            const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+            button.dispatchEvent(event);
+            expect(reached).toBe(1);
+            expect(event.defaultPrevented).toBe(false);
+            fixture.destroy();
+        });
+    });
 });

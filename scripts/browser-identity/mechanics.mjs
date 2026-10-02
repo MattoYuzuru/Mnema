@@ -507,6 +507,9 @@ export async function runMechanics(ctx) {
   await scenario('mechanics_hold_to_delete_geometry', async () => {
     await desktop();
     await ctx.navigate(ctx.deckPath, tab);
+    // «Удалить колоду» sits in the metadata panel behind «Изменить» on the deck hub.
+    await waitFor(() => has({ css: 'nav.hub-actions button', text: 'Изменить' }), 'the deck hub did not render «Изменить»');
+    await realClick({ css: 'nav.hub-actions button', text: 'Изменить' });
     const hold = { css: 'app-hold-to-delete-button button.hold-button', includes: 'Удалить колоду' };
     await waitFor(() => has(hold), 'the deck delete button did not render');
     const box = () => call(`const r = ${pick}.getBoundingClientRect(); return [r.width, r.height].map(Math.round).join('x');`, hold);

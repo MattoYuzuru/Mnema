@@ -28,8 +28,10 @@ describe('appRoutes', () => {
             'decks', 'decks/new', 'decks/:deckId/study', 'decks/:deckId/materials/new',
             'decks/:deckId/materials/:memberKey/exercises/new', 'decks/:deckId/exercises/:exerciseId/edit',
             'decks/:deckId/materials/:memberKey/edit',
-            'decks/:deckId/materials/:memberKey', 'decks/:deckId/materials', 'decks/:deckId/capture', 'decks/:deckId'
+            'decks/:deckId/materials/:memberKey', 'decks/:deckId/capture', 'decks/:deckId'
         ]);
+        // The material list lives in the Deck hub; no separate list route may come back (greenfield: no redirect either).
+        expect(paths).not.toContain('decks/:deckId/materials');
         for (const path of deckPaths) {
             const route = appRoutes.find(candidate => candidate.path === path)!;
             expect(route.component).toBeUndefined();
@@ -53,7 +55,6 @@ describe('appRoutes', () => {
         expect(await load('decks/:deckId/materials/:memberKey/exercises/new')).toBe(ExerciseAuthoringPageComponent);
         expect(await load('decks/:deckId/exercises/:exerciseId/edit')).toBe(ExerciseAuthoringPageComponent);
         expect(await load('decks/:deckId/materials/:memberKey')).toBe(BrowsePageComponent);
-        expect(await load('decks/:deckId/materials')).toBe(BrowsePageComponent);
         expect(await load('decks/:deckId/capture')).toBe(CapturePageComponent);
         expect(await load('decks/:deckId')).toBe(OwnDeckDetailPageComponent);
     });

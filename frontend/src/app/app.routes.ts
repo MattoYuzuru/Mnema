@@ -80,12 +80,6 @@ export const appRoutes: Routes = [
         canActivate: [authGuard]
     },
     {
-        path: 'decks/:deckId/materials',
-        loadComponent: () => import('./features/authoring/browse-page.component')
-            .then(module => module.BrowsePageComponent),
-        canActivate: [authGuard]
-    },
-    {
         path: 'decks/:deckId/capture',
         loadComponent: () => import('./features/authoring/capture-page.component')
             .then(module => module.CapturePageComponent),

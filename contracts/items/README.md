@@ -105,3 +105,10 @@ populated lazily after ownership is checked. Both Browse and Study progress use
 this projection; clients never fetch complete documents just to label a list.
 CSS ellipsis fits the available row width while preserving the full accessible
 name. Direct document reads and publication acknowledgements are unchanged.
+
+## Hub extensions
+
+The Browse list also accepts `sort=exerciseCount` and `include=exerciseCount`, every summary and direct
+read carries the deck-local `exemplar` flag, and a Deck page can delete up to 500 materials with one
+bulk command built on the publication semantics above. Those additive routes and rules are defined in
+the [Deck hub contract](../decks/README.md#deck-hub-285) and [`hub.json`](../decks/hub.json).

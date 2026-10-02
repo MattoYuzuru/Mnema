@@ -25,8 +25,9 @@ Adds to the root [`AGENTS.md`](../AGENTS.md); does not repeat it. Visual directi
 - Change detection is zoneless (no `zone.js`, no `provideZoneChangeDetection`); components are `OnPush` and rendering must be
   driven by signals, template events or `markForCheck`. Do not add `NgZone`-dependent code or zone polyfills.
 - `src/app/app.routes.ts` is the route source of truth; feature routes are lazy. Deck authoring
-  is under `/decks`; Study is `/decks/:deckId/study`. There is no legacy `my-study`, public-deck,
-  template or import route; do not reintroduce one.
+  is under `/decks`; Study is `/decks/:deckId/study`. `/decks/:deckId` is the Deck hub (statistics, the material
+  list with selection and bulk delete); there is no separate `/decks/:deckId/materials` list route. There is no
+  legacy `my-study`, public-deck, template or import route; do not reintroduce one.
 - Features live in `src/app/features/{authoring,own-decks,study}`; native document/editor/renderer in
   `src/app/content`. Theme values are centralized in `src/theme/tokens.css`; components use its semantic
   tokens as the brand contract requires.

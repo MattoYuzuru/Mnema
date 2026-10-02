@@ -2,6 +2,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
+import { runHub } from './hub.mjs';
 import { runMechanics } from './mechanics.mjs';
 import { runNotifications } from './notifications.mjs';
 
@@ -269,6 +270,18 @@ try {
   }`, [selector, label]);
   const bodyIncludes = (text, tab = cdp) => tab.callFunction(
     'function(text) { return document.body.innerText.includes(text); }', [text]);
+  /** The Deck page is a hub: its metadata form lives behind «Изменить». Opens it with a real activation and waits for the title field. */
+  async function openDeckEditor(tab = cdp) {
+    const control = `function() {
+      return [...document.querySelectorAll('nav.hub-actions button')].find(button => button.textContent.trim() === 'Изменить');
+    }`;
+    await until(() => tab.callFunction(`function() { return Boolean((${control})()); }`), 'deck hub did not load «Изменить»');
+    if (!(await exists('#detail-title', tab))) {
+      require(await tab.callFunction(`function() { const button = (${control})(); button.click(); return true; }`),
+        '«Изменить» control absent from the deck hub');
+    }
+    await until(() => exists('#detail-title', tab), 'deck metadata form did not open behind «Изменить»');
+  }
   async function submit(tab = cdp) { await tab.evaluate("document.querySelector('form button[type=submit]').click()"); }
   async function pressKey(key, code, virtualKeyCode, modifiers = 0, tab = cdp) {
     const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, nativeVirtualKeyCode: virtualKeyCode, modifiers };
@@ -389,8 +402,11 @@ try {
   await fill('#create-description', 'Длинная строка на русском\nשורה בעברית');
   await submit();
   await until(async () => /^\/decks\/[0-9a-f-]{36}$/.test(await sanitizedLocation())
-    && await exists('#detail-title'), 'real deck create did not open its canonical detail route');
+    && await exists('#deck-detail-title'), 'real deck create did not open its canonical hub route');
   const deckPath = await sanitizedLocation();
+  require(await cdp.callFunction(`function() { return !document.querySelector('#detail-title'); }`),
+    'the metadata form must stay closed until «Изменить» is used');
+  await openDeckEditor();
   require(await cdp.callFunction(`function(expected) {
     const input = document.querySelector('#detail-title');
     return input instanceof HTMLTextAreaElement && input.value === expected
@@ -398,7 +414,7 @@ try {
   }`, [originalTitle]), 'created deck did not preserve exact title');
   record('real_own_deck_create_and_detail', { canonicalRoute: true, exactUnicode: true });
   await cdp.call('Page.reload', { ignoreCache: true });
-  await until(() => exists('#detail-title'), 'deck detail did not survive browser reload');
+  await openDeckEditor();
   require(await cdp.callFunction(`function(expected) {
     const input = document.querySelector('#detail-title');
     return input instanceof HTMLTextAreaElement && input.value === expected;
@@ -421,9 +437,9 @@ try {
   await until(async () => tokenExchanges > beforeConflictLogin
     && (await sanitizedLocation(conflictTab)) === '/decks', 'same-account conflict tab did not authenticate');
   await navigate(deckPath, conflictTab);
-  await until(() => exists('#detail-title', conflictTab), 'conflict tab did not load the deck');
+  await openDeckEditor(conflictTab);
   await navigate(deckPath);
-  await until(() => exists('#detail-title'), 'primary conflict tab did not reload the deck');
+  await openDeckEditor();
   await fill('#detail-title', 'Изменение из первой вкладки');
   await submit();
   await until(() => cdp.callFunction(`function() {
@@ -442,6 +458,7 @@ try {
     return document.querySelector('h1')?.textContent?.trim() === 'Изменение из второй вкладки';
   }`), 'explicit conflict reapply did not publish a fresh command');
   await navigate(deckPath);
+  await openDeckEditor();
   await until(() => cdp.callFunction(`function() {
     const input = document.querySelector('#detail-title');
     return input instanceof HTMLTextAreaElement && input.value === 'Изменение из второй вкладки';
@@ -496,7 +513,7 @@ try {
     });
   }
   await navigate(deckPath);
-  await until(() => exists('#detail-title'), 'deck detail absent after cross-tab refresh');
+  await openDeckEditor();
 
   step = 'own_deck_responsive_evidence';
   require(await cdp.callFunction(`function() {
@@ -793,8 +810,12 @@ try {
       await saveFullScreenshot('authoring-browse-media-1440.png', second);
     }
     await saveScreenshot('authoring-browse-1440.png', second);
-    await navigate(deckPath + '/materials', second);
-    await until(() => bodyIncludes('1 материалов', second), 'Browse list did not expose the published item');
+    // The material list lives in the deck hub; the separate list route no longer exists.
+    await navigate(deckPath, second);
+    await until(() => second.callFunction(`function() {
+      return document.querySelectorAll('app-selectable-material-list li.item-row').length === 1
+        && document.querySelector('#materials-heading')?.textContent.replace(/\\s+/g, ' ').trim() === 'Материалы · 1';
+    }`), 'deck hub list did not expose the published item');
 
     const persisted = await second.callFunction(`async function(base, authorization, expectedText) {
       const response = await fetch(base + '/api/capture-notes?limit=20', {
@@ -983,9 +1004,20 @@ try {
         deckPath, materialPath, freeResponseEditPath, materialText: editedText });
       mechanicsFailures = outcome.failures;
       mechanicsFindings = outcome.findings;
+      // The Deck hub (#285) is checked on the deck the mechanics baseline just filled with exercises.
+      step = 'hub_prepare';
+      const hub = await runHub({
+        tab: second, config, record, SafeFailure, until, exists, bodyIncludes, sanitizedLocation, navigate,
+        saveScreenshot, saveFullScreenshot, clickText, setStep: value => { step = value; }, deckPath, bearer: secondBearer });
+      mechanicsFailures = [...mechanicsFailures, ...hub.failures];
     }
   }
-  require(await authenticated(), 'first tab lost its independent profile');
+  step = 'first_tab_profile';
+  // The first tab stayed in the background through the authoring, notification, mechanics and hub flows; bring it back
+  // before reading it, as the second tab's focus changes in those flows may have hidden it.
+  await cdp.call('Page.bringToFront');
+  await until(authenticated, 'first tab lost its independent profile', 30_000);
+  step = 'two_account_precondition';
   require(await cdp.callFunction(`async function(firstUrl, firstAuthorization, secondUrl, secondAuthorization, sessionUrl) {
     const values=await Promise.all([
       fetch(firstUrl, { credentials: 'omit', headers: { Authorization: firstAuthorization } }),
@@ -1060,6 +1092,8 @@ try {
   // No caught exception, URL, DOM, response body or stack may reveal a credential.
   await writeFile(join(config.output, 'browser.json'), JSON.stringify({ state: 'failed', step,
     reason: error instanceof SafeFailure ? error.message : 'driver_failure', completedScenarios: results.length,
+    // Local diagnosis only (--keep-on-failure): CDP method names and timeouts, never page data or credentials.
+    ...(config.diagnosticsDir && !(error instanceof SafeFailure) ? { driverDetail: String(error?.message ?? error).slice(0, 160) } : {}),
     ...(config.mechanics ? { scenarios: results } : {}), counts: diagnostics() }));
   process.exitCode = 1;
 } finally {

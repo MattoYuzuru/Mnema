@@ -81,8 +81,8 @@ tombstones сохраняют retry/conflict semantics после очистки
 
 ## Frontend boundary
 
-Replacement routes `/decks`, `/decks/:deckId`, deck-scoped
-`/decks/:deckId/materials/...`, `/decks/:deckId/capture` и editor используют
+Replacement routes `/decks`, `/decks/:deckId` (хаб колоды: статистика, список материалов с выбором и массовым удалением,
+форма за «Изменить»), deck-scoped `/decks/:deckId/materials/...` (материал, editor), `/decks/:deckId/capture` используют
 выбранное paper/antiquity/indigo оформление. Главная `/` включает гравюру
 Мнемозины и композицию принятого макета с реальными маршрутами и русским текстом.
 Семантические CSS-токены находятся в `frontend/src/theme/tokens.css`, правила

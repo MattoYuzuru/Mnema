@@ -1,5 +1,7 @@
 package app.mnema.learning.platform.api;
 
+import app.mnema.learning.catalog.item.BulkSelectionTooLargeException;
+import app.mnema.learning.catalog.item.ExemplarLimitReachedException;
 import app.mnema.learning.platform.concurrency.VersionConflictException;
 import app.mnema.learning.media.MediaStorageUnavailableException;
 import app.mnema.learning.media.MediaUploadConflictException;
@@ -99,6 +101,19 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return response(ApiErrorCode.RESOURCE_LIMIT_EXCEEDED, request.getRequestURI(), new HttpHeaders());
     }
 
+    @ExceptionHandler(ExemplarLimitReachedException.class)
+    ResponseEntity<Object> handleExemplarLimit(ExemplarLimitReachedException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.EXEMPLAR_LIMIT_REACHED, request.getRequestURI(), new HttpHeaders(),
+                exception.extension());
+    }
+
+    @ExceptionHandler(BulkSelectionTooLargeException.class)
+    ResponseEntity<Object> handleBulkSelectionTooLarge(BulkSelectionTooLargeException exception,
+                                                       HttpServletRequest request) {
+        return response(ApiErrorCode.BULK_SELECTION_TOO_LARGE, request.getRequestURI(), new HttpHeaders(),
+                exception.extension());
+    }
+
     @ExceptionHandler(Exception.class)
     ResponseEntity<Object> handleUnexpected(Exception exception, HttpServletRequest request) {
         log.error(
@@ -132,7 +147,12 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     }
 
     private ResponseEntity<Object> response(ApiErrorCode code, String requestUri, HttpHeaders headers) {
-        return response(code, code.status(), requestUri, headers);
+        return response(code, code.status(), requestUri, headers, ProblemExtension.none());
+    }
+
+    private ResponseEntity<Object> response(ApiErrorCode code, String requestUri, HttpHeaders headers,
+                                            ProblemExtension extension) {
+        return response(code, code.status(), requestUri, headers, extension);
     }
 
     private ResponseEntity<Object> response(
@@ -141,11 +161,22 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
             String requestUri,
             HttpHeaders headers
     ) {
+        return response(code, responseStatus, requestUri, headers, ProblemExtension.none());
+    }
+
+    private ResponseEntity<Object> response(
+            ApiErrorCode code,
+            HttpStatusCode responseStatus,
+            String requestUri,
+            HttpHeaders headers,
+            ProblemExtension extension
+    ) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(responseStatus, code.detail());
         problem.setType(code.type());
         problem.setTitle(code.title());
         problem.setInstance(URI.create(requestUri));
         problem.setProperty("code", code.name());
+        extension.members().forEach(problem::setProperty);
 
         HttpHeaders responseHeaders = new HttpHeaders();
         responseHeaders.putAll(headers);
