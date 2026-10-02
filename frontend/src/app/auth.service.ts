@@ -5,7 +5,7 @@ import { toObservable } from '@angular/core/rxjs-interop';
 import { firstValueFrom, timeout } from 'rxjs';
 import { AUTH_BROWSER, BROWSER_IDENTITY_CONFIG, validateIdentityConfig } from './auth-browser';
 import { AUTH_SCOPES, AUTH_STORAGE_KEY, PKCE_STORAGE_KEY, AuthFailure, IdentityProfile, StoredAccess,
-    objectValue, boundedText, parseProfile, parseStoredAccess, parseToken, parseTransaction, safeReturnUrl } from './auth-protocol';
+    FederatedProvider, isFederatedProvider, objectValue, boundedText, parseProfile, parseStoredAccess, parseToken, parseTransaction, safeReturnUrl } from './auth-protocol';
 
 export type AuthStatus = 'anonymous' | 'pending' | 'authenticated' | 'error';
 export interface AuthUser extends IdentityProfile { name?: string }
@@ -67,7 +67,24 @@ export class AuthService {
         await this.startAuthorization(returnTo);
     }
 
-    private async startAuthorization(returnTo: string): Promise<void> {
+    async availableProviders(): Promise<FederatedProvider[]> {
+        if (this.config.features?.federatedAuthEnabled === false) return [];
+        validateIdentityConfig(this.config, this.browser.origin);
+        const value = objectValue(await firstValueFrom(this.http.get<unknown>(`${this.config.authServerUrl}/api/accounts/providers`)
+            .pipe(timeout(8000))));
+        const providers = value['providers'];
+        if (!Array.isArray(providers) || providers.length > 3 || !providers.every(isFederatedProvider) ||
+            new Set(providers).size !== providers.length) throw new AuthFailure('protocol');
+        return providers;
+    }
+
+    async beginFederatedLogin(provider: FederatedProvider, returnTo: string): Promise<void> {
+        if (this.config.features?.federatedAuthEnabled === false) throw new AuthFailure('configuration');
+        if (this.cookieFlowPending || !isFederatedProvider(provider)) throw new AuthFailure('protocol');
+        await this.startAuthorization(returnTo, provider);
+    }
+
+    private async startAuthorization(returnTo: string, provider?: FederatedProvider): Promise<void> {
         this.pendingLogout = null;
         this.clear();
         const epoch = this.epoch;
@@ -79,8 +96,13 @@ export class AuthService {
             const challenge = await this.browser.challenge(verifier);
             if (epoch !== this.epoch) return;
             const transaction = { state, verifier, returnUrl: safeReturnUrl(returnTo), createdAt: this.browser.now(),
-                issuer: this.config.authServerUrl, clientId: this.config.clientId, redirectUri: this.config.identityRedirectUri };
+                issuer: this.config.authServerUrl, clientId: this.config.clientId, redirectUri: this.config.identityRedirectUri,
+                ...(provider ? { provider } : {}) };
             this.persist(PKCE_STORAGE_KEY, transaction);
+            if (provider) {
+                this.browser.navigate(`${this.config.authServerUrl}/oauth2/authorization/${provider}?${new URLSearchParams({ mnema_state: state })}`);
+                return;
+            }
             const query = new URLSearchParams({ response_type: 'code', client_id: this.config.clientId,
                 redirect_uri: this.config.identityRedirectUri, scope: AUTH_SCOPES, state,
                 code_challenge: challenge, code_challenge_method: 'S256' });
@@ -105,8 +127,17 @@ export class AuthService {
             this.browser.storage.removeItem(PKCE_STORAGE_KEY);
             if (!raw) throw new AuthFailure('protocol');
             const transaction = parseTransaction(raw, this.browser.now(), this.config.authServerUrl, this.config.clientId, this.config.identityRedirectUri);
+            if (transaction.provider) {
+                // The server echoes this correlation only after its own one-use OAuth state succeeds.
+                // A cookie is not SPA API access: continue through Mnema's separate S256 code exchange.
+                if (query.has('error') || query.has('code') || query.has('state') ||
+                    query.getAll('federation_state').length !== 1 || query.get('federation_state') !== transaction.state)
+                    throw new AuthFailure('protocol');
+                await this.startAuthorization(transaction.returnUrl);
+                return;
+            }
             const code = query.get('code');
-            if (query.has('error') || query.getAll('code').length !== 1 || query.getAll('state').length !== 1 ||
+            if (query.has('error') || query.has('federation_state') || query.getAll('code').length !== 1 || query.getAll('state').length !== 1 ||
                 query.get('state') !== transaction.state || !boundedText(code, 2048) || !code ||
                 (query.has('iss') && (query.getAll('iss').length !== 1 || query.get('iss') !== this.config.authServerUrl))) throw new AuthFailure('protocol');
             const body = new URLSearchParams({ grant_type: 'authorization_code', code, client_id: this.config.clientId,

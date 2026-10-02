@@ -2,6 +2,12 @@
 export const AUTH_SCOPES = 'openid profile account.read account.write learning.read learning.write';
 export const AUTH_STORAGE_KEY = 'mnema.identity.access';
 export const PKCE_STORAGE_KEY = 'mnema.identity.pkce';
+export const FEDERATED_PROVIDERS = ['google', 'yandex', 'github'] as const;
+export type FederatedProvider = typeof FEDERATED_PROVIDERS[number];
+
+export function isFederatedProvider(value: unknown): value is FederatedProvider {
+    return FEDERATED_PROVIDERS.some(provider => provider === value);
+}
 const MAX_ACCESS_SECONDS = 3 * 24 * 60 * 60;
 
 export interface IdentityProfile {
@@ -28,6 +34,7 @@ export interface PkceTransaction {
     issuer: string;
     clientId: string;
     redirectUri: string;
+    provider?: FederatedProvider;
 }
 
 export class AuthFailure extends Error {
@@ -103,7 +110,9 @@ export function parseTransaction(raw: string, now: number, issuer: string, clien
         typeof t['verifier'] !== 'string' || !/^[A-Za-z0-9_-]{43}$/u.test(t['verifier']) ||
         !Number.isSafeInteger(t['createdAt']) || Number(t['createdAt']) > now || now - Number(t['createdAt']) > 600000 ||
         t['issuer'] !== issuer || t['clientId'] !== clientId || t['redirectUri'] !== redirectUri ||
-        t['returnUrl'] !== safeReturnUrl(t['returnUrl'])) throw new AuthFailure('protocol');
+        t['returnUrl'] !== safeReturnUrl(t['returnUrl']) ||
+        (t['provider'] !== undefined && !isFederatedProvider(t['provider']))) throw new AuthFailure('protocol');
     return { state: t['state'], verifier: t['verifier'], returnUrl: t['returnUrl'] as string,
-        createdAt: Number(t['createdAt']), issuer, clientId, redirectUri };
+        createdAt: Number(t['createdAt']), issuer, clientId, redirectUri,
+        ...(t['provider'] === undefined ? {} : { provider: t['provider'] as FederatedProvider }) };
 }

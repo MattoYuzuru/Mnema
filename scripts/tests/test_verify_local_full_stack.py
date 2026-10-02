@@ -83,6 +83,28 @@ class LocalFullStackTest(unittest.TestCase):
 
         self.assertTrue((self.state / "runtime.env").is_file())
 
+    def test_legacy_local_only_truststore_retains_identity_material_and_adds_public_roots(self):
+        self.bootstrap()
+        protected = ["runtime.env", "identity-signing-jwk-set.json", "local-ca.key", "local-ca.crt", "localhost.crt"]
+        before = {name: (self.state / name).read_bytes() for name in protected}
+        truststore = self.state / "learning-truststore.p12"
+        truststore.unlink()
+        subprocess.run(["keytool", "-importcert", "-noprompt", "-storetype", "PKCS12",
+                        "-alias", "mnema-local-ca", "-file", str(self.state / "local-ca.crt"),
+                        "-keystore", str(truststore), "-storepass", "changeit"],
+                       check=True, capture_output=True, timeout=10)
+        truststore.chmod(0o600)
+        self.run_launcher("bootstrap")
+        listing = subprocess.run(["keytool", "-list", "-rfc", "-keystore", str(truststore),
+                                  "-storetype", "PKCS12", "-storepass", "changeit"],
+                                 check=True, capture_output=True, text=True, timeout=10).stdout
+        self.assertGreater(listing.count("BEGIN CERTIFICATE"), 1)
+        self.assertIn("mnema-local-ca", listing)
+        self.assertEqual(before, {name: (self.state / name).read_bytes() for name in protected})
+        upgraded = truststore.read_bytes()
+        self.run_launcher("bootstrap")
+        self.assertEqual(upgraded, truststore.read_bytes())
+
     def test_compose_contract_renders_without_exposing_plaintext_apps(self):
         self.bootstrap()
         values = dict(line.split("=", 1) for line in (self.state / "runtime.env").read_text().splitlines())
@@ -121,6 +143,32 @@ class LocalFullStackTest(unittest.TestCase):
         self.assertIn(pinned.replace(" AS backend-runtime", " AS backend-runtime"), runtime)
         self.assertIn("COPY deploy/local-full-stack/nginx.conf", frontend_runtime)
         self.assertIn(".mnema", (ROOT / ".dockerignore").read_text().splitlines())
+
+    def test_optional_oauth_env_is_data_not_shell_and_missing_explicit_file_fails(self):
+        self.bootstrap()
+        fake_bin = Path(self.temp.name) / "bin"
+        fake_bin.mkdir()
+        arguments = Path(self.temp.name) / "compose-arguments"
+        revision = Path(self.temp.name) / "truststore-revision"
+        fake_docker = fake_bin / "docker"
+        fake_docker.write_text("#!/bin/sh\nif [ \"$2\" = version ]; then exit 0; fi\nprintf '%s\\n' \"$@\" > \"$MNEMA_OAUTH_ARGUMENTS\"\nprintf '%s' \"$MNEMA_LOCAL_TRUSTSTORE_REVISION\" > \"$MNEMA_OAUTH_REVISION\"\n")
+        fake_docker.chmod(0o700)
+        oauth_file = Path(self.temp.name) / "oauth.env"
+        marker = Path(self.temp.name) / "must-not-execute"
+        oauth_file.write_text(f"GH_CLIENT_ID=synthetic\nGH_CLIENT_SECRET=synthetic\nOTHER=$(touch {marker})\n")
+        self.environment.update(PATH=f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+                                MNEMA_LOCAL_OAUTH_ENV_FILE=str(oauth_file), MNEMA_OAUTH_ARGUMENTS=str(arguments),
+                                MNEMA_OAUTH_REVISION=str(revision))
+        self.run_launcher("status")
+        args = arguments.read_text().splitlines()
+        self.assertEqual(["compose", "--env-file", str(oauth_file)], args[:3])
+        self.assertFalse(marker.exists())
+        self.assertEqual(hashlib.sha256((self.state / "learning-truststore.p12").read_bytes()).hexdigest(), revision.read_text())
+        self.assertIn("MNEMA_LOCAL_TRUSTSTORE_REVISION: ${MNEMA_LOCAL_TRUSTSTORE_REVISION:-initial}", COMPOSE.read_text())
+        self.environment["MNEMA_LOCAL_OAUTH_ENV_FILE"] = str(oauth_file) + "-missing"
+        result = self.run_launcher("status", check=False)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("OAuth env file is not readable", result.stderr)
 
     def test_partial_or_corrupt_security_state_fails_before_compose(self):
         self.state.mkdir(mode=0o700)

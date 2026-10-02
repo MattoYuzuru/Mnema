@@ -28,6 +28,11 @@ class ProviderConfigurationTest {
                     "https://identity.fixture.test/login/oauth2/code/" + provider);
             assertThat(registration.getProviderDetails().getAuthorizationUri()).startsWith("https://");
             assertThat(registration.getProviderDetails().getTokenUri()).startsWith("https://");
+            if (provider.equals("yandex")) {
+                assertThat(registration.getScopes()).containsExactly("login:email", "login:info");
+                assertThat(registration.getProviderDetails().getAuthorizationUri()).isEqualTo("https://oauth.yandex.ru/authorize");
+                assertThat(registration.getProviderDetails().getTokenUri()).isEqualTo("https://oauth.yandex.ru/token");
+            }
         }
     }
 }

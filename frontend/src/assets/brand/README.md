@@ -8,13 +8,19 @@ Brand colors and typography roles are set in [`tokens.css`](../../theme/tokens.c
 
 The sunburst SVG is the shared header/favicon mark. `app-icon-512.png` is its 512 px paper-backed app icon; `../og-image.png` is a 1200×630 social preview built from the same portrait, type and palette. These static graphics encode the current ink/paper colors, so regenerate them when those token values change.
 
-## Provider placeholders (2026-09-30)
+`oauth-icon-512.png` adapts `mnema-mark.svg` for provider application branding: 512×512,
+centered with an 8-unit margin on all sides and an opaque paper (`#f4f0e6`) background.
+It contains no provider logo or credentials.
 
-Local, inert sign-in placeholders reuse vendor assets, without a remote SDK or request.
+## Provider sign-in assets
+
+Sign-in buttons reuse local vendor assets without a remote SDK. Identity's public
+provider availability response determines which buttons are enabled.
 Google's light square SVG is from the [official sign-in asset archive](https://developers.google.com/static/identity/images/signin-assets.zip),
 linked by its [branding guide](https://developers.google.com/identity/branding-guidelines).
 Yandex's small logo is from its [button design guide](https://yandex.ru/dev/id/doc/ru/codes/buttons-design)
 ([original SVG](https://doc-binary.s3.yandex.net/src/dev/id/ru/files/small-logo.svg)).
 GitHub's mark is the [official asset](https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png);
 see the [brand guide](https://brand.github.com/foundations/logo). Vendor marks retain their original geometry/colors.
-All three are explicitly unavailable, and do not assert configured OAuth integrations.
+Vendor marks identify the chosen sign-in provider; they do not imply availability
+when its credentials are absent or federation is disabled in runtime configuration.

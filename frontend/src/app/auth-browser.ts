@@ -30,7 +30,13 @@ export const AUTH_BROWSER = new InjectionToken<AuthBrowser>('AUTH_BROWSER', { pr
     clearQuery: () => window.history.replaceState(window.history.state, '', window.location.pathname)
 }) });
 
-export interface BrowserIdentityConfig { authServerUrl: string; identityRedirectUri: string; clientId: string; learningApiBaseUrl: string }
+export interface BrowserIdentityConfig {
+    authServerUrl: string;
+    identityRedirectUri: string;
+    clientId: string;
+    learningApiBaseUrl: string;
+    features?: { federatedAuthEnabled?: boolean };
+}
 export const BROWSER_IDENTITY_CONFIG = new InjectionToken<BrowserIdentityConfig>('BROWSER_IDENTITY_CONFIG', {
     providedIn: 'root', factory: () => appConfig
 });

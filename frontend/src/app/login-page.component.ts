@@ -1,9 +1,9 @@
-import { ChangeDetectionStrategy, Component, ElementRef, OnDestroy, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { FormsModule, NgForm } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { AuthService } from './auth.service';
-import { AuthFailure, safeReturnUrl } from './auth-protocol';
+import { AuthFailure, FederatedProvider, safeReturnUrl } from './auth-protocol';
 
 export function identityErrorMessage(error: unknown): string {
     if (error instanceof AuthFailure) {
@@ -35,15 +35,21 @@ export function identityErrorMessage(error: unknown): string {
           <a class="primary-action" routerLink="/decks">Мои колоды →</a>
           <button class="text-action" type="button" data-testid="logout" [disabled]="busy()" (click)="logout()">Выйти из аккаунта</button>
         } @else {
-          <p class="intro">{{ registering ? 'Создайте аккаунт, чтобы собирать и сохранять свои материалы.' : 'Войдите с логином или почтой. Вход через сервисы появится позже.' }}</p>
-          <div class="provider-options" role="group" aria-label="Вход через сервисы — в работе">
+          <p class="intro">{{ registering ? 'Создайте аккаунт через удобный сервис или с почтой, чтобы сохранять свои материалы.' : 'Выберите удобный способ входа.' }}</p>
+          <div class="provider-options" role="group" aria-label="Вход через сервисы">
             @for (provider of providers; track provider.name) {
-              <button class="provider-placeholder" type="button" disabled [attr.aria-label]="provider.name + ', вход в работе'">
+              <button class="provider-option" type="button" [disabled]="busy() || !available().includes(provider.id)"
+                [attr.aria-label]="'Войти через ' + provider.name" (click)="loginWithProvider(provider.id)">
                 <img [src]="provider.icon" width="32" height="32" alt="" />
-                <strong>{{ provider.name }}</strong><span>В работе</span>
+                <strong>{{ provider.name }}</strong><span>{{ providerStatus() === 'loading' ? 'Проверяем…' : (available().includes(provider.id) ? 'Продолжить' : 'Недоступен') }}</span>
               </button>
             }
           </div>
+          @if (providerStatus() === 'error') {
+            <p class="field-help" role="status">Не удалось проверить вход через сервисы.
+              <button class="text-action" type="button" [disabled]="busy()" (click)="loadProviders()">Повторить</button>
+            </p>
+          }
           <p class="password-divider">{{ registering ? 'Или зарегистрируйтесь с почтой' : 'Или войдите с логином или почтой' }}</p>
           <form #form="ngForm" (ngSubmit)="submit(form)" novalidate>
             @if (registering) {
@@ -76,11 +82,11 @@ export function identityErrorMessage(error: unknown): string {
       </section>
     `
 })
-export class LoginPageComponent implements OnDestroy {
+export class LoginPageComponent implements OnInit, OnDestroy {
     readonly providers = [
-        { name: 'Google', icon: '/assets/brand/providers/google.svg' },
-        { name: 'Яндекс', icon: '/assets/brand/providers/yandex.svg' },
-        { name: 'GitHub', icon: '/assets/brand/providers/github.png' }
+        { id: 'google', name: 'Google', icon: '/assets/brand/providers/google.svg' },
+        { id: 'yandex', name: 'Яндекс', icon: '/assets/brand/providers/yandex.svg' },
+        { id: 'github', name: 'GitHub', icon: '/assets/brand/providers/github.png' }
     ] as const;
     readonly auth = inject(AuthService);
     private readonly route = inject(ActivatedRoute);
@@ -89,11 +95,36 @@ export class LoginPageComponent implements OnDestroy {
     readonly returnUrl = safeReturnUrl(this.route.snapshot.queryParamMap.get('returnUrl'));
     readonly busy = signal(false);
     readonly error = signal('');
+    readonly available = signal<FederatedProvider[]>([]);
+    readonly providerStatus = signal<'loading' | 'ready' | 'error'>('loading');
     email = '';
     username = '';
     login = '';
     password = '';
     private destroyed = false;
+
+    ngOnInit(): void { void this.loadProviders(); }
+
+    async loadProviders(): Promise<void> {
+        this.providerStatus.set('loading');
+        try {
+            const providers = await this.auth.availableProviders();
+            if (!this.destroyed) { this.available.set(providers); this.providerStatus.set('ready'); }
+        } catch {
+            if (!this.destroyed) { this.available.set([]); this.providerStatus.set('error'); }
+        }
+    }
+
+    async loginWithProvider(provider: FederatedProvider): Promise<void> {
+        if (this.busy() || !this.available().includes(provider)) return;
+        this.busy.set(true);
+        this.error.set('');
+        this.password = '';
+        try { await this.auth.beginFederatedLogin(provider, this.returnUrl); }
+        catch (error) {
+            if (!this.destroyed) { this.error.set(identityErrorMessage(error)); this.busy.set(false); }
+        }
+    }
 
     async submit(form: NgForm): Promise<void> {
         if (this.busy()) return;

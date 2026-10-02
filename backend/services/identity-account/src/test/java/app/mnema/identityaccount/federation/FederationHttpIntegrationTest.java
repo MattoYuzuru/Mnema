@@ -138,7 +138,7 @@ class FederationHttpIntegrationTest extends PostgresIntegrationTest {
                         .authorizationUri(endpoint("/" + provider + "/authorize"))
                         .tokenUri(endpoint("/" + provider + "/token")).userInfoUri(endpoint("/" + provider + "/user"))
                         .userNameAttributeName(provider.equals("google") ? "sub" : "id").scope(provider.equals(
-                                "google") ? new String[]{"openid", "email", "profile"} : provider.equals("yandex") ? new String[]{"login:email,login:info"} : new String[]{"read:user", "user:email"});
+                                "google") ? new String[]{"openid", "email", "profile"} : provider.equals("yandex") ? new String[]{"login:email", "login:info"} : new String[]{"read:user", "user:email"});
                 if (provider.equals("google"))
                     b.issuerUri("https://accounts.google.com").jwkSetUri(endpoint("/google/jwks"));
                 clients.add(b.build());
@@ -164,7 +164,12 @@ class FederationHttpIntegrationTest extends PostgresIntegrationTest {
     }
 
     Pending begin(String provider, String subject, String email, Cookie cookie) throws Exception {
+        return begin(provider, subject, email, cookie, null);
+    }
+
+    Pending begin(String provider, String subject, String email, Cookie cookie, String browserState) throws Exception {
         var request = get("/oauth2/authorization/" + provider).secure(true);
+        if (browserState != null) request.queryParam("mnema_state", browserState);
         if (cookie != null) request.cookie(cookie);
         var result = mvc.perform(request).andExpect(status().is3xxRedirection()).andReturn();
         var params = parameters(URI.create(result.getResponse().getRedirectedUrl()).getRawQuery());
@@ -220,7 +225,7 @@ class FederationHttpIntegrationTest extends PostgresIntegrationTest {
                         .contentType("application/json")
                         .content(json.writeValueAsString(Map.of("provider", "github", "proof", proof.token()))))
                 .andExpect(status().isOk());
-        assertThat(callback(pending).getResponse().getRedirectedUrl()).isEqualTo("https://mnema.app/auth/callback");
+        assertThat(callback(pending).getResponse().getRedirectedUrl()).isEqualTo("/login/continue");
         assertThat(jdbc.sql("SELECT count(*) FROM app_identity.external_identity WHERE account_id=:id")
                 .param("id", original).query(Long.class).single()).isEqualTo(1);
     }
@@ -232,7 +237,7 @@ class FederationHttpIntegrationTest extends PostgresIntegrationTest {
             String email = UUID.randomUUID() + "@example.test";
             var pending = begin(provider, subject, email, null);
             var result = callback(pending);
-            assertThat(result.getResponse().getRedirectedUrl()).isEqualTo("https://mnema.app/auth/callback");
+            assertThat(result.getResponse().getRedirectedUrl()).isEqualTo("/login/continue");
             Cookie cookie = result.getResponse().getCookie("SESSION");
             var session = mvc.perform(get("/api/accounts/session").secure(true).cookie(cookie))
                     .andExpect(status().isOk()).andExpect(jsonPath("$.hasPassword").value(false))
@@ -246,18 +251,61 @@ class FederationHttpIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void publicAvailabilityContainsOnlyProviderNames() throws Exception {
+        mvc.perform(get("/api/accounts/providers").secure(true)).andExpect(status().isOk())
+                .andExpect(content().json("{\"providers\":[\"google\",\"yandex\",\"github\"]}"));
+    }
+
+    @Test
+    void successfulProviderResponseEchoesOnlySessionBoundBrowserCorrelation() throws Exception {
+        for (String provider : List.of("google", "github", "yandex")) {
+            String state = "b".repeat(43);
+            var pending = begin(provider, UUID.randomUUID().toString(), UUID.randomUUID() + "@example.test", null, state);
+            var completed = callback(pending);
+            assertThat(completed.getResponse().getRedirectedUrl())
+                    .isEqualTo("https://mnema.app/auth/callback?federation_state=" + state);
+            mvc.perform(get("/api/accounts/session").secure(true).cookie(completed.getResponse().getCookie("SESSION")))
+                    .andExpect(status().isOk());
+            String verifier = "synthetic-browser-verifier-0123456789-abcdefghijklmnopqrstuvwxyz";
+            String challenge = Base64.getUrlEncoder().withoutPadding().encodeToString(
+                    java.security.MessageDigest.getInstance("SHA-256").digest(verifier.getBytes(StandardCharsets.US_ASCII)));
+            var authorized = mvc.perform(get("/oauth2/authorize").secure(true)
+                            .cookie(completed.getResponse().getCookie("SESSION"))
+                            .queryParam("response_type", "code").queryParam("client_id", "mnema-web")
+                            .queryParam("redirect_uri", "https://mnema.app/auth/callback")
+                            .queryParam("scope", "openid profile account.read account.write learning.read learning.write")
+                            .queryParam("state", "spa-state").queryParam("code_challenge", challenge)
+                            .queryParam("code_challenge_method", "S256"))
+                    .andExpect(status().is3xxRedirection()).andReturn();
+            var parameters = parameters(URI.create(authorized.getResponse().getRedirectedUrl()).getRawQuery());
+            assertThat(parameters).containsEntry("state", "spa-state").containsKey("code");
+            var exchanged = mvc.perform(post("/oauth2/token").param("grant_type", "authorization_code")
+                            .param("client_id", "mnema-web").param("redirect_uri", "https://mnema.app/auth/callback")
+                            .param("code", parameters.get("code")).param("code_verifier", verifier))
+                    .andExpect(status().isOk()).andReturn();
+            String bearer = "Bearer " + json.readTree(exchanged.getResponse().getContentAsString()).get("access_token").stringValue();
+            mvc.perform(get("/api/accounts/me").header("Authorization", bearer)).andExpect(status().isOk());
+            mvc.perform(get("/userinfo").header("Authorization", bearer)).andExpect(status().isOk());
+            assertThat(callback(pending).getResponse().getRedirectedUrl()).contains("error=federation_failed");
+        }
+        var malformed = begin("github", UUID.randomUUID().toString(), UUID.randomUUID() + "@example.test", null,
+                "https://foreign.example");
+        assertThat(callback(malformed).getResponse().getRedirectedUrl()).isEqualTo("/login/continue");
+    }
+
+    @Test
     void foreignStateAndProviderMixupCannotCreateAccount() throws Exception {
         var pending = begin("github", UUID.randomUUID().toString(), UUID.randomUUID() + "@example.test", null);
         long before = jdbc.sql("SELECT count(*) FROM app_identity.account").query(Long.class).single();
         mvc.perform(get("/login/oauth2/code/yandex").secure(true).cookie(pending.cookie())
                         .queryParam("state", pending.state()).queryParam("code", "synthetic-code"))
-                .andExpect(status().is3xxRedirection()).andExpect(redirectedUrl("/login?error=federation_failed"));
+                .andExpect(status().is3xxRedirection()).andExpect(redirectedUrl("https://mnema.app/auth/callback?error=federation_failed"));
         assertThat(jdbc.sql("SELECT count(*) FROM app_identity.account").query(Long.class).single()).isEqualTo(before);
         var wrong = begin("github", UUID.randomUUID().toString(), UUID.randomUUID() + "@example.test", null);
         mvc.perform(
                         get("/login/oauth2/code/github").secure(true).cookie(wrong.cookie()).queryParam("state", "wrong-state")
                                 .queryParam("code", "synthetic-code")).andExpect(status().is3xxRedirection())
-                .andExpect(redirectedUrl("/login?error=federation_failed"));
+                .andExpect(redirectedUrl("https://mnema.app/auth/callback?error=federation_failed"));
     }
 
     @Test
@@ -278,7 +326,7 @@ class FederationHttpIntegrationTest extends PostgresIntegrationTest {
                 .andExpect(status().isOk());
         var linked = callback(
                 begin("github", UUID.randomUUID().toString(), UUID.randomUUID() + "@example.test", cookie));
-        assertThat(linked.getResponse().getRedirectedUrl()).isEqualTo("https://mnema.app/auth/callback");
+        assertThat(linked.getResponse().getRedirectedUrl()).isEqualTo("https://mnema.app/profile");
         mvc.perform(get("/api/accounts/me/identities").secure(true).cookie(linked.getResponse().getCookie("SESSION")))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(2))
                 .andExpect(jsonPath("$[0].providerSubject").doesNotExist());

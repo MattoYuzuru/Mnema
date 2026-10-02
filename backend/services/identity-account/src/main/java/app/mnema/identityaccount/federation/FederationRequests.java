@@ -41,6 +41,12 @@ public final class FederationRequests implements AuthorizationRequestRepository<
             if (intent != null)
                 value = OAuth2AuthorizationRequest.from(value)
                         .attributes(attributes -> attributes.put("identity.intent", intent)).build();
+            else {
+                String[] states = request.getParameterValues("mnema_state");
+                if (states != null && states.length == 1 && states[0].matches("[A-Za-z0-9_-]{43}"))
+                    value = OAuth2AuthorizationRequest.from(value)
+                            .attributes(attributes -> attributes.put("identity.login-state", states[0])).build();
+            }
         }
         delegate.saveAuthorizationRequest(value, request, response);
         if (value != null)
@@ -53,7 +59,10 @@ public final class FederationRequests implements AuthorizationRequestRepository<
                                                                  HttpServletResponse response) {
         var value = loadAuthorizationRequest(request);
         delegate.removeAuthorizationRequest(request, response);
-        if (value != null) request.setAttribute("identity.intent", value.getAttribute("identity.intent"));
+        if (value != null) {
+            request.setAttribute("identity.intent", value.getAttribute("identity.intent"));
+            request.setAttribute("identity.login-state", value.getAttribute("identity.login-state"));
+        }
         var session = request.getSession(false);
         if (session != null) session.removeAttribute("identity.oauth-expiry");
         return value;
