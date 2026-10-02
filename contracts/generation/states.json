@@ -37,11 +37,11 @@
       },
       "REVIEW": {
         "terminal": false,
-        "description": "No artifact is QUEUED or GENERATING and at least one is PROPOSED, REVISING or STALE; the user reviews, edits and approves."
+        "description": "No artifact is QUEUED or GENERATING and at least one is PROPOSED, REVISING, STALE or a retryable FAILED (errorCode other than REFUSAL); the user reviews, edits, approves and retries. FAILED artifacts keep the session here so a retry or undo stays possible."
       },
       "CLOSED": {
         "terminal": true,
-        "description": "No artifact is PROPOSED, REVISING, STALE, QUEUED or GENERATING: the rest is PUBLISHED, HANDED_OFF, REJECTED or FAILED. Terminal; the client offers to archive used notes (N). REJECTED and FAILED leftovers do not keep a session open."
+        "description": "No artifact is PROPOSED, REVISING, STALE, QUEUED, GENERATING or retryable FAILED: the rest is PUBLISHED, HANDED_OFF, REJECTED or FAILED with errorCode REFUSAL (not retryable). Terminal; the client offers to archive used notes (N). REJECTED and REFUSAL leftovers do not keep a session open."
       },
       "CANCELLED": {
         "terminal": false,
@@ -127,11 +127,12 @@
       {
         "from": "RUNNING",
         "to": "REVIEW",
-        "trigger": "no artifact is QUEUED or GENERATING and at least one is PROPOSED, REVISING or STALE",
+        "trigger": "no artifact is QUEUED or GENERATING and at least one is PROPOSED, REVISING, STALE or retryable FAILED",
         "actor": "SERVER",
         "emits": [
           "SESSION_STATE"
-        ]
+        ],
+        "note": "The initial batch reservation is released at this moment (SETTLED or RELEASED)."
       },
       {
         "from": "REVIEW",
@@ -145,12 +146,12 @@
       {
         "from": "RUNNING",
         "to": "CLOSED",
-        "trigger": "no artifact is QUEUED or GENERATING and none is PROPOSED, REVISING or STALE",
+        "trigger": "no artifact is QUEUED or GENERATING and none is PROPOSED, REVISING, STALE or retryable FAILED",
         "actor": "SERVER",
         "emits": [
           "SESSION_STATE"
         ],
-        "note": "Reached when every finished artifact failed or was rejected; evaluated at the same moment as RUNNING to REVIEW."
+        "note": "Reached when every finished artifact was rejected, published, handed off or refused (FAILED with REFUSAL); evaluated at the same moment as RUNNING to REVIEW."
       },
       {
         "from": "RUNNING",
@@ -175,7 +176,7 @@
       {
         "from": "REVIEW",
         "to": "CLOSED",
-        "trigger": "no artifact is PROPOSED, REVISING or STALE (after approval, hand-off, rejection or a failed leftover)",
+        "trigger": "no artifact is PROPOSED, REVISING, STALE or retryable FAILED (after approval, hand-off or rejection)",
         "actor": "SERVER",
         "guard": "evaluated after every artifact transition",
         "emits": [
@@ -234,11 +235,12 @@
         "RUNNING",
         "REVIEW"
       ],
+      "activeCounting": "The 3-session limit counts PLANNING, PLAN_READY, RUNNING and REVIEW sessions that still have a PROPOSED, REVISING or STALE artifact. A REVIEW session that holds only FAILED or REJECTED leftovers does NOT count (its batch reservation is already released at REVIEW entry). listActiveSessions still lists every REVIEW session, because the user can retry there.",
       "maxArtifactsPerSession": {
         "MATERIALS": 20,
         "EXERCISES": 60
       },
-      "note": "Only PLANNING, PLAN_READY, RUNNING and REVIEW count toward the active-session limit. The 60 for EXERCISES is owner decision 2026-10-02 (see README); the architecture says 20 per session."
+      "note": "See activeCounting for what counts toward the active-session limit. The 60 for EXERCISES is owner decision 2026-10-02 (see README); the architecture says 20 per session."
     },
     "versioning": "session rowVersion bumps on every row change (state, pointers, last activity). It is exposed as ETag for reads; no session command uses it as a precondition.",
     "allowedOperations": {

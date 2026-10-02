@@ -78,12 +78,14 @@ by the owning task with a note here.
 2. **Edit actions** gain `REMOVE_MEDIA` (deterministic, free, answers 202 like every edit, creates a revision, does not count toward the
    50 turns) because approval requires slots to be `READY` or "explicitly removed" and no other way to remove exists; edits take an
    optional `preset` valid only with `REWRITE`.
-3. **Session `CLOSED`** = no artifact is `PROPOSED`, `REVISING`, `STALE`, `QUEUED` or `GENERATING`; `REJECTED` and `FAILED` leftovers do not
-   keep it open (a session whose artifacts all failed closes at once, so retry and undo are possible only while it is not `CLOSED`).
-   **`CANCELLED`** keeps `PROPOSED` artifacts approvable, rejectable, hand-off-able and strippable of media (`REMOVE_MEDIA` only), and
-   becomes `CLOSED` when none of them remains; `endReason` is `USER_CANCELLED`, `PLAN_FAILED` or `EXPIRED`. A failed `PLAN` step cancels the
-   session. Cancel and delete need no `If-Match` (state-idempotent). Purge: the retention worker deletes the rows at
-   `last activity + P30D`; `EXPIRED` is readable until then; after the purge every read is a 404.
+3. **Session `CLOSED`** = no artifact is `PROPOSED`, `REVISING`, `STALE`, `QUEUED`, `GENERATING` or retryable `FAILED`. `FAILED` artifacts keep
+   the session in `REVIEW`, so retry and undo stay possible; only `REJECTED` and `FAILED` with errorCode `REFUSAL` (not retryable) do not
+   keep it open. The 3-active-sessions limit counts `PLANNING`, `PLAN_READY`, `RUNNING` and `REVIEW` sessions that still have a `PROPOSED`,
+   `REVISING` or `STALE` artifact; a `REVIEW` session holding only `FAILED` or `REJECTED` leftovers does not count (its batch reservation is
+   already released at `REVIEW` entry). **`CANCELLED`** keeps `PROPOSED` artifacts approvable, rejectable, hand-off-able and strippable of
+   media (`REMOVE_MEDIA` only), and becomes `CLOSED` when none of them remains; `endReason` is `USER_CANCELLED`, `PLAN_FAILED` or `EXPIRED`. A
+   failed `PLAN` step cancels the session. Cancel and delete need no `If-Match` (state-idempotent). Purge: the retention worker deletes the
+   rows at `last activity + P30D`; `EXPIRED` is readable until then; after the purge every read is a 404.
 4. **STALE** artifacts: reject, hand off (edit the stale proposal yourself) or retry (regenerate against the new source revision);
    there is no "keep anyway" approve (`409 SOURCE_STALE`). Staleness is evaluated by the worker or re-pin job and by approve in its own
    short transaction before the publish transaction, never by a GET.
@@ -136,8 +138,6 @@ Resolved in favour of the architecture document unless stated. These are recorde
 
 - Whether `GET /api/capabilities` should add per-capability usage hints.
 - Media assets of a rewritten media block: kept or replaced when the slot spec is unchanged (AI-09, AI-10).
-- Whether a session that closes because every artifact failed should instead stay in `REVIEW` to allow a retry (current contract:
-  it closes; the user starts a new session or uses `retry` only while another artifact keeps it open).
 
 ## Verification
 

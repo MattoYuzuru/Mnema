@@ -100,7 +100,7 @@ Manifest и GC contracts описаны в
 | `learning.generation.session-retention` | Мастерская: жизнь сессии от последней активности; **contract only — implemented by AI-05 (#288)** | Duration; `P30D`; диапазон — AI-05 |
 | `learning.generation.session-expiry-warning` | Уведомление `GENERATION_SESSION_EXPIRING` до `expires_at`; **contract only — AI-05 (#288)** | Duration; `P3D`; диапазон — AI-05 |
 | `learning.generation.event-retention-after-close` | Хранение `generation_event` после закрытия сессии; **contract only — AI-04 (#287)** | Duration; `P1D`; диапазон — AI-04 |
-| `learning.generation.max-active-sessions-per-account` | Admission: активные сессии владельца (`RESOURCE_LIMIT_EXCEEDED`); **contract only — AI-04 (#287)** | Count; `3`; диапазон — AI-04 |
+| `learning.generation.max-active-sessions-per-account` | Admission: активные сессии владельца (PLANNING, PLAN_READY, RUNNING и REVIEW с PROPOSED/REVISING/STALE; `RESOURCE_LIMIT_EXCEEDED`); **contract only — AI-04 (#287)** | Count; `3`; диапазон — AI-04 |
 | `learning.generation.max-artifacts-per-session` | Admission: артефакты сессии `MATERIALS`; **contract only — AI-04 (#287)** | Count; `20`; диапазон — AI-04 |
 | `learning.generation.max-exercise-targets` / `max-exercises-per-target` / `max-exercises-per-session` | Сессия `EXERCISES`: материалы, упражнения на материал и на сессию; выше — `422` без усечения; решение владельца 2026-10-02; **contract only — AI-13 (#291)** | Count; `20` / `10` / `60`; диапазон — AI-13 |
 | `learning.generation.max-bulk-approval` | Артефактов в одной bulk-публикации; **contract only — AI-05 (#288)** | Count; `20`; диапазон — AI-05 |

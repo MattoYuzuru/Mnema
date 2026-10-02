@@ -104,7 +104,7 @@
       "title": "Resource limit exceeded",
       "detail": "The account or resource limit would be exceeded.",
       "origin": "existing",
-      "when": "More than 3 active sessions, more than 20 artifacts (MATERIALS) or 60 exercises (EXERCISES) in a session, more than 20 exercise targets or 10 exercises per target, EditingDraft quota on hand-off, more than 50 turns or 30 revisions on one artifact. No silent clamp.",
+      "when": "More than 3 active sessions (PLANNING, PLAN_READY, RUNNING, and REVIEW with a PROPOSED, REVISING or STALE artifact), more than 20 artifacts (MATERIALS) or 60 exercises (EXERCISES) in a session, more than 20 exercise targets or 10 exercises per target, EditingDraft quota on hand-off, more than 50 turns or 30 revisions on one artifact. No silent clamp.",
       "endpoints": [
         "createSession",
         "editArtifact",

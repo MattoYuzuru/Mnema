@@ -163,7 +163,7 @@
         {
           "status": 422,
           "code": "RESOURCE_LIMIT_EXCEEDED",
-          "when": "More than 3 active sessions (the problem lists activeSessionIds), too many artifacts, targets or exercises.",
+          "when": "More than 3 active sessions (PLANNING, PLAN_READY, RUNNING, and REVIEW with a PROPOSED, REVISING or STALE artifact; the problem lists activeSessionIds), too many artifacts, targets or exercises.",
           "limit": "ACTIVE_SESSIONS | ARTIFACTS_PER_SESSION | EXERCISE_TARGETS | EXERCISES_PER_TARGET | EXERCISES_PER_SESSION",
           "activeSessionIds": "uuids, only for ACTIVE_SESSIONS"
         }
@@ -215,7 +215,7 @@
       "path": "/api/generation-sessions",
       "summary": "Sessions of the account across decks: the 'active sessions' entry point of the Workshop.",
       "query": {
-        "state": "active (only value in v1): PLANNING, PLAN_READY, RUNNING, REVIEW",
+        "state": "active (only value in v1): PLANNING, PLAN_READY, RUNNING, REVIEW (every REVIEW session, also one that holds only FAILED leftovers and does not count toward the 3-session limit)",
         "limit": "1..100, default 20",
         "cursor": "opaque"
       },
