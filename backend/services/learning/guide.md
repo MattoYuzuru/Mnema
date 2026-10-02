@@ -417,7 +417,8 @@ and the UI (AI-04+) build on it; nothing here debits the user's quota, it only r
   against the live service) and `precached_prompt_tokens`. OpenRouter: config and adapter only, no default route.
 - **Routing and failure policy** (`RoutedTextGeneration`). 429: wait `max(Retry-After, jitter)` and retry up to six
   times, never past the deadline (a longer `Retry-After` is handed back as `RATE_LIMITED`); 5xx, network and idle/connect
-  timeouts: up to three tries, then the next route entry; invalid output: one repair on the same entry (the cacheable
+  timeouts (response headers must arrive within `learning.ai.transport.first-byte`, so a silent provider times out with deadline
+  left): up to three tries, then the next route entry; invalid output: one repair on the same entry (the cacheable
   prefix is untouched), then the escalation route (`text-fast` to `text-strong`), then `INVALID_OUTPUT`; refusal,
   rejected credentials and a passed deadline: no retry, no fallback. Circuit breaker per `(provider, capability)`: five
   consecutive transport failures inside 60 s open it for 30 s, then one probe (`CircuitBreaker`, `Clock`-driven; a
@@ -436,7 +437,8 @@ and the UI (AI-04+) build on it; nothing here debits the user's quota, it only r
   its flag and an adapter exist; `aiGeneration` needs a usable key on the `text-fast` route and the user-key secret, or the
   Stub. `TEMPORARILY_UNAVAILABLE` is an open circuit on every route entry or a spent daily budget and clears by itself.
   The capability problem members (`capability`, `reason`) arrive with the typed `ProblemExtension` of the usage/deck-hub work.
-- **Stub.** `learning.ai.provider=stub` (local and CI): the answer is a pure function of the request, MBM output is one of
+- **Stub.** `learning.ai.provider=stub` (local and CI; the only way to register it, with a startup WARN; a `stub` route entry is a
+  startup error): the answer is a pure function of the request, MBM output is one of
   five documents copied from the MBM valid fixtures (a test keeps them byte-equal to the contract and compiling), and the
   markers `[[stub:rate-limit]]`, `[[stub:transient]]`, `[[stub:timeout]]`, `[[stub:refusal]]`, `[[stub:invalid]]` and
   `[[stub:invalid-mbm]]` simulate failures; the two `invalid` markers stop applying once a repair segment is present.
@@ -447,7 +449,9 @@ and the UI (AI-04+) build on it; nothing here debits the user's quota, it only r
   hard `PromptException`. `PromptAssembler` orders segments for the provider's prefix cache (core, style, five skills,
   deck brief cacheable; the task section volatile) and enforces per-section and 32k input ceilings with
   `TokenCounter`, an estimate (about 3.5 characters per token for Latin, 2.2 for Cyrillic, one per CJK character).
-  `UserKeys` makes `HMAC-SHA256(accountId)` with a key id from `learning.ai.user-key.secret`.
+  `UserKeys` makes `HMAC-SHA256(accountId)` with a key id from `learning.ai.user-key.secret` as an `OpaqueUserKey`, the only type
+  `TextRequest` accepts. Block values are `PromptBlock`s, which only `PromptBlocks` makes (it redacts and escapes), and one text
+  value may not exceed 64 KiB. `toString()` of requests, responses, keys and provider settings never prints text or secrets.
 - **Opt-in eval and live tests** (`AiEvalRunner`, `LiveProviderTest`, skipped without `MNEMA_AI_EVAL` / `MNEMA_AI_LIVE`) are
   documented in [selfhost-local](../../../docs/deploy/selfhost-local.md#ai-provider-layer-local).
 - Keys are listed in the [runtime policy index](../../../docs/engineering/runtime-policy-index.md).
