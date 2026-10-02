@@ -374,6 +374,16 @@ describe('NativeEditorComponent', () => {
             expect(view.state.selection).toBeInstanceOf(NodeSelection);
             expect((view.state.selection as NodeSelection).node.type.name).toBe('code_block');
             expect(host.querySelector('.mnema-code-node p.mnema-code-hint')?.textContent).toContain('Esc');
+
+            // After Esc, Tab keeps its normal meaning (no keyboard trap) until the author types in the block again.
+            const leave = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+            textarea.dispatchEvent(leave);
+            expect(leave.defaultPrevented).toBe(false);
+            expect(textarea.value).toBe('a\tb');
+            textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'x', bubbles: true, cancelable: true }));
+            const insertAgain = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+            textarea.dispatchEvent(insertAgain);
+            expect(insertAgain.defaultPrevented).toBe(true);
         });
 
         it('keeps an invalid language out of the document and flags the field', () => {

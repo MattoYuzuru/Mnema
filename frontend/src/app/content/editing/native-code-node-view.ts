@@ -5,14 +5,21 @@ import { EditorView, NodeView } from 'prosemirror-view';
 import { CODE_BLOCK_MAX_LANGUAGE, CODE_BLOCK_MAX_SOURCE, isCodeBlockLanguage } from '../rendering/native-render-state';
 
 let instances = 0;
+/**
+ * Set by Esc, cleared by the next key typed in any code textarea. While it is set, Tab keeps its normal meaning (move focus)
+ * so that a keyboard user can leave a code block, and the next ones, forward: without it the textarea would swallow every Tab.
+ * Shared by all code blocks because the Tab order passes through each of them in turn.
+ */
+let tabMovesFocus = false;
 
 /**
  * Edits a native `code_block` in place: a language field and a plain `<textarea>`, so tabs, line breaks and trailing
  * spaces are exactly what the author typed. The node stays one atom of the document; nothing is executed or highlighted.
  *
  * Keyboard: Tab inserts a tab character (code needs indentation), Shift+Tab moves to the previous field, and Escape
- * leaves the block: it selects the block in the document and returns focus to the editor, so Tab/arrow keys continue
- * from there. The hint under the field says so; the textarea is never a keyboard trap.
+ * leaves the block: it selects the block in the document and returns focus to the editor, and from then on Tab moves
+ * focus forward again until the author types in a code block (see `tabMovesFocus`). The hint under the field says so;
+ * the textarea is never a keyboard trap.
  */
 export class NativeCodeNodeView implements NodeView {
     readonly dom: HTMLElement;
@@ -63,7 +70,7 @@ export class NativeCodeNodeView implements NodeView {
         const hint = document.createElement('p');
         hint.id = `${id}-hint`;
         hint.className = 'mnema-code-hint';
-        hint.textContent = 'Tab вставляет отступ. Esc выходит из блока кода, Shift+Tab переходит к полю языка.';
+        hint.textContent = 'Tab вставляет отступ. Esc выходит из блока кода: после него Tab переходит к следующему элементу. Shift+Tab возвращает к полю языка.';
 
         this.dom.append(languageLabel, languageHint, sourceLabel, hint);
         this.syncValues(true);
@@ -122,6 +129,7 @@ export class NativeCodeNodeView implements NodeView {
     private keydown(event: KeyboardEvent): void {
         if (event.isComposing || event.key === 'Process') return;
         if (event.key === 'Tab' && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
+            if (tabMovesFocus) return;
             event.preventDefault();
             const { selectionStart, selectionEnd } = this.source;
             if (this.source.value.length - (selectionEnd - selectionStart) < CODE_BLOCK_MAX_SOURCE) {
@@ -130,7 +138,10 @@ export class NativeCodeNodeView implements NodeView {
             }
         } else if (event.key === 'Escape') {
             event.preventDefault();
+            tabMovesFocus = true;
             this.leave();
+        } else if (!['Tab', 'Shift', 'Control', 'Alt', 'Meta'].includes(event.key)) {
+            tabMovesFocus = false;
         }
     }
 
