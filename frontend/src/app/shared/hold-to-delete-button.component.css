@@ -1,4 +1,4 @@
-:host { display: inline-flex; min-inline-size: 0; }
+:host { display: inline-flex; flex-direction: column; gap: .35rem; min-inline-size: 0; }
 .hold-button { display: grid; align-items: center; justify-items: center; inline-size: 100%; position: relative; isolation: isolate; overflow: hidden; min-block-size: var(--mn-touch-min, 2.75rem); border: 1px solid var(--mn-rule); border-radius: var(--mn-radius, 2px); padding: .7rem 1rem; background: transparent; color: var(--mn-muted); font: 700 .9rem/1.2 var(--mn-font-body, system-ui, sans-serif); cursor: pointer; touch-action: manipulation; transition: border-color .24s ease, color .24s ease; }
 .hold-button[aria-pressed='true'] { border-color: var(--mn-danger); color: var(--mn-danger); }
 .hold-button.holding { color: var(--mn-danger); }
@@ -6,6 +6,7 @@
 .hold-button:focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 3px; }
 .hold-wave { position: absolute; z-index: -1; inset: 0; background: color-mix(in srgb, var(--mn-danger) 18%, var(--mn-sheet)); clip-path: circle(var(--hold-size, 0px) at var(--hold-x, 50%) var(--hold-y, 50%)); transition: clip-path .04s linear; pointer-events: none; }
 .hold-label, .label-reserve { position: relative; grid-area: 1 / 1; }
+.consequence { inline-size: 0; min-inline-size: 100%; color: var(--mn-danger); font: 600 .85rem/1.4 var(--mn-font-body, system-ui, sans-serif); overflow-wrap: anywhere; }
 .label-reserve { visibility: hidden; pointer-events: none; }
 @media (prefers-reduced-motion: reduce) { .hold-button { transition: none; } .hold-wave { display: none; } .hold-button.holding { color: var(--mn-danger); } }
 @media (forced-colors: active) { .hold-button { border-color: CanvasText; } .hold-wave { background: Highlight; } }

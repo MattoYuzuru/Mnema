@@ -113,12 +113,40 @@ panel is closed with a click and reopened), so the dismissal stage closes by cli
 runs on a freshly opened panel. A failing stage writes `failure-notifications-<stage>.png` and `.txt` (harness labels and
 CDP method names only).
 
+### Deck hub (`--authoring --media --mechanics`)
+
+`hub.mjs` runs after the mechanics baseline on the same signed-in tab and records one result,
+`hub_overview_sort_star_select_delete` (`state: "failed"` with `reason`, `completed` facts and `failure-hub_*.png` on a
+broken step; a failed hub step fails the run like a failed mechanics step). The Deck page `/decks/:id` is the hub: it lists the
+materials (there is no `/decks/:id/materials` list route) and keeps the metadata form behind «Изменить», which the own-deck
+scenarios above and `mechanics_hold_to_delete_geometry` open first. The scenario adds two materials without exercises and one
+disposable material with a single exercise through the real editor (the exercise through the authenticated API, like the Study
+fixture), then checks:
+
+| Stage | Assertions |
+|---|---|
+| statistics | five `<figure>`s drawn when scrolled into view (`@defer (on viewport)`), each `svg[role=img]` named by its `<figcaption>`; every figure has a `<details>` with a real table opened by a real click; all five tables carry exactly the numbers of `GET /api/decks/{id}/insights`; coverage shows materials without exercises; no vanity metric; each widget ends in an action |
+| responsive | `hub-1440.png`, `hub-390.png`, `hub-320-at-200-percent.png` (320 CSS px at DPR 2), the document never overflows horizontally at 390 and 320 |
+| sort | the radio group is changed with a real ArrowRight; materials without exercises come first, every row keeps its true ordinal (`2,3,4,1`), the order equals the API's `sort=exerciseCount` order |
+| «Эталон» | the star is toggled with a real Space press (`aria-pressed`, name «Эталон: <title>»), the server stores it, it survives a reload, and the budget note shows «1 из 10» |
+| selection | checkbox + Shift+click range, tri-state «Выбрать все» (mixed, checked, cleared), the `role="region"` bulk bar with the count, sticky and inside the viewport, its height reserved as `--mn-bulk-bar-height`, **no «ИИ» button while the capability is off**, real Esc clears the selection (`hub-selection-1440.png`, `hub-selection-390.png`) |
+| hold-to-delete | the disposable material is selected, the first Space only arms the button and shows the consequence text «Удалит 1 материал и 1 упражнение…» (equal to the server preview), a second Space is held until the deletion happens (the material is still there after 1.5 s and the hold lasted at least 3 s), then the list, the total, the statistics and the API all show it gone (`hub-hold-to-delete-1440.png`) |
+| focus and motion | a real Tab reaches a row link and `.item-row:has(.row-link:focus-visible)` matches (`hub-row-focus-1440.png`); under `prefers-reduced-motion` smooth scrolling and the hold wave are off (`hub-reduced-motion-1440.png`) |
+
+The scenario clears its last selection with the «Снять выбор» button and then checks that the page still answers: an Esc sent at
+that point, after the reduced-motion emulation was reset, hung the headless renderer (shared by both tabs) in repeated runs, the same
+family as the notifications note above, so Esc is exercised earlier in the scenario only. If the page ever stops answering, the
+scenario fails and names where the main thread is stuck.
+
+Honest limits: Chrome only; no touch input, screen reader or Safari/Firefox; the AI button is checked absent, not present;
+partial (`PARTIAL`) bulk results need a concurrent foreign publication and are covered by the component and backend tests, not here.
+
 Use `--chrome` for another existing Chrome executable. The page contract defaults to
 `[data-testid="identity-profile"]`, `[data-testid="logout"]`, and `[role="alert"]`;
 matching CLI selector options are available. Registration uses `#email`, `#username`,
 `#password` (also `#login-name` if present); login uses `#login-name`, `#password`.
 After the successful callback returns to `/decks`, the harness exercises the canonical
-own-deck list, create, detail, metadata-save and conflict UI against the real Learning API,
+own-deck list, create, hub (metadata form behind «Изменить»), metadata-save and conflict UI against the real Learning API,
 then opens `/login` when it needs the profile/logout controls.
 
 ## Assertions and envelope

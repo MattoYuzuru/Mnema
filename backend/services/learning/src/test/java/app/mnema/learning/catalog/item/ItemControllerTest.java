@@ -85,7 +85,7 @@ class ItemControllerTest {
         ObjectNode page = JSON.createObjectNode().put("deckId", deck.toString())
                 .put("deckRevisionId", deckRevision.toString()).put("deckVersion", "2").put("total", 0);
         page.putArray("items"); page.putNull("nextCursor");
-        when(service.list(actor, deck, "20", "cursor")).thenReturn(page);
+        when(service.list(actor, deck, "20", "cursor", null, null)).thenReturn(page);
         mvc.perform(get("/decks/" + deck + "/items").param("limit", "20").param("cursor", "cursor"))
                 .andExpect(status().isOk()).andExpect(header().string("ETag", "\"2\""));
         ObjectNode detail = JSON.createObjectNode().put("deckVersion", "2").put("memberKey", member.toString());

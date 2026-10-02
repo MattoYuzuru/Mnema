@@ -13,10 +13,13 @@
       <button class="button secondary" type="button" (click)="store.retryDetail()">Повторить запрос</button>
     </section>
   } @else if (detail.deck; as deck) {
-    <header class="page-heading">
+    <header class="page-heading hub-heading">
       <div>
         <p class="eyebrow">Личная колода</p>
         <h1 id="deck-detail-title" tabindex="-1">{{ deck.metadata.title }}</h1>
+        @if (deck.metadata.description.trim()) {
+          <div class="hub-description"><app-deck-description [text]="deck.metadata.description" /></div>
+        }
         <p class="lede">Обновлено <time [attr.datetime]="deck.updatedAt">{{ deck.updatedAt | date:'dd.MM.y, HH:mm' }}</time></p>
       </div>
     </header>
@@ -66,13 +69,16 @@
       </section>
     }
 
-    <nav class="actions" aria-label="Материалы колоды">
+    <nav class="actions hub-actions" aria-label="Действия с колодой">
       <a class="button primary" [routerLink]="['/decks', deck.deckId, 'study']">Учить</a>
-      <a class="button secondary" [routerLink]="['/decks', deck.deckId, 'materials']">Просмотреть материалы</a>
+      <a class="button secondary" [routerLink]="['/decks', deck.deckId, 'materials', 'new']">Добавить материал</a>
       <a class="button secondary capture-link" [routerLink]="['/decks', deck.deckId, 'capture']" [attr.aria-label]="captureCount() ? 'На потом, заметок: ' + captureCount() : 'На потом'">На потом@if (captureCount(); as count) { <span class="capture-badge" aria-hidden="true">{{ count > 999 ? '999+' : count }}</span> }</a>
-      <a class="button secondary" [routerLink]="['/decks', deck.deckId, 'materials', 'new']">Новый материал</a>
+      <button class="button secondary" type="button" #editButton [attr.aria-controls]="editing() ? 'deck-editor' : null" [attr.aria-expanded]="editing()" (click)="toggleEditor()">Изменить</button>
     </nav>
 
+    @if (editing()) {
+    <section id="deck-editor" class="editor-panel" aria-labelledby="deck-editor-title" (keydown.escape)="closeEditor()">
+      <h2 id="deck-editor-title">Изменить колоду</h2>
     <form class="metadata-form" [formGroup]="form" (ngSubmit)="save(deck)" novalidate>
       <div class="field">
         <label for="detail-title">Название <span aria-hidden="true">*</span></label>
@@ -120,6 +126,7 @@
         <span class="draft-state" aria-live="polite">{{ form.dirty ? 'Есть несохранённые изменения' : 'Нет локальных изменений' }}</span>
         <div class="actions">
           <app-hold-to-delete-button label="Удалить колоду" [disabled]="deleting() || !canDelete(mutation)" (confirmed)="deleteDeck(deck)" />
+          <button class="button secondary" type="button" (click)="closeEditor()">Закрыть</button>
           <button class="button primary" type="submit"
             [disabled]="!canStartNewMutation(mutation)">
             {{ mutation.phase === 'pending' ? 'Отправляем…' : 'Сохранить изменения' }}
@@ -128,7 +135,10 @@
       </div>
       @if (deleteError(); as message) { <p class="field-error" role="alert">{{ message }}</p> }
     </form>
+    </section>
+    }
 
-
+    <app-deck-insights [deckId]="deck.deckId" [state]="insights()" (retry)="loadInsights()" (showMissing)="showMaterialsWithoutExercises()" />
+    <app-deck-materials [deckId]="deck.deckId" [generationAvailable]="generationAvailable()" (changed)="loadInsights()" />
   }
 </section>

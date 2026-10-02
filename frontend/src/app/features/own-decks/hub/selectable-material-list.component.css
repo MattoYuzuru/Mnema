@@ -1,0 +1,65 @@
+:host { display: block; min-inline-size: 0; color: var(--mn-body); font-family: var(--mn-font-body, system-ui, sans-serif); }
+* { box-sizing: border-box; }
+
+.list-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .25rem 1.5rem; border-block-start: 1px solid var(--mn-ink); padding-block-start: .25rem; }
+.select-all, .check { display: inline-flex; align-items: center; gap: .6rem; min-block-size: var(--mn-touch-min, 2.75rem); cursor: pointer; }
+.select-all { font-weight: 600; }
+:is(.select-all, .check) input { inline-size: 1.25rem; block-size: 1.25rem; margin: 0; accent-color: var(--mn-ink); cursor: pointer; }
+.check { position: relative; z-index: 1; justify-content: center; inline-size: var(--mn-touch-min, 2.75rem); }
+.budget { margin: 0; color: var(--mn-muted); font-size: .85rem; }
+.escalate { margin: 0; padding: .35rem 0 .65rem; font-size: .92rem; }
+
+.item-list { display: grid; margin: 0; padding: 0; list-style: none; }
+
+/* The wave and its isolation come from the global row rule; overflow stays visible so focus rings are not clipped. */
+.item-row {
+    position: relative;
+    display: grid;
+    grid-template-columns: var(--mn-touch-min, 2.75rem) 2.25rem minmax(0, 1fr) var(--mn-touch-min, 2.75rem) auto;
+    gap: .25rem .75rem;
+    align-items: center;
+    min-block-size: 4.5rem;
+    border-block-start: 1px solid var(--mn-rule);
+    border-inline-start: 3px solid transparent;
+    padding: .5rem .75rem .5rem 0;
+    overflow: visible;
+    --mn-wave-fill: var(--mn-soft);
+}
+.item-row.selected { border-inline-start-color: var(--mn-ink); background: color-mix(in srgb, var(--mn-soft) 55%, transparent); }
+.item-row:has(.row-link:focus-visible) { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: -3px; }
+.folio { color: var(--mn-ink); font: 1.6rem/1 var(--mn-font-display, Georgia, serif); text-align: end; }
+.copy { display: grid; gap: .15rem; min-inline-size: 0; }
+.row-link { min-inline-size: 0; overflow: hidden; color: var(--mn-ink); font-weight: 600; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
+/* Stretched link: the whole row opens the material; the checkbox and star sit above it. */
+.row-link::after { content: ''; position: absolute; inset: 0; }
+.row-link:focus-visible { outline: none; }
+.item-row:hover .row-link { text-decoration: underline; text-underline-offset: .2em; }
+.count { color: var(--mn-muted); font-size: .85rem; }
+.count.missing { display: inline-flex; align-items: center; gap: .35rem; color: var(--mn-caution); font-weight: 600; }
+.date { color: var(--mn-muted); font-size: .8rem; white-space: nowrap; }
+
+.star { position: relative; z-index: 1; display: inline-flex; align-items: center; justify-content: center; inline-size: var(--mn-touch-min, 2.75rem); block-size: var(--mn-touch-min, 2.75rem); border: 0; padding: 0; color: var(--mn-ink); background: transparent; cursor: pointer; }
+.star[aria-disabled='true'] { color: var(--mn-muted); cursor: not-allowed; }
+.star[aria-busy='true'] { cursor: progress; }
+:is(.star, .select-all input, .check input, .text-action, .button):focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 2px; }
+
+.text-action { display: inline-flex; align-items: center; min-block-size: var(--mn-touch-min, 2.75rem); border: 0; padding: 0; color: var(--mn-ink); background: transparent; font: 700 .92rem/1.25 var(--mn-font-body, system-ui, sans-serif); text-decoration: underline; text-underline-offset: .22em; cursor: pointer; }
+.more { display: grid; justify-items: start; gap: .5rem; padding-block: 1rem; border-block-start: 1px solid var(--mn-rule); }
+.button { min-block-size: var(--mn-touch-min, 2.75rem); border: 1px solid var(--mn-ink); border-radius: var(--mn-radius, 2px); padding: .5rem 1.1rem; color: var(--mn-ink); background: transparent; font: 600 .95rem/1.2 var(--mn-font-body, system-ui, sans-serif); cursor: pointer; }
+.button:disabled { cursor: progress; opacity: .65; }
+.problem { margin: 0; color: var(--mn-danger); font-size: .9rem; }
+
+@media (max-width: 42rem) {
+    .item-row { grid-template-columns: var(--mn-touch-min, 2.75rem) minmax(0, 1fr) var(--mn-touch-min, 2.75rem); }
+    .folio { display: none; }
+    .date { grid-column: 2 / -1; }
+}
+
+@media (forced-colors: active) {
+    .item-row { border-color: CanvasText; }
+    .item-row.selected { border-inline-start-color: Highlight; }
+    .item-row:has(.row-link:focus-visible) { outline-color: Highlight; }
+    .star[aria-disabled='true'] { color: GrayText; }
+    .count.missing { color: CanvasText; }
+    :is(.star, .select-all input, .check input, .text-action, .button):focus-visible { outline-color: Highlight; }
+}

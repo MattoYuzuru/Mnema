@@ -99,6 +99,21 @@ public final class ItemPublicationCommand {
                 List.of(new Create(null, ordinal, document)), body);
     }
 
+    /**
+     * A server-built bulk of {@code delete} changes, byte-for-byte what {@link #readBulk} would parse from the same
+     * wire body, so the bulk-delete route reuses the publication path and its receipts unchanged.
+     */
+    static ItemPublicationCommand deletes(UUID commandId, UUID expectedDeckRevisionId, List<Delete> deletes) {
+        ObjectNode body = JsonNodeFactory.instance.objectNode().put("commandId", commandId.toString())
+                .put("expectedDeckRevisionId", expectedDeckRevisionId.toString());
+        var changes = body.putArray("changes");
+        deletes.forEach(delete -> changes.addObject().put("operation", "delete")
+                .put("memberKey", delete.memberKey().toString())
+                .put("expectedItemRevisionId", delete.expectedItemRevisionId().toString())
+                .put("expectedOrdinal", delete.expectedOrdinal()));
+        return new ItemPublicationCommand(commandId, expectedDeckRevisionId, List.copyOf(deletes), body);
+    }
+
     private static ItemPublicationCommand command(JsonNode body, List<Change> changes) {
         try {
             return new ItemPublicationCommand(id(body, "commandId"), id(body, "expectedDeckRevisionId"), changes,

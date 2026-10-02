@@ -1,13 +1,20 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, effect, inject, input, output, signal } from '@angular/core';
 
 const HOLD_MS = 3_000;
+let nextHoldId = 0;
 
-/** A separate activation followed by a continuous hold prevents accidental destructive taps. */
+/**
+ * A separate activation followed by a continuous hold prevents accidental destructive taps. The optional
+ * `consequence` states what will disappear: it is the button's accessible description at all times and is shown as
+ * text under the button while it is armed, so the learner reads it before holding. Escape is consumed only while the
+ * button is armed or held, otherwise it bubbles (a surrounding selection can use it to clear itself).
+ */
 @Component({
     selector: 'app-hold-to-delete-button',
     host: { '(document:pointerdown)': 'cancelOutside($event)' },
     template: `
       <button type="button" class="hold-button" [class.holding]="holding()" [disabled]="disabled()" [attr.aria-pressed]="armed()"
+        [attr.aria-describedby]="consequence() ? consequenceId : null"
         [style.--hold-x.px]="waveX()" [style.--hold-y.px]="waveY()" [style.--hold-size.px]="waveSize()"
         (click)="onClick()" (pointerdown)="onPointerDown($event)" (pointerup)="stopHold()"
         (pointercancel)="stopHold()" (pointerleave)="stopHold()" (keydown)="onKeyDown($event)"
@@ -17,6 +24,7 @@ const HOLD_MS = 3_000;
         <span class="label-reserve" aria-hidden="true">Удерживайте 3 с</span>
         <span class="hold-label">{{ armed() ? 'Удерживайте ' + remaining() + ' с' : label() }}</span>
       </button>
+      @if (consequence()) { <span class="consequence" [id]="consequenceId" [hidden]="!armed()">{{ consequence() }}</span> }
     `,
     styleUrl: './hold-to-delete-button.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -24,6 +32,8 @@ const HOLD_MS = 3_000;
 export class HoldToDeleteButtonComponent {
     readonly label = input.required<string>();
     readonly disabled = input(false);
+    /** What the deletion removes, in words; empty when the label already says it. */
+    readonly consequence = input('');
     readonly confirmed = output<void>();
     readonly armed = signal(false);
     readonly holding = signal(false);
@@ -31,6 +41,7 @@ export class HoldToDeleteButtonComponent {
     readonly waveY = signal(0);
     readonly waveSize = signal(0);
     readonly remaining = signal(3);
+    protected readonly consequenceId = `mn-hold-consequence-${nextHoldId++}`;
 
     private readonly element = inject<ElementRef<HTMLElement>>(ElementRef);
     private readonly destroyRef = inject(DestroyRef);
@@ -63,7 +74,10 @@ export class HoldToDeleteButtonComponent {
 
     onKeyDown(event: KeyboardEvent): void {
         if (!this.armed()) this.suppressTrailingClick = false;
-        if (event.key === 'Escape') { event.preventDefault(); this.cancel(); return; }
+        if (event.key === 'Escape') {
+            if (this.armed()) { event.preventDefault(); event.stopPropagation(); this.cancel(); }
+            return;
+        }
         if (!this.armed() || this.disabled() || event.repeat || (event.key !== 'Enter' && event.key !== ' ')) return;
         event.preventDefault();
         const button = event.currentTarget as HTMLButtonElement;

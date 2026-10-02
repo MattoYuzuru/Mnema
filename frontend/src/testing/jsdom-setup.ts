@@ -57,6 +57,16 @@ class TestDragEvent extends MouseEvent {
 }
 define(globalThis, 'DragEvent', TestDragEvent);
 
+// `@defer (on viewport)` and lazy lists observe visibility. jsdom has no layout, so nothing ever intersects: specs that
+// need a deferred block render it explicitly (`fixture.getDeferBlocks()`) or replace this class with a controllable one.
+class TestIntersectionObserver {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+    takeRecords(): IntersectionObserverEntry[] { return []; }
+}
+define(globalThis, 'IntersectionObserver', TestIntersectionObserver);
+
 // jsdom has no media-query engine; nothing matches, which is the desktop/no-preference default.
 // `document.defaultView` is jsdom's own window object and is not always the same object as `globalThis`.
 const noMatchMedia = (query: string): MediaQueryList => ({

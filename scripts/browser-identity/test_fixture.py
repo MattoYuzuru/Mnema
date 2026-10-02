@@ -294,6 +294,21 @@ module.main()
             result = subprocess.run([node, "--check", str(Path(__file__).with_name("notifications.mjs"))], capture_output=True)
             self.assertEqual(0, result.returncode)
 
+    def test_deck_hub_scenario_is_wired_stubs_nothing_and_is_syntactically_valid(self):
+        driver = Path(__file__).with_name("browser.mjs").read_text()
+        source = Path(__file__).with_name("hub.mjs").read_text()
+        self.assertIn("import { runHub } from './hub.mjs'", driver)
+        self.assertIn("hub_overview_sort_star_select_delete", source)
+        # Real API, real editor, real 3 s hold: no interception, mocked route or synthetic click on the hold button.
+        self.assertNotIn("Fetch.fulfillRequest", source)
+        self.assertNotIn("route.fulfill", source)
+        self.assertIn("heldMs >= 3000", source)
+        self.assertIn('"hub.mjs"', Path(__file__).with_name("run.py").read_text())
+        node = shutil.which("node")
+        if node is not None:
+            result = subprocess.run([node, "--check", str(Path(__file__).with_name("hub.mjs"))], capture_output=True)
+            self.assertEqual(0, result.returncode)
+
 
 if __name__ == "__main__":
     unittest.main()

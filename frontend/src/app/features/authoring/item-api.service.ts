@@ -14,6 +14,7 @@ import {
     ItemChangeResult,
     ItemDetail,
     ItemPage,
+    ItemSort,
     ItemSummary,
     ItemRecordSummary,
     ItemWriteResult,
@@ -26,22 +27,36 @@ import {
     requireVersion
 } from './authoring.models';
 
+export interface ItemListOptions {
+    readonly cursor?: string | null;
+    readonly sort?: ItemSort;
+    /** Adds `exerciseCount` to every summary without a per-material request. */
+    readonly exerciseCount?: boolean;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ItemApiService {
     private readonly http = inject(HttpClient);
     private readonly baseUrl = appConfig.learningApiBaseUrl.replace(/\/$/, '');
 
-    list(deckId: string, cursor: string | null = null): Observable<ItemPage> {
+    /**
+     * One Browse page. `sort=exerciseCount` lists materials without exercises first and always carries the counts;
+     * a cursor belongs to the sort and deck revision that issued it, so a sort change starts from the first page.
+     */
+    list(deckId: string, options: ItemListOptions = {}): Observable<ItemPage> {
+        const { cursor = null, sort = 'ordinal', exerciseCount = false } = options;
         return defer(() => {
             const deck = requireEntity(deckId);
             let params = new HttpParams().set('limit', ITEM_PAGE_SIZE.toString());
+            if (sort !== 'ordinal') params = params.set('sort', sort);
+            if (exerciseCount || sort === 'exerciseCount') params = params.set('include', 'exerciseCount');
             if (cursor !== null) params = params.set('cursor', requireCursor(cursor)!);
             return this.http.get<unknown>(`${this.baseUrl}/decks/${encodeURIComponent(deck)}/items`, {
                 params, observe: 'response'
             });
         }).pipe(map(response => {
             requirePrivate(response);
-            const page = parseItemPage(response.body);
+            const page = parseItemPage(response.body, exerciseCount || sort === 'exerciseCount');
             requireEtag(response, page.deckVersion);
             if (page.deckId !== deckId.toLowerCase()) throw new AuthoringProtocolError('Item page deck mismatch.');
             return page;
@@ -120,43 +135,52 @@ export class ItemApiService {
     }
 }
 
-function parseItemPage(value: unknown): ItemPage {
-    const object = requireObject(value, ['deckId', 'deckRevisionId', 'deckVersion', 'total', 'items', 'nextCursor']);
+function parseItemPage(value: unknown, withCounts: boolean): ItemPage {
+    const object = requireObject(value, ['deckId', 'deckRevisionId', 'deckVersion', 'total', 'exemplars', 'items', 'nextCursor']);
     if (!Array.isArray(object['items']) || object['items'].length > ITEM_PAGE_SIZE) {
         throw new AuthoringProtocolError('Invalid item page.');
     }
-    const items = object['items'].map(parseSummary);
+    const budget = requireObject(object['exemplars'], ['count', 'limit']);
+    const exemplars = { count: requireCount(budget['count'], 100_000), limit: requireCount(budget['limit'], 1_000) };
+    if (exemplars.count > exemplars.limit) throw new AuthoringProtocolError('Invalid exemplar budget.');
+    const items = object['items'].map(entry => parseSummary(entry, withCounts));
     if (new Set(items.map(item => item.memberKey)).size !== items.length) throw new AuthoringProtocolError('Duplicate item.');
     return {
         deckId: requireEntity(object['deckId']), deckRevisionId: requireEntity(object['deckRevisionId']),
         deckVersion: requireVersion(object['deckVersion']), total: requireCount(object['total'], 100_000),
-        items, nextCursor: requireCursor(object['nextCursor'])
+        exemplars, items, nextCursor: requireCursor(object['nextCursor'])
     };
 }
 
 function parseItemDetail(value: unknown, current: boolean): ItemDetail {
     const object = requireObject(value, [
         'memberKey', 'itemRevisionId', 'itemVersion', 'ordinal', 'formatVersion', 'createdAt', 'updatedAt',
-        'deckId', 'deckRevisionId', 'deckVersion', 'document'
+        'deckId', 'deckRevisionId', 'deckVersion', 'document', 'exemplar'
     ]);
+    if (typeof object['exemplar'] !== 'boolean') throw new AuthoringProtocolError('Invalid exemplar flag.');
     if (current && object['ordinal'] === null) {
         throw new AuthoringProtocolError('Current-item reads require a snapshot-bound ordinal.');
     }
     const ordinal = object['ordinal'] === null ? null : requireOrdinal(object['ordinal'], false);
     const summary = parseRecordSummary(object);
     return {
-        ...summary, ordinal, deckId: requireEntity(object['deckId']), deckRevisionId: requireEntity(object['deckRevisionId']),
+        ...summary, ordinal, exemplar: object['exemplar'], deckId: requireEntity(object['deckId']), deckRevisionId: requireEntity(object['deckRevisionId']),
         deckVersion: requireVersion(object['deckVersion']),
         document: readRetainedNativeDocument(object['document'])
     };
 }
 
-function parseSummary(value: unknown): ItemSummary {
-    const object = requireObject(value, ['memberKey', 'itemRevisionId', 'itemVersion', 'ordinal', 'formatVersion', 'createdAt', 'updatedAt', 'title']);
+function parseSummary(value: unknown, withCount: boolean): ItemSummary {
+    const keys = ['memberKey', 'itemRevisionId', 'itemVersion', 'ordinal', 'formatVersion', 'createdAt', 'updatedAt', 'title', 'exemplar'];
+    const object = requireObject(value, withCount ? [...keys, 'exerciseCount'] : keys);
     if (typeof object['title'] !== 'string' || Array.from(object['title']).length > 240) {
         throw new AuthoringProtocolError('Invalid material title.');
     }
-    return { ...parseRecordSummary(object), ordinal: requireOrdinal(object['ordinal'], false), title: object['title'] as string };
+    if (typeof object['exemplar'] !== 'boolean') throw new AuthoringProtocolError('Invalid exemplar flag.');
+    return {
+        ...parseRecordSummary(object), ordinal: requireOrdinal(object['ordinal'], false), title: object['title'] as string,
+        exerciseCount: withCount ? requireCount(object['exerciseCount'], 100_000) : null, exemplar: object['exemplar']
+    };
 }
 
 function parseRecordSummary(object: Record<string, unknown>): ItemRecordSummary {

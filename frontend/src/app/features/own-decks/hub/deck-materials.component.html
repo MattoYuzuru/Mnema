@@ -1,0 +1,53 @@
+<section class="materials" aria-labelledby="materials-heading">
+  <header class="head">
+    <h2 id="materials-heading" #heading tabindex="-1">Материалы <span class="total">· {{ total() }}</span></h2>
+  </header>
+
+  <!-- Present before its text changes, so screen readers announce selection counts and star changes. -->
+  <p class="sr-only" role="status">{{ announcement() }}</p>
+
+  @switch (phase()) {
+    @case ('loading') { <p class="note" role="status">Загружаем материалы…</p> }
+    @case ('error') {
+      <div class="note error" role="alert">
+        <p>Не удалось загрузить материалы.</p>
+        <button class="button" type="button" (click)="refresh()">Повторить</button>
+      </div>
+    }
+    @default {
+      @if (notice(); as current) {
+        <div class="note" [class.error]="current.tone === 'error'" [attr.role]="current.tone === 'error' ? 'alert' : 'status'">
+          <p>{{ current.text }}</p>
+          <div class="note-actions">
+            @if (current.remainder.length > 0) {
+              <button class="button" type="button" (click)="selectRemainder()">Выбрать оставшиеся ({{ current.remainder.length }})</button>
+            }
+            @if (current.refresh) { <button class="button" type="button" (click)="refresh()">Обновить список</button> }
+            <button class="button quiet" type="button" (click)="dismissNotice()">Закрыть</button>
+          </div>
+        </div>
+      }
+      @if (problem(); as message) { <p class="note error" role="alert">{{ message }}</p> }
+
+      @if (total() === 0) {
+        <section class="empty">
+          <h3>Здесь пока пусто</h3>
+          <p>Создайте первый материал или перенесите заметку из «На потом».</p>
+          <p><a class="button primary" [routerLink]="['/decks', deckId(), 'materials', 'new']">Добавить материал</a></p>
+        </section>
+      } @else {
+        <app-segmented-choice legend="Порядок" [options]="sortOptions" [value]="sort()" (valueChange)="changeSort($event)" />
+
+        <app-selectable-material-list [deckId]="deckId()" [items]="items()" [total]="total()" [selection]="selection"
+          [exemplars]="exemplars()" [starPending]="starPending()" [hasMore]="hasMore()" [loadingMore]="loadingMore()"
+          [moreError]="moreError()" (toggleExemplar)="toggleExemplar($event)" (loadMore)="loadMore()" />
+
+        @if (selectionCount() > 0) {
+          <app-bulk-action-bar #bar [count]="selectionCount()" [consequence]="consequence()" [deleteDisabled]="deleteDisabled()"
+            [hint]="deleteHint()" [generationAvailable]="generationAvailable()" (clear)="clearSelection()"
+            (deleteConfirmed)="deleteSelected()" />
+        }
+      }
+    }
+  }
+</section>
