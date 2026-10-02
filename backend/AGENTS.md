@@ -6,9 +6,16 @@ routes: [repository guide](../docs/engineering/repository-guide.md). Commands an
 
 ## Build and test
 
-- Run Gradle from `backend/` with the wrapper and **JDK 21** (`JAVA_HOME`); the workstation default
+- Run Gradle from `backend/` with the wrapper and **JDK 25** (`JAVA_HOME`); the workstation default
   `java` may be newer. Gate: `./gradlew clean quality` (compile, tests, JaCoCo, the floors in
   `coverage-baseline.json`).
+- Java sources compile with `-Xlint:all -Werror`: a new warning fails the build. Tests run with Mockito
+  as a `-javaagent` (declared in `backend/build.gradle.kts`); do not rely on dynamic agent loading.
+- JSON is Jackson 3 (`tools.jackson`). `JsonNode` accessors are strict: `stringValue()`, `intValue()`,
+  `booleanValue()` and `asString()` throw `JsonNodeException` on a mismatched node, and `JacksonException`
+  is unchecked, so parser `catch` blocks must name it. Use the `...(default)` overloads
+  (`stringValue(null)`, `intValue(0)`) where absence must stay lenient, and keep request parsers
+  answering HTTP 400, never 500 (`JsonRequestBoundaryTest`, `MalformedJsonBodies`).
 - PostgreSQL-backed tests use Testcontainers and fail closed. A Docker/socket failure is an
   environment problem, never a reason to accept skipped tests (Colima variables are in the runbook).
 

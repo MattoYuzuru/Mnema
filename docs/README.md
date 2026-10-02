@@ -29,7 +29,7 @@ artifact:
    отвечает на какой доменный вопрос, и глоссарий (mechanic / content / objective /
    evaluator, presentation, scheduled / replay / practice, capability).
 3. **Current:** [Agent runbook](./engineering/agent-runbook.md) — проверенные команды
-   gate, настройка JDK 21 / Colima / Node 24, browser harness и локальный стек.
+   gate, настройка JDK 25 / Colima / Node 24, browser harness и локальный стек.
 4. **Current:** [Repository guide](./engineering/repository-guide.md) — версии,
    каталоги, runtime boundaries, change routes и
    [полный gate](./engineering/repository-guide.md#полный-quality-gate).

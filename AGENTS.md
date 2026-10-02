@@ -3,7 +3,7 @@
 Mnema is a greenfield learning platform built around versioned `LearningItem`s, multiple
 exercise types and spaced practice. The v1 flashcard implementation (removed in #146, kept in
 the `v1-apache-final` tag) is replacement input, not an architecture to preserve.
-Backend: Spring Boot 3.x+, Java 21, prefer Virtual Threads where appropriate (I/O-heavy
+Backend: Spring Boot 4.x, Java 25, prefer Virtual Threads where appropriate (I/O-heavy
 concurrency), modern Java (records, pattern matching, sealed types). Kotlin only in places
 consistent with the existing codebase (follow current package/module boundaries).
 Frontend: Angular (latest stable), standalone components, Signal-based state (signals,
@@ -18,7 +18,7 @@ generic rules summarised below: [`docs/engineering/engineering-standards.md`](do
 |---|---|
 | Any doc, with status (current / accepted / proposed / historical / superseded) | [`docs/README.md`](docs/README.md) |
 | What is true for product, mechanics, contracts, UI, delivery; glossary | [`docs/engineering/domain-truth-map.md`](docs/engineering/domain-truth-map.md) |
-| Run, build, test, local stack; machine setup (JDK 21, Colima, Node 24) | [`docs/engineering/agent-runbook.md`](docs/engineering/agent-runbook.md) |
+| Run, build, test, local stack; machine setup (JDK 25, Colima, Node 24) | [`docs/engineering/agent-runbook.md`](docs/engineering/agent-runbook.md) |
 | Modules, versions, change routes | [`docs/engineering/repository-guide.md`](docs/engineering/repository-guide.md) |
 | Issues / PRs | [`docs/engineering/work-item-standard.md`](docs/engineering/work-item-standard.md) |
 | Backend / frontend scoped rules | `backend/AGENTS.md`, `frontend/AGENTS.md` |
@@ -29,7 +29,7 @@ docs or historical evidence (those are read-only history, not current behaviour)
 ## Hard constraints
 
 - **Freshness:** never use deprecated APIs, legacy patterns or abandoned libraries; match the
-  exact versions in use (Java 21, Spring Boot 3.x, Angular latest stable); if unsure whether an
+  exact versions in use (Java 25, Spring Boot 4.x, Angular latest stable); if unsure whether an
   API/library is current, verify via official docs.
 - **Greenfield rewrite:** do not add `/v2` routes, dual reads/writes, compatibility adapters or
   wrappers around v1 product code. Replace the canonical path directly and delete superseded
@@ -85,7 +85,7 @@ Add or update tests for non-trivial changes (backend unit + slice/integration; f
 tests for critical logic, e2e only when necessary); prefer deterministic tests over brittle timing.
 
 ```bash
-cd backend && ./gradlew clean quality                              # JDK 21 + Docker/Testcontainers
+cd backend && ./gradlew clean quality                              # JDK 25 + Docker/Testcontainers
 cd frontend && npm ci && npm run lint && npm run test && npm run build
 python3 scripts/verify_docs.py
 ```

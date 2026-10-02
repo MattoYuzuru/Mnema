@@ -33,10 +33,10 @@ glossary: [domain truth map](./domain-truth-map.md).
 
 | Platform | Exact repository baseline | Source |
 |---|---:|---|
-| Java | toolchain 21 | `backend/build.gradle.kts`, CI setup-java |
-| Spring Boot | 3.5.16 | `backend/settings.gradle.kts` |
-| Kotlin | 2.4.20 | `backend/settings.gradle.kts` |
-| Gradle | 8.14.5 | `backend/gradle/wrapper/gradle-wrapper.properties` |
+| Java | toolchain 25 (LTS) | `backend/services/*/build.gradle.kts`, CI setup-java |
+| Spring Boot | 4.1.1 (Framework 7.0.9, Security 7.1.1 incl. Authorization Server, Session 4.1.1, Jackson 3.1.5, JUnit 6.0.3, Flyway 12.4.0, Tomcat 11.0.24) | `backend/settings.gradle.kts`, Boot BOM |
+| Gradle | 9.8.0 | `backend/gradle/wrapper/gradle-wrapper.properties` |
+| Testcontainers / JaCoCo | 2.0.5 / 0.8.15 | Boot BOM, `backend/build.gradle.kts` |
 | Angular | core/CLI/build 22.2.1, zoneless | `frontend/package.json` |
 | TypeScript | 6.0.3 | `frontend/package.json` |
 | Node | 24.21.0 (LTS) in CI/images | workflows and `frontend/Dockerfile` |
@@ -162,7 +162,7 @@ There is no legacy `my-study` fallback.
 
 ## Полный quality gate
 
-Prerequisites: JDK 21 toolchain availability, Node 24.21.0, npm, Chrome/Chromium (browser harness only; frontend unit tests need no browser) and
+Prerequisites: JDK 25 toolchain availability, Node 24.21.0, npm, Chrome/Chromium (browser harness only; frontend unit tests need no browser) and
 working Docker/Testcontainers resources. Do not allow database tests to skip. With
 Colima on macOS, point discovery at its host socket and mounts at the Linux VM socket;
 the verified per-shell setup (`JAVA_HOME`, `DOCKER_HOST`,

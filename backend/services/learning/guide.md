@@ -42,7 +42,8 @@ exercise mechanics into the seven below. Epic #76 added the greenfield media lif
   side effects nor an in-progress receipt.
 - Payload canonicalization is a durable protocol: UTF-8 JSON with lexicographically
   sorted object fields, preserved array order, normalized finite numbers and a
-  fixed escaping policy independent of application-wide Jackson configuration.
+  fixed escaping policy. `CanonicalJsonHasher` writes these bytes itself instead of through a
+  JSON library, so stored receipt digests cannot change with Jackson defaults or upgrades.
 - Mutable rows use a non-negative `row_version`. Repository SQL performs an update
   guarded by the expected version, and `CompareAndSetExecutor` accepts exactly one
   changed row or raises `VERSION_CONFLICT`.
@@ -241,13 +242,13 @@ only widens the exercise type and answer-key kind constraints for `ORDER` and `C
 (no data rewrite). Do not append
 Study tables to legacy `core` migrations or port old review algorithms.
 
-Sources: [Spring Security 6.5 JWT](https://docs.spring.io/spring-security/reference/6.5/servlet/oauth2/resource-server/jwt.html)
+Sources: [Spring Security 7.1 JWT](https://docs.spring.io/spring-security/reference/7.1/servlet/oauth2/resource-server/jwt.html)
 for signature/claims/scope boundaries; the exact 6.5.11 source establishes claim
-conversion behavior; [Java 21 HTTP](https://docs.oracle.com/en/java/javase/21/docs/api/java.net.http/java/net/http/HttpRequest.Builder.html)
+conversion behavior; [Java 25 HTTP](https://docs.oracle.com/en/java/javase/25/docs/api/java.net.http/java/net/http/HttpRequest.Builder.html)
 for request deadlines, supplemented by explicit bounded body completion/cancellation;
 [Spring scheduling](https://docs.spring.io/spring-framework/reference/integration/scheduling.html)
 for the enabled fixed-delay retention worker and duration-based configuration;
-[Java 21 Normalizer](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/text/Normalizer.html)
+[Java 25 Normalizer](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/text/Normalizer.html)
 and [Unicode UAX #15](https://www.unicode.org/reports/tr15/) for canonical
 decomposition in soft text matching; [PostgreSQL constraints](https://www.postgresql.org/docs/18/sql-createtable.html)
 for the deferred ordinal uniqueness during transactional roster compaction.

@@ -11,7 +11,7 @@ capabilities:
     invoke: "cd backend && ./gradlew clean quality"
     effects: [compile, test, coverage-report, coverage-baseline-check]
     status: configured
-    requirements: [jdk21, docker-for-postgresql-tests]
+    requirements: [jdk25, docker-for-postgresql-tests]
 
   - id: frontend-quality
     kind: command-set

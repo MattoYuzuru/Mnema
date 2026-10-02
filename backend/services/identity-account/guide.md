@@ -320,10 +320,10 @@ send real external mail or prove environment credentials/provider registration.
 Important implementation sources:
 [Spring Authorization Server configuration](https://docs.spring.io/spring-authorization-server/reference/configuration-model.html),
 [public-client PKCE and no refresh tokens](https://docs.spring.io/spring-authorization-server/reference/guides/how-to-pkce.html),
-[Spring Session JDBC](https://docs.spring.io/spring-session/reference/3.5/configuration/jdbc.html),
-[Spring JWT validation](https://docs.spring.io/spring-security/reference/6.5/servlet/oauth2/resource-server/jwt.html),
+[Spring Session JDBC](https://docs.spring.io/spring-session/reference/4.1/configuration/jdbc.html),
+[Spring JWT validation](https://docs.spring.io/spring-security/reference/7.1/servlet/oauth2/resource-server/jwt.html),
 [Postbox HTTPS signing](https://yandex.cloud/en/docs/postbox/operations/send-email#curl),
 [GitHub PKCE](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps),
 [Yandex PKCE](https://yandex.ru/dev/id/doc/en/codes/code-url),
-[Java 21 AES-GCM parameters](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/javax/crypto/spec/GCMParameterSpec.html),
-and [authenticated-stream caveat](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/javax/crypto/CipherInputStream.html).
+[Java 25 AES-GCM parameters](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/javax/crypto/spec/GCMParameterSpec.html),
+and [authenticated-stream caveat](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/javax/crypto/CipherInputStream.html).
