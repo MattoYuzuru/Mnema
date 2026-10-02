@@ -214,11 +214,13 @@ export async function runCodeBlock(ctx) {
 
   // ----- reopen in the editor and publish unchanged ----------------------------------------------------------------------
   await stage('reopen_roundtrip', async () => {
-    // The editor only opens from the current list (it needs the confirmed position): list -> material -> «Редактировать».
-    await navigate(`${deckPath}/materials`, tab);
-    await until(() => page(`return document.querySelector('a[href="' + args[0] + '"]') !== null;`, materialPath),
-      'the published material is not in the Browse list');
-    need(await page(`document.querySelector('a[href="' + args[0] + '"]').click(); return true;`, materialPath), 'material link absent');
+    // The editor only opens from the current list (it needs the confirmed position): deck hub list -> material ->
+    // «Редактировать» (#285 moved the materials list into the deck hub).
+    await navigate(deckPath, tab);
+    await until(() => page(`return document.querySelector('app-selectable-material-list a.row-link[href="' + args[0] + '"]') !== null;`,
+      materialPath), 'the published material is not in the deck hub list');
+    need(await page(`document.querySelector('app-selectable-material-list a.row-link[href="' + args[0] + '"]').click(); return true;`,
+      materialPath), 'material link absent');
     await until(async () => (await sanitizedLocation(tab)) === materialPath && await clickText('a.button.primary', 'Редактировать', tab),
       'the material page offers no «Редактировать» action');
     await until(async () => (await page(`return document.querySelectorAll('.mnema-code-node').length;`)) === 2,
