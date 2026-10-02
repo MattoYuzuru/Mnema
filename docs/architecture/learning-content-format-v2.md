@@ -167,6 +167,8 @@ This list is the format's capability envelope, not a claim that every node alrea
 has an editor. #74 delivered the exact native-v1 text/structure baseline in the
 [wire contract](../../contracts/content/native-v1/README.md); #76 supplies real
 media. Ruby/RTL/math/code/Mermaid fixtures probe extensibility and rendering safety.
+`code_block {lang, source}` is a supported node since #303 (inert text, no highlighter, no
+execution; see the wire contract); `math` stays an opaque placeholder until a separate decision.
 Mermaid and richer diagram/source editors can follow later. Unsupported capability
 is visible and preserved, never silently approximated.
 

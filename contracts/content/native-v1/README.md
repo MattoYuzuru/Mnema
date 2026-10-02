@@ -54,12 +54,14 @@ children, including opaque ones. Empty documents use one empty paragraph.
 Opaque acceptance grants **no rendering or execution capability**. Registering a
 new type/renderer must revalidate retained content against that schema before
 activating it; a matching type string is insufficient. Code/math and unknown
-future versions remain inert placeholders. The Epic #76 rich nodes below have
-explicit validators; their `version: 1` is the only supported version.
+future versions remain inert placeholders (`math` and `math_block` stay opaque; a
+formula is text until a separate KaTeX/MathML decision, not scheduled). The Epic #76
+rich nodes and `code_block` below have explicit validators; their `version: 1` is the
+only supported version.
 
 ## Rich block nodes (Epic #76)
 
-`image`, `audio`, `video`, `youtube`, `mermaid` and `table` are block leaves with empty
+`image`, `audio`, `video`, `youtube`, `mermaid`, `table` and `code_block` (next section) are block leaves with empty
 `content: []`. They share optional `lang`/`dir` with baseline nodes. Media nodes
 hold logical UUIDv4 `assetId` values, never object keys or direct URLs. The server
 extracts only supported image/audio/video references and binds them inside the
@@ -101,6 +103,46 @@ offers a source link. The frame is third-party content and may be unavailable or
 disallow embedding; the source link remains usable. See
 [youtube.json](valid/youtube.json) for the shared fixture.
 
+## Code blocks
+
+A block leaf with empty `content: []`, allowed wherever a block is. Attributes:
+
+| Attribute | Rule |
+|---|---|
+| `source` | required string; nonblank (`String.isBlank()`, as Mermaid source); at most 16384 UTF-16 code units; **no carriage return**. Tabs, line feeds, leading/trailing spaces and inner blank lines are data and kept byte for byte |
+| `lang` | optional string: empty (same as absent) or a programming-language identifier `[a-z0-9][a-z0-9+#.-]{0,31}` (`sql`, `python`, `c++`, `c#`, `objective-c`). A pattern, not an allowlist, so a new language needs no contract change; it is only a label and a CSS class suffix, never executed or looked up |
+
+Differences from every other supported node, deliberately:
+
+- **`lang` is not a BCP 47 tag here.** The shared optional `lang`/`dir` of the lexical profile below do not apply: `lang`
+  names the language of the code, and `dir` is not accepted (code is always rendered left to right).
+- **LF only.** A `\r` in `source` is rejected. Writers normalize `\r\n` and `\r` to `\n` before they build the node (the MBM
+  compiler and the editor adapter do); the server never rewrites stored content.
+
+The reader never parses, highlights or executes `source`. The web renderer shows it as text in `<pre><code
+class="language-…">` without a third-party highlighter, in its own horizontally scrollable, keyboard-focusable region.
+Plain-text projection (`NativeNodeIndex.text`, used by exercise `MATERIAL` quotes) of a `code_block` is its `source`.
+
+**Revalidation of retained content.** Before this node was activated, `code_block` was an opaque placeholder and its
+attributes were never interpreted (the research fixture carried `language`/`wrap`). The rule above ("registering a new type
+must revalidate retained content") is implemented as two reader modes:
+
+- `NativeDocumentReader.read` (publication, drafts, structural writes) validates strictly: a `code_block@1` that breaks the
+  table above is rejected, so a new `lang` or `source` outside the limits never enters storage.
+- `NativeDocumentReader.readRetained` (the stored-snapshot decoder) keeps a `code_block` that is not valid version 1 (any
+  attribute set other than the table above, a bad value, content, extension fields, or a position outside a block slot) as
+  an **opaque** node: preserved byte for byte, rendered as an inert placeholder, never projected to text. It sets
+  `hasUnsupportedContent`. No migration is needed and rollback (a code revert) leaves data readable.
+- The web boundary has the same split: `readNativeDocument` is strict and is used for what the client sends;
+  `readRetainedNativeDocument` is used for what the server returns. An author who loads a document with such a retained
+  placeholder sees it as an unsupported block; saving the document unchanged is rejected by the server until the placeholder
+  is deleted, because the write path is strict.
+
+Shared fixtures: [code.json](valid/code.json) (valid document, round trip) and
+[code-block-vectors.json](code-block-vectors.json) (`attrs` accepted and rejected by Java and TypeScript). The
+16384-unit bound has generated tests on both sides. MBM v1 compiles a fenced block to this node, see
+[mbm-v1](../../generation/mbm-v1/README.md).
+
 ## Shared lexical profile
 
 [lexical-vectors.json](lexical-vectors.json) is a shared server/editor corpus. Preserve
@@ -139,7 +181,8 @@ codec must fragment large scalars without changing their semantic node identity.
 ## Evidence and integration gate
 
 [valid/mixed.json](valid/mixed.json) preserves the completed research fixture, not
-ProseMirror state. Java tests cover it, lexical vectors, opaque fields/descendants,
+ProseMirror state (its `code_block` was rewritten to the version-1 shape in #303; `math_block`,
+`media_reference` and `future_formula` keep covering opaque nodes). Java tests cover it, lexical vectors, opaque fields/descendants,
 UUID case duplicates, structure, defensive copies, multilingual scalar/depth/count
 boundaries, and a 7,001-node document beyond the earlier 100k-token parser budget.
 

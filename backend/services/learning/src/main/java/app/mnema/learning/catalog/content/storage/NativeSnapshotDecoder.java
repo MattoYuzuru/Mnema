@@ -110,7 +110,7 @@ public final class NativeSnapshotDecoder {
             require(next[0] == nodes.size());
             ObjectNode nativeJson = JsonNodeFactory.instance.objectNode().put("formatVersion", 1);
             nativeJson.set("root", nativeRoot);
-            NativeDocument document = new NativeDocumentReader().read(JSON.canonicalBytes(nativeJson));
+            NativeDocument document = new NativeDocumentReader().readRetained(JSON.canonicalBytes(nativeJson));
             require(document.nodeCount() == records.size());
             result = new NativeSnapshot(root, document, objects, fragments);
             return result;

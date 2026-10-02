@@ -334,9 +334,8 @@
         "type": "code_block",
         "version": 1,
         "attrs": {
-          "language": "kotlin",
-          "source": "println(\"данные, не выполнение\")",
-          "wrap": true
+          "lang": "kotlin",
+          "source": "println(\"данные, не выполнение\")"
         },
         "content": []
       },

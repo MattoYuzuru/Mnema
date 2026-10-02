@@ -15,7 +15,7 @@ public final class NativeDocumentPreview {
     }
 
     private static String first(JsonNode node) {
-        if (!NativeNodeSchema.supports(node.path("type").asString(""), node.path("version").asInt(0))) return "";
+        if (!NativeNodeSchema.supports(node)) return "";
         if (TEXT_BLOCKS.contains(node.path("type").asString(""))) {
             StringBuilder text = new StringBuilder();
             appendText(node, text);
@@ -33,7 +33,7 @@ public final class NativeDocumentPreview {
     }
 
     private static void appendText(JsonNode node, StringBuilder text) {
-        if (!NativeNodeSchema.supports(node.path("type").asString(""), node.path("version").asInt(0))) return;
+        if (!NativeNodeSchema.supports(node)) return;
         if ("text".equals(node.path("type").asString(""))) text.append(node.path("attrs").path("text").asString(""));
         if ("ruby".equals(node.path("type").asString(""))) text.append(node.path("attrs").path("base").asString(""));
         for (JsonNode child : node.path("content")) appendText(child, text);

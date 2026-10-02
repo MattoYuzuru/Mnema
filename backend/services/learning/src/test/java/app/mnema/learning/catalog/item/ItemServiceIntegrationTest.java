@@ -3,6 +3,7 @@ package app.mnema.learning.catalog.item;
 import app.mnema.learning.catalog.deck.DeckCommand;
 import app.mnema.learning.catalog.deck.DeckService;
 import app.mnema.learning.media.MediaCatalog;
+import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.concurrency.VersionConflictException;
 import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
@@ -41,6 +42,7 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private static JsonNode nativeDocument;
     private static JsonNode richDocument;
+    private static JsonNode codeDocument;
 
     @Autowired private ItemService service;
     @Autowired private DeckService decks;
@@ -56,6 +58,7 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
         while (!Files.exists(root.resolve("contracts/content/native-v1/valid/mixed.json"))) root = root.getParent();
         nativeDocument = JSON.readTree(Files.readString(root.resolve("contracts/content/native-v1/valid/mixed.json")));
         richDocument = JSON.readTree(Files.readString(root.resolve("contracts/content/native-v1/valid/rich.json")));
+        codeDocument = JSON.readTree(Files.readString(root.resolve("contracts/content/native-v1/valid/code.json")));
     }
 
     @Test
@@ -114,6 +117,30 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
         assertThat(decks.read(actor, deck).path("rowVersion").stringValue(null)).isEqualTo("2");
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.item_revision WHERE deck_id=:deck")
                 .param("deck", deck).query(Long.class).single()).isEqualTo(2L);
+    }
+
+    @Test
+    void codeBlocksPublishReadBackByteForByteAndInvalidOnesNeverReachStorage() {
+        UUID actor = UUID.randomUUID();
+        UUID deck = createDeck(actor);
+        JsonNode before = decks.read(actor, deck);
+        var created = service.publish(actor, deck, 0, create(UUID.randomUUID(), before, codeDocument, null));
+        UUID member = UUID.fromString(created.acknowledgement().path("changes").get(0).path("memberKey").stringValue(null));
+        JsonNode read = service.read(actor, deck, member, null).path("document");
+        assertNative(read, codeDocument);
+        assertThat(read.path("root").path("content").get(2).path("attrs").path("source").stringValue(null))
+                .isEqualTo("int main() {\n\treturn 0;   \n}\n");
+        assertThat(service.list(actor, deck, "20", null).path("items").get(0).path("title").stringValue(null))
+                .isEqualTo("Как PostgreSQL выбирает план");
+
+        for (String[] invalid : new String[][]{{"lang", "SQL"}, {"lang", "a".repeat(33)}, {"source", "x".repeat(16_385)},
+                {"source", "a\r\nb"}, {"source", "  "}}) {
+            ObjectNode broken = (ObjectNode) codeDocument.deepCopy();
+            ((ObjectNode) broken.path("root").path("content").get(1).path("attrs")).put(invalid[0], invalid[1]);
+            JsonNode head = decks.read(actor, deck);
+            assertThatThrownBy(() -> create(UUID.randomUUID(), head, broken, null)).isInstanceOf(InvalidRequestException.class);
+        }
+        assertThat(count("learning_item", "deck_id", deck)).isOne();
     }
 
     @Test

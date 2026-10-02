@@ -355,6 +355,114 @@ class NativeDocumentReaderTest {
         }
     }
 
+    @Test
+    void codeFixtureKeepsEverySourceByteAndRoundTripsThroughCanonicalBytes() throws Exception {
+        byte[] fixture = Files.readAllBytes(contractRoot().resolve("valid/code.json"));
+        JsonNode expected = new ContentJsonReader(1_048_576, 128, 250_000).read(fixture);
+        NativeDocument document = reader.read(fixture);
+        assertThat(document.nodeCount()).isEqualTo(7);
+        assertThat(document.hasUnsupportedContent()).isFalse();
+        assertThat(NativeMediaReferences.from(document)).isEmpty();
+        assertThat(document.toJson()).isEqualTo(expected);
+        assertThat(reader.read(new CanonicalJsonHasher().canonicalBytes(document.toJson())).toJson()).isEqualTo(expected);
+        assertThat(document.toJson().path("root").path("content").get(2).path("attrs").path("source").stringValue(null))
+                .isEqualTo("int main() {\n\treturn 0;   \n}\n");
+    }
+
+    @Test
+    void sharedCodeBlockVectorsBindServerAndEditorValidation() throws Exception {
+        JsonNode vectors = new ContentJsonReader(65_536, 16, 5000)
+                .read(Files.readAllBytes(contractRoot().resolve("code-block-vectors.json")));
+        assertThat(vectors.path("cases").size()).isGreaterThan(20);
+        for (JsonNode vector : vectors.path("cases")) {
+            ObjectNode block = node(2, "code_block");
+            block.set("attrs", vector.path("attrs").deepCopy());
+            ObjectNode document = document(block);
+            String name = vector.path("name").stringValue(null);
+            if (vector.path("valid").booleanValue()) {
+                assertThat(read(document).hasUnsupportedContent()).as(name).isFalse();
+                assertThat(reader.readRetained(document.toString().getBytes(StandardCharsets.UTF_8)).hasUnsupportedContent())
+                        .as(name + " retained").isFalse();
+                assertSemanticEquality(read(document).toJson(), document);
+            } else {
+                invalid(document);
+                // retained content is never rejected for the same reason: it stays inert
+                assertThat(reader.readRetained(document.toString().getBytes(StandardCharsets.UTF_8)).hasUnsupportedContent())
+                        .as(name + " retained").isTrue();
+            }
+        }
+    }
+
+    @Test
+    void codeSourceIsBoundedInUtf16UnitsNotCodePoints() {
+        assertThat(read(document(code("sql", "x".repeat(16_384)))).nodeCount()).isEqualTo(2);
+        invalid(document(code("sql", "x".repeat(16_385))));
+        assertThat(read(document(code(null, "😀".repeat(8_192)))).nodeCount()).isEqualTo(2);
+        invalid(document(code(null, "😀".repeat(8_192) + "x")));
+    }
+
+    @Test
+    void codeBlockIsABlockLeafWithOnlyItsOwnFieldsAndVersionOne() {
+        ObjectNode withChild = code("sql", "x");
+        children(withChild).add(text(3, "child"));
+        invalid(document(withChild));
+
+        ObjectNode extension = code("sql", "x");
+        extension.put("extension", true);
+        invalid(document(extension));
+
+        invalid(document(paragraph(2, code(3, "sql", "x"))));
+        invalid(document(node(2, "blockquote", node(3, "bullet_list", code(4, "sql", "x")))));
+        assertThat(read(document(node(2, "blockquote", code(3, "sql", "x")))).nodeCount()).isEqualTo(3);
+        assertThat(read(document(node(2, "bullet_list", node(3, "list_item", paragraph(4), code(5, "sql", "x"))))).nodeCount())
+                .isEqualTo(5);
+
+        ObjectNode future = code("not even checked", " ");
+        future.put("version", 2);
+        assertThat(read(document(future)).hasUnsupportedContent()).isTrue();
+    }
+
+    @Test
+    void retainedCodeBlocksThatAreNotValidVersionOneStayOpaqueButNewWritesAreRejected() {
+        ObjectNode legacy = node(2, "code_block");
+        legacy.withObject("attrs").put("language", "kotlin").put("source", "println()").put("wrap", true);
+        ObjectNode future = node(3, "code_block");
+        future.withObject("attrs").put("source", "x").put("unknown", 0.1);
+        children(future).add(node(4, "text"));
+        ObjectNode inline = paragraph(5, code(6, "sql", "valid but in the wrong place"));
+        ObjectNode extension = code(7, "sql", "x");
+        extension.put("extension", true);
+        ObjectNode document = document(legacy, future, inline, extension, code(8, "sql", "x"));
+        byte[] bytes = document.toString().getBytes(StandardCharsets.UTF_8);
+
+        assertThatThrownBy(() -> reader.read(bytes)).isInstanceOf(IllegalArgumentException.class);
+        NativeDocument retained = reader.readRetained(bytes);
+        assertThat(retained.hasUnsupportedContent()).isTrue();
+        assertSemanticEquality(retained.toJson(), document);
+        assertThat(retained.nodeCount()).isEqualTo(8);
+
+        // the one valid node does not make a document unsupported; every other check still applies to retained content
+        ObjectNode valid = document(code("sql", "x"));
+        assertThat(reader.readRetained(valid.toString().getBytes(StandardCharsets.UTF_8)).hasUnsupportedContent()).isFalse();
+        ObjectNode brokenStructure = document(code("sql", "x"));
+        brokenStructure.path("root").path("content").get(0).withObject("attrs").put("source", "y");
+        ((ObjectNode) brokenStructure.path("root")).put("version", 1).withArray("content").add(node(7, "paragraph"));
+        ((ObjectNode) brokenStructure.path("root").path("content").get(1)).put("id", "not-a-uuid");
+        assertThatThrownBy(() -> reader.readRetained(brokenStructure.toString().getBytes(StandardCharsets.UTF_8)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    private static ObjectNode code(String lang, String source) {
+        return code(2, lang, source);
+    }
+
+    private static ObjectNode code(int id, String lang, String source) {
+        ObjectNode node = node(id, "code_block");
+        if (lang != null) node.withObject("attrs").put("lang", lang);
+        node.withObject("attrs").put("source", source);
+        return node;
+    }
+
     private static Path contractRoot() {
         Path root = Path.of(System.getProperty("user.dir"));
         for (int level = 0; level < 4 && !Files.isDirectory(root.resolve("contracts")); level++) {
