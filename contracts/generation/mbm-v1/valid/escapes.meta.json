@@ -1,0 +1,8 @@
+{
+  "description": "Backslash escapes before ASCII punctuation; a backslash before a letter is literal; code spans are verbatim.",
+  "input": {
+    "allowedLinks": [
+      "https://allowed.example/"
+    ]
+  }
+}

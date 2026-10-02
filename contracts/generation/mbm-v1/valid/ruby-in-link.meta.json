@@ -1,0 +1,8 @@
+{
+  "description": "Ruby inside a link label and marks around it.",
+  "input": {
+    "allowedLinks": [
+      "https://jisho.org/"
+    ]
+  }
+}

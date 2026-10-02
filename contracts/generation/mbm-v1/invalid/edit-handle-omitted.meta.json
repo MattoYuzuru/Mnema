@@ -1,5 +1,5 @@
 {
-  "description": "Edit of a target range: handles keep the node IDs of blocks whose type is unchanged; a block without a handle is new; descendants always get new IDs.",
+  "description": "Every declared handle of the range must appear: an omitted block would be an AI-initiated deletion.",
   "input": {
     "mode": "EDIT",
     "handles": {

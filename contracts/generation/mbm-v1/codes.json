@@ -1,6 +1,6 @@
 {
   "contract": "mbm-v1",
-  "description": "Stable compile finding codes. ERROR findings stop compilation (no document); WARNING findings accompany a compiled document. `rule` is the compact text the repair prompt shows for a line.",
+  "description": "Stable compile finding codes. ERROR findings stop compilation (no document); WARNING findings accompany a compiled document. `rule` is the compact text the repair prompt shows for a line. Findings that concern the options rather than a source line carry line 0.",
   "codes": [
     {
       "code": "MBM_EMPTY_DOCUMENT",
@@ -97,7 +97,7 @@
       "code": "MBM_VALUE_TOO_LONG",
       "severity": "ERROR",
       "scope": "directive",
-      "rule": "An attribute or body exceeds the native-v1 bound (alt 4096, title/caption 1024, description 8192, transcript and mermaid source 16384, table cell 4096 UTF-16 code units)."
+      "rule": "An attribute or body exceeds the bound (alt 4096, title and caption 1024, description 8192, mermaid source 16384, table cell 4096, image or video query or prompt 300 UTF-16 code units)."
     },
     {
       "code": "MBM_INVALID_SLOT_KEY",
@@ -166,6 +166,24 @@
       "rule": "A handle may be used on one block only."
     },
     {
+      "code": "MBM_TOO_MANY_MEDIA",
+      "severity": "ERROR",
+      "scope": "directive",
+      "rule": "At most 8 media directives per artifact (the media counts declared in the spec cap it lower); the estimate prices only the declared counts."
+    },
+    {
+      "code": "MBM_AUDIO_TEXT_TOO_LONG",
+      "severity": "ERROR",
+      "scope": "directive",
+      "rule": "The text of ::audio is at most 600 characters; split it into several clips."
+    },
+    {
+      "code": "MBM_EDIT_HANDLE_OMITTED",
+      "severity": "ERROR",
+      "scope": "block",
+      "rule": "Every handle of the edited range must appear in the output; removing a block is not an AI action. Reordering is allowed."
+    },
+    {
       "code": "MBM_LINK_NOT_ALLOWED",
       "severity": "WARNING",
       "scope": "inline",
@@ -176,6 +194,18 @@
       "severity": "WARNING",
       "scope": "block",
       "rule": "The block with this handle changed type: a new node ID was allocated."
+    },
+    {
+      "code": "MBM_LITERAL_DELIMITER",
+      "severity": "WARNING",
+      "scope": "inline",
+      "rule": "A run of three or more asterisks, or an asterisk run that could open emphasis but has no closer, stays literal text."
+    },
+    {
+      "code": "MBM_LINK_REJECTED_BY_PROFILE",
+      "severity": "WARNING",
+      "scope": "document",
+      "rule": "An allowlist or research URL violates the native-v1 href profile and was dropped before compilation (reported at line 0)."
     }
   ]
 }

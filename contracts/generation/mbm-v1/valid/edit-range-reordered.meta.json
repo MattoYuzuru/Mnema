@@ -1,0 +1,16 @@
+{
+  "description": "Reordering blocks inside the edited range is allowed: every block keeps the node ID of its handle; the wrapper doc consumes no allocation.",
+  "input": {
+    "mode": "EDIT",
+    "handles": {
+      "b3": {
+        "nodeId": "7d000000-0000-4000-8000-000000000003",
+        "type": "paragraph"
+      },
+      "b6": {
+        "nodeId": "7d000000-0000-4000-8000-000000000006",
+        "type": "paragraph"
+      }
+    }
+  }
+}

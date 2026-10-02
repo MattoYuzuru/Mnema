@@ -1,0 +1,131 @@
+{
+  "formatVersion": 1,
+  "root": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "type": "doc",
+    "version": 1,
+    "attrs": {},
+    "content": [
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "type": "bullet_list",
+        "version": 1,
+        "attrs": {},
+        "content": [
+          {
+            "id": "00000000-0000-4000-8000-000000000003",
+            "type": "list_item",
+            "version": 1,
+            "attrs": {},
+            "content": [
+              {
+                "id": "00000000-0000-4000-8000-000000000004",
+                "type": "paragraph",
+                "version": 1,
+                "attrs": {},
+                "content": [
+                  {
+                    "id": "00000000-0000-4000-8000-000000000005",
+                    "type": "text",
+                    "version": 1,
+                    "attrs": {
+                      "text": "первый",
+                      "marks": []
+                    },
+                    "content": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000006",
+            "type": "list_item",
+            "version": 1,
+            "attrs": {},
+            "content": [
+              {
+                "id": "00000000-0000-4000-8000-000000000007",
+                "type": "paragraph",
+                "version": 1,
+                "attrs": {},
+                "content": [
+                  {
+                    "id": "00000000-0000-4000-8000-000000000008",
+                    "type": "text",
+                    "version": 1,
+                    "attrs": {
+                      "text": "второй",
+                      "marks": []
+                    },
+                    "content": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000009",
+            "type": "list_item",
+            "version": 1,
+            "attrs": {},
+            "content": [
+              {
+                "id": "00000000-0000-4000-8000-00000000000a",
+                "type": "paragraph",
+                "version": 1,
+                "attrs": {},
+                "content": [
+                  {
+                    "id": "00000000-0000-4000-8000-00000000000b",
+                    "type": "text",
+                    "version": 1,
+                    "attrs": {
+                      "text": "третий",
+                      "marks": []
+                    },
+                    "content": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "00000000-0000-4000-8000-00000000000c",
+        "type": "bullet_list",
+        "version": 1,
+        "attrs": {},
+        "content": [
+          {
+            "id": "00000000-0000-4000-8000-00000000000d",
+            "type": "list_item",
+            "version": 1,
+            "attrs": {},
+            "content": [
+              {
+                "id": "00000000-0000-4000-8000-00000000000e",
+                "type": "paragraph",
+                "version": 1,
+                "attrs": {},
+                "content": [
+                  {
+                    "id": "00000000-0000-4000-8000-00000000000f",
+                    "type": "text",
+                    "version": 1,
+                    "attrs": {
+                      "text": "новый список после двух пустых строк",
+                      "marks": []
+                    },
+                    "content": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

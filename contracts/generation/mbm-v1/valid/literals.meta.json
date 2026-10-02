@@ -1,3 +1,15 @@
 {
-  "description": "Text that looks like markup but is not: hashtags, numbers with a dot, unmatched delimiters, brackets, braces, a double colon inside a line, an escaped leading hash, delimiter runs of three."
+  "description": "Text that looks like markup but is not: hashtags, numbers with a dot, unmatched delimiters, brackets, braces, a double colon inside a line, an escaped leading hash, delimiter runs of three.",
+  "expected": {
+    "warnings": [
+      {
+        "line": 7,
+        "code": "MBM_LITERAL_DELIMITER"
+      },
+      {
+        "line": 7,
+        "code": "MBM_LITERAL_DELIMITER"
+      }
+    ]
+  }
 }

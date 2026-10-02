@@ -1,0 +1,13 @@
+{
+  "description": "A research result whose URL does not satisfy the href profile is dropped before compilation, so a sources line naming it is not in research.",
+  "input": {
+    "research": [
+      {
+        "n": 1,
+        "url": "http://insecure.example/page",
+        "title": "Insecure"
+      }
+    ],
+    "sourcesHeading": "Источники"
+  }
+}
