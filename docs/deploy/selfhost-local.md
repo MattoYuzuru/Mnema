@@ -105,9 +105,12 @@ earlier build. Run this reset once before the first start of a #266 build (only 
 confirming the local data is disposable).
 
 Issue #278 moved the backend to Java 25, Spring Boot 4.1, Spring Security 7 and Spring Session 4.
-Flyway history and schema are unchanged, but serialized OAuth2 authorizations and browser
-sessions written by earlier builds are not guaranteed to be readable. On an existing local
-database clear them once (everyone signs in again); this is not a full data reset:
+Flyway history and schema are unchanged, and no manual step is required: a browser session
+created by an earlier build is ended at the authorization endpoint (the user is sent to sign in
+again), and an unredeemed authorization code from an earlier session answers `invalid_grant`
+instead of failing. Serialized OAuth2 rows from earlier builds are otherwise not guaranteed to
+be readable, so clearing them once is optional hygiene (everyone signs in again); it is not a
+full data reset:
 
 ```sql
 -- psql against the Identity database

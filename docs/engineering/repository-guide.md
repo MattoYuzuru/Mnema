@@ -34,7 +34,7 @@ glossary: [domain truth map](./domain-truth-map.md).
 | Platform | Exact repository baseline | Source |
 |---|---:|---|
 | Java | toolchain 25 (LTS) | `backend/services/*/build.gradle.kts`, CI setup-java |
-| Spring Boot | 4.1.1 (Framework 7.0.9, Security 7.1.1 incl. Authorization Server, Session 4.1.1, Jackson 3.1.5, JUnit 6.0.3, Flyway 12.4.0, Tomcat 11.0.24) | `backend/settings.gradle.kts`, Boot BOM |
+| Spring Boot | 4.1.1 (Framework 7.0.9, Security 7.1.1 incl. Authorization Server, Session 4.1.1, Jackson 3.1.5, JUnit 6.0.3, Flyway 12.4.0; Tomcat pinned to 11.0.26, the Boot BOM manages 11.0.24) | `backend/settings.gradle.kts`, Boot BOM |
 | Gradle | 9.8.0 | `backend/gradle/wrapper/gradle-wrapper.properties` |
 | Testcontainers / JaCoCo | 2.0.5 / 0.8.15 | Boot BOM, `backend/build.gradle.kts` |
 | Angular | core/CLI/build 22.2.1, zoneless | `frontend/package.json` |

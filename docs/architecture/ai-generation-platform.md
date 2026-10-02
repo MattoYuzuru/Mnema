@@ -11,7 +11,7 @@ artifact:
   base_revision: "origin/main 9d462f7b (#274) for code facts"
   assumptions:
     - "Primary storage, Identity, payments and learning history stay in Russian hosting; a stateless AI gateway abroad is optional and needs a legal decision."
-    - "Spring Boot 3.5 → 4.1 and Java 21 → 25 migration is a separate first infrastructure task; AI code is written to be portable."
+    - "The backend platform upgrade (Java 25, Gradle 9.8.0, Spring Boot 4.1.1, #278) is delivered; the frontend half (Angular/Node) is tracked separately. AI code is written to be portable."
     - "The seven exercise mechanics come from the server registry; ORDER/CATEGORIZE (#268) may land after the first AI slices."
   unresolved_questions:
     - "TTS vendor accessible to a Russian sole proprietor with quality close to Google; Yandex SpeechKit needs an explicit owner exception."
@@ -487,13 +487,15 @@ ETag/304 раз в 30–60 s, раз в 10 s при `activeWork > 0`. Первы
 
 ## 15. Platform
 
-Backend — Spring Boot 3.5.16 (OSS-поддержка 3.5.x закончилась 2026-06-30), Java 21.
-Первая инфраструктурная задача эпика — актуализация стека: Java 25 LTS, Gradle 9.8,
-Spring Boot 4.1.x (BOM: Framework 7.0.x, Security 7.1.x с Authorization Server внутри,
-Jackson 3.1.x, JUnit 6, Testcontainers 2.0.x, Flyway 12.x, Tomcat 11), Angular 22.2.x
-(TypeScript остаётся 6.0.x), Node 24 LTS, JaCoCo ≥0,8.15, Docker/CI images; главные
-риски — семантика Jackson 3 (`JacksonException` unchecked, `textValue()` на
-`MissingNode`), новые стартеры Flyway/Session JDBC, override `tomcat.version`.
+Backend (#278, доставлено): Java 25 LTS (Temurin 25.0.4.1), Gradle 9.8.0, Spring Boot 4.1.1
+(Framework 7.0.9, Security 7.1.1 с Authorization Server внутри, Session 4.1.1, Jackson 3.1.5,
+JUnit 6.0.3, Testcontainers 2.0.5, Flyway 12.4.0; Tomcat закреплён на 11.0.26 поверх 11.0.24 из
+BOM ради исправлений безопасности), JaCoCo 0.8.15, `-Xlint:all -Werror`. Фронтенд-часть
+актуализации стека — Angular 22.2.x (TypeScript остаётся 6.0.x), Node 24 LTS, Docker/CI images —
+ведётся отдельным PR. Разобранные риски backend — семантика Jackson 3 (`JacksonException`
+unchecked, строгие `JsonNode`-аксессоры), стартеры Flyway/Session JDBC; факты и тесты — в
+[platform research](../reviews/ai-layer-research-2026-10/platform-speech-search.md) и
+[repository guide](../engineering/repository-guide.md#platform-baseline).
 Порядок и characterization-тесты — в [platform research](../reviews/ai-layer-research-2026-10/platform-speech-search.md).
 AI-код пишется переносимо: JDK `HttpClient`, без spring-retry и Resilience4j; Spring AI
 не используется и может быть пересмотрен после миграции.
