@@ -47,6 +47,17 @@ x-learning-environment: &learning-environment
   # AI budget plan of every local account (FREE, PLUS, PRO, MAX); see docs/deploy/selfhost-local.md.
   LEARNING_USAGE_ENTITLEMENTS_DEFAULT_PLAN: ${MNEMA_LOCAL_AI_PLAN:-FREE}
 
+# AI provider layer (docs/deploy/selfhost-local.md). Names only: the values come from the launcher's process environment or
+# from the owner's private .env that Compose reads, never from this repository. Without them the AI capabilities stay
+# unavailable. Only the browser-facing Learning instance gets them; the media processor (Docker socket) does not.
+x-ai-environment: &ai-environment
+  LEARNING_FEATURES_AI_GENERATION_ENABLED: ${LEARNING_FEATURES_AI_GENERATION_ENABLED:-false}
+  LEARNING_AI_PROVIDER: ${LEARNING_AI_PROVIDER:-}
+  MNEMA_AI_DEEPSEEK_API_KEY: ${MNEMA_AI_DEEPSEEK_API_KEY:-}
+  MNEMA_AI_GIGACHAT_AUTH_KEY: ${MNEMA_AI_GIGACHAT_AUTH_KEY:-}
+  MNEMA_AI_OPENROUTER_API_KEY: ${MNEMA_AI_OPENROUTER_API_KEY:-}
+  MNEMA_AI_USER_KEY_SECRET: ${MNEMA_AI_USER_KEY_SECRET:-}
+
 # Official MinIO image, pinned by the digest the repository already uses for staging
 # (k8s/staging/data.yaml). MinIO no longer serves it from Docker Hub or Quay, so it
 # must already be in the local image store; see the runbook. The image ships `mc`.
@@ -157,7 +168,8 @@ services:
     build:
       <<: *backend-build
       target: learning-runtime
-    environment: *learning-environment
+    environment:
+      <<: [*learning-environment, *ai-environment]
     depends_on:
       postgres: {condition: service_healthy}
       minio-init: {condition: service_completed_successfully}

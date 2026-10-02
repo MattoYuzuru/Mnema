@@ -397,7 +397,62 @@ code adds.
   of attempts (`PROCESSING_FAILED`). Retryable attempts notify nobody. There is deliberately no "media ready" kind.
 - Keys are listed in the [runtime policy index](../../../docs/engineering/runtime-policy-index.md).
 
-Fresh Learning migrations V1–V26 are the database source of truth. V21 (unified exercise
+## AI provider layer
+
+`app.mnema.learning.ai` is the domain-free provider foundation of the AI layer (AI-02, #282; contracts in
+[`contracts/generation`](../../../contracts/generation/README.md), architecture §4, §8, §9). Generation sessions, steps
+and the UI (AI-04+) build on it; nothing here debits the user's quota, it only reports usage and cost.
+
+- **Ports.** `TextGeneration` (route, ordered segments with a `cacheable` flag that must form a leading run, output
+  contract `MBM_TEXT` or `JSON`, `maxOutputTokens`, temperature, deadline, opaque `userKey`, optional `StreamListener`,
+  step id and attempt) returns `AiResult<TextResponse>`: text, finish reason, usage `{promptTokens, cacheHitTokens,
+  cacheMissTokens, completionTokens}`, cost in micro-USD, provider request id and the route used. A failure is a sealed
+  `AiFailure` (`RATE_LIMITED`, `TRANSIENT`, `TIMEOUT`, `INVALID_OUTPUT`, `REFUSAL`, `BUDGET_EXHAUSTED`, `NOT_CONFIGURED`,
+  `CIRCUIT_OPEN`) with fixed detail codes, never text. `SpeechSynthesis`, `Transcription`, `ImageSearch`,
+  `ImageGeneration`, `WebSearch` and `VideoGeneration` are interfaces only.
+- **Adapter.** `OpenAiCompatibleAdapter` on the JDK `HttpClient` and Jackson 3 trees: no redirects, a connect limit, one
+  deadline over headers and body, an idle limit for SSE (a virtual-thread watchdog closes the stream), a hard body cap, and
+  error bodies are never read. DeepSeek: `thinking` is disabled explicitly, `user_id`, `prompt_cache_hit/miss_tokens`.
+  GigaChat: OAuth exchange of the authorization key (`GigaChatTokens`, covered by a recorded fixture only, not yet run
+  against the live service) and `precached_prompt_tokens`. OpenRouter: config and adapter only, no default route.
+- **Routing and failure policy** (`RoutedTextGeneration`). 429: wait `max(Retry-After, jitter)` and retry up to six
+  times, never past the deadline (a longer `Retry-After` is handed back as `RATE_LIMITED`); 5xx, network and idle/connect
+  timeouts: up to three tries, then the next route entry; invalid output: one repair on the same entry (the cacheable
+  prefix is untouched), then the escalation route (`text-fast` to `text-strong`), then `INVALID_OUTPUT`; refusal,
+  rejected credentials and a passed deadline: no retry, no fallback. Circuit breaker per `(provider, capability)`: five
+  consecutive transport failures inside 60 s open it for 30 s, then one probe (`CircuitBreaker`, `Clock`-driven; a
+  throttled ladder counts as one failure, invalid output and refusals do not count). Per-capability semaphores; a late
+  caller gets `RATE_LIMITED`. The daily budget per capability is summed from the journal and checked before any call.
+- **No transaction around a provider call.** `generate` throws `IllegalStateException` inside a transaction. Each call
+  writes an intent row (own short transaction) before the HTTP call and the outcome after it into
+  `ai_provider_call` (V27): ids, hashes, counts, cost and outcome; never a prompt, response or key. The row moves once
+  from `PENDING` (trigger-enforced); a crash leaves a visible `PENDING` row. A journal failure before the call fails
+  the call closed (`TRANSIENT journal_unavailable`); after it, it is only logged.
+- **Observability.** One `ai_call ...` log line and `mnema_ai_calls_total`, `mnema_ai_call_seconds`,
+  `mnema_ai_cost_micros_total` per provider call (`AiTelemetry`); a test asserts that no key, prompt, user key or
+  provider message reaches a log.
+- **Capabilities.** `GET /api/capabilities` returns eight keys (`aiAssessment`, `speechToText`, `aiGeneration`,
+  `textToSpeech`, `imageSearch`, `imageGeneration`, `videoGeneration`, `webSearch`). A capability is available only when
+  its flag and an adapter exist; `aiGeneration` needs a usable key on the `text-fast` route and the user-key secret, or the
+  Stub. `TEMPORARILY_UNAVAILABLE` is an open circuit on every route entry or a spent daily budget and clears by itself.
+  The capability problem members (`capability`, `reason`) arrive with the typed `ProblemExtension` of the usage/deck-hub work.
+- **Stub.** `learning.ai.provider=stub` (local and CI): the answer is a pure function of the request, MBM output is one of
+  five documents copied from the MBM valid fixtures (a test keeps them byte-equal to the contract and compiling), and the
+  markers `[[stub:rate-limit]]`, `[[stub:transient]]`, `[[stub:timeout]]`, `[[stub:refusal]]`, `[[stub:invalid]]` and
+  `[[stub:invalid-mbm]]` simulate failures; the two `invalid` markers stop applying once a repair segment is present.
+- **Prompt library** (`ai.prompt`). `PromptLibrary` loads `ai/prompts/v*/**` strictly (front matter keys, version equals
+  directory, no placeholder in the static layers). `PromptRenderer` fills `{{name}}` in one pass, so a placeholder inside
+  data stays inert; text values are redacted (`Redactor`: e-mail, Luhn-valid cards, phone forms) and escaped, block values
+  (`*_blocks`, `*_lines`, `allowed_links`, `document`, `schema`) come from `PromptBlocks`, and a missing required value is a
+  hard `PromptException`. `PromptAssembler` orders segments for the provider's prefix cache (core, style, five skills,
+  deck brief cacheable; the task section volatile) and enforces per-section and 32k input ceilings with
+  `TokenCounter`, an estimate (about 3.5 characters per token for Latin, 2.2 for Cyrillic, one per CJK character).
+  `UserKeys` makes `HMAC-SHA256(accountId)` with a key id from `learning.ai.user-key.secret`.
+- **Opt-in eval and live tests** (`AiEvalRunner`, `LiveProviderTest`, skipped without `MNEMA_AI_EVAL` / `MNEMA_AI_LIVE`) are
+  documented in [selfhost-local](../../../docs/deploy/selfhost-local.md#ai-provider-layer-local).
+- Keys are listed in the [runtime policy index](../../../docs/engineering/runtime-policy-index.md).
+
+Fresh Learning migrations V1–V27 are the database source of truth. V27 adds `ai_provider_call` (the provider-call journal). V21 (unified exercise
 mechanics) fails closed when pre-#266 exercise data exists: use a fresh local database. V23
 only widens the exercise type and answer-key kind constraints for `ORDER` and `CATEGORIZE`
 (no data rewrite); V24 adds the notification tables; V25 adds `deck_item_exemplar` and two indexes (assessed-binding by

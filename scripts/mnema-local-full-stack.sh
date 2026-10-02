@@ -290,7 +290,9 @@ compose() {
   require_command docker
   docker compose version >/dev/null 2>&1 || fail "Docker Compose plugin is required"
   local build_id
-  # Compose parses dotenv as data; never source the owner's file as shell code.
+  # Compose parses dotenv as data; never source the owner's file as shell code. The AI provider names (MNEMA_AI_*,
+  # LEARNING_FEATURES_AI_GENERATION_ENABLED, LEARNING_AI_PROVIDER) are not listed here: Compose substitutes them from this
+  # process environment or from that file straight into the Learning service (see compose.local-full-stack.yml).
   local oauth_env_file="${MNEMA_LOCAL_OAUTH_ENV_FILE:-$ROOT_DIR/.env}"
   if [[ ! -e "$oauth_env_file" && -z "${MNEMA_LOCAL_OAUTH_ENV_FILE:-}" ]]; then oauth_env_file=/dev/null; fi
   [[ -r "$oauth_env_file" && ! -d "$oauth_env_file" ]] || fail "OAuth env file is not readable"

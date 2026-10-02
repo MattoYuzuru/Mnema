@@ -285,6 +285,51 @@ Compose [health dependencies](https://docs.docker.com/compose/how-tos/startup-or
 and private files are mounted through Compose
 [secrets](https://docs.docker.com/compose/how-tos/use-secrets/).
 
+## AI provider layer (local)
+
+The AI layer ([architecture §9](../architecture/ai-generation-platform.md), issue #282) is **off by default** and CI never
+calls a provider: tests run on a deterministic Stub or on recorded fixtures served from a loopback `HttpServer`.
+Nothing here is committed with a value; the names below come from the launcher's process environment or from the
+owner's private `.env` that Compose already reads (`MNEMA_LOCAL_OAUTH_ENV_FILE` for a worktree). They reach only the
+browser-facing Learning service, never the media processor or the frontend.
+
+| Name | Meaning |
+|---|---|
+| `MNEMA_AI_DEEPSEEK_API_KEY` | Direct DeepSeek (primary text route) |
+| `MNEMA_AI_GIGACHAT_AUTH_KEY` | GigaChat authorization key (fallback; exchanged for a short-lived token; needs the Russian CA in the Java truststore) |
+| `MNEMA_AI_OPENROUTER_API_KEY` | OpenRouter (optional; no default route uses it) |
+| `MNEMA_AI_USER_KEY_SECRET` | At least 16 random characters: HMAC secret of the opaque per-account user id sent to providers. Required for a real provider; generate once and keep it (`openssl rand -hex 32`) |
+| `LEARNING_FEATURES_AI_GENERATION_ENABLED` | `true` turns `aiGeneration` on (default `false`) |
+| `LEARNING_AI_PROVIDER` | `stub` selects the deterministic Stub for every text route (no key needed); empty uses the real routes |
+
+**Enable it locally.** Put the names above in the private `.env`, then restart with the launcher. With a DeepSeek key,
+the user-key secret and the flag, `GET /api/capabilities` reports `aiGeneration: {available: true}`; without a key it
+reports `PROVIDER_NOT_CONFIGURED`, with the flag off `DISABLED`, and `TEMPORARILY_UNAVAILABLE` while the circuit of every
+route entry is open or the global daily budget is spent. To try the plumbing without a provider set
+`LEARNING_AI_PROVIDER=stub` and the flag. Each provider call is journaled without text in `app_learning.ai_provider_call`
+(90 days) and logged as `ai_call provider=... model=... capability=... outcome=... latency_ms=... in_hit=... in_miss=...
+out=... cost_micros=...`; metrics are `mnema_ai_calls_total`, `mnema_ai_call_seconds` and `mnema_ai_cost_micros_total`.
+Every property is listed in the [runtime policy index](../engineering/runtime-policy-index.md).
+
+**Opt-in checks.** Gradle does not treat the environment as a test input, so `cleanTest` forces the rerun. Both skip
+themselves in CI because their variables are absent. Run from the repository root:
+
+```bash
+# Offline eval on the Stub (no key, no network); report in backend/services/learning/build/reports/ai-eval/report.{json,md}
+cd backend && MNEMA_AI_EVAL=stub ./gradlew :services:learning:cleanTest :services:learning:test --tests '*AiEvalRunner*'
+
+# The same eval on the real route; spends a few cents, needs MNEMA_AI_DEEPSEEK_API_KEY in the environment
+cd backend && MNEMA_AI_EVAL=live ./gradlew :services:learning:cleanTest :services:learning:test --tests '*AiEvalRunner*'
+
+# Live smoke test of the DeepSeek adapter (three tiny calls: plain, streamed, JSON); the key is read from the environment
+cd backend && MNEMA_AI_LIVE=true ./gradlew :services:learning:cleanTest :services:learning:test --tests '*LiveProviderTest*'
+```
+
+The eval renders the prompt of every MBM valid fixture as a material task, compiles the answer with the MBM compiler,
+repairs once and reports validity pass rate, repair rate, p50/p95 latency and cost; neither test prints a key or a
+prompt. The live variants need the key exported in the shell that runs Gradle (for example `export
+MNEMA_AI_DEEPSEEK_API_KEY=...` from your private environment, not on the command line).
+
 ## Historical v1 self-host reference
 
 The old local and public launchers were removed from this checkout in #146. Their
