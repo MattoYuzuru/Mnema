@@ -1,11 +1,14 @@
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
-import { of } from 'rxjs';
+import { ActivatedRoute, provideRouter } from '@angular/router';
+import { of, throwError } from 'rxjs';
 import { AccountProfile, AccountProfileApi } from './account-profile.api';
 import { AuthService } from './auth.service';
 import { ProfilePageComponent } from './profile-page.component';
 import { appConfig } from './app.config';
 import { DURING_STUDY_STORAGE_KEY, NotificationPreferences } from './core/notifications/notification-preferences';
+import { UsageApiService } from './features/usage/usage-api.service';
+import type { UsageSnapshot } from './features/usage/usage.models';
+import { plusUsage } from './features/usage/usage-test-data';
 import { spyObj, type SpyObj } from '../testing/mocks';
 
 const profile: AccountProfile = { accountId: 'd2815e20-ea25-4dce-977a-66ee086f294d',
@@ -15,6 +18,7 @@ const profile: AccountProfile = { accountId: 'd2815e20-ea25-4dce-977a-66ee086f29
 describe('ProfilePageComponent', () => {
     let component: ProfilePageComponent;
     let api: SpyObj<AccountProfileApi>;
+    let usage: SpyObj<UsageApiService>;
     const originalEmailWarning = appConfig.features.showEmailVerificationWarning;
 
     afterEach(() => { appConfig.features.showEmailVerificationWarning = originalEmailWarning; });
@@ -26,11 +30,14 @@ describe('ProfilePageComponent', () => {
             uploadAvatar: vi.fn().mockName("AccountProfileApi.uploadAvatar"),
             avatarUrl: vi.fn().mockName("AccountProfileApi.avatarUrl")
         });
+        usage = spyObj<UsageApiService>({ load: vi.fn().mockName("UsageApiService.load") });
+        usage.load.mockReturnValue(of(plusUsage() as unknown as UsageSnapshot));
         api.load.mockReturnValue(of(profile));
         api.update.mockReturnValue(of({ ...profile, displayName: 'Updated' }));
         TestBed.configureTestingModule({ providers: [
                 provideRouter([]),
                 { provide: AccountProfileApi, useValue: api },
+                { provide: UsageApiService, useValue: usage },
                 { provide: AuthService, useValue: {
                         setPassword: vi.fn().mockName("AuthService.setPassword")
                     } }
@@ -136,5 +143,60 @@ describe('ProfilePageComponent', () => {
         expect(TestBed.inject(NotificationPreferences).duringStudy()).toBe('BADGE_ONLY');
         expect(localStorage.getItem(DURING_STUDY_STORAGE_KEY)).toBe('BADGE_ONLY');
         localStorage.removeItem(DURING_STUDY_STORAGE_KEY);
+    });
+
+    it('shows the «ИИ-бюджет» block next to the other sections', async () => {
+        const fixture = TestBed.createComponent(ProfilePageComponent);
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.detectChanges();
+        const root = fixture.nativeElement as HTMLElement;
+        const section = root.querySelector('section#ai-budget')!;
+        expect(section.getAttribute('aria-labelledby')).toBe('ai-budget-heading');
+        expect(root.querySelector('#ai-budget-heading')?.textContent).toBe('ИИ-бюджет');
+        expect(section.querySelector('app-usage-meter .summary')?.textContent).toContain('Использовано 14');
+    });
+
+    it('keeps the profile working when the usage request fails', async () => {
+        usage.load.mockReturnValue(throwError(() => new Error('offline')));
+        const fixture = TestBed.createComponent(ProfilePageComponent);
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.detectChanges();
+        const root = fixture.nativeElement as HTMLElement;
+        expect(root.querySelector('#ai-budget')?.textContent).toContain('Не удалось узнать расход ИИ');
+        expect(root.querySelector('#ai-budget [role=alert]')).toBeNull();
+        expect(root.querySelector('#profile-username')).not.toBeNull();
+        expect(root.querySelector('#notifications-heading')).not.toBeNull();
+        expect(root.querySelector('.profile-layout button[type=submit]')).not.toBeNull();
+    });
+
+    it('brings the «ИИ-бюджет» heading into view and focuses it for /profile#ai-budget', async () => {
+        const scroll = vi.spyOn(HTMLElement.prototype, 'scrollIntoView');
+        const route = TestBed.inject(ActivatedRoute);
+        Object.defineProperty(route.snapshot, 'fragment', { value: 'ai-budget' });
+        const fixture = TestBed.createComponent(ProfilePageComponent);
+        document.body.append(fixture.nativeElement as HTMLElement);
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.detectChanges();
+        await fixture.whenStable();
+        const heading = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('#ai-budget-heading')!;
+        expect(scroll).toHaveBeenCalledWith({ block: 'start' });
+        expect(document.activeElement).toBe(heading);
+        (fixture.nativeElement as HTMLElement).remove();
+    });
+
+    it('does not move focus when the profile is opened without the anchor', async () => {
+        const scroll = vi.spyOn(HTMLElement.prototype, 'scrollIntoView');
+        const fixture = TestBed.createComponent(ProfilePageComponent);
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.detectChanges();
+        expect(scroll).not.toHaveBeenCalled();
     });
 });

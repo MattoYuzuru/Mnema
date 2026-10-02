@@ -1,12 +1,14 @@
-import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Injector, OnInit, afterNextRender, inject, signal } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { AbstractControl, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { AccountProfile, AccountProfileApi } from './account-profile.api';
 import { AuthService } from './auth.service';
 import { appConfig } from './app.config';
 import { DuringStudyMode, NotificationPreferences } from './core/notifications/notification-preferences';
+import { UsageBudgetComponent } from './features/usage/usage-budget.component';
 import { SegmentedChoiceComponent, SegmentedOption } from './shared/segmented-choice.component';
 
 function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | null {
@@ -15,7 +17,7 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
 
 @Component({
     selector: 'app-profile-page',
-    imports: [ReactiveFormsModule, RouterLink, SegmentedChoiceComponent],
+    imports: [ReactiveFormsModule, RouterLink, SegmentedChoiceComponent, UsageBudgetComponent],
     template: `
       <section class="profile-page" aria-labelledby="profile-title">
         <a routerLink="/decks" class="back-link">← Мои колоды</a>
@@ -68,6 +70,10 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
                 @if (saveSuccess()) { <p class="success" role="status">Изменения сохранены.</p> }
                 <button type="submit" [disabled]="form.invalid || saving()">{{ saving() ? 'Сохраняем…' : 'Сохранить профиль' }}</button>
               </form>
+            </section>
+            <section id="ai-budget" class="sheet" aria-labelledby="ai-budget-heading">
+              <h2 id="ai-budget-heading" tabindex="-1">ИИ-бюджет</h2>
+              <app-usage-budget />
             </section>
             <section class="sheet" aria-labelledby="notifications-heading">
               <h2 id="notifications-heading">Уведомления</h2>
@@ -154,6 +160,9 @@ export class ProfilePageComponent implements OnInit {
     private readonly api = inject(AccountProfileApi);
     private readonly auth = inject(AuthService);
     private readonly fb = inject(FormBuilder);
+    private readonly injector = inject(Injector);
+    private readonly route = inject(ActivatedRoute);
+    private readonly document = inject(DOCUMENT);
     protected readonly preferences = inject(NotificationPreferences);
     protected readonly duringStudyOptions: readonly SegmentedOption<DuringStudyMode>[] = [
         { value: 'AT_PAUSES', label: 'В паузах', hint: 'Сообщение появится после ответа или в конце занятия.' },
@@ -200,7 +209,25 @@ export class ProfilePageComponent implements OnInit {
             this.avatarUrl.set(profile.avatarPresent ? this.api.avatarUrl(profile.accountId, Date.now()) : null);
         } catch {
             this.loadError.set('Проверьте соединение и попробуйте снова.');
-        } finally { this.loading.set(false); }
+        } finally {
+            this.loading.set(false);
+            this.revealFragment();
+        }
+    }
+
+    /**
+     * `/profile#ai-budget` (the link of a usage notification): the block only exists once the profile has loaded, so the
+     * router's own anchor scroll misses it. Bring it into view after the render and give its heading focus, so a keyboard
+     * or screen-reader user lands on it instead of at the top of the page.
+     */
+    private revealFragment(): void {
+        if (this.route.snapshot.fragment !== 'ai-budget') return;
+        afterNextRender({ write: () => {
+            const heading = this.document.getElementById('ai-budget-heading');
+            if (heading === null) return;
+            heading.scrollIntoView({ block: 'start' });
+            heading.focus({ preventScroll: true });
+        } }, { injector: this.injector });
     }
 
     async save(): Promise<void> {
