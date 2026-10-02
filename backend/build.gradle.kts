@@ -21,8 +21,16 @@ subprojects {
         toolVersion = "0.8.15"
     }
 
+    // Mockito's inline mock maker needs its agent at JVM start; loading it dynamically is
+    // deprecated since JDK 21 and prints a warning (https://javadoc.io/doc/org.mockito/mockito-core/latest/org.mockito/org/mockito/Mockito.html#0.3).
+    val mockitoAgent = configurations.create("mockitoAgent")
+    dependencies {
+        add("mockitoAgent", "org.mockito:mockito-core") { isTransitive = false }
+    }
+
     tasks.withType<Test>().configureEach {
         useJUnitPlatform()
+        jvmArgumentProviders.add(CommandLineArgumentProvider { listOf("-javaagent:${mockitoAgent.asPath}") })
         finalizedBy("jacocoTestReport")
     }
 

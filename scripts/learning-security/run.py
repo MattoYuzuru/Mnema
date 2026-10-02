@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Bounded, disposable real Identity -> Learning HTTP security composition.
 
-No dependencies beyond Python stdlib, Java 21, Docker and cached postgres:18.
+No dependencies beyond Python stdlib, Java 25, Docker and cached postgres:18.
 Never prints credentials, bearer tokens, session cookies or private JWK material.
 """
 import argparse

@@ -7,7 +7,7 @@ there is no Playwright/npm/pip dependency or package installation.
 
 ## Run
 
-Prerequisites: existing Java 21 on `PATH`, Node 24, Chrome, OpenSSL with `req -addext`, Docker
+Prerequisites: existing Java 25 on `PATH`, Node 24, Chrome, OpenSSL with `req -addext`, Docker
 with a locally cached `postgres:18`, built backend `bootJar`s and the built Angular browser
 directory. Build/gates belong to the implementation workflow; this harness does not build
 or download dependencies/images. On Colima set the existing local `DOCKER_HOST` normally.
