@@ -355,7 +355,11 @@ capacity evidence.
   publication and reads join `deck_head_item`, so a stale row is never visible. Bulk delete
   (`ItemBulkDeleteService`) resolves the selection against the named Deck revision's immutable member root and deletes
   through `ItemService.publish` in chunks of 100 with deterministic chunk command IDs; the outer receipt is stored at
-  the end, so a crash between chunks is repaired by an exact retry. Limit problems carry the typed
+  the end, so a crash between chunks is repaired by an exact retry. Both hub aggregates are written so no
+  plan depends on planner statistics: insights set `enable_nestloop=off` for their read-only transaction, and the
+  sorted list combines members and exercise rows with `UNION ALL` + `GROUP BY` instead of joining two sets (on
+  bulk-loaded tables without statistics the planner picked a nested loop that rescans a set per row, quadratic in
+  Deck size; 2.1 s cold at 10 000 materials, now ~0.1 s). Limit problems carry the typed
   `ProblemExtension` member `limit`. Measured numbers are in the #285 PR evidence.
 
 ## Notification center

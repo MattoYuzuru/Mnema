@@ -139,8 +139,10 @@ class ItemRepository {
     /**
      * One page of the members of {@code deck} ordered by (enabled assessed exercises ascending, ordinal ascending),
      * strictly after {@code (afterCount, afterOrdinal)} when given. One statement: the member-page traversal supplies
-     * every ordinal, so the cost is O(members) and independent of the page number. The CTEs are MATERIALIZED: inlined,
-     * the planner (which cannot estimate a recursive CTE) joins the per-member aggregate once per member.
+     * every ordinal, so the cost is O(members) and independent of the page number. Members and their exercise rows are
+     * combined by UNION ALL + GROUP BY, never by a join of the two sets: on tables without statistics (just bulk-loaded)
+     * the planner estimates one row for each side and a nested-loop join would rescan one set per row of the other,
+     * quadratic in the Deck size. The aggregation has no plan with that shape.
      */
     List<SortedMember> sortedMembers(DeckHead deck, Integer afterCount, Integer afterOrdinal, int limit) {
         boolean after = afterCount != null;
@@ -151,8 +153,10 @@ class ItemRepository {
                       FROM pages page
                       JOIN app_learning.storage_edge edge ON edge.reuse_scope_id=:scope AND edge.parent_id=page.object_id
                      WHERE page.tree_height=0 AND page.base+edge.ordinal<:count
-                ), counts AS MATERIALIZED (
-                    SELECT binding.member_key,count(*)::integer AS exercise_count
+                ), merged AS (
+                    SELECT member_key,ordinal,descriptor_id,0 AS exercises FROM members
+                    UNION ALL
+                    SELECT binding.member_key,NULL::integer,NULL::uuid,1
                       FROM app_learning.deck_head_exercise head
                       JOIN app_learning.exercise_revision revision ON revision.deck_id=head.deck_id
                        AND revision.exercise_id=head.exercise_id AND revision.revision_id=head.revision_id AND revision.enabled
@@ -160,12 +164,14 @@ class ItemRepository {
                        AND binding.exercise_id=head.exercise_id AND binding.exercise_revision_id=head.revision_id
                        AND binding.role='ASSESSED'
                      WHERE head.deck_id=:deck
-                     GROUP BY binding.member_key
+                ), grouped AS (
+                    SELECT member_key,max(ordinal) AS ordinal,(array_agg(descriptor_id) FILTER (WHERE descriptor_id IS NOT NULL))[1] AS descriptor_id,
+                           sum(exercises)::integer AS exercise_count
+                      FROM merged GROUP BY member_key HAVING max(ordinal) IS NOT NULL
                 )
-                SELECT member.member_key,member.ordinal,member.descriptor_id,COALESCE(count.exercise_count,0) AS exercise_count
-                  FROM members member LEFT JOIN counts count ON count.member_key=member.member_key
-                """ + (after ? " WHERE (COALESCE(count.exercise_count,0),member.ordinal)>(:afterCount,:afterOrdinal) " : " ")
-                + " ORDER BY exercise_count,member.ordinal LIMIT :limit")
+                SELECT member_key,ordinal,descriptor_id,exercise_count FROM grouped
+                """ + (after ? " WHERE (exercise_count,ordinal)>(:afterCount,:afterOrdinal) " : " ")
+                + " ORDER BY exercise_count,ordinal LIMIT :limit")
                 .param("root", deck.membersRootId()).param("scope", deck.scopeId()).param("count", deck.memberCount())
                 .param("leafRank", MEMBERS.leafRank()).param("maxHeight", MEMBERS.maximumHeight())
                 .param("deck", deck.deckId()).param("limit", limit);
