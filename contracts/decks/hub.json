@@ -1,0 +1,408 @@
+{
+  "contract": "deck-hub-v1",
+  "description": "Shared frontend/backend fixtures for the Deck hub (#285): insights, the exerciseCount sort/include on the item list, the exemplar command and bulk deletion. Shapes follow the Deck and Item contracts (private/no-store, decimal-string versions, quoted ETags, RFC 9457 problems). Illustrative cursors are opaque; clients never parse them. `invariants` are executable: the contract fixture test checks them against the examples.",
+  "constants": {
+    "exemplarLimit": 10,
+    "bulkDeleteChunkSize": 100,
+    "bulkDeleteMaxSelection": 500,
+    "listPageDefault": 20,
+    "listPageMax": 100,
+    "dueDays": 7,
+    "defaultTimezone": "Europe/Moscow",
+    "mechanics": [
+      "SELF_CHECK",
+      "FREE_RESPONSE",
+      "CLOZE",
+      "CHOICE",
+      "MATCH",
+      "ORDER",
+      "CATEGORIZE"
+    ],
+    "states": [
+      "NOT_STARTED",
+      "LEARNING",
+      "DUE",
+      "ON_TRACK"
+    ]
+  },
+  "invariants": [
+    "insights.response.coverage.total = withExercises + withoutExercises = sum(states)",
+    "sum(exercisesByMechanic) = sum of every material's exerciseCount (enabled current exercises)",
+    "dueByDay has exactly 7 entries: consecutive local dates, entry 0 is today and includes everything already due",
+    "sum(dueByDay.materials) <= coverage.total",
+    "items.sortedPage: exerciseCount ascending, ties by ordinal ascending, no repeats across pages",
+    "bulkDelete results: requested = deleted + length(notDeleted); status COMPLETED iff notDeleted is empty; PARTIAL implies 0 < deleted",
+    "exemplar.acknowledgement.exemplarCount <= constants.exemplarLimit"
+  ],
+  "insights": {
+    "request": "GET /api/decks/11111111-1111-4111-8111-111111111111/insights",
+    "response": {
+      "deckId": "11111111-1111-4111-8111-111111111111",
+      "deckRevisionId": "33333333-3333-4333-8333-333333333333",
+      "deckVersion": "7",
+      "asOf": "2026-10-02T09:00:00Z",
+      "timezone": "Europe/Moscow",
+      "coverage": {
+        "total": 10,
+        "withExercises": 7,
+        "withoutExercises": 3
+      },
+      "states": {
+        "NOT_STARTED": 4,
+        "LEARNING": 2,
+        "DUE": 2,
+        "ON_TRACK": 2
+      },
+      "dueByDay": [
+        {
+          "date": "2026-10-02",
+          "materials": 2
+        },
+        {
+          "date": "2026-10-03",
+          "materials": 0
+        },
+        {
+          "date": "2026-10-04",
+          "materials": 1
+        },
+        {
+          "date": "2026-10-05",
+          "materials": 0
+        },
+        {
+          "date": "2026-10-06",
+          "materials": 0
+        },
+        {
+          "date": "2026-10-07",
+          "materials": 1
+        },
+        {
+          "date": "2026-10-08",
+          "materials": 0
+        }
+      ],
+      "exercisesByMechanic": {
+        "SELF_CHECK": 3,
+        "FREE_RESPONSE": 4,
+        "CLOZE": 1,
+        "CHOICE": 6,
+        "MATCH": 0,
+        "ORDER": 0,
+        "CATEGORIZE": 0
+      },
+      "captures": {
+        "open": 4,
+        "oldestOpenCreatedAt": "2026-09-12T12:00:00.123456Z"
+      }
+    },
+    "emptyDeck": {
+      "deckId": "11111111-1111-4111-8111-111111111111",
+      "deckRevisionId": "22222222-2222-4222-8222-222222222222",
+      "deckVersion": "0",
+      "asOf": "2026-10-02T09:00:00Z",
+      "timezone": "Europe/Moscow",
+      "coverage": {
+        "total": 0,
+        "withExercises": 0,
+        "withoutExercises": 0
+      },
+      "states": {
+        "NOT_STARTED": 0,
+        "LEARNING": 0,
+        "DUE": 0,
+        "ON_TRACK": 0
+      },
+      "dueByDay": [
+        {
+          "date": "2026-10-02",
+          "materials": 0
+        },
+        {
+          "date": "2026-10-03",
+          "materials": 0
+        },
+        {
+          "date": "2026-10-04",
+          "materials": 0
+        },
+        {
+          "date": "2026-10-05",
+          "materials": 0
+        },
+        {
+          "date": "2026-10-06",
+          "materials": 0
+        },
+        {
+          "date": "2026-10-07",
+          "materials": 0
+        },
+        {
+          "date": "2026-10-08",
+          "materials": 0
+        }
+      ],
+      "exercisesByMechanic": {
+        "SELF_CHECK": 0,
+        "FREE_RESPONSE": 0,
+        "CLOZE": 0,
+        "CHOICE": 0,
+        "MATCH": 0,
+        "ORDER": 0,
+        "CATEGORIZE": 0
+      },
+      "captures": {
+        "open": 0,
+        "oldestOpenCreatedAt": null
+      }
+    },
+    "widgetActions": {
+      "coverage": "withoutExercises > 0: show those materials (item list sort=exerciseCount); start exercise generation with AI for the selection",
+      "states": "DUE > 0: start a scheduled study session; otherwise NOT_STARTED > 0: start a scheduled session with new materials",
+      "dueByDay": "entry 0 > 0: start a scheduled session now; otherwise the first non-empty day names when the next session is worth starting",
+      "exercisesByMechanic": "a mechanic with 0 while others are used: add an exercise of that mechanic (the exercise editor) or generate one",
+      "captures": "open > 0: open the deck's unprocessed capture notes; create materials from them with AI"
+    },
+    "notFound": {
+      "type": "urn:mnema:problem:resource-not-found",
+      "title": "Resource not found",
+      "status": 404,
+      "detail": "The requested resource does not exist.",
+      "instance": "/api/decks/11111111-1111-4111-8111-111111111111/insights",
+      "code": "RESOURCE_NOT_FOUND"
+    }
+  },
+  "items": {
+    "request": "GET /api/decks/11111111-1111-4111-8111-111111111111/items?sort=exerciseCount&include=exerciseCount&limit=3",
+    "sortedPage": {
+      "deckId": "11111111-1111-4111-8111-111111111111",
+      "deckRevisionId": "33333333-3333-4333-8333-333333333333",
+      "deckVersion": "7",
+      "total": 10,
+      "exemplars": {
+        "count": 1,
+        "limit": 10
+      },
+      "items": [
+        {
+          "memberKey": "44444444-4444-4444-8444-444444444443",
+          "itemRevisionId": "55555555-5555-4555-8555-555555555553",
+          "itemVersion": "0",
+          "ordinal": 2,
+          "formatVersion": 1,
+          "createdAt": "2026-09-12T12:00:00.123456Z",
+          "updatedAt": "2026-09-12T12:00:00.123456Z",
+          "title": "行く・来る",
+          "exerciseCount": 0,
+          "exemplar": false
+        },
+        {
+          "memberKey": "44444444-4444-4444-8444-444444444446",
+          "itemRevisionId": "55555555-5555-4555-8555-555555555556",
+          "itemVersion": "1",
+          "ordinal": 5,
+          "formatVersion": 1,
+          "createdAt": "2026-09-12T12:05:00.000000Z",
+          "updatedAt": "2026-09-14T08:00:00.000000Z",
+          "title": "Частица に",
+          "exerciseCount": 0,
+          "exemplar": true
+        },
+        {
+          "memberKey": "44444444-4444-4444-8444-444444444441",
+          "itemRevisionId": "55555555-5555-4555-8555-555555555551",
+          "itemVersion": "0",
+          "ordinal": 0,
+          "formatVersion": 1,
+          "createdAt": "2026-09-12T11:00:00.000000Z",
+          "updatedAt": "2026-09-12T11:00:00.000000Z",
+          "title": "Столица Франции — Париж",
+          "exerciseCount": 1,
+          "exemplar": false
+        }
+      ],
+      "nextCursor": "c29ydGVkLWN1cnNvci1leGFtcGxl"
+    },
+    "orderedPageWithCounts": {
+      "request": "GET /api/decks/11111111-1111-4111-8111-111111111111/items?include=exerciseCount&limit=2",
+      "response": {
+        "deckId": "11111111-1111-4111-8111-111111111111",
+        "deckRevisionId": "33333333-3333-4333-8333-333333333333",
+        "deckVersion": "7",
+        "total": 10,
+        "exemplars": {
+          "count": 1,
+          "limit": 10
+        },
+        "items": [
+          {
+            "memberKey": "44444444-4444-4444-8444-444444444441",
+            "itemRevisionId": "55555555-5555-4555-8555-555555555551",
+            "itemVersion": "0",
+            "ordinal": 0,
+            "formatVersion": 1,
+            "createdAt": "2026-09-12T11:00:00.000000Z",
+            "updatedAt": "2026-09-12T11:00:00.000000Z",
+            "title": "Столица Франции — Париж",
+            "exerciseCount": 1,
+            "exemplar": false
+          },
+          {
+            "memberKey": "44444444-4444-4444-8444-444444444442",
+            "itemRevisionId": "55555555-5555-4555-8555-555555555552",
+            "itemVersion": "0",
+            "ordinal": 1,
+            "formatVersion": 1,
+            "createdAt": "2026-09-12T11:30:00.000000Z",
+            "updatedAt": "2026-09-12T11:30:00.000000Z",
+            "title": "Лион",
+            "exerciseCount": 3,
+            "exemplar": false
+          }
+        ],
+        "nextCursor": "ZGVjay1vcmRlci1jdXJzb3ItZXhhbXBsZQ"
+      }
+    },
+    "invalidRequests": [
+      "sort=name",
+      "sort=exerciseCount&sort=ordinal",
+      "include=exemplar",
+      "include=exerciseCount,exerciseCount",
+      "a cursor issued for another sort or deck revision (other sort: 400; other revision: 412 VERSION_CONFLICT)"
+    ]
+  },
+  "exemplar": {
+    "request": "POST /api/decks/11111111-1111-4111-8111-111111111111/items/44444444-4444-4444-8444-444444444446/exemplar",
+    "command": {
+      "commandId": "018f1d98-5c10-7abc-8abc-0123456789ad",
+      "expectedItemRevisionId": "55555555-5555-4555-8555-555555555556",
+      "exemplar": true
+    },
+    "acknowledgement": {
+      "commandId": "018f1d98-5c10-7abc-8abc-0123456789ad",
+      "deckId": "11111111-1111-4111-8111-111111111111",
+      "memberKey": "44444444-4444-4444-8444-444444444446",
+      "itemRevisionId": "55555555-5555-4555-8555-555555555556",
+      "exemplar": true,
+      "changed": true,
+      "exemplarCount": 1
+    },
+    "unsetCommand": {
+      "commandId": "018f1d98-5c10-7abc-8abc-0123456789ae",
+      "expectedItemRevisionId": "55555555-5555-4555-8555-555555555556",
+      "exemplar": false
+    },
+    "limitReached": {
+      "type": "urn:mnema:problem:exemplar-limit-reached",
+      "title": "Exemplar limit reached",
+      "status": 422,
+      "detail": "The deck already has the maximum number of exemplars.",
+      "instance": "/api/decks/11111111-1111-4111-8111-111111111111/items/44444444-4444-4444-8444-444444444446/exemplar",
+      "code": "EXEMPLAR_LIMIT_REACHED",
+      "limit": 10
+    },
+    "staleItem": {
+      "type": "urn:mnema:problem:version-conflict",
+      "title": "Version conflict",
+      "status": 412,
+      "detail": "The resource changed after the supplied version was read.",
+      "instance": "/api/decks/11111111-1111-4111-8111-111111111111/items/44444444-4444-4444-8444-444444444446/exemplar",
+      "code": "VERSION_CONFLICT"
+    }
+  },
+  "bulkDelete": {
+    "previewRequest": "POST /api/decks/11111111-1111-4111-8111-111111111111/items/deletions/preview",
+    "previewBody": {
+      "itemIds": [
+        "44444444-4444-4444-8444-444444444441",
+        "44444444-4444-4444-8444-444444444442",
+        "44444444-4444-4444-8444-444444444443",
+        "44444444-4444-4444-8444-444444444444",
+        "44444444-4444-4444-8444-444444444445",
+        "44444444-4444-4444-8444-444444444446",
+        "44444444-4444-4444-8444-444444444447"
+      ],
+      "expectedDeckRevisionId": "33333333-3333-4333-8333-333333333333"
+    },
+    "previewResponse": {
+      "deckId": "11111111-1111-4111-8111-111111111111",
+      "deckRevisionId": "33333333-3333-4333-8333-333333333333",
+      "deckVersion": "7",
+      "materialCount": 7,
+      "affectedExerciseCount": 15
+    },
+    "command": {
+      "commandId": "018f1d98-5c10-7abc-8abc-0123456789af",
+      "expectedDeckRevisionId": "33333333-3333-4333-8333-333333333333",
+      "itemIds": [
+        "44444444-4444-4444-8444-444444444441",
+        "44444444-4444-4444-8444-444444444442",
+        "44444444-4444-4444-8444-444444444443",
+        "44444444-4444-4444-8444-444444444444",
+        "44444444-4444-4444-8444-444444444445",
+        "44444444-4444-4444-8444-444444444446",
+        "44444444-4444-4444-8444-444444444447"
+      ]
+    },
+    "commandAllInDeck": {
+      "commandId": "018f1d98-5c10-7abc-8abc-0123456789b0",
+      "expectedDeckRevisionId": "33333333-3333-4333-8333-333333333333",
+      "allInDeck": true,
+      "except": [
+        "44444444-4444-4444-8444-444444444441"
+      ]
+    },
+    "completed": {
+      "commandId": "018f1d98-5c10-7abc-8abc-0123456789af",
+      "deckId": "11111111-1111-4111-8111-111111111111",
+      "status": "COMPLETED",
+      "requested": 7,
+      "deleted": 7,
+      "notDeleted": [],
+      "stopReason": null,
+      "deckRevisionId": "66666666-6666-4666-8666-666666666666",
+      "deckVersion": "8",
+      "memberCount": 3
+    },
+    "partialNote": "Only a resolved selection of more than 100 materials (allInDeck, at most 500) can be partial: each 100-material chunk is one atomic publication, and a foreign publication between two chunks stops the run. Here the deck had 102 materials, 1 excepted, so the selection is 101: the first chunk of 100 was deleted and the second (1 material) hit a foreign publication.",
+    "partial": {
+      "commandId": "018f1d98-5c10-7abc-8abc-0123456789b0",
+      "deckId": "11111111-1111-4111-8111-111111111111",
+      "status": "PARTIAL",
+      "requested": 101,
+      "deleted": 100,
+      "notDeleted": [
+        "44444444-4444-4444-8444-444444444447"
+      ],
+      "stopReason": "VERSION_CONFLICT",
+      "deckRevisionId": "66666666-6666-4666-8666-666666666666",
+      "deckVersion": "8",
+      "memberCount": 2
+    },
+    "staleDeck": {
+      "type": "urn:mnema:problem:version-conflict",
+      "title": "Version conflict",
+      "status": 412,
+      "detail": "The resource changed after the supplied version was read.",
+      "instance": "/api/decks/11111111-1111-4111-8111-111111111111/items/deletions",
+      "code": "VERSION_CONFLICT"
+    },
+    "selectionTooLarge": {
+      "type": "urn:mnema:problem:bulk-selection-too-large",
+      "title": "Bulk selection too large",
+      "status": 422,
+      "detail": "The selection exceeds the bulk operation limit.",
+      "instance": "/api/decks/11111111-1111-4111-8111-111111111111/items/deletions",
+      "code": "BULK_SELECTION_TOO_LARGE",
+      "limit": 500
+    },
+    "clientMessages": {
+      "completed": "Удалено 7 материалов.",
+      "partial": "Удалено 100 материалов. 1 не тронут: колода изменилась в другой вкладке. Обновите список.",
+      "staleDeck": "Колода изменилась в другой вкладке. Ничего не удалено. Обновите список.",
+      "holdToDeleteConsequence": "Удалит 7 материалов и 15 упражнений. История занятий сохранится."
+    }
+  }
+}
