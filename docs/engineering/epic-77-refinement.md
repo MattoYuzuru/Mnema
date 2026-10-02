@@ -59,6 +59,18 @@ AI-UI} → AI-04 → AI-05 → AI-06 → {AI-08, STUDY-01, AI-13, AI-11} → {AI
 AI-14} → {AI-10, AI-09, AI-15, AI-18} → {AI-17, AI-19, AI-21}`. AI-20 требует AI-02 и STT-путь из AI-15 только для
 голосового ответа; текстовый путь — раньше.
 
+### Статус прогонов
+
+| Прогон | Статус | Evidence |
+|---|---|---|
+| 1 | Done 2026-10-02: #278 (#306, #308), #279; #280 — у владельца | [run-1](./evidence/epic-77/run-1/README.md) |
+
+Изменено относительно плана: стек поднят двумя PR (frontend, backend) вместо семи; решения
+владельца по usage (2026-10-02) записаны в [AI layer contract](../product/ai-layer-2026-10.md)
+и [`contracts/usage`](../../contracts/usage/README.md); в контракте генерации упражнений лимит
+сессии — 60 упражнений при 20 материалах (см. «Known doc conflicts» в
+[`contracts/generation`](../../contracts/generation/README.md)).
+
 ## Delivery slices
 
 | № | Issue | Outcome | Входит | Не входит | Риски |

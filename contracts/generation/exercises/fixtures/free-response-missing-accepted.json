@@ -1,0 +1,68 @@
+{
+  "description": "A mechanic object that violates output.schema.json (no accepted answers): the schema stage fails before any lint.",
+  "context": {
+    "commandId": "018f1d98-5c10-7abc-8abc-0123456789c1",
+    "expectedDeckRevisionId": "22222222-2222-4222-8222-222222222222",
+    "materials": {
+      "m1": {
+        "memberKey": "44444444-4444-4444-8444-444444444444",
+        "itemRevisionId": "55555555-5555-4555-8555-555555555555",
+        "blocks": {
+          "b1": {
+            "nodeId": "00000000-0000-4000-8000-000000000002",
+            "text": "Как работает планировщик запросов"
+          },
+          "b2": {
+            "nodeId": "00000000-0000-4000-8000-000000000004",
+            "text": "Планировщик выбирает план с наименьшей оценкой стоимости."
+          },
+          "b3": {
+            "nodeId": "00000000-0000-4000-8000-000000000006",
+            "text": "Seq Scan читает все страницы таблицы, а Index Scan — только нужные."
+          },
+          "b4": {
+            "nodeId": "00000000-0000-4000-8000-000000000008",
+            "text": "ANALYZE обновляет статистику таблицы, на которую опирается оценка стоимости."
+          },
+          "b5": {
+            "nodeId": "00000000-0000-4000-8000-00000000000a",
+            "text": "Если статистика устарела, оценки стоимости неточны, и планировщик может выбрать неудачный план."
+          }
+        }
+      }
+    },
+    "objectives": {
+      "t1": {
+        "objectiveId": "77777777-7777-4777-8777-777777777771",
+        "objectiveRevisionId": "77777777-7777-4777-8777-777777777773"
+      }
+    }
+  },
+  "modelOutput": {
+    "exercises": [
+      {
+        "mechanic": "FREE_RESPONSE",
+        "subject": "m1",
+        "objective": {
+          "ref": "t1"
+        },
+        "prompt": [
+          {
+            "kind": "TEXT",
+            "text": "Как называется команда, которая обновляет статистику таблицы для планировщика?"
+          }
+        ],
+        "reference": [
+          {
+            "kind": "MATERIAL",
+            "ref": "m1:b4"
+          }
+        ],
+        "matchingMode": "STRICT"
+      }
+    ]
+  },
+  "expectedLint": [
+    "SCHEMA_INVALID"
+  ]
+}

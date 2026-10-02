@@ -1,0 +1,21 @@
+{
+  "description": "Allowlist entries that do not satisfy the native-v1 href profile (here http) are dropped before compilation with a warning; links to them stay text.",
+  "input": {
+    "allowedLinks": [
+      "https://allowed.example/",
+      "http://insecure.example/"
+    ]
+  },
+  "expected": {
+    "warnings": [
+      {
+        "line": 0,
+        "code": "MBM_LINK_REJECTED_BY_PROFILE"
+      },
+      {
+        "line": 1,
+        "code": "MBM_LINK_NOT_ALLOWED"
+      }
+    ]
+  }
+}

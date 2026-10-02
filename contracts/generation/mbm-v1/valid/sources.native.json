@@ -1,0 +1,149 @@
+{
+  "formatVersion": 1,
+  "root": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "type": "doc",
+    "version": 1,
+    "attrs": {},
+    "content": [
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "type": "paragraph",
+        "version": 1,
+        "attrs": {},
+        "content": [
+          {
+            "id": "00000000-0000-4000-8000-000000000003",
+            "type": "text",
+            "version": 1,
+            "attrs": {
+              "text": "Статья описывает планировщик [1] и статистику [2].",
+              "marks": []
+            },
+            "content": []
+          }
+        ]
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000004",
+        "type": "heading",
+        "version": 1,
+        "attrs": {
+          "level": 2
+        },
+        "content": [
+          {
+            "id": "00000000-0000-4000-8000-000000000005",
+            "type": "text",
+            "version": 1,
+            "attrs": {
+              "text": "Источники",
+              "marks": []
+            },
+            "content": []
+          }
+        ]
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000006",
+        "type": "bullet_list",
+        "version": 1,
+        "attrs": {},
+        "content": [
+          {
+            "id": "00000000-0000-4000-8000-000000000007",
+            "type": "list_item",
+            "version": 1,
+            "attrs": {},
+            "content": [
+              {
+                "id": "00000000-0000-4000-8000-000000000008",
+                "type": "paragraph",
+                "version": 1,
+                "attrs": {},
+                "content": [
+                  {
+                    "id": "00000000-0000-4000-8000-000000000009",
+                    "type": "text",
+                    "version": 1,
+                    "attrs": {
+                      "text": "[1] ",
+                      "marks": []
+                    },
+                    "content": []
+                  },
+                  {
+                    "id": "00000000-0000-4000-8000-00000000000a",
+                    "type": "link",
+                    "version": 1,
+                    "attrs": {
+                      "href": "https://www.postgresql.org/docs/current/planner-optimizer.html"
+                    },
+                    "content": [
+                      {
+                        "id": "00000000-0000-4000-8000-00000000000b",
+                        "type": "text",
+                        "version": 1,
+                        "attrs": {
+                          "text": "Planner/Optimizer",
+                          "marks": []
+                        },
+                        "content": []
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "00000000-0000-4000-8000-00000000000c",
+            "type": "list_item",
+            "version": 1,
+            "attrs": {},
+            "content": [
+              {
+                "id": "00000000-0000-4000-8000-00000000000d",
+                "type": "paragraph",
+                "version": 1,
+                "attrs": {},
+                "content": [
+                  {
+                    "id": "00000000-0000-4000-8000-00000000000e",
+                    "type": "text",
+                    "version": 1,
+                    "attrs": {
+                      "text": "[2] ",
+                      "marks": []
+                    },
+                    "content": []
+                  },
+                  {
+                    "id": "00000000-0000-4000-8000-00000000000f",
+                    "type": "link",
+                    "version": 1,
+                    "attrs": {
+                      "href": "https://www.postgresql.org/docs/current/planner-stats.html"
+                    },
+                    "content": [
+                      {
+                        "id": "00000000-0000-4000-8000-000000000010",
+                        "type": "text",
+                        "version": 1,
+                        "attrs": {
+                          "text": "Statistics Used by the Planner",
+                          "marks": []
+                        },
+                        "content": []
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

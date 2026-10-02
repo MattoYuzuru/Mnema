@@ -1,0 +1,3 @@
+{
+  "description": "CRLF line endings are normalized to LF before parsing: the result equals the LF-only document."
+}

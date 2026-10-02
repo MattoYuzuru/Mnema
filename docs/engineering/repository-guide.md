@@ -64,7 +64,8 @@ Mnema/
 │   ├── features/own-decks/              canonical private Deck UI
 │   ├── features/study/                  canonical deck-scoped Study UI
 │   └── core/, shared/                  current shell and translation helpers
-├── contracts/                           shared native/content/deck/item fixtures
+├── contracts/                           shared native/content/deck/item/study fixtures;
+│                                        generation, usage, notifications (AI contracts, not yet implemented)
 ├── scripts/
 │   ├── browser-identity/                real local HTTPS browser/E2E harness
 │   ├── local-full-stack/                persistent local API smoke

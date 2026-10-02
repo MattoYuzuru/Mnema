@@ -1,0 +1,16 @@
+{
+  "description": "Edit of a target range: handles keep the node IDs of blocks whose type is unchanged; a block without a handle is new; descendants always get new IDs.",
+  "input": {
+    "mode": "EDIT",
+    "handles": {
+      "b3": {
+        "nodeId": "7d000000-0000-4000-8000-000000000003",
+        "type": "paragraph"
+      },
+      "b4": {
+        "nodeId": "7d000000-0000-4000-8000-000000000004",
+        "type": "table"
+      }
+    }
+  }
+}

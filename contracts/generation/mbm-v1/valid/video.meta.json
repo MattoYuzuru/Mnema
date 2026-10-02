@@ -1,0 +1,21 @@
+{
+  "description": "Video directive; allowed only when the videoGeneration capability is on.",
+  "input": {
+    "capabilities": {
+      "videoGeneration": true
+    }
+  },
+  "expected": {
+    "slots": [
+      {
+        "slotKey": "v1",
+        "kind": "VIDEO",
+        "spec": {
+          "prompt": "short animated explainer of a B-tree lookup"
+        },
+        "nodeId": "00000000-0000-4000-8000-000000000002",
+        "assetId": "00000000-0000-4000-a000-000000000001"
+      }
+    ]
+  }
+}

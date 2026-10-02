@@ -1,0 +1,1780 @@
+{
+  "contract": "generation-v1",
+  "description": "HTTP contract of Workshop sessions, artifacts, approval and edits under /api (Learning context path). Authority: docs/architecture/ai-generation-platform.md sections 3-5 and 7. Nothing here is implemented yet: AI-04 (#287), AI-05 (#288), AI-11 (#293), AI-13 (#291), AI-06 (#289) implement and consume it.",
+  "conventions": {
+    "owner": "The JWT subject is the only owner input. Foreign or absent deck, session or artifact IDs share one opaque 404.",
+    "caching": "Every response is Cache-Control: private, no-store.",
+    "ids": "Canonical lowercase UUID strings. commandId is UUIDv4 or UUIDv7; entity IDs are any registered version.",
+    "versions": "rowVersion, deckVersion and event cursors are decimal strings. ETag is the quoted rowVersion; If-Match is exactly one quoted canonical decimal (no weak validator, wildcard, list or leading zeros).",
+    "preconditions": "Missing required precondition 428 PRECONDITION_REQUIRED, malformed 400 INVALID_REQUEST, stale 412 VERSION_CONFLICT. Approval pins the Deck version in If-Match and the artifact version, revision and Deck revision in the body. Cancel and delete need no If-Match: they are state-idempotent. A session's rowVersion bumps on every row change and is exposed as ETag for reads; no session command uses it as a precondition.",
+    "evaluationOrder": "1 authentication and ownership (foreign or unknown IDs, including an unknown or foreign note ID in sources, are 404: no existence oracle); 2 command receipt replay (same commandId and body returns the stored response with Idempotency-Replayed: true, before anything else is re-evaluated); 3 request validation (400); 4 preconditions (428, then 412 on If-Match and expected versions); 5 state (409 GENERATION_STATE_CONFLICT, EDIT_IN_PROGRESS, SOURCE_UNAVAILABLE, CAPABILITY_UNAVAILABLE, 422 limits); 6 usage (409 USAGE_LIMIT_REACHED, last, inside the admission transaction). Nothing changes state before step 6 passes.",
+    "problemExtensions": "Problem extension members (capability, reason, bucket, limits ...) are added by the run-2 tasks through a small typed ProblemExtension map in platform.api; AI-01 (#281) is the first user. ApiErrorCode itself keeps its fixed status, title and detail.",
+    "idempotency": "Every POST command carries commandId. An exact retry returns the stored original status and body with Idempotency-Replayed: true and no ETag; changed reuse is 409 IDEMPOTENCY_CONFLICT. Replays are not current reads: reconcile with GET.",
+    "errors": "RFC 9457 application/problem+json with type urn:mnema:problem:<kebab-code>, title, status, detail, instance, code and the extension members listed in errors.json. Detail never echoes content.",
+    "bodyLimit": "Request bodies are strict JSON (exact field sets, duplicate keys rejected) of at most 64 KiB; none of them carries a document."
+  },
+  "endpoints": [
+    {
+      "operationId": "getCapabilities",
+      "method": "GET",
+      "path": "/api/capabilities",
+      "summary": "Extension of the existing capabilities endpoint with the AI flags (flag && adapter configured).",
+      "success": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "private, no-store"
+        },
+        "body": {
+          "$ref": "#/examples/capabilities"
+        }
+      },
+      "errors": [
+        {
+          "status": 401,
+          "code": "AUTHENTICATION_REQUIRED",
+          "when": "No valid token."
+        }
+      ],
+      "notes": [
+        "Existing keys aiAssessment and speechToText keep their shape. aiGeneration, textToSpeech, imageSearch, imageGeneration, videoGeneration, webSearch are added by AI-02 (#282). reason is null while available, else DISABLED, PROVIDER_NOT_CONFIGURED or the new TEMPORARILY_UNAVAILABLE (circuit open or global budget).",
+        "Quota is not a capability: it is GET /api/usage (contracts/usage)."
+      ]
+    },
+    {
+      "operationId": "estimateGeneration",
+      "method": "POST",
+      "path": "/api/decks/{deckId}/generation-estimates",
+      "summary": "Preflight cost of a spec or of one edit. Read-only; reserves nothing.",
+      "requestBody": {
+        "oneOf": [
+          "{spec}",
+          "{edit}"
+        ],
+        "example": {
+          "$ref": "../usage/usage.json#/estimateRequest/forms/spec"
+        }
+      },
+      "success": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "private, no-store"
+        },
+        "body": {
+          "$ref": "../usage/usage.json#/estimateResponse"
+        }
+      },
+      "errors": [
+        {
+          "status": 400,
+          "code": "INVALID_REQUEST",
+          "when": "Malformed or unknown field, duplicate JSON key, bad UUID or version."
+        },
+        {
+          "status": 404,
+          "code": "RESOURCE_NOT_FOUND",
+          "when": "Foreign or absent deck, session or artifact: one opaque boundary."
+        },
+        {
+          "status": 409,
+          "code": "CAPABILITY_UNAVAILABLE",
+          "when": "A capability the operation needs is off."
+        },
+        {
+          "status": 422,
+          "code": "SPEC_NOT_SUPPORTED",
+          "when": "A REVISE_ITEM or REVISE_EXERCISE spec before AI-16 (#294)."
+        },
+        {
+          "status": 422,
+          "code": "RESOURCE_LIMIT_EXCEEDED",
+          "when": "The spec exceeds a session limit (sources, targets, exercises per session).",
+          "limit": "SOURCES | ARTIFACTS_PER_SESSION | EXERCISE_TARGETS | EXERCISES_PER_TARGET | EXERCISES_PER_SESSION"
+        }
+      ],
+      "notes": [
+        "Owned by AI-01 (#281): the endpoint, the rate-card math and the reservation. The generation module supplies the spec interpretation and the personal-data scan hooks as they land (AI-04 and later).",
+        "Not keyed by commandId: it is a pure function of the spec, the rate card and the current balance."
+      ]
+    },
+    {
+      "operationId": "createSession",
+      "method": "POST",
+      "path": "/api/decks/{deckId}/generation-sessions",
+      "summary": "Create a session and its artifacts, reserve the initial batch, enqueue steps; all in one transaction.",
+      "requestBody": {
+        "fields": {
+          "commandId": "UUIDv4/v7",
+          "spec": "schemas.generationSpec"
+        },
+        "example": {
+          "commandId": "018f1d98-5c10-7abc-8abc-0123456789a1",
+          "spec": {
+            "$ref": "#/examples/specMaterials"
+          }
+        }
+      },
+      "success": {
+        "status": 201,
+        "headers": {
+          "Location": "/api/decks/{deckId}/generation-sessions/{sessionId}",
+          "ETag": "Quoted session rowVersion",
+          "Cache-Control": "private, no-store"
+        },
+        "body": {
+          "$ref": "#/examples/sessionDetailCreated"
+        }
+      },
+      "errors": [
+        {
+          "status": 400,
+          "code": "INVALID_REQUEST",
+          "when": "Malformed or unknown field, duplicate JSON key, bad UUID or version."
+        },
+        {
+          "status": 404,
+          "code": "RESOURCE_NOT_FOUND",
+          "when": "Foreign or absent deck, session or artifact: one opaque boundary."
+        },
+        {
+          "status": 409,
+          "code": "USAGE_LIMIT_REACHED",
+          "when": "The reservation or debit does not fit a credit, cap, fair-use or daily-burst limit."
+        },
+        {
+          "status": 409,
+          "code": "CAPABILITY_UNAVAILABLE",
+          "when": "A capability the operation needs is off."
+        },
+        {
+          "status": 409,
+          "code": "SOURCE_UNAVAILABLE",
+          "when": "A pinned owned note or material exists but no longer matches the pin, or has been deleted since."
+        },
+        {
+          "status": 409,
+          "code": "IDEMPOTENCY_CONFLICT",
+          "when": "commandId was used for a different command."
+        },
+        {
+          "status": 422,
+          "code": "SPEC_NOT_SUPPORTED",
+          "when": "REVISE_ITEM or REVISE_EXERCISE before AI-16 (#294) defines their flow."
+        },
+        {
+          "status": 422,
+          "code": "RESOURCE_LIMIT_EXCEEDED",
+          "when": "More than 3 active sessions (PLANNING, PLAN_READY, RUNNING, and REVIEW with a PROPOSED, REVISING or STALE artifact; the problem lists activeSessionIds), too many artifacts, targets or exercises.",
+          "limit": "ACTIVE_SESSIONS | ARTIFACTS_PER_SESSION | EXERCISE_TARGETS | EXERCISES_PER_TARGET | EXERCISES_PER_SESSION",
+          "activeSessionIds": "uuids, only for ACTIVE_SESSIONS"
+        }
+      ],
+      "notes": [
+        "Exact retry returns the stored 201 with Idempotency-Replayed: true and no ETag; reconcile with getSession.",
+        "Initial state is RUNNING, or PLANNING when spec.settings.planFirst.",
+        "The session reservation covers the initial batch only (contracts/usage reservation lifecycle).",
+        "A pinned NOTE or ITEM that is unknown or foreign is 404; SOURCE_UNAVAILABLE is only for an owned source whose version no longer matches the pin."
+      ]
+    },
+    {
+      "operationId": "listSessions",
+      "method": "GET",
+      "path": "/api/decks/{deckId}/generation-sessions",
+      "summary": "Sessions of one deck, newest first.",
+      "query": {
+        "limit": "1..100, default 20",
+        "cursor": "opaque",
+        "active": "true: only PLANNING, PLAN_READY, RUNNING, REVIEW"
+      },
+      "success": {
+        "status": 200,
+        "body": {
+          "items": [
+            {
+              "$ref": "#/examples/sessionSummary"
+            }
+          ],
+          "nextCursor": null
+        }
+      },
+      "errors": [
+        {
+          "status": 400,
+          "code": "INVALID_REQUEST",
+          "when": "Malformed or unknown field, duplicate JSON key, bad UUID or version."
+        },
+        {
+          "status": 404,
+          "code": "RESOURCE_NOT_FOUND",
+          "when": "Foreign or absent deck, session or artifact: one opaque boundary."
+        }
+      ]
+    },
+    {
+      "operationId": "listActiveSessions",
+      "method": "GET",
+      "path": "/api/generation-sessions",
+      "summary": "Sessions of the account across decks: the 'active sessions' entry point of the Workshop.",
+      "query": {
+        "state": "active (only value in v1): PLANNING, PLAN_READY, RUNNING, REVIEW (every REVIEW session, also one that holds only FAILED leftovers and does not count toward the 3-session limit)",
+        "limit": "1..100, default 20",
+        "cursor": "opaque"
+      },
+      "success": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "private, no-store"
+        },
+        "body": {
+          "items": [
+            {
+              "$ref": "#/examples/sessionSummary"
+            }
+          ],
+          "nextCursor": null
+        }
+      },
+      "errors": [
+        {
+          "status": 400,
+          "code": "INVALID_REQUEST",
+          "when": "Unknown state value, bad cursor or limit."
+        },
+        {
+          "status": 401,
+          "code": "AUTHENTICATION_REQUIRED",
+          "when": "No valid token."
+        }
+      ],
+      "notes": [
+        "Needed by AI-06 (#289). Items carry deckId; ordering is newest first by (lastActivityAt, sessionId)."
+      ]
+    },
+    {
+      "operationId": "getSession",
+      "method": "GET",
+      "path": "/api/decks/{deckId}/generation-sessions/{sessionId}",
+      "summary": "Session with artifact summaries.",
+      "success": {
+        "status": 200,
+        "headers": {
+          "ETag": "Quoted session rowVersion",
+          "Cache-Control": "private, no-store"
+        },
+        "body": {
+          "$ref": "#/examples/sessionDetail"
+        }
+      },
+      "errors": [
+        {
+          "status": 400,
+          "code": "INVALID_REQUEST",
+          "when": "Malformed or unknown field, duplicate JSON key, bad UUID or version."
+        },
+        {
+          "status": 404,
+          "code": "RESOURCE_NOT_FOUND",
+          "when": "Foreign or absent deck, session or artifact: one opaque boundary."
+        }
+      ],
+      "notes": [
+        "Read-only: a GET never detects or changes a source drift."
+      ]
+    },
+    {
+      "operationId": "cancelSession",
+      "method": "POST",
+      "path": "/api/decks/{deckId}/generation-sessions/{sessionId}/cancellation",
+      "summary": "Stop the session: waiting steps CANCELLED, running steps get cancel_requested, unfinished artifacts (QUEUED or GENERATING) FAILED(CANCELLED), unspent reservation released.",
+      "requestBody": {
+        "commandId": "018f1d98-5c10-7abc-8abc-0123456789a2"
+      },
+      "success": {
+        "status": 200,
+        "headers": {
+          "ETag": "new session rowVersion"
+        },
+        "body": {
+          "$ref": "#/examples/sessionDetailCancelled"
+        }
+      },
+      "errors": [
+        {
+          "status": 400,
+          "code": "INVALID_REQUEST",
+          "when": "Malformed or unknown field, duplicate JSON key, bad UUID or version."
+        },
+        {
+          "status": 404,
+          "code": "RESOURCE_NOT_FOUND",
+          "when": "Foreign or absent deck, session or artifact: one opaque boundary."
+        },
+        {
+          "status": 409,
+          "code": "GENERATION_STATE_CONFLICT",
+          "when": "Operation not allowed in the current session or artifact state (states.json allowedOperations).",
+          "reason": "ILLEGAL_STATE"
+        },
+        {
+          "status": 409,
+          "code": "IDEMPOTENCY_CONFLICT",
+          "when": "commandId was used for a different command."
+        }
+      ],
+      "notes": [
+        "State-idempotent, no If-Match: cancelling an already CANCELLED session answers 200 with the current state. CLOSED and EXPIRED sessions answer 409."
+      ]
+    },
+    {
+      "operationId": "deleteSession",
+      "method": "DELETE",
+      "path": "/api/decks/{deckId}/generation-sessions/{sessionId}",
+      "summary": "Hold-to-delete: physically removes unpublished artifacts, revisions, slots and holds; published content stays in the catalog.",
+      "success": {
+        "status": 204
+      },
+      "errors": [
+        {
+          "status": 400,
+          "code": "INVALID_REQUEST",
+          "when": "Malformed or unknown field, duplicate JSON key, bad UUID or version."
+        },
+        {
+          "status": 404,
+          "code": "RESOURCE_NOT_FOUND",
+          "when": "Foreign or absent deck, session or artifact: one opaque boundary."
+        }
+      ],
+      "notes": [
+        "No If-Match. The first call answers 204, later calls 404."
+      ]
+    },
+    {
+      "operationId": "listEvents",
+      "method": "GET",
+      "path": "/api/decks/{deckId}/generation-sessions/{sessionId}/events",
+      "summary": "Append-only progress events after a cursor (polling).",
+      "query": {
+        "after": "decimal event seq, default 0",
+        "limit": "1..100, default 100"
+      },
+      "success": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "private, no-store"
+        },
+        "body": {
+          "$ref": "events.json#/envelope/example"
+        }
+      },
+      "errors": [
+        {
+          "status": 400,
+          "code": "INVALID_REQUEST",
+          "when": "Malformed or unknown field, duplicate JSON key, bad UUID or version."
+        },
+        {
+          "status": 404,
+          "code": "RESOURCE_NOT_FOUND",
+          "when": "Foreign or absent deck, session or artifact: one opaque boundary."
+        }
+      ],
+      "notes": [
+        "See events.json. Events are kept until the session is closed (or cancelled or expired) plus one day; after that, or after a purge, the session is a 404."
+      ]
+    },
+    {
+      "operationId": "getArtifact",
+      "method": "GET",
+      "path": "/api/decks/{deckId}/generation-sessions/{sessionId}/artifacts/{artifactId}",
+      "summary": "Current revision (or an exact one), media slots, revision list and turns.",
+      "query": {
+        "revisionId": "optional: read this revision's payload; the current pointer is unchanged"
+      },
+      "success": {
+        "status": 200,
+        "headers": {
+          "ETag": "Quoted artifact rowVersion",
+          "Cache-Control": "private, no-store"
+        },
+        "body": {
+          "ITEM": {
+            "$ref": "#/examples/artifactDetailItem"
+          },
+          "EXERCISE": {
+            "$ref": "#/examples/artifactDetailExercise"
+          }
+        }
+      },
+      "errors": [
+        {
+          "status": 400,
+          "code": "INVALID_REQUEST",
+          "when": "Malformed or unknown field, duplicate JSON key, bad UUID or version."
+        },
+        {
+          "status": 404,
+          "code": "RESOURCE_NOT_FOUND",
+          "when": "Foreign or absent deck, session or artifact: one opaque boundary."
+        }
+      ],
+      "notes": [
+        "ITEM payload is a native-v1 document; EXERCISE payload is the objective and exercise members of the exercise publication command (contracts/study); commandId and expectedDeckRevisionId are supplied at approval.",
+        "Model route, prompt version and provenance are never returned.",
+        "Read-only: never changes state."
+      ]
+    },
+    {
+      "operationId": "approveArtifact",
+      "method": "POST",
+      "path": "/api/decks/{deckId}/generation-sessions/{sessionId}/artifacts/{artifactId}/approval",
+      "summary": "Publish one artifact into the catalog in one transaction (approve).",
+      "requestHeaders": {
+        "If-Match": "Quoted decimal Deck rowVersion (as in contracts/items); missing 428, malformed 400, stale 412."
+      },
+      "requestBody": {
+        "commandId": "018f1d98-5c10-7abc-8abc-0123456789b1",
+        "expectedArtifactVersion": "4",
+        "expectedRevisionId": "4e700000-0000-4000-8000-000000000001",
+        "expectedDeckRevisionId": "22222222-2222-4222-8222-222222222222"
+      },
+      "success": {
+        "status": 200,
+        "headers": {
+          "ETag": "new Deck rowVersion"
+        },
+        "body": {
+          "ITEM": {
+            "$ref": "#/examples/approvalAckItem"
+          },
+          "EXERCISE": {
+            "$ref": "#/examples/approvalAckExercise"
+          }
+        }
+      },
+      "errors": [
+        {
+          "status": 400,
+          "code": "INVALID_REQUEST",
+          "when": "Malformed or unknown field, duplicate JSON key, bad UUID or version."
+        },
+        {
+          "status": 404,
+          "code": "RESOURCE_NOT_FOUND",
+          "when": "Foreign or absent deck, session or artifact: one opaque boundary."
+        },
+        {
+          "status": 412,
+          "code": "VERSION_CONFLICT",
+          "when": "Deck, artifact or revision version is stale; read again, then retry with a new commandId."
+        },
+        {
+          "status": 428,
+          "code": "PRECONDITION_REQUIRED",
+          "when": "If-Match missing."
+        },
+        {
+          "status": 409,
+          "code": "GENERATION_STATE_CONFLICT",
+          "when": "State is not PROPOSED, a media slot is neither READY nor REMOVED, or a pinned source changed (the artifact became STALE in a short transaction before the publish transaction).",
+          "reason": "ILLEGAL_STATE | MEDIA_NOT_READY | SOURCE_STALE"
+        },
+        {
+          "status": 409,
+          "code": "IDEMPOTENCY_CONFLICT",
+          "when": "commandId was used for a different command."
+        }
+      ],
+      "notes": [
+        "Exact retry returns the stored acknowledgement with Idempotency-Replayed: true and no ETag.",
+        "Item approval publishes through the caller-owned port into ItemService; exercise approval through ExerciseService with objective.operation=reuse where the target objective is unchanged."
+      ]
+    },
+    {
+      "operationId": "approveArtifacts",
+      "method": "POST",
+      "path": "/api/decks/{deckId}/generation-sessions/{sessionId}/approvals",
+      "summary": "Approve up to 20 listed artifacts (ITEM and EXERCISE mixed) as one atomic bulk publication.",
+      "requestHeaders": {
+        "If-Match": "Quoted decimal Deck rowVersion (as in contracts/items); missing 428, malformed 400, stale 412."
+      },
+      "requestBody": {
+        "commandId": "018f1d98-5c10-7abc-8abc-0123456789b3",
+        "expectedDeckRevisionId": "22222222-2222-4222-8222-222222222222",
+        "artifacts": [
+          {
+            "artifactId": "a7a70000-0000-4000-8000-000000000001",
+            "expectedArtifactVersion": "4",
+            "expectedRevisionId": "4e700000-0000-4000-8000-000000000001"
+          },
+          {
+            "artifactId": "a7a70000-0000-4000-8000-000000000002",
+            "expectedArtifactVersion": "3",
+            "expectedRevisionId": "4e700000-0000-4000-8000-000000000002"
+          }
+        ]
+      },
+      "success": {
+        "status": 200,
+        "headers": {
+          "ETag": "new Deck rowVersion"
+        },
+        "body": {
+          "$ref": "#/examples/approvalAckBulk"
+        }
+      },
+      "errors": [
+        {
+          "status": 400,
+          "code": "INVALID_REQUEST",
+          "when": "Malformed or unknown field, duplicate JSON key, bad UUID or version."
+        },
+        {
+          "status": 404,
+          "code": "RESOURCE_NOT_FOUND",
+          "when": "Foreign or absent deck, session or artifact: one opaque boundary."
+        },
+        {
+          "status": 412,
+          "code": "VERSION_CONFLICT",
+          "when": "Deck or any artifact version is stale; the problem names the stale artifacts in artifactIds.",
+          "artifactIds": "uuids of the stale artifacts"
+        },
+        {
+          "status": 428,
+          "code": "PRECONDITION_REQUIRED",
+          "when": "If-Match missing."
+        },
+        {
+          "status": 409,
+          "code": "GENERATION_STATE_CONFLICT",
+          "when": "Any listed artifact is not approvable; the problem names them in artifactIds.",
+          "reason": "ILLEGAL_STATE | MEDIA_NOT_READY | SOURCE_STALE",
+          "artifactIds": "uuids that block the command"
+        },
+        {
+          "status": 409,
+          "code": "IDEMPOTENCY_CONFLICT",
+          "when": "commandId was used for a different command."
+        }
+      ],
+      "notes": [
+        "All or nothing, in ONE database transaction: ItemService and ExerciseService are called in-process, sequentially, with child command IDs derived as uuidv5(commandId, artifactId) and chained deck revisions. Any failure rolls everything back.",
+        "The list is capped at 20 (the MATERIALS session maximum); the client splits a larger selection (an exercise session can hold 60) into several commands, each atomic.",
+        "The response lists one acknowledgement per artifact (ITEM and EXERCISE shapes) and the final Deck revision.",
+        "The client lists exactly the artifacts it showed as approvable ('Approve all ready (N)'); an artifact that stopped being approvable fails the whole command."
+      ]
+    },
+    {
+      "operationId": "rejectArtifact",
+      "method": "POST",
+      "path": "/api/decks/{deckId}/generation-sessions/{sessionId}/artifacts/{artifactId}/rejection",
+      "summary": "Disapprove (reversible while the session is not CLOSED).",
+      "requestBody": {
+        "commandId": "018f1d98-5c10-7abc-8abc-0123456789b4",
+        "expectedArtifactVersion": "4"
+      },
+      "success": {
+        "status": 200,
+        "headers": {
+          "ETag": "new artifact rowVersion"
+        },
+        "body": {
+          "artifactId": "a7a70000-0000-4000-8000-000000000001",
+          "ordinal": 0,
+          "targetKind": "ITEM",
+          "state": "REJECTED",
+          "rowVersion": "5",
+          "title": "Seq Scan и Index Scan",
+          "currentRevisionId": "4e700000-0000-4000-8000-000000000001",
+          "mediaSlotCounts": {
+            "total": 1,
+            "ready": 1,
+            "failed": 0
+          },
+          "errorCode": null,
+          "repinStatus": null,
+          "publishedRef": null
+        }
+      },
+      "errors": [
+        {
+          "status": 400,
+          "code": "INVALID_REQUEST",
+          "when": "Malformed or unknown field, duplicate JSON key, bad UUID or version."
+        },
+        {
+          "status": 404,
+          "code": "RESOURCE_NOT_FOUND",
+          "when": "Foreign or absent deck, session or artifact: one opaque boundary."
+        },
+        {
+          "status": 412,
+          "code": "VERSION_CONFLICT",
+          "when": "Artifact changed."
+        },
+        {
+          "status": 409,
+          "code": "GENERATION_STATE_CONFLICT",
+          "when": "Operation not allowed in the current session or artifact state (states.json allowedOperations).",
+          "reason": "ILLEGAL_STATE"
+        },
+        {
+          "status": 409,
+          "code": "IDEMPOTENCY_CONFLICT",
+          "when": "commandId was used for a different command."
+        }
+      ]
+    },
+    {
+      "operationId": "undoRejectArtifact",
+      "method": "DELETE",
+      "path": "/api/decks/{deckId}/generation-sessions/{sessionId}/artifacts/{artifactId}/rejection",
+      "summary": "Undo a rejection: REJECTED back to PROPOSED.",
+      "requestHeaders": {
+        "If-Match": "Quoted decimal artifact rowVersion; missing 428, malformed 400, stale 412."
+      },
+      "success": {
+        "status": 200,
+        "headers": {
+          "ETag": "new artifact rowVersion"
+        },
+        "body": {
+          "$ref": "#/examples/artifactSummaryProposed"
+        }
+      },
+      "errors": [
+        {
+          "status": 400,
+          "code": "INVALID_REQUEST",
+          "when": "Malformed or unknown field, duplicate JSON key, bad UUID or version."
+        },
+        {
+          "status": 404,
+          "code": "RESOURCE_NOT_FOUND",
+          "when": "Foreign or absent deck, session or artifact: one opaque boundary."
+        },
+        {
+          "status": 412,
+          "code": "VERSION_CONFLICT",
+          "when": "Artifact changed."
+        },
+        {
+          "status": 428,
+          "code": "PRECONDITION_REQUIRED",
+          "when": "If-Match missing."
+        },
+        {
+          "status": 409,
+          "code": "GENERATION_STATE_CONFLICT",
+          "when": "Operation not allowed in the current session or artifact state (states.json allowedOperations).",
+          "reason": "ILLEGAL_STATE"
+        }
+      ]
+    },
+    {
+      "operationId": "handoffArtifact",
+      "method": "POST",
+      "path": "/api/decks/{deckId}/generation-sessions/{sessionId}/artifacts/{artifactId}/handoff",
+      "summary": "Open the current revision in the editor: creates an EditingDraft (member_key null for a new material); artifact HANDED_OFF. Also the way to edit a STALE proposal oneself.",
+      "requestBody": {
+        "commandId": "018f1d98-5c10-7abc-8abc-0123456789b5",
+        "expectedArtifactVersion": "4",
+        "expectedRevisionId": "4e700000-0000-4000-8000-000000000001"
+      },
+      "success": {
+        "status": 201,
+        "headers": {
+          "Location": "/api/editing-drafts/{draftId}",
+          "ETag": "draft rowVersion"
+        },
+        "body": {
+          "artifact": {
+            "artifactId": "a7a70000-0000-4000-8000-000000000001",
+            "ordinal": 0,
+            "targetKind": "ITEM",
+            "state": "HANDED_OFF",
+            "rowVersion": "5",
+            "title": "Seq Scan и Index Scan",
+            "currentRevisionId": "4e700000-0000-4000-8000-000000000001",
+            "mediaSlotCounts": {
+              "total": 1,
+              "ready": 1,
+              "failed": 0
+            },
+            "errorCode": null,
+            "repinStatus": null,
+            "publishedRef": null
+          },
+          "draft": {
+            "draftId": "d4af7000-0000-4000-8000-000000000001",
+            "deckId": "11111111-1111-4111-8111-111111111111",
+            "memberKey": null,
+            "baseRevisionId": null
+          }
+        }
+      },
+      "errors": [
+        {
+          "status": 400,
+          "code": "INVALID_REQUEST",
+          "when": "Malformed or unknown field, duplicate JSON key, bad UUID or version."
+        },
+        {
+          "status": 404,
+          "code": "RESOURCE_NOT_FOUND",
+          "when": "Foreign or absent deck, session or artifact: one opaque boundary."
+        },
+        {
+          "status": 412,
+          "code": "VERSION_CONFLICT",
+          "when": "Artifact or revision changed."
+        },
+        {
+          "status": 409,
+          "code": "GENERATION_STATE_CONFLICT",
+          "when": "Operation not allowed in the current session or artifact state (states.json allowedOperations).",
+          "reason": "ILLEGAL_STATE"
+        },
+        {
+          "status": 409,
+          "code": "IDEMPOTENCY_CONFLICT",
+          "when": "commandId was used for a different command."
+        },
+        {
+          "status": 422,
+          "code": "RESOURCE_LIMIT_EXCEEDED",
+          "when": "The account draft quota (contracts/authoring) is reached.",
+          "limit": "EDITING_DRAFTS"
+        }
+      ],
+      "notes": [
+        "ITEM artifacts only; an EXERCISE hand-off is defined by AI-13 (#291) and is INVALID_REQUEST here.",
+        "The client then restores the draft with GET /api/editing-drafts/{draftId}."
+      ]
+    },
+    {
+      "operationId": "editArtifact",
+      "method": "POST",
+      "path": "/api/decks/{deckId}/generation-sessions/{sessionId}/artifacts/{artifactId}/edits",
+      "summary": "Edit by selection, instruction or media redo. One edit per artifact at a time.",
+      "requestBody": {
+        "fields": {
+          "commandId": "UUIDv4/v7",
+          "expectedRevisionId": "current revision",
+          "target": "{nodeIds: 1..50 block node IDs} or null (EXERCISE)",
+          "action": "REWRITE | IMAGE_SEARCH | IMAGE_GENERATE | AUDIO_REGENERATE | FREE | REMOVE_MEDIA",
+          "preset": "optional SIMPLER | SHORTER | EXAMPLE | LONGER; valid only with REWRITE (else INVALID_REQUEST)",
+          "instruction": "text or speech transcript, 1..2000 characters; required for FREE, optional otherwise"
+        },
+        "example": {
+          "commandId": "018f1d98-5c10-7abc-8abc-0123456789b6",
+          "expectedRevisionId": "4e700000-0000-4000-8000-000000000001",
+          "target": {
+            "nodeIds": [
+              "00000000-0000-4000-8000-000000000004"
+            ]
+          },
+          "action": "REWRITE",
+          "preset": "SIMPLER",
+          "instruction": "Проще, с примером"
+        }
+      },
+      "success": {
+        "status": 202,
+        "headers": {
+          "Location": "/api/decks/{deckId}/generation-sessions/{sessionId}/artifacts/{artifactId}"
+        },
+        "body": {
+          "turn": {
+            "$ref": "#/examples/turnQueued"
+          },
+          "artifact": {
+            "artifactId": "a7a70000-0000-4000-8000-000000000001",
+            "ordinal": 0,
+            "targetKind": "ITEM",
+            "state": "REVISING",
+            "rowVersion": "5",
+            "title": "Seq Scan и Index Scan",
+            "currentRevisionId": "4e700000-0000-4000-8000-000000000001",
+            "mediaSlotCounts": {
+              "total": 1,
+              "ready": 1,
+              "failed": 0
+            },
+            "errorCode": null,
+            "repinStatus": null,
+            "publishedRef": null
+          }
+        }
+      },
+      "errors": [
+        {
+          "status": 400,
+          "code": "INVALID_REQUEST",
+          "when": "Malformed or unknown field, duplicate JSON key, bad UUID or version."
+        },
+        {
+          "status": 404,
+          "code": "RESOURCE_NOT_FOUND",
+          "when": "Foreign or absent deck, session or artifact: one opaque boundary."
+        },
+        {
+          "status": 409,
+          "code": "EDIT_IN_PROGRESS",
+          "when": "Another turn on this artifact is QUEUED or RUNNING.",
+          "turnId": "7a7a0000-0000-4000-8000-000000000001"
+        },
+        {
+          "status": 409,
+          "code": "USAGE_LIMIT_REACHED",
+          "when": "The reservation or debit does not fit a credit, cap, fair-use or daily-burst limit."
+        },
+        {
+          "status": 409,
+          "code": "CAPABILITY_UNAVAILABLE",
+          "when": "A capability the operation needs is off."
+        },
+        {
+          "status": 412,
+          "code": "VERSION_CONFLICT",
+          "when": "expectedRevisionId is not the current revision."
+        },
+        {
+          "status": 409,
+          "code": "GENERATION_STATE_CONFLICT",
+          "when": "Operation not allowed in the current session or artifact state (states.json allowedOperations).",
+          "reason": "ILLEGAL_STATE"
+        },
+        {
+          "status": 409,
+          "code": "IDEMPOTENCY_CONFLICT",
+          "when": "commandId was used for a different command."
+        },
+        {
+          "status": 422,
+          "code": "RESOURCE_LIMIT_EXCEEDED",
+          "when": "50 turns or 30 revisions already exist on the artifact.",
+          "limit": "TURNS_PER_ARTIFACT | REVISIONS_PER_ARTIFACT"
+        }
+      ],
+      "notes": [
+        "A block is the unit: a selection inside a paragraph widens to its block. nodeIds must be top-level blocks of the current revision (else INVALID_REQUEST).",
+        "Every chargeable action (REWRITE and FREE as EDIT_SELECTION, IMAGE_SEARCH, IMAGE_GENERATE, AUDIO_REGENERATE as TTS; mapping in usage.json) creates its own small turn-scoped reservation at admission; insufficient means 409 USAGE_LIMIT_REACHED before any state change.",
+        "REMOVE_MEDIA (extension to the architecture list) is free and deterministic: no model call, no reservation. It answers 202 like every edit, with the turn already APPLIED (example turnRemoveMedia), cause MEDIA, creates a revision and does not count toward the 50 turns. It is the only action accepted in a CANCELLED session.",
+        "EXERCISE artifacts accept only FREE with target null; the exercise edit flow is AI-16 (#294)."
+      ]
+    },
+    {
+      "operationId": "revertArtifact",
+      "method": "POST",
+      "path": "/api/decks/{deckId}/generation-sessions/{sessionId}/artifacts/{artifactId}/revert",
+      "summary": "Move the current-revision pointer to an earlier revision of the same artifact (undo/redo of edits).",
+      "requestBody": {
+        "commandId": "018f1d98-5c10-7abc-8abc-0123456789b7",
+        "expectedArtifactVersion": "5",
+        "toRevisionId": "4e700000-0000-4000-8000-000000000001"
+      },
+      "success": {
+        "status": 200,
+        "headers": {
+          "ETag": "new artifact rowVersion"
+        },
+        "body": {
+          "$ref": "#/examples/artifactSummaryProposed"
+        }
+      },
+      "errors": [
+        {
+          "status": 400,
+          "code": "INVALID_REQUEST",
+          "when": "Malformed or unknown field, duplicate JSON key, bad UUID or version."
+        },
+        {
+          "status": 404,
+          "code": "RESOURCE_NOT_FOUND",
+          "when": "Foreign or absent deck, session or artifact: one opaque boundary."
+        },
+        {
+          "status": 412,
+          "code": "VERSION_CONFLICT",
+          "when": "Artifact changed."
+        },
+        {
+          "status": 409,
+          "code": "GENERATION_STATE_CONFLICT",
+          "when": "Operation not allowed in the current session or artifact state (states.json allowedOperations).",
+          "reason": "ILLEGAL_STATE"
+        },
+        {
+          "status": 409,
+          "code": "IDEMPOTENCY_CONFLICT",
+          "when": "commandId was used for a different command."
+        }
+      ],
+      "notes": [
+        "toRevisionId must be one of the artifact's revisions (at most 30). No new revision is created."
+      ]
+    },
+    {
+      "operationId": "retryArtifact",
+      "method": "POST",
+      "path": "/api/decks/{deckId}/generation-sessions/{sessionId}/artifacts/{artifactId}/retry",
+      "summary": "Retry a FAILED artifact (not for errorCode REFUSAL) or regenerate a STALE one against the new source revision: back to QUEUED, a new reservation is made.",
+      "requestBody": {
+        "commandId": "018f1d98-5c10-7abc-8abc-0123456789b8",
+        "expectedArtifactVersion": "2"
+      },
+      "success": {
+        "status": 200,
+        "headers": {
+          "ETag": "new artifact rowVersion"
+        },
+        "body": {
+          "artifactId": "a7a70000-0000-4000-8000-000000000001",
+          "ordinal": 0,
+          "targetKind": "ITEM",
+          "state": "QUEUED",
+          "rowVersion": "3",
+          "title": "Seq Scan и Index Scan",
+          "currentRevisionId": null,
+          "mediaSlotCounts": {
+            "total": 1,
+            "ready": 1,
+            "failed": 0
+          },
+          "errorCode": null,
+          "repinStatus": null,
+          "publishedRef": null
+        }
+      },
+      "errors": [
+        {
+          "status": 400,
+          "code": "INVALID_REQUEST",
+          "when": "Malformed or unknown field, duplicate JSON key, bad UUID or version."
+        },
+        {
+          "status": 404,
+          "code": "RESOURCE_NOT_FOUND",
+          "when": "Foreign or absent deck, session or artifact: one opaque boundary."
+        },
+        {
+          "status": 412,
+          "code": "VERSION_CONFLICT",
+          "when": "Artifact changed."
+        },
+        {
+          "status": 409,
+          "code": "GENERATION_STATE_CONFLICT",
+          "when": "State is not FAILED or STALE, the session does not allow it, or the errorCode is REFUSAL.",
+          "reason": "ILLEGAL_STATE | NOT_RETRYABLE"
+        },
+        {
+          "status": 409,
+          "code": "USAGE_LIMIT_REACHED",
+          "when": "The reservation or debit does not fit a credit, cap, fair-use or daily-burst limit."
+        },
+        {
+          "status": 409,
+          "code": "CAPABILITY_UNAVAILABLE",
+          "when": "A capability the operation needs is off."
+        },
+        {
+          "status": 409,
+          "code": "SOURCE_UNAVAILABLE",
+          "when": "A pinned owned note or material exists but no longer matches the pin, or has been deleted since."
+        },
+        {
+          "status": 409,
+          "code": "IDEMPOTENCY_CONFLICT",
+          "when": "commandId was used for a different command."
+        }
+      ],
+      "notes": [
+        "Cancels any QUEUED or RUNNING turn of the artifact."
+      ]
+    }
+  ],
+  "schemas": {
+    "generationSpec": {
+      "description": "Immutable after create. The server clamps values and echoes the stored spec back so the client can show it as chips. Unknown fields are INVALID_REQUEST. Provisional parts are marked; the owning task finalizes them without changing the rest.",
+      "common": {
+        "kind": "MATERIALS | EXERCISES | REVISE_ITEM | REVISE_EXERCISE",
+        "outputLanguage": "BCP 47 per the native-v1 lexical profile; default is the deck language, else the UI language"
+      },
+      "MATERIALS": {
+        "prompt": "0..2000 characters; required when there is no SOURCE source. Limit chosen equal to the turn instruction limit (architecture section 3); revisit in AI-04.",
+        "sources": "0..20 pinned sources: {role: SOURCE|STYLE_EXAMPLE, type: NOTE, noteId, noteRowVersion} or {role, type: ITEM, memberKey, itemRevisionId}. At most 2 STYLE_EXAMPLE, items only. The pins are immutable for the session.",
+        "settings": {
+          "effort": "AUTO | SHORT | MEDIUM | DETAILED",
+          "notesMode": "ONE_PER_NOTE (default) | MERGE_INTO_ONE; ignored without NOTE sources",
+          "media": "{audio: {enabled, lang, voice: female|male|null}, imageSearch: boolean}; per-note overrides are provisional (AI-08, #290)",
+          "factCheck": "boolean: web research by effort (architecture section 14)",
+          "similarToDeck": "boolean: add deck exemplars to the brief ('Похоже на: как в колоде')",
+          "planFirst": "boolean: PLANNING first (needs the planner, AI-14 #295)",
+          "budgetPercent": "null or 1..100: spend at most this share of the current remaining budget on the session"
+        },
+        "artifacts": "ONE_PER_NOTE creates one artifact per NOTE source; MERGE_INTO_ONE or prompt-only creates one. More than 20 is RESOURCE_LIMIT_EXCEEDED.",
+        "media": "Declared media counts bound the compiler (MBM maxMedia, at most 8 per artifact) and the estimate prices only those."
+      },
+      "EXERCISES": {
+        "targets": "1..20 materials {memberKey, itemRevisionId}: multi-select or one material profile. A deck-wide selection beyond 20 materials is split by the client into several sessions (uncovered materials first). Limit: owner decision 2026-10-02, key learning.generation.max-exercise-targets.",
+        "settings": {
+          "mechanics": "AUTO or a nonempty set of SELF_CHECK, FREE_RESPONSE, CLOZE, CHOICE, MATCH, ORDER, CATEGORIZE (server registry)",
+          "priority": "UNCOVERED_FIRST | BALANCED (provisional: AI-13, #291)",
+          "quantity": "{mode: AUTO} | {mode: EXACT, perTarget: 1..10} | {mode: BUDGET_PERCENT, percent: 1..100}; mutually exclusive by mode. The resolved total is at most 60 exercises per session (owner decision 2026-10-02). There is NO silent clamp: above the limits the answer is 422 RESOURCE_LIMIT_EXCEEDED with limit and the limits, and the client offers to split into several sessions.",
+          "planFirst": "boolean",
+          "budgetPercent": "null or 1..100 (same meaning as for MATERIALS)"
+        }
+      },
+      "REVISE_ITEM": {
+        "target": "{memberKey, itemRevisionId}",
+        "status": "Shape provisional: AI-16 (#294) finalizes it. createSession and estimateGeneration answer 422 SPEC_NOT_SUPPORTED until then."
+      },
+      "REVISE_EXERCISE": {
+        "target": "{exerciseId, exerciseRevisionId}",
+        "status": "Shape provisional: AI-16 (#294) finalizes it. createSession and estimateGeneration answer 422 SPEC_NOT_SUPPORTED until then."
+      }
+    },
+    "sessionDetail": {
+      "states": "states.json session.states",
+      "endReason": "null | USER_CANCELLED | PLAN_FAILED | EXPIRED",
+      "artifactCounts": "one integer per artifact state",
+      "approvableCount": "Number of artifacts that can be approved now: PROPOSED with every media slot READY or REMOVED (not STALE, not REVISING). The pager summary ('7 ready') and the GENERATION_READY notification use it; the client derives 'writing' from QUEUED + GENERATING and 'failed' from FAILED.",
+      "usage": "{reservedCredits, spentCredits}: the session's initial-batch reservation (ACTIVE holds only), see contracts/usage"
+    },
+    "artifactSummary": {
+      "title": "Preview title of the current revision (first heading or paragraph, at most 240 code points) for the pager",
+      "mediaSlotCounts": "{total, ready, failed} counts of slots of the current revision; the slots themselves are in getArtifact mediaSlots",
+      "repinStatus": "null | AUTO_REPINNED | NEEDS_USER_DECISION (only with STALE)",
+      "publishedRef": "null until PUBLISHED: {kind: ITEM, memberKey, itemRevisionId, ordinal} or {kind: EXERCISE, exerciseId, exerciseRevisionId, objectiveId, objectiveRevisionId}",
+      "errorCode": "null or an artifact error code (states.json artifact.errorCodes)"
+    },
+    "turn": {
+      "status": "QUEUED | RUNNING | APPLIED | FAILED | CANCELLED (states.json turn.states)",
+      "errorCode": "null, or an artifact error code when FAILED",
+      "instruction": "echoed text; a speech transcript is stored as text, the audio is never kept"
+    }
+  },
+  "examples": {
+    "specMaterials": {
+      "kind": "MATERIALS",
+      "outputLanguage": "ru",
+      "prompt": "Объясни разницу между Seq Scan и Index Scan на простом примере",
+      "sources": [
+        {
+          "role": "SOURCE",
+          "type": "NOTE",
+          "noteId": "20700000-0000-4000-8000-000000000001",
+          "noteRowVersion": "3"
+        },
+        {
+          "role": "STYLE_EXAMPLE",
+          "type": "ITEM",
+          "memberKey": "44444444-4444-4444-8444-444444444444",
+          "itemRevisionId": "55555555-5555-4555-8555-555555555555"
+        }
+      ],
+      "settings": {
+        "effort": "MEDIUM",
+        "notesMode": "ONE_PER_NOTE",
+        "media": {
+          "audio": {
+            "enabled": true,
+            "lang": "ja",
+            "voice": "female"
+          },
+          "imageSearch": true
+        },
+        "factCheck": false,
+        "similarToDeck": true,
+        "planFirst": false,
+        "budgetPercent": null
+      }
+    },
+    "specExercises": {
+      "kind": "EXERCISES",
+      "outputLanguage": "ru",
+      "targets": [
+        {
+          "memberKey": "44444444-4444-4444-8444-444444444444",
+          "itemRevisionId": "55555555-5555-4555-8555-555555555555"
+        }
+      ],
+      "settings": {
+        "mechanics": "AUTO",
+        "priority": "UNCOVERED_FIRST",
+        "quantity": {
+          "mode": "EXACT",
+          "perTarget": 3
+        },
+        "planFirst": false,
+        "budgetPercent": null
+      }
+    },
+    "sessionSummary": {
+      "sessionId": "5e550000-0000-4000-8000-000000000001",
+      "deckId": "11111111-1111-4111-8111-111111111111",
+      "kind": "MATERIALS",
+      "state": "RUNNING",
+      "rowVersion": "12",
+      "endReason": null,
+      "createdAt": "2026-10-02T09:00:00Z",
+      "lastActivityAt": "2026-10-02T09:00:42Z",
+      "expiresAt": "2026-11-01T09:00:42Z",
+      "artifactCounts": {
+        "QUEUED": 1,
+        "GENERATING": 1,
+        "PROPOSED": 7,
+        "REVISING": 0,
+        "FAILED": 1,
+        "REJECTED": 0,
+        "STALE": 0,
+        "PUBLISHED": 0,
+        "HANDED_OFF": 0
+      },
+      "approvableCount": 6,
+      "usage": {
+        "reservedCredits": 21,
+        "spentCredits": 11
+      }
+    },
+    "sessionDetail": {
+      "sessionId": "5e550000-0000-4000-8000-000000000001",
+      "deckId": "11111111-1111-4111-8111-111111111111",
+      "kind": "MATERIALS",
+      "state": "RUNNING",
+      "rowVersion": "12",
+      "endReason": null,
+      "createdAt": "2026-10-02T09:00:00Z",
+      "lastActivityAt": "2026-10-02T09:00:42Z",
+      "expiresAt": "2026-11-01T09:00:42Z",
+      "artifactCounts": {
+        "QUEUED": 0,
+        "GENERATING": 1,
+        "PROPOSED": 1,
+        "REVISING": 0,
+        "FAILED": 0,
+        "REJECTED": 0,
+        "STALE": 0,
+        "PUBLISHED": 0,
+        "HANDED_OFF": 0
+      },
+      "approvableCount": 1,
+      "usage": {
+        "reservedCredits": 21,
+        "spentCredits": 11
+      },
+      "spec": {
+        "kind": "MATERIALS",
+        "outputLanguage": "ru",
+        "prompt": "Объясни разницу между Seq Scan и Index Scan на простом примере",
+        "sources": [
+          {
+            "role": "SOURCE",
+            "type": "NOTE",
+            "noteId": "20700000-0000-4000-8000-000000000001",
+            "noteRowVersion": "3"
+          },
+          {
+            "role": "STYLE_EXAMPLE",
+            "type": "ITEM",
+            "memberKey": "44444444-4444-4444-8444-444444444444",
+            "itemRevisionId": "55555555-5555-4555-8555-555555555555"
+          }
+        ],
+        "settings": {
+          "effort": "MEDIUM",
+          "notesMode": "ONE_PER_NOTE",
+          "media": {
+            "audio": {
+              "enabled": true,
+              "lang": "ja",
+              "voice": "female"
+            },
+            "imageSearch": true
+          },
+          "factCheck": false,
+          "similarToDeck": true,
+          "planFirst": false,
+          "budgetPercent": null
+        }
+      },
+      "artifacts": [
+        {
+          "artifactId": "a7a70000-0000-4000-8000-000000000001",
+          "ordinal": 0,
+          "targetKind": "ITEM",
+          "state": "PROPOSED",
+          "rowVersion": "4",
+          "title": "Seq Scan и Index Scan",
+          "currentRevisionId": "4e700000-0000-4000-8000-000000000001",
+          "mediaSlotCounts": {
+            "total": 1,
+            "ready": 1,
+            "failed": 0
+          },
+          "errorCode": null,
+          "repinStatus": null,
+          "publishedRef": null
+        },
+        {
+          "artifactId": "a7a70000-0000-4000-8000-000000000002",
+          "ordinal": 1,
+          "targetKind": "ITEM",
+          "state": "GENERATING",
+          "rowVersion": "2",
+          "title": "Index-only scan",
+          "currentRevisionId": null,
+          "mediaSlotCounts": {
+            "total": 0,
+            "ready": 0,
+            "failed": 0
+          },
+          "errorCode": null,
+          "repinStatus": null,
+          "publishedRef": null
+        }
+      ]
+    },
+    "sessionDetailCreated": {
+      "sessionId": "5e550000-0000-4000-8000-000000000001",
+      "deckId": "11111111-1111-4111-8111-111111111111",
+      "kind": "MATERIALS",
+      "state": "RUNNING",
+      "rowVersion": "1",
+      "endReason": null,
+      "createdAt": "2026-10-02T09:00:00Z",
+      "lastActivityAt": "2026-10-02T09:00:42Z",
+      "expiresAt": "2026-11-01T09:00:42Z",
+      "artifactCounts": {
+        "QUEUED": 2,
+        "GENERATING": 0,
+        "PROPOSED": 0,
+        "REVISING": 0,
+        "FAILED": 0,
+        "REJECTED": 0,
+        "STALE": 0,
+        "PUBLISHED": 0,
+        "HANDED_OFF": 0
+      },
+      "approvableCount": 0,
+      "usage": {
+        "reservedCredits": 21,
+        "spentCredits": 0
+      },
+      "spec": {
+        "kind": "MATERIALS",
+        "outputLanguage": "ru",
+        "prompt": "Объясни разницу между Seq Scan и Index Scan на простом примере",
+        "sources": [
+          {
+            "role": "SOURCE",
+            "type": "NOTE",
+            "noteId": "20700000-0000-4000-8000-000000000001",
+            "noteRowVersion": "3"
+          },
+          {
+            "role": "STYLE_EXAMPLE",
+            "type": "ITEM",
+            "memberKey": "44444444-4444-4444-8444-444444444444",
+            "itemRevisionId": "55555555-5555-4555-8555-555555555555"
+          }
+        ],
+        "settings": {
+          "effort": "MEDIUM",
+          "notesMode": "ONE_PER_NOTE",
+          "media": {
+            "audio": {
+              "enabled": true,
+              "lang": "ja",
+              "voice": "female"
+            },
+            "imageSearch": true
+          },
+          "factCheck": false,
+          "similarToDeck": true,
+          "planFirst": false,
+          "budgetPercent": null
+        }
+      },
+      "artifacts": [
+        {
+          "artifactId": "a7a70000-0000-4000-8000-000000000001",
+          "ordinal": 0,
+          "targetKind": "ITEM",
+          "state": "QUEUED",
+          "rowVersion": "0",
+          "title": "",
+          "currentRevisionId": null,
+          "mediaSlotCounts": {
+            "total": 0,
+            "ready": 0,
+            "failed": 0
+          },
+          "errorCode": null,
+          "repinStatus": null,
+          "publishedRef": null
+        },
+        {
+          "artifactId": "a7a70000-0000-4000-8000-000000000002",
+          "ordinal": 1,
+          "targetKind": "ITEM",
+          "state": "QUEUED",
+          "rowVersion": "0",
+          "title": "",
+          "currentRevisionId": null,
+          "mediaSlotCounts": {
+            "total": 0,
+            "ready": 0,
+            "failed": 0
+          },
+          "errorCode": null,
+          "repinStatus": null,
+          "publishedRef": null
+        }
+      ]
+    },
+    "sessionDetailCancelled": {
+      "sessionId": "5e550000-0000-4000-8000-000000000001",
+      "deckId": "11111111-1111-4111-8111-111111111111",
+      "kind": "MATERIALS",
+      "state": "CANCELLED",
+      "rowVersion": "13",
+      "endReason": "USER_CANCELLED",
+      "createdAt": "2026-10-02T09:00:00Z",
+      "lastActivityAt": "2026-10-02T09:00:42Z",
+      "expiresAt": "2026-11-01T09:00:42Z",
+      "artifactCounts": {
+        "QUEUED": 0,
+        "GENERATING": 0,
+        "PROPOSED": 1,
+        "REVISING": 0,
+        "FAILED": 1,
+        "REJECTED": 0,
+        "STALE": 0,
+        "PUBLISHED": 0,
+        "HANDED_OFF": 0
+      },
+      "approvableCount": 1,
+      "usage": {
+        "reservedCredits": 0,
+        "spentCredits": 11
+      },
+      "spec": {
+        "kind": "MATERIALS",
+        "outputLanguage": "ru",
+        "prompt": "Объясни разницу между Seq Scan и Index Scan на простом примере",
+        "sources": [
+          {
+            "role": "SOURCE",
+            "type": "NOTE",
+            "noteId": "20700000-0000-4000-8000-000000000001",
+            "noteRowVersion": "3"
+          },
+          {
+            "role": "STYLE_EXAMPLE",
+            "type": "ITEM",
+            "memberKey": "44444444-4444-4444-8444-444444444444",
+            "itemRevisionId": "55555555-5555-4555-8555-555555555555"
+          }
+        ],
+        "settings": {
+          "effort": "MEDIUM",
+          "notesMode": "ONE_PER_NOTE",
+          "media": {
+            "audio": {
+              "enabled": true,
+              "lang": "ja",
+              "voice": "female"
+            },
+            "imageSearch": true
+          },
+          "factCheck": false,
+          "similarToDeck": true,
+          "planFirst": false,
+          "budgetPercent": null
+        }
+      },
+      "artifacts": [
+        {
+          "artifactId": "a7a70000-0000-4000-8000-000000000001",
+          "ordinal": 0,
+          "targetKind": "ITEM",
+          "state": "PROPOSED",
+          "rowVersion": "4",
+          "title": "Seq Scan и Index Scan",
+          "currentRevisionId": "4e700000-0000-4000-8000-000000000001",
+          "mediaSlotCounts": {
+            "total": 1,
+            "ready": 1,
+            "failed": 0
+          },
+          "errorCode": null,
+          "repinStatus": null,
+          "publishedRef": null
+        },
+        {
+          "artifactId": "a7a70000-0000-4000-8000-000000000002",
+          "ordinal": 1,
+          "targetKind": "ITEM",
+          "state": "FAILED",
+          "rowVersion": "3",
+          "title": "Index-only scan",
+          "currentRevisionId": null,
+          "mediaSlotCounts": {
+            "total": 0,
+            "ready": 0,
+            "failed": 0
+          },
+          "errorCode": "CANCELLED",
+          "repinStatus": null,
+          "publishedRef": null
+        }
+      ]
+    },
+    "artifactSummaryProposed": {
+      "artifactId": "a7a70000-0000-4000-8000-000000000001",
+      "ordinal": 0,
+      "targetKind": "ITEM",
+      "state": "PROPOSED",
+      "rowVersion": "4",
+      "title": "Seq Scan и Index Scan",
+      "currentRevisionId": "4e700000-0000-4000-8000-000000000001",
+      "mediaSlotCounts": {
+        "total": 1,
+        "ready": 1,
+        "failed": 0
+      },
+      "errorCode": null,
+      "repinStatus": null,
+      "publishedRef": null
+    },
+    "artifactDetailItem": {
+      "artifactId": "a7a70000-0000-4000-8000-000000000001",
+      "ordinal": 0,
+      "targetKind": "ITEM",
+      "state": "PROPOSED",
+      "rowVersion": "4",
+      "title": "Seq Scan и Index Scan",
+      "currentRevisionId": "4e700000-0000-4000-8000-000000000001",
+      "mediaSlotCounts": {
+        "total": 1,
+        "ready": 1,
+        "failed": 0
+      },
+      "errorCode": null,
+      "repinStatus": null,
+      "publishedRef": null,
+      "sessionId": "5e550000-0000-4000-8000-000000000001",
+      "deckId": "11111111-1111-4111-8111-111111111111",
+      "sourceRefs": [
+        {
+          "type": "NOTE",
+          "noteId": "20700000-0000-4000-8000-000000000001",
+          "noteRowVersion": "3"
+        }
+      ],
+      "revision": {
+        "revisionId": "4e700000-0000-4000-8000-000000000001",
+        "cause": "INITIAL",
+        "createdAt": "2026-10-02T09:00:42Z",
+        "validation": {
+          "warnings": []
+        },
+        "payload": {
+          "kind": "NATIVE_DOCUMENT",
+          "document": {
+            "formatVersion": 1,
+            "root": {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "type": "doc",
+              "version": 1,
+              "attrs": {},
+              "content": [
+                {
+                  "id": "00000000-0000-4000-8000-000000000002",
+                  "type": "heading",
+                  "version": 1,
+                  "attrs": {
+                    "level": 1
+                  },
+                  "content": [
+                    {
+                      "id": "00000000-0000-4000-8000-000000000003",
+                      "type": "text",
+                      "version": 1,
+                      "attrs": {
+                        "text": "Seq Scan и Index Scan",
+                        "marks": []
+                      },
+                      "content": []
+                    }
+                  ]
+                },
+                {
+                  "id": "00000000-0000-4000-8000-000000000004",
+                  "type": "paragraph",
+                  "version": 1,
+                  "attrs": {},
+                  "content": [
+                    {
+                      "id": "00000000-0000-4000-8000-000000000005",
+                      "type": "text",
+                      "version": 1,
+                      "attrs": {
+                        "text": "Планировщик выбирает между чтением всей таблицы и поиском по индексу.",
+                        "marks": []
+                      },
+                      "content": []
+                    }
+                  ]
+                },
+                {
+                  "id": "00000000-0000-4000-8000-000000000006",
+                  "type": "audio",
+                  "version": 1,
+                  "attrs": {
+                    "assetId": "00000000-0000-4000-a000-000000000001",
+                    "title": "Произношение: planner",
+                    "transcript": "planner",
+                    "lang": "en"
+                  },
+                  "content": []
+                }
+              ]
+            }
+          }
+        }
+      },
+      "mediaSlots": [
+        {
+          "slotKey": "a1",
+          "kind": "AUDIO",
+          "nodeId": "00000000-0000-4000-8000-000000000006",
+          "assetId": "00000000-0000-4000-a000-000000000001",
+          "state": "READY",
+          "errorCode": null
+        }
+      ],
+      "revisions": [
+        {
+          "revisionId": "4e700000-0000-4000-8000-000000000001",
+          "cause": "INITIAL",
+          "createdAt": "2026-10-02T09:00:42Z"
+        }
+      ],
+      "turns": []
+    },
+    "artifactDetailExercise": {
+      "artifactId": "a7a70000-0000-4000-8000-000000000002",
+      "ordinal": 1,
+      "targetKind": "EXERCISE",
+      "state": "PROPOSED",
+      "rowVersion": "3",
+      "title": "Выбор между Seq Scan и Index Scan",
+      "currentRevisionId": "4e700000-0000-4000-8000-000000000002",
+      "mediaSlotCounts": {
+        "total": 0,
+        "ready": 0,
+        "failed": 0
+      },
+      "errorCode": null,
+      "repinStatus": null,
+      "publishedRef": null,
+      "sessionId": "5e550000-0000-4000-8000-000000000002",
+      "deckId": "11111111-1111-4111-8111-111111111111",
+      "sourceRefs": [
+        {
+          "type": "ITEM",
+          "memberKey": "44444444-4444-4444-8444-444444444444",
+          "itemRevisionId": "55555555-5555-4555-8555-555555555555"
+        }
+      ],
+      "revision": {
+        "revisionId": "4e700000-0000-4000-8000-000000000002",
+        "cause": "INITIAL",
+        "createdAt": "2026-10-02T09:00:42Z",
+        "validation": {
+          "warnings": []
+        },
+        "payload": {
+          "kind": "EXERCISE_COMMAND",
+          "command": {
+            "objective": {
+              "operation": "create",
+              "title": "Выбор между Seq Scan и Index Scan"
+            },
+            "exercise": {
+              "type": "SELF_CHECK",
+              "schemaVersion": 2,
+              "enabled": true,
+              "subject": {
+                "memberKey": "44444444-4444-4444-8444-444444444444",
+                "itemRevisionId": "55555555-5555-4555-8555-555555555555"
+              },
+              "content": {
+                "prompt": [
+                  {
+                    "kind": "TEXT",
+                    "text": "Когда планировщик выберет Seq Scan, а не Index Scan?"
+                  }
+                ],
+                "reference": [
+                  {
+                    "kind": "MATERIAL",
+                    "memberKey": "44444444-4444-4444-8444-444444444444",
+                    "itemRevisionId": "55555555-5555-4555-8555-555555555555",
+                    "nodeId": "00000000-0000-4000-8000-000000000004"
+                  }
+                ]
+              },
+              "answerKey": {
+                "kind": "SELF_REPORT"
+              },
+              "evaluatorPolicy": {
+                "id": "self-check",
+                "version": "1"
+              }
+            }
+          }
+        }
+      },
+      "mediaSlots": [],
+      "revisions": [
+        {
+          "revisionId": "4e700000-0000-4000-8000-000000000002",
+          "cause": "INITIAL",
+          "createdAt": "2026-10-02T09:00:42Z"
+        }
+      ],
+      "turns": []
+    },
+    "approvalAckItem": {
+      "commandId": "018f1d98-5c10-7abc-8abc-0123456789b1",
+      "deckId": "11111111-1111-4111-8111-111111111111",
+      "deckRevisionId": "33333333-3333-4333-8333-333333333333",
+      "deckVersion": "8",
+      "artifacts": [
+        {
+          "artifactId": "a7a70000-0000-4000-8000-000000000001",
+          "state": "PUBLISHED",
+          "publishedRef": {
+            "kind": "ITEM",
+            "memberKey": "44444444-4444-4444-8444-444444444444",
+            "itemRevisionId": "55555555-5555-4555-8555-555555555555",
+            "ordinal": 4
+          }
+        }
+      ]
+    },
+    "approvalAckExercise": {
+      "commandId": "018f1d98-5c10-7abc-8abc-0123456789b2",
+      "deckId": "11111111-1111-4111-8111-111111111111",
+      "deckRevisionId": "33333333-3333-4333-8333-333333333333",
+      "deckVersion": "9",
+      "artifacts": [
+        {
+          "artifactId": "a7a70000-0000-4000-8000-000000000002",
+          "state": "PUBLISHED",
+          "publishedRef": {
+            "kind": "EXERCISE",
+            "exerciseId": "88888888-8888-4888-8888-888888888881",
+            "exerciseRevisionId": "88888888-8888-4888-8888-888888888882",
+            "objectiveId": "77777777-7777-4777-8777-777777777771",
+            "objectiveRevisionId": "77777777-7777-4777-8777-777777777773"
+          }
+        }
+      ]
+    },
+    "approvalAckBulk": {
+      "commandId": "018f1d98-5c10-7abc-8abc-0123456789b3",
+      "deckId": "11111111-1111-4111-8111-111111111111",
+      "deckRevisionId": "33333333-3333-4333-8333-333333333333",
+      "deckVersion": "9",
+      "artifacts": [
+        {
+          "artifactId": "a7a70000-0000-4000-8000-000000000001",
+          "state": "PUBLISHED",
+          "publishedRef": {
+            "kind": "ITEM",
+            "memberKey": "44444444-4444-4444-8444-444444444444",
+            "itemRevisionId": "55555555-5555-4555-8555-555555555555",
+            "ordinal": 4
+          }
+        },
+        {
+          "artifactId": "a7a70000-0000-4000-8000-000000000002",
+          "state": "PUBLISHED",
+          "publishedRef": {
+            "kind": "EXERCISE",
+            "exerciseId": "88888888-8888-4888-8888-888888888881",
+            "exerciseRevisionId": "88888888-8888-4888-8888-888888888882",
+            "objectiveId": "77777777-7777-4777-8777-777777777771",
+            "objectiveRevisionId": "77777777-7777-4777-8777-777777777773"
+          }
+        }
+      ]
+    },
+    "turnQueued": {
+      "turnId": "7a7a0000-0000-4000-8000-000000000001",
+      "status": "QUEUED",
+      "action": "REWRITE",
+      "preset": "SIMPLER",
+      "targetNodeIds": [
+        "00000000-0000-4000-8000-000000000004"
+      ],
+      "instruction": "Проще, с примером",
+      "resultRevisionId": null,
+      "errorCode": null,
+      "createdAt": "2026-10-02T09:00:42Z"
+    },
+    "turnRemoveMedia": {
+      "turnId": "7a7a0000-0000-4000-8000-000000000001",
+      "status": "APPLIED",
+      "action": "REMOVE_MEDIA",
+      "preset": null,
+      "targetNodeIds": [
+        "00000000-0000-4000-8000-000000000006"
+      ],
+      "instruction": null,
+      "resultRevisionId": "4e700000-0000-4000-8000-000000000003",
+      "errorCode": null,
+      "createdAt": "2026-10-02T09:00:42Z"
+    },
+    "capabilities": {
+      "aiAssessment": {
+        "available": false,
+        "reason": "DISABLED"
+      },
+      "speechToText": {
+        "available": false,
+        "reason": "DISABLED"
+      },
+      "aiGeneration": {
+        "available": true,
+        "reason": null
+      },
+      "textToSpeech": {
+        "available": false,
+        "reason": "PROVIDER_NOT_CONFIGURED"
+      },
+      "imageSearch": {
+        "available": true,
+        "reason": null
+      },
+      "imageGeneration": {
+        "available": false,
+        "reason": "DISABLED"
+      },
+      "videoGeneration": {
+        "available": false,
+        "reason": "DISABLED"
+      },
+      "webSearch": {
+        "available": false,
+        "reason": "TEMPORARILY_UNAVAILABLE"
+      }
+    }
+  }
+}

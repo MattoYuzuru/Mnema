@@ -1,0 +1,22 @@
+{
+  "formatVersion": 1,
+  "root": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "type": "doc",
+    "version": 1,
+    "attrs": {},
+    "content": [
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "type": "mermaid",
+        "version": 1,
+        "attrs": {
+          "source": "flowchart LR\n  Client --> API --> DB",
+          "title": "Путь запроса",
+          "description": "Клиент обращается к API, API читает базу данных."
+        },
+        "content": []
+      }
+    ]
+  }
+}

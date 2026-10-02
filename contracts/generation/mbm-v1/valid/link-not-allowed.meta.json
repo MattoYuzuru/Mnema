@@ -1,0 +1,20 @@
+{
+  "description": "A link outside the allowlist stays plain text (label kept, URL dropped) and yields a warning; allowlisted link is kept.",
+  "input": {
+    "allowedLinks": [
+      "https://allowed.example/"
+    ]
+  },
+  "expected": {
+    "warnings": [
+      {
+        "line": 1,
+        "code": "MBM_LINK_NOT_ALLOWED"
+      },
+      {
+        "line": 1,
+        "code": "MBM_LINK_NOT_ALLOWED"
+      }
+    ]
+  }
+}

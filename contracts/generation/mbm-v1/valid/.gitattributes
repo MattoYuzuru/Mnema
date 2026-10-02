@@ -1,0 +1,2 @@
+*.mbm -text
+crlf.mbm -text whitespace=cr-at-eol

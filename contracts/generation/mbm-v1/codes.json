@@ -1,0 +1,211 @@
+{
+  "contract": "mbm-v1",
+  "description": "Stable compile finding codes. ERROR findings stop compilation (no document); WARNING findings accompany a compiled document. `rule` is the compact text the repair prompt shows for a line. Findings that concern the options rather than a source line carry line 0.",
+  "codes": [
+    {
+      "code": "MBM_EMPTY_DOCUMENT",
+      "severity": "ERROR",
+      "scope": "document",
+      "rule": "The document contains no block."
+    },
+    {
+      "code": "MBM_DOCUMENT_TOO_LARGE",
+      "severity": "ERROR",
+      "scope": "document",
+      "rule": "The source is larger than 256 KiB, or the compiled document is rejected by a NativeDocumentReader size limit (1 MiB, 10,000 nodes, depth 32).",
+      "fixtureExempt": true
+    },
+    {
+      "code": "MBM_HEADING_LEVEL",
+      "severity": "ERROR",
+      "scope": "block",
+      "rule": "Headings are # to ### only; split the topic or use a paragraph."
+    },
+    {
+      "code": "MBM_NESTED_LIST",
+      "severity": "ERROR",
+      "scope": "block",
+      "rule": "Lists are one level; write nested items as separate paragraphs or a table."
+    },
+    {
+      "code": "MBM_CODE_BLOCK_UNSUPPORTED",
+      "severity": "ERROR",
+      "scope": "block",
+      "rule": "Fenced code blocks are not part of MBM v1; use inline code or describe the code in prose (code_block is planned in #303)."
+    },
+    {
+      "code": "MBM_UNTERMINATED_FENCE",
+      "severity": "ERROR",
+      "scope": "block",
+      "rule": "Every opening fence needs a closing fence on its own line."
+    },
+    {
+      "code": "MBM_NESTED_LINK",
+      "severity": "ERROR",
+      "scope": "inline",
+      "rule": "A link label cannot contain another link."
+    },
+    {
+      "code": "MBM_UNKNOWN_DIRECTIVE",
+      "severity": "ERROR",
+      "scope": "directive",
+      "rule": "Only ::table, ::mermaid, ::audio, ::image, ::video and ::sources exist."
+    },
+    {
+      "code": "MBM_UNKNOWN_ATTRIBUTE",
+      "severity": "ERROR",
+      "scope": "directive",
+      "rule": "The directive does not define this attribute."
+    },
+    {
+      "code": "MBM_MISSING_ATTRIBUTE",
+      "severity": "ERROR",
+      "scope": "directive",
+      "rule": "A required attribute is missing or blank (alt, title, caption, description, slot, lang, mode)."
+    },
+    {
+      "code": "MBM_DUPLICATE_ATTRIBUTE",
+      "severity": "ERROR",
+      "scope": "directive",
+      "rule": "An attribute may appear once."
+    },
+    {
+      "code": "MBM_INVALID_ATTRIBUTE_VALUE",
+      "severity": "ERROR",
+      "scope": "directive",
+      "rule": "The value is outside the allowed set or lexical profile (mode: search|generate; voice: female|male; lang: BCP 47 profile of native-v1)."
+    },
+    {
+      "code": "MBM_ATTRIBUTE_SYNTAX",
+      "severity": "ERROR",
+      "scope": "directive",
+      "rule": "Attributes are {key=\"value\" ...} with double-quoted values; escape \\\" and \\\\ only."
+    },
+    {
+      "code": "MBM_DIRECTIVE_BODY_MISSING",
+      "severity": "ERROR",
+      "scope": "directive",
+      "rule": "The directive needs its body: text after the brace (audio, image, video), a pipe table (table), a fenced source (mermaid) or [n] URL lines (sources)."
+    },
+    {
+      "code": "MBM_UNEXPECTED_DIRECTIVE_TEXT",
+      "severity": "ERROR",
+      "scope": "directive",
+      "rule": "Text after the brace is allowed only for ::audio, ::image and ::video."
+    },
+    {
+      "code": "MBM_VALUE_TOO_LONG",
+      "severity": "ERROR",
+      "scope": "directive",
+      "rule": "An attribute or body exceeds the bound (alt 4096, title and caption 1024, description 8192, mermaid source 16384, table cell 4096, image or video query or prompt 300 UTF-16 code units)."
+    },
+    {
+      "code": "MBM_INVALID_SLOT_KEY",
+      "severity": "ERROR",
+      "scope": "directive",
+      "rule": "A slot key matches [a-z][a-z0-9_]{0,31}."
+    },
+    {
+      "code": "MBM_DUPLICATE_SLOT",
+      "severity": "ERROR",
+      "scope": "directive",
+      "rule": "A slot key is unique in the document and among the slots outside an edited range."
+    },
+    {
+      "code": "MBM_CAPABILITY_OFF",
+      "severity": "ERROR",
+      "scope": "directive",
+      "rule": "The capability behind this directive or mode (videoGeneration, imageGeneration) is not enabled for the session."
+    },
+    {
+      "code": "MBM_TABLE_MALFORMED",
+      "severity": "ERROR",
+      "scope": "directive",
+      "rule": "A table is a header row, a separator row (|---|) with the same cell count, then body rows."
+    },
+    {
+      "code": "MBM_TABLE_HEADER_BLANK",
+      "severity": "ERROR",
+      "scope": "directive",
+      "rule": "Every column heading must be nonblank."
+    },
+    {
+      "code": "MBM_TABLE_TOO_WIDE",
+      "severity": "ERROR",
+      "scope": "directive",
+      "rule": "A table has at most 12 columns."
+    },
+    {
+      "code": "MBM_TABLE_TOO_TALL",
+      "severity": "ERROR",
+      "scope": "directive",
+      "rule": "A table has at most 100 body rows."
+    },
+    {
+      "code": "MBM_TABLE_RAGGED",
+      "severity": "ERROR",
+      "scope": "directive",
+      "rule": "Every body row has exactly as many cells as the header."
+    },
+    {
+      "code": "MBM_SOURCE_NOT_IN_RESEARCH",
+      "severity": "ERROR",
+      "scope": "directive",
+      "rule": "Every ::sources line is [n] URL where n and the exact URL belong to one result of the session research."
+    },
+    {
+      "code": "MBM_UNKNOWN_HANDLE",
+      "severity": "ERROR",
+      "scope": "block",
+      "rule": "A [[handle]] must be one of the handles given for the edited range; new documents have none."
+    },
+    {
+      "code": "MBM_DUPLICATE_HANDLE",
+      "severity": "ERROR",
+      "scope": "block",
+      "rule": "A handle may be used on one block only."
+    },
+    {
+      "code": "MBM_TOO_MANY_MEDIA",
+      "severity": "ERROR",
+      "scope": "directive",
+      "rule": "At most 8 media directives per artifact (the media counts declared in the spec cap it lower); the estimate prices only the declared counts."
+    },
+    {
+      "code": "MBM_AUDIO_TEXT_TOO_LONG",
+      "severity": "ERROR",
+      "scope": "directive",
+      "rule": "The text of ::audio is at most 600 characters; split it into several clips."
+    },
+    {
+      "code": "MBM_EDIT_HANDLE_OMITTED",
+      "severity": "ERROR",
+      "scope": "block",
+      "rule": "Every handle of the edited range must appear in the output; removing a block is not an AI action. Reordering is allowed."
+    },
+    {
+      "code": "MBM_LINK_NOT_ALLOWED",
+      "severity": "WARNING",
+      "scope": "inline",
+      "rule": "The link URL is not in the allowlist: the label stays as text and the URL is dropped."
+    },
+    {
+      "code": "MBM_HANDLE_TYPE_CHANGED",
+      "severity": "WARNING",
+      "scope": "block",
+      "rule": "The block with this handle changed type: a new node ID was allocated."
+    },
+    {
+      "code": "MBM_LITERAL_DELIMITER",
+      "severity": "WARNING",
+      "scope": "inline",
+      "rule": "A run of three or more asterisks, or an asterisk run that could open emphasis but has no closer, stays literal text."
+    },
+    {
+      "code": "MBM_LINK_REJECTED_BY_PROFILE",
+      "severity": "WARNING",
+      "scope": "document",
+      "rule": "An allowlist or research URL violates the native-v1 href profile and was dropped before compilation (reported at line 0)."
+    }
+  ]
+}

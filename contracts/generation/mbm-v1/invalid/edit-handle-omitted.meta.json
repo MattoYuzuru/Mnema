@@ -1,0 +1,16 @@
+{
+  "description": "Every declared handle of the range must appear: an omitted block would be an AI-initiated deletion.",
+  "input": {
+    "mode": "EDIT",
+    "handles": {
+      "b3": {
+        "nodeId": "7d000000-0000-4000-8000-000000000003",
+        "type": "paragraph"
+      },
+      "b4": {
+        "nodeId": "7d000000-0000-4000-8000-000000000004",
+        "type": "table"
+      }
+    }
+  }
+}

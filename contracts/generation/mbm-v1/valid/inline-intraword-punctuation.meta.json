@@ -1,0 +1,11 @@
+{
+  "description": "Intraword asterisks stay literal; delimiters next to punctuation work; a candidate delimiter with no closer stays literal with a warning.",
+  "expected": {
+    "warnings": [
+      {
+        "line": 3,
+        "code": "MBM_LITERAL_DELIMITER"
+      }
+    ]
+  }
+}

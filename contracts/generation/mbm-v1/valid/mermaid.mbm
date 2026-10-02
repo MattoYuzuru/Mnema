@@ -1,0 +1,5 @@
+::mermaid{title="Путь запроса" description="Клиент обращается к API, API читает базу данных."}
+```mermaid
+flowchart LR
+  Client --> API --> DB
+```

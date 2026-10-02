@@ -29,6 +29,11 @@ exercise mechanics into the seven below. Epic #76 added the greenfield media lif
 - Database: fresh Flyway history at `classpath:db/learning/migration`, owned schema
   `app_learning`, `baseline-on-migrate=false`. It never scans a legacy migration
   directory.
+- AI layer (Epic #77): only contracts exist so far — [`contracts/generation`](../../../contracts/generation/README.md),
+  [`contracts/usage`](../../../contracts/usage/README.md),
+  [`contracts/notifications`](../../../contracts/notifications/README.md) and the versioned prompt
+  sections in `src/main/resources/ai/prompts/` (resources, not loaded by any code yet). No
+  generation, usage or notification endpoint is implemented; run-2 tasks (#281–#286, #303) add them.
 
 ## Shared platform contracts
 

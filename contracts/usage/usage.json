@@ -1,0 +1,596 @@
+{
+  "contract": "usage-v1",
+  "description": "Wire shapes of the usage API, the generation estimate and the usage data model. Rate card: rate-card-v1.json; allowances: allowances-v1.json. Authority: docs/architecture/ai-generation-platform.md section 10 and docs/product/ai-layer-2026-10.md section 5. Conventions (private/no-store, quoted decimal versions, RFC 9457 Problem Details) are those of contracts/decks and contracts/items.",
+  "conventions": {
+    "credits": "Integers. A fractional weight or cost is rounded up when it is turned into a debit; the ledger keeps costMicros for exact cost.",
+    "timestamps": "UTC, RFC 3339 with seconds. Every day, week and month boundary is a calendar boundary in learning.usage.calendar-zone (Europe/Moscow, owner decision 2026-10-02), expressed here as UTC instants.",
+    "percent": "Integer 0..100, rounded half up; percentUsed = (used + reserved) / total, holds included (for FREE too: total is the 50 bar).",
+    "warn": "A fair-use bucket sets warn=true above 80% of its monthly limit; the client then shows the quiet counter with its explanation.",
+    "stt": "Metered in seconds (usedSeconds); `used` is whole minutes rounded up. MAX has limit null (unlimited within fair use) and velocityPerDay."
+  },
+  "ownership": {
+    "estimateGeneration": "AI-01 (#281) owns the endpoint, the rate-card math and the reservation. Spec interpretation (which operations and counts a spec implies) and the personal-data scan hooks are supplied by the generation module as they land (AI-04 and later)."
+  },
+  "endpoints": [
+    {
+      "operationId": "getUsage",
+      "method": "GET",
+      "path": "/api/usage",
+      "success": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "private, no-store"
+        },
+        "body": "usageResponse"
+      },
+      "errors": [
+        {
+          "status": 401,
+          "code": "AUTHENTICATION_REQUIRED"
+        }
+      ]
+    },
+    {
+      "operationId": "estimateGeneration",
+      "method": "POST",
+      "path": "/api/decks/{deckId}/generation-estimates",
+      "definedIn": "../generation/http.json",
+      "request": "estimateRequest",
+      "success": {
+        "status": 200,
+        "body": "estimateResponse"
+      },
+      "note": "Read-only: it reserves and persists nothing."
+    }
+  ],
+  "usageResponse": {
+    "rateCardVersion": "rc-v1",
+    "plan": "PLUS",
+    "period": {
+      "periodId": "2026-10",
+      "start": "2026-09-30T21:00:00Z",
+      "end": "2026-10-31T21:00:00Z"
+    },
+    "entitlement": {
+      "source": "CONFIG",
+      "validUntil": "2026-10-31T21:00:00Z"
+    },
+    "credits": {
+      "total": 360,
+      "unlocked": 360,
+      "used": 42,
+      "reserved": 10,
+      "remaining": 308,
+      "percentUsed": 14
+    },
+    "dailyBurst": {
+      "limitCredits": 126,
+      "debitedTodayCredits": 11,
+      "remainingTodayCredits": 115,
+      "resetsAt": "2026-10-02T21:00:00Z",
+      "deferredUntil": null
+    },
+    "weeklyUnlock": null,
+    "fairUse": {
+      "stt": {
+        "unit": "MINUTES",
+        "used": 12,
+        "limit": 300,
+        "usedToday": 4,
+        "limitToday": 30,
+        "warn": false,
+        "usedSeconds": 692
+      },
+      "assessment": {
+        "unit": "ANSWERS",
+        "used": 41,
+        "limit": 500,
+        "usedToday": 6,
+        "limitToday": 40,
+        "warn": false
+      }
+    },
+    "caps": {
+      "podcasts": {
+        "used": 0,
+        "limit": 2,
+        "window": "MONTH"
+      },
+      "qualityImages": {
+        "used": 0,
+        "limit": 0,
+        "window": "MONTH"
+      },
+      "highFactcheck": {
+        "used": 1,
+        "limit": 2,
+        "window": "MONTH"
+      },
+      "smartPlan": {
+        "used": 1,
+        "limit": 4,
+        "window": "MONTH"
+      }
+    },
+    "updatedAt": "2026-10-02T09:00:42Z"
+  },
+  "usageResponseFree": {
+    "rateCardVersion": "rc-v1",
+    "plan": "FREE",
+    "period": {
+      "periodId": "2026-10",
+      "start": "2026-09-30T21:00:00Z",
+      "end": "2026-10-31T21:00:00Z"
+    },
+    "entitlement": {
+      "source": "CONFIG",
+      "validUntil": "2026-10-31T21:00:00Z"
+    },
+    "credits": {
+      "total": 50,
+      "unlocked": 13,
+      "used": 8,
+      "reserved": 0,
+      "remaining": 5,
+      "percentUsed": 16
+    },
+    "dailyBurst": null,
+    "weeklyUnlock": {
+      "portions": [
+        13,
+        13,
+        12,
+        12
+      ],
+      "unlockedPortions": 1,
+      "nextUnlockAt": "2026-10-04T21:00:00Z",
+      "nextPortionCredits": 13
+    },
+    "fairUse": {
+      "stt": {
+        "unit": "MINUTES",
+        "used": 52,
+        "limit": 60,
+        "usedToday": 3,
+        "limitToday": 10,
+        "warn": true,
+        "usedSeconds": 3071
+      },
+      "assessment": {
+        "unit": "ANSWERS",
+        "used": 10,
+        "limit": 50,
+        "usedToday": 1,
+        "limitToday": 5,
+        "warn": false
+      }
+    },
+    "caps": {
+      "podcasts": {
+        "used": 0,
+        "limit": 0,
+        "window": "MONTH"
+      },
+      "qualityImages": {
+        "used": 0,
+        "limit": 0,
+        "window": "MONTH"
+      },
+      "highFactcheck": {
+        "used": 0,
+        "limit": 0,
+        "window": "MONTH"
+      },
+      "smartPlan": {
+        "used": 0,
+        "limit": 0,
+        "window": "MONTH"
+      }
+    },
+    "updatedAt": "2026-10-02T09:00:42Z"
+  },
+  "usageResponseMaxFairUse": {
+    "stt": {
+      "unit": "MINUTES",
+      "used": 410,
+      "limit": null,
+      "usedToday": 35,
+      "limitToday": null,
+      "warn": false,
+      "usedSeconds": 24590,
+      "velocityPerDay": 120,
+      "usedTodayVelocity": 35
+    }
+  },
+  "usageResponseFields": {
+    "plan": "FREE | PLUS | PRO | MAX (allowances-v1.json).",
+    "period": "Current allowance period (a calendar month in the calendar zone) with its periodId; reservations and debits belong to a period.",
+    "entitlement": "The snapshot the numbers came from. source is CONFIG until billing (#79) publishes snapshots to entitlement_inbox; validUntil is the snapshot expiry. A browser return URL never changes it.",
+    "credits.total": "Bar size for the period. unlocked is how much of it may be spent now: all of it on paid plans; on FREE the sum of the portions unlocked so far (13 on the 1st, then on each following Monday).",
+    "credits.remaining": "unlocked - used - reserved, never negative.",
+    "dailyBurst": "Paid plans only: limits the DEBITS of one calendar day to 35% of the bar. null on FREE. deferredUntil is set while steps wait for the next day.",
+    "weeklyUnlock": "FREE only: portions [13, 13, 12, 12], how many are unlocked, the next unlock instant (Monday 00:00 Europe/Moscow) and its size. null on paid plans.",
+    "fairUse": "Quiet counters outside the bar (speech-to-text, answer checks).",
+    "caps": "Count caps per window; limit 0 means not offered on the plan."
+  },
+  "estimateRequest": {
+    "description": "Exactly one of spec (a generation spec, see generation/http.json schemas.generationSpec) or edit.",
+    "forms": {
+      "spec": {
+        "spec": {
+          "$ref": "../generation/http.json#/examples/specMaterials"
+        }
+      },
+      "edit": {
+        "edit": {
+          "sessionId": "5e550000-0000-4000-8000-000000000001",
+          "artifactId": "a7a70000-0000-4000-8000-000000000001",
+          "action": "REWRITE",
+          "targetNodeCount": 2
+        }
+      }
+    }
+  },
+  "estimateResponse": {
+    "rateCardVersion": "rc-v1",
+    "credits": {
+      "p50": 13,
+      "p95": 21
+    },
+    "breakdown": [
+      {
+        "operation": "MATERIAL_MEDIUM",
+        "count": 1,
+        "credits": 10
+      },
+      {
+        "operation": "TTS_CLIP_30S",
+        "count": 1,
+        "credits": 10
+      },
+      {
+        "operation": "IMAGE_SEARCH",
+        "count": 1,
+        "credits": 1
+      }
+    ],
+    "balance": {
+      "remainingCredits": 308,
+      "renewsAt": "2026-10-31T21:00:00Z"
+    },
+    "percentOfPeriodAllowance": {
+      "p50": 4,
+      "p95": 6
+    },
+    "budget": null,
+    "canStart": true,
+    "blockingBuckets": [],
+    "shortfallCredits": null,
+    "warnings": []
+  },
+  "estimateResponseShortfall": {
+    "rateCardVersion": "rc-v1",
+    "credits": {
+      "p50": 27,
+      "p95": 44
+    },
+    "breakdown": [
+      {
+        "operation": "MATERIAL_DETAILED",
+        "count": 2,
+        "credits": 44
+      }
+    ],
+    "balance": {
+      "remainingCredits": 12,
+      "renewsAt": "2026-10-31T21:00:00Z"
+    },
+    "percentOfPeriodAllowance": {
+      "p50": 8,
+      "p95": 12
+    },
+    "budget": null,
+    "canStart": false,
+    "blockingBuckets": [
+      {
+        "bucket": "CREDITS",
+        "window": "MONTH",
+        "unit": "CREDITS",
+        "limit": 360,
+        "used": 348,
+        "required": 44,
+        "offered": true,
+        "renewsAt": "2026-10-31T21:00:00Z",
+        "fitsAfterRenewal": true,
+        "plan": "PLUS"
+      }
+    ],
+    "shortfallCredits": 32,
+    "warnings": [
+      {
+        "code": "PERSONAL_DATA_SUSPECTED",
+        "sourceRef": {
+          "type": "NOTE",
+          "noteId": "20700000-0000-4000-8000-000000000001"
+        },
+        "ranges": [
+          {
+            "start": 120,
+            "end": 138
+          }
+        ]
+      }
+    ]
+  },
+  "estimateResponseFreeBlocked": {
+    "rateCardVersion": "rc-v1",
+    "credits": {
+      "p50": 14,
+      "p95": 22
+    },
+    "breakdown": [
+      {
+        "operation": "MATERIAL_DETAILED",
+        "count": 1,
+        "credits": 22
+      }
+    ],
+    "balance": {
+      "remainingCredits": 5,
+      "renewsAt": "2026-10-04T21:00:00Z"
+    },
+    "percentOfPeriodAllowance": {
+      "p50": 28,
+      "p95": 44
+    },
+    "budget": null,
+    "canStart": false,
+    "blockingBuckets": [
+      {
+        "bucket": "CREDITS",
+        "window": "WEEK",
+        "unit": "CREDITS",
+        "limit": 13,
+        "used": 8,
+        "required": 22,
+        "offered": true,
+        "renewsAt": "2026-10-04T21:00:00Z",
+        "fitsAfterRenewal": false,
+        "plan": "FREE"
+      }
+    ],
+    "shortfallCredits": 17,
+    "warnings": []
+  },
+  "estimateResponseFields": {
+    "credits": "p95 is the sum of rate card weights and is what a reservation holds; p50 is the same formula with typical weights = weight x 0.6 until measured weights exist (rate-card-v1.json estimation).",
+    "percentOfPeriodAllowance": "The composer shows 'about N% of the monthly limit' from p95, over the period bar.",
+    "budget": "Set when spec.settings.budgetPercent is given: {percent, capCredits}; capCredits = percent x remaining at estimate time, becomes the reservation cap and the planner input.",
+    "canStart": "false when any bucket blocks. The button stays enabled; pressing it explains the options (409 USAGE_LIMIT_REACHED).",
+    "blockingBuckets": "Present when canStart is false: one entry per blocking bucket with the members of the USAGE_LIMIT_REACHED problem (bucket, window, unit, limit, used, required, offered, renewsAt, fitsAfterRenewal, plan).",
+    "warnings[].code": "PERSONAL_DATA_SUSPECTED: a fragment of a source looks like personal data; ranges are UTF-16 offsets into the source text; the response never echoes the fragment. Mandatory server-side redaction of email, phone and card-number patterns happens regardless; this warning is the optional user-facing exclusion."
+  },
+  "reservation": {
+    "description": "usage_reservation. A hold on the balance, scoped to one admission. SESSION reservations cover the INITIAL batch only; every later chargeable action creates its own small reservation.",
+    "scopes": {
+      "SESSION": "Created with the session in one transaction (hold = estimate p95 of the initial batch, or the budget cap). When the session enters REVIEW (no QUEUED or GENERATING artifact) the unspent remainder is RELEASED.",
+      "TURN": "One edit turn (EDIT_SELECTION, IMAGE_SEARCH, IMAGE_GENERATE, AUDIO_REGENERATE) or one media redo; created at admission, bound to the turn.",
+      "STEP": "One retryArtifact (the regenerated artifact's steps) or one deferred step that must re-reserve after a period rollover."
+    },
+    "states": {
+      "ACTIVE": "Holding credits; counted in credits.reserved.",
+      "SETTLED": "Ended with at least one debit; the unspent remainder was returned. Applies when the session reaches REVIEW, or is CLOSED, CANCELLED, EXPIRED or deleted after a debit.",
+      "RELEASED": "Ended without any debit; the whole hold was returned (session reached REVIEW with nothing spent, cancelled, deleted or expired).",
+      "EXPIRED": "An orphaned hold passed its expiresAt and was returned."
+    },
+    "transitions": [
+      {
+        "from": null,
+        "to": "ACTIVE",
+        "trigger": "admission (session created, edit accepted, retry accepted)",
+        "guard": "the conditional update on usage_balance succeeds, else 409 USAGE_LIMIT_REACHED before any state change"
+      },
+      {
+        "from": "ACTIVE",
+        "to": "SETTLED",
+        "trigger": "scope finished (session in REVIEW, turn applied or failed, step finished) after at least one DEBIT; also session CLOSED, CANCELLED, EXPIRED or deleted after a DEBIT"
+      },
+      {
+        "from": "ACTIVE",
+        "to": "RELEASED",
+        "trigger": "scope finished or cancelled with no DEBIT; the session entered REVIEW with nothing spent; deleted or expired with nothing spent"
+      },
+      {
+        "from": "ACTIVE",
+        "to": "EXPIRED",
+        "trigger": "expiresAt elapsed without settlement"
+      }
+    ],
+    "periodRule": "A reservation carries periodId. Its debits draw from that period's balance. A reservation never outlives its period: expiresAt = min(learning.usage.reservation-ttl, period end). At period rollover every ACTIVE hold is released and the remaining steps re-reserve in the new period.",
+    "neverNegative": "Admission is ONE conditional update on usage_balance inside the admission transaction: UPDATE usage_balance SET reserved = reserved + :hold, row_version = row_version + 1 WHERE available >= :hold AND row_version = :v. Zero rows updated means 409 USAGE_LIMIT_REACHED. Two concurrent admissions cannot both pass because both compete for the same row version and the loser re-reads a smaller available. `available` is unlocked - used - reserved.",
+    "example": {
+      "reservationId": "2e500000-0000-4000-8000-000000000001",
+      "scope": "SESSION",
+      "sessionId": "5e550000-0000-4000-8000-000000000001",
+      "turnId": null,
+      "periodId": "2026-10",
+      "state": "ACTIVE",
+      "heldCredits": 21,
+      "debitedCredits": 11,
+      "rateCardVersion": "rc-v1",
+      "expiresAt": "2026-11-01T09:00:42Z"
+    },
+    "exampleTurn": {
+      "reservationId": "2e500000-0000-4000-8000-000000000002",
+      "scope": "TURN",
+      "sessionId": "5e550000-0000-4000-8000-000000000001",
+      "turnId": "7a7a0000-0000-4000-8000-000000000001",
+      "periodId": "2026-10",
+      "state": "ACTIVE",
+      "heldCredits": 4,
+      "debitedCredits": 0,
+      "rateCardVersion": "rc-v1",
+      "expiresAt": "2026-10-02T09:12:42Z"
+    },
+    "invariants": [
+      "debitedCredits never exceeds heldCredits; a call whose cost would exceed the remaining hold is not made (artifact FAILED with ESTIMATE_EXCEEDED; a retry re-reserves). A user's limit that cannot cover the call fails with USAGE_LIMIT.",
+      "A user never goes negative: credits.remaining >= 0.",
+      "A FAILED step caused by the provider is not debited; a repair inside a successful step is.",
+      "The daily burst limits DEBITS per calendar day, not reservations: admission checks the monthly availability only, a running step whose debit would exceed the burst completes, further steps that day wait in READY with next_attempt_at at the next day start and USAGE_UPDATED carries deferredUntil."
+    ]
+  },
+  "ledger": {
+    "description": "usage_ledger_entry: append-only; usage_balance is materialized in the same transaction. idempotencyKey is UNIQUE, so a retried write is a no-op. A DEBIT draws from the period of its reservation.",
+    "kinds": {
+      "GRANT": {
+        "sign": "+",
+        "meaning": "Allowance for a period or a Free weekly portion; produced from an entitlement snapshot.",
+        "idempotencyKey": "grant:{entitlementSnapshotId}:{periodId}:{portionIndex}"
+      },
+      "DEBIT": {
+        "sign": "-",
+        "meaning": "Consumption by a step result, in the transaction that stores the result.",
+        "idempotencyKey": "debit:{stepId}:{attempt}"
+      },
+      "REFUND": {
+        "sign": "+",
+        "meaning": "Return of a debit (for example a provider-side failure found later).",
+        "idempotencyKey": "refund:{debitIdempotencyKey}"
+      },
+      "ADJUSTMENT": {
+        "sign": "+/-",
+        "meaning": "Operator correction with an audit reference.",
+        "idempotencyKey": "adjust:{operatorRequestId}"
+      },
+      "EXPIRE": {
+        "sign": "-",
+        "meaning": "Unspent allowance removed at the end of its period; there is no rollover to the next month.",
+        "idempotencyKey": "expire:{periodId}"
+      }
+    },
+    "entryFields": [
+      "entryId",
+      "kind",
+      "credits",
+      "costMicros",
+      "operation",
+      "rateCardVersion",
+      "periodId",
+      "idempotencyKey",
+      "sessionId",
+      "stepId",
+      "attempt",
+      "reservationId",
+      "createdAt"
+    ],
+    "examples": [
+      {
+        "entryId": "1ed00000-0000-4000-8000-000000000001",
+        "kind": "GRANT",
+        "credits": 360,
+        "costMicros": null,
+        "operation": null,
+        "rateCardVersion": "rc-v1",
+        "periodId": "2026-10",
+        "idempotencyKey": "grant:snap-2026-10:2026-10:0",
+        "sessionId": null,
+        "stepId": null,
+        "attempt": null,
+        "reservationId": null,
+        "createdAt": "2026-09-30T21:00:00Z"
+      },
+      {
+        "entryId": "1ed00000-0000-4000-8000-000000000002",
+        "kind": "DEBIT",
+        "credits": -10,
+        "costMicros": 780000,
+        "operation": "MATERIAL_MEDIUM",
+        "rateCardVersion": "rc-v1",
+        "periodId": "2026-10",
+        "idempotencyKey": "debit:57e70000-0000-4000-8000-000000000001:1",
+        "sessionId": "5e550000-0000-4000-8000-000000000001",
+        "stepId": "57e70000-0000-4000-8000-000000000001",
+        "attempt": 1,
+        "reservationId": "2e500000-0000-4000-8000-000000000001",
+        "createdAt": "2026-10-02T09:00:42Z"
+      }
+    ],
+    "ledgerNotes": "costMicros is the measured provider cost in millionths of a rouble; credits is what the rate card charged. The gap is the input for the 14-day weight review."
+  },
+  "errors": {
+    "USAGE_LIMIT_REACHED": {
+      "status": 409,
+      "definedIn": "../generation/errors.json",
+      "example": {
+        "type": "urn:mnema:problem:usage-limit-reached",
+        "title": "Usage limit reached",
+        "status": 409,
+        "detail": "The remaining AI budget does not cover this operation.",
+        "instance": "/api/decks/11111111-1111-4111-8111-111111111111/generation-sessions",
+        "code": "USAGE_LIMIT_REACHED",
+        "bucket": "CREDITS",
+        "window": "MONTH",
+        "unit": "CREDITS",
+        "limit": 360,
+        "used": 348,
+        "required": 44,
+        "offered": true,
+        "renewsAt": "2026-10-31T21:00:00Z",
+        "fitsAfterRenewal": true,
+        "plan": "PLUS"
+      },
+      "exampleFreeWeek": {
+        "type": "urn:mnema:problem:usage-limit-reached",
+        "title": "Usage limit reached",
+        "status": 409,
+        "detail": "The remaining AI budget does not cover this operation.",
+        "instance": "/api/decks/11111111-1111-4111-8111-111111111111/generation-sessions",
+        "code": "USAGE_LIMIT_REACHED",
+        "bucket": "CREDITS",
+        "window": "WEEK",
+        "unit": "CREDITS",
+        "limit": 13,
+        "used": 8,
+        "required": 22,
+        "offered": true,
+        "renewsAt": "2026-10-04T21:00:00Z",
+        "fitsAfterRenewal": false,
+        "plan": "FREE"
+      },
+      "exampleNotOffered": {
+        "type": "urn:mnema:problem:usage-limit-reached",
+        "title": "Usage limit reached",
+        "status": 409,
+        "detail": "The remaining AI budget does not cover this operation.",
+        "instance": "/api/decks/11111111-1111-4111-8111-111111111111/generation-sessions",
+        "code": "USAGE_LIMIT_REACHED",
+        "bucket": "PODCASTS",
+        "window": "MONTH",
+        "unit": "COUNT",
+        "limit": 0,
+        "used": 0,
+        "required": 1,
+        "offered": false,
+        "renewsAt": null,
+        "fitsAfterRenewal": false,
+        "plan": "FREE"
+      }
+    },
+    "buckets": [
+      "CREDITS",
+      "DAILY_BURST",
+      "STT",
+      "ASSESSMENT",
+      "PODCASTS",
+      "QUALITY_IMAGES",
+      "HIGH_FACTCHECK",
+      "SMART_PLAN"
+    ],
+    "windows": [
+      "DAY",
+      "WEEK",
+      "MONTH"
+    ],
+    "note": "renewsAt is null when waiting will not help (offered=false). fitsAfterRenewal is true when the required amount fits the bucket after the next refresh or unlock only. STT and ASSESSMENT limits are fair-use: exceeding them returns the same code from their own endpoints (AI-15, AI-20); they are not debited from the bar."
+  }
+}

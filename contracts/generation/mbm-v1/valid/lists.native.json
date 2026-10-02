@@ -1,0 +1,233 @@
+{
+  "formatVersion": 1,
+  "root": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "type": "doc",
+    "version": 1,
+    "attrs": {},
+    "content": [
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "type": "bullet_list",
+        "version": 1,
+        "attrs": {},
+        "content": [
+          {
+            "id": "00000000-0000-4000-8000-000000000003",
+            "type": "list_item",
+            "version": 1,
+            "attrs": {},
+            "content": [
+              {
+                "id": "00000000-0000-4000-8000-000000000004",
+                "type": "paragraph",
+                "version": 1,
+                "attrs": {},
+                "content": [
+                  {
+                    "id": "00000000-0000-4000-8000-000000000005",
+                    "type": "text",
+                    "version": 1,
+                    "attrs": {
+                      "text": "первый пункт",
+                      "marks": []
+                    },
+                    "content": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000006",
+            "type": "list_item",
+            "version": 1,
+            "attrs": {},
+            "content": [
+              {
+                "id": "00000000-0000-4000-8000-000000000007",
+                "type": "paragraph",
+                "version": 1,
+                "attrs": {},
+                "content": [
+                  {
+                    "id": "00000000-0000-4000-8000-000000000008",
+                    "type": "text",
+                    "version": 1,
+                    "attrs": {
+                      "text": "второй пункт с ",
+                      "marks": []
+                    },
+                    "content": []
+                  },
+                  {
+                    "id": "00000000-0000-4000-8000-000000000009",
+                    "type": "text",
+                    "version": 1,
+                    "attrs": {
+                      "text": "термином",
+                      "marks": [
+                        "strong"
+                      ]
+                    },
+                    "content": []
+                  },
+                  {
+                    "id": "00000000-0000-4000-8000-00000000000a",
+                    "type": "text",
+                    "version": 1,
+                    "attrs": {
+                      "text": " и продолжением строки",
+                      "marks": []
+                    },
+                    "content": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "00000000-0000-4000-8000-00000000000b",
+        "type": "ordered_list",
+        "version": 1,
+        "attrs": {},
+        "content": [
+          {
+            "id": "00000000-0000-4000-8000-00000000000c",
+            "type": "list_item",
+            "version": 1,
+            "attrs": {},
+            "content": [
+              {
+                "id": "00000000-0000-4000-8000-00000000000d",
+                "type": "paragraph",
+                "version": 1,
+                "attrs": {},
+                "content": [
+                  {
+                    "id": "00000000-0000-4000-8000-00000000000e",
+                    "type": "text",
+                    "version": 1,
+                    "attrs": {
+                      "text": "шаг один",
+                      "marks": []
+                    },
+                    "content": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "00000000-0000-4000-8000-00000000000f",
+            "type": "list_item",
+            "version": 1,
+            "attrs": {},
+            "content": [
+              {
+                "id": "00000000-0000-4000-8000-000000000010",
+                "type": "paragraph",
+                "version": 1,
+                "attrs": {},
+                "content": [
+                  {
+                    "id": "00000000-0000-4000-8000-000000000011",
+                    "type": "text",
+                    "version": 1,
+                    "attrs": {
+                      "text": "шаг два",
+                      "marks": []
+                    },
+                    "content": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000012",
+        "type": "paragraph",
+        "version": 1,
+        "attrs": {},
+        "content": [
+          {
+            "id": "00000000-0000-4000-8000-000000000013",
+            "type": "text",
+            "version": 1,
+            "attrs": {
+              "text": "Затем продолжение:",
+              "marks": []
+            },
+            "content": []
+          }
+        ]
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000014",
+        "type": "ordered_list",
+        "version": 1,
+        "attrs": {
+          "order": 3
+        },
+        "content": [
+          {
+            "id": "00000000-0000-4000-8000-000000000015",
+            "type": "list_item",
+            "version": 1,
+            "attrs": {},
+            "content": [
+              {
+                "id": "00000000-0000-4000-8000-000000000016",
+                "type": "paragraph",
+                "version": 1,
+                "attrs": {},
+                "content": [
+                  {
+                    "id": "00000000-0000-4000-8000-000000000017",
+                    "type": "text",
+                    "version": 1,
+                    "attrs": {
+                      "text": "третий шаг",
+                      "marks": []
+                    },
+                    "content": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000018",
+            "type": "list_item",
+            "version": 1,
+            "attrs": {},
+            "content": [
+              {
+                "id": "00000000-0000-4000-8000-000000000019",
+                "type": "paragraph",
+                "version": 1,
+                "attrs": {},
+                "content": [
+                  {
+                    "id": "00000000-0000-4000-8000-00000000001a",
+                    "type": "text",
+                    "version": 1,
+                    "attrs": {
+                      "text": "четвёртый шаг",
+                      "marks": []
+                    },
+                    "content": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
