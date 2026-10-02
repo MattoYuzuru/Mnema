@@ -86,6 +86,24 @@ exercised (the buttons and the select are the supported path). Study answers wer
 results (a wrong cloze blank, a wrong first match pair, a wrong categorized item), so a green run says nothing
 about a fully correct cloze, match or categorize attempt.
 
+### Native code block (`--authoring`)
+
+`code-block.mjs` runs last in the authoring flow (after Study, notifications and mechanics when those are enabled), in a new
+material of the base deck, on the signed-in tab, at 1440 px with `prefers-reduced-motion: reduce`. It records one result,
+`code_block_real_editor_publish_browse_roundtrip`, and fails the run (`state: "failed"`, the step `code_block_<stage>`,
+`failure-code-block-<stage>.png` and `.txt`) when a stage breaks; it never works around a defective control.
+
+| Stage | Assertions |
+|---|---|
+| `editor_keyboard` | the toolbar button «Блок кода» inserts a block and focuses its textarea; real Shift+Tab reaches the language field, real typing sets `sql`, Tab returns to the textarea; the source (a Tab-indented line typed with the real Tab key, trailing spaces, an inner blank line, `<script>` and `<img onerror>` text) is typed key by key and the textarea value equals it byte for byte, so Tab inserted a tab and did not move focus; Esc selects the block and puts focus back on the editor surface (not `<body>`); further real Tab presses leave the editor (no trap) |
+| `editor_second_block` | a second block (no language) with a 401-character line; the draft is acknowledged; `code-block-editor-1440.png` |
+| `publish_browse` | publish, full reload, Browse: `pre > code.language-sql` text equals the typed source, the language label, no child elements, `dir="ltr"` and computed direction, the scroll region has `tabindex=0`, `role=region`, an accessible name, `overflow-x:auto`, `white-space:pre`, takes keyboard focus and shows a focus ring; nothing executed (`globalThis.__mnemaXss`, no script/img inside code); `code-block-browse-1440.png` |
+| `responsive_scroll` | at 390 px and at 320 CSS px with DPR 2 the page has no horizontal overflow, the long line sits in a scrolling region, and a real ArrowRight on the focused region scrolls it (`code-block-browse-390.png`, `code-block-browse-320-at-200-percent.png`) |
+| `reopen_roundtrip` | the editor reopens with the same language and sources; publishing unchanged keeps Browse identical and the Learning API returns exactly the typed `source`/`lang` (no `lang` on the second block, no CR) |
+
+Limits: Chrome only; the Esc and Tab behaviour is checked with CDP key events, not with a screen reader or a physical
+keyboard; "2x text" is the 320 px layout rasterized at DPR 2 as elsewhere in this harness, not the browser text-size setting.
+
 ### Notification center (`--authoring --media`)
 
 `notifications.mjs` runs after the base Study flow (which it completes first) and records one result,
@@ -186,7 +204,7 @@ Two synthetic accounts and two same-profile browser tabs exercise:
   These automated checks do not claim physical-device or AT coverage.
 
 The PKCE verifier is checked against the observed S256 challenge. Network interception
-blocks page requests outside the two exact origins (plus the local MinIO origin in media mode); at most 500 page requests in the base mode, 750 in authoring, 950 in media or 3000 in mechanics mode (allowing the local brand font and mark on repeated full navigations), and
+blocks page requests outside the two exact origins (plus the local MinIO origin in media mode); at most 500 page requests in the base mode, 900 in authoring, 1150 in media or 3000 in mechanics mode (allowing the local brand font and mark on repeated full navigations), and
 150 Identity requests are allowed (full SPA navigations reload several bundled assets).
 Global deadline 180 seconds, 600 with `--mechanics` (CLI 30–900), individual CDP/HTTP/readiness deadlines, 1 MiB proxy
 request/response cap, 16 MiB static asset cap. Database has a 512 MiB/two-CPU limit; each JVM

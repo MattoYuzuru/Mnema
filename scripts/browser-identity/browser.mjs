@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { runHub } from './hub.mjs';
 import { runMechanics } from './mechanics.mjs';
 import { runNotifications } from './notifications.mjs';
+import { runCodeBlock } from './code-block.mjs';
 
 const config = JSON.parse(await readFile(process.argv[2], 'utf8'));
 const results = [];
@@ -141,7 +142,7 @@ try {
       networkRequests++;
       if (url.origin === config.identity) identityRequests++;
       // Authoring exercises several full navigations and their local assets; keep a finite request budget.
-      if (networkRequests > (config.mechanics ? 3000 : config.media ? 950 : config.authoring ? 750 : 500)
+      if (networkRequests > (config.mechanics ? 3000 : config.media ? 1150 : config.authoring ? 900 : 500)
           || identityRequests > 150) asynchronousFailure = true;
       if (!allowed.has(url.origin) || asynchronousFailure) {
         externalRequests++;
@@ -1011,6 +1012,10 @@ try {
         saveScreenshot, saveFullScreenshot, clickText, setStep: value => { step = value; }, deckPath, bearer: secondBearer });
       mechanicsFailures = [...mechanicsFailures, ...hub.failures];
     }
+    // Native code block (#303): real editor input, publication, Browse, scrolling, round trip. Runs last in its own material.
+    await runCodeBlock({
+      tab: second, config, record, SafeFailure, until, exists, sanitizedLocation, navigate, saveScreenshot,
+      clickText, setStep: value => { step = value; }, deckPath, bearer: secondBearer });
   }
   step = 'first_tab_profile';
   // The first tab stayed in the background through the authoring, notification, mechanics and hub flows; bring it back

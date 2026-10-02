@@ -309,6 +309,21 @@ module.main()
             result = subprocess.run([node, "--check", str(Path(__file__).with_name("hub.mjs"))], capture_output=True)
             self.assertEqual(0, result.returncode)
 
+    def test_code_block_scenario_is_wired_real_input_and_syntactically_valid(self):
+        driver = Path(__file__).with_name("browser.mjs").read_text()
+        source = Path(__file__).with_name("code-block.mjs").read_text()
+        self.assertIn("import { runCodeBlock } from './code-block.mjs'", driver)
+        self.assertIn("record('code_block_real_editor_publish_browse_roundtrip'", source)
+        # Real keyboard events and the real toolbar; no stubbed responses and no direct value injection into the editor.
+        self.assertIn("Input.dispatchKeyEvent", source)
+        self.assertNotIn("Fetch.fulfillRequest", source)
+        self.assertNotIn("Object.getOwnPropertyDescriptor", source)
+        self.assertIn('"code-block.mjs"', Path(__file__).with_name("run.py").read_text())
+        node = shutil.which("node")
+        if node is not None:
+            result = subprocess.run([node, "--check", str(Path(__file__).with_name("code-block.mjs"))], capture_output=True)
+            self.assertEqual(0, result.returncode)
+
 
 if __name__ == "__main__":
     unittest.main()
