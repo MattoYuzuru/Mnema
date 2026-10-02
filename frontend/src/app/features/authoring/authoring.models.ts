@@ -15,19 +15,35 @@ export interface ItemRecordSummary {
     readonly updatedAt: string;
 }
 
-export interface ItemSummary extends ItemRecordSummary { readonly ordinal: number; readonly title: string; }
+/**
+ * One Browse row. `exerciseCount` (enabled exercises that assess the material) is present exactly when the list was
+ * requested with `include=exerciseCount`; `exemplar` is the deck-local «Эталон» flag.
+ */
+export interface ItemSummary extends ItemRecordSummary {
+    readonly ordinal: number;
+    readonly title: string;
+    readonly exerciseCount: number | null;
+    readonly exemplar: boolean;
+}
+
+/** How many materials may carry the «Эталон» flag in one deck, and how many do now. */
+export interface ExemplarBudget { readonly count: number; readonly limit: number; }
+
+export type ItemSort = 'ordinal' | 'exerciseCount';
 
 export interface ItemPage {
     readonly deckId: string;
     readonly deckRevisionId: string;
     readonly deckVersion: string;
     readonly total: number;
+    readonly exemplars: ExemplarBudget;
     readonly items: readonly ItemSummary[];
     readonly nextCursor: string | null;
 }
 
 export interface ItemDetail extends ItemRecordSummary {
     readonly ordinal: number | null;
+    readonly exemplar: boolean;
     readonly deckId: string;
     readonly deckRevisionId: string;
     readonly deckVersion: string;

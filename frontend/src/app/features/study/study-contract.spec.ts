@@ -159,7 +159,8 @@ describe('Mechanics wire contract (contracts/study/mechanics.json)', () => {
         for (const name of ['capabilities', 'capabilitiesFlagWithoutProvider']) {
             const reading = firstValueFrom(capabilities.read());
             http.expectOne('/api/capabilities').flush(mechanics[name], { headers: privateHeaders });
-            expect(await reading).toEqual(mechanics[name]);
+            // The study fixture predates aiGeneration; a response without it reads as «unavailable» (fail closed).
+            expect(await reading).toEqual({ ...mechanics[name], aiGeneration: { available: false, reason: 'DISABLED' } });
         }
         const cacheable = firstValueFrom(capabilities.read());
         http.expectOne('/api/capabilities').flush(mechanics['capabilities']);

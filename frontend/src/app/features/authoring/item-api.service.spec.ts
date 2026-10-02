@@ -21,6 +21,7 @@ describe('ItemApiService', () => {
         memberKey, itemRevisionId: revisionId, itemVersion: '0', ordinal: 4, formatVersion: 1,
         createdAt: '2026-09-19T10:00:00Z', updatedAt: '2026-09-19T10:00:00Z'
     } as const;
+    const exemplars = { count: 1, limit: 10 };
     const document = mixedNativeDocumentFixture();
 
     beforeEach(() => {
@@ -33,19 +34,22 @@ describe('ItemApiService', () => {
     it('reads bounded summaries and exact native detail through private no-store responses', async () => {
         const page = firstValueFrom(api.list(deckId));
         http.expectOne(`/api/decks/${deckId}/items?limit=20`).flush({
-            deckId, deckRevisionId, deckVersion: '8', total: 5, items: [{ ...summary, title: 'Первый текст материала' }], nextCursor: null
+            deckId, deckRevisionId, deckVersion: '8', total: 5, exemplars,
+            items: [{ ...summary, title: 'Первый текст материала', exemplar: true }], nextCursor: null
         }, { headers: { ...headers, ETag: '"8"' } });
-        expect((await page).items).toEqual([{ ...summary, title: 'Первый текст материала' }]);
+        const first = await page;
+        expect(first.items).toEqual([{ ...summary, title: 'Первый текст материала', exemplar: true, exerciseCount: null }]);
+        expect(first.exemplars).toEqual(exemplars);
 
         const detail = firstValueFrom(api.read(deckId, memberKey));
         http.expectOne(`/api/decks/${deckId}/items/${memberKey}`).flush({
-            ...summary, ordinal: 4, deckId, deckRevisionId, deckVersion: '8', document
+            ...summary, ordinal: 4, deckId, deckRevisionId, deckVersion: '8', document, exemplar: false
         }, { headers: { ...headers, ETag: '"8"' } });
         expect((await detail).document).toEqual(document);
 
         const historical = firstValueFrom(api.read(deckId, memberKey, revisionId));
         http.expectOne(`/api/decks/${deckId}/items/${memberKey}?revisionId=${revisionId}`).flush({
-            ...summary, ordinal: 4, deckId, deckRevisionId, deckVersion: '7', document
+            ...summary, ordinal: 4, deckId, deckRevisionId, deckVersion: '7', document, exemplar: false
         }, { headers: { ...headers, ETag: '"7"' } });
         expect((await historical).ordinal).toBe(4);
     });
@@ -69,7 +73,7 @@ describe('ItemApiService', () => {
     it('rejects a cacheable or shape-drifted item response', async () => {
         const page = firstValueFrom(api.list(deckId));
         http.expectOne(`/api/decks/${deckId}/items?limit=20`).flush({
-            deckId, deckRevisionId, deckVersion: '8', total: 0, items: [], nextCursor: null, secret: true
+            deckId, deckRevisionId, deckVersion: '8', total: 0, exemplars, items: [], nextCursor: null, secret: true
         }, { headers: { ETag: '"8"' } });
         await expect(page).rejects.toThrowError(AuthoringProtocolError);
     });
@@ -77,12 +81,12 @@ describe('ItemApiService', () => {
     it('requires a current ordinal but allows nullable historical locations', async () => {
         const detail = firstValueFrom(api.read(deckId, memberKey));
         http.expectOne(`/api/decks/${deckId}/items/${memberKey}`).flush({
-            ...summary, ordinal: null, deckId, deckRevisionId, deckVersion: '8', document
+            ...summary, ordinal: null, deckId, deckRevisionId, deckVersion: '8', document, exemplar: false
         }, { headers: { ...headers, ETag: '"8"' } });
         await expect(detail).rejects.toThrowError(AuthoringProtocolError);
         const history = firstValueFrom(api.read(deckId, memberKey, revisionId));
         http.expectOne(`/api/decks/${deckId}/items/${memberKey}?revisionId=${revisionId}`).flush({
-            ...summary, ordinal: null, deckId, deckRevisionId, deckVersion: '7', document
+            ...summary, ordinal: null, deckId, deckRevisionId, deckVersion: '7', document, exemplar: false
         }, { headers: { ...headers, ETag: '"7"' } });
         expect((await history).ordinal).toBeNull();
     });
@@ -123,5 +127,45 @@ describe('ItemApiService', () => {
         const result = firstValueFrom(api.delete(deckId, memberKey, '8', deckRevisionId, revisionId, 4, commandId));
         http.expectOne(`/api/decks/${deckId}/items/publications`).flush({ code: 'VERSION_CONFLICT' }, { status: 412, statusText: 'Precondition Failed' });
         await expect(result).rejects.toEqual(expect.objectContaining({ status: 412 }));
+    });
+
+    it('asks for exercise counts and the exercise-count sort, and requires counts exactly when asked', async () => {
+        const counted = { ...summary, title: 'Без упражнений', exemplar: false, exerciseCount: 0 };
+        const sorted = firstValueFrom(api.list(deckId, { sort: 'exerciseCount', cursor: 'opaque' }));
+        http.expectOne(`/api/decks/${deckId}/items?limit=20&sort=exerciseCount&include=exerciseCount&cursor=opaque`).flush({
+            deckId, deckRevisionId, deckVersion: '8', total: 5, exemplars, items: [counted], nextCursor: null
+        }, { headers: { ...headers, ETag: '"8"' } });
+        expect((await sorted).items).toEqual([counted]);
+
+        const ordered = firstValueFrom(api.list(deckId, { exerciseCount: true }));
+        http.expectOne(`/api/decks/${deckId}/items?limit=20&include=exerciseCount`).flush({
+            deckId, deckRevisionId, deckVersion: '8', total: 5, exemplars, items: [{ ...counted, exerciseCount: 3 }], nextCursor: null
+        }, { headers: { ...headers, ETag: '"8"' } });
+        expect((await ordered).items[0]?.exerciseCount).toBe(3);
+
+        // A list requested without counts must not carry them, and one requested with counts must.
+        const unexpected = firstValueFrom(api.list(deckId));
+        http.expectOne(`/api/decks/${deckId}/items?limit=20`).flush({
+            deckId, deckRevisionId, deckVersion: '8', total: 5, exemplars, items: [counted], nextCursor: null
+        }, { headers: { ...headers, ETag: '"8"' } });
+        await expect(unexpected).rejects.toThrowError(AuthoringProtocolError);
+        const missing = firstValueFrom(api.list(deckId, { exerciseCount: true }));
+        http.expectOne(`/api/decks/${deckId}/items?limit=20&include=exerciseCount`).flush({
+            deckId, deckRevisionId, deckVersion: '8', total: 5, exemplars, items: [{ ...summary, title: 'x', exemplar: false }], nextCursor: null
+        }, { headers: { ...headers, ETag: '"8"' } });
+        await expect(missing).rejects.toThrowError(AuthoringProtocolError);
+    });
+
+    it('rejects an exemplar budget above its limit and a non-boolean exemplar flag', async () => {
+        const over = firstValueFrom(api.list(deckId));
+        http.expectOne(`/api/decks/${deckId}/items?limit=20`).flush({
+            deckId, deckRevisionId, deckVersion: '8', total: 0, exemplars: { count: 11, limit: 10 }, items: [], nextCursor: null
+        }, { headers: { ...headers, ETag: '"8"' } });
+        await expect(over).rejects.toThrowError(AuthoringProtocolError);
+        const flag = firstValueFrom(api.list(deckId));
+        http.expectOne(`/api/decks/${deckId}/items?limit=20`).flush({
+            deckId, deckRevisionId, deckVersion: '8', total: 1, exemplars, items: [{ ...summary, title: 'x', exemplar: 'yes' }], nextCursor: null
+        }, { headers: { ...headers, ETag: '"8"' } });
+        await expect(flag).rejects.toThrowError(AuthoringProtocolError);
     });
 });
