@@ -15,7 +15,10 @@
     "podcasts": "Count cap on 3-minute podcasts",
     "qualityImages": "Count cap on quality generated images",
     "highFactcheck": "Count cap on high-effort fact checks",
-    "video": "Count cap on video clips (deferred)"
+    "smartPlan": "Count cap on smart plans (Flash and Pro share it; the Max plan's four Pro plans are counted in the same bucket)",
+    "video": "Count cap on video clips (deferred)",
+    "stt": "Fair-use bucket of speech-to-text, metered in seconds, shown as whole minutes rounded up",
+    "assessment": "Fair-use bucket of AI answer checks, counted in answers"
   },
   "availability": {
     "AVAILABLE": "In the first AI release.",
@@ -65,7 +68,7 @@
     {
       "id": "EXERCISES_PER_MATERIAL",
       "name": "Five exercises for one material",
-      "unit": "material with 5 exercises",
+      "unit": "5 exercises",
       "pricing": "CREDITS",
       "credits": 8,
       "cap": null,
@@ -73,7 +76,8 @@
       "worstCaseCostRub": {
         "min": 0.72,
         "max": 0.72
-      }
+      },
+      "note": "Pro-rated per exercise: ceil(8 x n / 5) for n exercises."
     },
     {
       "id": "EDIT_SELECTION",
@@ -107,7 +111,7 @@
       "unit": "plan",
       "pricing": "CREDITS",
       "credits": 20,
-      "cap": null,
+      "cap": "smartPlan",
       "availability": "AVAILABLE",
       "worstCaseCostRub": {
         "min": 1.98,
@@ -120,7 +124,7 @@
       "unit": "plan",
       "pricing": "CREDITS",
       "credits": 75,
-      "cap": null,
+      "cap": "smartPlan",
       "availability": "AVAILABLE",
       "worstCaseCostRub": {
         "min": 7.52,
@@ -139,7 +143,7 @@
         "min": 0.07,
         "max": 0.13
       },
-      "note": "Cost range is the external API case; self-host is a fixed cost."
+      "note": "Cost range is the external API case; self-host is a fixed cost. Metered in seconds; shown as whole minutes rounded up."
     },
     {
       "id": "TTS_CLIP_30S",
@@ -251,7 +255,20 @@
     }
   ],
   "estimation": {
-    "note": "The rate card prices a session, not a call: the first two artifacts of a session are priced at prefix-cache miss, the rest at cache hit. Estimates return p50 and p95; the reservation holds p95.",
-    "reservationBasis": "p95"
+    "p95": "The sum of the rate card weights of the operations the spec implies (the worst case). The reservation holds p95.",
+    "p50": "The same formula with typical (median) weights, defined as the rate card weight x 0.6 per operation, rounded up once on the sum, until measured weights exist (rc-v1 note: the 0.6 factor is a placeholder to be replaced by the 14-day measurements). There is no first-two-misses and rest-hits language: the rate card holds worst-case weights only.",
+    "exercisesProRata": "EXERCISES_PER_MATERIAL is priced per exercise: ceil(8 x n / 5) for n exercises.",
+    "mediaCounts": "The estimate prices only the media counts declared in the spec; the MBM compiler rejects excess directives (at most 8 per artifact), so the reservation cannot be exceeded by the document.",
+    "rounding": "Credits are integers; percentages are rounded half up."
+  },
+  "actionOperations": {
+    "description": "Edit action to rate card operation (each chargeable action reserves it at admission).",
+    "REWRITE": "EDIT_SELECTION",
+    "FREE": "EDIT_SELECTION",
+    "IMAGE_SEARCH": "IMAGE_SEARCH",
+    "IMAGE_GENERATE": "IMAGE_GENERATE_ECONOMY",
+    "AUDIO_REGENERATE": "TTS_CLIP_30S",
+    "REMOVE_MEDIA": null,
+    "notes": "REMOVE_MEDIA is free and needs no reservation. IMAGE_GENERATE uses the quality weight (IMAGE_GENERATE_QUALITY) when the spec asks for quality; generation is availability LATER. A media redo in a slot (find similar, create, regenerate audio) maps like the action."
   }
 }

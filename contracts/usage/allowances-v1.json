@@ -1,12 +1,21 @@
 {
   "contract": "usage-v1",
   "rateCardVersion": "rc-v1",
-  "source": "docs/product/ai-layer-2026-10.md section 5 (values copied verbatim).",
+  "source": "docs/product/ai-layer-2026-10.md section 5 (values copied verbatim); Free weekly portions and calendar zone: owner decisions 2026-10-02.",
+  "calendar": {
+    "zoneKey": "learning.usage.calendar-zone",
+    "zone": "Europe/Moscow",
+    "note": "Owner decision 2026-10-02. Every day, week (Monday 00:00) and month boundary of every window is a calendar boundary in this zone, kept as a single policy key. Europe/Moscow has no daylight saving, so a boundary is a fixed UTC offset (+03:00)."
+  },
   "periodRules": {
     "rollover": false,
-    "paidBar": "The whole monthly bar is available at once; spending in one day is limited to dailyBurstMaxFraction of the bar.",
-    "freeBar": "A quarter of the bar unlocks every Monday and does not accumulate.",
+    "paidBar": "The whole monthly bar is available at once. The daily burst limits the DEBITS of one calendar day to maxFraction of the bar; admission checks the monthly availability only, a step whose debit would exceed the burst waits (READY with next_attempt_at at the next day start), a running step completes.",
+    "freeBar": "Weekly portions that accumulate within the month (credits.schedule WEEKLY_PORTIONS); nothing carries over to the next month.",
     "boost": "A +50% boost is planned after recurring payments exist; it is not part of v1."
+  },
+  "fairUseMetering": {
+    "stt": "Metered in seconds; shown as whole minutes rounded up. A plan with unlimited STT has limit null and a velocityPerDay limit.",
+    "assessment": "Counted in answers."
   },
   "guarantee": "The sum of all caps stays at most 25% of the price after income tax (NPD 4%) and acquiring (about 3%). After two cohorts the bar is re-based on measured p95 (x1.35-1.5).",
   "plans": {
@@ -15,10 +24,18 @@
       "status": "AVAILABLE",
       "monthlyCredits": 50,
       "creditSchedule": {
-        "kind": "WEEKLY_UNLOCK",
-        "unlockDay": "MONDAY",
-        "unlockFraction": "1/4",
-        "accumulates": false
+        "kind": "WEEKLY_PORTIONS",
+        "portions": [
+          13,
+          13,
+          12,
+          12
+        ],
+        "firstUnlock": "PERIOD_START",
+        "nextUnlocks": "FOLLOWING_MONDAYS_00_00",
+        "accumulatesWithinPeriod": true,
+        "carryOverToNextPeriod": false,
+        "note": "Owner decision 2026-10-02. The portions sum to the 50 bar. The first unlocks on the 1st of the period, the next on each following Monday 00:00 in the calendar zone until the bar is fully unlocked; a month with a fifth Monday gets no extra. Unlocked but unspent credits stay usable until the period ends."
       },
       "stt": {
         "minutesPerMonth": 60,
@@ -33,12 +50,12 @@
         "qualityImages": 0,
         "highFactcheck": 0
       },
+      "images": "SEARCH_ONLY",
       "factcheckLow": true,
       "smartPlan": null,
       "displayHint": {
         "approxMaterialsWithFiveExercisesPerMonth": 2
-      },
-      "images": "SEARCH_ONLY"
+      }
     },
     "PLUS": {
       "priceRubPerMonth": 449,
@@ -46,7 +63,11 @@
       "monthlyCredits": 360,
       "creditSchedule": {
         "kind": "MONTHLY_BAR",
-        "dailyBurstMaxFraction": "0.35"
+        "dailyBurst": {
+          "basis": "DEBITS",
+          "maxFraction": "0.35",
+          "dayBoundary": "calendar-zone"
+        }
       },
       "stt": {
         "minutesPerMonth": 300,
@@ -61,6 +82,7 @@
         "qualityImages": 0,
         "highFactcheck": 2
       },
+      "images": "SEARCH_GENERATION_LATER",
       "factcheckLow": true,
       "smartPlan": {
         "perMonth": 4
@@ -70,8 +92,7 @@
           "min": 12,
           "max": 17
         }
-      },
-      "images": "SEARCH_GENERATION_LATER"
+      }
     },
     "PRO": {
       "priceRubPerMonth": 990,
@@ -79,7 +100,11 @@
       "monthlyCredits": 820,
       "creditSchedule": {
         "kind": "MONTHLY_BAR",
-        "dailyBurstMaxFraction": "0.35"
+        "dailyBurst": {
+          "basis": "DEBITS",
+          "maxFraction": "0.35",
+          "dayBoundary": "calendar-zone"
+        }
       },
       "stt": {
         "minutesPerMonth": 600,
@@ -94,6 +119,7 @@
         "qualityImages": 10,
         "highFactcheck": 5
       },
+      "images": "SEARCH_PLUS_QUALITY_LATER",
       "factcheckLow": true,
       "smartPlan": {
         "cadence": "WEEKLY"
@@ -103,8 +129,7 @@
           "min": 29,
           "max": 39
         }
-      },
-      "images": "SEARCH_PLUS_QUALITY_LATER"
+      }
     },
     "MAX": {
       "priceRubPerMonth": 1900,
@@ -112,11 +137,15 @@
       "monthlyCredits": 1780,
       "creditSchedule": {
         "kind": "MONTHLY_BAR",
-        "dailyBurstMaxFraction": "0.35"
+        "dailyBurst": {
+          "basis": "DEBITS",
+          "maxFraction": "0.35",
+          "dayBoundary": "calendar-zone"
+        }
       },
       "stt": {
-        "unlimitedWithinFairUse": true,
-        "velocityLimitMinutesPerDay": 120
+        "minutesPerMonth": null,
+        "velocityMinutesPerDay": 120
       },
       "assessment": {
         "answersPerMonth": 1500,
@@ -127,6 +156,7 @@
         "qualityImages": 25,
         "highFactcheck": 12
       },
+      "images": "SEARCH_PLUS_QUALITY_LATER",
       "factcheckLow": true,
       "smartPlan": {
         "cadence": "WEEKLY",
@@ -138,14 +168,13 @@
           "max": 85
         }
       },
-      "featureToggle": "Shown as 'in progress' with teasers behind a feature toggle until TTS and images are ready",
-      "images": "SEARCH_PLUS_QUALITY_LATER"
+      "featureToggle": "Shown as 'in progress' with teasers behind a feature toggle until TTS and images are ready"
     }
   },
   "notes": [
     "Plan identifiers are stable wire values: FREE, PLUS, PRO, MAX.",
     "caps.qualityImages is a count of quality generated images per month: 0 on FREE and PLUS (generation arrives later), 10 on PRO, 25 on MAX. `images` states what the plan offers; image generation itself is availability LATER in the rate card.",
-    "caps.podcasts and caps.highFactcheck are counts per month; a cap of 0 means the operation is not offered on the plan.",
-    "FREE unlocks 1/4 of the 50-credit bar each Monday. 50 / 4 is 12.5: the rounding rule for the weekly unlock is an open question (README), not decided here."
+    "caps.podcasts and caps.highFactcheck are counts per month; a cap of 0 means the operation is not offered on the plan (problem member offered=false).",
+    "MAX speech-to-text has no monthly limit (minutesPerMonth null) and a velocity limit of 120 minutes per day."
   ]
 }
