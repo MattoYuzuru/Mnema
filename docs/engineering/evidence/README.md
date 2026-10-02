@@ -44,6 +44,8 @@ of the former two-column exercise editor are likewise historical.
 
 - [Прогон 1: платформа и контракты](./epic-77/run-1/README.md) — актуализация стека (#278)
   и контракты AI-слоя (#279) с точными commit'ами и границами проверки.
+- [Прогон 2: фундамент без AI](./epic-77/run-2/README.md) — usage ledger, провайдеры, MBM-компилятор,
+  `code_block`, центр уведомлений, хаб колоды и UI-примитивы; ревью, измерения и границы проверки.
 
 ## Storage и content
 
