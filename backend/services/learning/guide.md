@@ -250,6 +250,21 @@ capacity evidence.
   back both material and exercise membership roots. Exercise writes advance the
   Deck CAS and receipt in the same transaction.
 
+- Deck hub (#285, [`contracts/decks/hub.json`](../../../contracts/decks/hub.json)):
+  `GET /api/decks/{id}/insights` (`DeckInsightsService`) is one snapshot-isolated read-only transaction over current
+  projections: coverage, per-material study state with the exact `study-progress` rule, `dueByDay[7]` in the
+  `zoneinfo` claim zone (fallback `Europe/Moscow`; Study's own fallback stays UTC), enabled exercises per mechanic and
+  open captures. The item list takes `sort=exerciseCount` (enabled assessed exercises ascending, ties by authoring
+  ordinal, keyset cursor bound to the Deck revision; one statement reuses the member-page traversal so every entry keeps
+  its true ordinal) and `include=exerciseCount`; every summary carries `exemplar`. «Эталон» is the table
+  `deck_item_exemplar` (V25), not a revision: `POST .../items/{memberKey}/exemplar` sets a desired value under a
+  per-Deck advisory lock (≤10), preconditioned by `expectedItemRevisionId`; `deleteHead` drops the flag in the delete
+  publication and reads join `deck_head_item`, so a stale row is never visible. Bulk delete
+  (`ItemBulkDeleteService`) resolves the selection against the named Deck revision's immutable member root and deletes
+  through `ItemService.publish` in chunks of 100 with deterministic chunk command IDs; the outer receipt is stored at
+  the end, so a crash between chunks is repaired by an exact retry. Limit problems carry the typed
+  `ProblemExtension` member `limit`. Measured numbers are in the #285 PR evidence.
+
 ## Notification center
 
 `app.mnema.learning.notification` implements [`contracts/notifications`](../../../contracts/notifications/README.md)
@@ -288,10 +303,11 @@ code adds.
   of attempts (`PROCESSING_FAILED`). Retryable attempts notify nobody. There is deliberately no "media ready" kind.
 - Keys are listed in the [runtime policy index](../../../docs/engineering/runtime-policy-index.md).
 
-Fresh Learning migrations V1–V24 are the database source of truth. V21 (unified exercise
+Fresh Learning migrations V1–V25 are the database source of truth. V21 (unified exercise
 mechanics) fails closed when pre-#266 exercise data exists: use a fresh local database. V23
 only widens the exercise type and answer-key kind constraints for `ORDER` and `CATEGORIZE`
-(no data rewrite); V24 adds the notification tables. Do not append
+(no data rewrite); V24 adds the notification tables; V25 adds `deck_item_exemplar` and two indexes (assessed-binding by
+member, open captures per Deck) and rewrites nothing. Do not append
 Study tables to legacy `core` migrations or port old review algorithms.
 
 Sources: [Spring Security 7.1 JWT](https://docs.spring.io/spring-security/reference/7.1/servlet/oauth2/resource-server/jwt.html)

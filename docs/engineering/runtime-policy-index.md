@@ -158,6 +158,10 @@ exercise response bounds и pagination maximum являются версиони
 wire/storage invariants. Их меняют вместе с контрактом, fixtures и обеими
 сторонами API. `BaselineReducer` interval ladder принадлежит versioned learning
 algorithm; изменение требует нового policy version/hash и migration evidence.
+Лимиты хаба колоды (#285) — те же версионированные wire-инварианты, а не Spring-ключи: не более 10
+«Эталонов» на колоду, bulk-удаление до 500 материалов за запрос порциями по 100 (одна атомарная публикация на порцию),
+семь дней в `dueByDay`. Они зафиксированы в [`contracts/decks/hub.json`](../../contracts/decks/hub.json), а
+`EXEMPLAR_LIMIT_REACHED` и `BULK_SELECTION_TOO_LARGE` возвращают значение в поле `limit`.
 Planner query/memory bounds и CSS tokens имеют другие причины изменения.
 Повторяющийся `@Transactional(timeout=10)` не превращается в один глобальный
 таймаут без измерений блокировок.
