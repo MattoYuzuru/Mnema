@@ -19,8 +19,8 @@ describe('CapabilitiesApiService', () => {
     afterEach(() => http.verify());
 
     it('is closed by default', () => {
-        expect(CAPABILITIES_UNAVAILABLE.aiAssessment.available).toBeFalse();
-        expect(CAPABILITIES_UNAVAILABLE.speechToText.available).toBeFalse();
+        expect(CAPABILITIES_UNAVAILABLE.aiAssessment.available).toBe(false);
+        expect(CAPABILITIES_UNAVAILABLE.speechToText.available).toBe(false);
     });
 
     it('accepts an available capability only without a reason and an unavailable one only with a known reason', async () => {
@@ -33,11 +33,11 @@ describe('CapabilitiesApiService', () => {
             { available: 'yes', reason: null }, { available: true, reason: null, secret: 'x' }]) {
             const rejected = firstValueFrom(api.read());
             http.expectOne('/api/capabilities').flush({ aiAssessment: bad, speechToText: bad }, { headers });
-            await expectAsync(rejected).toBeRejectedWithError(AuthoringProtocolError);
+            await expect(rejected).rejects.toThrowError(AuthoringProtocolError);
         }
         const extra = firstValueFrom(api.read());
         http.expectOne('/api/capabilities').flush({ aiAssessment: CAPABILITIES_UNAVAILABLE.aiAssessment,
             speechToText: CAPABILITIES_UNAVAILABLE.speechToText, provider: 'x' }, { headers });
-        await expectAsync(extra).toBeRejectedWithError(AuthoringProtocolError);
+        await expect(extra).rejects.toThrowError(AuthoringProtocolError);
     });
 });

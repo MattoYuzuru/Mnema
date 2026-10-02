@@ -2,10 +2,7 @@ import { AuthoringBlock, LIMITS, previewExerciseOf } from '../../content/exercis
 import { parseExerciseSpec } from '../../content/exercise/exercise-content.parse';
 import { NativeDocument } from '../../content/native-document';
 import { mechanics } from '../study/study-test-data';
-import {
-    ExerciseDrafts, SlotContext, buildSpec, carryPrompt, choiceSelectionProblem, clozePassage, draftsFromDetail, emptyDrafts,
-    isPristine, learnerContent, materialText, mechanicSpecificData, newBlank, newCategorizeItem, newCategory, newOrderItem, newPair, slotErrorMessage, validateDraft
-} from './exercise-draft';
+import { ExerciseDrafts, SlotContext, buildSpec, carryPrompt, choiceSelectionProblem, clozePassage, draftsFromDetail, emptyDrafts, isPristine, learnerContent, materialText, mechanicSpecificData, newBlank, newCategorizeItem, newCategory, newOrderItem, newPair, slotErrorMessage, validateDraft } from './exercise-draft';
 import { ExerciseDetail } from './exercise.models';
 
 describe('Exercise drafts', () => {
@@ -61,9 +58,8 @@ describe('Exercise drafts', () => {
             expect(slotErrorMessage([], slot, context)).toContain('от 1 до 2');
             expect(slotErrorMessage([text('a'), text(' ')], slot, context)).toContain('Блок 2');
             expect(slotErrorMessage([{ kind: 'MATERIAL', memberKey: subject.memberKey, itemRevisionId: subject.itemRevisionId,
-                nodeId: '00000000-0000-4000-8000-000000000004' }], { profile: 'COMPACT', min: 1, max: 2 }, context)).toContain('длиннее 300');
-            expect(slotErrorMessage([{ kind: 'MATERIAL', memberKey: subject.memberKey, itemRevisionId: subject.itemRevisionId, nodeId }],
-                { profile: 'COMPACT', min: 1, max: 2 }, context)).toBeNull();
+                    nodeId: '00000000-0000-4000-8000-000000000004' }], { profile: 'COMPACT', min: 1, max: 2 }, context)).toContain('длиннее 300');
+            expect(slotErrorMessage([{ kind: 'MATERIAL', memberKey: subject.memberKey, itemRevisionId: subject.itemRevisionId, nodeId }], { profile: 'COMPACT', min: 1, max: 2 }, context)).toBeNull();
             expect(materialText({ kind: 'MATERIAL', memberKey: subject.memberKey, itemRevisionId: subject.itemRevisionId, nodeId }, context)).toBe('Ядро хранит ДНК');
             expect(materialText(text('x'), context)).toBeNull();
         });
@@ -71,8 +67,7 @@ describe('Exercise drafts', () => {
         it('validates free-response alternatives, rules and soft matching', () => {
             const drafts = emptyDrafts();
             const valid = { ...drafts.FREE_RESPONSE, prompt: [text('q')] };
-            const check = (answer: Partial<typeof valid.answer>) => validateDraft('FREE_RESPONSE',
-                { ...drafts, FREE_RESPONSE: { ...valid, answer: { ...valid.answer, ...answer } } }, context)['accepted'];
+            const check = (answer: Partial<typeof valid.answer>) => validateDraft('FREE_RESPONSE', { ...drafts, FREE_RESPONSE: { ...valid, answer: { ...valid.answer, ...answer } } }, context)['accepted'];
             expect(check({ rows: [{ id: 'a', value: 'x' }] })).toBeUndefined();
             expect(check({ rows: [] })).toContain('от 1 до 20');
             expect(check({ rows: [{ id: 'a', value: ' ' }] })).toContain('пустые');
@@ -93,7 +88,7 @@ describe('Exercise drafts', () => {
             expect(cloze({ texts: ['a ', ''], blanks: [{ ...blank, size: { mode: 'FIXED', length: 4 } }] })['blank:' + blank.blankId]).toContain('от 5 до 20');
             const key = 'blank:' + blank.blankId;
             const lengths = (values: string[]) => cloze({ texts: ['a ', ''], blanks: [{ ...blank, size: { mode: 'ANSWER_LENGTH' },
-                answer: { ...blank.answer, rows: values.map((value, index) => ({ id: String(index), value })) } }] })[key];
+                        answer: { ...blank.answer, rows: values.map((value, index) => ({ id: String(index), value })) } }] })[key];
             expect(lengths(['ab', 'abc'])).toContain('одной длины');
             expect(lengths(['😀😀', 'ab'])).toBeUndefined();
         });
@@ -121,14 +116,14 @@ describe('Exercise drafts', () => {
             expect(validateDraft('MATCH', { ...base, MATCH: { prompt: [], pairs: [...filled, ...Array.from({ length: 5 }, newPair)] } }, context)['pairs'])
                 .toContain('от 2 до 6');
             const empty = validateDraft('MATCH', base, context);
-            expect(Object.keys(empty).some(key => key.startsWith('left:'))).toBeTrue();
+            expect(Object.keys(empty).some(key => key.startsWith('left:'))).toBe(true);
         });
 
         it('limits media per exercise and refuses one asset as two kinds', () => {
             const base = emptyDrafts();
             const asset = 'aaaaaaaa-0000-4000-8000-000000000001';
             const drafts = { ...base, SELF_CHECK: { prompt: [{ kind: 'IMAGE' as const, assetId: asset, alt: 'x' }, text('q')],
-                reference: [{ kind: 'AUDIO' as const, assetId: asset, title: 'x' }] } };
+                    reference: [{ kind: 'AUDIO' as const, assetId: asset, title: 'x' }] } };
             expect(validateDraft('SELF_CHECK', drafts, context)['media']).toContain('одновременно');
             expect(LIMITS.mediaBlocksPerExercise).toBe(32);
         });
@@ -141,8 +136,7 @@ describe('Exercise drafts', () => {
     });
 
     describe('preview', () => {
-        const project = (type: Parameters<typeof buildSpec>[0], drafts: ExerciseDrafts, revealed = false, placeholders = false) =>
-            learnerContent(previewExerciseOf(buildSpec(type, drafts, subject, true)), { context, revealed, placeholders });
+        const project = (type: Parameters<typeof buildSpec>[0], drafts: ExerciseDrafts, revealed = false, placeholders = false) => learnerContent(previewExerciseOf(buildSpec(type, drafts, subject, true)), { context, revealed, placeholders });
 
         it('keeps hidden things hidden: no labels, no transcripts until revealed, no keys', () => {
             const detail = detailFor('createSelfCheck');
@@ -159,7 +153,7 @@ describe('Exercise drafts', () => {
         it('skips incomplete blocks, sizes blanks and rotates the right column of a match', () => {
             const base = emptyDrafts();
             const free = project('FREE_RESPONSE', { ...base, FREE_RESPONSE: { ...base.FREE_RESPONSE,
-                prompt: [text(' '), { kind: 'IMAGE', assetId: 'bad', alt: 'x' }, { kind: 'YOUTUBE', videoId: 'x', title: 'y' }, text('ok')] } });
+                    prompt: [text(' '), { kind: 'IMAGE', assetId: 'bad', alt: 'x' }, { kind: 'YOUTUBE', videoId: 'x', title: 'y' }, text('ok')] } });
             expect(free.content.prompt).toEqual([{ kind: 'TEXT', text: 'ok' }]);
 
             const blank = newBlank('abcdefg');
@@ -168,9 +162,10 @@ describe('Exercise drafts', () => {
 
             const pairs = [newPair(), newPair(), newPair()];
             const match = project('MATCH', { ...base, MATCH: { prompt: [], pairs } });
-            if (match.type !== 'MATCH') throw new Error('Expected MATCH');
+            if (match.type !== 'MATCH')
+                throw new Error('Expected MATCH');
             expect(match.content.right.map(item => item.itemId)).toEqual([pairs[1].right.itemId, pairs[2].right.itemId, pairs[0].right.itemId]);
-            expect(match.content.left.every(item => item.blocks.length === 1)).toBeTrue();
+            expect(match.content.left.every(item => item.blocks.length === 1)).toBe(true);
             expect(match.content.left[0].blocks).toEqual([{ kind: 'TEXT', text: 'Пустой элемент' }]);
         });
 
@@ -184,10 +179,12 @@ describe('Exercise drafts', () => {
         it('shows neutral placeholders for unfinished parts of a draft and never invents content', () => {
             const base = emptyDrafts();
             const choice = project('CHOICE', base, false, true);
-            if (choice.type !== 'CHOICE') throw new Error('Expected CHOICE');
+            if (choice.type !== 'CHOICE')
+                throw new Error('Expected CHOICE');
             expect(choice.content.prompt).toEqual([{ kind: 'TEXT', text: 'Добавьте вопрос' }]);
             expect(choice.content.options.map(option => option.blocks)).toEqual([
-                [{ kind: 'TEXT', text: 'Добавьте вариант' }], [{ kind: 'TEXT', text: 'Добавьте вариант' }]]);
+                [{ kind: 'TEXT', text: 'Добавьте вариант' }], [{ kind: 'TEXT', text: 'Добавьте вариант' }]
+            ]);
             const half = project('CHOICE', { ...base, CHOICE: { ...base.CHOICE, options: [{ ...base.CHOICE.options[0], blocks: [text('Да')] }, base.CHOICE.options[1]] } }, false, true);
             expect(half.type === 'CHOICE' && half.content.options[1].blocks).toEqual([{ kind: 'TEXT', text: 'Добавьте ещё один вариант' }]);
             const check = project('SELF_CHECK', { ...base, SELF_CHECK: { prompt: [text('Вопрос')], reference: [text('')] } }, false, true);
@@ -202,15 +199,15 @@ describe('Exercise drafts', () => {
         it('recognises a fresh draft regardless of the random ids and notices the first edit', () => {
             const drafts = emptyDrafts();
             for (const type of ['SELF_CHECK', 'FREE_RESPONSE', 'CLOZE', 'CHOICE', 'MATCH'] as const) {
-                expect(isPristine(type, drafts)).withContext(type).toBeTrue();
-                expect(isPristine(type, emptyDrafts())).withContext(type).toBeTrue();
+                expect(isPristine(type, drafts), type).toBe(true);
+                expect(isPristine(type, emptyDrafts()), type).toBe(true);
             }
-            expect(isPristine('SELF_CHECK', { ...drafts, SELF_CHECK: { ...drafts.SELF_CHECK, prompt: [text('a')] } })).toBeFalse();
-            expect(isPristine('CHOICE', { ...drafts, CHOICE: { ...drafts.CHOICE, selectionMode: 'MULTIPLE' } })).toBeFalse();
-            expect(isPristine('CHOICE', { ...drafts, CHOICE: { ...drafts.CHOICE, options: [...drafts.CHOICE.options, drafts.CHOICE.options[0]] } })).toBeFalse();
-            expect(isPristine('MATCH', { ...drafts, MATCH: { ...drafts.MATCH, pairs: [...drafts.MATCH.pairs, newPair()] } })).toBeFalse();
+            expect(isPristine('SELF_CHECK', { ...drafts, SELF_CHECK: { ...drafts.SELF_CHECK, prompt: [text('a')] } })).toBe(false);
+            expect(isPristine('CHOICE', { ...drafts, CHOICE: { ...drafts.CHOICE, selectionMode: 'MULTIPLE' } })).toBe(false);
+            expect(isPristine('CHOICE', { ...drafts, CHOICE: { ...drafts.CHOICE, options: [...drafts.CHOICE.options, drafts.CHOICE.options[0]] } })).toBe(false);
+            expect(isPristine('MATCH', { ...drafts, MATCH: { ...drafts.MATCH, pairs: [...drafts.MATCH.pairs, newPair()] } })).toBe(false);
             // Typing and deleting again returns to a pristine draft.
-            expect(isPristine('SELF_CHECK', { ...drafts, SELF_CHECK: { ...drafts.SELF_CHECK, prompt: [text('')] } })).toBeTrue();
+            expect(isPristine('SELF_CHECK', { ...drafts, SELF_CHECK: { ...drafts.SELF_CHECK, prompt: [text('')] } })).toBe(true);
         });
 
         it('lists only the parts another mechanic cannot show', () => {
@@ -236,14 +233,17 @@ describe('Exercise drafts', () => {
 
     describe('ORDER and CATEGORIZE', () => {
         it('mints every item and group id with crypto.randomUUID, never from a counter or from the content', () => {
-            const minted = spyOn(crypto, 'randomUUID').and.callThrough();
-            const order = newOrderItem('один'); const category = newCategory('Глагол'); const item = newCategorizeItem();
+            const minted = vi.spyOn(crypto, 'randomUUID');
+            const order = newOrderItem('один');
+            const category = newCategory('Глагол');
+            const item = newCategorizeItem();
             const drafts = emptyDrafts();
             const ids = [order.itemId, category.categoryId, item.itemId, ...drafts.ORDER.items.map(entry => entry.itemId),
                 ...drafts.CATEGORIZE.categories.map(entry => entry.categoryId), ...drafts.CATEGORIZE.items.map(entry => entry.itemId)];
-            for (const value of ids) expect(value).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+            for (const value of ids)
+                expect(value).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
             expect(new Set(ids).size).toBe(ids.length);
-            expect(minted.calls.count()).toBeGreaterThanOrEqual(ids.length);   // every id above came through the spy
+            expect(vi.mocked(minted).mock.calls.length).toBeGreaterThanOrEqual(ids.length); // every id above came through the spy
         });
 
         const withItems = (...values: string[]) => ({ prompt: [], items: values.map(value => newOrderItem(value)) });
@@ -264,7 +264,7 @@ describe('Exercise drafts', () => {
             expect(errors(long)['item:' + long.items[0].itemId]).toContain('1000');
             const code = withItems('for (;;) {\n    x++;\n}', 'ок');
             expect(errors(code)).toEqual({});
-            expect(Object.keys(errors({ prompt: [], items: [{ itemId: 'a', blocks: [] }, newOrderItem('x')] })).some(key => key.startsWith('item:'))).toBeTrue();
+            expect(Object.keys(errors({ prompt: [], items: [{ itemId: 'a', blocks: [] }, newOrderItem('x')] })).some(key => key.startsWith('item:'))).toBe(true);
         });
 
         it('previews an ORDER or CATEGORIZE in a rotated order, never the authored one, with placeholders for empty parts', () => {
@@ -277,7 +277,8 @@ describe('Exercise drafts', () => {
             const blank = previewExerciseOf(buildSpec('ORDER', emptyDrafts(), subject, true));
             const placeholder = learnerContent(blank, { context: null, revealed: false, placeholders: true });
             expect(placeholder.type === 'ORDER' && placeholder.content.items.map(item => item.blocks[0])).toEqual([
-                { kind: 'TEXT', text: 'Добавьте элемент' }, { kind: 'TEXT', text: 'Добавьте элемент' }]);
+                { kind: 'TEXT', text: 'Добавьте элемент' }, { kind: 'TEXT', text: 'Добавьте элемент' }
+            ]);
 
             const categorize = emptyDrafts();
             const groups = categorize.CATEGORIZE.categories;
@@ -293,10 +294,10 @@ describe('Exercise drafts', () => {
             const draft = { ...base, items: base.items.map((item, index) => index === 0 ? { ...item, categoryId: base.categories[1].categoryId } : item) };
             const spec = buildSpec('CATEGORIZE', { ...emptyDrafts(), CATEGORIZE: draft }, subject, true);
             expect(spec.type === 'CATEGORIZE' && spec.answerKey.assignments).toEqual([{ itemId: draft.items[0].itemId, categoryId: base.categories[1].categoryId }]);
-            expect(isPristine('CATEGORIZE', { ...emptyDrafts(), CATEGORIZE: draft })).toBeFalse();
-            expect(isPristine('CATEGORIZE', { ...emptyDrafts(), CATEGORIZE: emptyDrafts().CATEGORIZE })).toBeTrue();
-            expect(isPristine('ORDER', { ...emptyDrafts(), ORDER: withItems('x', '') })).toBeFalse();
-            expect(isPristine('ORDER', emptyDrafts())).toBeTrue();
+            expect(isPristine('CATEGORIZE', { ...emptyDrafts(), CATEGORIZE: draft })).toBe(false);
+            expect(isPristine('CATEGORIZE', { ...emptyDrafts(), CATEGORIZE: emptyDrafts().CATEGORIZE })).toBe(true);
+            expect(isPristine('ORDER', { ...emptyDrafts(), ORDER: withItems('x', '') })).toBe(false);
+            expect(isPristine('ORDER', emptyDrafts())).toBe(true);
         });
 
         it('lists what a switch would lose', () => {
@@ -305,7 +306,7 @@ describe('Exercise drafts', () => {
             expect(mechanicSpecificData('ORDER', { ...base, ORDER: withItems('а', 'б') })).toEqual(['элементы и их порядок']);
             expect(mechanicSpecificData('CATEGORIZE', base)).toEqual([]);
             expect(mechanicSpecificData('CATEGORIZE', { ...base, CATEGORIZE: { ...base.CATEGORIZE,
-                categories: [{ categoryId: 'x', label: 'Глагол' }, base.CATEGORIZE.categories[1]] } })).toEqual(['группы, элементы и их распределение']);
+                    categories: [{ categoryId: 'x', label: 'Глагол' }, base.CATEGORIZE.categories[1]] } })).toEqual(['группы, элементы и их распределение']);
         });
     });
 });

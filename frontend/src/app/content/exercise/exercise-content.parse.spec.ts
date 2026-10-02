@@ -1,8 +1,6 @@
 import { clone, mechanics } from '../../features/study/study-test-data';
 import { AuthoringBlock, COMPACT_SLOT, PROMPT_SLOTS, SEQUENCE_SLOT, SLOT_PROFILES, allLearnerBlocks, categoryLabelKey, distinguishableItems, visibleBlocksKey } from './exercise-content.models';
-import {
-    ExerciseContentError, blockProblem, exactObject, parseExerciseSpec, parseLearnerBlock, parseLearnerContent, slotProblem
-} from './exercise-content.parse';
+import { ExerciseContentError, blockProblem, exactObject, parseExerciseSpec, parseLearnerBlock, parseLearnerContent, slotProblem } from './exercise-content.parse';
 
 describe('Exercise content rules', () => {
     const asset = 'aaaaaaaa-0000-4000-8000-000000000001';
@@ -86,7 +84,8 @@ describe('Exercise content rules', () => {
             kinds.content.prompt = [{ kind: 'IMAGE', assetId: asset, alt: 'x' }, { kind: 'AUDIO', assetId: asset, title: 'x' }];
             expect(() => parseExerciseSpec(kinds)).toThrowError(ExerciseContentError);
             const soft = clone(mechanics['createFreeResponseAudio'].exercise);
-            soft.answerKey.matchingMode = 'SOFT'; soft.answerKey.accepted = ['!!!'];
+            soft.answerKey.matchingMode = 'SOFT';
+            soft.answerKey.accepted = ['!!!'];
             expect(() => parseExerciseSpec(soft)).toThrowError(ExerciseContentError);
             const rule = clone(mechanics['createFreeResponseAudio'].exercise);
             rule.answerKey.normalization = ['TRIM', 'TRIM'];
@@ -104,7 +103,9 @@ describe('Exercise content rules', () => {
             size.content.passage[3].size.length = 4;
             expect(() => parseExerciseSpec(size)).toThrowError(ExerciseContentError);
             const onlyBlanks = clone(mechanics['createCloze'].exercise);
-            onlyBlanks.content.passage = onlyBlanks.content.passage.filter((segment: { kind: string }) => segment.kind === 'BLANK');
+            onlyBlanks.content.passage = onlyBlanks.content.passage.filter((segment: {
+                kind: string;
+            }) => segment.kind === 'BLANK');
             expect(() => parseExerciseSpec(onlyBlanks)).toThrowError(ExerciseContentError);
         });
 
@@ -136,8 +137,7 @@ describe('Exercise content rules', () => {
             expect(() => parseLearnerBlock({ kind: 'MATERIAL', memberKey: asset }, 'PROMPT', null)).toThrowError(ExerciseContentError);
             expect(() => parseLearnerBlock({ kind: 'YOUTUBE', videoId: 'dQw4w9WgXcQ', title: 'x' }, 'COMPACT', null)).toThrowError(ExerciseContentError);
             expect(() => parseLearnerBlock({ kind: 'YOUTUBE', videoId: 'bad', title: 'x' }, 'PROMPT', null)).toThrowError(ExerciseContentError);
-            expect(parseLearnerBlock({ kind: 'YOUTUBE', videoId: 'dQw4w9WgXcQ', title: 'x' }, 'PROMPT', null)).toEqual(
-                { kind: 'YOUTUBE', videoId: 'dQw4w9WgXcQ', title: 'x' });
+            expect(parseLearnerBlock({ kind: 'YOUTUBE', videoId: 'dQw4w9WgXcQ', title: 'x' }, 'PROMPT', null)).toEqual({ kind: 'YOUTUBE', videoId: 'dQw4w9WgXcQ', title: 'x' });
             expect(() => parseLearnerBlock('text', 'PROMPT', null)).toThrowError(ExerciseContentError);
         });
 
@@ -193,11 +193,11 @@ describe('ORDER and CATEGORIZE content', () => {
             expect(JSON.stringify(parsed)).not.toContain('assignments');
         }
         const learner = parseLearnerContent('CATEGORIZE', mechanics['presentations']['categorize'].content, false);
-        expect(allLearnerBlocks(learner).some(block => block.kind === 'AUDIO')).toBeTrue();
+        expect(allLearnerBlocks(learner).some(block => block.kind === 'AUDIO')).toBe(true);
     });
 
     it('folds group labels like the contract: NFC, edge whitespace and format characters, then case', () => {
-        const same = (a: string, b: string) => expect(categoryLabelKey(a)).withContext(`${a} / ${b}`).toBe(categoryLabelKey(b));
+        const same = (a: string, b: string) => expect(categoryLabelKey(a), `${a} / ${b}`).toBe(categoryLabelKey(b));
         same('  Глагол ', 'ГЛАГОЛ');
         same('Straße', 'STRASSE');
         same('Σ', 'ς');
@@ -205,21 +205,25 @@ describe('ORDER and CATEGORIZE content', () => {
         same('\u00a0Глагол\u3000', 'глагол');
         same('\u200bГлагол\u200b', 'Глагол');
         expect(categoryLabelKey('Глагол')).not.toBe(categoryLabelKey('Глаголы'));
-        expect(categoryLabelKey('Гла\u200bгол')).not.toBe(categoryLabelKey('Глагол'));   // only the edges are trimmed
-        expect(categoryLabelKey(' \u200b\u00a0\u3000')).toBe('');                         // no visible character
+        expect(categoryLabelKey('Гла\u200bгол')).not.toBe(categoryLabelKey('Глагол')); // only the edges are trimmed
+        expect(categoryLabelKey(' \u200b\u00a0\u3000')).toBe(''); // no visible character
     });
 
     it('rejects a group label without a visible character or one that folds onto another label, and keeps labels verbatim', () => {
         const base = mechanics['createCategorize'].exercise;
         for (const label of ['\u200b', '\u00a0\u3000', ' ']) {
-            const spec = clone(base); spec.content.categories[0].label = label;
-            expect(() => parseExerciseSpec(spec)).withContext(JSON.stringify(label)).toThrowError(ExerciseContentError);
+            const spec = clone(base);
+            spec.content.categories[0].label = label;
+            expect(() => parseExerciseSpec(spec), JSON.stringify(label)).toThrowError(ExerciseContentError);
         }
         for (const [first, second] of [['Straße', 'STRASSE'], ['Σ', 'ς'], ['Caf\u00e9', 'Cafe\u0301'], ['Глагол', '\u200bГЛАГОЛ\u00a0']]) {
-            const spec = clone(base); spec.content.categories[0].label = first; spec.content.categories[1].label = second;
-            expect(() => parseExerciseSpec(spec)).withContext(`${first} / ${second}`).toThrowError(ExerciseContentError);
+            const spec = clone(base);
+            spec.content.categories[0].label = first;
+            spec.content.categories[1].label = second;
+            expect(() => parseExerciseSpec(spec), `${first} / ${second}`).toThrowError(ExerciseContentError);
         }
-        const verbatim = clone(base); verbatim.content.categories[0].label = ' Существительное ';
+        const verbatim = clone(base);
+        verbatim.content.categories[0].label = ' Существительное ';
         expect(parseExerciseSpec(verbatim).type === 'CATEGORIZE' && parseExerciseSpec(verbatim).content).toEqual(verbatim.content);
     });
 
@@ -228,11 +232,11 @@ describe('ORDER and CATEGORIZE content', () => {
         expect(visibleBlocksKey(text('очень').blocks)).toBe(visibleBlocksKey(text('очень').blocks));
         expect(visibleBlocksKey(text('очень').blocks)).not.toBe(visibleBlocksKey(text('Очень').blocks));
         const audio = (title: string, transcript?: string) => [{ kind: 'AUDIO' as const, assetId: 'aaaaaaaa-0000-4000-8000-000000000001', title,
-            ...(transcript === undefined ? {} : { transcript }) }];
+                ...(transcript === undefined ? {} : { transcript }) }];
         expect(visibleBlocksKey(audio('Запись 1'))).toBe(visibleBlocksKey(audio('Другое название')));
-        expect(visibleBlocksKey(audio('x'))).not.toBe(visibleBlocksKey(audio('x', 'расшифровка')));   // the learner can ask for one
+        expect(visibleBlocksKey(audio('x'))).not.toBe(visibleBlocksKey(audio('x', 'расшифровка'))); // the learner can ask for one
         const material = (nodeId: string) => [{ kind: 'MATERIAL' as const, memberKey: 'm', itemRevisionId: 'r', nodeId }];
-        expect(visibleBlocksKey(material('a'))).not.toBe(visibleBlocksKey(material('b')));            // preview: never more lenient
+        expect(visibleBlocksKey(material('a'))).not.toBe(visibleBlocksKey(material('b'))); // preview: never more lenient
         expect(visibleBlocksKey(material('a'), () => 'один текст')).toBe(visibleBlocksKey(material('b'), () => 'один текст'));
         expect(visibleBlocksKey(material('a'), () => 'один текст')).toBe(visibleBlocksKey(text('один текст').blocks));
         expect(distinguishableItems([text('а'), text('а'), text('а')])).toBe(1);
@@ -241,8 +245,10 @@ describe('ORDER and CATEGORIZE content', () => {
 
     it('rejects an ORDER whose items are all indistinguishable', () => {
         const spec = clone(mechanics['createOrder'].exercise);
-        spec.content.items = spec.content.items.slice(1, 3);                    // two identical «очень» tiles
-        spec.answerKey.sequence = spec.content.items.map((entry: { itemId: string }) => entry.itemId);
+        spec.content.items = spec.content.items.slice(1, 3); // two identical «очень» tiles
+        spec.answerKey.sequence = spec.content.items.map((entry: {
+            itemId: string;
+        }) => entry.itemId);
         expect(() => parseExerciseSpec(spec)).toThrowError(ExerciseContentError);
         spec.content.items[1].blocks = [{ kind: 'TEXT', text: 'совсем' }];
         expect(() => parseExerciseSpec(spec)).not.toThrow();

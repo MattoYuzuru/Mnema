@@ -14,13 +14,13 @@ describe('StudyRecoveryService', () => {
     beforeEach(() => {
         storage = new Map();
         TestBed.configureTestingModule({ providers: [
-            { provide: AuthService, useValue: { user: () => ({ accountId: id }) } },
-            { provide: AUTH_BROWSER, useValue: { now: () => 10000, storage: {
-                getItem: (key: string) => storage.get(key) ?? null,
-                setItem: (key: string, value: string) => storage.set(key, value),
-                removeItem: (key: string) => storage.delete(key)
-            } } }
-        ] });
+                { provide: AuthService, useValue: { user: () => ({ accountId: id }) } },
+                { provide: AUTH_BROWSER, useValue: { now: () => 10000, storage: {
+                            getItem: (key: string) => storage.get(key) ?? null,
+                            setItem: (key: string, value: string) => storage.set(key, value),
+                            removeItem: (key: string) => storage.delete(key)
+                        } } }
+            ] });
         service = TestBed.inject(StudyRecoveryService);
     });
     it('restores the exact canonical option set', () => {
@@ -48,18 +48,20 @@ describe('StudyRecoveryService', () => {
             { kind: 'CATEGORIZE', assignments: [{ itemId: id, groupId: other }, { itemId: other, groupId: other }] }]) {
             storage.set(key, JSON.stringify({ version: 3, accountId: id, deckId: id, sessionId: id, updatedAt: 10000,
                 pending: { ...pending, response: broken } }));
-            expect(service.restore(id)).withContext(JSON.stringify(broken)).toBeNull();
+            expect(service.restore(id), JSON.stringify(broken)).toBeNull();
         }
     });
     it('invalidates older snapshots, old scalar responses and any command that still carries hintsUsed', () => {
         for (const version of [1, 2]) {
             storage.set(key, JSON.stringify({ version, accountId: id, deckId: id, sessionId: id, updatedAt: 10000,
                 pending: { ...pending, hintsUsed: [], response: { kind: 'CHOICE', optionId: id } } }));
-            expect(service.restore(id)).toBeNull(); expect(storage.has(key)).toBeFalse();
+            expect(service.restore(id)).toBeNull();
+            expect(storage.has(key)).toBe(false);
         }
         storage.set(key, JSON.stringify({ version: 3, accountId: id, deckId: id, sessionId: id, updatedAt: 10000,
             pending: { ...pending, hintsUsed: [] } }));
-        expect(service.restore(id)).toBeNull(); expect(storage.has(key)).toBeFalse();
+        expect(service.restore(id)).toBeNull();
+        expect(storage.has(key)).toBe(false);
     });
     it('rejects repeated option IDs and the legacy cue and option pair fields', () => {
         service.save({ deckId: id, sessionId: id, pending: { ...pending, response: { kind: 'CHOICE', optionIds: [id, id] } } });

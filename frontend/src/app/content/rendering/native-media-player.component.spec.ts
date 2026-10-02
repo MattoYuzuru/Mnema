@@ -16,7 +16,7 @@ describe('NativeMediaPlayerComponent', () => {
         fixture.detectChanges();
         const slider = fixture.nativeElement.querySelector('input[type=range]') as HTMLInputElement;
         expect(slider.getAttribute('aria-label')).toContain('Схема потока');
-        expect(slider.disabled).toBeFalse();
+        expect(slider.disabled).toBe(false);
         slider.value = '42';
         slider.dispatchEvent(new Event('input'));
         fixture.detectChanges();
@@ -32,11 +32,11 @@ describe('NativeMediaPlayerComponent', () => {
         fixture.componentRef.setInput('source', 'https://storage.example/playback.m4a');
         fixture.detectChanges();
         const media = fixture.nativeElement.querySelector('audio') as HTMLAudioElement;
-        const play = spyOn(media, 'play').and.resolveTo();
+        const play = vi.spyOn(media, 'play').mockResolvedValue();
         fixture.nativeElement.querySelector('button[aria-label="Воспроизвести"]').click();
         expect(play).toHaveBeenCalled();
         fixture.nativeElement.querySelector('button[aria-label="Выключить звук"]').click();
-        expect(media.muted).toBeTrue();
+        expect(media.muted).toBe(true);
         fixture.destroy();
     });
 
@@ -61,17 +61,25 @@ describe('NativeMediaPlayerComponent', () => {
 
     it('reaches both timeline endpoints for a short fractional recording', () => {
         const fixture = TestBed.createComponent(NativeMediaPlayerComponent);
-        fixture.componentRef.setInput('kind', 'audio'); fixture.componentRef.setInput('title', 'Короткая запись');
-        fixture.componentRef.setInput('source', '/audio.mp3'); fixture.detectChanges();
+        fixture.componentRef.setInput('kind', 'audio');
+        fixture.componentRef.setInput('title', 'Короткая запись');
+        fixture.componentRef.setInput('source', '/audio.mp3');
+        fixture.detectChanges();
         const media = fixture.nativeElement.querySelector('audio') as HTMLAudioElement;
         Object.defineProperty(media, 'duration', { configurable: true, value: 2.73 });
-        media.dispatchEvent(new Event('loadedmetadata')); fixture.detectChanges();
+        media.dispatchEvent(new Event('loadedmetadata'));
+        fixture.detectChanges();
         const slider = fixture.nativeElement.querySelector('input[type=range]') as HTMLInputElement;
-        expect(slider.max).toBe('2.73'); expect(slider.step).toBe('any');
-        fixture.componentInstance.seek('2.73'); fixture.detectChanges();
+        expect(slider.max).toBe('2.73');
+        expect(slider.step).toBe('any');
+        fixture.componentInstance.seek('2.73');
+        fixture.detectChanges();
         expect(slider.value).toBe('2.73');
-        fixture.componentInstance.seek('0'); fixture.detectChanges(); expect(slider.value).toBe('0');
-        fixture.componentInstance.toggleMute(); fixture.detectChanges();
+        fixture.componentInstance.seek('0');
+        fixture.detectChanges();
+        expect(slider.value).toBe('0');
+        fixture.componentInstance.toggleMute();
+        fixture.detectChanges();
         expect(fixture.nativeElement.querySelector('button[aria-label="Включить звук"] svg')).not.toBeNull();
         fixture.destroy();
     });
@@ -86,14 +94,14 @@ describe('NativeMediaPlayerComponent', () => {
         Object.defineProperty(media, 'error', { configurable: true, value: { code: 4 } });
         media.dispatchEvent(new Event('error'));
         fixture.detectChanges();
-        expect(fixture.componentInstance.error()).toBeTrue();
+        expect(fixture.componentInstance.error()).toBe(true);
         fixture.componentRef.setInput('source', 'https://storage.example/renewed');
         Object.defineProperty(media, 'error', { configurable: true, value: null });
         Object.defineProperty(media, 'readyState', { configurable: true, value: HTMLMediaElement.HAVE_METADATA });
         fixture.detectChanges();
         media.dispatchEvent(new Event('loadedmetadata'));
         fixture.detectChanges();
-        expect(fixture.componentInstance.error()).toBeFalse();
+        expect(fixture.componentInstance.error()).toBe(false);
         expect(fixture.nativeElement.querySelector('[role="alert"]')).toBeNull();
         fixture.destroy();
     });

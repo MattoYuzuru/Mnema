@@ -1,10 +1,16 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { TestBed, fakeAsync, flushMicrotasks } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 
 import { NativeMediaUploadApi, UploadView } from './native-media-upload.api';
 
 describe('NativeMediaUploadApi', () => {
+    beforeEach(() => {
+        vi.useFakeTimers({ advanceTimeDelta: 1, shouldAdvanceTime: true });
+    });
+    afterEach(() => {
+        vi.useRealTimers();
+    });
     const assetId = '0c2f05ec-8e16-464a-95d7-8fd97602d12d';
     const view: UploadView = {
         assetId, generation: 0, currentGeneration: 0, state: 'OPEN', assetState: 'PENDING_UPLOAD',
@@ -23,16 +29,16 @@ describe('NativeMediaUploadApi', () => {
 
     afterEach(() => http.verify());
 
-    it('reads the current server upload caps for browser preflight', fakeAsync(() => {
+    it('reads the current server upload caps for browser preflight', async () => {
         void api.policy();
         const request = http.expectOne('/api/media-assets/upload-policy');
         expect(request.request.method).toBe('GET');
-        request.flush({ maxImageBytes: 67_108_864, maxAudioBytes: 536_870_912,
-            maxVideoBytes: 4_294_967_296 });
-        flushMicrotasks();
-    }));
+        request.flush({ maxImageBytes: 67108864, maxAudioBytes: 536870912,
+            maxVideoBytes: 4294967296 });
+        await vi.advanceTimersByTimeAsync(0);
+    });
 
-    it('creates an owner-scoped Learning upload intent with an immutable client command identity', fakeAsync(() => {
+    it('creates an owner-scoped Learning upload intent with an immutable client command identity', async () => {
         let received: UploadView | undefined;
         void api.intent('0c2f05ec-8e16-464a-95d7-8fd97602d12e', 'upload', 'image', 'image/png', 3)
             .then(value => { received = value; });
@@ -43,18 +49,18 @@ describe('NativeMediaUploadApi', () => {
             mime: 'image/png', byteLength: 3
         });
         request.flush(view);
-        flushMicrotasks();
+        await vi.advanceTimersByTimeAsync(0);
         expect(received?.assetId).toBe(assetId);
-    }));
+    });
 
-    it('renews a single PUT URL by asset and current generation after editor recovery', fakeAsync(() => {
+    it('renews a single PUT URL by asset and current generation after editor recovery', async () => {
         let received: UploadView | undefined;
         void api.renewSingle(assetId, 0).then(value => { received = value; });
         const request = http.expectOne(`/api/media-assets/${assetId}/upload/url`);
         expect(request.request.method).toBe('POST');
         expect(request.request.body).toEqual({ generation: 0 });
         request.flush(view);
-        flushMicrotasks();
+        await vi.advanceTimersByTimeAsync(0);
         expect(received?.url).toBe(view.url);
-    }));
+    });
 });

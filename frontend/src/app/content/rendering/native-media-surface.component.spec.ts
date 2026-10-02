@@ -1,10 +1,16 @@
-import { TestBed, fakeAsync, flushMicrotasks, tick } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 
 import { documentOf, nativeNode } from './native-renderer.fixtures';
 import { MediaPlaybackApi, MediaPlaybackView } from './media-playback.api';
 import { NativeMediaSurfaceComponent } from './native-media-surface.component';
 
 describe('NativeMediaSurfaceComponent', () => {
+    beforeEach(() => {
+        vi.useFakeTimers({ advanceTimeDelta: 1, shouldAdvanceTime: true });
+    });
+    afterEach(() => {
+        vi.useRealTimers();
+    });
     const assetId = '31901995-16ea-4f8b-8301-5d8e03004c72';
     const pending: MediaPlaybackView = {
         assetId, state: 'PROCESSING', playback: null, poster: null, download: null
@@ -15,44 +21,49 @@ describe('NativeMediaSurfaceComponent', () => {
             expiresAt: '2099-01-01T00:00:00Z' }, poster: null, download: null
     };
 
-    it('replaces a pending placeholder after bounded polling and stops at READY', fakeAsync(() => {
-        const api = jasmine.createSpyObj<MediaPlaybackApi>('MediaPlaybackApi', ['read']);
-        api.read.and.resolveTo(pending);
+    it('replaces a pending placeholder after bounded polling and stops at READY', async () => {
+        const api = {
+            read: vi.fn().mockName("MediaPlaybackApi.read")
+        };
+        api.read.mockResolvedValue(pending);
         TestBed.configureTestingModule({ providers: [{ provide: MediaPlaybackApi, useValue: api }] });
         const fixture = TestBed.createComponent(NativeMediaSurfaceComponent);
         fixture.componentRef.setInput('document', documentOf([nativeNode('image', {
-            assetId, alt: 'Схема API'
-        })]));
+                assetId, alt: 'Схема API'
+            })]));
         fixture.detectChanges();
-        flushMicrotasks();
+        await vi.advanceTimersByTimeAsync(0);
         fixture.detectChanges();
-        expect(api.read).toHaveBeenCalledOnceWith(assetId);
+        expect(api.read).toHaveBeenCalledTimes(1);
+        expect(api.read).toHaveBeenCalledWith(assetId);
         expect(fixture.nativeElement.textContent).toContain('Готовим файл к просмотру');
 
-        api.read.and.resolveTo(ready);
-        tick(2_000);
-        flushMicrotasks();
+        api.read.mockResolvedValue(ready);
+        await vi.advanceTimersByTimeAsync(2000);
+        await vi.advanceTimersByTimeAsync(0);
         fixture.detectChanges();
         expect(fixture.nativeElement.querySelector('.image-open img')?.getAttribute('src'))
             .toBe('https://storage.example/ready.webp');
-        const calls = api.read.calls.count();
-        tick(30_000);
-        expect(api.read.calls.count()).toBe(calls);
+        const calls = vi.mocked(api.read).mock.calls.length;
+        await vi.advanceTimersByTimeAsync(30000);
+        expect(vi.mocked(api.read).mock.calls.length).toBe(calls);
         fixture.destroy();
-    }));
+    });
 
-    it('cancels scheduled status checks when the surface is removed', fakeAsync(() => {
-        const api = jasmine.createSpyObj<MediaPlaybackApi>('MediaPlaybackApi', ['read']);
-        api.read.and.resolveTo(pending);
+    it('cancels scheduled status checks when the surface is removed', async () => {
+        const api = {
+            read: vi.fn().mockName("MediaPlaybackApi.read")
+        };
+        api.read.mockResolvedValue(pending);
         TestBed.configureTestingModule({ providers: [{ provide: MediaPlaybackApi, useValue: api }] });
         const fixture = TestBed.createComponent(NativeMediaSurfaceComponent);
         fixture.componentRef.setInput('document', documentOf([nativeNode('image', {
-            assetId, alt: 'Схема API'
-        })]));
+                assetId, alt: 'Схема API'
+            })]));
         fixture.detectChanges();
-        flushMicrotasks();
+        await vi.advanceTimersByTimeAsync(0);
         fixture.destroy();
-        tick(30_000);
+        await vi.advanceTimersByTimeAsync(30000);
         expect(api.read).toHaveBeenCalledTimes(1);
-    }));
+    });
 });

@@ -43,21 +43,19 @@ describe('StudyApiService', () => {
     it('fails closed on another deck, cacheable data, a wrong location or duplicate presentations', async () => {
         const mismatch = firstValueFrom(api.read(deckId, sessionId));
         http.expectOne(location).flush(readySession([selfCheck], { deckId: '99999999-9999-4999-8999-999999999999' }), { headers: privateHeaders });
-        await expectAsync(mismatch).toBeRejectedWithError(StudyProtocolError);
+        await expect(mismatch).rejects.toThrowError(StudyProtocolError);
 
         const cacheable = firstValueFrom(api.start(deckId, commandId));
-        http.expectOne(`/api/decks/${deckId}/study-sessions`).flush(readySession([selfCheck]),
-            { status: 201, statusText: 'Created', headers: { Location: location } });
-        await expectAsync(cacheable).toBeRejectedWithError(StudyProtocolError);
+        http.expectOne(`/api/decks/${deckId}/study-sessions`).flush(readySession([selfCheck]), { status: 201, statusText: 'Created', headers: { Location: location } });
+        await expect(cacheable).rejects.toThrowError(StudyProtocolError);
 
         const misplaced = firstValueFrom(api.start(deckId, commandId));
-        http.expectOne(`/api/decks/${deckId}/study-sessions`).flush(readySession([selfCheck]),
-            { status: 201, statusText: 'Created', headers: { ...privateHeaders, Location: '/api/elsewhere' } });
-        await expectAsync(misplaced).toBeRejectedWithError(StudyProtocolError);
+        http.expectOne(`/api/decks/${deckId}/study-sessions`).flush(readySession([selfCheck]), { status: 201, statusText: 'Created', headers: { ...privateHeaders, Location: '/api/elsewhere' } });
+        await expect(misplaced).rejects.toThrowError(StudyProtocolError);
 
         const duplicate = firstValueFrom(api.read(deckId, sessionId));
         http.expectOne(location).flush(readySession([selfCheck, selfCheck]), { headers: privateHeaders });
-        await expectAsync(duplicate).toBeRejectedWithError(StudyProtocolError);
+        await expect(duplicate).rejects.toThrowError(StudyProtocolError);
     });
 
     it('submits an exact free-response attempt and accepts a deterministic receipt', async () => {
@@ -83,8 +81,7 @@ describe('StudyApiService', () => {
             { ...base['freeResponse'], durationMs: -1 }
         ];
         for (const command of bad) {
-            await expectAsync(firstValueFrom(api.submit(deckId, sessionId, command as AttemptCommand)))
-                .toBeRejectedWithError(StudyProtocolError);
+            await expect(firstValueFrom(api.submit(deckId, sessionId, command as AttemptCommand))).rejects.toThrowError(StudyProtocolError);
         }
         http.expectNone(`${location}/attempts`);
     });
@@ -96,11 +93,11 @@ describe('StudyApiService', () => {
             http.expectOne(`${location}/attempts`).flush(assessedOutcome(command, feedback), { headers: privateHeaders });
             return result;
         };
-        await expectAsync(outcomeFor({ ...mechanics['feedback']['cloze'], correctOptionIds: [] })).toBeRejectedWithError(StudyProtocolError);
+        await expect(outcomeFor({ ...mechanics['feedback']['cloze'], correctOptionIds: [] })).rejects.toThrowError(StudyProtocolError);
         const twice = clone(mechanics['feedback']['cloze']);
         twice.blanks[1].blankId = twice.blanks[0].blankId;
-        await expectAsync(outcomeFor(twice)).toBeRejectedWithError(StudyProtocolError);
-        await expectAsync(outcomeFor({ result: 'CORRECT' })).toBeRejectedWithError(StudyProtocolError);
+        await expect(outcomeFor(twice)).rejects.toThrowError(StudyProtocolError);
+        await expect(outcomeFor({ result: 'CORRECT' })).rejects.toThrowError(StudyProtocolError);
     });
 
     it('keeps replay and practice outcomes free of canonical effects', async () => {
@@ -111,7 +108,7 @@ describe('StudyApiService', () => {
             canonicalEffects: false, evidence: null, transition: null, feedback: mechanics['feedback']['choice']
         }, { headers: privateHeaders });
         const outcome = (await result).value;
-        expect(outcome.canonicalEffects).toBeFalse();
+        expect(outcome.canonicalEffects).toBe(false);
         expect(outcome.transition).toBeNull();
     });
 
@@ -119,26 +116,22 @@ describe('StudyApiService', () => {
         const presentation = mechanics['presentations']['freeResponse'];
         const call = () => firstValueFrom(api.revealTranscript(deckId, sessionId, presentation.presentationId, 'c3R1ZHktbm9uY2UtMTI', 'FREE_RESPONSE'));
         const missing = call();
-        http.expectOne(`${location}/presentations/${presentation.presentationId}/transcript`).flush(
-            { ...mechanics['transcriptRevealResponse'], content: presentation.content }, { headers: privateHeaders });
-        await expectAsync(missing).toBeRejectedWithError(StudyProtocolError);
+        http.expectOne(`${location}/presentations/${presentation.presentationId}/transcript`).flush({ ...mechanics['transcriptRevealResponse'], content: presentation.content }, { headers: privateHeaders });
+        await expect(missing).rejects.toThrowError(StudyProtocolError);
         const flag = call();
-        http.expectOne(`${location}/presentations/${presentation.presentationId}/transcript`).flush(
-            { ...mechanics['transcriptRevealResponse'], transcriptRevealed: false }, { headers: privateHeaders });
-        await expectAsync(flag).toBeRejectedWithError(StudyProtocolError);
+        http.expectOne(`${location}/presentations/${presentation.presentationId}/transcript`).flush({ ...mechanics['transcriptRevealResponse'], transcriptRevealed: false }, { headers: privateHeaders });
+        await expect(flag).rejects.toThrowError(StudyProtocolError);
     });
 
     it('rejects a hint answer for another blank and a pair check that reveals the key', async () => {
-        const hint = firstValueFrom(api.hint(deckId, sessionId, cloze.presentationId, 'c3R1ZHktbm9uY2UtMTM',
-            mechanics['hintCommand'].blankId));
-        http.expectOne(`${location}/presentations/${cloze.presentationId}/hints`).flush(
-            { ...mechanics['hintResponse'], blankId: 'b1a00000-0000-4000-8000-000000000003' }, { headers: privateHeaders });
-        await expectAsync(hint).toBeRejectedWithError(StudyProtocolError);
+        const hint = firstValueFrom(api.hint(deckId, sessionId, cloze.presentationId, 'c3R1ZHktbm9uY2UtMTM', mechanics['hintCommand'].blankId));
+        http.expectOne(`${location}/presentations/${cloze.presentationId}/hints`).flush({ ...mechanics['hintResponse'], blankId: 'b1a00000-0000-4000-8000-000000000003' }, { headers: privateHeaders });
+        await expect(hint).rejects.toThrowError(StudyProtocolError);
 
         const pair = mechanics['pairCheck'];
         const check = firstValueFrom(api.checkPair(deckId, sessionId, pair.presentationId, pair.nonce, pair.leftId, pair.rightId));
         http.expectOne(`${location}/pair-checks`).flush({ correct: true, correctRightId: pair.rightId }, { headers: privateHeaders });
-        await expectAsync(check).toBeRejectedWithError(StudyProtocolError);
+        await expect(check).rejects.toThrowError(StudyProtocolError);
     });
 
     it('sends server-owned replay and practice intents and validates refilled sessions', async () => {
@@ -166,9 +159,9 @@ describe('StudyApiService', () => {
         const progressResult = firstValueFrom(api.progress(deckId));
         http.expectOne(`/api/decks/${deckId}/study-progress?limit=100`).flush({
             asOf: '2026-10-01T10:00:00Z', items: [{ memberKey: '44444444-4444-4444-8444-444444444444',
-                itemRevisionId: '55555555-5555-4555-8555-555555555555', title: 'Вопрос по истории', state: 'DUE',
-                objectiveCoverage: { enabled: 2, introduced: 1, assessed: 1 }, lastAssessedAt: '2026-09-30T10:00:00Z',
-                nextDue: '2026-10-01T09:00:00Z' }], nextCursor: null
+                    itemRevisionId: '55555555-5555-4555-8555-555555555555', title: 'Вопрос по истории', state: 'DUE',
+                    objectiveCoverage: { enabled: 2, introduced: 1, assessed: 1 }, lastAssessedAt: '2026-09-30T10:00:00Z',
+                    nextDue: '2026-10-01T09:00:00Z' }], nextCursor: null
         }, { headers: privateHeaders });
         expect((await progressResult).items[0].state).toBe('DUE');
 

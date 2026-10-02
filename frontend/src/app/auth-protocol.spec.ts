@@ -13,7 +13,7 @@ describe('browser Identity protocol boundaries', () => {
         expect(safeReturnUrl('/decks/123?view=metadata#title')).toBe('/decks/123?view=metadata#title');
         for (const value of [null, '', 'https://evil.test', '//evil.test', '/\\evil.test', '/%2fevil.test', '/%5cevil.test',
             '/%0aevil', '/%xx', '/login', '/register?x=1', '/auth/callback', '/auth;aux=1', '/a\n', '/'.repeat(2049)]) {
-            expect(safeReturnUrl(value)).withContext(String(value)).toBe('/decks');
+            expect(safeReturnUrl(value), String(value)).toBe('/decks');
         }
     });
 

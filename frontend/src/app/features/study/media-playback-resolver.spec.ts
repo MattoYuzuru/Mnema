@@ -9,11 +9,10 @@ describe('Study media playback resolver', () => {
         const assetId = '00000000-0000-4000-8000-000000000001';
         const source = { url: 'https://storage.example/signed', expiresAt: '2030-01-01T00:00:00Z',
             mimeType: 'audio/mp4' };
-        const api = jasmine.createSpyObj<MediaPlaybackApi>('MediaPlaybackApi', ['read']);
-        api.read.and.returnValues(
-            Promise.resolve({ assetId, state: 'READY', playback: source, poster: null, download: null }),
-            Promise.resolve({ assetId, state: 'PROCESSING', playback: null, poster: null, download: null })
-        );
+        const api = {
+            read: vi.fn().mockName("MediaPlaybackApi.read")
+        };
+        api.read.mockReturnValueOnce(Promise.resolve({ assetId, state: 'READY', playback: source, poster: null, download: null })).mockReturnValueOnce(Promise.resolve({ assetId, state: 'PROCESSING', playback: null, poster: null, download: null }));
         TestBed.configureTestingModule({ providers: [{ provide: MediaPlaybackApi, useValue: api }] });
         const resolver = TestBed.inject(MEDIA_PLAYBACK_RESOLVER);
 

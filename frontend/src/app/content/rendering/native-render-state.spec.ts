@@ -3,12 +3,7 @@ import richTextVectors from '../../../../../contracts/content/native-v1/rich-tex
 import richDocumentJson from '../../../../../contracts/content/native-v1/valid/rich.json';
 import youtubeDocumentJson from '../../../../../contracts/content/native-v1/valid/youtube.json';
 import { NativeJson, NativeNode } from '../native-document';
-import {
-    NATIVE_RENDER_LIMITS,
-    buildNativeRenderState,
-    isAllowedNativeHref,
-    isAllowedNativeLang
-} from './native-render-state';
+import { NATIVE_RENDER_LIMITS, buildNativeRenderState, isAllowedNativeHref, isAllowedNativeLang } from './native-render-state';
 import { documentOf, nativeNode } from './native-renderer.fixtures';
 
 describe('native render boundary', () => {
@@ -25,7 +20,8 @@ describe('native render boundary', () => {
         const document = youtubeDocumentJson as unknown as import('../native-document').NativeDocument;
         const state = buildNativeRenderState(document);
         expect(state.status).toBe('ready');
-        if (state.status === 'ready') expect(state.root.content[0]?.kind).toBe('youtube');
+        if (state.status === 'ready')
+            expect(state.root.content[0]?.kind).toBe('youtube');
         const hostile = structuredClone(document);
         const attrs = hostile.root.content[0]!.attrs as Record<string, NativeJson>;
         attrs['videoId'] = 'https://attacker.example/embed';
@@ -36,13 +32,14 @@ describe('native render boundary', () => {
         const invalid = documentOf([nativeNode('image', { assetId: 'javascript:alert(1)', alt: 'Unsafe' })]);
         expect(buildNativeRenderState(invalid).status).toBe('invalid');
         const blankCaption = documentOf([nativeNode('image', {
-            assetId: '31901995-16ea-4f8b-8301-5d8e03004c72', alt: 'Scheme', caption: ' '
-        })]);
+                assetId: '31901995-16ea-4f8b-8301-5d8e03004c72', alt: 'Scheme', caption: ' '
+            })]);
         expect(buildNativeRenderState(blankCaption).status).toBe('invalid');
         const future = documentOf([nativeNode('image', { payload: '<script>unsafe</script>' }, [], { version: 2 })]);
         const state = buildNativeRenderState(future);
         expect(state.status).toBe('ready');
-        if (state.status === 'ready') expect(state.root.content[0]?.kind).toBe('opaque');
+        if (state.status === 'ready')
+            expect(state.root.content[0]?.kind).toBe('opaque');
     });
 
     it('matches Java isBlank for required rich text and table headers', () => {
@@ -52,25 +49,25 @@ describe('native render boundary', () => {
             expect(buildNativeRenderState(documentOf([nativeNode('image', { assetId, alt: vector.value })])).status)
                 .toBe(expected);
             expect(buildNativeRenderState(documentOf([nativeNode('table', {
-                caption: 'Таблица', columns: [vector.value], rows: []
-            })])).status).toBe(expected);
+                    caption: 'Таблица', columns: [vector.value], rows: []
+                })])).status).toBe(expected);
         }
     });
     it('matches every shared native-v1 language vector', () => {
-        expect(lexicalVectors.lang.accept.every(isAllowedNativeLang)).toBeTrue();
+        expect(lexicalVectors.lang.accept.every(isAllowedNativeLang)).toBe(true);
         expect(lexicalVectors.lang.reject.filter(isAllowedNativeLang)).toEqual([]);
     });
 
     it('matches every shared native-v1 href vector', () => {
         expect(lexicalVectors.href.accept.filter(value => !isAllowedNativeHref(value))).toEqual([]);
         expect(lexicalVectors.href.reject.filter(isAllowedNativeHref)).toEqual([]);
-        expect(isAllowedNativeHref('https://xn--9ca/')).toBeTrue();
+        expect(isAllowedNativeHref('https://xn--9ca/')).toBe(true);
     });
 
     it('accepts valid expanded, mapped IPv6 and a DNS final label containing digits', () => {
-        expect(isAllowedNativeHref('https://[2001:0db8:0000:0000:0000:ff00:0042:8329]/source')).toBeTrue();
-        expect(isAllowedNativeHref('https://[::ffff:192.0.2.128]:443/source')).toBeTrue();
-        expect(isAllowedNativeHref('https://example.tld1/source')).toBeTrue();
+        expect(isAllowedNativeHref('https://[2001:0db8:0000:0000:0000:ff00:0042:8329]/source')).toBe(true);
+        expect(isAllowedNativeHref('https://[::ffff:192.0.2.128]:443/source')).toBe(true);
+        expect(isAllowedNativeHref('https://example.tld1/source')).toBe(true);
     });
 
     it('preserves mark order without changing the semantic input', () => {
@@ -161,15 +158,15 @@ describe('native render boundary', () => {
 
     it('rejects malformed known nodes and nested supported links', () => {
         const malformed = documentOf([nativeNode('link', { href: 'javascript:alert(1)' }, [
-            nativeNode('text', { text: 'unsafe' })
-        ])]);
+                nativeNode('text', { text: 'unsafe' })
+            ])]);
         const nested = documentOf([nativeNode('paragraph', {}, [
-            nativeNode('link', { href: 'https://example.test' }, [
-                nativeNode('link', { href: 'https://example.test/nested' }, [
-                    nativeNode('text', { text: 'nested' })
+                nativeNode('link', { href: 'https://example.test' }, [
+                    nativeNode('link', { href: 'https://example.test/nested' }, [
+                        nativeNode('text', { text: 'nested' })
+                    ])
                 ])
-            ])
-        ])]);
+            ])]);
 
         expect(buildNativeRenderState(malformed).status).toBe('invalid');
         expect(buildNativeRenderState(nested).status).toBe('invalid');
@@ -177,18 +174,15 @@ describe('native render boundary', () => {
 
     it('rejects excessive scalar, depth, node count and visible text independently', () => {
         const scalar = documentOf([nativeNode('paragraph', {}, [
-            nativeNode('text', { text: 'x'.repeat(NATIVE_RENDER_LIMITS.maxScalarBytes + 1) })
-        ])]);
+                nativeNode('text', { text: 'x'.repeat(NATIVE_RENDER_LIMITS.maxScalarBytes + 1) })
+            ])]);
 
         let deepNode = nativeNode('paragraph');
         for (let index = 0; index < NATIVE_RENDER_LIMITS.maxDepth; index += 1) {
             deepNode = nativeNode('blockquote', {}, [deepNode]);
         }
         const deep = documentOf([deepNode]);
-        const numerous = documentOf(Array.from(
-            { length: NATIVE_RENDER_LIMITS.maxNodes },
-            () => nativeNode('paragraph')
-        ));
+        const numerous = documentOf(Array.from({ length: NATIVE_RENDER_LIMITS.maxNodes }, () => nativeNode('paragraph')));
         const visible = documentOf(Array.from({ length: 33 }, () => nativeNode('paragraph', {}, [
             nativeNode('text', { text: 'x'.repeat(NATIVE_RENDER_LIMITS.maxScalarBytes) })
         ])));
@@ -205,10 +199,7 @@ describe('native render boundary', () => {
             deepestAllowed = nativeNode('blockquote', {}, [deepestAllowed]);
         }
         const exactDepth = documentOf([deepestAllowed]);
-        const exactCount = documentOf(Array.from(
-            { length: NATIVE_RENDER_LIMITS.maxNodes - 1 },
-            () => nativeNode('paragraph')
-        ));
+        const exactCount = documentOf(Array.from({ length: NATIVE_RENDER_LIMITS.maxNodes - 1 }, () => nativeNode('paragraph')));
 
         expect(buildNativeRenderState(exactDepth).status).toBe('ready');
         expect(buildNativeRenderState(exactCount).status).toBe('ready');

@@ -10,24 +10,26 @@ import { fakePlayback } from '../study/study-test-data';
 import { learnerContent } from './exercise-draft';
 import { ExercisePreviewHostComponent } from './exercise-preview-host.component';
 import { PreviewMode, PreviewPresentation } from './exercise-preview.models';
+import { type SpyObj } from '../../../testing/mocks';
 
 describe('ExercisePreviewHostComponent', () => {
     let fixture: ComponentFixture<ExercisePreviewHostComponent>;
     let http: HttpTestingController;
-    let real: jasmine.SpyObj<MediaPlaybackResolver>;
+    let real: SpyObj<MediaPlaybackResolver>;
 
-    function presentationOf(exercise: PreviewExercise, mode: PreviewMode = 'DEMO', key = `${mode}:${exercise.type}`,
-                            blockedReason: string | null = null): PreviewPresentation {
+    function presentationOf(exercise: PreviewExercise, mode: PreviewMode = 'DEMO', key = `${mode}:${exercise.type}`, blockedReason: string | null = null): PreviewPresentation {
         return { mode, key, exercise: blockedReason === null ? exercise : null, blockedReason,
             learner: revealed => learnerContent(exercise, { context: null, revealed, placeholders: mode === 'AUTHOR_DRAFT' }) };
     }
     const demo = (mechanic: Mechanic) => presentationOf(catalogEntry(mechanic).demo.exercise);
 
     beforeEach(() => {
-        real = jasmine.createSpyObj<MediaPlaybackResolver>('real', ['resolve']);
-        real.resolve.and.callFake(fakePlayback);
+        real = {
+            resolve: vi.fn().mockName("real.resolve")
+        };
+        real.resolve.mockImplementation(fakePlayback);
         TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting(),
-            { provide: MEDIA_PLAYBACK_RESOLVER, useValue: real }] });
+                { provide: MEDIA_PLAYBACK_RESOLVER, useValue: real }] });
         http = TestBed.inject(HttpTestingController);
     });
     afterEach(() => http.verify());
@@ -43,7 +45,7 @@ describe('ExercisePreviewHostComponent', () => {
     function click(selector: string, index = 0): void { root().querySelectorAll<HTMLElement>(selector)[index].click(); refresh(); }
     function request(): TestRequest {
         const open = http.match(() => true);
-        expect(open.length).withContext('expected exactly one request').toBe(1);
+        expect(open.length, 'expected exactly one request').toBe(1);
         expect(open[0].request.url).toBe('/api/exercise-previews');
         expect(open[0].request.method).toBe('POST');
         return open[0];
@@ -85,12 +87,13 @@ describe('ExercisePreviewHostComponent', () => {
         it('FREE_RESPONSE: right and wrong answers get the server verdict and the reference', () => {
             show(demo('FREE_RESPONSE'));
             const area = root().querySelector<HTMLTextAreaElement>('textarea')!;
-            area.value = 'Dienstag'; area.dispatchEvent(new Event('input')); refresh();
+            area.value = 'Dienstag';
+            area.dispatchEvent(new Event('input'));
+            refresh();
             click('button[data-submit]');
             const call = request();
             expect(action(call).response).toEqual({ kind: 'TEXT', text: 'Dienstag' });
-            call.flush({ feedback: { result: 'INCORRECT', appliedRules: ['UNICODE_NFC'], reference: 'Mittwoch', referenceContent: [] } },
-                { headers: { 'Cache-Control': 'private, no-store' } });
+            call.flush({ feedback: { result: 'INCORRECT', appliedRules: ['UNICODE_NFC'], reference: 'Mittwoch', referenceContent: [] } }, { headers: { 'Cache-Control': 'private, no-store' } });
             refresh();
             expect(root().querySelector('.comparison')?.textContent).toContain('Dienstag');
             expect(root().querySelector('.comparison')?.textContent).toContain('Mittwoch');
@@ -107,17 +110,24 @@ describe('ExercisePreviewHostComponent', () => {
             hint.flush({ blankId: action(hint).blankId, firstLetter: 'м' }, { headers: { 'Cache-Control': 'private, no-store' } });
             refresh();
             expect(root().querySelector('.cloze-letter')?.textContent).toContain('м');
-            blanks[0].value = 'математика'; blanks[0].dispatchEvent(new Event('input'));
-            blanks[1].value = 'химия'; blanks[1].dispatchEvent(new Event('input'));
+            blanks[0].value = 'математика';
+            blanks[0].dispatchEvent(new Event('input'));
+            blanks[1].value = 'химия';
+            blanks[1].dispatchEvent(new Event('input'));
             refresh();
             click('button[data-submit]');
             const submit = request();
             expect(action(submit).hintedBlankIds).toEqual([action(hint).blankId]);
-            const ids = submit.request.body.exercise.content.passage.filter((segment: { kind: string }) => segment.kind === 'BLANK')
-                .map((segment: { blankId: string }) => segment.blankId);
+            const ids = submit.request.body.exercise.content.passage.filter((segment: {
+                kind: string;
+            }) => segment.kind === 'BLANK')
+                .map((segment: {
+                blankId: string;
+            }) => segment.blankId);
             submit.flush({ feedback: { result: 'PARTIAL', appliedRules: ['PER_BLANK'], blanks: [
-                { blankId: ids[0], correct: true, hinted: true, reference: 'математика' },
-                { blankId: ids[1], correct: false, hinted: false, reference: 'физика' }] } }, { headers: { 'Cache-Control': 'private, no-store' } });
+                        { blankId: ids[0], correct: true, hinted: true, reference: 'математика' },
+                        { blankId: ids[1], correct: false, hinted: false, reference: 'физика' }
+                    ] } }, { headers: { 'Cache-Control': 'private, no-store' } });
             refresh();
             expect(root().textContent).toContain('Частично');
             expect(root().querySelector('.cloze-verdict')?.textContent).toContain('с подсказкой');
@@ -126,55 +136,69 @@ describe('ExercisePreviewHostComponent', () => {
         it('CHOICE: a wrong and a right option, correct options shown after the verdict', () => {
             show(demo('CHOICE'));
             const options = root().querySelectorAll<HTMLInputElement>('input[type="radio"]');
-            options[0].click(); refresh();
+            options[0].click();
+            refresh();
             click('button[data-submit]');
             const call = request();
             const correct = call.request.body.exercise.answerKey.correctOptionIds;
             expect(action(call).response.optionIds).not.toEqual(correct);
-            call.flush({ feedback: { result: 'INCORRECT', appliedRules: ['EXACT_OPTION_SET'], correctOptionIds: correct } },
-                { headers: { 'Cache-Control': 'private, no-store' } });
+            call.flush({ feedback: { result: 'INCORRECT', appliedRules: ['EXACT_OPTION_SET'], correctOptionIds: correct } }, { headers: { 'Cache-Control': 'private, no-store' } });
             refresh();
             expect(root().textContent).toContain('(правильный ответ)');
             click('[data-restart]');
-            root().querySelectorAll<HTMLInputElement>('input[type="radio"]')[1].click(); refresh();
+            root().querySelectorAll<HTMLInputElement>('input[type="radio"]')[1].click();
+            refresh();
             click('button[data-submit]');
             const second = request();
             expect(action(second).response.optionIds).toEqual(correct);
-            second.flush({ feedback: { result: 'CORRECT', appliedRules: ['EXACT_OPTION_SET'], correctOptionIds: correct } },
-                { headers: { 'Cache-Control': 'private, no-store' } });
+            second.flush({ feedback: { result: 'CORRECT', appliedRules: ['EXACT_OPTION_SET'], correctOptionIds: correct } }, { headers: { 'Cache-Control': 'private, no-store' } });
             refresh();
             expect(root().querySelector('#preview-result-title')?.textContent).toBe('Верно');
         });
 
         it('MATCH: pairs are checked one by one on the server, a mistake is remembered for the final answer', () => {
             show(demo('MATCH'));
-            const key = new Map<string, string>((catalogEntry('MATCH').demo.exercise as unknown as { answerKey: { pairs: { leftId: string; rightId: string }[] } })
+            const key = new Map<string, string>((catalogEntry('MATCH').demo.exercise as unknown as {
+                answerKey: {
+                    pairs: {
+                        leftId: string;
+                        rightId: string;
+                    }[];
+                };
+            })
                 .answerKey.pairs.map(pair => [pair.leftId, pair.rightId]));
             const left = () => [...root().querySelectorAll<HTMLButtonElement>('button[data-side="left"]:not(:disabled)')];
             const right = () => [...root().querySelectorAll<HTMLButtonElement>('button[data-side="right"]:not(:disabled)')];
             let wrong = 0;
             while (left().length > 0) {
-                left()[0].click(); refresh();
+                left()[0].click();
+                refresh();
                 for (let candidate = 0; candidate < right().length; candidate++) {
-                    right()[candidate].click(); refresh();
+                    right()[candidate].click();
+                    refresh();
                     const call = request();
                     const { leftId, rightId } = action(call);
                     const correct = key.get(leftId) === rightId;
-                    if (!correct) wrong++;
+                    if (!correct)
+                        wrong++;
                     call.flush({ correct }, { headers: { 'Cache-Control': 'private, no-store' } });
                     refresh();
-                    if (correct) break;
+                    if (correct)
+                        break;
                 }
             }
             expect(wrong).toBeGreaterThan(0);
             click('button[data-submit]');
             const submit = request();
-            expect(action(submit).pairMistakes).toBeTrue();
+            expect(action(submit).pairMistakes).toBe(true);
             expect(action(submit).response.pairs.length).toBe(4);
             submit.flush({ feedback: { result: 'PARTIAL', appliedRules: ['SERVER_ISSUED_PAIR_MAP', 'PAIR_RETRY'],
-                pairs: action(submit).response.pairs.map((pair: { leftId: string; rightId: string }) => ({
-                    leftId: pair.leftId, selectedRightId: pair.rightId, correctRightId: pair.rightId, correct: true })) } },
-            { headers: { 'Cache-Control': 'private, no-store' } });
+                    pairs: action(submit).response.pairs.map((pair: {
+                        leftId: string;
+                        rightId: string;
+                    }) => ({
+                        leftId: pair.leftId, selectedRightId: pair.rightId, correctRightId: pair.rightId, correct: true
+                    })) } }, { headers: { 'Cache-Control': 'private, no-store' } });
             refresh();
             expect(root().querySelectorAll('.pair-feedback li').length).toBe(4);
             expect(root().textContent).toContain('Пример завершён');
@@ -189,18 +213,23 @@ describe('ExercisePreviewHostComponent', () => {
         it('ORDER: starts shuffled, is rearranged with the keyboard controls and checked on the server with the issued ids', () => {
             show(demo('ORDER'));
             const ids = () => [...root().querySelectorAll('li.order-item')].map(row => row.getAttribute('data-item-id')!);
-            const demoOrder = catalogEntry('ORDER').demo.exercise as unknown as { answerKey: { sequence: string[] } };
+            const demoOrder = catalogEntry('ORDER').demo.exercise as unknown as {
+                answerKey: {
+                    sequence: string[];
+                };
+            };
             const key = demoOrder.answerKey.sequence;
-            expect(ids()).not.toEqual(key);                                      // never opens in the authored order
+            expect(ids()).not.toEqual(key); // never opens in the authored order
             expect(ids().slice().sort()).toEqual(key.slice().sort());
             expect([...root().querySelectorAll('audio')].map(audio => audio.getAttribute('src')))
-                .toEqual(['/assets/demo/tone-low.mp3', '/assets/demo/tone-high.mp3']);   // local, original media
+                .toEqual(['/assets/demo/tone-low.mp3', '/assets/demo/tone-high.mp3']); // local, original media
             expect(new Set([...root().querySelectorAll('app-native-media-image img')].map(image => image.getAttribute('src'))))
                 .toEqual(new Set(['/assets/demo/wave-sparse.svg', '/assets/demo/wave-dense.svg']));
             // Move each item to its place by pressing the real controls.
             for (const [position, itemId] of key.entries()) {
                 while (ids().indexOf(itemId) > position) {
-                    root().querySelector<HTMLButtonElement>(`[data-item-id="${itemId}"] [data-move="up"]`)!.click(); refresh();
+                    root().querySelector<HTMLButtonElement>(`[data-item-id="${itemId}"] [data-move="up"]`)!.click();
+                    refresh();
                 }
             }
             expect(ids()).toEqual(key);
@@ -211,7 +240,7 @@ describe('ExercisePreviewHostComponent', () => {
             expect(action(call)).toEqual({ kind: 'SUBMIT', response: { kind: 'ORDER', sequence: key }, hintedBlankIds: [],
                 pairMistakes: false, transcriptRevealed: false });
             call.flush({ feedback: { result: 'CORRECT', appliedRules: ['EXACT_SEQUENCE'], correctSequence: key,
-                positions: key.map((itemId, position) => ({ position, selectedItemId: itemId, correct: true })) } }, { headers });
+                    positions: key.map((itemId, position) => ({ position, selectedItemId: itemId, correct: true })) } }, { headers });
             refresh();
             expect(root().querySelector('#preview-result-title')?.textContent).toBe('Верно');
             expect(root().querySelectorAll('.positions li').length).toBe(4);
@@ -225,25 +254,36 @@ describe('ExercisePreviewHostComponent', () => {
         it('CATEGORIZE: items are assigned by select-then-group and the server marks each assignment', () => {
             show(demo('CATEGORIZE'));
             const demoKey = (catalogEntry('CATEGORIZE').demo.exercise as unknown as {
-                answerKey: { assignments: { itemId: string; categoryId: string }[] } }).answerKey.assignments;
+                answerKey: {
+                    assignments: {
+                        itemId: string;
+                        categoryId: string;
+                    }[];
+                };
+            }).answerKey.assignments;
             expect(root().querySelectorAll('.group').length).toBe(3);
-            expect(root().querySelector<HTMLButtonElement>('button[data-submit]')?.disabled).toBeTrue();
+            expect(root().querySelector<HTMLButtonElement>('button[data-submit]')?.disabled).toBe(true);
             for (const { itemId, categoryId } of demoKey.slice().reverse()) {
-                root().querySelector<HTMLButtonElement>(`[data-item-id="${itemId}"] [data-select]`)!.click(); refresh();
-                root().querySelector<HTMLButtonElement>(`[data-category="${categoryId}"] [data-place]`)!.click(); refresh();
+                root().querySelector<HTMLButtonElement>(`[data-item-id="${itemId}"] [data-select]`)!.click();
+                refresh();
+                root().querySelector<HTMLButtonElement>(`[data-category="${categoryId}"] [data-place]`)!.click();
+                refresh();
             }
-            expect(root().querySelector<HTMLButtonElement>('button[data-submit]')?.disabled).toBeFalse();
+            expect(root().querySelector<HTMLButtonElement>('button[data-submit]')?.disabled).toBe(false);
             click('button[data-submit]');
             const call = request();
             expect(call.request.body.exercise.type).toBe('CATEGORIZE');
             const response = action(call).response;
             expect(response.kind).toBe('CATEGORIZE');
             expect(response.assignments.length).toBe(6);
-            expect(new Map(response.assignments.map((entry: { itemId: string; categoryId: string }) => [entry.itemId, entry.categoryId])))
+            expect(new Map(response.assignments.map((entry: {
+                itemId: string;
+                categoryId: string;
+            }) => [entry.itemId, entry.categoryId])))
                 .toEqual(new Map(demoKey.map(entry => [entry.itemId, entry.categoryId])));
             call.flush({ feedback: { result: 'CORRECT', appliedRules: ['SERVER_ISSUED_CATEGORY_MAP'],
-                assignments: demoKey.map(entry => ({ itemId: entry.itemId, selectedCategoryId: entry.categoryId,
-                    correctCategoryId: entry.categoryId, correct: true })) } }, { headers });
+                    assignments: demoKey.map(entry => ({ itemId: entry.itemId, selectedCategoryId: entry.categoryId,
+                        correctCategoryId: entry.categoryId, correct: true })) } }, { headers });
             refresh();
             expect(root().querySelector('#preview-result-title')?.textContent).toBe('Верно');
             expect(root().querySelectorAll('.pair-feedback li').length).toBe(6);
@@ -257,8 +297,10 @@ describe('ExercisePreviewHostComponent', () => {
                 if (mechanic === 'CATEGORIZE') {
                     const items = [...root().querySelectorAll<HTMLElement>('[data-pool] [data-item-id]')].map(row => row.getAttribute('data-item-id'));
                     for (const itemId of items) {
-                        root().querySelector<HTMLButtonElement>(`[data-item-id="${itemId}"] [data-select]`)!.click(); refresh();
-                        root().querySelector<HTMLButtonElement>('[data-place]:not(:disabled)')!.click(); refresh();
+                        root().querySelector<HTMLButtonElement>(`[data-item-id="${itemId}"] [data-select]`)!.click();
+                        refresh();
+                        root().querySelector<HTMLButtonElement>('[data-place]:not(:disabled)')!.click();
+                        refresh();
                     }
                 }
                 click('button[data-submit]');
@@ -272,27 +314,31 @@ describe('ExercisePreviewHostComponent', () => {
     it('tells the author when checking failed, keeps the answer and lets them try again', () => {
         show(demo('FREE_RESPONSE'));
         const area = root().querySelector<HTMLTextAreaElement>('textarea')!;
-        area.value = 'Mittwoch'; area.dispatchEvent(new Event('input')); refresh();
+        area.value = 'Mittwoch';
+        area.dispatchEvent(new Event('input'));
+        refresh();
         click('button[data-submit]');
         request().flush(null, { status: 500, statusText: 'x' });
         refresh();
         expect(root().querySelector('.notice.error')?.getAttribute('role')).toBe('alert');
         expect(root().querySelector('.notice.error')?.textContent).toContain('Не удалось проверить ответ');
         expect(root().querySelector<HTMLTextAreaElement>('textarea')?.value).toBe('Mittwoch');
-        expect(root().querySelector<HTMLButtonElement>('button[data-submit]')?.disabled).toBeFalse();
+        expect(root().querySelector<HTMLButtonElement>('button[data-submit]')?.disabled).toBe(false);
     });
 
     it('drops a late answer when the shown exercise changed meanwhile and restarts the trial', () => {
         show(demo('FREE_RESPONSE'));
         const area = root().querySelector<HTMLTextAreaElement>('textarea')!;
-        area.value = 'Mittwoch'; area.dispatchEvent(new Event('input')); refresh();
+        area.value = 'Mittwoch';
+        area.dispatchEvent(new Event('input'));
+        refresh();
         click('button[data-submit]');
         const late = request();
         set(presentationOf(catalogEntry('FREE_RESPONSE').demo.exercise, 'DEMO', 'another-key'));
-        expect(late.cancelled).toBeTrue();
+        expect(late.cancelled).toBe(true);
         expect(root().querySelector('#preview-result-title')).toBeNull();
         expect(root().querySelector<HTMLTextAreaElement>('textarea')?.value).toBe('');
-        expect(root().querySelector<HTMLButtonElement>('button[data-submit]')?.disabled).toBeFalse();
+        expect(root().querySelector<HTMLButtonElement>('button[data-submit]')?.disabled).toBe(false);
         http.expectNone('/api/exercise-previews');
     });
 
@@ -313,7 +359,7 @@ describe('ExercisePreviewHostComponent', () => {
         const exercise = catalogEntry('FREE_RESPONSE').demo.exercise;
         show(presentationOf(exercise, 'AUTHOR_DRAFT', 'draft', 'Проверить ответ пока нельзя: Добавьте вопрос.'));
         expect(root().querySelector('.badge')?.textContent?.trim()).toBe('Ваше задание');
-        expect(root().querySelector<HTMLButtonElement>('button[data-submit]')?.disabled).toBeTrue();
+        expect(root().querySelector<HTMLButtonElement>('button[data-submit]')?.disabled).toBe(true);
         expect(root().querySelector('.blocked')?.textContent).toContain('Добавьте вопрос');
         expect(root().querySelector('[data-preview-caption]')?.textContent).toContain('Проверить ответ можно, когда оно будет заполнено');
         root().querySelector<HTMLFormElement>('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
@@ -338,9 +384,8 @@ describe('ExercisePreviewHostComponent', () => {
         http.expectNone('/api/exercise-previews');
         click('button[data-submit]');
         const call = request();
-        expect(action(call).transcriptRevealed).toBeTrue();
-        call.flush({ feedback: { result: 'CORRECT', appliedRules: [], reference: 'Mittwoch', referenceContent: [] } },
-            { headers: { 'Cache-Control': 'private, no-store' } });
+        expect(action(call).transcriptRevealed).toBe(true);
+        call.flush({ feedback: { result: 'CORRECT', appliedRules: [], reference: 'Mittwoch', referenceContent: [] } }, { headers: { 'Cache-Control': 'private, no-store' } });
     });
 
     it('plays demo assets from the bundle without the media API and resolves author assets with the real resolver', () => {

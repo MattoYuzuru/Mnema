@@ -112,9 +112,7 @@ describe('NativeDocumentRendererComponent', () => {
     });
 
     it('maps document headings beneath the host h1 without collapsing level six', () => {
-        fixture.componentRef.setInput('document', documentOf(Array.from({ length: 6 }, (_, index) =>
-            nativeNode('heading', { level: index + 1 }, [nativeNode('text', { text: `Level ${index + 1}` })])
-        )));
+        fixture.componentRef.setInput('document', documentOf(Array.from({ length: 6 }, (_, index) => nativeNode('heading', { level: index + 1 }, [nativeNode('text', { text: `Level ${index + 1}` })]))));
         fixture.detectChanges();
         const host = fixture.nativeElement as HTMLElement;
 
@@ -263,35 +261,31 @@ describe('NativeDocumentRendererComponent', () => {
 
             for (const width of [320, 390, 1440]) {
                 frame.style.width = `${width}px`;
-                expect(frame.scrollWidth).withContext(`${width}px`).toBeLessThanOrEqual(frame.clientWidth);
+                expect(frame.scrollWidth, `${width}px`).toBeLessThanOrEqual(frame.clientWidth);
             }
 
             frame.style.width = '320px';
             root.style.fontSize = '32px';
             const doubledFontSize = Number.parseFloat(getComputedStyle(article).fontSize);
             expect(doubledFontSize).toBeGreaterThanOrEqual(baselineFontSize * 1.9);
-            expect(frame.scrollWidth).withContext('320px at 2x root text').toBeLessThanOrEqual(frame.clientWidth);
+            expect(frame.scrollWidth, '320px at 2x root text').toBeLessThanOrEqual(frame.clientWidth);
 
             root.style.fontSize = '16px';
             frame.style.setProperty('zoom', '2');
             const zoomedWidth = frame.getBoundingClientRect().width;
             expect(zoomedWidth).toBeGreaterThanOrEqual(frame.clientWidth * 1.9);
-            expect(frame.scrollWidth).withContext('320px at 200% CSS zoom').toBeLessThanOrEqual(frame.clientWidth);
-            console.info(
-                `[native-renderer] font ${baselineFontSize.toFixed(2)}px -> ${doubledFontSize.toFixed(2)}px; `
-                + `2x zoom width ${zoomedWidth.toFixed(2)}px`
-            );
-        } finally {
+            expect(frame.scrollWidth, '320px at 200% CSS zoom').toBeLessThanOrEqual(frame.clientWidth);
+            console.info(`[native-renderer] font ${baselineFontSize.toFixed(2)}px -> ${doubledFontSize.toFixed(2)}px; `
+                + `2x zoom width ${zoomedWidth.toFixed(2)}px`);
+        }
+        finally {
             root.style.fontSize = previousRootFontSize;
             frame.remove();
         }
     });
 
     it('renders a document at the 10,000-node boundary without truncation', () => {
-        const document = documentOf(Array.from(
-            { length: NATIVE_RENDER_LIMITS.maxNodes - 1 },
-            () => nativeNode('paragraph')
-        ));
+        const document = documentOf(Array.from({ length: NATIVE_RENDER_LIMITS.maxNodes - 1 }, () => nativeNode('paragraph')));
         const started = performance.now();
 
         fixture.componentRef.setInput('document', document);
@@ -301,5 +295,6 @@ describe('NativeDocumentRendererComponent', () => {
         expect((fixture.nativeElement as HTMLElement).querySelectorAll('p').length)
             .toBe(NATIVE_RENDER_LIMITS.maxNodes - 1);
         console.info(`[native-renderer] 10000-node prepare+DOM ${elapsed.toFixed(2)} ms`);
-    });
+        // jsdom needs ~40 s for 10,000 nodes (a real browser well under a second), so the default 5 s test timeout does not apply.
+    }, 120_000);
 });

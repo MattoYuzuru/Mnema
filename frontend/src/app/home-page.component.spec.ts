@@ -4,15 +4,19 @@ import { of } from 'rxjs';
 
 import { AuthService } from './auth.service';
 import { HomePageComponent } from './home-page.component';
+import { spyObj, type SpyObj } from '../testing/mocks';
 
 describe('HomePageComponent', () => {
     let fixture: ComponentFixture<HomePageComponent>;
-    let auth: jasmine.SpyObj<AuthService>;
+    let auth: SpyObj<AuthService>;
 
     beforeEach(async () => {
-        auth = jasmine.createSpyObj<AuthService>('AuthService', ['status', 'user']);
-        auth.status.and.returnValue('authenticated');
-        auth.user.and.returnValue(null);
+        auth = spyObj<AuthService>({
+            status: vi.fn().mockName("AuthService.status"),
+            user: vi.fn().mockName("AuthService.user")
+        });
+        auth.status.mockReturnValue('authenticated');
+        auth.user.mockReturnValue(null);
         Object.defineProperty(auth, 'status$', { value: of('authenticated') });
         Object.defineProperty(auth, 'user$', { value: of(null) });
         await TestBed.configureTestingModule({
@@ -44,7 +48,7 @@ describe('HomePageComponent', () => {
 
     it('offers login instead of a protected deck route to an anonymous visitor', () => {
         fixture.destroy();
-        auth.status.and.returnValue('anonymous');
+        auth.status.mockReturnValue('anonymous');
         fixture = TestBed.createComponent(HomePageComponent);
         fixture.detectChanges();
 

@@ -36,11 +36,11 @@ describe('appRoutes', () => {
             expect(route.loadComponent).toBeDefined();
             expect(route.canActivate).toEqual([authGuard]);
         }
-        expect(appRoutes.find(route => route.path === 'decks/:deckId/materials/new')?.canDeactivate).toHaveSize(1);
-        expect(appRoutes.find(route => route.path === 'decks/:deckId/materials/:memberKey/edit')?.canDeactivate).toHaveSize(1);
-        expect(appRoutes.find(route => route.path === 'decks/:deckId/materials/:memberKey/exercises/new')?.canDeactivate).toHaveSize(1);
-        expect(appRoutes.find(route => route.path === 'decks/:deckId/exercises/:exerciseId/edit')?.canDeactivate).toHaveSize(1);
-        expect(appRoutes.find(route => route.path === 'decks/:deckId/study')?.canDeactivate).toHaveSize(1);
+        expect(appRoutes.find(route => route.path === 'decks/:deckId/materials/new')?.canDeactivate).toHaveLength(1);
+        expect(appRoutes.find(route => route.path === 'decks/:deckId/materials/:memberKey/edit')?.canDeactivate).toHaveLength(1);
+        expect(appRoutes.find(route => route.path === 'decks/:deckId/materials/:memberKey/exercises/new')?.canDeactivate).toHaveLength(1);
+        expect(appRoutes.find(route => route.path === 'decks/:deckId/exercises/:exerciseId/edit')?.canDeactivate).toHaveLength(1);
+        expect(appRoutes.find(route => route.path === 'decks/:deckId/study')?.canDeactivate).toHaveLength(1);
     });
 
     it('loads each own-deck page through its lazy route', async () => {

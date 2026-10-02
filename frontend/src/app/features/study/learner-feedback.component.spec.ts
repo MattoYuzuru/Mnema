@@ -69,7 +69,7 @@ describe('LearnerFeedbackComponent', () => {
         expect(correct.length).toBe(6);
         expect(correct[0]).toBe('Это');
         expect(correct[4]).toContain('for (int i = 0; i < n; i++) {');
-        expect(root.querySelector('.correct-sequence img, .correct-sequence app-learner-media')).not.toBeNull();   // the image frame is shown again
+        expect(root.querySelector('.correct-sequence img, .correct-sequence app-learner-media')).not.toBeNull(); // the image frame is shown again
     });
 
     it('treats swapped identical tiles as right: nothing is marked wrong when the server says so', () => {
@@ -87,6 +87,6 @@ describe('LearnerFeedbackComponent', () => {
         expect(wrong[0].textContent).toContain('Ваша группа: Наречие');
         expect(wrong[0].textContent).toContain('Правильная группа: Существительное');
         expect(rows.filter(row => row.textContent?.includes('Правильная группа')).length).toBe(1);
-        expect(rows.some(row => row.querySelector('app-learner-media'))).toBeTrue();   // the audio item can be heard again
+        expect(rows.some(row => row.querySelector('app-learner-media'))).toBe(true); // the audio item can be heard again
     });
 });

@@ -50,27 +50,31 @@ describe('OrderBoardComponent', () => {
         for (const row of rows()) {
             const content = row.querySelector('.order-content')!;
             const controls = row.querySelector('.order-controls')!;
-            expect(content.contains(controls)).toBeFalse();
+            expect(content.contains(controls)).toBe(false);
             expect(content.querySelector('button[data-move]')).toBeNull();
         }
     });
 
     it('moves an item up and down by button, announces it and disables the arrows at the ends', () => {
-        button(3, 'up').click(); fixture.detectChanges();
+        button(3, 'up').click();
+        fixture.detectChanges();
         expect(order()).toEqual([1, 3, 2, 4, 5].map(id));
         expect(status()).toBe('Элемент «очень» перемещён на позицию 2 из 5.');
-        button(3, 'down').click(); fixture.detectChanges();
+        button(3, 'down').click();
+        fixture.detectChanges();
         expect(order()).toEqual([1, 2, 3, 4, 5].map(id));
-        expect(button(1, 'up').disabled).toBeTrue();
-        expect(button(5, 'down').disabled).toBeTrue();
-        button(1, 'up').click(); fixture.detectChanges();
+        expect(button(1, 'up').disabled).toBe(true);
+        expect(button(5, 'down').disabled).toBe(true);
+        button(1, 'up').click();
+        fixture.detectChanges();
         expect(order()).toEqual([1, 2, 3, 4, 5].map(id));
     });
 
     it('names generated media items by their issued number, which does not change when they move', () => {
         expect(button(4, 'up').getAttribute('aria-label')).toBe('Поднять выше: Аудио, элемент 4');
         expect(button(5, 'up').getAttribute('aria-label')).toBe('Поднять выше: Кадр 3');
-        button(4, 'up').click(); fixture.detectChanges();
+        button(4, 'up').click();
+        fixture.detectChanges();
         expect(button(4, 'up').getAttribute('aria-label')).toBe('Поднять выше: Аудио, элемент 4');
         expect(status()).toBe('Элемент «Аудио, элемент 4» перемещён на позицию 3 из 5.');
     });
@@ -90,16 +94,18 @@ describe('OrderBoardComponent', () => {
     });
 
     it('returns focus to the moved item after the list re-inserts it, switching arrows at the end of the list', async () => {
-        button(2, 'up').click(); fixture.detectChanges();
+        button(2, 'up').click();
+        fixture.detectChanges();
         await fixture.whenStable();
-        expect(document.activeElement).toBe(button(2, 'down'));      // now first: its up arrow is disabled
-        button(2, 'down').click(); fixture.detectChanges();
+        expect(document.activeElement).toBe(button(2, 'down')); // now first: its up arrow is disabled
+        button(2, 'down').click();
+        fixture.detectChanges();
         await fixture.whenStable();
         expect(document.activeElement).toBe(button(2, 'down'));
     });
 
     it('does not move anything when a media control is pressed, and no move control sits inside the content', () => {
-        spyOn(HTMLMediaElement.prototype, 'play').and.resolveTo();   // a real play would load the clip after this test ends
+        vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(); // a real play would load the clip after this test ends
         const changes: unknown[] = [];
         fixture.componentInstance.sequence.set(ITEMS.map(item => item.itemId));
         const board = fixture.debugElement.children[0].componentInstance as OrderBoardComponent;
@@ -110,11 +116,13 @@ describe('OrderBoardComponent', () => {
         fixture.detectChanges();
         expect(changes).toEqual([]);
         expect(order()).toEqual([1, 2, 3, 4, 5].map(id));
-        expect(root().querySelectorAll('.order-content button').length).toBeGreaterThan(0);   // the audio player is really there
+        expect(root().querySelectorAll('.order-content button').length).toBeGreaterThan(0); // the audio player is really there
     });
 
     it('keeps the same order across a re-render of equal items and does not reorder identical tiles', () => {
-        button(5, 'up').click(); button(1, 'down').click(); fixture.detectChanges();
+        button(5, 'up').click();
+        button(1, 'down').click();
+        fixture.detectChanges();
         const before = order();
         fixture.componentInstance.items.set(ITEMS.map(item => ({ ...item, blocks: [...item.blocks] })));
         fixture.detectChanges();
@@ -132,7 +140,7 @@ describe('OrderBoardComponent', () => {
         expect(rowOf(4).classList).toContain('is-dragging');
         const over = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: transfer() });
         rowOf(2).dispatchEvent(over);
-        expect(over.defaultPrevented).toBeTrue();
+        expect(over.defaultPrevented).toBe(true);
         fixture.detectChanges();
         expect(rowOf(2).classList).toContain('is-drop-target');
         rowOf(2).dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer() }));
@@ -142,15 +150,16 @@ describe('OrderBoardComponent', () => {
 
         const foreign = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: transfer() });
         rowOf(3).dispatchEvent(foreign);
-        expect(foreign.defaultPrevented).toBeFalse();
+        expect(foreign.defaultPrevented).toBe(false);
         rowOf(3).dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer() }));
         expect(order()).toEqual([1, 4, 2, 3, 5].map(id));
     });
 
     it('locks every control while disabled and offers no drag handle', () => {
-        fixture.componentInstance.disabled.set(true); fixture.detectChanges();
+        fixture.componentInstance.disabled.set(true);
+        fixture.detectChanges();
         expect(root().querySelectorAll('.drag-handle').length).toBe(0);
-        expect([...root().querySelectorAll<HTMLButtonElement>('button[data-move]')].every(control => control.disabled)).toBeTrue();
-        expect(root().querySelector<HTMLButtonElement>('[role="combobox"]')!.disabled).toBeTrue();
+        expect([...root().querySelectorAll<HTMLButtonElement>('button[data-move]')].every(control => control.disabled)).toBe(true);
+        expect(root().querySelector<HTMLButtonElement>('[role="combobox"]')!.disabled).toBe(true);
     });
 });
