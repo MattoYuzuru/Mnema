@@ -48,13 +48,13 @@ describe('HoldToDeleteButtonComponent', () => {
         fixture.destroy();
     });
 
-    it('keeps its geometry unchanged when the longer countdown label appears', () => {
+    // That the button keeps its box when the countdown label appears is geometry jsdom cannot measure; the browser
+    // harness owns it (scripts/browser-identity, scenario mechanics_hold_to_delete_geometry).
+    it('shows the countdown label without a separate hint when armed', () => {
         const { fixture, button } = setup();
-        const before = button.getBoundingClientRect().toJSON();
         button.click();
         fixture.detectChanges();
         expect(button.textContent).toContain('Удерживайте 3 с');
-        expect(button.getBoundingClientRect().toJSON()).toEqual(before);
         expect(fixture.nativeElement.querySelector('.hold-hint')).toBeNull();
         fixture.destroy();
     });

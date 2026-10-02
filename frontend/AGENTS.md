@@ -9,9 +9,11 @@ Adds to the root [`AGENTS.md`](../AGENTS.md); does not repeat it. Visual directi
 - Run from `frontend/`. Node is **24.21.0** (LTS) in CI and images; the workstation default may be newer.
 - `npm ci`, `npm run lint` (`ng lint`), `npm run test` (Vitest + jsdom via `@angular/build:unit-test`, single run with
   coverage thresholds; no browser needed), `npm run build` (production, output `dist/mnema-frontend`).
-- Unit tests run in jsdom, which has no layout engine: geometry assertions (`getBoundingClientRect`, widths, grid tracks)
-  are not evidence there. Browser-only APIs jsdom lacks are shimmed in `src/testing/jsdom-setup.ts`; a spec that truly needs
-  layout uses `HAS_LAYOUT_ENGINE` (`src/testing/layout.ts`) and is covered by the real-browser harness below instead.
+- Unit tests run in jsdom, which has no layout engine (every box is 0x0): specs make no geometry assertions. Reflow,
+  containment, grid stacking and decoration placement belong to the real-browser harness scenarios in
+  `scripts/browser-identity/mechanics.mjs` (`mechanics_*_reflow`, `mechanics_constellation_geometry`,
+  `mechanics_hold_to_delete_geometry`, `mechanics-study-*-390`). Browser-only APIs jsdom lacks are shimmed in
+  `src/testing/jsdom-setup.ts`; do not skip a spec for lack of layout, move the geometry check to the harness.
 - Spies are restored after every test (`vitest.config.mts`); write new specs with `vi.fn`/`vi.spyOn`, `SpyObj`/`spyObj`
   from `src/testing/mocks.ts` and `vi.useFakeTimers()`, not `fakeAsync` (the app and tests are zoneless).
 - For a user-visible flow, a green unit run is not enough: use the real-browser harness

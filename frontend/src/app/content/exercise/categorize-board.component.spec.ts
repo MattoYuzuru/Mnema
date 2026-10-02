@@ -2,7 +2,6 @@ import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { MEDIA_PLAYBACK_RESOLVER } from '../../features/study/media-playback-resolver';
-import { HAS_LAYOUT_ENGINE } from '../../../testing/layout';
 import { fakePlayback } from '../../features/study/study-test-data';
 import { CategorizeBoardComponent, CategoryAssignment } from './categorize-board.component';
 import { LearnerCategorizeItem, LearnerCategory } from './exercise-content.models';
@@ -141,7 +140,9 @@ describe('CategorizeBoardComponent', () => {
         expect(host().events.map(event => event.keyboard)).toEqual([true, false]);
     });
 
-    it('drops a selection whose item disappeared and stacks the groups in one column on a narrow screen', () => {
+    // Stacking the groups in one column on a narrow screen is layout jsdom cannot compute; the browser harness owns it
+    // (scripts/browser-identity, scenario mechanics-study-categorize-390 / categorize_study_390_columns).
+    it('drops a selection whose item disappeared', () => {
         select(1).click();
         fixture.detectChanges();
         host().items.set(ITEMS.filter(entry => entry.itemId !== item(1)));
@@ -150,15 +151,5 @@ describe('CategorizeBoardComponent', () => {
         const board = fixture.debugElement.children[0].componentInstance as CategorizeBoardComponent;
         expect(board.items().length).toBe(3);
         expect(board.selected()).toBeNull();
-        root().style.display = 'block';
-        root().style.width = '320px';
-        const groups = getComputedStyle(root().querySelector('.groups')!).gridTemplateColumns;
-        if (HAS_LAYOUT_ENGINE) {
-            expect(groups.split(' ').length).toBe(1);
-        } else {
-            // jsdom resolves no grid tracks; assert the declared rule that collapses to one column below 16rem per group.
-            expect(groups).toContain('auto-fit');
-            expect(groups).toContain('min(100%, 16rem)');
-        }
     });
 });

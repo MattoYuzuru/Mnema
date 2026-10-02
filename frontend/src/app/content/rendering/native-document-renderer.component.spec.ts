@@ -238,51 +238,8 @@ describe('NativeDocumentRendererComponent', () => {
         }
     });
 
-    it('contains long Russian and unbreakable content at reader widths, 2x root text, and CSS zoom', () => {
-        const frame = document.createElement('div');
-        const root = document.documentElement;
-        const previousRootFontSize = root.style.fontSize;
-        frame.style.position = 'fixed';
-        frame.style.inset = '0 auto auto -10000px';
-        document.body.appendChild(frame);
-        frame.appendChild(fixture.nativeElement);
-        fixture.componentRef.setInput('document', documentOf([
-            nativeNode('heading', { level: 1, lang: 'ru' }, [
-                nativeNode('text', { text: 'Длинный русский заголовок о памяти и осмысленном обучении' })
-            ]),
-            nativeNode('paragraph', {}, [nativeNode('text', { text: 'A'.repeat(512) })])
-        ]));
-
-        try {
-            root.style.fontSize = '16px';
-            fixture.detectChanges();
-            const article = frame.querySelector('article') as HTMLElement;
-            const baselineFontSize = Number.parseFloat(getComputedStyle(article).fontSize);
-
-            for (const width of [320, 390, 1440]) {
-                frame.style.width = `${width}px`;
-                expect(frame.scrollWidth, `${width}px`).toBeLessThanOrEqual(frame.clientWidth);
-            }
-
-            frame.style.width = '320px';
-            root.style.fontSize = '32px';
-            const doubledFontSize = Number.parseFloat(getComputedStyle(article).fontSize);
-            expect(doubledFontSize).toBeGreaterThanOrEqual(baselineFontSize * 1.9);
-            expect(frame.scrollWidth, '320px at 2x root text').toBeLessThanOrEqual(frame.clientWidth);
-
-            root.style.fontSize = '16px';
-            frame.style.setProperty('zoom', '2');
-            const zoomedWidth = frame.getBoundingClientRect().width;
-            expect(zoomedWidth).toBeGreaterThanOrEqual(frame.clientWidth * 1.9);
-            expect(frame.scrollWidth, '320px at 200% CSS zoom').toBeLessThanOrEqual(frame.clientWidth);
-            console.info(`[native-renderer] font ${baselineFontSize.toFixed(2)}px -> ${doubledFontSize.toFixed(2)}px; `
-                + `2x zoom width ${zoomedWidth.toFixed(2)}px`);
-        }
-        finally {
-            root.style.fontSize = previousRootFontSize;
-            frame.remove();
-        }
-    });
+    // Containment of long Russian and unbreakable content at 320 px, 2x root text and 200% zoom is geometry jsdom cannot
+    // measure; the browser harness owns it (scripts/browser-identity, scenario mechanics_renderer_reflow).
 
     it('renders a document at the 10,000-node boundary without truncation', () => {
         const document = documentOf(Array.from({ length: NATIVE_RENDER_LIMITS.maxNodes - 1 }, () => nativeNode('paragraph')));

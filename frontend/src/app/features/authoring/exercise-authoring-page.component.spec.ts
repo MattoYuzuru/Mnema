@@ -1546,23 +1546,6 @@ describe('ExerciseAuthoringPageComponent', () => {
         }
     });
 
-    it('has no horizontal overflow at 320, 390 and 1440 with long strings in every mechanic, preview and list included', () => {
-        const other = { ...detailOf(mechanics['createSelfCheck'].exercise, 1), exerciseId: id('60') };
-        configure(null, CAPABILITIES_UNAVAILABLE, [other]);
-        const long = 'я'.repeat(300);
-        const root = page();
-        root.style.display = 'block';
-        for (const kind of ['SELF_CHECK', 'FREE_RESPONSE', 'CLOZE', 'CHOICE', 'MATCH', 'ORDER', 'CATEGORIZE'] as const) {
-            select(kind);
-            component().setPrompt([text(long)]);
-            if (kind === 'SELF_CHECK')
-                component().setReference([text(long)]);
-            refresh();
-            for (const width of [320, 390, 1440]) {
-                root.style.width = `${width}px`;
-                refresh();
-                expect(root.scrollWidth, `${kind} at ${width}`).toBeLessThanOrEqual(width + 1);
-            }
-        }
-    });
+    // Horizontal overflow with long strings at 320/390 in every mechanic is geometry jsdom cannot measure; the browser
+    // harness owns it (scripts/browser-identity, scenario mechanics_editor_reflow).
 });

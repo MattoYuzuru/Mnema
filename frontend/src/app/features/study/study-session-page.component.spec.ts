@@ -548,17 +548,19 @@ describe('StudySessionPageComponent', () => {
         expect(api.restart).toHaveBeenCalledWith(deck.deckId, expect.any(String), ['44444444-4444-4444-8444-444444444444']);
     });
 
-    it('renders long unbroken text without horizontal overflow at 320, 390 and 1440', () => {
+    // Horizontal overflow at 320/390/1440 is a geometry assertion jsdom cannot make; the browser harness owns it
+    // (scripts/browser-identity, scenarios mechanics-study-*-390 / *_study_390_overflow).
+    it('renders long unbroken text in free-response and match presentations', () => {
         const long = 'x'.repeat(300);
         const wide = clone(fixtures['freeResponse']);
         wide.content.prompt[1].text = long;
         startWithPresentations([wide]);
-        expectNoOverflow();
+        expect(page().textContent).toContain(long);
         const match = clone(fixtures['match']);
         match.content.left[1].blocks[0].text = long;
         match.content.right[0].blocks[0].text = long;
         startWithPresentations([match]);
-        expectNoOverflow();
+        expect(page().textContent).toContain(long);
     });
 
     it('offers honest session presets before issuing a scheduled command', () => {
@@ -575,16 +577,6 @@ describe('StudySessionPageComponent', () => {
     // ------------------------------------------------------------------------------------------
 
     function page(): HTMLElement { return fixture.nativeElement as HTMLElement; }
-
-    function expectNoOverflow(): void {
-        const root = page();
-        root.style.display = 'block';
-        for (const width of [320, 390, 1440]) {
-            root.style.width = `${width}px`;
-            fixture.detectChanges();
-            expect(root.scrollWidth).toBeLessThanOrEqual(width + 1);
-        }
-    }
 
     function click(selector: string): void {
         const element = page().querySelector<HTMLElement>(selector);

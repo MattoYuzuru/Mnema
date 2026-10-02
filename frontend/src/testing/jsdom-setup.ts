@@ -1,8 +1,10 @@
 /**
  * Test-only shims for browser APIs that jsdom does not implement. Each shim is a minimal, behaviour-neutral
- * stand-in so that specs which assert on component logic can run without a real browser. Specs that need
- * a real layout, drag-and-drop or media pipeline are covered by the real-browser harness
- * (`scripts/browser-identity/run.py`), not by these shims.
+ * stand-in so that specs which assert on component logic can run without a real browser. jsdom has no layout engine
+ * (every box is 0x0), so specs here make no geometry assertions: reflow, containment, grid stacking and decoration
+ * placement are checked by the real-browser harness scenarios in `scripts/browser-identity/mechanics.mjs`
+ * (`mechanics_editor_reflow`, `mechanics_renderer_reflow`, `mechanics_constellation_geometry`,
+ * `mechanics_hold_to_delete_geometry` and the `mechanics-study-*-390` Study checks).
  */
 
 function define(target: object, name: string, value: unknown): void {
@@ -32,17 +34,6 @@ define(HTMLDialogElement.prototype, 'close', function close(this: HTMLDialogElem
 define(document, 'elementFromPoint', function elementFromPoint(): Element | null {
     return null;
 });
-
-// jsdom has no layout: every rectangle is zero-sized. It also returns plain objects without `DOMRect.toJSON`.
-const getBoundingClientRect = Element.prototype.getBoundingClientRect;
-Element.prototype.getBoundingClientRect = function (this: Element): DOMRect {
-    const rect = getBoundingClientRect.call(this);
-    if (typeof rect.toJSON !== 'function') {
-        const { x, y, width, height, top, right, bottom, left } = rect;
-        Object.defineProperty(rect, 'toJSON', { value: () => ({ x, y, width, height, top, right, bottom, left }) });
-    }
-    return rect;
-};
 
 class TestMediaStream {
     getTracks(): MediaStreamTrack[] { return []; }
