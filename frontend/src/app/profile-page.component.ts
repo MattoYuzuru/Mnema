@@ -121,6 +121,8 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
       .eyebrow { margin: 0 0 .45rem; color: var(--mn-ink); font: 700 .75rem/1.4 var(--mn-font-mono, ui-monospace, monospace); letter-spacing: .12em; text-transform: uppercase; }
       h1, h2 { color: var(--mn-ink); font-family: var(--mn-font-display, Georgia, serif); font-weight: 500; overflow-wrap: anywhere; }
       h1 { margin: .35rem 0 .75rem; font-size: clamp(2.7rem, 7vw, 5rem); line-height: .98; }
+      /* The anchor jump (/profile#ai-budget) must leave the heading and its focus ring clear of the viewport edge. */
+      #ai-budget-heading { scroll-margin-block-start: 1.5rem; }
       h2 { margin: 0 0 1.5rem; font-size: clamp(1.8rem, 3vw, 2.25rem); line-height: 1.05; }
       header > p:last-child { max-inline-size: 52ch; color: var(--mn-muted); }
       .profile-layout { display: grid; gap: clamp(1.5rem, 4vw, 3rem); }
