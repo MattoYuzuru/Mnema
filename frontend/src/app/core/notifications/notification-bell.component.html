@@ -21,7 +21,7 @@
           <div class="body">
             @if (isNew(entry.notification.seq)) { <span class="fresh">Новое</span> }
             @if (entry.presented.link; as link) {
-              <a class="text" [id]="textId(entry.notification.notificationId)" [routerLink]="link.commands" (click)="followed()">{{ entry.presented.text }}</a>
+              <a class="text" [id]="textId(entry.notification.notificationId)" [routerLink]="link.commands" [fragment]="link.fragment" (click)="followed()">{{ entry.presented.text }}</a>
             } @else {
               <span class="text" [id]="textId(entry.notification.notificationId)">{{ entry.presented.text }}</span>
             }

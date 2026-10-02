@@ -4,6 +4,8 @@ import { AppNotification, NotificationSeverity } from './notification.models';
 export interface NotificationLink {
     readonly label: string;
     readonly commands: readonly string[];
+    /** Optional in-page anchor, e.g. the «ИИ-бюджет» block of the profile. */
+    readonly fragment?: string;
 }
 
 export interface PresentedNotification {
@@ -130,10 +132,12 @@ function mediaFailed(params: Readonly<Record<string, unknown>>): string | null {
 
 /**
  * Route key to a client destination. TODO(AI-06 #289): WORKSHOP opens the deck page until the workshop route exists;
- * then map it to the workshop of `sessionId` and relabel the link «Открыть мастерскую». PLANS has no route yet, so it
- * stays a plain sentence like NONE.
+ * then map it to the workshop of `sessionId` and relabel the link «Открыть мастерскую». PLANS has no plans page yet
+ * (paywall: AI-19 #301), so it opens the «ИИ-бюджет» block of the profile (`/profile#ai-budget`); NONE stays a plain
+ * sentence.
  */
 function routeLink(notification: AppNotification): NotificationLink | null {
+    if (notification.route === 'PLANS') return { label: 'Открыть ИИ-бюджет', commands: ['/profile'], fragment: 'ai-budget' };
     if (notification.route !== 'WORKSHOP' && notification.route !== 'DECK') return null;
     const deckId = notification.params['deckId'];
     return typeof deckId === 'string' && UUID.test(deckId) ? { label: 'Открыть колоду', commands: ['/decks', deckId] } : null;

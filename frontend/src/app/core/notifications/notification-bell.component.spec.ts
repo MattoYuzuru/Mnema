@@ -99,8 +99,8 @@ describe('NotificationBellComponent', () => {
         await render();
         const entries = Array.from(root().querySelectorAll('li'));
         expect(entries).toHaveLength(3);
-        expect(entries[0].querySelector('a')).toBeNull();
         expect(entries[0].textContent).toContain('Лимит «Кредиты ИИ» закончился');
+        expect(entries[0].querySelector<HTMLAnchorElement>('a')?.getAttribute('href')).toBe('/profile#ai-budget');
         expect(entries[0].querySelector('.fresh')?.textContent).toBe('Новое');
         const link = entries[1].querySelector<HTMLAnchorElement>('a')!;
         expect(link.getAttribute('href')).toBe(`/decks/${DECK}`);
