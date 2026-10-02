@@ -90,6 +90,14 @@ export interface RenderMermaidNode extends RenderNodeBase {
     readonly description: string;
 }
 
+/** A fenced block of code: inert text. `lang` is a programming-language label, never a BCP 47 tag; there is no `dir`. */
+export interface RenderCodeBlockNode {
+    readonly kind: 'code-block';
+    readonly id: string;
+    readonly lang?: string;
+    readonly source: string;
+}
+
 export interface RenderTableNode extends RenderNodeBase {
     readonly kind: 'table';
     readonly caption: string;
@@ -116,6 +124,7 @@ export type NativeRenderNode = RenderContainerNode
     | RenderYoutubeNode
     | RenderMermaidNode
     | RenderTableNode
+    | RenderCodeBlockNode
     | RenderOpaqueNode;
 
 export interface RenderTextValue {
@@ -152,10 +161,14 @@ const SUPPORTED_TYPES = new Set([
     'ruby',
     'link',
     'divider',
-    'image', 'audio', 'video', 'youtube', 'mermaid', 'table'
+    'image', 'audio', 'video', 'youtube', 'mermaid', 'table', 'code_block'
 ]);
 const BLOCK_TYPES = new Set(['paragraph', 'heading', 'blockquote', 'bullet_list', 'ordered_list', 'divider',
-    'image', 'audio', 'video', 'youtube', 'mermaid', 'table']);
+    'image', 'audio', 'video', 'youtube', 'mermaid', 'table', 'code_block']);
+const CODE_BLOCK_ATTR_KEYS = new Set(['lang', 'source']);
+export const CODE_BLOCK_MAX_SOURCE = 16_384;
+export const CODE_BLOCK_MAX_LANGUAGE = 32;
+const CODE_LANGUAGE = /^[a-z0-9][a-z0-9+#.-]{0,31}$/;
 const INLINE_TYPES = new Set(['text', 'ruby', 'link']);
 const CORE_KEYS = new Set(['id', 'type', 'version', 'attrs', 'content']);
 const COMMON_ATTR_KEYS = new Set(['lang', 'dir']);
@@ -194,7 +207,7 @@ class RenderBudget {
  * Builds a bounded, inert view of an already-semantic native document.
  * Unknown attributes and descendants deliberately never enter the render model.
  */
-export function buildNativeRenderState(document: NativeDocument): NativeRenderState {
+export function buildNativeRenderState(document: NativeDocument, options: NativeRenderOptions = {}): NativeRenderState {
     try {
         if (!isRecord(document) || document['formatVersion'] !== 1 || !hasOnlyKeys(document, ['formatVersion', 'root'])) {
             return { status: 'invalid' };
@@ -207,7 +220,8 @@ export function buildNativeRenderState(document: NativeDocument): NativeRenderSt
 
         const context: RenderContext = {
             budget: new RenderBudget(),
-            ids: new Set<string>()
+            ids: new Set<string>(),
+            strict: options.strict === true
         };
         const root = buildNode(rootValue as unknown as NativeNode, 'root', 1, context, false);
         if (root.kind === 'opaque') {
@@ -222,9 +236,19 @@ export function buildNativeRenderState(document: NativeDocument): NativeRenderSt
     }
 }
 
+/**
+ * `strict` is for content being written: a `code_block@1` that breaks its schema makes the document invalid. Without it
+ * (content that is already stored) such a node stays an inert placeholder, as `NativeDocumentReader.readRetained` does:
+ * the type gained a validator after documents with arbitrary `code_block` attributes may have been stored.
+ */
+export interface NativeRenderOptions {
+    readonly strict?: boolean;
+}
+
 interface RenderContext {
     readonly budget: RenderBudget;
     readonly ids: Set<string>;
+    readonly strict: boolean;
 }
 
 function buildNode(
@@ -254,7 +278,8 @@ function buildNode(
         throw new InvalidNativeDocument();
     }
 
-    if (!SUPPORTED_TYPES.has(type) || version !== 1) {
+    if (!SUPPORTED_TYPES.has(type) || version !== 1
+        || (type === 'code_block' && !context.strict && (slot !== 'block' || readNativeCodeBlock(rawNode) === null))) {
         return {
             kind: 'opaque',
             display: slot === 'inline' ? 'inline' : slot === 'list-item' ? 'list-item' : 'block',
@@ -267,7 +292,8 @@ function buildNode(
     }
     assertTypeAllowedInSlot(type, slot);
 
-    const metadata = readMetadata(attrs, context.budget);
+    // code_block owns `lang` (the programming language) and has no direction: the shared lexical profile does not apply.
+    const metadata = type === 'code_block' ? {} : readMetadata(attrs, context.budget);
     switch (type) {
         case 'doc':
             assertAttrs(attrs, COMMON_ATTR_KEYS);
@@ -408,6 +434,12 @@ function buildNode(
                 source: readBoundedText(attrs, 'source', 16384, context.budget),
                 title: readBoundedText(attrs, 'title', 1024, context.budget),
                 description: readBoundedText(attrs, 'description', 8192, context.budget) };
+        case 'code_block': {
+            const code = readNativeCodeBlock(rawNode);
+            if (code === null) throw new InvalidNativeDocument();
+            context.budget.scalar(code.source);
+            return { kind: 'code-block', id, ...(code.lang === '' ? {} : { lang: code.lang }), source: code.source };
+        }
         case 'table': {
             assertAttrs(attrs, new Set([...COMMON_ATTR_KEYS, 'caption', 'summary', 'columns', 'rows']));
             assertEmpty(content);
@@ -423,6 +455,37 @@ function buildNode(
         default:
             throw new InvalidNativeDocument();
     }
+}
+
+/**
+ * The attributes of a valid `code_block@1`, or null: exactly the five core fields, an empty `content`, a nonblank
+ * `source` of at most 16384 UTF-16 units without a carriage return, and an optional `lang` that is empty or
+ * `[a-z0-9][a-z0-9+#.-]{0,31}`. Mirrors `NativeNodeSchema.validCodeBlock`; `lang` is `''` when absent or empty.
+ */
+export function readNativeCodeBlock(node: NativeNode): { readonly lang: string; readonly source: string } | null {
+    const attrs = node.attrs;
+    const source = isRecord(attrs) ? attrs['source'] : undefined;
+    if (!isRecord(node) || node.version !== 1 || !hasOnlyKeys(node, CORE_KEYS) || !isRecord(attrs)
+        || !Array.isArray(node.content) || node.content.length !== 0 || !hasOnlyKeys(attrs, CODE_BLOCK_ATTR_KEYS)
+        || typeof source !== 'string' || !NON_JAVA_WHITESPACE.test(source) || source.length > CODE_BLOCK_MAX_SOURCE
+        || source.includes('\r')) {
+        return null;
+    }
+    const lang = attrs['lang'];
+    if (lang !== undefined && (typeof lang !== 'string' || (lang !== '' && !CODE_LANGUAGE.test(lang)))) {
+        return null;
+    }
+    return { lang: lang ?? '', source };
+}
+
+/** `String.isBlank()` of the backend: the profile that makes `source` "nonblank" (a no-break space is not blank). */
+export function isNativeBlank(value: string): boolean {
+    return !NON_JAVA_WHITESPACE.test(value);
+}
+
+/** Whether `value` may be stored as the `lang` of a `code_block` (empty means no language). */
+export function isCodeBlockLanguage(value: string): boolean {
+    return value === '' || CODE_LANGUAGE.test(value);
 }
 
 function readBoundedText(attrs: Record<string, unknown>, key: string, maxLength: number,

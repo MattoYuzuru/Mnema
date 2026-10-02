@@ -198,6 +198,40 @@
 .native-table-figure th { background: var(--mn-soft); color: var(--mn-ink); }
 .native-table-figure figcaption { border-block-start: 1px solid var(--mn-rule); padding: .75rem; font: .9rem/1.5 system-ui, sans-serif; }
 
+.native-code {
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    margin: 1.5rem 0;
+    border: 1px solid var(--mn-rule);
+    border-inline-start: 3px solid var(--mn-ink);
+    background: color-mix(in srgb, var(--mn-soft) 58%, var(--mn-sheet));
+    text-align: start;
+    unicode-bidi: isolate;
+}
+.native-code-lang {
+    padding: .4rem .85rem;
+    border-block-end: 1px solid var(--mn-rule);
+    color: var(--mn-muted);
+    font: 600 .8rem/1.4 ui-monospace, "SFMono-Regular", Consolas, monospace;
+    letter-spacing: .02em;
+}
+.native-code-scroll { max-inline-size: 100%; overflow-x: auto; }
+.native-code-scroll:focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: -3px; }
+/* Code is shown as typed: no wrapping, no collapsing, no inherited prose spacing or inline-code chrome. */
+.native-code-pre {
+    margin: 0;
+    padding: .85rem 1rem;
+    inline-size: max-content;
+    min-inline-size: 100%;
+    color: var(--mn-ink);
+    font: .875rem/1.6 ui-monospace, "SFMono-Regular", Consolas, monospace;
+    tab-size: 4;
+    white-space: pre;
+    overflow-wrap: normal;
+    word-break: normal;
+}
+.native-document .native-code-text { padding: 0; border: 0; background: none; font: inherit; }
+
 .native-unsupported,
 .native-message {
     font-family: var(--mn-font-body, system-ui, sans-serif);
@@ -253,7 +287,7 @@
         outline-color: Highlight;
     }
 
-    .native-media, .native-table-figure, .native-media details,
+    .native-media, .native-table-figure, .native-code, .native-code-lang, .native-media details,
     .native-table-figure th, .native-table-figure td { border-color: CanvasText; }
 }
 
@@ -267,6 +301,9 @@
         color: CanvasText;
         box-shadow: none;
     }
+
+    .native-code-scroll { overflow: visible; }
+    .native-code-pre { inline-size: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 
     .native-link::after {
         content: " (" attr(href) ")";

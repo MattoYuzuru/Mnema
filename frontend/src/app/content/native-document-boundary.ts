@@ -9,11 +9,26 @@ export class NativeDocumentBoundaryError extends Error {
     constructor() { super('Invalid native document.'); this.name = 'NativeDocumentBoundaryError'; }
 }
 
-/** Clones and validates an untrusted native-v1 value without importing an editor runtime. */
+/**
+ * Clones and validates a native-v1 value the client is about to send or has just built, without importing an editor
+ * runtime. Strict: a `code_block@1` outside its schema is rejected, as `NativeDocumentReader.read` does on the server.
+ */
 export function readNativeDocument(value: unknown): NativeDocument {
+    return readBounded(value, true);
+}
+
+/**
+ * Same checks for a document that the server returned from storage. A `code_block` that was stored before the type had
+ * a validator and does not satisfy it stays an inert placeholder (`NativeDocumentReader.readRetained`).
+ */
+export function readRetainedNativeDocument(value: unknown): NativeDocument {
+    return readBounded(value, false);
+}
+
+function readBounded(value: unknown, strict: boolean): NativeDocument {
     const document = structuredClone(value) as NativeDocument;
     validateEnvelope(document);
-    if (buildNativeRenderState(document).status === 'invalid') throw new NativeDocumentBoundaryError();
+    if (buildNativeRenderState(document, { strict }).status === 'invalid') throw new NativeDocumentBoundaryError();
     return document;
 }
 

@@ -4,7 +4,7 @@ import { Observable, defer, map } from 'rxjs';
 
 import { appConfig } from '../../app.config';
 import { NativeDocument } from '../../content/native-document';
-import { readNativeDocument } from '../../content/native-document-boundary';
+import { readNativeDocument, readRetainedNativeDocument } from '../../content/native-document-boundary';
 import { NativeStructuralEdit } from '../../content/editing/native-structural-edits';
 import { expectedEtag } from '../own-decks/own-deck.models';
 import {
@@ -147,7 +147,7 @@ function parseItemDetail(value: unknown, current: boolean): ItemDetail {
     return {
         ...summary, ordinal, deckId: requireEntity(object['deckId']), deckRevisionId: requireEntity(object['deckRevisionId']),
         deckVersion: requireVersion(object['deckVersion']),
-        document: readNativeDocument(object['document'])
+        document: readRetainedNativeDocument(object['document'])
     };
 }
 

@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { NodeSelection, TextSelection } from 'prosemirror-state';
 
+import codeDocumentJson from '../../../../../contracts/content/native-v1/valid/code.json';
 import { mixedNativeDocumentFixture } from '../rendering/native-renderer.fixtures';
 import { NativeDocument } from '../native-document';
 import { createEmptyNativeDocument, nativeEditorSchema } from './native-editor-adapter';
@@ -307,5 +308,105 @@ describe('NativeEditorComponent', () => {
         expect(view.state.doc.firstChild?.firstChild?.attrs['id']).toBe(originalId);
         expect(view.state.doc.firstChild?.firstChild?.attrs['reading']).toBe('ハン');
         expect(view.state.doc.firstChild?.childCount).toBe(1);
+    });
+
+    describe('code blocks', () => {
+        function open(document: NativeDocument = createEmptyNativeDocument()): {
+            fixture: ReturnType<typeof TestBed.createComponent<NativeEditorComponent>>;
+            emitted: NativeDocument[];
+        } {
+            TestBed.configureTestingModule({ imports: [NativeEditorComponent] });
+            const fixture = TestBed.createComponent(NativeEditorComponent);
+            fixture.componentRef.setInput('document', document);
+            fixture.detectChanges();
+            const emitted: NativeDocument[] = [];
+            fixture.componentInstance.documentChange.subscribe(value => emitted.push(value));
+            return { fixture, emitted };
+        }
+
+        function type(textarea: HTMLTextAreaElement, value: string): void {
+            textarea.value = value;
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+
+        it('inserts an empty block that is not emitted until it has code, then keeps tabs and line breaks exactly', () => {
+            const { fixture, emitted } = open();
+            fixture.componentInstance.insertCodeBlock();
+            fixture.detectChanges();
+            const host = fixture.nativeElement as HTMLElement;
+            const textarea = host.querySelector<HTMLTextAreaElement>('.mnema-code-node textarea')!;
+            expect(textarea).not.toBeNull();
+            expect(host.querySelector('[role="alert"]')).toBeNull();
+            // the empty block is not part of the document; the empty paragraph still is
+            expect(emitted.at(-1)?.root.content.map(node => node.type)).toEqual(['paragraph']);
+
+            type(textarea, 'SELECT 1;\n\tFROM t   \n');
+            const language = host.querySelector<HTMLInputElement>('.mnema-code-node input')!;
+            language.value = 'sql';
+            language.dispatchEvent(new Event('input', { bubbles: true }));
+            const code = emitted.at(-1)!.root.content.find(node => node.type === 'code_block')!;
+            expect(code.attrs).toEqual({ lang: 'sql', source: 'SELECT 1;\n\tFROM t   \n' });
+        });
+
+        it('inserts a tab on Tab, leaves on Escape and never traps Shift+Tab', () => {
+            const { fixture, emitted } = open();
+            fixture.componentInstance.insertCodeBlock();
+            fixture.detectChanges();
+            const host = fixture.nativeElement as HTMLElement;
+            const textarea = host.querySelector<HTMLTextAreaElement>('.mnema-code-node textarea')!;
+            type(textarea, 'ab');
+            textarea.setSelectionRange(1, 1);
+            const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+            textarea.dispatchEvent(tab);
+            expect(tab.defaultPrevented).toBe(true);
+            expect(textarea.value).toBe('a\tb');
+            expect(emitted.at(-1)!.root.content.find(node => node.type === 'code_block')!.attrs['source']).toBe('a\tb');
+
+            const back = new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true });
+            textarea.dispatchEvent(back);
+            expect(back.defaultPrevented).toBe(false);
+            expect(textarea.value).toBe('a\tb');
+
+            const view = fixture.componentInstance['editorView']!;
+            const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+            textarea.dispatchEvent(escape);
+            expect(escape.defaultPrevented).toBe(true);
+            expect(view.state.selection).toBeInstanceOf(NodeSelection);
+            expect((view.state.selection as NodeSelection).node.type.name).toBe('code_block');
+            expect(host.querySelector('.mnema-code-node p.mnema-code-hint')?.textContent).toContain('Esc');
+        });
+
+        it('keeps an invalid language out of the document and flags the field', () => {
+            const { fixture, emitted } = open();
+            fixture.componentInstance.insertCodeBlock();
+            fixture.detectChanges();
+            const host = fixture.nativeElement as HTMLElement;
+            type(host.querySelector<HTMLTextAreaElement>('.mnema-code-node textarea')!, 'x');
+            const language = host.querySelector<HTMLInputElement>('.mnema-code-node input')!;
+            language.value = 'sql server';
+            language.dispatchEvent(new Event('input', { bubbles: true }));
+            expect(language.getAttribute('aria-invalid')).toBe('true');
+            expect(emitted.at(-1)!.root.content.find(node => node.type === 'code_block')!.attrs).toEqual({ source: 'x' });
+            // uppercase is normalized, not rejected
+            language.value = 'SQL';
+            language.dispatchEvent(new Event('input', { bubbles: true }));
+            language.dispatchEvent(new Event('change', { bubbles: true }));
+            expect(language.getAttribute('aria-invalid')).toBeNull();
+            expect(language.value).toBe('sql');
+            expect(emitted.at(-1)!.root.content.find(node => node.type === 'code_block')!.attrs['lang']).toBe('sql');
+        });
+
+        it('opens a document with a code block and disables its fields with the editor', () => {
+            const { fixture } = open(codeDocumentJson as unknown as NativeDocument);
+            const host = fixture.nativeElement as HTMLElement;
+            expect(host.querySelectorAll('.mnema-code-node').length).toBe(4);
+            const first = host.querySelector<HTMLTextAreaElement>('.mnema-code-node textarea')!;
+            expect(first.value).toContain('EXPLAIN (ANALYZE, BUFFERS)');
+            expect(first.dir).toBe('ltr');
+            fixture.componentRef.setInput('disabled', true);
+            fixture.detectChanges();
+            TestBed.flushEffects();
+            expect(first.disabled).toBe(true);
+        });
     });
 });

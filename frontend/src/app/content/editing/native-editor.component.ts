@@ -24,12 +24,14 @@ import { buildNativeRenderState, isAllowedNativeHref } from '../rendering/native
 import { youtubeVideoId } from '../youtube-video-id';
 import {
     NativeEditorAdapterError,
+    NativeEditorEmptyCodeError,
     exportNativeDocument,
     importNativeDocument,
     nativeEditorSchema,
     nativeTextIdentityPlugin,
     sanitizePastedHtml
 } from './native-editor-adapter';
+import { NativeCodeNodeView } from './native-code-node-view';
 import { NativeTableNodeView } from './native-table-node-view';
 
 @Component({
@@ -99,8 +101,7 @@ export class NativeEditorComponent implements AfterViewInit, OnDestroy {
 
     private syncDocument(document: NativeDocument): void {
         try {
-            if (this.editorView !== null
-                && JSON.stringify(exportNativeDocument(this.editorView.state.doc)) === JSON.stringify(document)) return;
+            if (this.editorView !== null && this.sameAsEditor(document)) return;
             const imported = importNativeDocument(document);
             this.editable.set(imported.editable);
             this.empty.set(imported.document !== null && this.isEmpty(imported.document));
@@ -133,7 +134,10 @@ export class NativeEditorComponent implements AfterViewInit, OnDestroy {
                 handleTextInput: (view, from, to, text) => this.handleMarkdownShortcut(view, from, to, text),
                 handlePaste: (view, event) => this.handlePaste(view, event),
                 handleDrop: (view, event) => this.handleDrop(view, event),
-                nodeViews: { table: (node, view, getPos) => new NativeTableNodeView(node, view, getPos) },
+                nodeViews: {
+                    table: (node, view, getPos) => new NativeTableNodeView(node, view, getPos),
+                    code_block: (node, view, getPos) => new NativeCodeNodeView(node, view, getPos)
+                },
                 dispatchTransaction: transaction => {
                     if (this.editorView === null) return;
                     const next = this.editorView.state.apply(transaction);
@@ -164,6 +168,15 @@ export class NativeEditorComponent implements AfterViewInit, OnDestroy {
         }
     }
 
+    /** Whether the editor already shows `document`; a state that cannot be exported (empty code only) differs. */
+    private sameAsEditor(document: NativeDocument): boolean {
+        try {
+            return JSON.stringify(exportNativeDocument(this.editorView!.state.doc)) === JSON.stringify(document);
+        } catch {
+            return false;
+        }
+    }
+
     private isEmpty(document: import('prosemirror-model').Node): boolean {
         return document.childCount === 1 && document.firstChild?.type === nativeEditorSchema.nodes['paragraph']
             && document.firstChild.content.size === 0;
@@ -171,7 +184,7 @@ export class NativeEditorComponent implements AfterViewInit, OnDestroy {
 
     private syncTableDisabled(disabled: boolean): void {
         this.editorHost().nativeElement.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLButtonElement>(
-            '.mnema-table-node input, .mnema-table-node textarea, .mnema-table-node button')
+            '.mnema-table-node input, .mnema-table-node textarea, .mnema-table-node button, .mnema-code-node input, .mnema-code-node textarea')
             .forEach(control => { control.disabled = disabled; });
     }
 
@@ -233,6 +246,21 @@ export class NativeEditorComponent implements AfterViewInit, OnDestroy {
     closeMediaTools(): void {
         this.mediaInspectorOpen.set(false);
         this.editorView?.focus();
+    }
+
+    /** Inserts an empty code block and puts the caret in its textarea; an empty block is not part of the document. */
+    insertCodeBlock(): void {
+        const view = this.editorView;
+        if (view === null || this.disabled() || !this.editable()) return;
+        const node = nativeEditorSchema.nodes['code_block']!.create({ id: crypto.randomUUID(), version: 1 });
+        // After the current block, so an empty paragraph is kept and the document never holds only a blank code block.
+        const { selection } = view.state;
+        const position = selection instanceof NodeSelection || selection.$to.depth === 0
+            ? selection.to : selection.$to.after();
+        view.dispatch(view.state.tr.insert(position, node).scrollIntoView());
+        const textarea = this.editorHost().nativeElement.querySelectorAll<HTMLTextAreaElement>('.mnema-code-node textarea');
+        const target = Array.from(textarea).find(element => element.value === '');
+        if (target) target.focus(); else view.focus();
     }
 
     insertTable(): void {
@@ -498,8 +526,10 @@ export class NativeEditorComponent implements AfterViewInit, OnDestroy {
         try {
             this.failure.set(null);
             this.documentChange.emit(exportNativeDocument(this.editorView.state.doc));
-        } catch {
-            this.failure.set('Правка вышла за безопасные границы формата. Отмените последнее действие.');
+        } catch (error) {
+            this.failure.set(error instanceof NativeEditorEmptyCodeError
+                ? 'Блок кода пока пуст: впишите код или удалите блок.'
+                : 'Правка вышла за безопасные границы формата. Отмените последнее действие.');
         }
     }
 

@@ -167,6 +167,15 @@
     @case ('mermaid') {
       <app-native-mermaid [source]="node.source" [title]="node.title" [description]="node.description" />
     }
+    @case ('code-block') {
+      <figure class="native-code" dir="ltr">
+        @if (node.lang) { <figcaption class="native-code-lang">{{ node.lang }}</figcaption> }
+        <div class="native-code-scroll" tabindex="0" role="region"
+          [attr.aria-label]="node.lang ? 'Код, язык ' + node.lang + ': прокрутка по горизонтали при необходимости' : 'Код: прокрутка по горизонтали при необходимости'">
+          <pre class="native-code-pre"><code class="native-code-text" [class]="node.lang ? 'language-' + node.lang : null">{{ node.source }}</code></pre>
+        </div>
+      </figure>
+    }
     @case ('table') {
       <figure class="native-table-figure" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
         <div class="native-table-scroll" tabindex="0" aria-label="Таблица: прокрутка по горизонтали при необходимости">

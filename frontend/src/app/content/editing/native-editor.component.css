@@ -65,6 +65,13 @@
 .mnema-native-editor .mnema-table-node input, .mnema-native-editor .mnema-table-node textarea { inline-size: 100%; min-inline-size: 6rem; min-block-size: var(--mn-touch-min, 2.75rem); border: 1px solid var(--mn-field-border); padding: .55rem; background: var(--mn-sheet); color: var(--mn-body); font: inherit; }
 .mnema-native-editor .mnema-table-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-block-start: .75rem; }
 .mnema-native-editor .mnema-table-actions button { min-block-size: var(--mn-touch-min, 2.75rem); border: 1px solid var(--mn-ink); padding: .5rem .7rem; background: var(--mn-sheet); color: var(--mn-ink); font: 600 .85rem var(--mn-font-body, system-ui, sans-serif); cursor: pointer; }
+.mnema-native-editor .mnema-code-node { display: grid; gap: .5rem; margin-block: .75rem; border: 1px solid var(--mn-rule); border-inline-start: 3px solid var(--mn-ink); padding: 1rem; background: var(--mn-sheet); color: var(--mn-body); font: .9rem/1.4 var(--mn-font-body, system-ui, sans-serif); }
+.mnema-native-editor .mnema-code-node.ProseMirror-selectednode { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 2px; }
+.mnema-native-editor .mnema-code-language, .mnema-native-editor .mnema-code-source { display: grid; gap: .35rem; color: var(--mn-ink); font-weight: 700; }
+.mnema-native-editor .mnema-code-language input { inline-size: min(100%, 16rem); min-block-size: var(--mn-touch-min, 2.75rem); border: 1px solid var(--mn-field-border); padding: .55rem; background: var(--mn-sheet); color: var(--mn-body); font: 1rem ui-monospace, 'SFMono-Regular', Consolas, monospace; }
+.mnema-native-editor .mnema-code-source textarea { inline-size: 100%; min-inline-size: 0; min-block-size: 8rem; border: 1px solid var(--mn-field-border); padding: .65rem; background: var(--mn-sheet); color: var(--mn-body); font: .9rem/1.55 ui-monospace, 'SFMono-Regular', Consolas, monospace; tab-size: 4; white-space: pre; overflow-x: auto; resize: vertical; }
+.mnema-native-editor .mnema-code-node [aria-invalid='true'] { border-color: var(--mn-danger); outline: 2px solid var(--mn-danger); }
+.mnema-native-editor .mnema-code-hint { margin: 0; color: var(--mn-muted); font-size: .8rem; font-weight: 400; }
 .mnema-native-editor .rich-tools { margin-block: 1.5rem; border-block: 1px solid var(--mn-rule); padding: .75rem 0 1rem; }
 .mnema-native-editor .rich-tools[hidden] { display: none; }
 .mnema-native-editor .rich-heading { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
@@ -104,4 +111,4 @@
 .mnema-native-editor .editor-error { border-inline-start: 4px solid var(--mn-danger); padding: .8rem 1rem; background: var(--mn-soft); }
 .mnema-native-editor .editor-note { color: var(--mn-muted); }
 .mnema-native-editor :where(button, input, textarea, summary):focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 3px; }
-@media (forced-colors: active) { .mnema-native-editor .editor-toolbar button, .mnema-native-editor .ruby-fields, .mnema-native-editor .ruby-fields input, .mnema-native-editor .rich-tools, .mnema-native-editor .rich-fields input, .mnema-native-editor .rich-fields textarea, .mnema-native-editor .mnema-rich-atom, .mnema-native-editor .mnema-table-node, .mnema-native-editor .mnema-table-node td, .mnema-native-editor .mnema-table-node th { border-color: CanvasText; } }
+@media (forced-colors: active) { .mnema-native-editor .editor-toolbar button, .mnema-native-editor .ruby-fields, .mnema-native-editor .ruby-fields input, .mnema-native-editor .rich-tools, .mnema-native-editor .rich-fields input, .mnema-native-editor .rich-fields textarea, .mnema-native-editor .mnema-rich-atom, .mnema-native-editor .mnema-table-node, .mnema-native-editor .mnema-table-node td, .mnema-native-editor .mnema-table-node th, .mnema-native-editor .mnema-code-node, .mnema-native-editor .mnema-code-node input, .mnema-native-editor .mnema-code-node textarea { border-color: CanvasText; } }
