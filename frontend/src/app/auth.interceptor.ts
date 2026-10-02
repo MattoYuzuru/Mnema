@@ -19,7 +19,7 @@ export function isCredentialTarget(requestUrl: string, identityOrigin: string, l
             ['/userinfo', '/api/accounts/me', '/api/accounts/me/avatar'].includes(url.pathname);
         const prefix = learning.pathname.replace(/\/$/u, '');
         const learningRoots = [`${prefix}/decks`, `${prefix}/editing-drafts`, `${prefix}/capture-notes`,
-            `${prefix}/media-assets`];
+            `${prefix}/media-assets`, `${prefix}/notifications`];
         // Single-resource routes without subpaths: capability flags and stateless author preview evaluation.
         const learningExact = [`${prefix}/capabilities`, `${prefix}/exercise-previews`];
         const learningRoute = url.origin === learning.origin && (learningExact.includes(url.pathname)
