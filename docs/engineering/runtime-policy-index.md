@@ -101,7 +101,9 @@ Manifest и GC contracts описаны в
 | `learning.generation.session-expiry-warning` | Уведомление `GENERATION_SESSION_EXPIRING` до `expires_at`; **contract only — AI-05 (#288)** | Duration; `P3D`; диапазон — AI-05 |
 | `learning.generation.event-retention-after-close` | Хранение `generation_event` после закрытия сессии; **contract only — AI-04 (#287)** | Duration; `P1D`; диапазон — AI-04 |
 | `learning.generation.max-active-sessions-per-account` | Admission: активные сессии владельца (`RESOURCE_LIMIT_EXCEEDED`); **contract only — AI-04 (#287)** | Count; `3`; диапазон — AI-04 |
-| `learning.generation.max-artifacts-per-session` | Admission: артефакты в сессии; **contract only — AI-04 (#287)** | Count; `20`; диапазон — AI-04 |
+| `learning.generation.max-artifacts-per-session` | Admission: артефакты сессии `MATERIALS`; **contract only — AI-04 (#287)** | Count; `20`; диапазон — AI-04 |
+| `learning.generation.max-exercise-targets` / `max-exercises-per-target` / `max-exercises-per-session` | Сессия `EXERCISES`: материалы, упражнения на материал и на сессию; выше — `422` без усечения; решение владельца 2026-10-02; **contract only — AI-13 (#291)** | Count; `20` / `10` / `60`; диапазон — AI-13 |
+| `learning.generation.max-bulk-approval` | Артефактов в одной bulk-публикации; **contract only — AI-05 (#288)** | Count; `20`; диапазон — AI-05 |
 | `learning.generation.max-revisions-per-artifact` / `max-turns-per-artifact` | Ревизии и инструкции на артефакт; **contract only — AI-04/AI-11 (#287, #293)** | Count; `30` / `50`; диапазон — AI-04 |
 | `learning.generation.max-instruction-chars` | Длина инструкции правки или запроса; **contract only — AI-04 (#287)** | UTF-16 units; `2000`; диапазон — AI-04 |
 | `learning.generation.step.text-draft-timeout` / `edit-timeout` / `tts-timeout` / `image-timeout` | Таймауты шагов; короче провайдерских; **contract only — AI-04 (#287)** | Duration; `PT6M` / `PT2M` / `PT2M` / `PT3M`; диапазон — AI-04 |
@@ -117,10 +119,11 @@ Manifest и GC contracts описаны в
 | `learning.ai.retry.max-rate-limit-retries` / `max-transient-retries` | Повторы шага: 429 с `Retry-After`, затем transient; **contract only — AI-02 (#282)** | Count; `6` / `3`; диапазон — AI-02 |
 | `learning.ai.context.max-input-tokens` | Жёсткий потолок входа генерации Flash non-thinking (рабочая зона 12–25k); **contract only — AI-04 (#287)** | Tokens; `32000`; диапазон — AI-04 |
 | `learning.usage.rate-card-version` | Активный rate card; новая версия не действует ретроактивно; **contract only — AI-01 (#281)** | Строка; `rc-v1`; версии — [rate-card](../../contracts/usage/README.md) |
-| `learning.usage.daily-burst-fraction` | Доля месячного бара за день на платных планах; **contract only — AI-01 (#281)** | Fraction; `0.35`; диапазон — AI-01 |
-| `learning.usage.free-weekly-unlock` | Недельная разблокировка бара Free (по понедельникам, без накопления); **contract only — AI-01 (#281)** | Fraction; `1/4`; правило округления открыто |
+| `learning.usage.daily-burst-fraction` | Доля месячного бара на платных планах, которую можно **списать** за календарный день (не зарезервировать); решение владельца 2026-10-02; **contract only — AI-01 (#281)** | Fraction; `0.35`; диапазон — AI-01 |
+| `learning.usage.free-weekly-portions` | Порции бара Free: накапливаются в месяце, первая — 1-го числа, далее по понедельникам; решение владельца 2026-10-02; **contract only — AI-01 (#281)** | Credits list; `13,13,12,12` (сумма = бар 50) |
+| `learning.usage.calendar-zone` | Часовой пояс границ дня, недели и месяца всех окон usage; решение владельца 2026-10-02; **contract only — AI-01 (#281)** | IANA zone; `Europe/Moscow` |
 | `learning.usage.low-threshold-percent` | Порог `USAGE_LOW` и подсказки fair-use; **contract only — AI-01 (#281)** | Percent; `80`; диапазон — AI-01 |
-| `learning.usage.reservation-ttl` | TTL осиротевшей reservation; **contract only — AI-01 (#281)** | Duration; значение определит AI-01 |
+| `learning.usage.reservation-ttl` | TTL осиротевшей reservation; фактический срок = min(TTL, конец периода); **contract only — AI-01 (#281)** | Duration; значение определит AI-01 |
 | `learning.usage.entitlement.source` | `EntitlementSource`: конфигурация до billing (#79); **contract only — AI-01 (#281)** | Enum; `config`; диапазон — AI-01 |
 | `learning.notifications.retention` / `max-per-account` | Хранение уведомлений и лимит на аккаунт; **contract only — AI-07 (#284)** | Duration / Count; `P30D` / `200`; диапазон — AI-07 |
 | `learning.notifications.params-max-bytes` | Размер `params` одного уведомления; **contract only — AI-07 (#284)** | Bytes; `4096`; диапазон — AI-07 |

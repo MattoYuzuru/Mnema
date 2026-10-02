@@ -12,7 +12,7 @@ artifact:
   assumptions:
     - "Primary storage, Identity, payments and learning history stay in Russian hosting; a stateless AI gateway abroad is optional and needs a legal decision."
     - "The backend platform upgrade (Java 25, Gradle 9.8.0, Spring Boot 4.1.1, #278) and the frontend upgrade (Angular 22.2.1, Node 24 LTS, Vitest, zoneless, #306) are delivered. AI code is written to be portable."
-    - "The seven exercise mechanics come from the server registry; ORDER/CATEGORIZE (#268) may land after the first AI slices."
+    - "The seven exercise mechanics come from the server registry; ORDER/CATEGORIZE (#268) are merged: all seven mechanics exist in the registry and in contracts/study."
   unresolved_questions:
     - "TTS vendor accessible to a Russian sole proprietor with quality close to Google; Yandex SpeechKit needs an explicit owner exception."
     - "Whether faster-whisper on the first 4 vCPU / 8 GB VPS meets the dictation latency target; benchmark before choosing self-host vs API."
@@ -217,6 +217,8 @@ sequenceDiagram
 
 ## 5. Прогресс в UI
 
+Аллокация `seq` событий (под row lock сессии, не `bigserial`) уточнена в [events contract](../../contracts/generation/events.json).
+
 `GET /api/decks/{deckId}/generation-sessions/{sid}/events?after={seq}&limit=100` →
 `{events, cursor, session: {state, rowVersion}, activeSteps}`. Типы: `ARTIFACT_STATE`,
 `BLOCKS_APPENDED` (уже скомпилированные native-блоки, ≤32 KiB), `MEDIA_SLOT_STATE`,
@@ -391,6 +393,7 @@ cost per accepted item.
   (`ACTIVE → SETTLED / RELEASED / EXPIRED`), `usage_ledger_entry` (append-only:
   `GRANT`, `DEBIT`, `REFUND`, `ADJUSTMENT`, `EXPIRE`; `cost_micros`, `idempotency_key`
   UNIQUE, `rate_card_version`).
+- Жизненный цикл reservation (сессия — только начальный батч, каждое последующее действие — своя reservation, период, never-negative) уточнён в [usage contract](../../contracts/usage/README.md#reservation-lifecycle).
 - Preflight: `POST /api/decks/{deckId}/generation-estimates` → credits p50/p95. Старт
   резервирует p95 в той же транзакции, что создаёт сессию; нехватка → `409
   USAGE_LIMIT_REACHED` с остатком и датой обновления. Перед вызовом остаток reservation
