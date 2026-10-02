@@ -29,10 +29,10 @@ exercise mechanics into the seven below. Epic #76 added the greenfield media lif
 - Database: fresh Flyway history at `classpath:db/learning/migration`, owned schema
   `app_learning`, `baseline-on-migrate=false`. It never scans a legacy migration
   directory.
-- AI layer (Epic #77): the notification center is implemented (below); generation and usage still exist only as
-  contracts — [`contracts/generation`](../../../contracts/generation/README.md),
-  [`contracts/usage`](../../../contracts/usage/README.md) — plus the versioned prompt sections in
-  `src/main/resources/ai/prompts/` (resources, not loaded by any code yet). Run-2 tasks (#281, #282, #285, #303) add the rest.
+- AI layer (Epic #77): the notification center and the usage ledger (`app.mnema.learning.usage`, below) are implemented;
+  generation still exists only as a contract — [`contracts/generation`](../../../contracts/generation/README.md) — plus the
+  versioned prompt sections in `src/main/resources/ai/prompts/` (resources, not loaded by any code yet). Run-2 tasks
+  (#282, #285, #303) add the rest.
 - MBM compiler (#283): `app.mnema.learning.generation.mbm` is a pure package (no Spring, I/O or clock; identifiers come from
   the injected `IdAllocator`) that compiles MBM v1 to a native-v1 document and renders native-v1 back to MBM.
   `MbmCompiler.compile(source, MbmOptions, IdAllocator)` returns `MbmResult.Success` (document already read by
@@ -43,6 +43,84 @@ exercise mechanics into the seven below. Epic #76 added the greenfield media lif
   prompt, `MbmLint` is the hook for the copy lint. Inline scanning has a linear work budget and a nesting bound that report
   `MBM_DOCUMENT_TOO_LARGE`. A fenced block outside `::mermaid` compiles to `code_block` (`BlockParser.codeBlock`). Writes use
   `NativeDocumentReader.read`; the stored-snapshot decoder uses `readRetained`, which keeps a `code_block` that is not valid v1 as an opaque node. The executable contract is `contracts/generation/mbm-v1`.
+
+## Usage ledger and AI budget (#281)
+
+`app.mnema.learning.usage` implements [`contracts/usage`](../../../contracts/usage/README.md): credits, reservations, the
+fair-use buckets, `GET /api/usage` and the estimate. Migration `V26__usage_ledger.sql`; policy keys are in the
+[runtime policy index](../../../docs/engineering/runtime-policy-index.md).
+
+- **Endpoints.** `GET /api/usage` (`learning.read`, `private, no-store`) is a pure read of the current period and never
+  writes. `POST /api/decks/{deckId}/generation-estimates` takes exactly one of `{spec}` or `{edit}` and reserves and
+  persists nothing; it is a POST, so it needs `learning.write`. A foreign or absent deck is the opaque 404 and is decided
+  before the body is read.
+- **Model.** `usage_allowance` (owner x period: plan, bar, Free portions, burst fraction, fair-use and cap limits, frozen
+  when the period is first used, rewritten only when the entitlement changes), `usage_balance` (`unlocked`, `used`,
+  `reserved`, `row_version`, `CHECK used + reserved <= unlocked`), `usage_reservation`
+  (`ACTIVE` -> `SETTLED` | `RELEASED` | `EXPIRED`; `SESSION` | `TURN` | `STEP`; opaque `session_id` and `turn_id`),
+  `usage_ledger_entry` (append-only by trigger; `idempotency_key` globally unique; `reference` is an opaque step or call id
+  that the table restricts to a token pattern, so no prose or personal data can be stored), `usage_counter` (fair-use and
+  count-cap windows) and `entitlement_inbox`. A period is a calendar month, windows and weeks are calendar windows, all in
+  `learning.usage.calendar-zone`.
+- **Writers join the caller's transaction** (`Propagation.MANDATORY`): `UsageLedger.reserve`, `settle`, `release` and
+  `consume` commit or roll back with the domain change they pay for. A refusal (`UsageLimitReachedException`) propagates
+  through that transaction, which rolls back: do not catch it inside the transaction, let it reach the problem handler
+  (the contract's "409 before any state change"). Call them as late as possible: a debit or consumption that crosses a
+  threshold publishes a notification, which takes the owner's notification cursor lock until the caller commits.
+- **Admission is one conditional update** on the balance row (`... WHERE unlocked - used - reserved >= :hold AND
+  row_version = :v`). Losing the row version means another admission committed, so the loser re-reads: it gets
+  `409 USAGE_LIMIT_REACHED` only when the remainder really is too small. The hold expires at
+  `min(learning.usage.reservation-ttl, end of the period)`; the default `PT2H` is the AI-01 decision the contract left open
+  (longer than the `PT1H` bound of a step run plus margin). `UsageLedger.expireDue` (scheduled by `UsageExpiryWorker`,
+  `FOR UPDATE SKIP LOCKED`, safe on every instance) returns orphaned holds; a hold that outlived its period ends as
+  `SETTLED` or `RELEASED` by whether it debited, an orphan that merely timed out is `EXPIRED`.
+- **Settlement by fact.** `settle` records a `DEBIT` against its hold once per idempotency key (`debit:{stepId}:{attempt}`);
+  a repeat changes nothing and reports `replayed`. A debit above what the hold still has is `EstimateExceededException`
+  (the artifact fails with `ESTIMATE_EXCEEDED`, nothing is written); a debit on an ended hold is
+  `ReservationNotActiveException`. `release` ends the hold (`SETTLED` after at least one debit, else `RELEASED`) and returns
+  the remainder. Ledger entries carry the rate-card version of their reservation, never the current one.
+- **Free weekly unlock.** The bar opens in portions `learning.usage.free-weekly-portions` (13, 13, 12, 12): the first on the
+  1st, the next on each following Monday 00:00 in the zone, accumulating within the month, nothing carried over; a fifth
+  Monday unlocks nothing extra. Each opening is one `GRANT` ledger entry written when the account next reserves. A refusal
+  names `window: WEEK`, the next unlock as `renewsAt`, and `fitsAfterRenewal` computed from what that portion will free.
+- **Daily burst.** On paid plans the debits of one calendar day are limited to `learning.usage.daily-burst-fraction` of the
+  bar. It never fails an admission or a `settle`; `UsageLedger.dailyDebitRoom(owner)` is the query the step scheduler (AI-04)
+  uses to park steps until `resetsAt`. `GET /api/usage` reports `deferredUntil: null`: only the scheduler knows which
+  steps wait.
+- **Fair-use buckets and count caps** are outside the bar. `consume(owner, bucket, amount, key, reference)` counts speech to
+  text (seconds), answer checks and the count caps (podcasts, quality images, high fact check, smart plan) against their
+  monthly and daily windows, once per key, locking the windows in a fixed order and checking before writing. The widest
+  exhausted window is the one reported. A cap of 0 is "not offered": `offered: false`, no `renewsAt`. Speech to text on a
+  plan without a monthly limit (Max) has only the per-day velocity limit. Smart plans are one bucket: Plus 4 a month, Pro one
+  a week, Max 8 a month (4 weekly plus 4 Pro).
+- **Notifications.** A write that crosses 80, 90 or 100 percent of a bucket publishes the highest threshold it crossed as
+  `USAGE_LOW` (once per bucket, period and threshold by dedupe key) and a window that runs out publishes
+  `USAGE_EXHAUSTED` keyed by the window instance, so the weekly Free window fires every week, all inside the transaction
+  of the debit or consumption.
+- **Estimate.** `GenerationSpecInterpreter` is the port for what a spec implies; `StandardSpecInterpreter` validates the
+  shape strictly and prices MATERIALS (one artifact per NOTE source or one when merged; `AUTO` effort is priced as medium;
+  one audio clip and one image search per artifact when declared; a low fact check per artifact unless the effort is
+  short) and EXERCISES (`EXACT`, `AUTO` = five per target or what the session limit allows, `BUDGET_PERCENT` = what the
+  share of the remaining budget buys, at least one per target). `REVISE_*` is `422 SPEC_NOT_SUPPORTED`. Limits above
+  `learning.generation.max-*` are `422 RESOURCE_LIMIT_EXCEEDED` with `limit` and `limits`, never clamped. It does not check
+  that notes or items exist or belong to the owner, nor that an edit's session and artifact exist: that is the generation
+  module's boundary (AI-04, which supplies its own interpreter and the personal-data warnings). p95 is the sum of rate-card
+  weights, p50 is `ceil(0.6 x sum)` over unrounded weights, exercises are `ceil(8 x n / 5)`.
+- **Entitlements.** `EntitlementSource` is the port; `ConfigEntitlementSource` serves `learning.usage.entitlements.default-plan`
+  with per-account `learning.usage.entitlements.overrides.<accountUuid>`. A plan change mid-period applies at once to the
+  limits and adds the missing credits as a `GRANT`; credits are never clawed back within a period. `EntitlementInbox` is the
+  validated, idempotent insert of billing's snapshots (no consumer yet, no endpoint). The rate card and allowances are
+  classpath copies of the contract files (`usage/*.json`); a test keeps them identical.
+- **Retention.** Counters of windows older than 90 days are deleted by the expiry worker. Ledger rows are immutable and are
+  kept.
+  TODO(account-deletion task, owner: the epic that adds Learning's account purge; whether billing (#79) must keep
+  ledger rows for a financial retention period is decided there): Learning has no account purge path today (only study retention exists), so nothing deletes usage rows when an
+  account is deleted. The rows hold no personal data (an account id and opaque references), so the purge should delete by
+  `owner_id` in this order: `usage_ledger_entry`, `usage_reservation`, `usage_balance`, `usage_allowance`,
+  `usage_counter`, `entitlement_inbox`; `DELETE` stays allowed on the ledger for that reason (only `UPDATE` is blocked).
+- **Tests.** `app.mnema.learning.usage`: PostgreSQL integration tests with a movable clock (`UsageTestConfiguration`) cover
+  parallel reservations, idempotent settlement, expiry and rollover, the Free schedule across months, the burst, the buckets
+  and the notifications; `UsageContractTest` reproduces the examples of `contracts/usage/usage.json` from database state.
 
 ## Shared platform contracts
 
@@ -64,8 +142,11 @@ exercise mechanics into the seven below. Epic #76 added the greenfield media lif
 - API failures use `application/problem+json` (RFC 9457). Stable machine codes are
   `IDEMPOTENCY_CONFLICT`, `VERSION_CONFLICT`, `PRECONDITION_REQUIRED`, `INVALID_REQUEST`,
   `RESOURCE_NOT_FOUND`, `SESSION_EXPIRED`, `PRESENTATION_EXPIRED`, `METHOD_NOT_ALLOWED`
-  and `INTERNAL_ERROR`. Public details
-  never contain exception messages, SQL or stored command data.
+  and `INTERNAL_ERROR`; the AI layer adds `USAGE_LIMIT_REACHED` (409) and `SPEC_NOT_SUPPORTED` (422). Public details
+  never contain exception messages, SQL or stored command data. A code keeps its fixed status, title and detail; the
+  extension members a contract lists for it (`bucket`, `limit`, `limits`, `capability`, `kind` ...) travel in a typed
+  `ProblemExtension` (`platform.api`): a small insertion-ordered map of strings, booleans, integers, instants, enums and
+  lists or maps of those, whose names can never replace `type`, `title`, `status`, `detail`, `instance` or `code`.
 
 PostgreSQL integration tests are fail-closed: Docker absence or container startup
   failure fails the build rather than skipping the suite.

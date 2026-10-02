@@ -7,7 +7,7 @@ artifact:
   created_at: "2026-09-28"
   updated_at: "2026-10-02"
   owners: ["learning-api", "web"]
-  source_tasks: ["GitHub Issue #241", "GitHub Epic #76", "GitHub Issue #284"]
+  source_tasks: ["GitHub Issue #241", "GitHub Epic #76", "GitHub Issue #284", "GitHub Issue #281"]
 ---
 
 # Изменяемые политики Learning
@@ -67,6 +67,17 @@ namespaces.
 | `learning.notifications.max-per-account` | Центр уведомлений: лимит на аккаунт; публикация N+1 вытесняет самое старое | Count; `200`; 10–1000 |
 | `learning.notifications.params-max-bytes` | Центр уведомлений: размер `params` одного уведомления (таблица дополнительно держит 4096) | Bytes; `4096`; 256–4096 |
 | `learning.notifications.cleanup-initial-delay` / `cleanup-interval` | Центр уведомлений: частота удаления истёкших строк (до 20 пачек по 500 за запуск) | Duration; `PT5M` / `PT1H`; положительное значение Spring scheduler |
+| `learning.usage.rate-card-version` | Usage: активный rate card; новая версия не действует ретроактивно на ledger и reservations с прежней версией. Класспат-копия [контракта](../../contracts/usage/rate-card-v1.json) — `usage/rate-card-v<N>.json` | Строка `rc-v<N>`; `rc-v1`; версия без ресурса — отказ при старте |
+| `learning.usage.calendar-zone` | Usage: часовой пояс границ дня, недели (понедельник 00:00) и месяца всех окон; решение владельца 2026-10-02 | IANA zone; `Europe/Moscow` |
+| `learning.usage.daily-burst-fraction` | Usage: доля месячного бара платных планов, которую можно **списать** за календарный день; reserve и settle не отказывают из-за него, это сигнал планировщику шагов (`UsageLedger.dailyDebitRoom`); решение владельца 2026-10-02 | Fraction; `0.35`; (0, 1] |
+| `learning.usage.free-weekly-portions` | Usage: порции бара Free; накапливаются в месяце, первая открывается 1-го числа, далее по понедельникам; сумма обязана равняться бару Free (50), иначе отказ при старте; решение владельца 2026-10-02 | Credits list; `13,13,12,12`; 1–5 порций, каждая ≥ 1 |
+| `learning.usage.low-threshold-percent` | Usage: первый порог `USAGE_LOW` и подсветки fair-use (`warn` — строго выше порога); 90 и 100 фиксированы | Percent; `80`; 50–89 |
+| `learning.usage.reservation-ttl` | Usage: TTL осиротевшей reservation; фактический срок = min(TTL, конец периода). Решение AI-01: с запасом больше границы запуска шагов `PT1H` | Duration; `PT2H`; `PT1M`–`P1D`, целое число секунд |
+| `learning.usage.expiry-interval` / `expiry-initial-delay` | Usage: частота воркера, который возвращает осиротевшие reservations и удаляет счётчики окон старше 90 дней (до 20 пачек по 200 за запуск) | Duration; `PT1M` / `PT1M`; положительное значение Spring scheduler |
+| `learning.usage.entitlements.default-plan` | Usage: `EntitlementSource` до billing (#79) — план всех аккаунтов; на локальном стенде с одним владельцем это способ получить платный план | Enum `FREE`/`PLUS`/`PRO`/`MAX`; `FREE` |
+| `learning.usage.entitlements.overrides.<accountUuid>` | Usage: план конкретного аккаунта (UUID субъекта токена); не меняет остальных | Enum `FREE`/`PLUS`/`PRO`/`MAX`; не задан; UUID в каноническом виде |
+| `learning.generation.max-exercise-targets` / `max-exercises-per-target` / `max-exercises-per-session` | Estimate (#281) и далее admission AI-13 (#291): материалы, упражнения на материал и на сессию; выше — `422 RESOURCE_LIMIT_EXCEEDED` без усечения; решение владельца 2026-10-02 | Count; `20` / `10` / `60`; 1–1000 |
+| `learning.generation.max-artifacts-per-session` / `max-sources` | Estimate (#281) и далее admission AI-04 (#287): артефакты сессии `MATERIALS` и pinned источники спеки; выше — `422 RESOURCE_LIMIT_EXCEEDED` (`ARTIFACTS_PER_SESSION` / `SOURCES`) | Count; `20` / `20`; 1–1000 |
 
 S3 endpoint, region, bucket и credentials находятся в том же namespace
 `learning.media.upload`, но относятся к подключению, а не к пользовательским
@@ -105,8 +116,6 @@ Manifest и GC contracts описаны в
 | `learning.generation.session-expiry-warning` | Уведомление `GENERATION_SESSION_EXPIRING` до `expires_at`; **contract only — AI-05 (#288)** | Duration; `P3D`; диапазон — AI-05 |
 | `learning.generation.event-retention-after-close` | Хранение `generation_event` после закрытия сессии; **contract only — AI-04 (#287)** | Duration; `P1D`; диапазон — AI-04 |
 | `learning.generation.max-active-sessions-per-account` | Admission: активные сессии владельца (PLANNING, PLAN_READY, RUNNING и REVIEW с PROPOSED/REVISING/STALE; `RESOURCE_LIMIT_EXCEEDED`); **contract only — AI-04 (#287)** | Count; `3`; диапазон — AI-04 |
-| `learning.generation.max-artifacts-per-session` | Admission: артефакты сессии `MATERIALS`; **contract only — AI-04 (#287)** | Count; `20`; диапазон — AI-04 |
-| `learning.generation.max-exercise-targets` / `max-exercises-per-target` / `max-exercises-per-session` | Сессия `EXERCISES`: материалы, упражнения на материал и на сессию; выше — `422` без усечения; решение владельца 2026-10-02; **contract only — AI-13 (#291)** | Count; `20` / `10` / `60`; диапазон — AI-13 |
 | `learning.generation.max-bulk-approval` | Артефактов в одной bulk-публикации; **contract only — AI-05 (#288)** | Count; `20`; диапазон — AI-05 |
 | `learning.generation.max-revisions-per-artifact` / `max-turns-per-artifact` | Ревизии и инструкции на артефакт; **contract only — AI-04/AI-11 (#287, #293)** | Count; `30` / `50`; диапазон — AI-04 |
 | `learning.generation.max-instruction-chars` | Длина инструкции правки или запроса; **contract only — AI-04 (#287)** | UTF-16 units; `2000`; диапазон — AI-04 |
@@ -122,13 +131,6 @@ Manifest и GC contracts описаны в
 | `learning.ai.circuit.failure-threshold` / `window` / `open-duration` | Circuit breaker на `(provider, capability)`; **contract only — AI-02 (#282)** | Count / Duration; `5` / `PT60S`, открыт `PT30S`; диапазон — AI-02 |
 | `learning.ai.retry.max-rate-limit-retries` / `max-transient-retries` | Повторы шага: 429 с `Retry-After`, затем transient; **contract only — AI-02 (#282)** | Count; `6` / `3`; диапазон — AI-02 |
 | `learning.ai.context.max-input-tokens` | Жёсткий потолок входа генерации Flash non-thinking (рабочая зона 12–25k); **contract only — AI-04 (#287)** | Tokens; `32000`; диапазон — AI-04 |
-| `learning.usage.rate-card-version` | Активный rate card; новая версия не действует ретроактивно; **contract only — AI-01 (#281)** | Строка; `rc-v1`; версии — [rate-card](../../contracts/usage/README.md) |
-| `learning.usage.daily-burst-fraction` | Доля месячного бара на платных планах, которую можно **списать** за календарный день (не зарезервировать); решение владельца 2026-10-02; **contract only — AI-01 (#281)** | Fraction; `0.35`; диапазон — AI-01 |
-| `learning.usage.free-weekly-portions` | Порции бара Free: накапливаются в месяце, первая — 1-го числа, далее по понедельникам; решение владельца 2026-10-02; **contract only — AI-01 (#281)** | Credits list; `13,13,12,12` (сумма = бар 50) |
-| `learning.usage.calendar-zone` | Часовой пояс границ дня, недели и месяца всех окон usage; решение владельца 2026-10-02; **contract only — AI-01 (#281)** | IANA zone; `Europe/Moscow` |
-| `learning.usage.low-threshold-percent` | Порог `USAGE_LOW` и подсказки fair-use; **contract only — AI-01 (#281)** | Percent; `80`; диапазон — AI-01 |
-| `learning.usage.reservation-ttl` | TTL осиротевшей reservation; фактический срок = min(TTL, конец периода); **contract only — AI-01 (#281)** | Duration; значение определит AI-01 |
-| `learning.usage.entitlement.source` | `EntitlementSource`: конфигурация до billing (#79); **contract only — AI-01 (#281)** | Enum; `config`; диапазон — AI-01 |
 
 Секреты провайдеров не являются policy: только имена env из архитектуры (§9), значения — в окружении `worker`.
 Клиентские интервалы опроса (события сессии 1 с / 5–15 с, уведомления 30–60 с / 10 с) — client policy
