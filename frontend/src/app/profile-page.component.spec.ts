@@ -5,6 +5,7 @@ import { AccountProfile, AccountProfileApi } from './account-profile.api';
 import { AuthService } from './auth.service';
 import { ProfilePageComponent } from './profile-page.component';
 import { appConfig } from './app.config';
+import { DURING_STUDY_STORAGE_KEY, NotificationPreferences } from './core/notifications/notification-preferences';
 import { spyObj, type SpyObj } from '../testing/mocks';
 
 const profile: AccountProfile = { accountId: 'd2815e20-ea25-4dce-977a-66ee086f294d',
@@ -114,5 +115,26 @@ describe('ProfilePageComponent', () => {
         expect(root.querySelector('.profile-sheet .avatar-action')?.getAttribute('aria-label')).toBe('Изменить аватар');
         expect(root.querySelector('.profile-sheet .file-input')?.getAttribute('type')).toBe('file');
         expect(root.querySelector('.file-label')).toBeNull();
+    });
+
+    it('stores the «Во время занятия» choice for notifications in this browser', async () => {
+        localStorage.removeItem(DURING_STUDY_STORAGE_KEY);
+        const fixture = TestBed.createComponent(ProfilePageComponent);
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.detectChanges();
+        const root = fixture.nativeElement as HTMLElement;
+        expect(root.querySelector('#notifications-heading')?.textContent).toBe('Уведомления');
+        const group = root.querySelector('section[aria-labelledby=notifications-heading] fieldset')!;
+        expect(group.querySelector('legend')?.textContent).toBe('Во время занятия');
+        expect(Array.from(group.querySelectorAll('.text')).map(label => label.textContent))
+            .toEqual(['В паузах', 'Сразу', 'Только значок']);
+        expect(group.querySelector<HTMLInputElement>('input:checked')?.value).toBe('AT_PAUSES');
+
+        group.querySelector<HTMLInputElement>('input[value=BADGE_ONLY]')!.click();
+        fixture.detectChanges();
+        expect(TestBed.inject(NotificationPreferences).duringStudy()).toBe('BADGE_ONLY');
+        expect(localStorage.getItem(DURING_STUDY_STORAGE_KEY)).toBe('BADGE_ONLY');
+        localStorage.removeItem(DURING_STUDY_STORAGE_KEY);
     });
 });

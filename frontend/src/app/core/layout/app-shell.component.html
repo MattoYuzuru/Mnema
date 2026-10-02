@@ -21,6 +21,7 @@
 
     <div class="session">
       @if (status() === 'authenticated') {
+        <app-notification-bell />
         <span class="identity">{{ user()?.name || user()?.email }}</span>
         <button type="button" class="quiet-action" (click)="logout()">Выйти</button>
       } @else if (status() === 'pending') {
@@ -44,3 +45,5 @@
     </nav>
   </footer>
 </div>
+
+<app-toast-region />

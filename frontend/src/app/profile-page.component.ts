@@ -6,6 +6,8 @@ import { firstValueFrom } from 'rxjs';
 import { AccountProfile, AccountProfileApi } from './account-profile.api';
 import { AuthService } from './auth.service';
 import { appConfig } from './app.config';
+import { DuringStudyMode, NotificationPreferences } from './core/notifications/notification-preferences';
+import { SegmentedChoiceComponent, SegmentedOption } from './shared/segmented-choice.component';
 
 function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | null {
     return new TextEncoder().encode(String(control.value ?? '')).length > 72 ? { passwordBytes: true } : null;
@@ -13,7 +15,7 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
 
 @Component({
     selector: 'app-profile-page',
-    imports: [ReactiveFormsModule, RouterLink],
+    imports: [ReactiveFormsModule, RouterLink, SegmentedChoiceComponent],
     template: `
       <section class="profile-page" aria-labelledby="profile-title">
         <a routerLink="/decks" class="back-link">← Мои колоды</a>
@@ -66,6 +68,13 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
                 @if (saveSuccess()) { <p class="success" role="status">Изменения сохранены.</p> }
                 <button type="submit" [disabled]="form.invalid || saving()">{{ saving() ? 'Сохраняем…' : 'Сохранить профиль' }}</button>
               </form>
+            </section>
+            <section class="sheet" aria-labelledby="notifications-heading">
+              <h2 id="notifications-heading">Уведомления</h2>
+              <app-segmented-choice legend="Во время занятия" name="notifications-during-study"
+                [options]="duringStudyOptions" [value]="preferences.duringStudy()"
+                (valueChange)="chooseDuringStudy($event)" />
+              <p class="hint">Настройка хранится в этом браузере. Все сообщения остаются в «Входящих» при любом выборе.</p>
             </section>
           @if (account.hasPassword) {
             <section class="sheet password-sheet" aria-labelledby="password-heading">
@@ -145,6 +154,12 @@ export class ProfilePageComponent implements OnInit {
     private readonly api = inject(AccountProfileApi);
     private readonly auth = inject(AuthService);
     private readonly fb = inject(FormBuilder);
+    protected readonly preferences = inject(NotificationPreferences);
+    protected readonly duringStudyOptions: readonly SegmentedOption<DuringStudyMode>[] = [
+        { value: 'AT_PAUSES', label: 'В паузах', hint: 'Сообщение появится после ответа или в конце занятия.' },
+        { value: 'IMMEDIATE', label: 'Сразу', hint: 'Сообщение появится поверх задания.' },
+        { value: 'BADGE_ONLY', label: 'Только значок', hint: 'Всплывающих сообщений не будет: только значок у колокольчика.' }
+    ];
     readonly showEmailWarning = appConfig.features.showEmailVerificationWarning;
     readonly profile = signal<AccountProfile | null>(null);
     readonly avatarUrl = signal<string | null>(null);
@@ -169,6 +184,10 @@ export class ProfilePageComponent implements OnInit {
     });
 
     ngOnInit(): void { void this.load(); }
+
+    protected chooseDuringStudy(mode: DuringStudyMode | null): void {
+        if (mode !== null) this.preferences.setDuringStudy(mode);
+    }
 
     async load(): Promise<void> {
         this.loading.set(true);

@@ -1,0 +1,42 @@
+<button type="button" class="bell" [attr.popovertarget]="panelId" [attr.aria-controls]="panelId"
+        [attr.aria-expanded]="center.panelOpen()" [attr.aria-label]="label()" [style.anchor-name]="anchorName">
+  <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false" fill="none"
+       stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z" /><path d="M10 20.5a2.2 2.2 0 0 0 4 0" />
+  </svg>
+  @if (center.badgeText(); as badge) { <span class="badge" aria-hidden="true">{{ badge }}</span> }
+</button>
+
+<div #panel class="panel" popover="auto" [id]="panelId" [attr.aria-labelledby]="titleId"
+     [style.position-anchor]="anchorName" (toggle)="onToggle($event)">
+  <h2 class="title" [id]="titleId">Входящие</h2>
+  @if (center.panelError(); as problem) { <p class="problem" role="alert">{{ problem }}</p> }
+  @if (center.entries().length === 0) {
+    <p class="empty">Пока тихо. Когда Мнема закончит работу, сообщение появится здесь.</p>
+  } @else {
+    <ul class="list">
+      @for (entry of center.entries(); track entry.notification.notificationId) {
+        <li class="entry" [class.is-new]="isNew(entry.notification.seq)">
+          <app-notification-glyph [severity]="entry.presented.severity" />
+          <div class="body">
+            @if (isNew(entry.notification.seq)) { <span class="fresh">Новое</span> }
+            @if (entry.presented.link; as link) {
+              <a class="text" [id]="textId(entry.notification.notificationId)" [routerLink]="link.commands" (click)="followed()">{{ entry.presented.text }}</a>
+            } @else {
+              <span class="text" [id]="textId(entry.notification.notificationId)">{{ entry.presented.text }}</span>
+            }
+            <time class="when" [attr.datetime]="entry.notification.createdAt">{{ time(entry.notification.createdAt) }}</time>
+          </div>
+          <button type="button" class="dismiss" aria-label="Убрать уведомление"
+                  [attr.aria-describedby]="textId(entry.notification.notificationId)"
+                  (click)="center.dismiss(entry.notification.notificationId)">
+            <span aria-hidden="true">×</span>
+          </button>
+        </li>
+      }
+    </ul>
+  }
+  @if (center.olderCursor() !== null) {
+    <button type="button" class="more" [disabled]="center.loadingMore()" (click)="center.loadMore()">Показать ещё</button>
+  }
+</div>
