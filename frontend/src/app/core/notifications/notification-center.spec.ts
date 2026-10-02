@@ -1,7 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 
 import { AuthService, AuthStatus } from '../../auth.service';
 import { spyObj, type SpyObj } from '../../../testing/mocks';
@@ -241,6 +241,27 @@ describe('NotificationCenter', () => {
         answers(notModified);
         await settle(IDLE_POLL_MS);
         expect(api.list).toHaveBeenLastCalledWith({ limit: 100, after: '42' }, null);
+    });
+
+    it('does not bring back an item dismissed while a list response was already in flight', async () => {
+        await signIn(page([note(2), note(1)], { unreadCount: 2, readUpto: '0' }));
+        // The panel reload is on the wire when the learner dismisses; its answer still contains the item.
+        const reload = new Subject<NotificationListResult>();
+        api.list.mockReturnValueOnce(reload);
+        api.setReadCursor.mockReturnValue(of({ readUpto: '2', unreadCount: 0 }));
+        center.open();
+        await settle();
+        api.dismiss.mockReturnValue(of(undefined));
+        await center.dismiss(note(2).notificationId);
+        reload.next(page([note(2), note(1)], { unreadCount: 2, readUpto: '0' }));
+        reload.complete();
+        await settle();
+        expect(center.items().map(item => item.seq)).toEqual(['1']);
+
+        // The same holds for a catch-up page and for an older page.
+        answers(page([note(2), note(3)], { unreadCount: 2, readUpto: '2' }));
+        await settle(IDLE_POLL_MS);
+        expect(center.items().map(item => item.seq)).toEqual(['3', '1']);
     });
 
     it('treats a 404 on dismiss as done and reports any other failure without removing the item', async () => {
