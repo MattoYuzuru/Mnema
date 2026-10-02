@@ -246,10 +246,9 @@ a paid plan the same way, through Spring configuration of the Learning process:
   `SPRING_APPLICATION_JSON='{"learning.usage.entitlements.overrides.<accountUuid>":"PRO"}'`
   (a UUID is not expressible as an environment-variable name, hence the JSON property).
 
-The launcher does not pass either variable through yet: the Learning environment is fixed in
-`x-learning-environment` of `compose.local-full-stack.yml`, so for the full stack add the
-variable there as a local, uncommitted edit and `start` again (a launcher pass-through such as
-`MNEMA_LOCAL_AI_PLAN` is a follow-up). Outside Compose set it in the environment of
+The full-stack launcher passes `MNEMA_LOCAL_AI_PLAN` (default `FREE`) to Learning as the default plan, so
+`MNEMA_LOCAL_AI_PLAN=PRO scripts/mnema-local-full-stack.sh start` puts every local account on Pro. The per-account JSON
+override needs a local edit of `x-learning-environment` in `compose.local-full-stack.yml`. Outside Compose set it in the environment of
 `./gradlew :services:learning:bootRun`. A plan change takes effect on the next request: limits
 change at once and the missing credits are granted on the next reservation. Credits and counters
 live in the retained PostgreSQL volume and are cleared by `reset`.

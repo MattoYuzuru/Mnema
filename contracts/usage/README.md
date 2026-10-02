@@ -1,7 +1,7 @@
 # Usage contract v1 (`usage-v1`)
 
 Credits, the versioned rate card, plan allowances, the usage API and the estimate that the composer shows before it spends
-anything. **Status: contract only** — AI-01 ([#281](https://github.com/MattoYuzuru/Mnema/issues/281)) implements it; the
+anything. **Status: implemented** in `app.mnema.learning.usage` by AI-01 ([#281](https://github.com/MattoYuzuru/Mnema/issues/281)); the
 paywall, entitlement inbox and promo codes are AI-19 ([#301](https://github.com/MattoYuzuru/Mnema/issues/301)) and
 AI-21 ([#302](https://github.com/MattoYuzuru/Mnema/issues/302)); payments are #79.
 
@@ -128,7 +128,16 @@ Other columns of the product table (low fact check on every plan; images: search
 [`allowances-v1.json`](allowances-v1.json). The guarantee behind the numbers: the sum of caps stays at most 25% of the price after
 income tax (NPD 4%) and acquiring (about 3%); after two cohorts the bar is re-based on measured p95 (x1.35-1.5).
 
+## Implementation notes (AI-01)
+
+- `learning.usage.reservation-ttl` defaults to `PT2H` (at least the `PT1H` bound of one step run plus margin), always capped at
+  the period end.
+- The ledger is internal (no HTTP read). `entryFields` describe its information, not a column list: `sessionId`, `stepId` and
+  `attempt` are stored in one opaque `reference` token (for example the debit key `debit:{stepId}:{attempt}`), so the row
+  carries no domain foreign keys.
+- Only `GRANT` and `DEBIT` entries are produced in v1; balances are per period, so nothing needs an `EXPIRE` entry at period end.
+  `REFUND` and `ADJUSTMENT` are accepted by the schema for billing (#79) and support corrections.
+
 ## Open questions
 
-- Default `learning.usage.reservation-ttl` is an AI-01 decision.
 - A trial is undecided in the product contract; promo codes cover trial-like offers (AI-21).
