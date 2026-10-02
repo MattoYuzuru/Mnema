@@ -5,7 +5,7 @@ artifact:
   title: "Learning runtime policy index"
   status: current
   created_at: "2026-09-28"
-  updated_at: "2026-09-28"
+  updated_at: "2026-10-02"
   owners: ["learning-api", "web"]
   source_tasks: ["GitHub Issue #241", "GitHub Epic #76"]
 ---
@@ -87,6 +87,48 @@ Manifest и GC contracts описаны в
 запрашивает страницы по 20 и обнаруживает превышение 50 страниц,
 вместо успешного ответа с неполным списком. При изменении верхней
 границы draft count нужно одновременно обновить этот клиентский контракт.
+
+## AI-слой: ключи, которых ещё нет (contract only)
+
+Ключи этого раздела — **contract only**: в Learning их пока нет, ни одно поведение не заявлено.
+Значения взяты из [AI generation platform](../architecture/ai-generation-platform.md) и
+[контрактов](../../contracts/generation/README.md); диапазоны и проверку при старте определит
+указанная задача. До реализации ключ нельзя считать настройкой, которую можно менять.
+
+| Ключ / место | Владелец и влияние | Единица; default; допустимый диапазон |
+|---|---|---|
+| `learning.generation.session-retention` | Мастерская: жизнь сессии от последней активности; **contract only — implemented by AI-05 (#288)** | Duration; `P30D`; диапазон — AI-05 |
+| `learning.generation.session-expiry-warning` | Уведомление `GENERATION_SESSION_EXPIRING` до `expires_at`; **contract only — AI-05 (#288)** | Duration; `P3D`; диапазон — AI-05 |
+| `learning.generation.event-retention-after-close` | Хранение `generation_event` после закрытия сессии; **contract only — AI-04 (#287)** | Duration; `P1D`; диапазон — AI-04 |
+| `learning.generation.max-active-sessions-per-account` | Admission: активные сессии владельца (`RESOURCE_LIMIT_EXCEEDED`); **contract only — AI-04 (#287)** | Count; `3`; диапазон — AI-04 |
+| `learning.generation.max-artifacts-per-session` | Admission: артефакты в сессии; **contract only — AI-04 (#287)** | Count; `20`; диапазон — AI-04 |
+| `learning.generation.max-revisions-per-artifact` / `max-turns-per-artifact` | Ревизии и инструкции на артефакт; **contract only — AI-04/AI-11 (#287, #293)** | Count; `30` / `50`; диапазон — AI-04 |
+| `learning.generation.max-instruction-chars` | Длина инструкции правки или запроса; **contract only — AI-04 (#287)** | UTF-16 units; `2000`; диапазон — AI-04 |
+| `learning.generation.step.text-draft-timeout` / `edit-timeout` / `tts-timeout` / `image-timeout` | Таймауты шагов; короче провайдерских; **contract only — AI-04 (#287)** | Duration; `PT6M` / `PT2M` / `PT2M` / `PT3M`; диапазон — AI-04 |
+| `learning.generation.step.assess-deadline` | Deadline шага `ASSESS`, затем `UNAVAILABLE`; **contract only — AI-20 (#292)** | Duration; `PT20S`; диапазон — AI-20 |
+| `learning.generation.step.max-run` | Максимум одного запуска шагов; **contract only — AI-04 (#287)** | Duration; `PT1H`; диапазон — AI-04 |
+| `learning.generation.concurrency.<capability>` | Семафор вызовов на инстанс: text, tts, image, video, search, assess; **contract only — AI-04 (#287)** | Count; `16`, `4`, `2`, `1`, `4`, `16`; диапазон — AI-04 |
+| `learning.generation.progress.checkpoint-interval` | Минимальный интервал `BLOCKS_APPENDED`; **contract only — AI-04 (#287)** | Duration; `PT0.75S`; диапазон — AI-04 |
+| `learning.runtime.roles` | Роль процесса: `api`, `worker` или `all`; **contract only — AI-17 (#300)** | Enum; `all`; значения из архитектуры |
+| `learning.ai.routes.<route>` | Server-owned маршрут capability к провайдеру и модели (например `text-fast`); fallback только на 429/5xx/timeout/invalid-after-repair; **contract only — AI-02 (#282)** | Строка provider/model; default — Stub; без секретов |
+| `learning.ai.providers.<id>.enabled` | Kill-switch провайдера без релиза; **contract only — AI-02 (#282)** | Boolean; диапазон — AI-02 |
+| `learning.ai.timeout.connect` / `idle-stream` | Таймауты HTTP-адаптеров; **contract only — AI-02 (#282)** | Duration; `PT5S` / `PT60S`; диапазон — AI-02 |
+| `learning.ai.circuit.failure-threshold` / `window` / `open-duration` | Circuit breaker на `(provider, capability)`; **contract only — AI-02 (#282)** | Count / Duration; `5` / `PT60S`, открыт `PT30S`; диапазон — AI-02 |
+| `learning.ai.retry.max-rate-limit-retries` / `max-transient-retries` | Повторы шага: 429 с `Retry-After`, затем transient; **contract only — AI-02 (#282)** | Count; `6` / `3`; диапазон — AI-02 |
+| `learning.ai.context.max-input-tokens` | Жёсткий потолок входа генерации Flash non-thinking (рабочая зона 12–25k); **contract only — AI-04 (#287)** | Tokens; `32000`; диапазон — AI-04 |
+| `learning.usage.rate-card-version` | Активный rate card; новая версия не действует ретроактивно; **contract only — AI-01 (#281)** | Строка; `rc-v1`; версии — [rate-card](../../contracts/usage/README.md) |
+| `learning.usage.daily-burst-fraction` | Доля месячного бара за день на платных планах; **contract only — AI-01 (#281)** | Fraction; `0.35`; диапазон — AI-01 |
+| `learning.usage.free-weekly-unlock` | Недельная разблокировка бара Free (по понедельникам, без накопления); **contract only — AI-01 (#281)** | Fraction; `1/4`; правило округления открыто |
+| `learning.usage.low-threshold-percent` | Порог `USAGE_LOW` и подсказки fair-use; **contract only — AI-01 (#281)** | Percent; `80`; диапазон — AI-01 |
+| `learning.usage.reservation-ttl` | TTL осиротевшей reservation; **contract only — AI-01 (#281)** | Duration; значение определит AI-01 |
+| `learning.usage.entitlement.source` | `EntitlementSource`: конфигурация до billing (#79); **contract only — AI-01 (#281)** | Enum; `config`; диапазон — AI-01 |
+| `learning.notifications.retention` / `max-per-account` | Хранение уведомлений и лимит на аккаунт; **contract only — AI-07 (#284)** | Duration / Count; `P30D` / `200`; диапазон — AI-07 |
+| `learning.notifications.params-max-bytes` | Размер `params` одного уведомления; **contract only — AI-07 (#284)** | Bytes; `4096`; диапазон — AI-07 |
+
+Секреты провайдеров не являются policy: только имена env из архитектуры (§9), значения — в окружении `worker`.
+Клиентские интервалы опроса (события сессии 1 с / 5–15 с, уведомления 30–60 с / 10 с) — client policy
+контрактов [events](../../contracts/generation/events.json) и
+[notifications](../../contracts/notifications/README.md), а не Spring-ключи.
 
 ## Аудит ещё не вынесенных значений
 

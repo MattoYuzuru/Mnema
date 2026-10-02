@@ -258,7 +258,7 @@ streaming-endpoint (HttpClient `partialText` / `rxResource({stream})`, отде�
 результат проходит тот же `NativeDocumentReader` (UTF-8, 1 MiB, 10 000 узлов, глубина
 32, лексический профиль `href`/`lang`); неизвестная директива — ошибка. Repair — один
 повтор с компактным списком «строка → правило»; многие ошибки чинятся детерминированно.
-Точная грамматика и golden fixtures — `contracts/generation/mbm-v1/` (задача AI-00).
+Точная грамматика и golden fixtures — [`contracts/generation/mbm-v1/`](../../contracts/generation/mbm-v1/README.md) (задача AI-00); остальные исполняемые контракты — [generation](../../contracts/generation/README.md), [usage](../../contracts/usage/README.md), [notifications](../../contracts/notifications/README.md).
 
 ### Упражнения (strict JSON)
 

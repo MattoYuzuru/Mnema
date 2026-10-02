@@ -46,7 +46,9 @@ artifact:
 8. **AI (Epic #77):** [product contract](./product/ai-layer-2026-10.md),
    [architecture](./architecture/ai-generation-platform.md),
    [refinement](./engineering/epic-77-refinement.md) и
-   [промпты прогонов](./engineering/prompts/epic-77-ai-layer.md).
+   [промпты прогонов](./engineering/prompts/epic-77-ai-layer.md),
+   исполняемые контракты — [generation](../contracts/generation/README.md),
+   [usage](../contracts/usage/README.md), [notifications](../contracts/notifications/README.md).
 
 ## Agent-facing engineering files
 
@@ -87,6 +89,7 @@ artifact:
 | current | [Learning API guide](../backend/services/learning/guide.md) | Content, exercise, Study и media runtime. |
 | current | [Learning runtime policy index](./engineering/runtime-policy-index.md) | Реестр runtime policies Learning. |
 | current | Контракты: [study](../contracts/study/README.md), [authoring](../contracts/authoring/README.md), [decks](../contracts/decks/README.md), [items](../contracts/items/README.md), [native content](../contracts/content/native-v1/README.md) | Общие fixtures backend/frontend. |
+| accepted | AI-контракты: [generation](../contracts/generation/README.md) (состояния, HTTP, события, ошибки, [MBM v1](../contracts/generation/mbm-v1/README.md), [упражнения](../contracts/generation/exercises/README.md)), [usage](../contracts/usage/README.md), [notifications](../contracts/notifications/README.md) и [prompt library](../backend/services/learning/src/main/resources/ai/prompts/README.md) | Только контракт и fixtures (AI-00, #279); реализуют AI-01…AI-13. |
 | historical | [`v1-apache-final`](https://github.com/MattoYuzuru/Mnema/tree/v1-apache-final) | Последний полный срез старых сервисов и миграций. |
 
 ## Media (Epic #76)
