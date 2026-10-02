@@ -3,6 +3,7 @@ import { DOCUMENT } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { AbstractControl, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { firstValueFrom } from 'rxjs';
 import { AccountProfile, AccountProfileApi } from './account-profile.api';
 import { AuthService } from './auth.service';
@@ -192,6 +193,14 @@ export class ProfilePageComponent implements OnInit {
         confirmPassword: ['', Validators.required]
     });
 
+    constructor() {
+        // A link to `/profile#ai-budget` while this page is already open changes only the fragment. Before the first load
+        // finishes the block does not exist yet; `load()` then reveals it itself.
+        this.route.fragment.pipe(takeUntilDestroyed()).subscribe(fragment => {
+            if (!this.loading()) this.revealFragment(fragment);
+        });
+    }
+
     ngOnInit(): void { void this.load(); }
 
     protected chooseDuringStudy(mode: DuringStudyMode | null): void {
@@ -211,17 +220,17 @@ export class ProfilePageComponent implements OnInit {
             this.loadError.set('Проверьте соединение и попробуйте снова.');
         } finally {
             this.loading.set(false);
-            this.revealFragment();
+            this.revealFragment(this.route.snapshot.fragment);
         }
     }
 
     /**
      * `/profile#ai-budget` (the link of a usage notification): the block only exists once the profile has loaded, so the
      * router's own anchor scroll misses it. Bring it into view after the render and give its heading focus, so a keyboard
-     * or screen-reader user lands on it instead of at the top of the page.
+     * or screen-reader user lands on it instead of at the top of the page. Also runs when the fragment changes later.
      */
-    private revealFragment(): void {
-        if (this.route.snapshot.fragment !== 'ai-budget') return;
+    private revealFragment(fragment: string | null): void {
+        if (fragment !== 'ai-budget') return;
         afterNextRender({ write: () => {
             const heading = this.document.getElementById('ai-budget-heading');
             if (heading === null) return;

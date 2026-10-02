@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, provideRouter } from '@angular/router';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import { AccountProfile, AccountProfileApi } from './account-profile.api';
 import { AuthService } from './auth.service';
 import { ProfilePageComponent } from './profile-page.component';
@@ -188,6 +188,35 @@ describe('ProfilePageComponent', () => {
         const heading = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('#ai-budget-heading')!;
         expect(scroll).toHaveBeenCalledWith({ block: 'start' });
         expect(document.activeElement).toBe(heading);
+        (fixture.nativeElement as HTMLElement).remove();
+    });
+
+    it('reveals the block when only the fragment changes on an already open profile', async () => {
+        const scroll = vi.spyOn(HTMLElement.prototype, 'scrollIntoView');
+        const fragments = new Subject<string | null>();
+        Object.defineProperty(TestBed.inject(ActivatedRoute), 'fragment', { value: fragments });
+        const fixture = TestBed.createComponent(ProfilePageComponent);
+        document.body.append(fixture.nativeElement as HTMLElement);
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.detectChanges();
+        await fixture.whenStable();
+        expect(scroll).not.toHaveBeenCalled();
+
+        fragments.next('elsewhere');
+        fixture.detectChanges();
+        await fixture.whenStable();
+        expect(scroll).not.toHaveBeenCalled();
+
+        fragments.next('ai-budget');
+        fixture.detectChanges();
+        await fixture.whenStable();
+        expect(scroll).toHaveBeenCalledTimes(1);
+        expect(document.activeElement).toBe((fixture.nativeElement as HTMLElement).querySelector('#ai-budget-heading'));
+
+        fixture.destroy();
+        fragments.next('ai-budget');
+        expect(scroll).toHaveBeenCalledTimes(1);
         (fixture.nativeElement as HTMLElement).remove();
     });
 
