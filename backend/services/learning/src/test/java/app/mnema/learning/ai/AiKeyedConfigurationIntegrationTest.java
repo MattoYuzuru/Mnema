@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @SpringBootTest(properties = {"learning.features.ai-generation.enabled=true", "learning.ai.provider=",
         "learning.ai.providers.deepseek.api-key=test-key-not-real", "learning.ai.providers.gigachat.auth-key=",
-        "learning.ai.providers.openrouter.api-key=", "learning.ai.user-key.secret=0123456789abcdef0123456789abcdef"})
+        "learning.ai.providers.openrouter.api-key=", "learning.ai.user-key.secret=0123456789abcdef0123456789abcdef", "spring.datasource.hikari.maximum-pool-size=2"})
 class AiKeyedConfigurationIntegrationTest extends PostgresIntegrationTest {
     @Autowired private AiProperties properties;
     @Autowired private LearningCapabilities capabilities;

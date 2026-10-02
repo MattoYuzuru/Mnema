@@ -24,7 +24,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** The provider layer on the real Spring context and PostgreSQL, on the Stub: no network, no key. */
 @SpringBootTest(properties = {"learning.ai.provider=stub", "learning.features.ai-generation.enabled=true",
-        "learning.features.image-search.enabled=true", "learning.ai.budget.text-micros=1000"})
+        "learning.features.image-search.enabled=true", "learning.ai.budget.text-micros=1000",
+        // small pool: every distinct test context keeps its own pool and the shared test PostgreSQL has a connection cap
+        "spring.datasource.hikari.maximum-pool-size=2"})
 class AiProviderIntegrationTest extends PostgresIntegrationTest {
     @Autowired private TextGeneration text;
     @Autowired private JdbcClient jdbc;
