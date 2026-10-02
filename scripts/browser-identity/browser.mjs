@@ -6,6 +6,7 @@ import { runHub } from './hub.mjs';
 import { runMechanics } from './mechanics.mjs';
 import { runNotifications } from './notifications.mjs';
 import { runCodeBlock } from './code-block.mjs';
+import { runUsage } from './usage.mjs';
 
 const config = JSON.parse(await readFile(process.argv[2], 'utf8'));
 const results = [];
@@ -142,7 +143,7 @@ try {
       networkRequests++;
       if (url.origin === config.identity) identityRequests++;
       // Authoring exercises several full navigations and their local assets; keep a finite request budget.
-      if (networkRequests > (config.mechanics ? 3000 : config.media ? 1150 : config.authoring ? 900 : 500)
+      if (networkRequests > (config.mechanics ? 3000 : config.media ? 1250 : config.authoring ? 1000 : 500)
           || identityRequests > 150) asynchronousFailure = true;
       if (!allowed.has(url.origin) || asynchronousFailure) {
         externalRequests++;
@@ -1016,6 +1017,11 @@ try {
     await runCodeBlock({
       tab: second, config, record, SafeFailure, until, exists, sanitizedLocation, navigate, saveScreenshot,
       clickText, setStep: value => { step = value; }, deckPath, bearer: secondBearer });
+    // The profile's «ИИ-бюджет» block (#281) against the real GET /api/usage.
+    step = 'usage_prepare';
+    await runUsage({
+      tab: second, config, record, SafeFailure, until, exists, navigate, saveScreenshot, setStep: value => { step = value; },
+      bearer: secondBearer });
   }
   step = 'first_tab_profile';
   // The first tab stayed in the background through the authoring, notification, mechanics and hub flows; bring it back

@@ -44,6 +44,8 @@ x-learning-environment: &learning-environment
   LEARNING_MEDIA_UPLOAD_BUCKET: mnema-local-media
   LEARNING_MEDIA_UPLOAD_ACCESS_KEY: ${MNEMA_LOCAL_S3_ACCESS_KEY:?Local launcher did not provide its object-storage access key}
   LEARNING_MEDIA_UPLOAD_SECRET_KEY: ${MNEMA_LOCAL_S3_SECRET_KEY:?Local launcher did not provide its object-storage secret key}
+  # AI budget plan of every local account (FREE, PLUS, PRO, MAX); see docs/deploy/selfhost-local.md.
+  LEARNING_USAGE_ENTITLEMENTS_DEFAULT_PLAN: ${MNEMA_LOCAL_AI_PLAN:-FREE}
 
 # Official MinIO image, pinned by the digest the repository already uses for staging
 # (k8s/staging/data.yaml). MinIO no longer serves it from Docker Hub or Quay, so it

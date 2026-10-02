@@ -1,7 +1,7 @@
 # Usage contract v1 (`usage-v1`)
 
 Credits, the versioned rate card, plan allowances, the usage API and the estimate that the composer shows before it spends
-anything. **Status: contract only** — AI-01 ([#281](https://github.com/MattoYuzuru/Mnema/issues/281)) implements it; the
+anything. **Status: implemented** in `app.mnema.learning.usage` by AI-01 ([#281](https://github.com/MattoYuzuru/Mnema/issues/281)); the
 paywall, entitlement inbox and promo codes are AI-19 ([#301](https://github.com/MattoYuzuru/Mnema/issues/301)) and
 AI-21 ([#302](https://github.com/MattoYuzuru/Mnema/issues/302)); payments are #79.
 
@@ -57,6 +57,10 @@ A reservation is a hold on the balance, scoped to one admission (`SESSION`, `TUR
 - **Every later chargeable action** (an edit turn, `retryArtifact`, a media redo, `AUDIO_REGENERATE`, an `IMAGE_SEARCH` edit)
   creates **its own small reservation** at admission. If it does not fit, the answer is `409 USAGE_LIMIT_REACHED` **before any state
   change**. `REMOVE_MEDIA` is free and needs none.
+- **Renewal.** `UsageLedger.renew(owner, reservationId)` keeps a live hold alive: it sets `expiresAt = min(now + learning.usage.reservation-ttl,
+  period end)`, never shortens it and never moves it past its period, so repeating it is harmless. The step scheduler (AI-04) calls it for
+  a session whose steps are deferred by the daily burst or still running; on a hold that has ended it fails with
+  `ReservationNotActiveException`. A hold the scheduler stops renewing expires by the sweep as an orphan.
 - A reservation carries `periodId`; its debits draw from that period; it never outlives its period
   (`expiresAt = min(learning.usage.reservation-ttl, period end)`); at period rollover every `ACTIVE` hold is released and the remaining
   steps re-reserve in the new period. A session that is `CLOSED`, `CANCELLED`, `EXPIRED` or deleted after at least one debit settles
@@ -64,6 +68,9 @@ A reservation is a hold on the balance, scoped to one admission (`SESSION`, `TUR
 - **Never negative.** Admission is one conditional update on `usage_balance` inside the admission transaction
   (`UPDATE … SET reserved = reserved + :hold, row_version = row_version + 1 WHERE available >= :hold AND row_version = :v`); zero rows
   updated is `409`. Two concurrent admissions cannot both pass.
+- Refusals the caller must handle are not all alike: `USAGE_LIMIT_REACHED` rolls the admission transaction back (nothing may change), while the
+  over-run (`EstimateExceededException`) and a debit on an ended hold (`ReservationNotActiveException`) are thrown before any write and leave
+  the caller's transaction usable, so it can record the failure and commit.
 - An over-run of the hold fails the artifact with `ESTIMATE_EXCEEDED` (a retry re-reserves); a limit that cannot cover the call fails
   with `USAGE_LIMIT`. A provider-side failure is not debited; a repair inside a successful step is.
 
@@ -128,7 +135,16 @@ Other columns of the product table (low fact check on every plan; images: search
 [`allowances-v1.json`](allowances-v1.json). The guarantee behind the numbers: the sum of caps stays at most 25% of the price after
 income tax (NPD 4%) and acquiring (about 3%); after two cohorts the bar is re-based on measured p95 (x1.35-1.5).
 
+## Implementation notes (AI-01)
+
+- `learning.usage.reservation-ttl` defaults to `PT2H` (at least the `PT1H` bound of one step run plus margin), always capped at
+  the period end.
+- The ledger is internal (no HTTP read). `entryFields` describe its information, not a column list: `sessionId`, `stepId` and
+  `attempt` are stored in one opaque `reference` token (for example the debit key `debit:{stepId}:{attempt}`), so the row
+  carries no domain foreign keys.
+- Only `GRANT` and `DEBIT` entries are produced in v1; balances are per period, so nothing needs an `EXPIRE` entry at period end.
+  `REFUND` and `ADJUSTMENT` are accepted by the schema for billing (#79) and support corrections.
+
 ## Open questions
 
-- Default `learning.usage.reservation-ttl` is an AI-01 decision.
 - A trial is undecided in the product contract; promo codes cover trial-like offers (AI-21).

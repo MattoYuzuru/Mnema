@@ -324,6 +324,22 @@ module.main()
             result = subprocess.run([node, "--check", str(Path(__file__).with_name("code-block.mjs"))], capture_output=True)
             self.assertEqual(0, result.returncode)
 
+    def test_usage_scenario_is_wired_reads_the_real_api_and_is_syntactically_valid(self):
+        driver = Path(__file__).with_name("browser.mjs").read_text()
+        source = Path(__file__).with_name("usage.mjs").read_text()
+        self.assertIn("import { runUsage } from './usage.mjs'", driver)
+        self.assertIn("record('usage_profile_ai_budget_real_api'", source)
+        # The text is compared with the real API answer fetched with the page's bearer; nothing is stubbed or injected.
+        self.assertIn("/api/usage", source)
+        self.assertNotIn("Fetch.fulfillRequest", source)
+        self.assertNotIn("route.fulfill", source)
+        self.assertNotIn("createElement('a')", source)
+        self.assertIn('"usage.mjs"', Path(__file__).with_name("run.py").read_text())
+        node = shutil.which("node")
+        if node is not None:
+            result = subprocess.run([node, "--check", str(Path(__file__).with_name("usage.mjs"))], capture_output=True)
+            self.assertEqual(0, result.returncode)
+
 
 if __name__ == "__main__":
     unittest.main()

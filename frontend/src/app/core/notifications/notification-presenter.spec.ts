@@ -75,7 +75,8 @@ describe('notification presenter', () => {
         expect(link('DECK', { deckId: DECK })).toEqual({ label: 'Открыть колоду', commands: ['/decks', DECK] });
         // WORKSHOP opens the deck page until the workshop route exists (AI-06 #289).
         expect(link('WORKSHOP', { deckId: DECK, sessionId: DECK })).toEqual({ label: 'Открыть колоду', commands: ['/decks', DECK] });
-        expect(link('PLANS', { deckId: DECK })).toBeNull();
+        // PLANS has no plans page yet: it opens the «ИИ-бюджет» block of the profile.
+        expect(link('PLANS', { deckId: DECK })).toEqual({ label: 'Открыть ИИ-бюджет', commands: ['/profile'], fragment: 'ai-budget' });
         expect(link('NONE', { deckId: DECK })).toBeNull();
         expect(link('DECK', { deckId: '../x' })).toBeNull();
         expect(link('DECK', {})).toBeNull();

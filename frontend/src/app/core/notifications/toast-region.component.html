@@ -12,7 +12,7 @@
         <div class="body">
           <p class="text">{{ toast.text }}</p>
           @if (toast.link; as link) {
-            <a class="action" [routerLink]="link.commands" (click)="close(toast.id)">{{ link.label }}</a>
+            <a class="action" [routerLink]="link.commands" [fragment]="link.fragment" (click)="close(toast.id)">{{ link.label }}</a>
           }
         </div>
         <button type="button" class="close" aria-label="Закрыть уведомление" (click)="close(toast.id)">

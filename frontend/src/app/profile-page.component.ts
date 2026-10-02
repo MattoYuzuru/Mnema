@@ -1,12 +1,15 @@
-import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Injector, OnInit, afterNextRender, inject, signal } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { AbstractControl, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { firstValueFrom } from 'rxjs';
 import { AccountProfile, AccountProfileApi } from './account-profile.api';
 import { AuthService } from './auth.service';
 import { appConfig } from './app.config';
 import { DuringStudyMode, NotificationPreferences } from './core/notifications/notification-preferences';
+import { UsageBudgetComponent } from './features/usage/usage-budget.component';
 import { SegmentedChoiceComponent, SegmentedOption } from './shared/segmented-choice.component';
 
 function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | null {
@@ -15,7 +18,7 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
 
 @Component({
     selector: 'app-profile-page',
-    imports: [ReactiveFormsModule, RouterLink, SegmentedChoiceComponent],
+    imports: [ReactiveFormsModule, RouterLink, SegmentedChoiceComponent, UsageBudgetComponent],
     template: `
       <section class="profile-page" aria-labelledby="profile-title">
         <a routerLink="/decks" class="back-link">← Мои колоды</a>
@@ -69,6 +72,10 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
                 <button type="submit" [disabled]="form.invalid || saving()">{{ saving() ? 'Сохраняем…' : 'Сохранить профиль' }}</button>
               </form>
             </section>
+            <section id="ai-budget" class="sheet" aria-labelledby="ai-budget-heading">
+              <h2 id="ai-budget-heading" tabindex="-1">ИИ-бюджет</h2>
+              <app-usage-budget />
+            </section>
             <section class="sheet" aria-labelledby="notifications-heading">
               <h2 id="notifications-heading">Уведомления</h2>
               <app-segmented-choice legend="Во время занятия" name="notifications-during-study"
@@ -114,6 +121,8 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
       .eyebrow { margin: 0 0 .45rem; color: var(--mn-ink); font: 700 .75rem/1.4 var(--mn-font-mono, ui-monospace, monospace); letter-spacing: .12em; text-transform: uppercase; }
       h1, h2 { color: var(--mn-ink); font-family: var(--mn-font-display, Georgia, serif); font-weight: 500; overflow-wrap: anywhere; }
       h1 { margin: .35rem 0 .75rem; font-size: clamp(2.7rem, 7vw, 5rem); line-height: .98; }
+      /* The anchor jump (/profile#ai-budget) must leave the heading and its focus ring clear of the viewport edge. */
+      #ai-budget-heading { scroll-margin-block-start: 1.5rem; }
       h2 { margin: 0 0 1.5rem; font-size: clamp(1.8rem, 3vw, 2.25rem); line-height: 1.05; }
       header > p:last-child { max-inline-size: 52ch; color: var(--mn-muted); }
       .profile-layout { display: grid; gap: clamp(1.5rem, 4vw, 3rem); }
@@ -154,6 +163,9 @@ export class ProfilePageComponent implements OnInit {
     private readonly api = inject(AccountProfileApi);
     private readonly auth = inject(AuthService);
     private readonly fb = inject(FormBuilder);
+    private readonly injector = inject(Injector);
+    private readonly route = inject(ActivatedRoute);
+    private readonly document = inject(DOCUMENT);
     protected readonly preferences = inject(NotificationPreferences);
     protected readonly duringStudyOptions: readonly SegmentedOption<DuringStudyMode>[] = [
         { value: 'AT_PAUSES', label: 'В паузах', hint: 'Сообщение появится после ответа или в конце занятия.' },
@@ -183,6 +195,14 @@ export class ProfilePageComponent implements OnInit {
         confirmPassword: ['', Validators.required]
     });
 
+    constructor() {
+        // A link to `/profile#ai-budget` while this page is already open changes only the fragment. Before the first load
+        // finishes the block does not exist yet; `load()` then reveals it itself.
+        this.route.fragment.pipe(takeUntilDestroyed()).subscribe(fragment => {
+            if (!this.loading()) this.revealFragment(fragment);
+        });
+    }
+
     ngOnInit(): void { void this.load(); }
 
     protected chooseDuringStudy(mode: DuringStudyMode | null): void {
@@ -200,7 +220,25 @@ export class ProfilePageComponent implements OnInit {
             this.avatarUrl.set(profile.avatarPresent ? this.api.avatarUrl(profile.accountId, Date.now()) : null);
         } catch {
             this.loadError.set('Проверьте соединение и попробуйте снова.');
-        } finally { this.loading.set(false); }
+        } finally {
+            this.loading.set(false);
+            this.revealFragment(this.route.snapshot.fragment);
+        }
+    }
+
+    /**
+     * `/profile#ai-budget` (the link of a usage notification): the block only exists once the profile has loaded, so the
+     * router's own anchor scroll misses it. Bring it into view after the render and give its heading focus, so a keyboard
+     * or screen-reader user lands on it instead of at the top of the page. Also runs when the fragment changes later.
+     */
+    private revealFragment(fragment: string | null): void {
+        if (fragment !== 'ai-budget') return;
+        afterNextRender({ write: () => {
+            const heading = this.document.getElementById('ai-budget-heading');
+            if (heading === null) return;
+            heading.scrollIntoView({ block: 'start' });
+            heading.focus({ preventScroll: true });
+        } }, { injector: this.injector });
     }
 
     async save(): Promise<void> {

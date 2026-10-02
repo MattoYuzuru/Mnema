@@ -233,6 +233,26 @@ and the two smoke state files. The CA, signing JWK, truststore and credentials s
 `stop`/`start` keep every volume; the bucket step is idempotent. State created before
 object storage existed is upgraded in place by `start`/`bootstrap` without rotating
 the signing key, database password or CA.
+### AI budget plan (usage, #281)
+
+Learning keeps an AI budget per account ([usage contract](../../contracts/usage/README.md);
+`GET /api/usage` shows it). Until billing exists (#79) the plan comes from configuration and
+every account is **Free** (a 50-credit bar that opens in weekly portions). The local owner gets
+a paid plan the same way, through Spring configuration of the Learning process:
+
+- every account on one plan, which is what a one-owner stack wants:
+  `LEARNING_USAGE_ENTITLEMENTS_DEFAULT_PLAN=PRO` (`FREE`, `PLUS`, `PRO` or `MAX`);
+- one account only, by the UUID that is the token subject:
+  `SPRING_APPLICATION_JSON='{"learning.usage.entitlements.overrides.<accountUuid>":"PRO"}'`
+  (a UUID is not expressible as an environment-variable name, hence the JSON property).
+
+The full-stack launcher passes `MNEMA_LOCAL_AI_PLAN` (default `FREE`) to Learning as the default plan, so
+`MNEMA_LOCAL_AI_PLAN=PRO scripts/mnema-local-full-stack.sh start` puts every local account on Pro. The per-account JSON
+override needs a local edit of `x-learning-environment` in `compose.local-full-stack.yml`. Outside Compose set it in the environment of
+`./gradlew :services:learning:bootRun`. A plan change takes effect on the next request: limits
+change at once and the missing credits are granted on the next reservation. Credits and counters
+live in the retained PostgreSQL volume and are cleared by `reset`.
+
 ### Colima clock
 
 **Symptom.** Sporadic HTTP 500 (for example on `POST /api/media-assets/{id}/upload/finalize`)
