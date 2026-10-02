@@ -45,11 +45,10 @@ public record StudySessionCommand(UUID commandId, Mode mode, int maxPresentation
             JsonNode budget = body.path("budget");
             fields(budget, mode == Mode.SCHEDULED ? Set.of("maxPresentations", "maxNewObjectives")
                     : Set.of("maxPresentations"));
-            if (!budget.path("maxPresentations").canConvertToInt()) throw invalid();
-            int maximum = budget.path("maxPresentations").intValue();
+            int maximum = integer(budget.path("maxPresentations"));
             if (maximum < 1 || maximum > 100) throw invalid();
-            int maximumNew = mode == Mode.SCHEDULED && budget.path("maxNewObjectives").canConvertToInt()
-                    ? budget.path("maxNewObjectives").intValue() : 0;
+            // The exact field set above makes maxNewObjectives mandatory for SCHEDULED and absent otherwise.
+            int maximumNew = mode == Mode.SCHEDULED ? integer(budget.path("maxNewObjectives")) : 0;
             if (maximumNew < 0 || maximumNew > maximum) throw invalid();
             UUID source = mode == Mode.REPLAY ? id(body.path("sourceSessionId")) : null;
             boolean includeNew = false;
@@ -62,6 +61,12 @@ public record StudySessionCommand(UUID commandId, Mode mode, int maxPresentation
             return new StudySessionCommand(id(body.path("commandId")), mode, maximum, maximumNew, source,
                     includeNew, order, (ObjectNode) body);
         } catch (IOException | IllegalArgumentException exception) { throw invalid(); }
+    }
+
+    /** Only a JSON integer in int range; fractional, scientific-notation decimals and strings are invalid. */
+    private static int integer(JsonNode value) {
+        if (!value.isIntegralNumber() || !value.canConvertToInt()) throw invalid();
+        return value.intValue();
     }
 
     private static UUID id(JsonNode value) {

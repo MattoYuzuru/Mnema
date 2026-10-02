@@ -59,6 +59,23 @@ class StudySessionCommandTest {
         assertThatThrownBy(() -> read(missingSource)).isInstanceOf(InvalidRequestException.class);
     }
 
+    @Test
+    void budgetNumbersMustBeJsonIntegersNotFractionsDecimalsOrStrings() {
+        for (String field : new String[]{"maxPresentations", "maxNewObjectives"}) {
+            for (String invalid : new String[]{"1.5", "5.5", "5.0", "\"1\"", "null", "true", "[]", "1e0", "3000000000"}) {
+                String body = fixture.path("startScheduled").toString()
+                        .replaceFirst("\"" + field + "\":\\d+", "\"" + field + "\":" + invalid);
+                assertThatThrownBy(() -> StudySessionCommand.read(
+                        new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8))))
+                        .as(field + "=" + invalid).isExactlyInstanceOf(InvalidRequestException.class);
+            }
+        }
+        ObjectNode valid = (ObjectNode) fixture.path("startScheduled").deepCopy();
+        valid.withObject("budget").put("maxPresentations", 5).put("maxNewObjectives", 2);
+        assertThat(read(valid).maxPresentations()).isEqualTo(5);
+        assertThat(read(valid).maxNewObjectives()).isEqualTo(2);
+    }
+
     private static StudySessionCommand read(JsonNode value) {
         return StudySessionCommand.read(new ByteArrayInputStream(value.toString().getBytes(StandardCharsets.UTF_8)));
     }
