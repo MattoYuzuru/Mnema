@@ -42,9 +42,9 @@ public class ProviderConfiguration {
                         .tokenUri("https://github.com/login/oauth/access_token")
                         .userInfoUri("https://api.github.com/user").userNameAttributeName("id");
                 case "yandex" -> b.clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_POST)
-                        .scope("login:email,login:info")
-                        .authorizationUri("https://oauth.yandex.com/authorize")
-                        .tokenUri("https://oauth.yandex.com/token").userInfoUri("https://login.yandex.ru/info")
+                        .scope("login:email", "login:info")
+                        .authorizationUri("https://oauth.yandex.ru/authorize")
+                        .tokenUri("https://oauth.yandex.ru/token").userInfoUri("https://login.yandex.ru/info")
                         .userNameAttributeName("id");
             }
             registrations.put(provider, b.build());

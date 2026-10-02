@@ -274,4 +274,69 @@ describe('real Identity browser protocol orchestration', () => {
         expect(auth.logoutUnconfirmed()).toBe(true);
         expect(storage.has(AUTH_STORAGE_KEY)).toBe(false);
     });
+    it('loads only validated public provider names without bearer or cookie credentials', async () => {
+        const result = auth.availableProviders();
+        const request = http.expectOne(`${issuer}/api/accounts/providers`);
+        expect(request.request.withCredentials).toBe(false);
+        expect(request.request.headers.has('Authorization')).toBe(false);
+        request.flush({ providers: ['google', 'yandex', 'github'] });
+        expect(await result).toEqual(['google', 'yandex', 'github']);
+        const invalid = auth.availableProviders();
+        const rejected = expect(invalid).rejects.toThrow();
+        http.expectOne(`${issuer}/api/accounts/providers`).flush({ providers: ['https://evil.test'] });
+        await rejected;
+    });
+
+    it('honors an explicit runtime federation disable without provider traffic', async () => {
+        TestBed.inject(BROWSER_IDENTITY_CONFIG).features = { federatedAuthEnabled: false };
+        expect(await auth.availableProviders()).toEqual([]);
+        await expect(auth.beginFederatedLogin('github', '/decks')).rejects.toThrow();
+        expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('federates with a one-use browser correlation then performs the existing Mnema S256 exchange', async () => {
+        await auth.beginFederatedLogin('github', '/decks?tab=mine');
+        const upstream = new URL(lastCall(navigate)[0]);
+        expect(upstream.pathname).toBe('/oauth2/authorization/github');
+        const pending = JSON.parse(storage.get(PKCE_STORAGE_KEY)!);
+        expect(upstream.searchParams.get('mnema_state')).toBe(pending.state);
+        expect(pending.provider).toBe('github');
+        expect(auth.accessToken()).toBeNull();
+        Object.assign(browser, { pathname: '/auth/callback', search: `?federation_state=${pending.state}` });
+        await auth.completeCallback();
+        expect(auth.status()).toBe('pending');
+        const authorization = new URL(lastCall(navigate)[0]);
+        expect(authorization.pathname).toBe('/oauth2/authorize');
+        expect(authorization.searchParams.get('code_challenge_method')).toBe('S256');
+        const transaction = JSON.parse(storage.get(PKCE_STORAGE_KEY)!);
+        expect(transaction.provider).toBeUndefined();
+        expect(transaction.returnUrl).toBe('/decks?tab=mine');
+        Object.assign(browser, { pathname: '/auth/callback', search: `?code=one-use-code&state=${transaction.state}` });
+        const result = auth.completeCallback();
+        const request = http.expectOne(`${issuer}/oauth2/token`);
+        expect(new URLSearchParams(request.request.body).get('code_verifier')).toBe(transaction.verifier);
+        request.flush({ access_token: 'opaque-token', expires_in: 300, token_type: 'Bearer', scope: AUTH_SCOPES });
+        await settle();
+        http.expectOne(`${issuer}/api/accounts/me`).flush({ ...profile, hasPassword: false });
+        await result;
+        expect(auth.status()).toBe('authenticated');
+        expect(router.navigateByUrl).toHaveBeenCalledWith('/decks?tab=mine', { replaceUrl: true });
+    });
+
+    it('rejects wrong, mixed, cancelled and replayed federation callbacks before creating API access', async () => {
+        for (const query of ['?federation_state=wrong', '?federation_state=' + 'r'.repeat(43) + '&code=injected',
+            '?code=injected&state=' + 'r'.repeat(43), '?error=federation_failed',
+            '?federation_state=' + 'r'.repeat(43) + '&federation_state=duplicate']) {
+            await auth.beginFederatedLogin('google', '/decks');
+            Object.assign(browser, { pathname: '/auth/callback', search: query });
+            await expect(auth.completeCallback()).rejects.toThrow();
+            expect(storage.has(PKCE_STORAGE_KEY)).toBe(false);
+            expect(auth.accessToken()).toBeNull();
+        }
+        callback('?federation_state=' + 's'.repeat(43));
+        await expect(auth.completeCallback()).rejects.toThrow();
+        await expect(auth.completeCallback()).rejects.toThrow();
+        http.expectNone(`${issuer}/oauth2/token`);
+    });
+
 });

@@ -1,6 +1,6 @@
 import type { Mock } from "vitest";
 import { signal } from '@angular/core';
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { AuthService, AuthStatus, AuthUser } from './auth.service';
@@ -16,12 +16,15 @@ describe('Identity form behavior', () => {
         loginWithPassword: Mock;
         registerWithPassword: Mock;
         logout: Mock;
+        availableProviders: Mock;
+        beginFederatedLogin: Mock;
     };
     async function page(path = 'login') {
         status.set('anonymous');
         user.set(null);
         auth = { status, user, logoutUnconfirmed: signal(false), loginWithPassword: vi.fn().mockResolvedValue(undefined),
-            registerWithPassword: vi.fn().mockResolvedValue(undefined), logout: vi.fn().mockResolvedValue(undefined) };
+            registerWithPassword: vi.fn().mockResolvedValue(undefined), logout: vi.fn().mockResolvedValue(undefined),
+            availableProviders: vi.fn().mockResolvedValue(['google', 'github']), beginFederatedLogin: vi.fn().mockResolvedValue(undefined) };
         await TestBed.configureTestingModule({ imports: [LoginPageComponent], providers: [provideRouter([]),
                 { provide: AuthService, useValue: auth }, { provide: ActivatedRoute, useValue: { snapshot: {
                             routeConfig: { path }, queryParamMap: convertToParamMap({ returnUrl: '/decks?tab=mine' })
@@ -29,7 +32,14 @@ describe('Identity form behavior', () => {
         const fixture = TestBed.createComponent(LoginPageComponent);
         fixture.detectChanges();
         await fixture.whenStable();
+        fixture.detectChanges();
         return fixture;
+    }
+
+    function enter(fixture: ComponentFixture<LoginPageComponent>, id: string, value: string): void {
+        const input = (fixture.nativeElement as HTMLElement).querySelector<HTMLInputElement>(`#${id}`)!;
+        input.value = value;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
     }
 
     it('exposes real labels and focuses the invalid field without sending credentials', async () => {
@@ -48,8 +58,8 @@ describe('Identity form behavior', () => {
     it('preserves login and clears password after an unsuccessful request without echoing server content', async () => {
         const fixture = await page();
         auth.loginWithPassword.mockRejectedValue(new HttpErrorResponse({ status: 401, error: { detail: 'private-debug-payload' } }));
-        fixture.componentInstance.login = 'fixture';
-        fixture.componentInstance.password = 'synthetic-password';
+        enter(fixture, 'login-name', 'fixture');
+        enter(fixture, 'password', 'synthetic-password');
         fixture.detectChanges();
         await fixture.whenStable();
         (fixture.nativeElement as HTMLElement).querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
@@ -64,9 +74,9 @@ describe('Identity form behavior', () => {
 
     it('enforces registration UTF-8 password bound before a network mutation', async () => {
         const fixture = await page('register');
-        fixture.componentInstance.email = 'fixture@example.test';
-        fixture.componentInstance.username = 'fixture';
-        fixture.componentInstance.password = 'я'.repeat(37);
+        enter(fixture, 'email', 'fixture@example.test');
+        enter(fixture, 'username', 'fixture');
+        enter(fixture, 'password', 'я'.repeat(37));
         fixture.detectChanges();
         await fixture.whenStable();
         (fixture.nativeElement as HTMLElement).querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
@@ -80,8 +90,8 @@ describe('Identity form behavior', () => {
         const fixture = await page();
         let reject!: (reason: unknown) => void;
         auth.loginWithPassword.mockReturnValue(new Promise<void>((_, fail) => { reject = fail; }));
-        fixture.componentInstance.login = 'fixture';
-        fixture.componentInstance.password = 'synthetic-password';
+        enter(fixture, 'login-name', 'fixture');
+        enter(fixture, 'password', 'synthetic-password');
         fixture.detectChanges();
         await fixture.whenStable();
         const form = (fixture.nativeElement as HTMLElement).querySelector('form')!;
@@ -107,5 +117,42 @@ describe('Identity form behavior', () => {
     it('keeps all transport diagnostics out of public error copy', () => {
         expect(identityErrorMessage(new Error('private-token'))).not.toContain('private-token');
         expect(identityErrorMessage(new HttpErrorResponse({ status: 429 }))).toContain('Слишком много');
+    });
+
+    it('enables only configured services and preserves the return page without submitting the password form', async () => {
+        const fixture = await page();
+        const element = fixture.nativeElement as HTMLElement;
+        const google = element.querySelector<HTMLButtonElement>('[aria-label="Войти через Google"]')!;
+        expect(google.disabled).toBe(false);
+        expect(element.querySelector<HTMLButtonElement>('[aria-label="Войти через Яндекс"]')!.disabled).toBe(true);
+        google.click();
+        google.click();
+        await fixture.whenStable();
+        expect(auth.beginFederatedLogin).toHaveBeenCalledExactlyOnceWith('google', '/decks?tab=mine');
+        expect(auth.loginWithPassword).not.toHaveBeenCalled();
+        expect(fixture.componentInstance.busy()).toBe(true);
+    });
+
+    it('keeps password login usable when availability fails and offers a retry', async () => {
+        const fixture = await page();
+        auth.availableProviders.mockRejectedValue(new Error('private-provider-secret'));
+        await fixture.componentInstance.loadProviders();
+        fixture.detectChanges();
+        expect(fixture.nativeElement.textContent).toContain('Не удалось проверить');
+        expect(fixture.nativeElement.textContent).not.toContain('private-provider-secret');
+        expect(fixture.componentInstance.busy()).toBe(false);
+        auth.availableProviders.mockResolvedValue(['yandex']);
+        await fixture.componentInstance.loadProviders();
+        expect(fixture.componentInstance.available()).toEqual(['yandex']);
+    });
+
+    it('recovers from navigation failure and ignores unavailable provider clicks', async () => {
+        const fixture = await page('register');
+        await fixture.componentInstance.loginWithProvider('yandex');
+        expect(auth.beginFederatedLogin).not.toHaveBeenCalled();
+        auth.beginFederatedLogin.mockRejectedValue(new Error('private-diagnostic'));
+        await fixture.componentInstance.loginWithProvider('google');
+        expect(fixture.componentInstance.busy()).toBe(false);
+        expect(fixture.componentInstance.error()).not.toContain('private-diagnostic');
     });
 });

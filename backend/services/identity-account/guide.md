@@ -257,6 +257,26 @@ this is not a production HTTP fallback. Federation credentials are optional thro
 missing pairs leave that provider unavailable. Callback URLs are fixed to the
 configured issuer plus `/login/oauth2/code/{provider}`.
 
+`GET /api/accounts/providers` is a public list of configured provider names only.
+The SPA starts `/oauth2/authorization/{provider}?mnema_state=...` with a random,
+bounded browser correlation. Identity stores it inside the expiring, session-bound
+upstream authorization request; it is echoed as `federation_state` to the fixed
+frontend `/auth/callback` only after provider authentication succeeds. Link/proof/
+recovery intents take precedence and cannot inherit an ordinary-login correlation.
+The SPA consumes its matching transaction, starts a new Mnema authorization-code
+request with S256 PKCE, exchanges that code, then verifies `/api/accounts/me`.
+The provider cookie or correlation alone never grants Learning API access. Callback
+failure, replay, missing correlation and mixed protocol responses fail closed.
+Direct backend-only login resumes `/login/continue`; explicit linking returns to
+`/profile`. Provider errors return to the frontend callback without provider diagnostics.
+
+Yandex scopes are separate `login:email` and `login:info` values, encoded with a
+space as required by the [Yandex authorization-code API](https://yandex.ru/dev/id/doc/ru/codes/code-url).
+The existing [Spring OAuth2 login](https://docs.spring.io/spring-security/reference/servlet/oauth2/login/advanced.html)
+handlers own upstream state, nonce validation and token exchange; Mnema does not
+implement another provider-token protocol or retain provider tokens.
+
+
 ## Disposable account-only transfer
 
 The `accountTransfer` Gradle task is an offline rehearsal tool for the accepted

@@ -56,7 +56,7 @@ describe('browser Identity protocol boundaries', () => {
         const t = { state: 's'.repeat(43), verifier: 'v'.repeat(43), returnUrl: '/decks', createdAt: now,
             issuer, clientId, redirectUri };
         expect(parseTransaction(JSON.stringify(t), now, issuer, clientId, redirectUri)).toEqual(t);
-        for (const update of [{ state: 'short' }, { verifier: 'x'.repeat(129) }, { returnUrl: '//evil.test' },
+        for (const update of [{ provider: 'evil' }, { provider: null }, { state: 'short' }, { verifier: 'x'.repeat(129) }, { returnUrl: '//evil.test' },
             { createdAt: now + 1 }, { createdAt: now - 600001 }, { issuer: 'https://other.test' }, { clientId: 'other' }, { redirectUri: origin }]) {
             expect(() => parseTransaction(JSON.stringify({ ...t, ...update }), now, issuer, clientId, redirectUri)).toThrow();
         }

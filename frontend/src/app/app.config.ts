@@ -36,7 +36,7 @@ const defaultConfig: AppConfig = {
     clientId: 'mnema-web',
     buildId: 'dev',
     features: {
-        federatedAuthEnabled: !isLocalSelfHost,
+        federatedAuthEnabled: true,
         showEmailVerificationWarning: !isLocalSelfHost
     }
 };

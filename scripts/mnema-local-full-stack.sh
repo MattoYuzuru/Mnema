@@ -178,6 +178,31 @@ ensure_storage_state() {
   rm -rf "$temporary"
 }
 
+generate_truststore() {
+  local destination="$1" ca_file="$2" java_runtime
+  java_runtime="$(java -XshowSettings:properties -version 2>&1 | sed -n 's/^[[:space:]]*java.home = //p')"
+  [[ -f "$java_runtime/lib/security/cacerts" ]] || fail "Java public CA bundle is missing"
+  # A custom JSSE truststore replaces the platform roots; retain both public HTTPS
+  # providers and the local proxy/storage CA instead of trusting only localhost.
+  keytool -importkeystore -noprompt -srckeystore "$java_runtime/lib/security/cacerts" \
+    -srcstorepass changeit -destkeystore "$destination" -deststoretype PKCS12 \
+    -deststorepass "$TRUSTSTORE_PASSWORD" >/dev/null 2>&1
+  keytool -importcert -noprompt -storetype PKCS12 -alias mnema-local-ca \
+    -file "$ca_file" -keystore "$destination" -storepass "$TRUSTSTORE_PASSWORD" >/dev/null 2>&1
+  chmod 600 "$destination"
+}
+
+ensure_public_truststore() {
+  local certificates temporary
+  certificates="$(keytool -list -rfc -keystore "$TRUSTSTORE_FILE" -storetype PKCS12 \
+    -storepass "$TRUSTSTORE_PASSWORD" 2>/dev/null | grep -c 'BEGIN CERTIFICATE')"
+  (( certificates > 1 )) && return
+  temporary="$(mktemp -d "$STATE_DIR/truststore.XXXXXX")"
+  generate_truststore "$temporary/truststore.p12" "$CA_CERT_FILE"
+  mv "$temporary/truststore.p12" "$TRUSTSTORE_FILE"
+  rmdir "$temporary"
+}
+
 generate_certificate_material() {
   local destination="$1"
   openssl req -x509 -newkey rsa:3072 -sha256 -nodes -days 3650 \
@@ -198,9 +223,7 @@ generate_certificate_material() {
     -CA "$destination/local-ca.crt" -CAkey "$destination/local-ca.key" -CAcreateserial \
     -extfile "$destination/localhost.ext" -out "$destination/localhost.crt" >/dev/null 2>&1
   generate_storage_certificate "$destination" "$destination"
-  keytool -importcert -noprompt -storetype PKCS12 -alias mnema-local-ca \
-    -file "$destination/local-ca.crt" -keystore "$destination/learning-truststore.p12" \
-    -storepass "$TRUSTSTORE_PASSWORD" >/dev/null 2>&1
+  generate_truststore "$destination/learning-truststore.p12" "$destination/local-ca.crt"
 }
 
 bootstrap() {
@@ -217,6 +240,7 @@ bootstrap() {
     load_runtime upgradeable
     ensure_storage_state
     validate_material
+    ensure_public_truststore
     install -d -m 700 "$MEDIA_WORK_ROOT"
     printf '[ok] Reusing retained local credentials and certificates in %s\n' "$STATE_DIR"
     return
@@ -266,8 +290,13 @@ compose() {
   require_command docker
   docker compose version >/dev/null 2>&1 || fail "Docker Compose plugin is required"
   local build_id
+  # Compose parses dotenv as data; never source the owner's file as shell code.
+  local oauth_env_file="${MNEMA_LOCAL_OAUTH_ENV_FILE:-$ROOT_DIR/.env}"
+  if [[ ! -e "$oauth_env_file" && -z "${MNEMA_LOCAL_OAUTH_ENV_FILE:-}" ]]; then oauth_env_file=/dev/null; fi
+  [[ -r "$oauth_env_file" && ! -d "$oauth_env_file" ]] || fail "OAuth env file is not readable"
   build_id="$(git -C "$ROOT_DIR" rev-parse HEAD 2>/dev/null || printf dev)"
   COMPOSE_DISABLE_ENV_FILE=true \
+  MNEMA_LOCAL_TRUSTSTORE_REVISION="$(openssl dgst -sha256 "$TRUSTSTORE_FILE" | awk '{print $NF}')" \
   MNEMA_LOCAL_POSTGRES_PASSWORD="$MNEMA_LOCAL_POSTGRES_PASSWORD_VALUE" \
   MNEMA_LOCAL_POSTGRES_DB="$MNEMA_LOCAL_POSTGRES_DB_VALUE" \
   MNEMA_LOCAL_POSTGRES_USER="$MNEMA_LOCAL_POSTGRES_USER_VALUE" \
@@ -286,7 +315,7 @@ compose() {
   MNEMA_LOCAL_STORAGE_TLS_KEY_FILE="$STORAGE_KEY_FILE" \
   MNEMA_LOCAL_CA_CERT_FILE="$CA_CERT_FILE" \
   MNEMA_LOCAL_TRUSTSTORE_FILE="$TRUSTSTORE_FILE" \
-    docker compose --project-name "$PROJECT_NAME" --file "$COMPOSE_FILE" "$@"
+    docker compose --env-file "$oauth_env_file" --project-name "$PROJECT_NAME" --file "$COMPOSE_FILE" "$@"
 }
 
 require_private_state() {

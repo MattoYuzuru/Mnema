@@ -9,6 +9,9 @@ import app.mnema.identityaccount.federation.FederationSuccess;
 import app.mnema.identityaccount.federation.ProviderTokenDiscarder;
 import app.mnema.identityaccount.federation.ProviderUsers;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -26,6 +29,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestCustomizers;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.server.authorization.oidc.authentication.OidcLogoutAuthenticationToken;
 import org.springframework.security.oauth2.server.authorization.oidc.web.authentication.OidcLogoutAuthenticationSuccessHandler;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -50,6 +54,8 @@ import java.util.List;
 
 @Configuration(proxyBeanMethods = false)
 public class SecurityConfiguration {
+    private static final Logger LOG = LoggerFactory.getLogger(SecurityConfiguration.class);
+
     /**
      * Browser session cookie attributes are security-critical, so they are pinned here instead of
      * depending on Spring Boot's server-property mapping, which does not apply in mock-servlet contexts.
@@ -126,14 +132,14 @@ public class SecurityConfiguration {
     SecurityFilterChain accountSecurity(HttpSecurity http, AccountStore accounts,
                                         ObjectProvider<ClientRegistrationRepository> registrations,
                                         FederationSuccess success, ProviderUsers users, Clock clock,
-                                        AccountErrors errors) throws Exception {
+                                        AccountErrors errors, @Value("${identity.frontend-origin}") String origin) throws Exception {
         http.cors(Customizer.withDefaults()).csrf(c -> c.csrfTokenRepository(new HttpSessionCsrfTokenRepository())
                         .requireCsrfProtectionMatcher(SecurityConfiguration::requiresAccountCsrf)
                         .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler()))
                 .authorizeHttpRequests(
                         a -> a.requestMatchers("/api/actuator/health/**", "/api/actuator/info", "/error", "/login",
                                         "/login/continue", "/oauth2/authorization/**", "/login/oauth2/code/**").permitAll()
-                                .requestMatchers(HttpMethod.GET, "/api/accounts/csrf", "/api/accounts/profiles/**")
+                                .requestMatchers(HttpMethod.GET, "/api/accounts/csrf", "/api/accounts/providers", "/api/accounts/profiles/**")
                                 .permitAll()
                                 .requestMatchers(HttpMethod.POST, "/api/accounts/register", "/api/accounts/login",
                                         "/api/accounts/password-reset/request", "/api/accounts/password-reset/confirm",
@@ -171,9 +177,15 @@ public class SecurityConfiguration {
                     .tokenEndpoint(token -> token.accessTokenResponseClient(users.tokenClient()))
                     .userInfoEndpoint(u -> u.userService(users).oidcUserService(users.oidcUsers()))
                     .successHandler(success).failureHandler((r, s, e) -> {
+                        String code = e instanceof OAuth2AuthenticationException failure
+                                ? failure.getError().getErrorCode() : "authentication_failed";
+                        // Provider descriptions and exception messages may contain credentials/URLs.
+                        LOG.warn("federation_upstream_failed error_code={} cause_type={}",
+                                code.matches("[a-z_]{1,64}") ? code : "provider_error",
+                                e.getCause() == null ? "none" : e.getCause().getClass().getSimpleName());
                         var session = r.getSession(false);
                         if (session != null) session.removeAttribute("identity.intent");
-                        s.sendRedirect("/login?error=federation_failed");
+                        s.sendRedirect(new IssuerContract(URI.create(origin)).issuer() + "/auth/callback?error=federation_failed");
                     }));
         }
         return http.build();

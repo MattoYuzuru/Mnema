@@ -9,6 +9,8 @@ import app.mnema.identityaccount.security.OwnershipProofs.Purpose;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -24,6 +26,7 @@ import java.util.UUID;
 
 @Service
 public class FederationSuccess implements AuthenticationSuccessHandler {
+    private static final Logger LOG = LoggerFactory.getLogger(FederationSuccess.class);
     private final FederatedAccounts accounts;
     private final BrowserSessions sessions;
     private final Clock clock;
@@ -84,8 +87,13 @@ public class FederationSuccess implements AuthenticationSuccessHandler {
             }
             var access = accounts.complete(ProviderUsers.external(provider, oauth.getPrincipal()), link);
             sessions.login(access, request, response);
-            response.sendRedirect(origin + "/auth/callback");
+            if (link != null) response.sendRedirect(origin + "/profile");
+            else if (request.getAttribute("identity.login-state") instanceof String state)
+                response.sendRedirect(origin + "/auth/callback?federation_state=" + state);
+            else response.sendRedirect("/login/continue");
         } catch (RuntimeException error) {
+            LOG.warn("federation_completion_failed provider={} error_type={}", provider,
+                    error.getClass().getSimpleName());
             SecurityContextHolder.clearContext();
             if (session != null) session.invalidate();
             response.sendRedirect(origin + "/auth/callback?error=federation_failed");

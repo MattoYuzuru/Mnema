@@ -19,6 +19,8 @@ x-hardened-runtime: &hardened-runtime
 
 # Local CA trust for Java clients that call Identity or the HTTPS object store.
 x-local-truststore: &local-truststore
+  # File-backed secrets and JVM trust contexts need container recreation after an upgrade.
+  MNEMA_LOCAL_TRUSTSTORE_REVISION: ${MNEMA_LOCAL_TRUSTSTORE_REVISION:-initial}
   JAVA_TOOL_OPTIONS: >-
     -Djavax.net.ssl.trustStore=/run/secrets/mnema_local_truststore
     -Djavax.net.ssl.trustStorePassword=changeit
@@ -130,6 +132,12 @@ services:
       MNEMA_IDENTITY_TRUSTED_PROXY_CIDRS: 127.0.0.0/8,::1/128
       MNEMA_IDENTITY_SIGNING_JWK_SET_FILE: /run/secrets/mnema_identity_signing_jwk
       MNEMA_IDENTITY_SIGNING_ACTIVE_KID: blackbox
+      SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_YANDEX_CLIENT_ID: ${YANDEX_CLIENT_ID:-}
+      SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_YANDEX_CLIENT_SECRET: ${YANDEX_CLIENT_SECRET:-}
+      SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENT_ID: ${GH_CLIENT_ID:-}
+      SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENT_SECRET: ${GH_CLIENT_SECRET:-}
       MNEMA_AVATAR_ENDPOINT: https://storage.mnema.localhost:${MNEMA_LOCAL_STORAGE_PORT:-3445}
       MNEMA_AVATAR_REGION: us-east-1
       MNEMA_AVATAR_BUCKET: mnema-local-avatars
@@ -221,7 +229,7 @@ services:
       MNEMA_LEARNING_API_BASE_URL: /api
       MNEMA_CLIENT_ID: mnema-web
       MNEMA_BUILD_ID: ${MNEMA_LOCAL_BUILD_ID:?Local launcher did not provide a build id}
-      MNEMA_FEATURE_FEDERATED_AUTH_ENABLED: "false"
+      MNEMA_FEATURE_FEDERATED_AUTH_ENABLED: "true"
       MNEMA_FEATURE_SHOW_EMAIL_VERIFICATION_WARNING: "false"
     depends_on:
       identity-account: {condition: service_started}

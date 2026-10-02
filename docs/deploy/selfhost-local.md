@@ -271,3 +271,50 @@ The old local and public launchers were removed from this checkout in #146. Thei
 matching source, Compose files and runbooks remain available in the
 [`v1-apache-final`](https://github.com/MattoYuzuru/Mnema/tree/v1-apache-final)
 tag and Git history. They are not supported by the replacement runtime.
+
+
+## Google, Yandex and GitHub login
+
+The local launcher reads the checkout's optional `.env` through Docker Compose,
+not by executing it as shell code. For a worktree, set `MNEMA_LOCAL_OAUTH_ENV_FILE`
+to the absolute path of the owner's existing file. A missing default `.env` keeps
+password login usable; an explicitly selected unreadable file fails before Compose.
+Keep the file private and out of Git. Only these values go to Identity:
+
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+- `YANDEX_CLIENT_ID`, `YANDEX_CLIENT_SECRET`
+- `GH_CLIENT_ID`, `GH_CLIENT_SECRET`
+
+Compose maps them to `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_*` settings.
+No provider credentials are included in frontend configuration or other services.
+The UI enables only providers returned by Identity's public `/api/accounts/providers`.
+A missing credential pair leaves that provider unavailable; availability is not proof
+that credentials or provider-console settings are valid.
+
+For the default Identity port, register these exact redirect URIs in the existing
+provider applications (retain separately used production addresses):
+
+| Provider | Local redirect URI |
+|---|---|
+| Google | `https://localhost:3444/login/oauth2/code/google` |
+| Yandex | `https://localhost:3444/login/oauth2/code/yandex` |
+| GitHub | `https://localhost:3444/login/oauth2/code/github` |
+
+Use the retained, trusted local CA. Never disable TLS verification to make browser
+login work. With another Identity port, change the registered URI accordingly.
+The launcher's Java truststore contains the installed JDK's public CA bundle plus
+the retained local CA. Bootstrap upgrades an older local-only truststore atomically
+without rotating the CA, signing keys or database credentials. This is necessary
+for verified outbound HTTPS to providers as well as the local storage proxy;
+see Java's [keytool import commands](https://docs.oracle.com/en/java/javase/21/docs/specs/man/keytool.html).
+The launcher includes the truststore content digest in Compose configuration so a
+later `start` recreates its Java consumers, including after a separate `bootstrap`.
+After changing configuration, rebuild/restart Identity and the frontend with the
+launcher. A real check must reach the provider, return to Mnema, show the authenticated
+account and load its decks; a redirect alone is not successful login. Cancelling at
+the provider must leave Mnema signed out with a retry action. Existing accounts are
+identified by provider plus subject; matching email never automatically links accounts.
+
+Provider settings: [Google clients](https://console.cloud.google.com/auth/clients),
+[Yandex applications](https://oauth.yandex.ru/),
+[GitHub OAuth applications](https://github.com/settings/developers).
