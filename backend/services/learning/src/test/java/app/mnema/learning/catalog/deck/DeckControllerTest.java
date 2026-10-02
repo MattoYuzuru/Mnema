@@ -111,6 +111,21 @@ class DeckControllerTest {
     }
 
     @Test
+    void malformedJsonIsAStableBadRequestProblemWithoutLeakingInputOrReachingTheService() throws Exception {
+        for (var body : app.mnema.learning.support.MalformedJsonBodies.all()) {
+            var response = mvc.perform(post("/decks").contentType(MediaType.APPLICATION_JSON).content(body.bytes()))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
+                    .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                    .andExpect(header().string("Cache-Control", "private, no-store"))
+                    .andReturn().getResponse().getContentAsString();
+            org.assertj.core.api.Assertions.assertThat(response).as(body.toString())
+                    .doesNotContain("commandId").doesNotContain("JsonParse").doesNotContain("Duplicate");
+        }
+        verifyNoInteractions(service);
+    }
+
+    @Test
     void listBindsOnlyAuthenticatedOwnerAndBoundedPaginationInputs() throws Exception {
         ObjectNode page = JsonMapper.builder().build().createObjectNode().putNull("nextCursor");
         page.putArray("items");

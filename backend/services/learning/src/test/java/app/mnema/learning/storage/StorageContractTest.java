@@ -27,6 +27,18 @@ class StorageContractTest {
     private final JsonNodeFactory json = JsonNodeFactory.instance;
 
     @Test
+    void physicalPayloadsKeepTheirTextAndOverTheByteLimitAreInvalidStorageJson() {
+        var encoding = new StorageEncoding(new CanonicalJsonHasher());
+        var small = JsonNodeFactory.instance.objectNode().put("text", "x");
+        assertThat(encoding.validatePayload(small)).isEqualTo("{\"text\":\"x\"}");
+
+        var oversized = JsonNodeFactory.instance.objectNode().put("text", "x".repeat(StorageEncoding.MAX_PAYLOAD_BYTES));
+        assertThatThrownBy(() -> encoding.validatePayload(oversized))
+                .isExactlyInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Invalid physical storage JSON");
+    }
+
+    @Test
     void payloadAndListsAreDefensiveSnapshots() {
         var payload = json.objectNode().put("value", 1);
         var edges = new ArrayList<NewEdge>();

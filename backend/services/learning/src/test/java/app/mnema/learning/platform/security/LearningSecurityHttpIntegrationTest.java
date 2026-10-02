@@ -347,9 +347,11 @@ class LearningSecurityHttpIntegrationTest extends PostgresIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"{}", "[]", "not json", "{\"sub\":\"other\"}", "{\"sub\":123}", "duplicate", "oversized"})
+    @ValueSource(strings = {"{}", "[]", "not json", "{\"sub\":\"other\"}", "{\"sub\":123}", "{\"sub\":null}",
+            "{\"sub\":true}", "{\"sub\":[\"x\"]}", "{\"sub\":{}}", "trailing", "duplicate", "oversized"})
     void rejectsMalformedMismatchedOrOversizedIdentity(String body) throws Exception {
         userInfoBody = switch (body) {
+            case "trailing" -> "{\"sub\":\"" + ACTOR + "\"} {}";
             case "duplicate" -> "{\"sub\":\"" + ACTOR + "\",\"sub\":\"" + ACTOR + "\"}";
             case "oversized" -> "{\"sub\":\"" + ACTOR + "\",\"padding\":\"" + "x".repeat(17_000) + "\"}";
             default -> body;
@@ -446,8 +448,36 @@ class LearningSecurityHttpIntegrationTest extends PostgresIntegrationTest {
                 .doesNotContain("Bearer ", "Exception", "java.", "access_token");
     }
 
+    /** The serializer defaults the real server applies to POJO responses are part of the wire contract. */
+    @Test
+    void pojoResponsesKeepTheirTimestampDecimalNullAndIdentifierRepresentation() throws Exception {
+        var response = request("GET", "/_wire", token("learning.read", c -> { }));
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.headers().firstValue("content-type")).hasValueSatisfying(value ->
+                assertThat(value).startsWith("application/json"));
+        var reader = new app.mnema.learning.platform.json.ContentJsonReader(4_096, 8, 128);
+        assertThat(reader.read(response.body().getBytes(StandardCharsets.UTF_8))).isEqualTo(reader.read(("""
+                {"id":"00000000-0000-4000-8000-000000000001","instant":"2026-09-28T12:00:00.123456Z",
+                 "offset":"2026-09-28T15:00:00+03:00","date":"2026-09-28","decimal":1.5,"absent":null,
+                 "numbers":[1,2],"nested":{"k":"v"}}""").getBytes(StandardCharsets.UTF_8)));
+    }
+
+    record Wire(UUID id, Instant instant, java.time.OffsetDateTime offset, java.time.LocalDate date,
+                java.math.BigDecimal decimal, String absent, java.util.List<Integer> numbers,
+                Map<String, String> nested) { }
+
     @RestController
     static class Probe {
+        @GetMapping("/_wire")
+        Wire wire() {
+            return new Wire(UUID.fromString("00000000-0000-4000-8000-000000000001"),
+                    Instant.parse("2026-09-28T12:00:00.123456Z"),
+                    java.time.OffsetDateTime.parse("2026-09-28T15:00:00+03:00"),
+                    java.time.LocalDate.parse("2026-09-28"), new java.math.BigDecimal("1.50"), null,
+                    java.util.List.of(1, 2), Map.of("k", "v"));
+        }
+
         @GetMapping("/_security")
         Map<String, String> read(Authentication actor) { return execute(actor); }
 

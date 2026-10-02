@@ -32,6 +32,33 @@ class CanonicalJsonHasherTest {
         assertThat(hasher.hash(first).sha256()).isEqualTo(hasher.hash(second).sha256());
     }
 
+    /**
+     * Command receipts persist these digests, so the canonical bytes are a storage contract that
+     * must survive library upgrades. The expectation was derived independently of the hasher.
+     * Supplementary characters (the emoji below) are persisted as escaped surrogate pairs by the
+     * generator that produced every existing receipt; that quirk is part of the contract.
+     */
+    @Test
+    void goldenDigestAndBytesStayStableForAFixedPayload() {
+        var payload = new ContentJsonReader(4_096, 16, 512).read(("""
+                {"z":[true,null,{"b":2,"a":1.0}],"a":"text","unicode":"é日本🎓",\
+                "esc":"line\\n\\\"q\\\"\\\\\\u0001",\
+                "num":{"big":9007199254740991,"neg":-12,"dec":0.1234567890123456,"exp":1e-7,"zero":-0.0,"trail":2.50},\
+                "empty":{},"arr":[]}
+                """).getBytes(StandardCharsets.UTF_8));
+        String expected = "{\"a\":\"text\",\"arr\":[],\"empty\":{},"
+                + "\"esc\":\"line\\n\\\"q\\\"\\\\\\u0001\","
+                + "\"num\":{\"big\":9007199254740991,\"dec\":0.1234567890123456,\"exp\":0.0000001,"
+                + "\"neg\":-12,\"trail\":2.5,\"zero\":0},"
+                + "\"unicode\":\"é日本\\uD83C\\uDF93\",\"z\":[true,null,{\"a\":1,\"b\":2}]}";
+
+        assertThat(hasher.canonicalBytes(payload)).isEqualTo(expected.getBytes(StandardCharsets.UTF_8));
+        var digest = hasher.hash(payload);
+        assertThat(digest.byteLength()).isEqualTo(226);
+        assertThat(java.util.HexFormat.of().formatHex(digest.sha256()))
+                .isEqualTo("c2af06c8fe21a65877bbe882d92c7f271fd8867fcb049f5569e4dfa797c01631");
+    }
+
     @Test
     void preservesArrayOrderAndDefensivelyCopiesDigests() throws Exception {
         var first = hasher.hash(objectMapper.readTree("[1,2]"));

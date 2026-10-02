@@ -472,6 +472,20 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
                 .content(body(Map.of("token", "unknown", "newPassword", password)))).andExpect(status().isBadRequest());
     }
 
+    /** Timestamps and the response key set are wire contract; the serializer must not change them. */
+    @Test
+    void ownershipProofResponseKeepsItsKeySetAndIsoInstantExpiry() throws Exception {
+        var cookie = login(account());
+        mvc.perform(post("/api/accounts/me/proofs").secure(true).cookie(cookie).with(csrf())
+                        .contentType("application/json")
+                        .content(body(Map.of("password", password, "purpose", "DELETE_ACCOUNT"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$.token").isString())
+                .andExpect(jsonPath("$.expiresAt").value(
+                        org.hamcrest.Matchers.matchesPattern("\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?Z")));
+    }
+
     @Test
     void bearerEditsUseTokenIdentityAndInvalidBearerCannotFallBackToCookie() throws Exception {
         var account = account();
