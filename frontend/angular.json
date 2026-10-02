@@ -55,7 +55,7 @@
             "setupFiles": ["src/testing/jsdom-setup.ts"],
             "coverageExclude": ["src/testing/**"],
             "coverageReporters": ["text-summary", "html"],
-            "coverageThresholds": { "statements": 80, "branches": 76, "functions": 82, "lines": 86 }
+            "coverageThresholds": { "statements": 80, "branches": 77, "functions": 82, "lines": 86 }
           }
         },
         "lint": {
