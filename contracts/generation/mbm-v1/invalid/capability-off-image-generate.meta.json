@@ -1,0 +1,8 @@
+{
+  "description": "An image in generate mode while imageGeneration is off.",
+  "input": {
+    "capabilities": {
+      "imageGeneration": false
+    }
+  }
+}

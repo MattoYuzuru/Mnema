@@ -1,0 +1,8 @@
+{
+  "description": "A video directive while the videoGeneration capability is off.",
+  "input": {
+    "capabilities": {
+      "videoGeneration": false
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "description": "Links whose URL is in the session allowlist become link nodes; link labels keep marks.",
+  "input": {
+    "allowedLinks": [
+      "https://www.postgresql.org/docs/current/",
+      "https://example.org/guide"
+    ]
+  }
+}

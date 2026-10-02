@@ -1,0 +1,28 @@
+{
+  "description": "A handle on a block whose type changed does not keep the node ID: a fresh ID is allocated and MBM_HANDLE_TYPE_CHANGED is reported as a warning.",
+  "input": {
+    "handles": {
+      "b3": {
+        "nodeId": "7d000000-0000-4000-8000-000000000003",
+        "type": "paragraph"
+      },
+      "b4": {
+        "nodeId": "7d000000-0000-4000-8000-000000000004",
+        "type": "table"
+      },
+      "b5": {
+        "nodeId": "7d000000-0000-4000-8000-000000000005",
+        "type": "paragraph"
+      }
+    }
+  },
+  "expected": {
+    "warnings": [
+      {
+        "line": 1,
+        "column": 1,
+        "code": "MBM_HANDLE_TYPE_CHANGED"
+      }
+    ]
+  }
+}

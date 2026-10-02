@@ -1,0 +1,3 @@
+::audio{slot="a1" lang="ja" voice="female" title="Произношение: 行く"} 行く
+
+::audio{slot="a2" lang="ru" title="Фраза целиком"} Завтра я поеду в Токио.

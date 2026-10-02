@@ -1,0 +1,13 @@
+{
+  "description": "A sources entry with a number that has no research result.",
+  "input": {
+    "research": [
+      {
+        "n": 1,
+        "url": "https://www.postgresql.org/docs/current/planner-stats.html",
+        "title": "Statistics Used by the Planner"
+      }
+    ],
+    "sourcesHeading": "Источники"
+  }
+}

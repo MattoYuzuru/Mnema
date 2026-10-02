@@ -1,0 +1,5 @@
+Статья описывает планировщик [1] и статистику [2].
+
+::sources
+[1] https://www.postgresql.org/docs/current/planner-optimizer.html
+[2] https://www.postgresql.org/docs/current/planner-stats.html

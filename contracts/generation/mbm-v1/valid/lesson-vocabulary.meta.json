@@ -1,0 +1,33 @@
+{
+  "description": "Realistic vocabulary lesson combining headings, ruby, audio, list, blockquote, image search, divider and an allowlisted link.",
+  "input": {
+    "allowedLinks": [
+      "https://jisho.org/"
+    ]
+  },
+  "expected": {
+    "slots": [
+      {
+        "slotKey": "a1",
+        "kind": "AUDIO",
+        "spec": {
+          "lang": "ja",
+          "voice": "female",
+          "text": "行く"
+        },
+        "nodeId": "00000000-0000-4000-8000-000000000009",
+        "assetId": "00000000-0000-4000-a000-000000000001"
+      },
+      {
+        "slotKey": "i1",
+        "kind": "IMAGE",
+        "spec": {
+          "mode": "search",
+          "query": "person walking to a train station"
+        },
+        "nodeId": "00000000-0000-4000-8000-000000000021",
+        "assetId": "00000000-0000-4000-a000-000000000002"
+      }
+    ]
+  }
+}

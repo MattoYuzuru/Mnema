@@ -1,0 +1,22 @@
+{
+  "description": "Image directive in generate mode; allowed only when the imageGeneration capability is on.",
+  "input": {
+    "capabilities": {
+      "imageGeneration": true
+    }
+  },
+  "expected": {
+    "slots": [
+      {
+        "slotKey": "i1",
+        "kind": "IMAGE",
+        "spec": {
+          "mode": "generate",
+          "prompt": "watercolor of a morning market, soft light"
+        },
+        "nodeId": "00000000-0000-4000-8000-000000000002",
+        "assetId": "00000000-0000-4000-a000-000000000001"
+      }
+    ]
+  }
+}

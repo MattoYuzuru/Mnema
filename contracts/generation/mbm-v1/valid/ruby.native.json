@@ -1,0 +1,89 @@
+{
+  "formatVersion": 1,
+  "root": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "type": "doc",
+    "version": 1,
+    "attrs": {},
+    "content": [
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "type": "heading",
+        "version": 1,
+        "attrs": {
+          "level": 1
+        },
+        "content": [
+          {
+            "id": "00000000-0000-4000-8000-000000000003",
+            "type": "ruby",
+            "version": 1,
+            "attrs": {
+              "base": "漢字",
+              "reading": "かんじ"
+            },
+            "content": []
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000004",
+            "type": "text",
+            "version": 1,
+            "attrs": {
+              "text": "の勉強",
+              "marks": []
+            },
+            "content": []
+          }
+        ]
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000005",
+        "type": "paragraph",
+        "version": 1,
+        "attrs": {},
+        "content": [
+          {
+            "id": "00000000-0000-4000-8000-000000000006",
+            "type": "ruby",
+            "version": 1,
+            "attrs": {
+              "base": "学校",
+              "reading": "がっこう"
+            },
+            "content": []
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000007",
+            "type": "text",
+            "version": 1,
+            "attrs": {
+              "text": "に",
+              "marks": []
+            },
+            "content": []
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000008",
+            "type": "ruby",
+            "version": 1,
+            "attrs": {
+              "base": "行",
+              "reading": "い"
+            },
+            "content": []
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000009",
+            "type": "text",
+            "version": 1,
+            "attrs": {
+              "text": "きます — Я иду в школу.",
+              "marks": []
+            },
+            "content": []
+          }
+        ]
+      }
+    ]
+  }
+}

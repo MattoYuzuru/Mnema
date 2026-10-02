@@ -1,0 +1,28 @@
+{
+  "description": "Audio directives: with and without voice; the body is the spoken text and becomes the transcript.",
+  "expected": {
+    "slots": [
+      {
+        "slotKey": "a1",
+        "kind": "AUDIO",
+        "spec": {
+          "lang": "ja",
+          "voice": "female",
+          "text": "行く"
+        },
+        "nodeId": "00000000-0000-4000-8000-000000000002",
+        "assetId": "00000000-0000-4000-a000-000000000001"
+      },
+      {
+        "slotKey": "a2",
+        "kind": "AUDIO",
+        "spec": {
+          "lang": "ru",
+          "text": "Завтра я поеду в Токио."
+        },
+        "nodeId": "00000000-0000-4000-8000-000000000003",
+        "assetId": "00000000-0000-4000-a000-000000000002"
+      }
+    ]
+  }
+}

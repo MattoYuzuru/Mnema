@@ -1,0 +1,9 @@
+{
+  "description": "A link inside the label of a link.",
+  "input": {
+    "allowedLinks": [
+      "https://a.example/",
+      "https://b.example/"
+    ]
+  }
+}

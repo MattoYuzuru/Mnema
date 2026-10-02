@@ -1,0 +1,4 @@
+::mermaid{title="t" description="d"}
+```mermaid
+flowchart LR
+  A --> B

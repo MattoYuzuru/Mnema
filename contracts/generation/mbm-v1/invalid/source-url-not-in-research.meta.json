@@ -1,0 +1,13 @@
+{
+  "description": "A sources entry whose URL differs from the research result with that number.",
+  "input": {
+    "research": [
+      {
+        "n": 1,
+        "url": "https://www.postgresql.org/docs/current/planner-stats.html",
+        "title": "Statistics Used by the Planner"
+      }
+    ],
+    "sourcesHeading": "Источники"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "description": "Sources directive: heading plus list of links; every URL must equal the research result with the same number.",
+  "input": {
+    "sourcesHeading": "Источники",
+    "research": [
+      {
+        "n": 1,
+        "url": "https://www.postgresql.org/docs/current/planner-optimizer.html",
+        "title": "Planner/Optimizer"
+      },
+      {
+        "n": 2,
+        "url": "https://www.postgresql.org/docs/current/planner-stats.html",
+        "title": "Statistics Used by the Planner"
+      }
+    ]
+  }
+}

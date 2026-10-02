@@ -1,0 +1,8 @@
+{
+  "description": "A slot key already used by a slot outside the compiled range of an edit.",
+  "input": {
+    "existingSlotKeys": [
+      "a9"
+    ]
+  }
+}

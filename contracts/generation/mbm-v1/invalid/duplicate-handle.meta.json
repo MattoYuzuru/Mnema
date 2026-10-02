@@ -1,0 +1,19 @@
+{
+  "description": "The same handle on two blocks.",
+  "input": {
+    "handles": {
+      "b3": {
+        "nodeId": "7d000000-0000-4000-8000-000000000003",
+        "type": "paragraph"
+      },
+      "b4": {
+        "nodeId": "7d000000-0000-4000-8000-000000000004",
+        "type": "table"
+      },
+      "b5": {
+        "nodeId": "7d000000-0000-4000-8000-000000000005",
+        "type": "paragraph"
+      }
+    }
+  }
+}

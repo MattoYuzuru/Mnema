@@ -1,0 +1,17 @@
+{
+  "description": "Image directive in search mode; the body is the search query.",
+  "expected": {
+    "slots": [
+      {
+        "slotKey": "i1",
+        "kind": "IMAGE",
+        "spec": {
+          "mode": "search",
+          "query": "animal cell diagram labeled"
+        },
+        "nodeId": "00000000-0000-4000-8000-000000000002",
+        "assetId": "00000000-0000-4000-a000-000000000001"
+      }
+    ]
+  }
+}
