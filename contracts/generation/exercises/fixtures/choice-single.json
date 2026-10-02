@@ -1,0 +1,206 @@
+{
+  "description": "CHOICE SINGLE: three plausible distractors, each with whyWrong (stripped before publication); options keep the model's order.",
+  "context": {
+    "commandId": "018f1d98-5c10-7abc-8abc-0123456789c1",
+    "expectedDeckRevisionId": "22222222-2222-4222-8222-222222222222",
+    "materials": {
+      "m1": {
+        "memberKey": "44444444-4444-4444-8444-444444444444",
+        "itemRevisionId": "55555555-5555-4555-8555-555555555555",
+        "blocks": {
+          "b1": {
+            "nodeId": "00000000-0000-4000-8000-000000000002",
+            "text": "Как работает планировщик запросов"
+          },
+          "b2": {
+            "nodeId": "00000000-0000-4000-8000-000000000004",
+            "text": "Планировщик выбирает план с наименьшей оценкой стоимости."
+          },
+          "b3": {
+            "nodeId": "00000000-0000-4000-8000-000000000006",
+            "text": "Seq Scan читает все страницы таблицы, а Index Scan — только нужные."
+          },
+          "b4": {
+            "nodeId": "00000000-0000-4000-8000-000000000008",
+            "text": "ANALYZE обновляет статистику таблицы, на которую опирается оценка стоимости."
+          },
+          "b5": {
+            "nodeId": "00000000-0000-4000-8000-00000000000a",
+            "text": "Если статистика устарела, оценки стоимости неточны, и планировщик может выбрать неудачный план."
+          }
+        }
+      }
+    },
+    "objectives": {
+      "t1": {
+        "objectiveId": "77777777-7777-4777-8777-777777777771",
+        "objectiveRevisionId": "77777777-7777-4777-8777-777777777773"
+      }
+    }
+  },
+  "modelOutput": {
+    "exercises": [
+      {
+        "mechanic": "CHOICE",
+        "subject": "m1",
+        "objective": {
+          "title": "Выбор плана планировщиком"
+        },
+        "prompt": [
+          {
+            "kind": "TEXT",
+            "text": "Что произойдёт, если статистика таблицы устарела?"
+          }
+        ],
+        "selectionMode": "SINGLE",
+        "options": [
+          {
+            "id": "o1",
+            "text": "Планировщик выберет план по неточным оценкам стоимости",
+            "correct": true
+          },
+          {
+            "id": "o2",
+            "text": "Планировщик всегда выберет Seq Scan",
+            "correct": false,
+            "whyWrong": "Выбор идёт по оценке стоимости, а не фиксирован."
+          },
+          {
+            "id": "o3",
+            "text": "Планировщик откажется выполнять запрос",
+            "correct": false,
+            "whyWrong": "Запрос выполняется, меняется только качество плана."
+          },
+          {
+            "id": "o4",
+            "text": "Планировщик сам запустит ANALYZE перед запросом",
+            "correct": false,
+            "whyWrong": "Статистику обновляет ANALYZE, а не планировщик на лету."
+          }
+        ]
+      }
+    ]
+  },
+  "expectedCommand": {
+    "commandId": "018f1d98-5c10-7abc-8abc-0123456789c1",
+    "expectedDeckRevisionId": "22222222-2222-4222-8222-222222222222",
+    "objective": {
+      "operation": "create",
+      "title": "Выбор плана планировщиком"
+    },
+    "exercise": {
+      "type": "CHOICE",
+      "schemaVersion": 2,
+      "enabled": true,
+      "subject": {
+        "memberKey": "44444444-4444-4444-8444-444444444444",
+        "itemRevisionId": "55555555-5555-4555-8555-555555555555"
+      },
+      "content": {
+        "prompt": [
+          {
+            "kind": "TEXT",
+            "text": "Что произойдёт, если статистика таблицы устарела?"
+          }
+        ],
+        "selectionMode": "SINGLE",
+        "options": [
+          {
+            "optionId": "0b000000-0000-4000-8000-000000000001",
+            "blocks": [
+              {
+                "kind": "TEXT",
+                "text": "Планировщик выберет план по неточным оценкам стоимости"
+              }
+            ]
+          },
+          {
+            "optionId": "0b000000-0000-4000-8000-000000000002",
+            "blocks": [
+              {
+                "kind": "TEXT",
+                "text": "Планировщик всегда выберет Seq Scan"
+              }
+            ]
+          },
+          {
+            "optionId": "0b000000-0000-4000-8000-000000000003",
+            "blocks": [
+              {
+                "kind": "TEXT",
+                "text": "Планировщик откажется выполнять запрос"
+              }
+            ]
+          },
+          {
+            "optionId": "0b000000-0000-4000-8000-000000000004",
+            "blocks": [
+              {
+                "kind": "TEXT",
+                "text": "Планировщик сам запустит ANALYZE перед запросом"
+              }
+            ]
+          }
+        ]
+      },
+      "answerKey": {
+        "kind": "CHOICE",
+        "correctOptionIds": [
+          "0b000000-0000-4000-8000-000000000001"
+        ]
+      },
+      "evaluatorPolicy": {
+        "id": "deterministic-choice",
+        "version": "1"
+      }
+    }
+  },
+  "expectedIdMap": {
+    "o1": "0b000000-0000-4000-8000-000000000001",
+    "o2": "0b000000-0000-4000-8000-000000000002",
+    "o3": "0b000000-0000-4000-8000-000000000003",
+    "o4": "0b000000-0000-4000-8000-000000000004"
+  },
+  "expectedSelfEvaluation": [
+    {
+      "probe": "KEY",
+      "response": {
+        "kind": "CHOICE",
+        "optionIds": [
+          "o1"
+        ]
+      },
+      "expectedResult": "CORRECT"
+    },
+    {
+      "probe": "DISTRACTOR",
+      "response": {
+        "kind": "CHOICE",
+        "optionIds": [
+          "o2"
+        ]
+      },
+      "expectedResult": "INCORRECT"
+    },
+    {
+      "probe": "DISTRACTOR",
+      "response": {
+        "kind": "CHOICE",
+        "optionIds": [
+          "o3"
+        ]
+      },
+      "expectedResult": "INCORRECT"
+    },
+    {
+      "probe": "DISTRACTOR",
+      "response": {
+        "kind": "CHOICE",
+        "optionIds": [
+          "o4"
+        ]
+      },
+      "expectedResult": "INCORRECT"
+    }
+  ]
+}

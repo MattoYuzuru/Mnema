@@ -1,0 +1,159 @@
+{
+  "contract": "generation-v1",
+  "description": "Stable exercise validation codes, in phase order SCHEMA, LINT, COMMAND, SELF_EVALUATION. A finding is {code, path?}; findings never echo content. A lint whose prerequisite already failed is skipped (stated in its rule).",
+  "phases": {
+    "SCHEMA": "JSON Schema output.schema.json",
+    "LINT": "Semantic lint per mechanic (architecture section 6 table) and reference resolution",
+    "COMMAND": "The same parse the publication endpoint uses",
+    "SELF_EVALUATION": "Probes through the same AttemptEvaluation as /exercise-previews"
+  },
+  "codes": [
+    {
+      "code": "SCHEMA_INVALID",
+      "mechanic": "ALL",
+      "phase": "SCHEMA",
+      "rule": "The output violates output.schema.json (exact field sets, bounds, enums, ID patterns). All schema violations of one exercise are one finding with the failing JSON paths."
+    },
+    {
+      "code": "REF_UNKNOWN_HANDLE",
+      "mechanic": "ALL",
+      "phase": "LINT",
+      "rule": "Every material handle (m1, m1:b3) must exist in the pinned materials of the session."
+    },
+    {
+      "code": "REF_UNKNOWN_OBJECTIVE",
+      "mechanic": "ALL",
+      "phase": "LINT",
+      "rule": "An objective handle (t1) must be one of the objectives offered in the task."
+    },
+    {
+      "code": "DUPLICATE_LOCAL_ID",
+      "mechanic": "ALL",
+      "phase": "LINT",
+      "rule": "Local IDs are unique within one exercise (options, blanks, items, categories, left and right items)."
+    },
+    {
+      "code": "SELF_CHECK_REFERENCE_BLANK",
+      "mechanic": "SELF_CHECK",
+      "phase": "LINT",
+      "rule": "The reference must have nonblank content."
+    },
+    {
+      "code": "SELF_CHECK_REFERENCE_EQUALS_PROMPT",
+      "mechanic": "SELF_CHECK",
+      "phase": "LINT",
+      "rule": "The reference must not equal the prompt after normalization (NFC, trim, case fold, collapsed whitespace)."
+    },
+    {
+      "code": "FREE_RESPONSE_ANSWER_IN_PROMPT",
+      "mechanic": "FREE_RESPONSE",
+      "phase": "LINT",
+      "rule": "No accepted answer may occur in the prompt text as whole words after normalization."
+    },
+    {
+      "code": "FREE_RESPONSE_ALTERNATIVES_NOT_DISTINCT",
+      "mechanic": "FREE_RESPONSE",
+      "phase": "LINT",
+      "rule": "Accepted alternatives are distinct after the exercise's own matching rule (normalization, or soft normalization in SOFT mode)."
+    },
+    {
+      "code": "FREE_RESPONSE_SOFT_EMPTY",
+      "mechanic": "FREE_RESPONSE",
+      "phase": "LINT",
+      "rule": "In SOFT mode no alternative may normalize to the empty string."
+    },
+    {
+      "code": "CLOZE_KEY_BLANK_MISMATCH",
+      "mechanic": "CLOZE",
+      "phase": "LINT",
+      "rule": "The key's blank IDs are exactly the blank IDs of the passage, each once."
+    },
+    {
+      "code": "CLOZE_FRAGMENT_NOT_IN_MATERIAL",
+      "mechanic": "CLOZE",
+      "phase": "LINT",
+      "rule": "The passage with accepted[0] filled into every blank must be a fragment (whitespace-normalized) of one block of the pinned material. Evaluated only when the key covers the blanks."
+    },
+    {
+      "code": "CLOZE_ANSWER_LENGTH_MISMATCH",
+      "mechanic": "CLOZE",
+      "phase": "LINT",
+      "rule": "All alternatives of an ANSWER_LENGTH blank have the same length in code points (NFC)."
+    },
+    {
+      "code": "CHOICE_OPTIONS_NOT_DISTINCT",
+      "mechanic": "CHOICE",
+      "phase": "LINT",
+      "rule": "Option texts are distinct after normalization."
+    },
+    {
+      "code": "CHOICE_CORRECT_COUNT",
+      "mechanic": "CHOICE",
+      "phase": "LINT",
+      "rule": "SINGLE has exactly one correct option; MULTIPLE has at least one."
+    },
+    {
+      "code": "CHOICE_ALL_OR_NONE_OF_THE_ABOVE",
+      "mechanic": "CHOICE",
+      "phase": "LINT",
+      "rule": "No option of the form 'all of the above' or 'none of the above' (per output language) unless the task explicitly asks for it."
+    },
+    {
+      "code": "MATCH_NOT_BIJECTION",
+      "mechanic": "MATCH",
+      "phase": "LINT",
+      "rule": "pairs is a bijection between left and right: every item once on each side."
+    },
+    {
+      "code": "MATCH_LABELS_NOT_DISTINCT",
+      "mechanic": "MATCH",
+      "phase": "LINT",
+      "rule": "Left labels are distinct and right labels are distinct after normalization."
+    },
+    {
+      "code": "MATCH_LABEL_LEAKS_PAIR",
+      "mechanic": "MATCH",
+      "phase": "LINT",
+      "rule": "A paired label must not contain the other label of its pair (the pair would be given away)."
+    },
+    {
+      "code": "ORDER_ITEMS_NOT_DISTINGUISHABLE",
+      "mechanic": "ORDER",
+      "phase": "LINT",
+      "rule": "At least two distinguishable tiles; identical tiles are interchangeable and fewer than two distinct make every arrangement correct."
+    },
+    {
+      "code": "CATEGORIZE_UNKNOWN_CATEGORY",
+      "mechanic": "CATEGORIZE",
+      "phase": "LINT",
+      "rule": "Every item names an existing category."
+    },
+    {
+      "code": "CATEGORIZE_TOO_FEW_NON_EMPTY_CATEGORIES",
+      "mechanic": "CATEGORIZE",
+      "phase": "LINT",
+      "rule": "At least two categories contain an item."
+    },
+    {
+      "code": "COMMAND_REJECTED",
+      "mechanic": "ALL",
+      "phase": "COMMAND",
+      "rule": "The compiled command was rejected by ExerciseCommand.readCreate, the parser of the publication endpoint, for a reason the lints above did not catch. A compiler or lint gap; never shown to the model as a rule.",
+      "fixtureExempt": true
+    },
+    {
+      "code": "SELF_EVALUATION_KEY_NOT_CORRECT",
+      "mechanic": "ALL",
+      "phase": "SELF_EVALUATION",
+      "rule": "The KEY probe did not evaluate to CORRECT through AttemptEvaluation.",
+      "fixtureExempt": true
+    },
+    {
+      "code": "SELF_EVALUATION_PROBE_ACCEPTED",
+      "mechanic": "ALL",
+      "phase": "SELF_EVALUATION",
+      "rule": "A DISTRACTOR or shifted-pair probe did not evaluate to INCORRECT (or PARTIAL where a fixture says so).",
+      "fixtureExempt": true
+    }
+  ]
+}
