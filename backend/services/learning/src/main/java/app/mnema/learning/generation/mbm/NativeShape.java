@@ -39,6 +39,8 @@ final class NativeShape {
         node.path("attrs").properties().forEach(entry -> {
             boolean dropped = entry.getKey().equals("assetId")
                     || ("order".equals(entry.getKey()) && entry.getValue().intValue(0) == 1)
+                    || ("code_block".equals(type) && "lang".equals(entry.getKey()) && entry.getValue().isString()
+                        && entry.getValue().stringValue("").isEmpty())
                     || ("table".equals(type) && entry.getKey().equals("rows"));
             if (!dropped) {
                 attrs.set(entry.getKey(), entry.getValue());

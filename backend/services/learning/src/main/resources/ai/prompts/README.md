@@ -106,8 +106,9 @@ Russian typography rules apply only when it is Russian. `<output_language>` is d
 
 ## What these files deliberately leave out
 
-- **Code blocks.** MBM v1 has no `code_block`; the `code` skill writes inline code. CONTENT-01
-  ([#303](https://github.com/MattoYuzuru/Mnema/issues/303)) adds the directive; the prompt change is a `v2`.
+- **Code blocks** were absent from the first draft of v1. CONTENT-01 ([#303](https://github.com/MattoYuzuru/Mnema/issues/303))
+  added fenced `code_block` to MBM v1 before any code loaded these files, so `system.md` and `skills/code.md` were updated in place: v1 is
+  frozen from the first artifact revision that records `prompt_version: v1` (AI-04 [#287](https://github.com/MattoYuzuru/Mnema/issues/287)), not before.
 - **A mandatory single `#` title.** The prompt asks for one `# title` as the first line, but the MBM compiler does not enforce it;
   the structure lint of AI-04 does, and the title fallback of Browse applies when it is missing.
 - **`::verify`**, drafted in the research, is not an MBM v1 construct and is not mentioned.

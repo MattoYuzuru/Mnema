@@ -4,7 +4,7 @@ import { EMPTY, Observable, defer, expand, map, reduce, take } from 'rxjs';
 
 import { appConfig } from '../../app.config';
 import { NativeDocument } from '../../content/native-document';
-import { readNativeDocument } from '../../content/native-document-boundary';
+import { readNativeDocument, readRetainedNativeDocument } from '../../content/native-document-boundary';
 import { expectedEtag } from '../own-decks/own-deck.models';
 import {
     AUTHORING_MAX_DRAFT_SCAN, AUTHORING_PAGE_SIZE, AuthoringProtocolError, CaptureAcknowledgement, CaptureConversion,
@@ -179,7 +179,7 @@ function parseDraftDetail(value: unknown): DraftDetail {
         'draftId', 'deckId', 'rowVersion', 'contentBytes', 'createdAt', 'acknowledgedAt', 'expiresAt',
         'memberKey', 'baseRevisionId', 'document'
     ]);
-    return { ...parseDraftSummaryWithoutDocument(object), document: readNativeDocument(object['document']) };
+    return { ...parseDraftSummaryWithoutDocument(object), document: readRetainedNativeDocument(object['document']) };
 }
 
 function parseDraftSummaryWithoutDocument(object: Record<string, unknown>): DraftSummary {

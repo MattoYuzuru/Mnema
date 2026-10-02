@@ -22,8 +22,7 @@ public final class NativeMediaReferences {
         while (!pending.isEmpty()) {
             JsonNode node = pending.removeLast();
             String type = node.path("type").stringValue(null);
-            int version = node.path("version").intValue(0);
-            if (!NativeNodeSchema.supports(type, version)) continue;
+            if (!NativeNodeSchema.supports(node)) continue;
             if (MEDIA_TYPES.contains(type)) {
                 references.add(new MediaCatalog.Reference(UUID.fromString(node.path("id").stringValue(null)),
                         UUID.fromString(node.path("attrs").path("assetId").stringValue(null))));

@@ -31,7 +31,21 @@ public final class NativeDocumentReader {
     // bound also protects opaque attributes, which do not contribute to native node depth.
     private final ContentJsonReader json = new ContentJsonReader(MAX_BYTES, 128, 250_000);
 
+    /** Reads content being written (publication, drafts): every supported node must satisfy its version-one schema. */
     public NativeDocument read(byte[] utf8) {
+        return read(utf8, true);
+    }
+
+    /**
+     * Reads content that is already stored. A node whose type gained a validator after it was stored (today only
+     * {@code code_block}) and that does not satisfy it, or that sits where its type is not allowed, stays an inert
+     * opaque node instead of making the whole document unreadable. Everything else is validated as in {@link #read}.
+     */
+    public NativeDocument readRetained(byte[] utf8) {
+        return read(utf8, false);
+    }
+
+    private NativeDocument read(byte[] utf8, boolean strict) {
         final JsonNode document;
         try {
             document = json.read(utf8);
@@ -64,7 +78,9 @@ public final class NativeDocumentReader {
                 throw invalid();
             }
             String type = node.path("type").stringValue(null);
-            boolean opaque = visit.opaque() || !NativeNodeSchema.supports(type, node.path("version").intValue(0));
+            boolean opaque = visit.opaque() || !NativeNodeSchema.supports(type, node.path("version").intValue(0))
+                    || (!strict && NativeNodeSchema.CODE_BLOCK.equals(type)
+                        && (visit.slot() != NativeNodeSchema.Slot.BLOCK || !NativeNodeSchema.validCodeBlock(node)));
             NativeNodeSchema.Slot slot = NativeNodeSchema.Slot.OPAQUE;
             if (opaque) {
                 unsupported = true;

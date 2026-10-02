@@ -286,9 +286,9 @@ lint per mechanic; (3) self-evaluation тем же `AttemptEvaluation`, что �
 
 ### Пробелы формата, закрываемые отдельно
 
-- native-v1 не имеет поддерживаемых `code_block`/`math` узлов (только opaque) —
-  блокер для технических колод; задача CONTENT-01 добавляет `code_block {lang,
-  source}` (ограничения как у mermaid) и директиву MBM, `math` — позже.
+- `code_block {lang, source}` (CONTENT-01, #303) поддерживается в native-v1 и MBM v1 (ограда ```` ``` ````
+  вне `::mermaid`); контракт — [native-v1](../../contracts/content/native-v1/README.md#code-blocks).
+  `math` остаётся opaque: решение «позже», отдельное решение по KaTeX/MathML не запланировано.
 - `LearnerContent` не перемешивает варианты CHOICE при показе — задача STUDY-01.
 
 ## 7. Правки по выделению

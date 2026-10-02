@@ -1,9 +1,13 @@
+import codeBlockVectors from '../../../../../contracts/content/native-v1/code-block-vectors.json';
+import codeDocumentJson from '../../../../../contracts/content/native-v1/valid/code.json';
 import lexicalVectors from '../../../../../contracts/content/native-v1/lexical-vectors.json';
 import richTextVectors from '../../../../../contracts/content/native-v1/rich-text-vectors.json';
 import richDocumentJson from '../../../../../contracts/content/native-v1/valid/rich.json';
 import youtubeDocumentJson from '../../../../../contracts/content/native-v1/valid/youtube.json';
 import { NativeJson, NativeNode } from '../native-document';
-import { NATIVE_RENDER_LIMITS, buildNativeRenderState, isAllowedNativeHref, isAllowedNativeLang } from './native-render-state';
+import {
+    NATIVE_RENDER_LIMITS, buildNativeRenderState, isAllowedNativeHref, isAllowedNativeLang, readNativeCodeBlock
+} from './native-render-state';
 import { documentOf, nativeNode } from './native-renderer.fixtures';
 
 describe('native render boundary', () => {
@@ -203,5 +207,65 @@ describe('native render boundary', () => {
 
         expect(buildNativeRenderState(exactDepth).status).toBe('ready');
         expect(buildNativeRenderState(exactCount).status).toBe('ready');
+    });
+
+    describe('code_block', () => {
+        const codeDocument = codeDocumentJson as unknown as import('../native-document').NativeDocument;
+
+        it('renders the shared fixture with the source kept verbatim', () => {
+            const state = buildNativeRenderState(codeDocument, { strict: true });
+            expect(state.status).toBe('ready');
+            if (state.status !== 'ready') return;
+            const blocks = state.root.content.filter(node => node.kind === 'code-block');
+            expect(blocks.map(block => block.kind === 'code-block' ? block.lang ?? null : 'x'))
+                .toEqual(['sql', 'c++', null, null]);
+            expect(blocks[1]).toMatchObject({ source: 'int main() {\n\treturn 0;   \n}\n' });
+        });
+
+        it('matches every shared code_block vector, strictly and without a shared lang/dir profile', () => {
+            expect(codeBlockVectors.cases.length).toBeGreaterThan(20);
+            for (const vector of codeBlockVectors.cases) {
+                const document = documentOf([nativeNode('code_block', vector.attrs as unknown as Record<string, NativeJson>)]);
+                expect(buildNativeRenderState(document, { strict: true }).status, vector.name)
+                    .toBe(vector.valid ? 'ready' : 'invalid');
+                // retained content is never invalid for this reason: it is an inert placeholder
+                const retained = buildNativeRenderState(document);
+                expect(retained.status, vector.name).toBe('ready');
+                if (retained.status === 'ready') {
+                    expect(retained.root.content[0]?.kind, vector.name).toBe(vector.valid ? 'code-block' : 'opaque');
+                }
+            }
+        });
+
+        it('bounds the source in UTF-16 units and rejects a carriage return', () => {
+            const strict = (source: string): string => buildNativeRenderState(
+                documentOf([nativeNode('code_block', { source })]), { strict: true }).status;
+            expect(strict('x'.repeat(16_384))).toBe('ready');
+            expect(strict('x'.repeat(16_385))).toBe('invalid');
+            expect(strict('😀'.repeat(8_192))).toBe('ready');
+            expect(strict('😀'.repeat(8_192) + 'x')).toBe('invalid');
+            expect(strict('a\r\nb')).toBe('invalid');
+        });
+
+        it('is a leaf in a block slot only', () => {
+            const code = (): NativeNode => nativeNode('code_block', { source: 'x' });
+            expect(buildNativeRenderState(documentOf([nativeNode('paragraph', {}, [code()])]), { strict: true }).status)
+                .toBe('invalid');
+            expect(buildNativeRenderState(documentOf([nativeNode('blockquote', {}, [code()])]), { strict: true }).status)
+                .toBe('ready');
+            expect(buildNativeRenderState(documentOf([nativeNode('code_block', { source: 'x' },
+                [nativeNode('paragraph')])]), { strict: true }).status).toBe('invalid');
+            // a retained one in an inline slot is opaque inline, not code
+            const retained = buildNativeRenderState(documentOf([nativeNode('paragraph', {}, [code()])]));
+            expect(retained.status).toBe('ready');
+        });
+
+        it('keeps retained legacy attributes inert and never reads them as code', () => {
+            const legacy = nativeNode('code_block', { language: 'kotlin', source: 'println()', wrap: true });
+            expect(readNativeCodeBlock(legacy)).toBeNull();
+            expect(readNativeCodeBlock(nativeNode('code_block', { lang: 'sql', source: 'x' }))).toEqual({ lang: 'sql', source: 'x' });
+            expect(readNativeCodeBlock(nativeNode('code_block', { source: 'x' }, [], { version: 2 }))).toBeNull();
+            expect(buildNativeRenderState(documentOf([legacy]), { strict: true }).status).toBe('invalid');
+        });
     });
 });

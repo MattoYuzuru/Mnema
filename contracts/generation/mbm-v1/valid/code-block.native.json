@@ -1,0 +1,114 @@
+{
+  "formatVersion": 1,
+  "root": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "type": "doc",
+    "version": 1,
+    "attrs": {},
+    "content": [
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "type": "heading",
+        "version": 1,
+        "attrs": {
+          "level": 1
+        },
+        "content": [
+          {
+            "id": "00000000-0000-4000-8000-000000000003",
+            "type": "text",
+            "version": 1,
+            "attrs": {
+              "text": "Планировщик запросов",
+              "marks": []
+            },
+            "content": []
+          }
+        ]
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000004",
+        "type": "paragraph",
+        "version": 1,
+        "attrs": {},
+        "content": [
+          {
+            "id": "00000000-0000-4000-8000-000000000005",
+            "type": "text",
+            "version": 1,
+            "attrs": {
+              "text": "Посмотреть план запроса можно командой EXPLAIN:",
+              "marks": []
+            },
+            "content": []
+          }
+        ]
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000006",
+        "type": "code_block",
+        "version": 1,
+        "attrs": {
+          "lang": "sql",
+          "source": "EXPLAIN SELECT *\nFROM orders\nWHERE id = 1;"
+        },
+        "content": []
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000007",
+        "type": "paragraph",
+        "version": 1,
+        "attrs": {},
+        "content": [
+          {
+            "id": "00000000-0000-4000-8000-000000000008",
+            "type": "text",
+            "version": 1,
+            "attrs": {
+              "text": "Код без языка и с отступом табуляцией:",
+              "marks": []
+            },
+            "content": []
+          }
+        ]
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000009",
+        "type": "code_block",
+        "version": 1,
+        "attrs": {
+          "source": "plain text\n\tindented with a tab"
+        },
+        "content": []
+      },
+      {
+        "id": "00000000-0000-4000-8000-00000000000a",
+        "type": "paragraph",
+        "version": 1,
+        "attrs": {},
+        "content": [
+          {
+            "id": "00000000-0000-4000-8000-00000000000b",
+            "type": "text",
+            "version": 1,
+            "attrs": {
+              "text": "Если в коде есть ограда, внешняя ограда длиннее:",
+              "marks": []
+            },
+            "content": []
+          }
+        ]
+      },
+      {
+        "id": "00000000-0000-4000-8000-00000000000c",
+        "type": "code_block",
+        "version": 1,
+        "attrs": {
+          "lang": "text",
+          "source": "```\ninner\n```"
+        },
+        "content": []
+      }
+    ]
+  }
+}

@@ -1,12 +1,13 @@
 ---
 section: skill-code
 prompt_version: v1
-purpose: "Per-type skill (L2): programming topics. MBM v1 has no code block yet, so code is written inline; replaced when the code_block extension lands. Byte-stable within a prompt_version; no placeholders."
+purpose: "Per-type skill (L2): programming topics; multi-line examples go into fenced code blocks (code_block, #303). Byte-stable within a prompt_version; no placeholders."
 ---
 <skill name="code">
 Программирование. Задача → минимальный пример → разбор, что делает каждая важная часть →
-частая ошибка и как её заметить. Блоков кода в формате нет: пиши команды, имена и короткие
-выражения внутри строки как `код`, а пример длиннее строки опиши словами по шагам. Имена
+частая ошибка и как её заметить. Пример длиннее строки — в блоке кода: ```язык на отдельной
+строке, код, закрывающие ``` (язык — латиницей в нижнем регистре: sql, python, bash). Короткие
+команды и имена — внутри строки как `код`. Блок кода — только для кода, не для обычного текста. Имена
 функций, флагов и версий — только точные; если не уверен в версии, напиши «в современных
 версиях» и не называй номер.
 </skill>

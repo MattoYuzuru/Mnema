@@ -1,0 +1,223 @@
+{
+ "description": "Shared server/editor corpus for code_block v1 attrs. `attrs` is the complete attrs object; the 16384-unit source bound is tested with generated strings.",
+ "cases": [
+  {
+   "name": "minimal",
+   "attrs": {
+    "source": "x"
+   },
+   "valid": true
+  },
+  {
+   "name": "language sql",
+   "attrs": {
+    "lang": "sql",
+    "source": "SELECT 1;"
+   },
+   "valid": true
+  },
+  {
+   "name": "empty lang means none",
+   "attrs": {
+    "lang": "",
+    "source": "x"
+   },
+   "valid": true
+  },
+  {
+   "name": "symbols in lang",
+   "attrs": {
+    "lang": "c++",
+    "source": "x"
+   },
+   "valid": true
+  },
+  {
+   "name": "hash in lang",
+   "attrs": {
+    "lang": "c#",
+    "source": "x"
+   },
+   "valid": true
+  },
+  {
+   "name": "dotted and dashed lang",
+   "attrs": {
+    "lang": "objective-c.2",
+    "source": "x"
+   },
+   "valid": true
+  },
+  {
+   "name": "digit-first lang",
+   "attrs": {
+    "lang": "6502",
+    "source": "x"
+   },
+   "valid": true
+  },
+  {
+   "name": "lang of 32 characters",
+   "attrs": {
+    "lang": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "source": "x"
+   },
+   "valid": true
+  },
+  {
+   "name": "lang of 33 characters",
+   "attrs": {
+    "lang": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "source": "x"
+   },
+   "valid": false
+  },
+  {
+   "name": "uppercase lang",
+   "attrs": {
+    "lang": "SQL",
+    "source": "x"
+   },
+   "valid": false
+  },
+  {
+   "name": "lang starting with a symbol",
+   "attrs": {
+    "lang": "+c",
+    "source": "x"
+   },
+   "valid": false
+  },
+  {
+   "name": "lang starting with a dot",
+   "attrs": {
+    "lang": ".sql",
+    "source": "x"
+   },
+   "valid": false
+  },
+  {
+   "name": "lang with a space",
+   "attrs": {
+    "lang": "sql server",
+    "source": "x"
+   },
+   "valid": false
+  },
+  {
+   "name": "lang with a line break",
+   "attrs": {
+    "lang": "sql\n",
+    "source": "x"
+   },
+   "valid": false
+  },
+  {
+   "name": "lang with a quote",
+   "attrs": {
+    "lang": "sql\"onload=",
+    "source": "x"
+   },
+   "valid": false
+  },
+  {
+   "name": "non-ASCII lang",
+   "attrs": {
+    "lang": "яз",
+    "source": "x"
+   },
+   "valid": false
+  },
+  {
+   "name": "lang is not a BCP 47 tag here",
+   "attrs": {
+    "lang": "ru-RU",
+    "source": "x"
+   },
+   "valid": false
+  },
+  {
+   "name": "lang is not a string",
+   "attrs": {
+    "lang": 1,
+    "source": "x"
+   },
+   "valid": false
+  },
+  {
+   "name": "direction is not allowed",
+   "attrs": {
+    "dir": "ltr",
+    "source": "x"
+   },
+   "valid": false
+  },
+  {
+   "name": "legacy attribute names",
+   "attrs": {
+    "language": "kotlin",
+    "source": "x",
+    "wrap": true
+   },
+   "valid": false
+  },
+  {
+   "name": "tabs, LF and trailing spaces are data",
+   "attrs": {
+    "source": "a\n\tb  \n"
+   },
+   "valid": true
+  },
+  {
+   "name": "markup is data",
+   "attrs": {
+    "source": "<img src=x onerror=alert(1)>"
+   },
+   "valid": true
+  },
+  {
+   "name": "missing source",
+   "attrs": {
+    "lang": "sql"
+   },
+   "valid": false
+  },
+  {
+   "name": "empty source",
+   "attrs": {
+    "source": ""
+   },
+   "valid": false
+  },
+  {
+   "name": "blank source",
+   "attrs": {
+    "source": " \n\t "
+   },
+   "valid": false
+  },
+  {
+   "name": "no-break space is not blank",
+   "attrs": {
+    "source": "\u00a0"
+   },
+   "valid": true
+  },
+  {
+   "name": "carriage return is rejected",
+   "attrs": {
+    "source": "a\r\nb"
+   },
+   "valid": false
+  },
+  {
+   "name": "source is not a string",
+   "attrs": {
+    "source": [
+     "x"
+    ]
+   },
+   "valid": false
+  }
+ ]
+}

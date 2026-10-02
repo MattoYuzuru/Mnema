@@ -25,9 +25,13 @@ public final class NativeNodeIndex {
     public static NativeNodeIndex load(NativeStorageBatches batches, ObjectRef contentRoot) {
         NativeSnapshotDecoder decoder = new NativeSnapshotDecoder(contentRoot);
         while (!decoder.isComplete()) batches.readNext(decoder);
+        return of(decoder.snapshot().document());
+    }
+
+    static NativeNodeIndex of(NativeDocument document) {
         Map<UUID, JsonNode> nodes = new HashMap<>();
         ArrayDeque<JsonNode> pending = new ArrayDeque<>();
-        pending.add(decoder.snapshot().document().toJson().path("root"));
+        pending.add(document.toJson().path("root"));
         while (!pending.isEmpty()) {
             JsonNode node = pending.removeLast();
             nodes.put(UUID.fromString(node.path("id").stringValue(null)), node);
@@ -40,14 +44,18 @@ public final class NativeNodeIndex {
     public Optional<String> text(UUID nodeId) { return Optional.ofNullable(nodes.get(nodeId)).map(NativeNodeIndex::project); }
 
     private static String project(JsonNode node) {
-        if (!NativeNodeSchema.supports(node.path("type").stringValue(null), node.path("version").intValue(0))) return "";
+        if (!NativeNodeSchema.supports(node)) return "";
         JsonNode attrs = node.path("attrs");
         return switch (node.path("type").stringValue(null)) {
             case "text" -> attrs.path("text").asString("");
             case "ruby" -> attrs.path("base").asString("");
+            case NativeNodeSchema.CODE_BLOCK -> attrs.path("source").asString("");
             case "paragraph", "heading", "link" -> {
                 StringBuilder inline = new StringBuilder();
-                node.path("content").forEach(child -> inline.append(project(child)));
+                node.path("content").forEach(child -> {
+                    // A retained code_block that sits inside inline content is opaque, not code.
+                    if (NativeNodeSchema.INLINE.contains(child.path("type").asString(""))) inline.append(project(child));
+                });
                 yield inline.toString();
             }
             case "doc", "blockquote", "bullet_list", "ordered_list", "list_item" -> {

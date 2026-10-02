@@ -9,13 +9,31 @@ import {
 import { Plugin, PluginKey, Transaction } from 'prosemirror-state';
 
 import { NativeDocument, NativeJson, NativeNode } from '../native-document';
-import { readNativeDocument } from '../native-document-boundary';
-import { buildNativeRenderState, isAllowedNativeHref } from '../rendering/native-render-state';
+import { readNativeDocument, readRetainedNativeDocument } from '../native-document-boundary';
+import {
+    CODE_BLOCK_MAX_SOURCE,
+    buildNativeRenderState,
+    isAllowedNativeHref,
+    isCodeBlockLanguage,
+    isNativeBlank,
+    readNativeCodeBlock
+} from '../rendering/native-render-state';
 
 export class NativeEditorAdapterError extends Error {
     constructor(message = 'Invalid native document for editing.') {
         super(message);
         this.name = 'NativeEditorAdapterError';
+    }
+}
+
+/**
+ * A container would be empty once blank code blocks are left out. A blank code block is a transient editing state (the
+ * author just inserted one): it is not part of the exported document, and native-v1 has no empty code block.
+ */
+export class NativeEditorEmptyCodeError extends NativeEditorAdapterError {
+    constructor() {
+        super('A container holds only blank code blocks.');
+        this.name = 'NativeEditorEmptyCodeError';
     }
 }
 
@@ -40,7 +58,7 @@ const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
 const TYPE = /^[a-z][a-z0-9_]{0,63}$/;
 const KNOWN_TYPES = new Set([
     'doc', 'paragraph', 'heading', 'blockquote', 'bullet_list', 'ordered_list',
-    'list_item', 'text', 'ruby', 'link', 'divider', 'image', 'audio', 'video', 'youtube', 'mermaid', 'table'
+    'list_item', 'text', 'ruby', 'link', 'divider', 'image', 'audio', 'video', 'youtube', 'mermaid', 'table', 'code_block'
 ]);
 const textIdentityKey = new PluginKey('mnema-text-identity');
 
@@ -96,6 +114,20 @@ const nodes: Record<string, NodeSpec> = {
     video: richAtom('video', { ...commonAttrs, assetId: {}, title: {}, transcript: { default: null } }, 'Видео'),
     youtube: richAtom('youtube', { ...commonAttrs, videoId: {}, title: {}, transcript: { default: null } }, 'YouTube'),
     mermaid: richAtom('mermaid', { ...commonAttrs, source: {}, title: {}, description: {} }, 'Схема Mermaid'),
+    // `lang` is the programming language here (not a BCP 47 tag) and there is no `dir`: code is always left to right.
+    // The editor edits `source` in a node view (native-code-node-view.ts); toDOM serves clipboard and serialization.
+    code_block: {
+        group: 'block', atom: true, selectable: true,
+        attrs: { id: { default: null }, version: { default: 1 }, lang: { default: null }, source: { default: '' } },
+        parseDOM: [{
+            tag: 'pre',
+            preserveWhitespace: 'full',
+            getAttrs: element => pastedCodeAttrs(element as HTMLElement) ?? false
+        }],
+        toDOM: node => ['pre', { class: 'mnema-code-atom', dir: 'ltr', 'data-native-kind': 'code_block' },
+            ['code', typeof node.attrs['lang'] === 'string' && node.attrs['lang'] !== ''
+                ? { class: `language-${node.attrs['lang'] as string}` } : {}, String(node.attrs['source'])]]
+    },
     table: richAtom('table', { ...commonAttrs, caption: {}, summary: { default: null }, columns: {}, rows: {} },
         'Таблица'),
     ruby: {
@@ -225,7 +257,8 @@ export const nativeTextIdentityPlugin = new Plugin({
 
 export function importNativeDocument(document: NativeDocument): NativeEditorImport {
     let source: NativeDocument;
-    try { source = readNativeDocument(document); } catch { throw new NativeEditorAdapterError(); }
+    // Stored content: a retained code_block that is not valid v1 is an unsupported block, not a load failure.
+    try { source = readRetainedNativeDocument(document); } catch { throw new NativeEditorAdapterError(); }
     if (source.root.version !== 1) return { editable: false, document: null, source };
     const renderState = buildNativeRenderState(source);
     if (renderState.status !== 'ready') throw new NativeEditorAdapterError();
@@ -236,7 +269,11 @@ export function importNativeDocument(document: NativeDocument): NativeEditorImpo
 
 export function exportNativeDocument(document: ProseMirrorNode): NativeDocument {
     if (document.type !== nativeEditorSchema.topNodeType) throw new NativeEditorAdapterError();
-    try { return readNativeDocument({ formatVersion: 1 as const, root: exportNode(document) }); }
+    let root: NativeNode;
+    try { root = exportNode(document); }
+    catch (error) { throw error instanceof NativeEditorEmptyCodeError ? error : new NativeEditorAdapterError(); }
+    // Retained opaque payloads pass through unchanged; the API boundary is strict and rejects what the server would.
+    try { return readRetainedNativeDocument({ formatVersion: 1 as const, root }); }
     catch { throw new NativeEditorAdapterError(); }
 }
 
@@ -278,7 +315,8 @@ function sanitizePastedDocument(html: string): globalThis.Document {
 }
 
 function importNode(node: NativeNode, slot: NativeSlot): ProseMirrorNode {
-    if (!KNOWN_TYPES.has(node.type) || node.version !== 1) {
+    if (!KNOWN_TYPES.has(node.type) || node.version !== 1
+        || (node.type === 'code_block' && (slot !== 'block' || readNativeCodeBlock(node) === null))) {
         const opaqueType = slot === 'inline' ? 'unsupported_inline'
             : slot === 'list-item' ? 'unsupported_list_item' : 'unsupported_block';
         return nativeEditorSchema.nodes[opaqueType]!.create({ payload: cloneJson(node) });
@@ -319,6 +357,11 @@ function importNode(node: NativeNode, slot: NativeSlot): ProseMirrorNode {
         case 'mermaid':
             return nativeEditorSchema.node('mermaid', { ...metadata, source: node.attrs['source'],
                 title: node.attrs['title'], description: node.attrs['description'] });
+        case 'code_block': {
+            const code = readNativeCodeBlock(node)!;
+            return nativeEditorSchema.node('code_block', { id: node.id, version: node.version,
+                lang: Object.hasOwn(node.attrs, 'lang') ? code.lang : null, source: code.source });
+        }
         case 'table':
             return nativeEditorSchema.node('table', { ...metadata, caption: node.attrs['caption'],
                 summary: node.attrs['summary'] ?? null, columns: cloneJson(node.attrs['columns']),
@@ -347,7 +390,7 @@ function exportNode(node: ProseMirrorNode): NativeNode {
     const attrs: Record<string, NativeJson> = {};
     const id = requireUuid(node.attrs['id']);
     const version = readPositiveInteger(node.attrs['version'], 1);
-    addMetadata(attrs, node.attrs);
+    if (node.type.name !== 'code_block') addMetadata(attrs, node.attrs);
     let type = node.type.name;
     if (type === 'link_node') type = 'link';
     switch (type) {
@@ -382,6 +425,17 @@ function exportNode(node: ProseMirrorNode): NativeNode {
             attrs['title'] = String(node.attrs['title']);
             attrs['description'] = String(node.attrs['description']);
             break;
+        case 'code_block': {
+            // LF only: the author's line breaks are data, a stray CR never is.
+            const source = String(node.attrs['source']).replace(/\r\n?/gu, '\n');
+            const lang = node.attrs['lang'];
+            if (source.length > CODE_BLOCK_MAX_SOURCE || (typeof lang === 'string' && !isCodeBlockLanguage(lang))) {
+                throw new NativeEditorAdapterError();
+            }
+            if (typeof lang === 'string') attrs['lang'] = lang;
+            attrs['source'] = source;
+            break;
+        }
         case 'table':
             attrs['caption'] = String(node.attrs['caption']);
             addOptional(attrs, node.attrs, 'summary');
@@ -389,7 +443,23 @@ function exportNode(node: ProseMirrorNode): NativeNode {
             attrs['rows'] = cloneJson(node.attrs['rows']) as NativeJson;
             break;
     }
-    return { id, type, version, attrs, content: node.content.content.map(exportNode) };
+    const children = node.content.content.filter(child => !isBlankCodeBlock(child));
+    if (children.length === 0 && node.content.content.length > 0) throw new NativeEditorEmptyCodeError();
+    return { id, type, version, attrs, content: children.map(exportNode) };
+}
+
+/** A code block with nothing to keep; it exists only while the author is about to type. */
+export function isBlankCodeBlock(node: ProseMirrorNode): boolean {
+    return node.type.name === 'code_block' && isNativeBlank(String(node.attrs['source']));
+}
+
+/** Attributes for a pasted `<pre>`: its text with LF line breaks, or null when it cannot be a valid code block. */
+function pastedCodeAttrs(element: HTMLElement): Record<string, unknown> | null {
+    const source = (element.textContent ?? '').replace(/\r\n?/gu, '\n');
+    const className = element.querySelector('code')?.className ?? element.className;
+    const language = /(?:^|\s)language-([^\s]+)/u.exec(className)?.[1]?.toLowerCase() ?? '';
+    if (isNativeBlank(source) || source.length > CODE_BLOCK_MAX_SOURCE) return null;
+    return { id: null, version: 1, lang: isCodeBlockLanguage(language) && language !== '' ? language : null, source };
 }
 
 function addOptional(target: Record<string, NativeJson>, source: Record<string, unknown>, key: string): void {

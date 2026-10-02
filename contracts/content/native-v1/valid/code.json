@@ -1,0 +1,70 @@
+{
+  "formatVersion": 1,
+  "root": {
+    "id": "200ff492-4895-4b81-ac7a-fae25e309f25",
+    "type": "doc",
+    "version": 1,
+    "attrs": {},
+    "content": [
+      {
+        "id": "cc3131e4-561e-47f5-b196-876dce0440a5",
+        "type": "paragraph",
+        "version": 1,
+        "attrs": {},
+        "content": [
+          {
+            "id": "ae4621b5-3bf6-4931-a122-12c13f7fd318",
+            "type": "text",
+            "version": 1,
+            "attrs": {
+              "text": "Как PostgreSQL выбирает план",
+              "marks": [
+                "strong"
+              ]
+            },
+            "content": []
+          }
+        ]
+      },
+      {
+        "id": "e7db5fdc-f149-4579-bc0d-962092602545",
+        "type": "code_block",
+        "version": 1,
+        "attrs": {
+          "lang": "sql",
+          "source": "EXPLAIN (ANALYZE, BUFFERS)\nSELECT *\n  FROM orders\n WHERE customer_id = 42;"
+        },
+        "content": []
+      },
+      {
+        "id": "fa90678b-259c-491b-a17d-4567fe2ea3e1",
+        "type": "code_block",
+        "version": 1,
+        "attrs": {
+          "lang": "c++",
+          "source": "int main() {\n\treturn 0;   \n}\n"
+        },
+        "content": []
+      },
+      {
+        "id": "7a1c1c14-97d6-44b5-9bb6-fcd9ebe2e3ca",
+        "type": "code_block",
+        "version": 1,
+        "attrs": {
+          "source": "plain text, no language\n\n    indented, with a blank line above"
+        },
+        "content": []
+      },
+      {
+        "id": "f118ed76-20bc-49bb-8e40-416840c140d0",
+        "type": "code_block",
+        "version": 1,
+        "attrs": {
+          "lang": "",
+          "source": "<script>alert(1)</script> is data, never executed"
+        },
+        "content": []
+      }
+    ]
+  }
+}

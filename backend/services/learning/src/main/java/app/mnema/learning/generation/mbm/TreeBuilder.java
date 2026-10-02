@@ -82,6 +82,14 @@ final class TreeBuilder {
                 attrs.put("description", mermaid.description());
                 child(parent, "mermaid", block.keptId(), attrs);
             }
+            case Block.Code code -> {
+                ObjectNode attrs = JSON.createObjectNode();
+                if (!code.lang().isEmpty()) {
+                    attrs.put("lang", code.lang());
+                }
+                attrs.put("source", code.source());
+                child(parent, "code_block", block.keptId(), attrs);
+            }
             case Block.Media media -> media(parent, media);
             case Block.Sources sources -> sources(parent, sources);
         }

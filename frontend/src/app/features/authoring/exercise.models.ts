@@ -1,4 +1,5 @@
 import { NativeDocument, NativeNode } from '../../content/native-document';
+import { readNativeCodeBlock } from '../../content/rendering/native-render-state';
 import { ExerciseSpec, Mechanic } from '../../content/exercise/exercise-content.models';
 
 export const EXERCISE_PAGE_SIZE = 20;
@@ -94,6 +95,8 @@ export function textProjections(document: NativeDocument): readonly ExerciseProj
 
 export function nodeText(node: NativeNode): string {
     if (node.type === 'text' && typeof node.attrs['text'] === 'string') return node.attrs['text'];
+    // The same text the server projects: the source of a valid code block, nothing for a retained opaque one.
+    if (node.type === 'code_block') return readNativeCodeBlock(node)?.source ?? '';
     return node.content.map(nodeText).filter(Boolean).join(' ');
 }
 

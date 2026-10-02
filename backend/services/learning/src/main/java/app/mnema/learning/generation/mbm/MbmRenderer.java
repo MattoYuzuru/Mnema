@@ -194,6 +194,7 @@ public final class MbmRenderer {
                 case "divider" -> "---";
                 case "table" -> table(node);
                 case "mermaid" -> mermaid(node);
+                case "code_block" -> code(node);
                 case "audio" -> audio(node);
                 case "image" -> image(node);
                 case "video" -> video(node);
@@ -250,6 +251,20 @@ public final class MbmRenderer {
         private String mermaid(JsonNode node) {
             JsonNode attrs = node.path("attrs");
             String source = attrs.path("source").stringValue("");
+            String fence = "`".repeat(fenceLength(source));
+            return "::mermaid{title=" + quoted(attrs.path("title").stringValue("")) + " description="
+                    + quoted(attrs.path("description").stringValue("")) + "}\n" + fence + "mermaid\n" + source + "\n" + fence;
+        }
+
+        /** A fenced block whose fence is longer than any backtick run at the start of a source line. */
+        private String code(JsonNode node) {
+            JsonNode attrs = node.path("attrs");
+            String source = attrs.path("source").stringValue("");
+            String fence = "`".repeat(fenceLength(source));
+            return fence + attrs.path("lang").stringValue("") + "\n" + source + "\n" + fence;
+        }
+
+        private static int fenceLength(String source) {
             int ticks = 3;
             for (String line : source.split("\n", -1)) {
                 int run = 0;
@@ -258,9 +273,7 @@ public final class MbmRenderer {
                 }
                 ticks = Math.max(ticks, run + 1);
             }
-            String fence = "`".repeat(ticks);
-            return "::mermaid{title=" + quoted(attrs.path("title").stringValue("")) + " description="
-                    + quoted(attrs.path("description").stringValue("")) + "}\n" + fence + "mermaid\n" + source + "\n" + fence;
+            return ticks;
         }
 
         private String audio(JsonNode node) {

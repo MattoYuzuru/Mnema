@@ -2,11 +2,15 @@ import { splitBlock, toggleMark } from 'prosemirror-commands';
 import { history, undo } from 'prosemirror-history';
 import { EditorState, TextSelection } from 'prosemirror-state';
 
+import codeDocumentJson from '../../../../../contracts/content/native-v1/valid/code.json';
 import mixedDocumentJson from '../../../../../contracts/content/native-v1/valid/mixed.json';
 import richDocumentJson from '../../../../../contracts/content/native-v1/valid/rich.json';
 import youtubeDocumentJson from '../../../../../contracts/content/native-v1/valid/youtube.json';
 import { NativeDocument, NativeNode } from '../native-document';
-import { exportNativeDocument, importNativeDocument, nativeEditorSchema, nativeTextIdentityPlugin, parseSafePastedHtml, sanitizePastedHtml } from './native-editor-adapter';
+import {
+    NativeEditorEmptyCodeError, exportNativeDocument, importNativeDocument, nativeEditorSchema, nativeTextIdentityPlugin,
+    parseSafePastedHtml, sanitizePastedHtml
+} from './native-editor-adapter';
 
 describe('native ProseMirror adapter', () => {
     const mixed = mixedDocumentJson as unknown as NativeDocument;
@@ -30,6 +34,69 @@ describe('native ProseMirror adapter', () => {
         expect(imported.document?.childCount).toBe(5);
         expect(exportNativeDocument(imported.document!)).toEqual(rich);
         expect(imported.document!.toString()).not.toContain('object-storage');
+    });
+
+    it('round-trips code blocks byte for byte: tabs, trailing spaces, blank lines, empty lang and no lang', () => {
+        const code = codeDocumentJson as unknown as NativeDocument;
+        const imported = importNativeDocument(code);
+        expect(imported.editable).toBe(true);
+        const exported = exportNativeDocument(imported.document!);
+        expect(exported).toEqual(code);
+        const sources = exported.root.content.filter(node => node.type === 'code_block').map(node => node.attrs['source']);
+        expect(sources[1]).toBe('int main() {\n\treturn 0;   \n}\n');
+        expect(sources[2]).toBe('plain text, no language\n\n    indented, with a blank line above');
+        const attrs = exported.root.content.filter(node => node.type === 'code_block').map(node => node.attrs);
+        expect(Object.hasOwn(attrs[2]!, 'lang')).toBe(false);
+        expect(attrs[3]!['lang']).toBe('');
+        // no ProseMirror state, no direction, no BCP 47 metadata leaks into code
+        expect(JSON.stringify(exported)).not.toContain('"dir"');
+    });
+
+    it('normalizes carriage returns to LF and refuses an overlong or invalid code block on export', () => {
+        const imported = importNativeDocument(codeDocumentJson as unknown as NativeDocument);
+        const code = imported.document!.child(1);
+        const withCr = nativeEditorSchema.nodes['code_block']!.create({ ...code.attrs, source: 'a\r\nb\rc' });
+        const crDocument = imported.document!.copy(imported.document!.content.replaceChild(1, withCr));
+        expect(exportNativeDocument(crDocument).root.content[1]!.attrs['source']).toBe('a\nb\nc');
+        const long = nativeEditorSchema.nodes['code_block']!.create({ ...code.attrs, source: 'x'.repeat(16_385) });
+        expect(() => exportNativeDocument(imported.document!.copy(imported.document!.content.replaceChild(1, long)))).toThrowError();
+        const badLang = nativeEditorSchema.nodes['code_block']!.create({ ...code.attrs, lang: 'SQL' });
+        expect(() => exportNativeDocument(imported.document!.copy(imported.document!.content.replaceChild(1, badLang)))).toThrowError();
+    });
+
+    it('leaves a blank code block out of the export and refuses a container that would be empty', () => {
+        const base = importNativeDocument(simpleDocument('текст')).document!;
+        const blank = nativeEditorSchema.nodes['code_block']!.create({ id: '00000000-0000-4000-8000-0000000001aa', version: 1 });
+        const nbsp = nativeEditorSchema.nodes['code_block']!.create({
+            id: '00000000-0000-4000-8000-0000000001ab', version: 1, source: '\u00a0'
+        });
+        const withBlank = base.copy(base.content.append(nativeEditorSchema.nodes['doc']!.create(null, [blank]).content));
+        expect(exportNativeDocument(withBlank)).toEqual(simpleDocument('текст'));
+        // a no-break space is code in native-v1 (not blank), so it stays
+        const withNbsp = base.copy(base.content.append(nativeEditorSchema.nodes['doc']!.create(null, [nbsp]).content));
+        expect(exportNativeDocument(withNbsp).root.content.length).toBe(2);
+        const onlyBlank = base.copy(nativeEditorSchema.nodes['doc']!.create(null, [blank]).content);
+        expect(() => exportNativeDocument(onlyBlank)).toThrowError(NativeEditorEmptyCodeError);
+    });
+
+    it('keeps a retained code_block that is not valid version one as an unsupported block, unchanged', () => {
+        const legacy = { id: '00000000-0000-4000-8000-0000000001bb', type: 'code_block', version: 1,
+            attrs: { language: 'kotlin', source: 'println("x")', wrap: true }, content: [] } satisfies NativeNode;
+        const document: NativeDocument = { formatVersion: 1, root: { ...simpleDocument('a').root,
+            content: [...simpleDocument('a').root.content, legacy] } };
+        const imported = importNativeDocument(document);
+        expect(imported.editable).toBe(true);
+        expect(imported.document!.child(1).type.name).toBe('unsupported_block');
+        expect(exportNativeDocument(imported.document!)).toEqual(document);
+    });
+
+    it('turns pasted preformatted text into a code block only when it can be a valid one', () => {
+        const parsed = parseSafePastedHtml('<pre><code class="language-SQL">SELECT 1;\n\tFROM t</code></pre>');
+        expect(parsed.firstChild?.type.name).toBe('code_block');
+        expect(parsed.firstChild?.attrs['source']).toBe('SELECT 1;\n\tFROM t');
+        expect(parsed.firstChild?.attrs['lang']).toBe('sql');
+        expect(parseSafePastedHtml('<pre>   </pre>').firstChild?.type.name).not.toBe('code_block');
+        expect(parseSafePastedHtml('<pre><code class="language-x y">a</code></pre>').firstChild?.attrs['lang']).toBe('x');
     });
 
     it('round-trips a YouTube block as an inert provider ID', () => {

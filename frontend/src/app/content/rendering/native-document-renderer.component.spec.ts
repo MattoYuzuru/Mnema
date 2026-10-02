@@ -1,5 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
+import codeDocumentJson from '../../../../../contracts/content/native-v1/valid/code.json';
 import mixedDocumentJson from '../../../../../contracts/content/native-v1/valid/mixed.json';
 import richDocumentJson from '../../../../../contracts/content/native-v1/valid/rich.json';
 import youtubeDocumentJson from '../../../../../contracts/content/native-v1/valid/youtube.json';
@@ -252,5 +253,43 @@ describe('NativeDocumentRendererComponent', () => {
         fixture.detectChanges();
 
         expect((fixture.nativeElement as HTMLElement).querySelectorAll('p').length).toBe(count);
+    });
+
+    it('renders code as inert text in a focusable, horizontally scrollable region', () => {
+        fixture.componentRef.setInput('document', codeDocumentJson as unknown as NativeDocument);
+        fixture.detectChanges();
+        const host = fixture.nativeElement as HTMLElement;
+
+        const blocks = Array.from(host.querySelectorAll<HTMLElement>('figure.native-code'));
+        expect(blocks.length).toBe(4);
+        expect(blocks.every(block => block.getAttribute('dir') === 'ltr')).toBe(true);
+        const first = blocks[0]!;
+        expect(first.querySelector('figcaption')?.textContent).toBe('sql');
+        expect(first.querySelector('pre > code.language-sql')?.textContent)
+            .toBe('EXPLAIN (ANALYZE, BUFFERS)\nSELECT *\n  FROM orders\n WHERE customer_id = 42;');
+        const region = first.querySelector<HTMLElement>('.native-code-scroll')!;
+        expect(region.getAttribute('tabindex')).toBe('0');
+        expect(region.getAttribute('role')).toBe('region');
+        expect(region.getAttribute('aria-label')).toContain('Код, язык sql');
+        expect(blocks[1]!.querySelector('code')?.className).toContain('language-c++');
+        expect(blocks[1]!.querySelector('code')?.textContent).toBe('int main() {\n\treturn 0;   \n}\n');
+        // no language: no label and no language class, but still a named region
+        expect(blocks[2]!.querySelector('figcaption')).toBeNull();
+        expect(blocks[2]!.querySelector('code')?.className).not.toContain('language-');
+        expect(blocks[2]!.querySelector('.native-code-scroll')?.getAttribute('aria-label')).toBe('Код: прокрутка по горизонтали при необходимости');
+        // markup in the source is text, never elements
+        expect(blocks[3]!.querySelector('code')?.textContent).toContain('<script>alert(1)</script>');
+        expect(host.querySelector('script')).toBeNull();
+    });
+
+    it('shows a retained code_block that is not valid version one as an unsupported placeholder', () => {
+        fixture.componentRef.setInput('document', documentOf([
+            nativeNode('code_block', { language: 'kotlin', source: 'println("secret")', wrap: true })
+        ]));
+        fixture.detectChanges();
+        const host = fixture.nativeElement as HTMLElement;
+        expect(host.querySelector('.native-unsupported')?.textContent).toContain('не поддерживается');
+        expect(host.textContent).not.toContain('secret');
+        expect(host.querySelector('pre')).toBeNull();
     });
 });

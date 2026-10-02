@@ -39,6 +39,20 @@ class NativeSnapshotCodecTest {
     }
 
     @Test
+    void retainedLegacyCodeBlockSurvivesTheStoredSnapshotRoundTripAsAnOpaqueNode() {
+        ObjectNode legacy = node(2, "code_block");
+        legacy.withObject("attrs").put("language", "kotlin").put("source", "println()").put("wrap", true);
+        ObjectNode current = node(3, "code_block");
+        current.withObject("attrs").put("lang", "sql").put("source", "SELECT 1;");
+        byte[] bytes = JSON.canonicalBytes(document(legacy, current));
+        var retained = new NativeDocumentReader().readRetained(bytes);
+        assertThat(retained.hasUnsupportedContent()).isTrue();
+        var decoded = decode(codec.encode(scope, retained));
+        assertThat(decoded.document().toJson()).isEqualTo(retained.toJson());
+        assertThat(decoded.document().hasUnsupportedContent()).isTrue();
+    }
+
+    @Test
     void scalarAndPropertyNameBoundaryAndJsonDepthRemainIndependentOfPhysicalDepth() {
         ObjectNode future = node(2, "future");
         future.withObject("attrs").put("я".repeat(16_384), "🌿".repeat(8192));

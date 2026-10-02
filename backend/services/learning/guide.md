@@ -41,8 +41,8 @@ exercise mechanics into the seven below. Epic #76 added the greenfield media lif
   `MbmRenderer` writes `[[bN]]` handles and is lossless or refuses (`MbmUnsupportedContentException`: it re-compiles every
   block and compares). `MbmAutoFixer` repairs harmless slips before compiling, `MbmRepairList` formats errors for the repair
   prompt, `MbmLint` is the hook for the copy lint. Inline scanning has a linear work budget and a nesting bound that report
-  `MBM_DOCUMENT_TOO_LARGE`. Fenced `code_block` stays `MBM_CODE_BLOCK_UNSUPPORTED` until #303 (the single fence scan in
-  `BlockParser` is where it plugs in). The executable contract is `contracts/generation/mbm-v1`.
+  `MBM_DOCUMENT_TOO_LARGE`. A fenced block outside `::mermaid` compiles to `code_block` (`BlockParser.codeBlock`). Writes use
+  `NativeDocumentReader.read`; the stored-snapshot decoder uses `readRetained`, which keeps a `code_block` that is not valid v1 as an opaque node. The executable contract is `contracts/generation/mbm-v1`.
 
 ## Shared platform contracts
 

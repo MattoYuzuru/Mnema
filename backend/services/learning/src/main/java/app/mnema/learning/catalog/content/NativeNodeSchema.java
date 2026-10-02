@@ -31,8 +31,9 @@ final class NativeNodeSchema {
             Map.entry("video", Set.of("assetId", "title", "transcript")),
             Map.entry("youtube", Set.of("videoId", "title", "transcript")),
             Map.entry("mermaid", Set.of("source", "title", "description")),
+            Map.entry("code_block", Set.of("lang", "source")),
             Map.entry("table", Set.of("caption", "summary", "columns", "rows")));
-    private static final Set<String> INLINE = Set.of("text", "ruby", "link");
+    static final Set<String> INLINE = Set.of("text", "ruby", "link");
     private static final Set<String> DIRECTIONS = Set.of("auto", "ltr", "rtl");
     private static final Set<String> MARKS = Set.of("strong", "em", "code");
     private static final Set<String> LANGUAGE_ATTRIBUTES = Set.of("lang", "dir");
@@ -44,6 +45,11 @@ final class NativeNodeSchema {
     private static final Pattern DNS_LABEL = Pattern.compile("[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?",
             Pattern.CASE_INSENSITIVE);
     private static final Pattern YOUTUBE_VIDEO_ID = Pattern.compile("[A-Za-z0-9_-]{11}");
+    // Programming-language identifier of a code_block, not a BCP 47 tag: lowercase, as short as "c" or "sql".
+    private static final Pattern CODE_LANGUAGE = Pattern.compile("[a-z0-9][a-z0-9+#.-]{0,31}");
+    private static final Set<String> NODE_FIELDS = Set.of("id", "type", "version", "attrs", "content");
+    static final String CODE_BLOCK = "code_block";
+    static final int MAX_CODE_SOURCE = 16_384;
 
     private NativeNodeSchema() {
     }
@@ -52,11 +58,35 @@ final class NativeNodeSchema {
         return version == 1 && ATTRIBUTES.containsKey(type);
     }
 
+    /**
+     * Whether this concrete node is interpreted as a supported version-one node. Equal to
+     * {@link #supports(String, int)} except for {@code code_block}, which was an opaque placeholder with arbitrary
+     * attributes before it gained a validator: a retained {@code code_block} that does not satisfy version one
+     * stays opaque, so activating the type never makes stored content unreadable.
+     */
+    static boolean supports(JsonNode node) {
+        String type = node.path("type").stringValue(null);
+        return supports(type, node.path("version").intValue(0)) && (!CODE_BLOCK.equals(type) || validCodeBlock(node));
+    }
+
+    /** Core fields, attributes and content of a version-one {@code code_block}; never throws. */
+    static boolean validCodeBlock(JsonNode node) {
+        JsonNode attrs = node.path("attrs");
+        return node.isObject() && node.size() == NODE_FIELDS.size()
+                && node.properties().stream().allMatch(property -> NODE_FIELDS.contains(property.getKey()))
+                && attrs.isObject() && node.path("content").isArray() && node.path("content").isEmpty()
+                && attrs.properties().stream().allMatch(property -> ATTRIBUTES.get(CODE_BLOCK).contains(property.getKey()))
+                && validCodeSource(attrs.path("source"))
+                && (!attrs.has("lang") || validCodeLanguage(attrs.path("lang")));
+    }
+
     static Slot validate(JsonNode node, Slot parentSlot, boolean insideLink) {
         String type = node.path("type").stringValue(null);
         JsonNode attrs = node.path("attrs");
+        boolean code = CODE_BLOCK.equals(type);
+        // code_block owns "lang" (a programming language) and has no direction: code is always left to right.
         if (attrs.properties().stream().anyMatch(property -> !ATTRIBUTES.get(type).contains(property.getKey())
-                    && !LANGUAGE_ATTRIBUTES.contains(property.getKey()))
+                    && (code || !LANGUAGE_ATTRIBUTES.contains(property.getKey())))
                 || ("doc".equals(type) && parentSlot != Slot.ROOT)
                 || ("list_item".equals(type) && parentSlot != Slot.LIST_ITEM)
                 || (parentSlot == Slot.INLINE && !INLINE.contains(type))
@@ -65,7 +95,9 @@ final class NativeNodeSchema {
                 || parentSlot == Slot.NONE) {
             throw NativeDocumentReader.invalid();
         }
-        languageAndDirection(attrs);
+        if (!code) {
+            languageAndDirection(attrs);
+        }
         Slot children = switch (type) {
             case "doc", "blockquote", "list_item" -> Slot.BLOCK;
             case "paragraph", "heading", "link" -> Slot.INLINE;
@@ -139,9 +171,25 @@ final class NativeNodeSchema {
                 requireBoundedText(attrs.path("description"), 8_192);
             }
             case "table" -> validateTable(attrs);
+            case CODE_BLOCK -> {
+                if (!validCodeSource(attrs.path("source")) || (attrs.has("lang") && !validCodeLanguage(attrs.path("lang")))) {
+                    throw NativeDocumentReader.invalid();
+                }
+            }
             default -> { }
         }
         return children;
+    }
+
+    /** Nonblank like Mermaid source, at most 16 384 UTF-16 units; tabs and LF are data, CR is not (normalized by writers). */
+    private static boolean validCodeSource(JsonNode value) {
+        return value.isString() && !value.stringValue(null).isBlank()
+                && value.stringValue(null).length() <= MAX_CODE_SOURCE && value.stringValue(null).indexOf('\r') < 0;
+    }
+
+    /** Absent or empty means "no language"; otherwise a lowercase identifier such as {@code sql} or {@code c++}. */
+    private static boolean validCodeLanguage(JsonNode value) {
+        return value.isString() && (value.stringValue(null).isEmpty() || CODE_LANGUAGE.matcher(value.stringValue(null)).matches());
     }
 
     private static void requireText(JsonNode node) {
