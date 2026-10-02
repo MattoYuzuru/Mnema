@@ -353,7 +353,7 @@ class Fixture(BASE.Fixture):
                 digest.update(hashlib.sha256(asset.read_bytes()).digest())
         evidence = {"fixture": self.results, "frontend_tree_sha256": digest.hexdigest(),
                     "scripts": {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
-                                for name in ("run.py", "browser.mjs", "mechanics.mjs")}}
+                                for name in ("run.py", "browser.mjs", "mechanics.mjs", "notifications.mjs")}}
         (self.args.output / "fixture.json").write_text(json.dumps(evidence, indent=2))
         runner = self.launch_group([self.args.node, str(Path(__file__).with_name("browser.mjs")), str(private_config)], "browser")
         self.control("browser_running")

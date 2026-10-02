@@ -86,6 +86,33 @@ exercised (the buttons and the select are the supported path). Study answers wer
 results (a wrong cloze blank, a wrong first match pair, a wrong categorized item), so a green run says nothing
 about a fully correct cloze, match or categorize attempt.
 
+### Notification center (`--authoring --media`)
+
+`notifications.mjs` runs after the base Study flow (which it completes first) and records one result,
+`notifications_center_real_media_failure`. The producer is real end to end: a deliberately corrupt file
+(`broken-image.png`, 2 KiB that are not an image, declared `image/png`) is dropped into the new-material editor's upload
+surface. It passes the client checks and the upload, the real media worker container rejects it, and the real Learning
+backend publishes `MEDIA_PROCESSING_FAILED` (`VERIFICATION_REJECTED`) for the owner. Nothing is stubbed. The stages:
+
+| Stage | Assertions |
+|---|---|
+| `toast` | after an SPA navigation to the deck list and a visibility poll, exactly one ERROR toast in `section.toast-region` (`popover="manual"`, open, not a live region) with the outcome sentence; the persistent `role="status"` announced it; the bell badge is `aria-hidden` and the bell's name carries the exact count; the API list carries the notification |
+| `toast_visuals` | reduced motion is fade only and ordinary motion keeps the slide (computed `animation-name`); the toast fits 1440 and 390 px without horizontal overflow (`notifications-toast-1440.png`, `notifications-toast-390.png`) |
+| `toast_keyboard` | real Tab from the last footer link reaches the toast's «×»; real Esc closes it and returns focus to the previous link, not `<body>` |
+| `bell_panel` | real Tab reaches the bell, Enter opens the panel (`aria-expanded`, `:popover-open`, the entry listed), the badge clears after the read-cursor PUT and the server reports 0 unread; Esc closes and focus returns to the bell; the panel at 390 and 1440 px (`notifications-panel-390.png`, `notifications-panel-1440.png`); «×» dismisses the entry and the API list is empty |
+| `quiet_mode` | a second corrupt upload; Study is reached through links and a practice session is in the answering phase; once the API has the notification a poll updates the badge at once, but no toast appears and nothing is announced; after answering, the toast shows on the feedback screen without taking focus from the feedback heading (`notifications-study-feedback-toast-1440.png`); it is closed with «×» |
+| `escape_empty_panel` | Esc on the emptied panel closes it and focus returns to the bell |
+
+Honest limits. The 45 s poll is not waited for: a `visibilitychange` event is dispatched on the document (the store polls
+at once when the tab becomes visible; `visibilityKicks` in the result counts them). Hover pause is not exercised: an ERROR
+toast has no timeout and the 3 s echo toast has no caller yet. Light dismiss is a real mouse press outside the panel. In
+this headless Chrome, Esc sent to a background tab hides the tab and stops its animation frames, so the scenario calls
+`Page.bringToFront` before every Esc; an Esc sent after the viewport was resized twice while the panel stayed open and its
+only entry was dismissed froze the renderer in an early run (reproduced twice, not on a plain popover page, not once the
+panel is closed with a click and reopened), so the dismissal stage closes by click and the Esc check on the emptied panel
+runs on a freshly opened panel. A failing stage writes `failure-notifications-<stage>.png` and `.txt` (harness labels and
+CDP method names only).
+
 Use `--chrome` for another existing Chrome executable. The page contract defaults to
 `[data-testid="identity-profile"]`, `[data-testid="logout"]`, and `[role="alert"]`;
 matching CLI selector options are available. Registration uses `#email`, `#username`,

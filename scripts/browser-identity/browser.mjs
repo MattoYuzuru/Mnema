@@ -3,6 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { runMechanics } from './mechanics.mjs';
+import { runNotifications } from './notifications.mjs';
 
 const config = JSON.parse(await readFile(process.argv[2], 'utf8'));
 const results = [];
@@ -126,6 +127,11 @@ try {
   function watchTab(tab) {
     const tokenRequests = new Set();
     tab.on('Runtime.exceptionThrown', () => { browserErrors++; });
+    // A page that opens a JavaScript dialog blocks every later CDP call; that is a product finding, named as such.
+    tab.on('Page.javascriptDialogOpening', event => {
+      asynchronousFailure = true; firstAsynchronousFailure ??= 'unexpected JavaScript dialog: ' + String(event.type).slice(0, 20);
+      run(tab.call('Page.handleJavaScriptDialog', { accept: false }));
+    });
     tab.on('Page.lifecycleEvent', event => {
       if (event.name === 'DOMContentLoaded') loadedDocuments.add(event.loaderId);
     });
@@ -959,11 +965,18 @@ try {
       authoredAudioLoaded: Boolean(config.media), keyboardStart: true,
       feedbackFocus: true, widths: [1440, 390, 320], deviceScaleFactor: 2,
       reducedMotion: true, noHorizontalOverflow: true, primaryActionMinimumPx: 44 });
-    if (config.mechanics) {
-      // Close the base flow's one-exercise session so the mechanics baseline starts a fresh standard session.
-      step = 'mechanics_prepare';
+    if (config.media) {
+      // Close the base flow's one-exercise session so later scenarios start fresh sessions.
+      step = 'study_browser_complete';
       require(await clickText('.feedback-card button.primary', 'Продолжить', second), 'Study continue action absent');
       await until(() => exists('.completion', second), 'base Study session did not complete');
+      // Notification center against a REAL producer (the media worker rejecting a corrupt upload).
+      await runNotifications({
+        tab: second, config, record, SafeFailure, until, exists, sanitizedLocation, navigate, saveScreenshot,
+        clickText, setStep: value => { step = value; }, deckPath, bearer: secondBearer, answerText: editedText });
+    }
+    if (config.mechanics) {
+      step = 'mechanics_prepare';
       const outcome = await runMechanics({
         tab: second, config, record, SafeFailure, until, exists, bodyIncludes, sanitizedLocation, navigate, click,
         saveScreenshot, saveFullScreenshot, run, mediaTrace: () => ({ api: mediaApiResponses.slice(-10), store: mediaResponses.slice(-10), failures: mediaFailures.slice(-5) }), setStep: value => { step = value; },
