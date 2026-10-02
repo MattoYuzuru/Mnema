@@ -61,6 +61,8 @@ public final class GrantTransactionFilter extends OncePerRequestFilter {
     }
 
     private static final class FilterFailure extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
         FilterFailure(Exception cause) {
             super(cause);
         }

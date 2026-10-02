@@ -1,6 +1,8 @@
 package app.mnema.identityaccount.transfer;
 
 final class AccountTransferFailure extends RuntimeException {
+    private static final long serialVersionUID = 1L;
+
     private final String code;
 
     AccountTransferFailure(String code) {

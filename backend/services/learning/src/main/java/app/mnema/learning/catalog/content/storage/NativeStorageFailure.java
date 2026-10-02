@@ -2,6 +2,8 @@ package app.mnema.learning.catalog.content.storage;
 
 /** Internal codec failures contain neither content nor physical/semantic identifiers. */
 public final class NativeStorageFailure extends RuntimeException {
+    private static final long serialVersionUID = 1L;
+
     public enum Code { INVALID_GRAPH, BUDGET_EXCEEDED, STRUCTURE_CHANGED, PREPARATION_EXPIRED, INCOMPLETE }
 
     private final Code code;

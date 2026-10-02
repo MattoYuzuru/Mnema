@@ -2,6 +2,8 @@ package app.mnema.learning.catalog.content.pages;
 
 /** Internal page errors deliberately exclude content and identifiers. */
 public final class CountedPageFailure extends RuntimeException {
+    private static final long serialVersionUID = 1L;
+
     public enum Code { INVALID_PAGE, INVALID_RANGE, KEY_MISMATCH, BUDGET_EXCEEDED }
     private final Code code;
 

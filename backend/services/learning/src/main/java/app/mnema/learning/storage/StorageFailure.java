@@ -2,6 +2,8 @@ package app.mnema.learning.storage;
 
 /** Internal failures contain no payload, object identifiers or database exception details. */
 public final class StorageFailure extends RuntimeException {
+    private static final long serialVersionUID = 1L;
+
     public enum Code { OBJECT_MISSING, OBJECT_MISMATCH, PREPARATION_EXPIRED, INVALID_PREPARATION, BUDGET_EXCEEDED }
 
     private final Code code;

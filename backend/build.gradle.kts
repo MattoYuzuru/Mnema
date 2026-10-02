@@ -23,6 +23,10 @@ subprojects {
         add("mockitoAgent", "org.mockito:mockito-core") { isTransitive = false }
     }
 
+    tasks.withType<JavaCompile>().configureEach {
+        options.compilerArgs.addAll(listOf("-Xlint:all", "-Werror"))
+    }
+
     tasks.withType<Test>().configureEach {
         useJUnitPlatform()
         jvmArgumentProviders.add(CommandLineArgumentProvider { listOf("-javaagent:${mockitoAgent.asPath}") })
