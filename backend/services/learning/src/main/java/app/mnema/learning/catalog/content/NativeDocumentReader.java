@@ -2,7 +2,7 @@ package app.mnema.learning.catalog.content;
 
 import app.mnema.learning.platform.json.ContentJsonReader;
 import app.mnema.learning.platform.json.CanonicalJsonHasher;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
@@ -40,7 +40,7 @@ public final class NativeDocumentReader {
         }
         if (!hasExactly(document, ENVELOPE_FIELDS) || !positiveInt(document.path("formatVersion"))
                 || document.path("formatVersion").intValue() != 1
-                || !"doc".equals(document.path("root").path("type").textValue())) {
+                || !"doc".equals(document.path("root").path("type").stringValue(null))) {
             throw invalid();
         }
         validateScalarSizes(document);
@@ -56,15 +56,15 @@ public final class NativeDocumentReader {
             Visit visit = pending.removeLast();
             JsonNode node = visit.node();
             if (++count > MAX_NODES || visit.depth() > MAX_DEPTH || !node.isObject()
-                    || !node.path("id").isTextual() || !UUID_V4.matcher(node.path("id").textValue()).matches()
-                    || !ids.add(UUID.fromString(node.path("id").textValue()))
-                    || !node.path("type").isTextual() || !TYPE.matcher(node.path("type").textValue()).matches()
+                    || !node.path("id").isString() || !UUID_V4.matcher(node.path("id").stringValue(null)).matches()
+                    || !ids.add(UUID.fromString(node.path("id").stringValue(null)))
+                    || !node.path("type").isString() || !TYPE.matcher(node.path("type").stringValue(null)).matches()
                     || !positiveInt(node.path("version")) || !node.path("attrs").isObject()
                     || !node.path("content").isArray()) {
                 throw invalid();
             }
-            String type = node.path("type").textValue();
-            boolean opaque = visit.opaque() || !NativeNodeSchema.supports(type, node.path("version").intValue());
+            String type = node.path("type").stringValue(null);
+            boolean opaque = visit.opaque() || !NativeNodeSchema.supports(type, node.path("version").intValue(0));
             NativeNodeSchema.Slot slot = NativeNodeSchema.Slot.OPAQUE;
             if (opaque) {
                 unsupported = true;
@@ -100,8 +100,8 @@ public final class NativeDocumentReader {
         pending.add(document);
         while (!pending.isEmpty()) {
             JsonNode value = pending.removeLast();
-            if (value.isTextual()) {
-                requireScalarSize(value.textValue());
+            if (value.isString()) {
+                requireScalarSize(value.stringValue(null));
             } else if (value.isObject()) {
                 for (var property : value.properties()) {
                     requireScalarSize(property.getKey());

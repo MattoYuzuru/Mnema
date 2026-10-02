@@ -2,9 +2,9 @@ package app.mnema.learning.catalog.content.storage;
 
 import app.mnema.learning.catalog.content.NativeDocumentReader;
 import app.mnema.learning.platform.json.CanonicalJsonHasher;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;

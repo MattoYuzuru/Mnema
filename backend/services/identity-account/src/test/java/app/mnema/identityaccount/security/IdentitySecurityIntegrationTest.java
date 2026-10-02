@@ -7,14 +7,14 @@ import app.mnema.identityaccount.profile.Profiles;
 import app.mnema.identityaccount.moderation.Moderation;
 import app.mnema.identityaccount.federation.FederatedAccounts;
 import app.mnema.identityaccount.support.PostgresIntegrationTest;
-import com.fasterxml.jackson.databind.*;
+import tools.jackson.databind.*;
 import com.nimbusds.jose.*;
 import com.nimbusds.jose.crypto.RSASSASigner;
 import com.nimbusds.jwt.*;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -35,7 +35,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @SpringBootTest
-@AutoConfigureMockMvc(print = org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint.NONE)
+@AutoConfigureMockMvc(print = org.springframework.boot.webmvc.test.autoconfigure.MockMvcPrint.NONE)
 class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
     @Autowired
     MockMvc mvc;
@@ -139,7 +139,7 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
         var account = account();
         var initial = mvc.perform(get("/api/accounts/csrf").secure(true)).andExpect(status().isOk()).andReturn();
         Cookie before = initial.getResponse().getCookie("SESSION");
-        String token = json.readTree(initial.getResponse().getContentAsString()).get("token").asText();
+        String token = json.readTree(initial.getResponse().getContentAsString()).get("token").asString();
         mvc.perform(post("/api/accounts/login").secure(true).cookie(before).contentType("application/json")
                         .content(body(Map.of("login", accounts.get(account.accountId(), false).email(), "password", password))))
                 .andExpect(status().isForbidden());
@@ -268,7 +268,7 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
         assertThat(tokens.has("refresh_token")).isFalse();
         assertThat(tokens.path("expires_in").asLong())
                 .isBetween(Duration.ofDays(3).minusSeconds(10).toSeconds(), Duration.ofDays(3).toSeconds());
-        String access = tokens.get("access_token").asText();
+        String access = tokens.get("access_token").asString();
         var decoded = decoder.decode(access);
         assertThat(Duration.between(decoded.getIssuedAt(), decoded.getExpiresAt()))
                 .isEqualTo(Duration.ofDays(3));
@@ -306,15 +306,15 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
                         .param("code", code).param("code_verifier", verifier))
                 .andExpect(status().isOk()).andReturn();
         var tokens = json.readTree(result.getResponse().getContentAsString());
-        String bearer = "Bearer " + tokens.path("access_token").asText();
+        String bearer = "Bearer " + tokens.path("access_token").asString();
 
-        assertThat(tokens.path("scope").asText().split(" "))
+        assertThat(tokens.path("scope").asString().split(" "))
                 .containsExactlyInAnyOrder("openid", "learning.read", "learning.write");
         mvc.perform(get("/userinfo").header("Authorization", bearer))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.sub").value(account.accountId().toString()));
         mvc.perform(get("/api/accounts/me").header("Authorization", bearer))
                 .andExpect(status().isForbidden());
-        mvc.perform(get("/userinfo").header("Authorization", "Bearer " + tokens.path("id_token").asText()))
+        mvc.perform(get("/userinfo").header("Authorization", "Bearer " + tokens.path("id_token").asString()))
                 .andExpect(status().isUnauthorized());
 
         tx.executeWithoutResult(status -> {
@@ -335,7 +335,7 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
                         .param("client_id", "mnema-web").param("redirect_uri", "https://mnema.app/auth/callback")
                         .param("code", code).param("code_verifier", verifier))
                 .andExpect(status().isOk()).andReturn();
-        String accessToken = json.readTree(result.getResponse().getContentAsString()).path("access_token").asText();
+        String accessToken = json.readTree(result.getResponse().getContentAsString()).path("access_token").asString();
         var grant = authorizations.findByToken(accessToken,
                 org.springframework.security.oauth2.server.authorization.OAuth2TokenType.ACCESS_TOKEN);
         assertThat(grant).isNotNull();
@@ -421,9 +421,9 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
         var tokens = json.readTree(result.getResponse().getContentAsString());
         String outstanding = authorize(cookie, verifier);
         mvc.perform(post("/connect/logout").secure(true).cookie(cookie).with(csrf())
-                        .param("id_token_hint", tokens.get("id_token").asText()).param("client_id", "mnema-web"))
+                        .param("id_token_hint", tokens.get("id_token").asString()).param("client_id", "mnema-web"))
                 .andExpect(status().is3xxRedirection());
-        mvc.perform(get("/api/accounts/me").header("Authorization", "Bearer " + tokens.get("access_token").asText()))
+        mvc.perform(get("/api/accounts/me").header("Authorization", "Bearer " + tokens.get("access_token").asString()))
                 .andExpect(status().isUnauthorized());
         mvc.perform(post("/oauth2/token").param("grant_type", "authorization_code").param("client_id", "mnema-web")
                 .param("redirect_uri", "https://mnema.app/auth/callback").param("code", outstanding)
@@ -437,7 +437,7 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
                 .content(body(Map.of("email", key + "@example.test", "loginName", key, "password", password,
                         "profileUsername", key)))).andExpect(status().isCreated()).andReturn();
         UUID id = UUID.fromString(
-                json.readTree(registered.getResponse().getContentAsString()).get("accountId").asText());
+                json.readTree(registered.getResponse().getContentAsString()).get("accountId").asString());
         var access = accounts.get(id, false).access();
         var cookie = login(access);
         mvc.perform(post("/api/accounts/register").with(csrf()).contentType("application/json")
@@ -558,12 +558,12 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
                                 clientId, "fixture-secret")).param("grant_type", "authorization_code")
                 .param("redirect_uri", "https://mnema.app/auth/callback").param("code", code)
                 .param("code_verifier", verifier)).andExpect(status().isOk()).andReturn();
-        String refresh = json.readTree(result.getResponse().getContentAsString()).get("refresh_token").asText();
+        String refresh = json.readTree(result.getResponse().getContentAsString()).get("refresh_token").asString();
         var rotated = mvc.perform(post("/oauth2/token").with(
                         org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic(
                                 clientId, "fixture-secret")).param("grant_type", "refresh_token")
                 .param("refresh_token", refresh)).andExpect(status().isOk()).andReturn();
-        String next = json.readTree(rotated.getResponse().getContentAsString()).get("refresh_token").asText();
+        String next = json.readTree(rotated.getResponse().getContentAsString()).get("refresh_token").asString();
         assertThat(next).isNotEqualTo(refresh);
         mvc.perform(post("/oauth2/token").with(
                         org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic(

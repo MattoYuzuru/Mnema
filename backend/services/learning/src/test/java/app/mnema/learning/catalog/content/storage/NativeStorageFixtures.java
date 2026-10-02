@@ -3,8 +3,8 @@ package app.mnema.learning.catalog.content.storage;
 import app.mnema.learning.catalog.content.NativeDocument;
 import app.mnema.learning.catalog.content.NativeDocumentReader;
 import app.mnema.learning.storage.StorageTypes.StoredObject;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.util.UUID;
 

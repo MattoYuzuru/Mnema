@@ -9,9 +9,9 @@ import app.mnema.learning.platform.concurrency.VersionPreconditionRequiredExcept
 import app.mnema.learning.platform.id.UuidPolicy;
 import app.mnema.learning.platform.json.CanonicalJsonHasher;
 import app.mnema.learning.platform.json.ContentJsonReader;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -109,9 +109,9 @@ public final class ItemPublicationCommand {
     }
 
     private static Change change(JsonNode value, boolean requireMember, UUID pathMember) {
-        if (!value.isObject() || !value.path("operation").isTextual()) throw new InvalidRequestException();
+        if (!value.isObject() || !value.path("operation").isString()) throw new InvalidRequestException();
         UUID member = pathMember != null ? pathMember : requireMember ? id(value, "memberKey") : null;
-        return switch (value.path("operation").textValue()) {
+        return switch (value.path("operation").stringValue(null)) {
             case "create" -> {
                 fields(value, Set.of("operation", "memberKey", "document"),
                         Set.of("operation", "memberKey", "document", "ordinal"));
@@ -171,9 +171,9 @@ public final class ItemPublicationCommand {
     }
 
     private static NativeStructuralEdit edit(JsonNode value) {
-        if (!value.isObject() || !value.path("type").isTextual()) throw new InvalidRequestException();
+        if (!value.isObject() || !value.path("type").isString()) throw new InvalidRequestException();
         try {
-            return switch (value.path("type").textValue()) {
+            return switch (value.path("type").stringValue(null)) {
                 case "insert" -> {
                     fields(value, Set.of("type", "nodeId", "parentId", "childIndex"));
                     yield new NativeStructuralEdit.Insert(id(value, "nodeId"), id(value, "parentId"),
@@ -217,10 +217,10 @@ public final class ItemPublicationCommand {
 
     private static UUID id(JsonNode object, String name) {
         JsonNode value = object.path(name);
-        if (!value.isTextual() || value.textValue().length() != 36) throw new InvalidRequestException();
+        if (!value.isString() || value.stringValue(null).length() != 36) throw new InvalidRequestException();
         try {
-            UUID id = UuidPolicy.requireEntityId(UUID.fromString(value.textValue()), name);
-            if (!id.toString().equalsIgnoreCase(value.textValue())) throw new InvalidRequestException();
+            UUID id = UuidPolicy.requireEntityId(UUID.fromString(value.stringValue(null)), name);
+            if (!id.toString().equalsIgnoreCase(value.stringValue(null))) throw new InvalidRequestException();
             return id;
         } catch (IllegalArgumentException exception) {
             throw new InvalidRequestException();

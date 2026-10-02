@@ -1,7 +1,7 @@
 package app.mnema.learning.catalog.authoring;
 
 import app.mnema.learning.platform.api.InvalidRequestException;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -37,7 +37,7 @@ public class DraftController {
     @GetMapping("/{draftId}")
     ResponseEntity<JsonNode> read(@AuthenticationPrincipal Jwt identity, @PathVariable String draftId) {
         JsonNode result = service.read(actor(identity), AuthoringIds.entity(draftId));
-        return ResponseEntity.ok().headers(privateHeaders()).eTag(result.path("rowVersion").textValue()).body(result);
+        return ResponseEntity.ok().headers(privateHeaders()).eTag(result.path("rowVersion").stringValue(null)).body(result);
     }
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -46,7 +46,7 @@ public class DraftController {
         DraftService.WriteResult result = service.create(actor(identity), AuthoringCommands.draftCreate(body));
         var response = write(result, HttpStatus.CREATED);
         response.location(URI.create(request.getContextPath() + "/editing-drafts/"
-                + result.acknowledgement().path("draft").path("draftId").textValue()));
+                + result.acknowledgement().path("draft").path("draftId").stringValue(null)));
         return response.body(result.acknowledgement());
     }
 
@@ -70,7 +70,7 @@ public class DraftController {
     private static ResponseEntity.BodyBuilder write(DraftService.WriteResult result, HttpStatus status) {
         var response = ResponseEntity.status(status).headers(privateHeaders());
         if (result.replayed()) response.header("Idempotency-Replayed", "true");
-        else response.eTag(result.acknowledgement().path("draft").path("rowVersion").textValue());
+        else response.eTag(result.acknowledgement().path("draft").path("rowVersion").stringValue(null));
         return response;
     }
 

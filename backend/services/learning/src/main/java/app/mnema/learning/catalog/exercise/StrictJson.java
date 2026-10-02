@@ -2,7 +2,7 @@ package app.mnema.learning.catalog.exercise;
 
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.id.UuidPolicy;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -50,13 +50,13 @@ final class StrictJson {
 
     /** Text that is present, not blank and at most {@code max} UTF-16 units. */
     static String nonBlank(JsonNode value, int max) {
-        if (!value.isTextual() || value.textValue().isBlank() || value.textValue().length() > max) throw invalid();
-        return value.textValue();
+        if (!value.isString() || value.stringValue(null).isBlank() || value.stringValue(null).length() > max) throw invalid();
+        return value.stringValue(null);
     }
 
     static String oneOf(JsonNode value, Set<String> allowed) {
-        if (!value.isTextual() || !allowed.contains(value.textValue())) throw invalid();
-        return value.textValue();
+        if (!value.isString() || !allowed.contains(value.stringValue(null))) throw invalid();
+        return value.stringValue(null);
     }
 
     static int integer(JsonNode value, int min, int max) {
@@ -74,10 +74,10 @@ final class StrictJson {
 
     /** Canonical lowercase UUID text; the same value must round-trip. */
     static UUID idValue(JsonNode value) {
-        if (!value.isTextual() || value.textValue().length() != 36) throw invalid();
+        if (!value.isString() || value.stringValue(null).length() != 36) throw invalid();
         try {
-            UUID id = UuidPolicy.requireEntityId(UUID.fromString(value.textValue()), "id");
-            if (!id.toString().equals(value.textValue())) throw invalid();
+            UUID id = UuidPolicy.requireEntityId(UUID.fromString(value.stringValue(null)), "id");
+            if (!id.toString().equals(value.stringValue(null))) throw invalid();
             return id;
         } catch (IllegalArgumentException exception) { throw invalid(); }
     }

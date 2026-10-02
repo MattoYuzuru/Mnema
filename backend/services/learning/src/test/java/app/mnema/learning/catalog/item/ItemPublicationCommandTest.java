@@ -1,9 +1,9 @@
 package app.mnema.learning.catalog.item;
 
 import app.mnema.learning.platform.api.InvalidRequestException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
@@ -24,7 +24,7 @@ class ItemPublicationCommandTest {
         while (!Files.exists(root.resolve("contracts/items/publication.json"))) root = root.getParent();
         JsonNode fixture = JSON.readTree(Files.readString(root.resolve("contracts/items/publication.json")));
         ItemPublicationCommand command = ItemPublicationCommand.readCreate(bytes(fixture.path("create").toString()));
-        assertThat(command.commandId().toString()).isEqualTo(fixture.path("create").path("commandId").textValue());
+        assertThat(command.commandId().toString()).isEqualTo(fixture.path("create").path("commandId").stringValue(null));
         assertThat(((ItemPublicationCommand.Create) command.changes().getFirst()).ordinal()).isZero();
         ItemPublicationCommand save = ItemPublicationCommand.readSave(bytes(fixture.path("save").toString()), UUID.randomUUID());
         var structural = ((ItemPublicationCommand.Save) save.changes().getFirst()).edits();

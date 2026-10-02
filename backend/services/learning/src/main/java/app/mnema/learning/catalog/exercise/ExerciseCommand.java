@@ -5,8 +5,8 @@ import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.concurrency.VersionPreconditionRequiredException;
 import app.mnema.learning.platform.id.UuidPolicy;
 import app.mnema.learning.platform.json.ContentJsonReader;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -76,8 +76,8 @@ public record ExerciseCommand(UUID commandId, UUID expectedDeckRevisionId, UUID 
     }
 
     private static Objective objective(JsonNode value) {
-        if (!value.isObject() || !value.path("operation").isTextual()) throw invalid();
-        return switch (value.path("operation").textValue()) {
+        if (!value.isObject() || !value.path("operation").isString()) throw invalid();
+        return switch (value.path("operation").stringValue(null)) {
             case "create" -> {
                 fields(value, "operation", "title");
                 yield new CreateObjective(title(value));

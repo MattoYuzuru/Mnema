@@ -9,9 +9,9 @@ import app.mnema.learning.platform.idempotency.CommandIdentity;
 import app.mnema.learning.platform.idempotency.CommandReceiptService;
 import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
 import app.mnema.learning.platform.json.CanonicalJsonHasher;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -86,7 +86,7 @@ public class CaptureService {
             acknowledgement.set("capture", repository.capture(actor, id).orElseThrow().summary());
             return acknowledgement;
         });
-        UUID id = UUID.fromString(result.path("capture").path("noteId").textValue());
+        UUID id = UUID.fromString(result.path("capture").path("noteId").stringValue(null));
         own(actor, id);
         return new WriteResult(result, !applied[0]);
     }
@@ -147,11 +147,11 @@ public class CaptureService {
         }
         if (note.rowVersion() != expected) throw new VersionConflictException();
         JsonNode first = publication.path("changes").path(0);
-        if (!first.path("memberKey").isTextual() || !first.path("itemRevisionId").isTextual()) {
+        if (!first.path("memberKey").isString() || !first.path("itemRevisionId").isString()) {
             throw new IllegalStateException("Item creation acknowledgement is incomplete");
         }
-        UUID member = AuthoringIds.entity(first.path("memberKey").textValue());
-        UUID revision = AuthoringIds.entity(first.path("itemRevisionId").textValue());
+        UUID member = AuthoringIds.entity(first.path("memberKey").stringValue(null));
+        UUID revision = AuthoringIds.entity(first.path("itemRevisionId").stringValue(null));
         ObjectNode result = JsonNodeFactory.instance.objectNode().put("commandId", commandId.toString())
                 .put("noteId", noteId.toString()).put("noteVersion", Long.toString(expected + 1))
                 .put("sourcePreserved", true);

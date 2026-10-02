@@ -4,9 +4,9 @@ import app.mnema.learning.platform.api.ApiExceptionHandler;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.concurrency.VersionConflictException;
 import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -39,7 +39,7 @@ class DeckControllerTest {
     @BeforeEach
     void setUp() throws Exception {
         fixture = JsonMapper.builder().build().readTree(Files.readString(Path.of("../../../contracts/decks/metadata.json")));
-        deck = UUID.fromString(fixture.path("detail").path("deckId").textValue());
+        deck = UUID.fromString(fixture.path("detail").path("deckId").stringValue(null));
         acknowledgement = JsonMapper.builder().build().createObjectNode();
         acknowledgement.set("commandId", fixture.path("command").path("commandId"));
         acknowledgement.set("deck", fixture.path("detail"));

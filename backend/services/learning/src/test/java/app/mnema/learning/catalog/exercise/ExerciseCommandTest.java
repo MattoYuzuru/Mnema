@@ -3,9 +3,9 @@ package app.mnema.learning.catalog.exercise;
 import app.mnema.learning.media.MediaCatalog;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.concurrency.VersionPreconditionRequiredException;
-import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -34,7 +34,7 @@ class ExerciseCommandTest {
     void everyContractFixtureOfTheSevenMechanicsParsesAndKeepsItsStoredShape(String name) {
         ObjectNode fixture = mechanic(name);
         ExerciseCommand command = ExerciseCommand.readCreate(bytes(fixture));
-        assertThat(command.exercise().type().name()).isEqualTo(fixture.path("exercise").path("type").textValue());
+        assertThat(command.exercise().type().name()).isEqualTo(fixture.path("exercise").path("type").stringValue(null));
         // numbers are read as big integers, so compare the persisted text rather than node classes
         assertThat(command.exercise().content().toString()).isEqualTo(fixture.path("exercise").path("content").toString());
         assertThat(command.exercise().answerKey().toString()).isEqualTo(fixture.path("exercise").path("answerKey").toString());
@@ -42,7 +42,7 @@ class ExerciseCommandTest {
                 .isEqualTo(fixture.path("exercise").path("evaluatorPolicy").toString());
         assertThat(command.objective()).isInstanceOf(ExerciseCommand.CreateObjective.class);
         assertThat(command.exercise().subject().memberKey().toString())
-                .isEqualTo(fixture.path("exercise").path("subject").path("memberKey").textValue());
+                .isEqualTo(fixture.path("exercise").path("subject").path("memberKey").stringValue(null));
         assertThat(command.exercise().requiresSemanticAssessment()).isFalse();
         assertThat(command.exercise().requiresSpeechToText()).isFalse();
     }
@@ -75,8 +75,8 @@ class ExerciseCommandTest {
         ExerciseCommand command = ExerciseCommand.readCreate(bytes(mechanic("createCloze")));
         UUID deck = UUID.randomUUID();
         UUID exercise = UUID.randomUUID();
-        assertThat(command.envelope(deck, exercise, 4).path("expectedDeckVersion").textValue()).isEqualTo("4");
-        assertThat(command.envelope(deck, exercise, 4).path("exerciseId").textValue()).isEqualTo(exercise.toString());
+        assertThat(command.envelope(deck, exercise, 4).path("expectedDeckVersion").stringValue(null)).isEqualTo("4");
+        assertThat(command.envelope(deck, exercise, 4).path("exerciseId").stringValue(null)).isEqualTo(exercise.toString());
         assertThat(command.envelope(deck, null, 4).has("exerciseId")).isFalse();
         command.payload().put("tampered", true);
         assertThat(command.payload().has("tampered")).isFalse();
@@ -195,9 +195,9 @@ class ExerciseCommandTest {
         assertInvalid("createChoiceVideoMultiple", body -> content(body).put("selectionMode", "MANY"));
         assertInvalid("createChoiceVideoMultiple", body -> answerKey(body).withArray("correctOptionIds").removeAll());
         assertInvalid("createChoiceVideoMultiple", body -> answerKey(body).withArray("correctOptionIds")
-                .set(1, JSON.getNodeFactory().textNode(UUID.randomUUID().toString())));
+                .set(1, JSON.getNodeFactory().stringNode(UUID.randomUUID().toString())));
         assertInvalid("createChoiceVideoMultiple", body -> answerKey(body).withArray("correctOptionIds")
-                .set(1, JSON.getNodeFactory().textNode(CHOICE_A)));
+                .set(1, JSON.getNodeFactory().stringNode(CHOICE_A)));
         assertInvalid("createChoiceVideoMultiple", body -> ((ObjectNode) content(body).withArray("options").get(1))
                 .put("optionId", CHOICE_A));
         assertInvalid("createChoiceVideoMultiple", body -> drop(content(body).withArray("options"), 3, 2, 1));
@@ -275,7 +275,7 @@ class ExerciseCommandTest {
         assertInvalid("createCloze", body -> {
             ArrayNode passage = content(body).withArray("passage");
             for (int index = passage.size() - 1; index >= 0; index--) {
-                if ("TEXT".equals(passage.get(index).path("kind").textValue())) passage.remove(index);
+                if ("TEXT".equals(passage.get(index).path("kind").stringValue(null))) passage.remove(index);
             }
         });
         assertInvalid("createCloze", body -> ((ObjectNode) content(body).withArray("passage").get(0)).put("text", ""));
@@ -291,7 +291,7 @@ class ExerciseCommandTest {
         // whitespace-only segments are legal (indentation between blanks) and text is kept verbatim
         ExerciseCommand cloze = ExerciseCommand.readCreate(bytes(patched("createCloze", body -> content(body)
                 .withArray("passage").insert(1, Blocks.text("\n    ")))));
-        assertThat(cloze.exercise().content().path("passage").get(1).path("text").textValue()).isEqualTo("\n    ");
+        assertThat(cloze.exercise().content().path("passage").get(1).path("text").stringValue(null)).isEqualTo("\n    ");
         // twelve blanks are valid
         ExerciseCommand.readCreate(bytes(patched("createCloze", body -> addBlanks(body, 9))));
     }
@@ -358,7 +358,7 @@ class ExerciseCommandTest {
         // prompt and reference allow 4000 verbatim units, newlines and indentation included
         ExerciseCommand text = ExerciseCommand.readCreate(bytes(patched("createFreeResponseAudio", body ->
                 ((ObjectNode) content(body).withArray("prompt").get(1)).put("text", "  a\n\tb  " + "x".repeat(3_990)))));
-        assertThat(text.exercise().content().path("prompt").get(1).path("text").textValue()).startsWith("  a\n\tb  ");
+        assertThat(text.exercise().content().path("prompt").get(1).path("text").stringValue(null)).startsWith("  a\n\tb  ");
         assertInvalid("createFreeResponseAudio", body -> ((ObjectNode) content(body).withArray("prompt").get(1))
                 .put("text", "x".repeat(4_001)));
         assertInvalid("createFreeResponseAudio", body -> ((ObjectNode) content(body).withArray("prompt").get(1)).put("text", " \n "));
@@ -386,7 +386,7 @@ class ExerciseCommandTest {
         assertInvalid("createSelfCheck", body -> ((ObjectNode) content(body).withArray("reference").get(1)).put("assetId", "bad"));
         assertInvalid("createSelfCheck", body -> ((ObjectNode) content(body).withArray("reference").get(0)).remove("nodeId"));
         assertInvalid("createSelfCheck", body -> ((ObjectNode) content(body).withArray("reference").get(0)).put("kind", "NODE_TEXT"));
-        assertInvalid("createSelfCheck", body -> content(body).withArray("reference").add(JSON.getNodeFactory().textNode("loose")));
+        assertInvalid("createSelfCheck", body -> content(body).withArray("reference").add(JSON.getNodeFactory().stringNode("loose")));
     }
 
     @Test
@@ -418,7 +418,7 @@ class ExerciseCommandTest {
                 rubric -> rubric.withArray("criteria").removeAll(),
                 rubric -> { for (int index = 0; index < 9; index++) criterion(rubric, UUID.randomUUID().toString()); },
                 rubric -> ((ObjectNode) rubric.withArray("criteria").get(1)).put("criterionId",
-                        rubric.path("criteria").get(0).path("criterionId").textValue()),
+                        rubric.path("criteria").get(0).path("criterionId").stringValue(null)),
                 rubric -> ((ObjectNode) rubric.withArray("criteria").get(0)).put("critical", "yes"),
                 rubric -> ((ObjectNode) rubric.withArray("criteria").get(0)).put("description", "d".repeat(501)),
                 rubric -> ((ObjectNode) rubric.withArray("criteria").get(0)).put("weight", 3),
@@ -554,7 +554,7 @@ class ExerciseCommandTest {
         }
     }
 
-    private static void drop(com.fasterxml.jackson.databind.node.ArrayNode array, int... indexes) {
+    private static void drop(tools.jackson.databind.node.ArrayNode array, int... indexes) {
         for (int index : indexes) array.remove(index);
     }
 }

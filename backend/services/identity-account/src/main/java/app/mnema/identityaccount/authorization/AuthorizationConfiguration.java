@@ -29,7 +29,8 @@ import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.core.oidc.OidcScopes;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
-import org.springframework.security.oauth2.jwt.JwtValidators;
+import org.springframework.security.oauth2.jwt.JwtIssuerValidator;
+import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationConsentService;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationService;
@@ -138,7 +139,7 @@ public class AuthorizationConfiguration {
                 (selector, context) -> selector.select(keys.toPublicJWKSet())));
         var decoder = new NimbusJwtDecoder(processor);
         decoder.setJwtValidator(
-                new DelegatingOAuth2TokenValidator<>(JwtValidators.createDefaultWithIssuer(issuer.issuer()), jwt -> {
+                new DelegatingOAuth2TokenValidator<>(new JwtTimestampValidator(), new JwtIssuerValidator(issuer.issuer()), jwt -> {
                     try {
                         if (!jwt.getAudience().contains("mnema-api") ||
                                 !(jwt.getClaim("generation") instanceof String gen) ||

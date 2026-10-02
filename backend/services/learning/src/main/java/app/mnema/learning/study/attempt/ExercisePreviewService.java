@@ -4,9 +4,9 @@ import app.mnema.learning.catalog.exercise.AnswerKey;
 import app.mnema.learning.catalog.exercise.ExerciseType;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.study.session.LearnerContent;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Service;
 
 import java.util.HashSet;
@@ -78,6 +78,6 @@ public class ExercisePreviewService {
     }
 
     private static void sideIds(JsonNode side, Set<UUID> ids) {
-        side.forEach(item -> ids.add(UUID.fromString(item.path("itemId").textValue())));
+        side.forEach(item -> ids.add(UUID.fromString(item.path("itemId").stringValue(null))));
     }
 }

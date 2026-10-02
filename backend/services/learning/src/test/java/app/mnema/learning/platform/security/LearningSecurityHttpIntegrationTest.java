@@ -2,7 +2,7 @@ package app.mnema.learning.platform.security;
 
 import app.mnema.learning.support.ContractFixtures;
 import app.mnema.learning.support.PostgresIntegrationTest;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.node.ObjectNode;
 import com.nimbusds.jose.JOSEObjectType;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
@@ -138,6 +138,36 @@ class LearningSecurityHttpIntegrationTest extends PostgresIntegrationTest {
     static void stopFixture() {
         IDENTITY.stop(0);
         CLIENT.shutdownNow();
+    }
+
+    /** RFC 9457 bodies of the security filters and the MVC advice are wire contract: exact members, no extras. */
+    @Test
+    void securityAndRoutingProblemsHaveTheExactBodies() throws Exception {
+        userInfoStatus = 500;
+        assertBody(request("POST", "/_security", token("learning.write", c -> { })), 503,
+                "identity-unavailable", "Identity unavailable", "Authentication is temporarily unavailable.",
+                "/api/_security", "IDENTITY_UNAVAILABLE");
+        userInfoStatus = 200;
+        assertBody(request("GET", "/_security", "a".repeat(16_385)), 401, "authentication-required",
+                "Authentication required", "Valid authentication is required.", "/api/_security",
+                "AUTHENTICATION_REQUIRED");
+        assertBody(request("POST", "/_security", token("learning.read", c -> { })), 403, "access-denied",
+                "Access denied", "The operation is not permitted.", "/api/_security", "ACCESS_DENIED");
+        assertBody(request("GET", "/v2", token("learning.read", c -> { })), 404, "resource-not-found",
+                "Resource not found", "The requested resource does not exist.", "/api/v2", "RESOURCE_NOT_FOUND");
+        assertBody(request("DELETE", "/_security", token("learning.write", c -> { })), 405, "method-not-allowed",
+                "Method not allowed", "The request method is not supported for this resource.", "/api/_security",
+                "METHOD_NOT_ALLOWED");
+    }
+
+    private static void assertBody(HttpResponse<String> response, int status, String type, String title,
+                                   String detail, String instance, String code) {
+        var reader = new app.mnema.learning.platform.json.ContentJsonReader(4_096, 4, 64);
+        var expected = "{\"type\":\"urn:mnema:problem:" + type + "\",\"title\":\"" + title + "\",\"status\":" + status
+                + ",\"detail\":\"" + detail + "\",\"instance\":\"" + instance + "\",\"code\":\"" + code + "\"}";
+        assertThat(response.statusCode()).isEqualTo(status);
+        assertThat(reader.read(response.body().getBytes(StandardCharsets.UTF_8)))
+                .isEqualTo(reader.read(expected.getBytes(StandardCharsets.UTF_8)));
     }
 
     @Test
@@ -459,7 +489,7 @@ class LearningSecurityHttpIntegrationTest extends PostgresIntegrationTest {
         var reader = new app.mnema.learning.platform.json.ContentJsonReader(4_096, 8, 128);
         assertThat(reader.read(response.body().getBytes(StandardCharsets.UTF_8))).isEqualTo(reader.read(("""
                 {"id":"00000000-0000-4000-8000-000000000001","instant":"2026-09-28T12:00:00.123456Z",
-                 "offset":"2026-09-28T15:00:00+03:00","date":"2026-09-28","decimal":1.5,"absent":null,
+                 "offset":"2026-09-28T15:00:00+03:00","date":"2026-09-28","decimal":1.50,"absent":null,
                  "numbers":[1,2],"nested":{"k":"v"}}""").getBytes(StandardCharsets.UTF_8)));
     }
 

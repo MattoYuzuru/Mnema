@@ -1,7 +1,7 @@
 package app.mnema.learning.catalog.exercise;
 
 import app.mnema.learning.media.MediaCatalog;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 
 import java.util.Optional;
 import java.util.Set;
@@ -51,8 +51,8 @@ public sealed interface Block {
     default boolean isMedia() { return !(this instanceof Text) && !(this instanceof Material); }
 
     static Block parse(JsonNode node, Slot slot) {
-        if (!node.isObject() || !node.path("kind").isTextual()) throw invalid();
-        Block block = switch (node.path("kind").textValue()) {
+        if (!node.isObject() || !node.path("kind").isString()) throw invalid();
+        Block block = switch (node.path("kind").stringValue(null)) {
             case "TEXT" -> {
                 fields(node, "kind", "text");
                 String text = nonBlank(node.path("text"), slot.maxText());
@@ -77,9 +77,9 @@ public sealed interface Block {
             }
             case "YOUTUBE" -> {
                 fields(node, "kind", "videoId", "title");
-                if (!node.path("videoId").isTextual()
-                        || !YOUTUBE_VIDEO_ID.matcher(node.path("videoId").textValue()).matches()) throw invalid();
-                yield new Youtube(node.path("videoId").textValue(), nonBlank(node.path("title"), MAX_LABEL));
+                if (!node.path("videoId").isString()
+                        || !YOUTUBE_VIDEO_ID.matcher(node.path("videoId").stringValue(null)).matches()) throw invalid();
+                yield new Youtube(node.path("videoId").stringValue(null), nonBlank(node.path("title"), MAX_LABEL));
             }
             default -> throw invalid();
         };

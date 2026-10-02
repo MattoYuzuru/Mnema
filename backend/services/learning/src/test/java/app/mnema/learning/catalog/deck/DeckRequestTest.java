@@ -2,8 +2,8 @@ package app.mnema.learning.catalog.deck;
 
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.concurrency.VersionPreconditionRequiredException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
@@ -33,7 +33,7 @@ class DeckRequestTest {
         assertThat(read(fixtures.path("command").toString().replace(COMMAND, COMMAND.toUpperCase())).commandId())
                 .isEqualTo(command.commandId());
         UUID target = UUID.randomUUID();
-        assertThat(command.envelope(target, 9007199254740993L).path("expectedVersion").textValue()).isEqualTo("9007199254740993");
+        assertThat(command.envelope(target, 9007199254740993L).path("expectedVersion").stringValue(null)).isEqualTo("9007199254740993");
         assertThat(command.envelope(target, 0L)).isNotEqualTo(command.envelope(UUID.randomUUID(), 0L));
     }
 

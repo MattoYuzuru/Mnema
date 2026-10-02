@@ -3,9 +3,10 @@ package app.mnema.identityaccount.contract;
 import app.mnema.identityaccount.support.PostgresIntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.MockMvcPrint;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.json.JsonCompareMode;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
@@ -32,13 +33,13 @@ class ProblemBodyCharacterizationTest extends PostgresIntegrationTest {
                 .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
                 .andExpect(content().json("""
                         {"type":"about:blank","title":"Unauthorized","status":401,
-                         "detail":"authentication_failed","code":"authentication_failed"}""", true));
+                         "detail":"authentication_failed","code":"authentication_failed"}""", JsonCompareMode.STRICT));
         mvc.perform(post("/api/accounts/login").secure(true).contentType("application/json").content("{}"))
                 .andExpect(status().isForbidden())
                 .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
                 .andExpect(content().json("""
                         {"type":"about:blank","title":"Forbidden","status":403,
-                         "detail":"operation_denied","code":"operation_denied"}""", true));
+                         "detail":"operation_denied","code":"operation_denied"}""", JsonCompareMode.STRICT));
     }
 
     @Test
@@ -48,11 +49,11 @@ class ProblemBodyCharacterizationTest extends PostgresIntegrationTest {
                 "{\"login\":null,\"password\":\"b\"}", "{\"login\":{\"x\":1},\"password\":\"b\"}"}) {
             login(body).andExpect(status().isBadRequest())
                     .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
-                    .andExpect(content().json(INVALID_REQUEST, true));
+                    .andExpect(content().json(INVALID_REQUEST, JsonCompareMode.STRICT));
         }
         mvc.perform(withCsrf(post("/api/accounts/login")))
                 .andExpect(status().isBadRequest())
-                .andExpect(content().json(INVALID_REQUEST, true));
+                .andExpect(content().json(INVALID_REQUEST, JsonCompareMode.STRICT));
     }
 
     @Test
@@ -62,7 +63,7 @@ class ProblemBodyCharacterizationTest extends PostgresIntegrationTest {
                 .andExpect(content().contentTypeCompatibleWith("application/problem+json"))
                 .andExpect(content().json("""
                         {"type":"about:blank","title":"Unauthorized","status":401,"detail":"authentication_failed",
-                         "instance":"/api/accounts/login","code":"authentication_failed"}""", true));
+                         "instance":"/api/accounts/login","code":"authentication_failed"}""", JsonCompareMode.STRICT));
     }
 
     private static final String INVALID_REQUEST = """

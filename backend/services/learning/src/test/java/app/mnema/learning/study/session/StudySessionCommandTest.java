@@ -1,9 +1,9 @@
 package app.mnema.learning.study.session;
 
 import app.mnema.learning.platform.api.InvalidRequestException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -42,19 +42,19 @@ class StudySessionCommandTest {
 
     @Test
     void rejectsUnknownFieldsInvalidBudgetsAndModeSpecificSpoofing() {
-        ObjectNode unknown = fixture.path("startScheduled").deepCopy();
+        ObjectNode unknown = (ObjectNode) fixture.path("startScheduled").deepCopy();
         unknown.put("timezone", "Pacific/Honolulu");
         assertThatThrownBy(() -> read(unknown)).isInstanceOf(InvalidRequestException.class);
 
-        ObjectNode oversized = fixture.path("startScheduled").deepCopy();
+        ObjectNode oversized = (ObjectNode) fixture.path("startScheduled").deepCopy();
         oversized.withObject("budget").put("maxPresentations", 101);
         assertThatThrownBy(() -> read(oversized)).isInstanceOf(InvalidRequestException.class);
 
-        ObjectNode excessiveNew = fixture.path("startScheduled").deepCopy();
+        ObjectNode excessiveNew = (ObjectNode) fixture.path("startScheduled").deepCopy();
         excessiveNew.withObject("budget").put("maxNewObjectives", 21);
         assertThatThrownBy(() -> read(excessiveNew)).isInstanceOf(InvalidRequestException.class);
 
-        ObjectNode missingSource = fixture.path("startReplay").deepCopy();
+        ObjectNode missingSource = (ObjectNode) fixture.path("startReplay").deepCopy();
         missingSource.remove("sourceSessionId");
         assertThatThrownBy(() -> read(missingSource)).isInstanceOf(InvalidRequestException.class);
     }

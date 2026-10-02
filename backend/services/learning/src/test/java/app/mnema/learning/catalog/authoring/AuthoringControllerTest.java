@@ -3,9 +3,9 @@ package app.mnema.learning.catalog.authoring;
 import app.mnema.learning.platform.api.ApiExceptionHandler;
 import app.mnema.learning.platform.api.ResourceLimitExceededException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -128,7 +128,7 @@ class AuthoringControllerTest {
                 .andExpect(header().string("Cache-Control", "private, no-store"));
         when(drafts.create(eq(actor), any())).thenThrow(new ResourceLimitExceededException());
         mvc.perform(post("/editing-drafts").contentType(MediaType.APPLICATION_JSON).content(draftCreateBody()))
-                .andExpect(status().isUnprocessableEntity())
+                .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.code").value("RESOURCE_LIMIT_EXCEEDED"));
     }
 

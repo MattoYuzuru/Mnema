@@ -2,7 +2,7 @@ package app.mnema.learning.catalog.item;
 
 import app.mnema.learning.catalog.authoring.CaptureItemPublisher;
 import app.mnema.learning.catalog.content.NativeDocument;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import org.springframework.stereotype.Component;
 
 import java.util.UUID;

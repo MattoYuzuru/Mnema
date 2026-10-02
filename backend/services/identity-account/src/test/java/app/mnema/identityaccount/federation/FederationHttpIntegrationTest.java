@@ -4,7 +4,7 @@ import app.mnema.identityaccount.support.PostgresIntegrationTest;
 import app.mnema.identityaccount.account.AccountStore;
 import app.mnema.identityaccount.contract.AccountAccess;
 import app.mnema.identityaccount.security.*;
-import com.fasterxml.jackson.databind.*;
+import tools.jackson.databind.*;
 import com.nimbusds.jose.*;
 import com.nimbusds.jose.crypto.RSASSASigner;
 import com.nimbusds.jose.jwk.*;
@@ -13,7 +13,7 @@ import com.sun.net.httpserver.HttpServer;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.*;
+import org.springframework.boot.webmvc.test.autoconfigure.*;
 import org.springframework.boot.test.context.*;
 import org.springframework.context.annotation.*;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -212,7 +212,7 @@ class FederationHttpIntegrationTest extends PostgresIntegrationTest {
         var profile = mvc.perform(get("/api/accounts/session").secure(true).cookie(cookie)).andExpect(status().isOk())
                 .andReturn();
         UUID original = UUID.fromString(
-                json.readTree(profile.getResponse().getContentAsString()).get("accountId").asText());
+                json.readTree(profile.getResponse().getContentAsString()).get("accountId").asString());
         var pending = begin("github", UUID.randomUUID().toString(), UUID.randomUUID() + "@example.test", cookie);
         var proof = tx.execute(
                 status -> proofs.issue(accounts.get(original, false).access(), OwnershipProofs.Purpose.LINK_IDENTITY));
@@ -237,7 +237,7 @@ class FederationHttpIntegrationTest extends PostgresIntegrationTest {
             var session = mvc.perform(get("/api/accounts/session").secure(true).cookie(cookie))
                     .andExpect(status().isOk()).andExpect(jsonPath("$.hasPassword").value(false))
                     .andExpect(jsonPath("$.emailVerified").value(!provider.equals("yandex"))).andReturn();
-            String accountId = json.readTree(session.getResponse().getContentAsString()).get("accountId").asText();
+            String accountId = json.readTree(session.getResponse().getContentAsString()).get("accountId").asString();
             assertThat(jdbc.sql("SELECT provider_subject FROM app_identity.external_identity WHERE account_id=:id")
                     .param("id", UUID.fromString(accountId)).query(String.class).single()).isEqualTo(subject);
             assertThat(TOKEN_REQUESTS.getLast()).containsKey("code_verifier");
@@ -270,7 +270,7 @@ class FederationHttpIntegrationTest extends PostgresIntegrationTest {
                 .andExpect(status().isOk());
         var verified = callback(begin("google", subject, email, cookie));
         assertThat(verified.getResponse().getStatus()).isEqualTo(200);
-        var proof = json.readTree(verified.getResponse().getContentAsString()).get("token").asText();
+        var proof = json.readTree(verified.getResponse().getContentAsString()).get("token").asString();
         cookie = verified.getResponse().getCookie("SESSION");
         mvc.perform(post("/api/accounts/me/identities/link").secure(true).cookie(cookie).with(csrf())
                         .contentType("application/json")
@@ -304,12 +304,12 @@ class FederationHttpIntegrationTest extends PostgresIntegrationTest {
                 .andExpect(status().isOk()).andReturn();
         var proofResponse = callback(begin("google", subject, email,
                 proofStart.getResponse().getCookie("SESSION")));
-        String proof = json.readTree(proofResponse.getResponse().getContentAsString()).get("token").asText();
+        String proof = json.readTree(proofResponse.getResponse().getContentAsString()).get("token").asString();
         var deletion = mvc.perform(post("/api/accounts/deletion/confirmed").secure(true).with(csrf())
                         .contentType("application/json")
                         .content(json.writeValueAsString(Map.of("proof", proof))))
                 .andExpect(status().isAccepted()).andReturn();
-        String operation = json.readTree(deletion.getResponse().getContentAsString()).get("operationId").asText();
+        String operation = json.readTree(deletion.getResponse().getContentAsString()).get("operationId").asString();
 
         var start = mvc.perform(post("/api/accounts/deletion/recovery/federated").secure(true).with(csrf())
                         .contentType("application/json").content("{\"provider\":\"google\"}"))

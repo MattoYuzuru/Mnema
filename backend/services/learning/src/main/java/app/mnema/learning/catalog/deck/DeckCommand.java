@@ -3,9 +3,9 @@ package app.mnema.learning.catalog.deck;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.id.UuidPolicy;
 import app.mnema.learning.platform.json.ContentJsonReader;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -68,8 +68,8 @@ public record DeckCommand(UUID commandId, String title, String description) {
     }
 
     private static String text(JsonNode node, String name) {
-        if (!node.path(name).isTextual()) throw new InvalidRequestException();
-        return node.path(name).textValue();
+        if (!node.path(name).isString()) throw new InvalidRequestException();
+        return node.path(name).stringValue(null);
     }
 
     private static void requireFields(JsonNode node, Set<String> fields) {

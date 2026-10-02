@@ -9,10 +9,10 @@ import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
 import app.mnema.learning.platform.json.CanonicalJsonHasher;
 import app.mnema.learning.storage.ImmutableStorage;
 import app.mnema.learning.support.PostgresIntegrationTest;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -63,7 +63,7 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
         UUID actor = UUID.randomUUID(); UUID deck = createDeck(actor);
         service.publish(actor, deck, 0, create(UUID.randomUUID(), decks.read(actor, deck), nativeDocument, null));
         var first = service.list(actor, deck, "20", null).path("items").get(0);
-        assertThat(first.path("title").textValue()).isEqualTo("Память, письмо и проверяемые знания");
+        assertThat(first.path("title").stringValue(null)).isEqualTo("Память, письмо и проверяемые знания");
         assertThat(first.has("document")).isFalse();
         assertThat(service.list(actor, deck, "20", null).path("items").get(0).path("title"))
                 .isEqualTo(first.path("title"));
@@ -75,7 +75,7 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
     void publicationPinsOnlySupportedOwnedMediaInTheSameTransaction() {
         UUID actor = UUID.randomUUID();
         UUID deck = createDeck(actor);
-        ObjectNode document = richDocument.deepCopy();
+        ObjectNode document = (ObjectNode) richDocument.deepCopy();
         ArrayNode nodes = (ArrayNode) document.path("root").path("content");
         for (int index = 0; index < 3; index++) {
             UUID asset = mediaCatalog.reserve(actor, UUID.randomUUID(), MediaCatalog.Origin.UPLOAD);
@@ -83,8 +83,8 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
         }
         JsonNode before = decks.read(actor, deck);
         var created = service.publish(actor, deck, 0, create(UUID.randomUUID(), before, document, null));
-        UUID member = UUID.fromString(created.acknowledgement().path("changes").get(0).path("memberKey").textValue());
-        UUID revision = UUID.fromString(created.acknowledgement().path("changes").get(0).path("itemRevisionId").textValue());
+        UUID member = UUID.fromString(created.acknowledgement().path("changes").get(0).path("memberKey").stringValue(null));
+        UUID revision = UUID.fromString(created.acknowledgement().path("changes").get(0).path("itemRevisionId").stringValue(null));
         assertNative(service.read(actor, deck, member, revision).path("document"), document);
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.content_media_ref WHERE deck_id=:deck "
                         + "AND member_key=:member AND revision_id=:revision")
@@ -97,7 +97,7 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
         var saved = service.publish(actor, deck, 1,
                 save(UUID.randomUUID(), head, member, revision, next, null));
         UUID nextRevision = UUID.fromString(saved.acknowledgement().path("changes").get(0)
-                .path("itemRevisionId").textValue());
+                .path("itemRevisionId").stringValue(null));
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.content_media_ref WHERE revision_id=:revision")
                 .param("revision", nextRevision).query(Long.class).single()).isEqualTo(2L);
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.content_media_ref WHERE revision_id=:revision")
@@ -111,7 +111,7 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
         assertThatThrownBy(() -> service.publish(actor, deck, 2,
                 save(UUID.randomUUID(), current, member, nextRevision, foreign, null)))
                 .isInstanceOf(ResourceNotFoundException.class);
-        assertThat(decks.read(actor, deck).path("rowVersion").textValue()).isEqualTo("2");
+        assertThat(decks.read(actor, deck).path("rowVersion").stringValue(null)).isEqualTo("2");
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.item_revision WHERE deck_id=:deck")
                 .param("deck", deck).query(Long.class).single()).isEqualTo(2L);
     }
@@ -124,30 +124,30 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
         UUID commandId = UUID.randomUUID();
         var created = service.publish(actor, deck, 0, create(commandId, deckBefore, nativeDocument, null));
         JsonNode createdChange = created.acknowledgement().path("changes").get(0);
-        UUID member = UUID.fromString(createdChange.path("memberKey").textValue());
-        UUID firstRevision = UUID.fromString(createdChange.path("itemRevisionId").textValue());
+        UUID member = UUID.fromString(createdChange.path("memberKey").stringValue(null));
+        UUID firstRevision = UUID.fromString(createdChange.path("itemRevisionId").stringValue(null));
 
         assertThat(created.replayed()).isFalse();
         assertThat(service.list(actor, deck, "1", null).path("items")).hasSize(1);
         JsonNode first = service.read(actor, deck, member, null);
         assertNative(first.path("document"), nativeDocument);
-        assertThat(first.path("itemVersion").textValue()).isEqualTo("0");
+        assertThat(first.path("itemVersion").stringValue(null)).isEqualTo("0");
         assertThat(first.toString()).doesNotContain("rootId", "reuseScope", "pinId");
         assertThat(service.publish(actor, deck, 0, create(commandId, deckBefore, nativeDocument, null)).replayed()).isTrue();
         assertThat(count("learning_item", "deck_id", deck)).isOne();
 
-        ObjectNode changed = nativeDocument.deepCopy();
+        ObjectNode changed = (ObjectNode) nativeDocument.deepCopy();
         ((ObjectNode) changed.path("root").path("content").get(0).path("content").get(0).path("attrs"))
                 .put("text", "Изменённый заголовок");
         JsonNode head = decks.read(actor, deck);
         UUID saveCommand = UUID.randomUUID();
         var saved = service.publish(actor, deck, 1, save(saveCommand, head, member, firstRevision, changed, null));
         UUID secondRevision = UUID.fromString(saved.acknowledgement().path("changes").get(0)
-                .path("itemRevisionId").textValue());
+                .path("itemRevisionId").stringValue(null));
         assertNative(service.read(actor, deck, member, null).path("document"), changed);
         JsonNode historical = service.read(actor, deck, member, firstRevision);
         assertNative(historical.path("document"), nativeDocument);
-        assertThat(historical.path("deckVersion").textValue()).isEqualTo("1");
+        assertThat(historical.path("deckVersion").stringValue(null)).isEqualTo("1");
         assertThat(secondRevision).isNotEqualTo(firstRevision);
         assertThat(count("item_revision", "deck_id", deck)).isEqualTo(2);
         assertThat(count("deck_revision", "deck_id", deck)).isEqualTo(3);
@@ -170,10 +170,10 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
         for (UUID member : members) creates.add(change("create", member, null, null, nativeDocument, null));
         var created = service.publish(actor, deck, 0, bulk(UUID.randomUUID(), before, creates));
         UUID removedRevision = UUID.fromString(created.acknowledgement().path("changes").get(1)
-                .path("itemRevisionId").textValue());
+                .path("itemRevisionId").stringValue(null));
         UUID movedRevision = UUID.fromString(created.acknowledgement().path("changes").get(2)
-                .path("itemRevisionId").textValue());
-        assertThat(service.list(actor, deck, "2", null).path("nextCursor").isTextual()).isTrue();
+                .path("itemRevisionId").stringValue(null));
+        assertThat(service.list(actor, deck, "2", null).path("nextCursor").isString()).isTrue();
 
         JsonNode currentDeck = decks.read(actor, deck);
         ArrayNode changes = JSON.createArrayNode();
@@ -183,8 +183,8 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
 
         JsonNode page = service.list(actor, deck, "100", null);
         assertThat(page.path("items")).hasSize(2);
-        assertThat(page.path("items").get(0).path("memberKey").textValue()).isEqualTo(members.get(2).toString());
-        assertThat(page.path("items").get(1).path("memberKey").textValue()).isEqualTo(members.get(0).toString());
+        assertThat(page.path("items").get(0).path("memberKey").stringValue(null)).isEqualTo(members.get(2).toString());
+        assertThat(page.path("items").get(1).path("memberKey").stringValue(null)).isEqualTo(members.get(0).toString());
         assertThatThrownBy(() -> service.read(actor, deck, members.get(1), null))
                 .isInstanceOf(ResourceNotFoundException.class);
         assertNative(service.read(actor, deck, members.get(1), removedRevision).path("document"), nativeDocument);
@@ -200,8 +200,8 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
         JsonNode before = decks.read(actor, deck);
         UUID createCommand = UUID.randomUUID();
         var created = service.publish(actor, deck, 0, create(createCommand, before, nativeDocument, null));
-        UUID member = UUID.fromString(created.acknowledgement().path("changes").get(0).path("memberKey").textValue());
-        UUID revision = UUID.fromString(created.acknowledgement().path("changes").get(0).path("itemRevisionId").textValue());
+        UUID member = UUID.fromString(created.acknowledgement().path("changes").get(0).path("memberKey").stringValue(null));
+        UUID revision = UUID.fromString(created.acknowledgement().path("changes").get(0).path("itemRevisionId").stringValue(null));
         assertThatThrownBy(() -> service.publish(actor, deck, 0,
                 create(createCommand, before, nativeDocument, 0))).isInstanceOf(IdempotencyConflictException.class);
         assertThatThrownBy(() -> service.publish(actor, deck, 0,
@@ -213,7 +213,7 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
 
         JsonNode currentDeck = decks.read(actor, deck);
         ObjectNode wrongPosition = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString())
-                .put("expectedDeckRevisionId", currentDeck.path("revisionId").textValue())
+                .put("expectedDeckRevisionId", currentDeck.path("revisionId").stringValue(null))
                 .put("expectedItemRevisionId", revision.toString()).put("expectedOrdinal", 1);
         wrongPosition.set("document", nativeDocument.deepCopy());
         assertThatThrownBy(() -> service.publish(actor, deck, 1,
@@ -239,8 +239,8 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
         var created = service.publish(actor, deck, 0,
                 create(UUID.randomUUID(), decks.read(actor, deck), nativeDocument, null));
         JsonNode item = created.acknowledgement().path("changes").get(0);
-        UUID member = UUID.fromString(item.path("memberKey").asText());
-        UUID revision = UUID.fromString(item.path("itemRevisionId").asText());
+        UUID member = UUID.fromString(item.path("memberKey").asString());
+        UUID revision = UUID.fromString(item.path("itemRevisionId").asString());
         JsonNode snapshot = decks.read(actor, deck); UUID commandId = UUID.randomUUID();
         ArrayNode changes = JSON.createArrayNode().add(change("delete", member, revision, 0, null, null));
         ItemPublicationCommand command = bulk(commandId, snapshot, changes);
@@ -282,21 +282,21 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
         }
         var created = service.publish(actor, deck, 0, bulk(UUID.randomUUID(), decks.read(actor, deck), creates));
         UUID selected = members.get(20);
-        UUID revision = UUID.fromString(created.acknowledgement().path("changes").get(20).path("itemRevisionId").asText());
+        UUID revision = UUID.fromString(created.acknowledgement().path("changes").get(20).path("itemRevisionId").asString());
         assertThat(service.read(actor, deck, selected, null).path("ordinal").asInt()).isEqualTo(20);
         ItemRepository.DeckHead initial = repository.deck(actor, deck).orElseThrow();
         service.publish(actor, deck, 1, bulk(UUID.randomUUID(), decks.read(actor, deck),
                 JSON.createArrayNode().add(change("reorder", selected, revision, 20, null, 2))));
         assertThat(service.read(actor, deck, selected, null).path("ordinal").asInt()).isEqualTo(2);
-        UUID firstRevision = UUID.fromString(created.acknowledgement().path("changes").get(0).path("itemRevisionId").asText());
+        UUID firstRevision = UUID.fromString(created.acknowledgement().path("changes").get(0).path("itemRevisionId").asString());
         service.publish(actor, deck, 2, bulk(UUID.randomUUID(), decks.read(actor, deck),
                 JSON.createArrayNode().add(change("delete", members.get(0), firstRevision, 0, null, null))));
         JsonNode direct = service.read(actor, deck, selected, null);
         assertThat(direct.path("ordinal").asInt()).isEqualTo(1);
-        assertThat(direct.path("deckVersion").asText()).isEqualTo("3");
+        assertThat(direct.path("deckVersion").asString()).isEqualTo("3");
         assertThat(service.read(actor, deck, selected, revision).path("ordinal").asInt()).isEqualTo(20);
         assertThat(repository.currentOrdinal(initial, repository.headItem(actor, deck, selected).orElseThrow())).contains(20);
-        ObjectNode changed = nativeDocument.deepCopy();
+        ObjectNode changed = (ObjectNode) nativeDocument.deepCopy();
         ((ObjectNode) changed.path("root").path("content").get(0).path("content").get(0).path("attrs"))
                 .put("text", "Current content changed");
         service.publish(actor, deck, 3, bulk(UUID.randomUUID(), decks.read(actor, deck),
@@ -317,7 +317,7 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
             service.publish(actor, deck, 0, create(command, before, nativeDocument, null));
             status.setRollbackOnly();
         });
-        assertThat(decks.read(actor, deck).path("rowVersion").textValue()).isEqualTo("0");
+        assertThat(decks.read(actor, deck).path("rowVersion").stringValue(null)).isEqualTo("0");
         assertThat(service.list(actor, deck, null, null).path("items")).isEmpty();
         assertThat(count("item_revision", "deck_id", deck)).isZero();
         assertThat(count("command_receipt", "command_id", command)).isZero();
@@ -339,13 +339,13 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
         UUID deck = createDeck(actor);
         JsonNode before = decks.read(actor, deck);
         var created = service.publish(actor, deck, 0, create(UUID.randomUUID(), before, nativeDocument, null));
-        UUID member = UUID.fromString(created.acknowledgement().path("changes").get(0).path("memberKey").textValue());
+        UUID member = UUID.fromString(created.acknowledgement().path("changes").get(0).path("memberKey").stringValue(null));
         UUID oldRevision = UUID.fromString(created.acknowledgement().path("changes").get(0)
-                .path("itemRevisionId").textValue());
-        ObjectNode next = nativeDocument.deepCopy();
+                .path("itemRevisionId").stringValue(null));
+        ObjectNode next = (ObjectNode) nativeDocument.deepCopy();
         ArrayNode content = (ArrayNode) next.path("root").path("content");
-        UUID deleted = UUID.fromString(content.get(1).path("id").textValue());
-        UUID movedId = UUID.fromString(content.get(2).path("id").textValue());
+        UUID deleted = UUID.fromString(content.get(1).path("id").stringValue(null));
+        UUID movedId = UUID.fromString(content.get(2).path("id").stringValue(null));
         content.remove(1);
         UUID insertedId = UUID.randomUUID();
         ObjectNode paragraph = JSON.createObjectNode().put("id", insertedId.toString())
@@ -360,15 +360,15 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
         ((ObjectNode) content.get(1).path("content").get(0).path("attrs")).put("text", "Value and topology");
         JsonNode deckHead = decks.read(actor, deck);
         ObjectNode body = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString())
-                .put("expectedDeckRevisionId", deckHead.path("revisionId").textValue())
+                .put("expectedDeckRevisionId", deckHead.path("revisionId").stringValue(null))
                 .put("expectedItemRevisionId", oldRevision.toString()).put("expectedOrdinal", 0);
         body.set("document", next);
         ArrayNode edits = body.putArray("edits");
         edits.addObject().put("type", "delete").put("nodeId", deleted.toString());
         edits.addObject().put("type", "insert").put("nodeId", insertedId.toString())
-                .put("parentId", nativeDocument.path("root").path("id").textValue()).put("childIndex", 1);
+                .put("parentId", nativeDocument.path("root").path("id").stringValue(null)).put("childIndex", 1);
         edits.addObject().put("type", "move").put("nodeId", movedId.toString())
-                .put("parentId", nativeDocument.path("root").path("id").textValue()).put("childIndex", 0);
+                .put("parentId", nativeDocument.path("root").path("id").stringValue(null)).put("childIndex", 0);
         service.publish(actor, deck, 1, ItemPublicationCommand.readSave(bytes(body), member));
         assertNative(service.read(actor, deck, member, null).path("document"), next);
         assertNative(service.read(actor, deck, member, oldRevision).path("document"), nativeDocument);
@@ -384,7 +384,7 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
         UUID deck = createDeck(actor);
         JsonNode before = decks.read(actor, deck);
         var created = service.publish(actor, deck, 0, create(UUID.randomUUID(), before, nativeDocument, null));
-        UUID member = UUID.fromString(created.acknowledgement().path("changes").get(0).path("memberKey").textValue());
+        UUID member = UUID.fromString(created.acknowledgement().path("changes").get(0).path("memberKey").stringValue(null));
         assertThatThrownBy(() -> jdbc.sql("UPDATE app_learning.learning_item SET created_at=created_at "
                         + "WHERE deck_id=:deck AND member_key=:member").param("deck", deck).param("member", member).update())
                 .isInstanceOf(DataIntegrityViolationException.class);
@@ -405,7 +405,7 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
             throws InterruptedException {
         start.await();
         try {
-            ObjectNode changed = nativeDocument.deepCopy();
+            ObjectNode changed = (ObjectNode) nativeDocument.deepCopy();
             ((ObjectNode) changed.path("root").path("content").get(0).path("content").get(0).path("attrs"))
                     .put("text", UUID.randomUUID().toString());
             service.publish(actor, deck, 1, save(UUID.randomUUID(), deckHead, member, revision, changed, null));
@@ -417,12 +417,12 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
 
     private UUID createDeck(UUID actor) {
         return UUID.fromString(decks.create(actor, new DeckCommand(UUID.randomUUID(), "Deck", "Description"))
-                .acknowledgement().path("deck").path("deckId").textValue());
+                .acknowledgement().path("deck").path("deckId").stringValue(null));
     }
 
     private static ItemPublicationCommand create(UUID command, JsonNode deck, JsonNode document, Integer ordinal) {
         ObjectNode body = JSON.createObjectNode().put("commandId", command.toString())
-                .put("expectedDeckRevisionId", deck.path("revisionId").textValue());
+                .put("expectedDeckRevisionId", deck.path("revisionId").stringValue(null));
         body.set("document", document.deepCopy());
         if (ordinal != null) body.put("ordinal", ordinal);
         return ItemPublicationCommand.readCreate(bytes(body));
@@ -431,7 +431,7 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
     private static ItemPublicationCommand save(UUID command, JsonNode deck, UUID member, UUID revision,
                                                JsonNode document, Integer ordinal) {
         ObjectNode body = JSON.createObjectNode().put("commandId", command.toString())
-                .put("expectedDeckRevisionId", deck.path("revisionId").textValue())
+                .put("expectedDeckRevisionId", deck.path("revisionId").stringValue(null))
                 .put("expectedItemRevisionId", revision.toString()).put("expectedOrdinal", 0);
         body.set("document", document.deepCopy());
         if (ordinal != null) body.put("ordinal", ordinal);
@@ -440,7 +440,7 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
 
     private static ItemPublicationCommand bulk(UUID command, JsonNode deck, ArrayNode changes) {
         ObjectNode body = JSON.createObjectNode().put("commandId", command.toString())
-                .put("expectedDeckRevisionId", deck.path("revisionId").textValue());
+                .put("expectedDeckRevisionId", deck.path("revisionId").stringValue(null));
         body.set("changes", changes);
         return ItemPublicationCommand.readBulk(bytes(body));
     }

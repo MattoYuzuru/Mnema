@@ -1,7 +1,7 @@
 package app.mnema.learning.catalog.exercise;
 
 import app.mnema.learning.platform.text.SoftTextNormalizer;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 
 import java.text.Normalizer;
 import java.util.ArrayList;

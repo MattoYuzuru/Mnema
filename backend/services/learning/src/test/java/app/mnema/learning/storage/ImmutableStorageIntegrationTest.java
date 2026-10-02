@@ -5,7 +5,7 @@ import app.mnema.learning.platform.concurrency.VersionConflictException;
 import app.mnema.learning.platform.idempotency.CommandIdentity;
 import app.mnema.learning.platform.idempotency.CommandReceiptService;
 import app.mnema.learning.support.PostgresIntegrationTest;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

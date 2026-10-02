@@ -3,8 +3,8 @@ package app.mnema.learning.study.attempt;
 import app.mnema.learning.catalog.exercise.ExerciseDefinition;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.json.ContentJsonReader;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -55,8 +55,8 @@ record ExercisePreviewCommand(ExerciseDefinition definition, ObjectNode content,
     }
 
     private static Action action(JsonNode value) {
-        if (!value.path("kind").isTextual()) throw invalid();
-        return switch (value.path("kind").textValue()) {
+        if (!value.path("kind").isString()) throw invalid();
+        return switch (value.path("kind").stringValue(null)) {
             case "SUBMIT" -> {
                 AttemptCommand.fields(value, Set.of("kind", "response", "hintedBlankIds", "pairMistakes",
                         "transcriptRevealed"));

@@ -2,8 +2,8 @@ package app.mnema.learning.study.session;
 
 import app.mnema.learning.catalog.exercise.AnswerKey;
 import app.mnema.learning.catalog.exercise.ExerciseType;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -24,7 +24,7 @@ class LearnerContentTest {
         for (var entry : Map.of("createSelfCheck", "selfCheck", "createFreeResponseAudio", "freeResponse",
                 "createCloze", "cloze", "createChoiceVideoMultiple", "choice").entrySet()) {
             ObjectNode exercise = mechanic(entry.getKey()).withObject("exercise");
-            ExerciseType type = ExerciseType.valueOf(exercise.path("type").textValue());
+            ExerciseType type = ExerciseType.valueOf(exercise.path("type").stringValue(null));
             LearnerContent.Resolved resolved = LearnerContent.issue(type, exercise.path("content"),
                     AnswerKey.parse(type, exercise.path("answerKey")), new Random(1), material -> MATERIAL_TEXT);
             JsonNode expected = fixture("mechanics.json").path("presentations").path(entry.getValue()).path("content");
@@ -46,16 +46,16 @@ class LearnerContentTest {
         LearnerContent.Resolved resolved = LearnerContent.issue(ExerciseType.FREE_RESPONSE, exercise.path("content"),
                 AnswerKey.parse(ExerciseType.FREE_RESPONSE, exercise.path("answerKey")), new Random(1), m -> "x");
         assertThat(resolved.content().has("reference")).isFalse();
-        assertThat(resolved.reveal().path("reference").get(0).path("text").textValue()).isEqualTo("Das Gedächtnis");
+        assertThat(resolved.reveal().path("reference").get(0).path("text").stringValue(null)).isEqualTo("Das Gedächtnis");
 
         assertThat(LearnerContent.hasTranscript(resolved.content())).isTrue();
         assertThat(LearnerContent.view(resolved.content(), false).toString()).doesNotContain("Erinnerung");
         assertThat(LearnerContent.view(resolved.content(), false).path("prompt").get(0).path("transcriptAvailable")
                 .booleanValue()).isTrue();
-        assertThat(LearnerContent.view(resolved.content(), true).path("prompt").get(0).path("transcript").textValue())
+        assertThat(LearnerContent.view(resolved.content(), true).path("prompt").get(0).path("transcript").stringValue(null))
                 .isEqualTo("Erinnerung");
         // the stored form is never mutated by a view
-        assertThat(resolved.content().path("prompt").get(0).path("transcript").textValue()).isEqualTo("Erinnerung");
+        assertThat(resolved.content().path("prompt").get(0).path("transcript").stringValue(null)).isEqualTo("Erinnerung");
 
         ObjectNode choice = mechanic("createChoiceVideoMultiple").withObject("exercise");
         LearnerContent.Resolved plain = LearnerContent.issue(ExerciseType.CHOICE, choice.path("content"),
@@ -69,10 +69,10 @@ class LearnerContentTest {
         LearnerContent.Resolved resolved = LearnerContent.issue(ExerciseType.CLOZE, exercise.path("content"),
                 AnswerKey.parse(ExerciseType.CLOZE, exercise.path("answerKey")), new Random(1), m -> "x");
         JsonNode passage = resolved.content().path("passage");
-        assertThat(passage.get(1).path("size").path("mode").textValue()).isEqualTo("ANSWER_LENGTH");
+        assertThat(passage.get(1).path("size").path("mode").stringValue(null)).isEqualTo("ANSWER_LENGTH");
         assertThat(passage.get(1).path("size").path("length").intValue()).isEqualTo(3);
         assertThat(passage.get(3).path("size").path("length").intValue()).isEqualTo(8);
-        assertThat(passage.get(0).path("text").textValue()).isEqualTo("list.stream()\n    .");
+        assertThat(passage.get(0).path("text").stringValue(null)).isEqualTo("list.stream()\n    .");
     }
 
     @Test
@@ -108,9 +108,9 @@ class LearnerContentTest {
     void thePermutationDoesNotDependOnTheAnswerKey() {
         ObjectNode exercise = twoPairMatch();
         ObjectNode swappedKey = exercise.deepCopy();
-        com.fasterxml.jackson.databind.node.ArrayNode pairs = swappedKey.withObject("answerKey").withArray("pairs");
-        String firstRight = pairs.get(0).path("rightId").textValue();
-        ((ObjectNode) pairs.get(0)).put("rightId", pairs.get(1).path("rightId").textValue());
+        tools.jackson.databind.node.ArrayNode pairs = swappedKey.withObject("answerKey").withArray("pairs");
+        String firstRight = pairs.get(0).path("rightId").stringValue(null);
+        ((ObjectNode) pairs.get(0)).put("rightId", pairs.get(1).path("rightId").stringValue(null));
         ((ObjectNode) pairs.get(1)).put("rightId", firstRight);
         for (int[] draws : new int[][] {{1, 1}, {1, 0}, {0, 1}, {0, 0}}) {
             assertThat(issue(swappedKey, new ScriptedSource(draws)))
@@ -140,7 +140,7 @@ class LearnerContentTest {
         // the fixture shows one possible shuffle: same prompt and the same tiles, in any permutation
         assertThat(content.path("prompt")).isEqualTo(expected.path("prompt"));
         assertThat(content.path("items")).containsExactlyInAnyOrderElementsOf(expected.path("items"));
-        assertThat(content.fieldNames()).toIterable().containsExactlyInAnyOrder("prompt", "items");
+        assertThat(content.propertyNames()).containsExactlyInAnyOrder("prompt", "items");
         assertThat(resolved.reveal()).isEmpty();
         assertThat(content.toString()).doesNotContain("sequence", "answerKey", "\"title\"");
     }
@@ -179,7 +179,7 @@ class LearnerContentTest {
     @Test
     void twoItemOrderIsUniformSoNeitherLayoutIsEverExcluded() {
         ObjectNode exercise = threeWordOrder();
-        drop((com.fasterxml.jackson.databind.node.ArrayNode) exercise.path("content").path("items"), 2);
+        drop((tools.jackson.databind.node.ArrayNode) exercise.path("content").path("items"), 2);
         exercise.withObject("answerKey").withArray("sequence").remove(2);
         List<String> key = ids(exercise.path("content").path("items"));
         // one draw only: 1 keeps the order (the solved board is allowed), 0 swaps it
@@ -204,7 +204,7 @@ class LearnerContentTest {
         // the key is never read for the arrangement
         ObjectNode otherKey = exercise.deepCopy();
         ((ObjectNode) otherKey.path("answerKey").path("assignments").get(0)).put("categoryId",
-                otherKey.path("content").path("categories").get(1).path("categoryId").textValue());
+                otherKey.path("content").path("categories").get(1).path("categoryId").stringValue(null));
         assertThat(issueCategorize(otherKey, new ScriptedSource(0, 0, 0))).isEqualTo(content);
         assertThat(content.toString()).doesNotContain("assignments", "correct", "\"title\"");
     }
@@ -246,14 +246,14 @@ class LearnerContentTest {
     /** Three text tiles whose last two are identical: authored order «a», «b», «b». */
     private static ObjectNode threeWordOrder() {
         ObjectNode exercise = mechanic("createOrder").withObject("exercise");
-        com.fasterxml.jackson.databind.node.ArrayNode items = (com.fasterxml.jackson.databind.node.ArrayNode)
+        tools.jackson.databind.node.ArrayNode items = (tools.jackson.databind.node.ArrayNode)
                 exercise.path("content").path("items");
         drop(items, 5, 4, 3);
         ((ObjectNode) items.get(0).path("blocks").get(0)).put("text", "a");
         ((ObjectNode) items.get(1).path("blocks").get(0)).put("text", "b");
         ((ObjectNode) items.get(2).path("blocks").get(0)).put("text", "b");
         exercise.withObject("answerKey").withArray("sequence").removeAll();
-        items.forEach(item -> exercise.withObject("answerKey").withArray("sequence").add(item.path("itemId").textValue()));
+        items.forEach(item -> exercise.withObject("answerKey").withArray("sequence").add(item.path("itemId").stringValue(null)));
         return exercise;
     }
 
@@ -317,11 +317,11 @@ class LearnerContentTest {
 
     private static List<String> ids(JsonNode items) {
         List<String> ids = new ArrayList<>();
-        items.forEach(item -> ids.add(item.path("itemId").textValue()));
+        items.forEach(item -> ids.add(item.path("itemId").stringValue(null)));
         return ids;
     }
 
-    private static void drop(com.fasterxml.jackson.databind.node.ArrayNode array, int... indexes) {
+    private static void drop(tools.jackson.databind.node.ArrayNode array, int... indexes) {
         for (int index : indexes) array.remove(index);
     }
 }

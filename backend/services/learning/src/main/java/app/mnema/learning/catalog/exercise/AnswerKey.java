@@ -1,6 +1,6 @@
 package app.mnema.learning.catalog.exercise;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -40,8 +40,8 @@ public sealed interface AnswerKey {
 
     /** Strict exact-field parse; the kind must be the one this mechanic uses. */
     static AnswerKey parse(ExerciseType type, JsonNode value) {
-        if (!value.isObject() || !value.path("kind").isTextual()
-                || !expectedKind(type).equals(value.path("kind").textValue())) throw invalid();
+        if (!value.isObject() || !value.path("kind").isString()
+                || !expectedKind(type).equals(value.path("kind").stringValue(null))) throw invalid();
         return switch (type) {
             case SELF_CHECK -> {
                 fields(value, "kind");

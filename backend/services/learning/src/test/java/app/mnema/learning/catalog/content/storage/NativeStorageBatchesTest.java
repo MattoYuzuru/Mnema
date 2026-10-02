@@ -27,7 +27,7 @@ class NativeStorageBatchesTest {
     @Test
     void oneKernelCallPerStepAndExpiredFrontierCannotContinue() {
         var doc = document();
-        for (int i = 2; i < 80; i++) ((com.fasterxml.jackson.databind.node.ObjectNode) doc.path("root")).withArray("content").add(node(i, "future"));
+        for (int i = 2; i < 80; i++) ((tools.jackson.databind.node.ObjectNode) doc.path("root")).withArray("content").add(node(i, "future"));
         var plan = codec.encode(scope, read(doc));
         when(clock.instant()).thenReturn(now);
         when(storage.stageBatch(any(), any())).thenAnswer(call -> ((StageBatch) call.getArgument(0)).rootObjectIds().stream()

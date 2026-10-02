@@ -26,7 +26,6 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestCustomizers;
-import org.springframework.security.oauth2.server.authorization.config.annotation.web.configurers.OAuth2AuthorizationServerConfigurer;
 import org.springframework.security.oauth2.server.authorization.oidc.authentication.OidcLogoutAuthenticationToken;
 import org.springframework.security.oauth2.server.authorization.oidc.web.authentication.OidcLogoutAuthenticationSuccessHandler;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -37,6 +36,8 @@ import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.security.web.csrf.HttpSessionCsrfTokenRepository;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
+import org.springframework.session.web.http.CookieSerializer;
+import org.springframework.session.web.http.DefaultCookieSerializer;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -49,6 +50,19 @@ import java.util.List;
 
 @Configuration(proxyBeanMethods = false)
 public class SecurityConfiguration {
+    /**
+     * Browser session cookie attributes are security-critical, so they are pinned here instead of
+     * depending on Spring Boot's server-property mapping, which does not apply in mock-servlet contexts.
+     */
+    @Bean
+    CookieSerializer sessionCookieSerializer() {
+        var serializer = new DefaultCookieSerializer();
+        serializer.setUseSecureCookie(true);
+        serializer.setUseHttpOnlyCookie(true);
+        serializer.setSameSite("Lax");
+        return serializer;
+    }
+
     /** Browser cookie writes require CSRF; explicit bearer writes must pass JWT authentication. */
     private static boolean requiresAccountCsrf(HttpServletRequest request) {
         if (List.of("GET", "HEAD", "OPTIONS", "TRACE").contains(request.getMethod())) return false;
@@ -85,15 +99,16 @@ public class SecurityConfiguration {
     SecurityFilterChain authorization(HttpSecurity http, AccountStore accounts, BrowserSessions sessions,
                                       JdbcClient jdbcClient, TransactionTemplate transactions, Clock clock,
                                       AccountErrors errors) throws Exception {
-        var server = OAuth2AuthorizationServerConfigurer.authorizationServer();
         var oidcLogout = new OidcLogoutAuthenticationSuccessHandler();
         oidcLogout.setLogoutHandler((request, response, authentication) -> {
             var logout = (OidcLogoutAuthenticationToken) authentication;
             if (logout.isPrincipalAuthenticated())
                 sessions.logout(BrowserSessions.access((Authentication) logout.getPrincipal()), request);
         });
-        http.securityMatcher(server.getEndpointsMatcher())
-                .with(server, s -> s.oidc(o -> o.logoutEndpoint(l -> l.logoutResponseHandler(oidcLogout))))
+        http.oauth2AuthorizationServer(server -> {
+                    http.securityMatcher(server.getEndpointsMatcher());
+                    server.oidc(o -> o.logoutEndpoint(l -> l.logoutResponseHandler(oidcLogout)));
+                })
                 .addFilterAfter(new RecoveryAuthorizationBoundaryFilter(errors), SecurityContextHolderFilter.class)
                 .addFilterBefore(new GrantTransactionFilter(jdbcClient, transactions), AuthorizationFilter.class)
                 .authorizeHttpRequests(a -> a.anyRequest().authenticated()).cors(Customizer.withDefaults())

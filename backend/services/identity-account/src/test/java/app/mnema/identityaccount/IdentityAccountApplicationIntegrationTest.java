@@ -8,7 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.actuate.info.InfoEndpoint;
 import org.springframework.boot.info.BuildProperties;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -163,7 +163,7 @@ class IdentityAccountApplicationIntegrationTest extends PostgresIntegrationTest 
                             JOIN app_identity.spring_session s ON s.primary_id = a.session_primary_id
                             WHERE s.session_id = :id AND a.attribute_name = 'characterization'""")
                     .param("id", session.getId()).query(Long.class).single()).isEqualTo(1L);
-            var found = (org.springframework.session.Session) sessionRepository.findById(session.getId());
+            var found = sessionRepository.findById(session.getId());
             assertThat((String) found.getAttribute("characterization")).isEqualTo("kept");
         } finally {
             sessionRepository.deleteById(session.getId());

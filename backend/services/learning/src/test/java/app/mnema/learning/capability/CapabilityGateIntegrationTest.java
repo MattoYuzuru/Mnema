@@ -10,8 +10,8 @@ import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.study.session.StudySessionService;
 import app.mnema.learning.support.PostgresIntegrationTest;
 import app.mnema.learning.support.StudyFixtures;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -56,7 +56,7 @@ class CapabilityGateIntegrationTest extends PostgresIntegrationTest {
         StudyFixtures.Material material = fixtures.material();
         long before = fixtures.deckVersion(material);
         for (String name : new String[] {"rejectedAiAssessment", "rejectedSpeechInput"}) {
-            ObjectNode command = fixtures.createBody(material, mechanic(name).path("exercise").deepCopy(), "Capability");
+            ObjectNode command = fixtures.createBody(material, (ObjectNode) mechanic(name).path("exercise").deepCopy(), "Capability");
             command.withObject("exercise").set("subject", JSON.createObjectNode()
                     .put("memberKey", material.member().toString()).put("itemRevisionId", material.itemRevision().toString()));
             assertThatThrownBy(() -> exercises.publish(material.actor(), material.deck(), null, before,

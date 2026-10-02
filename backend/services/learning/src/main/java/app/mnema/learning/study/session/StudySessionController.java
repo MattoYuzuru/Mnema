@@ -2,7 +2,7 @@ package app.mnema.learning.study.session;
 
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.id.UuidPolicy;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -36,7 +36,7 @@ public class StudySessionController {
         HttpStatus status = result.preparing() ? HttpStatus.ACCEPTED : HttpStatus.CREATED;
         ResponseEntity.BodyBuilder response = ResponseEntity.status(status).headers(privateHeaders());
         if (result.replayed()) response.header("Idempotency-Replayed", "true");
-        String sessionId = result.body().path("sessionId").textValue();
+        String sessionId = result.body().path("sessionId").stringValue(null);
         response.location(URI.create("/api/decks/" + deck + "/study-sessions/" + sessionId));
         return response.body(result.body());
     }

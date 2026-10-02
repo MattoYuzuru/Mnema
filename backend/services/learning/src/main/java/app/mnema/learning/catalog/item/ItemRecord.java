@@ -1,8 +1,8 @@
 package app.mnema.learning.catalog.item;
 
 import app.mnema.learning.catalog.content.NativeDocument;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.time.Instant;
 import java.util.UUID;

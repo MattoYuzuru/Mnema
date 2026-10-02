@@ -1,7 +1,7 @@
 package app.mnema.learning.catalog.deck;
 
 import app.mnema.learning.platform.api.InvalidRequestException;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -37,14 +37,14 @@ public class DeckController {
     @GetMapping("/{deckId}")
     ResponseEntity<JsonNode> read(@AuthenticationPrincipal Jwt identity, @PathVariable String deckId) {
         JsonNode deck = service.read(DeckCommand.entityId(identity.getSubject()), DeckCommand.entityId(deckId));
-        return ResponseEntity.ok().headers(privateHeaders()).eTag(deck.path("rowVersion").textValue()).body(deck);
+        return ResponseEntity.ok().headers(privateHeaders()).eTag(deck.path("rowVersion").stringValue(null)).body(deck);
     }
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<JsonNode> create(@AuthenticationPrincipal Jwt identity, InputStream body, HttpServletRequest request) {
         var result = service.create(DeckCommand.entityId(identity.getSubject()), DeckCommand.read(body));
         var response = write(result, HttpStatus.CREATED);
-        response.location(URI.create(request.getContextPath() + "/decks/" + result.acknowledgement().path("deck").path("deckId").textValue()));
+        response.location(URI.create(request.getContextPath() + "/decks/" + result.acknowledgement().path("deck").path("deckId").stringValue(null)));
         return response.body(result.acknowledgement());
     }
 
@@ -67,7 +67,7 @@ public class DeckController {
     private static ResponseEntity.BodyBuilder write(DeckService.WriteResult result, HttpStatus status) {
         var response = ResponseEntity.status(status).headers(privateHeaders());
         if (result.replayed()) response.header("Idempotency-Replayed", "true");
-        else response.eTag(result.acknowledgement().path("deck").path("rowVersion").textValue());
+        else response.eTag(result.acknowledgement().path("deck").path("rowVersion").stringValue(null));
         return response;
     }
 

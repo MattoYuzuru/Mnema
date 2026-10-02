@@ -1,9 +1,9 @@
 package app.mnema.learning.catalog.exercise;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -26,7 +26,7 @@ public final class OrderEquivalence {
     /** Item id to equivalence signature for an {@code items: [{itemId, blocks}]} array. */
     public static Map<UUID, String> signatures(JsonNode items) {
         Map<UUID, String> result = new LinkedHashMap<>();
-        for (JsonNode item : items) result.put(UUID.fromString(item.path("itemId").textValue()), signature(item.path("blocks")));
+        for (JsonNode item : items) result.put(UUID.fromString(item.path("itemId").stringValue(null)), signature(item.path("blocks")));
         return result;
     }
 
@@ -44,7 +44,7 @@ public final class OrderEquivalence {
     /** Object fields in lexicographic order, minus author-only data. */
     private static JsonNode canonical(JsonNode block) {
         if (!block.isObject()) return block;
-        String kind = block.path("kind").asText();
+        String kind = block.path("kind").asString("");
         boolean timed = kind.equals("AUDIO") || kind.equals("VIDEO");
         Map<String, JsonNode> sorted = new TreeMap<>();
         block.properties().forEach(field -> {

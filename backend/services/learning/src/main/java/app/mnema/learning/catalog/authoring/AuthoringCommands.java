@@ -5,9 +5,9 @@ import app.mnema.learning.catalog.content.NativeDocumentReader;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.json.CanonicalJsonHasher;
 import app.mnema.learning.platform.json.ContentJsonReader;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -103,13 +103,13 @@ final class AuthoringCommands {
         JsonNode body = read(input, CAPTURE_JSON, MAX_CAPTURE_REQUEST);
         fields(body, Set.of("commandId", "expectedDeckVersion", "expectedDeckRevisionId", "document"),
                 Set.of("commandId", "expectedDeckVersion", "expectedDeckRevisionId", "ordinal", "document"));
-        if (!body.path("expectedDeckVersion").isTextual()
-                || !body.path("expectedDeckVersion").textValue().matches("0|[1-9][0-9]{0,18}")) {
+        if (!body.path("expectedDeckVersion").isString()
+                || !body.path("expectedDeckVersion").stringValue(null).matches("0|[1-9][0-9]{0,18}")) {
             throw new InvalidRequestException();
         }
         long deckVersion;
         try {
-            deckVersion = Long.parseLong(body.path("expectedDeckVersion").textValue());
+            deckVersion = Long.parseLong(body.path("expectedDeckVersion").stringValue(null));
             if (deckVersion == Long.MAX_VALUE) throw new InvalidRequestException();
         } catch (NumberFormatException exception) {
             throw new InvalidRequestException();
@@ -156,9 +156,9 @@ final class AuthoringCommands {
 
     private static String text(JsonNode body, String name, int maxBytes) {
         JsonNode value = body.path(name);
-        if (!value.isTextual() || value.textValue().isEmpty()
-                || value.textValue().getBytes(StandardCharsets.UTF_8).length > maxBytes) throw new InvalidRequestException();
-        return value.textValue();
+        if (!value.isString() || value.stringValue(null).isEmpty()
+                || value.stringValue(null).getBytes(StandardCharsets.UTF_8).length > maxBytes) throw new InvalidRequestException();
+        return value.stringValue(null);
     }
 
     @SafeVarargs

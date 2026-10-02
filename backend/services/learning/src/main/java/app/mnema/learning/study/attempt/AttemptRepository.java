@@ -1,8 +1,8 @@
 package app.mnema.learning.study.attempt;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.json.JsonMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
@@ -178,8 +178,8 @@ class AttemptRepository {
                 .param("revision", presentation.objectiveRevisionId()).param("epoch", presentation.learningEpoch())
                 .param("result", evaluation.result().name()).param("strength", evaluation.evidenceClass().name())
                 .param("reasons", jsonArray(evaluation.reasonCodes()).toString())
-                .param("evaluatorId", presentation.evaluator().path("id").textValue())
-                .param("evaluatorVersion", presentation.evaluator().path("version").textValue())
+                .param("evaluatorId", presentation.evaluator().path("id").stringValue(null))
+                .param("evaluatorVersion", presentation.evaluator().path("version").stringValue(null))
                 .param("hints", jsonArray(presentation.hintedBlanks().stream()
                         .map(blank -> "FIRST_LETTER:" + blank)::iterator).toString()).param("confidence", command.confidence(),
                         java.sql.Types.VARCHAR).param("duration", command.durationMs())
@@ -259,12 +259,12 @@ class AttemptRepository {
 
     private static JsonNode json(String value) {
         try { return JSON.readTree(value); }
-        catch (JsonProcessingException exception) { throw new IllegalStateException("Invalid persisted JSON", exception); }
+        catch (JacksonException exception) { throw new IllegalStateException("Invalid persisted JSON", exception); }
     }
 
     private static List<UUID> blankIds(JsonNode values) {
         List<UUID> result = new java.util.ArrayList<>();
-        values.forEach(value -> result.add(UUID.fromString(value.textValue())));
+        values.forEach(value -> result.add(UUID.fromString(value.stringValue(null))));
         return List.copyOf(result);
     }
 

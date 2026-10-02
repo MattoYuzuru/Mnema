@@ -5,10 +5,10 @@ import app.mnema.learning.catalog.exercise.Block;
 import app.mnema.learning.catalog.exercise.ExerciseContent;
 import app.mnema.learning.catalog.exercise.ExerciseType;
 import app.mnema.learning.catalog.exercise.OrderEquivalence;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.text.BreakIterator;
 import java.text.Normalizer;
@@ -95,7 +95,9 @@ public final class LearnerContent {
 
     /** The learner's view of stored content: transcripts are present only once revealed. */
     static <T extends JsonNode> T view(T stored, boolean revealed) {
-        T copy = stored.deepCopy();
+        // deepCopy() preserves the concrete node type; Jackson 3 only declares the JsonNode supertype.
+        @SuppressWarnings("unchecked")
+        T copy = (T) stored.deepCopy();
         if (!revealed) strip(copy);
         return copy;
     }
@@ -136,8 +138,8 @@ public final class LearnerContent {
         key.blanks().forEach(blank -> keyed.put(blank.blankId(), firstLetter(blank.rule().accepted().getFirst())));
         Map<UUID, String> result = new HashMap<>();
         for (JsonNode segment : content.path("passage")) {
-            if (segment.path("kind").textValue().equals("BLANK") && segment.path("firstLetterHint").booleanValue()) {
-                UUID blankId = UUID.fromString(segment.path("blankId").textValue());
+            if (segment.path("kind").stringValue(null).equals("BLANK") && segment.path("firstLetterHint").booleanValue(false)) {
+                UUID blankId = UUID.fromString(segment.path("blankId").stringValue(null));
                 result.put(blankId, keyed.get(blankId));
             }
         }
@@ -152,7 +154,7 @@ public final class LearnerContent {
     }
 
     private static boolean isTimedMedia(JsonNode node) {
-        String kind = node.path("kind").textValue();
+        String kind = node.path("kind").stringValue(null);
         return "AUDIO".equals(kind) || "VIDEO".equals(kind);
     }
 

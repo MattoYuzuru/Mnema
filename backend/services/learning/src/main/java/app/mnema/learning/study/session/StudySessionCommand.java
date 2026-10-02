@@ -3,8 +3,8 @@ package app.mnema.learning.study.session;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.id.UuidPolicy;
 import app.mnema.learning.platform.json.ContentJsonReader;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -34,8 +34,8 @@ public record StudySessionCommand(UUID commandId, Mode mode, int maxPresentation
     public static StudySessionCommand read(InputStream input) {
         try {
             JsonNode body = JSON.read(input.readNBytes(MAX_BYTES + 1));
-            if (!body.path("mode").isTextual()) throw invalid();
-            Mode mode = Mode.valueOf(body.path("mode").textValue());
+            if (!body.path("mode").isString()) throw invalid();
+            Mode mode = Mode.valueOf(body.path("mode").stringValue(null));
             Set<String> expected = switch (mode) {
                 case SCHEDULED -> Set.of("commandId", "mode", "budget");
                 case REPLAY -> Set.of("commandId", "mode", "sourceSessionId", "budget");
@@ -55,9 +55,9 @@ public record StudySessionCommand(UUID commandId, Mode mode, int maxPresentation
             boolean includeNew = false;
             PracticeOrder order = null;
             if (mode == Mode.PRACTICE) {
-                if (!body.path("includeNew").isBoolean() || !body.path("order").isTextual()) throw invalid();
+                if (!body.path("includeNew").isBoolean() || !body.path("order").isString()) throw invalid();
                 includeNew = body.path("includeNew").booleanValue();
-                order = PracticeOrder.valueOf(body.path("order").textValue());
+                order = PracticeOrder.valueOf(body.path("order").stringValue(null));
             }
             return new StudySessionCommand(id(body.path("commandId")), mode, maximum, maximumNew, source,
                     includeNew, order, (ObjectNode) body);
@@ -65,10 +65,10 @@ public record StudySessionCommand(UUID commandId, Mode mode, int maxPresentation
     }
 
     private static UUID id(JsonNode value) {
-        if (!value.isTextual() || value.textValue().length() != 36) throw invalid();
+        if (!value.isString() || value.stringValue(null).length() != 36) throw invalid();
         try {
-            UUID result = UuidPolicy.requireEntityId(UUID.fromString(value.textValue()), "id");
-            if (!result.toString().equals(value.textValue())) throw invalid();
+            UUID result = UuidPolicy.requireEntityId(UUID.fromString(value.stringValue(null)), "id");
+            if (!result.toString().equals(value.stringValue(null))) throw invalid();
             return result;
         } catch (IllegalArgumentException exception) { throw invalid(); }
     }

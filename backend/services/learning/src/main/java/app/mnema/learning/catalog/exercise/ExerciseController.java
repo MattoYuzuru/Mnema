@@ -2,7 +2,7 @@ package app.mnema.learning.catalog.exercise;
 
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.id.UuidPolicy;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -36,7 +36,7 @@ public class ExerciseController {
         String member = parameter(request, "memberKey");
         JsonNode page = service.list(id(identity.getSubject()), id(deckId), member == null ? null : id(member),
                 parameter(request, "limit"), parameter(request, "cursor"));
-        return ResponseEntity.ok().headers(privateHeaders()).eTag(page.path("deckVersion").textValue()).body(page);
+        return ResponseEntity.ok().headers(privateHeaders()).eTag(page.path("deckVersion").stringValue(null)).body(page);
     }
 
     @GetMapping("/{exerciseId}")
@@ -45,7 +45,7 @@ public class ExerciseController {
         String revision = parameter(request, "revisionId");
         JsonNode value = service.read(id(identity.getSubject()), id(deckId), id(exerciseId),
                 revision == null ? null : id(revision));
-        return ResponseEntity.ok().headers(privateHeaders()).eTag(value.path("deckVersion").textValue()).body(value);
+        return ResponseEntity.ok().headers(privateHeaders()).eTag(value.path("deckVersion").stringValue(null)).body(value);
     }
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -56,7 +56,7 @@ public class ExerciseController {
                 ExercisePrecondition.read(request.getHeaders(HttpHeaders.IF_MATCH)), ExerciseCommand.readCreate(body));
         ResponseEntity.BodyBuilder response = write(result, HttpStatus.CREATED);
         response.location(URI.create(request.getContextPath() + "/decks/" + deck + "/exercises/"
-                + result.acknowledgement().path("exerciseId").textValue()));
+                + result.acknowledgement().path("exerciseId").stringValue(null)));
         return response.body(result.acknowledgement());
     }
 
@@ -79,7 +79,7 @@ public class ExerciseController {
     private static ResponseEntity.BodyBuilder write(ExerciseService.WriteResult result, HttpStatus status) {
         ResponseEntity.BodyBuilder response = ResponseEntity.status(status).headers(privateHeaders());
         if (result.replayed()) response.header("Idempotency-Replayed", "true");
-        else response.eTag(result.acknowledgement().path("deckVersion").textValue());
+        else response.eTag(result.acknowledgement().path("deckVersion").stringValue(null));
         return response;
     }
 

@@ -13,10 +13,10 @@ import app.mnema.learning.platform.concurrency.VersionConflictException;
 import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
 import app.mnema.learning.platform.json.CanonicalJsonHasher;
 import app.mnema.learning.support.PostgresIntegrationTest;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.fasterxml.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.node.ArrayNode;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -78,7 +78,7 @@ class AuthoringServiceIntegrationTest extends PostgresIntegrationTest {
             assertThat(List.of(a.get(10, TimeUnit.SECONDS), b.get(10, TimeUnit.SECONDS)))
                     .containsExactlyInAnyOrder("acknowledged", "conflict");
         }
-        assertThat(drafts.read(actor, left.draftId()).path("rowVersion").textValue()).isEqualTo("1");
+        assertThat(drafts.read(actor, left.draftId()).path("rowVersion").stringValue(null)).isEqualTo("1");
         assertThat(count("item_revision", "deck_id", deck.id())).isEqualTo(itemRevisions);
         assertNativeJson(items.read(actor, deck.id(), item.member(), null).path("document"), published);
         assertThatThrownBy(() -> jdbc.sql("UPDATE app_learning.editing_draft SET base_revision_id=NULL,"
@@ -111,7 +111,7 @@ class AuthoringServiceIntegrationTest extends PostgresIntegrationTest {
                 .isInstanceOf(ResourceNotFoundException.class);
         assertThat(draftAssets(draft.draftId())).containsExactly(second);
         assertNativeJson(drafts.read(actor, draft.draftId()).path("document"), secondDocument.toJson());
-        assertThat(drafts.read(actor, draft.draftId()).path("rowVersion").textValue()).isEqualTo("1");
+        assertThat(drafts.read(actor, draft.draftId()).path("rowVersion").stringValue(null)).isEqualTo("1");
 
         drafts.delete(actor, draft.draftId(), 1);
         assertThat(draftAssets(draft.draftId())).isEmpty();
@@ -130,12 +130,12 @@ class AuthoringServiceIntegrationTest extends PostgresIntegrationTest {
         repository.insertDraft(draft, actor, expired, old);
 
         JsonNode restored = captures.read(actor, note);
-        assertThat(restored.path("createdAt").textValue()).isEqualTo(old.toString());
+        assertThat(restored.path("createdAt").stringValue(null)).isEqualTo(old.toString());
         assertThat(restored.toString()).doesNotContain("expiresAt", "due", "studyState", "objective");
         assertThatThrownBy(() -> drafts.read(actor, draft)).isInstanceOf(ResourceNotFoundException.class);
 
         JsonNode edited = captures.update(actor, note, 0, new AuthoringCommands.CaptureUpdate("Лекция", "Исправлено"));
-        assertThat(edited.path("createdAt").textValue()).isEqualTo(old.toString());
+        assertThat(edited.path("createdAt").stringValue(null)).isEqualTo(old.toString());
         JsonNode archived = captures.archive(actor, note, 1, new AuthoringCommands.CaptureArchive(true));
         assertThat(archived.path("archived").booleanValue()).isTrue();
         assertThat(captures.list(actor, "1", null).path("items")).hasSize(1);
@@ -165,9 +165,9 @@ class AuthoringServiceIntegrationTest extends PostgresIntegrationTest {
         JsonNode page = captures.list(actor, first.id().toString(), "1", null);
         assertThat(page.path("total").longValue()).isEqualTo(2);
         assertThat(page.path("items")).hasSize(1);
-        assertThat(page.path("items").get(0).path("noteId").textValue()).isEqualTo(newest.toString());
-        JsonNode next = captures.list(actor, first.id().toString(), "1", page.path("nextCursor").textValue());
-        assertThat(next.path("items").get(0).path("noteId").textValue()).isEqualTo(oldest.toString());
+        assertThat(page.path("items").get(0).path("noteId").stringValue(null)).isEqualTo(newest.toString());
+        JsonNode next = captures.list(actor, first.id().toString(), "1", page.path("nextCursor").stringValue(null));
+        assertThat(next.path("items").get(0).path("noteId").stringValue(null)).isEqualTo(oldest.toString());
         assertThat(next.path("nextCursor").isNull()).isTrue();
         assertThat(captures.list(actor, "1", null).path("total").isMissingNode()).isTrue();
         assertThatThrownBy(() -> captures.list(UUID.randomUUID(), first.id().toString(), "1", null))
@@ -215,9 +215,9 @@ class AuthoringServiceIntegrationTest extends PostgresIntegrationTest {
         assertThat(captures.list(actor, deck.id().toString(), "20", null).path("total").longValue()).isZero();
         assertThat(count("learning_item", "deck_id", deck.id())).isOne();
         JsonNode preserved = captures.read(actor, note.noteId());
-        assertThat(preserved.path("source").textValue()).isEqualTo("Видео 12:30");
-        assertThat(preserved.path("text").textValue()).isEqualTo("Разобрать термин");
-        assertThat(preserved.path("createdAt").textValue()).isEqualTo(note.createdAt().toString());
+        assertThat(preserved.path("source").stringValue(null)).isEqualTo("Видео 12:30");
+        assertThat(preserved.path("text").stringValue(null)).isEqualTo("Разобрать термин");
+        assertThat(preserved.path("createdAt").stringValue(null)).isEqualTo(note.createdAt().toString());
         assertThatThrownBy(() -> captures.update(actor, note.noteId(), 1,
                 new AuthoringCommands.CaptureUpdate("changed", "changed")))
                 .isInstanceOf(VersionConflictException.class);
@@ -274,13 +274,13 @@ class AuthoringServiceIntegrationTest extends PostgresIntegrationTest {
                         + "AND expires_at = acknowledged_at + interval '30 days' "
                         + "FROM app_learning.editing_draft WHERE draft_id=:draft")
                 .param("draft", draft).query(Boolean.class).single()).isTrue();
-        assertThat(drafts.read(actor, draft).path("rowVersion").textValue()).isEqualTo("1");
+        assertThat(drafts.read(actor, draft).path("rowVersion").stringValue(null)).isEqualTo("1");
 
         UUID edited = UUID.randomUUID();
         repository.insertCapture(edited, actor, captureCreate(deck.id(), "source", "text"), ahead);
         captures.update(actor, edited, 0, new AuthoringCommands.CaptureUpdate("source", "changed"));
         captures.archive(actor, edited, 1, new AuthoringCommands.CaptureArchive(true));
-        assertThat(captures.read(actor, edited).path("rowVersion").textValue()).isEqualTo("2");
+        assertThat(captures.read(actor, edited).path("rowVersion").stringValue(null)).isEqualTo("2");
 
         UUID converted = UUID.randomUUID();
         repository.insertCapture(converted, actor, captureCreate(deck.id(), "source", "convert me"), ahead);
@@ -361,14 +361,14 @@ class AuthoringServiceIntegrationTest extends PostgresIntegrationTest {
     private DeckHead createDeck(UUID actor) {
         JsonNode value = decks.create(actor, new DeckCommand(UUID.randomUUID(), "Deck", "Description"))
                 .acknowledgement().path("deck");
-        return new DeckHead(UUID.fromString(value.path("deckId").textValue()),
-                UUID.fromString(value.path("revisionId").textValue()), Long.parseLong(value.path("rowVersion").textValue()));
+        return new DeckHead(UUID.fromString(value.path("deckId").stringValue(null)),
+                UUID.fromString(value.path("revisionId").stringValue(null)), Long.parseLong(value.path("rowVersion").stringValue(null)));
     }
 
     private DeckHead deck(UUID actor, UUID deck) {
         JsonNode value = decks.read(actor, deck);
-        return new DeckHead(deck, UUID.fromString(value.path("revisionId").textValue()),
-                Long.parseLong(value.path("rowVersion").textValue()));
+        return new DeckHead(deck, UUID.fromString(value.path("revisionId").stringValue(null)),
+                Long.parseLong(value.path("rowVersion").stringValue(null)));
     }
 
     private ItemHead createItem(UUID actor, DeckHead deck, ObjectNode document) {
@@ -378,8 +378,8 @@ class AuthoringServiceIntegrationTest extends PostgresIntegrationTest {
         JsonNode change = items.publish(actor, deck.id(), deck.version(),
                 ItemPublicationCommand.readCreate(AuthoringCommandsTest.bytes(body)))
                 .acknowledgement().path("changes").get(0);
-        return new ItemHead(UUID.fromString(change.path("memberKey").textValue()),
-                UUID.fromString(change.path("itemRevisionId").textValue()));
+        return new ItemHead(UUID.fromString(change.path("memberKey").stringValue(null)),
+                UUID.fromString(change.path("itemRevisionId").stringValue(null)));
     }
 
     private static AuthoringCommands.DraftCreate draftCreate(UUID deck, UUID member, UUID base, NativeDocument document) {
@@ -426,12 +426,12 @@ class AuthoringServiceIntegrationTest extends PostgresIntegrationTest {
     private static ObjectNode document(String text) { return AuthoringCommandsTest.document(text); }
 
     private DraftRecord draft(UUID actor, JsonNode acknowledgement) {
-        return repository.draft(actor, UUID.fromString(acknowledgement.path("draft").path("draftId").textValue()))
+        return repository.draft(actor, UUID.fromString(acknowledgement.path("draft").path("draftId").stringValue(null)))
                 .orElseThrow();
     }
 
     private CaptureRecord capture(UUID actor, JsonNode acknowledgement) {
-        return repository.capture(actor, UUID.fromString(acknowledgement.path("capture").path("noteId").textValue()))
+        return repository.capture(actor, UUID.fromString(acknowledgement.path("capture").path("noteId").stringValue(null)))
                 .orElseThrow();
     }
 

@@ -37,7 +37,7 @@ final class CurrentIdentityFilter extends OncePerRequestFilter {
                     return;
                 }
                 if (result.statusCode() != 200 || !authentication.getName().equals(
-                        json.read(result.body()).path("sub").textValue())) {
+                        json.read(result.body()).path("sub").stringValue(null))) {
                     errors.unavailable(request, response);
                     return;
                 }

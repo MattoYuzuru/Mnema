@@ -1,6 +1,6 @@
 package app.mnema.learning.catalog.content.storage;
 
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 
 import java.util.*;
@@ -15,7 +15,7 @@ class NativeStructuralEditorTest {
     @Test
     void insertDeleteAndMovePreserveOpaqueMetadataSpellingAndDirectOldRoots() {
         ObjectNode opaque = node(4, "future", text(5, "Я🌿"));
-        opaque.put("id", opaque.path("id").asText().toUpperCase(Locale.ROOT));
+        opaque.put("id", opaque.path("id").asString().toUpperCase(Locale.ROOT));
         opaque.put("version", 42).putObject("unknown").put("keep", "exact");
         ObjectNode doc = document(node(2, "paragraph", text(3, "first")), opaque, node(6, "paragraph"));
         var original = codec.encode(UUID.randomUUID(), read(doc));
@@ -38,7 +38,7 @@ class NativeStructuralEditorTest {
         exact(third, deleted);
         assertThat(decode(original).document().toJson()).isEqualTo(read(doc).toJson());
         assertThat(second.snapshot().objects().keySet()).containsAll(original.snapshot().objects().values().stream()
-                .filter(value -> value.payload().path("role").asText().equals("record") && value.payload().path("data").asText().contains("exact"))
+                .filter(value -> value.payload().path("role").asString().equals("record") && value.payload().path("data").asString().contains("exact"))
                 .map(value -> value.objectId()).toList());
     }
 
@@ -226,7 +226,7 @@ class NativeStructuralEditorTest {
                 .isInstanceOf(NativeStorageFailure.class);
     }
 
-    private static UUID id(int number) { return UUID.fromString(node(number, "future").path("id").asText()); }
+    private static UUID id(int number) { return UUID.fromString(node(number, "future").path("id").asString()); }
 
     private static void exact(NativeEncodingPlan plan, ObjectNode expected) {
         assertThat(decode(plan).document().toJson()).isEqualTo(read(expected).toJson());

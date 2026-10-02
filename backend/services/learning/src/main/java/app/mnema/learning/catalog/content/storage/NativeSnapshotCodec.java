@@ -6,9 +6,9 @@ import app.mnema.learning.storage.StorageTypes.NewEdge;
 import app.mnema.learning.storage.StorageTypes.NewObject;
 import app.mnema.learning.storage.StorageTypes.ObjectKind;
 import app.mnema.learning.storage.StorageTypes.ObjectRef;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -88,7 +88,7 @@ public final class NativeSnapshotCodec {
                     .forEach(field -> metadata.set(field.getKey(), field.getValue().deepCopy()));
             ObjectNode record = JsonNodeFactory.instance.objectNode().put("c", node.path("content").size());
             record.set("n", metadata);
-            result.add(new NodeRecord(UUID.fromString(node.path("id").textValue()), node.path("content").size(), record));
+            result.add(new NodeRecord(UUID.fromString(node.path("id").stringValue(null)), node.path("content").size(), record));
             for (int i = node.path("content").size() - 1; i >= 0; i--) pending.push(node.path("content").get(i));
         }
         return result;

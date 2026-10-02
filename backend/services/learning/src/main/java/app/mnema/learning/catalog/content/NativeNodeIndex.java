@@ -3,7 +3,7 @@ package app.mnema.learning.catalog.content;
 import app.mnema.learning.catalog.content.storage.NativeSnapshotDecoder;
 import app.mnema.learning.catalog.content.storage.NativeStorageBatches;
 import app.mnema.learning.storage.StorageTypes.ObjectRef;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 
 import java.util.ArrayDeque;
 import java.util.HashMap;
@@ -30,7 +30,7 @@ public final class NativeNodeIndex {
         pending.add(decoder.snapshot().document().toJson().path("root"));
         while (!pending.isEmpty()) {
             JsonNode node = pending.removeLast();
-            nodes.put(UUID.fromString(node.path("id").textValue()), node);
+            nodes.put(UUID.fromString(node.path("id").stringValue(null)), node);
             node.path("content").forEach(pending::add);
         }
         return new NativeNodeIndex(nodes);
@@ -40,11 +40,11 @@ public final class NativeNodeIndex {
     public Optional<String> text(UUID nodeId) { return Optional.ofNullable(nodes.get(nodeId)).map(NativeNodeIndex::project); }
 
     private static String project(JsonNode node) {
-        if (!NativeNodeSchema.supports(node.path("type").textValue(), node.path("version").intValue())) return "";
+        if (!NativeNodeSchema.supports(node.path("type").stringValue(null), node.path("version").intValue(0))) return "";
         JsonNode attrs = node.path("attrs");
-        return switch (node.path("type").textValue()) {
-            case "text" -> attrs.path("text").asText("");
-            case "ruby" -> attrs.path("base").asText("");
+        return switch (node.path("type").stringValue(null)) {
+            case "text" -> attrs.path("text").asString("");
+            case "ruby" -> attrs.path("base").asString("");
             case "paragraph", "heading", "link" -> {
                 StringBuilder inline = new StringBuilder();
                 node.path("content").forEach(child -> inline.append(project(child)));

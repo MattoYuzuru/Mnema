@@ -3,10 +3,10 @@ package app.mnema.learning.media;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.id.UuidPolicy;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
@@ -187,7 +187,7 @@ public class MediaManifestCatalog {
 
     private byte[] json(ObjectNode node) {
         try { return mapper.writeValueAsBytes(node); }
-        catch (JsonProcessingException failure) { throw new IllegalStateException("Manifest serialization failed", failure); }
+        catch (JacksonException failure) { throw new IllegalStateException("Manifest serialization failed", failure); }
     }
 
     private static byte[] sha256(byte[] value) {

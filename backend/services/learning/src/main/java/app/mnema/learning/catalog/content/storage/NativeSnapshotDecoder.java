@@ -7,9 +7,9 @@ import app.mnema.learning.storage.StorageTypes.NewObject;
 import app.mnema.learning.storage.StorageTypes.ObjectKind;
 import app.mnema.learning.storage.StorageTypes.ObjectRef;
 import app.mnema.learning.storage.StorageTypes.StoredObject;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -82,7 +82,7 @@ public final class NativeSnapshotDecoder {
             require(role(envelope).equals("document"));
             expanded = 1;
             List<Leaf> records = tree(envelope.edges().getFirst().child().objectId(), "nodes", -1, true);
-            require(records.size() == envelope.payload().path("nodeCount").intValue());
+            require(records.size() == envelope.payload().path("nodeCount").intValue(0));
             List<ObjectNode> nodes = new ArrayList<>();
             List<Integer> childCounts = new ArrayList<>();
             List<List<String>> fragments = new ArrayList<>();
@@ -98,13 +98,13 @@ public final class NativeSnapshotDecoder {
                 require(canonical(decoded).equals(text));
                 int count = integer(decoded.path("c"), 0, NativeDocumentReader.MAX_NODES);
                 require(decoded.path("n").isObject() && !decoded.path("n").has("content")
-                        && decoded.path("n").path("id").isTextual()
-                        && UUID.fromString(decoded.path("n").path("id").textValue()).equals(record.key()));
+                        && decoded.path("n").path("id").isString()
+                        && UUID.fromString(decoded.path("n").path("id").stringValue(null)).equals(record.key()));
                 nodes.add((ObjectNode) decoded.path("n"));
                 childCounts.add(count);
                 fragments.add(parts);
             }
-            require(recordBytes == envelope.payload().path("recordBytes").intValue());
+            require(recordBytes == envelope.payload().path("recordBytes").intValue(0));
             int[] next = {0};
             ObjectNode nativeRoot = assemble(nodes, childCounts, next, 1);
             require(next[0] == nodes.size());
@@ -123,13 +123,13 @@ public final class NativeSnapshotDecoder {
     private void validateObject(NewObject value) {
         require(value.encodingVersion() == VERSION && value.dagRank() <= 8);
         JsonNode data = value.payload();
-        require(integer(data.path("codec"), VERSION, VERSION) == VERSION && data.path("role").isTextual());
-        switch (data.path("role").textValue()) {
+        require(integer(data.path("codec"), VERSION, VERSION) == VERSION && data.path("role").isString());
+        switch (data.path("role").stringValue(null)) {
             case "record", "fragment" -> {
                 fields(data, "codec", "role", "data");
                 require(value.kind() == (role(value).equals("record") ? ObjectKind.BLOCK : ObjectKind.FRAGMENT)
-                        && value.dagRank() == 0 && value.edges().isEmpty() && data.path("data").isTextual());
-                String text = data.path("data").textValue();
+                        && value.dagRank() == 0 && value.edges().isEmpty() && data.path("data").isString());
+                String text = data.path("data").stringValue(null);
                 require(!text.isEmpty() && bytes(text) <= MAX_FRAGMENT_BYTES);
                 for (int i = 0; i < text.length(); i++) {
                     char c = text.charAt(i);
@@ -165,7 +165,7 @@ public final class NativeSnapshotDecoder {
         visit();
         NewObject page = object(id);
         require(role(page).equals(expectedRole));
-        int height = page.payload().path("treeHeight").intValue();
+        int height = page.payload().path("treeHeight").intValue(0);
         require(expectedHeight == -1 || height == expectedHeight);
         require(rootPage ? height == 0 || page.edges().size() >= 2 : page.edges().size() >= 16);
         List<Leaf> result = new ArrayList<>();
@@ -181,7 +181,7 @@ public final class NativeSnapshotDecoder {
                 require(expectedRole.equals("nodes") ? edge.logicalKey() != null : edge.logicalKey() == null);
                 result.add(new Leaf(child.objectId(), edge.logicalKey()));
             }
-            require(result.size() - before == page.payload().path("counts").get(i).intValue());
+            require(result.size() - before == page.payload().path("counts").get(i).intValue(0));
             budget(result.size() <= (expectedRole.equals("nodes") ? NativeDocumentReader.MAX_NODES : MAX_OBJECTS));
         }
         return result;
@@ -191,7 +191,7 @@ public final class NativeSnapshotDecoder {
         NewObject value = object(id);
         if (role(value).equals("record")) {
             visit();
-            return List.of(value.payload().path("data").textValue());
+            return List.of(value.payload().path("data").stringValue(null));
         }
         List<Leaf> leaves = tree(id, "fragments", -1, true);
         require(leaves.size() > 1);
@@ -201,7 +201,7 @@ public final class NativeSnapshotDecoder {
             visit();
             NewObject fragment = object(leaf.id());
             require(role(fragment).equals("fragment"));
-            String part = fragment.payload().path("data").textValue();
+            String part = fragment.payload().path("data").stringValue(null);
             require(bytes(part) >= MIN_FRAGMENT_BYTES);
             length += bytes(part);
             budget(length <= MAX_RECORD_BYTES);
@@ -225,7 +225,7 @@ public final class NativeSnapshotDecoder {
         require(result != null);
         return result;
     }
-    private static String role(NewObject object) { return object.payload().path("role").textValue(); }
+    private static String role(NewObject object) { return object.payload().path("role").stringValue(null); }
     private static NativeStorageFailure sanitized(RuntimeException exception) {
         return exception instanceof NativeStorageFailure failure ? failure
                 : new NativeStorageFailure(NativeStorageFailure.Code.INVALID_GRAPH);

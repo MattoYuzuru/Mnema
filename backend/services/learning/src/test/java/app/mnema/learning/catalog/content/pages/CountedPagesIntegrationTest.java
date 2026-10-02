@@ -3,7 +3,7 @@ package app.mnema.learning.catalog.content.pages;
 import app.mnema.learning.storage.ImmutableStorage;
 import app.mnema.learning.storage.StorageTypes.*;
 import app.mnema.learning.support.PostgresIntegrationTest;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import tools.jackson.databind.node.JsonNodeFactory;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;

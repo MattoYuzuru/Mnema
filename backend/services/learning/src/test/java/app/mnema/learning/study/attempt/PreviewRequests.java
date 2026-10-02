@@ -1,7 +1,7 @@
 package app.mnema.learning.study.attempt;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.util.List;
 import java.util.UUID;
@@ -16,7 +16,7 @@ final class PreviewRequests {
 
     /** The editor's exercise: a publication exercise without deck subject and enabled flag. */
     static ObjectNode exercise(JsonNode published) {
-        ObjectNode exercise = published.deepCopy();
+        ObjectNode exercise = (ObjectNode) published.deepCopy();
         exercise.remove("enabled");
         exercise.remove("subject");
         return exercise;

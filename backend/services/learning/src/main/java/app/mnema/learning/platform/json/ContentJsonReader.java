@@ -1,12 +1,13 @@
 package app.mnema.learning.platform.json;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.StreamReadConstraints;
-import com.fasterxml.jackson.core.StreamReadFeature;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectReader;
-import com.fasterxml.jackson.databind.json.JsonMapper;
+import tools.jackson.core.json.JsonFactory;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.StreamReadConstraints;
+import tools.jackson.core.StreamReadFeature;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectReader;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -70,7 +71,7 @@ public final class ContentJsonReader {
             }
             validateScalars(root);
             return root;
-        } catch (IOException | ArithmeticException exception) {
+        } catch (IOException | JacksonException | ArithmeticException exception) {
             // Jackson exceptions can include private field names and values even with source
             // locations disabled. Do not retain them as causes in an exposed request failure.
             throw invalid();
@@ -96,8 +97,8 @@ public final class ContentJsonReader {
                 }
             } else if (node.isArray()) {
                 node.forEach(pending::add);
-            } else if (node.isTextual()) {
-                validateString(node.textValue());
+            } else if (node.isString()) {
+                validateString(node.stringValue(null));
             } else if (node.isNumber()) {
                 var decimal = node.decimalValue();
                 if (decimal.precision() > MAX_NUMBER_LENGTH

@@ -1,6 +1,6 @@
 package app.mnema.learning.capability;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 
 /**
  * Seam for a future rubric-based semantic assessment provider (the {@code ai-semantic} evaluator).

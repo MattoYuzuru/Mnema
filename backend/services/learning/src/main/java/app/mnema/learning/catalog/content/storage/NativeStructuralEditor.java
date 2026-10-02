@@ -8,7 +8,7 @@ import app.mnema.learning.storage.StorageTypes.NewObject;
 import app.mnema.learning.storage.StorageTypes.ObjectKind;
 import app.mnema.learning.storage.StorageTypes.ObjectRef;
 import app.mnema.learning.storage.StorageTypes.StoredObject;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -50,7 +50,7 @@ public final class NativeStructuralEditor {
         NewObject oldEnvelope = previous.objects().get(previous.root().objectId());
         ObjectRef oldManifest = oldEnvelope.edges().getFirst().child();
         NewObject manifest = previous.objects().get(oldManifest.objectId());
-        TreeRoot current = new TreeRoot(oldManifest, manifest.payload().path("treeHeight").intValue(), previous.document().nodeCount());
+        TreeRoot current = new TreeRoot(oldManifest, manifest.payload().path("treeHeight").intValue(0), previous.document().nodeCount());
         List<Entry> oldEntries = new ArrayList<>();
         for (int start = 0; start < current.count(); start += 100) oldEntries.addAll(pages.read(current, start, 100));
         List<NativeSnapshotCodec.NodeRecord> oldRecords = NativeSnapshotCodec.flatten(previous.document());
@@ -228,9 +228,9 @@ public final class NativeStructuralEditor {
         return null;
     }
 
-    private static UUID id(ObjectNode node) { return UUID.fromString(node.path("id").textValue()); }
+    private static UUID id(ObjectNode node) { return UUID.fromString(node.path("id").stringValue(null)); }
     private static boolean editableContainer(ObjectNode node) {
-        return node.path("version").intValue() == 1 && EDITABLE_CONTAINERS.contains(node.path("type").textValue());
+        return node.path("version").intValue(0) == 1 && EDITABLE_CONTAINERS.contains(node.path("type").stringValue(null));
     }
     private record Intent(int from, int to, List<UUID> removed, List<UUID> inserted) { }
     private record Located(ObjectNode node, ObjectNode parent, int index, boolean editableAncestry) { }
@@ -245,8 +245,8 @@ public final class NativeStructuralEditor {
         RecordWriter(UUID scope, NativeSnapshot previous, Map<UUID, NewObject> created, ObjectSource source) {
             this.scope = scope; this.created = created; this.source = source;
             previous.objects().values().stream().filter(object -> object.kind() == ObjectKind.FRAGMENT)
-                    .forEach(object -> fragments.put(object.payload().path("data").textValue(), object));
-            previous.objects().values().stream().filter(object -> object.payload().path("role").asText().equals("fragments"))
+                    .forEach(object -> fragments.put(object.payload().path("data").stringValue(null), object));
+            previous.objects().values().stream().filter(object -> object.payload().path("role").asString("").equals("fragments"))
                     .forEach(object -> fragmentPages.put(PageValue.of(object), object));
         }
 

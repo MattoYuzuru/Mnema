@@ -11,9 +11,9 @@ import app.mnema.learning.support.PostgresIntegrationTest;
 import app.mnema.learning.support.StudyFixtures;
 import app.mnema.learning.support.StudyFixtures.Issued;
 import app.mnema.learning.support.StudyFixtures.Material;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -76,8 +76,8 @@ class OrderCategorizeStudyIntegrationTest extends PostgresIntegrationTest {
         fixtures.publish(material, sentence.exercise());
         Issued issued = fixtures.issueOne(material);
 
-        assertThat(issued.json().path("type").textValue()).isEqualTo("ORDER");
-        assertThat(issued.json().path("evaluator").path("id").textValue()).isEqualTo("deterministic-order");
+        assertThat(issued.json().path("type").stringValue(null)).isEqualTo("ORDER");
+        assertThat(issued.json().path("evaluator").path("id").stringValue(null)).isEqualTo("deterministic-order");
         assertThat(ids(issued.content().path("items"))).containsExactlyInAnyOrder(strings(sentence.key()));
         assertThat(issued.json().toString()).doesNotContain("sequence", "answerKey", "correct");
         assertThat(texts(issued.content().path("items"))).as("code keeps its newlines and indentation").contains(CODE);
@@ -108,12 +108,12 @@ class OrderCategorizeStudyIntegrationTest extends PostgresIntegrationTest {
         AttemptService.SubmitResult first = attempts.submit(material.actor(), material.deck(), issued.session(), swapped);
         JsonNode outcome = first.outcome();
         assertThat(first.replayed()).isFalse();
-        assertThat(outcome.path("status").textValue()).isEqualTo("ASSESSED");
-        assertThat(outcome.path("feedback").path("result").textValue()).isEqualTo("CORRECT");
-        assertThat(outcome.path("feedback").path("positions").findValuesAsText("correct"))
+        assertThat(outcome.path("status").stringValue(null)).isEqualTo("ASSESSED");
+        assertThat(outcome.path("feedback").path("result").stringValue(null)).isEqualTo("CORRECT");
+        assertThat(outcome.path("feedback").path("positions").findValuesAsString("correct"))
                 .containsExactly("true", "true", "true", "true", "true");
         assertThat(outcome.path("feedback").path("correctSequence")).hasSize(5);
-        assertThat(outcome.path("evidence").path("evidenceClass").textValue()).isEqualTo("MEDIUM");
+        assertThat(outcome.path("evidence").path("evidenceClass").stringValue(null)).isEqualTo("MEDIUM");
         assertThat(outcome.path("evidence").path("reasonCodes").toString()).isEqualTo("[\"SEQUENCING\",\"DETERMINISTIC\"]");
         assertThat(outcome.path("transition").path("afterLevel").intValue()).isOne();
 
@@ -133,11 +133,11 @@ class OrderCategorizeStudyIntegrationTest extends PostgresIntegrationTest {
         UUID[] key = sentence.key();
         JsonNode outcome = attempts.submit(material.actor(), material.deck(), issued.session(),
                 attempt(issued, order(key[4], key[1], key[2], key[3], key[0]))).outcome();
-        assertThat(outcome.path("feedback").path("result").textValue()).isEqualTo("INCORRECT");
-        assertThat(outcome.path("feedback").path("positions").findValuesAsText("correct"))
+        assertThat(outcome.path("feedback").path("result").stringValue(null)).isEqualTo("INCORRECT");
+        assertThat(outcome.path("feedback").path("positions").findValuesAsString("correct"))
                 .containsExactly("false", "true", "true", "true", "false");
-        assertThat(outcome.path("feedback").path("correctSequence").get(0).textValue()).isEqualTo(key[0].toString());
-        assertThat(outcome.path("evidence").path("result").textValue()).isEqualTo("INCORRECT");
+        assertThat(outcome.path("feedback").path("correctSequence").get(0).stringValue(null)).isEqualTo(key[0].toString());
+        assertThat(outcome.path("evidence").path("result").stringValue(null)).isEqualTo("INCORRECT");
         assertThat(count("study_evidence", material)).isOne();
     }
 
@@ -150,7 +150,7 @@ class OrderCategorizeStudyIntegrationTest extends PostgresIntegrationTest {
         Material other = fixtures.material();
         fixtures.publish(other, sentence(other).exercise());
         Issued foreign = fixtures.issueOne(other);
-        UUID foreignId = UUID.fromString(foreign.content().path("items").get(0).path("itemId").textValue());
+        UUID foreignId = UUID.fromString(foreign.content().path("items").get(0).path("itemId").stringValue(null));
         UUID[] key = sentence.key();
 
         for (ObjectNode response : List.of(
@@ -170,7 +170,7 @@ class OrderCategorizeStudyIntegrationTest extends PostgresIntegrationTest {
         assertThat(count("study_transition", material)).isZero();
         // the presentation is still pending
         assertThat(attempts.submit(material.actor(), material.deck(), issued.session(), attempt(issued, order(key)))
-                .outcome().path("feedback").path("result").textValue()).isEqualTo("CORRECT");
+                .outcome().path("feedback").path("result").stringValue(null)).isEqualTo("CORRECT");
     }
 
     /** Authored order «дом, бежать, река, читать» with the third group left empty as a distractor. */
@@ -196,7 +196,7 @@ class OrderCategorizeStudyIntegrationTest extends PostgresIntegrationTest {
         Groups groups = groups(material);
         fixtures.publish(material, groups.exercise());
         Issued issued = fixtures.issueOne(material);
-        assertThat(issued.json().path("type").textValue()).isEqualTo("CATEGORIZE");
+        assertThat(issued.json().path("type").stringValue(null)).isEqualTo("CATEGORIZE");
         assertThat(ids(issued.content().path("items"))).containsExactlyInAnyOrder(strings(groups.items()));
         assertThat(issued.content().path("categories")).isEqualTo(groups.exercise().path("content").path("categories"));
         assertThat(issued.json().toString()).doesNotContain("assignments", "answerKey", "correct");
@@ -213,7 +213,7 @@ class OrderCategorizeStudyIntegrationTest extends PostgresIntegrationTest {
         Material other = fixtures.material();
         fixtures.publish(other, groups(other).exercise());
         Issued foreign = fixtures.issueOne(other);
-        UUID foreignItem = UUID.fromString(foreign.content().path("items").get(0).path("itemId").textValue());
+        UUID foreignItem = UUID.fromString(foreign.content().path("items").get(0).path("itemId").stringValue(null));
         UUID[] t = groups.items();
         UUID[] c = groups.categories();
 
@@ -233,14 +233,14 @@ class OrderCategorizeStudyIntegrationTest extends PostgresIntegrationTest {
         // a wrong group for one item: partial, with the correct group reported per item; the empty group is allowed
         JsonNode outcome = attempts.submit(material.actor(), material.deck(), issued.session(), attempt(issued,
                 categorize(new UUID[][] {{t[0], c[0]}, {t[1], c[1]}, {t[2], c[2]}, {t[3], c[1]}}))).outcome();
-        assertThat(outcome.path("feedback").path("result").textValue()).isEqualTo("PARTIAL");
-        assertThat(outcome.path("feedback").path("assignments").findValuesAsText("correct"))
+        assertThat(outcome.path("feedback").path("result").stringValue(null)).isEqualTo("PARTIAL");
+        assertThat(outcome.path("feedback").path("assignments").findValuesAsString("correct"))
                 .containsExactly("true", "true", "false", "true");
-        assertThat(outcome.path("feedback").path("assignments").get(2).path("correctCategoryId").textValue())
+        assertThat(outcome.path("feedback").path("assignments").get(2).path("correctCategoryId").stringValue(null))
                 .isEqualTo(c[0].toString());
-        assertThat(outcome.path("feedback").path("assignments").get(2).path("selectedCategoryId").textValue())
+        assertThat(outcome.path("feedback").path("assignments").get(2).path("selectedCategoryId").stringValue(null))
                 .isEqualTo(c[2].toString());
-        assertThat(outcome.path("evidence").path("evidenceClass").textValue()).isEqualTo("LOW");
+        assertThat(outcome.path("evidence").path("evidenceClass").stringValue(null)).isEqualTo("LOW");
         assertThat(outcome.path("evidence").path("reasonCodes").toString())
                 .isEqualTo("[\"CATEGORIZING\",\"DETERMINISTIC\",\"RECOGNITION\"]");
         assertThat(count("study_evidence", material)).isOne();
@@ -256,7 +256,7 @@ class OrderCategorizeStudyIntegrationTest extends PostgresIntegrationTest {
         UUID[] c = groups.categories();
         AttemptCommand answer = attempt(issued, categorize(new UUID[][] {{t[3], c[1]}, {t[2], c[0]}, {t[1], c[1]}, {t[0], c[0]}}));
         JsonNode outcome = attempts.submit(material.actor(), material.deck(), issued.session(), answer).outcome();
-        assertThat(outcome.path("feedback").path("result").textValue()).isEqualTo("CORRECT");
+        assertThat(outcome.path("feedback").path("result").stringValue(null)).isEqualTo("CORRECT");
         assertThat(outcome.path("transition").path("afterLevel").intValue()).isOne();
         assertThat(attempts.submit(material.actor(), material.deck(), issued.session(), answer).replayed()).isTrue();
         assertThat(count("study_transition", material)).isOne();
@@ -282,7 +282,7 @@ class OrderCategorizeStudyIntegrationTest extends PostgresIntegrationTest {
             JsonNode outcome = attempts.submit(material.actor(), material.deck(), practice.session(),
                     attempt(practice, response)).outcome();
             assertThat(outcome.path("canonicalEffects").booleanValue()).as(type).isFalse();
-            assertThat(outcome.path("feedback").path("result").textValue()).isEqualTo("CORRECT");
+            assertThat(outcome.path("feedback").path("result").stringValue(null)).isEqualTo("CORRECT");
             assertThat(outcome.path("evidence").isNull()).isTrue();
             assertThat(outcome.path("transition").isNull()).isTrue();
             for (String table : new String[] {"study_evidence", "study_transition", "study_state", "study_exposure"}) {
@@ -329,8 +329,8 @@ class OrderCategorizeStudyIntegrationTest extends PostgresIntegrationTest {
                     .param("asset", sound).update();
             JsonNode outcome = attempts.submit(material.actor(), material.deck(), issued.session(),
                     attempt(issued, response)).outcome();
-            assertThat(outcome.path("status").textValue()).as(type).isEqualTo("NOT_ASSESSED");
-            assertThat(outcome.path("feedback").path("reasonCodes").get(0).textValue()).isEqualTo("MEDIA_NOT_READY");
+            assertThat(outcome.path("status").stringValue(null)).as(type).isEqualTo("NOT_ASSESSED");
+            assertThat(outcome.path("feedback").path("reasonCodes").get(0).stringValue(null)).isEqualTo("MEDIA_NOT_READY");
             assertThat(outcome.path("transition").isNull()).isTrue();
             assertThat(outcome.path("evidence").isNull()).isTrue();
             assertThat(count("study_evidence", material)).isZero();
@@ -372,14 +372,14 @@ class OrderCategorizeStudyIntegrationTest extends PostgresIntegrationTest {
         List<Issued> issued = fixtures.issue(material, "PRACTICE", null);
         assertThat(issued).hasSize(2);
         for (Issued presentation : issued) {
-            boolean order = presentation.json().path("type").textValue().equals("ORDER");
+            boolean order = presentation.json().path("type").stringValue(null).equals("ORDER");
             ObjectNode response = order ? misplaced : wrongGroup;
             JsonNode study = attempts.submit(material.actor(), material.deck(), presentation.session(),
                     attempt(presentation, response)).outcome().path("feedback");
             JsonNode preview = previews.evaluate(ExercisePreviewCommand.read(bytes(request(
                     exercise(order ? sentence.exercise() : groups.exercise()), submit(response))))).path("feedback");
-            assertThat(preview).as(presentation.json().path("type").textValue()).isEqualTo(study);
-            assertThat(study.path("result").textValue()).isIn("INCORRECT", "PARTIAL");
+            assertThat(preview).as(presentation.json().path("type").stringValue(null)).isEqualTo(study);
+            assertThat(study.path("result").stringValue(null)).isIn("INCORRECT", "PARTIAL");
         }
 
         Map<String, Long> before = rowCounts();
@@ -420,13 +420,13 @@ class OrderCategorizeStudyIntegrationTest extends PostgresIntegrationTest {
 
     private static List<String> texts(JsonNode items) {
         List<String> texts = new ArrayList<>();
-        items.forEach(item -> item.path("blocks").forEach(block -> texts.add(block.path("text").asText())));
+        items.forEach(item -> item.path("blocks").forEach(block -> texts.add(block.path("text").asString())));
         return texts;
     }
 
     private static List<String> ids(JsonNode items) {
         List<String> ids = new ArrayList<>();
-        items.forEach(item -> ids.add(item.path("itemId").textValue()));
+        items.forEach(item -> ids.add(item.path("itemId").stringValue(null)));
         return ids;
     }
 

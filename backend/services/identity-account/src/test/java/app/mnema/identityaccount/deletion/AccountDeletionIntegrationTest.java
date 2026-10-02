@@ -11,13 +11,13 @@ import app.mnema.identityaccount.profile.Profiles;
 import app.mnema.identityaccount.security.OwnershipProofs;
 import app.mnema.identityaccount.support.PostgresIntegrationTest;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.MockMvcPrint;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -260,7 +260,7 @@ class AccountDeletionIntegrationTest extends PostgresIntegrationTest {
             mvc.perform(get("/api/accounts/me").secure(true)
                             .cookie(proofResponse.getResponse().getCookie("SESSION")))
                     .andExpect(status().isUnauthorized());
-        String proof = json.readTree(proofResponse.getResponse().getContentAsString()).get("token").asText();
+        String proof = json.readTree(proofResponse.getResponse().getContentAsString()).get("token").asString();
         var operation = mvc.perform(post("/api/accounts/deletion/confirmed").secure(true).with(csrf())
                         .contentType("application/json").content(body(Map.of("proof", proof))))
                 .andExpect(status().isAccepted()).andExpect(jsonPath("$.state").value("PENDING_DELETION"))
@@ -269,11 +269,11 @@ class AccountDeletionIntegrationTest extends PostgresIntegrationTest {
                         .contentType("application/json").content(body(Map.of("proof", proof))))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.operationId").value(json.readTree(operation.getResponse().getContentAsString())
-                        .get("operationId").asText()));
+                        .get("operationId").asString()));
         assertThat(accounts.get(banned.accountId(), false).status()).isEqualTo("BANNED");
         Cookie recovery = recoveryLogin(banned);
         mvc.perform(delete("/api/accounts/deletion/recovery/" + json.readTree(
-                                operation.getResponse().getContentAsString()).get("operationId").asText())
+                                operation.getResponse().getContentAsString()).get("operationId").asString())
                         .secure(true).cookie(recovery).with(csrf()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.ordinaryAccessRestored").value(false));
         assertThat(accounts.get(banned.accountId(), false).status()).isEqualTo("BANNED");

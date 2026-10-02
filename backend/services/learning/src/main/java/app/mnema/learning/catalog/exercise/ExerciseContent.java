@@ -1,6 +1,6 @@
 package app.mnema.learning.catalog.exercise;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 
 import java.text.Normalizer;
 import java.util.ArrayList;
@@ -153,22 +153,22 @@ public sealed interface ExerciseContent {
         int text = 0;
         int literals = 0;
         for (JsonNode segment : array(node, 2, MAX_PASSAGE_SEGMENTS)) {
-            String kind = segment.path("kind").textValue();
+            String kind = segment.path("kind").stringValue(null);
             if ("TEXT".equals(kind)) {
                 fields(segment, "kind", "text");
                 // Whitespace-only segments are legitimate (indentation between two blanks).
-                if (!segment.path("text").isTextual() || segment.path("text").textValue().isEmpty()) throw invalid();
-                text += segment.path("text").textValue().length();
+                if (!segment.path("text").isString() || segment.path("text").stringValue(null).isEmpty()) throw invalid();
+                text += segment.path("text").stringValue(null).length();
                 literals++;
-                segments.add(new Literal(segment.path("text").textValue()));
+                segments.add(new Literal(segment.path("text").stringValue(null)));
             } else if ("BLANK".equals(kind)) {
                 fields(segment, "kind", "blankId", "size", "firstLetterHint");
                 UUID blankId = id(segment, "blankId");
                 if (!blanks.add(blankId)) throw invalid();
                 JsonNode size = segment.path("size");
-                boolean fixed = "FIXED".equals(size.path("mode").textValue());
+                boolean fixed = "FIXED".equals(size.path("mode").stringValue(null));
                 if (fixed) fields(size, "mode", "length"); else fields(size, "mode");
-                if (!fixed && !"ANSWER_LENGTH".equals(size.path("mode").textValue())) throw invalid();
+                if (!fixed && !"ANSWER_LENGTH".equals(size.path("mode").stringValue(null))) throw invalid();
                 segments.add(new Blank(blankId, fixed,
                         fixed ? integer(size.path("length"), MIN_FIXED_BLANK, MAX_FIXED_BLANK) : 0,
                         bool(segment.path("firstLetterHint"))));
