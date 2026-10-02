@@ -1629,6 +1629,30 @@
     "speechToText": {
       "available": false,
       "reason": "DISABLED"
+    },
+    "aiGeneration": {
+      "available": false,
+      "reason": "DISABLED"
+    },
+    "textToSpeech": {
+      "available": false,
+      "reason": "DISABLED"
+    },
+    "imageSearch": {
+      "available": false,
+      "reason": "DISABLED"
+    },
+    "imageGeneration": {
+      "available": false,
+      "reason": "DISABLED"
+    },
+    "videoGeneration": {
+      "available": false,
+      "reason": "DISABLED"
+    },
+    "webSearch": {
+      "available": false,
+      "reason": "DISABLED"
     }
   },
   "capabilitiesFlagWithoutProvider": {
@@ -1637,6 +1661,30 @@
       "reason": "PROVIDER_NOT_CONFIGURED"
     },
     "speechToText": {
+      "available": false,
+      "reason": "DISABLED"
+    },
+    "aiGeneration": {
+      "available": false,
+      "reason": "DISABLED"
+    },
+    "textToSpeech": {
+      "available": false,
+      "reason": "DISABLED"
+    },
+    "imageSearch": {
+      "available": false,
+      "reason": "DISABLED"
+    },
+    "imageGeneration": {
+      "available": false,
+      "reason": "DISABLED"
+    },
+    "videoGeneration": {
+      "available": false,
+      "reason": "DISABLED"
+    },
+    "webSearch": {
       "available": false,
       "reason": "DISABLED"
     }

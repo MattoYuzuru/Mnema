@@ -28,7 +28,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** Both flags on, but no provider implementation exists: the gate must stay closed. */
 @SpringBootTest(properties = {"learning.features.ai-assessment.enabled=true",
-        "learning.features.speech-to-text.enabled=true"})
+        "learning.features.speech-to-text.enabled=true", "learning.features.ai-generation.enabled=true",
+        // hermetic: a key exported in the developer's shell must never reach this context
+        "learning.ai.providers.deepseek.api-key=", "learning.ai.providers.gigachat.auth-key=",
+        "learning.ai.providers.openrouter.api-key=", "learning.ai.provider="})
 class CapabilityGateIntegrationTest extends PostgresIntegrationTest {
     @Autowired private LearningCapabilities capabilities;
     @Autowired private CapabilityController controller;
@@ -48,6 +51,17 @@ class CapabilityGateIntegrationTest extends PostgresIntegrationTest {
         assertThat(body.path("aiAssessment")).isEqualTo(fixture("mechanics.json")
                 .path("capabilitiesFlagWithoutProvider").path("aiAssessment"));
         assertThat(body.path("speechToText").path("available").booleanValue()).isFalse();
+    }
+
+    @Test
+    void aiGenerationNeedsAnAdapterBeyondItsFlagAndTheFullKeySetIsServed() {
+        assertThat(capabilities.aiGeneration()).isEqualTo(new LearningCapabilities.Status(false,
+                LearningCapabilities.Reason.PROVIDER_NOT_CONFIGURED));
+        JsonNode body = JSON.valueToTree(controller.read().getBody());
+        assertThat(body.propertyNames()).containsExactlyInAnyOrder("aiAssessment", "speechToText", "aiGeneration", "textToSpeech",
+                "imageSearch", "imageGeneration", "videoGeneration", "webSearch");
+        assertThat(body.path("aiGeneration").path("reason").stringValue()).isEqualTo("PROVIDER_NOT_CONFIGURED");
+        assertThat(body.path("textToSpeech").path("reason").stringValue()).isEqualTo("DISABLED");
     }
 
     @Test

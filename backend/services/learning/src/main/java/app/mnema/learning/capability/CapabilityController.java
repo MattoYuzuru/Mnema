@@ -17,8 +17,14 @@ public class CapabilityController {
     @GetMapping
     ResponseEntity<Capabilities> read() {
         return ResponseEntity.ok().header("Cache-Control", "private, no-store")
-                .body(new Capabilities(capabilities.aiAssessment(), capabilities.speechToText()));
+                .body(new Capabilities(capabilities.aiAssessment(), capabilities.speechToText(),
+                        capabilities.aiGeneration(), capabilities.textToSpeech(), capabilities.imageSearch(),
+                        capabilities.imageGeneration(), capabilities.videoGeneration(), capabilities.webSearch()));
     }
 
-    public record Capabilities(LearningCapabilities.Status aiAssessment, LearningCapabilities.Status speechToText) { }
+    /** The exact key set of {@code getCapabilities} in {@code contracts/generation/http.json}. */
+    public record Capabilities(LearningCapabilities.Status aiAssessment, LearningCapabilities.Status speechToText,
+                               LearningCapabilities.Status aiGeneration, LearningCapabilities.Status textToSpeech,
+                               LearningCapabilities.Status imageSearch, LearningCapabilities.Status imageGeneration,
+                               LearningCapabilities.Status videoGeneration, LearningCapabilities.Status webSearch) { }
 }

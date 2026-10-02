@@ -298,8 +298,10 @@ class LearningSecurityHttpIntegrationTest extends PostgresIntegrationTest {
         var response = request("GET", "/capabilities", token("learning.read", c -> { }));
         assertThat(response.statusCode()).isEqualTo(200);
         assertThat(response.headers().firstValue("cache-control")).contains("private, no-store");
-        assertThat(response.body()).isEqualTo("{\"aiAssessment\":{\"available\":false,\"reason\":\"DISABLED\"},"
-                + "\"speechToText\":{\"available\":false,\"reason\":\"DISABLED\"}}");
+        String disabled = "{\"available\":false,\"reason\":\"DISABLED\"}";
+        assertThat(response.body()).isEqualTo("{\"aiAssessment\":" + disabled + ",\"speechToText\":" + disabled
+                + ",\"aiGeneration\":" + disabled + ",\"textToSpeech\":" + disabled + ",\"imageSearch\":" + disabled
+                + ",\"imageGeneration\":" + disabled + ",\"videoGeneration\":" + disabled + ",\"webSearch\":" + disabled + "}");
     }
 
     @Test
