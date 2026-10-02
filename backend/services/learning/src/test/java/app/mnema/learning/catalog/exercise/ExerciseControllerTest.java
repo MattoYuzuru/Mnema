@@ -133,7 +133,9 @@ class ExerciseControllerTest {
 
     @Test
     void unavailableCapabilityIsAConflictWithTheContractProblemAndNoStatefulHeaders() throws Exception {
-        when(service.publish(eq(actor), eq(deck), eq(null), eq(1L), any())).thenThrow(new CapabilityUnavailableException());
+        when(service.publish(eq(actor), eq(deck), eq(null), eq(1L), any())).thenThrow(new CapabilityUnavailableException(
+                app.mnema.learning.platform.api.ProblemExtension.builder().put("capability", "aiAssessment")
+                        .put("reason", "PROVIDER_NOT_CONFIGURED").build()));
         JsonNode expected = fixture("mechanics.json").path("capabilityUnavailableProblem");
         String body = mvc.perform(post("/api/decks/" + deck + "/exercises").contextPath("/api").header("If-Match", "\"1\"")
                         .contentType(MediaType.APPLICATION_JSON).content(mechanic("rejectedAiAssessment").toString()))
@@ -142,7 +144,7 @@ class ExerciseControllerTest {
                 .andExpect(header().doesNotExist("ETag"))
                 .andReturn().getResponse().getContentAsString();
         JsonNode problem = JSON.readTree(body);
-        for (String field : new String[] {"type", "title", "status", "detail", "code"}) {
+        for (String field : new String[] {"type", "title", "status", "detail", "code", "capability", "reason"}) {
             org.assertj.core.api.Assertions.assertThat(problem.path(field)).isEqualTo(expected.path(field));
         }
         org.assertj.core.api.Assertions.assertThat(problem.path("instance").stringValue(null))

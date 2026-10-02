@@ -31,7 +31,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
         "learning.features.speech-to-text.enabled=true", "learning.features.ai-generation.enabled=true",
         // hermetic: a key exported in the developer's shell must never reach this context
         "learning.ai.providers.deepseek.api-key=", "learning.ai.providers.gigachat.auth-key=",
-        "learning.ai.providers.openrouter.api-key=", "learning.ai.provider="})
+        "learning.ai.providers.openrouter.api-key=", "learning.ai.provider=", "spring.datasource.hikari.maximum-pool-size=2"})
 class CapabilityGateIntegrationTest extends PostgresIntegrationTest {
     @Autowired private LearningCapabilities capabilities;
     @Autowired private CapabilityController controller;
@@ -74,7 +74,10 @@ class CapabilityGateIntegrationTest extends PostgresIntegrationTest {
             command.withObject("exercise").set("subject", JSON.createObjectNode()
                     .put("memberKey", material.member().toString()).put("itemRevisionId", material.itemRevision().toString()));
             assertThatThrownBy(() -> exercises.publish(material.actor(), material.deck(), null, before,
-                    ExerciseCommand.readCreate(bytes(command)))).as(name).isInstanceOf(CapabilityUnavailableException.class);
+                    ExerciseCommand.readCreate(bytes(command)))).as(name).isInstanceOfSatisfying(CapabilityUnavailableException.class,
+                    exception -> assertThat(exception.extension().members()).containsEntry("capability",
+                            name.equals("rejectedAiAssessment") ? "aiAssessment" : "speechToText")
+                            .containsEntry("reason", "PROVIDER_NOT_CONFIGURED"));
         }
         assertThat(fixtures.deckVersion(material)).isEqualTo(before);
         // structural errors are reported before any capability question

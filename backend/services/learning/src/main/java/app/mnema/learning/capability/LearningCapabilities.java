@@ -8,6 +8,7 @@ import app.mnema.learning.ai.SpeechSynthesis;
 import app.mnema.learning.ai.VideoGeneration;
 import app.mnema.learning.ai.WebSearch;
 import app.mnema.learning.platform.api.CapabilityUnavailableException;
+import app.mnema.learning.platform.api.ProblemExtension;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
@@ -69,12 +70,31 @@ public final class LearningCapabilities {
 
     public Status webSearch() { return port(flags.webSearch().enabled(), AiCapability.SEARCH, webSearch); }
 
-    public void requireAiAssessment() {
-        if (!aiAssessment().available()) throw new CapabilityUnavailableException();
-    }
+    /**
+     * The {@code require*} methods throw {@link CapabilityUnavailableException} (409 {@code CAPABILITY_UNAVAILABLE}) carrying the
+     * contract's problem members {@code capability} (the key of {@code GET /api/capabilities}) and {@code reason}
+     * (including {@code TEMPORARILY_UNAVAILABLE}), see {@code contracts/generation/errors.json}.
+     */
+    public void requireAiAssessment() { require("aiAssessment", aiAssessment()); }
 
-    public void requireSpeechToText() {
-        if (!speechToText().available()) throw new CapabilityUnavailableException();
+    public void requireSpeechToText() { require("speechToText", speechToText()); }
+
+    public void requireAiGeneration() { require("aiGeneration", aiGeneration()); }
+
+    public void requireTextToSpeech() { require("textToSpeech", textToSpeech()); }
+
+    public void requireImageSearch() { require("imageSearch", imageSearch()); }
+
+    public void requireImageGeneration() { require("imageGeneration", imageGeneration()); }
+
+    public void requireVideoGeneration() { require("videoGeneration", videoGeneration()); }
+
+    public void requireWebSearch() { require("webSearch", webSearch()); }
+
+    private static void require(String capability, Status status) {
+        if (status.available()) return;
+        throw new CapabilityUnavailableException(ProblemExtension.builder().put("capability", capability)
+                .put("reason", status.reason()).build());
     }
 
     private Status port(boolean enabled, AiCapability capability, boolean present) {
