@@ -12,6 +12,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * GigaChat OAuth: the authorization key is exchanged for an access token valid about 30 minutes; the token is cached
@@ -29,6 +30,7 @@ final class GigaChatTokens implements BearerSource {
     private final String scope;
     private final ChatHttp http;
     private final Clock clock;
+    private final ReentrantLock lock = new ReentrantLock();
     private String token;
     private Instant expiresAt = Instant.EPOCH;
 
@@ -44,8 +46,29 @@ final class GigaChatTokens implements BearerSource {
     public boolean configured() { return authUri != null && !authKey.isEmpty(); }
 
     @Override
-    public synchronized AiResult<String> bearer(Duration budget) {
+    public void invalidate() {
+        lock.lock();
+        try {
+            token = null;
+            expiresAt = Instant.EPOCH;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Override
+    public AiResult<String> bearer(Duration budget) {
         if (!configured()) return AiResult.failed(new AiFailure.NotConfigured("no_key"));
+        lock.lock();
+        try {
+            return exchange(budget);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** Runs under {@link #lock}: concurrent callers share one exchange instead of stampeding the auth server. */
+    private AiResult<String> exchange(Duration budget) {
         if (token != null && clock.instant().isBefore(expiresAt.minus(RENEW_BEFORE))) return AiResult.ok(token);
         var request = HttpRequest.newBuilder(authUri)
                 .header("Authorization", "Basic " + authKey)

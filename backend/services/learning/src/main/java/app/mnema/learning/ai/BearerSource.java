@@ -9,6 +9,9 @@ interface BearerSource {
 
     AiResult<String> bearer(Duration budget);
 
+    /** The provider rejected the credential (401): drop any cached token so the next call exchanges again. */
+    default void invalidate() { }
+
     /** A static API key. */
     static BearerSource staticKey(String key) {
         return new BearerSource() {

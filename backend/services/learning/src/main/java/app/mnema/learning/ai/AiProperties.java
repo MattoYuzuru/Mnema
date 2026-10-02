@@ -77,6 +77,13 @@ public record AiProperties(
             requireEndpoint(authUrl);
         }
 
+        /** Never prints a credential. */
+        @Override
+        public String toString() {
+            return "Provider[enabled=" + enabled + ", baseUrl=" + baseUrl + ", apiKey=" + (apiKey.isEmpty() ? "unset" : "<redacted>")
+                    + ", authKey=" + (authKey.isEmpty() ? "unset" : "<redacted>") + "]";
+        }
+
         private static void requireEndpoint(String value) {
             if (value.isEmpty()) return;
             URI uri;
@@ -106,11 +113,16 @@ public record AiProperties(
         }
     }
 
+    /**
+     * {@code firstByte} bounds the wait for the response headers (a silent provider must not eat the whole deadline, or
+     * fallback could never happen); {@code idleStream} bounds silence inside a body. A non-streamed call receives its
+     * headers when the provider starts answering, so raise {@code firstByte} if non-streamed answers take longer.
+     */
     public record Transport(@DefaultValue("5s") Duration connectTimeout, @DefaultValue("60s") Duration idleStream,
-                            @DefaultValue("4194304") int maxBodyBytes) {
+                            @DefaultValue("4194304") int maxBodyBytes, @DefaultValue("60s") Duration firstByte) {
         public Transport {
             if (connectTimeout.isNegative() || connectTimeout.isZero() || idleStream.isNegative() || idleStream.isZero()
-                    || maxBodyBytes < 1_024 || maxBodyBytes > 64 * 1_024 * 1_024) {
+                    || firstByte.isNegative() || firstByte.isZero() || maxBodyBytes < 1_024 || maxBodyBytes > 64 * 1_024 * 1_024) {
                 throw new IllegalArgumentException("Invalid transport limits");
             }
         }
@@ -206,6 +218,10 @@ public record AiProperties(
         }
 
         public boolean configured() { return secret.length() >= 16; }
+
+        /** Never prints the secret. */
+        @Override
+        public String toString() { return "UserKey[keyId=" + keyId + ", secret=" + (secret.isEmpty() ? "unset" : "<redacted>") + "]"; }
     }
 
     /** {@code learning.ai.prompt.*}: the active prompt version and the input ceilings (tokens, estimated). */

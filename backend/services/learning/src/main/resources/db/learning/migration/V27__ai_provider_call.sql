@@ -1,8 +1,9 @@
 -- Journal of provider calls (architecture §4, §9). One row per provider call: an intent row is committed before the
 -- call and its outcome afterwards, each in its own short transaction, so no transaction is open during the HTTP call and
 -- a crash leaves a visible PENDING row. The row carries identifiers, counts, hashes and enums only: never a prompt, a
--- response, a key or personal data. Rows are append-only: the outcome moves once from PENDING, nothing else changes, and
--- the 90-day retention worker is the only deleter. It is also the source of the global daily budget sum.
+-- response, a key or personal data. A row is inserted once and finalized once: the single UPDATE the trigger allows moves
+-- it from PENDING to a final outcome and fills the usage columns in the same statement; afterwards nothing changes. The
+-- 90-day retention worker is the only deleter. The table is also the source of the global daily budget sum.
 CREATE TABLE app_learning.ai_provider_call (
     call_id UUID PRIMARY KEY,
     -- Generation steps arrive with AI-04; the column is nullable until then.
@@ -33,11 +34,11 @@ CREATE INDEX ai_provider_call_expiry ON app_learning.ai_provider_call(created_at
 
 CREATE FUNCTION app_learning.ai_provider_call_guard() RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
-    IF OLD.outcome <> 'PENDING'
+    IF OLD.outcome <> 'PENDING' OR NEW.outcome = 'PENDING'
        OR (OLD.call_id, OLD.step_id, OLD.attempt, OLD.capability, OLD.provider, OLD.model, OLD.request_hash, OLD.created_at)
           IS DISTINCT FROM (NEW.call_id, NEW.step_id, NEW.attempt, NEW.capability, NEW.provider, NEW.model,
           NEW.request_hash, NEW.created_at) THEN
-        RAISE EXCEPTION 'ai_provider_call is append-only' USING ERRCODE = '23514';
+        RAISE EXCEPTION 'ai_provider_call may only be finalized once' USING ERRCODE = '23514';
     END IF;
     RETURN NEW;
 END;

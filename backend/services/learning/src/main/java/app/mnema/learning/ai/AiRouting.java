@@ -10,10 +10,10 @@ import java.util.Set;
  * The server-owned route table: for every {@link AiRoute} an ordered list of provider and model, resolved against the
  * adapters that exist. Entries of a disabled provider or one without credentials are skipped at call time, so a route
  * lists the preferred order and the environment decides what is usable. With {@code learning.ai.provider=stub} every
- * route is the Stub.
+ * route is the Stub (and route entries are ignored); a {@code stub} entry in a route is a configuration error.
  */
 final class AiRouting {
-    private static final Set<String> KNOWN = Set.of("deepseek", "gigachat", "openrouter", StubTextAdapter.PROVIDER);
+    private static final Set<String> KNOWN = Set.of("deepseek", "gigachat", "openrouter");
 
     /** A provider adapter paired with the model to request from it. */
     record Candidate(TextAdapter adapter, String model) {
@@ -46,8 +46,10 @@ final class AiRouting {
         if (colon < 1 || colon == raw.length() - 1) throw new IllegalArgumentException("A route entry is provider:model");
         String provider = raw.substring(0, colon).strip();
         String model = raw.substring(colon + 1).strip();
+        // The Stub is selected only by learning.ai.provider=stub, never through a route entry: a production route cannot
+        // be pointed at it by accident.
         if (!KNOWN.contains(provider)) throw new IllegalArgumentException("Unknown provider in a route");
-        if (!provider.equals(StubTextAdapter.PROVIDER) && properties.models().stream()
+        if (properties.models().stream()
                 .noneMatch(price -> price.provider().equals(provider) && price.id().equals(model))) {
             throw new IllegalArgumentException("A route names a model that has no price entry");
         }

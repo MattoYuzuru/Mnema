@@ -9,7 +9,6 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.regex.Pattern;
 
 /**
  * One text generation call.
@@ -21,17 +20,16 @@ import java.util.regex.Pattern;
  * @param maxOutputTokens 1..65536
  * @param temperature 0..2
  * @param deadline the whole call, including backoff and fallback; at most one hour
- * @param userKey opaque, non-personal key (see {@code UserKeys}); sent to the provider for abuse isolation
+ * @param userKey opaque, non-personal key made by {@link UserKeys}; sent to the provider for abuse isolation
  * @param listener optional; a non-null listener switches the call to streaming
  * @param stepId the generation step this call belongs to, null until generation steps exist
  * @param attempt the step attempt, at least 1
  */
 public record TextRequest(AiRoute route, List<Segment> segments, OutputContract output, int maxOutputTokens,
-                          double temperature, Duration deadline, String userKey, StreamListener listener,
+                          double temperature, Duration deadline, OpaqueUserKey userKey, StreamListener listener,
                           UUID stepId, int attempt) {
     /** Prefix of the segment appended by {@link #withRepair}; the Stub uses it to recognize a repair request. */
     public static final String REPAIR_PREFIX = "<repair>";
-    private static final Pattern USER_KEY = Pattern.compile("[A-Za-z0-9._-]{1,64}");
     private static final int MAX_REPAIR_DETAIL = 2_000;
 
     public TextRequest {
@@ -51,7 +49,7 @@ public record TextRequest(AiRoute route, List<Segment> segments, OutputContract 
         if (deadline == null || deadline.isNegative() || deadline.isZero() || deadline.compareTo(Duration.ofHours(1)) > 0) {
             throw new IllegalArgumentException("Invalid deadline");
         }
-        if (userKey == null || !USER_KEY.matcher(userKey).matches()) throw new IllegalArgumentException("Invalid userKey");
+        Objects.requireNonNull(userKey, "userKey");
         if (attempt < 1) throw new IllegalArgumentException("attempt starts at 1");
     }
 
@@ -64,9 +62,20 @@ public record TextRequest(AiRoute route, List<Segment> segments, OutputContract 
             Objects.requireNonNull(text, "text");
         }
 
+        /** Lengths only: segments carry prompt text. */
+        @Override
+        public String toString() { return "Segment[role=" + role + ", chars=" + text.length() + ", cacheable=" + cacheable + "]"; }
+
         public static Segment system(String text, boolean cacheable) { return new Segment(Role.SYSTEM, text, cacheable); }
 
         public static Segment user(String text, boolean cacheable) { return new Segment(Role.USER, text, cacheable); }
+    }
+
+    /** No prompt text and no user key: segment sizes only. */
+    @Override
+    public String toString() {
+        return "TextRequest[route=" + route + ", segments=" + segments + ", output=" + output + ", maxOutputTokens=" + maxOutputTokens
+                + ", deadline=" + deadline + ", stepId=" + stepId + ", attempt=" + attempt + ", streaming=" + streaming() + "]";
     }
 
     public boolean streaming() { return listener != null; }

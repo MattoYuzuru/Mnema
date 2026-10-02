@@ -35,6 +35,12 @@ final class FakeProvider implements AutoCloseable {
 
         static Reply sse(String fixture) { return new Reply(200, Map.of("Content-Type", "text/event-stream"), fixture(fixture), 0, 0, true); }
 
+        Reply withHeader(String name, String value) {
+            Map<String, String> merged = new LinkedHashMap<>(headers);
+            merged.put(name, value);
+            return new Reply(status, merged, body, delayMillis, lineGapMillis, stream);
+        }
+
         Reply delayed(long millis) { return new Reply(status, headers, body, millis, lineGapMillis, stream); }
 
         Reply gap(long millis) { return new Reply(status, headers, body, delayMillis, millis, stream); }

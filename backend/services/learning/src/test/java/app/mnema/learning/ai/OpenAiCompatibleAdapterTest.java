@@ -244,7 +244,7 @@ class OpenAiCompatibleAdapterTest {
         assertThat(failure(unreachable.attempt("deepseek-flash", AiTestSupport.request(), BUDGET)))
                 .isEqualTo(new AiFailure.Transient("io_error"));
 
-        try (var small = new ChatHttp(new AiProperties.Transport(Duration.ofSeconds(2), Duration.ofSeconds(1), 1_024))) {
+        try (var small = new ChatHttp(new AiProperties.Transport(Duration.ofSeconds(2), Duration.ofSeconds(1), 1_024, Duration.ofSeconds(1)))) {
             provider.enqueue(Reply.json(200, "x".repeat(4_000)));
             var adapter = new OpenAiCompatibleAdapter("deepseek", OpenAiCompatibleAdapter.Dialect.DEEPSEEK,
                     URI.create(provider.baseUrl()), BearerSource.staticKey("k"), small, PRICES, Clock.systemUTC());
@@ -282,5 +282,52 @@ class OpenAiCompatibleAdapterTest {
         assertThat(routerBody.path("user").stringValue()).isEqualTo(AiTestSupport.USER_KEY);
         assertThat(routerBody.path("provider").path("data_collection").stringValue()).isEqualTo("deny");
         assertThat(routerBody.path("usage").path("include").booleanValue()).isTrue();
+    }
+
+    @Test
+    void aSilentProviderTimesOutAtFirstByteWithDeadlineLeft() {
+        provider.enqueue(Reply.fixtureJson("chat-ok.json").delayed(1_200));
+        long started = System.nanoTime();
+        // 5 s of budget, 300 ms first-byte limit (tests): the attempt ends long before the budget does
+        assertThat(failure(deepseek().attempt("deepseek-flash", AiTestSupport.request(), BUDGET))).isEqualTo(new AiFailure.Timeout());
+        assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofSeconds(1));
+    }
+
+    @Test
+    void gigaChatFinishReasonsAreMappedAndAStreamedRefusalIsARefusal() {
+        provider.enqueue(Reply.fixtureJson("chat-blacklist.json"), Reply.fixtureJson("chat-finish-error.json"), Reply.sse("stream-refusal.sse"));
+        OpenAiCompatibleAdapter adapter = adapter(OpenAiCompatibleAdapter.Dialect.GIGACHAT, "gigachat", "giga");
+        assertThat(failure(adapter.attempt("GigaChat-2", AiTestSupport.request(), BUDGET))).isEqualTo(new AiFailure.Refusal("blacklist"));
+        assertThat(failure(adapter.attempt("GigaChat-2", AiTestSupport.request(), BUDGET))).isEqualTo(new AiFailure.Transient("finish_error"));
+        assertThat(failure(adapter.attempt("GigaChat-2", AiTestSupport.request(text -> { }), BUDGET))).isEqualTo(new AiFailure.Refusal("refusal"));
+    }
+
+    @Test
+    void onlyPlainProviderRequestIdsAreKept() {
+        provider.enqueue(Reply.fixtureJson("chat-unsafe-id.json"), Reply.json(200, FakeProvider.fixture("chat-ok.json").replace(
+                "chatcmpl-5f1c0e2b", "x".repeat(201))), Reply.json(200, FakeProvider.fixture("chat-unsafe-id.json"))
+                .withHeader("x-request-id", "hdr-123.ABC:4"));
+        OpenAiCompatibleAdapter adapter = deepseek();
+        assertThat(ok(adapter.attempt("deepseek-flash", AiTestSupport.request(), BUDGET)).providerRequestId()).isNull();
+        assertThat(ok(adapter.attempt("deepseek-flash", AiTestSupport.request(), BUDGET)).providerRequestId()).as("over 200 characters").isNull();
+        assertThat(ok(adapter.attempt("deepseek-flash", AiTestSupport.request(), BUDGET)).providerRequestId())
+                .as("an unsafe body id falls back to a safe header id").isEqualTo("hdr-123.ABC:4");
+    }
+
+    @Test
+    void aRejectedCredentialInvalidatesTheCachedToken() {
+        provider.enqueue(Reply.status(401));
+        var invalidated = new java.util.concurrent.atomic.AtomicInteger();
+        BearerSource source = new BearerSource() {
+            @Override public boolean configured() { return true; }
+
+            @Override public AiResult<String> bearer(Duration budget) { return AiResult.ok("t"); }
+
+            @Override public void invalidate() { invalidated.incrementAndGet(); }
+        };
+        var adapter = new OpenAiCompatibleAdapter("gigachat", OpenAiCompatibleAdapter.Dialect.GIGACHAT, URI.create(provider.baseUrl()),
+                source, http, PRICES, Clock.systemUTC());
+        assertThat(failure(adapter.attempt("GigaChat-2", AiTestSupport.request(), BUDGET))).isEqualTo(new AiFailure.NotConfigured("http_401"));
+        assertThat(invalidated).hasValue(1);
     }
 }

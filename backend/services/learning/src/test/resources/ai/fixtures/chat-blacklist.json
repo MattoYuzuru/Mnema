@@ -1,0 +1,1 @@
+{"choices":[{"message":{"content":"","role":"assistant"},"index":0,"finish_reason":"blacklist"}],"created":1790000000,"model":"GigaChat-2:2.0.28.2","object":"chat.completion","usage":{"prompt_tokens":10,"completion_tokens":0,"total_tokens":10}}

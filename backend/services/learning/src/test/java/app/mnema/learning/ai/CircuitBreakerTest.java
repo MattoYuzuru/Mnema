@@ -14,17 +14,19 @@ class CircuitBreakerTest {
 
     private void fail(int times) {
         for (int index = 0; index < times; index++) {
-            assertThat(breaker.tryAcquire()).isTrue();
-            breaker.onFailure();
+            long ticket = breaker.tryAcquire();
+            assertThat(ticket).isNotEqualTo(CircuitBreaker.REFUSED);
+            breaker.onFailure(ticket);
         }
     }
+
+    private boolean granted() { return breaker.tryAcquire() != CircuitBreaker.REFUSED; }
 
     @Test
     void staysClosedBelowTheThresholdAndASuccessResetsTheStreak() {
         fail(4);
         assertThat(breaker.state()).isEqualTo(CircuitBreaker.State.CLOSED);
-        assertThat(breaker.tryAcquire()).isTrue();
-        breaker.onSuccess();
+        breaker.onSuccess(breaker.tryAcquire());
         fail(4);
         assertThat(breaker.state()).isEqualTo(CircuitBreaker.State.CLOSED);
         assertThat(breaker.isOpen()).isFalse();
@@ -35,9 +37,9 @@ class CircuitBreakerTest {
         fail(5);
         assertThat(breaker.state()).isEqualTo(CircuitBreaker.State.OPEN);
         assertThat(breaker.isOpen()).isTrue();
-        assertThat(breaker.tryAcquire()).isFalse();
+        assertThat(granted()).isFalse();
         clock.advance(Duration.ofSeconds(29));
-        assertThat(breaker.tryAcquire()).isFalse();
+        assertThat(granted()).isFalse();
         assertThat(breaker.isOpen()).isTrue();
     }
 
@@ -56,35 +58,58 @@ class CircuitBreakerTest {
         fail(5);
         clock.advance(Duration.ofSeconds(30));
         assertThat(breaker.isOpen()).as("a probe may go now").isFalse();
-        assertThat(breaker.tryAcquire()).isTrue();
+        long probe = breaker.tryAcquire();
+        assertThat(probe).isNotEqualTo(CircuitBreaker.REFUSED);
         assertThat(breaker.state()).isEqualTo(CircuitBreaker.State.HALF_OPEN);
-        assertThat(breaker.tryAcquire()).as("only one probe at a time").isFalse();
+        assertThat(granted()).as("only one probe at a time").isFalse();
         assertThat(breaker.isOpen()).isTrue();
-        breaker.onSuccess();
+        breaker.onSuccess(probe);
         assertThat(breaker.state()).isEqualTo(CircuitBreaker.State.CLOSED);
-        assertThat(breaker.tryAcquire()).isTrue();
+        assertThat(granted()).isTrue();
     }
 
     @Test
     void aFailedProbeReopensForAnotherFullPeriod() {
         fail(5);
         clock.advance(Duration.ofSeconds(31));
-        assertThat(breaker.tryAcquire()).isTrue();
-        breaker.onFailure();
+        long probe = breaker.tryAcquire();
+        assertThat(probe).isNotEqualTo(CircuitBreaker.REFUSED);
+        breaker.onFailure(probe);
         assertThat(breaker.state()).isEqualTo(CircuitBreaker.State.OPEN);
         clock.advance(Duration.ofSeconds(29));
-        assertThat(breaker.tryAcquire()).isFalse();
+        assertThat(granted()).isFalse();
         clock.advance(Duration.ofSeconds(2));
-        assertThat(breaker.tryAcquire()).isTrue();
+        assertThat(granted()).isTrue();
     }
 
     @Test
     void anUnusedProbePermissionCanBeGivenBack() {
         fail(5);
         clock.advance(Duration.ofSeconds(31));
-        assertThat(breaker.tryAcquire()).isTrue();
-        breaker.release();
-        assertThat(breaker.tryAcquire()).isTrue();
+        long probe = breaker.tryAcquire();
+        assertThat(probe).isNotEqualTo(CircuitBreaker.REFUSED);
+        breaker.release(probe);
+        assertThat(granted()).isTrue();
+    }
+
+    @Test
+    void aSlowCallAdmittedBeforeTheBreakerOpenedCannotCloseItOrCountAgainstTheNextStreak() {
+        long slow = breaker.tryAcquire();
+        fail(5);
+        assertThat(breaker.state()).isEqualTo(CircuitBreaker.State.OPEN);
+        breaker.onSuccess(slow);
+        assertThat(breaker.state()).as("a stale success is ignored").isEqualTo(CircuitBreaker.State.OPEN);
+        assertThat(granted()).isFalse();
+
+        clock.advance(Duration.ofSeconds(31));
+        long probe = breaker.tryAcquire();
+        breaker.release(slow);
+        assertThat(granted()).as("a stale release does not free the probe slot").isFalse();
+        breaker.onFailure(slow);
+        assertThat(breaker.state()).as("a stale failure does not reopen it").isEqualTo(CircuitBreaker.State.HALF_OPEN);
+        breaker.onSuccess(probe);
+        assertThat(breaker.state()).isEqualTo(CircuitBreaker.State.CLOSED);
+        assertThat(breaker.currentTicket()).isEqualTo(1);
     }
 
     @Test

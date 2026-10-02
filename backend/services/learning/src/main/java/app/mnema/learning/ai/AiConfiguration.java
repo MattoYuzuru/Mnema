@@ -2,6 +2,8 @@ package app.mnema.learning.ai;
 
 import app.mnema.learning.ai.prompt.PromptAssembler;
 import app.mnema.learning.ai.prompt.PromptLibrary;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -18,6 +20,8 @@ import java.util.random.RandomGenerator;
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(AiProperties.class)
 class AiConfiguration {
+    private static final Logger LOG = LoggerFactory.getLogger(AiConfiguration.class);
+
     @Bean(destroyMethod = "close")
     ChatHttp aiChatHttp(AiProperties properties) { return new ChatHttp(properties.transport()); }
 
@@ -28,7 +32,7 @@ class AiConfiguration {
 
     @Bean
     BreakerRegistry aiBreakers(AiProperties properties) {
-        return new BreakerRegistry(Clock.systemUTC(), properties.breaker());
+        return new BreakerRegistry(new MonotonicClock(), properties.breaker());
     }
 
     @Bean
@@ -40,7 +44,7 @@ class AiConfiguration {
     TextGeneration textGeneration(AiRouting routing, BreakerRegistry breakers, AiBudget budget, JdbcCallJournal journal,
                                   MeterRegistry meters, AiProperties properties) {
         return new RoutedTextGeneration(routing, breakers, budget, journal, new AiTelemetry(meters), properties,
-                Clock.systemUTC(), Sleeper.SYSTEM, RandomGenerator.getDefault());
+                new MonotonicClock(), Sleeper.SYSTEM, RandomGenerator.getDefault());
     }
 
     @Bean
@@ -48,6 +52,9 @@ class AiConfiguration {
                                   AiProperties properties) {
         return new DefaultAiAvailability(routing, breakers, budget, userKeys, AiProperties.STUB.equals(properties.provider()));
     }
+
+    @Bean
+    UserKeys userKeys(AiProperties properties) { return new UserKeys(properties.userKey()); }
 
     @Bean
     PromptLibrary promptLibrary(AiProperties properties) {
@@ -61,7 +68,11 @@ class AiConfiguration {
 
     static Map<String, TextAdapter> adapters(AiProperties properties, ChatHttp http, Clock clock) {
         Map<String, TextAdapter> adapters = new LinkedHashMap<>();
-        adapters.put(StubTextAdapter.PROVIDER, new StubTextAdapter());
+        if (AiProperties.STUB.equals(properties.provider())) {
+            // Only this explicit setting registers the Stub; it must never be active in production.
+            LOG.warn("ai_stub_active learning.ai.provider=stub: every AI text call is answered by the deterministic Stub");
+            adapters.put(StubTextAdapter.PROVIDER, new StubTextAdapter());
+        }
         Map<String, Map<String, AiProperties.Model>> prices = new HashMap<>();
         for (AiProperties.Model model : properties.models()) {
             prices.computeIfAbsent(model.provider(), key -> new HashMap<>()).put(model.id(), model);

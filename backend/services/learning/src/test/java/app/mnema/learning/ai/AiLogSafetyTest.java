@@ -56,7 +56,7 @@ class AiLogSafetyTest {
                 for (int index = 0; index < 8; index++) {
                     var request = new TextRequest(AiRoute.TEXT_FAST, List.of(TextRequest.Segment.system(CANARY, true),
                             TextRequest.Segment.user(CANARY + " задача", false)), OutputContract.MBM_TEXT, 100, 0.5,
-                            Duration.ofSeconds(10), AiTestSupport.USER_KEY, index == 6 ? text -> { } : null, null, 1);
+                            Duration.ofSeconds(10), AiTestSupport.KEY, index == 6 ? text -> { } : null, null, 1);
                     router.generate(request);
                 }
             }
@@ -76,6 +76,14 @@ class AiLogSafetyTest {
         String all = String.join("\n", lines);
         assertThat(all).doesNotContain(KEY).doesNotContain("SECRET").doesNotContain(CANARY).doesNotContain(AiTestSupport.USER_KEY)
                 .doesNotContain("secret-looking-detail").doesNotContain("Bearer").doesNotContain("Заголовок");
+        // value objects that travel through logs and exception messages never print secrets or text
+        var request = new TextRequest(AiRoute.TEXT_FAST, List.of(TextRequest.Segment.system(CANARY, true)), OutputContract.MBM_TEXT,
+                10, 0.5, Duration.ofSeconds(1), AiTestSupport.KEY, null, null, 1);
+        var response = new TextResponse(CANARY, TextResponse.FinishReason.STOP, Usage.ZERO, 0, null, new TextResponse.RouteUsed("p", "m"));
+        var provider = new AiProperties.Provider(true, "https://api.example.com", KEY, "https://auth.example.com", KEY, "S");
+        assertThat(String.join("\n", request.toString(), request.segments().get(0).toString(), response.toString(), provider.toString(),
+                AiTestSupport.KEY.toString(), new AiProperties.UserKey(KEY + KEY, "k1").toString()))
+                .doesNotContain(CANARY).doesNotContain(KEY).doesNotContain(AiTestSupport.USER_KEY);
         String okLine = lines.stream().filter(line -> line.contains("outcome=OK")).findFirst().orElseThrow();
         assertThat(okLine).contains("in_hit=2000 in_miss=500 out=300 cost_micros=522").contains("latency_ms=");
     }

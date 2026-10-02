@@ -22,12 +22,14 @@ import java.util.function.Predicate;
 final class ChatHttp implements AutoCloseable {
     private final HttpClient client;
     private final long idleNanos;
+    private final Duration firstByte;
     private final int maxBodyBytes;
 
     ChatHttp(AiProperties.Transport transport) {
         this.client = HttpClient.newBuilder().connectTimeout(transport.connectTimeout())
                 .followRedirects(HttpClient.Redirect.NEVER).build();
         this.idleNanos = transport.idleStream().toNanos();
+        this.firstByte = transport.firstByte();
         this.maxBodyBytes = transport.maxBodyBytes();
     }
 
@@ -59,7 +61,10 @@ final class ChatHttp implements AutoCloseable {
         long deadline = System.nanoTime() + budget.toNanos();
         HttpResponse<InputStream> response;
         try {
-            response = client.send(request.timeout(budget).build(), HttpResponse.BodyHandlers.ofInputStream());
+            // Headers must arrive within firstByte (or the budget, if shorter): a silent provider then times out with deadline
+            // left, so the router can retry and fall back instead of burning the whole call on one candidate.
+            Duration headerWait = budget.compareTo(firstByte) < 0 ? budget : firstByte;
+            response = client.send(request.timeout(headerWait).build(), HttpResponse.BodyHandlers.ofInputStream());
         } catch (HttpTimeoutException exception) {
             throw new TransportException(TransportException.Kind.TIMEOUT);
         } catch (IOException exception) {

@@ -37,7 +37,7 @@ public final class EvalStack implements AutoCloseable {
                 List.of("deepseek:deepseek-flash")), providers);
         // Real latencies: the production transport limits, not the short ones of the loopback tests.
         AiProperties properties = new AiProperties(base.provider(), base.routes(), base.providers(), base.models(),
-                new AiProperties.Transport(Duration.ofSeconds(5), Duration.ofSeconds(60), 4 * 1024 * 1024),
+                new AiProperties.Transport(Duration.ofSeconds(5), Duration.ofSeconds(60), 4 * 1024 * 1024, Duration.ofSeconds(60)),
                 new AiProperties.Retry(3, 6, Duration.ofMillis(500), Duration.ofSeconds(8), Duration.ofSeconds(30)),
                 base.breaker(), base.permits(), new AiProperties.Budget("Europe/Moscow", 0, 0, 0, 0, 0, 0, 0, Duration.ofSeconds(10)),
                 base.userKey(), base.prompt());

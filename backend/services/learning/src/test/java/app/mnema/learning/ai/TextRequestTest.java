@@ -9,33 +9,46 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class TextRequestTest {
-    private static TextRequest with(List<TextRequest.Segment> segments, int max, double temperature, Duration deadline, String key, int attempt) {
+    private static TextRequest with(List<TextRequest.Segment> segments, int max, double temperature, Duration deadline, OpaqueUserKey key, int attempt) {
         return new TextRequest(AiRoute.TEXT_FAST, segments, OutputContract.MBM_TEXT, max, temperature, deadline, key, null, null, attempt);
     }
 
     @Test
     void cacheableSegmentsMustFormALeadingRun() {
         assertThatThrownBy(() -> with(List.of(TextRequest.Segment.user("a", false), TextRequest.Segment.user("b", true)), 10, 0.5,
-                Duration.ofSeconds(1), "k1.abc", 1)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> with(List.of(), 10, 0.5, Duration.ofSeconds(1), "k1.abc", 1)).isInstanceOf(IllegalArgumentException.class);
+                Duration.ofSeconds(1), AiTestSupport.KEY, 1)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> with(List.of(), 10, 0.5, Duration.ofSeconds(1), AiTestSupport.KEY, 1)).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
     void limitsAreValidated() {
         List<TextRequest.Segment> one = List.of(TextRequest.Segment.user("a", false));
         for (Runnable invalid : List.<Runnable>of(
-                () -> with(one, 0, 0.5, Duration.ofSeconds(1), "k1.abc", 1),
-                () -> with(one, 70_000, 0.5, Duration.ofSeconds(1), "k1.abc", 1),
-                () -> with(one, 10, 2.5, Duration.ofSeconds(1), "k1.abc", 1),
-                () -> with(one, 10, Double.NaN, Duration.ofSeconds(1), "k1.abc", 1),
-                () -> with(one, 10, 0.5, Duration.ZERO, "k1.abc", 1),
-                () -> with(one, 10, 0.5, Duration.ofHours(2), "k1.abc", 1),
-                () -> with(one, 10, 0.5, null, "k1.abc", 1),
-                () -> with(one, 10, 0.5, Duration.ofSeconds(1), "user@example.com", 1),
-                () -> with(one, 10, 0.5, Duration.ofSeconds(1), null, 1),
-                () -> with(one, 10, 0.5, Duration.ofSeconds(1), "k1.abc", 0))) {
+                () -> with(one, 0, 0.5, Duration.ofSeconds(1), AiTestSupport.KEY, 1),
+                () -> with(one, 70_000, 0.5, Duration.ofSeconds(1), AiTestSupport.KEY, 1),
+                () -> with(one, 10, 2.5, Duration.ofSeconds(1), AiTestSupport.KEY, 1),
+                () -> with(one, 10, Double.NaN, Duration.ofSeconds(1), AiTestSupport.KEY, 1),
+                () -> with(one, 10, 0.5, Duration.ZERO, AiTestSupport.KEY, 1),
+                () -> with(one, 10, 0.5, Duration.ofHours(2), AiTestSupport.KEY, 1),
+                () -> with(one, 10, 0.5, null, AiTestSupport.KEY, 1),
+                () -> with(one, 10, 0.5, Duration.ofSeconds(1), AiTestSupport.KEY, 0),
+                () -> new OpaqueUserKey("user@example.com"), () -> new OpaqueUserKey(null), () -> new OpaqueUserKey("x".repeat(65)))) {
             assertThatThrownBy(invalid::run).isInstanceOf(IllegalArgumentException.class);
         }
+    }
+
+    @Test
+    void aMissingUserKeyIsRejectedAndNoPersonalDataSurvivesToString() {
+        assertThatThrownBy(() -> with(List.of(TextRequest.Segment.user("a", false)), 10, 0.5, Duration.ofSeconds(1), null, 1))
+                .isInstanceOf(NullPointerException.class);
+        TextRequest request = new TextRequest(AiRoute.TEXT_FAST, List.of(TextRequest.Segment.user("СЕКРЕТНЫЙ-ТЕКСТ", false)),
+                OutputContract.MBM_TEXT, 10, 0.5, Duration.ofSeconds(1), AiTestSupport.KEY, null, null, 1);
+        assertThat(request.toString()).doesNotContain("СЕКРЕТНЫЙ-ТЕКСТ").doesNotContain(AiTestSupport.USER_KEY).contains("chars=15");
+        assertThat(AiTestSupport.KEY.toString()).doesNotContain(AiTestSupport.USER_KEY);
+        assertThat(AiTestSupport.KEY).isEqualTo(new OpaqueUserKey(AiTestSupport.USER_KEY)).hasSameHashCodeAs(new OpaqueUserKey(AiTestSupport.USER_KEY));
+        assertThat(AiTestSupport.KEY).isNotEqualTo("x");
+        var response = new TextResponse("СЕКРЕТНЫЙ-ОТВЕТ", TextResponse.FinishReason.STOP, Usage.ZERO, 0, null, new TextResponse.RouteUsed("p", "m"));
+        assertThat(response.toString()).doesNotContain("СЕКРЕТНЫЙ-ОТВЕТ").contains("chars=15");
     }
 
     @Test
@@ -57,7 +70,7 @@ class TextRequestTest {
         assertThat(request.withRoute(AiRoute.ASSESS).fingerprint()).isNotEqualTo(request.fingerprint());
         assertThat(request.withRepair("x").fingerprint()).isNotEqualTo(request.fingerprint());
         TextRequest otherKey = new TextRequest(request.route(), request.segments(), request.output(), request.maxOutputTokens(),
-                request.temperature(), request.deadline(), "k2.other", null, null, 1);
+                request.temperature(), request.deadline(), new OpaqueUserKey("k2.other"), null, null, 1);
         assertThat(otherKey.fingerprint()).isEqualTo(request.fingerprint());
         assertThat(request.streaming()).isFalse();
         assertThat(request.withListener(text -> { }).streaming()).isTrue();

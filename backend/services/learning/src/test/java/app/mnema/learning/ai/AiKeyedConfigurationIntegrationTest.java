@@ -34,6 +34,6 @@ class AiKeyedConfigurationIntegrationTest extends PostgresIntegrationTest {
         assertThat(properties.permits().video()).isEqualTo(1);
         assertThat(properties.breaker().failureThreshold()).isEqualTo(5);
         assertThat(properties.prompt().version()).isEqualTo("v1");
-        assertThat(userKeys.opaque(UUID.randomUUID())).startsWith("k1.");
+        assertThat(userKeys.opaque(UUID.randomUUID()).value()).startsWith("k1.");
     }
 }

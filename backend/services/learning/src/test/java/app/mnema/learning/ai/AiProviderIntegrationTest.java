@@ -43,7 +43,7 @@ class AiProviderIntegrationTest extends PostgresIntegrationTest {
         UUID step = UUID.randomUUID();
         var request = new TextRequest(AiRoute.TEXT_FAST, List.of(TextRequest.Segment.system("СЕКРЕТНЫЙ-ПРОМПТ", true),
                 TextRequest.Segment.user("задача", false)), OutputContract.MBM_TEXT, 500, 0.5, Duration.ofSeconds(5),
-                AiTestSupport.USER_KEY, null, step, 2);
+                AiTestSupport.KEY, null, step, 2);
         assertThat(text.generate(request)).isInstanceOf(AiResult.Ok.class);
 
         var rows = jdbc.sql("SELECT * FROM app_learning.ai_provider_call").query().listOfRows();
@@ -90,6 +90,10 @@ class AiProviderIntegrationTest extends PostgresIntegrationTest {
                 .param("id", second).update()).isInstanceOf(DataAccessException.class);
         assertThatThrownBy(() -> jdbc.sql("UPDATE app_learning.ai_provider_call SET capability='TTS' WHERE call_id=:id")
                 .param("id", second).update()).isInstanceOf(DataAccessException.class);
+        // the single allowed update must leave PENDING: usage cannot be edited in place on a pending row
+        UUID pending = journal.begin(new CallJournal.Intent(null, 1, AiCapability.TEXT, "stub", "stub", "e".repeat(64)));
+        assertThatThrownBy(() -> jdbc.sql("UPDATE app_learning.ai_provider_call SET cost_micros=5 WHERE call_id=:id")
+                .param("id", pending).update()).isInstanceOf(DataAccessException.class);
         // a failed finish never throws into the caller: an unknown outcome violates the CHECK and is logged
         journal.finish(second, new CallJournal.Outcome("MADE_UP", Usage.ZERO, 0, null, 1));
         assertThat(jdbc.sql("SELECT outcome FROM app_learning.ai_provider_call WHERE call_id=:id").param("id", second)

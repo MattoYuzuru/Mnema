@@ -1,5 +1,7 @@
 package app.mnema.learning.ai;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Clock;
@@ -29,10 +31,14 @@ import java.util.random.RandomGenerator;
  *   <li><b>Open circuit</b>: the candidate is skipped without a call; budget spent: no call at all.</li>
  * </ul>
  *
+ * <p>Time (deadline, backoff) comes from the injected clock, a {@link MonotonicClock} in production so that wall-clock
+ * steps cannot shorten or extend a call.
+ *
  * <p>Each provider call has an intent row before it and an outcome row after it, and the whole method refuses to run
  * inside a database transaction: a connection must never be held while a model thinks.
  */
 final class RoutedTextGeneration implements TextGeneration {
+    private static final Logger LOG = LoggerFactory.getLogger(RoutedTextGeneration.class);
     private final AiRouting routing;
     private final BreakerRegistry breakers;
     private final AiBudget budget;
@@ -145,7 +151,8 @@ final class RoutedTextGeneration implements TextGeneration {
             switch (failure) {
                 case AiFailure.RateLimited limited -> {
                     if (++rateLimitTries > properties.retry().rateLimitRetries()) {
-                        breakers.of(candidate.provider(), first.route().capability()).onFailure();
+                        CircuitBreaker breaker = breakers.of(candidate.provider(), first.route().capability());
+                        breaker.onFailure(breaker.currentTicket());
                         return result;
                     }
                     Duration pause = max(limited.retryAfter(), jitter(rateLimitTries));
@@ -176,51 +183,80 @@ final class RoutedTextGeneration implements TextGeneration {
         }
     }
 
-    /** One journaled, metered, breaker-guarded provider call. */
+    /**
+     * One journaled, metered, breaker-guarded provider call. The breaker ticket is settled right after the adapter returns and,
+     * whatever happens afterwards (journal, metrics, an Error), a ticket that was never settled is released in {@code finally},
+     * so a half-open probe slot cannot leak.
+     */
     private AiResult<TextResponse> attemptOnce(AiRouting.Candidate candidate, TextRequest request, Duration remaining) {
         AiCapability capability = request.route().capability();
         CircuitBreaker breaker = breakers.of(candidate.provider(), capability);
-        if (!breaker.tryAcquire()) return AiResult.failed(new AiFailure.CircuitOpen());
-        UUID callId;
+        long ticket = breaker.tryAcquire();
+        if (ticket == CircuitBreaker.REFUSED) return AiResult.failed(new AiFailure.CircuitOpen());
+        boolean settled = false;
         try {
-            callId = journal.begin(new CallJournal.Intent(request.stepId(), request.attempt(), capability,
-                    candidate.provider(), candidate.model(), request.fingerprint()));
-        } catch (RuntimeException exception) {
-            breaker.release();
-            return AiResult.failed(new AiFailure.Transient("journal_unavailable"));
+            UUID callId;
+            try {
+                callId = journal.begin(new CallJournal.Intent(request.stepId(), request.attempt(), capability,
+                        candidate.provider(), candidate.model(), request.fingerprint()));
+            } catch (RuntimeException exception) {
+                warn("journal_begin", exception, candidate, request);
+                return AiResult.failed(new AiFailure.Transient("journal_unavailable"));
+            }
+            long started = System.nanoTime();
+            AiResult<TextResponse> result;
+            try {
+                result = candidate.adapter().attempt(candidate.model(), request, remaining);
+            } catch (RuntimeException exception) {
+                if (request.listener() instanceof Delivery delivery && delivery.failed()) {
+                    // The caller's own listener threw: retrying would replay text into a broken consumer. Not a provider fault.
+                    warn("stream_listener", exception, candidate, request);
+                    result = AiResult.failed(new AiFailure.Refusal("listener_failed"));
+                } else {
+                    warn("adapter", exception, candidate, request);
+                    result = AiResult.failed(new AiFailure.Transient("adapter_error"));
+                }
+            }
+            Duration latency = Duration.ofNanos(System.nanoTime() - started);
+            // "Success" for the breaker means the provider answered, whatever the content; transport and credential
+            // failures are what open it.
+            if (result instanceof AiResult.Failed<TextResponse> failed && (failed.failure() instanceof AiFailure.Transient
+                    || failed.failure() instanceof AiFailure.Timeout || failed.failure() instanceof AiFailure.NotConfigured)) {
+                breaker.onFailure(ticket);
+            } else {
+                breaker.onSuccess(ticket);
+            }
+            settled = true;
+            String outcome;
+            Usage usage = Usage.ZERO;
+            long cost = 0;
+            String providerRequestId = null;
+            if (result instanceof AiResult.Ok<TextResponse> ok) {
+                outcome = "OK";
+                usage = ok.value().usage();
+                cost = ok.value().costMicros();
+                providerRequestId = ok.value().providerRequestId();
+                budget.record(capability, cost);
+            } else {
+                outcome = ((AiResult.Failed<TextResponse>) result).failure().outcome();
+            }
+            journal.finish(callId, new CallJournal.Outcome(outcome, usage, cost, providerRequestId, latency.toMillis()));
+            try {
+                telemetry.record(capability, candidate.provider(), candidate.model(), request.stepId(), outcome, latency, usage, cost);
+            } catch (RuntimeException exception) {
+                warn("telemetry", exception, candidate, request);
+            }
+            return result;
+        } finally {
+            if (!settled) breaker.release(ticket);
         }
-        long started = System.nanoTime();
-        AiResult<TextResponse> result;
-        try {
-            result = candidate.adapter().attempt(candidate.model(), request, remaining);
-        } catch (RuntimeException exception) {
-            result = AiResult.failed(new AiFailure.Transient("adapter_error"));
-        }
-        Duration latency = Duration.ofNanos(System.nanoTime() - started);
-        String outcome;
-        Usage usage = Usage.ZERO;
-        long cost = 0;
-        String providerRequestId = null;
-        if (result instanceof AiResult.Ok<TextResponse> ok) {
-            outcome = "OK";
-            usage = ok.value().usage();
-            cost = ok.value().costMicros();
-            providerRequestId = ok.value().providerRequestId();
-            budget.record(capability, cost);
-        } else {
-            outcome = ((AiResult.Failed<TextResponse>) result).failure().outcome();
-        }
-        journal.finish(callId, new CallJournal.Outcome(outcome, usage, cost, providerRequestId, latency.toMillis()));
-        telemetry.record(capability, candidate.provider(), candidate.model(), request.stepId(), outcome, latency, usage, cost);
-        // "Success" for the breaker means the provider answered, whatever the content; transport and credential
-        // failures are what open it.
-        if (result instanceof AiResult.Failed<TextResponse> failed && (failed.failure() instanceof AiFailure.Transient
-                || failed.failure() instanceof AiFailure.Timeout || failed.failure() instanceof AiFailure.NotConfigured)) {
-            breaker.onFailure();
-        } else {
-            breaker.onSuccess();
-        }
-        return result;
+    }
+
+    /** Internal failures are logged by stage and exception class only: messages can carry prompt or provider text. */
+    private static void warn(String stage, RuntimeException exception, AiRouting.Candidate candidate, TextRequest request) {
+        LOG.warn("ai_call_internal_failure stage={} error_type={} provider={} model={} step_id={}", stage,
+                exception.getClass().getSimpleName(), candidate.provider(), candidate.model(),
+                request.stepId() == null ? "-" : request.stepId());
     }
 
     private Duration remaining(Instant deadline) {
@@ -250,23 +286,35 @@ final class RoutedTextGeneration implements TextGeneration {
 
     private static Duration max(Duration left, Duration right) { return left.compareTo(right) >= 0 ? left : right; }
 
-    /** Tells the caller's listener when delivered text is abandoned by a retry or a fallback. */
+    /** Tells the caller's listener when delivered text is abandoned by a retry or a fallback, and notes when it throws. */
     private static final class Delivery implements StreamListener {
         private final StreamListener delegate;
         private boolean delivered;
+        private boolean failed;
 
         Delivery(StreamListener delegate) { this.delegate = delegate; }
+
+        boolean failed() { return failed; }
 
         @Override
         public void onDelta(String text) {
             delivered = true;
-            delegate.onDelta(text);
+            try {
+                delegate.onDelta(text);
+            } catch (RuntimeException exception) {
+                failed = true;
+                throw exception;
+            }
         }
 
         void restart() {
             if (delivered) {
                 delivered = false;
-                delegate.onRestart();
+                try {
+                    delegate.onRestart();
+                } catch (RuntimeException exception) {
+                    LOG.warn("ai_stream_restart_failed error_type={}", exception.getClass().getSimpleName());
+                }
             }
         }
     }

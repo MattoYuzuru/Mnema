@@ -76,4 +76,54 @@ class AiBudgetTest {
         clock.advance(Duration.ofMinutes(1));
         assertThat(flaky.exhausted(AiCapability.TEXT)).isTrue();
     }
+
+    @Test
+    void aRefreshRunsOutsideAnyLockAndOtherCallersKeepReadingTheStaleValueMeanwhile() throws Exception {
+        var started = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        var slow = new AiBudget(AiTestSupport.properties("", AiTestSupport.routes(List.of(), List.of(), List.of()),
+                java.util.Map.of()).budget(), (capability, since) -> {
+            if (calls.incrementAndGet() == 1) return 1_000;
+            started.countDown();
+            try {
+                release.await(10, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            }
+            return 10_000_000;
+        }, clock);
+        assertThat(slow.exhausted(AiCapability.TEXT)).isFalse();
+        clock.advance(Duration.ofSeconds(11));
+
+        Thread refresher = Thread.ofVirtual().start(() -> slow.exhausted(AiCapability.TEXT));
+        assertThat(started.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+        // a concurrent reader neither waits for the JDBC call nor starts a second one: it serves the stale same-day value
+        assertThat(slow.exhausted(AiCapability.TEXT)).isFalse();
+        slow.record(AiCapability.TEXT, 1);
+        assertThat(calls).hasValue(2);
+        release.countDown();
+        refresher.join();
+        assertThat(slow.exhausted(AiCapability.TEXT)).as("the refreshed value is served afterwards").isTrue();
+        assertThat(calls).hasValue(2);
+    }
+
+    @Test
+    void aFailedRefreshIsLoggedByExceptionClassOnly() {
+        var appender = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(AiBudget.class);
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            var broken = new AiBudget(AiTestSupport.properties("", AiTestSupport.routes(List.of(), List.of(), List.of()),
+                    java.util.Map.of()).budget(), (capability, since) -> {
+                throw new IllegalStateException("jdbc url with password");
+            }, clock);
+            assertThat(broken.exhausted(AiCapability.TEXT)).isFalse();
+        } finally {
+            logger.detachAppender(appender);
+        }
+        assertThat(appender.list).singleElement().satisfies(event -> assertThat(event.getFormattedMessage())
+                .isEqualTo("ai_budget_refresh_failed capability=text error_type=IllegalStateException"));
+    }
 }

@@ -14,6 +14,7 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * OpenAI-compatible {@code /chat/completions} adapter for DeepSeek, GigaChat and OpenRouter. Differences between the
@@ -35,7 +36,8 @@ final class OpenAiCompatibleAdapter implements TextAdapter {
     }
 
     private static final JsonMapper JSON = JsonMapper.builder().build();
-    private static final int MAX_ID = 200;
+    /** Provider request ids are stored in an octet-limited column and logged: only plain identifiers are kept. */
+    private static final Pattern SAFE_ID = Pattern.compile("[A-Za-z0-9._:-]{1,200}");
 
     private final String provider;
     private final Dialect dialect;
@@ -84,6 +86,7 @@ final class OpenAiCompatibleAdapter implements TextAdapter {
                 case IO -> new AiFailure.Transient("io_error");
             });
         }
+        if (reply.status() == 401) bearer.invalidate();
         if (reply.status() / 100 != 2) return AiResult.failed(statusFailure(reply.status(), reply.retryAfter()));
         Parsed parsed = stream != null ? stream.parsed() : parseWhole(reply.body());
         if (parsed.failure() != null) return AiResult.failed(parsed.failure());
@@ -119,11 +122,11 @@ final class OpenAiCompatibleAdapter implements TextAdapter {
         switch (dialect) {
             case DEEPSEEK -> {
                 body.putObject("thinking").put("type", "disabled");
-                body.put("user_id", request.userKey());
+                body.put("user_id", request.userKey().value());
             }
             case GIGACHAT -> { }
             case OPENROUTER -> {
-                body.put("user", request.userKey());
+                body.put("user", request.userKey().value());
                 body.putObject("usage").put("include", true);
                 body.putObject("provider").put("data_collection", "deny");
             }
@@ -186,6 +189,11 @@ final class OpenAiCompatibleAdapter implements TextAdapter {
         if ("insufficient_system_resource".equals(reason) || "aborted".equals(reason)) {
             return AiResult.failed(new AiFailure.Transient("finish_" + reason));
         }
+        // GigaChat finish reasons beyond the OpenAI set. UNVERIFIED against the official reference (developers.sber.ru was not
+        // retrievable when this was written): "blacklist" is mapped to a refusal (the answer was withheld by a content stop
+        // list) and "error" to a transient failure (a provider-side generation error). Revisit with the live API.
+        if ("blacklist".equals(reason)) return AiResult.failed(new AiFailure.Refusal("blacklist"));
+        if ("error".equals(reason)) return AiResult.failed(new AiFailure.Transient("finish_error"));
         String text = parsed.text();
         if (text.isBlank()) return AiResult.failed(new AiFailure.InvalidOutput("empty_content"));
         if (request.output() == OutputContract.JSON) {
@@ -202,10 +210,12 @@ final class OpenAiCompatibleAdapter implements TextAdapter {
         };
         Usage usage = usage(parsed.usage(), request, text);
         long cost = cost(model, usage, parsed.usage());
-        String id = parsed.id() != null ? parsed.id() : headerId;
-        if (id != null && id.length() > MAX_ID) id = id.substring(0, MAX_ID);
+        String id = safeId(parsed.id());
+        if (id == null) id = safeId(headerId);
         return AiResult.ok(new TextResponse(text, finishReason, usage, cost, id, new TextResponse.RouteUsed(provider, model)));
     }
+
+    private static String safeId(String candidate) { return candidate != null && SAFE_ID.matcher(candidate).matches() ? candidate : null; }
 
     private Usage usage(JsonNode node, TextRequest request, String text) {
         if (!node.isObject() || node.isEmpty()) {
@@ -274,6 +284,10 @@ final class OpenAiCompatibleAdapter implements TextAdapter {
             if (id == null && chunk.path("id").isString()) id = chunk.path("id").stringValue();
             if (chunk.path("usage").isObject()) usage = chunk.path("usage");
             JsonNode choice = chunk.path("choices").path(0);
+            if (choice.path("delta").path("refusal").isString() && !choice.path("delta").path("refusal").stringValue().isEmpty()) {
+                failure = new AiFailure.Refusal("refusal");
+                return false;
+            }
             String delta = choice.path("delta").path("content").stringValue("");
             if (!delta.isEmpty()) {
                 text.append(delta);

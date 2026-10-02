@@ -1,6 +1,10 @@
 package app.mnema.learning.ai;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.slf4j.LoggerFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -139,7 +143,7 @@ class RoutedTextGenerationTest {
         assertThat(gigachat.calls()).as("rate limited is fallbackable").hasSize(1);
 
         var shortDeadline = new TextRequest(AiRoute.TEXT_FAST, AiTestSupport.request().segments(), OutputContract.MBM_TEXT, 100,
-                0.5, Duration.ofSeconds(5), AiTestSupport.USER_KEY, null, null, 1);
+                0.5, Duration.ofSeconds(5), AiTestSupport.KEY, null, null, 1);
         deepseek.then(new AiFailure.RateLimited(Duration.ofSeconds(10)));
         gigachat.then(new AiFailure.RateLimited(Duration.ofSeconds(10)));
         assertThat(failure(router(recording()).generate(shortDeadline))).isEqualTo(new AiFailure.RateLimited(Duration.ofSeconds(10)));
@@ -415,8 +419,92 @@ class RoutedTextGenerationTest {
         assertThat(deepseek.calls()).isEmpty();
     }
 
+    @Test
+    void internalFailuresAreLoggedByStageAndExceptionClassNeverByMessage() {
+        var appender = new ListAppender<ILoggingEvent>();
+        var logger = (Logger) LoggerFactory.getLogger(RoutedTextGeneration.class);
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            journal.failBegin = true;
+            router(recording()).generate(AiTestSupport.request());
+            journal.failBegin = false;
+            deepseek.thenDo(call -> {
+                throw new IllegalStateException("секрет в сообщении");
+            });
+            router(recording()).generate(AiTestSupport.request());
+        } finally {
+            logger.detachAppender(appender);
+        }
+        List<String> lines = appender.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
+        assertThat(lines).anyMatch(line -> line.startsWith("ai_call_internal_failure stage=journal_begin error_type=IllegalStateException provider=deepseek"));
+        assertThat(lines).anyMatch(line -> line.startsWith("ai_call_internal_failure stage=adapter error_type=IllegalStateException"));
+        assertThat(String.join("\n", lines)).doesNotContain("секрет").doesNotContain("database down");
+        assertThat(appender.list).allSatisfy(event -> assertThat(event.getThrowableProxy()).isNull());
+    }
+
+    @Test
+    void aStreamListenerThatThrowsFailsTheCallWithoutRetryOrFallback() {
+        StreamListener broken = text -> {
+            throw new IllegalArgumentException("consumer bug");
+        };
+        deepseek.thenDo(call -> {
+            call.request().listener().onDelta("текст");
+            return ScriptedAdapter.success("deepseek", call.model(), "не должен дойти");
+        });
+        AiFailure failure = failure(router(recording()).generate(AiTestSupport.request(broken)));
+        assertThat(failure).isEqualTo(new AiFailure.Refusal("listener_failed"));
+        assertThat(deepseek.calls()).hasSize(1);
+        assertThat(gigachat.calls()).isEmpty();
+        assertThat(breakers.of("deepseek", AiCapability.TEXT).state()).isEqualTo(CircuitBreaker.State.CLOSED);
+        assertThat(journal.outcomes.get(0).outcome()).isEqualTo("REFUSAL");
+    }
+
+    @Test
+    void aFailingRestartCallbackDoesNotBreakTheCall() {
+        StreamListener listener = new StreamListener() {
+            @Override public void onDelta(String text) { }
+
+            @Override public void onRestart() { throw new IllegalStateException("restart bug"); }
+        };
+        deepseek.thenDo(call -> {
+            call.request().listener().onDelta("начало");
+            return AiResult.failed(new AiFailure.Transient("stream_truncated"));
+        }).thenOk("со второй попытки");
+        assertThat(ok(router(recording()).generate(AiTestSupport.request(listener))).text()).isEqualTo("со второй попытки");
+    }
+
+    @Test
+    void aProbeSlotIsNotLostWhenTheAdapterThrowsAnError() {
+        RoutedTextGeneration router = router(recording());
+        var breaker = breakers.of("deepseek", AiCapability.TEXT);
+        for (int index = 0; index < 5; index++) breaker.onFailure(breaker.tryAcquire());
+        clock.advance(Duration.ofSeconds(31));
+        deepseek.thenDo(call -> {
+            throw new AssertionError("an Error is not a provider failure");
+        });
+        assertThatThrownBy(() -> router.generate(AiTestSupport.request())).isInstanceOf(AssertionError.class);
+        assertThat(breaker.tryAcquire()).as("the half-open probe slot was given back").isNotEqualTo(CircuitBreaker.REFUSED);
+    }
+
+    @Test
+    void aFailingTelemetryOrJournalFinishNeverStrandsTheBreaker() {
+        deepseek.thenOk("ok").thenOk("ok");
+        var failingFinish = new RecordingJournal() {
+            @Override public void finish(UUID callId, Outcome outcome) { throw new IllegalStateException("finish bug"); }
+        };
+        var router = new RoutedTextGeneration(new AiRouting(properties, Map.of("deepseek", deepseek, "gigachat", gigachat)),
+                breakers = new BreakerRegistry(clock, properties.breaker()), new AiBudget(properties.budget(), (c, s) -> 0, clock),
+                failingFinish, new AiTelemetry(meters), properties, clock, recording(), MAX_JITTER);
+        var breaker = breakers.of("deepseek", AiCapability.TEXT);
+        for (int index = 0; index < 5; index++) breaker.onFailure(breaker.tryAcquire());
+        clock.advance(Duration.ofSeconds(31));
+        assertThatThrownBy(() -> router.generate(AiTestSupport.request())).isInstanceOf(IllegalStateException.class);
+        assertThat(breaker.state()).as("settled before the journal ran").isEqualTo(CircuitBreaker.State.CLOSED);
+    }
+
     /** In-memory journal. */
-    private static final class RecordingJournal implements CallJournal {
+    private static class RecordingJournal implements CallJournal {
         final List<Intent> intents = new ArrayList<>();
         final List<Outcome> outcomes = new ArrayList<>();
         boolean failBegin;

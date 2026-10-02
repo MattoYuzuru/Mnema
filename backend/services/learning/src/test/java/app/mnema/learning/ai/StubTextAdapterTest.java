@@ -20,7 +20,7 @@ class StubTextAdapterTest {
 
     private static TextRequest request(String task, OutputContract output, StreamListener listener) {
         return new TextRequest(AiRoute.TEXT_FAST, List.of(TextRequest.Segment.system("ядро", true), TextRequest.Segment.user(task, false)),
-                output, 500, 0.5, Duration.ofSeconds(5), AiTestSupport.USER_KEY, listener, null, 1);
+                output, 500, 0.5, Duration.ofSeconds(5), AiTestSupport.KEY, listener, null, 1);
     }
 
     private static TextResponse ok(AiResult<TextResponse> result) { return ((AiResult.Ok<TextResponse>) result).value(); }

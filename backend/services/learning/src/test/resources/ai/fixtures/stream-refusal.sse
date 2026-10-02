@@ -1,0 +1,4 @@
+data: {"id":"chatcmpl-s8","object":"chat.completion.chunk","model":"gpt-test","choices":[{"index":0,"delta":{"refusal":"I can't help with that."},"finish_reason":null}]}
+
+data: [DONE]
+

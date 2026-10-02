@@ -19,6 +19,13 @@ public record TextResponse(String text, FinishReason finishReason, Usage usage, 
         if (costMicros < 0) throw new IllegalArgumentException("cost must not be negative");
     }
 
+    /** No answer text: its length only. */
+    @Override
+    public String toString() {
+        return "TextResponse[chars=" + text.length() + ", finishReason=" + finishReason + ", usage=" + usage + ", costMicros="
+                + costMicros + ", route=" + route + "]";
+    }
+
     public enum FinishReason { STOP, LENGTH, OTHER }
 
     public record RouteUsed(String provider, String model) {
