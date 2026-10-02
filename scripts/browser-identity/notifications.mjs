@@ -135,10 +135,12 @@ export async function runNotifications(ctx) {
         setTimeout(() => resolvePaused([]), 8000);
         frames = (await paused).slice(0, 8).map(frame => `${frame.functionName || '?'}@${String(frame.url).split('/').pop()}:${frame.location.lineNumber}:${frame.location.columnNumber}`).join(' <- ');
       }
+      const snapshot = await bellState().then(state => state === null ? null : { open: state.open, expanded: state.expanded,
+        entries: state.entries.length, empty: state.empty !== null, badge: state.badge }, () => 'unavailable');
       await failureShot(name);
       // Only our own labels and CDP method names: never page content, URLs or credentials.
       await writeFile(join(config.output, `failure-notifications-${name}.txt`),
-        (error instanceof SafeFailure ? error.message : `driver: ${String(error?.message ?? error).slice(0, 160)} (trace: ${trace.filter(entry => !entry.startsWith('before-raf')).slice(-20).join(' ')}; last page call: ${lastCall}; page state: ${alive}; stuck at: ${frames})`) + '\n').catch(() => {});
+        (error instanceof SafeFailure ? error.message : `driver: ${String(error?.message ?? error).slice(0, 160)} (trace: ${trace.filter(entry => !entry.startsWith('before-raf')).slice(-20).join(' ')}; last page call: ${lastCall}; page state: ${alive}; stuck at: ${frames})`) + `\nbell: ${JSON.stringify(snapshot)}\n`).catch(() => {});
       throw error;
     }
   };
@@ -262,8 +264,8 @@ export async function runNotifications(ctx) {
     const inside = await activeElement();
     need(inside.inRegion && inside.cls.includes('close'), 'Tab from the footer did not reach the toast close button');
     await keys.Escape();
-    const state = await toastState();
-    need(state.toasts.length === 0 && !state.open, 'Esc did not close the toast and its popover');
+    await until(async () => { const state = await toastState(); return state.toasts.length === 0 && !state.open; },
+      'Esc did not close the toast and its popover', 10_000);
     const focus = await activeElement();
     need(!focus.isBody && focus.tag === 'A' && focus.text.length > 0, 'focus was lost to <body> after closing the toast');
     evidence.toastEsc = { closed: true, focusReturnedTo: 'previous link', hoverPause: 'not exercised: ERROR has no timeout and the echo toast has no caller' };
@@ -288,8 +290,8 @@ export async function runNotifications(ctx) {
     const server = await serverFailures();
     need(server.unreadCount === 0 && server.items.length === 1, 'server read cursor did not move to the shown notification');
     await keys.Escape();
-    bell = await bellState();
-    need(!bell.open && bell.expanded === 'false', 'Esc did not close the panel');
+    await until(async () => { const state = await bellState(); return !state.open && state.expanded === 'false'; },
+      'Esc did not close the panel', 10_000);
     const focus = await activeElement();
     need(focus.isBell, 'focus did not return to the bell after Esc');
     evidence.panel = { keyboardOpen: true, listed: true, badgeCleared: true, serverUnread: 0, escReturnsFocusToBell: true };
@@ -382,8 +384,14 @@ export async function runNotifications(ctx) {
     // Leave the inbox clean for the following scenarios.
     need(await page(`const bell = document.querySelector('app-notification-bell .bell'); bell.click(); return true;`), 'bell absent');
     await until(async () => (await bellState()).open, 'panel did not open for cleanup', 10_000);
-    need(await page(`for (const button of document.querySelectorAll('app-notification-bell li .dismiss')) button.click(); return true;`), 'cleanup failed');
-    await until(async () => (await serverFailures()).items.length === 0, 'cleanup dismissals did not reach the server', 10_000);
+    // One entry at a time, each until it has left the panel, so nothing depends on how requests interleave.
+    for (let remaining = (await bellState()).entries.length; remaining > 0; remaining--) {
+      need(await page(`const button = document.querySelector('app-notification-bell li .dismiss');
+        if (!(button instanceof HTMLButtonElement)) return false; button.click(); return true;`), 'cleanup dismiss button absent');
+      await until(async () => (await bellState()).entries.length < remaining, 'cleanup dismissal did not leave the panel', 10_000);
+    }
+    await until(async () => (await bellState()).empty !== null && (await serverFailures()).items.length === 0,
+      'panel and server list are not both empty after cleanup', 10_000);
     await clickOutside();
   });
 
@@ -392,10 +400,13 @@ export async function runNotifications(ctx) {
     await page(`const bell = document.querySelector('app-notification-bell .bell'); bell.focus(); return true;`);
     await keys.Enter();
     await until(async () => (await bellState()).open, 'panel did not open', 10_000);
-    need((await bellState()).empty !== null, 'panel is not empty');
+    // The panel reloads on open; wait for the observable end state instead of reading it once.
+    await until(async () => (await bellState()).empty !== null, 'panel is not empty', 10_000);
+    need((await serverFailures()).items.length === 0, 'server list is not empty');
     await keys.Escape();
-    const state = await bellState();
-    need(!state.open && state.expanded === 'false', 'Esc did not close the empty panel');
+    // `toggle` is dispatched as a task and Angular renders on the next frame: wait for the closed state.
+    await until(async () => { const state = await bellState(); return !state.open && state.expanded === 'false'; },
+      'Esc did not close the empty panel', 10_000);
     need((await activeElement()).isBell, 'focus did not return to the bell');
   });
 
