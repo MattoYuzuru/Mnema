@@ -7,6 +7,7 @@ import tools.jackson.core.StreamReadFeature;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectReader;
+import tools.jackson.databind.cfg.JsonNodeFeature;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
@@ -54,6 +55,8 @@ public final class ContentJsonReader {
         reader = JsonMapper.builder(factory)
                 .enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
                 .enable(DeserializationFeature.USE_BIG_INTEGER_FOR_INTS)
+                // Jackson 2 normalized decimal trees; keep that so scale limits and echoed values do not change.
+                .enable(JsonNodeFeature.STRIP_TRAILING_BIGDECIMAL_ZEROES)
                 .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
                 .build().readerFor(JsonNode.class);
     }
