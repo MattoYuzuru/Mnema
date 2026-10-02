@@ -10,6 +10,7 @@ and examples in `metadata.json` are shared frontend/backend fixtures.
 | Own list | `GET /api/decks?limit=20&cursor=...` | 200, items + nullable nextCursor |
 | Detail | `GET /api/decks/{deckId}` | 200, Deck + ETag |
 | Replace metadata | `PATCH /api/decks/{deckId}`, command body + If-Match | 200, acknowledgement |
+| Delete | `DELETE /api/decks/{deckId}` + If-Match | 204; tombstone, see below |
 
 PATCH uses `application/json` and replaces **both** metadata fields; it is not
 JSON Merge Patch and cannot modify identity, ownership, visibility or membership.
@@ -35,6 +36,10 @@ Deck read. Refresh with GET before further editing; never apply an old receipt
 over a newer client version. [RFC9110 conditional semantics](https://www.rfc-editor.org/rfc/rfc9110.html#section-13.1.1)
 informs this replay distinction; [RFC5789](https://www.rfc-editor.org/rfc/rfc5789.html)
 informs conditional partial-resource updates.
+
+Delete requires the strong Deck version in `If-Match` (428/412 as above) and tombstones
+the Deck: deck-scoped reads then return 404, while immutable revisions, study evidence
+and account-owned media are retained. Physical purge is a separate retention operation.
 
 Absent and foreign private Deck IDs both return the same404. Reads and writes
 require existing learning.read/learning.write scopes and fresh Identity validation.

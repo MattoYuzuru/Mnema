@@ -81,14 +81,14 @@ the second smoke proves restart persistence. It also publishes one retained nati
 material and `FREE_RESPONSE` exercise, completes a real scheduled attempt and observes
 material progress. The smoke then restarts that material and runs replay plus
 introduced-only practice, requiring both feedback-only modes to report
-`canonicalEffects: false` and leave the restarted progress projection unchanged. Four
+`canonicalEffects: false` and leave the restarted progress projection unchanged. Six
 additional retained fixture Decks exercise `SELF_CHECK`, multi-blank `CLOZE` with a
-server-issued first-letter hint, `MULTIPLE` `CHOICE` and `MATCH` with a durable wrong
-pair check through real scheduled API attempts, exact retries and progress reads; every
+server-issued first-letter hint, `MULTIPLE` `CHOICE`, `MATCH` with a durable wrong
+pair check, `ORDER` and `CATEGORIZE` through real scheduled API attempts, exact retries and progress reads; every
 issued presentation is checked for leaked answer keys, bindings, media titles or
 transcripts. The smoke also requires both AI capabilities to report `DISABLED` and
 direct publication of `ai-semantic` or speech-input exercises to fail with
-`CAPABILITY_UNAVAILABLE`. Conservative self-check/choice/matching evidence may leave
+`CAPABILITY_UNAVAILABLE`. Conservative self-check, choice, matching and categorization evidence may leave
 progress in `LEARNING`. Anonymous
 Study start still has to fail closed with `401`.
 

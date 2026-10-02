@@ -163,6 +163,13 @@ evidence и transition audit сохраняются до удаления акк
 | E-12 | Labeling/hotspot/image occlusion/sketch | 1 item, several regions/objectives | spatial/visual relation | deterministic regions or self/human | `MEDIUM` | P2 unless cohort gate |
 | E-13 | Numeric/unit, symbolic, code completion/tests | normally 1 / 1 | exact domain application | specialized deterministic | `HIGH` when evaluator valid | P2 |
 
+**Статус реализации (после #266/#268).** Каталог остаётся границей возможностей, а
+реализованы семь механик из раздела выше. Они покрывают: E-01/E-09 (self), E-02,
+E-03 (в том числе несколько пропусков), E-04 (single и multiple), E-06 (pairs и
+categorization), E-07 (ordering) и E-10 (аудио-условие плюс `FREE_RESPONSE`).
+Приоритеты `P1` в таблице выше сохранены как исходное планирование, а не как остаток
+невыполненной работы; E-05, E-08 и E-11…E-13 не реализованы.
+
 Recognition не бесполезно, но correct choice не означает `EASY`. Free response может
 быть хорошей учебной практикой, но self-grade остаётся слабым измерением. Эти две
 оси нельзя смешивать.
@@ -256,8 +263,8 @@ effects. Новые due позже в тот же день не блокирую
 7. Keyboard, screen-reader and touch baseline общего shell.
 8. Server-enforced replay/full-deck practice and explicit restart; durable quick notes are excluded from all study modes.
 
-Multiple select перенесён из P0 в P1: он добавляет partial-scoring semantics, но не
-доказывает новый loop сверх single choice.
+Multiple select был перенесён из P0 в P1 (partial-scoring semantics не доказывают новый
+loop сверх single choice); он реализован в #266 как `CHOICE` в режиме `MULTIPLE`.
 
 После #266 cloze поддерживает несколько пропусков: подсказка первой буквы выдаётся
 сервером для конкретного пропуска и ограничивает результат до `MEDIUM`. Choice — native
@@ -266,6 +273,9 @@ radio group (`SINGLE`) или checkbox group (`MULTIPLE`), всегда `LOW`; �
 alias и не получает transition.
 
 ### P1 — разнообразие без AI
+
+Реализовано в #266/#268: multiple select, matching, ordering, categorization, listening
+dictation (как аудио-условие `FREE_RESPONSE`). Остальное ниже не реализовано.
 
 - multiple select и true/false + correction;
 - multi-value recall;

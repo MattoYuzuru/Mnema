@@ -12,6 +12,15 @@ artifact:
 
 # Epic #76: медиа в материалах и упражнениях
 
+> **Статус реализации.** Все десять слайсов закрыты; акцептанс — в разделе «Общие
+> acceptance gates». Три медиа-специфичных типа упражнений (`LISTEN_CHOICE`,
+> `AUDIO_TEXT_MATCH`, `LISTEN_TYPE`, решение 4 и слайс #240) заменены в #266: медиа —
+> содержимое слота, а не механика, и аудирование строится из `CHOICE`, `MATCH` и
+> `FREE_RESPONSE` ([контракт](../../contracts/study/README.md#exercise-mechanics-266)).
+> Раздел UX про «split editor» относится к редактору материала; редактор упражнения с
+> #267 — одна колонка ([описание](../frontend/design-and-experience-2026-09.md)).
+> Остальные решения ниже действуют.
+
 ## Результат и граница
 
 Автор загружает или записывает медиа, вставляет его в versioned `LearningItem`,
@@ -50,10 +59,11 @@ Learning runtime. Production deployment и native offline apps здесь отс
    длительность аудио, Study session или storage GC.
 3. Поддерживаются готовая PNG/иная разрешённая картинка схемы, редактируемый
    Mermaid source с безопасным preview и нативная таблица. Их узлы получают
-   собственные versioned schemas/renderers и текстовые альтернативы. Сейчас
-   [native-v1](../../contracts/content/native-v1/README.md) сохраняет их только
-   как opaque placeholders; готовыми их считать нельзя.
-4. `LISTEN_CHOICE`: одно аудио и один верный ответ из 2–6 вариантов.
+   собственные versioned schemas/renderers и текстовые альтернативы. Реализованы в #237:
+   [native-v1](../../contracts/content/native-v1/README.md#rich-block-nodes-epic-76)
+   задаёт валидаторы узлов `image`, `audio`, `video`, `youtube`, `mermaid` и `table`.
+4. *(Заменено #266, см. примечание вверху; формулировки сохранены как решение того
+   этапа.)* `LISTEN_CHOICE`: одно аудио и один верный ответ из 2–6 вариантов.
    `AUDIO_TEXT_MATCH`: 2–6 закреплённых пар «аудио ↔ короткий текст» с выбором
    кнопками, без обязательного drag. Ответ отправляется атомарной картой пар.
    `LISTEN_TYPE`: аудио как условие ручной расшифровки/короткого ответа, без STT;
@@ -185,9 +195,9 @@ flows: выбрать значения, которые владелец или �
 ## Delivery slices (не больше десяти)
 
 Каждая строка становится отдельным work item/PR с собственным acceptance и
-проверкой, согласно [стандарту задач](work-item-standard.md). Порядок допускает
-частичную готовность продукта в greenfield rewrite; Epic остаётся Backlog, пока
-refinement не принят, и затем In progress до integrated acceptance.
+проверкой, согласно [стандарту задач](work-item-standard.md). Порядок допускал
+частичную готовность продукта в greenfield rewrite; текущее состояние Epic читается
+из GitHub, а не из этого документа.
 
 | № | Issue | Outcome | Основная граница |
 |---:|---|---|---|
@@ -198,7 +208,7 @@ refinement не принят, и затем In progress до integrated acceptan
 | 5 | [#237](https://github.com/MattoYuzuru/Mnema/issues/237) | Добавить versioned native image/audio/video/Mermaid/table nodes и renderer contracts | Content reader/editor adapter, opaque preservation |
 | 6 | [#238](https://github.com/MattoYuzuru/Mnema/issues/238) | Дать автору batch/drop/file/record/camera workflow с автообновлением asset status | Editor UX и recovery |
 | 7 | [#239](https://github.com/MattoYuzuru/Mnema/issues/239) | Показать готовые media в Browse/Study с доступными плеерами, zoom, YouTube и обновлением списка колод | Viewer UX, permission/error states |
-| 8 | [#240](https://github.com/MattoYuzuru/Mnema/issues/240) | Ввести `LISTEN_CHOICE`, `AUDIO_TEXT_MATCH`, `LISTEN_TYPE` с authoring, Study и evidence semantics | Exercise/session/attempt contract |
+| 8 | [#240](https://github.com/MattoYuzuru/Mnema/issues/240) | Ввести `LISTEN_CHOICE`, `AUDIO_TEXT_MATCH`, `LISTEN_TYPE` с authoring, Study и evidence semantics (заменено механиками #266) | Exercise/session/attempt contract |
 | 9 | [#241](https://github.com/MattoYuzuru/Mnema/issues/241) | Инвентаризировать и централизовать изменяемые policies, описать scope каждого параметра | Config/doc audit, без смены learning policy |
 | 10 | [#242](https://github.com/MattoYuzuru/Mnema/issues/242) | Реализовать delayed two-scan GC, offline manifest/install contract и integrated acceptance | PostgreSQL/MinIO/Chrome, a11y, legacy targets |
 

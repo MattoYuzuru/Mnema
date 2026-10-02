@@ -2,8 +2,8 @@
 
 Implemented by Learning's `catalog.content.NativeDocumentReader`, immutable native
 storage, authoring APIs and the production Angular editor/renderer. This file owns
-the baseline wire boundary; richer node types and #75 exercise projections remain
-separate capabilities.
+the baseline wire boundary and the Epic #76 rich nodes below; exercise content lives in
+the separate [`contracts/study`](../../study/README.md) contract.
 
 Input is UTF-8 JSON read through `ContentJsonReader` **before** ordinary JSON binding
 can discard duplicate keys. Output is a defensive `NativeDocument` semantic snapshot.

@@ -78,14 +78,17 @@ projection, receipt and durable root pins in one transaction; rollback exposes n
 partial head. Storage preparation remains synchronously bounded by native-v1,
 100 changes and 100,000 members. There is no large-publication job API in this slice.
 
-## Reserved exercise and media seams
+## Exercise and media seams
 
-This API stores native content only. It does not accept exercise answer specs,
-scheduler state, media bytes or public URLs as authorization. Future exercise
-bindings must use `(deckId, memberKey, itemRevisionId, nodeId)` against one pinned
-Deck revision. Future media nodes must carry an authorized asset identity and
-processing/missing capability state; upload and serving remain #76. Neither seam
-changes the native-v1 preservation or opaque-node rule.
+This API stores native content only. It does not accept exercise answer keys,
+scheduler state, media bytes or public URLs as authorization. Exercises are a separate
+resource that pins `(deckId, memberKey, itemRevisionId, nodeId)` against one Deck
+revision ([`contracts/study`](../study/README.md#authoring-resources)). Media nodes carry
+only an authorized logical `assetId`; publication binds it to the pinned revision, while
+upload, processing and playback are separate Learning APIs
+([upload transport](../../docs/engineering/media-upload-transport.md),
+[playback](../../docs/engineering/media-playback.md)). Neither seam changes the
+native-v1 preservation or opaque-node rule.
 
 Exact examples are in `publication.json`. The full multilingual/RTL/ruby/future-node
 golden document remains `contracts/content/native-v1/valid/mixed.json` and is used

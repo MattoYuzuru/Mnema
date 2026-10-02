@@ -1,6 +1,6 @@
 # Как работать с Mnema
 
-Спасибо за интерес к проекту. Mnema находится в переходе от v1 к hosted v2, поэтому сначала проверьте, относится ли изменение к текущему checkout или к proposed v2.
+Спасибо за интерес к проекту. Mnema заменяет v1 новой платформой вокруг versioned `LearningItem`; checkout содержит только replacement runtime (`identity-account`, `learning`, Angular SPA), а v1 доступен лишь по тегу `v1-apache-final`. Сначала проверьте, относится ли изменение к текущему runtime или к proposed-документам (`docs/README.md` показывает статусы). Доставка сейчас только локальная: [local development delivery](docs/operations/local-development-delivery.md).
 
 ## Лицензионная граница
 
@@ -45,7 +45,7 @@ cd backend && ./gradlew quality
 cd ../frontend && npm run lint && npm test && npm run build
 ```
 
-Если изменение затрагивает только документацию, дополнительно проверьте относительные ссылки и `git diff --check`. Настроенные quality gates всё равно остаются обязательными перед push согласно `AGENTS.md`.
+Если изменение затрагивает только документацию, дополнительно выполните `python3 scripts/verify_docs.py` (ссылки и статусы) и `git diff --check`. Настроенные quality gates всё равно остаются обязательными перед push согласно `AGENTS.md`.
 
 ## Review
 

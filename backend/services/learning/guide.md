@@ -4,10 +4,16 @@
 Gradle project dependency on legacy `core`, `media`, `import` or `ai`. Epic #74
 added the canonical private Deck, deck-local LearningItem, native content,
 EditingDraft and CaptureNote domains. Epic #75 now also owns immutable objectives,
-P0 exercise revisions, explicit content bindings, bounded Study session snapshots,
+exercise revisions, explicit content bindings, bounded Study session snapshots,
 deterministic attempts, the baseline Study state reducer, material progress,
-scheduled/replay/practice selection and retention cleanup.
-Greenfield media lifecycle remains #76.
+scheduled/replay/practice selection and retention cleanup; #266/#268 unified the
+exercise mechanics into the seven below. Epic #76 added the greenfield media lifecycle
+(`/api/media-assets`, deck media manifests, playback, physical GC): see
+[upload transport](../../../docs/engineering/media-upload-transport.md),
+[playback](../../../docs/engineering/media-playback.md),
+[offline manifest](../../../docs/engineering/media-offline-manifest.md),
+[GC](../../../docs/engineering/media-gc.md) and the
+[runtime policy index](../../../docs/engineering/runtime-policy-index.md).
 
 ## Runtime contract
 
