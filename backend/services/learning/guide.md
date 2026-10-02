@@ -62,16 +62,27 @@ fair-use buckets, `GET /api/usage` and the estimate. Migration `V26__usage_ledge
   that the table restricts to a token pattern, so no prose or personal data can be stored), `usage_counter` (fair-use and
   count-cap windows) and `entitlement_inbox`. A period is a calendar month, windows and weeks are calendar windows, all in
   `learning.usage.calendar-zone`.
-- **Writers join the caller's transaction** (`Propagation.MANDATORY`): `UsageLedger.reserve`, `settle`, `release` and
-  `consume` commit or roll back with the domain change they pay for. A refusal (`UsageLimitReachedException`) propagates
-  through that transaction, which rolls back: do not catch it inside the transaction, let it reach the problem handler
-  (the contract's "409 before any state change"). Call them as late as possible: a debit or consumption that crosses a
-  threshold publishes a notification, which takes the owner's notification cursor lock until the caller commits.
+- **Writers join the caller's transaction** (`Propagation.MANDATORY`): `UsageLedger.reserve`, `settle`, `release`, `renew`
+  and `consume` commit or roll back with the domain change they pay for. `USAGE_LIMIT_REACHED`
+  (`UsageLimitReachedException`, from `reserve` and `consume`) propagates through that transaction, which rolls back: do
+  not catch it inside the transaction, let it reach the problem handler (the contract's "409 before any state change").
+  `EstimateExceededException` and `ReservationNotActiveException` are thrown before anything is written and are declared
+  `noRollbackFor` on `settle`, `release` and `renew`: the caller can catch them, record the artifact failure and commit.
+  A pathological loss of the admission race (32 re-reads) is `UsageContentionException`, answered as a retryable
+  `503 USAGE_UNAVAILABLE`.
+- **Lock order, a rule for callers.** Writers lock reservation, then balance, then the owner's notification cursor
+  (`settle`, `release`, `renew`, the sweep); balance, then the new reservation (`reserve`); counters in window order, then
+  the cursor (`consume`). A debit or consumption that crosses a threshold publishes a notification, which holds the cursor
+  lock until the caller commits. So call the usage writers *before* publishing the caller's own notifications in the same
+  transaction, and as late as the domain write allows.
 - **Admission is one conditional update** on the balance row (`... WHERE unlocked - used - reserved >= :hold AND
   row_version = :v`). Losing the row version means another admission committed, so the loser re-reads: it gets
   `409 USAGE_LIMIT_REACHED` only when the remainder really is too small. The hold expires at
   `min(learning.usage.reservation-ttl, end of the period)`; the default `PT2H` is the AI-01 decision the contract left open
-  (longer than the `PT1H` bound of a step run plus margin). `UsageLedger.expireDue` (scheduled by `UsageExpiryWorker`,
+  (longer than the `PT1H` bound of a step run plus margin). `UsageLedger.renew(owner, reservationId)` keeps a live hold
+  alive: `expiresAt = min(now + ttl, period end)`, never shortened, never past the period, idempotent, owner-checked and
+  row-locked; the step scheduler (AI-04) calls it for a session whose steps wait on the daily burst or still run, and on an
+  ended hold it throws `ReservationNotActiveException`. `UsageLedger.expireDue` (scheduled by `UsageExpiryWorker`,
   `FOR UPDATE SKIP LOCKED`, safe on every instance) returns orphaned holds; a hold that outlived its period ends as
   `SETTLED` or `RELEASED` by whether it debited, an orphan that merely timed out is `EXPIRED`.
 - **Settlement by fact.** `settle` records a `DEBIT` against its hold once per idempotency key (`debit:{stepId}:{attempt}`);
@@ -95,10 +106,11 @@ fair-use buckets, `GET /api/usage` and the estimate. Migration `V26__usage_ledge
   a week, Max 8 a month (4 weekly plus 4 Pro).
 - **Notifications.** A write that crosses 80, 90 or 100 percent of a bucket publishes the highest threshold it crossed as
   `USAGE_LOW` (once per bucket, period and threshold by dedupe key) and a window that runs out publishes
-  `USAGE_EXHAUSTED` keyed by the window instance, so the weekly Free window fires every week, all inside the transaction
-  of the debit or consumption.
+  `USAGE_EXHAUSTED` keyed by bucket, window kind and window start (`usage:{bucket}:{WINDOW}:{windowStart}:exhausted`), so the
+  weekly Free window fires every week, the last Free window (from the fourth unlock) is its own instance and a day and a
+  month that start together never share a key, all inside the transaction of the debit or consumption.
 - **Estimate.** `GenerationSpecInterpreter` is the port for what a spec implies; `StandardSpecInterpreter` validates the
-  shape strictly and prices MATERIALS (one artifact per NOTE source or one when merged; `AUTO` effort is priced as medium;
+  shape strictly and prices MATERIALS (one artifact per NOTE source or one when merged; `AUTO` effort is priced as detailed (a hold covers the worst case the planner may choose);
   one audio clip and one image search per artifact when declared; a low fact check per artifact unless the effort is
   short) and EXERCISES (`EXACT`, `AUTO` = five per target or what the session limit allows, `BUDGET_PERCENT` = what the
   share of the remaining budget buys, at least one per target). `REVISE_*` is `422 SPEC_NOT_SUPPORTED`. Limits above
