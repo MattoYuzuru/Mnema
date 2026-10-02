@@ -35,6 +35,13 @@ public class BrowserSessions {
         this.clock = clock;
     }
 
+    static final String SESSION_FACTOR = "BROWSER_SESSION";
+
+    /** True when the authentication carries the factor stamped by {@link #login} and {@link #recovery}. */
+    public static boolean hasSessionFactor(Authentication authentication) {
+        return authentication.getAuthorities().stream().anyMatch(FactorGrantedAuthority.class::isInstance);
+    }
+
     public static AccountAccess access(Authentication authentication) {
         try {
             if (authentication instanceof JwtAuthenticationToken token)
@@ -91,7 +98,7 @@ public class BrowserSessions {
                 User.withUsername(access.accountId().toString()).password("").authorities(authority).build(), null,
                 List.of(new SimpleGrantedAuthority(authority),
                         // The authorization server derives the ID token's auth_time from the newest factor.
-                        FactorGrantedAuthority.withFactor("BROWSER_SESSION").issuedAt(clock.instant()).build()));
+                        FactorGrantedAuthority.withFactor(SESSION_FACTOR).issuedAt(clock.instant()).build()));
         authentication.setDetails(Long.toString(access.generation()));
         var context = SecurityContextHolder.createEmptyContext();
         context.setAuthentication(authentication);

@@ -7,6 +7,7 @@ import app.mnema.identityaccount.security.BrowserSessions;
 
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
+import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationCode;
 import org.springframework.security.oauth2.core.OAuth2ErrorCodes;
 import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
@@ -68,8 +69,20 @@ public final class GenerationAuthorizations implements OAuth2AuthorizationServic
         return current(delegate.findByToken(token, type));
     }
 
+    /**
+     * An authorization code issued to a browser session that predates the browser-session factor cannot be
+     * redeemed: the token generator would fail with a 500 for lack of an authentication time. Hiding it
+     * makes the token endpoint answer {@code invalid_grant}. Already issued access tokens are unaffected.
+     */
+    private static boolean isUnredeemableLegacyCode(OAuth2Authorization authorization) {
+        Authentication principal = authorization.getAttribute(Principal.class.getName());
+        return principal != null && authorization.getAccessToken() == null
+                && authorization.getToken(OAuth2AuthorizationCode.class) != null
+                && !BrowserSessions.hasSessionFactor(principal);
+    }
+
     private OAuth2Authorization current(OAuth2Authorization authorization) {
-        if (authorization == null) return null;
+        if (authorization == null || isUnredeemableLegacyCode(authorization)) return null;
         try {
             accounts.require(
                     new AccountAccess(UUID.fromString(authorization.getPrincipalName()), generation(authorization)),

@@ -28,6 +28,7 @@ import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
+import java.util.function.BiFunction;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -65,6 +66,8 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
     org.springframework.security.crypto.password.PasswordEncoder passwords;
     @Autowired
     org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService authorizations;
+    @Autowired
+    org.springframework.session.jdbc.JdbcIndexedSessionRepository sessions;
     final String password = "correct-horse-battery-42";
 
     AccountAccess account() {
@@ -470,6 +473,79 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
                 .andExpect(status().isNoContent());
         mvc.perform(post("/api/accounts/password-reset/confirm").with(csrf()).contentType("application/json")
                 .content(body(Map.of("token", "unknown", "newPassword", password)))).andExpect(status().isBadRequest());
+    }
+
+    /** A session created before sessions carried the browser-session factor cannot finish a code exchange. */
+    private org.springframework.security.authentication.UsernamePasswordAuthenticationToken legacyBrowserAuthentication(
+            AccountAccess access) {
+        var legacy = org.springframework.security.authentication.UsernamePasswordAuthenticationToken.authenticated(
+                org.springframework.security.core.userdetails.User.withUsername(access.accountId().toString())
+                        .password("").authorities("ACCOUNT").build(), null,
+                java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ACCOUNT")));
+        legacy.setDetails(Long.toString(access.generation()));
+        return legacy;
+    }
+
+    @Test
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    void preUpgradeBrowserSessionWithoutTheFactorIsEndedAndSignsInAgainInsteadOfFailing() throws Exception {
+        var account = account();
+        var cookie = login(account);
+        String sessionId = new String(Base64.getDecoder().decode(cookie.getValue()), StandardCharsets.UTF_8);
+        org.springframework.session.Session session = sessions.findById(sessionId);
+        var context = org.springframework.security.core.context.SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(legacyBrowserAuthentication(account));
+        session.setAttribute("SPRING_SECURITY_CONTEXT", context);
+        ((org.springframework.session.SessionRepository) sessions).save(session);
+        mvc.perform(get("/api/accounts/me").secure(true).cookie(cookie)).andExpect(status().isOk());
+
+        String challenge = Base64.getUrlEncoder().withoutPadding().encodeToString(MessageDigest.getInstance("SHA-256")
+                .digest("synthetic-pkce-verifier-0123456789-abcdefghijklmnopqrstuvwxyz".getBytes(StandardCharsets.US_ASCII)));
+        var authorize = mvc.perform(get("/oauth2/authorize").secure(true).cookie(cookie).accept("text/html")
+                        .queryParam("response_type", "code").queryParam("client_id", "mnema-web")
+                        .queryParam("redirect_uri", "https://mnema.app/auth/callback")
+                        .queryParam("scope", "openid profile account.read").queryParam("state", "fixture-state")
+                        .queryParam("code_challenge", challenge).queryParam("code_challenge_method", "S256"))
+                .andExpect(status().is3xxRedirection()).andReturn();
+        assertThat(authorize.getResponse().getRedirectedUrl()).endsWith("/login").doesNotContain("code=");
+        assertThat(sessions.findById(sessionId)).isNull();
+        mvc.perform(get("/api/accounts/me").secure(true).cookie(cookie)).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void authorizationCodeIssuedToAPreUpgradeSessionIsInvalidGrantNotAServerError() throws Exception {
+        var account = account();
+        var now = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
+        var client = clients.findByClientId("mnema-web");
+        BiFunction<String, org.springframework.security.core.Authentication,
+                org.springframework.security.oauth2.server.authorization.OAuth2Authorization> issue =
+                (code, principal) -> org.springframework.security.oauth2.server.authorization.OAuth2Authorization
+                        .withRegisteredClient(client).principalName(account.accountId().toString())
+                        .authorizationGrantType(org.springframework.security.oauth2.core.AuthorizationGrantType.AUTHORIZATION_CODE)
+                        .attribute("generation", Long.toString(account.generation()))
+                        .attribute(java.security.Principal.class.getName(), principal)
+                        .token(new org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationCode(
+                                code, now, now.plusSeconds(120))).build();
+        String legacyCode = "legacy-code-" + UUID.randomUUID();
+        authorizations.save(issue.apply(legacyCode, legacyBrowserAuthentication(account)));
+
+        assertThat(authorizations.findByToken(legacyCode,
+                new org.springframework.security.oauth2.server.authorization.OAuth2TokenType("code"))).isNull();
+        mvc.perform(post("/oauth2/token").param("grant_type", "authorization_code").param("client_id", "mnema-web")
+                        .param("redirect_uri", "https://mnema.app/auth/callback").param("code", legacyCode)
+                        .param("code_verifier", "synthetic-pkce-verifier-0123456789-abcdefghijklmnopqrstuvwxyz"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error").value("invalid_grant"));
+
+        var current = org.springframework.security.authentication.UsernamePasswordAuthenticationToken.authenticated(
+                legacyBrowserAuthentication(account).getPrincipal(), null, java.util.List.of(
+                        new org.springframework.security.core.authority.SimpleGrantedAuthority("ACCOUNT"),
+                        org.springframework.security.core.authority.FactorGrantedAuthority
+                                .withFactor("BROWSER_SESSION").issuedAt(now).build()));
+        current.setDetails(Long.toString(account.generation()));
+        String currentCode = "current-code-" + UUID.randomUUID();
+        authorizations.save(issue.apply(currentCode, current));
+        assertThat(authorizations.findByToken(currentCode,
+                new org.springframework.security.oauth2.server.authorization.OAuth2TokenType("code"))).isNotNull();
     }
 
     /** Timestamps and the response key set are wire contract; the serializer must not change them. */

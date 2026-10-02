@@ -138,6 +138,9 @@ public class AuthorizationConfiguration {
         processor.setJWSKeySelector(new JWSVerificationKeySelector<>(JWSAlgorithm.RS256,
                 (selector, context) -> selector.select(keys.toPublicJWKSet())));
         var decoder = new NimbusJwtDecoder(processor);
+        // Deliberately not JwtValidators.createDefaultWithIssuer: Security 7's default adds a typ=JWT check that
+        // rejects at+jwt (enforced by the JOSE type verifier above) and a certificate-thumbprint check that
+        // has nothing to bind here because Mnema issues no certificate-bound (cnf) tokens.
         decoder.setJwtValidator(
                 new DelegatingOAuth2TokenValidator<>(new JwtTimestampValidator(), new JwtIssuerValidator(issuer.issuer()), jwt -> {
                     try {

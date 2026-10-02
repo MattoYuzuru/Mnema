@@ -109,7 +109,8 @@ public class SecurityConfiguration {
                     http.securityMatcher(server.getEndpointsMatcher());
                     server.oidc(o -> o.logoutEndpoint(l -> l.logoutResponseHandler(oidcLogout)));
                 })
-                .addFilterAfter(new RecoveryAuthorizationBoundaryFilter(errors), SecurityContextHolderFilter.class)
+                .addFilterAfter(new LegacyBrowserSessionFilter(), SecurityContextHolderFilter.class)
+                .addFilterAfter(new RecoveryAuthorizationBoundaryFilter(errors), LegacyBrowserSessionFilter.class)
                 .addFilterBefore(new GrantTransactionFilter(jdbcClient, transactions), AuthorizationFilter.class)
                 .authorizeHttpRequests(a -> a.anyRequest().authenticated()).cors(Customizer.withDefaults())
                 .exceptionHandling(
