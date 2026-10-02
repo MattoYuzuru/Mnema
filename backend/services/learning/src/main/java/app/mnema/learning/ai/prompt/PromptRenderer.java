@@ -41,7 +41,8 @@ public final class PromptRenderer {
             if (fallback != null) return fallback;
             throw new PromptException("Unresolved placeholder " + name + " in " + section.name());
         }
-        String clean = Redactor.redact(value.text());
+        // The size cap comes first: redaction must never see an unbounded value.
+        String clean = Redactor.redact(Redactor.requireWithin(value.text(), name));
         if (name.endsWith("_json")) return escape(JSON.writeValueAsString(clean), false);
         return escape(clean, true);
     }

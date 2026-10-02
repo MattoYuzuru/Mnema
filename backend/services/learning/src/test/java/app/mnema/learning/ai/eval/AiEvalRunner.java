@@ -6,6 +6,7 @@ import app.mnema.learning.ai.EvalStack;
 import app.mnema.learning.ai.OutputContract;
 import app.mnema.learning.ai.TextRequest;
 import app.mnema.learning.ai.TextResponse;
+import app.mnema.learning.ai.UserKeys;
 import app.mnema.learning.ai.prompt.AssembledPrompt;
 import app.mnema.learning.ai.prompt.PromptAssembler;
 import app.mnema.learning.ai.prompt.PromptBlocks;
@@ -132,11 +133,11 @@ class AiEvalRunner {
                           String marker, boolean live, long[] totals, List<Long> latencies) {
         PromptValues values = baseValues().block("allowed_links", PromptBlocks.allowedLinks(links))
                 .block("note_blocks", PromptBlocks.note("N1", note.length() > 6_000 ? note.substring(0, 6_000) : note))
-                .block("search_result_blocks", "").text("request", "Объясни тему заметки" + marker)
+                .block("search_result_blocks", PromptBlocks.empty()).text("request", "Объясни тему заметки" + marker)
                 .text("task.skill", skill).number("task.words", 150).text("task.media", "нет");
         AssembledPrompt prompt = assembler.assemble(PromptTask.MATERIAL, values);
         TextRequest request = new TextRequest(AiRoute.TEXT_FAST, prompt.segments(), OutputContract.MBM_TEXT, 4_000, 0.8,
-                live ? Duration.ofMinutes(6) : Duration.ofSeconds(30), "k1.eval" + UUID.nameUUIDFromBytes(id.getBytes(StandardCharsets.UTF_8)),
+                live ? Duration.ofMinutes(6) : Duration.ofSeconds(30), UserKeys.withSecret("0123456789abcdef0123456789abcdef", "k1").opaque(UUID.nameUUIDFromBytes(id.getBytes(StandardCharsets.UTF_8))),
                 null, null, 1);
         MbmOptions options = MbmOptions.create().withAllowedLinks(links);
 
@@ -184,7 +185,7 @@ class AiEvalRunner {
                 .number("style_card.tables", 0).number("style_card.examples", 2).number("style_card.audio", 0)
                 .block("exemplar_blocks", PromptBlocks.exemplar("E1", "starred", "# Образец\n\nКороткий текст."))
                 .text("recent_material", "# Последний материал\n\nТекст.").number("outline.total", 1).number("outline.shown", 1)
-                .block("outline.lines", PromptBlocks.lines(List.of("m1 · Образец · Короткий текст · exercises: 0")));
+                .block("outline.lines", PromptBlocks.outline(List.of(new PromptBlocks.OutlineEntry("m1", "Образец", "Короткий текст", 0))));
     }
 
     // ------------------------------------------------------------------------------------ compiler contract cases
@@ -246,8 +247,8 @@ class AiEvalRunner {
     /** Minimal material values for the render cases. */
     private static final class PromptValuesFixtures {
         static PromptValues material(String note) {
-            return baseValues().block("allowed_links", "").block("note_blocks", PromptBlocks.note("N1", note))
-                    .block("search_result_blocks", "").text("request", "тема").text("task.skill", "free").number("task.words", 100)
+            return baseValues().block("allowed_links", PromptBlocks.empty()).block("note_blocks", PromptBlocks.note("N1", note))
+                    .block("search_result_blocks", PromptBlocks.empty()).text("request", "тема").text("task.skill", "free").number("task.words", 100)
                     .text("task.media", "нет");
         }
     }

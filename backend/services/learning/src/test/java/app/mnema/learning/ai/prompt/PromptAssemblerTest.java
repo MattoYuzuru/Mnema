@@ -2,6 +2,7 @@ package app.mnema.learning.ai.prompt;
 
 import app.mnema.learning.ai.AiProperties;
 import app.mnema.learning.ai.TextRequest;
+import app.mnema.learning.ai.UserKeys;
 import app.mnema.learning.ai.AiRoute;
 import app.mnema.learning.ai.OutputContract;
 import org.junit.jupiter.api.Test;
@@ -60,7 +61,7 @@ class PromptAssemblerTest {
         assertThat(prompt.promptVersion()).isEqualTo("v1");
         // the cacheable segments are a leading run, which TextRequest enforces
         new TextRequest(AiRoute.TEXT_FAST, segments, OutputContract.MBM_TEXT, 4_000, 0.8, Duration.ofMinutes(6),
-                "k1.abcdef", null, null, 1);
+                UserKeys.withSecret("0123456789abcdef0123456789abcdef", "k1").opaque(java.util.UUID.randomUUID()), null, null, 1);
         assertThat(prompt.sectionTokens()).containsKeys("system", "style", "deck-brief", "material");
         assertThat(prompt.estimatedTokens()).isEqualTo(prompt.sectionTokens().values().stream().mapToInt(Integer::intValue).sum());
         assertThat(prompt.overWorkingTarget()).isFalse();
@@ -92,8 +93,8 @@ class PromptAssemblerTest {
 
     @Test
     void anOversizedSectionOrInputIsRefusedSoTheCallerTrimsItsData() {
-        String huge = "слово ".repeat(40_000);
-        assertThatThrownBy(() -> assembler.assemble(PromptTask.MATERIAL, PromptFixtures.material("Т", List.of(huge))))
+        String large = "слово ".repeat(10_000);
+        assertThatThrownBy(() -> assembler.assemble(PromptTask.MATERIAL, PromptFixtures.material("Т", List.of(large, large, large, large))))
                 .isInstanceOf(PromptException.class).hasMessageContaining("material");
         var tight = new PromptAssembler(LIBRARY, new AiProperties.Prompt("v1", 3_500, 3_000));
         assertThatThrownBy(() -> tight.assemble(PromptTask.MATERIAL, PromptFixtures.material("Т", List.of())))

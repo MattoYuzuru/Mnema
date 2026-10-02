@@ -13,9 +13,11 @@ import java.util.regex.Pattern;
  * warning that lets the user exclude other personal fragments is a separate, user-facing step.
  */
 public final class Redactor {
-    private static final Pattern EMAIL = Pattern.compile("[\\p{L}\\p{N}._%+-]+@[\\p{L}\\p{N}-]+(?:\\.[\\p{L}\\p{N}-]+)*\\.\\p{L}{2,}");
-    private static final Pattern RUN = Pattern.compile("\\d+(?:[ -]\\d+)*");
-    private static final Pattern GROUP = Pattern.compile("\\d+");
+    /** Largest text accepted per value (UTF-16 units, 64 KiB of text): bounds the cost of redaction and rendering. */
+    public static final int MAX_CHARS = 64 * 1024;
+    // Every quantifier is bounded, so a hostile value without an '@' costs at most 64 steps per position (linear overall).
+    private static final Pattern EMAIL = Pattern.compile(
+            "[\\p{L}\\p{N}._%+-]{1,64}@[\\p{L}\\p{N}-]{1,63}(?:\\.[\\p{L}\\p{N}-]{1,63}){0,8}\\.\\p{L}{2,24}");
     /** Usual card lengths, the common 16 first so that a card glued to another number is found as a 16-digit window. */
     private static final int[] CARD_LENGTHS = {16, 15, 14, 13, 19, 18, 17};
     private static final Pattern PHONE = Pattern.compile(
@@ -27,6 +29,13 @@ public final class Redactor {
 
     private Redactor() { }
 
+    /** @throws PromptException when {@code text} exceeds {@link #MAX_CHARS}; the message names {@code what}, never the text */
+    public static String requireWithin(String text, String what) {
+        if (text != null && text.length() > MAX_CHARS) throw new PromptException("Value of " + what + " exceeds 64 KiB");
+        return text;
+    }
+
+    /** Redacts without a size check; callers on the prompt path use {@link #requireWithin} first. */
     public static String redact(String text) {
         if (text == null || text.isEmpty()) return text;
         String out = EMAIL.matcher(text).replaceAll("[email]");
@@ -39,22 +48,37 @@ public final class Redactor {
      * whole groups of the usual lengths (16 first) are tried, so a card next to a phone number is still found.
      */
     private static String replaceCards(String text) {
-        Matcher run = RUN.matcher(text);
         StringBuilder out = new StringBuilder();
         int copied = 0;
-        while (run.find()) {
+        int length = text.length();
+        for (int position = 0; position < length; ) {
+            if (!isDigit(text.charAt(position))) {
+                position++;
+                continue;
+            }
+            // A run is digit groups separated by one space or hyphen. Scanned by hand: a regex group repeated per digit group
+            // recurses once per group and overflows the stack on a hostile megabyte of "1 1 1 1 ...".
             List<int[]> groups = new ArrayList<>();
-            Matcher group = GROUP.matcher(run.group());
-            while (group.find()) groups.add(new int[] {run.start() + group.start(), run.start() + group.end()});
+            int groupStart = position;
+            while (true) {
+                int groupEnd = groupStart;
+                while (groupEnd < length && isDigit(text.charAt(groupEnd))) groupEnd++;
+                groups.add(new int[] {groupStart, groupEnd});
+                position = groupEnd;
+                boolean separated = groupEnd + 1 < length && (text.charAt(groupEnd) == ' ' || text.charAt(groupEnd) == '-')
+                        && isDigit(text.charAt(groupEnd + 1));
+                if (!separated) break;
+                groupStart = groupEnd + 1;
+            }
             boolean[] used = new boolean[groups.size()];
             List<int[]> spans = new ArrayList<>();
-            for (int length : CARD_LENGTHS) {
+            for (int cardLength : CARD_LENGTHS) {
                 for (int first = 0; first < groups.size(); first++) {
                     if (used[first]) continue;
                     int digits = 0;
-                    for (int last = first; last < groups.size() && !used[last] && digits < length; last++) {
+                    for (int last = first; last < groups.size() && !used[last] && digits < cardLength; last++) {
                         digits += groups.get(last)[1] - groups.get(last)[0];
-                        if (digits == length && luhn(digitsOf(text, groups, first, last))) {
+                        if (digits == cardLength && luhn(digitsOf(text, groups, first, last))) {
                             for (int mark = first; mark <= last; mark++) used[mark] = true;
                             spans.add(new int[] {groups.get(first)[0], groups.get(last)[1]});
                         }
@@ -67,8 +91,10 @@ public final class Redactor {
                 copied = span[1];
             }
         }
-        return out.append(text, copied, text.length()).toString();
+        return out.append(text, copied, length).toString();
     }
+
+    private static boolean isDigit(char character) { return character >= '0' && character <= '9'; }
 
     private static String digitsOf(String text, List<int[]> groups, int first, int last) {
         var digits = new StringBuilder();

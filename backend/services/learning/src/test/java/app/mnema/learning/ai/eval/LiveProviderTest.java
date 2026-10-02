@@ -6,6 +6,7 @@ import app.mnema.learning.ai.EvalStack;
 import app.mnema.learning.ai.OutputContract;
 import app.mnema.learning.ai.TextRequest;
 import app.mnema.learning.ai.TextResponse;
+import app.mnema.learning.ai.UserKeys;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -28,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class LiveProviderTest {
     private static TextRequest request(String task, OutputContract output, app.mnema.learning.ai.StreamListener listener) {
         return new TextRequest(AiRoute.TEXT_FAST, List.of(TextRequest.Segment.system("Отвечай предельно кратко.", true),
-                TextRequest.Segment.user(task, false)), output, 200, 0.2, Duration.ofSeconds(60), "k1.livetest", listener, null, 1);
+                TextRequest.Segment.user(task, false)), output, 200, 0.2, Duration.ofSeconds(60), UserKeys.withSecret("0123456789abcdef0123456789abcdef", "k1").opaque(java.util.UUID.nameUUIDFromBytes("live".getBytes())), listener, null, 1);
     }
 
     @Test
