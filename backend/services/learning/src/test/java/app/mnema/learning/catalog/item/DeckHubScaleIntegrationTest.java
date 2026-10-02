@@ -119,10 +119,11 @@ class DeckHubScaleIntegrationTest extends PostgresIntegrationTest {
 
     @Test
     void sortedPagesStayInsideTheBudgetAndAFullScanHasNoDuplicatesOrGaps() {
-        // First scan lazily fills the item_preview projection (an expense of the first read of any Browse page).
+        // First scan lazily fills the item_preview projection (an expense of the first read of any Browse page). It uses
+        // the client's page size: one 100-item cold page can exceed the 10 s transaction timeout on a slow CI runner.
         String warm = null;
         do {
-            JsonNode page = items.list(actor, real, "100", warm, "exerciseCount", null);
+            JsonNode page = items.list(actor, real, "25", warm, "exerciseCount", null);
             warm = page.path("nextCursor").stringValue(null);
         } while (warm != null);
         var head = repository.deck(actor, real).orElseThrow();
