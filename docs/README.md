@@ -4,7 +4,7 @@ artifact:
   type: navigator
   title: "Mnema documentation"
   status: current
-  updated_at: "2026-10-01"
+  updated_at: "2026-10-02"
   owners: ["project-owner"]
   evidence_revision: "f6955a5fb9889f546dc47129e5e4bed7b913f95a"
 ---
@@ -43,6 +43,11 @@ artifact:
 7. **Media:** [Epic #76 refinement](./engineering/epic-76-refinement.md) и раздел
    [Media](#media-epic-76) ниже.
 
+8. **AI (Epic #77):** [product contract](./product/ai-layer-2026-10.md),
+   [architecture](./architecture/ai-generation-platform.md),
+   [refinement](./engineering/epic-77-refinement.md) и
+   [промпты прогонов](./engineering/prompts/epic-77-ai-layer.md).
+
 ## Agent-facing engineering files
 
 | Статус | Документ | Назначение |
@@ -63,8 +68,9 @@ artifact:
 | accepted | [Exercise catalog](./product/exercise-catalog-v2.md) | Механики, attempt/evidence, reducer и retention boundaries. |
 | accepted | [UX refinement 2026-09-29](./product/ux-improvements-2026-09-29.md) | Приёмочные сценарии доработки редактора, упражнений и основных экранов. |
 | accepted | [Final polish 2026-09-29](./product/final-polish-2026-09-29.md) | Удаление, заметки «На потом», пропуски и режимы проверки текста. |
+| accepted | [AI layer contract](./product/ai-layer-2026-10.md) | Принятые решения AI-слоя: слои, сценарии, UX, usage, тарифы, промокоды, legal gates. |
 | proposed | [Product direction](./product/product-direction-v2.md) | Product hypotheses, roadmap и метрики. |
-| proposed | [Launch economics](./product/russia-launch-economics-2026.md) | Коммерческие гипотезы. |
+| proposed | [Launch economics](./product/russia-launch-economics-2026.md) | Коммерческие гипотезы; AI-часть обновлена 2026-10-02 в AI layer contract. |
 | proposed | [Legal/payment checklist](./product/russia-legal-launch-checklist-2026.md) | Human/legal gates; не юридическая гарантия. |
 
 ## Architecture и backend
@@ -74,6 +80,7 @@ artifact:
 | current | [System overview](./system-overview.md) | Replacement topology и legacy boundary. |
 | accepted | [Content and Study platform](./architecture/content-platform-v2.md) | Общая модель; P0 content/Study реализованы, P1/P2 — границы будущей работы. |
 | accepted | [Native content format](./architecture/learning-content-format-v2.md) | Persisted native document contract. |
+| accepted | [AI generation platform](./architecture/ai-generation-platform.md) | Принятая архитектура AI-слоя: модули в Learning, Мастерская, MBM, провайдеры, usage, уведомления, безопасность. |
 | current | [Revision storage and runtime boundaries](./architecture/revision-storage-and-runtime-boundaries.md) | Выбранное и реализованное storage-направление. |
 | current | [Counted-page contract](./architecture/counted-page-contract.md) | Counted-page/structural invariants. |
 | current | [Identity & Account guide](../backend/services/identity-account/guide.md) | Identity runtime. |
@@ -113,6 +120,8 @@ artifact:
 | current | [Capability inventory](./engineering/capability-inventory.yaml) | Машиночитаемый список команд и harnesses; при расхождении приоритетнее runbook и `--help`. |
 | current | [Evidence index](./engineering/evidence/README.md) | Короткий вход в большие evidence-наборы. |
 | accepted | [Epic #75 refinement](./engineering/epic-75-refinement.md) | Принятые решения и реализованные delivery slices. |
+| accepted | [Epic #77 refinement](./engineering/epic-77-refinement.md) | AI-слой: delivery slices, пять прогонов и acceptance эпика. |
+| current | [Epic #77 prompts](./engineering/prompts/epic-77-ai-layer.md) | Промпты последовательных прогонов агента для реактивированного AI-эпика. |
 | historical | [Epic #74 refinement](./engineering/epic-74-refinement.md), [dependency decisions](./engineering/epic-74-dependency-decisions.md), [hardware handoff](./engineering/epic-74-hardware-handoff.md) | Выполненный план, принятые зависимости и session handoff #74. |
 | historical | [GitHub execution model](./engineering/github-execution-model.md) | Исходная настройка Project #4; текущие статусы читаются из GitHub. |
 | proposed | [Greenfield delivery plan](./engineering/v2-delivery-plan-2026-08.md) | Sequencing proposal; GitHub state и этот navigator приоритетнее. |
@@ -144,6 +153,9 @@ infrastructure task; никакие прошлые staging результаты 
   Epic #74/#75/#76, storage, browser, security и research evidence. Ключевые записи:
   [закрытие #74](./engineering/evidence/epic-74/verification/integrated-main-2026-09-19.md),
   [закрытие #75](./engineering/evidence/epic-75/verification/integrated-main-2026-09-24.md).
+- **historical:** [AI layer research 2026-10](./reviews/ai-layer-research-2026-10/README.md) —
+  исследования архитектуры, экономики, UX, контекста и платформы; принятые
+  решения перенесены в product/architecture docs.
 - **historical:** [Project review](./reviews/project-review-2026-08.md) и
   [September refinement research](./reviews/product-refinement-2026-09.md) —
   исходные findings; принятые решения перенесены в owner/architecture docs.

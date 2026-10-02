@@ -10,7 +10,7 @@ artifact:
   assumptions:
     - "Approximately ten production accounts must survive; content, media, review and AI data may be reset."
     - "The initial hosted market and infrastructure are in Russia."
-    - "The manual LearningItem/Study replacement launches without AI; managed AI is a separately reactivated future capability."
+    - "The manual LearningItem/Study replacement launched without AI; managed AI was reactivated on 2026-10-02 through Epic #77 (docs/product/ai-layer-2026-10.md)."
   unresolved_questions:
     - "Which launch message wins within the accessible cohorts: language learning or general exam/student learning?"
     - "Which deterministic exercise mix produces retained use in each launch cohort?"
@@ -65,11 +65,11 @@ Job: совместно поддерживать колоду, выпускат�
 | D-01 | `pursue` | Native entity — rich learning item; templates, arbitrary fields and mandatory deck languages удаляются. |
 | D-02 | `pursue` | Exercises are separate versioned interactions over stable content and memory objectives. |
 | D-03 | `pursue` | Study is always deck-scoped; no global cross-deck Today queue. Browse remains separate. |
-| D-04 | `defer` | Manual LearningItem/Study MVP has no AI dependency. Managed AI, provider selection and quota economics return only through reactivated #77. |
+| D-04 | `pursue` (reactivated 2026-10-02) | The manual loop stays AI-independent. Managed AI, provider routing and usage economics are accepted in [AI layer contract](./ai-layer-2026-10.md) and delivered through Epic #77. |
 | D-05 | `pursue` | Immutable revisions reuse unchanged blocks/media/manifests; future editable forks have independent deck-local identity and progress. |
 | D-06 | `defer UX; reserve model` | Private decks launch first. Public/restricted sharing, coauthors and publication review follow validated learning. |
 | D-07 | `defer` | Selective upstream updates and later contributions/advanced merges are part of the future model. Manual pull is recommended; automatic tracking is not yet selected. |
-| D-08 | `hypothesis` | Russia-first B2C. Free deck-count limits and subscription expansion are possible; 5 own + 5 copied is an example, not a committed tariff. Earlier AI Starter/trial research is not current pricing. |
+| D-08 | `hypothesis` | Russia-first B2C. 2026-10-02: AI tiers Plus 449 / Pro 990 / Max 1 900 ₽ accepted as planning inputs; a deck-count limit is not introduced at the AI monetization launch. |
 | D-09 | `defer` | Existing self-host is unsupported during v2 rewrite; a sanitized downstream repository may appear later. |
 | D-10 | `defer` | Anki import follows native launch; no APKG round-trip promise. |
 
@@ -221,6 +221,9 @@ The full capability envelope is in [exercise catalog](./exercise-catalog-v2.md).
 - only authorized author/reviewer can publish.
 
 ### Deferred AI and later billing
+
+Обновление 2026-10-02: AI реактивирован ([AI layer contract](./ai-layer-2026-10.md));
+критерии ниже остаются инвариантами manual loop.
 
 - first value requires no AI service, provider key, quota or paid entitlement;
 - every create/Browse/Study journey remains complete with AI absent;
