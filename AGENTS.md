@@ -18,7 +18,7 @@ generic rules summarised below: [`docs/engineering/engineering-standards.md`](do
 |---|---|
 | Any doc, with status (current / accepted / proposed / historical / superseded) | [`docs/README.md`](docs/README.md) |
 | What is true for product, mechanics, contracts, UI, delivery; glossary | [`docs/engineering/domain-truth-map.md`](docs/engineering/domain-truth-map.md) |
-| Run, build, test, local stack; machine setup (JDK 21, Colima, Node 22) | [`docs/engineering/agent-runbook.md`](docs/engineering/agent-runbook.md) |
+| Run, build, test, local stack; machine setup (JDK 21, Colima, Node 24) | [`docs/engineering/agent-runbook.md`](docs/engineering/agent-runbook.md) |
 | Modules, versions, change routes | [`docs/engineering/repository-guide.md`](docs/engineering/repository-guide.md) |
 | Issues / PRs | [`docs/engineering/work-item-standard.md`](docs/engineering/work-item-standard.md) |
 | Backend / frontend scoped rules | `backend/AGENTS.md`, `frontend/AGENTS.md` |
@@ -96,7 +96,7 @@ python3 scripts/verify_docs.py
 - Before any push, re-run the full relevant gate on the exact branch/commit being pushed.
 - If the gate fails for missing coverage or tests, add or update tests until the thresholds pass;
   do not push with a red gate. Coverage thresholds are a hard requirement of done.
-- Machine setup (default `java` is not 21, Colima socket, Node 22) and the complete CI-equivalent
+- Machine setup (default `java` is not 21, Colima socket, Node 24) and the complete CI-equivalent
   command list: [`docs/engineering/agent-runbook.md`](docs/engineering/agent-runbook.md).
 
 ## GitHub work items and pull requests

@@ -35,7 +35,7 @@ checkout их не собирает.
 
 ## Запустить локально
 
-Нужны JDK 21, Node 22, Docker (на macOS — Colima), OpenSSL, `keytool` и Chrome. Лаунчер
+Нужны JDK 21, Node 24, Docker (на macOS — Colima), OpenSSL, `keytool` и Chrome. Лаунчер
 поднимает весь стек с локальным HTTPS: PostgreSQL 18, Identity & Account, Learning,
 MinIO для файлов, обработку медиа и фронтенд.
 

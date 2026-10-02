@@ -33,8 +33,9 @@ export DOCKER_HOST=unix:///Users/yuzuru/.colima/default/docker.sock
 export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
 export TESTCONTAINERS_RYUK_DISABLED=true
 
-# Node must be exactly 22.x for the browser harness (CI/images use 22.23.2)
-NODE22=/opt/homebrew/opt/node@22/bin/node
+# Node must be exactly 24.x for the browser harness and the frontend gate (CI/images use 24.21.0)
+NODE24=/opt/homebrew/opt/node@24/bin/node
+export PATH="/opt/homebrew/opt/node@24/bin:$PATH"   # npm ci/lint/test/build use this Node, not the newer default
 ```
 
 `TESTCONTAINERS_RYUK_DISABLED` is an owner-supplied workaround, not documented elsewhere in
@@ -46,7 +47,7 @@ problem, never permission to accept skipped tests.
 
 ```bash
 cd backend && ./gradlew clean quality          # compile, tests, JaCoCo, coverage-baseline.json floors
-cd frontend && npm ci && npm run lint && npm run test && npm run build   # tests need Chrome
+cd frontend && npm ci && npm run lint && npm run test && npm run build   # Vitest/jsdom: no browser needed
 python3 scripts/verify_docs.py                 # links, anchors, doc statuses
 python3 -m unittest discover -s scripts/tests -p 'test_*.py'   # ~35 s
 ```
@@ -69,7 +70,7 @@ python3 scripts/learning-security/run.py
 ```bash
 cd frontend && npm run build && cd ..
 python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend \
-  --node "$NODE22" --authoring --media --mechanics
+  --node "$NODE24" --authoring --media --mechanics
 ```
 
 - Needs: JDK 21 first on `PATH` (the harness starts `java -jar`), built `bootJar`s, Chrome, cached `postgres:18`, and for
@@ -117,7 +118,7 @@ scripts/mnema-local-full-stack.sh reset-certificates --confirm
 | `./gradlew quality --dry-run` under JDK 21 resolves the task graph | verified |
 | Colima socket present, `docker version` answers (29.5.2) with that `DOCKER_HOST` | verified |
 | Testcontainers env above: `:services:identity-account:test --tests '*AccountTransferIntegrationTest'` ran 4 tests, 0 skipped, passed | verified |
-| `/opt/homebrew/opt/node@22/bin/node` is v22.23.2; default `node` is 26.9 | verified |
+| `/opt/homebrew/opt/node@24/bin/node` is v24.21.0 (npm 11.19.0); default `node` is 26.9 | verified |
 | `run.py --help` lists `--authoring --media --mechanics --keep-on-failure --node`; `--mute-audio` and temp-dir behaviour read from source | verified (source) |
 | `verify_docs.py` passes; `unittest discover scripts/tests -p 'test_*.py'` 188 tests OK | verified |
 | MinIO digest `14cea493…` present in the local Docker image cache | verified |

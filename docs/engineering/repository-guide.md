@@ -37,9 +37,10 @@ glossary: [domain truth map](./domain-truth-map.md).
 | Spring Boot | 3.5.16 | `backend/settings.gradle.kts` |
 | Kotlin | 2.4.20 | `backend/settings.gradle.kts` |
 | Gradle | 8.14.5 | `backend/gradle/wrapper/gradle-wrapper.properties` |
-| Angular | core 22.1.5; CLI/build 22.1.7 | `frontend/package.json` |
+| Angular | core/CLI/build 22.2.1, zoneless | `frontend/package.json` |
 | TypeScript | 6.0.3 | `frontend/package.json` |
-| Node | 22.23.2 in CI/images | workflows and `frontend/Dockerfile` |
+| Node | 24.21.0 (LTS) in CI/images | workflows and `frontend/Dockerfile` |
+| Frontend unit tests | Vitest 5 + jsdom (`@angular/build:unit-test`) | `frontend/angular.json`, `frontend/vitest.config.mts` |
 | PostgreSQL | 18 in replacement compose/tests | `docker-compose.yml`, test fixtures |
 
 The workstation JDK/Node may be newer (on the owner's Mac the default `java` is 26); release
@@ -161,11 +162,11 @@ There is no legacy `my-study` fallback.
 
 ## Полный quality gate
 
-Prerequisites: JDK 21 toolchain availability, Node 22.23.2, npm, Chrome/Chromium and
+Prerequisites: JDK 21 toolchain availability, Node 24.21.0, npm, Chrome/Chromium (browser harness only; frontend unit tests need no browser) and
 working Docker/Testcontainers resources. Do not allow database tests to skip. With
 Colima on macOS, point discovery at its host socket and mounts at the Linux VM socket;
 the verified per-shell setup (`JAVA_HOME`, `DOCKER_HOST`,
-`TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE`, Node 22 path) is in the
+`TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE`, Node 24 path) is in the
 [agent runbook](./agent-runbook.md#workstation-setup-owners-mac).
 
 ```bash
@@ -212,7 +213,7 @@ studying every mechanic through the real UI. It is not a substitute for unit gat
 
 ```bash
 python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend \
-  --node /absolute/path/to/node22 --authoring            # add --media --mechanics for all mechanics
+  --node /absolute/path/to/node24 --authoring            # add --media --mechanics for all mechanics
 ```
 
 It uses disposable local services and a real HTTPS Chrome flow. Follow
