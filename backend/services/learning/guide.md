@@ -29,11 +29,10 @@ exercise mechanics into the seven below. Epic #76 added the greenfield media lif
 - Database: fresh Flyway history at `classpath:db/learning/migration`, owned schema
   `app_learning`, `baseline-on-migrate=false`. It never scans a legacy migration
   directory.
-- AI layer (Epic #77): only contracts exist so far — [`contracts/generation`](../../../contracts/generation/README.md),
-  [`contracts/usage`](../../../contracts/usage/README.md),
-  [`contracts/notifications`](../../../contracts/notifications/README.md) and the versioned prompt
-  sections in `src/main/resources/ai/prompts/` (resources, not loaded by any code yet). No
-  generation, usage or notification endpoint is implemented; run-2 tasks (#281–#286, #303) add them.
+- AI layer (Epic #77): the notification center is implemented (below); generation and usage still exist only as
+  contracts — [`contracts/generation`](../../../contracts/generation/README.md),
+  [`contracts/usage`](../../../contracts/usage/README.md) — plus the versioned prompt sections in
+  `src/main/resources/ai/prompts/` (resources, not loaded by any code yet). Run-2 tasks (#281, #282, #285, #303) add the rest.
 - MBM compiler (#283): `app.mnema.learning.generation.mbm` is a pure package (no Spring, I/O or clock; identifiers come from
   the injected `IdAllocator`) that compiles MBM v1 to a native-v1 document and renders native-v1 back to MBM.
   `MbmCompiler.compile(source, MbmOptions, IdAllocator)` returns `MbmResult.Success` (document already read by
@@ -251,10 +250,48 @@ capacity evidence.
   back both material and exercise membership roots. Exercise writes advance the
   Deck CAS and receipt in the same transaction.
 
-Fresh Learning migrations V1–V23 are the database source of truth. V21 (unified exercise
+## Notification center
+
+`app.mnema.learning.notification` implements [`contracts/notifications`](../../../contracts/notifications/README.md)
+(AI-07, #284): a durable, general in-app inbox. The contract files are normative; this section records only what the
+code adds.
+
+- **Producer port.** `NotificationPublisher.publish(owner, kind, dedupeKey, params, route)` has `MANDATORY` propagation:
+  it joins the transaction of the domain change and fails without one, so there is no outbox and a notification exists
+  exactly when its change commits. Call it as the **last write** of that transaction: it locks the owner's
+  `notification_cursor` row (created on first use) to allocate `seq`, and the lock lasts until the caller commits. Under
+  the lock it checks `(owner, dedupe_key)` first; a repeat is a no-op (`false`, the first stands, no `seq` consumed). A
+  dedupe key held only by an expired row is free again. The 201st notification of an owner deletes everything beyond the
+  newest 200 sequence slots.
+- **Params are validated, not trusted.** `NotificationKind` carries each kind's severity, route rule and exact params
+  fields; only UUIDs, bounded tokens (`[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}`), non-negative counts and `Instant`s pass, so
+  prose and personal data cannot be stored. A violation is a producer bug and throws `IllegalArgumentException`.
+  `MEDIA_PROCESSING_FAILED` is `DYNAMIC`: `WORKSHOP` with a `sessionId`, `DECK` with only a `deckId`, else `NONE`;
+  the publisher rejects any other route.
+- **HTTP.** `GET /api/notifications` (`limit` 1..100, default 20; `after` for the ascending catch-up; `cursor` for the next
+  page; `after` with `cursor` is 400), `PUT /api/notifications/read-cursor` (`{"readUpto":"<seq>"}`, a monotonic maximum,
+  above the latest seq is 400) and `DELETE /api/notifications/{id}` (204, repeat 204, foreign/absent/expired opaque 404). All
+  answer `Cache-Control: private, no-store`. The list `ETag` is a strong opaque
+  `"n-<latestSeq>-<readUpto>-<visibleCount>-<activeWork>-<earliestExpiryEpochSec>-<queryHash>"`; the visible count makes a
+  dismissal, expiry or eviction change it and the query hash keeps different `limit`/`after`/`cursor` apart. A matching
+  `If-None-Match` is a 304 without a body and without reading the page. The list is read in one `REPEATABLE READ`
+  snapshot. Scopes are the blanket rule of the security chain: `learning.read` for GET, `learning.write` for the rest.
+- **`activeWork`** is `0` until generation exists: `ActiveWorkCounter` is satisfied by the placeholder `NoActiveWork`.
+  TODO(AI-04, #287): replace it with the owner's count of sessions in `PLANNING` or `RUNNING` and delete the placeholder.
+- **Retention.** `expires_at = created_at + learning.notifications.retention` (default 30 days) is fixed at publication.
+  `NotificationRetentionWorker` deletes expired rows in locked batches of 500 (at most 20 batches per tick;
+  `learning.notifications.cleanup-initial-delay` `PT5M`, `cleanup-interval` `PT1H`). The cap needs no sweep because
+  publication enforces it. Dismissed rows stay until expiry so their dedupe key still holds.
+- **First producer.** `MediaProcessingRepository` publishes `MEDIA_PROCESSING_FAILED` (`media:{assetId}:failed`, route
+  `NONE`, deck/session/artifact/slot null because the pipeline does not know them) in the transaction that records a
+  terminal failure: a rejected asset (`VERIFICATION_REJECTED`) and exhausted retries or an interrupted asset that ran out
+  of attempts (`PROCESSING_FAILED`). Retryable attempts notify nobody. There is deliberately no "media ready" kind.
+- Keys are listed in the [runtime policy index](../../../docs/engineering/runtime-policy-index.md).
+
+Fresh Learning migrations V1–V24 are the database source of truth. V21 (unified exercise
 mechanics) fails closed when pre-#266 exercise data exists: use a fresh local database. V23
 only widens the exercise type and answer-key kind constraints for `ORDER` and `CATEGORIZE`
-(no data rewrite). Do not append
+(no data rewrite); V24 adds the notification tables. Do not append
 Study tables to legacy `core` migrations or port old review algorithms.
 
 Sources: [Spring Security 7.1 JWT](https://docs.spring.io/spring-security/reference/7.1/servlet/oauth2/resource-server/jwt.html)
