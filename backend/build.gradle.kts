@@ -12,6 +12,10 @@ allprojects {
 
 subprojects {
     apply(plugin = "jacoco")
+    // Boot 4.1.1 manages Tomcat 11.0.24; 11.0.25 and 11.0.26 carry Apache security fixes
+    // (https://tomcat.apache.org/security-11.html). Remove once the Boot BOM catches up.
+    extra["tomcat.version"] = "11.0.26"
+
     extensions.configure<org.gradle.testing.jacoco.plugins.JacocoPluginExtension> {
         toolVersion = "0.8.15"
     }
