@@ -40,6 +40,11 @@ of the former two-column exercise editor are likewise historical.
   [component visual checks](./epic-76/media-visual/README.md) are the local acceptance
   evidence for media; they cover three listening types that #266 later replaced.
 
+## Epic #77
+
+- [Прогон 1: платформа и контракты](./epic-77/run-1/README.md) — актуализация стека (#278)
+  и контракты AI-слоя (#279) с точными commit'ами и границами проверки.
+
 ## Storage и content
 
 - [Storage research index](./epic-74/storage/README.md) routes to measurements,
