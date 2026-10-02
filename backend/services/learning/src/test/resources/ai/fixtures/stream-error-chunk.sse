@@ -1,0 +1,4 @@
+data: {"id":"chatcmpl-s3","object":"chat.completion.chunk","model":"deepseek-flash","choices":[{"index":0,"delta":{"content":"начало"},"finish_reason":null}]}
+
+data: {"error":{"message":"upstream failure","type":"server_error"}}
+

@@ -1,0 +1,1 @@
+{"id":"chatcmpl-77aa","object":"chat.completion","model":"deepseek-flash","choices":[{"index":0,"message":{"role":"assistant","content":"{\"exercises\":[]}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":100,"completion_tokens":10,"total_tokens":110,"prompt_cache_hit_tokens":0,"prompt_cache_miss_tokens":100}}

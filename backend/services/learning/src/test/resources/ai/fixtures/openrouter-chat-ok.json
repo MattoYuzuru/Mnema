@@ -1,0 +1,1 @@
+{"id":"gen-or-1","model":"deepseek/deepseek-flash","choices":[{"message":{"role":"assistant","content":"Ответ OpenRouter"},"finish_reason":"stop"}],"usage":{"prompt_tokens":800,"completion_tokens":40,"total_tokens":840,"prompt_tokens_details":{"cached_tokens":300},"cost":0.000123}}

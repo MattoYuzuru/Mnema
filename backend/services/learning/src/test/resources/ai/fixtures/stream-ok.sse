@@ -1,0 +1,16 @@
+: keep-alive
+
+data: {"id":"chatcmpl-s1","object":"chat.completion.chunk","created":1790000000,"model":"deepseek-flash","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+: keep-alive
+
+data: {"id":"chatcmpl-s1","object":"chat.completion.chunk","created":1790000000,"model":"deepseek-flash","choices":[{"index":0,"delta":{"content":"# Заго"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-s1","object":"chat.completion.chunk","created":1790000000,"model":"deepseek-flash","choices":[{"index":0,"delta":{"content":"ловок\n\nТекст."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-s1","object":"chat.completion.chunk","created":1790000000,"model":"deepseek-flash","choices":[{"index":0,"delta":{"content":""},"finish_reason":"stop"}]}
+
+data: {"id":"chatcmpl-s1","object":"chat.completion.chunk","created":1790000000,"model":"deepseek-flash","choices":[],"usage":{"prompt_tokens":2500,"completion_tokens":300,"total_tokens":2800,"prompt_cache_hit_tokens":2000,"prompt_cache_miss_tokens":500}}
+
+data: [DONE]
+

@@ -1,0 +1,1 @@
+{"id":"chatcmpl-9a12","object":"chat.completion","model":"gpt-test","choices":[{"index":0,"message":{"role":"assistant","content":null,"refusal":"I can't help with that."},"finish_reason":"stop"}]}
