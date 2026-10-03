@@ -5,11 +5,12 @@ import { buildMaterialsSpec } from './generation-composer.component';
 import { readProblem } from './generation-problem';
 import {
     ARTIFACT_ERROR_CODES, ARTIFACT_STATES, EFFORTS, OPERATION_TABLES, SESSION_STATES, SLOT_STATES, isApprovable, isRetryable,
-    parseApprovalAck, parseArtifactDetail, parseArtifactSummary, parseEstimate, parseEventsPage, parseHandoff, parseSessionDetail,
-    parseSessionPage, parseSessionSummary, previewDocument, serializeMaterialsSpec
+    NoteOverrides, SpecSource, parseApprovalAck, parseArtifactDetail, parseArtifactSummary, parseEstimate, parseEventsPage, parseHandoff,
+    parseNoteArchive, parseSessionDetail, parseSessionPage, parseSessionSummary, previewDocument, serializeMaterialsSpec
 } from './generation.models';
 import {
-    clone, errorsContract, eventsContract, examples, httpContract, ids, problemResponse, statesContract, usageContract
+    artifactDetailWithNote, clone, errorsContract, eventsContract, examples, httpContract, ids, noteArchiveAnswer, noteIds, problemResponse,
+    sessionWithNotes, statesContract, usageContract
 } from './generation-test-data';
 
 /**
@@ -215,14 +216,14 @@ describe('Generation wire contract (contracts/generation)', () => {
         });
 
         it('lists no operation the client implements under another method or path than http.json', () => {
+            // `archiveUsedNotes` (#290) joins http.json with the backend; until then it cannot be looked up there.
             const implemented = ['getCapabilities', 'estimateGeneration', 'createSession', 'listSessions', 'listActiveSessions', 'getSession',
                 'cancelSession', 'deleteSession', 'listEvents', 'getArtifact', 'approveArtifact', 'approveArtifacts', 'rejectArtifact',
-                'undoRejectArtifact', 'handoffArtifact', 'retryArtifact'];
+                'undoRejectArtifact', 'handoffArtifact', 'retryArtifact', 'archiveUsedNotes'];
             const ids = (httpContract['endpoints'] as { operationId: string }[]).map(endpoint => endpoint.operationId);
             for (const operation of implemented) expect(ids, operation).toContain(operation);
             // Edits and reverts belong to AI-11 (#293): not part of this client yet.
-            // Note archival (`archiveUsedNotes`) is offered by a later task of the epic.
-            expect(ids.filter(operation => !implemented.includes(operation)).sort()).toEqual(['archiveUsedNotes', 'editArtifact', 'revertArtifact']);
+            expect(ids.filter(operation => !implemented.includes(operation)).sort()).toEqual(['editArtifact', 'revertArtifact']);
         });
 
         it('knows every problem code the contract lists for the operations it calls', () => {
@@ -230,6 +231,80 @@ describe('Generation wire contract (contracts/generation)', () => {
             for (const code of ['GENERATION_STATE_CONFLICT', 'USAGE_LIMIT_REACHED', 'CAPABILITY_UNAVAILABLE', 'RESOURCE_LIMIT_EXCEEDED', 'VERSION_CONFLICT']) {
                 expect(codes).toContain(code);
             }
+        });
+    });
+    describe('notes as sources (#290: overrides, note status, archival)', () => {
+        const note = (overrides?: NoteOverrides, role: 'SOURCE' | 'STYLE_EXAMPLE' = 'SOURCE', id = noteIds.first): SpecSource =>
+            ({ role, type: 'NOTE', noteId: id, noteRowVersion: '3', ...(overrides === undefined ? {} : { overrides }) });
+        const sourcesOf = (spec: ReturnType<typeof serializeMaterialsSpec>) => spec['sources'] as Record<string, unknown>[];
+
+        it('parses the required notes counters of a session', () => {
+            expect(parseSessionDetail(sessionWithNotes({ used: 4, archivable: 3 })).notes).toEqual({ used: 4, archivable: 3 });
+            expect(parseSessionDetail(sessionWithNotes({ used: 0, archivable: 0 })).notes).toEqual({ used: 0, archivable: 0 });
+            expect(() => parseSessionDetail(sessionWithNotes({ used: 1, archivable: 2 }))).toThrow(AuthoringProtocolError);
+            expect(() => parseSessionDetail(sessionWithNotes({ used: 1, archivable: 1, extra: 1 } as never))).toThrow(AuthoringProtocolError);
+            expect(() => parseSessionDetail(sessionWithNotes(null, null, { notes: null }))).toThrow(AuthoringProtocolError);
+            const { notes: _omitted, ...withoutNotes } = examples['sessionDetail'];
+            expect(() => parseSessionDetail(withoutNotes)).toThrow(AuthoringProtocolError);
+        });
+
+        it('reads the status of the pinned note of an artifact, and tolerates its absence and a status it does not know', () => {
+            expect(parseArtifactDetail(examples['artifactDetailItem']).noteSources).toEqual([{ noteId: '20700000-0000-4000-8000-000000000001', noteRowVersion: '3', status: 'CURRENT' }]);
+            expect(parseArtifactDetail(examples['artifactDetailExercise']).noteSources).toEqual([]);
+            for (const status of ['CURRENT', 'CHANGED', 'ARCHIVED', 'DELETED']) {
+                expect(parseArtifactDetail(artifactDetailWithNote(status)).noteSources).toEqual([{ noteId: noteIds.first, noteRowVersion: '3', status }]);
+            }
+            expect(parseArtifactDetail(artifactDetailWithNote(null)).noteSources[0]?.status).toBeNull();
+            expect(parseArtifactDetail(artifactDetailWithNote('SOMETHING_NEW')).noteSources[0]?.status).toBeNull();
+            const mixed = artifactDetailWithNote('CHANGED');
+            mixed['sourceRefs'].push({ type: 'ITEM', memberKey: ids.first, itemRevisionId: ids.revision });
+            expect(parseArtifactDetail(mixed).noteSources).toHaveLength(1);
+            const broken = artifactDetailWithNote('CHANGED');
+            broken['sourceRefs'][0].noteId = 'not-an-id';
+            expect(() => parseArtifactDetail(broken)).toThrow(AuthoringProtocolError);
+        });
+
+        it('serializes sparse overrides exactly as the contract states them, and never an empty object', () => {
+            const settings = { ...DEFAULT_SETTINGS, effort: 'MEDIUM' as const };
+            const built = (...sources: SpecSource[]) => serializeMaterialsSpec({ ...buildMaterialsSpec('', settings, [], { image: true, audio: true }), sources });
+            const full: NoteOverrides = { effort: 'DETAILED', media: { audio: { enabled: true, lang: 'ko', voice: null }, imageSearch: false } };
+            expect(sourcesOf(built(note(full)))[0]).toEqual({ role: 'SOURCE', type: 'NOTE', noteId: noteIds.first, noteRowVersion: '3', overrides: full });
+            expect(sourcesOf(built(note({ effort: 'SHORT' })))[0]!['overrides']).toEqual({ effort: 'SHORT' });
+            expect(sourcesOf(built(note({ media: { imageSearch: true } })))[0]!['overrides']).toEqual({ media: { imageSearch: true } });
+            expect(sourcesOf(built(note(undefined)))[0]).not.toHaveProperty('overrides');
+            expect(sourcesOf(built(note({})))[0]).not.toHaveProperty('overrides');
+            expect(sourcesOf(built(note({ media: {} })))[0]).not.toHaveProperty('overrides');
+            expect(JSON.stringify(built(note({}), note({ media: {} }, 'SOURCE', noteIds.second)))).not.toContain('overrides');
+        });
+
+        it('sends the sources of the contract example unchanged, and reads its echo (overrides are not part of the echo the UI keeps)', () => {
+            const example = examples['specMaterialsOverrides'];
+            const sent = serializeMaterialsSpec({ ...buildMaterialsSpec('', DEFAULT_SETTINGS, [], { image: true, audio: true }),
+                sources: example.sources.map((source: any) => note(source.overrides, 'SOURCE', source.noteId)).map((source: SpecSource, index: number) =>
+                    ({ ...source, noteRowVersion: example.sources[index].noteRowVersion } as SpecSource)) });
+            expect(sourcesOf(sent)).toEqual(example.sources);
+            const echoed = parseSessionDetail({ ...examples['sessionDetail'], spec: example });
+            expect(echoed.spec).toMatchObject({ kind: 'MATERIALS', outputLanguage: 'ru' });
+        });
+
+        it('refuses overrides where they do not apply: a style example, or any mode but ONE_PER_NOTE', () => {
+            const base = buildMaterialsSpec('', DEFAULT_SETTINGS, [], { image: true, audio: true });
+            expect(() => serializeMaterialsSpec({ ...base, sources: [note({ effort: 'SHORT' }, 'STYLE_EXAMPLE')] })).toThrow(AuthoringProtocolError);
+            expect(() => serializeMaterialsSpec({ ...base, settings: { ...base.settings, notesMode: 'MERGE_INTO_ONE' },
+                sources: [note({ effort: 'SHORT' })] })).toThrow(AuthoringProtocolError);
+            expect(() => serializeMaterialsSpec({ ...base, settings: { ...base.settings, notesMode: 'MERGE_INTO_ONE' },
+                sources: [note(undefined), note(undefined, 'SOURCE', noteIds.second)] })).not.toThrow();
+        });
+
+        it('parses the archival answer with archived and skipped notes, and an empty one', () => {
+            expect(parseNoteArchive(noteArchiveAnswer([noteIds.first, noteIds.second], [{ noteId: noteIds.third, reason: 'CHANGED' }]), false)).toEqual({
+                archived: [noteIds.first, noteIds.second], skipped: [{ noteId: noteIds.third, reason: 'CHANGED' }], replayed: false });
+            expect(parseNoteArchive(noteArchiveAnswer([]), true)).toEqual({ archived: [], skipped: [], replayed: true });
+            for (const reason of ['ALREADY_ARCHIVED', 'DELETED']) {
+                expect(parseNoteArchive(noteArchiveAnswer([], [{ noteId: noteIds.first, reason }]), false).skipped[0]?.reason).toBe(reason);
+            }
+            expect(() => parseNoteArchive(noteArchiveAnswer([], [{ noteId: noteIds.first, reason: 'NOPE' }]), false)).toThrow(AuthoringProtocolError);
+            expect(() => parseNoteArchive({ archived: [] }, false)).toThrow(AuthoringProtocolError);
         });
     });
 });

@@ -7,7 +7,7 @@
 
     <div class="field prompt-field">
       <textarea #promptField [id]="uid + '-prompt'" name="prompt" rows="3" enterkeyhint="send" [maxLength]="maxLength"
-        placeholder="Например: 20 глаголов движения с примерами из аниме" autocomplete="off"
+        [placeholder]="hasNotes() ? 'Необязательно: например, «добавь примеры из аниме»' : 'Например: 20 глаголов движения с примерами из аниме'" autocomplete="off"
         [value]="prompt()" [attr.aria-invalid]="promptMissing() ? 'true' : null"
         [attr.aria-describedby]="uid + '-prompt-help' + (promptMissing() ? ' ' + uid + '-prompt-error' : '')"
         (input)="onInput($event)" (keydown)="onKeydown($event)"></textarea>
@@ -18,12 +18,25 @@
     </div>
 
     @if (sources().length > 0) {
-      <ul class="source-chips" aria-label="Источники запроса">
-        @for (source of sources(); track source.label) {
+      <ul #chips class="source-chips" aria-label="Источники запроса">
+        @for (source of sources(); track sourceKey(source)) {
           <li class="source-chip"><span>{{ source.label }}</span>
             <button type="button" class="chip-remove" [attr.aria-label]="'Убрать: ' + source.label" (click)="removeSource(source)"><span aria-hidden="true">×</span></button></li>
         }
       </ul>
+    }
+
+    @if (groupable()) {
+      <div class="notes-options">
+        <app-segmented-choice legend="Как оформить заметки" [options]="groupingOptions" [name]="uid + '-grouping'"
+          [value]="settings().notesMode" (valueChange)="setNotesMode($event ?? 'ONE_PER_NOTE')" />
+        @if (settings().notesMode === 'ONE_PER_NOTE') {
+          <app-note-overrides [notes]="noteSources()" [imageAvailable]="imageAvailable()" [audioAvailable]="audioAvailable()"
+            [value]="overrides()" (valueChange)="onOverrides($event)" />
+        } @else if (overridesCleared()) {
+          <p class="hint cleared-note">Отдельные настройки заметок сброшены: при объединении они не нужны.</p>
+        }
+      </div>
     }
 
     <div class="action-row">

@@ -3,7 +3,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { isSendKey } from './generation-composer.component';
 import { readProblem } from './generation-problem';
 import {
-    EFFORT_OPTIONS, NBSP, artifactStatus, describeEstimate, describeSessionProgress, describeUsageLimit, failureNote, failureReason,
+    EFFORT_OPTIONS, NBSP, NOTES_MODE_OPTIONS, artifactStatus, describeEstimate, describeNoteArchive, describeSessionProgress, describeUsageLimit, failureNote, failureReason,
     formatDay, formatWorkshopStart, positionLabel, problemMessage, promptExcerpt, slotCaption, summarize
 } from './generation-view';
 import {
@@ -129,6 +129,26 @@ describe('Generation texts and helpers', () => {
             expect(slotCaption('IMAGE', 'GENERATING')).toBe('Подбираем изображение…');
             expect(slotCaption('AUDIO', 'GENERATING')).toBe('Озвучиваем…');
             expect(slotCaption('VIDEO', 'GENERATING')).toBe('Готовим видео…');
+        });
+    });
+
+    describe('notes (#290)', () => {
+        const noteId = (n: number) => `20700000-0000-4000-8000-00000000000${n}`;
+
+        it('offers one material per note first, and merging second', () => {
+            expect(NOTES_MODE_OPTIONS.map(option => [option.value, option.label])).toEqual([
+                ['ONE_PER_NOTE', 'Материал на заметку'], ['MERGE_INTO_ONE', 'Объединить в один']]);
+        });
+
+        it('tells what archiving did: archived, skipped and why, never blaming a note it did not skip', () => {
+            expect(describeNoteArchive({ archived: [], skipped: [] })).toBe('Архивировать нечего.');
+            expect(describeNoteArchive({ archived: [noteId(1), noteId(2)], skipped: [] })).toBe('Архивировано: 2');
+            expect(describeNoteArchive({ archived: [noteId(1)], skipped: [{ noteId: noteId(2), reason: 'CHANGED' }] }))
+                .toBe('Архивировано: 1, пропущено: 1 — заметка изменилась');
+            expect(describeNoteArchive({ archived: [], skipped: [{ noteId: noteId(1), reason: 'ALREADY_ARCHIVED' }] }))
+                .toBe('Архивировано: 0, пропущено: 1 — уже в архиве');
+            expect(describeNoteArchive({ archived: [noteId(1)], skipped: [{ noteId: noteId(2), reason: 'CHANGED' }, { noteId: noteId(3), reason: 'DELETED' },
+                { noteId: noteId(4), reason: 'CHANGED' }] })).toBe('Архивировано: 1, пропущено: 3 — заметка изменилась: 2, заметка удалена: 1');
         });
     });
 

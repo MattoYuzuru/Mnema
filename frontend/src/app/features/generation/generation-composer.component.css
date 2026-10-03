@@ -30,3 +30,4 @@ h1 label { font: inherit; font-weight: inherit; cursor: text; }
     .action-row { justify-content: stretch; }
     .generate-cta { inline-size: 100%; }
 }
+.notes-options { display: grid; gap: 1rem; min-inline-size: 0; }

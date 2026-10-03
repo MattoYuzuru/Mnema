@@ -7,13 +7,14 @@ import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { spyObj, type SpyObj } from '../../../testing/mocks';
 import { GenerationApiService } from './generation-api.service';
 import {
-    ApprovalAck, ArtifactSummary, parseApprovalAck, parseArtifactDetail, parseArtifactSummary, parseEventsPage, parseHandoff, parseSessionDetail
+    ApprovalAck, ArtifactSummary, parseApprovalAck, parseNoteArchive, parseArtifactDetail, parseArtifactSummary, parseEventsPage, parseHandoff, parseSessionDetail
 } from './generation.models';
 import {
     POLL_ACTIVE_MS, POLL_BACKGROUND_MAX_MS, POLL_BACKGROUND_MIN_MS, POLL_IDLE_MS, WorkshopSessionStore
 } from './workshop-session.store';
 import {
-    activeStep, artifactWith, clone, deckFixture, eventsEnvelope, examples, httpContract, ids, problemResponse, sessionWith, wireBlocks, wireEvent
+    activeStep, artifactWith, clone, deckFixture, eventsEnvelope, examples, httpContract, ids, noteArchiveAnswer, noteIds, problemResponse, sessionWith,
+    sessionWithNotes, wireBlocks, wireEvent
 } from './generation-test-data';
 
 const second = 'a7a70000-0000-4000-8000-000000000003';
@@ -42,7 +43,8 @@ describe('WorkshopSessionStore', () => {
             approveArtifact: vi.fn().mockName('approveArtifact'), approveArtifacts: vi.fn().mockName('approveArtifacts'),
             rejectArtifact: vi.fn().mockName('rejectArtifact'), undoRejectArtifact: vi.fn().mockName('undoRejectArtifact'),
             retryArtifact: vi.fn().mockName('retryArtifact'), handoffArtifact: vi.fn().mockName('handoffArtifact'),
-            cancelSession: vi.fn().mockName('cancelSession'), deleteSession: vi.fn().mockName('deleteSession')
+            cancelSession: vi.fn().mockName('cancelSession'), deleteSession: vi.fn().mockName('deleteSession'),
+            archiveUsedNotes: vi.fn().mockName('archiveUsedNotes')
         });
         decks = spyObj<OwnDecksApiService>({ detail: vi.fn().mockName('detail') });
         toast = { echo: vi.fn() };
@@ -586,6 +588,89 @@ describe('WorkshopSessionStore', () => {
             pending.next(parseArtifactSummary({ ...clone(examples['artifactSummaryProposed']), state: 'REJECTED', rowVersion: '5' }));
             pending.complete();
             expect(await first).toBe(true);
+        });
+    });
+
+    describe('archiving the used notes (#290)', () => {
+        const published = (): Record<string, unknown>[] => [artifactWith(ids.first, 0, 'PUBLISHED', { rowVersion: '5' }),
+            artifactWith(ids.second, 1, 'PUBLISHED', { rowVersion: '5' })];
+        const withNotes = (archivable: number, used = 3): Record<string, unknown> =>
+            sessionWithNotes({ used, archivable }, published(), { state: 'CLOSED', approvableCount: 0 });
+        const answer = (archived: string[], skipped: { noteId: string; reason: string }[] = [], replayed = false) =>
+            parseNoteArchive(noteArchiveAnswer(archived, skipped), replayed);
+
+        it('knows how many notes are archivable', () => {
+            setup(withNotes(2));
+            expect(store.archivableNotes()).toBe(2);
+            setup(withNotes(0));
+            expect(store.archivableNotes()).toBe(0);
+        });
+
+        it('does nothing without archivable notes, and never asks the server', async () => {
+            setup(withNotes(0));
+            expect(await store.archiveNotes()).toBe(false);
+            setup(sessionWith(published(), { state: 'CLOSED' }));
+            expect(await store.archiveNotes()).toBe(false);
+            expect(api.archiveUsedNotes).not.toHaveBeenCalled();
+        });
+
+        it('archives with a command id, keeps the result for the page, echoes a summary and reads the session again', async () => {
+            setup(withNotes(2));
+            api.archiveUsedNotes.mockReturnValue(of(answer([noteIds.first], [{ noteId: noteIds.second, reason: 'CHANGED' }])));
+            api.getSession.mockReturnValue(of(parseSessionDetail(withNotes(0))));
+            expect(await store.archiveNotes()).toBe(true);
+            expect(api.archiveUsedNotes).toHaveBeenCalledWith(ids.deckId, ids.sessionId, expect.stringMatching(/^[0-9a-f-]{36}$/));
+            expect(store.noteArchive()).toMatchObject({ archived: [noteIds.first], skipped: [{ noteId: noteIds.second, reason: 'CHANGED' }] });
+            expect(toast.echo).toHaveBeenCalledWith('Архивировано: 1, пропущено: 1 — заметка изменилась');
+            expect(store.archivableNotes()).toBe(0);
+            expect(store.isBusy('notes')).toBe(false);
+        });
+
+        it('sends the same command again after an unknown outcome, and a new one after a definitive answer', async () => {
+            setup(withNotes(2));
+            api.archiveUsedNotes.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 0 })));
+            expect(await store.archiveNotes()).toBe(false);
+            expect(store.notice()?.tone).toBe('error');
+            expect(store.noteArchive()).toBeNull();
+            api.archiveUsedNotes.mockReturnValueOnce(of(answer([noteIds.first], [], true)));
+            expect(await store.archiveNotes()).toBe(true);
+            api.archiveUsedNotes.mockReturnValueOnce(of(answer([])));
+            await store.archiveNotes();
+            const [uncertain, retried, later] = api.archiveUsedNotes.mock.calls.map(call => call[2]);
+            expect(retried).toBe(uncertain);
+            expect(later).not.toBe(retried);
+        });
+
+        it('refuses a second press while the first is running, so one press archives once', async () => {
+            setup(withNotes(2));
+            const pending = new Subject<ReturnType<typeof answer>>();
+            api.archiveUsedNotes.mockReturnValue(pending);
+            const first = store.archiveNotes();
+            expect(store.isBusy('notes')).toBe(true);
+            expect(await store.archiveNotes()).toBe(false);
+            expect(api.archiveUsedNotes).toHaveBeenCalledTimes(1);
+            pending.next(answer([noteIds.first]));
+            pending.complete();
+            expect(await first).toBe(true);
+        });
+
+        it('shows the refusal in words and treats a 404 as the Workshop being gone', async () => {
+            setup(withNotes(2));
+            api.archiveUsedNotes.mockReturnValueOnce(throwError(() => problemResponse(409, { code: 'IDEMPOTENCY_CONFLICT' })));
+            expect(await store.archiveNotes()).toBe(false);
+            expect(store.notice()?.tone).toBe('error');
+            api.archiveUsedNotes.mockReturnValueOnce(throwError(() => problemResponse(404)));
+            await store.archiveNotes();
+            expect(store.phase()).toBe('missing');
+        });
+
+        it('forgets the result of an earlier session when another one is opened', async () => {
+            setup(withNotes(2));
+            api.archiveUsedNotes.mockReturnValue(of(answer([noteIds.first])));
+            await store.archiveNotes();
+            expect(store.noteArchive()).not.toBeNull();
+            store.open(ids.deckId, ids.sessionId);
+            expect(store.noteArchive()).toBeNull();
         });
     });
 });

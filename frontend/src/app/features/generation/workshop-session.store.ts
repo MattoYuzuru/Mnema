@@ -7,9 +7,10 @@ import { newCommandId } from '../authoring/authoring.models';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { DeckPin, GenerationApiService } from './generation-api.service';
 import { GenerationProblem, readProblem } from './generation-problem';
-import { problemMessage } from './generation-view';
+import { describeNoteArchive, problemMessage } from './generation-view';
 import {
-    ApprovalAck, ArtifactDetail, ArtifactSummary, GenerationEvent, HandoffResult, MAX_APPROVALS_PER_COMMAND, SessionDetail, UsageUpdate, ActiveStep,
+    ApprovalAck, ArtifactDetail, ArtifactSummary, GenerationEvent, HandoffResult, MAX_APPROVALS_PER_COMMAND, NoteArchiveResult, SessionDetail,
+    UsageUpdate, ActiveStep,
     allows, isApprovable, isRetryable, isTerminalSession, sessionAllows
 } from './generation.models';
 import { AppliedEvents, Arrival, DraftBlocks, WorkshopModel, applyEvents, isNewer, mergeSession } from './workshop-events';
@@ -73,9 +74,13 @@ export class WorkshopSessionStore {
     readonly busy = signal<ReadonlySet<string>>(new Set());
     /** Drafts made by hand-off in this page, by artifact id: the link back to the editor names its draft. */
     readonly handoffs = signal<Readonly<Record<string, string>>>({});
+    /** What the last «Архивировать использованные заметки» did (AI-08, #290); `null` until it ran in this page. */
+    readonly noteArchive = signal<NoteArchiveResult | null>(null);
 
     readonly artifacts = computed(() => this.session()?.artifacts ?? []);
     readonly approvable = computed(() => this.artifacts().filter(isApprovable));
+    /** Used notes that «Архивировать использованные» would archive now; 0 while the server does not report it. */
+    readonly archivableNotes = computed(() => this.session()?.notes.archivable ?? 0);
     readonly terminal = computed(() => { const session = this.session(); return session !== null && isTerminalSession(session.state); });
 
     private deckId = '';
@@ -124,6 +129,7 @@ export class WorkshopSessionStore {
         this.commandIds.clear();
         this.staleWhileLoading.clear();
         this.handoffs.set({});
+        this.noteArchive.set(null);
         this.document.addEventListener('visibilitychange', this.onVisibility);
         const view = this.document.defaultView;
         view?.addEventListener('online', this.onOnline);
@@ -321,6 +327,26 @@ export class WorkshopSessionStore {
             return outcome.value;
         } finally {
             this.end(artifactId);
+        }
+    }
+
+    /**
+     * Archives the notes the approved and handed-off materials were written from. The server skips a note that changed since
+     * the pin; the answer says what was archived and what was skipped and why. An unknown outcome is retried with the same
+     * command (the server replays its stored answer), so pressing again never archives twice.
+     */
+    async archiveNotes(): Promise<boolean> {
+        if (this.session() === null || this.archivableNotes() === 0 || this.isBusy('notes')) return false;
+        this.begin('notes');
+        try {
+            const outcome = await this.send('archive-notes', this.sessionId, id => this.api.archiveUsedNotes(this.deckId, this.sessionId, id));
+            if (!outcome.ok) { this.failed(outcome.problem); return false; }
+            this.noteArchive.set(outcome.value);
+            this.toast.echo(describeNoteArchive(outcome.value));
+            await this.refresh();
+            return true;
+        } finally {
+            this.end('notes');
         }
     }
 

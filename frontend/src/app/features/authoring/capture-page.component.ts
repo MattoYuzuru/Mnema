@@ -1,22 +1,25 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { forkJoin } from 'rxjs';
+import { catchError, forkJoin, of } from 'rxjs';
 
 import { NativeDocument } from '../../content/native-document';
 import { OwnDeck } from '../own-decks/own-deck.models';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
+import { MAX_NOTES, NOTES_QUERY_PARAM, noteExcerpt, serializeNoteIds } from '../generation/note-sources';
 import { AuthoringApiService } from './authoring-api.service';
+import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService } from './capabilities-api.service';
 import { CaptureNote, newCommandId } from './authoring.models';
 
 @Component({
     selector: 'app-capture-page',
     imports: [ReactiveFormsModule, RouterLink],
     templateUrl: './capture-page.component.html',
-    styleUrl: './authoring-page.css',
-    changeDetection: ChangeDetectionStrategy.OnPush
+    styleUrls: ['./authoring-page.css', './capture-page.component.css'],
+    changeDetection: ChangeDetectionStrategy.OnPush,
+    host: { '(keydown.escape)': 'clearSelectionFromKeyboard($event)' }
 })
 export class CapturePageComponent {
     readonly form = new FormGroup({ text: new FormControl('', { nonNullable: true, validators: [captureTextValidator] }) });
@@ -34,15 +37,39 @@ export class CapturePageComponent {
     readonly nextCursor = signal<string | null>(null);
     readonly loadingMore = signal(false);
     readonly moreError = signal(false);
+    private readonly selectAllBox = viewChild<ElementRef<HTMLInputElement>>('selectAll');
+    private readonly injector = inject(Injector);
     readonly loadSentinel = viewChild<ElementRef<HTMLElement>>('loadSentinel');
     readonly busy = signal(false);
     readonly error = signal<string | null>(null);
     readonly recovery = signal<'reload' | 'retry' | null>(null);
+    /** The server offers AI generation (`aiGeneration`); false while unknown and when the read fails (fail closed). */
+    readonly generationAvailable = signal(false);
+    /** Ids of the picked notes (AI-08, #290). Only notes still in the list count, see {@link selectedNotes}. */
+    readonly selected = signal<ReadonlySet<string>>(new Set());
+    /** Why a pick was refused or cut short: said in words, never silently. */
+    readonly selectionNote = signal<string | null>(null);
+    readonly maxNotes = MAX_NOTES;
+    /** The picked notes in list order. */
+    readonly selectedNotes = computed(() => this.notes().filter(note => this.selected().has(note.noteId)));
+    readonly selectedCount = computed(() => this.selectedNotes().length);
+    /** State of «Выбрать все загруженные» over the notes that are loaded now. */
+    readonly allState = computed<'checked' | 'mixed' | 'unchecked'>(() => {
+        const notes = this.notes();
+        const picked = this.selectedCount();
+        if (notes.length === 0 || picked === 0) return 'unchecked';
+        // With more than 20 loaded, 20 is as many as can be picked: that is «all», and the next press clears.
+        return picked === Math.min(notes.length, MAX_NOTES) ? 'checked' : 'mixed';
+    });
+    /** The limit sentence: standing while the maximum is picked, and the explanation of a pick that was cut short. */
+    readonly limitText = computed(() => this.selectionNote()
+        ?? (this.selectedCount() >= MAX_NOTES ? `Выбрано максимум: за один раз можно не больше ${MAX_NOTES} заметок.` : ''));
 
     private readonly route = inject(ActivatedRoute);
     private readonly router = inject(Router);
     private readonly decks = inject(OwnDecksApiService);
     private readonly api = inject(AuthoringApiService);
+    private readonly capabilities = inject(CapabilitiesApiService);
     private readonly destroyRef = inject(DestroyRef);
     private pendingCapture: { readonly commandId: string; readonly text: string } | null = null;
     private pendingConversion: {
@@ -50,6 +77,8 @@ export class CapturePageComponent {
     } | null = null;
 
     constructor() {
+        this.capabilities.read().pipe(catchError(() => of(CAPABILITIES_UNAVAILABLE)), takeUntilDestroyed(this.destroyRef))
+            .subscribe(result => this.generationAvailable.set(result.aiGeneration.available));
         this.load();
         effect(onCleanup => {
             const sentinel = this.loadSentinel()?.nativeElement;
@@ -68,6 +97,8 @@ export class CapturePageComponent {
         this.pendingCapture = null;
         this.pendingConversion = null;
         this.recovery.set(null);
+        this.selected.set(new Set());
+        this.selectionNote.set(null);
         this.loading.set(true);
         this.error.set(null);
         this.moreError.set(false);
@@ -172,6 +203,66 @@ export class CapturePageComponent {
                     this.busy.set(false);
                 }
             });
+    }
+
+    // --- Picking notes for «Создать материалы с ИИ» ---
+
+    protected excerptOf(note: CaptureNote): string { return noteExcerpt(note.text); }
+
+    isSelected(note: CaptureNote): boolean { return this.selected().has(note.noteId); }
+
+    /** Picks or drops one note. A pick beyond the limit is refused with the reason, and the box goes back to unchecked. */
+    toggleNote(note: CaptureNote, event: Event): void {
+        const box = event.target as HTMLInputElement;
+        if (!box.checked) {
+            this.selected.update(held => { const next = new Set(held); next.delete(note.noteId); return next; });
+            this.selectionNote.set(null);
+            return;
+        }
+        if (this.selectedCount() >= MAX_NOTES) {
+            box.checked = false;
+            this.selectionNote.set(`За один раз можно выбрать не больше ${MAX_NOTES} заметок. Создайте материалы по этим, а потом вернитесь за остальными.`);
+            return;
+        }
+        this.selected.update(held => new Set(held).add(note.noteId));
+        this.selectionNote.set(null);
+    }
+
+    /** The header checkbox: picks the loaded notes (the first {@link MAX_NOTES} of them), or clears them when all are picked. */
+    toggleLoaded(): void {
+        const notes = this.notes();
+        if (this.allState() === 'checked') { this.clearSelection(); return; }
+        const picked = notes.slice(0, MAX_NOTES);
+        this.selected.set(new Set(picked.map(note => note.noteId)));
+        this.selectionNote.set(notes.length > MAX_NOTES
+            ? `Выбрали первые ${MAX_NOTES} из ${notes.length} загруженных: за один раз можно не больше ${MAX_NOTES} заметок.` : null);
+    }
+
+    /** Clears the picks. The bar (and its focused button) goes away, so focus moves to «Выбрать все загруженные». */
+    clearSelection(): void {
+        const hadBar = this.selectedCount() > 0;
+        this.selected.set(new Set());
+        this.selectionNote.set(null);
+        if (hadBar) afterNextRender(() => this.selectAllBox()?.nativeElement.focus(), { injector: this.injector });
+    }
+
+    /** Escape clears the picks only from the list or the bar, never while typing in a field (the note field, a toggletip). */
+    clearSelectionFromKeyboard(event: Event): void {
+        const target = event.target as HTMLElement | null;
+        if (this.selectedCount() === 0 || event.defaultPrevented || target === null) return;
+        if (target.closest('textarea, input:not([type=checkbox]), select, [contenteditable]') !== null) return;
+        if (target.closest('.capture-list, .selection-bar, .selection-head') === null) return;
+        this.clearSelection();
+    }
+
+    /** Takes the picked notes to the composer. It reads them again there, so a note edited in the meantime is pinned as it is now. */
+    createMaterials(): void {
+        const deck = this.deck();
+        const notes = this.selectedNotes();
+        if (deck === null || !this.generationAvailable() || notes.length === 0 || notes.length > MAX_NOTES) return;
+        void this.router.navigate(['/decks', deck.deckId, 'materials', 'new'], {
+            queryParams: { [NOTES_QUERY_PARAM]: serializeNoteIds(notes.map(note => note.noteId)) }
+        });
     }
 
     retry(): void {

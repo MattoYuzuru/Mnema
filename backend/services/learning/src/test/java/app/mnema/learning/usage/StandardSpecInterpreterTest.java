@@ -252,4 +252,72 @@ class StandardSpecInterpreterTest {
                             failure -> assertThat(failure.extension().members()).containsEntry("kind", kind));
         }
     }
+
+    private static String noteWith(int n, String overrides) {
+        String note = note(n);
+        return note.substring(0, note.length() - 1) + ",\"overrides\":" + overrides + "}";
+    }
+
+    @Test
+    void perNoteOverridesPriceEachMaterialAtItsEffectiveSettings() {
+        String sources = noteWith(1, "{\"effort\":\"DETAILED\",\"media\":{\"audio\":{\"enabled\":true,\"lang\":\"ko\",\"voice\":null},"
+                + "\"imageSearch\":false}}") + "," + note(2) + "," + noteWith(3, "{\"effort\":\"SHORT\"}");
+        var result = interpret(materials(sources, "{\"effort\":\"MEDIUM\",\"media\":{\"imageSearch\":true}}"));
+        // note 1: detailed + audio, no image; note 2: session values (medium + image); note 3: short + image
+        assertThat(lines(result)).containsExactlyInAnyOrder("MATERIAL_DETAILEDx1", "MATERIAL_MEDIUMx1", "MATERIAL_SHORTx1",
+                "TTS_CLIP_30Sx1", "IMAGE_SEARCHx2");
+        // without overrides the lines are the old session-wide ones
+        assertThat(lines(interpret(materials(note(1) + "," + note(2), "{\"effort\":\"MEDIUM\"}")))).containsExactly("MATERIAL_MEDIUMx2");
+        // an override that equals the session value prices the same as none
+        assertThat(lines(interpret(materials(noteWith(1, "{\"effort\":\"MEDIUM\"}") + "," + note(2), "{\"effort\":\"MEDIUM\"}"))))
+                .containsExactly("MATERIAL_MEDIUMx2");
+    }
+
+    @Test
+    void overridesAreStrictSparseAndOnlyForNotesWrittenOnePerNote() {
+        String settings = "{\"effort\":\"MEDIUM\"}";
+        String merge = "{\"effort\":\"MEDIUM\",\"notesMode\":\"MERGE_INTO_ONE\"}";
+        for (String bad : List.of("{}", "[]", "\"DETAILED\"", "null", "{\"effort\":\"HUGE\"}", "{\"effort\":null}", "{\"factCheck\":true}",
+                "{\"effort\":\"SHORT\",\"extra\":1}", "{\"media\":{}}", "{\"media\":{\"video\":true}}", "{\"media\":{\"audio\":{}}}",
+                "{\"media\":{\"audio\":{\"enabled\":\"yes\"}}}", "{\"media\":{\"audio\":{\"enabled\":true,\"voice\":\"robot\"}}}",
+                "{\"media\":{\"audio\":{\"enabled\":true,\"lang\":\"not a language\"}}}", "{\"media\":{\"imageSearch\":1}}")) {
+            assertThatThrownBy(() -> interpret(materials(noteWith(1, bad), settings))).as(bad).isInstanceOf(InvalidRequestException.class);
+        }
+        // merged notes: one material, nothing to override
+        assertThatThrownBy(() -> interpret(materials(noteWith(1, "{\"effort\":\"SHORT\"}") + "," + note(2), merge)))
+                .isInstanceOf(InvalidRequestException.class);
+        // an override is only for a note, only for a SOURCE
+        String item = "{\"role\":\"SOURCE\",\"type\":\"ITEM\",\"memberKey\":\"44444444-4444-4444-8444-444444444444\","
+                + "\"itemRevisionId\":\"55555555-5555-4555-8555-555555555555\",\"overrides\":{\"effort\":\"SHORT\"}}";
+        assertThatThrownBy(() -> interpret(materials(item, settings))).isInstanceOf(InvalidRequestException.class);
+        String style = noteWith(1, "{\"effort\":\"SHORT\"}").replace("\"SOURCE\"", "\"STYLE_EXAMPLE\"");
+        assertThatThrownBy(() -> interpret(materials(style, settings))).isInstanceOf(InvalidRequestException.class);
+        // a spec without notes has nothing to override either
+        assertThat(lines(interpret(materials(note(1), settings)))).containsExactly("MATERIAL_MEDIUMx1");
+    }
+
+    @Test
+    void theContractsOverridesExamplePricesEachNoteAtItsOwnSettings() {
+        var result = interpreter.interpret(UUID.randomUUID(), UUID.randomUUID(), ContractExamples.generation("specMaterialsOverrides"), 308);
+        assertThat(lines(result)).containsExactlyInAnyOrder("MATERIAL_DETAILEDx1", "MATERIAL_SHORTx1", "TTS_CLIP_30Sx1", "IMAGE_SEARCHx1");
+    }
+
+    @Test
+    void aRepeatedNotePinOrMaterialPinIsInvalid() {
+        assertThatThrownBy(() -> interpret(materials(note(1) + "," + note(1), "{}"))).isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> interpret(materials(noteWith(1, "{\"effort\":\"SHORT\"}") + "," + note(1), "{}")))
+                .isInstanceOf(InvalidRequestException.class);
+        String item = "{\"role\":\"SOURCE\",\"type\":\"ITEM\",\"memberKey\":\"44444444-4444-4444-8444-444444444444\","
+                + "\"itemRevisionId\":\"55555555-5555-4555-8555-555555555555\"}";
+        assertThatThrownBy(() -> interpret(materials(item + "," + item, "{}"))).isInstanceOf(InvalidRequestException.class);
+        // different notes, or the same material at another revision, are fine
+        assertThat(lines(interpret(materials(note(1) + "," + note(2), "{}")))).containsExactly("MATERIAL_MEDIUMx2");
+    }
+
+    @Test
+    void theBreakdownKeepsTheMaterialLinesFirstThenMediaAndResearch() {
+        String sources = noteWith(1, "{\"effort\":\"DETAILED\",\"media\":{\"audio\":{\"enabled\":true}}}") + "," + note(2);
+        assertThat(lines(interpret(materials(sources, "{\"effort\":\"SHORT\",\"media\":{\"imageSearch\":true},\"factCheck\":true}"))))
+                .containsExactly("MATERIAL_DETAILEDx1", "MATERIAL_SHORTx1", "TTS_CLIP_30Sx1", "IMAGE_SEARCHx2", "FACTCHECK_LOW" + "x1");
+    }
 }

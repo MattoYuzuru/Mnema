@@ -113,6 +113,18 @@ export class AuthoringApiService {
         }));
     }
 
+    /** One note by id (`GET /api/capture-notes/{noteId}`): the composer re-reads the notes it pins so the pin is the current version. */
+    readCapture(noteId: string): Observable<CaptureNote> {
+        return defer(() => this.http.get<unknown>(`${this.baseUrl}/capture-notes/${encodeURIComponent(requireEntity(noteId))}`, {
+            observe: 'response'
+        })).pipe(map(response => {
+            requirePrivate(response);
+            const note = parseCapture(response.body);
+            requireEtag(response, note.rowVersion);
+            return note;
+        }));
+    }
+
     deleteCapture(note: CaptureNote): Observable<void> {
         return this.http.delete(`${this.baseUrl}/capture-notes/${encodeURIComponent(requireEntity(note.noteId))}`, {
             headers: ifMatch(note.rowVersion), observe: 'response', responseType: 'text'

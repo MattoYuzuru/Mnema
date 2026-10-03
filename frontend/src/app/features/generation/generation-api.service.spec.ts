@@ -7,7 +7,7 @@ import { AuthoringProtocolError } from '../authoring/authoring.models';
 import { buildMaterialsSpec } from './generation-composer.component';
 import { GenerationApiService } from './generation-api.service';
 import { DEFAULT_SETTINGS } from './generation-settings.component';
-import { clone, eventsContract, examples, httpContract, ids, pathOf, privateHeaders, usageContract } from './generation-test-data';
+import { clone, eventsContract, examples, httpContract, ids, noteArchiveAnswer, noteIds, pathOf, privateHeaders, usageContract } from './generation-test-data';
 
 describe('GenerationApiService', () => {
     let api: GenerationApiService;
@@ -253,5 +253,35 @@ describe('GenerationApiService', () => {
         await expect(firstValueFrom(api.getArtifact(ids.deckId, ids.sessionId, 'x'))).rejects.toBeInstanceOf(AuthoringProtocolError);
         await expect(firstValueFrom(api.cancelSession(ids.deckId, ids.sessionId, 'not-a-command'))).rejects.toBeInstanceOf(AuthoringProtocolError);
         http.expectNone(() => true);
+    });
+
+    describe('archiveUsedNotes (#290)', () => {
+        const path = `/api/decks/${ids.deckId}/generation-sessions/${ids.sessionId}/note-archival`;
+        const answer = noteArchiveAnswer([noteIds.first], [{ noteId: noteIds.second, reason: 'CHANGED' }]);
+
+        it('posts only the commandId, without If-Match, and parses the archived and skipped notes', async () => {
+            const result = firstValueFrom(api.archiveUsedNotes(ids.deckId, ids.sessionId, command));
+            const request = http.expectOne(path);
+            expect(request.request.method).toBe('POST');
+            expect(request.request.body).toEqual({ commandId: command });
+            expect(request.request.headers.has('If-Match')).toBe(false);
+            request.flush(answer, { headers: privateHeaders });
+            expect(await result).toEqual({ archived: [noteIds.first], skipped: [{ noteId: noteIds.second, reason: 'CHANGED' }], replayed: false });
+        });
+
+        it('reports a stored replay, and refuses a cacheable answer, another status or a malformed body', async () => {
+            const replay = firstValueFrom(api.archiveUsedNotes(ids.deckId, ids.sessionId, command));
+            http.expectOne(path).flush(answer, { headers: { ...privateHeaders, 'Idempotency-Replayed': 'true' } });
+            expect((await replay).replayed).toBe(true);
+            const attempt = async (flush: (request: ReturnType<HttpTestingController['expectOne']>) => void) => {
+                const result = firstValueFrom(api.archiveUsedNotes(ids.deckId, ids.sessionId, command));
+                flush(http.expectOne(path));
+                await expect(result).rejects.toBeInstanceOf(AuthoringProtocolError);
+            };
+            await attempt(request => request.flush(answer));
+            await attempt(request => request.flush(answer, { status: 201, statusText: 'Created', headers: privateHeaders }));
+            await attempt(request => request.flush({ archived: [] }, { headers: privateHeaders }));
+            await attempt(request => request.flush(answer, { headers: { ...privateHeaders, 'Idempotency-Replayed': 'false' } }));
+        });
     });
 });

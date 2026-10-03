@@ -4,7 +4,9 @@ import app.mnema.learning.generation.Rows.Source;
 import tools.jackson.databind.JsonNode;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -14,20 +16,24 @@ import java.util.UUID;
  *
  * @param effort the effort as sent; {@code AUTO} runs as {@code MEDIUM} until the planner exists (AI-14)
  * @param audioLanguage the clip language, null when audio is off or the spec names none
+ * @param noteOverrides the sparse per-note {@code overrides} by note id (only with one artifact per note, #290)
  */
 record MaterialsSpec(String prompt, String outputLanguage, List<Source> sources, String effort, boolean mergeNotes,
                      boolean audio, String audioLanguage, String audioVoice, boolean imageSearch, boolean factCheck,
-                     boolean similarToDeck) {
+                     boolean similarToDeck, Map<UUID, JsonNode> noteOverrides) {
     static final String DEFAULT_LANGUAGE = "ru";
 
     static MaterialsSpec read(JsonNode spec) {
         List<Source> sources = new ArrayList<>();
+        Map<UUID, JsonNode> overrides = new LinkedHashMap<>();
         int ordinal = 0;
         for (JsonNode source : spec.path("sources")) {
             String role = source.path("role").stringValue("SOURCE");
             if (source.path("type").stringValue("").equals("NOTE")) {
-                sources.add(new Source(ordinal++, role, "NOTE", UUID.fromString(source.path("noteId").stringValue("")),
+                UUID noteId = UUID.fromString(source.path("noteId").stringValue(""));
+                sources.add(new Source(ordinal++, role, "NOTE", noteId,
                         Long.parseLong(source.path("noteRowVersion").stringValue("0")), null, null));
+                if (source.path("overrides").isObject()) overrides.putIfAbsent(noteId, source.get("overrides"));
             } else {
                 sources.add(new Source(ordinal++, role, "ITEM", null, null,
                         UUID.fromString(source.path("memberKey").stringValue("")),
@@ -41,12 +47,62 @@ record MaterialsSpec(String prompt, String outputLanguage, List<Source> sources,
                 settings.path("notesMode").stringValue("ONE_PER_NOTE").equals("MERGE_INTO_ONE"), audio.path("enabled").asBoolean(false),
                 audio.path("lang").stringValue(null), audio.path("voice").stringValue(null),
                 settings.path("media").path("imageSearch").asBoolean(false), settings.path("factCheck").asBoolean(false),
-                settings.path("similarToDeck").asBoolean(false));
+                settings.path("similarToDeck").asBoolean(false), Map.copyOf(overrides));
     }
 
-    /** The effort a material is written and charged at: {@code AUTO} is {@code MEDIUM} without a planner. */
-    String workingEffort() {
-        return effort.equals("AUTO") ? "MEDIUM" : effort;
+    /**
+     * The settings that apply to one material: the session's, with the sparse overrides of the note it is written from
+     * (members that are absent keep the session value; an {@code audio} override replaces the whole clip setting).
+     */
+    record Effective(String effort, boolean audio, String audioLanguage, String audioVoice, boolean imageSearch,
+                     boolean factCheck) {
+        /** The effort a material is written and charged at: {@code AUTO} is {@code MEDIUM} without a planner. */
+        String workingEffort() {
+            return effort.equals("AUTO") ? "MEDIUM" : effort;
+        }
+
+        /** Media directives the compiler allows for this material: exactly the declared kinds (the estimate prices only those). */
+        int maxMedia() {
+            return (audio ? 1 : 0) + (imageSearch ? 1 : 0);
+        }
+
+        /** Whether the material needs web research: a fact check on an effort above short. */
+        boolean research() {
+            return factCheck && !workingEffort().equals("SHORT");
+        }
+    }
+
+    /** The session's own settings, for a material without overrides (merged notes, prompt only, items only). */
+    Effective defaults() {
+        return new Effective(effort, audio, audioLanguage, audioVoice, imageSearch, factCheck);
+    }
+
+    /** The settings of the material whose pins are {@code sourceRefs}: the overrides of its NOTE source, when it has any. */
+    Effective forArtifact(JsonNode sourceRefs) {
+        Effective base = defaults();
+        if (mergeNotes || noteOverrides.isEmpty()) return base;
+        for (JsonNode ref : sourceRefs) {
+            if (!ref.path("type").stringValue("").equals("NOTE")) continue;
+            JsonNode overrides = noteOverrides.get(UUID.fromString(ref.path("noteId").stringValue("")));
+            return overrides == null ? base : apply(base, overrides);
+        }
+        return base;
+    }
+
+    private static Effective apply(Effective base, JsonNode overrides) {
+        String effort = overrides.path("effort").stringValue(base.effort());
+        JsonNode media = overrides.path("media");
+        boolean audio = base.audio();
+        String language = base.audioLanguage();
+        String voice = base.audioVoice();
+        if (media.path("audio").isObject()) {
+            JsonNode clip = media.get("audio");
+            audio = clip.path("enabled").asBoolean(false);
+            language = clip.path("lang").stringValue(null);
+            voice = clip.path("voice").stringValue(null);
+        }
+        boolean image = media.has("imageSearch") ? media.path("imageSearch").asBoolean(false) : base.imageSearch();
+        return new Effective(effort, audio, language, voice, image, base.factCheck());
     }
 
     List<Source> notes() {
@@ -66,10 +122,5 @@ record MaterialsSpec(String prompt, String outputLanguage, List<Source> sources,
     int artifactCount() {
         int notes = notes().size();
         return mergeNotes || notes == 0 ? 1 : notes;
-    }
-
-    /** Media directives the compiler allows per material: exactly the declared kinds (the estimate prices only those). */
-    int maxMedia() {
-        return (audio ? 1 : 0) + (imageSearch ? 1 : 0);
     }
 }

@@ -1,0 +1,17 @@
+.selection-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .25rem 1.5rem; margin-block-start: 1rem; }
+.select-all { display: inline-flex; align-items: center; gap: .75rem; min-block-size: var(--mn-touch-min, 2.75rem); color: var(--mn-ink); font-weight: 600; cursor: pointer; }
+.select-all input, .note-check input { inline-size: 1.25rem; block-size: 1.25rem; margin: 0; accent-color: var(--mn-ink); }
+.selection-count { margin: 0; color: var(--mn-body); }
+.selection-limit { margin: 0; color: var(--mn-body); font-size: .95rem; }
+.selection-limit:empty { display: none; }
+.capture-card { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 .5rem; align-items: start; }
+.capture-card:not(:has(.note-check)) { grid-template-columns: minmax(0, 1fr); }
+.capture-card.is-selected { background: var(--mn-soft); }
+.note-check { display: inline-flex; align-items: center; justify-content: center; min-inline-size: var(--mn-touch-min, 2.75rem); min-block-size: var(--mn-touch-min, 2.75rem); cursor: pointer; }
+.note-body { min-inline-size: 0; }
+.note-body > p:first-child { margin-block-start: .5rem; }
+.selection-bar { position: sticky; inset-block-end: 0; z-index: 3; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1.5rem; margin-block-start: 1rem; border: 1px solid var(--mn-ink); border-radius: var(--mn-radius, 2px); padding: .65rem 1rem calc(.65rem + env(safe-area-inset-bottom, 0px)); background: var(--mn-sheet); box-shadow: 0 -.5rem 1.5rem -1rem rgb(40 19 120 / 35%); }
+.selection-bar-count { margin: 0; color: var(--mn-ink); }
+.button.quiet { border-color: transparent; text-decoration: underline; text-underline-offset: .22em; }
+@media (max-width: 42rem) { .selection-bar .actions { inline-size: 100%; } .selection-bar .actions > * { flex: 1 1 100%; } }
+@media (forced-colors: active) { .selection-bar { border-color: CanvasText; box-shadow: none; } .capture-card.is-selected { outline: 1px solid Highlight; } }

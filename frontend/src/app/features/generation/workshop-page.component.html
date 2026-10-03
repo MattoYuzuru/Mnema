@@ -67,6 +67,14 @@
               <button class="button" type="button" #approveAllTrigger [attr.aria-disabled]="sessionBusy() ? 'true' : null" (click)="sessionBusy() || askApproveAll()">Одобрить все готовые ({{ approvableCount() }})</button>
             }
           }
+          @if (archivableNotes() > 0) {
+            <div class="note-archive">
+              <button class="button" type="button" [attr.aria-disabled]="notesBusy() ? 'true' : null" aria-describedby="note-archive-hint"
+                (click)="notesBusy() || archiveNotes()">Архивировать использованные заметки ({{ archivableNotes() }})</button>
+              <p class="muted" id="note-archive-hint">Заметки уйдут из «На потом»: материалы по ним уже в колоде. Изменённые заметки останутся.</p>
+            </div>
+          }
+          @if (archiveSummary(); as summary) { <p class="notice note-archive-result" tabindex="-1" #archiveResult>{{ summary }}</p> }
           <a class="text-link" [routerLink]="['/decks', deckId()]">Выйти в колоду</a>
         </div>
       }
