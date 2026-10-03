@@ -75,12 +75,12 @@ class StandardSpecInterpreterTest {
         assertThat(lines(interpret(materials(two, "{\"effort\":\"DETAILED\"}")))).containsExactly("MATERIAL_DETAILEDx2");
         assertThat(lines(interpret(materials(two, "{\"effort\":\"SHORT\",\"notesMode\":\"MERGE_INTO_ONE\"}"))))
                 .containsExactly("MATERIAL_SHORTx1");
-        assertThat(lines(interpret(materials(two, "{\"effort\":\"AUTO\"}")))).containsExactly("MATERIAL_DETAILEDx2");
-        assertThat(lines(interpret("{\"kind\":\"MATERIALS\",\"prompt\":\"Explain\"}"))).containsExactly("MATERIAL_DETAILEDx1");
+        assertThat(lines(interpret(materials(two, "{\"effort\":\"AUTO\"}")))).containsExactly("MATERIAL_MEDIUMx2");
+        assertThat(lines(interpret("{\"kind\":\"MATERIALS\",\"prompt\":\"Explain\"}"))).containsExactly("MATERIAL_MEDIUMx1");
         // Item sources and style examples make no artifact of their own.
         String item = "{\"role\":\"SOURCE\",\"type\":\"ITEM\",\"memberKey\":\"44444444-4444-4444-8444-444444444444\","
                 + "\"itemRevisionId\":\"55555555-5555-4555-8555-555555555555\"}";
-        assertThat(lines(interpret(materials(item, "{}")))).containsExactly("MATERIAL_DETAILEDx1");
+        assertThat(lines(interpret(materials(item, "{}")))).containsExactly("MATERIAL_MEDIUMx1");
     }
 
     @Test
@@ -93,15 +93,26 @@ class StandardSpecInterpreterTest {
         assertThat(lines(interpret(materials(two, settings.replace("MEDIUM", "SHORT"))))).containsExactly("MATERIAL_SHORTx2",
                 "TTS_CLIP_30Sx2", "IMAGE_SEARCHx2");
         assertThat(lines(interpret(materials(note(1), "{\"media\":{\"audio\":{\"enabled\":false},\"imageSearch\":false}}"))))
-                .containsExactly("MATERIAL_DETAILEDx1");
+                .containsExactly("MATERIAL_MEDIUMx1");
     }
 
     @Test
-    void budgetPercentIsCarriedAndPlanFirstAndSimilarToDeckCostNothing() {
-        var result = interpret(materials(note(1), "{\"budgetPercent\":40,\"planFirst\":true,\"similarToDeck\":true}"));
+    void budgetPercentIsCarriedAndPlanFirstAndSimilarToDeckCostNothingOnceThePlannerExists() {
+        var withPlanner = new StandardSpecInterpreter(new GenerationLimits(20, 20, 20, 10, 60), null, true);
+        var result = withPlanner.interpret(UUID.randomUUID(), UUID.randomUUID(),
+                parse(materials(note(1), "{\"budgetPercent\":40,\"planFirst\":true,\"similarToDeck\":true}")), 100);
         assertThat(result.budgetPercent()).isEqualTo(40);
-        assertThat(lines(result)).containsExactly("MATERIAL_DETAILEDx1");
+        assertThat(lines(result)).containsExactly("MATERIAL_MEDIUMx1");
         assertThat(interpret(materials(note(1), "{\"budgetPercent\":null}")).budgetPercent()).isNull();
+    }
+
+    @Test
+    void planFirstIsNotSupportedUntilThePlannerIsEnabled() {
+        assertThatThrownBy(() -> interpret(materials(note(1), "{\"planFirst\":true}")))
+                .isInstanceOfSatisfying(SpecNotSupportedException.class, failure ->
+                        assertThat(failure.extension().members()).containsEntry("kind", "MATERIALS"));
+        // planFirst false is the plain run
+        assertThat(lines(interpret(materials(note(1), "{\"planFirst\":false}")))).containsExactly("MATERIAL_MEDIUMx1");
     }
 
     @Test
@@ -159,7 +170,7 @@ class StandardSpecInterpreterTest {
         // Merged into one, the same sources fit.
         assertThat(lines(tight.interpret(UUID.randomUUID(), UUID.randomUUID(),
                 parse(materials(note(1) + "," + note(2) + "," + note(3), "{\"notesMode\":\"MERGE_INTO_ONE\"}")), 10)))
-                .containsExactly("MATERIAL_DETAILEDx1");
+                .containsExactly("MATERIAL_MEDIUMx1");
     }
 
     private void assertLimit(Runnable action, String limit, Map<String, Object> limits) {

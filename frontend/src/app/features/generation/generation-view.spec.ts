@@ -4,7 +4,7 @@ import { isSendKey } from './generation-composer.component';
 import { readProblem } from './generation-problem';
 import {
     EFFORT_OPTIONS, NBSP, NOTES_MODE_OPTIONS, artifactStatus, describeEstimate, describeNoteArchive, describeSessionProgress, describeUsageLimit, failureNote, failureReason,
-    formatDay, positionLabel, problemMessage, promptExcerpt, slotCaption, summarize
+    formatDay, formatWorkshopStart, positionLabel, problemMessage, promptExcerpt, slotCaption, summarize
 } from './generation-view';
 import {
     ARTIFACT_ERROR_CODES, ARTIFACT_STATES, ArtifactSummary, BlockingBucket, GenerationEstimate, SLOT_STATES, parseArtifactSummary, parseSessionSummary
@@ -117,6 +117,9 @@ describe('Generation texts and helpers', () => {
             expect(formatDay(null)).toBeNull();
             expect(formatDay('soon')).toBeNull();
             expect(formatDay('2026-10-04T12:00:00Z')).toBe('4 октября');
+            // Russian month names, never the English ones of Angular's default `date` locale.
+            expect(formatWorkshopStart('2026-10-03T08:53:00Z')).toMatch(/^3 октября/u);
+            expect(formatWorkshopStart('soon')).toBe('');
         });
 
         it('describes every media slot state in words', () => {

@@ -69,7 +69,7 @@
         <p>{{ message }}</p>
         @if (activeWorkshops().length > 0) {
           <ul class="workshop-links">@for (workshop of activeWorkshops(); track workshop.sessionId) {
-            <li><a class="text-link" [routerLink]="['/decks', workshop.deckId, 'workshop', workshop.sessionId]">Открыть мастерскую от {{ workshop.createdAt | date:'d MMMM, HH:mm' }}</a></li>
+            <li><a class="text-link" [routerLink]="['/decks', workshop.deckId, 'workshop', workshop.sessionId]">Открыть мастерскую от {{ startedAt(workshop) }}</a></li>
           }</ul>
         }
         <p><a class="text-link" [routerLink]="['/decks', deckId(), 'materials', 'new']" [queryParams]="{ write: 1 }">Написать материал самому</a></p>

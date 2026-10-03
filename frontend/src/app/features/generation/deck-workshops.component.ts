@@ -1,10 +1,9 @@
-import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, DestroyRef, effect, inject, input, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 
 import { GenerationApiService } from './generation-api.service';
-import { describeSessionProgress } from './generation-view';
+import { describeSessionProgress, formatWorkshopStart } from './generation-view';
 import { SessionSummary } from './generation.models';
 
 /**
@@ -13,7 +12,7 @@ import { SessionSummary } from './generation.models';
  */
 @Component({
     selector: 'app-deck-workshops',
-    imports: [DatePipe, RouterLink],
+    imports: [RouterLink],
     template: `
       @if (sessions().length > 0) {
         <section class="workshops" aria-labelledby="deck-workshops-title">
@@ -21,7 +20,7 @@ import { SessionSummary } from './generation.models';
           <ul>
             @for (session of sessions(); track session.sessionId) {
               <li>
-                <a [routerLink]="['/decks', deckId(), 'workshop', session.sessionId]">Мастерская от {{ session.createdAt | date:'d MMMM, HH:mm' }}</a>
+                <a [routerLink]="['/decks', deckId(), 'workshop', session.sessionId]">Мастерская от {{ startedAt(session) }}</a>
                 <span class="progress">{{ progress(session) }}</span>
               </li>
             }
@@ -67,6 +66,10 @@ export class DeckWorkshopsComponent {
             });
             onCleanup(() => request.unsubscribe());
         });
+    }
+
+    protected startedAt(session: SessionSummary): string {
+        return formatWorkshopStart(session.createdAt);
     }
 
     protected progress(session: SessionSummary): string {

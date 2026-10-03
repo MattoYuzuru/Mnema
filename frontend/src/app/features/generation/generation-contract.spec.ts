@@ -26,6 +26,7 @@ describe('Generation wire contract (contracts/generation)', () => {
                 expect(session.spec.kind).toBe('MATERIALS');
                 expect(session.spec.prompt).toBe(examples[name].spec.prompt);
             }
+            expect(parseSessionDetail(examples['sessionDetail']).notes).toEqual({ used: 0, archivable: 0 });
             const summary = parseSessionSummary(examples['sessionSummary']);
             expect(summary).toMatchObject({ state: 'RUNNING', approvableCount: 6, usage: { reservedCredits: 21, spentCredits: 11 } });
             expect(summary.artifactCounts.PROPOSED).toBe(7);
@@ -209,18 +210,20 @@ describe('Generation wire contract (contracts/generation)', () => {
         it('stops polling in exactly the terminal session states the contract names', () => {
             const clientCadence = eventsContract['polling'].clientCadence as string;
             for (const state of ['CLOSED', 'CANCELLED', 'EXPIRED']) expect(clientCadence).toContain(state);
-            expect(statesContract['session'].states['CLOSED'].terminal).toBe(true);
+            // CLOSED is no longer terminal (#288): an undo of a rejection reopens it, so the store resumes polling after the undo.
+            expect(statesContract['session'].states['CLOSED'].terminal).toBe(false);
+            expect(statesContract['session'].allowedOperations['CLOSED']).toContain('undoRejectArtifact');
         });
 
         it('lists no operation the client implements under another method or path than http.json', () => {
             // `archiveUsedNotes` (#290) joins http.json with the backend; until then it cannot be looked up there.
             const implemented = ['getCapabilities', 'estimateGeneration', 'createSession', 'listSessions', 'listActiveSessions', 'getSession',
                 'cancelSession', 'deleteSession', 'listEvents', 'getArtifact', 'approveArtifact', 'approveArtifacts', 'rejectArtifact',
-                'undoRejectArtifact', 'handoffArtifact', 'retryArtifact'];
+                'undoRejectArtifact', 'handoffArtifact', 'retryArtifact', 'archiveUsedNotes'];
             const ids = (httpContract['endpoints'] as { operationId: string }[]).map(endpoint => endpoint.operationId);
             for (const operation of implemented) expect(ids, operation).toContain(operation);
             // Edits and reverts belong to AI-11 (#293): not part of this client yet.
-            expect(ids.filter(operation => ![...implemented, 'archiveUsedNotes'].includes(operation)).sort()).toEqual(['editArtifact', 'revertArtifact']);
+            expect(ids.filter(operation => !implemented.includes(operation)).sort()).toEqual(['editArtifact', 'revertArtifact']);
         });
 
         it('knows every problem code the contract lists for the operations it calls', () => {
@@ -235,13 +238,14 @@ describe('Generation wire contract (contracts/generation)', () => {
             ({ role, type: 'NOTE', noteId: id, noteRowVersion: '3', ...(overrides === undefined ? {} : { overrides }) });
         const sourcesOf = (spec: ReturnType<typeof serializeMaterialsSpec>) => spec['sources'] as Record<string, unknown>[];
 
-        it('parses a session with and without the optional notes counters', () => {
-            expect(parseSessionDetail(examples['sessionDetail']).notes).toBeNull();
+        it('parses the required notes counters of a session', () => {
             expect(parseSessionDetail(sessionWithNotes({ used: 4, archivable: 3 })).notes).toEqual({ used: 4, archivable: 3 });
             expect(parseSessionDetail(sessionWithNotes({ used: 0, archivable: 0 })).notes).toEqual({ used: 0, archivable: 0 });
             expect(() => parseSessionDetail(sessionWithNotes({ used: 1, archivable: 2 }))).toThrow(AuthoringProtocolError);
             expect(() => parseSessionDetail(sessionWithNotes({ used: 1, archivable: 1, extra: 1 } as never))).toThrow(AuthoringProtocolError);
             expect(() => parseSessionDetail(sessionWithNotes(null, null, { notes: null }))).toThrow(AuthoringProtocolError);
+            const { notes: _omitted, ...withoutNotes } = examples['sessionDetail'];
+            expect(() => parseSessionDetail(withoutNotes)).toThrow(AuthoringProtocolError);
         });
 
         it('reads the status of the pinned note of an artifact, and tolerates its absence and a status it does not know', () => {

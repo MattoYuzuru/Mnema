@@ -99,8 +99,8 @@ export interface SessionNotes { readonly used: number; readonly archivable: numb
 export interface SessionDetail extends SessionSummary {
     readonly spec: SpecEcho;
     readonly artifacts: readonly ArtifactSummary[];
-    /** Absent while the server does not report it (a backend older than #290): the archive action is then not offered. */
-    readonly notes: SessionNotes | null;
+    /** Detail only (#288): what the «Архивировать использованные заметки (k)» offer is based on. */
+    readonly notes: SessionNotes;
 }
 
 export interface SessionPage { readonly items: readonly SessionSummary[]; readonly nextCursor: string | null; }
@@ -283,7 +283,8 @@ const SESSION_OPERATIONS: Readonly<Record<SessionState, readonly UiOperation[]>>
         'cancelSession', 'deleteSession'],
     REVIEW: ['approveArtifact', 'approveArtifacts', 'rejectArtifact', 'undoRejectArtifact', 'handoffArtifact', 'retryArtifact',
         'cancelSession', 'deleteSession'],
-    CLOSED: ['deleteSession'],
+    // A rejection can still be undone in a CLOSED session (#288): it reopens it (REVIEW, or CANCELLED after a cancellation).
+    CLOSED: ['deleteSession', 'undoRejectArtifact'],
     CANCELLED: ['approveArtifact', 'approveArtifacts', 'rejectArtifact', 'undoRejectArtifact', 'handoffArtifact', 'deleteSession'],
     EXPIRED: ['deleteSession']
 };
@@ -401,18 +402,15 @@ function parseSpecEcho(value: unknown): SpecEcho {
 
 function parseSessionNotes(value: unknown): SessionNotes {
     const object = requireObject(value, ['used', 'archivable']);
-    const notes = { used: requireCount(object['used'], 20), archivable: requireCount(object['archivable'], 20) };
+    const notes = { used: requireCount(object['used'], 100_000), archivable: requireCount(object['archivable'], 100_000) };
     if (notes.archivable > notes.used) throw new AuthoringProtocolError('Invalid note counts.');
     return notes;
 }
 
-/** `notes` is optional on the wire (#290): a response with and without it parses; without it the archive action is not offered. */
 export function parseSessionDetail(value: unknown): SessionDetail {
-    const withNotes = value !== null && typeof value === 'object' && !Array.isArray(value) && 'notes' in value;
-    const object = requireObject(value, [...SUMMARY_KEYS, 'spec', 'artifacts', ...(withNotes ? ['notes'] : [])]);
+    const object = requireObject(value, [...SUMMARY_KEYS, 'spec', 'artifacts', 'notes']);
     const artifacts = list(object['artifacts'], 200).map(parseArtifactSummary);
-    return { ...parseSummaryFields(object), spec: parseSpecEcho(object['spec']), artifacts,
-        notes: withNotes ? parseSessionNotes(object['notes']) : null };
+    return { ...parseSummaryFields(object), spec: parseSpecEcho(object['spec']), artifacts, notes: parseSessionNotes(object['notes']) };
 }
 
 function parseMediaSlotCounts(value: unknown): MediaSlotCounts {

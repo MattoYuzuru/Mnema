@@ -493,6 +493,21 @@ describe('WorkshopSessionStore', () => {
             expect(await store.undoReject(ids.first)).toBe(false);
         });
 
+        it('keeps «Вернуть» after the last rejection closed the session, and resumes polling when the undo reopens it', async () => {
+            setup(sessionWith([artifactWith(ids.first, 0, 'REJECTED', { rowVersion: '5' })], { state: 'CLOSED', approvableCount: 0, rowVersion: '8' }));
+            await tick(0);
+            expect(api.listEvents).not.toHaveBeenCalled();
+            const body = httpContract['endpoints'].find((e: any) => e.operationId === 'rejectArtifact').success.body;
+            api.undoRejectArtifact.mockReturnValue(of(parseArtifactSummary({ ...clone(body), state: 'PROPOSED', rowVersion: '6' })));
+            api.getSession.mockReturnValue(of(parseSessionDetail(sessionWith([artifactWith(ids.first, 0, 'PROPOSED', { rowVersion: '6' })],
+                { state: 'REVIEW', rowVersion: '9', approvableCount: 1 }))));
+            expect(await store.undoReject(ids.first)).toBe(true);
+            await tick(0);
+            expect(store.session()?.state).toBe('REVIEW');
+            await tick(POLL_IDLE_MS);
+            expect(api.listEvents).toHaveBeenCalled();
+        });
+
         it('retries a failed material and puts the loop back to work', async () => {
             setup(sessionWith([artifactWith(ids.first, 0, 'FAILED', { errorCode: 'PROVIDER_UNAVAILABLE', currentRevisionId: null, rowVersion: '2' })], { state: 'REVIEW' }));
             const body = httpContract['endpoints'].find((e: any) => e.operationId === 'retryArtifact').success.body;
@@ -584,10 +599,10 @@ describe('WorkshopSessionStore', () => {
         const answer = (archived: string[], skipped: { noteId: string; reason: string }[] = [], replayed = false) =>
             parseNoteArchive(noteArchiveAnswer(archived, skipped), replayed);
 
-        it('knows how many notes are archivable, and none while the server does not report it', () => {
+        it('knows how many notes are archivable', () => {
             setup(withNotes(2));
             expect(store.archivableNotes()).toBe(2);
-            setup(sessionWith(published(), { state: 'CLOSED' }));
+            setup(withNotes(0));
             expect(store.archivableNotes()).toBe(0);
         });
 

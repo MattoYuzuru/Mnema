@@ -1,0 +1,587 @@
+package app.mnema.learning.generation;
+
+import app.mnema.learning.catalog.content.NativeDocument;
+import app.mnema.learning.catalog.content.NativeDocumentReader;
+import app.mnema.learning.generation.GenerationRepository.DeckHead;
+import app.mnema.learning.generation.GenerationStateConflictException.Reason;
+import app.mnema.learning.generation.Rows.Artifact;
+import app.mnema.learning.generation.Rows.Revision;
+import app.mnema.learning.generation.Rows.Session;
+import app.mnema.learning.generation.Rows.Slot;
+import app.mnema.learning.generation.SourceDrift.Drift;
+import app.mnema.learning.platform.api.InvalidRequestException;
+import app.mnema.learning.platform.api.ProblemExtension;
+import app.mnema.learning.platform.api.ResourceLimitExceededException;
+import app.mnema.learning.platform.api.ResourceNotFoundException;
+import app.mnema.learning.platform.concurrency.VersionConflictException;
+import app.mnema.learning.platform.idempotency.CommandIdentity;
+import app.mnema.learning.platform.idempotency.CommandReceiptService;
+import app.mnema.learning.usage.AdmissionPricing;
+import app.mnema.learning.usage.Reservation;
+import app.mnema.learning.usage.ReservationScope;
+import app.mnema.learning.usage.UsageLedger;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ArrayNode;
+import tools.jackson.databind.node.ObjectNode;
+
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+/**
+ * The commands that take a proposal out of review ({@code contracts/generation/http.json}): approve (one and bulk), reject
+ * and undo, hand-off, retry, delete, and the archival of the notes a session used. The order of evaluation is the
+ * contract's: ownership (404), receipt replay, request validation (400), preconditions (428, 412), state (409) and usage
+ * (409, last, inside the transaction that changes state, so a refusal leaves nothing).
+ *
+ * <p>Approval is one transaction with the catalog command: the catalog's publication calls {@link #apply} as its
+ * completion, so the artifact's {@code PUBLISHED}, the {@code published_ref}, the provenance and the event commit with the
+ * material or not at all. What approval checks <em>before</em> that transaction (preconditions, state, source drift) is
+ * repeated inside it for the parts a concurrent command could change.
+ */
+@Service
+class ReviewService {
+    private static final String SCOPE = "generation.sessions";
+    /** Sessions in which a proposal can still be approved, rejected, handed off or taken back (states.json). */
+    private static final Set<String> REVIEWABLE = Set.of("RUNNING", "REVIEW", "CANCELLED");
+    /** Sessions that can still generate: only there is a retry meaningful. */
+    private static final Set<String> RETRYABLE = Set.of("RUNNING", "REVIEW");
+    /** The most artifacts one approval command may name (contract decision 5). */
+    static final int MAX_BULK = 20;
+
+    /** The answer of a command: the body, whether a stored receipt gave it, and the {@code ETag} to send (null on a replay). */
+    record Result(JsonNode body, boolean replayed, String etag) { }
+
+    /** One artifact of an approval and the versions the client expects. */
+    private record Plan(UUID artifactId, long artifactVersion, UUID revisionId) { }
+
+    private final GenerationRepository repository;
+    private final StepRepository steps;
+    private final SessionLifecycle lifecycle;
+    private final SessionViews views;
+    private final CommandReceiptService receipts;
+    private final GeneratedItemPublisher publisher;
+    private final GeneratedDraftOpener drafts;
+    private final SourceDrift drift;
+    private final NoteArchival notes;
+    private final UsageLedger ledger;
+    private final AdmissionPricing pricing;
+    private final GenerationGate gate;
+    private final ObjectProvider<StepDispatcher> dispatcher;
+    private final TransactionTemplate transaction;
+    private final GenerationSettings settings;
+
+    ReviewService(GenerationRepository repository, StepRepository steps, SessionLifecycle lifecycle, SessionViews views,
+                  CommandReceiptService receipts, GeneratedItemPublisher publisher, GeneratedDraftOpener drafts,
+                  SourceDrift drift, NoteArchival notes, UsageLedger ledger, AdmissionPricing pricing, GenerationGate gate,
+                  ObjectProvider<StepDispatcher> dispatcher, PlatformTransactionManager transactions, GenerationSettings settings) {
+        this.settings = settings;
+        this.repository = repository;
+        this.steps = steps;
+        this.lifecycle = lifecycle;
+        this.views = views;
+        this.receipts = receipts;
+        this.publisher = publisher;
+        this.drafts = drafts;
+        this.drift = drift;
+        this.notes = notes;
+        this.ledger = ledger;
+        this.pricing = pricing;
+        this.gate = gate;
+        this.dispatcher = dispatcher;
+        this.transaction = new TransactionTemplate(transactions);
+    }
+
+    // ------------------------------------------------------------------- approve
+
+    /** {@code approveArtifact}: one proposal into the deck, in one transaction with the catalog command. */
+    Result approve(UUID owner, UUID deckId, UUID sessionId, UUID artifactId, List<String> ifMatch, byte[] raw) {
+        Session session = session(owner, deckId, sessionId);
+        repository.artifact(sessionId, artifactId).orElseThrow(ResourceNotFoundException::new);
+        JsonNode body = Commands.read(raw);
+        Commands.fields(body, Set.of("commandId", "expectedArtifactVersion", "expectedRevisionId", "expectedDeckRevisionId"), Set.of());
+        UUID commandId = Commands.commandId(body);
+        ObjectNode envelope = envelope(deckId, sessionId, body).put("artifactId", artifactId.toString())
+                .put("ifMatch", Commands.raw(ifMatch));
+        CommandIdentity identity = new CommandIdentity(commandId, owner, SCOPE, "artifact.approve");
+        Optional<JsonNode> replay = receipts.replay(identity, envelope);
+        if (replay.isPresent()) return new Result(replay.get(), true, null);
+
+        Plan plan = new Plan(artifactId, Commands.version(body, "expectedArtifactVersion"), Commands.entity(body, "expectedRevisionId"));
+        UUID deckRevision = Commands.entity(body, "expectedDeckRevisionId");
+        long deckVersion = Commands.ifMatch(ifMatch);
+        return publish(session, identity, envelope, commandId, deckVersion, deckRevision, List.of(plan), false,
+                Commands.derive(commandId, artifactId.toString()));
+    }
+
+    /** {@code approveArtifacts}: up to 20 proposals as one atomic bulk publication. */
+    Result approveMany(UUID owner, UUID deckId, UUID sessionId, List<String> ifMatch, byte[] raw) {
+        Session session = session(owner, deckId, sessionId);
+        JsonNode body = Commands.read(raw);
+        Commands.fields(body, Set.of("commandId", "expectedDeckRevisionId", "artifacts"), Set.of());
+        UUID commandId = Commands.commandId(body);
+        ObjectNode envelope = envelope(deckId, sessionId, body).put("ifMatch", Commands.raw(ifMatch));
+        CommandIdentity identity = new CommandIdentity(commandId, owner, SCOPE, "artifact.approve-many");
+        Optional<JsonNode> replay = receipts.replay(identity, envelope);
+        if (replay.isPresent()) return new Result(replay.get(), true, null);
+
+        JsonNode listed = body.get("artifacts");
+        if (listed == null || !listed.isArray() || listed.isEmpty() || listed.size() > MAX_BULK) throw new InvalidRequestException();
+        List<Plan> plans = new ArrayList<>();
+        Set<UUID> seen = new HashSet<>();
+        for (JsonNode entry : listed) {
+            if (!entry.isObject()) throw new InvalidRequestException();
+            Commands.fields(entry, Set.of("artifactId", "expectedArtifactVersion", "expectedRevisionId"), Set.of());
+            UUID artifactId = Commands.entity(entry, "artifactId");
+            if (!seen.add(artifactId)) throw new InvalidRequestException();
+            plans.add(new Plan(artifactId, Commands.version(entry, "expectedArtifactVersion"), Commands.entity(entry, "expectedRevisionId")));
+        }
+        // an artifact that is not this session's is the opaque 404, before the remaining body fields and the preconditions
+        for (Plan plan : plans) repository.artifact(sessionId, plan.artifactId()).orElseThrow(ResourceNotFoundException::new);
+        UUID deckRevision = Commands.entity(body, "expectedDeckRevisionId");
+        long deckVersion = Commands.ifMatch(ifMatch);
+        String name = "bulk:" + plans.stream().map(plan -> plan.artifactId().toString()).sorted().collect(Collectors.joining(","));
+        return publish(session, identity, envelope, commandId, deckVersion, deckRevision, plans, true, Commands.derive(commandId, name));
+    }
+
+    private Result publish(Session session, CommandIdentity identity, ObjectNode envelope, UUID commandId, long deckVersion,
+                           UUID deckRevision, List<Plan> plans, boolean bulk, UUID publicationCommand) {
+        DeckHead head = repository.deckHead(session.ownerId(), session.deckId()).orElseThrow(ResourceNotFoundException::new);
+        if (head.version() != deckVersion || !head.revisionId().equals(deckRevision)) throw new VersionConflictException();
+        Map<UUID, Artifact> artifacts = new LinkedHashMap<>();
+        for (Plan plan : plans) {
+            artifacts.put(plan.artifactId(), repository.artifact(session.sessionId(), plan.artifactId())
+                    .orElseThrow(ResourceNotFoundException::new));
+        }
+        Session current = repository.session(session.sessionId()).orElseThrow(ResourceNotFoundException::new);
+        check(current, plans, artifacts, bulk, true);
+
+        List<GeneratedItemPublisher.Material> materials = new ArrayList<>();
+        for (Plan plan : plans) {
+            Artifact artifact = artifacts.get(plan.artifactId());
+            Revision revision = repository.revision(artifact.artifactId(), artifact.currentRevisionId()).orElseThrow();
+            materials.add(new GeneratedItemPublisher.Material(Commands.derive(publicationCommand, "member:" + artifact.artifactId()),
+                    document(revision.payload().path("document"))));
+        }
+        JsonNode[] acknowledgement = new JsonNode[1];
+        boolean[] applied = {false};
+        publisher.create(session.ownerId(), session.deckId(), deckVersion, publicationCommand, deckRevision, materials,
+                (publication, replayed) -> acknowledgement[0] = receipts.execute(identity, envelope, () -> {
+                    applied[0] = true;
+                    return apply(session.sessionId(), commandId, publicationCommand, plans, publication, bulk);
+                }));
+        String etag = applied[0] ? acknowledgement[0].path("deckVersion").stringValue(null) : null;
+        return new Result(acknowledgement[0], !applied[0], etag);
+    }
+
+    /**
+     * The checks that decide whether the artifacts can be approved, in the contract's order: stale versions (412), a state that
+     * forbids it (409 ILLEGAL_STATE), a source that moved (409 SOURCE_STALE) and a media slot that is not ready (409
+     * MEDIA_NOT_READY). With {@code detectDrift} (before the publish transaction) PROPOSED artifacts whose sources drifted
+     * become STALE in a short transaction of their own, which commits before the 409 is raised.
+     */
+    private void check(Session session, List<Plan> plans, Map<UUID, Artifact> artifacts, boolean bulk, boolean detectDrift) {
+        List<UUID> staleVersions = new ArrayList<>();
+        for (Plan plan : plans) {
+            Artifact artifact = artifacts.get(plan.artifactId());
+            if (artifact.rowVersion() != plan.artifactVersion() || !Objects.equals(artifact.currentRevisionId(), plan.revisionId())) {
+                staleVersions.add(artifact.artifactId());
+            }
+        }
+        if (!staleVersions.isEmpty()) throw new StaleArtifactsException(bulk ? staleVersions : List.of());
+
+        List<UUID> all = plans.stream().map(Plan::artifactId).toList();
+        if (!REVIEWABLE.contains(session.state())) throw conflict(Reason.ILLEGAL_STATE, all, bulk);
+        List<UUID> illegal = new ArrayList<>();
+        List<UUID> stale = new ArrayList<>();
+        Map<UUID, Long> proposed = new LinkedHashMap<>();
+        for (Plan plan : plans) {
+            Artifact artifact = artifacts.get(plan.artifactId());
+            // an exercise artifact is approved by AI-13 (#291); until then it is not approvable here
+            if (!artifact.targetKind().equals("ITEM")) {
+                illegal.add(artifact.artifactId());
+                continue;
+            }
+            switch (artifact.state()) {
+                case "STALE" -> stale.add(artifact.artifactId());
+                case "PROPOSED" -> proposed.put(artifact.artifactId(), artifact.rowVersion());
+                default -> illegal.add(artifact.artifactId());
+            }
+        }
+        if (!illegal.isEmpty()) throw conflict(Reason.ILLEGAL_STATE, illegal, bulk);
+        if (detectDrift) {
+            Map<UUID, Long> drifted = new LinkedHashMap<>();
+            proposed.forEach((id, version) -> {
+                if (!drift.drifted(session, artifacts.get(id)).isEmpty()) drifted.put(id, version);
+            });
+            if (!drifted.isEmpty()) stale.addAll(drift.markStale(session.sessionId(), drifted));
+        }
+        if (!stale.isEmpty()) throw conflict(Reason.SOURCE_STALE, stale, bulk);
+        List<UUID> unready = new ArrayList<>();
+        for (UUID id : proposed.keySet()) {
+            Artifact artifact = artifacts.get(id);
+            if (repository.slots(id, artifact.currentRevisionId()).stream().anyMatch(slot -> !resolved(slot))) unready.add(id);
+        }
+        if (!unready.isEmpty()) throw conflict(Reason.MEDIA_NOT_READY, unready, bulk);
+    }
+
+    /**
+     * A slot approval can live with: its media is READY or the user explicitly removed it. Invariant for AI-11: a REMOVED slot
+     * means its node is gone from the current revision, so the edit that removes media must remove the node together with the
+     * slot (a REMOVED slot whose node stays would make approval publish a reference to an asset that never exists).
+     */
+    private static boolean resolved(Slot slot) {
+        return slot.state().equals("READY") || slot.state().equals("REMOVED");
+    }
+
+    private static GenerationStateConflictException conflict(Reason reason, List<UUID> ids, boolean bulk) {
+        return new GenerationStateConflictException(reason, bulk ? ids : List.of());
+    }
+
+    /**
+     * The completion of the catalog publication, in its transaction: re-checks what a concurrent command could have changed,
+     * publishes each artifact (state, reference, provenance, event), releases its media holds and closes the session when
+     * nothing is left to review. Any failure rolls the material back with it.
+     */
+    private JsonNode apply(UUID sessionId, UUID commandId, UUID publicationCommand, List<Plan> plans, JsonNode publication, boolean bulk) {
+        SessionLifecycle.Tx tx = lifecycle.lock(sessionId);
+        if (tx == null) throw new ResourceNotFoundException();
+        Map<UUID, Artifact> artifacts = new LinkedHashMap<>();
+        for (Plan plan : plans) {
+            artifacts.put(plan.artifactId(), repository.artifact(sessionId, plan.artifactId()).orElseThrow(ResourceNotFoundException::new));
+        }
+        check(tx.session, plans, artifacts, bulk, false);
+        JsonNode changes = publication.path("changes");
+        if (changes.size() != plans.size()) throw new IllegalStateException("Publication does not match the approval");
+        ObjectNode acknowledgement = Json.object().put("commandId", commandId.toString())
+                .put("deckId", tx.session.deckId().toString())
+                .put("deckRevisionId", publication.path("deckRevisionId").stringValue(null))
+                .put("deckVersion", publication.path("deckVersion").stringValue(null));
+        ArrayNode listed = acknowledgement.putArray("artifacts");
+        for (int index = 0; index < plans.size(); index++) {
+            Artifact artifact = artifacts.get(plans.get(index).artifactId());
+            JsonNode change = changes.get(index);
+            ObjectNode reference = Json.object().put("kind", "ITEM").put("memberKey", change.path("memberKey").stringValue(null))
+                    .put("itemRevisionId", change.path("itemRevisionId").stringValue(null)).put("ordinal", change.path("ordinal").intValue());
+            Artifact published = repository.publish(artifact, reference, publicationCommand);
+            repository.insertProvenance(tx.session.ownerId(), sessionId, artifact.artifactId(), artifact.currentRevisionId(), reference,
+                    repository.provenance(artifact.artifactId()));
+            // the catalog holds the assets through the revision it just stored; the Workshop's hold is no longer needed
+            repository.releaseMediaHolds(artifact.artifactId());
+            tx.events.add(SessionLifecycle.artifactEvent(published));
+            listed.addObject().put("artifactId", artifact.artifactId().toString()).put("state", "PUBLISHED").set("publishedRef", reference);
+        }
+        lifecycle.closeIfDone(tx);
+        lifecycle.flush(tx);
+        return acknowledgement;
+    }
+
+    private static NativeDocument document(JsonNode document) {
+        return new NativeDocumentReader().read(document.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
+    // ---------------------------------------------------------------- reject / undo
+
+    /** {@code rejectArtifact}: reversible disapproval of a proposed or stale artifact. */
+    Result reject(UUID owner, UUID deckId, UUID sessionId, UUID artifactId, byte[] raw) {
+        session(owner, deckId, sessionId);
+        repository.artifact(sessionId, artifactId).orElseThrow(ResourceNotFoundException::new);
+        JsonNode body = Commands.read(raw);
+        Commands.fields(body, Set.of("commandId", "expectedArtifactVersion"), Set.of());
+        UUID commandId = Commands.commandId(body);
+        ObjectNode envelope = envelope(deckId, sessionId, body).put("artifactId", artifactId.toString());
+        CommandIdentity identity = new CommandIdentity(commandId, owner, SCOPE, "artifact.reject");
+        Optional<JsonNode> replay = receipts.replay(identity, envelope);
+        if (replay.isPresent()) return new Result(replay.get(), true, null);
+        long expected = Commands.version(body, "expectedArtifactVersion");
+
+        boolean[] applied = {false};
+        JsonNode summary = receipts.execute(identity, envelope, () -> {
+            applied[0] = true;
+            SessionLifecycle.Tx tx = lock(sessionId);
+            Artifact artifact = reviewable(tx, sessionId, artifactId, expected, null, false, "PROPOSED", "STALE");
+            Artifact rejected = repository.transition(artifact, "REJECTED", null, null, null, artifact.revisionCount());
+            tx.events.add(SessionLifecycle.artifactEvent(rejected));
+            lifecycle.closeIfDone(tx);
+            lifecycle.flush(tx);
+            return summary(rejected);
+        });
+        return new Result(summary, !applied[0], applied[0] ? summary.path("rowVersion").stringValue(null) : null);
+    }
+
+    /** {@code undoRejectArtifact}: REJECTED back to PROPOSED while the session is not closed; {@code If-Match} is the artifact version. */
+    Result undoReject(UUID owner, UUID deckId, UUID sessionId, UUID artifactId, List<String> ifMatch) {
+        session(owner, deckId, sessionId);
+        repository.artifact(sessionId, artifactId).orElseThrow(ResourceNotFoundException::new);
+        long expected = Commands.ifMatch(ifMatch);
+        JsonNode summary = Objects.requireNonNull(transaction.execute(status -> {
+            SessionLifecycle.Tx tx = lock(sessionId);
+            Artifact artifact = reviewable(tx, sessionId, artifactId, expected, null, tx.state.equals("CLOSED"), "REJECTED");
+            Artifact proposed = repository.transition(artifact, "PROPOSED", null, null, null, artifact.revisionCount());
+            tx.events.add(SessionLifecycle.artifactEvent(proposed));
+            // taking back the rejection that closed the session reopens it (a cancelled one stays cancelled); flush refreshes
+            // the activity and the expiry
+            if (tx.state.equals("CLOSED")) tx.state = tx.endReason == null ? "REVIEW" : "CANCELLED";
+            lifecycle.flush(tx);
+            return summary(proposed);
+        }));
+        return new Result(summary, false, summary.path("rowVersion").stringValue(null));
+    }
+
+    // -------------------------------------------------------------------- hand-off
+
+    /** {@code handoffArtifact}: opens the current revision as an ordinary {@code EditingDraft}; the artifact is {@code HANDED_OFF}. */
+    Result handoff(UUID owner, UUID deckId, UUID sessionId, UUID artifactId, byte[] raw) {
+        session(owner, deckId, sessionId);
+        Artifact known = repository.artifact(sessionId, artifactId).orElseThrow(ResourceNotFoundException::new);
+        JsonNode body = Commands.read(raw);
+        Commands.fields(body, Set.of("commandId", "expectedArtifactVersion", "expectedRevisionId"), Set.of());
+        UUID commandId = Commands.commandId(body);
+        ObjectNode envelope = envelope(deckId, sessionId, body).put("artifactId", artifactId.toString());
+        CommandIdentity identity = new CommandIdentity(commandId, owner, SCOPE, "artifact.handoff");
+        Optional<JsonNode> replay = receipts.replay(identity, envelope);
+        if (replay.isPresent()) return new Result(replay.get(), true, null);
+        long expected = Commands.version(body, "expectedArtifactVersion");
+        UUID expectedRevision = Commands.entity(body, "expectedRevisionId");
+        // an exercise hand-off is defined by AI-13; here it is not a valid request
+        if (!known.targetKind().equals("ITEM")) throw new InvalidRequestException();
+
+        boolean[] applied = {false};
+        String[] etag = new String[1];
+        JsonNode acknowledgement = receipts.execute(identity, envelope, () -> {
+            applied[0] = true;
+            SessionLifecycle.Tx tx = lock(sessionId);
+            Artifact artifact = reviewable(tx, sessionId, artifactId, expected, expectedRevision, false, "PROPOSED", "STALE");
+            JsonNode draft;
+            try {
+                draft = drafts.open(tx.session.ownerId(), deckId, Commands.derive(commandId, "draft:" + artifactId),
+                        handoffDocument(artifact));
+            } catch (ResourceLimitExceededException limit) {
+                throw new ResourceLimitExceededException(ProblemExtension.builder().put("limit", "EDITING_DRAFTS").build());
+            }
+            Artifact handedOff = repository.transition(artifact, "HANDED_OFF", null, null, null, artifact.revisionCount());
+            repository.releaseMediaHolds(artifact.artifactId());
+            // the artifact no longer changes: its waiting media steps stop and slots still open are settled as cancelled
+            steps.cancelMedia(artifact.artifactId());
+            for (Slot slot : repository.failOpenSlotsOf(artifact.artifactId(), "CANCELLED")) {
+                tx.events.add(new Rows.EventDraft("MEDIA_SLOT_STATE", artifact.artifactId(), Json.object()
+                        .put("slotKey", slot.slotKey()).put("kind", slot.kind()).put("state", "FAILED")
+                        .put("assetId", slot.assetId().toString()).put("errorCode", "CANCELLED")));
+            }
+            tx.events.add(SessionLifecycle.artifactEvent(handedOff));
+            lifecycle.closeIfDone(tx);
+            lifecycle.flush(tx);
+            JsonNode created = draft.path("draft");
+            etag[0] = created.path("rowVersion").stringValue(null);
+            ObjectNode result = Json.object();
+            result.set("artifact", summary(handedOff));
+            ObjectNode projected = result.putObject("draft");
+            projected.put("draftId", created.path("draftId").stringValue(null)).put("deckId", deckId.toString());
+            projected.put("memberKey", created.path("memberKey").stringValue(null));
+            projected.put("baseRevisionId", created.path("baseRevisionId").stringValue(null));
+            return result;
+        });
+        return new Result(acknowledgement, !applied[0], applied[0] ? etag[0] : null);
+    }
+
+    /**
+     * The document the editor opens: the current revision without the media nodes whose assets are not ready (a placeholder
+     * node cannot be saved: its asset does not exist). Ready media stays and the draft holds it like any draft.
+     */
+    private NativeDocument handoffDocument(Artifact artifact) {
+        Revision revision = repository.revision(artifact.artifactId(), artifact.currentRevisionId()).orElseThrow();
+        JsonNode document = revision.payload().path("document").deepCopy();
+        Set<String> missing = repository.slots(artifact.artifactId(), revision.revisionId()).stream()
+                .filter(slot -> !slot.state().equals("READY")).map(slot -> slot.nodeId().toString()).collect(Collectors.toSet());
+        if (!missing.isEmpty()) dropNodes(document.path("root"), missing);
+        return document(document);
+    }
+
+    private static void dropNodes(JsonNode node, Set<String> ids) {
+        JsonNode content = node.path("content");
+        if (!content.isArray()) return;
+        ArrayNode children = (ArrayNode) content;
+        for (int index = children.size() - 1; index >= 0; index--) {
+            if (ids.contains(children.get(index).path("id").stringValue(""))) children.remove(index);
+            else dropNodes(children.get(index), ids);
+        }
+    }
+
+    // ----------------------------------------------------------------------- retry
+
+    /**
+     * {@code retryArtifact}: a FAILED artifact (not a refusal) or a STALE one is written again, against the pins as they are
+     * now for a stale one. A new reservation is made first; the usage refusal leaves nothing.
+     */
+    Result retry(UUID owner, UUID deckId, UUID sessionId, UUID artifactId, byte[] raw) {
+        session(owner, deckId, sessionId);
+        repository.artifact(sessionId, artifactId).orElseThrow(ResourceNotFoundException::new);
+        JsonNode body = Commands.read(raw);
+        Commands.fields(body, Set.of("commandId", "expectedArtifactVersion"), Set.of());
+        UUID commandId = Commands.commandId(body);
+        ObjectNode envelope = envelope(deckId, sessionId, body).put("artifactId", artifactId.toString());
+        CommandIdentity identity = new CommandIdentity(commandId, owner, SCOPE, "artifact.retry");
+        Optional<JsonNode> replay = receipts.replay(identity, envelope);
+        if (replay.isPresent()) return new Result(replay.get(), true, null);
+        long expected = Commands.version(body, "expectedArtifactVersion");
+
+        boolean[] applied = {false};
+        JsonNode summary = receipts.execute(identity, envelope, () -> {
+            applied[0] = true;
+            // the admission lock first (as createSession takes it), so the count of active sessions below cannot race a create
+            repository.lockAdmission(owner);
+            return requeue(sessionId, artifactId, expected);
+        });
+        return new Result(summary, !applied[0], applied[0] ? summary.path("rowVersion").stringValue(null) : null);
+    }
+
+    private JsonNode requeue(UUID sessionId, UUID artifactId, long expected) {
+        SessionLifecycle.Tx tx = lock(sessionId);
+        Artifact artifact = repository.artifact(sessionId, artifactId).orElseThrow(ResourceNotFoundException::new);
+        if (artifact.rowVersion() != expected) throw new VersionConflictException();
+        boolean stale = artifact.state().equals("STALE");
+        if (!RETRYABLE.contains(tx.state) || !(stale || artifact.state().equals("FAILED"))) {
+            throw new GenerationStateConflictException(Reason.ILLEGAL_STATE);
+        }
+        if (!stale && "REFUSAL".equals(artifact.errorCode())) throw new GenerationStateConflictException(Reason.NOT_RETRYABLE);
+
+        Session session = tx.session;
+        List<Drift> drifted = drift.drifted(session, artifact);
+        // a stale artifact is regenerated against what the sources are now; a failed one needs its pins to hold
+        if (drifted.stream().anyMatch(Drift::gone) || (!stale && !drifted.isEmpty())) {
+            throw new SourceUnavailableException(drifted.stream().map(Drift::source).toList());
+        }
+        MaterialsSpec spec = MaterialsSpec.read(session.spec());
+        gate.requireFor(spec);
+        // a REVIEW session with only failed or rejected leftovers does not count as active; retrying makes it count again
+        if (tx.state.equals("REVIEW") && repository.artifactCounts(sessionId).entrySet().stream()
+                .noneMatch(entry -> Set.of("PROPOSED", "REVISING", "STALE").contains(entry.getKey()) && entry.getValue() > 0)) {
+            List<UUID> active = repository.activeSessionIds(session.ownerId());
+            if (active.size() >= settings.maxActiveSessions()) {
+                throw new ResourceLimitExceededException(ProblemExtension.builder().put("limit", "ACTIVE_SESSIONS")
+                        .put("limits", Map.of("maxActiveSessions", settings.maxActiveSessions()))
+                        .put("activeSessionIds", active.stream().map(UUID::toString).toList()).build());
+            }
+        }
+        String operation = AdmissionPricing.materialOperation(spec.workingEffort());
+        int credits = pricing.credits(operation);
+        // usage is last: a refusal rolls this transaction back, so nothing above has changed
+        Reservation reservation = ledger.reserve(session.ownerId(), ReservationScope.STEP, session.sessionId(), null, Math.max(1, credits));
+
+        repository.dropMedia(artifactId);
+        repository.cancelTurns(artifactId);
+        steps.cancelMedia(artifactId);
+        Artifact queued = repository.requeue(artifact, stale ? drift.repinned(artifact, drifted) : artifact.sourceRefs());
+        ObjectNode input = Json.object().put("effort", spec.workingEffort()).put("operation", operation).put("credits", credits)
+                .put("reservationId", reservation.reservationId().toString());
+        steps.insert(UUID.randomUUID(), sessionId, artifactId, session.ownerId(), TextDraftExecutor.KIND, "TEXT", input,
+                "draft:" + artifactId + ":" + (steps.draftCount(artifactId) + 1));
+        tx.events.add(SessionLifecycle.artifactEvent(queued));
+        tx.events.add(lifecycle.usageEvent(session, null));
+        if (tx.state.equals("REVIEW")) tx.state = "RUNNING";
+        lifecycle.flush(tx);
+        wakeAfterCommit();
+        return summary(queued);
+    }
+
+    private void wakeAfterCommit() {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) return;
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                dispatcher.ifAvailable(StepDispatcher::wake);
+            }
+        });
+    }
+
+    // ---------------------------------------------------------------------- delete
+
+    /**
+     * {@code deleteSession}: hold-to-delete. The unpublished rows (artifacts, revisions, slots, holds, steps, events) go
+     * with the session and its credit holds are released; what was published or handed off stays in the catalog and in the
+     * editor. The first call answers 204 and later calls 404.
+     */
+    void delete(UUID owner, UUID deckId, UUID sessionId) {
+        session(owner, deckId, sessionId);
+        transaction.executeWithoutResult(status -> {
+            SessionLifecycle.Tx tx = lock(sessionId);
+            lifecycle.releaseHolds(tx.session);
+            repository.deleteSession(sessionId);
+        });
+    }
+
+    // ----------------------------------------------------------------- note archival
+
+    /** {@code archiveUsedNotes}: archives the notes the session used by their pinned versions; idempotent. */
+    Result archiveNotes(UUID owner, UUID deckId, UUID sessionId, byte[] raw) {
+        session(owner, deckId, sessionId);
+        JsonNode body = Commands.read(raw);
+        Commands.fields(body, Set.of("commandId"), Set.of());
+        UUID commandId = Commands.commandId(body);
+        ObjectNode envelope = envelope(deckId, sessionId, body);
+        CommandIdentity identity = new CommandIdentity(commandId, owner, SCOPE, "session.note-archival");
+        Optional<JsonNode> replay = receipts.replay(identity, envelope);
+        if (replay.isPresent()) return new Result(replay.get(), true, null);
+        boolean[] applied = {false};
+        JsonNode result = receipts.execute(identity, envelope, () -> {
+            applied[0] = true;
+            SessionLifecycle.Tx tx = lock(sessionId);
+            return notes.archive(tx.session);
+        });
+        return new Result(result, !applied[0], null);
+    }
+
+    // --------------------------------------------------------------------- helpers
+
+    private Session session(UUID owner, UUID deckId, UUID sessionId) {
+        return repository.session(owner, deckId, sessionId).orElseThrow(ResourceNotFoundException::new);
+    }
+
+    private SessionLifecycle.Tx lock(UUID sessionId) {
+        SessionLifecycle.Tx tx = lifecycle.lock(sessionId);
+        if (tx == null) throw new ResourceNotFoundException();
+        return tx;
+    }
+
+    /**
+     * The artifact of a command that moves one proposal: its version and, when the command names one, its revision (412)
+     * first, then the states the session and the artifact allow (409 ILLEGAL_STATE).
+     */
+    private Artifact reviewable(SessionLifecycle.Tx tx, UUID sessionId, UUID artifactId, long expected, UUID expectedRevision,
+                                boolean closedToo, String... states) {
+        Artifact artifact = repository.artifact(sessionId, artifactId).orElseThrow(ResourceNotFoundException::new);
+        if (artifact.rowVersion() != expected
+                || (expectedRevision != null && !expectedRevision.equals(artifact.currentRevisionId()))) {
+            throw new VersionConflictException();
+        }
+        if (!(REVIEWABLE.contains(tx.state) || closedToo) || !Set.of(states).contains(artifact.state())) {
+            throw new GenerationStateConflictException(Reason.ILLEGAL_STATE);
+        }
+        return artifact;
+    }
+
+    private JsonNode summary(Artifact artifact) {
+        return SessionViews.artifactSummary(artifact, repository.slotCounts(List.of(artifact.artifactId())).get(artifact.artifactId()));
+    }
+
+    /** The receipt envelope of a command: the path ids and the whole body, so any change of either is a different command. */
+    private static ObjectNode envelope(UUID deckId, UUID sessionId, JsonNode body) {
+        ObjectNode envelope = Json.object().put("deckId", deckId.toString()).put("sessionId", sessionId.toString());
+        envelope.set("body", body);
+        return envelope;
+    }
+}

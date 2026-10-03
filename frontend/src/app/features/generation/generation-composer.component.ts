@@ -1,4 +1,3 @@
-import { DatePipe } from '@angular/common';
 import {
     ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, input, output, signal,
     untracked, viewChild
@@ -17,7 +16,7 @@ import { GenerationApiService } from './generation-api.service';
 import { GenerationProblem, readProblem } from './generation-problem';
 import { DEFAULT_SETTINGS, GenerationSettingsComponent, GenerationSettingsValue } from './generation-settings.component';
 import {
-    NOTES_MODE_OPTIONS, UsageExplanation, describeEstimate, describeUsageLimit, problemMessage
+    NOTES_MODE_OPTIONS, UsageExplanation, describeEstimate, describeUsageLimit, formatWorkshopStart, problemMessage
 } from './generation-view';
 import {
     GenerationEstimate, MAX_PROMPT_LENGTH, MaterialsSpec, NotesMode, SessionDetail, SessionSummary, SpecSource, serializeMaterialsSpec
@@ -86,7 +85,7 @@ let nextComposer = 0;
  */
 @Component({
     selector: 'app-generation-composer',
-    imports: [DatePipe, RouterLink, GenerationSettingsComponent, ToggletipComponent, SegmentedChoiceComponent, NoteOverridesComponent],
+    imports: [RouterLink, GenerationSettingsComponent, ToggletipComponent, SegmentedChoiceComponent, NoteOverridesComponent],
     templateUrl: './generation-composer.component.html',
     styleUrls: ['../authoring/authoring-page.css', './generation-composer.component.css'],
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -149,6 +148,7 @@ export class GenerationComposerComponent {
         const pin = source.spec.type === 'NOTE' ? this.freshPins().get(source.spec.noteId) : undefined;
         return pin === undefined || source.spec.type !== 'NOTE' ? source.spec : { ...source.spec, noteRowVersion: pin };
     }), { image: this.imageAvailable(), audio: this.audioAvailable() }, this.overrides()));
+    protected readonly startedAt = (workshop: SessionSummary): string => formatWorkshopStart(workshop.createdAt);
     protected readonly overBudget = computed(() => {
         const state = this.estimate();
         return state.phase === 'ready' && !state.estimate.canStart;

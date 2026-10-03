@@ -1,6 +1,6 @@
 {
   "contract": "generation-v1",
-  "description": "HTTP contract of Workshop sessions, artifacts, approval and edits under /api (Learning context path). Authority: docs/architecture/ai-generation-platform.md sections 3-5 and 7. Nothing here is implemented yet: AI-04 (#287), AI-05 (#288), AI-11 (#293), AI-13 (#291), AI-06 (#289) implement and consume it.",
+  "description": "HTTP contract of Workshop sessions, artifacts, approval and edits under /api (Learning context path). Authority: docs/architecture/ai-generation-platform.md sections 3-5 and 7. Implemented so far: AI-04 (#287: sessions, events, artifact) and AI-05 (#288: approval, rejection, hand-off, retry, delete, note archival). AI-11 (#293), AI-13 (#291) and AI-06 (#289) implement or consume the rest.",
   "conventions": {
     "owner": "The JWT subject is the only owner input. Foreign or absent deck, session or artifact IDs share one opaque 404.",
     "caching": "Every response is Cache-Control: private, no-store.",
@@ -349,6 +349,47 @@
       ]
     },
     {
+      "operationId": "archiveUsedNotes",
+      "method": "POST",
+      "path": "/api/decks/{deckId}/generation-sessions/{sessionId}/note-archival",
+      "summary": "Archive the notes the session used: exactly the NOTE sources of its PUBLISHED or HANDED_OFF artifacts, each by its pinned row_version. Explicit and idempotent.",
+      "requestBody": {
+        "commandId": "018f1d98-5c10-7abc-8abc-0123456789c1"
+      },
+      "success": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "private, no-store"
+        },
+        "body": {
+          "$ref": "#/examples/noteArchival"
+        }
+      },
+      "errors": [
+        {
+          "status": 400,
+          "code": "INVALID_REQUEST",
+          "when": "Malformed or unknown field, duplicate JSON key, bad UUID or version."
+        },
+        {
+          "status": 404,
+          "code": "RESOURCE_NOT_FOUND",
+          "when": "Foreign or absent deck, session or artifact: one opaque boundary."
+        },
+        {
+          "status": 409,
+          "code": "IDEMPOTENCY_CONFLICT",
+          "when": "commandId was used for a different command."
+        }
+      ],
+      "notes": [
+        "No If-Match. Allowed in every session state (CLOSED, CANCELLED and EXPIRED included) until the retention worker purges the session, then 404.",
+        "\"Used\" means at least one PUBLISHED or HANDED_OFF artifact pins the note AND no artifact of the session still in play (QUEUED, GENERATING, PROPOSED, REVISING, STALE or a retryable FAILED) pins it: archiving bumps the note's row_version, which would turn such a sibling STALE. Notes still in use are simply not part of the command (no skip reason). Each used note is archived through the capture archive command with the pinned noteRowVersion as the expected version. A note whose current row_version differs is skipped CHANGED (never archived silently); an archived note is skipped ALREADY_ARCHIVED (checked first); a deleted one DELETED. No used notes is a 200 with empty lists.",
+        "Exact retry returns the stored response with Idempotency-Replayed: true and no ETag. A second call with a new commandId is harmless: everything archived is ALREADY_ARCHIVED.",
+        "The session is not changed: no event, no version bump. The count the UI needs is sessionDetail.notes."
+      ]
+    },
+    {
       "operationId": "listEvents",
       "method": "GET",
       "path": "/api/decks/{deckId}/generation-sessions/{sessionId}/events",
@@ -486,7 +527,9 @@
       ],
       "notes": [
         "Exact retry returns the stored acknowledgement with Idempotency-Replayed: true and no ETag.",
-        "Item approval publishes through the caller-owned port into ItemService; exercise approval through ExerciseService with objective.operation=reuse where the target objective is unchanged."
+        "Item approval publishes through the caller-owned port into ItemService; exercise approval through ExerciseService with objective.operation=reuse where the target objective is unchanged.",
+        "The catalog command carries a command id derived from commandId and artifactId (a name-based hash shaped as a version-4 UUID, because a version-5 value is not a legal command id), so a repeat is the same command. A session CLOSED, EXPIRED, PLANNING or PLAN_READY answers ILLEGAL_STATE; a rowVersion or revision mismatch is 412 before any state conflict.",
+        "An EXERCISE artifact is answered 409 ILLEGAL_STATE until AI-13 (#291)."
       ]
     },
     {
@@ -558,7 +601,7 @@
         }
       ],
       "notes": [
-        "All or nothing, in ONE database transaction: ItemService and ExerciseService are called in-process, sequentially, with child command IDs derived as uuidv5(commandId, artifactId) and chained deck revisions. Any failure rolls everything back.",
+        "All or nothing, in ONE database transaction: the catalog is called in-process through the caller-owned port. Items only (AI-05): ONE bulk publication, one deck revision, with a command id derived from commandId and the sorted artifact ids; with exercises (AI-13) ItemService and ExerciseService are called sequentially with child command IDs derived per artifact and chained deck revisions. Any failure rolls everything back.",
         "The list is capped at 20 (the MATERIALS session maximum); the client splits a larger selection (an exercise session can hold 60) into several commands, each atomic.",
         "The response lists one acknowledgement per artifact (ITEM and EXERCISE shapes) and the final Deck revision.",
         "The client lists exactly the artifacts it showed as approvable ('Approve all ready (N)'); an artifact that stopped being approvable fails the whole command."
@@ -669,6 +712,9 @@
           "when": "Operation not allowed in the current session or artifact state (states.json allowedOperations).",
           "reason": "ILLEGAL_STATE"
         }
+      ],
+      "notes": [
+        "Allowed in a CLOSED session until the retention worker purges it: it reopens the session (CLOSED to REVIEW, or CANCELLED for a session that ended through cancellation), emits SESSION_STATE and refreshes lastActivityAt and expiresAt. An EXPIRED session answers 409 ILLEGAL_STATE."
       ]
     },
     {
@@ -749,7 +795,8 @@
       ],
       "notes": [
         "ITEM artifacts only; an EXERCISE hand-off is defined by AI-13 (#291) and is INVALID_REQUEST here.",
-        "The client then restores the draft with GET /api/editing-drafts/{draftId}."
+        "The client then restores the draft with GET /api/editing-drafts/{draftId}.",
+        "The draft holds the revision's document without the media nodes whose assets are not READY (they cannot be saved); READY media stays."
       ]
     },
     {
@@ -988,10 +1035,18 @@
           "status": 409,
           "code": "IDEMPOTENCY_CONFLICT",
           "when": "commandId was used for a different command."
+        },
+        {
+          "status": 422,
+          "code": "RESOURCE_LIMIT_EXCEEDED",
+          "when": "Retrying turns a REVIEW session that does not count as active into a counted one and the account already has the maximum of active sessions.",
+          "limit": "ACTIVE_SESSIONS"
         }
       ],
       "notes": [
-        "Cancels any QUEUED or RUNNING turn of the artifact."
+        "Cancels any QUEUED or RUNNING turn of the artifact.",
+        "A new STEP reservation of the artifact's weight is made first (409 USAGE_LIMIT_REACHED leaves nothing changed); the debit of the new run draws from it and it ends with the session's return to REVIEW. A STALE artifact is regenerated against the pins as they are now (the artifact's sourceRefs are replaced); a FAILED one needs its pins to hold (SOURCE_UNAVAILABLE otherwise). The slots and holds of the replaced revision are dropped.",
+        "A REVIEW session that holds only FAILED or REJECTED leftovers does not count as active; retrying makes it count again, so the 3-active-sessions limit is checked first (422 RESOURCE_LIMIT_EXCEEDED, limit ACTIVE_SESSIONS, before usage)."
       ]
     }
   ],
@@ -1041,7 +1096,8 @@
       "endReason": "null | USER_CANCELLED | PLAN_FAILED | EXPIRED",
       "artifactCounts": "one integer per artifact state",
       "approvableCount": "Number of artifacts that can be approved now: PROPOSED with every media slot READY or REMOVED (not STALE, not REVISING). The pager summary ('7 ready') and the GENERATION_READY notification use it; the client derives 'writing' from QUEUED + GENERATING and 'failed' from FAILED.",
-      "usage": "{reservedCredits, spentCredits}: the session's initial-batch reservation (ACTIVE holds only), see contracts/usage"
+      "usage": "{reservedCredits, spentCredits}: the session's initial-batch reservation (ACTIVE holds only), see contracts/usage",
+      "notes": "{used, archivable}: used = distinct NOTE sources (role SOURCE) referenced by at least one PUBLISHED or HANDED_OFF artifact and by no artifact still in play (QUEUED, GENERATING, PROPOSED, REVISING, STALE, retryable FAILED); archivable = used notes that are not archived and whose row_version still equals the pinned one. The UI shows 'Archive the used notes (k)' when k > 0 (operation archiveUsedNotes). Detail only, not in summaries."
     },
     "artifactSummary": {
       "title": "Preview title of the current revision (first heading or paragraph, at most 240 code points) for the pager",
@@ -1200,6 +1256,10 @@
           "budgetPercent": null
         }
       },
+      "notes": {
+        "used": 0,
+        "archivable": 0
+      },
       "artifacts": [
         {
           "artifactId": "a7a70000-0000-4000-8000-000000000001",
@@ -1298,6 +1358,10 @@
           "budgetPercent": null
         }
       },
+      "notes": {
+        "used": 0,
+        "archivable": 0
+      },
       "artifacts": [
         {
           "artifactId": "a7a70000-0000-4000-8000-000000000001",
@@ -1395,6 +1459,10 @@
           "planFirst": false,
           "budgetPercent": null
         }
+      },
+      "notes": {
+        "used": 0,
+        "archivable": 0
       },
       "artifacts": [
         {
@@ -1775,6 +1843,19 @@
         "available": false,
         "reason": "TEMPORARILY_UNAVAILABLE"
       }
+    },
+    "noteArchival": {
+      "archived": [
+        {
+          "noteId": "20700000-0000-4000-8000-000000000001"
+        }
+      ],
+      "skipped": [
+        {
+          "noteId": "20700000-0000-4000-8000-000000000002",
+          "reason": "CHANGED"
+        }
+      ]
     }
   }
 }

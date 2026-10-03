@@ -108,5 +108,6 @@ export function mergeSession(held: SessionDetail | null, fresh: SessionDetail): 
         return current !== undefined && isNewer(current.rowVersion, artifact.rowVersion) ? current : artifact;
     });
     const base = isNewer(held.rowVersion, fresh.rowVersion) ? held : fresh;
-    return { ...base, artifacts: [...artifacts].sort((left, right) => left.ordinal - right.ordinal) };
+    // `notes` change without a version bump (archival does not touch the session): the fresh read is always the newer one.
+    return { ...base, notes: fresh.notes, artifacts: [...artifacts].sort((left, right) => left.ordinal - right.ordinal) };
 }

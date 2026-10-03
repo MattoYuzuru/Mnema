@@ -372,6 +372,22 @@ public class UsageLedger {
         return new Consumption(false);
     }
 
+    // --------------------------------------------------------------- read-only
+
+    /** One of the owner's reservations (a session shows its credits from it); another owner's is empty. */
+    @Transactional(readOnly = true)
+    public Optional<Reservation> reservation(UUID owner, UUID reservationId) {
+        UuidPolicy.requireEntityId(owner, "owner");
+        return repository.reservation(reservationId).filter(found -> found.ownerId().equals(owner));
+    }
+
+    /** What the owner can still spend now (the {@code balanceRemainingCredits} of a usage event). */
+    @Transactional(readOnly = true)
+    public int remainingCredits(UUID owner) {
+        UuidPolicy.requireEntityId(owner, "owner");
+        return state.credits(state.resolve(owner, clock.now())).remaining();
+    }
+
     // -------------------------------------------------------------- daily burst
 
     /**

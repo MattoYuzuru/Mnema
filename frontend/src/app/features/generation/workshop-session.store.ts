@@ -80,7 +80,7 @@ export class WorkshopSessionStore {
     readonly artifacts = computed(() => this.session()?.artifacts ?? []);
     readonly approvable = computed(() => this.artifacts().filter(isApprovable));
     /** Used notes that «Архивировать использованные» would archive now; 0 while the server does not report it. */
-    readonly archivableNotes = computed(() => this.session()?.notes?.archivable ?? 0);
+    readonly archivableNotes = computed(() => this.session()?.notes.archivable ?? 0);
     readonly terminal = computed(() => { const session = this.session(); return session !== null && isTerminalSession(session.state); });
 
     private deckId = '';
@@ -166,6 +166,8 @@ export class WorkshopSessionStore {
                 if (epoch !== this.epoch) return;
                 this.session.set(mergeSession(this.session(), fresh));
                 this.phase.set('ready');
+                // An undo reopened a CLOSED session (#288): the loop stopped at CLOSED and must run again.
+                if (!isTerminalSession(fresh.state) && this.timer === null && this.poll === null && this.started && !this.disposed) this.schedule(POLL_IDLE_MS);
             },
             (error: unknown) => {
                 if (epoch === this.epoch && readProblem(error).status === 404) this.gone();

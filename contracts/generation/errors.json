@@ -89,6 +89,7 @@
       "endpoints": [
         "approveArtifact",
         "approveArtifacts",
+        "archiveUsedNotes",
         "cancelSession",
         "createSession",
         "editArtifact",
@@ -109,7 +110,8 @@
         "createSession",
         "editArtifact",
         "estimateGeneration",
-        "handoffArtifact"
+        "handoffArtifact",
+        "retryArtifact"
       ],
       "extensionMembers": {
         "limit": "ACTIVE_SESSIONS | ARTIFACTS_PER_SESSION | EXERCISE_TARGETS | EXERCISES_PER_TARGET | EXERCISES_PER_SESSION | SOURCES | EDITING_DRAFTS | TURNS_PER_ARTIFACT | REVISIONS_PER_ARTIFACT",

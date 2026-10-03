@@ -5,8 +5,13 @@ edits, errors, the MBM v1 output format for materials and the strict-JSON output
 shared input of the backend tasks (AI-01..AI-05, AI-07, AI-13) and of the frontend, so they can proceed in
 parallel without re-deciding wire shapes.
 
-**Status: contract only.** Nothing described here is implemented; no runtime code, migration or UI exists. Each file
-says which task implements it. The accepted sources, which this contract must not contradict:
+**Status: partly implemented.** AI-04 ([#287](https://github.com/MattoYuzuru/Mnema/issues/287)) implements sessions, artifacts,
+steps, events, the `TEXT_DRAFT` step and the operations `estimateGeneration`, `createSession`, `listSessions`,
+`listActiveSessions`, `getSession`, `cancelSession`, `listEvents` and `getArtifact`; AI-05
+([#288](https://github.com/MattoYuzuru/Mnema/issues/288)) implements `approveArtifact`, `approveArtifacts`, `rejectArtifact`,
+`undoRejectArtifact`, `handoffArtifact`, `retryArtifact`, `deleteSession`, `archiveUsedNotes` and the retention worker (see
+the decisions below for what they settled); edits, revert, exercises, the planner and the media executors do not exist yet.
+Each file says which task implements it. The accepted sources, which this contract must not contradict:
 
 - [AI generation platform](../../docs/architecture/ai-generation-platform.md) — §3 domain model and states,
   §4 steps, §5 events, §6 MBM and exercises, §7 edits, §9 capabilities, §10 usage, §12 notifications;
@@ -24,7 +29,7 @@ output lives in
 | File | Content | Implemented by |
 |---|---|---|
 | [`states.json`](states.json) | State machines of session, artifact, step, turn and media slot; triggers, actors, guards, error codes, allowed operations per state | AI-04 [#287](https://github.com/MattoYuzuru/Mnema/issues/287), AI-05 [#288](https://github.com/MattoYuzuru/Mnema/issues/288) |
-| [`http.json`](http.json) | 18 operations: capabilities, estimate, sessions (deck-scoped and account-wide active list), events, artifact, approval (single and bulk), reject/undo, hand-off, edits, revert, retry; headers, bodies, examples, errors; the evaluation order of checks | AI-04, AI-05, AI-11 [#293](https://github.com/MattoYuzuru/Mnema/issues/293), AI-13 [#291](https://github.com/MattoYuzuru/Mnema/issues/291) |
+| [`http.json`](http.json) | 19 operations: capabilities, estimate, sessions (deck-scoped and account-wide active list), events, artifact, approval (single and bulk), reject/undo, hand-off, edits, revert, retry, note archival; headers, bodies, examples, errors; the evaluation order of checks | AI-04, AI-05, AI-11 [#293](https://github.com/MattoYuzuru/Mnema/issues/293), AI-13 [#291](https://github.com/MattoYuzuru/Mnema/issues/291) |
 | [`events.json`](events.json) | Polling envelope, per-session `seq` allocation, one example per event type | AI-04, AI-06 [#289](https://github.com/MattoYuzuru/Mnema/issues/289) |
 | [`errors.json`](errors.json) | RFC 9457 codes of generation, usage and notifications; extension members | all |
 | [`mbm-v1/`](mbm-v1/README.md) | Grammar, directives, limits, handles, allowlist, error codes, golden fixtures `mbm → native-v1` | AI-03 [#283](https://github.com/MattoYuzuru/Mnema/issues/283) |
@@ -78,7 +83,7 @@ by the owning task with a note here.
 2. **Edit actions** gain `REMOVE_MEDIA` (deterministic, free, answers 202 like every edit, creates a revision, does not count toward the
    50 turns) because approval requires slots to be `READY` or "explicitly removed" and no other way to remove exists; edits take an
    optional `preset` valid only with `REWRITE`.
-3. **Session `CLOSED`** = no artifact is `PROPOSED`, `REVISING`, `STALE`, `QUEUED`, `GENERATING` or retryable `FAILED`. `FAILED` artifacts keep
+3. **Session `CLOSED`** (reopened only by an undo of a rejection, decision 12) = no artifact is `PROPOSED`, `REVISING`, `STALE`, `QUEUED`, `GENERATING` or retryable `FAILED`. `FAILED` artifacts keep
    the session in `REVIEW`, so retry and undo stay possible; only `REJECTED` and `FAILED` with errorCode `REFUSAL` (not retryable) do not
    keep it open. The 3-active-sessions limit counts `PLANNING`, `PLAN_READY`, `RUNNING` and `REVIEW` sessions that still have a `PROPOSED`,
    `REVISING` or `STALE` artifact; a `REVIEW` session holding only `FAILED` or `REJECTED` leftovers does not count (its batch reservation is
@@ -104,6 +109,85 @@ by the owning task with a note here.
    extension members are added through a small typed `ProblemExtension` map in `platform.api` (AI-01 is the first user).
 10. **Errors**: the artifact error `BUDGET_EXHAUSTED` is split into `USAGE_LIMIT` (the user's limit) and `ESTIMATE_EXCEEDED`
     (under-reservation; a retry re-reserves); `MEDIA_SLOT_STATE.errorCode` and a failed turn's `errorCode` are enumerated in `states.json`.
+
+11. **AI-04 settled these** (revisable by the owning task with a note here):
+    - `planFirst: true` is `422 SPEC_NOT_SUPPORTED` (`kind: MATERIALS`) in the estimate and in `createSession` until the planner
+      exists (`learning.generation.planner.enabled`, AI-14); `kind: EXERCISES` is `422 SPEC_NOT_SUPPORTED` (`kind: EXERCISES`) in
+      `createSession` until AI-13 (the estimate still prices it). `AUTO` effort is priced (estimate and hold) and run as `MEDIUM` until the planner and auto-effort land.
+    - The checks of `createSession` run in this order: deck (404), receipt replay, shape and limits (400, 422), sources (404 for an
+      unknown, foreign or other-deck note or material, 409 `SOURCE_UNAVAILABLE` for a note whose `row_version` moved or a
+      `SOURCE` material that is no longer the head; a `STYLE_EXAMPLE` only has to exist), capabilities (409; `textToSpeech`
+      for audio, `imageSearch`, `webSearch` for a fact check above short effort), active sessions (422, with `activeSessionIds`
+      and `limits.maxActiveSessions`), usage (409, strictly last: a full count cap, a `budgetPercent` hold that cannot pay for
+      one material at its effort, then the reservation). The estimate runs the same interpretation, so it answers the same 400, 404,
+      409 `CAPABILITY_UNAVAILABLE` and 422.
+    - A note source must belong to the deck of the session. The estimate's `edit` form answers an opaque 404 for a session or an
+      artifact that is not the owner's deck's.
+    - `listSessions` takes `limit`, `cursor` and `active`; `listActiveSessions` takes a required `state=active`, `limit` and
+      `cursor`; any other query parameter is `400`. Both order by `(lastActivityAt, sessionId)` descending.
+    - `USAGE_UPDATED` is emitted after a committed debit and after the reservation is released (so a session that finishes
+      has two), and with `deferredUntil` when the daily burst parks a step. A `BLOCKS_APPENDED` checkpoint appends events
+      without bumping the session `rowVersion`; every transaction that changes the session does.
+    - `GENERATION_READY` is published when every artifact is approvable and none failed, `GENERATION_PARTIAL` and
+      `GENERATION_FAILED` as the notification contract says; a REVIEW session whose proposals still wait for media and has no
+      failure publishes nothing until the media tasks (AI-09, AI-10) resolve the slots. The producer of the three kinds is AI-04.
+    - Media directives are bounded by the declared media: `maxMedia` is one for enabled audio plus one for image search, so a
+      model that emits more is repaired (`MBM_TOO_MANY_MEDIA`); `::image mode="generate"` and `::video` stay refused
+      (`MBM_CAPABILITY_OFF`) until their executors exist.
+    - Step time: a run has `PT6M` (`TEXT_DRAFT`); a requeue delay is at most `learning.generation.step.backoff-cap`; a step
+      older than `learning.generation.step.max-lifetime` (`PT1H`, from its first claim) is `FAILED(DEADLINE_EXCEEDED)`.
+    - Cancelling `FAILED(CANCELLED)`s the media slots of the cancelled media steps and emits `MEDIA_SLOT_STATE`.
+    - A step ends `FAILED(ESTIMATE_EXCEEDED)` without a provider call when the remaining hold does not cover the material's
+      weight; a debit that no longer fits (a parallel step used the hold) fails the artifact the same way after the call, with
+      no debit. A failed run is debited nothing; a repair inside a successful step is.
+
+12. **AI-05 settled these** (revisable by the owning task with a note here):
+    - **Note archival** (`archiveUsedNotes`, `POST .../generation-sessions/{sessionId}/note-archival`, body `{commandId}`, no
+      `If-Match`, `200 {archived: [{noteId}], skipped: [{noteId, reason: CHANGED | ALREADY_ARCHIVED | DELETED}]}`). "Used notes"
+      are the distinct `NOTE` sources of artifacts that are `PUBLISHED` or `HANDED_OFF`; each is archived through the capture
+      archive command with the **pinned** `noteRowVersion` as the expected version, so a note that changed since is skipped and
+      reported, never archived silently. `ALREADY_ARCHIVED` is checked first, then `DELETED`, then `CHANGED`. It is allowed in every
+      session state until the purge (then 404), changes nothing about the session, is idempotent by `commandId`
+      (`Idempotency-Replayed`, changed reuse `409 IDEMPOTENCY_CONFLICT`) and a second call with a new `commandId` is harmless.
+      A note counts as used only while no artifact still in play (`QUEUED`, `GENERATING`, `PROPOSED`, `REVISING`, `STALE`, retryable
+      `FAILED`) pins it, because archiving bumps its `row_version` and would turn that sibling `STALE`; such notes are not part of
+      the command (no extra skip reason).
+      `sessionDetail` gains `notes: {used, archivable}` (`archivable` = used notes that are not archived and still match their pin).
+    - **Child command ids.** The catalog and draft commands that an approval or a hand-off issues carry ids derived from the
+      request's `commandId` (`derive(commandId, artifactId)`; for a bulk approval of items, one bulk publication with an id derived
+      from the sorted artifact ids). The contract says `uuidv5`; a version-5 value is not a legal command id of this platform
+      (`UuidPolicy.requireCommandId` accepts versions 4 and 7), so the id is a SHA-256 name-based hash shaped as a version-4 UUID.
+      The member keys of the new materials are derived the same way, so a repeated request is the same publication.
+    - **Evaluation inside the commands.** A stale `expectedArtifactVersion`, `expectedRevisionId` or `expectedDeckRevisionId`
+      is `412` before any `409`; the bulk `412` lists the stale artifacts in `artifactIds` (none when only the deck is stale).
+      A `409` reason order is `ILLEGAL_STATE`, `SOURCE_STALE`, `MEDIA_NOT_READY`. A tombstoned deck is the opaque `404` like an
+      absent one (the sessions of a deleted deck are as absent as the deck); `SOURCE_UNAVAILABLE` is not an approval error.
+    - **Source drift at approval.** A `PROPOSED` artifact whose `NOTE` pin moved or is gone, or whose `SOURCE` material is no
+      longer the head (a `STYLE_EXAMPLE` never counts), becomes `STALE` in a short transaction of its own that commits before the
+      `409 SOURCE_STALE`; `repinStatus` is `NEEDS_USER_DECISION` because the by-node-id re-pin job does not exist yet.
+    - **Reject / undo.** Rejecting the last open artifact closes the session (decision 3). The undo is still allowed in a `CLOSED`
+      session until the purge: it reopens it (`CLOSED` to `REVIEW`, or `CANCELLED` when the session ended through cancellation),
+      emits `SESSION_STATE` and refreshes `last_activity_at` and `expires_at`; an `EXPIRED` session refuses it (`409 ILLEGAL_STATE`).
+      `CLOSED` is therefore not terminal in `states.json`.
+    - **Hand-off** opens the revision's document without the media nodes whose assets are not `READY` (a placeholder node cannot be
+      saved: its asset does not exist); the draft quota is `422 RESOURCE_LIMIT_EXCEEDED` with `limit: EDITING_DRAFTS`.
+    - **Retry** makes a `STEP` reservation of the artifact's weight first (a refusal is `409 USAGE_LIMIT_REACHED` and changes
+      nothing); the retried step's input carries its `reservationId`, so its debit draws from it, and it is released with the
+      session's other holds when the session returns to `REVIEW`. The session's `usage` and `USAGE_UPDATED` show the sum of all
+      its holds. A `STALE` artifact is regenerated against the pins as they are now; a `FAILED` one needs its pins to hold, else
+      `409 SOURCE_UNAVAILABLE`. The slots, holds and waiting media steps of the replaced revision are dropped. A `REVIEW` session
+      returns to `RUNNING`; when that makes a session count as active again (it held only `FAILED` or `REJECTED` leftovers) the
+      3-active-sessions limit is checked first (`422 RESOURCE_LIMIT_EXCEEDED`, `limit: ACTIVE_SESSIONS`, before usage). Approving an
+      `EXERCISE` artifact is `409 ILLEGAL_STATE` until AI-13.
+    - **Retention.** `learning.generation.session-retention` (`P30D`) from last activity is `expires_at`. At `expires_at` the worker ends a
+      live session as `EXPIRED` (it stops like a cancellation and releases its holds) and it stays readable for
+      `learning.generation.retention.expired-readable` (`P1D`); then every session is purged (rows, holds, events; credit holds
+      released; published materials, handed-off drafts and `generation_provenance` stay). `CLOSED` and `CANCELLED` sessions are purged
+      at `expires_at`. `GENERATION_SESSION_EXPIRING` is published `retention.warn-before` (`P3D`) before expiry while a `PROPOSED`,
+      `REVISING` or `STALE` artifact remains (`pendingCount`; key per expiry date). Events of an ended session are deleted
+      `retention.events-after-end` (`P1D`) after it ended.
+    - **Media holds** of an artifact are released in the approval's or hand-off's own transaction (the catalog or the draft holds the
+      assets by then), not after the commit.
 
 ## Owner decisions (2026-10-02)
 
@@ -131,7 +215,7 @@ Resolved in favour of the architecture document unless stated. These are recorde
 | research `context-and-quality.md` (the `::verify` block) vs architecture §6 | The research prompt uses a `::verify` block; MBM v1 has none | Not in MBM v1 nor in the prompts |
 | research (edit context: whole document up to 8k tokens) vs architecture §7 (outline + target ± neighbour) | Edit context size | Prompt placeholders allow both; AI-11 |
 | architecture §6 (swapped pair is `INCORRECT`) vs `AttemptEvaluation` | A swapped pair among 3+ gives `PARTIAL` | Probes shift **all** pairs so `INCORRECT` is well defined |
-| architecture §4 (at most 20 artifacts per session) vs owner decision (60 exercises) | Different limits | 20 for `MATERIALS`, 60 for `EXERCISES`; architecture to be updated with the AI-04 task |
+| architecture §4 (at most 20 artifacts per session) vs owner decision (60 exercises) | Different limits | 20 for `MATERIALS`, 60 for `EXERCISES`; architecture §4 updated by AI-04 |
 | `docs/product/ai-layer-2026-10.md` (¼ of the bar every Monday, i.e. 12.5) | Not an integer | Replaced by the owner decision: portions 13, 13, 12, 12 |
 
 ## Open questions
