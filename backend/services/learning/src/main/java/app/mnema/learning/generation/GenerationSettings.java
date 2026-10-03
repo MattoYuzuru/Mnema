@@ -18,6 +18,7 @@ import java.time.Duration;
  * @param similarTitle similarity (0..1) above which a new title is reported as similar to an existing one
  * @param edit the interactive edit steps (queue timeout)
  * @param intent the free intent call of «Попросить Мнему…» (rate limit and deadline)
+ * @param planner the planner of «Сначала показать план» (AI-14): the switch itself is read by the usage module's interpreter
  * @param retention the retention worker: how often it runs, how long an expired session stays readable, when the owner is
  *                  warned and how long the events of an ended session are kept
  */
@@ -33,7 +34,8 @@ record GenerationSettings(
         @DefaultValue Context context,
         @DefaultValue Retention retention,
         @DefaultValue Edit edit,
-        @DefaultValue Intent intent) {
+        @DefaultValue Intent intent,
+        @DefaultValue Planner planner) {
 
     GenerationSettings {
         if (sessionRetention.isNegative() || sessionRetention.isZero() || maxActiveSessions < 1 || maxActiveSessions > 100
@@ -165,6 +167,22 @@ record GenerationSettings(
         Intent {
             if (perHour < 1 || perHour > 10_000 || deadline.isNegative() || deadline.isZero() || deadline.compareTo(Duration.ofMinutes(2)) > 0) {
                 throw new IllegalArgumentException("Invalid generation intent settings");
+            }
+        }
+    }
+
+    /**
+     * The planner (#295). {@code enabled} is read by the usage module ({@code planFirst} is {@code SPEC_NOT_SUPPORTED} when off); the rest is the PLAN step.
+     *
+     * @param deadline the budget of one run of a PLAN step, provider calls and the repair included (a thinking model is slow)
+     * @param maxOutputTokens the bound of the answer, the reasoning of a thinking model included
+     */
+    record Planner(@DefaultValue("true") boolean enabled, @DefaultValue("PT4M") Duration deadline,
+                   @DefaultValue("16000") int maxOutputTokens) {
+        Planner {
+            if (deadline.isNegative() || deadline.isZero() || deadline.compareTo(Duration.ofMinutes(30)) > 0
+                    || maxOutputTokens < 1_000 || maxOutputTokens > 65_536) {
+                throw new IllegalArgumentException("Invalid generation planner settings");
             }
         }
     }

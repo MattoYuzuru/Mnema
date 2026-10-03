@@ -159,6 +159,18 @@ class GenerationRepository {
         }
     }
 
+    /** The plan of a plan-first session as it stands (the model's, then the owner's approved one); empty for any other session. */
+    Optional<JsonNode> plan(UUID sessionId) {
+        return jdbc.sql("SELECT plan::text FROM app_learning.generation_session WHERE session_id=:id AND plan IS NOT NULL")
+                .param("id", sessionId).query(String.class).optional().map(Json::read);
+    }
+
+    /** Stores the plan; the caller holds the session lock and flushes (the plan is part of the row version it bumps). */
+    void setPlan(UUID sessionId, JsonNode plan) {
+        jdbc.sql("UPDATE app_learning.generation_session SET plan=CAST(:plan AS jsonb) WHERE session_id=:id")
+                .param("plan", Json.write(plan)).param("id", sessionId).update();
+    }
+
     void setReservation(UUID sessionId, UUID reservation) {
         jdbc.sql("UPDATE app_learning.generation_session SET reservation_id=:reservation WHERE session_id=:id")
                 .param("reservation", reservation).param("id", sessionId).update();
@@ -197,9 +209,13 @@ class GenerationRepository {
                 + "AND state IN ('PLANNING','RUNNING')" + LIVE_DECK).param("owner", owner).query(Integer.class).single();
     }
 
-    /** Sessions of {@code RUNNING} that hold a reservation, for its periodic renewal. */
+    /**
+     * Sessions that hold a reservation and are doing work (RUNNING, or PLANNING: the planner is working), for its periodic renewal. A
+     * PLAN_READY session is not renewed: the plan waits for the owner and its hold lapses after {@code learning.usage.reservation-ttl}
+     * (the approval reserves again), so a plan nobody launches never blocks credits for the days it may stay open.
+     */
     List<Session> runningWithReservation(UUID after, int limit) {
-        return jdbc.sql("SELECT " + SESSION_COLUMNS + " FROM app_learning.generation_session WHERE state='RUNNING' "
+        return jdbc.sql("SELECT " + SESSION_COLUMNS + " FROM app_learning.generation_session WHERE state IN ('RUNNING','PLANNING') "
                         + "AND reservation_id IS NOT NULL AND session_id>:after ORDER BY session_id LIMIT :limit")
                 .param("after", after).param("limit", limit).query(SESSION).list();
     }

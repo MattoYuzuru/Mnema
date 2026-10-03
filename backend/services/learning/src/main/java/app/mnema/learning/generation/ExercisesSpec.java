@@ -39,6 +39,11 @@ record ExercisesSpec(List<Source> targets, String outputLanguage, List<String> m
                 settings.path("priority").stringValue(UNCOVERED_FIRST));
     }
 
+    /** The same spec with the mechanics a plan chose for one target ({@code mechanics} of a plan item): what that step asks for and the lint allows. */
+    ExercisesSpec withMechanics(List<String> chosen) {
+        return new ExercisesSpec(targets, outputLanguage, List.copyOf(chosen), priority);
+    }
+
     /**
      * The mechanics the model may use, in the registry order of the contract. {@code AUTO} allows all seven: nothing generated here
      * needs a capability that can be off (a {@code FREE_RESPONSE} is deterministic text, never the {@code ai-semantic} evaluator,

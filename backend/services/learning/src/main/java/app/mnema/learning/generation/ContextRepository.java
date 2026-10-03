@@ -100,6 +100,30 @@ class ContextRepository {
         return result;
     }
 
+    /** The current heads of these materials (those that are still current materials of the deck), in no particular order. */
+    List<Head> heads(UUID deck, Collection<UUID> members) {
+        if (members.isEmpty()) return List.of();
+        return jdbc.sql(HEADS + " AND h.member_key IN (:members)").param("deck", deck).param("members", members)
+                .query((row, ignored) -> head(row)).list();
+    }
+
+    /** Enabled current exercises per material and mechanic ({@code memberKey -> {mechanic -> count}}); a material without any is absent. */
+    Map<UUID, Map<String, Integer>> mechanicCounts(UUID deck, Collection<UUID> members) {
+        Map<UUID, Map<String, Integer>> result = new HashMap<>();
+        if (members.isEmpty()) return result;
+        jdbc.sql("SELECT binding.member_key,revision.exercise_type,count(*)::integer AS n FROM app_learning.exercise_content_binding binding "
+                        + "JOIN app_learning.deck_head_exercise head ON head.deck_id=binding.deck_id "
+                        + "AND head.exercise_id=binding.exercise_id AND head.revision_id=binding.exercise_revision_id "
+                        + "JOIN app_learning.exercise_revision revision ON revision.deck_id=head.deck_id "
+                        + "AND revision.exercise_id=head.exercise_id AND revision.revision_id=head.revision_id AND revision.enabled "
+                        + "WHERE binding.deck_id=:deck AND binding.role='ASSESSED' AND binding.member_key IN (:members) "
+                        + "GROUP BY binding.member_key,revision.exercise_type ORDER BY binding.member_key,revision.exercise_type")
+                .param("deck", deck).param("members", members)
+                .query((row, ignored) -> result.computeIfAbsent(row.getObject("member_key", UUID.class), key -> new java.util.LinkedHashMap<>())
+                        .put(row.getString("exercise_type"), row.getInt("n"))).list();
+        return result;
+    }
+
     /** The current objectives bound to a material, oldest first, with the mechanics of the exercises that evidence each one. */
     List<ObjectiveLine> objectives(UUID deck, UUID member, int limit) {
         return jdbc.sql("SELECT o.objective_id,r.revision_id,r.descriptor ->> 'title' AS title,"

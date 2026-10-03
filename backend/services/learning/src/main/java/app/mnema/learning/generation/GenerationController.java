@@ -30,7 +30,7 @@ import java.util.UUID;
 /**
  * The HTTP surface of generation sessions ({@code contracts/generation/http.json}) that exists so far: create, list (one
  * deck and the account's active sessions), read, cancel, events, artifact, approval (one and bulk), rejection and its undo,
- * hand-off, retry, delete and the archival of used notes. Edits and revert come with AI-11. Every response is
+ * hand-off, retry, edits, revert, the plan approval of a plan-first session, delete and the archival of used notes. Every response is
  * {@code Cache-Control: private, no-store}; the owner is the token subject and nothing else; ids and queries are checked
  * before the service is called, and a body is read (bounded) before any transaction starts.
  */
@@ -103,6 +103,26 @@ class GenerationController {
         query(request, Set.of());
         ObjectNode body = service.read(owner, deck, session);
         return ResponseEntity.ok().headers(privateHeaders()).eTag(quoted(body.path("rowVersion").stringValue("0"))).body(body);
+    }
+
+    /**
+     * {@code approvePlan}: launches the plan of a PLAN_READY session (the model's plan with the owner's edits): the artifacts and steps of exactly that
+     * plan are created and the session is RUNNING. 200 with the session; the ETag is its new version. The version the owner saw is in the body.
+     */
+    @PostMapping(value = "/decks/{deckId}/generation-sessions/{sessionId}/plan-approval", consumes = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<JsonNode> approvePlan(@AuthenticationPrincipal Jwt identity, @PathVariable String deckId,
+                                         @PathVariable String sessionId, InputStream body) {
+        UUID owner = owner(identity);
+        UUID deck = entity(deckId, "deckId");
+        UUID session = entity(sessionId, "sessionId");
+        SessionService.Written written = service.approvePlan(owner, deck, session, read(body));
+        var response = ResponseEntity.ok().headers(privateHeaders());
+        if (written.replayed()) {
+            response.header("Idempotency-Replayed", "true");
+        } else {
+            response.eTag(quoted(written.body().path("rowVersion").stringValue("0")));
+        }
+        return response.body(written.body());
     }
 
     @PostMapping(value = "/decks/{deckId}/generation-sessions/{sessionId}/cancellation", consumes = MediaType.APPLICATION_JSON_VALUE)
