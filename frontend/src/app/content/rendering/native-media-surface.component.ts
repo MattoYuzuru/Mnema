@@ -5,6 +5,7 @@ import { NativeDocument } from '../native-document';
 import { NativeRenderNode, buildNativeRenderState } from './native-render-state';
 import { MediaPlaybackApi, MediaPlaybackView } from './media-playback.api';
 import { AssetPlaybackSource, NativeDocumentRendererComponent } from './native-document-renderer.component';
+import { BlockOverlay } from './native-top-block.directive';
 
 const FIRST_POLL_MS = 2_000;
 const MAX_POLL_MS = 15_000;
@@ -17,11 +18,14 @@ const MAX_RENEW_CHECK_MS = 15 * 60_000;
     selector: 'app-native-media-surface',
     imports: [NativeDocumentRendererComponent],
     template: `<app-native-document-renderer [document]="document()" [assetSources]="sources()"
-        [assetStatuses]="statuses()" (assetFailed)="refreshFailed($event)" />`,
+        [assetStatuses]="statuses()" [exposeNodeIds]="exposeNodeIds()" [overlay]="overlay()" (assetFailed)="refreshFailed($event)" />`,
     changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class NativeMediaSurfaceComponent {
     readonly document = input.required<NativeDocument>();
+    /** Workshop only: node ids on the top-level blocks, and what is drawn around them (see the renderer). */
+    readonly exposeNodeIds = input(false);
+    readonly overlay = input<BlockOverlay | null>(null);
     readonly sources = signal<Readonly<Record<string, AssetPlaybackSource>>>({});
     readonly statuses = signal<Readonly<Record<string, string>>>({});
 

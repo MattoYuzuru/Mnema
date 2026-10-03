@@ -122,6 +122,13 @@ textarea::placeholder {
     color: var(--mn-ink);
 }
 
+/* The Workshop's «Попросить Мнему…» window keeps the chosen blocks painted while focus is in the window (CSS Custom Highlight API;
+   the renderer marks the blocks with `.is-target` where the API does not exist). Not a selection: it is never announced. */
+::highlight(mnema-ai-target) {
+    background-color: var(--mn-selection);
+    color: var(--mn-ink);
+}
+
 :focus-visible {
     outline: 3px solid var(--mn-focus);
     outline-offset: 3px;

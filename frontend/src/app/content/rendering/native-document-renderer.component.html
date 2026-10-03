@@ -8,10 +8,19 @@
         data-native-render-state="ready"
       >
         @for (node of state.root.content; track node.id) {
-          <ng-container
-            [ngTemplateOutlet]="blockNode"
-            [ngTemplateOutletContext]="{ $implicit: node }"
-          />
+          @if (overlay(); as around) {
+            @if (around.before.has(node.id)) {
+              <ng-container [ngTemplateOutlet]="around.template" [ngTemplateOutletContext]="{ $implicit: node.id, placement: 'before' }" />
+            }
+            @if (!around.hidden.has(node.id)) {
+              <ng-container [ngTemplateOutlet]="blockNode" [ngTemplateOutletContext]="{ $implicit: node, top: true }" />
+            }
+            @if (around.after.has(node.id)) {
+              <ng-container [ngTemplateOutlet]="around.template" [ngTemplateOutletContext]="{ $implicit: node.id, placement: 'after' }" />
+            }
+          } @else {
+            <ng-container [ngTemplateOutlet]="blockNode" [ngTemplateOutletContext]="{ $implicit: node, top: true }" />
+          }
         }
       </article>
     }
@@ -28,10 +37,10 @@
   }
 }
 
-<ng-template #blockNode let-node>
+<ng-template #blockNode let-node let-top="top">
   @switch (node.kind) {
     @case ('paragraph') {
-      <p class="native-paragraph" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
+      <p class="native-paragraph" [appTopBlock]="top ? node.id : null" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
         @for (child of node.content; track child.id) {
           <ng-container
             [ngTemplateOutlet]="inlineNode"
@@ -43,33 +52,34 @@
     @case ('heading') {
       @switch (node.level) {
         @case (1) {
-          <h2 class="native-heading native-heading--1" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
+          <h2 class="native-heading native-heading--1" [appTopBlock]="top ? node.id : null" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
             <ng-container [ngTemplateOutlet]="inlineChildren" [ngTemplateOutletContext]="{ $implicit: node.content }" />
           </h2>
         }
         @case (2) {
-          <h3 class="native-heading native-heading--2" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
+          <h3 class="native-heading native-heading--2" [appTopBlock]="top ? node.id : null" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
             <ng-container [ngTemplateOutlet]="inlineChildren" [ngTemplateOutletContext]="{ $implicit: node.content }" />
           </h3>
         }
         @case (3) {
-          <h4 class="native-heading native-heading--3" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
+          <h4 class="native-heading native-heading--3" [appTopBlock]="top ? node.id : null" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
             <ng-container [ngTemplateOutlet]="inlineChildren" [ngTemplateOutletContext]="{ $implicit: node.content }" />
           </h4>
         }
         @case (4) {
-          <h5 class="native-heading native-heading--4" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
+          <h5 class="native-heading native-heading--4" [appTopBlock]="top ? node.id : null" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
             <ng-container [ngTemplateOutlet]="inlineChildren" [ngTemplateOutletContext]="{ $implicit: node.content }" />
           </h5>
         }
         @case (5) {
-          <h6 class="native-heading native-heading--5" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
+          <h6 class="native-heading native-heading--5" [appTopBlock]="top ? node.id : null" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
             <ng-container [ngTemplateOutlet]="inlineChildren" [ngTemplateOutletContext]="{ $implicit: node.content }" />
           </h6>
         }
         @case (6) {
           <div
             class="native-heading native-heading--6"
+            [appTopBlock]="top ? node.id : null"
             role="heading"
             aria-level="7"
             [attr.lang]="node.lang ?? null"
@@ -81,7 +91,7 @@
       }
     }
     @case ('blockquote') {
-      <blockquote class="native-quote" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
+      <blockquote class="native-quote" [appTopBlock]="top ? node.id : null" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
         @for (child of node.content; track child.id) {
           <ng-container
             [ngTemplateOutlet]="blockNode"
@@ -91,7 +101,7 @@
       </blockquote>
     }
     @case ('bullet-list') {
-      <ul class="native-list" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
+      <ul class="native-list" [appTopBlock]="top ? node.id : null" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
         @for (child of node.content; track child.id) {
           <ng-container
             [ngTemplateOutlet]="blockNode"
@@ -103,6 +113,7 @@
     @case ('ordered-list') {
       <ol
         class="native-list"
+        [appTopBlock]="top ? node.id : null"
         [attr.start]="node.order ?? null"
         [attr.lang]="node.lang ?? null"
         [attr.dir]="node.dir ?? null"
@@ -126,10 +137,10 @@
       </li>
     }
     @case ('divider') {
-      <hr class="native-divider" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null" />
+      <hr class="native-divider" [appTopBlock]="top ? node.id : null" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null" />
     }
     @case ('image') {
-      <figure class="native-media" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
+      <figure class="native-media" [appTopBlock]="top ? node.id : null" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
         @if (sources().get(node.assetId.toLowerCase()); as source) {
           <app-native-media-image [source]="source.url" [poster]="source.posterUrl ?? null"
             [download]="source.downloadUrl ?? source.url" [alt]="node.alt"
@@ -142,7 +153,7 @@
       </figure>
     }
     @case ('audio') {
-      <figure class="native-media" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
+      <figure class="native-media" [appTopBlock]="top ? node.id : null" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
         <figcaption>{{ node.title }}</figcaption>
         @if (sources().get(node.assetId.toLowerCase()); as source) {
           <app-native-media-player kind="audio" [source]="source.url" [title]="node.title"
@@ -152,7 +163,7 @@
       </figure>
     }
     @case ('video') {
-      <figure class="native-media" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
+      <figure class="native-media" [appTopBlock]="top ? node.id : null" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
         <figcaption>{{ node.title }}</figcaption>
         @if (sources().get(node.assetId.toLowerCase()); as source) {
           <app-native-media-player kind="video" [source]="source.url" [poster]="source.posterUrl ?? null"
@@ -162,13 +173,13 @@
       </figure>
     }
     @case ('youtube') {
-      <app-native-youtube [videoId]="node.videoId" [title]="node.title" [transcript]="node.transcript ?? null" />
+      <app-native-youtube [appTopBlock]="top ? node.id : null" [videoId]="node.videoId" [title]="node.title" [transcript]="node.transcript ?? null" />
     }
     @case ('mermaid') {
-      <app-native-mermaid [source]="node.source" [title]="node.title" [description]="node.description" />
+      <app-native-mermaid [appTopBlock]="top ? node.id : null" [source]="node.source" [title]="node.title" [description]="node.description" />
     }
     @case ('code-block') {
-      <figure class="native-code" dir="ltr">
+      <figure class="native-code" dir="ltr" [appTopBlock]="top ? node.id : null">
         @if (node.lang) { <figcaption class="native-code-lang">{{ node.lang }}</figcaption> }
         <div class="native-code-scroll" tabindex="0" role="region"
           [attr.aria-label]="node.lang ? 'Код, язык ' + node.lang + ': прокрутка по горизонтали при необходимости' : 'Код: прокрутка по горизонтали при необходимости'">
@@ -177,7 +188,7 @@
       </figure>
     }
     @case ('table') {
-      <figure class="native-table-figure" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
+      <figure class="native-table-figure" [appTopBlock]="top ? node.id : null" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
         <div class="native-table-scroll" tabindex="0" aria-label="Таблица: прокрутка по горизонтали при необходимости">
           <table>
             <caption>{{ node.caption }}</caption>
@@ -194,7 +205,7 @@
       @if (node.display === 'list-item') {
         <li class="native-list-item native-unsupported native-unsupported--list-item">Этот пункт пока не поддерживается.</li>
       } @else {
-        <div class="native-unsupported" role="note">Этот фрагмент пока не поддерживается.</div>
+        <div class="native-unsupported" role="note" [appTopBlock]="top ? node.id : null">Этот фрагмент пока не поддерживается.</div>
       }
     }
   }
