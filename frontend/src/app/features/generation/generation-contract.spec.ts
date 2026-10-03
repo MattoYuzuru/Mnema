@@ -1,12 +1,15 @@
 import { buildNativeRenderState } from '../../content/rendering/native-render-state';
 import { AuthoringProtocolError } from '../authoring/authoring.models';
+import { DEFAULT_BUILDER_VALUE, buildExercisesSpec } from './exercise-builder';
+import { readProposal } from './exercise-proposal';
 import { DEFAULT_SETTINGS } from './generation-settings.component';
 import { buildMaterialsSpec } from './generation-composer.component';
 import { readProblem } from './generation-problem';
+import { HttpErrorResponse } from '@angular/common/http';
 import {
     ARTIFACT_ERROR_CODES, ARTIFACT_STATES, EFFORTS, OPERATION_TABLES, SESSION_STATES, SLOT_STATES, isApprovable, isRetryable,
     NoteOverrides, SpecSource, parseApprovalAck, parseArtifactDetail, parseArtifactSummary, parseEstimate, parseEventsPage, parseHandoff,
-    parseNoteArchive, parseSessionDetail, parseSessionPage, parseSessionSummary, previewDocument, serializeMaterialsSpec
+    parseNoteArchive, parseSessionDetail, parseSessionPage, parseSessionSummary, previewDocument, serializeMaterialsSpec, serializeExercisesSpec
 } from './generation.models';
 import {
     artifactDetailWithNote, clone, errorsContract, eventsContract, examples, httpContract, ids, noteArchiveAnswer, noteIds, problemResponse,
@@ -306,5 +309,46 @@ describe('Generation wire contract (contracts/generation)', () => {
             expect(() => parseNoteArchive(noteArchiveAnswer([], [{ noteId: noteIds.first, reason: 'NOPE' }]), false)).toThrow(AuthoringProtocolError);
             expect(() => parseNoteArchive({ archived: [] }, false)).toThrow(AuthoringProtocolError);
         });
+    });
+});
+
+const problemResponseOf = (body: Record<string, unknown>) => new HttpErrorResponse({ status: 422, error: body });
+
+describe('Exercise generation wire contract (contracts/generation, AI-13 #291)', () => {
+    it('sends exactly the generationSpec.EXERCISES example for the same choices', () => {
+        const example = examples['specExercises'];
+        const spec = buildExercisesSpec(example.targets, { ...DEFAULT_BUILDER_VALUE, quantityMode: 'EXACT', perTarget: 3 }, example.outputLanguage);
+        expect(serializeExercisesSpec(spec)).toEqual(example);
+    });
+
+    it('reads the exercise detail example: the stored command, the display and the quotes of the pinned revision', () => {
+        const detail = parseArtifactDetail(examples['artifactDetailExercise']);
+        expect(detail.display).toEqual(examples['artifactDetailExercise'].display);
+        const proposal = readProposal(detail)!;
+        expect(proposal.mechanic).toBe(detail.display!.mechanic);
+        expect(proposal.objectiveTitle).toBe(detail.display!.objectiveTitle);
+        // Every MATERIAL block of the stored exercise has its quote, so the card renders without another request.
+        const blocks = JSON.stringify(proposal.exercise.content).match(/"nodeId":"[0-9a-f-]{36}"/gu) ?? [];
+        for (const block of blocks) expect(Object.keys(proposal.quotes)).toContain(block.slice(10, -1));
+    });
+
+    it('reads the exercise acknowledgements: single, and a bulk answer that may mix both kinds', () => {
+        const single = parseApprovalAck(examples['approvalAckExercise'], false);
+        expect(single.artifacts[0]!.publishedRef.kind).toBe('EXERCISE');
+        const bulk = parseApprovalAck(examples['approvalAckBulk'], false);
+        expect(bulk.artifacts.length).toBeGreaterThan(0);
+    });
+
+    it('documents the optional replacement on the approval request and nowhere else', () => {
+        const endpoints = httpContract['endpoints'] as { operationId: string; requestBodyOptional?: Record<string, string> }[];
+        const approve = endpoints.find(endpoint => endpoint.operationId === 'approveArtifact')!;
+        expect(Object.keys(approve.requestBodyOptional ?? {})).toEqual(['replacement']);
+        expect(endpoints.find(endpoint => endpoint.operationId === 'approveArtifacts')?.requestBodyOptional?.['replacement']).toBeUndefined();
+    });
+
+    it('limits what the contract says: 20 targets, 10 per target, 60 per session', () => {
+        const limit = (errorsContract['codes'].RESOURCE_LIMIT_EXCEEDED.example as Record<string, unknown>)['limits'];
+        expect(limit).toEqual({ maxExerciseTargets: 20, maxExercisesPerTarget: 10, maxExercisesPerSession: 60 });
+        expect(readProblem(problemResponseOf({ code: 'RESOURCE_LIMIT_EXCEEDED', limit: 'EXERCISES_PER_SESSION', limits: limit })).limits).toEqual(limit);
     });
 });

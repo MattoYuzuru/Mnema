@@ -314,8 +314,9 @@ const EVALUATORS: Readonly<Record<Mechanic, readonly string[]>> = {
 function parsePresentation(value: unknown): StudyPresentation {
     const object = exact(value, [
         'presentationId', 'nonce', 'ordinal', 'exerciseRevisionId', 'type', 'objectiveId', 'objectiveRevisionId',
-        'learningEpoch', 'content', 'transcriptRevealed', 'hints', 'evaluator'
+        'learningEpoch', 'isNew', 'content', 'transcriptRevealed', 'hints', 'evaluator'
     ]);
+    if (typeof object['isNew'] !== 'boolean') throw protocol('Invalid new mark.');
     const type = exerciseType(object['type']);
     if (typeof object['transcriptRevealed'] !== 'boolean') throw protocol('Invalid transcript state.');
     const learner = guard(() => parseLearnerContent(type, object['content'], object['transcriptRevealed'] as boolean));
@@ -327,7 +328,8 @@ function parsePresentation(value: unknown): StudyPresentation {
         ordinal: count(object['ordinal'], 99), exerciseRevisionId: entity(object['exerciseRevisionId']),
         objectiveId: entity(object['objectiveId']), objectiveRevisionId: entity(object['objectiveRevisionId']),
         learningEpoch: unsigned(object['learningEpoch']), transcriptRevealed: object['transcriptRevealed'],
-        hints, evaluator: { id: text(evaluator['id'], 100), version: text(evaluator['version'], 100) }, ...learner
+        hints, evaluator: { id: text(evaluator['id'], 100), version: text(evaluator['version'], 100) },
+        isNew: object['isNew'], ...learner
     };
 }
 

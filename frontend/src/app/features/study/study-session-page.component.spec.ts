@@ -587,6 +587,15 @@ describe('StudySessionPageComponent', () => {
         expect(page().textContent).toContain(long);
     });
 
+    it('marks a new generated exercise with the text «Новое» on its card, and shows nothing for the others (AI-13)', () => {
+        startWithPresentations([{ ...fixtures['selfCheck'], isNew: true }]);
+        const badge = fixture.nativeElement.querySelector('.study-card app-new-badge');
+        expect(badge?.textContent).toBe('Новое');
+        expect(fixture.nativeElement.querySelector('.study-card .eyebrow')?.textContent).toContain('Вспомните без подсказки');
+        startWithPresentations([{ ...fixtures['selfCheck'], isNew: false }]);
+        expect(fixture.nativeElement.querySelector('.study-card app-new-badge')).toBeNull();
+    });
+
     it('offers honest session presets before issuing a scheduled command', () => {
         api.start.mockReturnValue(of({ value: sessionOf([fixtures['selfCheck']]), replayed: false }));
         fixture = TestBed.createComponent(StudySessionPageComponent);

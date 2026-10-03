@@ -5,7 +5,7 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { forkJoin, switchMap } from 'rxjs';
+import { forkJoin, map, of, switchMap } from 'rxjs';
 
 import {
     AuthoringBlock, ExerciseSpec, LIMITS, MECHANICS, Mechanic, ObjectiveCommand, PROMPT_SLOTS, REFERENCE_SLOTS, authoringSlots,
@@ -14,6 +14,13 @@ import {
 import { MECHANIC_CATALOG, StepId, catalogEntry, stepTitle } from '../../content/exercise/mechanic-catalog';
 import { MnemaSelectComponent, MnemaSelectOption } from '../../core/controls/mnema-select.component';
 import { HoldToDeleteButtonComponent } from '../../shared/hold-to-delete-button.component';
+import { NewBadgeComponent } from '../../shared/new-badge.component';
+import { ToastService } from '../../core/notifications/toast.service';
+import { ExerciseProposal, quoteContext, readProposal } from '../generation/exercise-proposal';
+import { GenerationApiService } from '../generation/generation-api.service';
+import { readProblem } from '../generation/generation-problem';
+import { problemMessage } from '../generation/generation-view';
+import { ArtifactDetail } from '../generation/generation.models';
 import { OwnDeck } from '../own-decks/own-deck.models';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { AuthoringProtocolError, ItemDetail, newCommandId } from './authoring.models';
@@ -37,6 +44,16 @@ import { OrderEditorComponent } from './order-editor.component';
 
 type Phase = 'loading' | 'ready' | 'saving' | 'saved' | 'conflict' | 'rejected' | 'error';
 type ObjectiveMode = 'create' | 'reuse' | 'revise';
+
+/**
+ * An exercise Мнема proposed in a Workshop, opened for editing before it is saved (`?session=<id>&artifact=<id>`, AI-13): saving
+ * approves the artifact with the edited exercise as its `replacement`, then returns to the Workshop.
+ */
+interface ProposalEdit {
+    readonly sessionId: string;
+    readonly artifact: ArtifactDetail;
+    readonly proposal: ExerciseProposal;
+}
 
 interface PendingWrite {
     readonly commandId: string;
@@ -83,7 +100,7 @@ function stepOwns(step: StepId, key: string): boolean {
 
 @Component({
     selector: 'app-exercise-authoring-page',
-    imports: [RouterLink, MnemaSelectComponent, HoldToDeleteButtonComponent, MechanicPickerComponent, ExercisePreviewHostComponent,
+    imports: [RouterLink, MnemaSelectComponent, HoldToDeleteButtonComponent, NewBadgeComponent, MechanicPickerComponent, ExercisePreviewHostComponent,
         ExerciseSlotEditorComponent, FreeResponseEditorComponent, ClozeEditorComponent, ChoiceEditorComponent, MatchEditorComponent,
         OrderEditorComponent, CategoryGroupsEditorComponent, CategorizeItemsEditorComponent],
     templateUrl: './exercise-authoring-page.component.html',
@@ -106,6 +123,8 @@ export class ExerciseAuthoringPageComponent {
     /** Set after the first failed save so untouched new blocks are not flagged while the author is still typing. */
     readonly showProblems = signal(false);
     readonly capabilities = signal<LearningCapabilities>(CAPABILITIES_UNAVAILABLE);
+    /** Set when the page edits a Workshop proposal instead of a new or saved exercise. */
+    readonly proposalEdit = signal<ProposalEdit | null>(null);
 
     /** Nothing is selected on a new exercise: the page starts with the type choice alone. */
     readonly mechanic = signal<Mechanic | null>(null);
@@ -128,7 +147,19 @@ export class ExerciseAuthoringPageComponent {
     readonly visibleSteps = computed(() => this.steps().slice(0, this.openCount()));
     readonly idPrefix = computed(() => { const value = this.mechanic(); return value === null ? 'exercise' : ID_PREFIX[value]; });
 
-    readonly projections = computed(() => this.item() === null ? [] : textProjections(this.item()!.document));
+    /**
+     * The text the exercise can quote. A proposal may quote an earlier revision of the material than the one now current: its
+     * quotes (sent with the artifact) fill in what the current document no longer has.
+     */
+    readonly projections = computed(() => {
+        const item = this.item();
+        if (item === null) return [];
+        const own = textProjections(item.document);
+        const quotes = this.proposalEdit()?.proposal.quotes;
+        if (quotes === undefined) return own;
+        const known = new Set(own.map(projection => projection.nodeId));
+        return [...own, ...quoteContext(quotes).projections.filter(projection => !known.has(projection.nodeId))];
+    });
     readonly context = computed<SlotContext | null>(() => {
         const item = this.item();
         return item === null ? null : { document: item.document, memberKey: item.memberKey,
@@ -196,6 +227,8 @@ export class ExerciseAuthoringPageComponent {
     private readonly items = inject(ItemApiService);
     private readonly exercises = inject(ExerciseApiService);
     private readonly capabilityApi = inject(CapabilitiesApiService);
+    private readonly generation = inject(GenerationApiService);
+    private readonly toast = inject(ToastService);
     private readonly destroyRef = inject(DestroyRef);
     private pending: PendingWrite | null = null;
 
@@ -206,6 +239,13 @@ export class ExerciseAuthoringPageComponent {
             next: value => this.capabilities.set(value),
             error: () => this.capabilities.set(CAPABILITIES_UNAVAILABLE)
         });
+    }
+
+    /** The Workshop a proposal came from (`?session=`), for the way back when the proposal cannot be opened. */
+    workshopLink(): readonly string[] | null {
+        const deckId = this.route.snapshot.paramMap.get('deckId');
+        const sessionId = this.route.snapshot.queryParamMap.get('session');
+        return deckId === null || sessionId === null ? null : ['/decks', deckId, 'workshop', sessionId];
     }
 
     load(): void {
@@ -220,11 +260,17 @@ export class ExerciseAuthoringPageComponent {
         this.message.set(null);
         this.fieldErrors.set({});
         if (exerciseId === null) {
+            const sessionId = this.route.snapshot.queryParamMap.get('session');
+            const artifactId = this.route.snapshot.queryParamMap.get('artifact');
+            const proposed = sessionId !== null && artifactId !== null;
             forkJoin({ deck: this.decks.detail(deckId), item: this.items.read(deckId, routeMember!),
-                page: this.exercises.list(deckId, routeMember!) })
+                page: this.exercises.list(deckId, routeMember!),
+                artifact: proposed ? this.generation.getArtifact(deckId, sessionId, artifactId).pipe(map(value => ({ sessionId, value }))) : of(null) })
                 .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-                    next: result => this.openNew(result.deck, result.item, result.page),
-                    error: () => this.fail('Не удалось загрузить материал и упражнения.')
+                    next: result => result.artifact === null
+                        ? this.openNew(result.deck, result.item, result.page)
+                        : this.openProposal(result.deck, result.item, result.page, result.artifact.sessionId, result.artifact.value),
+                    error: () => this.fail(proposed ? 'Не удалось загрузить упражнение из мастерской.' : 'Не удалось загрузить материал и упражнения.')
                 });
             return;
         }
@@ -234,7 +280,11 @@ export class ExerciseAuthoringPageComponent {
                     const member = result.detail.objective.memberKey;
                     forkJoin({ item: this.items.read(deckId, member), page: this.exercises.list(deckId, member) })
                         .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-                            next: content => this.openExisting(result.deck, content.item, content.page, result.detail),
+                            next: content => {
+                                this.openExisting(result.deck, content.item, content.page, result.detail);
+                                // Opening the exercise is what clears «Новое»; the mark is decoration, so a failure is ignored.
+                                this.exercises.clearNewMark(result.deck.deckId, result.detail.exerciseId).subscribe({ error: () => undefined });
+                            },
                             error: () => this.fail('Не удалось сверить упражнение с актуальным материалом.')
                         });
                 },
@@ -395,6 +445,11 @@ export class ExerciseAuthoringPageComponent {
         }
         this.phase.set('saving');
         this.message.set(null);
+        const edit = this.proposalEdit();
+        if (edit !== null) {
+            this.approveProposal(edit, deck, pending);
+            return;
+        }
         const request = current === null
             ? this.exercises.create(deck.deckId, deck.rowVersion, deck.revisionId,
                 pending.objective, pending.exercise, pending.commandId)
@@ -520,6 +575,70 @@ export class ExerciseAuthoringPageComponent {
         if (this.route.snapshot.queryParamMap.get('saved') === '1') {
             this.phase.set('saved'); this.message.set('Упражнение сохранено.');
         }
+    }
+
+    /**
+     * Opens a Workshop proposal in the editor. Only a proposed exercise of this material is editable; anything else (already
+     * decided, another material, not an exercise) says so and offers the way back instead of a form that cannot be saved.
+     */
+    private openProposal(deck: OwnDeck, item: ItemDetail, page: ExercisePage, sessionId: string, artifact: ArtifactDetail): void {
+        const proposal = readProposal(artifact);
+        if (proposal === null || artifact.state !== 'PROPOSED' || proposal.exercise.subject.memberKey !== item.memberKey) {
+            this.proposalEdit.set(null);
+            this.fail('Это упражнение уже нельзя править: его решили, или материал другой. Вернитесь в мастерскую.');
+            return;
+        }
+        this.proposalEdit.set({ sessionId, artifact, proposal });
+        this.openNew(deck, item, page);
+        const { exercise, objective } = proposal;
+        this.mechanic.set(exercise.type);
+        this.enabled.set(exercise.enabled);
+        this.drafts.set(draftsFromDetail(exercise));
+        this.opened.set({ ...closedSteps(), [exercise.type]: catalogEntry(exercise.type).steps.length });
+        const known = objective.operation === 'reuse' ? this.objectives().find(value => value.objectiveId === objective.objectiveId) : undefined;
+        if (known !== undefined) {
+            this.objectiveMode.set('reuse'); this.selectedObjectiveId.set(known.objectiveId);
+        } else {
+            // A new objective, or a reused one this page has not listed: the title is the objective's name, and the server reuses
+            // an objective of the same material and title when there is one.
+            this.objectiveMode.set('create'); this.selectedObjectiveId.set(null);
+            this.objectiveTitle.set(proposal.objectiveTitle); this.titleEdited.set(true);
+        }
+    }
+
+    /** Saves the edited proposal: the artifact is approved with the exercise as its `replacement`; then back to the Workshop. */
+    private approveProposal(edit: ProposalEdit, deck: OwnDeck, pending: PendingWrite): void {
+        const artifact = edit.artifact;
+        this.generation.approveArtifact(deck.deckId, edit.sessionId, { artifactId: artifact.artifactId,
+            expectedArtifactVersion: artifact.rowVersion, expectedRevisionId: artifact.currentRevisionId! },
+            { rowVersion: deck.rowVersion, revisionId: deck.revisionId }, pending.commandId,
+            { objective: pending.objective, exercise: pending.exercise })
+            .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+                next: () => {
+                    this.pending = null; this.dirty.set(false); this.phase.set('saved');
+                    this.toast.echo('Упражнение сохранено в колоду');
+                    void this.router.navigate(['/decks', deck.deckId, 'workshop', edit.sessionId]);
+                },
+                error: (error: unknown) => this.proposalFailed(error)
+            });
+    }
+
+    private proposalFailed(error: unknown): void {
+        const problem = readProblem(error);
+        if (problem.uncertain) {
+            this.phase.set('error');
+            this.message.set('Не удалось проверить сохранение. Повторите попытку: будет отправлена та же команда.');
+            return;
+        }
+        this.pending = null;
+        if (problem.status === 412 || problem.status === 409) {
+            this.phase.set('conflict');
+            this.message.set(`${problemMessage(problem, 'EXERCISES')} Загрузите упражнение заново или вернитесь в мастерскую.`);
+            return;
+        }
+        this.phase.set('rejected');
+        this.message.set(problem.status === 400 || problem.status === 422
+            ? 'Упражнение не принято. Проверьте фрагменты материала и настройки ответа.' : problemMessage(problem, 'EXERCISES'));
     }
 
     private changed(): void {

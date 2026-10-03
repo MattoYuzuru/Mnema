@@ -7,6 +7,7 @@ import { map, timer } from 'rxjs';
 import { Mechanic } from '../../content/exercise/exercise-content.models';
 import { QuietZone } from '../../core/notifications/quiet-zone';
 import { MnemaSelectComponent, MnemaSelectOption } from '../../core/controls/mnema-select.component';
+import { NewBadgeComponent } from '../../shared/new-badge.component';
 import { LearnerExerciseComponent, PairChecker } from './learner-exercise.component';
 import { LearnerFeedbackComponent, feedbackTitle } from './learner-feedback.component';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
@@ -33,7 +34,7 @@ const TASK_OPEN: readonly Phase[] = ['answering', 'revealed', 'submitting'];
 
 @Component({
     selector: 'app-study-session-page',
-    imports: [RouterLink, MnemaSelectComponent, LearnerExerciseComponent, LearnerFeedbackComponent],
+    imports: [RouterLink, MnemaSelectComponent, LearnerExerciseComponent, LearnerFeedbackComponent, NewBadgeComponent],
     templateUrl: './study-session-page.component.html',
     styleUrl: './study-session-page.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush

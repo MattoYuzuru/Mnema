@@ -11,7 +11,8 @@ export interface PreviewSubmission {
     readonly transcriptRevealed: boolean;
 }
 
-export type PreviewMode = 'DEMO' | 'AUTHOR_DRAFT' | 'AUTHOR_READY';
+/** `PROPOSAL` is an exercise Мнема proposed in a Workshop batch: playable like the author's own, but not the author's. */
+export type PreviewMode = 'DEMO' | 'AUTHOR_DRAFT' | 'AUTHOR_READY' | 'PROPOSAL';
 
 /**
  * What the preview host shows and evaluates right now. It is derived from the page state and never written

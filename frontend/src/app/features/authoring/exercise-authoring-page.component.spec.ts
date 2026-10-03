@@ -3,7 +3,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ApplicationRef } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
-import { Subject, of, throwError } from 'rxjs';
+import { Observable, Subject, of, throwError } from 'rxjs';
 
 import { DEMO_ASSETS } from '../../content/exercise/demo/demo-media';
 import { AuthoringBlock, ExerciseSpec, Mechanic } from '../../content/exercise/exercise-content.models';
@@ -25,6 +25,11 @@ import { ExerciseDetail, ExercisePage } from './exercise.models';
 import { ItemApiService } from './item-api.service';
 import { NativeMediaUploadApi } from './native-media-upload.api';
 import { spyObj, type SpyObj, lastCall } from '../../../testing/mocks';
+import { ToastService } from '../../core/notifications/toast.service';
+import { GenerationApiService } from '../generation/generation-api.service';
+import { ArtifactDetail, parseApprovalAck, parseArtifactDetail } from '../generation/generation.models';
+import { ack, createCommand, exerciseDetail } from '../generation/exercise-test-data';
+import { ids as generationIds, problemResponse } from '../generation/generation-test-data';
 
 describe('ExerciseAuthoringPageComponent', () => {
     const id = (suffix: string) => `00000000-0000-4000-8000-${suffix.padStart(12, '0')}`;
@@ -67,6 +72,11 @@ describe('ExerciseAuthoringPageComponent', () => {
     let getUserMedia: Mock;
     let scroll: Mock;
     let savedQuery = '';
+    let extraQuery: Record<string, string> = {};
+    let proposalAnswer: Observable<ArtifactDetail> | null = null;
+    let newMarks = new Set<string>();
+    let generationApi: SpyObj<GenerationApiService>;
+    let toast: { echo: ReturnType<typeof vi.fn> };
 
     function detailOf(spec: ExerciseSpec, ordinal = 0): ExerciseDetail {
         return { exerciseId: id('50'), exerciseRevisionId: id('51'), exerciseVersion: '1', ordinal,
@@ -77,7 +87,7 @@ describe('ExerciseAuthoringPageComponent', () => {
     function summaryOf(detail: ExerciseDetail, exerciseId = detail.exerciseId) {
         return { exerciseId, exerciseRevisionId: detail.exerciseRevisionId, exerciseVersion: '1', ordinal: detail.ordinal,
             type: detail.type, enabled: detail.enabled, schemaVersion: 2 as const, createdAt: detail.createdAt,
-            updatedAt: detail.updatedAt, objective: detail.objective };
+            updatedAt: detail.updatedAt, objective: detail.objective, isNew: newMarks.has(exerciseId) };
     }
 
     /** `detail` opens the edit route; `others` are further exercises of the material already listed. */
@@ -85,6 +95,9 @@ describe('ExerciseAuthoringPageComponent', () => {
         decksApi = spyObj<OwnDecksApiService>({
             detail: vi.fn().mockName("OwnDecksApiService.detail")
         });
+        generationApi = spyObj<GenerationApiService>({ getArtifact: vi.fn(), approveArtifact: vi.fn() });
+        generationApi.getArtifact.mockImplementation(() => proposalAnswer ?? throwError(() => new HttpErrorResponse({ status: 500 })));
+        toast = { echo: vi.fn() };
         const items = {
             read: vi.fn().mockName("ItemApiService.read")
         };
@@ -93,7 +106,8 @@ describe('ExerciseAuthoringPageComponent', () => {
             read: vi.fn().mockName("ExerciseApiService.read"),
             create: vi.fn().mockName("ExerciseApiService.create"),
             update: vi.fn().mockName("ExerciseApiService.update"),
-            delete: vi.fn().mockName("ExerciseApiService.delete")
+            delete: vi.fn().mockName("ExerciseApiService.delete"),
+            clearNewMark: vi.fn().mockName("ExerciseApiService.clearNewMark")
         });
         capabilityApi = spyObj<CapabilitiesApiService>({
             read: vi.fn().mockName("CapabilitiesApiService.read")
@@ -124,6 +138,7 @@ describe('ExerciseAuthoringPageComponent', () => {
         api.create.mockReturnValue(of({ acknowledgement, replayed: false }));
         api.update.mockReturnValue(of({ acknowledgement, replayed: false }));
         api.delete.mockReturnValue(of(undefined));
+        api.clearNewMark.mockReturnValue(of(undefined));
         capabilityApi.read.mockReturnValue(capabilities === 'error' ? throwError(() => new HttpErrorResponse({ status: 500 })) : of(capabilities));
         router.navigate.mockResolvedValue(true);
         previewApi.submit.mockReturnValue(of({ result: 'CORRECT', appliedRules: [] } as AttemptFeedback));
@@ -150,19 +165,20 @@ describe('ExerciseAuthoringPageComponent', () => {
         TestBed.configureTestingModule({ providers: [
                 { provide: ActivatedRoute, useValue: { snapshot: {
                             paramMap: convertToParamMap({ deckId: deck.deckId, ...(detail ? { exerciseId: detail.exerciseId } : { memberKey: item.memberKey }) }),
-                            queryParamMap: convertToParamMap(savedQuery === '' ? {} : { saved: savedQuery })
+                            queryParamMap: convertToParamMap({ ...(savedQuery === '' ? {} : { saved: savedQuery }), ...extraQuery })
                         } } },
                 { provide: Router, useValue: router }, { provide: OwnDecksApiService, useValue: decksApi },
                 { provide: ItemApiService, useValue: items }, { provide: ExerciseApiService, useValue: api },
                 { provide: ExercisePreviewApiService, useValue: previewApi }, { provide: StudyApiService, useValue: studyApi },
                 { provide: CapabilitiesApiService, useValue: capabilityApi }, { provide: MEDIA_PLAYBACK_RESOLVER, useValue: playback },
-                { provide: NativeMediaUploadApi, useValue: upload }
+                { provide: NativeMediaUploadApi, useValue: upload },
+                { provide: GenerationApiService, useValue: generationApi }, { provide: ToastService, useValue: toast }
             ] });
         fixture = TestBed.createComponent(ExerciseAuthoringPageComponent);
         fixture.detectChanges();
     }
 
-    beforeEach(() => { savedQuery = ''; });
+    beforeEach(() => { savedQuery = ''; extraQuery = {}; proposalAnswer = null; newMarks = new Set<string>(); });
 
     const page = () => fixture.nativeElement as HTMLElement;
     const component = () => fixture.componentInstance;
@@ -1544,6 +1560,192 @@ describe('ExerciseAuthoringPageComponent', () => {
                 expect(page().querySelector('#exercise-errors')?.textContent).toContain(reason);
             });
         }
+    });
+
+
+    describe('«Новое» (AI-13)', () => {
+        it('marks a newly saved exercise in the list with the text «Новое» and leaves the others alone', () => {
+            const marked = detailOf(mechanics['createSelfCheck'].exercise);
+            newMarks = new Set([marked.exerciseId]);
+            configure(null, CAPABILITIES_UNAVAILABLE, [marked, { ...detailOf(mechanics['createSelfCheck'].exercise), exerciseId: id('61') }]);
+            refresh();
+            const rows = page().querySelectorAll('#existing-exercises li');
+            expect(rows[0]!.querySelector('app-new-badge')?.textContent).toBe('Новое');
+            expect(rows[1]!.querySelector('app-new-badge')).toBeNull();
+        });
+
+        it('clears the mark when an exercise is opened, and ignores a failure of it', () => {
+            configure(detailOf(mechanics['createSelfCheck'].exercise));
+            expect(api.clearNewMark).toHaveBeenCalledWith(deck.deckId, id('50'));
+            expect(component().phase()).toBe('ready');
+            TestBed.resetTestingModule();
+            configure(detailOf(mechanics['createSelfCheck'].exercise));
+            api.clearNewMark.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+            component().load();
+            refresh();
+            expect(component().phase()).toBe('ready');
+        });
+
+        it('does not clear anything for a new exercise', () => {
+            configure(null);
+            expect(api.clearNewMark).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('editing a Workshop proposal («Изменить», AI-13)', () => {
+        const sessionId = generationIds.sessionId;
+        const artifactId = 'a7a70000-0000-4000-8000-000000000001';
+        const proposalExercise = (): ExerciseSpec => clone(mechanics['createSelfCheck'].exercise) as ExerciseSpec;
+        const artifact = (command: Record<string, unknown> = createCommand(proposalExercise(), 'Цель Мнемы'), overrides: Record<string, unknown> = {}) =>
+            parseArtifactDetail(exerciseDetail(artifactId, 0, command, { sessionId, ...overrides },
+                { mechanic: (command['exercise'] as ExerciseSpec).type, objectiveTitle: 'Цель Мнемы', quotes: {} }));
+        const open = (found: ArtifactDetail | Observable<ArtifactDetail> = artifact(), others: readonly ExerciseDetail[] = []) => {
+            TestBed.resetTestingModule();
+            extraQuery = { session: sessionId, artifact: artifactId };
+            proposalAnswer = found instanceof Observable ? found : of(found);
+            configure(null, CAPABILITIES_UNAVAILABLE, others);
+            refresh();
+        };
+        const approved = () => generationApi.approveArtifact.mockImplementation((_d, _s, target, _pin, commandId) =>
+            of(parseApprovalAck(ack(commandId, [target.artifactId]), false)));
+
+        it('opens the proposal in the editor: its mechanic, its content, the way back to the Workshop and a save that says what it does', () => {
+            open();
+            expect(generationApi.getArtifact).toHaveBeenCalledWith(deck.deckId, sessionId, artifactId);
+            expect(component().mechanic()).toBe('SELF_CHECK');
+            expect(component().proposalEdit()).not.toBeNull();
+            expect(component().phase()).toBe('ready');
+            expect(page().querySelector('.eyebrow')?.textContent).toBe('Правка упражнения Мнемы');
+            expect(page().querySelector('.lede')?.textContent).toContain('предложила Мнема');
+            expect(page().querySelector('a[data-back-workshop]')).not.toBeNull();
+            expect(component().workshopLink()).toEqual(['/decks', deck.deckId, 'workshop', sessionId]);
+            expect(buttonByText('Сохранить в колоду')).toBeDefined();
+            expect(page().querySelector('[data-create-another]')).toBeNull();
+            expect(component().dirty()).toBe(false);
+            expect(component().objectiveMode()).toBe('create');
+            expect(component().effectiveTitle()).toBe('Цель Мнемы');
+            expect(page().querySelector('app-exercise-preview-host')).not.toBeNull();
+        });
+
+        it('saves by approving the artifact with the edited exercise as the replacement, then returns to the Workshop', () => {
+            open();
+            approved();
+            component().setPrompt([text('Исправленный вопрос?')]);
+            refresh();
+            component().save();
+            refresh();
+            expect(api.create).not.toHaveBeenCalled();
+            expect(api.update).not.toHaveBeenCalled();
+            const [deckId, session, target, pin, commandId, replacement] = lastCall(generationApi.approveArtifact);
+            expect(deckId).toBe(deck.deckId);
+            expect(session).toBe(sessionId);
+            expect(target).toEqual({ artifactId, expectedArtifactVersion: '3', expectedRevisionId: component().proposalEdit()!.artifact.currentRevisionId });
+            expect(pin).toEqual({ rowVersion: deck.rowVersion, revisionId: deck.revisionId });
+            expect(commandId).toMatch(/^[0-9a-f-]{36}$/);
+            expect(replacement!.objective).toEqual({ operation: 'create', title: 'Цель Мнемы' });
+            expect(JSON.stringify(replacement!.exercise)).toContain('Исправленный вопрос?');
+            expect(replacement!.exercise.subject).toEqual({ memberKey: item.memberKey, itemRevisionId: item.itemRevisionId });
+            expect(toast.echo).toHaveBeenCalledWith('Упражнение сохранено в колоду');
+            expect(router.navigate).toHaveBeenCalledWith(['/decks', deck.deckId, 'workshop', sessionId]);
+            expect(component().dirty()).toBe(false);
+        });
+
+        it('keeps the objective the proposal reused when the page lists it, and creates one by title when it does not', () => {
+            const listed = detailOf(mechanics['createSelfCheck'].exercise);
+            open(artifact(createCommand(proposalExercise()), {}), [listed]);
+            expect(component().objectiveMode()).toBe('create');
+            const reuse = { objective: { operation: 'reuse', objectiveId: listed.objective.objectiveId, objectiveRevisionId: listed.objective.objectiveRevisionId }, exercise: proposalExercise() };
+            open(artifact(reuse), [listed]);
+            expect(component().objectiveMode()).toBe('reuse');
+            expect(component().selectedObjectiveId()).toBe(listed.objective.objectiveId);
+            const unknown = { objective: { operation: 'reuse', objectiveId: id('77'), objectiveRevisionId: id('78') }, exercise: proposalExercise() };
+            open(artifact(unknown));
+            expect(component().objectiveMode()).toBe('create');
+            expect(component().effectiveTitle()).toBe('Цель Мнемы');
+        });
+
+        it('quotes the earlier revision of the material the proposal was written from when the page has moved on', () => {
+            const exercise = proposalExercise();
+            const quoted = { ...exercise, content: { ...(exercise as any).content, reference: [{ kind: 'MATERIAL', memberKey: item.memberKey, itemRevisionId: item.itemRevisionId,
+                nodeId: '00000000-0000-4000-8000-0000000000aa' }] } } as ExerciseSpec;
+            open(parseArtifactDetail(exerciseDetail(artifactId, 0, createCommand(quoted), { sessionId },
+                { mechanic: 'SELF_CHECK', objectiveTitle: 'x', quotes: { '00000000-0000-4000-8000-0000000000aa': 'Старая формулировка' } })));
+            expect(component().projections().some(projection => projection.text === 'Старая формулировка')).toBe(true);
+            expect(component().projections().length).toBe(4);
+        });
+
+        it('sends the very same command again after an answer that never came', () => {
+            open();
+            generationApi.approveArtifact.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+            approved();
+            generationApi.approveArtifact.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+            component().save();
+            refresh();
+            expect(component().phase()).toBe('error');
+            expect(component().message()).toContain('та же команда');
+            expect(page().querySelector('a[data-back-workshop]')).not.toBeNull();
+            const first = lastCall(generationApi.approveArtifact)[4];
+            component().retry();
+            refresh();
+            expect(generationApi.approveArtifact.mock.calls.at(-1)![4]).toBe(first);
+        });
+
+        it('explains a stale material or a moved deck, and a refusal of the exercise, in words', () => {
+            open();
+            generationApi.approveArtifact.mockReturnValueOnce(throwError(() => problemResponse(409, { code: 'GENERATION_STATE_CONFLICT', reason: 'SOURCE_STALE' })));
+            component().save();
+            refresh();
+            expect(component().phase()).toBe('conflict');
+            expect(component().message()).toContain('Материал изменился, пока писалось упражнение');
+            generationApi.approveArtifact.mockReturnValueOnce(throwError(() => problemResponse(412)));
+            component().save();
+            refresh();
+            expect(component().phase()).toBe('conflict');
+            generationApi.approveArtifact.mockReturnValueOnce(throwError(() => problemResponse(400, { code: 'INVALID_REQUEST' })));
+            component().save();
+            refresh();
+            expect(component().phase()).toBe('rejected');
+            expect(component().message()).toContain('Упражнение не принято');
+            generationApi.approveArtifact.mockReturnValueOnce(throwError(() => problemResponse(404)));
+            component().save();
+            refresh();
+            expect(component().message()).toContain('больше недоступны');
+        });
+
+        it('does not send an exercise that does not validate', () => {
+            open();
+            component().setPrompt([text('')]);
+            refresh();
+            component().save();
+            refresh();
+            expect(generationApi.approveArtifact).not.toHaveBeenCalled();
+            expect(component().phase()).toBe('rejected');
+        });
+
+        it('refuses a proposal that is already decided, belongs to another material, or cannot be read, and offers the way back', () => {
+            open(artifact(undefined, { state: 'PUBLISHED' }));
+            expect(component().proposalEdit()).toBeNull();
+            expect(component().phase()).toBe('error');
+            expect(component().message()).toContain('нельзя править');
+            expect(page().querySelector('a[data-back-workshop]')).not.toBeNull();
+            const other = { ...proposalExercise(), subject: { memberKey: id('99'), itemRevisionId: item.itemRevisionId } } as ExerciseSpec;
+            open(artifact(createCommand(other)));
+            expect(component().message()).toContain('нельзя править');
+            open(parseArtifactDetail(exerciseDetail(artifactId, 0, { objective: { operation: 'create', title: 'x' }, exercise: { type: 'NOPE' } }, { sessionId },
+                { mechanic: 'CHOICE', objectiveTitle: 'x', quotes: {} })));
+            expect(component().message()).toContain('нельзя править');
+        });
+
+        it('says so when the proposal cannot be loaded at all', () => {
+            open(throwError(() => new HttpErrorResponse({ status: 500 })));
+            expect(component().message()).toBe('Не удалось загрузить упражнение из мастерской.');
+            expect(page().querySelector('a[data-back-workshop]')).not.toBeNull();
+        });
+
+        it('has no way back to a Workshop when the address names none', () => {
+            configure(null);
+            expect(component().workshopLink()).toBeNull();
+        });
     });
 
     // Horizontal overflow with long strings at 320/390 in every mechanic is geometry jsdom cannot measure; the browser
