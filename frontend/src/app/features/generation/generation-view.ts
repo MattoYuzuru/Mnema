@@ -337,6 +337,16 @@ export function describeEditCost(estimate: GenerationEstimate, allowance: number
     return describeEstimate(estimate);
 }
 
+/** Why an edit does not fit the budget, in words: the same facts as the composer's explanation, for one small edit. */
+export function describeEditLimit(bucket: BlockingBucket | undefined): string {
+    if (bucket === undefined) return 'Не хватит лимита ИИ на эту правку. Подробности — в профиле, в блоке «ИИ-бюджет».';
+    if (!bucket.offered) return 'Правки Мнемы недоступны на вашем тарифе. Подробности — в профиле, в блоке «ИИ-бюджет».';
+    const date = formatDay(bucket.renewsAt);
+    const first = bucket.window === 'DAY' ? 'На сегодня лимит ИИ исчерпан.' : 'Не хватит лимита ИИ на эту правку.';
+    return date !== null && bucket.fitsAfterRenewal ? `${first} Лимит обновится ${date}: тогда правки снова будут доступны.`
+        : `${first} Подробности — в профиле, в блоке «ИИ-бюджет».`;
+}
+
 const EDIT_REFUSALS: Readonly<Record<string, string>> = {
     TARGET_NOT_CONTIGUOUS: 'Выделение изменилось: выделите нужные абзацы заново.',
     TARGET_UNSUPPORTED_BLOCK: 'В выделении есть блок, который Мнема пока не умеет переписывать (например, видео, формула или заголовок глубокого уровня). Выделите только текст вокруг него.',

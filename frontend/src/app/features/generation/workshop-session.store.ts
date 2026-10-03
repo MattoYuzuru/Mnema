@@ -9,7 +9,7 @@ import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { UsageApiService } from '../usage/usage-api.service';
 import { DeckPin, GenerationApiService } from './generation-api.service';
 import { GenerationProblem, readProblem } from './generation-problem';
-import { REVERTED_NOTE, describeEditCost, describeNoteArchive, editOutcomeNote, editProblemMessage, problemMessage } from './generation-view';
+import { REVERTED_NOTE, describeEditCost, describeEditLimit, describeNoteArchive, editOutcomeNote, editProblemMessage, problemMessage } from './generation-view';
 import {
     ApprovalAck, ArtifactDetail, ArtifactSummary, ArtifactTurn, EditAction, EditPreset, GenerationEvent, HandoffResult, MAX_APPROVALS_PER_COMMAND,
     NoteArchiveResult, SessionDetail, UsageUpdate, ActiveStep,
@@ -59,14 +59,17 @@ export interface EditAsk {
     readonly anchorAfter: string | null;
     readonly preset?: EditPreset | null;
     readonly instruction?: string | null;
-    /** «Ещё раз»: the same request as a new command, which takes its own reservation. */
-    readonly again?: boolean;
+    /**
+     * «Ещё раз»: the turn this asks again. The request goes out as a command of its own (its own reservation), named by this turn and
+     * the revision on screen, so an answer that never arrived is repeated with the same command, not charged twice.
+     */
+    readonly againOf?: string;
 }
 
 /** What this page remembers of the last rewrite it made on an artifact: the revision it started from, and whether its strip is closed. */
 export interface EditMemo {
     readonly turnId: string;
-    readonly ask: Omit<EditAsk, 'again'>;
+    readonly ask: Omit<EditAsk, 'againOf'>;
     readonly baseRevisionId: string;
     readonly dismissed: boolean;
     /** The end of the turn was put into the summary line. */
@@ -77,8 +80,8 @@ export type EditOutcome =
     | { readonly ok: true; readonly turn: ArtifactTurn }
     | { readonly ok: false; readonly message: string; readonly aborted: boolean };
 
-/** The cost line of a rewrite and whether the budget lets it start. */
-export interface EditCost { readonly text: string; readonly canStart: boolean; }
+/** The cost line of a rewrite, and, when the budget does not let it start, the reason in words. */
+export interface EditCost { readonly text: string; readonly canStart: boolean; readonly blocked: string | null; }
 
 /** Thrown into a command that the user took back before the server answered. */
 class CommandAborted extends Error {}
@@ -120,6 +123,8 @@ export class WorkshopSessionStore {
     readonly noteArchive = signal<NoteArchiveResult | null>(null);
     /** The last rewrite made in this page, by artifact id (AI-11, #293): drives the strip, the diff and «Ещё раз». */
     readonly edits = signal<Readonly<Record<string, EditMemo>>>({});
+    /** Turns whose strip the user closed in this page: a failed strip derived from the turns after a reload is not drawn for them. */
+    readonly closedTurns = signal<ReadonlySet<string>>(new Set());
     /** A sentence about how an edit ended; the page adds it to the summary line for a few seconds. */
     readonly editNote = signal<string | null>(null);
 
@@ -149,7 +154,7 @@ export class WorkshopSessionStore {
     private readonly revisions = new Map<string, Promise<NativeDocument | null>>();
     private allowance: Promise<number | null> | null = null;
     private noteTimer: ReturnType<typeof setTimeout> | null = null;
-    private editNonce = 0;
+    private readonly refetched = new Set<string>();
     private readonly staleWhileLoading = new Set<string>();
     private readonly onVisibility = (): void => this.visibilityChanged();
     private readonly onOnline = (): void => this.wake();
@@ -181,6 +186,8 @@ export class WorkshopSessionStore {
         this.handoffs.set({});
         this.noteArchive.set(null);
         this.edits.set({});
+        this.closedTurns.set(new Set());
+        this.refetched.clear();
         this.setNote(null);
         this.revisions.clear();
         this.document.addEventListener('visibilitychange', this.onVisibility);
@@ -240,8 +247,10 @@ export class WorkshopSessionStore {
         if (entry.phase === 'loading' || entry.phase === 'error') return false;
         // A turn still listed as running while the artifact is proposed again has ended (a failed or stopped rewrite leaves the
         // revision where it was, so nothing else would tell): read it again.
-        const unfinished = entry.detail?.turns.some(turn => turn.status === 'QUEUED' || turn.status === 'RUNNING') ?? false;
-        return entry.stale || entry.forRevision !== artifact.currentRevisionId || (unfinished && artifact.state === 'PROPOSED');
+        // Once per turn: a server that keeps listing it as running is not asked again and again.
+        const unfinished = artifact.state === 'PROPOSED' && (entry.detail?.turns.some(turn => (turn.status === 'QUEUED' || turn.status === 'RUNNING')
+            && !this.refetched.has(`${artifact.artifactId}:${turn.turnId}:${artifact.rowVersion}`)) ?? false);
+        return entry.stale || entry.forRevision !== artifact.currentRevisionId || unfinished;
     }
 
     loadDetail(artifactId: string): void {
@@ -249,6 +258,12 @@ export class WorkshopSessionStore {
         const epoch = this.epoch;
         const forRevision = this.find(artifactId)?.currentRevisionId ?? null;
         const held = entry?.detail ?? null;
+        // One read per turn and artifact version: a server that keeps listing a turn as running under the same version is not asked again
+        // and again, but any later change of the artifact (the end of the rewrite, a cancellation) is read.
+        const artifact = this.find(artifactId);
+        if (artifact?.state === 'PROPOSED') {
+            for (const turn of held?.turns ?? []) if (turn.status === 'QUEUED' || turn.status === 'RUNNING') this.refetched.add(`${artifactId}:${turn.turnId}:${artifact.rowVersion}`);
+        }
         this.staleWhileLoading.delete(artifactId);
         this.setDetail(artifactId, { phase: 'loading', detail: held, forRevision, stale: false });
         this.api.getArtifact(this.deckId, this.sessionId, artifactId).subscribe({
@@ -512,7 +527,7 @@ export class WorkshopSessionStore {
         }
         this.begin(artifactId);
         try {
-            const key = ask.again === true ? `again:${++this.editNonce}`
+            const key = ask.againOf !== undefined ? `again:${expected}:${ask.againOf}`
                 : [expected, ask.action, ask.preset ?? '', ask.instruction ?? '', ask.nodeIds.join(',')].join('|');
             const outcome = await this.send('edit', `${artifactId}:${key}`, id => this.api.editArtifact(this.deckId, this.sessionId, artifactId,
                 { expectedRevisionId: expected, action: ask.action, nodeIds: ask.nodeIds, preset: ask.preset ?? null,
@@ -535,7 +550,7 @@ export class WorkshopSessionStore {
             if (turn.status === 'APPLIED') {
                 this.setNote(editOutcomeNote('APPLIED', turn.action));
             } else {
-                const { again: _again, ...stored } = ask;
+                const { againOf: _againOf, ...stored } = ask;
                 this.edits.update(memos => ({ ...memos, [artifactId]: { turnId: turn.turnId, ask: stored, baseRevisionId: expected,
                     dismissed: false, announced: false } }));
                 // The turn may already have ended and been read (see `addTurn`): then this is the only moment to say so.
@@ -564,7 +579,8 @@ export class WorkshopSessionStore {
                 id => this.api.revertArtifact(this.deckId, this.sessionId, artifactId, artifact.rowVersion, toRevisionId, id));
             if (!outcome.ok) { this.failed(outcome.problem); return false; }
             this.patch(outcome.value);
-            this.dismissEdit(artifactId);
+            // Going to another revision ends the review of the last turn, whether this page made it or only read it.
+            this.dismissEdit(artifactId, this.details()[artifactId]?.detail?.turns.at(-1)?.turnId ?? null);
             this.setNote(REVERTED_NOTE);
             void this.refresh();
             return true;
@@ -574,7 +590,8 @@ export class WorkshopSessionStore {
     }
 
     /** Closes the strip under a rewritten range («Оставить», or after «Вернуть»). */
-    dismissEdit(artifactId: string): void {
+    dismissEdit(artifactId: string, turnId: string | null = null): void {
+        if (turnId !== null) this.closedTurns.update(held => new Set(held).add(turnId));
         const memo = this.edits()[artifactId];
         if (memo !== undefined && !memo.dismissed) this.edits.update(memos => ({ ...memos, [artifactId]: { ...memo, dismissed: true } }));
     }
@@ -602,7 +619,8 @@ export class WorkshopSessionStore {
                 targetNodeCount: Math.min(blocks, 50) }));
             const allowance = await this.budgetAllowance();
             if (epoch !== this.epoch) return null;
-            return { text: describeEditCost(estimate, allowance), canStart: estimate.canStart };
+            return { text: describeEditCost(estimate, allowance), canStart: estimate.canStart,
+                blocked: estimate.canStart ? null : describeEditLimit(estimate.blockingBuckets[0]) };
         } catch {
             return null;
         }

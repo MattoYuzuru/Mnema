@@ -28,10 +28,10 @@ const turnOf = (change: Record<string, unknown> = {}) => ({ ...clone(examples['t
 const revisions = (...list: [string, string][]) => list.map(([revisionId, cause]) => ({ revisionId, cause, createdAt: '2026-10-02T09:00:42Z' }));
 
 function fakeStore() {
-    return { edits: signal<Readonly<Record<string, EditMemo>>>({}), busy: signal<ReadonlySet<string>>(new Set()),
+    return { edits: signal<Readonly<Record<string, EditMemo>>>({}), closedTurns: signal<ReadonlySet<string>>(new Set()), busy: signal<ReadonlySet<string>>(new Set()),
         edit: vi.fn<(...args: unknown[]) => Promise<EditOutcome>>(), revert: vi.fn<(...args: unknown[]) => Promise<boolean>>(),
         dismissEdit: vi.fn(), loadRevision: vi.fn<(...args: unknown[]) => Promise<NativeDocument | null>>(),
-        editCost: vi.fn<(...args: unknown[]) => Promise<{ text: string; canStart: boolean } | null>>(), notify: vi.fn() };
+        editCost: vi.fn<(...args: unknown[]) => Promise<{ text: string; canStart: boolean; blocked: string | null } | null>>(), notify: vi.fn() };
 }
 
 describe('ProposalDocumentComponent', () => {
@@ -53,7 +53,7 @@ describe('ProposalDocumentComponent', () => {
     async function create(inputs: Record<string, unknown> = {}, doc = sample()): Promise<void> {
         TestBed.resetTestingModule();
         store = fakeStore();
-        store.editCost.mockResolvedValue({ text: '≈ 0,3 % лимита', canStart: true });
+        store.editCost.mockResolvedValue({ text: '≈ 0,3 % лимита', canStart: true, blocked: null });
         store.edit.mockResolvedValue({ ok: true, turn: parseTurn() });
         store.loadRevision.mockResolvedValue(sample());
         TestBed.configureTestingModule({ providers: [{ provide: WorkshopSessionStore, useValue: store },
@@ -143,7 +143,9 @@ describe('ProposalDocumentComponent', () => {
             expect(group.getAttribute('popover')).toBe('manual');
             expect(group.getAttribute('role')).toBe('group');
             expect(group.getAttribute('aria-label')).toBe('Действия с выделенным текстом');
-            expect(group.textContent!.trim()).toBe('Попросить Мнему…');
+            expect(group.querySelector('button')!.textContent!.trim()).toBe('Попросить Мнему…');
+            expect(group.querySelector('button')!.getAttribute('aria-keyshortcuts')).toBe('Shift+F10');
+            expect(group.querySelector('.group-key')!.textContent).toBe('Shift+F10');
             expect(root().querySelector('.selection-bar')).toBeNull();
             window.document.getSelection()!.collapseToStart();
             fixture.componentInstance.refresh();
@@ -162,7 +164,7 @@ describe('ProposalDocumentComponent', () => {
             expect(root().querySelector('.selection-actions')).not.toBeNull();
         });
 
-        it('offers nothing where a rewrite is not possible: media only, outside the material, a cancelled session, a running command, an old revision, an exercise', async () => {
+        it('offers nothing where a rewrite is not possible: media only, outside the material, a cancelled session, an old revision, an exercise', async () => {
             await create();
             select(4, 5);
             fixture.componentInstance.refresh();
@@ -179,7 +181,7 @@ describe('ProposalDocumentComponent', () => {
             await settle();
             expect(root().querySelector('.selection-actions')).toBeNull();
             outside.remove();
-            for (const change of [{ sessionState: 'CANCELLED' }, { busy: true }, { detail: detailOf(sample(), {}, AFTER_REVISION) }, { artifact: summary('REVISING') },
+            for (const change of [{ sessionState: 'CANCELLED' },  { detail: detailOf(sample(), {}, AFTER_REVISION) },
                 { artifact: parseArtifactSummary({ ...artifactWith(ids.first, 0, 'PROPOSED', { currentRevisionId: BEFORE_REVISION }), targetKind: 'EXERCISE' }) }]) {
                 await create(change);
                 select(2);
@@ -199,6 +201,151 @@ describe('ProposalDocumentComponent', () => {
             await (fixture.componentInstance as never as { send(ask: unknown): Promise<void> }).send({ preset: 'SIMPLER', instruction: null });
             expect(store.edit).toHaveBeenCalledWith(ids.first, expect.objectContaining({ action: 'REWRITE', nodeIds: [3, 4, 5, 6].map(newId), anchorBefore: newId(2), anchorAfter: null }),
                 expect.any(AbortSignal));
+        });
+    });
+
+    describe('a group that cannot open the window', () => {
+        it('is drawn disabled with its reason while a rewrite is running or another command is in flight, and the menu key does not open the window', async () => {
+            for (const [change, reason] of [[{ artifact: summary('REVISING') }, 'Мнема ещё переписывает этот материал'],
+                [{ busy: true }, 'Подождите: предыдущее действие ещё выполняется']] as const) {
+                await create(change);
+                select(2);
+                fixture.componentInstance.refresh();
+                await settle();
+                const button = root().querySelector<HTMLButtonElement>('.selection-actions button')!;
+                expect(button.getAttribute('aria-disabled')).toBe('true');
+                expect(root().querySelector('.group-note')!.textContent).toBe(reason);
+                expect(button.getAttribute('aria-describedby')).toBe(root().querySelector('.group-note')!.id);
+                expect(root().querySelector('.group-key')).toBeNull();
+                button.click();
+                window.document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true }));
+                await settle();
+                expect(root().querySelector('app-ai-prompt-window')).toBeNull();
+            }
+        });
+
+        it('stays for the rewrite that has just started, instead of vanishing under the user', async () => {
+            await create();
+            select(2);
+            fixture.componentInstance.refresh();
+            await settle();
+            fixture.componentRef.setInput('artifact', summary('REVISING'));
+            await settle();
+            expect(root().querySelector('.selection-actions button')!.getAttribute('aria-disabled')).toBe('true');
+        });
+    });
+
+    describe('the keyboard menu', () => {
+        const press = (type: string, init: KeyboardEventInit): KeyboardEvent => {
+            const event = new KeyboardEvent(type, { bubbles: true, cancelable: true, ...init });
+            window.document.dispatchEvent(event);
+            return event;
+        };
+
+        it('takes the release of the key whose press opened the window, and nothing else: the menu key keeps its meaning in the field', async () => {
+            await create();
+            select(2);
+            fixture.componentInstance.refresh();
+            await settle();
+            expect(press('keydown', { key: 'F10', shiftKey: true }).defaultPrevented).toBe(true);
+            await settle();
+            expect(root().querySelector('app-ai-prompt-window')).not.toBeNull();
+            expect(press('keyup', { key: 'F10', shiftKey: true }).defaultPrevented).toBe(true);
+            // Pressed in the open window, the same key is the browser's.
+            expect(press('keydown', { key: 'F10', shiftKey: true }).defaultPrevented).toBe(false);
+            expect(press('keyup', { key: 'F10', shiftKey: true }).defaultPrevented).toBe(false);
+            expect(press('keyup', { key: 'a' }).defaultPrevented).toBe(false);
+        });
+
+        it('opens the window for a context menu the keyboard asked for, and leaves the mouse\'s menu native', async () => {
+            await create();
+            select(2);
+            fixture.componentInstance.refresh();
+            await settle();
+            const mouse = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 });
+            window.document.dispatchEvent(mouse);
+            expect(mouse.defaultPrevented).toBe(false);
+            await settle();
+            expect(root().querySelector('app-ai-prompt-window')).toBeNull();
+            const keyboard = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: -1 });
+            window.document.dispatchEvent(keyboard);
+            expect(keyboard.defaultPrevented).toBe(true);
+            await settle();
+            expect(root().querySelector('app-ai-prompt-window')).not.toBeNull();
+            // With no group (the window is open, or nothing is selected) the menu is the browser's.
+            const again = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: -1 });
+            window.document.dispatchEvent(again);
+            expect(again.defaultPrevented).toBe(false);
+        });
+
+        it('says where the group goes: clamped to the screen, and above the selection when it is at the bottom', async () => {
+            vi.stubGlobal('innerWidth', 1000);
+            vi.stubGlobal('innerHeight', 800);
+            await create();
+            select(2);
+            fixture.componentInstance.refresh();
+            await settle();
+            const instance = fixture.componentInstance as unknown as { anchor: { set(value: unknown): void } };
+            instance.anchor.set({ top: 760, bottom: 780, left: 980, right: 995 });
+            await settle();
+            const style = root().querySelector<HTMLElement>('.selection-actions')!.style;
+            expect([style.top, style.left]).toEqual(['auto', '692px']);
+            expect(style.bottom).toBe('46px');
+        });
+    });
+
+    describe('the budget', () => {
+        it('shows why an edit does not fit, and pressing explains it instead of sending a request that would fail', async () => {
+            await create();
+            store.editCost.mockResolvedValue({ text: '≈ 40 % лимита', canStart: false, blocked: 'На сегодня лимит ИИ исчерпан.' });
+            select(2);
+            fixture.componentInstance.refresh();
+            await settle();
+            labelled('Попросить Мнему…')!.click();
+            await settle();
+            await settle();
+            const win = root().querySelector('app-ai-prompt-window')!;
+            expect(win.querySelector('.window-cost')!.textContent).toBe('≈ 40 % лимита · не хватит лимита');
+            [...win.querySelectorAll<HTMLButtonElement>('.chip')].find(chip => chip.textContent!.trim() === 'Проще')!.click();
+            await settle();
+            expect(store.edit).not.toHaveBeenCalled();
+            expect(win.querySelector('.window-error')!.textContent).toBe('На сегодня лимит ИИ исчерпан.');
+            expect(win.querySelector('.window-button.primary')!.getAttribute('aria-disabled')).toBeNull();
+        });
+    });
+
+    describe('after a reload', () => {
+        it('draws the strip of a failed turn from the turns alone, in words, until the user closes it', async () => {
+            await create({ detail: detailOf(sample(), { turns: [turnOf({ status: 'FAILED', errorCode: 'PROVIDER_UNAVAILABLE', resultRevisionId: null })] }) });
+            const strip = root().querySelector('.rewrite-strip')!;
+            expect(strip.classList.contains('is-failed')).toBe(true);
+            expect(strip.textContent).toContain('Сервис ИИ временно недоступен. Текст не изменился, лимит не списан.');
+            expect(block(2).nextElementSibling).toBe(strip);
+            labelled('Ещё раз')!.click();
+            await settle();
+            expect(store.edit).toHaveBeenCalledWith(ids.first, { action: 'REWRITE', nodeIds: [newId(2)], anchorBefore: newId(1), anchorAfter: newId(3), preset: 'SIMPLER',
+                instruction: null, againOf: turnOf()['turnId'] });
+            labelled('Закрыть')!.click();
+            expect(store.dismissEdit).toHaveBeenCalledWith(ids.first, turnOf()['turnId']);
+            store.closedTurns.set(new Set([turnOf()['turnId'] as string]));
+            await settle();
+            expect(root().querySelector('.rewrite-strip')).toBeNull();
+        });
+
+        it('draws no strip for an applied rewrite it only read (it does not know the revision it started from), but lists it in the history', async () => {
+            await create({ artifact: summary('PROPOSED', { currentRevisionId: AFTER_REVISION }),
+                detail: detailOf(sample(), { turns: [turnOf()], revisions: revisions([BEFORE_REVISION, 'INITIAL'], [AFTER_REVISION, 'EDIT']) }, AFTER_REVISION) });
+            expect(root().querySelector('.rewrite-strip')).toBeNull();
+            expect(root().querySelectorAll('.history-entry')).toHaveLength(2);
+        });
+
+        it('draws no strip for a failed turn that is not the last one, a media redo, or one whose blocks are gone', async () => {
+            await create({ detail: detailOf(sample(), { turns: [turnOf({ status: 'FAILED', errorCode: 'REFUSAL', resultRevisionId: null }), turnOf({ turnId: '7a7a0000-0000-4000-8000-0000000000bb' })] }) });
+            expect(root().querySelector('.rewrite-strip')).toBeNull();
+            await create({ detail: detailOf(sample(), { turns: [turnOf({ status: 'FAILED', action: 'IMAGE_SEARCH', resultRevisionId: null })] }) });
+            expect(root().querySelector('.rewrite-strip')).toBeNull();
+            await create({ detail: detailOf(sample(), { turns: [turnOf({ status: 'FAILED', resultRevisionId: null, targetNodeIds: [newId(99)] })] }) });
+            expect(root().querySelector('.rewrite-strip')).toBeNull();
         });
     });
 
@@ -466,7 +613,7 @@ describe('ProposalDocumentComponent', () => {
             expect(strip()!.textContent).toContain('Мнема отказалась переписывать этот фрагмент. Текст не изменился, лимит не списан.');
             expect([...strip()!.querySelectorAll('button')].map(button => button.textContent!.trim())).toEqual(['Ещё раз', 'Закрыть']);
             labelled('Закрыть')!.click();
-            expect(store.dismissEdit).toHaveBeenCalledWith(ids.first);
+            expect(store.dismissEdit).toHaveBeenCalledWith(ids.first, '7a7a0000-0000-4000-8000-0000000000aa');
             await create({ detail: detailOf(sample(), { turns: [turnOf({ status: 'CANCELLED', resultRevisionId: null })] }) });
             store.edits.set({ [ids.first]: memo() });
             await settle();
@@ -479,7 +626,7 @@ describe('ProposalDocumentComponent', () => {
             await settle();
             labelled('Оставить')!.click();
             await settle();
-            expect(store.dismissEdit).toHaveBeenCalledWith(ids.first);
+            expect(store.dismissEdit).toHaveBeenCalledWith(ids.first, '7a7a0000-0000-4000-8000-0000000000aa');
             expect(window.document.activeElement).toBe(host);
         });
 
@@ -504,7 +651,8 @@ describe('ProposalDocumentComponent', () => {
             await settle();
             labelled('Ещё раз')!.click();
             await settle();
-            expect(store.edit).toHaveBeenCalledWith(ids.first, { action: 'REWRITE', anchorBefore: newId(1), anchorAfter: newId(3), preset: 'SIMPLER', nodeIds: [newId(2)], again: true });
+            expect(store.edit).toHaveBeenCalledWith(ids.first, { action: 'REWRITE', anchorBefore: newId(1), anchorAfter: newId(3), preset: 'SIMPLER', instruction: null,
+                nodeIds: [newId(2)], againOf: '7a7a0000-0000-4000-8000-0000000000aa' });
             expect(store.notify).not.toHaveBeenCalled();
             store.edit.mockResolvedValue({ ok: false, aborted: false, message: 'Не хватает лимита ИИ на эту правку.' });
             labelled('Ещё раз')!.click();
@@ -612,7 +760,7 @@ describe('ProposalDocumentComponent', () => {
             expect(items.map(item => item.querySelector('.history-ask')!.textContent)).toEqual(['Исходная версия', 'Проще', 'Сделай подробнее', 'Убрано медиа']);
             expect(items[1]!.classList.contains('is-current')).toBe(true);
             expect(items[1]!.textContent).toContain('сейчас показана');
-            expect(items[2]!.querySelector('.history-status')!.textContent).toBe('не удалось');
+            expect(items[2]!.querySelector('.history-status')!.textContent).toBe('не удалось — Мнема отказалась переписывать этот фрагмент');
             expect(items[0]!.querySelector('button')!.textContent).toBe('Вернуть к этой версии');
             expect(items[2]!.querySelector('button')).toBeNull();
             expect(items[3]!.querySelector('button')).not.toBeNull();

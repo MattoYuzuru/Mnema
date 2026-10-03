@@ -65,11 +65,36 @@ const BREAK = '\u0000¶';
 /** Above this many table cells the exact diff is not worth its memory: the whole text is shown as replaced. */
 const MAX_CELLS = 4_000_000;
 
-function tokensOf(lines: readonly string[]): Token[] {
+type WordSegmenter = { segment(text: string): Iterable<{ segment: string; isWordLike?: boolean }> };
+
+/** A word segmenter for `locale` where the browser has one (Japanese and Chinese have no spaces between words), else `null`. */
+function segmenterFor(locale: string | undefined): WordSegmenter | null {
+    const Segmenter = (Intl as unknown as { Segmenter?: new (locale?: string, options?: { granularity: 'word' }) => WordSegmenter }).Segmenter;
+    if (Segmenter === undefined) return null;
+    try { return new Segmenter(locale, { granularity: 'word' }); } catch { return new Segmenter(undefined, { granularity: 'word' }); }
+}
+
+/** Words with the whitespace that follows each of them: the same tokens whichever way the words are found. */
+function wordsOf(line: string, segmenter: WordSegmenter | null): Token[] {
+    if (segmenter === null) return (line.match(/\S+\s*/gu) ?? []).map(word => ({ text: word, key: word.trim() }));
+    const tokens: Token[] = [];
+    for (const { segment, isWordLike } of segmenter.segment(line)) {
+        const last = tokens[tokens.length - 1];
+        const trimmed = segment.trim();
+        if (trimmed === '') { if (last !== undefined) tokens[tokens.length - 1] = { text: last.text + segment, key: last.key }; }
+        // Punctuation belongs to the word before it, as it does when the words are cut at whitespace.
+        else if (isWordLike === false && last !== undefined && last.text === last.text.trimEnd()) {
+            tokens[tokens.length - 1] = { text: last.text + segment, key: last.key + trimmed };
+        } else tokens.push({ text: segment, key: trimmed });
+    }
+    return tokens;
+}
+
+function tokensOf(lines: readonly string[], segmenter: WordSegmenter | null): Token[] {
     const tokens: Token[] = [];
     lines.forEach((line, position) => {
         if (position > 0) tokens.push({ text: '', key: BREAK });
-        for (const word of line.match(/\S+\s*/gu) ?? []) tokens.push({ text: word, key: word.trim() });
+        tokens.push(...wordsOf(line, segmenter));
     });
     return tokens;
 }
@@ -100,12 +125,13 @@ function commonPairs(before: readonly Token[], after: readonly Token[]): readonl
 
 /**
  * The word diff of two versions of a fragment, as paragraphs of runs: a small LCS over words (no dependency). A paragraph
- * break is a token like any other, so a rewrite that merges or splits paragraphs shows it. Words keep the whitespace that follows
- * them; a run of the same kind is one segment, so `<del>` and `<ins>` come in as few pieces as possible.
+ * break is a token like any other, so a rewrite that merges or splits paragraphs shows it. Words come from `Intl.Segmenter` for `locale`
+ * where there is one (so Japanese is cut into words), else from the whitespace; they keep the whitespace that follows them; a run of the same kind is one segment, so `<del>` and `<ins>` come in as few pieces as possible.
  */
-export function diffLines(before: readonly string[], after: readonly string[]): readonly DiffParagraph[] {
-    const old = tokensOf(before);
-    const next = tokensOf(after);
+export function diffLines(before: readonly string[], after: readonly string[], locale?: string): readonly DiffParagraph[] {
+    const segmenter = segmenterFor(locale);
+    const old = tokensOf(before, segmenter);
+    const next = tokensOf(after, segmenter);
     const pairs = commonPairs(old, next);
     const runs: { kind: DiffSegment['kind']; token: Token }[] = [];
     let row = 0;

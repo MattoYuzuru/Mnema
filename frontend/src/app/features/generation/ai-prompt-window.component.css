@@ -22,13 +22,15 @@
     max-block-size: 85dvh;
     margin: 0;
     border-width: 2px 0 0;
-    padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom, 0px));
+    padding: 0;
     overflow: auto;
     box-shadow: none;
 }
+/* The padding is the wrapper's, so a click on the dialog element itself can only be a click on the backdrop. */
+.sheet-body { padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom, 0px)); }
 .sheet::backdrop { background: rgb(40 19 120 / 24%); }
 
-.window-form { display: grid; gap: .65rem; }
+.window-form { position: relative; display: grid; gap: .65rem; }
 .window-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
 .window-title { margin: 0; color: var(--mn-ink); font: 500 1.35rem/1.2 var(--mn-font-display, Georgia, serif); }
 .window-title:focus-visible { outline: none; }
@@ -54,7 +56,8 @@
 .window-field[readonly] { background: var(--mn-soft); }
 .window-cost { margin: 0; color: var(--mn-muted); font-size: .9rem; }
 .window-error { margin: 0; color: var(--mn-danger); font-weight: 600; overflow-wrap: anywhere; }
-.window-error:empty { display: none; }
+/* Empty, the live region stays in the accessibility tree (a message put into a region that appears with it is not announced), out of the layout. */
+.window-error:empty { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); }
 .window-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; }
 .window-keys { margin: 0; color: var(--mn-muted); font-size: .8rem; }
 :where(button, textarea):focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 3px; }

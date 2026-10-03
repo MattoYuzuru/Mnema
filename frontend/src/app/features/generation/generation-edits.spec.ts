@@ -7,7 +7,7 @@ import { AuthoringProtocolError } from '../authoring/authoring.models';
 import { GenerationApiService } from './generation-api.service';
 import { readProblem } from './generation-problem';
 import {
-    NBSP, describeEditCost, describeTurnAsk, describeTurnStatus, editOutcomeNote, editProblemMessage, mediaActionReason, turnFailureReason
+    NBSP, describeEditCost, describeEditLimit, describeTurnAsk, describeTurnStatus, editOutcomeNote, editProblemMessage, mediaActionReason, turnFailureReason
 } from './generation-view';
 import {
     EDIT_ACTIONS, EDIT_PRESETS, RequestValidationError, TURN_STATES, parseArtifactDetail, parseEditAccepted, parseEstimate, parseTurn, serializeEdit,
@@ -114,9 +114,8 @@ describe('edits on the wire (contracts/generation, AI-11)', () => {
     });
 
     describe('refusals', () => {
-        it('reads the members the edit refusals carry: the running turn, the reason and the limits', () => {
-            expect(readProblem(problemResponse(409, { code: 'EDIT_IN_PROGRESS', turnId: ids.first }))).toMatchObject({ code: 'EDIT_IN_PROGRESS', turnId: ids.first });
-            expect(readProblem(problemResponse(409, { code: 'EDIT_IN_PROGRESS', turnId: 'nope' })).turnId).toBeNull();
+        it('reads the members the edit refusals carry: the code, the reason and the limits', () => {
+            expect(readProblem(problemResponse(409, { code: 'EDIT_IN_PROGRESS', turnId: ids.first }))).toMatchObject({ code: 'EDIT_IN_PROGRESS' });
             expect(readProblem(problemResponse(400, { code: 'INVALID_REQUEST', reason: 'TARGET_PERSONAL_DATA' }))).toMatchObject({ reason: 'TARGET_PERSONAL_DATA' });
             expect(readProblem(problemResponse(422, { code: 'RESOURCE_LIMIT_EXCEEDED', limit: 'EDIT_TARGET_SIZE',
                 limits: { maxTurnsPerArtifact: 50, maxRevisionsPerArtifact: 30, maxEditTargetTokens: 2050 } })).limits).toEqual({ maxTurnsPerArtifact: 50,
@@ -186,6 +185,15 @@ describe('edits on the wire (contracts/generation, AI-11)', () => {
             expect(describeEditCost({ ...estimate, credits: { p50: 0, p95: 1 } }, 5000)).toBe(`менее 0,1${NBSP}% лимита`);
             expect(describeEditCost(estimate, null)).toBe(`≈${NBSP}${estimate.percentOfPeriodAllowance.p95}${NBSP}% лимита`);
             expect(describeEditCost({ ...estimate, percentOfPeriodAllowance: { p50: 0, p95: 0 } }, 0)).toBe(`менее 1${NBSP}% лимита`);
+        });
+
+        it('says why an edit does not fit the budget: the day is over, the plan lacks it, or the limit renews', () => {
+            const bucket = { bucket: 'credits.day', window: 'DAY' as const, unit: 'CREDITS' as const, limit: 100, used: 98, required: 4, offered: true,
+                renewsAt: '2026-10-04T00:00:00Z', fitsAfterRenewal: true, plan: 'FREE' as const };
+            expect(describeEditLimit(bucket)).toMatch(/^На сегодня лимит ИИ исчерпан\. Лимит обновится .*: тогда правки снова будут доступны\.$/u);
+            expect(describeEditLimit({ ...bucket, window: 'MONTH', fitsAfterRenewal: false })).toBe('Не хватит лимита ИИ на эту правку. Подробности — в профиле, в блоке «ИИ-бюджет».');
+            expect(describeEditLimit({ ...bucket, offered: false })).toContain('недоступны на вашем тарифе');
+            expect(describeEditLimit(undefined)).toContain('Не хватит лимита ИИ на эту правку');
         });
 
         it('explains why a media action is not offered, by the capability the server reports', () => {

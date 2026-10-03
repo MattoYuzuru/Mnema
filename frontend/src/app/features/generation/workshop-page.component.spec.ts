@@ -228,20 +228,22 @@ describe('WorkshopPageComponent', () => {
     });
 
     describe('the end of an edit in the summary', () => {
-        it('adds one sentence about it to the summary line, the one live region of the page, and takes it away again', async () => {
+        it('adds one sentence about it to the summary line, the one live region of the page, and takes it away without saying the line again', async () => {
             await open(reviewing());
             const before = summary();
-            await vi.advanceTimersByTimeAsync(ANNOUNCE_GAP_MS);
             store.editNote.set('Мнема переписала фрагмент.');
-            await vi.advanceTimersByTimeAsync(ANNOUNCE_GAP_MS);
             await settle();
             expect(summary()).toBe(`${before} · Мнема переписала фрагмент.`);
-            const own = [...root().querySelectorAll('[role=status]')].filter(element => !element.closest('app-native-media-surface'));
-            expect(own).toHaveLength(1);
+            const line = root().querySelector('.summary')!;
+            expect(line.getAttribute('aria-atomic')).toBe('false');
+            // The note is its own node: removing it leaves the text node of the line alone, so a reader is not told the whole line again.
+            const text = line.firstChild;
             store.editNote.set(null);
-            await vi.advanceTimersByTimeAsync(ANNOUNCE_GAP_MS);
             await settle();
             expect(summary()).toBe(before);
+            expect(line.firstChild).toBe(text);
+            const own = [...root().querySelectorAll('[role=status]')].filter(element => !element.closest('app-native-media-surface'));
+            expect(own).toHaveLength(1);
         });
     });
 

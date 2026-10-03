@@ -70,6 +70,21 @@ describe('the word diff', () => {
         expect(merged[0]!.segments.every(segment => segment.kind === 'same')).toBe(true);
     });
 
+    it('cuts Japanese into words with the browser segmenter, and falls back to whitespace words without one', () => {
+        const segments = diffLines(['私は学生です。'], ['私は先生です。'], 'ja')[0]!.segments;
+        expect(segments.some(segment => segment.kind === 'same' && segment.text.includes('私'))).toBe(true);
+        expect(segments.find(segment => segment.kind === 'del')!.text).toContain('学生');
+        expect(segments.find(segment => segment.kind === 'ins')!.text).toContain('先生');
+        expect(segments.some(segment => segment.kind === 'same' && segment.text.includes('です'))).toBe(true);
+        const intl = Intl;
+        vi.stubGlobal('Intl', { ...intl, Segmenter: undefined });
+        const plain = diffLines(['私は学生です。'], ['私は先生です。'], 'ja');
+        expect(plain[0]!.segments.map(segment => segment.kind)).toEqual(['del', 'ins']);
+        vi.unstubAllGlobals();
+        // A locale the engine does not know still segments.
+        expect(hasChanges(diffLines(['а б'], ['а в'], 'not a locale!'))).toBe(true);
+    });
+
     it('falls back to «all replaced» when the exact diff would be too large, and still reads in order', () => {
         const long = Array.from({ length: 2100 }, (_, index) => `слово${index}`).join(' ');
         const other = Array.from({ length: 2100 }, (_, index) => `иное${index}`).join(' ');

@@ -26,6 +26,13 @@ export function quoteOf(text: string): string {
     return line.length > QUOTE_LENGTH ? `${line.slice(0, QUOTE_LENGTH - 1).trimEnd()}…` : line;
 }
 
+/** The text of a range without the readings of ruby (`rt`, `rp`): what the user selected to read, not what is drawn above it. */
+function plainText(range: Range): string {
+    const fragment = range.cloneContents();
+    fragment.querySelectorAll('rt, rp').forEach(node => node.remove());
+    return fragment.textContent ?? '';
+}
+
 function textBetween(startNode: Node, startOffset: number, endNode: Node, endOffset: number): string {
     const range = document.createRange();
     range.setStart(startNode, startOffset);
@@ -48,8 +55,10 @@ export function endRect(range: Range): SelectionTarget['rect'] {
  */
 export function readSelection(host: HTMLElement, selection: Selection | null, order: readonly string[],
                               kinds: ReadonlyMap<string, string>): SelectionTarget | null {
-    if (selection === null || selection.rangeCount === 0 || selection.isCollapsed || selection.toString().trim().length === 0) return null;
+    if (selection === null || selection.rangeCount === 0 || selection.isCollapsed) return null;
     const range = selection.getRangeAt(0);
+    const text = plainText(range);
+    if (text.trim().length === 0) return null;
     // A selection starts inside the material. It may end below it: a triple click on the last paragraph ends in whatever follows.
     if (!host.contains(range.startContainer)) return null;
     const blocks = [...host.querySelectorAll<HTMLElement>('.native-document > [data-node-id]')].filter(block => range.intersectsNode(block));
@@ -67,7 +76,7 @@ export function readSelection(host: HTMLElement, selection: Selection | null, or
     const whole = document.createRange();
     whole.setStartBefore(blocks[0]!);
     whole.setEndAfter(blocks[blocks.length - 1]!);
-    return { nodeIds: run, anchorBefore: order[from - 1] ?? null, anchorAfter: order[to + 1] ?? null, quote: quoteOf(selection.toString()),
+    return { nodeIds: run, anchorBefore: order[from - 1] ?? null, anchorAfter: order[to + 1] ?? null, quote: quoteOf(text),
         range: whole, selected: range.cloneRange(), rect: endRect(range) };
 }
 

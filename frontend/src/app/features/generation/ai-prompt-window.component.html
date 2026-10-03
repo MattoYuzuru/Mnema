@@ -13,12 +13,13 @@
     <label class="window-label" [for]="fieldId">Что изменить?</label>
     <textarea #field class="window-field" rows="2" enterkeyhint="send" autocomplete="off" [id]="fieldId" [attr.maxlength]="maxLength"
       [readOnly]="sending()" [value]="instruction()" [attr.aria-describedby]="describedBy()"
-      placeholder="Например: слишком сложно, объясни проще" (input)="onInput($event)" (keydown)="onKeydown($event)"></textarea>
+      placeholder="Например: слишком сложно, объясни проще" (input)="onInput($event)" (keydown)="onKeydown($event)"
+      (compositionstart)="onCompositionStart()" (compositionend)="onCompositionEnd()"></textarea>
     @if (cost(); as line) { <p class="window-cost" [id]="costId">{{ line }}</p> }
     <p class="window-error" [id]="errorId" aria-live="polite">{{ error() }}</p>
     <div class="window-actions">
       @if (sending()) { <button type="button" class="window-button" (click)="retract.emit()">Отменить</button> }
-      <button type="submit" class="window-button primary" [attr.aria-disabled]="(sending() || empty()) ? 'true' : null">{{ sending() ? 'Отправляю…' : 'Отправить' }}</button>
+      <button type="submit" class="window-button primary" [attr.aria-disabled]="(sending() || (empty() && !limited())) ? 'true' : null">{{ sending() ? 'Отправляю…' : 'Отправить' }}</button>
     </div>
     @if (mode() === 'popover') { <p class="window-keys">Enter — отправить, Shift+Enter — новая строка, Esc — закрыть.</p> }
   </form>
@@ -26,12 +27,12 @@
 
 @if (mode() === 'sheet') {
   <dialog #surface class="window sheet" [attr.aria-labelledby]="titleId" (cancel)="onCancel($event)" (click)="onSheetClick($event)">
-    <ng-container [ngTemplateOutlet]="body" />
+    <div class="sheet-body"><ng-container [ngTemplateOutlet]="body" /></div>
   </dialog>
 } @else {
   <div #surface class="window floating" popover="manual" role="dialog" aria-modal="false" [attr.aria-labelledby]="titleId"
     [style.top]="placement().top" [style.bottom]="placement().bottom" [style.left]="placement().left" [style.inline-size]="placement().width"
-    (keydown.escape)="dismiss(true)">
+    [style.max-block-size.px]="placement().maxHeight" (keydown.escape)="onEscape($any($event))">
     <ng-container [ngTemplateOutlet]="body" />
   </div>
 }

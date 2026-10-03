@@ -163,7 +163,7 @@ describe('ProposalViewComponent', () => {
         it('says above the material that a selection can be rewritten, only where it can (a proposal in a running session)', () => {
             const hint = (): string | undefined => root().querySelector('.selection-hint')?.textContent?.trim();
             create(summary('PROPOSED'), { entry: entry() });
-            expect(hint()).toBe('Выделите фрагмент текста, чтобы попросить Мнему переписать его.');
+            expect(hint()).toBe('Выделите фрагмент текста, чтобы попросить Мнему переписать его. С клавиатуры: Shift+F10 или клавиша меню; Tab после выделения тоже доходит до кнопки, но после ссылок и плееров самого блока.');
             expect(root().querySelector('.selection-hint')!.nextElementSibling?.classList.contains('final')).toBe(true);
             create(summary('PROPOSED'), { entry: entry() }, 'CANCELLED');
             expect(hint()).toBeUndefined();

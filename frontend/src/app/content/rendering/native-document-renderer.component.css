@@ -327,5 +327,5 @@
 
 @media (forced-colors: active) {
     .native-document > .is-rewriting { outline-color: CanvasText; }
-    .native-document > .is-target { outline: 2px solid Highlight; }
+    .native-document > .is-target { background: Highlight; color: HighlightText; box-shadow: none; outline: 2px solid Highlight; }
 }

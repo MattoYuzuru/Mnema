@@ -68,6 +68,13 @@ describe('selection to blocks', () => {
         before.remove();
     });
 
+    it('quotes what was selected without the readings of ruby', () => {
+        host.querySelector('[data-node-id="b1"]')!.innerHTML = 'Слово <ruby>漢字<rp>(</rp><rt>かんじ</rt><rp>)</rp></ruby> здесь';
+        const paragraph = host.querySelector('[data-node-id="b1"]')!;
+        const target = readSelection(host, select(paragraph.firstChild!, 0, paragraph.lastChild!, 6), ids, kinds)!;
+        expect(target.quote).toBe('Слово 漢字 здесь');
+    });
+
     it('offers nothing for no selection, a collapsed or blank one, one outside the document, or one that holds media only', () => {
         expect(readSelection(host, null, ids, kinds)).toBeNull();
         const selection = document.getSelection()!;

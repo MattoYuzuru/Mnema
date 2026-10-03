@@ -36,7 +36,9 @@ Adds to the root [`AGENTS.md`](../AGENTS.md); does not repeat it. Visual directi
 - Node ids are the Workshop's alone (AI-11): the renderer draws `data-node-id` on top-level blocks only when it is given
   `exposeNodeIds` (and the Workshop's marks and slots through `overlay`); Browse, Study and the editor preview never pass them.
   Selection edits (`proposal-document`, `ai-prompt-window`) read a selection by node id, send whole blocks to `editArtifact` and
-  follow the turn through the events; they announce only through the Workshop's summary line.
+  follow the turn through the events; they announce only through the Workshop's summary line. The keyboard route is Shift+F10 or
+  the menu key while the group is shown (the group says so); Tab from the selection reaches the group too, but after the block's own
+  focusable elements (links, players), because the group follows the document in the tab order.
 - Learner-facing models never carry answer keys; references arrive only in feedback. Validate server
   envelopes strictly and treat an unknown network outcome by retrying the exact attempt.
 - Keep keyboard, screen-reader, touch and non-drag alternatives for every interactive exercise

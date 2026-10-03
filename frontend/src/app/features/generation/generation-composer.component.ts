@@ -65,7 +65,6 @@ export function buildMaterialsSpec(prompt: string, settings: GenerationSettingsV
     };
 }
 
-export { isSendKey } from './implicit-submit';
 
 let nextComposer = 0;
 

@@ -35,6 +35,13 @@ def child_environment():
             and key.lower() not in {"http_proxy", "https_proxy", "all_proxy"}}
 
 
+def cdp_timeout_ms():
+    """Default wait for a plain CDP command: 10 s, or `MNEMA_HARNESS_CDP_TIMEOUT_MS` (1-120 s) read here, because the children do not
+    inherit MNEMA_ variables. Calls that wait for the page itself keep their own, longer limit in browser.mjs."""
+    value = os.environ.get("MNEMA_HARNESS_CDP_TIMEOUT_MS", "")
+    return int(value) if value.isdigit() and 1000 <= int(value) <= 120_000 else 10_000
+
+
 def static_path(dist, request_path):
     """Resolve only checked-in build assets; SPA routes use the one index document."""
     name = unquote(urlsplit(request_path).path)
@@ -383,6 +390,7 @@ class Fixture(BASE.Fixture):
                   "logoutSelector": self.args.logout_selector, "errorSelector": self.args.error_selector,
                   "authoring": self.args.authoring, "media": self.args.media, "mechanics": self.args.mechanics,
                   "generation": self.args.generation, "onlyEdits": self.args.only_edits,
+                  "cdpTimeoutMs": cdp_timeout_ms(),
                   "diagnosticsDir": str(self.tmp) if self.args.mechanics and self.args.keep_on_failure else None,
                   "mediaOrigin": self.media_origin, "mediaClips": media_clips}
         private_config = self.tmp / "browser.json"

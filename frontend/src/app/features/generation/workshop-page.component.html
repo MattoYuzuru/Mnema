@@ -48,7 +48,7 @@
       } @else {
         <div class="pager-row">
           <app-batch-pager [artifacts]="artifacts()" [selectedId]="selectedId()" (picked)="select($event)" />
-          <p class="summary" role="status">{{ statusText() }}</p>
+          <p class="summary" role="status" aria-atomic="false">{{ statusText() }}@if (store.editNote(); as note) {<span class="summary-note"> · {{ note }}</span>}</p>
         </div>
 
         @if (current(); as artifact) {

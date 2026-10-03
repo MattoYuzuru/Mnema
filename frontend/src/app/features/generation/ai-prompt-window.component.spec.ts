@@ -97,6 +97,13 @@ describe('AiPromptWindowComponent', () => {
             expect(named('Отправить').getAttribute('aria-disabled')).toBeNull();
         });
 
+        it('keeps the button pressable on an empty field while the budget does not fit, so the press can explain', async () => {
+            await create({ limited: true });
+            expect(named('Отправить').getAttribute('aria-disabled')).toBeNull();
+            named('Отправить').click();
+            expect(asks).toEqual([{ preset: null, instruction: null }]);
+        });
+
         it('does not let Enter on a checkbox or range submit the form', async () => {
             await create();
             const form = root().querySelector('form')!;
@@ -141,26 +148,72 @@ describe('AiPromptWindowComponent', () => {
             expect(fixture.componentInstance.instruction()).toBe('слишком сложно');
         });
 
-        it('sits under the end of the selection, inside the viewport, and above it when there is no room below', async () => {
+        it('sits under the end of the selection, inside the viewport, above it when there is no room below, and limits its height to the room', async () => {
             vi.stubGlobal('innerWidth', 1000);
             vi.stubGlobal('innerHeight', 800);
             await create({ anchor: { top: 100, bottom: 120, left: 300, right: 400 } });
             let style = root().querySelector<HTMLElement>('[popover]')!.style;
-            expect([style.top, style.left, style.inlineSize]).toEqual(['128px', '300px', '416px']);
+            expect([style.top, style.left, style.inlineSize, style.maxBlockSize]).toEqual(['128px', '300px', '416px', '664px']);
             await create({ anchor: { top: 100, bottom: 120, left: 900, right: 990 } });
-            style = root().querySelector<HTMLElement>('[popover]')!.style;
-            expect(style.left).toBe('576px');
+            expect(root().querySelector<HTMLElement>('[popover]')!.style.left).toBe('576px');
             await create({ anchor: { top: 700, bottom: 720, left: 4, right: 40 } });
             style = root().querySelector<HTMLElement>('[popover]')!.style;
-            expect([style.top, style.bottom, style.left]).toEqual(['auto', '108px', '8px']);
+            expect([style.top, style.bottom, style.left, style.maxBlockSize]).toEqual(['auto', '108px', '8px', '684px']);
             await create({ anchor: { top: 100, bottom: 700, left: 300, right: 400 } });
             style = root().querySelector<HTMLElement>('[popover]')!.style;
-            expect([style.top, style.bottom]).toEqual(['auto', '8px']);
+            expect([style.top, style.bottom, style.maxBlockSize]).toEqual(['auto', '8px', '784px']);
             vi.stubGlobal('innerWidth', 300);
             await create({ anchor: { top: 10, bottom: 30, left: 0, right: 20 } });
             expect(root().querySelector<HTMLElement>('[popover]')!.style.inlineSize).toBe('284px');
             await create({ anchor: null });
             expect(root().querySelector<HTMLElement>('[popover]')!.style.top).toBe('20vh');
+        });
+
+        it('is placed again with the height its content really takes: a message that makes it taller moves it where it fits', async () => {
+            vi.stubGlobal('innerWidth', 1000);
+            vi.stubGlobal('innerHeight', 800);
+            let height = 200;
+            Object.defineProperty(HTMLElement.prototype, 'scrollHeight', { configurable: true, get: () => height });
+            try {
+                await create({ anchor: { top: 400, bottom: 420, left: 300, right: 400 } });
+                expect(root().querySelector<HTMLElement>('[popover]')!.style.top).toBe('428px');
+                height = 500;
+                fixture.componentRef.setInput('error', 'Длинное объяснение, из-за которого окно стало выше.');
+                await fixture.whenStable();
+                fixture.detectChanges();
+                await fixture.whenStable();
+                fixture.detectChanges();
+                const style = root().querySelector<HTMLElement>('[popover]')!.style;
+                expect([style.top, style.bottom]).toEqual(['auto', '408px']);
+            } finally {
+                delete (HTMLElement.prototype as { scrollHeight?: unknown }).scrollHeight;
+            }
+        });
+
+        it('keeps the empty error line in the accessibility tree: it is not hidden, only taken out of the layout', async () => {
+            await create();
+            const error = root().querySelector<HTMLElement>('.window-error')!;
+            expect(error.textContent).toBe('');
+            expect(error.hasAttribute('hidden')).toBe(false);
+            expect(error.getAttribute('aria-live')).toBe('polite');
+        });
+
+        it('does not close on Esc while an IME composes (the composition is what Esc cancels), by event flag, keyCode or composition events', async () => {
+            await create();
+            const surface = root().querySelector('[popover]')!;
+            const esc = (init: KeyboardEventInit & { keyCode?: number } = {}): void => {
+                const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, ...init });
+                if (init.keyCode !== undefined) Object.defineProperty(event, 'keyCode', { value: init.keyCode });
+                surface.dispatchEvent(event);
+            };
+            esc({ isComposing: true });
+            esc({ keyCode: 229 });
+            field().dispatchEvent(new Event('compositionstart', { bubbles: true }));
+            esc();
+            expect(dismissals).toEqual([]);
+            field().dispatchEvent(new Event('compositionend', { bubbles: true }));
+            esc();
+            expect(dismissals).toEqual([true]);
         });
     });
 
@@ -178,7 +231,7 @@ describe('AiPromptWindowComponent', () => {
             expect(asks).toEqual([{ preset: 'SIMPLER', instruction: null }]);
         });
 
-        it('closes on Esc (the native cancel is taken over), on «×» and on the backdrop, and not on a click inside', async () => {
+        it('closes on Esc (the native cancel is taken over), on «×» and on the backdrop alike, and not on a click inside or on its padding', async () => {
             await create({ mode: 'sheet' });
             const dialog = root().querySelector('dialog')!;
             const cancel = new Event('cancel', { cancelable: true });
@@ -186,11 +239,22 @@ describe('AiPromptWindowComponent', () => {
             expect(cancel.defaultPrevented).toBe(true);
             expect(dismissals).toEqual([true]);
             field().click();
+            root().querySelector<HTMLElement>('.sheet-body')!.click();
             expect(dismissals).toEqual([true]);
+            // The dialog element itself is the backdrop: it closes the sheet as Esc does (focus goes back, the typed request stays).
             dialog.click();
-            expect(dismissals).toEqual([true, false]);
+            expect(dismissals).toEqual([true, true]);
             root().querySelector<HTMLButtonElement>('.window-close')!.click();
-            expect(dismissals).toEqual([true, false, true]);
+            expect(dismissals).toEqual([true, true, true]);
+        });
+
+        it('does not close on the native cancel of an IME composition', async () => {
+            await create({ mode: 'sheet' });
+            field().dispatchEvent(new Event('compositionstart', { bubbles: true }));
+            const cancel = new Event('cancel', { cancelable: true });
+            root().querySelector('dialog')!.dispatchEvent(cancel);
+            expect(cancel.defaultPrevented).toBe(true);
+            expect(dismissals).toEqual([]);
         });
     });
 });

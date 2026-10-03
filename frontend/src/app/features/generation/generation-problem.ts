@@ -16,8 +16,6 @@ export interface GenerationProblem {
     /** `RESOURCE_LIMIT_EXCEEDED.limit`. */
     readonly limit: string | null;
     readonly capability: string | null;
-    /** `EDIT_IN_PROGRESS.turnId`: the turn that is still running. */
-    readonly turnId: string | null;
     readonly artifactIds: readonly string[];
     readonly activeSessionIds: readonly string[];
     /** `RESOURCE_LIMIT_EXCEEDED.limits`: the configured limits that apply (`maxExerciseTargets`, ...), or `null`. */
@@ -39,11 +37,6 @@ const PLANS = ['FREE', 'PLUS', 'PRO', 'MAX'];
 function memberText(body: Record<string, unknown>, key: string): string | null {
     const value = body[key];
     return typeof value === 'string' && value.length > 0 && value.length <= 64 ? value : null;
-}
-
-function memberId(body: Record<string, unknown>, key: string): string | null {
-    const value = body[key];
-    return typeof value === 'string' && UUID.test(value) ? value.toLowerCase() : null;
 }
 
 function memberIds(body: Record<string, unknown>, key: string): readonly string[] {
@@ -90,7 +83,7 @@ export function readProblem(error: unknown): GenerationProblem {
         const code = memberText(body, 'code');
         return {
             status: error.status, code, reason: memberText(body, 'reason'), limit: memberText(body, 'limit'),
-            capability: memberText(body, 'capability'), turnId: memberId(body, 'turnId'), artifactIds: memberIds(body, 'artifactIds'),
+            capability: memberText(body, 'capability'), artifactIds: memberIds(body, 'artifactIds'),
             activeSessionIds: memberIds(body, 'activeSessionIds'), limits: readLimitMembers(body),
             usage: code === 'USAGE_LIMIT_REACHED' ? readUsage(body) : null,
             uncertain: error.status === 0 || error.status >= 500
@@ -98,12 +91,12 @@ export function readProblem(error: unknown): GenerationProblem {
     }
     // A request the client refused to build was never sent: a definitive validation problem, not an unknown outcome.
     if (error instanceof RequestValidationError) {
-        return { status: 400, code: null, reason: null, limit: null, capability: null, turnId: null, artifactIds: [], activeSessionIds: [],
+        return { status: 400, code: null, reason: null, limit: null, capability: null, artifactIds: [], activeSessionIds: [],
             limits: null, usage: null, uncertain: false };
     }
     // A protocol error means the command may well have been applied: the answer could not be read.
     const unreadable = error instanceof AuthoringProtocolError;
-    return { status: unreadable ? -1 : 0, code: null, reason: null, limit: null, capability: null, turnId: null, artifactIds: [],
+    return { status: unreadable ? -1 : 0, code: null, reason: null, limit: null, capability: null, artifactIds: [],
         activeSessionIds: [], limits: null, usage: null, uncertain: true };
 }
 

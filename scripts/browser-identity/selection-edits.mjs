@@ -153,7 +153,8 @@ export async function runWorkshopEdits(ctx, h) {
     const group = document.querySelector('app-proposal-document .selection-actions');
     const active = document.activeElement;
     return { blocks, nodeIds: document.querySelectorAll('[data-node-id]').length,
-      group: group ? { open: group.matches(':popover-open'), label: group.getAttribute('aria-label'), buttons: [...group.querySelectorAll('button')].map(node => node.textContent.trim()) } : null,
+      group: group ? { open: group.matches(':popover-open'), label: group.getAttribute('aria-label'), buttons: [...group.querySelectorAll('button')].map(node => node.textContent.trim()), key: group.querySelector('.group-key')?.textContent ?? null,
+        rect: (() => { const rect = group.getBoundingClientRect(); return { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right }; })() } : null,
       bar: [...document.querySelectorAll('app-proposal-document .selection-bar button')].map(node => node.textContent.trim()),
       window: popover ? { role: popover.getAttribute('role'), modal: popover.getAttribute('aria-modal'), popover: popover.getAttribute('popover'), open: popover.matches(':popover-open'),
         label: document.getElementById(popover.getAttribute('aria-labelledby'))?.textContent.trim(), presets: [...popover.querySelectorAll('.chip')].map(node => node.textContent.trim()),
@@ -234,6 +235,8 @@ export async function runWorkshopEdits(ctx, h) {
     } else await press_('Попросить Мнему…', 'app-proposal-document .selection-actions');
     await until(async () => (await widget()).window !== null || (await widget()).sheet !== null, 'the selection did not open the window', 8_000);
   };
+  /** The box lies inside the viewport (a window that runs off the bottom would clip its button). */
+  const inViewport = rect => page(`const [rect] = args; return rect.top >= -1 && rect.left >= -1 && rect.bottom <= innerHeight + 1 && rect.right <= innerWidth + 1;`, rect);
   const currentText = async () => plain((await getArtifact()).revision.payload.document);
 
   // ======================================================================================================================
@@ -289,7 +292,7 @@ export async function runWorkshopEdits(ctx, h) {
     const view = await widget();
     need(view.blocks.length === 5, `the Workshop shows ${view.blocks.length} blocks`);
     need(view.blocks.every((block, index) => block.id === initial.blocks[index].id), 'the Workshop blocks do not carry the node ids of the revision');
-    need(view.hint === 'Выделите фрагмент текста, чтобы попросить Мнему переписать его.', `the hint is «${view.hint}»`);
+    need(view.hint === 'Выделите фрагмент текста, чтобы попросить Мнему переписать его. С клавиатуры: Shift+F10 или клавиша меню; Tab после выделения тоже доходит до кнопки, но после ссылок и плееров самого блока.', `the hint is «${view.hint}»`);
     need(view.history === null, 'a proposal without edits shows a history');
     // Node ids belong to the Workshop only: the whole page carries them on the top-level blocks and nowhere else.
     need(view.nodeIds === 5, `${view.nodeIds} elements carry data-node-id`);
@@ -305,6 +308,8 @@ export async function runWorkshopEdits(ctx, h) {
     const grouped = await widget();
     need(grouped.group?.open === true && grouped.group.label === 'Действия с выделенным текстом', `the group is ${JSON.stringify(grouped.group)}`);
     need(grouped.group.buttons.join() === 'Попросить Мнему…', `the group offers ${JSON.stringify(grouped.group.buttons)}`);
+    need(grouped.group.key === 'Shift+F10', `the group does not say the keyboard route (${grouped.group.key})`);
+    need(await inViewport(grouped.group.rect), `the group runs off the screen: ${JSON.stringify(grouped.group.rect)}`);
     need(grouped.selection.trim() !== '', 'the selection is empty');
     // The window opens from the keyboard (Tab to the group, Enter).
     await openWindow();
@@ -328,6 +333,7 @@ export async function runWorkshopEdits(ctx, h) {
     const painted = (await widget());
     need(painted.highlightApi ? painted.highlight === true : painted.blocks.find(block => block.id === paragraphBlock.id).target === true,
       'the chosen block is not painted while the window is open');
+    need(await inViewport(win.rect), `the window runs off the screen: ${JSON.stringify(win.rect)}`);
     await shot('workshop-edit-window-1440.png');
     // Esc closes it, returns focus to the document and puts the selection back.
     await press('Escape');
@@ -576,6 +582,7 @@ export async function runWorkshopEdits(ctx, h) {
       // The window stays open for as long as the user does not close it, even though the page now knows the artifact is being rewritten.
       await sleep(1500);
       need((await widget()).window?.error?.startsWith('Мнема ещё переписывает'), 'the explaining window did not stay open');
+      need(await inViewport(view.window.rect), `the window with its message runs off the screen: ${JSON.stringify(view.window.rect)}`);
       await shot('workshop-edit-in-progress-1440.png');
     } finally {
       await tab.call('Network.setBlockedURLs', { urls: [] });

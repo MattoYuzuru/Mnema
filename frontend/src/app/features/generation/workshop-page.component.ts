@@ -186,9 +186,7 @@ export class WorkshopPageComponent {
         effect(() => {
             // Nothing to say before the batch is known: «Пока ничего» would be a false first announcement.
             if (this.session() === null) return;
-            // The end of an edit joins the summary for a few seconds: the one live region of the page says it, once.
-            const note = this.store.editNote();
-            const text = note === null ? summarize(this.artifacts()) : `${summarize(this.artifacts())} · ${note}`;
+            const text = summarize(this.artifacts());
             untracked(() => this.announce(text));
         });
         this.destroyRef.onDestroy(() => { if (this.statusTimer !== null) clearTimeout(this.statusTimer); });

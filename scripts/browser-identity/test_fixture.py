@@ -420,6 +420,17 @@ module.main()
             result = subprocess.run([node, "--check", str(Path(__file__).with_name("selection-edits.mjs"))], capture_output=True)
             self.assertEqual(0, result.returncode)
 
+    def test_cdp_timeout_is_ten_seconds_unless_the_runner_environment_says_otherwise(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("MNEMA_HARNESS_CDP_TIMEOUT_MS", None)
+            self.assertEqual(10_000, HARNESS.cdp_timeout_ms())
+            for value, expected in (("25000", 25_000), ("500", 10_000), ("999999", 10_000), ("fast", 10_000), ("", 10_000)):
+                with self.subTest(value=value), patch.dict(os.environ, {"MNEMA_HARNESS_CDP_TIMEOUT_MS": value}):
+                    self.assertEqual(expected, HARNESS.cdp_timeout_ms())
+        driver = Path(__file__).with_name("browser.mjs").read_text()
+        self.assertIn("SLOW_CDP_METHODS", driver)
+        self.assertIn("config.cdpTimeoutMs", driver)
+
     def test_only_edits_is_a_development_aid_that_needs_generation(self):
         with patch.object(sys, "argv", ["run.py", "--dist", str(self.dist), "--authoring", "--only-edits"]), \
                 contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as exit_code:

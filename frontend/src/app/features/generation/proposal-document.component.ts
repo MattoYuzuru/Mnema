@@ -8,23 +8,36 @@ import { BlockOverlay, BlockSlotContext } from '../../content/rendering/native-t
 import { NativeMediaSurfaceComponent } from '../../content/rendering/native-media-surface.component';
 import { ToggletipComponent } from '../../shared/toggletip.component';
 import { CAPABILITIES_UNAVAILABLE, Capability, LearningCapabilities } from '../authoring/capabilities-api.service';
-import { AiPromptAsk, AiPromptWindowComponent, AnchorRect } from './ai-prompt-window.component';
+import { AiPromptAsk, AiPromptWindowComponent } from './ai-prompt-window.component';
 import { describeTurnAsk, describeTurnStatus, formatWorkshopStart, mediaActionReason, turnFailureReason } from './generation-view';
+import { AnchorRect, placeNear, viewport } from './place-near';
 import { ArtifactDetail, ArtifactSummary, ArtifactTurn, EditAction, SessionState, allows } from './generation.models';
 import { SelectionTarget, clearTarget, endRect, paintTarget, readSelection, runBetween } from './selection-targets';
 import { EditMemo, WorkshopSessionStore } from './workshop-session.store';
 import { DiffParagraph, blocksOf, diffLines, hasChanges, isMediaKind } from './word-diff';
 
-/** The strip under a rewritten range, in either of its two shapes. */
-interface Review {
-    readonly kind: 'applied' | 'failed';
-    readonly memo: EditMemo;
+/** The blocks of the current revision a review (the strip under them) is about, in order. */
+interface ReviewBase {
     readonly turn: ArtifactTurn;
-    /** The blocks of the current revision the rewrite touched, in order. */
     readonly range: readonly string[];
+}
+
+/** A rewrite made in this page that is now the shown revision. */
+interface AppliedReview extends ReviewBase {
+    readonly kind: 'applied';
+    readonly memo: EditMemo;
     /** Whether «Вернуть» can go to the revision the rewrite started from. */
     readonly canUndo: boolean;
 }
+
+/** A rewrite that failed or was stopped; `memo` is `null` when the page learned of it by reading the turns (after a reload). */
+interface FailedReview extends ReviewBase {
+    readonly kind: 'failed';
+    readonly memo: EditMemo | null;
+    readonly canUndo: false;
+}
+
+type Review = AppliedReview | FailedReview;
 
 type DiffState =
     | { readonly phase: 'idle' }
@@ -43,8 +56,16 @@ interface HistoryEntry {
     readonly revertTo: string | null;
 }
 
+/** «не удалось — Мнема отказалась переписывать этот фрагмент»: how a turn stands, and for a failed one the reason in words. */
+function turnStatusWithReason(turn: ArtifactTurn): string {
+    const status = describeTurnStatus(turn);
+    return turn.status === 'FAILED' ? `${status} — ${turnFailureReason(turn.errorCode).replace(/\.$/u, '')}` : status;
+}
+
 let nextDocument = 0;
 const HOLD_MS = 800;
+/** The floating group is small and its size is known well enough to place it (it grows by one line when it explains itself). */
+const GROUP_SIZE = { width: 300, height: 64 } as const;
 
 /**
  * The material of a proposal as the Workshop shows it, and everything that edits it in place (AI-11, #293): a selection of text
@@ -86,6 +107,7 @@ export class ProposalDocumentComponent {
     private abort: AbortController | null = null;
     private painted = false;
     private holdUntil = 0;
+    private menuKeyHandled = false;
     private destroyed = false;
 
     protected readonly imageActions = [
@@ -102,6 +124,8 @@ export class ProposalDocumentComponent {
     protected readonly sending = signal(false);
     protected readonly windowError = signal<string | null>(null);
     protected readonly cost = signal<string | null>(null);
+    /** What the estimate said about the budget, once it has: the reason a rewrite cannot start, if it cannot. */
+    protected readonly limit = signal<string | null>(null);
     protected readonly showDiff = signal(false);
     protected readonly diffState = signal<DiffState>({ phase: 'idle' });
     protected readonly marked = signal<ReadonlySet<string>>(new Set());
@@ -122,6 +146,16 @@ export class ProposalDocumentComponent {
     private readonly rewritable = computed(() => this.proposed() && this.sessionState() !== 'CANCELLED');
     /** A selection offers a rewrite: nothing else is running on the artifact. */
     protected readonly canRewrite = computed(() => this.rewritable() && !this.busy());
+    /** A rewrite of this very material is running (here or in another tab): a selection is met with a disabled group that says so. */
+    private readonly revising = computed(() => !this.isExercise() && this.artifact().state === 'REVISING' && this.shownIsCurrent()
+        && allows(this.sessionState(), 'PROPOSED', 'editArtifact') && this.sessionState() !== 'CANCELLED');
+    private readonly selectable = computed(() => this.rewritable() || this.revising());
+    /** The group is drawn but cannot open the window: a rewrite is running or another command is in flight. */
+    protected readonly groupDisabled = computed(() => !this.canRewrite());
+    protected readonly groupReason = computed(() => this.revising() ? 'Мнема ещё переписывает этот материал'
+        : this.busy() ? 'Подождите: предыдущее действие ещё выполняется' : null);
+    protected readonly groupPlace = computed(() => placeNear(this.anchor(), GROUP_SIZE, viewport(), 6));
+    protected readonly reasonId = `${this.uid}-reason`;
     protected readonly canMedia = computed(() => this.proposed() && !this.busy());
     /** The artifact can go back to another revision (its state and its session's allow it); a command in flight only makes the actions wait. */
     private readonly revertable = computed(() => this.shownIsCurrent() && !this.isExercise()
@@ -137,14 +171,22 @@ export class ProposalDocumentComponent {
         return new Set(this.order().filter(id => ids.has(id)));
     });
     protected readonly busyLast = computed(() => this.order().filter(id => this.busyIds().has(id)).at(-1) ?? null);
-    /** The strip of the last rewrite made on this page: «Переписано» with its four actions, or why it failed. */
+    /**
+     * The strip under the last rewrite: «Переписано» with its four actions (only for a rewrite this page made, because only it knows the
+     * revision the rewrite started from), or why a rewrite failed (also for one the page only read about, after a reload).
+     * TODO(#293 follow-up): an applied rewrite read after a reload has no strip, only its entry in the history, because `turns[]` carry
+     * no base revision. When the backend adds `baseRevisionId` to the turn, derive the applied strip, its diff and «Вернуть» from it too
+     * and drop the memo; until then do not guess the base from the order of `revisions[]`: after a revert and a new edit it is wrong.
+     */
     protected readonly review = computed<Review | null>(() => {
         const memo = this.memo();
         const detail = this.detail();
-        if (memo === null || memo.dismissed || detail === null || this.artifact().state !== 'PROPOSED' || !this.shownIsCurrent()) return null;
+        if (detail === null || this.artifact().state !== 'PROPOSED' || !this.shownIsCurrent()) return null;
+        const order = this.order();
+        if (memo === null) return this.readFailure(detail, order);
+        if (memo.dismissed) return null;
         const turn = detail.turns.find(held => held.turnId === memo.turnId);
         if (turn === undefined) return null;
-        const order = this.order();
         const own = new Set(memo.ask.nodeIds);
         if (turn.status === 'APPLIED' && turn.resultRevisionId === this.artifact().currentRevisionId) {
             let range = runBetween(order, memo.ask.anchorBefore, memo.ask.anchorAfter);
@@ -200,7 +242,7 @@ export class ProposalDocumentComponent {
                 datetime: first.createdAt, current: first.revisionId === current, revertTo: target(first.revisionId) });
         }
         for (const turn of detail.turns) {
-            entries.push({ key: turn.turnId, label: describeTurnAsk(turn), status: describeTurnStatus(turn), time: formatWorkshopStart(turn.createdAt),
+            entries.push({ key: turn.turnId, label: describeTurnAsk(turn), status: turnStatusWithReason(turn), time: formatWorkshopStart(turn.createdAt),
                 datetime: turn.createdAt, current: turn.status === 'APPLIED' && turn.resultRevisionId === current,
                 revertTo: turn.status === 'APPLIED' ? target(turn.resultRevisionId) : null });
         }
@@ -212,6 +254,16 @@ export class ProposalDocumentComponent {
         return review.turn.status === 'CANCELLED' ? 'Правка остановлена.' : turnFailureReason(review.turn.errorCode);
     });
 
+    /** The last turn, when it failed or was stopped and its strip was not closed: its blocks are still where it asked for them. */
+    private readFailure(detail: ArtifactDetail, order: readonly string[]): FailedReview | null {
+        const turn = detail.turns.at(-1);
+        if (turn === undefined || (turn.status !== 'FAILED' && turn.status !== 'CANCELLED') || (turn.action !== 'REWRITE' && turn.action !== 'FREE')
+            || this.store.closedTurns().has(turn.turnId)) return null;
+        const own = new Set(turn.targetNodeIds);
+        const range = order.filter(id => own.has(id));
+        return range.length === 0 ? null : { kind: 'failed', memo: null, turn, range, canUndo: false };
+    }
+
     constructor() {
         const destroy = inject(DestroyRef);
         afterNextRender(() => this.listen(destroy));
@@ -219,7 +271,13 @@ export class ProposalDocumentComponent {
         // that is explaining a refusal stays until the user closes it: the refusal may be the very reason the proposal stopped being editable.
         effect(() => {
             if (this.rewritable()) return;
-            untracked(() => { if (this.phase() !== 'window' || this.windowError() === null) this.reset(false); });
+            const revising = this.revising();
+            untracked(() => {
+                if (this.phase() === 'window' && this.windowError() !== null) return;
+                // The disabled group of a running rewrite stays; a window that was open for the old state goes.
+                if (revising && this.phase() === 'group') return;
+                this.reset(false);
+            });
         });
         // The group is a popover in the top layer: it has to be shown when it exists.
         effect(() => {
@@ -258,11 +316,13 @@ export class ProposalDocumentComponent {
         const onReposition = (): void => this.reposition();
         const onPointer = (event: Event): void => this.outside(event);
         const onKey = (event: KeyboardEvent): void => this.keydown(event);
-        const onKeyUp = (event: KeyboardEvent): void => { if (this.menuKey(event) && this.phase() !== 'idle') event.preventDefault(); };
+        const onKeyUp = (event: KeyboardEvent): void => this.keyup(event);
+        const onContext = (event: MouseEvent): void => this.contextmenu(event);
         document.addEventListener('selectionchange', onSelection);
         document.addEventListener('pointerdown', onPointer, true);
         document.addEventListener('keydown', onKey, true);
         document.addEventListener('keyup', onKeyUp, true);
+        document.addEventListener('contextmenu', onContext, true);
         window.addEventListener('scroll', onReposition, { capture: true, passive: true });
         window.addEventListener('resize', onReposition);
         destroy.onDestroy(() => {
@@ -271,6 +331,7 @@ export class ProposalDocumentComponent {
             document.removeEventListener('pointerdown', onPointer, true);
             document.removeEventListener('keydown', onKey, true);
             document.removeEventListener('keyup', onKeyUp, true);
+            document.removeEventListener('contextmenu', onContext, true);
             window.removeEventListener('scroll', onReposition, true);
             window.removeEventListener('resize', onReposition);
         });
@@ -284,7 +345,7 @@ export class ProposalDocumentComponent {
     /** Reads the selection again: the group follows it, and goes when there is none (unless keyboard focus is on the group). */
     refresh(): void {
         if (this.destroyed || this.phase() === 'window') return;
-        const next = this.canRewrite()
+        const next = this.selectable()
             ? readSelection(this.host().nativeElement, document.getSelection(), this.order(), this.kinds()) : null;
         if (next === null) {
             // A tap on the group can clear the selection before its click arrives: keep the group for a moment after a press on it.
@@ -325,7 +386,7 @@ export class ProposalDocumentComponent {
         if (node instanceof Element && node.closest('app-ai-prompt-window, .selection-actions')) return;
         this.closeWindow(false);
         // The click moved focus to what was clicked; when that is nothing focusable, the document keeps it.
-        setTimeout(() => { if (document.activeElement === document.body) this.focusHost(); });
+        setTimeout(() => { if (!this.destroyed && document.activeElement === document.body) this.focusHost(); });
     }
 
     /** The menu key, or Shift+F10: the keyboard's «context menu». */
@@ -333,8 +394,31 @@ export class ProposalDocumentComponent {
         return event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey);
     }
 
+    /** Whether the keyboard's menu may open the window now: the group is there and not disabled. */
+    private opensWithMenu(): boolean {
+        return this.phase() === 'group' && !this.groupDisabled();
+    }
+
     private keydown(event: KeyboardEvent): void {
-        if (!this.menuKey(event) || this.phase() !== 'group') return;
+        if (!this.menuKey(event) || !this.opensWithMenu()) return;
+        event.preventDefault();
+        // The key's release must not bring up the browser's own menu either (some platforms show it on keyup).
+        this.menuKeyHandled = true;
+        this.openWindow();
+    }
+
+    /** Only the release of a key whose press opened the window is taken: in the window's field the menu key keeps its meaning. */
+    private keyup(event: KeyboardEvent): void {
+        if (!this.menuKeyHandled || !this.menuKey(event)) return;
+        this.menuKeyHandled = false;
+        event.preventDefault();
+    }
+
+    /** A context menu asked for with the keyboard (no pointer position) opens the window while the group is there; a mouse's stays native. */
+    private contextmenu(event: MouseEvent): void {
+        const pointer = event as MouseEvent & { pointerType?: string; pointerId?: number };
+        const fromKeyboard = event.button === -1 || pointer.pointerType === '' || pointer.pointerId === -1;
+        if (!fromKeyboard || !this.opensWithMenu()) return;
         event.preventDefault();
         this.openWindow();
     }
@@ -343,8 +427,9 @@ export class ProposalDocumentComponent {
 
     openWindow(): void {
         const target = this.target();
-        if (target === null || this.phase() !== 'group') return;
+        if (target === null || this.phase() !== 'group' || this.groupDisabled()) return;
         this.windowError.set(null);
+        this.limit.set(null);
         this.cost.set('Считаем…');
         this.phase.set('window');
         this.painted = paintTarget(target.range);
@@ -352,13 +437,18 @@ export class ProposalDocumentComponent {
         const token = ++this.costToken;
         const artifactId = this.artifact().artifactId;
         void this.store.editCost(artifactId, target.nodeIds.length).then(cost => {
-            if (token === this.costToken && !this.destroyed) this.cost.set(cost?.text ?? null);
+            if (token !== this.costToken || this.destroyed) return;
+            this.cost.set(cost === null ? null : !cost.blocked ? cost.text : `${cost.text} · не хватит лимита`);
+            this.limit.set(cost?.blocked || null);
         });
     }
 
     protected async send(ask: AiPromptAsk): Promise<void> {
         const target = this.target();
         if (target === null || this.sending() || this.phase() !== 'window') return;
+        // The budget does not fit this edit: pressing explains the options (as the composer does) instead of sending a request that will fail.
+        const limit = this.limit();
+        if (limit !== null) { this.windowError.set(limit); return; }
         this.sending.set(true);
         this.windowError.set(null);
         const abort = this.abort = new AbortController();
@@ -441,7 +531,7 @@ export class ProposalDocumentComponent {
         if (!this.showDiff()) this.diffState.set({ phase: 'idle' });
     }
 
-    private async computeDiff(review: Review): Promise<void> {
+    private async computeDiff(review: AppliedReview): Promise<void> {
         const token = ++this.diffToken;
         this.diffState.set({ phase: 'loading' });
         const before = await this.store.loadRevision(this.artifact().artifactId, review.memo.baseRevisionId);
@@ -452,16 +542,18 @@ export class ProposalDocumentComponent {
         const oldRange = ids.length > 0 ? ids : review.memo.ask.nodeIds;
         const lines = (list: readonly { id: string; kind: string; lines: readonly string[] }[], range: ReadonlySet<string>): string[] =>
             list.filter(block => range.has(block.id) && !isMediaKind(block.kind)).flatMap(block => block.lines);
-        const paragraphs = diffLines(lines(old, new Set(oldRange)), lines(this.blocks(), new Set(review.range)));
+        const language = this.document().root.attrs['lang'];
+        const paragraphs = diffLines(lines(old, new Set(oldRange)), lines(this.blocks(), new Set(review.range)),
+            typeof language === 'string' ? language : undefined);
         this.diffState.set({ phase: 'ready', paragraphs, changed: hasChanges(paragraphs) });
     }
 
-    protected keep(): void {
-        this.store.dismissEdit(this.artifact().artifactId);
+    protected keep(review: Review): void {
+        this.store.dismissEdit(this.artifact().artifactId, review.turn.turnId);
         this.focusHost();
     }
 
-    protected async undo(review: Review): Promise<void> {
+    protected async undo(review: AppliedReview): Promise<void> {
         if (this.busy() || !review.canUndo) return;
         const done = await this.store.revert(this.artifact().artifactId, review.memo.baseRevisionId);
         if (done) this.focusHost();
@@ -469,8 +561,14 @@ export class ProposalDocumentComponent {
 
     protected async again(review: Review): Promise<void> {
         if (this.busy()) return;
-        const { nodeIds: _nodeIds, ...ask } = review.memo.ask;
-        const outcome = await this.store.edit(this.artifact().artifactId, { ...ask, nodeIds: review.range, again: true });
+        // The same request on the blocks that are there now (a rewrite is asked again of the rewritten text: it compounds), as a command of
+        // its own named by this turn, so an answer that never arrived is repeated, not charged twice.
+        const order = this.order();
+        const first = order.indexOf(review.range[0]!);
+        const last = order.indexOf(review.range[review.range.length - 1]!);
+        const outcome = await this.store.edit(this.artifact().artifactId, { action: review.turn.action, nodeIds: review.range,
+            anchorBefore: order[first - 1] ?? null, anchorAfter: order[last + 1] ?? null, preset: review.turn.preset,
+            instruction: review.turn.instruction, againOf: review.turn.turnId });
         if (!outcome.ok && !outcome.aborted) this.store.notify(outcome.message);
         else if (outcome.ok) this.focusHost();
     }

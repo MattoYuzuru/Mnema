@@ -10,12 +10,19 @@ import { runUsage } from './usage.mjs';
 import { runWorkshop } from './workshop.mjs';
 
 const config = JSON.parse(await readFile(process.argv[2], 'utf8'));
+const defaultCdpTimeout = Number.isInteger(config.cdpTimeoutMs) && config.cdpTimeoutMs >= 1000 && config.cdpTimeoutMs <= 120_000 ? config.cdpTimeoutMs : 10_000;
 const results = [];
 class SafeFailure extends Error {}
 const require = (value, label) => { if (!value) throw new SafeFailure(label); };
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-/** One CDP call may wait this long: a loaded machine (several browser harnesses share one) can hold a page for ten seconds and more. */
-const CDP_TIMEOUT_MS = 30_000;
+/**
+ * A plain CDP command fails after `config.cdpTimeoutMs` (10 s unless `MNEMA_HARNESS_CDP_TIMEOUT_MS` in the runner's environment says
+ * otherwise): it is answered by the browser at once, so a silence is a finding. A call that waits for the page itself (navigation,
+ * a screenshot, evaluating a script or a promise in it) may wait `SLOW_CDP_TIMEOUT_MS`: on a loaded machine (several browser harnesses
+ * can share one) a page is held for ten seconds and more without being broken.
+ */
+const SLOW_CDP_TIMEOUT_MS = 30_000;
+const SLOW_CDP_METHODS = new Set(['Page.navigate', 'Page.reload', 'Page.captureScreenshot', 'Runtime.evaluate', 'Runtime.callFunctionOn', 'Runtime.releaseObject']);
 
 class CDP {
   constructor(socket) {
@@ -35,7 +42,7 @@ class CDP {
   call(method, params = {}) {
     return new Promise((resolve, reject) => {
       const id = ++this.next;
-      const timeout = setTimeout(() => { this.pending.delete(id); reject(new Error(`CDP timeout: ${method}`)); }, CDP_TIMEOUT_MS);
+      const timeout = setTimeout(() => { this.pending.delete(id); reject(new Error(`CDP timeout: ${method}`)); }, SLOW_CDP_METHODS.has(method) ? Math.max(SLOW_CDP_TIMEOUT_MS, defaultCdpTimeout) : defaultCdpTimeout);
       this.pending.set(id, { resolve, reject, timeout, method });
       this.socket.send(JSON.stringify({ id, method, params }));
     });

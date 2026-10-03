@@ -1,11 +1,13 @@
 import {
-    ChangeDetectionStrategy, Component, ElementRef, afterNextRender, computed, inject, input, model, output, viewChild
+    ChangeDetectionStrategy, Component, ElementRef, afterNextRender, afterRenderEffect, computed, input, model, output, signal, untracked,
+    viewChild
 } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 
 import { EDIT_PRESET_OPTIONS } from './generation-view';
 import { EditPreset, MAX_INSTRUCTION_LENGTH } from './generation.models';
 import { blockImplicitSubmit, isSendKey } from './implicit-submit';
+import { AnchorRect, placeNear, viewport } from './place-near';
 
 /** What the user asked for in the window: a quick preset, a sentence, or both. */
 export interface AiPromptAsk {
@@ -13,12 +15,8 @@ export interface AiPromptAsk {
     readonly instruction: string | null;
 }
 
-/** Where the selection ends on screen (viewport pixels); the floating window sits under it. */
-export interface AnchorRect { readonly top: number; readonly bottom: number; readonly left: number; readonly right: number; }
-
 const WINDOW_WIDTH = 416;
 const WINDOW_HEIGHT_GUESS = 400;
-const EDGE = 8;
 
 let nextWindow = 0;
 
@@ -52,6 +50,8 @@ export class AiPromptWindowComponent {
     readonly sending = input(false);
     /** Why the last request was refused, in words. */
     readonly error = input<string | null>(null);
+    /** The budget does not fit this edit: the button stays pressable (an empty field too) and the press explains, as the composer's does. */
+    readonly limited = input(false);
     /** Where the selection ends (popover only). */
     readonly anchor = input<AnchorRect | null>(null);
 
@@ -75,12 +75,32 @@ export class AiPromptWindowComponent {
     protected readonly maxLength = MAX_INSTRUCTION_LENGTH;
     protected readonly blockImplicitSubmit = blockImplicitSubmit;
     protected readonly empty = computed(() => this.instruction().trim().length === 0);
-    protected readonly placement = computed(() => this.place(this.anchor()));
+    /** The height the content really takes (known after the first render and whenever it grows): the window is placed with it. */
+    private readonly measured = signal<number | null>(null);
+    private readonly composing = signal(false);
+    protected readonly placement = computed(() => placeNear(this.anchor(), { width: WINDOW_WIDTH, height: this.measured() ?? WINDOW_HEIGHT_GUESS }, viewport()));
     protected readonly describedBy = computed(() => [this.cost() !== null ? this.costId : null, this.error() !== null ? this.errorId : null]
         .filter((id): id is string => id !== null).join(' ') || null);
 
     constructor() {
         afterNextRender(() => this.show());
+        // A message or a cost line makes the window taller: measure it again, so it is placed on the side where it fits.
+        afterRenderEffect(() => {
+            this.error(); this.cost(); this.sending(); this.anchor();
+            const surface = this.surface()?.nativeElement;
+            if (surface === undefined || this.mode() !== 'popover' || surface.scrollHeight === 0) return;
+            const height = Math.ceil(surface.scrollHeight) + 2;
+            untracked(() => { if (Math.abs(height - (this.measured() ?? 0)) > 1) this.measured.set(height); });
+        });
+    }
+
+    protected onCompositionStart(): void { this.composing.set(true); }
+    protected onCompositionEnd(): void { this.composing.set(false); }
+
+    /** Esc during an IME composition cancels the composition, not the window. */
+    protected onEscape(event: KeyboardEvent): void {
+        if (event.isComposing || event.keyCode === 229 || this.composing()) return;
+        this.dismiss(true);
     }
 
     protected onKeydown(event: KeyboardEvent): void {
@@ -99,8 +119,8 @@ export class AiPromptWindowComponent {
     }
 
     protected sendText(): void {
-        if (this.sending() || this.empty()) return;
-        this.ask.emit({ preset: null, instruction: this.instruction().trim() });
+        if (this.sending() || (this.empty() && !this.limited())) return;
+        this.ask.emit({ preset: null, instruction: this.empty() ? null : this.instruction().trim() });
     }
 
     protected sendPreset(preset: EditPreset): void {
@@ -116,12 +136,15 @@ export class AiPromptWindowComponent {
     /** Esc in a modal dialog closes it natively; the host takes the window away instead, so the dialog never closes behind its back. */
     protected onCancel(event: Event): void {
         event.preventDefault();
-        this.dismiss(true);
+        if (!this.composing()) this.dismiss(true);
     }
 
-    /** A click on the dialog itself (not on its content) is a click on the backdrop. */
+    /**
+     * A click on the dialog element itself is a click on the backdrop (the padding belongs to the inner wrapper, so it never is one).
+     * It closes the sheet as Esc does: the typed request stays for the same selection and focus goes back to the document.
+     */
     protected onSheetClick(event: MouseEvent): void {
-        if (event.target === this.surface()?.nativeElement) this.dismiss(false);
+        if (event.target === this.surface()?.nativeElement) this.dismiss(true);
     }
 
     private show(): void {
@@ -137,22 +160,5 @@ export class AiPromptWindowComponent {
             }
             this.field()?.nativeElement.focus();
         }
-    }
-
-    /** Under the end of the selection, inside the viewport; above it when there is no room below. */
-    private place(anchor: AnchorRect | null): { top: string; bottom: string; left: string; width: string } {
-        const view = { width: typeof window === 'undefined' ? 1024 : window.innerWidth, height: typeof window === 'undefined' ? 768 : window.innerHeight };
-        const width = Math.min(WINDOW_WIDTH, view.width - 2 * EDGE);
-        if (anchor === null) return { top: '20vh', bottom: 'auto', left: `${Math.max(EDGE, (view.width - width) / 2)}px`, width: `${width}px` };
-        const left = Math.min(Math.max(anchor.left, EDGE), view.width - width - EDGE);
-        const below = view.height - anchor.bottom;
-        if (below >= WINDOW_HEIGHT_GUESS) {
-            return { top: `${Math.max(EDGE, anchor.bottom + EDGE)}px`, bottom: 'auto', left: `${left}px`, width: `${width}px` };
-        }
-        if (anchor.top >= WINDOW_HEIGHT_GUESS) {
-            return { top: 'auto', bottom: `${Math.max(EDGE, view.height - anchor.top + EDGE)}px`, left: `${left}px`, width: `${width}px` };
-        }
-        // No room on either side (a short window): the bottom of the screen, over the text, never off the screen.
-        return { top: 'auto', bottom: `${EDGE}px`, left: `${left}px`, width: `${width}px` };
     }
 }

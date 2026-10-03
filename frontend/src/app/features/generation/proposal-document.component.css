@@ -18,7 +18,14 @@
     background: var(--mn-sheet);
     color: var(--mn-body);
     box-shadow: 0 .6rem 1.5rem rgb(38 28 55 / 18%);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .25rem .6rem;
 }
+.group-key { color: var(--mn-muted); font: .8rem var(--mn-font-mono, ui-monospace, monospace); white-space: nowrap; }
+.group-note { color: var(--mn-body); font-size: .85rem; max-inline-size: 18rem; }
+.selection-actions button[aria-disabled='true'], .selection-bar button[aria-disabled='true'] { cursor: not-allowed; opacity: .6; }
 .selection-actions button, .selection-bar button {
     min-block-size: var(--mn-touch-min, 2.75rem);
     border: 1px solid var(--mn-field-border);
@@ -43,6 +50,8 @@
     background: var(--mn-sheet);
     box-shadow: 0 -.4rem 1rem rgb(38 28 55 / 14%);
 }
+.selection-bar { flex-direction: column; align-items: center; gap: .35rem; }
+.selection-bar .group-note { text-align: center; }
 .selection-bar button { inline-size: min(100%, 24rem); border-color: var(--mn-ink); background: var(--mn-ink); color: var(--mn-on-ink); }
 .selection-bar button:hover { background: var(--mn-ink); text-decoration: underline; text-underline-offset: .2em; }
 

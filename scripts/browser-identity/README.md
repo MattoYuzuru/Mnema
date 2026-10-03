@@ -279,7 +279,7 @@ Two synthetic accounts and two same-profile browser tabs exercise:
 The PKCE verifier is checked against the observed S256 challenge. Network interception
 blocks page requests outside the two exact origins (plus the local MinIO origin in media mode); at most 500 page requests in the base mode, 1000 in authoring (the profile AI budget scenario adds a few full loads), 1250 in media or 3000 in mechanics mode (allowing the local brand font and mark on repeated full navigations), and
 150 Identity requests are allowed (full SPA navigations reload several bundled assets).
-Global deadline 180 seconds, 600 with `--mechanics` (CLI 30–900), individual CDP (30 s per call: several browser harnesses may share one loaded machine)/HTTP/readiness deadlines, 1 MiB proxy
+Global deadline 180 seconds, 600 with `--mechanics` (CLI 30–900), individual CDP (10 s for a plain command, `MNEMA_HARNESS_CDP_TIMEOUT_MS` to change it; 30 s for the calls that wait for the page itself: navigation, screenshots, evaluating a script or promise in it, because several browser harnesses can share one loaded machine and hold a healthy page for ten seconds and more)/HTTP/readiness deadlines, 1 MiB proxy
 request/response cap, 16 MiB static asset cap. Database has a 512 MiB/two-CPU limit; each JVM
 has a 384 MiB heap cap. This is behavioral smoke evidence, not load/soak evidence.
 

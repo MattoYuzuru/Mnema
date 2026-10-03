@@ -120,17 +120,72 @@ describe('WorkshopSessionStore: selection edits (AI-11)', () => {
             expect(store.editNote()).toBeNull();
         });
 
-        it('asks again as a new command with its own reservation: «Ещё раз» never replays the earlier command, an exact repeat does', async () => {
+        it('asks again as a command of its own, named by the turn and the revision: an answer that never arrived is repeated with the same command, a definitive one frees it', async () => {
             setup();
             await tick();
             api.editArtifact.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
             await store.edit(ids.first, ask);
-            await store.edit(ids.first, ask);
-            expect(api.editArtifact.mock.calls[1]![4]).toBe(api.editArtifact.mock.calls[0]![4]);
+            // «Ещё раз» of turn A is a different command from the first ask, and the same one when repeated.
+            await store.edit(ids.first, { ...ask, againOf: 'turn-a' });
+            await store.edit(ids.first, { ...ask, againOf: 'turn-a' });
+            const ids3 = api.editArtifact.mock.calls.map(call => call[4]);
+            expect(ids3[1]).not.toBe(ids3[0]);
+            expect(ids3[2]).toBe(ids3[1]);
+            // Another turn asked again is another command.
+            await store.edit(ids.first, { ...ask, againOf: 'turn-b' });
+            expect(api.editArtifact.mock.calls[3]![4]).not.toBe(ids3[1]);
+            // A definitive refusal frees the command: the next try is a new one.
+            api.editArtifact.mockReturnValue(throwError(() => problemResponse(409, { code: 'EDIT_IN_PROGRESS' })));
+            await store.edit(ids.first, { ...ask, againOf: 'turn-c' });
+            const refused = api.editArtifact.mock.calls[4]![4];
+            store.loadDetail(ids.first);
+            await store.edit(ids.first, { ...ask, againOf: 'turn-c' });
+            expect(api.editArtifact.mock.calls[5]![4]).not.toBe(refused);
+            expect(api.editArtifact.mock.calls[5]![3]).toEqual(api.editArtifact.mock.calls[0]![3]);
+        });
+
+        it('reads a turn that stays listed as running only once: a server that never lists it as ended is not asked again and again', async () => {
+            setup();
+            await tick();
             api.editArtifact.mockReturnValue(of(accepted()));
-            await store.edit(ids.first, { ...ask, again: true });
-            expect(api.editArtifact.mock.calls[2]![4]).not.toBe(api.editArtifact.mock.calls[0]![4]);
-            expect(api.editArtifact.mock.calls[2]![3]).toEqual(api.editArtifact.mock.calls[0]![3]);
+            await store.edit(ids.first, ask);
+            api.getSession.mockImplementation(() => of(parseSessionDetail(sessionWith([proposed(ids.revision, '6')], { state: 'REVIEW' }))));
+            await store.refresh();
+            expect(store.needsDetail(store.artifacts()[0]!)).toBe(true);
+            api.getArtifact.mockReturnValue(of(detailWith([turn()])));
+            store.loadDetail(ids.first);
+            expect(store.needsDetail(store.artifacts()[0]!)).toBe(false);
+        });
+
+        it('reads again when the artifact changes under a turn it already read once (the rewrite ends or is cancelled later)', async () => {
+            setup();
+            await tick();
+            api.editArtifact.mockReturnValue(of(accepted()));
+            await store.edit(ids.first, ask);
+            // A read made while the page still thinks the artifact is proposed (its summary is behind) lists the turn as running.
+            api.getSession.mockImplementation(() => of(parseSessionDetail(sessionWith([proposed(ids.revision, '6')], { state: 'REVIEW' }))));
+            await store.refresh();
+            api.getArtifact.mockReturnValue(of(detailWith([turn()])));
+            store.loadDetail(ids.first);
+            store.loadDetail(ids.first);
+            expect(store.needsDetail(store.artifacts()[0]!)).toBe(false);
+            // The artifact then changes (the rewrite is cancelled): the turn is read again.
+            api.getSession.mockImplementation(() => of(parseSessionDetail(sessionWith([proposed(ids.revision, '7')], { state: 'CANCELLED' }))));
+            await store.refresh();
+            expect(store.needsDetail(store.artifacts()[0]!)).toBe(true);
+        });
+
+        it('says why the budget does not fit an edit, and closes the strip of a turn by its id', async () => {
+            setup();
+            await tick();
+            const blocked = parseEstimate({ ...clone(usageContract['estimateResponse']), canStart: false, blockingBuckets: [{ ...clone(usageContract['estimateResponse']).blockingBuckets?.[0] ?? {
+                bucket: 'credits.day', window: 'DAY', unit: 'CREDITS', limit: 100, used: 98, required: 4, offered: true, renewsAt: '2026-10-04T00:00:00Z', fitsAfterRenewal: true, plan: 'FREE' } }] });
+            api.estimateEdit.mockReturnValue(of(blocked));
+            const cost = await store.editCost(ids.first, 1);
+            expect(cost).toMatchObject({ canStart: false });
+            expect(cost?.blocked).toMatch(/лимит/u);
+            store.dismissEdit(ids.first, 'turn-x');
+            expect(store.closedTurns().has('turn-x')).toBe(true);
         });
 
         it('refuses without a request when the artifact is not proposed, the session cannot rewrite, or the revision on screen is not current', async () => {
@@ -199,7 +254,7 @@ describe('WorkshopSessionStore: selection edits (AI-11)', () => {
             expect(await store.edit(ids.first, ask)).toMatchObject({ ok: false, message: expect.stringContaining('та же команда') });
             expect(api.getSession).not.toHaveBeenCalled();
             api.editArtifact.mockReturnValue(throwError(() => problemResponse(404)));
-            await store.edit(ids.first, { ...ask, again: true });
+            await store.edit(ids.first, { ...ask, againOf: 'x' });
             expect(store.phase()).toBe('missing');
         });
 
@@ -265,7 +320,7 @@ describe('WorkshopSessionStore: selection edits (AI-11)', () => {
             await store.refresh();
             const again = '7a7a0000-0000-4000-8000-0000000000bb';
             api.editArtifact.mockReturnValue(of(accepted(turn({ turnId: again }))));
-            await store.edit(ids.first, { ...ask, again: true });
+            await store.edit(ids.first, { ...ask, againOf: 'x' });
             finish('CANCELLED', { turnId: again });
             expect(store.editNote()).toContain('остановлена');
         });
@@ -350,7 +405,7 @@ describe('WorkshopSessionStore: selection edits (AI-11)', () => {
             setup();
             await tick();
             api.estimateEdit.mockReturnValue(of(parseEstimate({ ...clone(usageContract['estimateResponse']), credits: { p50: 3, p95: 4 } })));
-            expect(await store.editCost(ids.first, 2)).toEqual({ text: '≈ 0,2 % лимита', canStart: true });
+            expect(await store.editCost(ids.first, 2)).toEqual({ text: '≈ 0,2 % лимита', canStart: true, blocked: null });
             expect(api.estimateEdit).toHaveBeenCalledWith(ids.deckId, { sessionId: ids.sessionId, artifactId: ids.first, action: 'REWRITE', targetNodeCount: 2 });
             await store.editCost(ids.first, 80);
             expect(api.estimateEdit.mock.calls[1]![1].targetNodeCount).toBe(50);

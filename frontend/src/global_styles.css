@@ -129,6 +129,10 @@ textarea::placeholder {
     color: var(--mn-ink);
 }
 
+@media (forced-colors: active) {
+    ::highlight(mnema-ai-target) { background-color: Highlight; color: HighlightText; }
+}
+
 :focus-visible {
     outline: 3px solid var(--mn-focus);
     outline-offset: 3px;

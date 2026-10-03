@@ -1,6 +1,6 @@
 import { HttpErrorResponse } from '@angular/common/http';
 
-import { isSendKey } from './generation-composer.component';
+import { isSendKey } from './implicit-submit';
 import { readProblem } from './generation-problem';
 import {
     EFFORT_OPTIONS, NBSP, NOTES_MODE_OPTIONS, artifactStatus, describeEstimate, describeNoteArchive, describeSessionProgress, describeUsageLimit, failureNote, failureReason,

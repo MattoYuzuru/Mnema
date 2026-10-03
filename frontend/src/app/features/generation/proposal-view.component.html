@@ -49,7 +49,7 @@
         <p class="muted">Мнема переписывает материал. Текст ниже можно читать.</p>
       }
       @if (document(); as shown) {
-        @if (canSelectEdit()) { <p class="muted selection-hint">Выделите фрагмент текста, чтобы попросить Мнему переписать его.</p> }
+        @if (canSelectEdit()) { <p class="muted selection-hint">Выделите фрагмент текста, чтобы попросить Мнему переписать его. С клавиатуры: Shift+F10 или клавиша меню; Tab после выделения тоже доходит до кнопки, но после ссылок и плееров самого блока.</p> }
         <div class="final"><app-proposal-document [artifact]="artifact()" [document]="shown" [detail]="detail()" [sessionState]="sessionState()"
           [capabilities]="capabilities()" [busy]="busy()" /></div>
       } @else if (isExercise() && detail()) {

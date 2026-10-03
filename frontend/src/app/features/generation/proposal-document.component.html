@@ -4,20 +4,26 @@
 
 @if (phase() === 'group' && !coarse()) {
   <div #group class="selection-actions" popover="manual" role="group" aria-label="Действия с выделенным текстом"
-    [style.top.px]="(anchor()?.bottom ?? 0) + 6" [style.left.px]="anchor()?.left ?? 0" (pointerdown)="hold()" (mousedown)="$event.preventDefault()">
-    <button type="button" (click)="openWindow()">Попросить Мнему…</button>
+    [style.top]="groupPlace().top" [style.bottom]="groupPlace().bottom" [style.left]="groupPlace().left"
+    (pointerdown)="hold()" (mousedown)="$event.preventDefault()">
+    <button type="button" aria-keyshortcuts="Shift+F10" [attr.aria-disabled]="groupDisabled() ? 'true' : null"
+      [attr.aria-describedby]="groupReason() ? reasonId : null" (click)="openWindow()">Попросить Мнему…</button>
+    @if (groupReason(); as reason) { <span class="group-note" [id]="reasonId">{{ reason }}</span> }
+    @else { <kbd class="group-key" aria-hidden="true">Shift+F10</kbd> }
   </div>
 }
 
 @if (phase() === 'group' && coarse()) {
   <div class="selection-bar" (pointerdown)="hold()" (mousedown)="$event.preventDefault()">
-    <button type="button" (click)="openWindow()">Попросить Мнему…</button>
+    <button type="button" [attr.aria-disabled]="groupDisabled() ? 'true' : null" [attr.aria-describedby]="groupReason() ? reasonId : null"
+      (click)="openWindow()">Попросить Мнему…</button>
+    @if (groupReason(); as reason) { <span class="group-note" [id]="reasonId">{{ reason }}</span> }
   </div>
 }
 
 @if (phase() === 'window') {
   <app-ai-prompt-window [mode]="mode()" [quote]="target()?.quote ?? ''" [cost]="cost()" [(instruction)]="instruction" [sending]="sending()"
-    [error]="windowError()" [anchor]="anchor()" (ask)="send($event)" (retract)="cancelSend()" (dismissed)="dismiss($event)" />
+    [error]="windowError()" [limited]="limit() !== null" [anchor]="anchor()" (ask)="send($event)" (retract)="cancelSend()" (dismissed)="dismiss($event)" />
 }
 
 @if (history().length > 0) {
@@ -92,7 +98,7 @@
           @if (strip.kind === 'applied') {
             <span class="strip-state">Переписано</span>
             <button type="button" class="strip-button" [attr.aria-expanded]="showDiff()" [attr.aria-controls]="diffId" (click)="toggleDiff()">{{ showDiff() ? 'Скрыть изменения' : 'Показать изменения' }}</button>
-            <button type="button" class="strip-button" (click)="keep()">Оставить</button>
+            <button type="button" class="strip-button" (click)="keep(strip)">Оставить</button>
             @if (strip.canUndo) { <button type="button" class="strip-button" [attr.aria-disabled]="busy() ? 'true' : null" (click)="undo(strip)">Вернуть</button> }
             <button type="button" class="strip-button" [attr.aria-disabled]="busy() ? 'true' : null" (click)="again(strip)">Ещё раз</button>
             @if (showDiff() && diffState().phase === 'loading') { <span class="strip-note">Считаем изменения…</span> }
@@ -100,7 +106,7 @@
           } @else {
             <span class="strip-state is-error">{{ failure() }} Текст не изменился, лимит не списан.</span>
             <button type="button" class="strip-button" [attr.aria-disabled]="busy() ? 'true' : null" (click)="again(strip)">Ещё раз</button>
-            <button type="button" class="strip-button" (click)="keep()">Закрыть</button>
+            <button type="button" class="strip-button" (click)="keep(strip)">Закрыть</button>
           }
         </div>
       }
