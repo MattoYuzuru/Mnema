@@ -16,6 +16,8 @@ export interface GenerationProblem {
     /** `RESOURCE_LIMIT_EXCEEDED.limit`. */
     readonly limit: string | null;
     readonly capability: string | null;
+    /** `RATE_LIMITED`: whole seconds to wait (the `retryAfter` member, or the `Retry-After` header); `null` when the server did not say. */
+    readonly retryAfter: number | null;
     readonly artifactIds: readonly string[];
     readonly activeSessionIds: readonly string[];
     /** `RESOURCE_LIMIT_EXCEEDED.limits`: the configured limits that apply (`maxExerciseTargets`, ...), or `null`. */
@@ -56,6 +58,13 @@ function count(value: unknown): number | null {
     return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
 
+function retryAfterOf(error: HttpErrorResponse, body: Record<string, unknown>): number | null {
+    const member = count(body['retryAfter']);
+    if (member !== null) return member;
+    const header = error.headers?.get('Retry-After') ?? null;
+    return header !== null && /^[0-9]{1,6}$/u.test(header.trim()) ? Number(header.trim()) : null;
+}
+
 function instantOrNull(value: unknown): string | null {
     return typeof value === 'string' && Number.isFinite(Date.parse(value)) ? value : null;
 }
@@ -83,7 +92,7 @@ export function readProblem(error: unknown): GenerationProblem {
         const code = memberText(body, 'code');
         return {
             status: error.status, code, reason: memberText(body, 'reason'), limit: memberText(body, 'limit'),
-            capability: memberText(body, 'capability'), artifactIds: memberIds(body, 'artifactIds'),
+            capability: memberText(body, 'capability'), retryAfter: retryAfterOf(error, body), artifactIds: memberIds(body, 'artifactIds'),
             activeSessionIds: memberIds(body, 'activeSessionIds'), limits: readLimitMembers(body),
             usage: code === 'USAGE_LIMIT_REACHED' ? readUsage(body) : null,
             uncertain: error.status === 0 || error.status >= 500
@@ -91,13 +100,13 @@ export function readProblem(error: unknown): GenerationProblem {
     }
     // A request the client refused to build was never sent: a definitive validation problem, not an unknown outcome.
     if (error instanceof RequestValidationError) {
-        return { status: 400, code: null, reason: null, limit: null, capability: null, artifactIds: [], activeSessionIds: [],
-            limits: null, usage: null, uncertain: false };
+        return { status: 400, code: null, reason: null, limit: null, capability: null, retryAfter: null, artifactIds: [],
+            activeSessionIds: [], limits: null, usage: null, uncertain: false };
     }
     // A protocol error means the command may well have been applied: the answer could not be read.
     const unreadable = error instanceof AuthoringProtocolError;
-    return { status: unreadable ? -1 : 0, code: null, reason: null, limit: null, capability: null, artifactIds: [],
-        activeSessionIds: [], limits: null, usage: null, uncertain: true };
+    return { status: unreadable ? -1 : 0, code: null, reason: null, limit: null, capability: null, retryAfter: null,
+        artifactIds: [], activeSessionIds: [], limits: null, usage: null, uncertain: true };
 }
 
 export function isStatus(problem: GenerationProblem, status: number, code?: string): boolean {

@@ -13,6 +13,7 @@ import {
     parseApprovalAck, parseArtifactDetail, parseArtifactSummary, parseEditAccepted, parseEstimate, parseEventsPage, parseHandoff,
     parseNoteArchive, parseSessionDetail, parseSessionPage, serializeEdit, serializeEditEstimate, serializeSpec
 } from './generation.models';
+import { IntentContext, IntentResult, parseIntent, serializeIntentRequest } from './generation-intent';
 
 /** The Deck version an approval is pinned to (`If-Match` and `expectedDeckRevisionId`). */
 export interface DeckPin { readonly rowVersion: string; readonly revisionId: string; }
@@ -47,6 +48,19 @@ export class GenerationApiService {
                 requireStatus(response, 200);
                 return parseEstimate(response.body);
             }));
+    }
+
+    /**
+     * «Попросить Мнему…» (`createIntent`, AI-16): one sentence about the material or exercise the owner is looking at becomes a spec, chips
+     * and notes. Free and stateless: nothing is reserved, there is no command id, and a retry is another call (and another place of the
+     * hourly limit, `429 RATE_LIMITED`).
+     */
+    createIntent(deckId: string, context: IntentContext, text: string): Observable<IntentResult> {
+        return defer(() => this.http.post<unknown>(`${this.deckPath(deckId)}/generation-intents`, serializeIntentRequest(context, text),
+            { observe: 'response' })).pipe(map(response => {
+            requireStatus(response, 200);
+            return parseIntent(response.body);
+        }));
     }
 
     /** The preflight cost of one edit (`estimateGeneration`, `edit` form): what a rewrite of `targetNodeCount` blocks would hold. */

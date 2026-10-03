@@ -79,6 +79,10 @@ export interface SpecEcho {
     readonly prompt: string | null;
     /** The pinned materials of an `EXERCISES` session, in the order they were requested; empty for every other kind. */
     readonly targets: readonly ExerciseTarget[];
+    /** What a `REVISE_*` session was asked to change in the text; `null` for the other kinds and for a voice-only redo. */
+    readonly instruction: string | null;
+    /** The voice a `REVISE_EXERCISE` session was asked for; `null` when it has no media action. */
+    readonly voice: SpeechVoice | null;
 }
 
 export interface MediaSlotCounts { readonly total: number; readonly ready: number; readonly failed: number; }
@@ -123,6 +127,8 @@ export interface MediaSlot {
     readonly assetId: string;
     readonly state: SlotState;
     readonly errorCode: SlotErrorCode | null;
+    /** The voice of the last redo of the audio of an exercise (AI-16); `null` before one ran, and always `null` for a material. */
+    readonly voice: SpeechVoice | null;
 }
 
 export interface ArtifactRevisionRef { readonly revisionId: string; readonly cause: string; readonly createdAt: string; }
@@ -149,15 +155,21 @@ export interface ArtifactTurn {
     readonly resultRevisionId: string | null;
     readonly errorCode: ArtifactErrorCode | null;
     readonly createdAt: string;
+    /** The voice of an `AUDIO_REGENERATE` turn of an exercise (AI-16); `null` for every other turn. */
+    readonly voice: SpeechVoice | null;
 }
 
 /** The body of `editArtifact` as the client builds it; {@link serializeEdit} turns it into the exact wire body. */
 export interface EditRequest {
     readonly expectedRevisionId: string;
     readonly action: EditAction;
+    /** The blocks of a material the edit names; an exercise has none (`exercise: true`). */
     readonly nodeIds: readonly string[];
     readonly preset?: EditPreset | null;
     readonly instruction?: string | null;
+    /** The edit is on the exercise of a `REVISE_EXERCISE` session (AI-16): `FREE` rewrites it whole, `AUDIO_REGENERATE` redoes its audio with `voice`. */
+    readonly exercise?: boolean;
+    readonly voice?: SpeechVoice | null;
 }
 
 /** `202` of `editArtifact`: the turn and the artifact (`REVISING` for a rewrite; `PROPOSED` on the new revision for `REMOVE_MEDIA`). */
@@ -297,6 +309,9 @@ export const EFFORTS = ['AUTO', 'SHORT', 'MEDIUM', 'DETAILED'] as const;
 export type Effort = (typeof EFFORTS)[number];
 export type NotesMode = 'ONE_PER_NOTE' | 'MERGE_INTO_ONE';
 export type AudioVoice = 'female' | 'male' | null;
+/** A voice that is chosen (the audio of a material may also be left to the server: {@link AudioVoice}). */
+export type SpeechVoice = 'female' | 'male';
+export const SPEECH_VOICES: readonly SpeechVoice[] = ['female', 'male'];
 
 /**
  * Per-note overrides of a `SOURCE` note (AI-08, #290): sparse, every member optional, absent = the session default. They are
@@ -477,11 +492,16 @@ function parseSpecEcho(value: unknown): SpecEcho {
     const object = value as Record<string, unknown>;
     const prompt = object['prompt'];
     const language = object['outputLanguage'];
+    const instruction = object['instruction'];
+    const media = object['media'];
+    const voice = media !== null && typeof media === 'object' ? (media as Record<string, unknown>)['voice'] : null;
     return {
         kind: oneOf(object['kind'], SESSION_KINDS, 'spec kind'),
         outputLanguage: typeof language === 'string' ? language : null,
         prompt: typeof prompt === 'string' ? prompt : null,
-        targets: parseEchoTargets(object['targets'])
+        targets: parseEchoTargets(object['targets']),
+        instruction: typeof instruction === 'string' && instruction.trim().length > 0 ? instruction : null,
+        voice: voice === 'female' || voice === 'male' ? voice : null
     };
 }
 
@@ -539,9 +559,19 @@ export function parseArtifactSummary(value: unknown): ArtifactSummary {
     return parseSummaryOf(requireObject(value, ARTIFACT_SUMMARY_KEYS));
 }
 
+/** The keys of `value` plus `optional` when it carries it: a member the contract adds to some shapes only (`voice`). */
+function keysWith(value: unknown, keys: readonly string[], optional: string): readonly string[] {
+    return value !== null && typeof value === 'object' && !Array.isArray(value) && optional in value ? [...keys, optional] : keys;
+}
+
+function parseVoice(value: unknown): SpeechVoice | null {
+    return value === undefined || value === null ? null : oneOf(value, SPEECH_VOICES, 'voice');
+}
+
 function parseMediaSlot(value: unknown): MediaSlot {
-    const object = requireObject(value, ['slotKey', 'kind', 'nodeId', 'assetId', 'state', 'errorCode']);
+    const object = requireObject(value, keysWith(value, ['slotKey', 'kind', 'nodeId', 'assetId', 'state', 'errorCode'], 'voice'));
     return {
+        voice: parseVoice(object['voice']),
         slotKey: text(object['slotKey'], 64), kind: oneOf(object['kind'], SLOT_KINDS, 'slot kind'),
         nodeId: requireEntity(object['nodeId']), assetId: requireEntity(object['assetId']),
         state: oneOf(object['state'], SLOT_STATES, 'slot state'),
@@ -556,9 +586,10 @@ function parseRevisionRef(value: unknown): ArtifactRevisionRef {
 }
 
 export function parseTurn(value: unknown): ArtifactTurn {
-    const object = requireObject(value, ['turnId', 'status', 'action', 'preset', 'instruction', 'targetNodeIds', 'resultRevisionId',
-        'errorCode', 'createdAt']);
+    const object = requireObject(value, keysWith(value, ['turnId', 'status', 'action', 'preset', 'instruction', 'targetNodeIds',
+        'resultRevisionId', 'errorCode', 'createdAt'], 'voice'));
     return {
+        voice: parseVoice(object['voice']),
         turnId: requireEntity(object['turnId']), status: oneOf(object['status'], TURN_STATES, 'turn status'),
         action: oneOf(object['action'], EDIT_ACTIONS, 'edit action'),
         preset: nullable(object['preset'], preset => oneOf(preset, EDIT_PRESETS, 'edit preset')),
@@ -893,8 +924,31 @@ export interface ExercisesSpec {
     readonly settings: ExercisesSettings;
 }
 
-/** Either spec the composers send. */
-export type GenerationSpec = MaterialsSpec | ExercisesSpec;
+/**
+ * `REVISE_ITEM` (AI-16, #294): one instruction applied to the whole material, which must still be the head of its member. The target is
+ * the pin the owner saw; the server builds this spec from «Попросить Мнему…» and the client sends it as it is.
+ */
+export interface ReviseItemSpec {
+    readonly kind: 'REVISE_ITEM';
+    readonly outputLanguage?: string;
+    readonly target: ExerciseTarget;
+    readonly instruction: string;
+}
+
+/** What changes in the audio of an exercise: only a new voice (AI-16 delivers the model and a Stub; real synthesis is AI-09). */
+export interface ReviseMedia { readonly action: 'AUDIO_REGENERATE'; readonly voice: SpeechVoice; }
+
+/** `REVISE_EXERCISE`: an instruction for the text, a media action, or both (at least one). */
+export interface ReviseExerciseSpec {
+    readonly kind: 'REVISE_EXERCISE';
+    readonly outputLanguage?: string;
+    readonly target: { readonly exerciseId: string; readonly exerciseRevisionId: string };
+    readonly instruction?: string;
+    readonly media?: ReviseMedia;
+}
+
+/** Every spec a session is created from. */
+export type GenerationSpec = MaterialsSpec | ExercisesSpec | ReviseItemSpec | ReviseExerciseSpec;
 
 /** The server's limits (`limits.maxExerciseTargets` and its siblings): one session holds at most this many materials. */
 export const MAX_EXERCISE_TARGETS = 20;
@@ -932,10 +986,47 @@ export function serializeExercisesSpec(spec: ExercisesSpec): Record<string, unkn
     return body;
 }
 
-/** The body of either spec. */
+/** The instruction of a revision as the server reads it: trimmed, not blank, at most 2000 code points. */
+function reviseInstruction(value: string | undefined, required: boolean): string | null {
+    const trimmed = value?.trim() ?? '';
+    if (trimmed.length === 0) {
+        if (required) throw new RequestValidationError('A revision needs an instruction.');
+        return null;
+    }
+    if (codePoints(trimmed) > MAX_INSTRUCTION_LENGTH) throw new RequestValidationError('The instruction is too long.');
+    return trimmed;
+}
+
+/** The exact body of a `REVISE_ITEM` spec. */
+export function serializeReviseItemSpec(spec: ReviseItemSpec): Record<string, unknown> {
+    return {
+        kind: 'REVISE_ITEM', ...(spec.outputLanguage === undefined ? {} : { outputLanguage: spec.outputLanguage }),
+        target: { memberKey: requireEntity(spec.target.memberKey), itemRevisionId: requireEntity(spec.target.itemRevisionId) },
+        instruction: reviseInstruction(spec.instruction, true)
+    };
+}
+
+/** The exact body of a `REVISE_EXERCISE` spec: an instruction, a media action or both; never neither. */
+export function serializeReviseExerciseSpec(spec: ReviseExerciseSpec): Record<string, unknown> {
+    const instruction = reviseInstruction(spec.instruction, false);
+    if (instruction === null && spec.media === undefined) throw new RequestValidationError('A revision needs an instruction or a media action.');
+    return {
+        kind: 'REVISE_EXERCISE', ...(spec.outputLanguage === undefined ? {} : { outputLanguage: spec.outputLanguage }),
+        target: { exerciseId: requireEntity(spec.target.exerciseId), exerciseRevisionId: requireEntity(spec.target.exerciseRevisionId) },
+        ...(instruction === null ? {} : { instruction }),
+        ...(spec.media === undefined ? {} : { media: { action: 'AUDIO_REGENERATE', voice: oneOf(spec.media.voice, SPEECH_VOICES, 'voice') } })
+    };
+}
+
+/** The body of any spec. */
 export function serializeSpec(spec: GenerationSpec): Record<string, unknown> {
     try {
-        return spec.kind === 'MATERIALS' ? serializeMaterialsSpec(spec) : serializeExercisesSpec(spec);
+        switch (spec.kind) {
+            case 'MATERIALS': return serializeMaterialsSpec(spec);
+            case 'EXERCISES': return serializeExercisesSpec(spec);
+            case 'REVISE_ITEM': return serializeReviseItemSpec(spec);
+            case 'REVISE_EXERCISE': return serializeReviseExerciseSpec(spec);
+        }
     } catch (error) {
         // A malformed id inside the spec is the same kind of refusal: nothing was sent.
         if (error instanceof AuthoringProtocolError && !(error instanceof RequestValidationError)) throw new RequestValidationError(error.message);
@@ -981,11 +1072,13 @@ function codePoints(value: string): number {
  */
 export function serializeEdit(request: EditRequest, commandId: string): Record<string, unknown> {
     const action = oneOf(request.action, EDIT_ACTIONS, 'edit action');
+    const preset = request.preset ?? null;
+    if (request.exercise === true) return serializeExerciseEdit(request, action, commandId);
+    if (request.voice !== undefined && request.voice !== null) throw new RequestValidationError('A voice belongs to the audio of an exercise.');
     const nodeIds = request.nodeIds.map(requireEntity);
     if (nodeIds.length === 0 || nodeIds.length > MAX_EDIT_TARGETS || new Set(nodeIds).size !== nodeIds.length) {
         throw new RequestValidationError('An edit targets 1 to 50 distinct blocks.');
     }
-    const preset = request.preset ?? null;
     if (preset !== null && (action !== 'REWRITE' || !(EDIT_PRESETS as readonly string[]).includes(preset))) {
         throw new RequestValidationError('A preset belongs to a rewrite.');
     }
@@ -998,6 +1091,24 @@ export function serializeEdit(request: EditRequest, commandId: string): Record<s
         commandId: requireCommand(commandId), expectedRevisionId: requireEntity(request.expectedRevisionId), action,
         target: { nodeIds }, ...(preset === null ? {} : { preset }), ...(instruction === null ? {} : { instruction })
     };
+}
+
+/**
+ * An edit of the exercise of a `REVISE_EXERCISE` session: `FREE` rewrites it whole (an instruction, no target) and `AUDIO_REGENERATE`
+ * redoes its audio (a voice, nothing else). No other action, no target, no preset.
+ */
+function serializeExerciseEdit(request: EditRequest, action: EditAction, commandId: string): Record<string, unknown> {
+    if (request.nodeIds.length > 0 || (request.preset ?? null) !== null) throw new RequestValidationError('An exercise is edited whole.');
+    const base = { commandId: requireCommand(commandId), expectedRevisionId: requireEntity(request.expectedRevisionId), action };
+    if (action === 'FREE') {
+        if (request.voice !== undefined && request.voice !== null) throw new RequestValidationError('A voice belongs to the redo of the audio.');
+        return { ...base, instruction: reviseInstruction(request.instruction ?? undefined, true) };
+    }
+    if (action === 'AUDIO_REGENERATE') {
+        if (request.voice === undefined || request.voice === null) throw new RequestValidationError('The redo of the audio needs a voice.');
+        return { ...base, voice: oneOf(request.voice, SPEECH_VOICES, 'voice') };
+    }
+    throw new RequestValidationError('An exercise takes a free rewrite or a redo of its audio.');
 }
 
 /** The `edit` form of the estimate request body. */
