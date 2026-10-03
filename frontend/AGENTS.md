@@ -39,6 +39,11 @@ Adds to the root [`AGENTS.md`](../AGENTS.md); does not repeat it. Visual directi
   follow the turn through the events; they announce only through the Workshop's summary line. The keyboard route is Shift+F10 or
   the menu key while the group is shown (the group says so); Tab from the selection reaches the group too, but after the block's own
   focusable elements (links, players), because the group follows the document in the tab order.
+- «Попросить Мнему…» (AI-16, `generation/ask-mnema.component`) is the one composer of free text for what already exists: a collapsed disclosure in the
+  material profile and the exercise editor (only with `aiGeneration`). The free `createIntent` call returns a spec the server built and clamped;
+  the owner edits it as chips (the exercise builder's own `exercise-settings-fields`, the instruction, the voice) and only «Запустить» creates the
+  session, which is the one step that reserves. `REVISE_ITEM` and `REVISE_EXERCISE` results live in the Workshop (`revise-item-result`,
+  `revise-exercise-result`): «Оставить» is an ordinary revise approval, «Вернуть» goes to the first revision of the draft, «Ещё раз» is a new edit.
 - Learner-facing models never carry answer keys; references arrive only in feedback. Validate server
   envelopes strictly and treat an unknown network outcome by retrying the exact attempt.
 - Keep keyboard, screen-reader, touch and non-drag alternatives for every interactive exercise

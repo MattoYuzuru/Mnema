@@ -12,9 +12,11 @@ import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService, LearningCapabilities 
 import { BatchPagerComponent } from './batch-pager.component';
 import { ExerciseBatchReviewComponent } from './exercise-batch-review.component';
 import { targetsSummary } from './exercise-builder';
-import { NBSP, describeNoteArchive, formatDay, positionLabel, promptExcerpt, summarize } from './generation-view';
+import { NBSP, describeNoteArchive, formatDay, positionLabel, promptExcerpt, reviseSummary, summarize, voiceChipText, workshopHeading } from './generation-view';
 import { ArtifactState, ArtifactSummary, sessionAllows } from './generation.models';
 import { ProposalViewComponent } from './proposal-view.component';
+import { ReviseExerciseResultComponent } from './revise-exercise-result.component';
+import { ReviseItemResultComponent } from './revise-item-result.component';
 import { WorkshopSessionStore } from './workshop-session.store';
 
 /** The summary is a live region, so it changes at most once per this many milliseconds; extra changes are merged. */
@@ -31,7 +33,8 @@ const UNREVIEWED: readonly ArtifactState[] = ['QUEUED', 'GENERATING', 'PROPOSED'
  */
 @Component({
     selector: 'app-workshop-page',
-    imports: [RouterLink, BatchPagerComponent, ProposalViewComponent, HoldToDeleteButtonComponent, ExerciseBatchReviewComponent],
+    imports: [RouterLink, BatchPagerComponent, ProposalViewComponent, HoldToDeleteButtonComponent, ExerciseBatchReviewComponent, ReviseItemResultComponent,
+        ReviseExerciseResultComponent],
     providers: [WorkshopSessionStore],
     templateUrl: './workshop-page.component.html',
     styleUrls: ['../authoring/authoring-page.css', './workshop-page.component.css'],
@@ -82,16 +85,29 @@ export class WorkshopPageComponent {
     });
     /** An `EXERCISES` session has its own review: proposals grouped by material, playable, kept or not. */
     protected readonly exercises = computed(() => this.session()?.kind === 'EXERCISES');
+    /** A session of `REVISE_ITEM` or `REVISE_EXERCISE` (AI-16, #294): one existing material or exercise, rewritten, with its own result card. */
+    protected readonly reviseItem = computed(() => this.session()?.kind === 'REVISE_ITEM');
+    protected readonly reviseExercise = computed(() => this.session()?.kind === 'REVISE_EXERCISE');
+    protected readonly revision = computed(() => this.reviseItem() || this.reviseExercise());
     protected readonly heading = computed(() => {
         switch (this.store.phase()) {
             case 'missing': return 'Мастерская недоступна';
             case 'error': return 'Не удалось открыть мастерскую';
-            default: return this.exercises() ? 'Мастерская упражнений' : 'Мастерская';
+            default: return workshopHeading(this.session()?.kind ?? 'MATERIALS');
         }
     });
-    protected readonly deleteConsequence = computed(() => this.exercises()
-        ? 'Неодобренные упражнения исчезнут. Сохранённые останутся в колоде.' : 'Неодобренные материалы исчезнут. Одобренные останутся в колоде.');
-    protected readonly excerpt = computed(() => promptExcerpt(this.session()?.spec.prompt ?? null));
+    protected readonly deleteConsequence = computed(() => this.revision()
+        ? 'Неоставленная правка исчезнет. Материал и упражнения в колоде останутся прежними.'
+        : this.exercises()
+            ? 'Неодобренные упражнения исчезнут. Сохранённые останутся в колоде.' : 'Неодобренные материалы исчезнут. Одобренные останутся в колоде.');
+    protected readonly excerpt = computed(() => promptExcerpt(this.session()?.spec.prompt ?? this.session()?.spec.instruction ?? null));
+    /** What a revision was asked, on the page subtitle: the sentence and, for a voice change, the chip. */
+    protected readonly voiceLine = computed(() => {
+        const voice = this.session()?.spec.voice ?? null;
+        return voice === null ? null : voiceChipText(voice);
+    });
+    /** One sentence for the live region of a revision: it says what is happening or what the owner can do now. */
+    protected readonly revisionSummary = computed(() => reviseSummary(this.artifacts()[0] ?? null, this.session()?.kind ?? 'REVISE_ITEM'));
     /** «Для 7 материалов»: what the exercises of this Workshop are for, in place of the prompt a Materials Workshop quotes. */
     protected readonly targetsLine = computed(() => {
         const count = this.session()?.spec.targets.length ?? 0;
@@ -133,10 +149,12 @@ export class WorkshopPageComponent {
         const session = this.session();
         const noun = session?.kind === 'EXERCISES' ? 'упражнения' : 'материалы';
         switch (session?.state) {
-            case 'CANCELLED': return session.kind === 'EXERCISES'
+            case 'CANCELLED': return session.kind === 'REVISE_ITEM' || session.kind === 'REVISE_EXERCISE'
+                ? 'Вы остановили правку. Готовое можно оставить; новые правки писаться не будут.'
+                : session.kind === 'EXERCISES'
                 ? 'Вы остановили мастерскую. Готовые упражнения можно сохранить; новые писаться не будут.'
                 : 'Вы остановили мастерскую. Готовые материалы можно одобрить; новые писаться не будут.';
-            case 'CLOSED': return `Все ${noun} разобраны.`;
+            case 'CLOSED': return session.kind === 'REVISE_ITEM' || session.kind === 'REVISE_EXERCISE' ? 'Правка разобрана.' : `Все ${noun} разобраны.`;
             case 'EXPIRED': return 'Срок мастерской вышел. Её можно только удалить: одобренное уже в колоде.';
             case 'PLANNING':
             case 'PLAN_READY': return 'Мнема составляет план. Планы пока не поддерживаются: остановите мастерскую и создайте материал заново.';
@@ -186,7 +204,7 @@ export class WorkshopPageComponent {
         effect(() => {
             // Nothing to say before the batch is known: «Пока ничего» would be a false first announcement.
             if (this.session() === null) return;
-            const text = summarize(this.artifacts());
+            const text = this.revision() ? this.revisionSummary() : summarize(this.artifacts());
             untracked(() => this.announce(text));
         });
         this.destroyRef.onDestroy(() => { if (this.statusTimer !== null) clearTimeout(this.statusTimer); });

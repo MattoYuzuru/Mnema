@@ -7,6 +7,7 @@
       <p class="eyebrow">{{ store.phase() === 'ready' ? 'ИИ · проверьте факты' : 'Мастерская' }}</p>
       <h1 id="workshop-title" tabindex="-1">{{ heading() }}</h1>
       @if (store.phase() === 'ready' && !exercises() && excerpt(); as text) { <p class="lede">Запрос: «{{ text }}»</p> }
+      @if (store.phase() === 'ready' && reviseExercise() && voiceLine(); as line) { <p class="lede">{{ line }}</p> }
       @if (store.phase() === 'ready' && exercises() && targetsLine(); as line) { <p class="lede">{{ line }}</p> }
     </div>
     @if (store.phase() === 'ready') {
@@ -43,6 +44,19 @@
       @if (exercises()) {
         <p class="summary exercise-summary" role="status">{{ statusText() }}</p>
         <app-exercise-batch-review [deckId]="deckId()" />
+      } @else if (revision()) {
+        <p class="summary exercise-summary" role="status">{{ statusText() }}@if (store.editNote(); as note) {<span class="summary-note"> · {{ note }}</span>}</p>
+        @if (current(); as artifact) {
+          @if (reviseItem()) {
+            <app-revise-item-result [artifact]="artifact" [deckId]="deckId()" [sessionState]="session()!.state" [entry]="entry()" [busy]="artifactBusy()"
+              [capabilities]="capabilities()" />
+          } @else {
+            <app-revise-exercise-result [artifact]="artifact" [deckId]="deckId()" [sessionState]="session()!.state" [entry]="entry()" [busy]="artifactBusy()" />
+          }
+        } @else {
+          <section class="notice"><p>В этой мастерской нет правки.</p><p><a class="button" [routerLink]="['/decks', deckId()]">К колоде</a></p></section>
+        }
+        <div class="footer-row"><a class="text-link" [routerLink]="['/decks', deckId()]">Выйти в колоду</a></div>
       } @else if (artifacts().length === 0) {
         <section class="notice"><p>В этой мастерской пока нет материалов.</p><p><a class="button" [routerLink]="['/decks', deckId()]">К колоде</a></p></section>
       } @else {
