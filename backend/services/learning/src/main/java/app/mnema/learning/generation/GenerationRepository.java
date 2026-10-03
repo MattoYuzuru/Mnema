@@ -7,6 +7,7 @@ import app.mnema.learning.generation.Rows.Revision;
 import app.mnema.learning.generation.Rows.Session;
 import app.mnema.learning.generation.Rows.Slot;
 import app.mnema.learning.generation.Rows.Source;
+import app.mnema.learning.generation.Rows.Turn;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -68,6 +69,15 @@ class GenerationRepository {
             row.getString("slot_key"), row.getObject("revision_id", UUID.class), row.getObject("node_id", UUID.class),
             row.getString("kind"), Json.read(row.getString("spec")), row.getObject("asset_id", UUID.class),
             row.getString("state"), row.getString("error_code"));
+
+    private static final String TURN_COLUMNS = "turn_id,artifact_id,session_id,owner_id,status,action,preset,instruction,"
+            + "target_node_ids::text AS target_node_ids,step_id,result_revision_id,error_code,counts_toward_limit,created_at";
+    private static final RowMapper<Turn> TURN = (row, ignored) -> new Turn(row.getObject("turn_id", UUID.class),
+            row.getObject("artifact_id", UUID.class), row.getObject("session_id", UUID.class), row.getObject("owner_id", UUID.class),
+            row.getString("status"), row.getString("action"), row.getString("preset"), row.getString("instruction"),
+            uuidArray(row.getString("target_node_ids")), row.getObject("step_id", UUID.class),
+            row.getObject("result_revision_id", UUID.class), row.getString("error_code"), row.getBoolean("counts_toward_limit"),
+            instant(row, "created_at"));
 
     private final JdbcClient jdbc;
 
@@ -515,12 +525,28 @@ class GenerationRepository {
                 .param("artifact", artifactId).param("id", revisionId).query(REVISION).optional();
     }
 
-    /** Revision list of an artifact without payloads: {@code {revisionId, cause, createdAt}}, oldest first. */
+    /**
+     * Revision list of an artifact without payloads: {@code {revisionId, cause, createdAt}}, oldest first. Only the revisions of the current
+     * generation of the draft are listed, the ones a revert may restore: a retry writes a new INITIAL revision against new pins, and the
+     * revisions before it belong to sources the artifact no longer stands on.
+     */
     List<Revision> revisionList(UUID artifactId) {
         return jdbc.sql("SELECT revision_id,artifact_id,revision_no,cause,'{}'::text AS payload,'{}'::text AS handles,"
                         + "prompt_version,model_route,'{}'::text AS validation,created_at "
-                        + "FROM app_learning.generation_artifact_revision WHERE artifact_id=:artifact ORDER BY revision_no")
-                .param("artifact", artifactId).query(REVISION).list();
+                        + "FROM app_learning.generation_artifact_revision WHERE artifact_id=:artifact AND revision_no>=:start ORDER BY revision_no")
+                .param("artifact", artifactId).param("start", generationStart(artifactId)).query(REVISION).list();
+    }
+
+    /** The number of the latest INITIAL revision: the first revision of the current generation of the draft (1 when there is none). */
+    int generationStart(UUID artifactId) {
+        return jdbc.sql("SELECT COALESCE(max(revision_no),1) FROM app_learning.generation_artifact_revision WHERE artifact_id=:artifact AND cause='INITIAL'")
+                .param("artifact", artifactId).query(Integer.class).single();
+    }
+
+    /** The number of a revision of the artifact, empty when it is not one of its revisions. */
+    Optional<Integer> revisionNumber(UUID artifactId, UUID revisionId) {
+        return jdbc.sql("SELECT revision_no FROM app_learning.generation_artifact_revision WHERE artifact_id=:artifact AND revision_id=:id")
+                .param("artifact", artifactId).param("id", revisionId).query(Integer.class).optional();
     }
 
     // ---------------------------------------------------------------- media slots
@@ -559,6 +585,50 @@ class GenerationRepository {
                 .param("code", errorCode).param("id", artifactId).query(SLOT).list();
     }
 
+    /** Every slot of the artifact, whatever revision it was last attached to. */
+    List<Slot> slotsOf(UUID artifactId) {
+        return jdbc.sql("SELECT artifact_id,slot_key,revision_id,node_id,kind,spec::text AS spec,asset_id,state,error_code "
+                        + "FROM app_learning.generation_media_slot WHERE artifact_id=:artifact ORDER BY created_at,slot_key")
+                .param("artifact", artifactId).query(SLOT).list();
+    }
+
+    /**
+     * The slots whose nodes are in the artifact's new current revision follow it ({@code revision_id}): a slot row is one per key,
+     * so "the slots of a revision" are the ones attached to it.
+     */
+    void attachSlots(UUID artifactId, java.util.Collection<UUID> nodeIds, UUID revisionId) {
+        if (nodeIds.isEmpty()) return;
+        jdbc.sql("UPDATE app_learning.generation_media_slot SET revision_id=:revision,updated_at=CURRENT_TIMESTAMP "
+                        + "WHERE artifact_id=:artifact AND node_id IN (:nodes) AND revision_id<>:revision")
+                .param("revision", revisionId).param("artifact", artifactId).param("nodes", nodeIds).update();
+    }
+
+    /**
+     * The user removed these media nodes (or an edit dropped them): their slots become REMOVED, which counts as resolved, and the
+     * media hold on their assets goes. Returns the slots that changed (a slot that was already REMOVED is not repeated).
+     */
+    List<Slot> removeSlots(UUID artifactId, java.util.Collection<UUID> nodeIds) {
+        if (nodeIds.isEmpty()) return List.of();
+        jdbc.sql("DELETE FROM app_learning.generation_media_ref WHERE artifact_id=:artifact AND node_id IN (:nodes)")
+                .param("artifact", artifactId).param("nodes", nodeIds).update();
+        return jdbc.sql("UPDATE app_learning.generation_media_slot SET state='REMOVED',error_code=NULL,updated_at=CURRENT_TIMESTAMP "
+                        + "WHERE artifact_id=:artifact AND node_id IN (:nodes) AND state<>'REMOVED' RETURNING artifact_id,slot_key,"
+                        + "revision_id,node_id,kind,spec::text AS spec,asset_id,state,error_code")
+                .param("artifact", artifactId).param("nodes", nodeIds).query(SLOT).list();
+    }
+
+    /**
+     * A revision whose media node had its slot REMOVED is restored: the asset is not held any more, so the node is shown without a
+     * ready asset and the slot is FAILED ({@code NO_RESULT}); approval then needs the media removed again. Returns the slots changed.
+     */
+    List<Slot> reopenRemovedSlots(UUID artifactId, java.util.Collection<UUID> nodeIds) {
+        if (nodeIds.isEmpty()) return List.of();
+        return jdbc.sql("UPDATE app_learning.generation_media_slot SET state='FAILED',error_code='NO_RESULT',updated_at=CURRENT_TIMESTAMP "
+                        + "WHERE artifact_id=:artifact AND node_id IN (:nodes) AND state='REMOVED' RETURNING artifact_id,slot_key,"
+                        + "revision_id,node_id,kind,spec::text AS spec,asset_id,state,error_code")
+                .param("artifact", artifactId).param("nodes", nodeIds).query(SLOT).list();
+    }
+
     /** {@code {total, ready, failed}} of the slots of each artifact's current revision. */
     Map<UUID, int[]> slotCounts(Collection<UUID> artifacts) {
         Map<UUID, int[]> result = new HashMap<>();
@@ -590,6 +660,88 @@ class GenerationRepository {
     void cancelTurns(UUID artifactId) {
         jdbc.sql("UPDATE app_learning.generation_artifact_turn SET status='CANCELLED' WHERE artifact_id=:id "
                 + "AND status IN ('QUEUED','RUNNING')").param("id", artifactId).update();
+    }
+
+    // ---------------------------------------------------------------------- turns
+
+    /** A {@code uuid[]} literal of PostgreSQL ({@code {a,b}}): ids are canonical UUIDs, so nothing needs quoting. */
+    private static String uuidLiteral(List<UUID> ids) {
+        return "{" + ids.stream().map(UUID::toString).collect(java.util.stream.Collectors.joining(",")) + "}";
+    }
+
+    private static List<UUID> uuidArray(String literal) {
+        String inner = literal == null ? "" : literal.substring(1, literal.length() - 1);
+        if (inner.isBlank()) return List.of();
+        return java.util.Arrays.stream(inner.split(",")).map(UUID::fromString).toList();
+    }
+
+    void insertTurn(Turn turn) {
+        jdbc.sql("INSERT INTO app_learning.generation_artifact_turn(turn_id,artifact_id,session_id,owner_id,status,action,preset,"
+                        + "instruction,target_node_ids,step_id,result_revision_id,error_code,counts_toward_limit,created_at) VALUES "
+                        + "(:id,:artifact,:session,:owner,:status,:action,:preset,:instruction,CAST(:nodes AS uuid[]),:step,:result,"
+                        + ":error,:counts,CURRENT_TIMESTAMP)")
+                .param("id", turn.turnId()).param("artifact", turn.artifactId()).param("session", turn.sessionId())
+                .param("owner", turn.ownerId()).param("status", turn.status()).param("action", turn.action())
+                .param("preset", turn.preset()).param("instruction", turn.instruction())
+                .param("nodes", uuidLiteral(turn.targetNodeIds())).param("step", turn.stepId())
+                .param("result", turn.resultRevisionId()).param("error", turn.errorCode())
+                .param("counts", turn.countsTowardLimit()).update();
+    }
+
+    Optional<Turn> turn(UUID turnId) {
+        return jdbc.sql("SELECT " + TURN_COLUMNS + " FROM app_learning.generation_artifact_turn WHERE turn_id=:id")
+                .param("id", turnId).query(TURN).optional();
+    }
+
+    /**
+     * The turns of the artifact's current generation of the draft, oldest first (the order the user made them in): what a retry rewrote
+     * from new sources is a new draft, and the instructions given to the old one are not part of its history.
+     */
+    List<Turn> turns(UUID artifactId) {
+        return jdbc.sql("SELECT " + TURN_COLUMNS + " FROM app_learning.generation_artifact_turn t WHERE artifact_id=:id AND created_at>="
+                        + "(SELECT COALESCE(max(created_at),'-infinity') FROM app_learning.generation_artifact_revision WHERE artifact_id=:id AND cause='INITIAL') "
+                        + "ORDER BY created_at,turn_id").param("id", artifactId).query(TURN).list();
+    }
+
+    /** The turn that keeps the artifact REVISING (at most one exists), if any. */
+    Optional<Turn> openTurn(UUID artifactId) {
+        return jdbc.sql("SELECT " + TURN_COLUMNS + " FROM app_learning.generation_artifact_turn WHERE artifact_id=:id "
+                + "AND status IN ('QUEUED','RUNNING') ORDER BY created_at DESC LIMIT 1").param("id", artifactId).query(TURN).optional();
+    }
+
+    /** How many turns count toward the artifact's limit of 50 ({@code REMOVE_MEDIA} does not). */
+    int countedTurns(UUID artifactId) {
+        return jdbc.sql("SELECT count(*)::integer FROM app_learning.generation_artifact_turn WHERE artifact_id=:id AND counts_toward_limit")
+                .param("id", artifactId).query(Integer.class).single();
+    }
+
+    /**
+     * The last {@code limit} instructions that shaped the text now shown, newest first: APPLIED rewrites (never a failed one) whose
+     * result is a revision of the current generation of the draft that is not later than the current revision, so a turn that was
+     * reverted away or belongs to an older draft is not history.
+     */
+    List<Turn> recentTurns(UUID artifactId, UUID before, int limit) {
+        return jdbc.sql("SELECT " + TURN_COLUMNS + " FROM app_learning.generation_artifact_turn WHERE artifact_id=:id "
+                        + "AND turn_id<>:before AND status='APPLIED' AND action IN ('REWRITE','FREE') AND result_revision_id IN ("
+                        + "SELECT r.revision_id FROM app_learning.generation_artifact_revision r JOIN app_learning.generation_artifact a "
+                        + "ON a.artifact_id=r.artifact_id JOIN app_learning.generation_artifact_revision c ON c.revision_id=a.current_revision_id "
+                        + "WHERE r.artifact_id=:id AND r.revision_no<=c.revision_no AND r.revision_no>="
+                        + "(SELECT COALESCE(max(revision_no),1) FROM app_learning.generation_artifact_revision WHERE artifact_id=:id AND cause='INITIAL')) "
+                        + "ORDER BY created_at DESC,turn_id DESC LIMIT :limit")
+                .param("id", artifactId).param("before", before).param("limit", limit).query(TURN).list();
+    }
+
+    /** Moves a turn on: RUNNING, or a terminal status with its result revision or error code. */
+    void updateTurn(UUID turnId, String status, UUID resultRevision, String errorCode) {
+        jdbc.sql("UPDATE app_learning.generation_artifact_turn SET status=:status,result_revision_id=COALESCE(:result,result_revision_id),"
+                        + "error_code=:error WHERE turn_id=:id")
+                .param("status", status).param("result", resultRevision).param("error", errorCode).param("id", turnId).update();
+    }
+
+    /** The session's QUEUED and RUNNING turns end as CANCELLED (the session was cancelled or expired); returns them. */
+    List<Turn> cancelSessionTurns(UUID sessionId) {
+        return jdbc.sql("UPDATE app_learning.generation_artifact_turn SET status='CANCELLED' WHERE session_id=:id "
+                        + "AND status IN ('QUEUED','RUNNING') RETURNING " + TURN_COLUMNS).param("id", sessionId).query(TURN).list();
     }
 
     /** Distinct model routes and prompt versions of the revisions of an artifact: the provenance of what is published. */

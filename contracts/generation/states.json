@@ -398,7 +398,7 @@
     },
     "mediaSlotErrorCodes": {
       "PROVIDER_UNAVAILABLE": "Provider failures exhausted all routes.",
-      "NO_RESULT": "A search returned nothing usable (no licensed image found).",
+      "NO_RESULT": "A search returned nothing usable (no licensed image found); also the slot of a media node that a revert restored after its REMOVE_MEDIA (the asset is no longer held, so the media must be added again or removed).",
       "VERIFICATION_REJECTED": "The media pipeline (#76) rejected the staged bytes.",
       "DEADLINE_EXCEEDED": "The step deadline passed.",
       "USAGE_LIMIT": "The user's limit does not cover the redo.",
@@ -766,7 +766,7 @@
     ]
   },
   "turn": {
-    "description": "generation_artifact_turn: one user instruction on an artifact (at most 2000 characters, text or speech transcript; at most 50 per artifact). REMOVE_MEDIA is also recorded as a turn (cause MEDIA, creates a revision) but does not count toward the 50.",
+    "description": "generation_artifact_turn: one user instruction on an artifact (at most 2000 characters, text or speech transcript; at most 50 per artifact). REMOVE_MEDIA is also recorded as a turn (cause MEDIA, creates a revision) but does not count toward the 50. A turn is made by editArtifact and listed by getArtifact (turns).",
     "states": {
       "QUEUED": {
         "terminal": false,
@@ -848,11 +848,21 @@
         "to": "CANCELLED",
         "trigger": "session cancellation or artifact retry",
         "actor": "USER|SERVER"
+      },
+      {
+        "from": "QUEUED",
+        "to": "FAILED",
+        "trigger": "EDIT step expired before a worker claimed it (queue timeout), or lost its lease before the turn started",
+        "actor": "WORKER",
+        "emits": [
+          "ARTIFACT_STATE"
+        ],
+        "note": "errorCode DEADLINE_EXCEEDED or PROVIDER_UNAVAILABLE; the hold is released unspent and the artifact is PROPOSED again."
       }
     ]
   },
   "mediaSlot": {
-    "description": "generation_media_slot: one media directive of the document. The slot key is stable across revisions of an artifact. errorCode is one of artifact.mediaSlotErrorCodes.",
+    "description": "generation_media_slot: one media directive of the document. The slot key is stable across revisions of an artifact. errorCode is one of artifact.mediaSlotErrorCodes. The slots of an artifact follow the revision that is shown: each is attached to the current revision when its node is in that document.",
     "states": {
       "PENDING": {
         "terminal": false,
@@ -875,8 +885,8 @@
         "description": "Step or verification failed; errorCode explains; the user can redo or remove."
       },
       "REMOVED": {
-        "terminal": true,
-        "description": "The user explicitly removed the media; the node is gone from the proposal. Counts as resolved for approve."
+        "terminal": false,
+        "description": "The user explicitly removed the media (or a revision without the node became the current one); the node is gone from the proposal. Counts as resolved for approve. Only a revert to a revision that still holds the node leaves this state (to FAILED)."
       }
     },
     "initial": [
@@ -988,6 +998,44 @@
         "from": "READY",
         "to": "REMOVED",
         "trigger": "user removes the media",
+        "actor": "USER",
+        "emits": [
+          "MEDIA_SLOT_STATE"
+        ]
+      },
+      {
+        "from": "REMOVED",
+        "to": "FAILED",
+        "trigger": "revert to a revision whose document still holds the node",
+        "actor": "USER",
+        "guard": "the hold on the asset ended with the removal, so the node shows without a ready asset; errorCode NO_RESULT",
+        "emits": [
+          "MEDIA_SLOT_STATE"
+        ],
+        "note": "Approval then needs the media removed again (REMOVE_MEDIA). A revert to a revision without the node makes the slot REMOVED again."
+      },
+      {
+        "from": "FAILED",
+        "to": "REMOVED",
+        "trigger": "revert to a revision whose document does not hold the node",
+        "actor": "USER",
+        "emits": [
+          "MEDIA_SLOT_STATE"
+        ]
+      },
+      {
+        "from": "READY",
+        "to": "REMOVED",
+        "trigger": "revert to a revision whose document does not hold the node",
+        "actor": "USER",
+        "emits": [
+          "MEDIA_SLOT_STATE"
+        ]
+      },
+      {
+        "from": "PENDING",
+        "to": "REMOVED",
+        "trigger": "revert to a revision whose document does not hold the node",
         "actor": "USER",
         "emits": [
           "MEDIA_SLOT_STATE"

@@ -19,7 +19,8 @@ import java.util.List;
  * {@code {"exercises": [...]}} built from the material in the prompt ({@link StubExercises}); two markers in the material text
  * break it: {@code [[stub:broken-key]]} (the first exercise of the first answer has two correct options in a SINGLE choice, the
  * repair is valid) and {@code [[stub:broken-key-always]]} (also broken after the repair and on the strong route, so the
- * artifact fails with {@code INVALID_OUTPUT}). Usage is estimated; cost is zero.
+ * artifact fails with {@code INVALID_OUTPUT}). An edit request (the prompt carries {@code <task kind="edit">}) is answered by {@link StubEdits}:
+ * the target blocks with their handles, each plain paragraph with one sentence added. Usage is estimated; cost is zero.
  */
 final class StubTextAdapter implements TextAdapter {
     static final String PROVIDER = "stub";
@@ -51,6 +52,8 @@ final class StubTextAdapter implements TextAdapter {
         String text;
         if (!repair && prompt.contains("[[stub:invalid-mbm]]")) {
             text = invalidDocument;
+        } else if (request.output() == OutputContract.MBM_TEXT && StubEdits.isEditRequest(prompt)) {
+            text = StubEdits.answer(prompt);
         } else if (request.output() == OutputContract.JSON && StubExercises.isExerciseRequest(prompt)) {
             text = StubExercises.answer(prompt, repair);
         } else if (request.output() == OutputContract.JSON) {

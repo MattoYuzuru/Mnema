@@ -9,6 +9,7 @@ import java.util.regex.Pattern;
  * Mandatory redaction of personal-data patterns in all user text before it enters a prompt: e-mail addresses, payment
  * card numbers (13-19 digits passing the Luhn check, also glued to other numbers) and telephone numbers (international {@code +} numbers, numbers
  * with an area code in parentheses, 11-digit Russian/NANP numbers starting with 7 or 8, and the common grouped forms).
+ * Digit groups right after a URL path or query character ({@code / = _ # ? & %}) are not telephone numbers: an address keeps its digits.
  * It is a deliberately narrow safety net that avoids mangling ordinary numbers, dates and decimals; the preflight
  * warning that lets the user exclude other personal fragments is a separate, user-facing step.
  */
@@ -21,7 +22,7 @@ public final class Redactor {
     /** Usual card lengths, the common 16 first so that a card glued to another number is found as a 16-digit window. */
     private static final int[] CARD_LENGTHS = {16, 15, 14, 13, 19, 18, 17};
     private static final Pattern PHONE = Pattern.compile(
-            "(?<![\\p{L}\\p{N}])(?:\\+\\d[\\d\\s().-]{8,16}\\d"
+            "(?<![\\p{L}\\p{N}/=_#?&%])(?:\\+\\d[\\d\\s().-]{8,16}\\d"
                     + "|(?:[78]|\\+7)?[\\s-]?\\(\\d{3,4}\\)[\\s-]?\\d{2,3}[\\s-]?\\d{2}[\\s-]?\\d{2}"
                     + "|[78]\\d{10}"
                     + "|\\d{3}[ -]\\d{3}[ -]\\d{2}[ -]\\d{2}"

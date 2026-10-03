@@ -7,3 +7,8 @@ export function blockImplicitSubmit(event: Event): void {
     const target = event.target;
     if (target instanceof HTMLInputElement && ['checkbox', 'radio', 'range'].includes(target.type)) event.preventDefault();
 }
+
+/** Whether a keydown in a request field sends the form: Enter alone, never Shift+Enter, never while an IME composes. */
+export function isSendKey(event: Pick<KeyboardEvent, 'key' | 'shiftKey' | 'isComposing' | 'keyCode'>): boolean {
+    return event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229;
+}

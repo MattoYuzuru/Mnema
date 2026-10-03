@@ -210,6 +210,36 @@ The scenario records its own duration (`durationMs`, also for the whole Workshop
 
 Screenshots: `exercises-{builder,review,list}-{1440,390}.png`, `exercises-saved-1440.png`, `exercises-study-new-{1440,390}.png`.
 
+### Selection edits in the Workshop (`--authoring --generation`, #293, AI-11)
+
+`selection-edits.mjs` runs last among the Workshop scenarios, against the same second Learning (Stub text provider, never a real one,
+no key), in a **deck of its own**. The deck and the proposal are made through the authenticated API (the Stub answers with its
+`headings` document for a known prompt: heading, paragraph, two headings, paragraph; other prompts are tried if that ever changes);
+everything the user does is the real Angular UI on the real HTTP surface. The Stub has no media, so the actions under an image or an audio
+are covered by the component specs; the scenario proves that node ids stay out of Browse.
+
+| Step | What is driven and asserted |
+|---|---|
+| `fixture`, `open` | the proposal has five blocks; the Workshop draws `data-node-id` on the five top-level blocks and nowhere else; the hint above the material; no history yet |
+| `select_and_window` | a real triple click selects a paragraph, the floating group «Попросить Мнему…» opens (`popover="manual"`, label «Действия с выделенным текстом»); **Tab** from the selection reaches the group and **Enter** opens the non-modal `role="dialog"` window (label, four presets, field, quote, no microphone, cost line «≈ N % лимита» next to the real `generation-estimates`, the block painted with the CSS Custom Highlight API while focus is in the window); `Esc` closes it, returns focus to the document and puts the selection back |
+| `rewrite_simpler` | Shift+Enter is a new line and sends nothing, an Enter during an IME composition or with keyCode 229 sends nothing; «Проще» sends: the block is `aria-busy` with the dashed frame and the caption while the turn runs, then only that block changed (same node ids, neighbours byte for byte), the strip «Переписано · Показать изменения · Оставить · Вернуть · Ещё раз», the end in the summary line (the page's one live region), debited once (the usage bar), `revisions` INITIAL, EDIT |
+| `diff` | «Показать изменения»: `<ins>` with the spoken prefix «добавлено:», the rewritten block replaced by it, `aria-expanded`/`aria-controls`; hidden again |
+| `again_and_undo` | «Ещё раз» is a new turn with its own reservation (usage), «Вернуть» moves the pointer back and deletes nothing |
+| `history` | «История правок (2)»: the original, every turn, the shown version marked, «Вернуть к этой версии» both back and forward |
+| `failed_rewrite` | `[[stub:refusal]]` in the instruction: the strip says why and that the text did not change, nothing is charged |
+| `mobile_sheet` | a 390 px touch viewport (`pointer: coarse`): a bar fixed at the bottom instead of the floating group, a modal bottom sheet (`showModal()`, `enterkeyhint="send"`, safe-area padding, no overflow), «Короче» sends, the strip at 390 px has no target below 44 px |
+| `edit_in_progress` | the page's polling is cut with `Network.setBlockedURLs` (requests that fail, never an invented answer) while a slow edit is started through the API: the window explains «Мнема ещё переписывает предыдущий фрагмент — дождитесь окончания.» and stays open although the page now knows the artifact is being rewritten; «×» closes it, the block is busy (screenshot), and «Стоп» cancels the turn (`CANCELLED`, artifact `PROPOSED`, hold released) |
+| `approve_and_browse` | a cancelled session offers no rewrite; the approved material in Browse is the rewritten revision and carries no node id and no Workshop mark |
+
+On failure the step writes `failure-edits-<step>.txt` with the reason, what the server held (artifact state and the last turns, no
+text), and, when the page stopped answering, the top of its stack and its slowest calls.
+Screenshots: `workshop-edit-window-1440.png`, `workshop-edit-rewriting-1440.png`, `workshop-edit-diff-1440.png`, `workshop-edit-in-progress-1440.png`,
+`workshop-edit-sheet-390.png`, `workshop-edit-rewriting-390.png`, `workshop-edit-strip-390.png`, `workshop-edit-diff-390.png`.
+
+`--only-edits` (development aid, requires `--generation`) runs this scenario alone after the base flow, which is much faster than the
+whole run; it never replaces it. With `--keep-on-failure` the private directory also holds `slow-requests.log` (proxied requests that
+took two seconds or more: method, path without query, status, time).
+
 ## Assertions and envelope
 
 Two synthetic accounts and two same-profile browser tabs exercise:
@@ -249,7 +279,7 @@ Two synthetic accounts and two same-profile browser tabs exercise:
 The PKCE verifier is checked against the observed S256 challenge. Network interception
 blocks page requests outside the two exact origins (plus the local MinIO origin in media mode); at most 500 page requests in the base mode, 1000 in authoring (the profile AI budget scenario adds a few full loads), 1250 in media or 3000 in mechanics mode (allowing the local brand font and mark on repeated full navigations), and
 150 Identity requests are allowed (full SPA navigations reload several bundled assets).
-Global deadline 180 seconds, 600 with `--mechanics` (CLI 30–900), individual CDP/HTTP/readiness deadlines, 1 MiB proxy
+Global deadline 180 seconds, 600 with `--mechanics` (CLI 30–900), individual CDP (10 s for a plain command, `MNEMA_HARNESS_CDP_TIMEOUT_MS` to change it; 30 s for the calls that wait for the page itself: navigation, screenshots, evaluating a script or promise in it, because several browser harnesses can share one loaded machine and hold a healthy page for ten seconds and more)/HTTP/readiness deadlines, 1 MiB proxy
 request/response cap, 16 MiB static asset cap. Database has a 512 MiB/two-CPU limit; each JVM
 has a 384 MiB heap cap. This is behavioral smoke evidence, not load/soak evidence.
 

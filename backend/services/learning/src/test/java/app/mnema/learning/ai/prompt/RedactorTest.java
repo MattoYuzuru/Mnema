@@ -31,6 +31,14 @@ class RedactorTest {
     }
 
     @Test
+    void digitGroupsInsideAnAddressAreNotTelephoneNumbers() {
+        for (String url : new String[] {"https://example.org/a/123-456-7890", "https://example.org/?id=123 456 7890", "https://example.org/x_89161234567"}) {
+            assertThat(Redactor.redact("см. " + url + " тут")).as(url).isEqualTo("см. " + url + " тут");
+        }
+        assertThat(Redactor.redact("звоните 123-456-7890")).isEqualTo("звоните [phone]");
+    }
+
+    @Test
     void telephoneNumbersInCommonFormsAreRedacted() {
         for (String phone : new String[] {"+7 916 123-45-67", "+1 (415) 555-2671", "8 (916) 123 45 67", "(495) 123-45-67", "89161234567",
                 "916 123 45 67", "415-555-2671", "+44 20 7946 0958"}) {

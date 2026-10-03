@@ -39,10 +39,12 @@ import java.util.UUID;
 class GenerationController {
     private final SessionService service;
     private final ReviewService review;
+    private final ArtifactEdits edits;
 
-    GenerationController(SessionService service, ReviewService review) {
+    GenerationController(SessionService service, ReviewService review, ArtifactEdits edits) {
         this.service = service;
         this.review = review;
+        this.edits = edits;
     }
 
     @PostMapping(value = "/decks/{deckId}/generation-sessions", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -201,6 +203,29 @@ class GenerationController {
                                    @PathVariable String sessionId, @PathVariable String artifactId, InputStream body) {
         UUID owner = owner(identity);
         return answer(HttpStatus.OK, review.retry(owner, entity(deckId, "deckId"), entity(sessionId, "sessionId"),
+                entity(artifactId, "artifactId"), read(body)));
+    }
+
+    /** {@code editArtifact}: 202 with the turn and the artifact; the rewrite itself runs on the worker (poll the events). */
+    @PostMapping(value = ARTIFACT + "/edits", consumes = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<JsonNode> edit(@AuthenticationPrincipal Jwt identity, @PathVariable String deckId,
+                                  @PathVariable String sessionId, @PathVariable String artifactId, InputStream body) {
+        UUID owner = owner(identity);
+        UUID deck = entity(deckId, "deckId");
+        UUID session = entity(sessionId, "sessionId");
+        UUID artifact = entity(artifactId, "artifactId");
+        ReviewService.Result result = edits.edit(owner, deck, session, artifact, read(body));
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(HttpStatus.ACCEPTED).headers(privateHeaders());
+        response.location(URI.create("/api/decks/" + deck + "/generation-sessions/" + session + "/artifacts/" + artifact));
+        if (result.replayed()) response.header("Idempotency-Replayed", "true");
+        return response.body(result.body());
+    }
+
+    @PostMapping(value = ARTIFACT + "/revert", consumes = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<JsonNode> revert(@AuthenticationPrincipal Jwt identity, @PathVariable String deckId,
+                                    @PathVariable String sessionId, @PathVariable String artifactId, InputStream body) {
+        UUID owner = owner(identity);
+        return answer(HttpStatus.OK, edits.revert(owner, entity(deckId, "deckId"), entity(sessionId, "sessionId"),
                 entity(artifactId, "artifactId"), read(body)));
     }
 

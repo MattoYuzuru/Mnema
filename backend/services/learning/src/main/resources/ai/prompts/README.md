@@ -85,7 +85,7 @@ Placeholder names used by v1 and their owners:
 |---|---|
 | `deck-brief` | `deck.title`, `deck.description`, `lang.output`, `lang.target`, `level`, `counts.items`, `counts.exercises`, `deck_terms`, `style_card.{words,headings,lists,tables,examples,audio}`, `exemplar_blocks`, `recent_material`, `outline.{total,shown,lines}` |
 | `material` | `allowed_links`, `note_blocks`, `search_result_blocks`, `request`, `task.{skill,words,media}`, `lang.output`, `level` |
-| `edit` | `document` (rendered by code with the tags `<context_before>`, `<target>` and `<context_after>`; the whole document when it fits, otherwise the outline plus those three), `history`, `preset` (`SIMPLER`, `SHORTER`, `EXAMPLE`, `LONGER` or none), `instruction` |
+| `edit` | `document` (rendered by code: the outline of the material as `[[bN]] first line`, at most 200 lines, then the tags `<context_before>`, `<target>` with the handles `b(index + 1)` and `<context_after>`), `history` (the last five finished instructions, one per line), `preset` (the Russian label «Проще», «Короче», «Пример», «Подробнее», or none), `instruction` (user text, or «без дополнительных указаний») |
 | `exercises` | `schema`, `material_blocks`, `objective_lines`, `existing_exercise_lines`, `neighbor_lines`, `task.{count,mechanics}`, `lang.output` |
 | `assessment` | `exercise.{prompt,reference}`, `criteria_lines`, `misconception_lines`, `material_fragment`, `feedback_language`, `answer_source`, `learner_answer_json` |
 

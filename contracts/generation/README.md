@@ -11,8 +11,8 @@ steps, events, the `TEXT_DRAFT` step and the operations `estimateGeneration`, `c
 ([#288](https://github.com/MattoYuzuru/Mnema/issues/288)) implements `approveArtifact`, `approveArtifacts`, `rejectArtifact`,
 `undoRejectArtifact`, `handoffArtifact`, `retryArtifact`, `deleteSession`, `archiveUsedNotes` and the retention worker (see
 the decisions below for what they settled); AI-13 ([#291](https://github.com/MattoYuzuru/Mnema/issues/291)) implements `EXERCISES`
-sessions, the exercise side of approval, re-pin and retry, and the «Новое» mark (decision 14); edits, revert, the planner and the media
-executors do not exist yet. Each file says which task implements it. The accepted sources, which this contract must not contradict:
+sessions, the exercise side of approval, re-pin and retry, and the «Новое» mark (decision 14); AI-11 ([#293](https://github.com/MattoYuzuru/Mnema/issues/293))
+implements `editArtifact` and `revertArtifact` for materials (decision 15); the planner, the exercise edit flow and the media executors do not exist yet. Each file says which task implements it. The accepted sources, which this contract must not contradict:
 
 - [AI generation platform](../../docs/architecture/ai-generation-platform.md) — §3 domain model and states,
   §4 steps, §5 events, §6 MBM and exercises, §7 edits, §9 capabilities, §10 usage, §12 notifications;
@@ -260,6 +260,59 @@ by the owning task with a note here.
       /api/decks/{deckId}/exercises/{exerciseId}/new-mark`, 204, idempotent) or answered in Study (the attempt's own transaction, any terminal result, `CANCEL` included: a presented and then terminated exercise counts as opened). No notification kind is
       added: `GENERATION_READY`, `_PARTIAL` and `_FAILED` carry `sessionKind: EXERCISES`; the client announces «Новые упражнения: N — уже в колоде».
 
+15. **AI-11 (#293) settled these** (revisable by the owning task with a note here):
+    - **Target.** `target.nodeIds` are 1..50 distinct node IDs of **consecutive** top-level blocks of the current revision (any request order); anything else
+      (a nested node, an unknown or repeated ID, a gap) is `400 INVALID_REQUEST`, and so is a rewrite target the model cannot be given: a block MBM cannot express
+      (`MbmUnsupportedContentException`: heading level 4+, `youtube`, opaque math, an attribute MBM cannot carry), a block whose text holds an e-mail address, a
+      telephone or a card number (the prompt layer redacts them, so the rewrite would overwrite the author's own data with a placeholder; digit groups inside a URL are not telephone numbers) and a run of media only. The 400 names its cause in the additive `reason`
+      member: `TARGET_NOT_CONTIGUOUS`, `TARGET_UNSUPPORTED_BLOCK`, `TARGET_PERSONAL_DATA`, `TARGET_MEDIA_ONLY`. The blocks to rewrite weigh at most 2050 estimated tokens (the output bound holds them
+      again): more is `422 RESOURCE_LIMIT_EXCEEDED` with `limit: EDIT_TARGET_SIZE`.
+      The client sends every block a selection touches, media blocks inside the run included. The target is judged against the current revision, so it is checked
+      after the `412` and before the state checks.
+    - **Actions.** `REWRITE` (optional `preset` and `instruction`) and `FREE` (`instruction` required) run the EDIT step; `REMOVE_MEDIA` is deterministic and free (media
+      nodes only); `IMAGE_SEARCH`, `IMAGE_GENERATE` and `AUDIO_REGENERATE` need blocks of their kind and answer `409 CAPABILITY_UNAVAILABLE` (the capability gate's
+      reason, `PROVIDER_NOT_CONFIGURED` when the gate passes) until AI-09 and AI-10 provide their executors, so those tasks only flip the capability. An `EXERCISE` artifact
+      refuses every edit and every revert with `409 GENERATION_STATE_CONFLICT` (`ILLEGAL_STATE`) until AI-16 (#294). An edit is allowed in a `RUNNING` or `REVIEW` session
+      on a `PROPOSED` artifact (a `CANCELLED` session accepts `REMOVE_MEDIA` only); an artifact with a turn in flight is `REVISING`: a second edit is `409 EDIT_IN_PROGRESS`
+      with the running turn's `turnId`, and approve, reject, hand-off and revert are `ILLEGAL_STATE`.
+    - **Context** (architecture section 7, `ai/prompts/v1/edit.md` used verbatim). The cacheable prefix is the material's own (core, style, skills, deck brief), then
+      `document` = the outline of the material (`[[bN]] first line` of every top-level block, at most 200 lines around the target) followed by `<context_before>` (one
+      neighbour), `<target>` (the blocks to rewrite in full MBM, each with the handle `b(index + 1)` that the outline shows) and `<context_after>`; `history` = the last five
+      instructions that shaped the text now shown (`APPLIED` rewrites whose result revision is of the current draft and not later than the current revision, so never a failed one,
+      one reverted away or one of an older draft; preset and text, one line each); `preset` (the Russian label) and `instruction` last. Temperature 0.7; the output bound is
+      about twice the target. A neighbour MBM cannot express is shown by its first line; a media block is shown as `[аудио]`, `[изображение]` or `[видео]` in the outline and
+      the neighbours and never in the target. The prompt layer escapes `& < > "` in everything it shows, so the answer is **unescaped once** (the exact inverse) before it is compiled.
+    - **Applying.** The answer is compiled in MBM edit mode with the target's handles (a block that starts with a target's handle and keeps its type keeps its node ID; a handle
+      that is not a target, a repeated one and an omitted one are errors; no media directive, as `maxMedia` is 0; links only from the session allowlist and the links the
+      target already carried). The new document is the current document with the target range replaced by the compiled blocks, and the range's media blocks (never
+      shown to the model, never dropped, same node, same slot) each right after the rewritten block that has the node ID of the nearest text block before it in the run (a media
+      block that opened the run stays first; one whose anchor is gone or changed type goes to the end of the range); every block outside the range is the same JSON. It must pass `NativeDocumentReader`. One repair call, then one
+      on the strong route, then the turn is `FAILED(INVALID_OUTPUT)`. A success is a new revision (cause `EDIT`, the prompt version and route), the turn `APPLIED` with
+      `resultRevisionId`, the artifact `PROPOSED` on it; a failure, a cancellation or a lost lease leaves the artifact `PROPOSED` on the unchanged revision. No database transaction
+      is open during the provider call. A slot whose node is no longer in the document would become `REMOVED` (its hold dropped); the slots whose node is there follow the new
+      revision (a slot row is one per key, attached to the revision that is current).
+    - **Usage.** A rewrite reserves its own hold at admission (`ReservationScope.TURN`, `EDIT_SELECTION`, 4 credits on rc-v1; insufficient is `409 USAGE_LIMIT_REACHED`, nothing
+      changes), debits it with the result and releases it in the same transaction; a failed or cancelled turn releases it unspent (`USAGE_UPDATED` after each). A session that
+      leaves `RUNNING` keeps the holds of the edits still working. The daily burst never parks an edit (a turn that waits for the next day is a turn that hangs); its debit
+      is still recorded. An EDIT step is offered to workers before drafts and fails its turn with `DEADLINE_EXCEEDED` (hold released) when no worker claimed it within
+      `learning.generation.edit.queue-timeout` (`PT2M`). `429`, `5xx` and the router's fallbacks are the provider layer's; the step retries with backoff up to `learning.generation.step.max-attempts`.
+      Limits: 50 turns (`REMOVE_MEDIA` not counted) and 30 revisions per artifact for a rewrite (`REMOVE_MEDIA` is exempt and may use the room up to 40, the bound of the tables, `V31`; a draft has at most eight media), `422 RESOURCE_LIMIT_EXCEEDED` with `limit` `TURNS_PER_ARTIFACT` or
+      `REVISIONS_PER_ARTIFACT` (and `limits {maxTurnsPerArtifact, maxRevisionsPerArtifact}`).
+    - **REMOVE_MEDIA** finishes in the request transaction: a new revision (cause `MEDIA`) without the nodes, their slots `REMOVED` (`MEDIA_SLOT_STATE`), the hold on their assets
+      dropped and their waiting media steps cancelled, the turn recorded as `APPLIED` (`counts_toward_limit` false), no model call. This enforces the invariant `ReviewService`
+      states: a `REMOVED` slot's node is gone from the current revision.
+    - **Revert** moves the pointer to any revision of the current draft (earlier or later), creates nothing and deletes nothing, and is refused while a turn is in flight. A retry writes the
+      artifact again from other pins as a new `INITIAL` revision; the revisions before it are history (readable with `?revisionId=`) but a revert to one is `409 ILLEGAL_STATE`, since it would
+      put old-source text under the new pins and media nodes without slots. The artifact's
+      slots follow the revision shown: a slot whose node the revision holds is attached to it, one whose node it does not hold becomes `REMOVED`, and a `REMOVED` slot whose node is
+      back is `FAILED` with `NO_RESULT` (the hold ended, so the node has no ready asset and approval answers `MEDIA_NOT_READY` until `REMOVE_MEDIA` removes it again). The unknown
+      or foreign revision is `404`. «Ещё раз» is a client action: a new edit with the same target, preset and instruction and a new `commandId`, with its own hold.
+    - **Cancellation.** Cancelling or expiring the session cancels the QUEUED and RUNNING turns (`CANCELLED`), puts a `REVISING` artifact back to `PROPOSED` and releases the holds. A step that expires
+      before it was claimed or loses its lease before the turn started fails a QUEUED turn (`QUEUED` to `FAILED` in `states.json`).
+    - **Reads.** `getArtifact` lists the turns of the current draft (oldest first, `REMOVE_MEDIA` included; a retry starts a new draft) in the `turn` shape and its revisions, which are the restorable ones; `?revisionId=` returns any revision's payload; a
+      historic revision's `mediaSlots` are the slots of the media nodes it holds. The Stub answers an edit with the target blocks and their handles, each plain paragraph with one
+      added sentence `Переписано: <preset label>.`
+
 ## Owner decisions (2026-10-02)
 
 Final. Values live in config keys, so a change is a configuration change. Details: [usage contract](../usage/README.md#owner-decisions-2026-10-02).
@@ -284,7 +337,7 @@ Resolved in favour of the architecture document unless stated. These are recorde
 | `docs/architecture/ai-generation-platform.md` (front matter assumption) | Said ORDER/CATEGORIZE "may land after the first AI slices"; both exist (#268, `contracts/study/mechanics.json`) | The assumption is corrected; the contract covers all seven mechanics |
 | `contracts/study/README.md:167` vs architecture §11 | Study maps provider uncertainty to `UNSURE`; the architecture says it must become a self-check | Left to AI-20 ([#292](https://github.com/MattoYuzuru/Mnema/issues/292)) |
 | research `context-and-quality.md` (the `::verify` block) vs architecture §6 | The research prompt uses a `::verify` block; MBM v1 has none | Not in MBM v1 nor in the prompts |
-| research (edit context: whole document up to 8k tokens) vs architecture §7 (outline + target ± neighbour) | Edit context size | Prompt placeholders allow both; AI-11 |
+| research (edit context: whole document up to 8k tokens) vs architecture §7 (outline + target ± neighbour) | Edit context size | Architecture §7 won: outline (≤200 lines) + target + one neighbour each side (decision 15) |
 | architecture §6 (swapped pair is `INCORRECT`) vs `AttemptEvaluation` | A swapped pair among 3+ gives `PARTIAL` | Probes shift **all** pairs so `INCORRECT` is well defined |
 | architecture §4 (at most 20 artifacts per session) vs owner decision (60 exercises) | Different limits | 20 for `MATERIALS`, 60 for `EXERCISES`; architecture §4 updated by AI-04 |
 | `docs/product/ai-layer-2026-10.md` (¼ of the bar every Monday, i.e. 12.5) | Not an integer | Replaced by the owner decision: portions 13, 13, 12, 12 |
@@ -292,7 +345,7 @@ Resolved in favour of the architecture document unless stated. These are recorde
 ## Open questions
 
 - Whether `GET /api/capabilities` should add per-capability usage hints.
-- Media assets of a rewritten media block: kept or replaced when the slot spec is unchanged (AI-09, AI-10).
+- Media redo of a block in place (`IMAGE_SEARCH`, `IMAGE_GENERATE`, `AUDIO_REGENERATE`): whether the asset is kept or replaced when the slot spec is unchanged (AI-09, AI-10). A rewrite never touches media (decision 15).
 
 ## Verification
 

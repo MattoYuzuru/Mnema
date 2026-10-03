@@ -48,12 +48,12 @@
       } @else {
         <div class="pager-row">
           <app-batch-pager [artifacts]="artifacts()" [selectedId]="selectedId()" (picked)="select($event)" />
-          <p class="summary" role="status">{{ statusText() }}</p>
+          <p class="summary" role="status" aria-atomic="false">{{ statusText() }}@if (store.editNote(); as note) {<span class="summary-note"> · {{ note }}</span>}</p>
         </div>
 
         @if (current(); as artifact) {
           <app-proposal-view [artifact]="artifact" [index]="currentIndex()" [total]="artifacts().length" [deckId]="deckId()"
-            [sessionState]="session()!.state" [entry]="entry()" [draft]="draft()" [arrival]="store.arrival()" [busy]="artifactBusy()" [handoffDraftId]="store.handoffs()[artifact.artifactId] ?? null"
+            [sessionState]="session()!.state" [entry]="entry()" [draft]="draft()" [arrival]="store.arrival()" [busy]="artifactBusy()" [capabilities]="capabilities()" [handoffDraftId]="store.handoffs()[artifact.artifactId] ?? null"
             (approve)="approve()" (reject)="reject()" (undo)="undo()" (handoff)="handoff()" (retry)="retry()" (reload)="reloadDetail()" />
         }
 

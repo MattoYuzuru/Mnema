@@ -338,7 +338,7 @@ class SessionLifecycle {
     }
 
     /** The step has outlived {@code learning.generation.step.max-lifetime} counted from its first claim. */
-    private boolean expired(Step step) {
+    boolean expired(Step step) {
         return step.firstClaimedAt() != null && step.firstClaimedAt().plus(settings.step().maxLifetime()).isBefore(Instant.now());
     }
 
@@ -421,9 +421,13 @@ class SessionLifecycle {
         for (Artifact artifact : repository.artifacts(tx.session.sessionId())) {
             if (artifact.state().equals("QUEUED") || artifact.state().equals("GENERATING")) {
                 failArtifact(tx, artifact, "CANCELLED");
+            } else if (artifact.state().equals("REVISING")) {
+                // an edit in flight is cancelled with its step: the proposal is what it was before the edit (contract states.json turn)
+                tx.events.add(artifactEvent(repository.transition(artifact, "PROPOSED", null, null, null, artifact.revisionCount())));
             }
         }
-        releaseReservation(tx);
+        repository.cancelSessionTurns(tx.session.sessionId());
+        releaseReservation(tx, false);
     }
 
     /**
@@ -470,19 +474,27 @@ class SessionLifecycle {
         if (counts.get("QUEUED") + counts.get("GENERATING") > 0) return;
         boolean open = counts.get("PROPOSED") + counts.get("REVISING") + counts.get("STALE")
                 + repository.retryableFailures(tx.session.sessionId()) > 0;
-        releaseReservation(tx);
+        releaseReservation(tx, true);
         tx.state = open ? "REVIEW" : "CLOSED";
         notifyOutcome(tx, counts);
     }
 
-    /** Ends every hold of the session (initial batch and retries); what was consumed stays consumed. */
-    void releaseReservation(Tx tx) {
-        if (releaseHolds(tx.session)) tx.events.add(usageEvent(tx.session, null));
+    /**
+     * Ends the holds of the session (initial batch, retries and edit turns); what was consumed stays consumed. A session that
+     * merely leaves RUNNING ({@code keepOpenEdits}) keeps the holds of the edits still working: they end with their turn.
+     */
+    void releaseReservation(Tx tx, boolean keepOpenEdits) {
+        if (releaseHolds(tx.session, keepOpenEdits)) tx.events.add(usageEvent(tx.session, null));
     }
 
     /** Ends every hold of the session in the caller's transaction, announcing nothing; false when it had none. */
     boolean releaseHolds(Session session) {
-        List<UUID> held = reservations.ids(session);
+        return releaseHolds(session, false);
+    }
+
+    private boolean releaseHolds(Session session, boolean keepOpenEdits) {
+        List<UUID> held = new ArrayList<>(reservations.ids(session));
+        if (keepOpenEdits) held.removeAll(steps.openEditReservations(session.sessionId()));
         for (UUID reservation : held) {
             try {
                 ledger.release(session.ownerId(), reservation);
@@ -556,7 +568,7 @@ class SessionLifecycle {
     // ------------------------------------------------------------------- helpers
 
     /** Steps of these sessions may run: a RUNNING session, or a REVIEW one whose media steps still work. */
-    private static boolean runnable(Session session) {
+    static boolean runnable(Session session) {
         return session.state().equals("RUNNING") || session.state().equals("REVIEW");
     }
 

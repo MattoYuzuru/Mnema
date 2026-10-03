@@ -546,7 +546,8 @@ class GenerationReviewIntegrationTest extends GenerationReviewSupport {
         assertThat(rewritten.revision()).isNotEqualTo(proposal.revision());
         JsonNode detail = json(send(owner, get(base(deck, proposal.session()) + "/artifacts/" + proposal.artifact())));
         assertThat(detail.path("sourceRefs").get(0).path("noteRowVersion").stringValue(null)).isEqualTo("1");
-        assertThat(detail.path("revisions")).hasSize(2);
+        // the earlier draft's revision is history, not listed (only the revisions a revert may restore are)
+        assertThat(detail.path("revisions")).hasSize(1);
         assertThat(detail.path("repinStatus").isNull()).isTrue();
         assertThat(provider.calls.getLast().prompt()).contains("вторая версия");
         // the slots of the replaced revision are gone; the new revision has its own

@@ -8,10 +8,10 @@ import { ExerciseContentError, parseExerciseSpec, parseObjectiveCommand } from '
 import { AuthoringProtocolError, requireCommand, requireCursor, requireEntity, requireVersion } from '../authoring/authoring.models';
 import { expectedEtag } from '../own-decks/own-deck.models';
 import {
-    ApprovalAck, ArtifactDetail, ArtifactSummary, CreatedSession, EventsPage, GenerationEstimate, HandoffResult,
-    GenerationSpec, MAX_APPROVALS_PER_COMMAND, RequestValidationError, NoteArchiveResult, SessionDetail, SessionPage, parseApprovalAck, parseArtifactDetail,
-    parseArtifactSummary, parseEstimate, parseEventsPage, parseHandoff, parseNoteArchive, parseSessionDetail, parseSessionPage,
-    serializeSpec
+    ApprovalAck, ArtifactDetail, ArtifactSummary, CreatedSession, EditAccepted, EditEstimateRequest, EditRequest, EventsPage, GenerationEstimate,
+    HandoffResult, GenerationSpec, MAX_APPROVALS_PER_COMMAND, RequestValidationError, NoteArchiveResult, SessionDetail, SessionPage,
+    parseApprovalAck, parseArtifactDetail, parseArtifactSummary, parseEditAccepted, parseEstimate, parseEventsPage, parseHandoff,
+    parseNoteArchive, parseSessionDetail, parseSessionPage, serializeEdit, serializeEditEstimate, serializeSpec
 } from './generation.models';
 
 /** The Deck version an approval is pinned to (`If-Match` and `expectedDeckRevisionId`). */
@@ -47,6 +47,15 @@ export class GenerationApiService {
                 requireStatus(response, 200);
                 return parseEstimate(response.body);
             }));
+    }
+
+    /** The preflight cost of one edit (`estimateGeneration`, `edit` form): what a rewrite of `targetNodeCount` blocks would hold. */
+    estimateEdit(deckId: string, request: EditEstimateRequest): Observable<GenerationEstimate> {
+        return defer(() => this.http.post<unknown>(`${this.deckPath(deckId)}/generation-estimates`, serializeEditEstimate(request),
+            { observe: 'response' })).pipe(map(response => {
+            requireStatus(response, 200);
+            return parseEstimate(response.body);
+        }));
     }
 
     createSession(deckId: string, spec: GenerationSpec, commandId: string): Observable<CreatedSession> {
@@ -111,11 +120,16 @@ export class GenerationApiService {
         }));
     }
 
-    getArtifact(deckId: string, sessionId: string, artifactId: string): Observable<ArtifactDetail> {
-        return defer(() => this.http.get<unknown>(this.artifact(deckId, sessionId, artifactId), { observe: 'response' }))
+    /**
+     * The artifact with its current revision, or with the exact `revisionId` asked for (the pointer is unchanged): the client builds
+     * the diff of an edit from two such reads.
+     */
+    getArtifact(deckId: string, sessionId: string, artifactId: string, revisionId: string | null = null): Observable<ArtifactDetail> {
+        return defer(() => this.http.get<unknown>(this.artifact(deckId, sessionId, artifactId),
+            { params: revisionId === null ? undefined : new HttpParams().set('revisionId', requireEntity(revisionId)), observe: 'response' }))
             .pipe(map(response => {
                 requireStatus(response, 200);
-                const artifact = parseArtifactDetail(response.body);
+                const artifact = parseArtifactDetail(response.body, revisionId === null ? null : revisionId.toLowerCase());
                 if (artifact.artifactId !== artifactId.toLowerCase() || artifact.sessionId !== sessionId.toLowerCase()) {
                     throw new AuthoringProtocolError('Artifact identity does not match the request.');
                 }
@@ -195,6 +209,40 @@ export class GenerationApiService {
         return defer(() => this.http.post<unknown>(`${this.artifact(deckId, sessionId, artifactId)}/retry`,
             { commandId: requireCommand(commandId), expectedArtifactVersion: requireVersion(expectedArtifactVersion) },
             { observe: 'response' })).pipe(map(response => this.summary(response, artifactId, 'QUEUED')));
+    }
+
+    /**
+     * Edits the selection of a proposal (`editArtifact`, no `If-Match`). A rewrite is accepted with the turn `QUEUED` and the artifact
+     * `REVISING`; `REMOVE_MEDIA` is applied before the answer. An exact retry answers `202` with `Idempotency-Replayed: true`.
+     */
+    editArtifact(deckId: string, sessionId: string, artifactId: string, request: EditRequest, commandId: string): Observable<EditAccepted> {
+        return defer(() => this.http.post<unknown>(`${this.artifact(deckId, sessionId, artifactId)}/edits`, serializeEdit(request, commandId),
+            { observe: 'response' })).pipe(map(response => {
+            requireStatus(response, 202);
+            const accepted = parseEditAccepted(response.body, replayHeader(response));
+            if (accepted.artifact.artifactId !== artifactId.toLowerCase()) throw new AuthoringProtocolError('Edit acknowledgement mismatch.');
+            if (accepted.turn.action !== request.action) throw new AuthoringProtocolError('Edit acknowledgement mismatch.');
+            return accepted;
+        }));
+    }
+
+    /**
+     * Moves the current-revision pointer to another revision of the artifact (`revertArtifact`): no revision is created or deleted.
+     * Moving to the revision already current is a `200` no-op, so a missing `ETag` is not an error there.
+     */
+    revertArtifact(deckId: string, sessionId: string, artifactId: string, expectedArtifactVersion: string, toRevisionId: string,
+                   commandId: string): Observable<ArtifactSummary> {
+        return defer(() => this.http.post<unknown>(`${this.artifact(deckId, sessionId, artifactId)}/revert`, {
+            commandId: requireCommand(commandId), expectedArtifactVersion: requireVersion(expectedArtifactVersion),
+            toRevisionId: requireEntity(toRevisionId)
+        }, { observe: 'response' })).pipe(map(response => {
+            requireStatus(response, 200);
+            const artifact = parseArtifactSummary(response.body);
+            if (artifact.artifactId !== artifactId.toLowerCase() || artifact.state !== 'PROPOSED'
+                || artifact.currentRevisionId !== toRevisionId.toLowerCase()) throw new AuthoringProtocolError('Revert acknowledgement mismatch.');
+            if (!replayHeader(response) && response.headers.has('ETag')) requireEtag(response, artifact.rowVersion);
+            return artifact;
+        }));
     }
 
     /**

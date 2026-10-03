@@ -4,6 +4,7 @@ import app.mnema.learning.generation.Rows.Artifact;
 import app.mnema.learning.generation.Rows.Revision;
 import app.mnema.learning.generation.Rows.Session;
 import app.mnema.learning.generation.Rows.Slot;
+import app.mnema.learning.generation.Rows.Turn;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
@@ -120,8 +121,11 @@ class SessionViews {
             rev.set("payload", revision.payload().deepCopy());
         }
         ArrayNode slots = node.putArray("mediaSlots");
-        if (revision != null) {
-            for (Slot slot : repository.slots(artifact.artifactId(), revision.revisionId())) {
+        if (revision != null && revision.payload().path("kind").stringValue("").equals("NATIVE_DOCUMENT")) {
+            // the slots of the media nodes this revision holds, whichever revision each slot is attached to now
+            java.util.Set<UUID> present = EditDocument.idSet(revision.payload().path("document"));
+            for (Slot slot : repository.slotsOf(artifact.artifactId())) {
+                if (!present.contains(slot.nodeId())) continue;
                 slots.addObject().put("slotKey", slot.slotKey()).put("kind", slot.kind()).put("nodeId", slot.nodeId().toString())
                         .put("assetId", slot.assetId().toString()).put("state", slot.state()).put("errorCode", slot.errorCode());
             }
@@ -131,7 +135,24 @@ class SessionViews {
             revisions.addObject().put("revisionId", listed.revisionId().toString()).put("cause", listed.cause())
                     .put("createdAt", Json.time(listed.createdAt()));
         }
-        node.putArray("turns");
+        ArrayNode turns = node.putArray("turns");
+        for (Turn turn : repository.turns(artifact.artifactId())) turns.add(turn(turn));
+        return node;
+    }
+
+    /** One turn as the contract's {@code turn} shape: the user's instruction and where it stands. */
+    static ObjectNode turn(Turn turn) {
+        ObjectNode node = Json.object();
+        node.put("turnId", turn.turnId().toString());
+        node.put("status", turn.status());
+        node.put("action", turn.action());
+        node.put("preset", turn.preset());
+        node.put("instruction", turn.instruction());
+        ArrayNode targets = node.putArray("targetNodeIds");
+        turn.targetNodeIds().forEach(id -> targets.add(id.toString()));
+        node.put("resultRevisionId", turn.resultRevisionId() == null ? null : turn.resultRevisionId().toString());
+        node.put("errorCode", turn.errorCode());
+        node.put("createdAt", Json.time(turn.createdAt()));
         return node;
     }
 

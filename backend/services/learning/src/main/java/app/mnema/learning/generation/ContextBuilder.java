@@ -86,15 +86,31 @@ class ContextBuilder {
 
     /** @throws SourceGoneException a pinned note or material no longer matches its pin or is gone */
     DraftContext build(Session session, Artifact artifact, MaterialsSpec spec) {
-        UUID owner = session.ownerId();
-        UUID deck = session.deckId();
-        Brief brief = context.brief(owner, deck).orElseThrow(SourceGoneException::new);
-        GenerationSettings.Context budgets = settings.context();
-
         MaterialsSpec.Effective effective = spec.forArtifact(artifact.sourceRefs());
         List<String> sourceTexts = sourceTexts(session, artifact);
         String request = spec.prompt().isBlank() ? "по источникам выше" : spec.prompt();
+        PromptValues values = briefValues(session, spec, sourceTexts, request)
+                .block("allowed_links", PromptBlocks.allowedLinks(links(sourceTexts)))
+                .block("note_blocks", noteBlocks(sourceTexts, settings.context().notesTokens()))
+                .block("search_result_blocks", PromptBlocks.empty())
+                .text("request", request).text("task.skill", "free").number("task.words", wordsFor(effective.workingEffort()))
+                .text("task.media", media(effective));
+        AssembledPrompt prompt = assembler.assemble(PromptTask.MATERIAL, values);
+        MbmOptions options = MbmOptions.create().withAllowedLinks(links(sourceTexts)).withMaxMedia(effective.maxMedia());
+        return new DraftContext(prompt, options, maxTokens(effective.workingEffort()), TEMPERATURE);
+    }
 
+    /**
+     * The values of the deck brief (title, profile, terms, exemplars with their style card, the most recent material, the outline)
+     * and of the core: the cacheable prefix every text step of a session shares, so a material and an edit of it hit the same
+     * provider cache. {@code request} and {@code sourceTexts} only steer the outline of a deck too large to show whole.
+     *
+     * @throws SourceGoneException the deck is gone
+     */
+    PromptValues briefValues(Session session, MaterialsSpec spec, List<String> sourceTexts, String request) {
+        UUID owner = session.ownerId();
+        UUID deck = session.deckId();
+        Brief brief = context.brief(owner, deck).orElseThrow(SourceGoneException::new);
         Map<UUID, String> exemplarTexts = exemplarTexts(owner, deck, spec);
         List<PromptBlock> exemplarBlocks = new ArrayList<>();
         int index = 1;
@@ -105,7 +121,7 @@ class ContextBuilder {
         Outline outline = outline(deck, spec, request, sourceTexts, exemplarTexts.keySet());
 
         String exemplarJoined = String.join("\n", exemplarTexts.values());
-        PromptValues values = PromptValues.create()
+        return PromptValues.create()
                 .text("deck.title", orDash(brief.title())).text("deck.description", orDash(brief.description()))
                 .text("lang.output", spec.outputLanguage()).text("lang.target", "не указан")
                 .number("counts.items", brief.items()).number("counts.exercises", brief.exercises())
@@ -116,15 +132,19 @@ class ContextBuilder {
                 .block("exemplar_blocks", PromptBlocks.join(exemplarBlocks))
                 .text("recent_material", recent.isBlank() ? "в колоде пока нет материалов" : recent)
                 .number("outline.total", outline.total()).number("outline.shown", outline.shown())
-                .block("outline.lines", outline.lines())
-                .block("allowed_links", PromptBlocks.allowedLinks(links(sourceTexts)))
-                .block("note_blocks", noteBlocks(sourceTexts, budgets.notesTokens()))
-                .block("search_result_blocks", PromptBlocks.empty())
-                .text("request", request).text("task.skill", "free").number("task.words", wordsFor(effective.workingEffort()))
-                .text("task.media", media(effective));
-        AssembledPrompt prompt = assembler.assemble(PromptTask.MATERIAL, values);
-        MbmOptions options = MbmOptions.create().withAllowedLinks(links(sourceTexts)).withMaxMedia(effective.maxMedia());
-        return new DraftContext(prompt, options, maxTokens(effective.workingEffort()), TEMPERATURE);
+                .block("outline.lines", outline.lines());
+    }
+
+    /**
+     * The text of every source of the artifact for the outline and the link allowlist of an edit: like {@link #sourceTexts} but a
+     * source that is gone is skipped (an edit does not need it), so editing a proposal never fails because a note was deleted.
+     */
+    List<String> sourceTextsLenient(Session session, Artifact artifact) {
+        try {
+            return sourceTexts(session, artifact);
+        } catch (SourceGoneException gone) {
+            return List.of();
+        }
     }
 
     // ---------------------------------------------------------------- sources
@@ -162,7 +182,7 @@ class ContextBuilder {
     }
 
     /** Link targets the user wrote in their own sources: the session allowlist (research results are added by AI-14). */
-    private static List<String> links(List<String> texts) {
+    static List<String> links(List<String> texts) {
         Set<String> found = new LinkedHashSet<>();
         for (String text : texts) {
             Matcher matcher = URL.matcher(text);

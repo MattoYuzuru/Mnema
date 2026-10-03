@@ -32,7 +32,7 @@ exercise mechanics into the seven below. Epic #76 added the greenfield media lif
 - AI layer (Epic #77): run 2 delivered the notification center, the usage ledger (`app.mnema.learning.usage`), the MBM
   compiler (`generation.mbm`), the `code_block` node and the provider foundation (`app.mnema.learning.ai`, below); run 3 adds
   generation sessions, steps and the text draft (`app.mnema.learning.generation`, "Generation sessions (#287)" below); approval,
-  edits and media execution follow (AI-05 and later).
+  edits ("Selection edits (#293)" below) and media execution follow (AI-05 and later).
 - MBM compiler (#283): `app.mnema.learning.generation.mbm` is a pure package (no Spring, I/O or clock; identifiers come from
   the injected `IdAllocator`) that compiles MBM v1 to a native-v1 document and renders native-v1 back to MBM.
   `MbmCompiler.compile(source, MbmOptions, IdAllocator)` returns `MbmResult.Success` (document already read by
@@ -141,8 +141,8 @@ fair-use buckets, `GET /api/usage` and the estimate. Migration `V26__usage_ledge
 `app.mnema.learning.generation` implements the core of the Workshop ([`contracts/generation`](../../../contracts/generation/README.md),
 [architecture §3-§6](../../../docs/architecture/ai-generation-platform.md)): sessions, artifacts, durable steps, events, the
 `TEXT_DRAFT` step and its HTTP surface. Approval, rejection, hand-off, retry, delete, note archival and retention are
-"Review commands (#288)" below, exercise sessions "Exercise generation (#291)". Not here yet: edits, the planner and the media
-executors; their tables exist (V28), their routes do not.
+"Review commands (#288)" below, exercise sessions "Exercise generation (#291)", edits and revert "Selection edits (#293)". Not here yet:
+the planner and the media executors; their tables exist (V28), their routes do not.
 
 - **HTTP** (`GenerationController`, every response `private, no-store`; unknown query parameters and body fields are `400`):
   `POST /api/decks/{deckId}/generation-sessions` (201, `Location`, `ETag`; an exact retry answers 201 with
@@ -368,6 +368,39 @@ by `AttemptService.submit` on every terminal result (the attempt's transaction).
 (hourly), the closest existing worker; readers compare `marked_at`, so an unpurged row is never shown. `V30` also adds
 `generation_provenance.edited`. Tests: `GenerationExercisesIntegrationTest`, `ExerciseValidationFixtureTest`, `ExerciseValidatorTest`,
 `StubExercisesTest`.
+
+## Selection edits (#293)
+
+`editArtifact` and `revertArtifact` of a material ([decision 15](../../../contracts/generation/README.md), architecture section 7), in `app.mnema.learning.generation`.
+`generation_artifact_turn` (V28) and the `EDIT` step kind existed; `V31__generation_revision_headroom.sql` raises the table bound of `revision_count` and `revision_no` from 30 to 40 so that `REMOVE_MEDIA` (exempt from the 30-revision cap of a rewrite, at most eight media per draft) can always store its revision.
+
+- **Admission** (`ArtifactEdits`, `POST .../artifacts/{id}/edits` answers `202 {turn, artifact}`, `POST .../revert` answers `200` with the artifact summary): the contract's order of
+  evaluation, in one transaction under the session lock: replay, 400 body, 412 `expectedRevisionId`, 400 target (`EditTarget.resolve`: consecutive top-level blocks;
+  `EditContexts.editable`: MBM can render them and the redaction would not change their text), 409 state (`EditInProgressException` carries `turnId`; an EXERCISE artifact
+  is `ILLEGAL_STATE`), 409 capability (`GenerationGate.requireEdit`), 422 limits, then the reservation. A rewrite writes a QUEUED turn, an `EDIT` step (input `{turnId, action,
+  revisionId, operation, credits, reservationId}`; its idempotency key is `edit:<turnId>`) and makes the artifact REVISING. `REMOVE_MEDIA` is done in the same transaction
+  (`ArtifactEdits.removeMedia`). Pure document operations are in `EditDocument` and `EditTarget` (blocks, handles, range replacement, the same JSON outside the range).
+- **The step** (`EditExecutor`, kind `EDIT`, capability `TEXT`, deadline `PT2M`, not streaming, temperature 0.7): `EditLifecycle.begin` (turn RUNNING), `EditContexts.build`
+  (the deck brief comes from `ContextBuilder.briefValues`, shared with the material's own step so the cacheable prefix is the same), the turn's hold checked, the provider
+  called outside any transaction, the answer unescaped once, auto-fixed, compiled in MBM edit mode (`MbmOptions.edit(handles)`, `maxMedia 0`), spliced
+  (`EditDocument.replace`) and read by `NativeDocumentReader`; up to three rounds (answer, repair, strong route) then `FAILED(INVALID_OUTPUT)`.
+- **State** (`EditLifecycle`, one short transaction each, session lock first): `succeed` settles `EDIT_SELECTION`, releases the turn's hold, inserts the revision (cause `EDIT`),
+  moves the slots (`followSlots`: a slot whose node is gone is `REMOVED`, one whose node is there follows the new revision), sets the turn `APPLIED` and the artifact
+  `PROPOSED`; `fail`, `recover` (expired lease) and `expire` (lifetime) end the turn `FAILED`/`CANCELLED`, release the hold unspent and put the artifact back to `PROPOSED`
+  on its old revision. `StepDispatcher.recoverExpired` and `StepQueue` route an `EDIT` step to them (an artifact step would otherwise be cancelled with the artifact stuck in
+  REVISING). `SessionLifecycle.stopWork` (cancel and expiry) cancels open turns and returns REVISING artifacts to PROPOSED; `settle` does not release the holds of edits
+  still working. The daily burst never parks an edit (`StepQueue`); `StepDispatcher` offers EDIT first, `pickDue` orders by `priority` (an EDIT step is inserted with 10) and `StepQueue` fails an EDIT step that no worker
+  claimed within `learning.generation.edit.queue-timeout` (`PT2M`, from `created_at`) through `EditLifecycle.expire` (turn `FAILED(DEADLINE_EXCEEDED)`, hold released). A void step (cancelled, lost lease, revision moved)
+  also ends its turn and releases its hold.
+- **Reads**: `SessionViews.artifactDetail` lists the `turns` and `revisions` of the current generation of the draft (from the latest `INITIAL` revision: a retry starts a new draft and its older revisions are
+  not restorable, `ArtifactEdits.moveTo` refuses them with `ILLEGAL_STATE`) and the slots of the media nodes the shown revision holds; `?revisionId=` reads any revision. The prompt's history is the APPLIED
+  rewrites whose result revision is in that generation and not after the current revision (`GenerationRepository.recentTurns`).
+- **For AI-09 and AI-10 (media executors)**: a media step must update its slot by `slotKey` (a slot row is one per key and is attached to whichever revision is current: `revision_id` moves with edits and reverts), never
+  by the revision it was created for, and must treat a slot whose state is `REMOVED` as gone. A revert that restores a node whose slot was `REMOVED` marks it `FAILED(NO_RESULT)` and does **not** restore its
+  `generation_media_ref` hold (removal deleted it), so the asset is only reachable again through a new media step.
+- **Stub**: `StubEdits` answers `<task kind="edit">` with the target blocks and their handles, each plain paragraph with one added sentence `Переписано: <preset>.`.
+- Tests: `GenerationEditsIntegrationTest` (real context, PostgreSQL and the Stub; `GenerationEditsSupport` has the requests and the built documents; the test provider's
+  `[[fake:hold-edit]]` holds an edit call), `EditDocumentTest` (targets, handles, range replacement, the MBM round trip, what is editable), `StubEditsTest`.
 
 ## Shared platform contracts
 

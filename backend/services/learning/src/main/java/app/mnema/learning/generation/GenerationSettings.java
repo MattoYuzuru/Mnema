@@ -16,6 +16,8 @@ import java.time.Duration;
  * @param usdRubRate roubles per US dollar: the ledger keeps cost in millionths of a rouble, the provider layer in
  *                   micro-dollars (an approximation, like the price table)
  * @param similarTitle similarity (0..1) above which a new title is reported as similar to an existing one
+ * @param edit the interactive edit steps
+ * @param edit the interactive edit steps (queue timeout)
  * @param retention the retention worker: how often it runs, how long an expired session stays readable, when the owner is
  *                  warned and how long the events of an ended session are kept
  */
@@ -29,7 +31,8 @@ record GenerationSettings(
         @DefaultValue Step step,
         @DefaultValue Stream stream,
         @DefaultValue Context context,
-        @DefaultValue Retention retention) {
+        @DefaultValue Retention retention,
+        @DefaultValue Edit edit) {
 
     GenerationSettings {
         if (sessionRetention.isNegative() || sessionRetention.isZero() || maxActiveSessions < 1 || maxActiveSessions > 100
@@ -133,6 +136,20 @@ record GenerationSettings(
             if (interval.isNegative() || interval.isZero() || expiredReadable.isNegative() || warnBefore.isNegative()
                     || warnBefore.isZero() || eventsAfterEnd.isNegative() || batch < 1 || batch > 1_000) {
                 throw new IllegalArgumentException("Invalid generation retention settings");
+            }
+        }
+    }
+
+    /**
+     * Edit steps (selection edits, #293), which a person waits for.
+     *
+     * @param queueTimeout an EDIT step that no worker claimed within this time from its creation fails its turn with
+     *                     {@code DEADLINE_EXCEEDED} and releases its hold, so the proposal is not REVISING for long behind a busy queue
+     */
+    record Edit(@DefaultValue("PT2M") Duration queueTimeout) {
+        Edit {
+            if (queueTimeout.isNegative() || queueTimeout.isZero() || queueTimeout.compareTo(Duration.ofHours(1)) > 0) {
+                throw new IllegalArgumentException("Invalid generation edit settings");
             }
         }
     }

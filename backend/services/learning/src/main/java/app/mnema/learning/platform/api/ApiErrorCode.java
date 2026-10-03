@@ -38,6 +38,11 @@ enum ApiErrorCode {
             "Generation state conflict",
             "The operation is not allowed in the current state."
     ),
+    EDIT_IN_PROGRESS(
+            HttpStatus.CONFLICT,
+            "Edit in progress",
+            "Another edit of this artifact is still running."
+    ),
     SOURCE_UNAVAILABLE(
             HttpStatus.CONFLICT,
             "Source unavailable",
