@@ -154,10 +154,11 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
         UUID inner = id(blocks.get(1).path("content").get(0));
 
         // not top-level (a text node), unknown, repeated, not consecutive, empty, too many: all 400, nothing changes
-        problem(edit(owner, deck, proposal, editBody(UUID.randomUUID(), proposal.revision(), "REWRITE", "SIMPLER", null, inner)), 400, "INVALID_REQUEST");
-        problem(edit(owner, deck, proposal, editBody(UUID.randomUUID(), proposal.revision(), "REWRITE", "SIMPLER", null, UUID.randomUUID())), 400, "INVALID_REQUEST");
-        problem(edit(owner, deck, proposal, editBody(UUID.randomUUID(), proposal.revision(), "REWRITE", "SIMPLER", null, p1, p1)), 400, "INVALID_REQUEST");
-        problem(edit(owner, deck, proposal, editBody(UUID.randomUUID(), proposal.revision(), "REWRITE", "SIMPLER", null, p1, id(blocks.get(3)))), 400, "INVALID_REQUEST");
+        for (UUID[] bad : new UUID[][] {{inner}, {UUID.randomUUID()}, {p1, p1}, {p1, id(blocks.get(3))}}) {
+            MockHttpServletResponse refused = edit(owner, deck, proposal, editBody(UUID.randomUUID(), proposal.revision(), "REWRITE", "SIMPLER", null, bad));
+            problem(refused, 400, "INVALID_REQUEST");
+            assertThat(json(refused).path("reason").stringValue(null)).isEqualTo("TARGET_NOT_CONTIGUOUS");
+        }
         problem(edit(owner, deck, proposal, editBody(UUID.randomUUID(), proposal.revision(), "REWRITE", "SIMPLER", null)), 400, "INVALID_REQUEST");
         UUID[] many = new UUID[51];
         for (int index = 0; index < many.length; index++) many[index] = UUID.randomUUID();
@@ -631,7 +632,9 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
         // a block of the wrong kind is a bad request, and a text rewrite of media alone has nothing to rewrite
         problem(edit(owner, deck, proposal, editBody(UUID.randomUUID(), proposal.revision(), "AUDIO_REGENERATE", null, null, paragraph)), 400, "INVALID_REQUEST");
         problem(edit(owner, deck, proposal, editBody(UUID.randomUUID(), proposal.revision(), "IMAGE_SEARCH", null, null, audio)), 400, "INVALID_REQUEST");
-        problem(edit(owner, deck, proposal, editBody(UUID.randomUUID(), proposal.revision(), "REWRITE", "SIMPLER", null, audio)), 400, "INVALID_REQUEST");
+        MockHttpServletResponse mediaOnly = edit(owner, deck, proposal, editBody(UUID.randomUUID(), proposal.revision(), "REWRITE", "SIMPLER", null, audio));
+        problem(mediaOnly, 400, "INVALID_REQUEST");
+        assertThat(json(mediaOnly).path("reason").stringValue(null)).isEqualTo("TARGET_MEDIA_ONLY");
         problem(edit(owner, deck, proposal, editBody(UUID.randomUUID(), proposal.revision(), "REMOVE_MEDIA", null, null, paragraph)), 400, "INVALID_REQUEST");
 
         // an image block: the image actions name their capability
@@ -844,8 +847,12 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
         ObjectNode phone = paragraph("Позвоните +7 (999) 123-45-67 завтра");
         ObjectNode after = heading(4, "Ещё один");
         Proposal odd = withDocument(owner, proposal, document(heading(1, "Заголовок"), deep, plain, phone, after));
-        problem(edit(owner, deck, odd, editBody(UUID.randomUUID(), odd.revision(), "REWRITE", "SIMPLER", null, id(deep))), 400, "INVALID_REQUEST");
-        problem(edit(owner, deck, odd, editBody(UUID.randomUUID(), odd.revision(), "REWRITE", "SIMPLER", null, id(phone))), 400, "INVALID_REQUEST");
+        MockHttpServletResponse unsupported = edit(owner, deck, odd, editBody(UUID.randomUUID(), odd.revision(), "REWRITE", "SIMPLER", null, id(deep)));
+        problem(unsupported, 400, "INVALID_REQUEST");
+        assertThat(json(unsupported).path("reason").stringValue(null)).isEqualTo("TARGET_UNSUPPORTED_BLOCK");
+        MockHttpServletResponse personal = edit(owner, deck, odd, editBody(UUID.randomUUID(), odd.revision(), "REWRITE", "SIMPLER", null, id(phone)));
+        problem(personal, 400, "INVALID_REQUEST");
+        assertThat(json(personal).path("reason").stringValue(null)).isEqualTo("TARGET_PERSONAL_DATA");
         problem(edit(owner, deck, odd, editBody(UUID.randomUUID(), odd.revision(), "REWRITE", "SIMPLER", null, id(plain), id(phone))), 400, "INVALID_REQUEST");
         assertThat(editCalls()).isEmpty();
         assertThat(artifactState(proposal.artifact())).isEqualTo("PROPOSED");
@@ -920,5 +927,130 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
         awaitTurn(slow, "APPLIED");
         assertThat(reservationOfTurn(slow)).isEqualTo("SETTLED");
         assertThat(debits(owner) - debitsBefore).isGreaterThanOrEqualTo(4 + 10);
+    }
+
+    // ------------------------------------------------------------- review findings
+
+    @Test
+    void aRevisionFromBeforeARetryIsHistoryNotSomethingToRestoreAndTheOldDraftsTurnsAreNotListed() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        UUID note = note(owner, deck, "первая версия заметки");
+        Proposal proposal = proposal(owner, deck, spec(null, noteSource(note, 0)));
+        UUID target = id(blocks(detail(owner, deck, proposal)).get(0));
+        UUID turn = accepted(owner, deck, proposal, editBody(UUID.randomUUID(), proposal.revision(), "REWRITE", "SIMPLER", null, target));
+        awaitTurn(turn, "APPLIED");
+        Proposal edited = fresh(owner, deck, proposal);
+
+        // the note moves, the proposal goes stale and a retry writes it again from the new note (a new INITIAL revision)
+        jdbc.sql("UPDATE app_learning.capture_note SET row_version=row_version+1,note_text='вторая версия заметки',updated_at=CURRENT_TIMESTAMP "
+                + "WHERE note_id=:id").param("id", note).update();
+        problem(approve(owner, deck, edited, UUID.randomUUID()), 409, "GENERATION_STATE_CONFLICT");
+        Proposal stale = fresh(owner, deck, proposal);
+        assertThat(retry(owner, deck, stale, UUID.randomUUID(), stale.version()).getStatus()).isEqualTo(200);
+        awaitState(proposal.session(), "REVIEW");
+        Proposal rewritten = fresh(owner, deck, proposal);
+        assertThat(artifactState(proposal.artifact())).isEqualTo("PROPOSED");
+        assertThat(revisions(proposal.artifact())).isEqualTo(3);
+
+        // the earlier draft's revisions are not restorable (that would put old-source text under the new pins), its turns are not its history
+        for (UUID old : new UUID[] {proposal.revision(), edited.revision()}) {
+            MockHttpServletResponse refused = revert(owner, deck, rewritten, rewritten.version(), old);
+            problem(refused, 409, "GENERATION_STATE_CONFLICT");
+            assertThat(json(refused).path("reason").stringValue(null)).isEqualTo("ILLEGAL_STATE");
+        }
+        JsonNode detail = detail(owner, deck, proposal);
+        assertThat(detail.path("revisions")).hasSize(1);
+        assertThat(detail.path("revisions").get(0).path("revisionId").stringValue(null)).isEqualTo(rewritten.revision().toString());
+        assertThat(detail.path("revisions").get(0).path("cause").stringValue(null)).isEqualTo("INITIAL");
+        assertThat(detail.path("turns")).isEmpty();
+        // the old revisions stay readable
+        assertThat(detail(owner, deck, proposal, "?revisionId=" + proposal.revision()).path("revision").path("revisionId").stringValue(null))
+                .isEqualTo(proposal.revision().toString());
+        // and the new draft is edited from a clean history
+        UUID again = accepted(owner, deck, rewritten, editBody(UUID.randomUUID(), rewritten.revision(), "REWRITE", "SHORTER", null,
+                id(blocks(detail).get(0))));
+        awaitTurn(again, "APPLIED");
+        assertThat(editCalls().getLast().prompt()).contains("<history>\nнет предыдущих правок\n</history>");
+    }
+
+    @Test
+    void theHistoryIsTheAppliedInstructionsOfTheTextNowShownAndNeverAFailedOneOrOneThatWasRevertedAway() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        Proposal proposal = proposal(owner, deck, spec(MULTI));
+        UUID target = id(blocks(detail(owner, deck, proposal)).get(1));
+
+        UUID first = accepted(owner, deck, proposal, editBody(UUID.randomUUID(), proposal.revision(), "FREE", null, "первая правка", target));
+        awaitTurn(first, "APPLIED");
+        Proposal one = fresh(owner, deck, proposal);
+        UUID failed = accepted(owner, deck, one, editBody(UUID.randomUUID(), one.revision(), "FREE", null, "[[stub:refusal]] отказ", target));
+        awaitTurn(failed, "FAILED");
+        Proposal two = fresh(owner, deck, proposal);
+        UUID third = accepted(owner, deck, two, editBody(UUID.randomUUID(), two.revision(), "FREE", null, "третья правка", target));
+        awaitTurn(third, "APPLIED");
+        assertThat(editCalls().getLast().prompt()).contains("<history>\nпервая правка\n</history>").doesNotContain("отказ</history>");
+
+        // back to the original: nothing that was applied after it is history any more
+        Proposal now = fresh(owner, deck, proposal);
+        assertThat(revert(owner, deck, now, now.version(), proposal.revision()).getStatus()).isEqualTo(200);
+        Proposal base = fresh(owner, deck, proposal);
+        UUID fourth = accepted(owner, deck, base, editBody(UUID.randomUUID(), base.revision(), "FREE", null, "четвёртая правка", target));
+        awaitTurn(fourth, "APPLIED");
+        assertThat(editCalls().getLast().prompt()).contains("<history>\nнет предыдущих правок\n</history>");
+    }
+
+    @Test
+    void aTargetTooBigForTheOutputIsA422WithItsLimitAndRemovingMediaIsNotCappedAtThirtyRevisions() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        Proposal proposal = proposal(owner, deck, spec(MULTI));
+        ObjectNode[] long50 = new ObjectNode[8];
+        for (int index = 0; index < long50.length; index++) long50[index] = paragraph(("слово " + index + " ").repeat(300));
+        List<tools.jackson.databind.JsonNode> content = new ArrayList<>(List.of(heading(1, "Заголовок")));
+        content.addAll(List.of(long50));
+        Proposal big = withDocument(owner, proposal, document(content.toArray(new tools.jackson.databind.JsonNode[0])));
+        UUID[] all = new UUID[long50.length];
+        for (int index = 0; index < all.length; index++) all[index] = id(long50[index]);
+        MockHttpServletResponse refused = edit(owner, deck, big, editBody(UUID.randomUUID(), big.revision(), "REWRITE", "SHORTER", null, all));
+        problem(refused, 422, "RESOURCE_LIMIT_EXCEEDED");
+        assertThat(json(refused).path("limit").stringValue(null)).isEqualTo("EDIT_TARGET_SIZE");
+        assertThat(json(refused).path("limits").path("maxEditTargetTokens").intValue()).isEqualTo(2050);
+        assertThat(editCalls()).isEmpty();
+        assertThat(artifactState(proposal.artifact())).isEqualTo("PROPOSED");
+
+        // a removal reaches past the 30 revisions a rewrite stops at, and stops at the bound of the table
+        Proposal audio = proposal(owner, deck, audioSpec("[[fake:audio]] с аудио"));
+        UUID node = id(blocks(detail(owner, deck, audio)).get(2));
+        UUID text = id(blocks(detail(owner, deck, audio)).get(1));
+        jdbc.sql("UPDATE app_learning.generation_artifact SET revision_count=30 WHERE artifact_id=:id").param("id", audio.artifact()).update();
+        MockHttpServletResponse rewrite = edit(owner, deck, audio, editBody(UUID.randomUUID(), audio.revision(), "REWRITE", "SIMPLER", null, text));
+        problem(rewrite, 422, "RESOURCE_LIMIT_EXCEEDED");
+        assertThat(json(rewrite).path("limit").stringValue(null)).isEqualTo("REVISIONS_PER_ARTIFACT");
+        jdbc.sql("UPDATE app_learning.generation_artifact SET revision_count=40 WHERE artifact_id=:id").param("id", audio.artifact()).update();
+        problem(edit(owner, deck, audio, editBody(UUID.randomUUID(), audio.revision(), "REMOVE_MEDIA", null, null, node)), 422, "RESOURCE_LIMIT_EXCEEDED");
+        jdbc.sql("UPDATE app_learning.generation_artifact SET revision_count=30 WHERE artifact_id=:id").param("id", audio.artifact()).update();
+        assertThat(edit(owner, deck, audio, editBody(UUID.randomUUID(), audio.revision(), "REMOVE_MEDIA", null, null, node)).getStatus()).isEqualTo(202);
+        assertThat(jdbc.sql("SELECT revision_count FROM app_learning.generation_artifact WHERE artifact_id=:id").param("id", audio.artifact())
+                .query(Integer.class).single()).isEqualTo(31);
+    }
+
+    @Test
+    void anEditStepNobodyClaimedInTimeFailsItsTurnAndReleasesItsHold() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        Proposal proposal = proposal(owner, deck, spec(MULTI));
+        UUID target = id(blocks(detail(owner, deck, proposal)).get(1));
+        UUID turn = forgedEdit(owner, proposal, target, "READY");
+        jdbc.sql("UPDATE app_learning.generation_artifact_turn SET status='QUEUED' WHERE turn_id=:id").param("id", turn).update();
+        jdbc.sql("UPDATE app_learning.generation_step SET created_at=CURRENT_TIMESTAMP - interval '3 minutes' WHERE step_id=:id")
+                .param("id", stepOfTurn(turn)).update();
+
+        awaitTurn(turn, "FAILED");
+
+        assertThat(turnError(turn)).isEqualTo("DEADLINE_EXCEEDED");
+        assertThat(reservationOfTurn(turn)).isEqualTo("RELEASED");
+        assertThat(artifactState(proposal.artifact())).isEqualTo("PROPOSED");
+        assertThat(editCalls()).isEmpty();
     }
 }

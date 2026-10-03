@@ -25,6 +25,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -47,6 +48,8 @@ class EditContexts {
     private static final int FIRST_LINE = 120;
     private static final int MIN_TOKENS = 600;
     private static final int MAX_TOKENS = 4_500;
+    /** The most the blocks to rewrite may weigh: the answer holds them again (and a longer rewrite), within the output bound. */
+    static final int MAX_TARGET_TOKENS = (MAX_TOKENS - 400) / 2;
     private static final Map<String, String> PRESETS = Map.of("SIMPLER", "Проще", "SHORTER", "Короче", "EXAMPLE", "Пример",
             "LONGER", "Подробнее");
     private static final Set<String> BLOCK_TYPES = Set.of("paragraph", "heading", "list_item", "bullet_list", "ordered_list",
@@ -78,17 +81,28 @@ class EditContexts {
     // ------------------------------------------------------------------ editable
 
     /**
-     * Whether the model can be given this target: every block to rewrite must be expressible as MBM (a node it has no syntax for, an
-     * attribute it cannot carry or an opaque payload is refused before any model call) and its text must not contain what the prompt
-     * layer would redact (an e-mail address, a telephone or a card number).
+     * Why the model cannot be given this target, empty when it can: {@code TARGET_UNSUPPORTED_BLOCK} (a node it has no MBM syntax for,
+     * an attribute it cannot carry or an opaque payload) or {@code TARGET_PERSONAL_DATA} (the text holds what the prompt layer would
+     * redact, an e-mail address, a telephone or a card number, so the rewrite would replace it with a placeholder). Both are refused
+     * before any model call.
      */
-    boolean editable(EditTarget target) {
+    Optional<String> refusal(EditTarget target) {
         try {
-            Rendered rendered = render(target);
-            return Redactor.redact(rendered.text()).equals(rendered.text());
+            String text = render(target).text();
+            return Redactor.redact(text).equals(text) ? Optional.empty() : Optional.of("TARGET_PERSONAL_DATA");
         } catch (MbmUnsupportedContentException unsupported) {
-            return false;
+            return Optional.of("TARGET_UNSUPPORTED_BLOCK");
         }
+    }
+
+    /**
+     * The estimated tokens of the blocks to rewrite, which is what the output must hold again: a target above
+     * {@link #MAX_TARGET_TOKENS} does not fit the output bound and is refused at admission.
+     *
+     * @throws MbmUnsupportedContentException a block MBM cannot express (refused earlier by {@link #refusal})
+     */
+    int tokens(EditTarget target) {
+        return TokenCounter.estimate(render(target).text());
     }
 
     /**

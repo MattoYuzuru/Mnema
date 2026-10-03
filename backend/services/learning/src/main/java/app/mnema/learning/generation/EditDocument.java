@@ -51,18 +51,41 @@ final class EditDocument {
     }
 
     /**
-     * The document with the blocks {@code from..to} (inclusive indexes of the top-level blocks) replaced by {@code replacement}
-     * followed by {@code kept}, the media blocks of that range that the model never sees and an edit never drops. Everything
-     * outside the range is the original JSON.
+     * The document with the blocks {@code from..to} (inclusive indexes of the top-level blocks) replaced by {@code replacement}. The
+     * media blocks of {@code run} (the original blocks of that range) are never shown to the model and an edit never drops them: each
+     * stays right after the rewritten block that carries the node id of the nearest text block before it in the run (that id survives a
+     * rewrite whose block keeps its type), in its original order; one that opened the run stays first; one whose anchor is gone or
+     * changed type goes to the end of the range. Everything outside the range is the original JSON.
      */
-    static JsonNode replace(JsonNode document, int from, int to, List<JsonNode> replacement, List<JsonNode> kept) {
+    static JsonNode replace(JsonNode document, int from, int to, List<JsonNode> replacement, List<JsonNode> run) {
+        Set<UUID> rewritten = new LinkedHashSet<>();
+        replacement.forEach(block -> rewritten.add(id(block)));
+        List<JsonNode> leading = new ArrayList<>();
+        List<JsonNode> tail = new ArrayList<>();
+        Map<UUID, List<JsonNode>> after = new LinkedHashMap<>();
+        UUID anchor = null;
+        for (JsonNode block : run) {
+            if (!isMedia(block)) {
+                anchor = id(block);
+            } else if (anchor == null) {
+                leading.add(block);
+            } else if (rewritten.contains(anchor)) {
+                after.computeIfAbsent(anchor, ignored -> new ArrayList<>()).add(block);
+            } else {
+                tail.add(block);
+            }
+        }
         JsonNode copy = document.deepCopy();
         ObjectNode root = (ObjectNode) copy.path("root");
         ArrayNode content = (ArrayNode) root.path("content");
         List<JsonNode> merged = new ArrayList<>();
         for (int index = 0; index < from; index++) merged.add(content.get(index));
-        replacement.forEach(block -> merged.add(block.deepCopy()));
-        kept.forEach(block -> merged.add(block.deepCopy()));
+        leading.forEach(block -> merged.add(block.deepCopy()));
+        for (JsonNode block : replacement) {
+            merged.add(block.deepCopy());
+            after.getOrDefault(id(block), List.of()).forEach(media -> merged.add(media.deepCopy()));
+        }
+        tail.forEach(block -> merged.add(block.deepCopy()));
         for (int index = to + 1; index < content.size(); index++) merged.add(content.get(index));
         ArrayNode rebuilt = root.putArray("content");
         merged.forEach(rebuilt::add);

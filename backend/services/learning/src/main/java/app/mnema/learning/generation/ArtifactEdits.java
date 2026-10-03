@@ -52,6 +52,8 @@ class ArtifactEdits {
     /** The contract's limits of one artifact: instructions (turns) and revisions. */
     static final int MAX_TURNS = 50;
     static final int MAX_REVISIONS = 30;
+    /** What {@code REMOVE_MEDIA} may reach (it is exempt from {@link #MAX_REVISIONS}); the bound of the tables. */
+    static final int MAX_REVISIONS_REMOVAL = 40;
     static final int MAX_TARGETS = 50;
     static final int MAX_INSTRUCTION = 2_000;
     private static final Set<String> ACTIONS = Set.of("REWRITE", "IMAGE_SEARCH", "IMAGE_GENERATE", "AUDIO_REGENERATE", "FREE", "REMOVE_MEDIA");
@@ -154,7 +156,8 @@ class ArtifactEdits {
             } catch (IllegalArgumentException malformed) {
                 throw new InvalidRequestException();
             }
-            if (!node.toString().equals(id.stringValue()) || !seen.add(node)) throw new InvalidRequestException();
+            if (!node.toString().equals(id.stringValue())) throw new InvalidRequestException();
+            if (!seen.add(node)) throw InvalidRequestException.because("TARGET_NOT_CONTIGUOUS");
             result.add(node);
         }
         return result;
@@ -181,7 +184,9 @@ class ArtifactEdits {
         if (!artifact.state().equals("PROPOSED")) throw new GenerationStateConflictException(Reason.ILLEGAL_STATE);
         gate.requireEdit(request.action());
         if (!removal && repository.countedTurns(artifactId) >= MAX_TURNS) throw limit("TURNS_PER_ARTIFACT");
-        if (artifact.revisionCount() >= MAX_REVISIONS) throw limit("REVISIONS_PER_ARTIFACT");
+        // a removal only takes media away (at most eight directives), so it may use the headroom the table leaves above the cap
+        if (artifact.revisionCount() >= (removal ? MAX_REVISIONS_REMOVAL : MAX_REVISIONS)) throw limit("REVISIONS_PER_ARTIFACT");
+        if (!removal && contexts.tokens(target) > EditContexts.MAX_TARGET_TOKENS) throw limit("EDIT_TARGET_SIZE");
 
         return removal ? removeMedia(tx, artifact, revision, target, request) : rewrite(tx, artifact, target, request);
     }
@@ -191,10 +196,13 @@ class ArtifactEdits {
      * block the model can be given; for a media action only media blocks of that kind.
      */
     private EditTarget target(Revision revision, Request request) {
-        EditTarget target = EditTarget.resolve(revision.payload().path("document"), request.targets()).orElseThrow(InvalidRequestException::new);
+        EditTarget target = EditTarget.resolve(revision.payload().path("document"), request.targets())
+                .orElseThrow(() -> InvalidRequestException.because("TARGET_NOT_CONTIGUOUS"));
         switch (request.action()) {
             case "REWRITE", "FREE" -> {
-                if (target.text().isEmpty() || !contexts.editable(target)) throw new InvalidRequestException();
+                if (target.text().isEmpty()) throw InvalidRequestException.because("TARGET_MEDIA_ONLY");
+                Optional<String> refusal = contexts.refusal(target);
+                if (refusal.isPresent()) throw InvalidRequestException.because(refusal.get());
             }
             case "REMOVE_MEDIA" -> {
                 if (!target.onlyMedia()) throw new InvalidRequestException();
@@ -211,7 +219,8 @@ class ArtifactEdits {
 
     private static ResourceLimitExceededException limit(String name) {
         return new ResourceLimitExceededException(ProblemExtension.builder().put("limit", name)
-                .put("limits", Map.of("maxTurnsPerArtifact", MAX_TURNS, "maxRevisionsPerArtifact", MAX_REVISIONS)).build());
+                .put("limits", Map.of("maxTurnsPerArtifact", MAX_TURNS, "maxRevisionsPerArtifact", MAX_REVISIONS,
+                        "maxEditTargetTokens", EditContexts.MAX_TARGET_TOKENS)).build());
     }
 
     // -------------------------------------------------------------------- rewrite
@@ -288,7 +297,8 @@ class ArtifactEdits {
 
     /**
      * {@code revertArtifact}: the current-revision pointer moves to an earlier (or later) revision of the same artifact. No revision is
-     * created and none is deleted, so the history stays and the move can be undone by another revert. Refused while a turn runs.
+     * created and none is deleted, so the history stays and the move can be undone by another revert. Refused while a turn runs, and for a
+     * revision from before the artifact was last retried.
      */
     ReviewService.Result revert(UUID owner, UUID deckId, UUID sessionId, UUID artifactId, byte[] raw) {
         session(owner, deckId, sessionId);
@@ -321,6 +331,9 @@ class ArtifactEdits {
             throw new GenerationStateConflictException(Reason.ILLEGAL_STATE);
         }
         Revision target = repository.revision(artifactId, to).orElseThrow(ResourceNotFoundException::new);
+        // a retry wrote the artifact again from other pins: the revisions before that draft stand on sources it no longer has, so they are
+        // history (readable) but never restored (that would bypass the drift protection and leave media nodes without slots)
+        if (target.revisionNo() < repository.generationStart(artifactId)) throw new GenerationStateConflictException(Reason.ILLEGAL_STATE);
         if (to.equals(artifact.currentRevisionId())) return summary(artifact);
 
         JsonNode document = target.payload().path("document");

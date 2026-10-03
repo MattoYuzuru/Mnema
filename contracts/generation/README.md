@@ -264,7 +264,9 @@ by the owning task with a note here.
     - **Target.** `target.nodeIds` are 1..50 distinct node IDs of **consecutive** top-level blocks of the current revision (any request order); anything else
       (a nested node, an unknown or repeated ID, a gap) is `400 INVALID_REQUEST`, and so is a rewrite target the model cannot be given: a block MBM cannot express
       (`MbmUnsupportedContentException`: heading level 4+, `youtube`, opaque math, an attribute MBM cannot carry), a block whose text holds an e-mail address, a
-      telephone or a card number (the prompt layer redacts them, so the rewrite would overwrite the author's own data with a placeholder) and a run of media only.
+      telephone or a card number (the prompt layer redacts them, so the rewrite would overwrite the author's own data with a placeholder; digit groups inside a URL are not telephone numbers) and a run of media only. The 400 names its cause in the additive `reason`
+      member: `TARGET_NOT_CONTIGUOUS`, `TARGET_UNSUPPORTED_BLOCK`, `TARGET_PERSONAL_DATA`, `TARGET_MEDIA_ONLY`. The blocks to rewrite weigh at most 2050 estimated tokens (the output bound holds them
+      again): more is `422 RESOURCE_LIMIT_EXCEEDED` with `limit: EDIT_TARGET_SIZE`.
       The client sends every block a selection touches, media blocks inside the run included. The target is judged against the current revision, so it is checked
       after the `412` and before the state checks.
     - **Actions.** `REWRITE` (optional `preset` and `instruction`) and `FREE` (`instruction` required) run the EDIT step; `REMOVE_MEDIA` is deterministic and free (media
@@ -276,13 +278,15 @@ by the owning task with a note here.
     - **Context** (architecture section 7, `ai/prompts/v1/edit.md` used verbatim). The cacheable prefix is the material's own (core, style, skills, deck brief), then
       `document` = the outline of the material (`[[bN]] first line` of every top-level block, at most 200 lines around the target) followed by `<context_before>` (one
       neighbour), `<target>` (the blocks to rewrite in full MBM, each with the handle `b(index + 1)` that the outline shows) and `<context_after>`; `history` = the last five
-      finished instructions of the artifact (`APPLIED` or `FAILED`, preset and text); `preset` (the Russian label) and `instruction` last. Temperature 0.7; the output bound is
+      instructions that shaped the text now shown (`APPLIED` rewrites whose result revision is of the current draft and not later than the current revision, so never a failed one,
+      one reverted away or one of an older draft; preset and text, one line each); `preset` (the Russian label) and `instruction` last. Temperature 0.7; the output bound is
       about twice the target. A neighbour MBM cannot express is shown by its first line; a media block is shown as `[аудио]`, `[изображение]` or `[видео]` in the outline and
       the neighbours and never in the target. The prompt layer escapes `& < > "` in everything it shows, so the answer is **unescaped once** (the exact inverse) before it is compiled.
     - **Applying.** The answer is compiled in MBM edit mode with the target's handles (a block that starts with a target's handle and keeps its type keeps its node ID; a handle
       that is not a target, a repeated one and an omitted one are errors; no media directive, as `maxMedia` is 0; links only from the session allowlist and the links the
-      target already carried). The new document is the current document with the target range replaced by the compiled blocks **followed by the range's media blocks** (never
-      shown to the model, never dropped, same node, same slot); every block outside the range is the same JSON. It must pass `NativeDocumentReader`. One repair call, then one
+      target already carried). The new document is the current document with the target range replaced by the compiled blocks, and the range's media blocks (never
+      shown to the model, never dropped, same node, same slot) each right after the rewritten block that has the node ID of the nearest text block before it in the run (a media
+      block that opened the run stays first; one whose anchor is gone or changed type goes to the end of the range); every block outside the range is the same JSON. It must pass `NativeDocumentReader`. One repair call, then one
       on the strong route, then the turn is `FAILED(INVALID_OUTPUT)`. A success is a new revision (cause `EDIT`, the prompt version and route), the turn `APPLIED` with
       `resultRevisionId`, the artifact `PROPOSED` on it; a failure, a cancellation or a lost lease leaves the artifact `PROPOSED` on the unchanged revision. No database transaction
       is open during the provider call. A slot whose node is no longer in the document would become `REMOVED` (its hold dropped); the slots whose node is there follow the new
@@ -290,18 +294,22 @@ by the owning task with a note here.
     - **Usage.** A rewrite reserves its own hold at admission (`ReservationScope.TURN`, `EDIT_SELECTION`, 4 credits on rc-v1; insufficient is `409 USAGE_LIMIT_REACHED`, nothing
       changes), debits it with the result and releases it in the same transaction; a failed or cancelled turn releases it unspent (`USAGE_UPDATED` after each). A session that
       leaves `RUNNING` keeps the holds of the edits still working. The daily burst never parks an edit (a turn that waits for the next day is a turn that hangs); its debit
-      is still recorded. `429`, `5xx` and the router's fallbacks are the provider layer's; the step retries with backoff up to `learning.generation.step.max-attempts`.
-      Limits: 50 turns (`REMOVE_MEDIA` not counted) and 30 revisions per artifact, `422 RESOURCE_LIMIT_EXCEEDED` with `limit` `TURNS_PER_ARTIFACT` or
+      is still recorded. An EDIT step is offered to workers before drafts and fails its turn with `DEADLINE_EXCEEDED` (hold released) when no worker claimed it within
+      `learning.generation.edit.queue-timeout` (`PT2M`). `429`, `5xx` and the router's fallbacks are the provider layer's; the step retries with backoff up to `learning.generation.step.max-attempts`.
+      Limits: 50 turns (`REMOVE_MEDIA` not counted) and 30 revisions per artifact for a rewrite (`REMOVE_MEDIA` is exempt and may use the room up to 40, the bound of the tables, `V31`; a draft has at most eight media), `422 RESOURCE_LIMIT_EXCEEDED` with `limit` `TURNS_PER_ARTIFACT` or
       `REVISIONS_PER_ARTIFACT` (and `limits {maxTurnsPerArtifact, maxRevisionsPerArtifact}`).
     - **REMOVE_MEDIA** finishes in the request transaction: a new revision (cause `MEDIA`) without the nodes, their slots `REMOVED` (`MEDIA_SLOT_STATE`), the hold on their assets
       dropped and their waiting media steps cancelled, the turn recorded as `APPLIED` (`counts_toward_limit` false), no model call. This enforces the invariant `ReviewService`
       states: a `REMOVED` slot's node is gone from the current revision.
-    - **Revert** moves the pointer to any revision of the artifact (earlier or later), creates nothing and deletes nothing, and is refused while a turn is in flight. The artifact's
+    - **Revert** moves the pointer to any revision of the current draft (earlier or later), creates nothing and deletes nothing, and is refused while a turn is in flight. A retry writes the
+      artifact again from other pins as a new `INITIAL` revision; the revisions before it are history (readable with `?revisionId=`) but a revert to one is `409 ILLEGAL_STATE`, since it would
+      put old-source text under the new pins and media nodes without slots. The artifact's
       slots follow the revision shown: a slot whose node the revision holds is attached to it, one whose node it does not hold becomes `REMOVED`, and a `REMOVED` slot whose node is
       back is `FAILED` with `NO_RESULT` (the hold ended, so the node has no ready asset and approval answers `MEDIA_NOT_READY` until `REMOVE_MEDIA` removes it again). The unknown
       or foreign revision is `404`. «Ещё раз» is a client action: a new edit with the same target, preset and instruction and a new `commandId`, with its own hold.
-    - **Cancellation.** Cancelling or expiring the session cancels the QUEUED and RUNNING turns (`CANCELLED`), puts a `REVISING` artifact back to `PROPOSED` and releases the holds.
-    - **Reads.** `getArtifact` lists every turn (oldest first, `REMOVE_MEDIA` included) in the `turn` shape and every revision; `?revisionId=` returns any revision's payload; a
+    - **Cancellation.** Cancelling or expiring the session cancels the QUEUED and RUNNING turns (`CANCELLED`), puts a `REVISING` artifact back to `PROPOSED` and releases the holds. A step that expires
+      before it was claimed or loses its lease before the turn started fails a QUEUED turn (`QUEUED` to `FAILED` in `states.json`).
+    - **Reads.** `getArtifact` lists the turns of the current draft (oldest first, `REMOVE_MEDIA` included; a retry starts a new draft) in the `turn` shape and its revisions, which are the restorable ones; `?revisionId=` returns any revision's payload; a
       historic revision's `mediaSlots` are the slots of the media nodes it holds. The Stub answers an edit with the target blocks and their handles, each plain paragraph with one
       added sentence `Переписано: <preset label>.`
 

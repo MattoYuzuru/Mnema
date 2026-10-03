@@ -39,7 +39,8 @@ final class Rows {
 
     record Step(UUID stepId, UUID sessionId, UUID artifactId, UUID ownerId, String kind, String capability, String state,
                 int attempts, UUID leaseToken, Instant leaseUntil, Instant nextAttemptAt, Instant deadlineAt,
-                Instant startedAt, Instant firstClaimedAt, boolean cancelRequested, JsonNode input, String errorCode) { }
+                Instant startedAt, Instant firstClaimedAt, boolean cancelRequested, JsonNode input, String errorCode,
+                Instant createdAt) { }
 
     record Event(long seq, String type, UUID artifactId, JsonNode payload, Instant occurredAt) { }
 

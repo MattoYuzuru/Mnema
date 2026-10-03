@@ -81,6 +81,11 @@ class StepQueue {
                 && step.firstClaimedAt().plus(settings.step().maxLifetime()).isBefore(java.time.Instant.now())) {
             return new Look.Expired(step.stepId(), step.sessionId(), step.kind());
         }
+        // A person waits for an edit: one that no worker claimed in time is given up, its turn fails and its hold is released
+        if (step.kind().equals(EditExecutor.KIND) && step.firstClaimedAt() == null && step.createdAt() != null
+                && step.createdAt().plus(settings.edit().queueTimeout()).isBefore(java.time.Instant.now())) {
+            return new Look.Expired(step.stepId(), step.sessionId(), step.kind());
+        }
         int credits = step.input().path("credits").asInt(0);
         // An edit is interactive and costs a few credits: the daily burst never parks it for a day (a turn that waits is a turn that hangs)
         if (credits > 0 && !step.kind().equals(EditExecutor.KIND)) {

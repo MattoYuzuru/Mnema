@@ -848,6 +848,16 @@
         "to": "CANCELLED",
         "trigger": "session cancellation or artifact retry",
         "actor": "USER|SERVER"
+      },
+      {
+        "from": "QUEUED",
+        "to": "FAILED",
+        "trigger": "EDIT step expired before a worker claimed it (queue timeout), or lost its lease before the turn started",
+        "actor": "WORKER",
+        "emits": [
+          "ARTIFACT_STATE"
+        ],
+        "note": "errorCode DEADLINE_EXCEEDED or PROVIDER_UNAVAILABLE; the hold is released unspent and the artifact is PROPOSED again."
       }
     ]
   },

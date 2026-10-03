@@ -55,7 +55,6 @@ class EditDocumentTest {
         assertThat(run.to()).isEqualTo(2);
         assertThat(run.text()).extracting(EditTarget.Indexed::index).containsExactly(1, 2);
         assertThat(run.media()).isEmpty();
-        assertThat(run.noMedia()).isTrue();
 
         EditTarget withMedia = EditTarget.resolve(document, ids(document, 3, 4, 5)).orElseThrow();
         assertThat(withMedia.text()).extracting(EditTarget.Indexed::index).containsExactly(3, 5);
@@ -90,7 +89,7 @@ class EditDocumentTest {
         List<JsonNode> blocks = EditDocument.blocks(document);
         JsonNode newBlocks = compile("Новый абзац.\n\nЕщё один.");
 
-        JsonNode replaced = EditDocument.replace(document, 3, 4, EditDocument.blocks(newBlocks), List.of(blocks.get(4)));
+        JsonNode replaced = EditDocument.replace(document, 3, 4, EditDocument.blocks(newBlocks), blocks.subList(3, 5));
 
         List<JsonNode> after = EditDocument.blocks(replaced);
         assertThat(after).hasSize(7);
@@ -107,6 +106,47 @@ class EditDocumentTest {
         assertThat(replaced.path("formatVersion").intValue()).isEqualTo(1);
         List<JsonNode> without = EditDocument.blocks(EditDocument.without(document, Set.of(EditDocument.id(blocks.get(4)))));
         assertThat(without).hasSize(5).doesNotContain(blocks.get(4));
+    }
+
+    @Test
+    void mediaStaysBesideTheTextBlockItFollowedLeadingMediaStaysFirstAndOneWhoseAnchorIsGoneGoesToTheEndOfTheRange() {
+        String source = "::audio{slot=\"a0\" lang=\"ja\" title=\"Первое\"} 行く\n\nП1.\n\n::audio{slot=\"a1\" lang=\"ja\" title=\"Второе\"} 来る\n\n"
+                + "::audio{slot=\"a2\" lang=\"ja\" title=\"Третье\"} 見る\n\nП2.\n\n::audio{slot=\"a3\" lang=\"ja\" title=\"Четвёртое\"} 食べる\n\nП3.\n";
+        JsonNode document = compile(source);
+        List<JsonNode> run = EditDocument.blocks(document);
+        assertThat(run).extracting(block -> block.path("type").stringValue(null))
+                .containsExactly("audio", "paragraph", "audio", "audio", "paragraph", "audio", "paragraph");
+        UUID p1 = EditDocument.id(run.get(1));
+        UUID p2 = EditDocument.id(run.get(4));
+        UUID p3 = EditDocument.id(run.get(6));
+
+        // the model keeps the ids of P1 and P2 (types unchanged, handles used), P3 comes back as a heading (a new id)
+        JsonNode rewritten = compile("новый П1.\n\nновый П2.\n\n# Теперь заголовок");
+        List<JsonNode> blocks = EditDocument.blocks(rewritten);
+        ((ObjectNode) blocks.get(0)).put("id", p1.toString());
+        ((ObjectNode) blocks.get(1)).put("id", p2.toString());
+
+        List<JsonNode> after = EditDocument.blocks(EditDocument.replace(document, 0, 6, blocks, run));
+
+        assertThat(after).extracting(block -> block.path("type").stringValue(null))
+                .containsExactly("audio", "paragraph", "audio", "audio", "paragraph", "audio", "heading");
+        // a0 led the run and still does; a1 and a2 follow P1 in their order; a3 follows P2; P3 is gone, so nothing hangs on it
+        assertThat(after.get(0)).isEqualTo(run.get(0));
+        assertThat(EditDocument.id(after.get(1))).isEqualTo(p1);
+        assertThat(after.get(2)).isEqualTo(run.get(2));
+        assertThat(after.get(3)).isEqualTo(run.get(3));
+        assertThat(EditDocument.id(after.get(4))).isEqualTo(p2);
+        assertThat(after.get(5)).isEqualTo(run.get(5));
+        assertThat(EditDocument.id(after.get(6))).isNotEqualTo(p3);
+
+        // a media block after a text block that did not survive goes to the end of the range, before what follows the range
+        List<JsonNode> without = new java.util.ArrayList<>(blocks.subList(1, 3));
+        List<JsonNode> moved = EditDocument.blocks(EditDocument.replace(document, 0, 6, without, run));
+        assertThat(moved).extracting(block -> block.path("type").stringValue(null))
+                .containsExactly("audio", "paragraph", "audio", "heading", "audio", "audio");
+        assertThat(EditDocument.id(moved.get(1))).isEqualTo(p2);
+        assertThat(moved.get(2)).isEqualTo(run.get(5));
+        assertThat(moved.subList(4, 6)).containsExactly(run.get(2), run.get(3));
     }
 
     @Test
@@ -143,16 +183,19 @@ class EditDocumentTest {
     void theEditorOnlyAcceptsTargetsTheModelCanBeGiven() {
         EditContexts contexts = new EditContexts(null, null, null);
         JsonNode plain = compile("Обычный абзац.");
-        assertThat(contexts.editable(EditTarget.resolve(plain, ids(plain, 0)).orElseThrow())).isTrue();
+        assertThat(contexts.refusal(EditTarget.resolve(plain, ids(plain, 0)).orElseThrow())).isEmpty();
 
         ObjectNode withPhone = (ObjectNode) JSON.readTree(compile("Позвоните: +7 999 123 45 67").toString());
-        assertThat(contexts.editable(EditTarget.resolve(withPhone, ids(withPhone, 0)).orElseThrow())).isFalse();
+        assertThat(contexts.refusal(EditTarget.resolve(withPhone, ids(withPhone, 0)).orElseThrow())).contains("TARGET_PERSONAL_DATA");
         ObjectNode withMail = (ObjectNode) JSON.readTree(compile("Пишите на ivan@example.org").toString());
-        assertThat(contexts.editable(EditTarget.resolve(withMail, ids(withMail, 0)).orElseThrow())).isFalse();
+        assertThat(contexts.refusal(EditTarget.resolve(withMail, ids(withMail, 0)).orElseThrow())).contains("TARGET_PERSONAL_DATA");
         // a heading of level 4 has no MBM syntax
         ObjectNode deep = (ObjectNode) JSON.readTree(compile("### Заголовок").toString());
         ((ObjectNode) deep.path("root").path("content").get(0).path("attrs")).put("level", 4);
-        assertThat(contexts.editable(EditTarget.resolve(deep, ids(deep, 0)).orElseThrow())).isFalse();
+        assertThat(contexts.refusal(EditTarget.resolve(deep, ids(deep, 0)).orElseThrow())).contains("TARGET_UNSUPPORTED_BLOCK");
+        ObjectNode link = (ObjectNode) JSON.readTree(compile("Смотри https://example.org/a/123-456-7890").toString());
+        assertThat(contexts.refusal(EditTarget.resolve(link, ids(link, 0)).orElseThrow())).isEmpty();
+        assertThat(contexts.tokens(EditTarget.resolve(plain, ids(plain, 0)).orElseThrow())).isPositive();
     }
 
     @Test

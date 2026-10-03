@@ -79,6 +79,8 @@ class EditLifecycle {
         if (held.get().cancelRequested() || turn == null || !turn.open() || artifact == null || !artifact.state().equals("REVISING")
                 || !SessionLifecycle.runnable(tx.session)) {
             steps.finish(claim.stepId(), "CANCELLED", null, null);
+            // a turn still open here is over with its step: it ends cancelled and releases its hold, as in fail()
+            if (turn != null && turn.open() && artifact != null) cancelTurn(tx, held.get(), turn, artifact);
             return Optional.empty();
         }
         if (turn.status().equals("QUEUED")) repository.updateTurn(turn.turnId(), "RUNNING", null, null);
@@ -107,7 +109,13 @@ class EditLifecycle {
         if (held.get().cancelRequested() || turn == null || !turn.open() || artifact == null || !artifact.state().equals("REVISING")
                 || !SessionLifecycle.runnable(tx.session)) {
             steps.finish(claim.stepId(), "CANCELLED", null, null);
+            if (turn != null && turn.open() && artifact != null) cancelTurn(tx, held.get(), turn, artifact);
             return false;
+        }
+        // the rewrite was made of the revision the turn was admitted on; if the pointer moved meanwhile it is stale and is not stored
+        if (!held.get().input().path("revisionId").stringValue("").equals(String.valueOf(artifact.currentRevisionId()))) {
+            finishFailed(tx, held.get(), turn, artifact, "INVALID_OUTPUT");
+            return true;
         }
         UUID reservation = reservation(held.get());
         try {

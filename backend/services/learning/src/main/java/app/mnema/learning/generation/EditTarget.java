@@ -58,9 +58,4 @@ record EditTarget(int from, int to, List<JsonNode> blocks, List<Indexed> text, L
     boolean onlyMedia() {
         return text.isEmpty();
     }
-
-    /** True when the run holds media (nothing for the model to rewrite there). */
-    boolean noMedia() {
-        return media.isEmpty();
-    }
 }

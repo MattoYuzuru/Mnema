@@ -39,7 +39,7 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler(InvalidRequestException.class)
     ResponseEntity<Object> handleInvalidRequest(InvalidRequestException exception, HttpServletRequest request) {
-        return response(ApiErrorCode.INVALID_REQUEST, request.getRequestURI(), new HttpHeaders());
+        return response(ApiErrorCode.INVALID_REQUEST, request, exception);
     }
 
     @ExceptionHandler(CapabilityUnavailableException.class)

@@ -525,12 +525,28 @@ class GenerationRepository {
                 .param("artifact", artifactId).param("id", revisionId).query(REVISION).optional();
     }
 
-    /** Revision list of an artifact without payloads: {@code {revisionId, cause, createdAt}}, oldest first. */
+    /**
+     * Revision list of an artifact without payloads: {@code {revisionId, cause, createdAt}}, oldest first. Only the revisions of the current
+     * generation of the draft are listed, the ones a revert may restore: a retry writes a new INITIAL revision against new pins, and the
+     * revisions before it belong to sources the artifact no longer stands on.
+     */
     List<Revision> revisionList(UUID artifactId) {
         return jdbc.sql("SELECT revision_id,artifact_id,revision_no,cause,'{}'::text AS payload,'{}'::text AS handles,"
                         + "prompt_version,model_route,'{}'::text AS validation,created_at "
-                        + "FROM app_learning.generation_artifact_revision WHERE artifact_id=:artifact ORDER BY revision_no")
-                .param("artifact", artifactId).query(REVISION).list();
+                        + "FROM app_learning.generation_artifact_revision WHERE artifact_id=:artifact AND revision_no>=:start ORDER BY revision_no")
+                .param("artifact", artifactId).param("start", generationStart(artifactId)).query(REVISION).list();
+    }
+
+    /** The number of the latest INITIAL revision: the first revision of the current generation of the draft (1 when there is none). */
+    int generationStart(UUID artifactId) {
+        return jdbc.sql("SELECT COALESCE(max(revision_no),1) FROM app_learning.generation_artifact_revision WHERE artifact_id=:artifact AND cause='INITIAL'")
+                .param("artifact", artifactId).query(Integer.class).single();
+    }
+
+    /** The number of a revision of the artifact, empty when it is not one of its revisions. */
+    Optional<Integer> revisionNumber(UUID artifactId, UUID revisionId) {
+        return jdbc.sql("SELECT revision_no FROM app_learning.generation_artifact_revision WHERE artifact_id=:artifact AND revision_id=:id")
+                .param("artifact", artifactId).param("id", revisionId).query(Integer.class).optional();
     }
 
     // ---------------------------------------------------------------- media slots
@@ -677,10 +693,14 @@ class GenerationRepository {
                 .param("id", turnId).query(TURN).optional();
     }
 
-    /** Every turn of an artifact, oldest first (the order the user made them in). */
+    /**
+     * The turns of the artifact's current generation of the draft, oldest first (the order the user made them in): what a retry rewrote
+     * from new sources is a new draft, and the instructions given to the old one are not part of its history.
+     */
     List<Turn> turns(UUID artifactId) {
-        return jdbc.sql("SELECT " + TURN_COLUMNS + " FROM app_learning.generation_artifact_turn WHERE artifact_id=:id "
-                + "ORDER BY created_at,turn_id").param("id", artifactId).query(TURN).list();
+        return jdbc.sql("SELECT " + TURN_COLUMNS + " FROM app_learning.generation_artifact_turn t WHERE artifact_id=:id AND created_at>="
+                        + "(SELECT COALESCE(max(created_at),'-infinity') FROM app_learning.generation_artifact_revision WHERE artifact_id=:id AND cause='INITIAL') "
+                        + "ORDER BY created_at,turn_id").param("id", artifactId).query(TURN).list();
     }
 
     /** The turn that keeps the artifact REVISING (at most one exists), if any. */
@@ -695,10 +715,18 @@ class GenerationRepository {
                 .param("id", artifactId).query(Integer.class).single();
     }
 
-    /** The last {@code limit} finished instructions (APPLIED or FAILED) of the artifact before {@code before}, newest first. */
+    /**
+     * The last {@code limit} instructions that shaped the text now shown, newest first: APPLIED rewrites (never a failed one) whose
+     * result is a revision of the current generation of the draft that is not later than the current revision, so a turn that was
+     * reverted away or belongs to an older draft is not history.
+     */
     List<Turn> recentTurns(UUID artifactId, UUID before, int limit) {
         return jdbc.sql("SELECT " + TURN_COLUMNS + " FROM app_learning.generation_artifact_turn WHERE artifact_id=:id "
-                        + "AND turn_id<>:before AND status IN ('APPLIED','FAILED') AND action IN ('REWRITE','FREE') "
+                        + "AND turn_id<>:before AND status='APPLIED' AND action IN ('REWRITE','FREE') AND result_revision_id IN ("
+                        + "SELECT r.revision_id FROM app_learning.generation_artifact_revision r JOIN app_learning.generation_artifact a "
+                        + "ON a.artifact_id=r.artifact_id JOIN app_learning.generation_artifact_revision c ON c.revision_id=a.current_revision_id "
+                        + "WHERE r.artifact_id=:id AND r.revision_no<=c.revision_no AND r.revision_no>="
+                        + "(SELECT COALESCE(max(revision_no),1) FROM app_learning.generation_artifact_revision WHERE artifact_id=:id AND cause='INITIAL')) "
                         + "ORDER BY created_at DESC,turn_id DESC LIMIT :limit")
                 .param("id", artifactId).param("before", before).param("limit", limit).query(TURN).list();
     }

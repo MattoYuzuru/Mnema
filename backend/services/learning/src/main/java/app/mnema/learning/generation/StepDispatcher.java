@@ -51,6 +51,8 @@ class StepDispatcher implements DisposableBean {
     private final EditLifecycle edits;
     private final GenerationSettings settings;
     private final Map<String, StepExecutor> executors;
+    /** The executors in the order they are offered work: the interactive EDIT first, so a person waiting for a rewrite is not behind a batch. */
+    private final List<StepExecutor> offered;
     private final Map<AiCapability, Semaphore> permits = new EnumMap<>(AiCapability.class);
     private final ExecutorService threads = Executors.newVirtualThreadPerTaskExecutor();
     private final AtomicBoolean draining = new AtomicBoolean();
@@ -68,6 +70,7 @@ class StepDispatcher implements DisposableBean {
         this.edits = edits;
         this.settings = settings;
         this.executors = executors.stream().collect(java.util.stream.Collectors.toUnmodifiableMap(StepExecutor::kind, e -> e));
+        this.offered = executors.stream().sorted(java.util.Comparator.comparing(executor -> !executor.kind().equals(EditExecutor.KIND))).toList();
         for (StepExecutor executor : executors) {
             permits.computeIfAbsent(executor.capability(), capability -> new Semaphore(ai.permits().of(capability)));
         }
@@ -154,7 +157,7 @@ class StepDispatcher implements DisposableBean {
     }
 
     private boolean startOne() {
-        for (StepExecutor executor : executors.values()) {
+        for (StepExecutor executor : offered) {
             Semaphore permit = permits.get(executor.capability());
             if (!permit.tryAcquire()) continue;
             Optional<StepClaim> claim;

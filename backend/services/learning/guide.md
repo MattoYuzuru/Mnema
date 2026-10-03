@@ -372,7 +372,7 @@ by `AttemptService.submit` on every terminal result (the attempt's transaction).
 ## Selection edits (#293)
 
 `editArtifact` and `revertArtifact` of a material ([decision 15](../../../contracts/generation/README.md), architecture section 7), in `app.mnema.learning.generation`.
-No migration: `generation_artifact_turn` (V28) and the `EDIT` step kind existed.
+`generation_artifact_turn` (V28) and the `EDIT` step kind existed; `V31__generation_revision_headroom.sql` raises the table bound of `revision_count` and `revision_no` from 30 to 40 so that `REMOVE_MEDIA` (exempt from the 30-revision cap of a rewrite, at most eight media per draft) can always store its revision.
 
 - **Admission** (`ArtifactEdits`, `POST .../artifacts/{id}/edits` answers `202 {turn, artifact}`, `POST .../revert` answers `200` with the artifact summary): the contract's order of
   evaluation, in one transaction under the session lock: replay, 400 body, 412 `expectedRevisionId`, 400 target (`EditTarget.resolve`: consecutive top-level blocks;
@@ -389,8 +389,15 @@ No migration: `generation_artifact_turn` (V28) and the `EDIT` step kind existed.
   `PROPOSED`; `fail`, `recover` (expired lease) and `expire` (lifetime) end the turn `FAILED`/`CANCELLED`, release the hold unspent and put the artifact back to `PROPOSED`
   on its old revision. `StepDispatcher.recoverExpired` and `StepQueue` route an `EDIT` step to them (an artifact step would otherwise be cancelled with the artifact stuck in
   REVISING). `SessionLifecycle.stopWork` (cancel and expiry) cancels open turns and returns REVISING artifacts to PROPOSED; `settle` does not release the holds of edits
-  still working. The daily burst never parks an edit (`StepQueue`).
-- **Reads**: `SessionViews.artifactDetail` lists `turns` and the slots of the media nodes the shown revision holds; `?revisionId=` was already there.
+  still working. The daily burst never parks an edit (`StepQueue`); `StepDispatcher` offers EDIT first, `pickDue` orders by `priority` (an EDIT step is inserted with 10) and `StepQueue` fails an EDIT step that no worker
+  claimed within `learning.generation.edit.queue-timeout` (`PT2M`, from `created_at`) through `EditLifecycle.expire` (turn `FAILED(DEADLINE_EXCEEDED)`, hold released). A void step (cancelled, lost lease, revision moved)
+  also ends its turn and releases its hold.
+- **Reads**: `SessionViews.artifactDetail` lists the `turns` and `revisions` of the current generation of the draft (from the latest `INITIAL` revision: a retry starts a new draft and its older revisions are
+  not restorable, `ArtifactEdits.moveTo` refuses them with `ILLEGAL_STATE`) and the slots of the media nodes the shown revision holds; `?revisionId=` reads any revision. The prompt's history is the APPLIED
+  rewrites whose result revision is in that generation and not after the current revision (`GenerationRepository.recentTurns`).
+- **For AI-09 and AI-10 (media executors)**: a media step must update its slot by `slotKey` (a slot row is one per key and is attached to whichever revision is current: `revision_id` moves with edits and reverts), never
+  by the revision it was created for, and must treat a slot whose state is `REMOVED` as gone. A revert that restores a node whose slot was `REMOVED` marks it `FAILED(NO_RESULT)` and does **not** restore its
+  `generation_media_ref` hold (removal deleted it), so the asset is only reachable again through a new media step.
 - **Stub**: `StubEdits` answers `<task kind="edit">` with the target blocks and their handles, each plain paragraph with one added sentence `Переписано: <preset>.`.
 - Tests: `GenerationEditsIntegrationTest` (real context, PostgreSQL and the Stub; `GenerationEditsSupport` has the requests and the built documents; the test provider's
   `[[fake:hold-edit]]` holds an edit call), `EditDocumentTest` (targets, handles, range replacement, the MBM round trip, what is editable), `StubEditsTest`.

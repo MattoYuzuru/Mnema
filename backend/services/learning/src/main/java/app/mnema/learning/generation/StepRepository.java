@@ -23,14 +23,14 @@ import java.util.UUID;
 @Repository
 class StepRepository {
     private static final String COLUMNS = "step_id,session_id,artifact_id,owner_id,kind,capability,state,attempts,lease_token,"
-            + "lease_until,next_attempt_at,deadline_at,started_at,first_claimed_at,cancel_requested,input::text AS input,error_code";
+            + "lease_until,next_attempt_at,deadline_at,started_at,first_claimed_at,cancel_requested,input::text AS input,error_code,created_at";
     private static final RowMapper<Step> STEP = (row, ignored) -> new Step(row.getObject("step_id", UUID.class),
             row.getObject("session_id", UUID.class), row.getObject("artifact_id", UUID.class),
             row.getObject("owner_id", UUID.class), row.getString("kind"), row.getString("capability"),
             row.getString("state"), row.getInt("attempts"), row.getObject("lease_token", UUID.class),
             optional(row, "lease_until"), GenerationRepository.instant(row, "next_attempt_at"), optional(row, "deadline_at"),
             optional(row, "started_at"), optional(row, "first_claimed_at"), row.getBoolean("cancel_requested"), Json.read(row.getString("input")),
-            row.getString("error_code"));
+            row.getString("error_code"), GenerationRepository.instant(row, "created_at"));
 
     private final JdbcClient jdbc;
 
@@ -45,9 +45,9 @@ class StepRepository {
 
     void insert(UUID stepId, UUID sessionId, UUID artifactId, UUID owner, String kind, String capability, JsonNode input,
                 String idempotencyKey) {
-        jdbc.sql("INSERT INTO app_learning.generation_step(step_id,session_id,artifact_id,owner_id,kind,capability,state,input,"
+        jdbc.sql("INSERT INTO app_learning.generation_step(step_id,session_id,artifact_id,owner_id,kind,capability,state,priority,input,"
                         + "idempotency_key,next_attempt_at,created_at,updated_at) VALUES (:id,:session,:artifact,:owner,:kind,"
-                        + ":capability,'READY',CAST(:input AS jsonb),:key,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)")
+                        + ":capability,'READY',CASE WHEN :kind='EDIT' THEN 10 ELSE 0 END,CAST(:input AS jsonb),:key,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)")
                 .param("id", stepId).param("session", sessionId).param("artifact", artifactId).param("owner", owner)
                 .param("kind", kind).param("capability", capability).param("input", Json.write(input))
                 .param("key", idempotencyKey).update();
@@ -68,7 +68,7 @@ class StepRepository {
                         + "AND (SELECT count(*) FROM app_learning.generation_step r WHERE r.owner_id=s.owner_id "
                         + "AND r.state='RUNNING')<:cap AND EXISTS (SELECT 1 FROM app_learning.generation_session g "
                         + "WHERE g.session_id=s.session_id AND g.state IN ('RUNNING','REVIEW')) "
-                        + "ORDER BY s.next_attempt_at,s.created_at,s.step_id LIMIT 1 FOR UPDATE OF s SKIP LOCKED")
+                        + "ORDER BY s.priority DESC,s.next_attempt_at,s.created_at,s.step_id LIMIT 1 FOR UPDATE OF s SKIP LOCKED")
                 .param("kinds", kinds).param("cap", accountCap).query(STEP).optional();
     }
 

@@ -461,7 +461,7 @@
       ],
       "notes": [
         "ITEM payload is a native-v1 document; EXERCISE payload is the objective and exercise members of the exercise publication command (contracts/study); commandId and expectedDeckRevisionId are supplied at approval.",
-        "turns lists every turn of the artifact, oldest first, in the turn shape (REMOVE_MEDIA turns included); revisions lists every revision {revisionId, cause INITIAL | EDIT | MEDIA | REPIN, createdAt}, oldest first; ?revisionId= returns any revision's payload (an unknown one is 404) while currentRevisionId stays the pointer, so a client builds the diff of an edit from the previous and the result revision. mediaSlots are the slots of the media nodes the shown revision holds, whichever revision each slot is attached to now.",
+        "turns lists the turns of the current generation of the draft, oldest first, in the turn shape (REMOVE_MEDIA turns included; a retry starts a new draft, so earlier instructions are not listed); revisions lists the revisions of that generation {revisionId, cause INITIAL | EDIT | MEDIA | REPIN, createdAt}, oldest first, which are the ones a revert may restore; ?revisionId= returns any revision's payload, older generations included (an unknown one is 404) while currentRevisionId stays the pointer, so a client builds the diff of an edit from the previous and the result revision. mediaSlots are the slots of the media nodes the shown revision holds, whichever revision each slot is attached to now.",
         "An EXERCISE detail adds the read-only display {mechanic, objectiveTitle, quotes}: the mechanic, the title of the objective the exercise evidences (the offered or the new one) and the plain text of every MATERIAL node the exercise quotes, by node id, as it reads in the pinned revision (so a client renders MATERIAL blocks without further requests). It is absent for ITEM artifacts and when revision is null. The artifact title is the first TEXT block of the prompt, else the objective title.",
         "Model route, prompt version and provenance are never returned.",
         "Read-only: never changes state."
@@ -865,7 +865,8 @@
         {
           "status": 400,
           "code": "INVALID_REQUEST",
-          "when": "Malformed or unknown field, duplicate JSON key, bad UUID or version; a preset without REWRITE; FREE without an instruction; a target that is not consecutive top-level blocks of the current revision (a nested node, an unknown or repeated ID, a gap); a rewrite target the model cannot be given (a block MBM cannot express, a block whose text holds an e-mail, a telephone or a card number, a run of media only); a media action on blocks of the wrong kind."
+          "when": "Malformed or unknown field, duplicate JSON key, bad UUID or version; a preset without REWRITE; FREE without an instruction; a media action on blocks of the wrong kind; or a target the edit cannot use, named by the additive `reason` member: TARGET_NOT_CONTIGUOUS (a nested node, an unknown or repeated ID, a gap), TARGET_UNSUPPORTED_BLOCK (a block MBM cannot express), TARGET_PERSONAL_DATA (a block whose text holds an e-mail address, a telephone or a card number) or TARGET_MEDIA_ONLY (a rewrite of media blocks only).",
+          "reason": "TARGET_NOT_CONTIGUOUS | TARGET_UNSUPPORTED_BLOCK | TARGET_PERSONAL_DATA | TARGET_MEDIA_ONLY (absent for the other 400s)"
         },
         {
           "status": 404,
@@ -907,19 +908,21 @@
         {
           "status": 422,
           "code": "RESOURCE_LIMIT_EXCEEDED",
-          "when": "50 turns or 30 revisions already exist on the artifact.",
-          "limit": "TURNS_PER_ARTIFACT | REVISIONS_PER_ARTIFACT"
+          "when": "50 turns or 30 revisions already exist on the artifact (REMOVE_MEDIA is not counted as a turn and may use the revisions up to 40), or the blocks to rewrite are too big for the output bound.",
+          "limit": "TURNS_PER_ARTIFACT | REVISIONS_PER_ARTIFACT | EDIT_TARGET_SIZE"
         }
       ],
       "notes": [
-        "A block is the unit: a selection inside a paragraph widens to its block. nodeIds must be CONSECUTIVE top-level blocks of the current revision, in any request order, and include every block the selection touches, media blocks inside the run too (a skipped media block is a gap); anything else is INVALID_REQUEST.",
+        "A block is the unit: a selection inside a paragraph widens to its block. nodeIds must be CONSECUTIVE top-level blocks of the current revision, in any request order, and include every block the selection touches, media blocks inside the run too (a skipped media block is a gap); anything else is INVALID_REQUEST with reason TARGET_NOT_CONTIGUOUS.",
         "Evaluation order: 404, receipt replay, 400 body, 412 expectedRevisionId, 400 target (it can only be judged against the current revision), 409 state (session, artifact, EDIT_IN_PROGRESS, EXERCISE), 409 capability, 422 limits, 409 usage last. Nothing changes state before the usage step passes.",
         "REWRITE and FREE (as EDIT_SELECTION, 4 credits on rc-v1) create their own turn-scoped reservation (scope TURN) at admission; insufficient means 409 USAGE_LIMIT_REACHED before any state change. The hold is debited when the turn is APPLIED and released unspent when it FAILS or is CANCELLED. «Ещё раз» is a new edit with a new commandId and takes its own hold. IMAGE_SEARCH, IMAGE_GENERATE and AUDIO_REGENERATE (priced as in usage.json) are refused with 409 CAPABILITY_UNAVAILABLE until AI-09 and AI-10 (decision 15).",
         "A rewrite is 202 with the turn QUEUED and the artifact REVISING; the worker runs one EDIT step (PT2M, at most three model calls: the answer, one repair, one on the strong route). The result is a new revision (cause EDIT), the turn APPLIED with resultRevisionId and the artifact PROPOSED on it; on failure the turn is FAILED with an errorCode, the artifact PROPOSED on the unchanged revision and nothing is debited. The client follows ARTIFACT_STATE and re-reads getArtifact (turns[], revisions[]).",
         "REMOVE_MEDIA (extension to the architecture list) is free and deterministic: no model call, no reservation. It answers 202 like every edit, with the turn already APPLIED (example turnRemoveMedia), cause MEDIA, creates a revision without the media nodes (their slots become REMOVED and the hold on their assets ends) and does not count toward the 50 turns. It is the only action accepted in a CANCELLED session.",
-        "A rewrite never shows media to the model and never drops it: the media blocks of the target run stay in the document (same node, same slot, now attached to the new revision) and end up after the rewritten blocks of the run.",
+        "A rewrite never shows media to the model and never drops it: each media block of the target run stays in the document (same node, same slot, now attached to the new revision) right after the rewritten block that carries the node ID of the nearest text block before it in the run, in its original order; a media block that opened the run stays first, and one whose anchor did not survive the rewrite (gone or changed type) goes to the end of the range.",
         "EXERCISE artifacts: every edit answers 409 GENERATION_STATE_CONFLICT with reason ILLEGAL_STATE until AI-16 (#294) defines the exercise edit flow.",
-        "Every block outside the target is the same JSON in the new revision (same node IDs); a rewritten block whose type is unchanged keeps its node ID (MBM handle rule), its descendants and new blocks get new IDs."
+        "Every block outside the target is the same JSON in the new revision (same node IDs); a rewritten block whose type is unchanged keeps its node ID (MBM handle rule), its descendants and new blocks get new IDs.",
+        "The blocks to rewrite may weigh at most 2050 estimated tokens (the output bound of 4500 holds them again and a longer rewrite): a bigger target is 422 RESOURCE_LIMIT_EXCEEDED with limit EDIT_TARGET_SIZE and limits.maxEditTargetTokens; the client splits the selection.",
+        "The edit is interactive: its step is offered to workers before drafts, is never parked by the daily burst, and fails its turn with DEADLINE_EXCEEDED (hold released) when no worker claimed it within learning.generation.edit.queue-timeout (PT2M)."
       ]
     },
     {
@@ -960,7 +963,7 @@
         {
           "status": 409,
           "code": "GENERATION_STATE_CONFLICT",
-          "when": "Operation not allowed in the current session or artifact state: the session is not RUNNING or REVIEW, the artifact is not PROPOSED (a turn in flight makes it REVISING, which refuses a revert), or it is an EXERCISE (until AI-16 #294).",
+          "when": "Operation not allowed in the current session or artifact state: the session is not RUNNING or REVIEW, the artifact is not PROPOSED (a turn in flight makes it REVISING, which refuses a revert), it is an EXERCISE (until AI-16 #294), or the revision is from before the artifact was last retried.",
           "reason": "ILLEGAL_STATE"
         },
         {
@@ -970,7 +973,7 @@
         }
       ],
       "notes": [
-        "toRevisionId must be one of the artifact's revisions (at most 30), earlier or later than the current one; the current revision is a 200 no-op. No revision is created and none is deleted, so the history (revisions, turns) stays and a revert can be undone by another revert; an edit made after a revert is a new revision (a branch).",
+        "toRevisionId must be one of the revisions listed by getArtifact (the current generation of the draft, at most 30 for rewrites): earlier or later than the current one; the current revision is a 200 no-op. A revision from before the artifact was last retried (a retry writes a new INITIAL revision from other pins) is history, readable with ?revisionId= but never restored: 409 ILLEGAL_STATE. No revision is created and none is deleted, so the history (revisions, turns) stays and a revert can be undone by another revert; an edit made after a revert is a new revision (a branch).",
         "Evaluation order: 404, receipt replay, 400 body, 412 expectedArtifactVersion, 409 state, 404 unknown revision.",
         "Media slots follow the shown revision: a slot whose node the revision holds is attached to it, one whose node it does not hold becomes REMOVED. Restoring a revision whose media node had its slot REMOVED shows the node without a ready asset (the hold ended): the slot is FAILED with errorCode NO_RESULT (a MEDIA_SLOT_STATE event), so approval answers 409 MEDIA_NOT_READY until REMOVE_MEDIA removes the node again.",
         "Events: ARTIFACT_STATE (PROPOSED, new artifactVersion and currentRevisionId) and MEDIA_SLOT_STATE for each slot that changed state."

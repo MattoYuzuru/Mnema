@@ -207,16 +207,19 @@ class GenerationUnitTest {
                 new GenerationSettings.Step(3, Duration.ofSeconds(5), Duration.ofMinutes(2), Duration.ofMinutes(6), Duration.ofHours(1)),
                 new GenerationSettings.Stream(Duration.ofMillis(750), 24_576),
                 new GenerationSettings.Context(200, 40, 40, 2_500, 6_000, 12_000, 5_000),
-                new GenerationSettings.Retention(Duration.ofMinutes(10), Duration.ofDays(1), Duration.ofDays(3), Duration.ofDays(1), 50));
+                new GenerationSettings.Retention(Duration.ofMinutes(10), Duration.ofDays(1), Duration.ofDays(3), Duration.ofDays(1), 50),
+                new GenerationSettings.Edit(Duration.ofMinutes(2)));
         assertThat(defaults.maxActiveSessions()).isEqualTo(3);
         assertThatThrownBy(() -> new GenerationSettings(Duration.ZERO, 3, java.math.BigDecimal.ONE, 0.5, defaults.worker(), defaults.step(),
-                defaults.stream(), defaults.context(), defaults.retention())).isInstanceOf(IllegalArgumentException.class);
+                defaults.stream(), defaults.context(), defaults.retention(), defaults.edit())).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new GenerationSettings(Duration.ofDays(1), 0, java.math.BigDecimal.ONE, 0.5, defaults.worker(), defaults.step(),
-                defaults.stream(), defaults.context(), defaults.retention())).isInstanceOf(IllegalArgumentException.class);
+                defaults.stream(), defaults.context(), defaults.retention(), defaults.edit())).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new GenerationSettings(Duration.ofDays(1), 3, java.math.BigDecimal.ZERO, 0.5, defaults.worker(), defaults.step(),
-                defaults.stream(), defaults.context(), defaults.retention())).isInstanceOf(IllegalArgumentException.class);
+                defaults.stream(), defaults.context(), defaults.retention(), defaults.edit())).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new GenerationSettings(Duration.ofDays(1), 3, java.math.BigDecimal.ONE, 1.5, defaults.worker(), defaults.step(),
-                defaults.stream(), defaults.context(), defaults.retention())).isInstanceOf(IllegalArgumentException.class);
+                defaults.stream(), defaults.context(), defaults.retention(), defaults.edit())).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new GenerationSettings.Edit(Duration.ZERO)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new GenerationSettings.Edit(Duration.ofHours(2))).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new GenerationSettings.Retention(Duration.ZERO, Duration.ofDays(1), Duration.ofDays(3), Duration.ofDays(1), 50))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new GenerationSettings.Retention(Duration.ofMinutes(1), Duration.ofDays(1), Duration.ZERO, Duration.ofDays(1), 50))

@@ -101,7 +101,11 @@ class EditExecutor implements StepExecutor {
         Artifact artifact = repository.artifact(claim.sessionId(), claim.artifactId()).orElse(null);
         Revision revision = artifact == null ? null : repository.revision(artifact.artifactId(),
                 UUID.fromString(claim.input().path("revisionId").stringValue(""))).orElse(null);
-        if (session == null || artifact == null || revision == null) return;
+        if (session == null || artifact == null || revision == null) {
+            // nothing to rewrite: the turn must not stay RUNNING (a deleted session writes nothing and this is a no-op)
+            finish(claim, Failure.fail("INVALID_OUTPUT"));
+            return;
+        }
 
         EditContext context;
         try {
@@ -207,14 +211,14 @@ class EditExecutor implements StepExecutor {
     /**
      * The compiled range spliced into the current document, read by {@code NativeDocumentReader}; empty when the document would
      * not be accepted (too large, too many nodes). Blocks outside the target are carried over unchanged, and the media blocks of
-     * the target stay where the rewrite ends.
+     * the target stay beside the text block they followed.
      */
     private Optional<EditLifecycle.Result> splice(Artifact artifact, Revision revision, EditContext context, MbmResult.Success success,
                                                   String modelRoute, long providerCostMicros) {
         String promptVersion = context.prompt().promptVersion();
         List<JsonNode> rewritten = EditDocument.blocks(success.document());
         JsonNode merged = EditDocument.replace(revision.payload().path("document"), context.target().from(), context.target().to(),
-                rewritten, context.target().media());
+                rewritten, context.target().blocks());
         NativeDocument validated;
         try {
             validated = new NativeDocumentReader().read(merged.toString().getBytes(StandardCharsets.UTF_8));
