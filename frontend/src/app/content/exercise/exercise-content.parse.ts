@@ -1,6 +1,6 @@
 import { isCanonicalEntityId } from '../../features/own-decks/own-deck.models';
 import {
-    AI_LEVELS, AiRubric, AuthoringBlock, ChoiceOption, ClozeBlankKey, ClozeBlankSegment, ClozeSegment, ClozeSize,
+    AiCriterion, AiRubric, CRITERION_TIERS, CRITERION_WEIGHTS, AuthoringBlock, ChoiceOption, ClozeBlankKey, ClozeBlankSegment, ClozeSegment, ClozeSize,
     COMPACT_SLOT, Category, CategorizeItem, ExerciseSpec, LIMITS, LearnerBlock, LearnerClozeSegment, LearnerContent, MatchItem,
     MECHANICS, Mechanic, NORMALIZATION_RULES, NormalizationRule, ObjectiveCommand, OrderItem, PROMPT_SLOTS, REFERENCE_SLOTS,
     SEQUENCE_SLOT, SLOT_PROFILES, SlotProfile, SlotSpec, authoringSlots, categoryLabelKey, codePointLength, distinguishableItems, isBlank,
@@ -198,19 +198,25 @@ function textAnswer(object: Record<string, unknown>, limits: { readonly min: num
 }
 
 function aiRubric(value: unknown): AiRubric {
-    const object = exactObject(value, ['referenceAnswer', 'criteria', 'levels']);
-    const criteria = array(object['criteria'], LIMITS.aiCriteria.min, LIMITS.aiCriteria.max).map(entry => {
-        const criterion = exactObject(entry, ['criterionId', 'description', 'critical']);
-        return { criterionId: id(criterion['criterionId']),
-            description: nonblank(criterion['description'], LIMITS.aiCriteria.description), critical: bool(criterion['critical']) };
+    const object = exactObject(value, ['referenceAnswer', 'criteria', 'misconceptions', 'acceptableTerms']);
+    const limits = LIMITS.aiRubric;
+    const criteria = array(object['criteria'], 3, limits.criteria.max).map(entry => {
+        const criterion = exactObject(entry, ['criterionId', 'description', 'tier', 'weight']);
+        const weight = criterion['weight'];
+        if (typeof weight !== 'number' || !(CRITERION_WEIGHTS as readonly number[]).includes(weight)) fail('Invalid weight.');
+        return { criterionId: id(criterion['criterionId']), description: nonblank(criterion['description'], limits.description),
+            tier: oneOf(criterion['tier'], CRITERION_TIERS), weight: weight as AiCriterion['weight'] };
     });
     unique(criteria.map(entry => entry.criterionId));
-    const levels = array(object['levels'], AI_LEVELS.length, AI_LEVELS.length).map(entry => {
-        const level = exactObject(entry, ['level', 'description']);
-        return { level: oneOf(level['level'], AI_LEVELS), description: nonblank(level['description'], LIMITS.aiCriteria.description) };
-    });
-    if (levels.some((entry, index) => entry.level !== AI_LEVELS[index])) fail('Levels must follow the contract order.');
-    return { referenceAnswer: nonblank(object['referenceAnswer'], LIMITS.aiReferenceAnswer), criteria, levels };
+    for (const tier of CRITERION_TIERS) {
+        const count = criteria.filter(entry => entry.tier === tier).length;
+        if (count < limits.tiers[tier].min || count > limits.tiers[tier].max) fail('Invalid number of key points of one tier.');
+    }
+    return { referenceAnswer: nonblank(object['referenceAnswer'], limits.referenceAnswer), criteria,
+        misconceptions: array(object['misconceptions'], 0, limits.misconceptions.max)
+            .map(entry => nonblank(entry, limits.misconceptions.length)),
+        acceptableTerms: array(object['acceptableTerms'], 0, limits.acceptableTerms.max)
+            .map(entry => nonblank(entry, limits.acceptableTerms.length)) };
 }
 
 function evaluator<I extends string>(value: unknown, expected: I): { readonly id: I; readonly version: '1' } {

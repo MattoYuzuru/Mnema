@@ -88,7 +88,7 @@ function stepOwns(step: StepId, key: string): boolean {
         case 'prompt':
         case 'context': return key === 'prompt';
         case 'reference': return key === 'reference';
-        case 'answers': return key === 'accepted' || key === 'reference';
+        case 'answers': return key === 'accepted' || key === 'reference' || key.startsWith('rubric:');
         case 'passage': return key === 'passage' || key.startsWith('blank:');
         case 'options': return key === 'options' || key === 'selection' || key.startsWith('option:');
         case 'pairs': return key === 'pairs' || key.startsWith('left:') || key.startsWith('right:');
@@ -363,7 +363,11 @@ export class ExerciseAuthoringPageComponent {
     }
 
     stepNumber(index: number): number { return index + 2; }
-    titleOf(step: StepId): string { return stepTitle(this.mechanic()!, step); }
+    titleOf(step: StepId): string {
+        const mechanic = this.mechanic()!;
+        return mechanic === 'FREE_RESPONSE' && step === 'answers' && this.drafts().FREE_RESPONSE.aiRubric !== null
+            ? 'Эталон и пункты проверки' : stepTitle(mechanic, step);
+    }
     typeTitle(type: Mechanic): string { return catalogEntry(type).title; }
     promptLabel(step: StepId): string { return PROMPT_LABELS[step]; }
     promptHint(): string | null { return PROMPT_HINTS[this.mechanic()!] ?? null; }

@@ -1,5 +1,5 @@
 import {
-    AiRubric, AuthoringBlock, Category, ChoiceOption, ClozeBlankKey, ClozeSegment, ClozeSize, COMPACT_SLOT, ExerciseSpec,
+    AuthoringBlock, Category, ChoiceOption, ClozeBlankKey, ClozeSegment, ClozeSize, COMPACT_SLOT, ExerciseSpec,
     ExerciseSubject, LIMITS, LearnerBlock, LearnerClozeSegment, LearnerContent, MatchingMode, MatchItem, Mechanic, NORMALIZATION_RULES,
     NormalizationRule, OrderItem, PROMPT_SLOTS, PreviewExercise, REFERENCE_SLOTS, ResponseInput, SEQUENCE_SLOT, SLOT_PROFILES,
     SelectionMode, SlotSpec, authoringSlots, categoryLabelKey, codePointLength, distinguishableItems, isBlank, mediaBlockCount
@@ -7,6 +7,7 @@ import {
 import { blockProblem, isEntityId, slotProblem } from '../../content/exercise/exercise-content.parse';
 import { NativeDocument } from '../../content/native-document';
 import { ExerciseProjection } from './exercise.models';
+import { AiRubricDraft, rubricDraft, rubricErrors, rubricSpec } from './ai-rubric-draft';
 
 /**
  * Editable state of one exercise per mechanic. Drafts are plain immutable values: switching the mechanic
@@ -27,8 +28,8 @@ export interface FreeResponseDraft {
     readonly reference: readonly AuthoringBlock[];
     readonly answer: TextAnswerDraft;
     readonly responseInput: ResponseInput;
-    /** Present only when an existing exercise was authored with AI checking; this editor cannot create one. */
-    readonly aiRubric: AiRubric | null;
+    /** Rubric v1 while «Проверять смысл ответа с ИИ» is on; `null` means the deterministic list of accepted answers. */
+    readonly aiRubric: AiRubricDraft | null;
 }
 export interface ClozeBlankDraft {
     readonly blankId: string;
@@ -150,7 +151,7 @@ export function draftsFromDetail(detail: ExerciseSpec): ExerciseDrafts {
         case 'SELF_CHECK': return { ...drafts, SELF_CHECK: { prompt: detail.content.prompt, reference: detail.content.reference } };
         case 'FREE_RESPONSE': return { ...drafts, FREE_RESPONSE: { prompt: detail.content.prompt, reference: detail.content.reference,
             answer: answerDraft(detail.answerKey), responseInput: detail.content.responseInput,
-            aiRubric: detail.evaluatorPolicy.id === 'ai-semantic' ? detail.evaluatorPolicy.rubric : null } };
+            aiRubric: detail.evaluatorPolicy.id === 'ai-semantic' ? rubricDraft(detail.evaluatorPolicy.rubric) : null } };
         case 'CLOZE': {
             const texts: string[] = [''];
             const blanks: ClozeBlankDraft[] = [];
@@ -196,6 +197,17 @@ function textKey(answer: TextAnswerDraft) {
     return { accepted: answer.rows.map(row => row.value), normalization: answer.normalization, matchingMode: answer.matchingMode };
 }
 
+/**
+ * The server still requires a TEXT answer key for an AI-checked exercise although the grader never reads it. The
+ * author is not asked for it: the typed list is kept when it is valid (an existing exercise round-trips unchanged),
+ * otherwise the key is the first characters of the reference answer, compared strictly.
+ */
+function aiAnswerKey(draft: FreeResponseDraft, rubric: AiRubricDraft) {
+    if (answerErrorMessage(draft.answer, LIMITS.freeResponseAccepted) === null) return textKey(draft.answer);
+    const first = Array.from(rubric.referenceAnswer.trim()).slice(0, LIMITS.freeResponseAccepted.length).join('').trim();
+    return { accepted: [first], normalization: [...NORMALIZATION_RULES], matchingMode: 'STRICT' as const };
+}
+
 /** Builds the publication payload for the selected mechanic. It may be invalid until `validateDraft` passes. */
 export function buildSpec(type: Mechanic, drafts: ExerciseDrafts, subject: ExerciseSubject, enabled: boolean): ExerciseSpec {
     const base = { schemaVersion: 2 as const, enabled, subject };
@@ -205,9 +217,9 @@ export function buildSpec(type: Mechanic, drafts: ExerciseDrafts, subject: Exerc
         case 'FREE_RESPONSE': {
             const draft = drafts.FREE_RESPONSE;
             return { ...base, type, content: { prompt: draft.prompt, reference: draft.reference, responseInput: draft.responseInput },
-                answerKey: { kind: 'TEXT', ...textKey(draft.answer) },
+                answerKey: { kind: 'TEXT', ...(draft.aiRubric === null ? textKey(draft.answer) : aiAnswerKey(draft, draft.aiRubric)) },
                 evaluatorPolicy: draft.aiRubric === null ? { id: 'deterministic-text', version: '1' }
-                    : { id: 'ai-semantic', version: '1', rubric: draft.aiRubric } };
+                    : { id: 'ai-semantic', version: '1', rubric: rubricSpec(draft.aiRubric) } };
         }
         case 'CLOZE': {
             const draft = drafts.CLOZE;
@@ -305,8 +317,11 @@ export function validateDraft(type: Mechanic, drafts: ExerciseDrafts, context: S
             const draft = drafts.FREE_RESPONSE;
             check('prompt', draft.prompt, PROMPT_SLOTS.FREE_RESPONSE);
             check('reference', draft.reference, REFERENCE_SLOTS.FREE_RESPONSE);
-            const message = answerErrorMessage(draft.answer, LIMITS.freeResponseAccepted);
-            if (message !== null) errors['accepted'] = message;
+            if (draft.aiRubric !== null) Object.assign(errors, rubricErrors(draft.aiRubric));
+            else {
+                const message = answerErrorMessage(draft.answer, LIMITS.freeResponseAccepted);
+                if (message !== null) errors['accepted'] = message;
+            }
             break;
         }
         case 'CLOZE': {

@@ -1076,7 +1076,8 @@ describe('ExerciseAuthoringPageComponent', () => {
         const ai = clone(mechanics['rejectedAiAssessment'].exercise) as ExerciseSpec;
         configure(detailOf(ai), 'error');
         expect(component().capabilities()).toEqual(CAPABILITIES_UNAVAILABLE);
-        expect(page().querySelector<HTMLInputElement>('input[role="switch"]')?.disabled).toBe(true);
+        // An exercise already checked by AI can always be switched back to a deterministic one; it can never be switched on.
+        expect(page().querySelector<HTMLInputElement>('input[role="switch"]')?.disabled).toBe(false);
         expect(page().querySelector<HTMLInputElement>('input[role="switch"]')?.checked).toBe(true);
         component().save();
         expect(api.update).not.toHaveBeenCalled();
@@ -1809,6 +1810,180 @@ describe('ExerciseAuthoringPageComponent', () => {
         it('has no way back to a Workshop when the address names none', () => {
             configure(null);
             expect(component().workshopLink()).toBeNull();
+        });
+    });
+
+    describe('AI rubric (rubric v1)', () => {
+        const AVAILABLE: LearningCapabilities = { ...CAPABILITIES_UNAVAILABLE, aiAssessment: { available: true, reason: null } };
+        const toggle = () => page().querySelector<HTMLInputElement>('app-free-response-editor input[role="switch"]')!;
+        const rubricEditor = () => page().querySelector('app-ai-rubric-editor');
+        const points = () => [...page().querySelectorAll<HTMLElement>('app-ai-rubric-editor li[data-criterion]')];
+        const field = (selector: string) => page().querySelector<HTMLInputElement | HTMLTextAreaElement>(selector)!;
+        const edit = (element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, value: string, event = 'input') => {
+            element.value = value;
+            element.dispatchEvent(new Event(event));
+            refresh();
+        };
+
+        function fill(): void {
+            component().setPrompt([text('Объясните, что такое инерция.')]);
+            refresh();
+            edit(field('#free-response-rubric-reference'), 'Инерция — свойство тела сохранять скорость.');
+            const descriptions = points().map(point => point.querySelector<HTMLTextAreaElement>('textarea')!);
+            ['Говорит о сохранении скорости', 'Называет условие: нет воздействия', 'Приводит пример'].forEach((value, index) => edit(descriptions[index], value));
+        }
+
+        it('enables the switch only when the capability is available and then shows the rubric editor instead of the answer list', () => {
+            configure(null, AVAILABLE);
+            select('FREE_RESPONSE');
+            expect(toggle().disabled).toBe(false);
+            expect(toggle().checked).toBe(false);
+            expect(page().textContent).toContain('сравнит ответ с эталоном');
+            expect(page().querySelector('app-text-answer-editor')).not.toBeNull();
+            expect(rubricEditor()).toBeNull();
+
+            toggle().click();
+            refresh();
+            expect(toggle().checked).toBe(true);
+            expect(rubricEditor()).not.toBeNull();
+            expect(page().querySelector('app-text-answer-editor')).toBeNull();
+            expect(points().length).toBe(3);
+            expect(page().querySelector('#step-answers-title')?.textContent).toContain('Эталон и пункты проверки');
+            expect(page().querySelector('#free-response-rubric-reference')).not.toBeNull();
+        });
+
+        it('keeps the rubric when the switch is turned off and on again, and returns to the deterministic list', () => {
+            configure(null, AVAILABLE);
+            select('FREE_RESPONSE');
+            toggle().click();
+            refresh();
+            edit(field('#free-response-rubric-reference'), 'Мой эталон');
+            toggle().click();
+            refresh();
+            expect(rubricEditor()).toBeNull();
+            expect(page().querySelector('app-text-answer-editor')).not.toBeNull();
+            expect(component().drafts().FREE_RESPONSE.aiRubric).toBeNull();
+            toggle().click();
+            refresh();
+            expect(field('#free-response-rubric-reference').value).toBe('Мой эталон');
+        });
+
+        it('publishes an exact rubric v1 with a derived answer key and the criteria in the authored order', () => {
+            configure(null, AVAILABLE);
+            select('FREE_RESPONSE');
+            toggle().click();
+            refresh();
+            fill();
+            const second = points()[1];
+            edit(second.querySelector<HTMLSelectElement>('select[id$="-weight"]')!, '2', 'change');
+            buttonByText('+ Добавить пункт').click();
+            refresh();
+            const added = points()[3];
+            edit(added.querySelector<HTMLTextAreaElement>('textarea')!, 'Называет слово «инерция»');
+            edit(added.querySelector<HTMLSelectElement>('select[id$="-tier"]')!, 'TERM', 'change');
+            const details = page().querySelector<HTMLDetailsElement>('app-ai-rubric-editor details.fine')!;
+            expect(details.open).toBe(false);
+            expect(details.textContent).toContain('Тонкая настройка');
+            buttonByText('+ Добавить ошибку').click();
+            refresh();
+            edit(page().querySelector<HTMLInputElement>('app-ai-rubric-editor details input[type="text"]')!, 'Скорость не сохраняется');
+            buttonByText('+ Добавить термин').click();
+            refresh();
+            const inputs = page().querySelectorAll<HTMLInputElement>('app-ai-rubric-editor details input[type="text"]');
+            edit(inputs[1], 'инертность');
+            expect(details.open).toBe(true);
+            component().setObjectiveTitle('Инерция');
+            component().save();
+            refresh();
+            const spec = created().exercise as Extract<ExerciseSpec, { type: 'FREE_RESPONSE' }>;
+            expect(parseExerciseSpec(spec)).toEqual(spec);
+            const policy = spec.evaluatorPolicy as { id: string; version: string; rubric: Record<string, unknown> };
+            expect(policy.id).toBe('ai-semantic');
+            expect(policy.version).toBe('1');
+            expect(Object.keys(policy.rubric)).toEqual(['referenceAnswer', 'criteria', 'misconceptions', 'acceptableTerms']);
+            const criteria = policy.rubric['criteria'] as { tier: string; weight: number; description: string; criterionId: string }[];
+            expect(criteria.map(entry => [entry.tier, entry.weight, entry.description])).toEqual([
+                ['CORE', 3, 'Говорит о сохранении скорости'], ['CORE', 2, 'Называет условие: нет воздействия'],
+                ['DETAIL', 1, 'Приводит пример'], ['TERM', 1, 'Называет слово «инерция»']]);
+            expect(new Set(criteria.map(entry => entry.criterionId)).size).toBe(4);
+            expect(policy.rubric['misconceptions']).toEqual(['Скорость не сохраняется']);
+            expect(policy.rubric['acceptableTerms']).toEqual(['инертность']);
+            expect(spec.answerKey).toEqual({ kind: 'TEXT', accepted: ['Инерция — свойство тела сохранять скорость.'],
+                normalization: ['UNICODE_NFC', 'TRIM', 'CASE_FOLD'], matchingMode: 'STRICT' });
+        });
+
+        it('explains the 2-3 / 1-4 / 0-2 rule with live counters and blocks saving until it holds', () => {
+            configure(null, AVAILABLE);
+            select('FREE_RESPONSE');
+            toggle().click();
+            refresh();
+            const counts = () => page().querySelector('app-ai-rubric-editor .tier-counts')!.textContent!.replace(/\s+/g, ' ');
+            expect(counts()).toContain('Суть: 2 (нужно 2–3)');
+            expect(counts()).toContain('Детали: 1 (нужно 1–4)');
+            expect(counts()).toContain('Термины: 0 (нужно 0–2)');
+            expect(page().querySelector('app-ai-rubric-editor .tier-counts')?.getAttribute('role')).toBe('status');
+            const detail = points()[2];
+            edit(detail.querySelector<HTMLSelectElement>('select[id$="-tier"]')!, 'TERM', 'change');
+            expect(counts()).toContain('Детали: 0 (нужно 1–4) · добавьте');
+            expect(page().querySelector('app-ai-rubric-editor .tier-count.off')).not.toBeNull();
+            fill();
+            component().setObjectiveTitle('Инерция');
+            component().save();
+            refresh();
+            expect(api.create).not.toHaveBeenCalled();
+            expect(page().querySelector('app-ai-rubric-editor fieldset.points .field-error')?.textContent).toContain('«Детали» (0)');
+            edit(points()[2].querySelector<HTMLSelectElement>('select[id$="-tier"]')!, 'DETAIL', 'change');
+            component().save();
+            refresh();
+            expect(api.create).toHaveBeenCalledTimes(1);
+        });
+
+        it('flags an empty reference answer and an empty key point next to their fields', () => {
+            configure(null, AVAILABLE);
+            select('FREE_RESPONSE');
+            toggle().click();
+            refresh();
+            component().setPrompt([text('Вопрос')]);
+            component().setObjectiveTitle('Цель');
+            component().save();
+            refresh();
+            expect(api.create).not.toHaveBeenCalled();
+            const reference = field('#free-response-rubric-reference');
+            expect(reference.getAttribute('aria-invalid')).toBe('true');
+            expect(page().querySelector(`#${reference.getAttribute('aria-describedby')!.split(' ').pop()}`)?.textContent).toContain('эталонный ответ');
+            expect(points()[0].querySelector('.field-error')?.textContent).toContain('Опишите пункт');
+            expect(points()[0].querySelector('textarea')?.getAttribute('aria-invalid')).toBe('true');
+        });
+
+        it('moves focus to the new key point on add and to the neighbour on remove, and never allows more than nine points', async () => {
+            configure(null, AVAILABLE);
+            select('FREE_RESPONSE');
+            toggle().click();
+            refresh();
+            buttonByText('+ Добавить пункт').click();
+            refresh();
+            await fixture.whenStable();
+            expect(points().length).toBe(4);
+            expect(document.activeElement).toBe(points()[3].querySelector('textarea'));
+            (points()[1].querySelector('button[aria-label="Убрать пункт 2"]') as HTMLButtonElement).click();
+            refresh();
+            await fixture.whenStable();
+            expect(points().length).toBe(3);
+            expect(document.activeElement).toBe(points()[1].querySelector('textarea'));
+            while (points().length < 9) { buttonByText('+ Добавить пункт').click(); refresh(); }
+            expect(buttonByText('+ Добавить пункт').disabled).toBe(true);
+        });
+
+        it('loads an existing rubric into the editor, keeps its answer key and round-trips it', () => {
+            const ai = clone(mechanics['rejectedAiAssessment'].exercise) as ExerciseSpec;
+            configure(detailOf(ai), AVAILABLE);
+            expect(toggle().checked).toBe(true);
+            expect(toggle().disabled).toBe(false);
+            expect(points().length).toBe(4);
+            expect(field('#free-response-rubric-reference').value).toContain('Инерция');
+            component().save();
+            refresh();
+            expect(lastCall(api.update)[6]).toEqual(ai);
         });
     });
 
