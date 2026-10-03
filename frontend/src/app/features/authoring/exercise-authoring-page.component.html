@@ -147,7 +147,11 @@
             }
 
             @if (canContinueFrom(index)) {
-              @for (problem of stepProblems(); track $index) { <p class="field-error step-problem">Чтобы продолжить, исправьте: {{ problem }}</p> }
+              @if (stepProblems().length > 0) {
+                <div role="alert">
+                  @for (problem of stepProblems(); track $index) { <p class="field-error step-problem">Чтобы продолжить, исправьте: {{ problem }}</p> }
+                </div>
+              }
               <button class="button primary continue" type="button" data-continue (click)="continueFrom(step)">Продолжить</button>
             }
           </section>

@@ -76,6 +76,22 @@ class AttemptCommandTest {
     }
 
     @Test
+    void aTextResponseMayNameItsSourceTypedByDefaultOrSpeech() {
+        assertThat(((AttemptCommand.TextResponse) read(submit("freeResponse")).response()).answerSource()).isEqualTo("TYPED");
+        AttemptCommand speech = read(mutate("freeResponse", body -> response(body).put("answerSource", "SPEECH")));
+        assertThat(((AttemptCommand.TextResponse) speech.response()).answerSource()).isEqualTo("SPEECH");
+        assertThat(((AttemptCommand.TextResponse) read(mutate("freeResponse", body -> response(body).put("answerSource", "TYPED")))
+                .response()).typed()).isTrue();
+        for (String bad : new String[] {"VOICE", "", "speech", " "}) {
+            assertInvalid(mutate("freeResponse", body -> response(body).put("answerSource", bad)));
+        }
+        assertInvalid(mutate("freeResponse", body -> response(body).put("answerSource", 7)));
+        assertInvalid(mutate("freeResponse", body -> response(body).putNull("answerSource")));
+        // only a text response has a source
+        assertInvalid(mutate("selfCheck", body -> response(body).put("answerSource", "TYPED")));
+    }
+
+    @Test
     void clozeResponsesNeedUniqueBlankIdsAndBoundedText() {
         assertInvalid(mutate("cloze", body -> response(body).withArray("blanks").removeAll()));
         assertInvalid(mutate("cloze", body -> ((ObjectNode) response(body).withArray("blanks").get(1))

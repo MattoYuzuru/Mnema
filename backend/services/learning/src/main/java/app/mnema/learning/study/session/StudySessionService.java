@@ -355,9 +355,16 @@ public class StudySessionService {
             result.put("nextCursor", cursor(session));
         } else result.putNull("nextCursor");
         ArrayNode values = result.putArray("presentations");
+        // an answer that is being assessed by the model, or waits for the learner's own rating, keeps its presentation pending (the
+        // terminal receipt is not written yet) and names its attempt, so that a reload resumes it instead of answering again
+        Map<UUID, JsonNode> assessments = repository.pendingAssessments(session.accountId(), session.sessionId());
         repository.pendingPresentations(session.accountId(), session.sessionId(), session.batchStart(),
-                Math.max(1, session.batchSize())).stream().limit(session.batchSize())
-                .forEach(row -> values.add(presentation(row)));
+                Math.max(1, session.batchSize())).stream().limit(session.batchSize()).forEach(row -> {
+                    ObjectNode projected = presentation(row);
+                    JsonNode assessment = assessments.get(row.presentationId());
+                    if (assessment != null) projected.set("assessment", assessment.deepCopy());
+                    values.add(projected);
+                });
         return result;
     }
 

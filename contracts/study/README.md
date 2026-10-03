@@ -60,7 +60,7 @@ listening-specific exercise type.
 | Mechanic | Interaction | Answer key (`answerKey.kind`) | Evaluator |
 |---|---|---|---|
 | `SELF_CHECK` | explicit reveal of the reference, then behavioral self-rating | `SELF_REPORT` | `self-check` |
-| `FREE_RESPONSE` | one text answer, whatever the prompt contains | `TEXT`: any one accepted alternative, explicit normalization, `STRICT`/`SOFT` | `deterministic-text` (`ai-semantic` reserved, §AI) |
+| `FREE_RESPONSE` | one text answer, whatever the prompt contains | `TEXT`: any one accepted alternative, explicit normalization, `STRICT`/`SOFT` | `deterministic-text`, or `ai-semantic` (§AI assessment) |
 | `CLOZE` | one text input per blank in an authored passage | `CLOZE`: accepted answers per `blankId` | `deterministic-cloze` |
 | `CHOICE` | `SINGLE` or `MULTIPLE` selection of authored options | `CHOICE`: exact set of `correctOptionIds` | `deterministic-choice` |
 | `MATCH` | one-to-one pairing of independently shuffled left/right items | `MATCH`: bijection `pairs[{leftId,rightId}]` | `deterministic-match` |
@@ -170,17 +170,89 @@ exists, so a mistakenly enabled flag yields `PROVIDER_NOT_CONFIGURED`, never a f
 [generation contract](../generation/http.json) `getCapabilities`) as `{available, reason}` with
 `reason ∈ DISABLED | PROVIDER_NOT_CONFIGURED | TEMPORARILY_UNAVAILABLE` (null when available) and no provider details.
 
-`FREE_RESPONSE` may declare `evaluatorPolicy {id:"ai-semantic", version:"1", rubric}` with a
-typed rubric (`referenceAnswer`; 1..10 `criteria {criterionId, description, critical}`; exactly
-the levels `COMPLETE`, `PARTIAL`, `INSUFFICIENT` with descriptions) or `content.responseInput =
-TEXT_OR_SPEECH`. While the matching capability is unavailable, publication fails with 409
-`CAPABILITY_UNAVAILABLE` after structural validation; Study skips such candidates, and an issued
-`ai-semantic` presentation evaluates to `UNAVAILABLE` + `EVALUATOR_UNAVAILABLE` with no exact-match
-fallback. A future evaluator maps `COMPLETE→CORRECT`, `PARTIAL→PARTIAL`, `INSUFFICIENT→INCORRECT`,
-provider uncertainty to `UNSURE` and provider failure to `UNAVAILABLE`; it returns evaluation and
-evidence only and never writes `StudyState`. There is no speech-to-text endpoint or response kind.
-Author audio recording is ordinary media upload and does not depend on either flag. The provider
-foundation itself remains issue #77.
+`FREE_RESPONSE` may declare `evaluatorPolicy {id:"ai-semantic", version:"1", rubric}` (rubric v1 below) or `content.responseInput =
+TEXT_OR_SPEECH`. While the matching capability is unavailable, publication fails with 409 `CAPABILITY_UNAVAILABLE` after structural
+validation; Study skips such candidates for new sessions. `aiAssessment` is available when its flag is on **and** an adapter is
+configured on the server's `assess` route (a provider key, or the deterministic Stub in local runs and CI) and the route is healthy.
+There is still no speech-to-text endpoint or response kind. Author audio recording is ordinary media upload and does not depend on either flag.
+
+### AI assessment of free explanations (`ai-semantic`, #292)
+
+**Rubric v1** (`evaluatorPolicy.rubric`, strict, replaces the earlier `critical`/`levels` shape; nothing could have been published with it
+because the capability never existed): `referenceAnswer` (1..4000); `criteria` 3..10 of `{criterionId, description (1..500), tier, weight}`
+with `tier ∈ CORE | DETAIL | TERM` and `weight` 1..3 inside the tier; `misconceptions` 0..10 strings (≤300); `acceptableTerms` 0..30 strings
+(≤80). The tier counts are **2..3 CORE** (the essence), **1..4 DETAIL** (completeness) and **0..2 TERM** (terminology); a violation is the opaque
+`400 INVALID_REQUEST`. All four members are required (arrays may be empty). The model never sees tiers or weights. The `TEXT` answer key stays
+required and is not used by the evaluator; `content.reference` is shown after the answer as `referenceContent`.
+
+**Cost and limits.** The grader's prompt is bounded so that every valid exercise is gradable (question cut at 16,000 characters). One provider attempt of the `assess` route takes at most `learning.ai.routes.assess-attempt-cap` (8 s), so the fallback provider has time inside the 20 s deadline.
+
+**Roles.** The model only returns, per criterion, a verdict `MET | PARTLY | NOT_MET | CONTRADICTED | UNCLEAR` with a quote and a short note
+(prompt `ai/prompts/v1/assessment.md`, route `assess`: non-thinking Flash, never the strong route, rubric and exercise in the cacheable prefix,
+the answer as one JSON string of untrusted data). The server validates the output (every criterion once, `MET`/`PARTLY` need a quote that is a
+verbatim fragment of the answer, else the verdict is downgraded to `UNCLEAR`; invalid JSON gets one repair, then the grade is unavailable), computes
+the strictness, aggregates, maps to evidence and writes through the baseline reducer. The model never grades and never writes `StudyState`.
+
+**Strictness `ai-semantic-v1`** (server only, derived from the objective's state in the current learning epoch; the first attempt at an exercise
+in an epoch is capped at S2):
+
+| Level | When | COMPLETE | PARTIAL | else |
+|---|---|---|---|---|
+| S1 «Знакомство» (1 run, temperature 0.2) | no assessed attempt in the epoch, or level ≤ 1 | every CORE at least PARTLY and at least one CORE MET | at least one CORE at least PARTLY | INSUFFICIENT |
+| S2 «Закрепление» (2 runs, 0.3) | level 2–3 | every CORE MET and ≥ 50 % of the DETAIL weight MET | every CORE at least PARTLY | INSUFFICIENT |
+| S3 «Владение» (2 runs, 0.3) | level ≥ 4 or `correctStreak` ≥ 2 | every CORE MET, ≥ 80 % of the DETAIL weight, every TERM MET | every CORE at least PARTLY | INSUFFICIENT |
+
+At every level an `OFF_TOPIC` answer, any `CONTRADICTED` criterion, or no CORE criterion at least PARTLY is INSUFFICIENT; an `UNCLEAR` criterion outside
+CORE counts as not met. When two runs differ by one step the lower verdict stands, except that a criterion CONTRADICTED in some runs but not all (any tier) is uncertain; a contradiction every run sees is certain. Evidence: COMPLETE `CORRECT`, PARTIAL `PARTIAL`, INSUFFICIENT `INCORRECT`;
+class `LOW` at S1 and `MEDIUM` at S2/S3, **never `HIGH`**; reason codes `AI_SEMANTIC`, `STRICTNESS_S1|S2|S3`, `RUBRIC_V1`, plus `INJECTION` when the answer addressed
+the grader (the content is graded only) and `SPEECH` for a transcript.
+
+**Provider uncertainty is never a result.** Runs that disagree on the off-topic flag or on a CORE criterion by more than one step (MET against NOT_MET), an
+`UNCLEAR` CORE criterion and `ASR_GARBLED` speech (the flag counts only for an answer whose `answerSource` is `SPEECH`) send the learner to **self-check**: they see the reference and the criteria and rate themselves, which writes
+`SELF_REPORT` evidence of class `LOW`. `UNSURE` stays only for uncertainty the learner declares themselves (a reducer input); a provider never produces it. A provider
+failure, timeout, an exhausted fair-use allowance and a capability that went away are also self-check, never an error and never a penalty.
+
+**Flow (asynchronous, short polling).** Submitting a `TEXT` response to an `ai-semantic` presentation validates it and, in one transaction, records the answer as
+`ASSESSING` (table `study_assessment`; answer text kept only until the attempt is terminal); the answer is `202 {attemptId, presentationId, mode, status:"ASSESSING",
+retryAfterMs}`. After the commit the grader runs on a virtual thread with **no transaction open**, bounded per instance by `learning.ai.assess.concurrency`. Its result
+is stored in a short transaction with a compare-and-set on `ASSESSING`: the receipt, evidence, transition, feedback and one fair-use answer check (a grade is paid for only
+when delivered). Deadline `learning.ai.assess.deadline` = 20 s (target p50 ≤ 3 s, p95 ≤ 8 s; the client offers «Оценить себя» at 5 s): a sweeper turns an overdue answer into
+self-check (`DEADLINE`); a late grade is discarded. State machine: `ASSESSING` → `DONE | SELF_CHECK | UNAVAILABLE`; `SELF_CHECK` and `UNAVAILABLE` both mean the learner rates
+themselves (`status: "SELF_CHECK"` on the wire) and end in `DONE` through the rating of the **same attempt**; a presentation keeps one terminal receipt. If the
+capability is off or the fair-use allowance is spent at submit, the same `202` says `status: "SELF_CHECK"` at once. A scheduled presentation of an old learning epoch is not
+graded and not charged (plain `NOT_ASSESSED`).
+
+| Operation | Request | Success |
+|---|---|---|
+| Submit | `POST /api/decks/{deckId}/study-sessions/{sessionId}/attempts` (`TEXT` response, optional `answerSource` `TYPED`/`SPEECH`) | `202` assessment state (also a retry while not terminal, `Idempotency-Replayed`), or `200` outcome |
+| Read | `GET …/attempts/{attemptId}` | `200` assessment state or the terminal outcome |
+| «Оценить себя» | `POST …/attempts/{attemptId}/self-check` (no body or `{}`) | `200` the attempt as it is now (self-check, or the outcome if the grade won the race) |
+| Own rating | `POST …/attempts/{attemptId}/self-rating` `{rating}` (`NOT_RECALLED`, `HINTED`, `PARTIAL`, `FULL`) | `200` outcome (`SELF_REPORT`, `LOW`, reason codes `AI_FALLBACK` and the reason) |
+| «Оспорить оценку» | `POST …/attempts/{attemptId}/dispute` `{commandId, shareExample?}` | `200` outcome `NOT_ASSESSED` with `disputed: true` |
+
+Assessment state (`$defs/assessmentState`): `{attemptId, presentationId, mode, status:"ASSESSING", retryAfterMs}` (700 ms during the first 3 s, then 1500) or
+`{…, status:"SELF_CHECK", reason, selfCheck:{reference, referenceContent, criteria:[{criterionId, description}]}}` with `reason ∈ LEARNER_CHOICE | PROVIDER_UNCERTAIN |
+PROVIDER_UNAVAILABLE | USAGE_LIMIT | CAPABILITY_UNAVAILABLE | DEADLINE | BUSY` (never a provider detail; `BUSY` = the account already has `learning.ai.assess.max-in-flight` (3) answers being graded, a soft cap). A presentation whose answer is in assessment carries one more optional member
+`assessment {attemptId, status: ASSESSING|SELF_CHECK}`, so that a reload resumes it. The reference, criteria, quotes, verdicts and notes are **never** in a presentation or in an
+`ASSESSING` response: they appear only after the answer, in the feedback or in the self-check view.
+
+**Feedback after a grade** (additive to the `FREE_RESPONSE` feedback, which still carries `reference` = `rubric.referenceAnswer` and `referenceContent`):
+`assessment {strictness S1|S2|S3, judgement COMPLETE|PARTIAL|INSUFFICIENT, covered [{criterionId, description, quote, partial}], missing [{criterionId, description, partial}],
+contradicted [{criterionId, description, note}], nextStricter}`. `covered` lists criteria MET or PARTLY with the learner's own words (`partial` for PARTLY); `missing` lists every
+criterion not fully met and not contradicted (a PARTLY criterion is in both with `partial: true`); `contradicted` lists criteria the answer states the opposite of or that match a
+listed misconception; `nextStricter` is true when the next attempt will be graded at a stricter level (computed from the objective's state after this transition; false outside SCHEDULED).
+Fixtures: [assessment.json](assessment.json).
+
+**Quotes.** A `MET`/`PARTLY` verdict is kept only with a quote that is a verbatim fragment of the answer: at least 3 characters, at most 15 words and 200 characters, in at most
+three fragments (split at an ellipsis) of at least 3 characters each, found in order. The quote shown (`covered[].quote`) is the learner's own text, with their case and spacing.
+Because a scheduled receipt is kept until account deletion, **short quotes of the learner's answers stay in the receipt's `feedback`** (the answer itself is kept 30 days).
+
+**Dispute.** An AI grade (not a deterministic result, not a self-rating) can be disputed while its transition is the **last** transition of the objective in the current learning
+epoch (compare-and-set on the objective's state row, locked). The server appends a compensating transition (`study_transition.kind = COMPENSATION`, `compensates_attempt_id`,
+reason code `AI_DISPUTED`; append-only, no attempt of its own) that restores the before-state of the AI transition (level, streak, lapses, and the objective's `last_assessed_at` and `next_due` exactly as the earlier attempt left them; for a first attempt: never assessed, due at once, as after a restart), makes the attempt `NOT_ASSESSED` with `disputed: true` and writes a
+counts-only row (`study_assessment_dispute`: strictness, judgement, exercise; **no answer text** unless the client sends `shareExample: true`, which the UI never does today). The AI
+evidence row stays as the audit trail. Otherwise `409 DISPUTE_NOT_ALLOWED`. In `PRACTICE`/`REPLAY` there is no transition and the dispute only marks the receipt and counts. The same
+`commandId` replays. The golden fixtures (12 exercises × 12 answers) and the opt-in live eval are in [assessment-golden](assessment-golden/README.md).
 
 ## Session resources
 
@@ -192,7 +264,8 @@ foundation itself remains issue #77.
 | Reveal transcripts | `POST /api/decks/{deckId}/study-sessions/{sessionId}/presentations/{presentationId}/transcript` with `{nonce}` | 200 `{presentationId, transcriptRevealed, content}` |
 | Reveal first letter | `POST /api/decks/{deckId}/study-sessions/{sessionId}/presentations/{presentationId}/hints` with `{nonce, blankId}` | 200 `{presentationId, blankId, firstLetter}` |
 | Check one pair | `POST /api/decks/{deckId}/study-sessions/{sessionId}/pair-checks` with `{presentationId, nonce, leftId, rightId}` | 200 `{correct}` |
-| Submit | `POST /api/decks/{deckId}/study-sessions/{sessionId}/attempts` | 200 stored outcome |
+| Submit | `POST /api/decks/{deckId}/study-sessions/{sessionId}/attempts` | 200 stored outcome, or 202 assessment state for an `ai-semantic` answer |
+| Assessment of an answer | `GET`/`POST …/attempts/{attemptId}[/self-check\|/self-rating\|/dispute]` | see [AI assessment](#ai-assessment-of-free-explanations-ai-semantic-292) |
 | Today's replay sources | `GET /api/decks/{deckId}/study-sessions/replay-sources` | 200 bounded completed sessions |
 | Restart items | `POST /api/decks/{deckId}/study-restarts` | 200 restart acknowledgement |
 | Material progress | `GET /api/decks/{deckId}/study-progress?limit=...&cursor=...` | 200 explainable page |
@@ -278,7 +351,7 @@ transitions. A late presentation from an old learning epoch returns a durable
 
 Responses use these shapes:
 
-- `TEXT {text}` for `FREE_RESPONSE`;
+- `TEXT {text, answerSource?}` for `FREE_RESPONSE` (`answerSource` `TYPED` by default; `SPEECH` marks a transcript and is accepted only for `responseInput: TEXT_OR_SPEECH`);
 - `SELF_CHECK {rating}` with `NOT_RECALLED`, `HINTED`, `PARTIAL` or `FULL`;
 - `CLOZE {blanks:[{blankId,text}]}` covering exactly the issued blank IDs;
 - `CHOICE {optionIds}`, a non-empty unique array of server-issued option IDs (exactly one for `SINGLE`);
@@ -297,6 +370,7 @@ affect evidence.
 |---|---|---|---|
 | `SELF_CHECK` | `FULL→CORRECT`, `PARTIAL`/`HINTED→PARTIAL`, `NOT_RECALLED→INCORRECT` | `LOW`, `SELF_REPORT` | rule only |
 | `FREE_RESPONSE` | any accepted alternative → `CORRECT`, else `INCORRECT` | `HIGH`; revealed transcript → `LOW` | `reference`, `referenceContent` |
+| `FREE_RESPONSE` with `ai-semantic` | server-aggregated verdicts: `COMPLETE→CORRECT`, `PARTIAL`, `INSUFFICIENT→INCORRECT`; uncertainty → self-check | `LOW` (S1) or `MEDIUM` (S2/S3), never `HIGH`; self-rating `LOW`, `SELF_REPORT` | `reference`, `referenceContent`, `assessment` |
 | `CLOZE` | all blanks `CORRECT`, some `PARTIAL`, none `INCORRECT` | `HIGH`; any hinted blank caps non-incorrect results at `MEDIUM`; transcript → `LOW` | per-blank `correct`, `hinted`, `reference` |
 | `CHOICE` | exact selected set → `CORRECT`, else `INCORRECT` | `LOW` recognition | `correctOptionIds` |
 | `MATCH` | all pairs `CORRECT`, some `PARTIAL`, none `INCORRECT`; a correct final map after any wrong pair check is `PARTIAL` + `PAIR_RETRY` | `LOW` recognition | per-pair selected/correct IDs |
@@ -335,7 +409,9 @@ Correct evidence never demotes an objective already above its promotion ceiling:
 assessed result resets it. `INCORRECT` and `UNSURE` increment `lapseCount`;
 `PARTIAL` does not. `nextDue = acceptedAt + interval(resulting level)`.
 `NONE`, `NOT_ASSESSED` and `UNAVAILABLE` are not reducer inputs and create no
-state transition. Server UTC time, truncated to microseconds, is persisted as
+state transition. `UNSURE` is the learner's own declared uncertainty; an AI provider never produces it
+(its uncertainty is a self-check, see AI assessment). A dispute appends a `COMPENSATION` transition that restores the before-state
+of the AI transition it takes back (append-only; it is not a reducer step and carries no attempt). Server UTC time, truncated to microseconds, is persisted as
 `acceptedAt`; tests use a fixed clock. Algorithm, version, config ID/hash and
 before/after state are stored on every transition. `configHash` is SHA-256 over
 RFC 8785-style canonical JSON containing exactly `configId`, `intervals`,
@@ -374,7 +450,8 @@ Existing Problem Details remain canonical. Study adds stable error codes
 `SESSION_PREPARING`, `SESSION_EXPIRED` and `PRESENTATION_EXPIRED`; private
 absent/foreign IDs remain the same opaque 404. A recoverable evaluator failure is
 HTTP 200 `UNAVAILABLE` feedback with reason code `EVALUATOR_UNAVAILABLE`, not an
-incorrect result or transport Problem Detail.
+incorrect result or transport Problem Detail; an `ai-semantic` answer never produces it: a failed grade is self-check (HTTP 202 /
+`status: SELF_CHECK`). The assessment commands add `409 DISPUTE_NOT_ALLOWED` and `409 ASSESSMENT_STATE_CONFLICT` (a self-rating while the model still grades).
 No log, metric, trace or Problem Detail includes raw response, expected answer,
 private content or receipt payload.
 

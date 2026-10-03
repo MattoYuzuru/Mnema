@@ -109,14 +109,52 @@ describe('Exercise content rules', () => {
             expect(() => parseExerciseSpec(onlyBlanks)).toThrowError(ExerciseContentError);
         });
 
-        it('requires a rubric with the three levels in contract order', () => {
+        it('accepts rubric v1 and rejects the old critical/levels shape', () => {
             const ai = clone(mechanics['rejectedAiAssessment'].exercise);
-            expect(() => parseExerciseSpec(ai)).not.toThrow();
-            ai.evaluatorPolicy.rubric.levels.reverse();
-            expect(() => parseExerciseSpec(ai)).toThrowError(ExerciseContentError);
-            const critical = clone(mechanics['rejectedAiAssessment'].exercise);
-            critical.evaluatorPolicy.rubric.criteria = [];
-            expect(() => parseExerciseSpec(critical)).toThrowError(ExerciseContentError);
+            expect(parseExerciseSpec(ai)).toEqual(ai);
+            const old = clone(ai);
+            old.evaluatorPolicy.rubric = { referenceAnswer: 'x', criteria: [{ criterionId: ai.evaluatorPolicy.rubric.criteria[0].criterionId, description: 'd', critical: true }],
+                levels: [{ level: 'COMPLETE', description: 'a' }, { level: 'PARTIAL', description: 'b' }, { level: 'INSUFFICIENT', description: 'c' }] };
+            expect(() => parseExerciseSpec(old)).toThrowError(ExerciseContentError);
+        });
+
+        it('enforces the rubric bounds: 2-3 essential, 1-4 detail, 0-2 terminology points, weights 1-3, list lengths', () => {
+            const rubric = () => {
+                const ai = clone(mechanics['rejectedAiAssessment'].exercise);
+                return { ai, rubric: ai.evaluatorPolicy.rubric as {
+                    criteria: { criterionId: string; description: string; tier: string; weight: number }[];
+                    misconceptions: string[]; acceptableTerms: string[]; referenceAnswer: string; extra?: unknown; } };
+            };
+            const reject = (change: (value: ReturnType<typeof rubric>['rubric']) => void) => {
+                const sample = rubric();
+                change(sample.rubric);
+                expect(() => parseExerciseSpec(sample.ai)).toThrowError(ExerciseContentError);
+            };
+            const point = (tier: string, index: number) => ({ criterionId: `c0000000-0000-4000-8000-0000000001${String(index).padStart(2, '0')}`,
+                description: `Пункт ${index}`, tier, weight: 1 });
+            reject(value => { value.criteria = value.criteria.filter(entry => entry.tier !== 'DETAIL'); });
+            reject(value => { value.criteria = value.criteria.filter(entry => entry.tier !== 'CORE').concat(point('DETAIL', 7)); });
+            reject(value => { value.criteria.push(point('CORE', 1), point('CORE', 2)); });
+            reject(value => { value.criteria.push(point('TERM', 3), point('TERM', 4)); });
+            reject(value => { value.criteria = [...value.criteria, ...[1, 2, 3, 4, 5].map(index => point('DETAIL', index))]; });
+            reject(value => { value.criteria[0].weight = 4; });
+            reject(value => { value.criteria[0].weight = 0; });
+            reject(value => { value.criteria[0].tier = 'OPTIONAL'; });
+            reject(value => { value.criteria[1].criterionId = value.criteria[0].criterionId; });
+            reject(value => { value.criteria[0].description = '   '; });
+            reject(value => { value.criteria[0].description = 'я'.repeat(501); });
+            reject(value => { value.referenceAnswer = ' '; });
+            reject(value => { value.referenceAnswer = 'я'.repeat(4001); });
+            reject(value => { value.misconceptions = Array.from({ length: 11 }, (_, index) => `ошибка ${index}`); });
+            reject(value => { value.misconceptions = ['я'.repeat(301)]; });
+            reject(value => { value.acceptableTerms = Array.from({ length: 31 }, (_, index) => `термин ${index}`); });
+            reject(value => { value.acceptableTerms = ['']; });
+            reject(value => { delete (value as Partial<typeof value>).misconceptions; });
+            reject(value => { value.extra = true; });
+            const edge = rubric();
+            edge.rubric.misconceptions = Array.from({ length: 10 }, (_, index) => `ошибка ${index}`);
+            edge.rubric.acceptableTerms = Array.from({ length: 30 }, () => 'т'.repeat(80));
+            expect(() => parseExerciseSpec(edge.ai)).not.toThrow();
         });
 
         it('exactObject accepts only the listed keys', () => {

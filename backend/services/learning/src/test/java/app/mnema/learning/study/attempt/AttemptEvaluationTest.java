@@ -58,6 +58,19 @@ class AttemptEvaluationTest {
     }
 
     @Test
+    void aTranscriptOfSpeechIsAcceptedOnlyWhereTheExerciseTakesSpeech() {
+        AttemptCommand.TextResponse speech = new AttemptCommand.TextResponse("erinnerung", "SPEECH");
+        assertThatThrownBy(() -> evaluate(freeResponse(false), speech)).isInstanceOf(InvalidRequestException.class);
+        ObjectNode content = (ObjectNode) presentation("freeResponse").path("content").deepCopy();
+        content.put("responseInput", "TEXT_OR_SPEECH");
+        AttemptEvaluation.Subject takesSpeech = new AttemptEvaluation.Subject(ExerciseType.FREE_RESPONSE, evaluator("deterministic-text"),
+                mechanic("createFreeResponseAudio").withObject("exercise").withObject("answerKey"), content, reveal(), Set.of(), false);
+        assertThat(evaluate(takesSpeech, speech).result()).isEqualTo(AttemptEvaluation.Result.CORRECT);
+        assertThat(evaluate(takesSpeech, new AttemptCommand.TextResponse("erinnerung", "TYPED")).result())
+                .isEqualTo(AttemptEvaluation.Result.CORRECT);
+    }
+
+    @Test
     void strictPreservesDiacriticsAndPunctuationWhileSoftIgnoresThemWithoutTypoTolerance() {
         Consumer<ObjectNode> accepted = key -> {
             key.putArray("accepted").add("co-opération!");

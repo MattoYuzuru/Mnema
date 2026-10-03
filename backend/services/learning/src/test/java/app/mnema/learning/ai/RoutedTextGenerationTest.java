@@ -171,6 +171,36 @@ class RoutedTextGenerationTest {
     }
 
     @Test
+    void aGradingAttemptIsCappedSoASlowProviderHandsOverToTheFallbackInsteadOfBeingRetried() {
+        AiProperties base = AiTestSupport.properties("", AiTestSupport.routes(List.of(), List.of(),
+                List.of("deepseek:deepseek-flash", "gigachat:GigaChat-2")), Map.of());
+        properties = new AiProperties(base.provider(), base.routes(), base.providers(), base.models(), base.transport(), base.retry(),
+                base.breaker(), base.permits(), base.budget(), base.userKey(), base.prompt());
+        assertThat(properties.routes().assessAttemptCap()).isEqualTo(Duration.ofSeconds(8));
+        deepseek.then(new AiFailure.Timeout());
+        gigachat.thenOk("ответ запасного");
+        TextRequest request = new TextRequest(AiRoute.ASSESS, List.of(TextRequest.Segment.user("задача", false)), OutputContract.JSON, 100, 0.2,
+                Duration.ofSeconds(20), AiTestSupport.KEY, null, null, 1);
+
+        TextResponse response = ok(router(recording()).generate(request));
+
+        assertThat(response.text()).isEqualTo("ответ запасного");
+        assertThat(deepseek.calls()).as("one capped attempt, not three").hasSize(1);
+        assertThat(deepseek.calls().getFirst().budget()).isEqualTo(Duration.ofSeconds(8));
+        assertThat(gigachat.calls()).hasSize(1);
+        assertThat(gigachat.calls().getFirst().budget()).as("every attempt is capped, the fallback included").isEqualTo(Duration.ofSeconds(8));
+        // a deadline shorter than the cap is the budget as it is; the text routes have no cap
+        assertThat(properties.routes().attemptCap(AiRoute.TEXT_FAST)).isNull();
+        assertThat(properties.routes().attemptCap(AiRoute.ASSESS)).isEqualTo(Duration.ofSeconds(8));
+        deepseek.then(new AiFailure.Timeout());
+        TextRequest short20 = new TextRequest(AiRoute.ASSESS, List.of(TextRequest.Segment.user("задача", false)), OutputContract.JSON, 100, 0.2,
+                Duration.ofSeconds(5), AiTestSupport.KEY, null, null, 1);
+        ok(router(recording()).generate(short20));
+        assertThat(deepseek.calls().get(1).budget()).isEqualTo(Duration.ofSeconds(5));
+        assertThatThrownBy(() -> new AiProperties.Routes(List.of(), List.of(), List.of(), Duration.ZERO)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void anIdleTimeoutInsideTheDeadlineIsRetriedButThePassedDeadlineIsFinal() {
         deepseek.then(new AiFailure.Timeout()).thenOk("после таймаута");
         assertThat(ok(router(recording()).generate(AiTestSupport.request())).text()).isEqualTo("после таймаута");

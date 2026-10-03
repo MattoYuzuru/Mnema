@@ -374,6 +374,24 @@ public class UsageLedger {
 
     // --------------------------------------------------------------- read-only
 
+    /**
+     * Whether {@code amount} of a fair-use bucket or count cap still fits every window of the owner's allowance now. A plain
+     * read: nothing is written and nothing is locked, so the answer can be stale by the time {@link #consume} runs (which
+     * checks again under the counter locks). Callers use it to refuse early without a refusal that rolls their transaction back.
+     */
+    @Transactional(readOnly = true)
+    public boolean fairUseFits(UUID owner, Bucket bucket, long amount) {
+        UuidPolicy.requireEntityId(owner, "owner");
+        Objects.requireNonNull(bucket, "bucket");
+        if (!bucket.consumable() || amount < 1 || amount > MAX_UNITS) throw new IllegalArgumentException("Invalid consumption");
+        Instant now = clock.now();
+        UsageState.Resolved resolved = state.resolve(owner, now);
+        for (Allowance.WindowLimit limit : resolved.allowance().limits(bucket)) {
+            if (limit.limit() != null && state.counter(owner, bucket, limit.window(), now) + amount > limit.limit()) return false;
+        }
+        return true;
+    }
+
     /** One of the owner's reservations (a session shows its credits from it); another owner's is empty. */
     @Transactional(readOnly = true)
     public Optional<Reservation> reservation(UUID owner, UUID reservationId) {

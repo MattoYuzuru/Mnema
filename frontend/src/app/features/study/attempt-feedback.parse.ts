@@ -1,5 +1,5 @@
 import { parseLearnerBlock } from '../../content/exercise/exercise-content.parse';
-import { AttemptFeedback } from './study.models';
+import { AssessmentFeedback, AttemptFeedback } from './study.models';
 import { entity, exact, guard, isRecord, protocol, strings, text } from './study-wire';
 
 const RESULTS = ['CORRECT', 'PARTIAL', 'UNSURE', 'INCORRECT'] as const;
@@ -9,6 +9,10 @@ export function parseAttemptFeedback(value: unknown): AttemptFeedback {
     if (!isRecord(value) || typeof value['result'] !== 'string') throw protocol('Invalid feedback.');
     const result = value['result'];
     if (result === 'NOT_ASSESSED' || result === 'UNAVAILABLE') {
+        if ('referenceContent' in value) {
+            const object = exact(value, ['result', 'reasonCodes', 'reference', 'referenceContent']);
+            return { result, reasonCodes: strings(object['reasonCodes']), ...parseReference(object) };
+        }
         const object = exact(value, ['result', 'reasonCodes']);
         return { result, reasonCodes: strings(object['reasonCodes']) };
     }
@@ -88,12 +92,57 @@ export function parseAttemptFeedback(value: unknown): AttemptFeedback {
         return { result: verdict, appliedRules: rules(object), assignments };
     }
     if ('referenceContent' in value) {
-        const object = exact(value, ['result', 'appliedRules', 'reference', 'referenceContent']);
-        if (!Array.isArray(object['referenceContent']) || object['referenceContent'].length > 8) {
-            throw protocol('Invalid reference content.');
+        if ('assessment' in value) {
+            const object = exact(value, ['result', 'appliedRules', 'reference', 'referenceContent', 'assessment']);
+            const assessment = parseAssessment(object['assessment']);
+            if (verdict !== { COMPLETE: 'CORRECT', PARTIAL: 'PARTIAL', INSUFFICIENT: 'INCORRECT' }[assessment.judgement]) {
+                throw protocol('Assessment judgement mismatch.');
+            }
+            return { result: verdict, appliedRules: rules(object), ...parseReference(object), assessment };
         }
-        return { result: verdict, appliedRules: rules(object), reference: text(object['reference'], 4096, 0),
-            referenceContent: object['referenceContent'].map(block => guard(() => parseLearnerBlock(block, 'REFERENCE', null))) };
+        const object = exact(value, ['result', 'appliedRules', 'reference', 'referenceContent']);
+        return { result: verdict, appliedRules: rules(object), ...parseReference(object) };
     }
     return { result: verdict, appliedRules: rules(exact(value, ['result', 'appliedRules'])) };
+}
+
+function parseReference(object: Record<string, unknown>) {
+    if (!Array.isArray(object['referenceContent']) || object['referenceContent'].length > 8) {
+        throw protocol('Invalid reference content.');
+    }
+    return { reference: text(object['reference'], 16384, 0),
+        referenceContent: object['referenceContent'].map(block => guard(() => parseLearnerBlock(block, 'REFERENCE', null))) };
+}
+
+/** Key points found in, and missing from, an AI-graded answer. The server aggregated them; the browser only shows them. */
+function parseAssessment(value: unknown): AssessmentFeedback {
+    const object = exact(value, ['strictness', 'judgement', 'covered', 'missing', 'contradicted', 'nextStricter']);
+    const strictness = object['strictness'];
+    const judgement = object['judgement'];
+    if (strictness !== 'S1' && strictness !== 'S2' && strictness !== 'S3') throw protocol('Invalid strictness.');
+    if (judgement !== 'COMPLETE' && judgement !== 'PARTIAL' && judgement !== 'INSUFFICIENT') throw protocol('Invalid judgement.');
+    if (typeof object['nextStricter'] !== 'boolean') throw protocol('Invalid assessment note.');
+    const points = (list: unknown): readonly unknown[] => {
+        if (!Array.isArray(list) || list.length > 10) throw protocol('Invalid assessment points.');
+        return list;
+    };
+    const flag = (entry: Record<string, unknown>): boolean => {
+        if (typeof entry['partial'] !== 'boolean') throw protocol('Invalid assessment point.');
+        return entry['partial'];
+    };
+    const covered = points(object['covered']).map(item => {
+        const entry = exact(item, ['criterionId', 'description', 'quote', 'partial']);
+        return { criterionId: entity(entry['criterionId']), description: text(entry['description'], 2048, 0),
+            quote: text(entry['quote'], 2048, 1), partial: flag(entry) };
+    });
+    const missing = points(object['missing']).map(item => {
+        const entry = exact(item, ['criterionId', 'description', 'partial']);
+        return { criterionId: entity(entry['criterionId']), description: text(entry['description'], 2048, 0), partial: flag(entry) };
+    });
+    const contradicted = points(object['contradicted']).map(item => {
+        const entry = exact(item, ['criterionId', 'description', 'note']);
+        return { criterionId: entity(entry['criterionId']), description: text(entry['description'], 2048, 0),
+            note: text(entry['note'], 2048, 0) };
+    });
+    return { strictness, judgement, covered, missing, contradicted, nextStricter: object['nextStricter'] };
 }

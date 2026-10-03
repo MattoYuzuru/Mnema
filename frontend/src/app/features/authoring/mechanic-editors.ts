@@ -3,6 +3,8 @@ import { ChangeDetectionStrategy, Component, Directive, ElementRef, Injector, af
 import {
     AuthoringBlock, COMPACT_SLOT, LIMITS, REFERENCE_SLOTS, SelectionMode, isBlank
 } from '../../content/exercise/exercise-content.models';
+import { AiRubricEditorComponent } from './ai-rubric-editor.component';
+import { AiRubricDraft, emptyRubric } from './ai-rubric-draft';
 import { CAPABILITIES_UNAVAILABLE, LearningCapabilities } from './capabilities-api.service';
 import {
     ChoiceDraft, ClozeBlankDraft, ClozeDraft, DraftErrors, FreeResponseDraft, MatchDraft, SelfCheckDraft, SlotContext, TextAnswerDraft,
@@ -27,25 +29,28 @@ export abstract class MechanicEditorBase {
 
 @Component({
     selector: 'app-free-response-editor',
-    imports: [ExerciseSlotEditorComponent, TextAnswerEditorComponent],
+    imports: [ExerciseSlotEditorComponent, TextAnswerEditorComponent, AiRubricEditorComponent],
     template: `
-      <app-text-answer-editor [answer]="draft().answer" (answerChange)="setAnswer($event)" [idPrefix]="idPrefix() + '-answer'"
-        [error]="errors()['accepted'] ?? null" [max]="20" [length]="512" />
       <div class="ai-switch">
         <label class="check-line" [attr.for]="idPrefix() + '-ai'">
-          <input type="checkbox" role="switch" [id]="idPrefix() + '-ai'" disabled [checked]="draft().aiRubric !== null"
-                 [attr.aria-describedby]="idPrefix() + '-ai-hint'" />
+          <input type="checkbox" role="switch" [id]="idPrefix() + '-ai'" [disabled]="!aiAvailable() && !aiOn()" [checked]="aiOn()"
+                 [attr.aria-describedby]="idPrefix() + '-ai-hint'" (change)="setAi($any($event.target).checked)" />
           <span>Проверять смысл ответа с ИИ</span> <span class="badge">ИИ</span>
         </label>
-        <p class="hint" [id]="idPrefix() + '-ai-hint'">Проверка объяснений и формулировок по эталону. Пока недоступна.
-          {{ aiReason() }}</p>
+        <p class="hint" [id]="idPrefix() + '-ai-hint'">{{ aiHint() }}</p>
       </div>
+      @if (draft().aiRubric; as rubric) {
+        <app-ai-rubric-editor [rubric]="rubric" (rubricChange)="setRubric($event)" [errors]="errors()" [idPrefix]="idPrefix() + '-rubric'" />
+      } @else {
+        <app-text-answer-editor [answer]="draft().answer" (answerChange)="setAnswer($event)" [idPrefix]="idPrefix() + '-answer'"
+          [error]="errors()['accepted'] ?? null" [max]="20" [length]="512" />
+      }
       <details class="optional" [open]="referenceOpen()">
         <summary>Эталон после ответа (необязательно)</summary>
         <app-exercise-slot-editor label="Эталон" [spec]="reference" [blocks]="draft().reference"
           (blocksChange)="draft.set({ ...draft(), reference: $event })" [context]="context()" [idPrefix]="idPrefix() + '-reference'"
           [error]="errors()['reference'] ?? null" [showProblems]="showProblems()"
-          hint="Богатый эталон показывается после ответа. Проверка использует только список допустимых ответов выше." />
+          [hint]="draft().aiRubric ? 'Богатый эталон показывается после ответа вместе с текстом эталонного ответа. Его не читает проверка.' : 'Богатый эталон показывается после ответа. Проверка использует только список допустимых ответов выше.'" />
       </details>
     `,
     styleUrl: './exercise-fields.css',
@@ -56,17 +61,37 @@ export class FreeResponseEditorComponent extends MechanicEditorBase {
     readonly draft = model.required<FreeResponseDraft>();
     readonly capabilities = input<LearningCapabilities>(CAPABILITIES_UNAVAILABLE);
     readonly reference = REFERENCE_SLOTS.FREE_RESPONSE;
-    readonly aiReason = computed(() => {
+    readonly aiAvailable = computed(() => this.capabilities().aiAssessment.available);
+    readonly aiOn = computed(() => this.draft().aiRubric !== null);
+    readonly aiHint = computed(() => {
         const capability = this.capabilities().aiAssessment;
-        if (capability.available) return 'Настройка критериев появится в следующем обновлении редактора.';
-        return capability.reason === 'PROVIDER_NOT_CONFIGURED' ? 'Сервер включил функцию, но поставщик проверки не подключён.'
-            : 'Функция отключена на сервере.';
+        if (capability.available) {
+            return 'Мнема сравнит ответ с эталоном и покажет ученику, что в нём есть и чего не хватает. '
+                + 'Если проверка недоступна или не уверена, ученик оценит себя сам.';
+        }
+        return 'Проверка объяснений и формулировок по эталону. Пока недоступна. '
+            + (capability.reason === 'PROVIDER_NOT_CONFIGURED' ? 'Сервер включил функцию, но поставщик проверки не подключён.'
+                : capability.reason === 'TEMPORARILY_UNAVAILABLE' ? 'Сервис временно недоступен.' : 'Функция отключена на сервере.');
     });
     /** Opens by itself for an existing reference or a reference problem, so neither stays hidden. */
     readonly referenceOpen = computed(() => this.errors()['reference'] !== undefined
         || this.draft().reference.some(block => block.kind !== 'TEXT' || !isBlank(block.text)));
+    /** Switching AI checking off keeps what was typed, so switching it back on restores the rubric. */
+    private stash: AiRubricDraft | null = null;
 
     setAnswer(answer: TextAnswerDraft): void { this.draft.set({ ...this.draft(), answer }); }
+    setRubric(aiRubric: AiRubricDraft): void { this.draft.set({ ...this.draft(), aiRubric }); }
+
+    setAi(on: boolean): void {
+        const current = this.draft().aiRubric;
+        if (on && current === null) {
+            if (!this.aiAvailable()) return;
+            this.draft.set({ ...this.draft(), aiRubric: this.stash ?? emptyRubric() });
+        } else if (!on && current !== null) {
+            this.stash = current;
+            this.draft.set({ ...this.draft(), aiRubric: null });
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------------------------

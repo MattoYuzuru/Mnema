@@ -54,7 +54,7 @@ class AttemptControllerTest {
         outcome.putNull("evidence"); outcome.putObject("feedback").put("result", "NOT_ASSESSED");
         outcome.putNull("transition");
         when(service.submit(eq(actor), eq(deck), eq(session), any()))
-                .thenReturn(new AttemptService.SubmitResult(outcome, true));
+                .thenReturn(new AttemptService.SubmitResult(outcome, true, false));
         mvc.perform(post("/api/decks/" + deck + "/study-sessions/" + session + "/attempts")
                         .contextPath("/api").contentType(MediaType.APPLICATION_JSON).content(body()))
                 .andExpect(status().isOk()).andExpect(header().string("Idempotency-Replayed", "true"))
@@ -65,6 +65,23 @@ class AttemptControllerTest {
                         .contentType(MediaType.APPLICATION_JSON).content(body()))
                 .andExpect(status().isGone()).andExpect(jsonPath("$.code").value("PRESENTATION_EXPIRED"))
                 .andExpect(header().string("Cache-Control", "private, no-store"));
+    }
+
+    @Test
+    void anAnswerInAssessmentIsAcceptedWithA202AndReplaysAsAcceptedToo() throws Exception {
+        ObjectNode state = JSON.createObjectNode().put("attemptId", UUID.randomUUID().toString())
+                .put("presentationId", presentation.toString()).put("mode", "SCHEDULED").put("status", "ASSESSING")
+                .put("retryAfterMs", 700);
+        when(service.submit(eq(actor), eq(deck), eq(session), any())).thenReturn(new AttemptService.SubmitResult(state, false, true));
+        mvc.perform(post("/decks/" + deck + "/study-sessions/" + session + "/attempts")
+                        .contentType(MediaType.APPLICATION_JSON).content(body()))
+                .andExpect(status().isAccepted()).andExpect(jsonPath("$.status").value("ASSESSING"))
+                .andExpect(jsonPath("$.retryAfterMs").value(700)).andExpect(header().doesNotExist("Idempotency-Replayed"))
+                .andExpect(header().string("Cache-Control", "private, no-store"));
+        when(service.submit(eq(actor), eq(deck), eq(session), any())).thenReturn(new AttemptService.SubmitResult(state, true, true));
+        mvc.perform(post("/decks/" + deck + "/study-sessions/" + session + "/attempts")
+                        .contentType(MediaType.APPLICATION_JSON).content(body()))
+                .andExpect(status().isAccepted()).andExpect(header().string("Idempotency-Replayed", "true"));
     }
 
     @Test

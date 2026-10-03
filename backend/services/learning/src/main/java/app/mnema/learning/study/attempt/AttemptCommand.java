@@ -19,6 +19,8 @@ import java.util.UUID;
 /** Strict attempt envelope; all assessment authority remains in the stored presentation. */
 public record AttemptCommand(UUID attemptId, UUID presentationId, String nonce, Response response,
                              String confidence, int durationMs, ObjectNode payload) {
+    static final String TYPED = "TYPED";
+    static final String SPEECH = "SPEECH";
     private static final int MAX_BYTES = 262_144;
     private static final ContentJsonReader JSON = new ContentJsonReader(MAX_BYTES, 8, 20_000);
     private static final Set<String> CONFIDENCE = Set.of("KNEW", "UNSURE", "GUESSED");
@@ -61,8 +63,11 @@ public record AttemptCommand(UUID attemptId, UUID presentationId, String nonce, 
         if (!value.path("kind").isString()) throw invalid();
         return switch (value.path("kind").stringValue(null)) {
             case "TEXT" -> {
-                fields(value, Set.of("kind", "text"));
-                yield new TextResponse(text(value.path("text"), 4_096, true));
+                // answerSource is optional: a typed answer needs no more, a transcript of speech says SPEECH
+                fields(value, value.has("answerSource") ? Set.of("kind", "text", "answerSource") : Set.of("kind", "text"));
+                String source = value.has("answerSource") ? text(value.path("answerSource"), 16, false) : TYPED;
+                if (!source.equals(TYPED) && !source.equals(SPEECH)) throw invalid();
+                yield new TextResponse(text(value.path("text"), 4_096, true), source);
             }
             case "SELF_CHECK" -> {
                 fields(value, Set.of("kind", "rating"));
@@ -174,7 +179,12 @@ public record AttemptCommand(UUID attemptId, UUID presentationId, String nonce, 
 
     public sealed interface Response permits TextResponse, SelfCheckResponse, ClozeResponse, ChoiceResponse,
             MatchResponse, OrderResponse, CategorizeResponse, CancelResponse { }
-    public record TextResponse(String text) implements Response { }
+    /** {@code answerSource} is {@code TYPED} or {@code SPEECH} (a transcript, which the grader may forgive recognition errors in). */
+    public record TextResponse(String text, String answerSource) implements Response {
+        public TextResponse(String text) { this(text, TYPED); }
+
+        boolean typed() { return TYPED.equals(answerSource); }
+    }
     public record SelfCheckResponse(SelfRating rating) implements Response { }
     public record BlankText(UUID blankId, String text) { }
     public record ClozeResponse(List<BlankText> blanks) implements Response {

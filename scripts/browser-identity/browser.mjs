@@ -8,6 +8,7 @@ import { runNotifications } from './notifications.mjs';
 import { runCodeBlock } from './code-block.mjs';
 import { runUsage } from './usage.mjs';
 import { runWorkshop } from './workshop.mjs';
+import { runAssessment } from './assessment.mjs';
 
 const config = JSON.parse(await readFile(process.argv[2], 'utf8'));
 const defaultCdpTimeout = Number.isInteger(config.cdpTimeoutMs) && config.cdpTimeoutMs >= 1000 && config.cdpTimeoutMs <= 120_000 ? config.cdpTimeoutMs : 10_000;
@@ -165,8 +166,8 @@ try {
       // The Workshop scenarios (`--generation`) poll the real events endpoint and load the app several times; the exercise
       // generation scenario (#291) adds a batch review, an editor round trip and a Study session on top of them (each full page load
       // also asks Identity, so its budget grows with `--generation` too).
-      if (networkRequests > (config.mechanics ? 3000 : config.media ? 1250 : config.authoring ? 1000 : 500) + (config.generation ? 3500 : 0)
-          || identityRequests > 150 + (config.generation ? 100 : 0)) asynchronousFailure = true;
+      if (networkRequests > (config.mechanics ? 3000 : config.media ? 1250 : config.authoring ? 1000 : 500) + (config.generation ? 3500 : 0) + (config.assessment ? 1000 : 0)
+          || identityRequests > 150 + (config.generation ? 100 : 0) + (config.assessment ? 50 : 0)) asynchronousFailure = true;
       if (!allowed.has(url.origin) || asynchronousFailure) {
         externalRequests++;
         run(interception(release(tab.call('Fetch.failRequest', { requestId: event.requestId, errorReason: 'BlockedByClient' }))));
@@ -1053,6 +1054,13 @@ try {
       await runWorkshop({
         tab: second, config, record, SafeFailure, until, exists, navigate, saveScreenshot, clickText, setStep: value => { step = value; },
         deckPath, bearer: secondBearer, inflight: inflightNow });
+    }
+    // The semantic assessment of explanations (#292): the rubric editor and the learner's side, with the Stub grader.
+    if (config.assessment) {
+      step = 'assessment_prepare';
+      await runAssessment({
+        tab: second, config, record, SafeFailure, until, exists, navigate, saveScreenshot, saveFullScreenshot, clickText,
+        setStep: value => { step = value; }, deckPath, bearer: secondBearer });
     }
   }
   step = 'first_tab_profile';

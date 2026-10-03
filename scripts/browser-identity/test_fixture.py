@@ -431,6 +431,35 @@ module.main()
         self.assertIn("SLOW_CDP_METHODS", driver)
         self.assertIn("config.cdpTimeoutMs", driver)
 
+    def test_assessment_scenario_is_wired_stub_only_and_syntactically_valid(self):
+        with patch.object(sys, "argv", ["run.py", "--dist", str(self.dist), "--assessment"]), \
+                contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as exit_code:
+            HARNESS.main()
+        self.assertEqual(2, exit_code.exception.code)
+        runner = Path(__file__).with_name("run.py").read_text()
+        driver = Path(__file__).with_name("browser.mjs").read_text()
+        source = Path(__file__).with_name("assessment.mjs").read_text()
+        self.assertIn("import { runAssessment } from './assessment.mjs'", driver)
+        self.assertIn("config.assessment", driver)
+        self.assertIn('"assessment.mjs"', runner)
+        # The second Learning (Stub provider, assessment flag on) is shared by `--generation` and `--assessment`.
+        self.assertIn('"LEARNING_FEATURES_AI_ASSESSMENT_ENABLED": "true"', runner)
+        self.assertIn("def stub_instance", runner)
+        self.assertNotIn("DEEPSEEK", source)
+        self.assertNotIn("Fetch.fulfillRequest", source)
+        self.assertNotIn("route.fulfill", source)
+        # The whole path is the real UI on the real API; the scenario names its steps and its evidence.
+        for step in ("capability_and_fixture", "rubric_editor", "preview_has_no_model", "api_exercises", "study", "resume_after_reload", "wire"):
+            self.assertIn(f"step('{step}'", source)
+        for name in ("rubric-editor", "result-complete", "result-partial", "result-offtopic", "self-check", "dispute-confirm", "disputed"):
+            self.assertIn(f"'{name}'", source)
+        self.assertIn("assessment-assessing-1440.png", source)
+        self.assertIn("record('assessment_semantic_stub_real_api'", source)
+        node = shutil.which("node")
+        if node is not None:
+            result = subprocess.run([node, "--check", str(Path(__file__).with_name("assessment.mjs"))], capture_output=True)
+            self.assertEqual(0, result.returncode)
+
     def test_only_edits_is_a_development_aid_that_needs_generation(self):
         with patch.object(sys, "argv", ["run.py", "--dist", str(self.dist), "--authoring", "--only-edits"]), \
                 contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as exit_code:

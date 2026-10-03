@@ -27,6 +27,15 @@ describe('StudyRecoveryService', () => {
         service.save({ deckId: id, sessionId: id, pending });
         expect(service.restore(id)?.pending).toEqual(pending);
     });
+    it('keeps when an AI-checked answer was sent, and refuses a value that is not a time', () => {
+        service.save({ deckId: id, sessionId: id, pending, assessmentStartedAt: 9000 });
+        expect(service.restore(id)?.assessmentStartedAt).toBe(9000);
+        service.save({ deckId: id, sessionId: id, pending });
+        expect(service.restore(id)?.assessmentStartedAt).toBeNull();
+        const stored = JSON.parse(storage.get(key)!);
+        storage.set(key, JSON.stringify({ ...stored, assessmentStartedAt: 'soon' }));
+        expect(service.restore(id)).toBeNull();
+    });
     it('restores a cloze response with its blank ids and a match response with issued pair ids', () => {
         const cloze: AttemptCommand = { ...pending, response: { kind: 'CLOZE', blanks: [{ blankId: id, text: 'map' }] } };
         service.save({ deckId: id, sessionId: id, pending: cloze });

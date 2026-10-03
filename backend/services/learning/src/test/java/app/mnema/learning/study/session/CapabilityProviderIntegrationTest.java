@@ -1,14 +1,12 @@
 package app.mnema.learning.study.session;
 
 import app.mnema.learning.capability.LearningCapabilities;
-import app.mnema.learning.capability.SemanticAssessmentProvider;
 import app.mnema.learning.capability.SpeechToTextProvider;
 import app.mnema.learning.catalog.deck.DeckService;
 import app.mnema.learning.catalog.exercise.ExerciseCommand;
 import app.mnema.learning.catalog.exercise.ExerciseService;
 import app.mnema.learning.catalog.item.ItemService;
 import app.mnema.learning.media.MediaCatalog;
-import app.mnema.learning.study.attempt.AttemptService;
 import app.mnema.learning.support.PostgresIntegrationTest;
 import app.mnema.learning.support.StudyFixtures;
 import app.mnema.learning.support.StudyFixtures.Issued;
@@ -29,27 +27,20 @@ import java.util.UUID;
 import static app.mnema.learning.support.ContractFixtures.bytes;
 import static app.mnema.learning.support.ContractFixtures.mechanic;
 import static app.mnema.learning.support.StudyFixtures.JSON;
-import static app.mnema.learning.support.StudyFixtures.attempt;
 import static app.mnema.learning.support.StudyFixtures.text;
-import static app.mnema.learning.support.StudyFixtures.textResponse;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * With flags on and test provider beans present the capabilities are available, so such exercises can be
- * published. There is still no evaluator runtime: answers are UNAVAILABLE, never exact-matched, and a
- * deployment that loses the capability stops issuing them.
+ * With the flags on, the Stub as the provider and a test speech provider the capabilities are available, so such exercises can be
+ * published and issued. The learner never sees the rubric, and a deployment that loses the capability stops issuing them. What
+ * happens to an answer is {@code AssessmentFlowIntegrationTest}.
  */
 @SpringBootTest(properties = {"learning.features.ai-assessment.enabled=true",
-        "learning.features.speech-to-text.enabled=true"})
+        "learning.features.speech-to-text.enabled=true", "learning.ai.provider=stub"})
 @Import(CapabilityProviderIntegrationTest.Providers.class)
 class CapabilityProviderIntegrationTest extends PostgresIntegrationTest {
     @TestConfiguration
     static class Providers {
-        @Bean SemanticAssessmentProvider semantic() {
-            return (rubric, response) -> new SemanticAssessmentProvider.Judgement(
-                    SemanticAssessmentProvider.Level.UNAVAILABLE, "stub");
-        }
-
         @Bean SpeechToTextProvider speech() { return asset -> new SpeechToTextProvider.Transcription("stub"); }
     }
 
@@ -57,14 +48,13 @@ class CapabilityProviderIntegrationTest extends PostgresIntegrationTest {
     @Autowired private ExerciseService exercises;
     @Autowired private StudySessionService sessions;
     @Autowired private StudySessionRepository repository;
-    @Autowired private AttemptService attempts;
     @Autowired private DeckService decks;
     @Autowired private ItemService items;
     @Autowired private MediaCatalog media;
     @Autowired private JdbcClient jdbc;
 
     @Test
-    void availableCapabilitiesPublishButTheSemanticEvaluatorStaysUnavailableAtRuntime() {
+    void availableCapabilitiesPublishAndIssueWhileTheRubricStaysPrivate() {
         assertThat(capabilities.aiAssessment()).isEqualTo(new LearningCapabilities.Status(true, null));
         assertThat(capabilities.speechToText()).isEqualTo(new LearningCapabilities.Status(true, null));
         StudyFixtures fixtures = new StudyFixtures(decks, items, exercises, sessions, media, jdbc);
@@ -88,15 +78,6 @@ class CapabilityProviderIntegrationTest extends PostgresIntegrationTest {
         // the rubric is author data: the learner sees only the evaluator identity
         assertThat(session.toString()).doesNotContain("Инерция —", "rubric", "referenceAnswer");
         assertThat(semantic.json().path("content").path("responseInput").stringValue(null)).isEqualTo("TEXT");
-        JsonNode outcome = attempts.submit(material.actor(), material.deck(), semantic.session(),
-                attempt(semantic, textResponse("свойство тела сохранять скорость"))).outcome();
-        assertThat(outcome.path("status").stringValue(null)).isEqualTo("UNAVAILABLE");
-        assertThat(outcome.path("feedback").path("reasonCodes").get(0).stringValue(null)).isEqualTo("EVALUATOR_UNAVAILABLE");
-        assertThat(outcome.path("evidence").isNull()).isTrue();
-        assertThat(outcome.path("transition").isNull()).isTrue();
-        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.study_transition WHERE account_id=:actor")
-                .param("actor", material.actor()).query(Long.class).single()).isZero();
-
         // when the deployment loses the capability the candidate is skipped, never issued
         StudySessionRepository.Session real = repository.session(material.actor(), material.deck(), semantic.session()).orElseThrow();
         StudySessionRepository.Session fresh = new StudySessionRepository.Session(real.accountId(), UUID.randomUUID(),
