@@ -83,3 +83,30 @@ export const deckFixture = {
     deckId: ids.deckId, revisionId: ids.deckRevision, rowVersion: '8', sequence: '1', metadata: { title: 'Японский N4', description: '' },
     visibility: 'private' as const, createdAt: '2026-10-01T09:00:00Z', updatedAt: '2026-10-01T09:00:00Z', memberCount: 3, exerciseCount: 0
 };
+
+// --- Fixtures of the #290 contract additions (notes as sources); they move into `contracts/generation/http.json` with the backend ---
+
+export const noteIds = {
+    first: '20700000-0000-4000-8000-000000000001',
+    second: '20700000-0000-4000-8000-000000000002',
+    third: '20700000-0000-4000-8000-000000000003'
+};
+
+/** `sessionDetail.notes` (decision B): used notes and how many «Архивировать использованные» would archive now. */
+export function sessionWithNotes(notes: { used: number; archivable: number } | null, artifacts: readonly Record<string, unknown>[] | null = null,
+                                 overrides: Record<string, unknown> = {}): Record<string, any> {
+    const base = clone(examples['sessionDetail']);
+    return { ...base, ...(artifacts === null ? {} : { artifacts }), ...(notes === null ? {} : { notes }), ...overrides };
+}
+
+/** `getArtifact` of a NOTE-sourced artifact with the read-time `status` of decision C (omitted when `null`). */
+export function artifactDetailWithNote(status: string | null, noteId = noteIds.first): Record<string, any> {
+    const detail = clone(examples['artifactDetailItem']);
+    detail['sourceRefs'] = [{ type: 'NOTE', noteId, noteRowVersion: '3', ...(status === null ? {} : { status }) }];
+    return detail;
+}
+
+/** The answer of `archiveUsedNotes` (decision B). */
+export function noteArchiveAnswer(archived: readonly string[], skipped: readonly { noteId: string; reason: string }[] = []): Record<string, unknown> {
+    return { archived: archived.map(noteId => ({ noteId })), skipped };
+}

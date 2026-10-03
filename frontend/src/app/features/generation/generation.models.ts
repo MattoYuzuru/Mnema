@@ -93,9 +93,14 @@ export interface ArtifactSummary {
     readonly publishedRef: PublishedRef | null;
 }
 
+/** Used notes of a session (`sessionDetail.notes`): how many were used and how many «Архивировать использованные» would archive now. */
+export interface SessionNotes { readonly used: number; readonly archivable: number; }
+
 export interface SessionDetail extends SessionSummary {
     readonly spec: SpecEcho;
     readonly artifacts: readonly ArtifactSummary[];
+    /** Absent while the server does not report it (a backend older than #290): the archive action is then not offered. */
+    readonly notes: SessionNotes | null;
 }
 
 export interface SessionPage { readonly items: readonly SessionSummary[]; readonly nextCursor: string | null; }
@@ -123,8 +128,16 @@ export interface ArtifactRevision extends ArtifactRevisionRef {
     readonly payload: ArtifactPayload;
 }
 
+/** How a pinned note compares with the note now (`getArtifact.sourceRefs[].status`); informational, it never changes the artifact. */
+export const NOTE_STATUSES = ['CURRENT', 'CHANGED', 'ARCHIVED', 'DELETED'] as const;
+export type NoteStatus = (typeof NOTE_STATUSES)[number];
+
+/** A NOTE entry of the artifact's `sourceRefs`; `status` is null while the server does not report it. */
+export interface NoteSourceRef { readonly noteId: string; readonly noteRowVersion: string; readonly status: NoteStatus | null; }
+
 export interface ArtifactDetail extends ArtifactSummary {
     readonly sessionId: string;
+    readonly noteSources: readonly NoteSourceRef[];
     readonly deckId: string;
     readonly revision: ArtifactRevision | null;
     readonly mediaSlots: readonly MediaSlot[];
@@ -217,9 +230,22 @@ export type Effort = (typeof EFFORTS)[number];
 export type NotesMode = 'ONE_PER_NOTE' | 'MERGE_INTO_ONE';
 export type AudioVoice = 'female' | 'male' | null;
 
+/**
+ * Per-note overrides of a `SOURCE` note (AI-08, #290): sparse, every member optional, absent = the session default. They are
+ * valid only with `notesMode = ONE_PER_NOTE`, and an empty object is never sent.
+ */
+export interface NoteOverrides {
+    readonly effort?: Effort;
+    readonly media?: {
+        readonly audio?: { readonly enabled: boolean; readonly lang: string; readonly voice: AudioVoice };
+        readonly imageSearch?: boolean;
+    };
+}
+
 /** A pinned source of a spec (`generationSpec.MATERIALS.sources`); the pins are immutable for the session. */
 export type SpecSource =
-    | { readonly role: 'SOURCE' | 'STYLE_EXAMPLE'; readonly type: 'NOTE'; readonly noteId: string; readonly noteRowVersion: string }
+    | { readonly role: 'SOURCE' | 'STYLE_EXAMPLE'; readonly type: 'NOTE'; readonly noteId: string; readonly noteRowVersion: string;
+        readonly overrides?: NoteOverrides }
     | { readonly role: 'SOURCE' | 'STYLE_EXAMPLE'; readonly type: 'ITEM'; readonly memberKey: string; readonly itemRevisionId: string };
 
 export interface MaterialsSettings {
@@ -373,10 +399,20 @@ function parseSpecEcho(value: unknown): SpecEcho {
     };
 }
 
+function parseSessionNotes(value: unknown): SessionNotes {
+    const object = requireObject(value, ['used', 'archivable']);
+    const notes = { used: requireCount(object['used'], 20), archivable: requireCount(object['archivable'], 20) };
+    if (notes.archivable > notes.used) throw new AuthoringProtocolError('Invalid note counts.');
+    return notes;
+}
+
+/** `notes` is optional on the wire (#290): a response with and without it parses; without it the archive action is not offered. */
 export function parseSessionDetail(value: unknown): SessionDetail {
-    const object = requireObject(value, [...SUMMARY_KEYS, 'spec', 'artifacts']);
+    const withNotes = value !== null && typeof value === 'object' && !Array.isArray(value) && 'notes' in value;
+    const object = requireObject(value, [...SUMMARY_KEYS, 'spec', 'artifacts', ...(withNotes ? ['notes'] : [])]);
     const artifacts = list(object['artifacts'], 200).map(parseArtifactSummary);
-    return { ...parseSummaryFields(object), spec: parseSpecEcho(object['spec']), artifacts };
+    return { ...parseSummaryFields(object), spec: parseSpecEcho(object['spec']), artifacts,
+        notes: withNotes ? parseSessionNotes(object['notes']) : null };
 }
 
 function parseMediaSlotCounts(value: unknown): MediaSlotCounts {
@@ -453,17 +489,30 @@ function parseRevision(value: unknown): ArtifactRevision {
         validationWarnings: list(validation['warnings'], 100), payload: parsePayload(object['payload']) };
 }
 
+/**
+ * Reads the NOTE entries of `sourceRefs` and ignores the rest: only the pinned note and its informational `status` matter to
+ * the Workshop, and an unknown status (a newer server) is read as «not reported», never as an error.
+ */
+function parseNoteSourceRef(value: unknown): readonly NoteSourceRef[] {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new AuthoringProtocolError('Invalid source reference.');
+    const object = value as Record<string, unknown>;
+    if (object['type'] !== 'NOTE') return [];
+    const status = object['status'];
+    return [{ noteId: requireEntity(object['noteId']), noteRowVersion: requireVersion(object['noteRowVersion']),
+        status: typeof status === 'string' && (NOTE_STATUSES as readonly string[]).includes(status) ? status as NoteStatus : null }];
+}
+
 export function parseArtifactDetail(value: unknown): ArtifactDetail {
     const object = requireObject(value, [...ARTIFACT_SUMMARY_KEYS, 'sessionId', 'deckId', 'sourceRefs', 'revision', 'mediaSlots',
         'revisions', 'turns']);
-    list(object['sourceRefs'], 20);
+    const noteSources = list(object['sourceRefs'], 20).flatMap(parseNoteSourceRef);
     const revision = nullable(object['revision'], parseRevision);
     if (revision !== null && revision.revisionId !== object['currentRevisionId']) {
         throw new AuthoringProtocolError('Artifact revision does not match the current one.');
     }
     return {
         ...parseSummaryOf(Object.fromEntries(ARTIFACT_SUMMARY_KEYS.map(key => [key, object[key]]))),
-        sessionId: requireEntity(object['sessionId']), deckId: requireEntity(object['deckId']), revision,
+        sessionId: requireEntity(object['sessionId']), deckId: requireEntity(object['deckId']), noteSources, revision,
         mediaSlots: list(object['mediaSlots'], 64).map(parseMediaSlot),
         revisions: list(object['revisions'], 30).map(parseRevisionRef), turnCount: list(object['turns'], 50).length
     };
@@ -640,9 +689,30 @@ export function parseEstimate(value: unknown): GenerationEstimate {
 
 // --- Serialization of the spec ---
 
-function serializeSource(source: SpecSource): Record<string, unknown> {
+/** Sparse overrides as they go on the wire; `null` when nothing is overridden (an empty object is `INVALID_REQUEST`). */
+function serializeOverrides(overrides: NoteOverrides): Record<string, unknown> | null {
+    const body: Record<string, unknown> = {};
+    if (overrides.effort !== undefined) body['effort'] = oneOf(overrides.effort, EFFORTS, 'effort');
+    const media: Record<string, unknown> = {};
+    const audio = overrides.media?.audio;
+    if (audio !== undefined) media['audio'] = { enabled: audio.enabled, lang: audio.lang, voice: audio.voice };
+    if (overrides.media?.imageSearch !== undefined) media['imageSearch'] = overrides.media.imageSearch;
+    if (Object.keys(media).length > 0) body['media'] = media;
+    return Object.keys(body).length > 0 ? body : null;
+}
+
+function serializeSource(source: SpecSource, notesMode: NotesMode): Record<string, unknown> {
     if (source.type === 'NOTE') {
-        return { role: source.role, type: 'NOTE', noteId: requireEntity(source.noteId), noteRowVersion: requireVersion(source.noteRowVersion) };
+        const body: Record<string, unknown> = { role: source.role, type: 'NOTE', noteId: requireEntity(source.noteId),
+            noteRowVersion: requireVersion(source.noteRowVersion) };
+        const overrides = source.overrides === undefined ? null : serializeOverrides(source.overrides);
+        if (overrides !== null) {
+            if (source.role !== 'SOURCE' || notesMode !== 'ONE_PER_NOTE') {
+                throw new AuthoringProtocolError('Overrides apply to SOURCE notes with ONE_PER_NOTE only.');
+            }
+            body['overrides'] = overrides;
+        }
+        return body;
     }
     return { role: source.role, type: 'ITEM', memberKey: requireEntity(source.memberKey), itemRevisionId: requireEntity(source.itemRevisionId) };
 }
@@ -659,7 +729,7 @@ export function serializeMaterialsSpec(spec: MaterialsSpec): Record<string, unkn
     const body: Record<string, unknown> = { kind: 'MATERIALS' };
     if (spec.outputLanguage !== undefined) body['outputLanguage'] = spec.outputLanguage;
     body['prompt'] = spec.prompt;
-    body['sources'] = spec.sources.map(serializeSource);
+    body['sources'] = spec.sources.map(source => serializeSource(source, settings.notesMode));
     body['settings'] = {
         effort: oneOf(settings.effort, EFFORTS, 'effort'), notesMode: settings.notesMode,
         media: { audio: { enabled: settings.media.audio.enabled, lang: settings.media.audio.lang, voice: settings.media.audio.voice },
@@ -667,4 +737,27 @@ export function serializeMaterialsSpec(spec: MaterialsSpec): Record<string, unkn
         factCheck: settings.factCheck, similarToDeck: settings.similarToDeck, planFirst: false, budgetPercent: settings.budgetPercent
     };
     return body;
+}
+
+// --- Archiving the used notes (`archiveUsedNotes`, #290) ---
+
+export const NOTE_SKIP_REASONS = ['CHANGED', 'ALREADY_ARCHIVED', 'DELETED'] as const;
+export type NoteSkipReason = (typeof NOTE_SKIP_REASONS)[number];
+
+export interface NoteArchiveResult {
+    readonly archived: readonly string[];
+    readonly skipped: readonly { readonly noteId: string; readonly reason: NoteSkipReason }[];
+    readonly replayed: boolean;
+}
+
+export function parseNoteArchive(value: unknown, replayed: boolean): NoteArchiveResult {
+    const object = requireObject(value, ['archived', 'skipped']);
+    return {
+        archived: list(object['archived'], 20).map(entry => requireEntity(requireObject(entry, ['noteId'])['noteId'])),
+        skipped: list(object['skipped'], 20).map(entry => {
+            const skipped = requireObject(entry, ['noteId', 'reason']);
+            return { noteId: requireEntity(skipped['noteId']), reason: oneOf(skipped['reason'], NOTE_SKIP_REASONS, 'skip reason') };
+        }),
+        replayed
+    };
 }

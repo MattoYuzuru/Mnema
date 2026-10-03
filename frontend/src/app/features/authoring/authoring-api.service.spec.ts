@@ -93,6 +93,21 @@ describe('AuthoringApiService', () => {
         expect((await converted).publication.changes[0]?.memberKey).toBe(memberKey);
     });
 
+    it('reads one note by id with its ETag, so a pin is the version that is current now (#290)', async () => {
+        const note = firstValueFrom(api.readCapture(noteId));
+        http.expectOne(`/api/capture-notes/${noteId}`).flush({ ...capture, rowVersion: '3' }, { headers: { ...headers, ETag: '"3"' } });
+        expect(await note).toEqual({ ...capture, rowVersion: '3' });
+        for (const [flush, label] of [
+            [(request: ReturnType<HttpTestingController['expectOne']>) => request.flush(capture, { headers: { ...headers, ETag: '"9"' } }), 'wrong ETag'],
+            [(request: ReturnType<HttpTestingController['expectOne']>) => request.flush(capture, { headers: { ETag: '"0"' } }), 'cacheable'],
+            [(request: ReturnType<HttpTestingController['expectOne']>) => request.flush({ ...capture, leaked: true }, { headers: { ...headers, ETag: '"0"' } }), 'extra member']
+        ] as const) {
+            const attempt = firstValueFrom(api.readCapture(noteId));
+            flush(http.expectOne(`/api/capture-notes/${noteId}`));
+            await expect(attempt, label).rejects.toBeInstanceOf(AuthoringProtocolError);
+        }
+    });
+
     it('reads a deck-scoped pending capture count and deletes with the note version', async () => {
         const page = firstValueFrom(api.listDeckCaptures(deckId, null, 1));
         const request = http.expectOne(req => req.url === '/api/capture-notes'

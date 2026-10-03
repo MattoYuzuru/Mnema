@@ -7,8 +7,8 @@ import { AuthoringProtocolError, requireCommand, requireCursor, requireEntity, r
 import { expectedEtag } from '../own-decks/own-deck.models';
 import {
     ApprovalAck, ArtifactDetail, ArtifactSummary, CreatedSession, EventsPage, GenerationEstimate, HandoffResult,
-    MAX_APPROVALS_PER_COMMAND, MaterialsSpec, SessionDetail, SessionPage, parseApprovalAck, parseArtifactDetail,
-    parseArtifactSummary, parseEstimate, parseEventsPage, parseHandoff, parseSessionDetail, parseSessionPage,
+    MAX_APPROVALS_PER_COMMAND, MaterialsSpec, NoteArchiveResult, SessionDetail, SessionPage, parseApprovalAck, parseArtifactDetail,
+    parseArtifactSummary, parseEstimate, parseEventsPage, parseHandoff, parseNoteArchive, parseSessionDetail, parseSessionPage,
     serializeMaterialsSpec
 } from './generation.models';
 
@@ -186,6 +186,18 @@ export class GenerationApiService {
         return defer(() => this.http.post<unknown>(`${this.artifact(deckId, sessionId, artifactId)}/retry`,
             { commandId: requireCommand(commandId), expectedArtifactVersion: requireVersion(expectedArtifactVersion) },
             { observe: 'response' })).pipe(map(response => this.summary(response, artifactId, 'QUEUED')));
+    }
+
+    /**
+     * Archives the notes the approved or handed-off materials were written from (`archiveUsedNotes`, no `If-Match`). A note that
+     * changed since the pin is skipped by the server, never archived silently. An exact retry replays the stored answer.
+     */
+    archiveUsedNotes(deckId: string, sessionId: string, commandId: string): Observable<NoteArchiveResult> {
+        return defer(() => this.http.post<unknown>(`${this.session(deckId, sessionId)}/note-archival`,
+            { commandId: requireCommand(commandId) }, { observe: 'response' })).pipe(map(response => {
+            requireStatus(response, 200);
+            return parseNoteArchive(response.body, replayHeader(response));
+        }));
     }
 
     private deckPath(deckId: string): string {
