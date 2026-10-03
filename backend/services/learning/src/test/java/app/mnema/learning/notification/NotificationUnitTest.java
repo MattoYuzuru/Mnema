@@ -118,9 +118,4 @@ class NotificationUnitTest {
         new NotificationRetentionWorker(endless).purge();
         verify(endless, times(NotificationRetentionWorker.MAX_BATCHES_PER_TICK)).purgeBatch();
     }
-
-    @Test
-    void thePlaceholderReportsNoActiveWorkUntilGenerationExists() {
-        assertThat(new NoActiveWork().count(UUID.randomUUID())).isZero();
-    }
 }
