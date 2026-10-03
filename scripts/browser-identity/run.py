@@ -396,7 +396,7 @@ class Fixture(BASE.Fixture):
                   "logoutSelector": self.args.logout_selector, "errorSelector": self.args.error_selector,
                   "authoring": self.args.authoring, "media": self.args.media, "mechanics": self.args.mechanics,
                   "generation": self.args.generation, "assessment": self.args.assessment,
-                  "onlyEdits": self.args.only_edits, "cdpTimeoutMs": cdp_timeout_ms(),
+                  "onlyEdits": self.args.only_edits, "onlyAsk": self.args.only_ask, "cdpTimeoutMs": cdp_timeout_ms(),
                   "diagnosticsDir": str(self.tmp) if self.args.mechanics and self.args.keep_on_failure else None,
                   "mediaOrigin": self.media_origin, "mediaClips": media_clips}
         private_config = self.tmp / "browser.json"
@@ -411,7 +411,7 @@ class Fixture(BASE.Fixture):
                     "scripts": {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
                                 for name in ("run.py", "browser.mjs", "mechanics.mjs", "notifications.mjs", "hub.mjs",
                                              "code-block.mjs", "usage.mjs", "workshop.mjs", "exercises.mjs", "selection-edits.mjs",
-                                             "assessment.mjs")}}
+                                             "ask-mnema.mjs", "assessment.mjs")}}
         (self.args.output / "fixture.json").write_text(json.dumps(evidence, indent=2))
         runner = self.launch_group([self.args.node, str(Path(__file__).with_name("browser.mjs")), str(private_config)], "browser")
         self.control("browser_running")
@@ -520,6 +520,9 @@ def main():
     parser.add_argument("--only-edits", action="store_true",
                         help="development aid: after the base flow run only the Workshop selection-edit scenario (requires --generation); "
                              "never a substitute for the full run")
+    parser.add_argument("--only-ask", action="store_true",
+                        help="development aid: after the base flow run only the «Попросить Мнему…» scenario (requires --generation); "
+                             "never a substitute for the full run")
     parser.add_argument("--timeout", type=int, default=None, metavar="SECONDS",
                         help="global deadline, 30-900 seconds (default 180, or 600 with --mechanics)")
     parser.add_argument("--keep-on-failure", action="store_true",
@@ -536,6 +539,8 @@ def main():
         parser.error("--assessment requires --authoring")
     if args.only_edits and not args.generation:
         parser.error("--only-edits requires --generation")
+    if args.only_ask and not args.generation:
+        parser.error("--only-ask requires --generation")
     if args.timeout is None:
         args.timeout = 600 if args.mechanics else 180
         if args.generation or args.assessment:
