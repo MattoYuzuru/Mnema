@@ -91,8 +91,8 @@ export function readProblem(error: unknown): GenerationProblem {
     }
     // A request the client refused to build was never sent: a definitive validation problem, not an unknown outcome.
     if (error instanceof RequestValidationError) {
-        return { status: 400, code: null, reason: null, limit: null, capability: null, artifactIds: [], activeSessionIds: [], limits: null,
-            usage: null, uncertain: false };
+        return { status: 400, code: null, reason: null, limit: null, capability: null, artifactIds: [], activeSessionIds: [],
+            limits: null, usage: null, uncertain: false };
     }
     // A protocol error means the command may well have been applied: the answer could not be read.
     const unreadable = error instanceof AuthoringProtocolError;

@@ -14,7 +14,7 @@ import { CaptureNote, newCommandId } from '../authoring/authoring.models';
 import { CAPABILITIES_UNAVAILABLE, LearningCapabilities } from '../authoring/capabilities-api.service';
 import { GenerationApiService } from './generation-api.service';
 import { GenerationProblem, readProblem } from './generation-problem';
-import { blockImplicitSubmit } from './implicit-submit';
+import { blockImplicitSubmit, isSendKey } from './implicit-submit';
 import { scheduleEstimate } from './estimate-schedule';
 import { DEFAULT_SETTINGS, GenerationSettingsComponent, GenerationSettingsValue } from './generation-settings.component';
 import {
@@ -65,10 +65,6 @@ export function buildMaterialsSpec(prompt: string, settings: GenerationSettingsV
     };
 }
 
-/** Whether a keydown in the prompt field sends the form: Enter alone, never Shift+Enter, never while an IME composes. */
-export function isSendKey(event: Pick<KeyboardEvent, 'key' | 'shiftKey' | 'isComposing' | 'keyCode'>): boolean {
-    return event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229;
-}
 
 let nextComposer = 0;
 

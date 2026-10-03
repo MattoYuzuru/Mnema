@@ -28,3 +28,4 @@ h2:focus-visible { outline: none; }
 .note-changed { margin: .25rem 0 0; color: var(--mn-body); font-size: .95rem; }
 .note-changed-tag { display: inline-block; margin-inline-end: .35rem; border: 1px solid var(--mn-ink); padding: 0 .5rem; color: var(--mn-ink); background: var(--mn-soft); font-weight: 700; }
 @media (forced-colors: active) { .note-changed-tag { border-color: CanvasText; } }
+.selection-hint { margin-block: 0 -.25rem; font-size: .9rem; }

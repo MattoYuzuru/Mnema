@@ -1,0 +1,115 @@
+<div #host class="document-host" tabindex="-1">
+  <app-native-media-surface [document]="document()" [exposeNodeIds]="true" [overlay]="overlay()" />
+</div>
+
+@if (phase() === 'group' && !coarse()) {
+  <div #group class="selection-actions" popover="manual" role="group" aria-label="Действия с выделенным текстом"
+    [style.top]="groupPlace().top" [style.bottom]="groupPlace().bottom" [style.left]="groupPlace().left"
+    (pointerdown)="hold()" (mousedown)="$event.preventDefault()">
+    <button type="button" aria-keyshortcuts="Shift+F10" [attr.aria-disabled]="groupDisabled() ? 'true' : null"
+      [attr.aria-describedby]="groupReason() ? reasonId : null" (click)="openWindow()">Попросить Мнему…</button>
+    @if (groupReason(); as reason) { <span class="group-note" [id]="reasonId">{{ reason }}</span> }
+    @else { <kbd class="group-key" aria-hidden="true">Shift+F10</kbd> }
+  </div>
+}
+
+@if (phase() === 'group' && coarse()) {
+  <div class="selection-bar" (pointerdown)="hold()" (mousedown)="$event.preventDefault()">
+    <button type="button" [attr.aria-disabled]="groupDisabled() ? 'true' : null" [attr.aria-describedby]="groupReason() ? reasonId : null"
+      (click)="openWindow()">Попросить Мнему…</button>
+    @if (groupReason(); as reason) { <span class="group-note" [id]="reasonId">{{ reason }}</span> }
+  </div>
+}
+
+@if (phase() === 'window') {
+  <app-ai-prompt-window [mode]="mode()" [quote]="target()?.quote ?? ''" [cost]="cost()" [(instruction)]="instruction" [sending]="sending()"
+    [error]="windowError()" [limited]="limit() !== null" [anchor]="anchor()" (ask)="send($event)" (retract)="cancelSend()" (dismissed)="dismiss($event)" />
+}
+
+@if (history().length > 0) {
+  <details class="edit-history">
+    <summary>История правок ({{ history().length - 1 }})</summary>
+    <ol class="history-list">
+      @for (entry of history(); track entry.key) {
+        <li class="history-entry" [class.is-current]="entry.current">
+          <span class="history-ask">{{ entry.label }}</span>
+          @if (entry.status) { <span class="history-status">{{ entry.status }}</span> }
+          @if (entry.time) { <time class="history-time" [attr.datetime]="entry.datetime">{{ entry.time }}</time> }
+          @if (entry.current) { <span class="history-now">сейчас показана</span> }
+          @else if (entry.revertTo) {
+            <button type="button" class="strip-button" [attr.aria-disabled]="(busy() || !canRevert()) ? 'true' : null" (click)="revertTo(entry)">Вернуть к этой версии</button>
+          }
+        </li>
+      }
+    </ol>
+  </details>
+}
+
+<ng-template #slot let-id let-placement="placement">
+  @if (placement === 'before') {
+    @if (diffStart() === id) {
+      <div class="rewrite-diff" role="group" aria-label="Что изменилось в переписанном фрагменте" [id]="diffId">
+        @if (diffState(); as diff) {
+          @if (diff.phase === 'ready') {
+            @if (!diff.changed) { <p class="diff-same">Текст не изменился.</p> }
+            @for (paragraph of diff.paragraphs; track $index) {
+              <p class="diff-paragraph">@for (segment of paragraph.segments; track $index) {@switch (segment.kind) {
+                @case ('del') {<del><span class="sr-only">удалено: </span>{{ segment.text }}</del>}
+                @case ('ins') {<ins><span class="sr-only">добавлено: </span>{{ segment.text }}</ins>}
+                @default {<span>{{ segment.text }}</span>}
+              }}</p>
+            }
+          }
+        }
+      </div>
+    }
+  } @else {
+    @if (mediaKind(id); as kind) {
+      <div class="media-actions" role="group" [attr.aria-label]="mediaLabel(id)">
+        @if (kind === 'image') {
+          @for (action of imageActions; track action.key) {
+            @if (capabilityOf(action.key).available) {
+              <button type="button" class="strip-button" [attr.aria-disabled]="busy() ? 'true' : null" (click)="mediaAction(id, action.edit)">{{ action.label }}</button>
+            } @else {
+              <span class="media-unavailable">
+                <button type="button" class="strip-button" aria-disabled="true">{{ action.label }}</button>
+                <app-toggletip [topic]="action.label">{{ reasonOf(action.key) }}</app-toggletip>
+              </span>
+            }
+          }
+        } @else {
+          @if (capabilityOf('speech').available) {
+            <button type="button" class="strip-button" [attr.aria-disabled]="busy() ? 'true' : null" (click)="mediaAction(id, 'AUDIO_REGENERATE')">Озвучить заново</button>
+          } @else {
+            <span class="media-unavailable">
+              <button type="button" class="strip-button" aria-disabled="true">Озвучить заново</button>
+              <app-toggletip topic="Озвучить заново">{{ reasonOf('speech') }}</app-toggletip>
+            </span>
+          }
+        }
+        <button type="button" class="strip-button" [attr.aria-disabled]="busy() ? 'true' : null" (click)="mediaAction(id, 'REMOVE_MEDIA')">Убрать</button>
+      </div>
+    }
+    @if (busyLast() === id) { <p class="rewriting-caption">Мнема переписывает…</p> }
+    @if (reviewLast() === id) {
+      @if (review(); as strip) {
+        <div class="rewrite-strip" role="group" [class.is-failed]="strip.kind === 'failed'"
+          [attr.aria-label]="strip.kind === 'applied' ? 'Переписанный фрагмент' : 'Правка не удалась'">
+          @if (strip.kind === 'applied') {
+            <span class="strip-state">Переписано</span>
+            <button type="button" class="strip-button" [attr.aria-expanded]="showDiff()" [attr.aria-controls]="diffId" (click)="toggleDiff()">{{ showDiff() ? 'Скрыть изменения' : 'Показать изменения' }}</button>
+            <button type="button" class="strip-button" (click)="keep(strip)">Оставить</button>
+            @if (strip.canUndo) { <button type="button" class="strip-button" [attr.aria-disabled]="busy() ? 'true' : null" (click)="undo(strip)">Вернуть</button> }
+            <button type="button" class="strip-button" [attr.aria-disabled]="busy() ? 'true' : null" (click)="again(strip)">Ещё раз</button>
+            @if (showDiff() && diffState().phase === 'loading') { <span class="strip-note">Считаем изменения…</span> }
+            @if (showDiff() && diffState().phase === 'error') { <span class="strip-note is-error">Не удалось загрузить прежнюю версию.</span> }
+          } @else {
+            <span class="strip-state is-error">{{ failure() }} Текст не изменился, лимит не списан.</span>
+            <button type="button" class="strip-button" [attr.aria-disabled]="busy() ? 'true' : null" (click)="again(strip)">Ещё раз</button>
+            <button type="button" class="strip-button" (click)="keep(strip)">Закрыть</button>
+          }
+        </div>
+      }
+    }
+  }
+</ng-template>

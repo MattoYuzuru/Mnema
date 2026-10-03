@@ -127,6 +127,50 @@ export interface MediaSlot {
 
 export interface ArtifactRevisionRef { readonly revisionId: string; readonly cause: string; readonly createdAt: string; }
 
+/** What an edit does (`editArtifact.action`). The three media redos are refused with `CAPABILITY_UNAVAILABLE` until AI-09 and AI-10. */
+export const EDIT_ACTIONS = ['REWRITE', 'IMAGE_SEARCH', 'IMAGE_GENERATE', 'AUDIO_REGENERATE', 'FREE', 'REMOVE_MEDIA'] as const;
+export type EditAction = (typeof EDIT_ACTIONS)[number];
+export const EDIT_PRESETS = ['SIMPLER', 'SHORTER', 'EXAMPLE', 'LONGER'] as const;
+export type EditPreset = (typeof EDIT_PRESETS)[number];
+export const TURN_STATES = ['QUEUED', 'RUNNING', 'APPLIED', 'FAILED', 'CANCELLED'] as const;
+export type TurnState = (typeof TURN_STATES)[number];
+export const MAX_INSTRUCTION_LENGTH = 2000;
+export const MAX_EDIT_TARGETS = 50;
+
+/** One user instruction on an artifact (`getArtifact.turns[]`, `editArtifact.turn`). */
+export interface ArtifactTurn {
+    readonly turnId: string;
+    readonly status: TurnState;
+    readonly action: EditAction;
+    readonly preset: EditPreset | null;
+    readonly instruction: string | null;
+    readonly targetNodeIds: readonly string[];
+    /** The revision the turn made: set once it is `APPLIED`. */
+    readonly resultRevisionId: string | null;
+    readonly errorCode: ArtifactErrorCode | null;
+    readonly createdAt: string;
+}
+
+/** The body of `editArtifact` as the client builds it; {@link serializeEdit} turns it into the exact wire body. */
+export interface EditRequest {
+    readonly expectedRevisionId: string;
+    readonly action: EditAction;
+    readonly nodeIds: readonly string[];
+    readonly preset?: EditPreset | null;
+    readonly instruction?: string | null;
+}
+
+/** `202` of `editArtifact`: the turn and the artifact (`REVISING` for a rewrite; `PROPOSED` on the new revision for `REMOVE_MEDIA`). */
+export interface EditAccepted { readonly turn: ArtifactTurn; readonly artifact: ArtifactSummary; readonly replayed: boolean; }
+
+/** The `edit` form of `estimateGeneration`. `targetNodeCount` is the number of blocks the selection touches. */
+export interface EditEstimateRequest {
+    readonly sessionId: string;
+    readonly artifactId: string;
+    readonly action: EditAction;
+    readonly targetNodeCount?: number;
+}
+
 /** Item payload is a native-v1 document; an exercise payload is kept opaque here and read by `exercise-proposal.ts`. */
 export type ArtifactPayload =
     | { readonly kind: 'NATIVE_DOCUMENT'; readonly document: NativeDocument }
@@ -161,8 +205,10 @@ export interface ArtifactDetail extends ArtifactSummary {
     readonly deckId: string;
     readonly revision: ArtifactRevision | null;
     readonly mediaSlots: readonly MediaSlot[];
+    /** Revisions of the current generation of the draft, oldest first: exactly the ones a revert accepts. */
     readonly revisions: readonly ArtifactRevisionRef[];
-    readonly turnCount: number;
+    /** Turns of the same generation, oldest first (`REMOVE_MEDIA` included). */
+    readonly turns: readonly ArtifactTurn[];
     /** Only an `EXERCISE` artifact has it; `null` for an item (or while the server does not send it). */
     readonly display: ExerciseDisplay | null;
 }
@@ -296,25 +342,27 @@ export const MAX_APPROVALS_PER_COMMAND = 20;
 // --- Which operations a state allows (`states.json` session/artifact allowedOperations) ---
 
 export type UiOperation = 'approveArtifact' | 'approveArtifacts' | 'rejectArtifact' | 'undoRejectArtifact' | 'handoffArtifact'
-    | 'retryArtifact' | 'cancelSession' | 'deleteSession';
+    | 'retryArtifact' | 'editArtifact' | 'revertArtifact' | 'cancelSession' | 'deleteSession';
 
 const SESSION_OPERATIONS: Readonly<Record<SessionState, readonly UiOperation[]>> = {
     PLANNING: ['cancelSession', 'deleteSession'],
     PLAN_READY: ['cancelSession', 'deleteSession'],
-    RUNNING: ['approveArtifact', 'approveArtifacts', 'rejectArtifact', 'undoRejectArtifact', 'handoffArtifact', 'retryArtifact',
-        'cancelSession', 'deleteSession'],
-    REVIEW: ['approveArtifact', 'approveArtifacts', 'rejectArtifact', 'undoRejectArtifact', 'handoffArtifact', 'retryArtifact',
-        'cancelSession', 'deleteSession'],
+    RUNNING: ['approveArtifact', 'approveArtifacts', 'rejectArtifact', 'undoRejectArtifact', 'handoffArtifact', 'editArtifact',
+        'revertArtifact', 'retryArtifact', 'cancelSession', 'deleteSession'],
+    REVIEW: ['approveArtifact', 'approveArtifacts', 'rejectArtifact', 'undoRejectArtifact', 'handoffArtifact', 'editArtifact',
+        'revertArtifact', 'retryArtifact', 'cancelSession', 'deleteSession'],
     // A rejection can still be undone in a CLOSED session (#288): it reopens it (REVIEW, or CANCELLED after a cancellation).
     CLOSED: ['deleteSession', 'undoRejectArtifact'],
-    CANCELLED: ['approveArtifact', 'approveArtifacts', 'rejectArtifact', 'undoRejectArtifact', 'handoffArtifact', 'deleteSession'],
+    // A cancelled session still takes `REMOVE_MEDIA` (the only free, model-less edit), but no rewrite and no revert.
+    CANCELLED: ['approveArtifact', 'approveArtifacts', 'rejectArtifact', 'undoRejectArtifact', 'handoffArtifact', 'editArtifact',
+        'deleteSession'],
     EXPIRED: ['deleteSession']
 };
 
 const ARTIFACT_OPERATIONS: Readonly<Record<ArtifactState, readonly UiOperation[]>> = {
     QUEUED: [],
     GENERATING: [],
-    PROPOSED: ['approveArtifact', 'approveArtifacts', 'rejectArtifact', 'handoffArtifact'],
+    PROPOSED: ['approveArtifact', 'approveArtifacts', 'rejectArtifact', 'handoffArtifact', 'editArtifact', 'revertArtifact'],
     REVISING: [],
     FAILED: ['retryArtifact'],
     REJECTED: ['undoRejectArtifact'],
@@ -342,8 +390,8 @@ export function isRetryable(artifact: ArtifactSummary): boolean {
 
 /**
  * Approvable now: proposed, with every media slot ready (an exercise has no slots, so it is approvable as soon as it is
- * proposed). An artifact whose media is still being made, or failed, waits; removing media is a later task (AI-11), so a
- * failed slot is resolved by editing the material oneself.
+ * proposed). An artifact whose media is still being made, or failed, waits; a failed slot is resolved by removing the media
+ * (`REMOVE_MEDIA`, AI-11) or by editing the material oneself.
  */
 export function isApprovable(artifact: ArtifactSummary): boolean {
     const { total, ready } = artifact.mediaSlotCounts;
@@ -507,6 +555,25 @@ function parseRevisionRef(value: unknown): ArtifactRevisionRef {
         createdAt: requireInstant(object['createdAt']) };
 }
 
+export function parseTurn(value: unknown): ArtifactTurn {
+    const object = requireObject(value, ['turnId', 'status', 'action', 'preset', 'instruction', 'targetNodeIds', 'resultRevisionId',
+        'errorCode', 'createdAt']);
+    return {
+        turnId: requireEntity(object['turnId']), status: oneOf(object['status'], TURN_STATES, 'turn status'),
+        action: oneOf(object['action'], EDIT_ACTIONS, 'edit action'),
+        preset: nullable(object['preset'], preset => oneOf(preset, EDIT_PRESETS, 'edit preset')),
+        instruction: nullable(object['instruction'], instruction => text(instruction, MAX_INSTRUCTION_LENGTH * 2)),
+        targetNodeIds: list(object['targetNodeIds'], MAX_EDIT_TARGETS).map(requireEntity),
+        resultRevisionId: nullable(object['resultRevisionId'], requireEntity), errorCode: lenientErrorCode(object['errorCode']),
+        createdAt: requireInstant(object['createdAt'])
+    };
+}
+
+export function parseEditAccepted(value: unknown, replayed: boolean): EditAccepted {
+    const object = requireObject(value, ['turn', 'artifact']);
+    return { turn: parseTurn(object['turn']), artifact: parseArtifactSummary(object['artifact']), replayed };
+}
+
 function parsePayload(value: unknown): ArtifactPayload {
     if (value !== null && typeof value === 'object' && (value as Record<string, unknown>)['kind'] === 'EXERCISE_COMMAND') {
         const object = requireObject(value, ['kind', 'command']);
@@ -554,13 +621,17 @@ function parseDisplay(value: unknown): ExerciseDisplay {
 
 const ARTIFACT_DETAIL_KEYS = [...ARTIFACT_SUMMARY_KEYS, 'sessionId', 'deckId', 'sourceRefs', 'revision', 'mediaSlots', 'revisions', 'turns'];
 
-export function parseArtifactDetail(value: unknown): ArtifactDetail {
+/**
+ * `shownRevisionId` is set when the answer is a read of one exact revision (`?revisionId=`): the payload is then that revision's, and
+ * `currentRevisionId` stays the artifact's pointer. Without it the payload must be the current revision.
+ */
+export function parseArtifactDetail(value: unknown, shownRevisionId: string | null = null): ArtifactDetail {
     // `display` belongs to an exercise artifact with a revision, and only to it: absent for an item and while there is no revision.
     const hasDisplay = value !== null && typeof value === 'object' && !Array.isArray(value) && 'display' in value;
     const object = requireObject(value, hasDisplay ? [...ARTIFACT_DETAIL_KEYS, 'display'] : ARTIFACT_DETAIL_KEYS);
     const noteSources = list(object['sourceRefs'], 20).flatMap(parseNoteSourceRef);
     const revision = nullable(object['revision'], parseRevision);
-    if (revision !== null && revision.revisionId !== object['currentRevisionId']) {
+    if (revision !== null && revision.revisionId !== (shownRevisionId ?? object['currentRevisionId'])) {
         throw new AuthoringProtocolError('Artifact revision does not match the current one.');
     }
     if (hasDisplay !== (revision?.payload.kind === 'EXERCISE_COMMAND')) throw new AuthoringProtocolError('Artifact display does not match its payload.');
@@ -568,7 +639,7 @@ export function parseArtifactDetail(value: unknown): ArtifactDetail {
         ...parseSummaryOf(Object.fromEntries(ARTIFACT_SUMMARY_KEYS.map(key => [key, object[key]]))),
         sessionId: requireEntity(object['sessionId']), deckId: requireEntity(object['deckId']), noteSources, revision,
         mediaSlots: list(object['mediaSlots'], 64).map(parseMediaSlot),
-        revisions: list(object['revisions'], 30).map(parseRevisionRef), turnCount: list(object['turns'], 50).length,
+        revisions: list(object['revisions'], 40).map(parseRevisionRef), turns: list(object['turns'], 100).map(parseTurn),
         display: hasDisplay ? parseDisplay(object['display']) : null
     };
 }
@@ -893,4 +964,48 @@ export function parseNoteArchive(value: unknown, replayed: boolean): NoteArchive
         }),
         replayed
     };
+}
+
+// --- Edits and reverts (`editArtifact`, `revertArtifact`, AI-11 #293) ---
+
+/** Code points, not UTF-16 units: the server counts code points (`instruction` 1..2000, not blank). */
+function codePoints(value: string): number {
+    let count = 0;
+    for (const _ of value) count += 1;
+    return count;
+}
+
+/**
+ * The exact body of `editArtifact` (unknown fields are `INVALID_REQUEST`): `preset` only with `REWRITE`, `instruction` required for
+ * `FREE` and ignored for `REMOVE_MEDIA`, 1 to 50 distinct node ids. A request that breaks a rule is refused here and never sent.
+ */
+export function serializeEdit(request: EditRequest, commandId: string): Record<string, unknown> {
+    const action = oneOf(request.action, EDIT_ACTIONS, 'edit action');
+    const nodeIds = request.nodeIds.map(requireEntity);
+    if (nodeIds.length === 0 || nodeIds.length > MAX_EDIT_TARGETS || new Set(nodeIds).size !== nodeIds.length) {
+        throw new RequestValidationError('An edit targets 1 to 50 distinct blocks.');
+    }
+    const preset = request.preset ?? null;
+    if (preset !== null && (action !== 'REWRITE' || !(EDIT_PRESETS as readonly string[]).includes(preset))) {
+        throw new RequestValidationError('A preset belongs to a rewrite.');
+    }
+    const instruction = action === 'REMOVE_MEDIA' ? null : request.instruction?.trim() ?? null;
+    if (instruction !== null && (instruction.length === 0 || codePoints(instruction) > MAX_INSTRUCTION_LENGTH)) {
+        throw new RequestValidationError('The instruction is empty or too long.');
+    }
+    if (action === 'FREE' && instruction === null) throw new RequestValidationError('A free edit needs an instruction.');
+    return {
+        commandId: requireCommand(commandId), expectedRevisionId: requireEntity(request.expectedRevisionId), action,
+        target: { nodeIds }, ...(preset === null ? {} : { preset }), ...(instruction === null ? {} : { instruction })
+    };
+}
+
+/** The `edit` form of the estimate request body. */
+export function serializeEditEstimate(request: EditEstimateRequest): Record<string, unknown> {
+    const count = request.targetNodeCount;
+    if (count !== undefined && (!Number.isInteger(count) || count < 1 || count > MAX_EDIT_TARGETS)) {
+        throw new RequestValidationError('An edit targets 1 to 50 blocks.');
+    }
+    return { edit: { sessionId: requireEntity(request.sessionId), artifactId: requireEntity(request.artifactId),
+        action: oneOf(request.action, EDIT_ACTIONS, 'edit action'), ...(count === undefined ? {} : { targetNodeCount: count }) } };
 }
