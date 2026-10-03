@@ -28,7 +28,7 @@ Adds to the root [`AGENTS.md`](../AGENTS.md); does not repeat it. Visual directi
   is under `/decks`; Study is `/decks/:deckId/study`. `/decks/:deckId` is the Deck hub (statistics, the material
   list with selection and bulk delete); there is no separate `/decks/:deckId/materials` list route. There is no
   legacy `my-study`, public-deck, template or import route; do not reintroduce one.
-- Features live in `src/app/features/{authoring,own-decks,study,usage}` (`usage` is the profile's «ИИ-бюджет» block over `GET /api/usage`); native document/editor/renderer in
+- Features live in `src/app/features/{authoring,generation,own-decks,study,usage}` (`usage` is the profile's «ИИ-бюджет» block over `GET /api/usage`; `generation` is the AI composer and Workshop over `contracts/generation`, see the brand contract); native document/editor/renderer in
   `src/app/content`. Theme values are centralized in `src/theme/tokens.css`; components use its semantic
   tokens as the brand contract requires.
 - Wire shapes come from [`contracts/`](../contracts) fixtures that backend and frontend specs both
