@@ -298,3 +298,21 @@ html { scroll-padding-block-end: var(--mn-bulk-bar-height, 0px); }
 /* The ruled caret is the cloze field's focus indicator, including programmatic focus. */
 html body input.cloze-field:focus-visible { outline: none; }
 html body input.cloze-field { outline: none; }
+
+/*
+ * Blocks that appear while a material is written in the Workshop (`ProposalView` marks them for at most 600 ms): an ink
+ * reveal from the top. It runs once and never loops; reduced motion and the global reduced-motion rule above end it at once.
+ * Pinned by `ink-arrival.css.spec.ts`.
+ */
+.native-document > .is-arriving {
+    animation: mn-ink-in .6s cubic-bezier(.22, .61, .36, 1) both;
+}
+
+@keyframes mn-ink-in {
+    from { clip-path: inset(0 0 100% 0); }
+    to { clip-path: inset(0 0 0 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .native-document > .is-arriving { animation: none; }
+}

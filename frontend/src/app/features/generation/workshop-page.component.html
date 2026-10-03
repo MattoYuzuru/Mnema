@@ -1,0 +1,75 @@
+<section class="page narrow workshop" aria-labelledby="workshop-title">
+  <a class="back-link" [routerLink]="['/decks', deckId()]"><span aria-hidden="true">←</span> К колоде@if (store.deckTitle(); as title) { «{{ title }}»}</a>
+
+  <!-- One heading for every phase: the shell moves focus to it on navigation, and it must survive the load. -->
+  <header class="page-heading workshop-heading">
+    <div>
+      <p class="eyebrow">{{ store.phase() === 'ready' ? 'ИИ · проверьте факты' : 'Мастерская' }}</p>
+      <h1 id="workshop-title" tabindex="-1">{{ heading() }}</h1>
+      @if (store.phase() === 'ready' && excerpt(); as text) { <p class="lede">Запрос: «{{ text }}»</p> }
+    </div>
+    @if (store.phase() === 'ready') {
+      <div class="actions">
+        @if (canStop()) {
+          <button class="button" type="button" aria-label="Стоп: остановить генерацию" [attr.aria-disabled]="sessionBusy() ? 'true' : null" (click)="sessionBusy() || stop()">Стоп</button>
+        }
+        <app-hold-to-delete-button label="Удалить мастерскую" [disabled]="sessionBusy()"
+          consequence="Неодобренные материалы исчезнут. Одобренные останутся в колоде." (confirmed)="deleteSession()" />
+      </div>
+    }
+  </header>
+
+  @switch (store.phase()) {
+    @case ('loading') { <p class="notice">Открываем мастерскую…</p> }
+    @case ('missing') {
+      <section class="notice"><p>Её уже удалили или срок хранения вышел. Одобренные материалы остались в колоде.</p>
+        <p><a class="button" [routerLink]="['/decks', deckId()]">К колоде</a></p></section>
+    }
+    @case ('error') {
+      <section class="notice error" role="alert"><p>Проверьте соединение и попробуйте ещё раз. Ничего не потеряно: материалы хранятся на сервере.</p>
+        <button class="button" type="button" (click)="store.retryLoad()">Повторить</button></section>
+    }
+    @case ('ready') {
+      @if (store.notice(); as notice) {
+        <section class="notice" [class.error]="notice.tone === 'error'" [attr.role]="notice.tone === 'error' ? 'alert' : null">
+          <p>{{ notice.text }}</p>
+        </section>
+      }
+      @if (connectionNote(); as note) { <p class="notice">{{ note }}</p> }
+      @if (deferredUntil(); as day) { <p class="notice">Дневной лимит ИИ исчерпан. Мнема продолжит {{ day }}: готовое можно разбирать уже сейчас.</p> }
+      @if (endNote(); as note) { <p class="notice">{{ note }}</p> }
+
+      @if (artifacts().length === 0) {
+        <section class="notice"><p>В этой мастерской пока нет материалов.</p><p><a class="button" [routerLink]="['/decks', deckId()]">К колоде</a></p></section>
+      } @else {
+        <div class="pager-row">
+          <app-batch-pager [artifacts]="artifacts()" [selectedId]="selectedId()" (picked)="select($event)" />
+          <p class="summary" role="status">{{ statusText() }}</p>
+        </div>
+
+        @if (current(); as artifact) {
+          <app-proposal-view [artifact]="artifact" [index]="currentIndex()" [total]="artifacts().length" [deckId]="deckId()"
+            [sessionState]="session()!.state" [entry]="entry()" [draft]="draft()" [arrival]="store.arrival()" [busy]="artifactBusy()" [handoffDraftId]="store.handoffs()[artifact.artifactId] ?? null"
+            (approve)="approve()" (reject)="reject()" (undo)="undo()" (handoff)="handoff()" (retry)="retry()" (reload)="reloadDetail()" />
+        }
+
+        <div class="footer-row">
+          @if (canApproveAll()) {
+            @if (confirmingAll()) {
+              <section class="notice confirm" role="group" aria-labelledby="confirm-all-title" (keydown.escape)="dismissApproveAll()">
+                <p id="confirm-all-title"><strong>Одобрить материалов: {{ approvableCount() }}?</strong> Они сразу попадут в колоду.</p>
+                <div class="actions">
+                  <button class="button primary" type="button" #confirmApprove [attr.aria-disabled]="sessionBusy() ? 'true' : null" (click)="sessionBusy() || approveAll()">Да, одобрить</button>
+                  <button class="button" type="button" (click)="dismissApproveAll()">Отмена</button>
+                </div>
+              </section>
+            } @else {
+              <button class="button" type="button" #approveAllTrigger [attr.aria-disabled]="sessionBusy() ? 'true' : null" (click)="sessionBusy() || askApproveAll()">Одобрить все готовые ({{ approvableCount() }})</button>
+            }
+          }
+          <a class="text-link" [routerLink]="['/decks', deckId()]">Выйти в колоду</a>
+        </div>
+      }
+    }
+  }
+</section>

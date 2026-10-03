@@ -1,0 +1,10 @@
+.workshop { display: grid; gap: 1.25rem; align-content: start; }
+.workshop-heading { margin-block: .5rem 0; }
+.workshop-heading .actions { justify-content: flex-end; }
+h1 { font-size: clamp(2.25rem, 5vw, 3.75rem); }
+.pager-row { display: grid; gap: .5rem; border: 1px solid var(--mn-ink); padding: .5rem .75rem; background: var(--mn-sheet); }
+.summary { margin: 0; color: var(--mn-body); font-weight: 600; overflow-wrap: anywhere; }
+.summary:empty { display: none; }
+.footer-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem 1.5rem; border-block-start: 1px solid var(--mn-rule); padding-block-start: 1rem; }
+.confirm { margin: 0; }
+@media (min-width: 48rem) { .pager-row { grid-template-columns: minmax(0, 1fr) auto; align-items: center; } }

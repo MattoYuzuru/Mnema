@@ -1,0 +1,99 @@
+<article class="proposal" [attr.aria-busy]="writing()" [attr.aria-labelledby]="headingId" [attr.data-state]="artifact().state">
+  <header class="proposal-heading">
+    <h2 [id]="headingId" tabindex="-1">{{ position() }}<span class="status-word">, {{ status().word }}</span></h2>
+  </header>
+
+  @switch (artifact().state) {
+    @case ('QUEUED') {
+      <p class="muted">Мнема поставила материал в очередь и скоро начнёт.</p>
+      <div class="skeleton" aria-hidden="true"><span></span><span></span><span></span></div>
+    }
+    @case ('GENERATING') {
+      @if (preview(); as previewDocument) {
+        <div class="draft"><app-native-document-renderer [document]="previewDocument" /></div>
+      } @else {
+        <p class="muted">Мнема пишет материал…</p>
+        <div class="skeleton" aria-hidden="true"><span></span><span></span><span></span></div>
+      }
+    }
+    @case ('FAILED') {
+      <section class="notice error" aria-labelledby="failure-title">
+        <p id="failure-title"><strong>{{ failure() }}</strong></p>
+        @if (failureNote(); as note) { <p>{{ note }}</p> }
+      </section>
+    }
+    @case ('PUBLISHED') {
+      <section class="notice success">
+        <p><strong>Материал одобрен и добавлен в колоду.</strong></p>
+        @if (published(); as ref) { <p><a class="text-link" [routerLink]="['/decks', deckId(), 'materials', ref.memberKey]">Открыть материал</a></p> }
+      </section>
+    }
+    @case ('HANDED_OFF') {
+      <section class="notice">
+        <p><strong>Материал передан в редактор.</strong></p>
+        <p><a class="text-link" [routerLink]="['/decks', deckId(), 'materials', 'new']" [queryParams]="handoffDraftId() ? { write: 1, draft: handoffDraftId() } : { write: 1 }">Продолжить в редакторе</a></p>
+      </section>
+    }
+    @default {
+      @if (artifact().state === 'REJECTED') {
+        <section class="notice"><p><strong>Вы отклонили этот материал.</strong> Он не попадёт в колоду, пока вы его не вернёте.</p></section>
+      } @else if (artifact().state === 'STALE') {
+        <section class="notice error">
+          <p><strong>Заметка изменилась, пока писался материал.</strong></p>
+          <p>Можно написать материал заново по новой заметке, править этот самому или отклонить его.</p>
+        </section>
+      } @else if (artifact().state === 'REVISING') {
+        <p class="muted">Мнема переписывает материал. Текст ниже можно читать.</p>
+      }
+      @if (document(); as shown) {
+        <div class="final"><app-native-media-surface [document]="shown" /></div>
+      } @else if (isExercise() && detail()) {
+        <p class="notice">Предпросмотр упражнений появится позже. Пока их можно только отклонить.</p>
+      } @else if (entry()?.phase === 'error') {
+        <section class="notice error" role="alert">
+          <p>Не удалось загрузить материал.</p>
+          <button class="button" type="button" (click)="reload.emit()">Повторить</button>
+        </section>
+      } @else if (preview(); as previewDocument) {
+        <div class="draft"><app-native-document-renderer [document]="previewDocument" /></div>
+      } @else {
+        <p class="muted">Загружаем материал…</p>
+        <div class="skeleton" aria-hidden="true"><span></span><span></span><span></span></div>
+      }
+    }
+  }
+
+  @if (slotFrames().length > 0) {
+    <ul class="slots" aria-label="Медиа материала">
+      @for (frame of slotFrames(); track frame.key) {
+        <li class="slot" [class.is-failed]="frame.failed" [attr.data-kind]="frame.kind">
+          <span class="slot-caption">{{ frame.caption }}</span>
+        </li>
+      }
+    </ul>
+  }
+
+  <div class="actions proposal-actions" role="group" aria-label="Что сделать с материалом">
+    @if (artifact().state === 'PROPOSED') {
+      @if (!isExercise()) {
+        <button class="button primary" type="button" [attr.aria-disabled]="(busy() || !canApprove() || !shownIsCurrent()) ? 'true' : null"
+          [attr.aria-describedby]="approveWait() ? 'approve-wait' : null" (click)="(busy() || !canApprove() || !shownIsCurrent()) || approve.emit()">Одобрить и далее →</button>
+      }
+      @if (canHandoff()) { <button class="button" type="button" [attr.aria-disabled]="(busy() || !shownIsCurrent()) ? 'true' : null" (click)="(busy() || !shownIsCurrent()) || handoff.emit()">Править самому</button> }
+      @if (canReject()) { <button class="button" type="button" [attr.aria-disabled]="(busy()) ? 'true' : null" (click)="(busy()) || reject.emit()">Отклонить</button> }
+    }
+    @if (artifact().state === 'STALE') {
+      @if (canRetry()) { <button class="button primary" type="button" [attr.aria-disabled]="(busy()) ? 'true' : null" (click)="(busy()) || retry.emit()">Попробовать снова</button> }
+      @if (canHandoff() && shownIsCurrent()) { <button class="button" type="button" [attr.aria-disabled]="(busy()) ? 'true' : null" (click)="(busy()) || handoff.emit()">Править самому</button> }
+      @if (canReject()) { <button class="button" type="button" [attr.aria-disabled]="(busy()) ? 'true' : null" (click)="(busy()) || reject.emit()">Отклонить</button> }
+    }
+    @if (artifact().state === 'FAILED') {
+      @if (canRetry()) { <button class="button primary" type="button" [attr.aria-disabled]="(busy()) ? 'true' : null" (click)="(busy()) || retry.emit()">Попробовать снова</button> }
+      <a class="button" [routerLink]="['/decks', deckId(), 'materials', 'new']" [queryParams]="{ write: 1 }">Написать самому</a>
+    }
+    @if (artifact().state === 'REJECTED' && canUndo()) {
+      <button class="button primary" type="button" [attr.aria-disabled]="(busy()) ? 'true' : null" (click)="(busy()) || undo.emit()">Вернуть</button>
+    }
+  </div>
+  @if (approveWait(); as wait) { <p class="muted" id="approve-wait">{{ wait }}</p> }
+</article>
