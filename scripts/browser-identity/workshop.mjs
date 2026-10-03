@@ -111,14 +111,14 @@ export async function runWorkshop(ctx) {
   };
 
   /** The real API, called with the page's own bearer (no cookie). `body` is serialised here. */
-  const api = (method, path, body) => page(`
+  const api = (method, path, body, extraHeaders = {}) => page(`
     const response = await fetch(args[0] + args[2], { method: args[1], credentials: 'omit',
-      headers: { Authorization: args[3], ...(args[4] === null ? {} : { 'Content-Type': 'application/json' }) },
+      headers: { Authorization: args[3], ...(args[4] === null ? {} : { 'Content-Type': 'application/json' }), ...args[5] },
       body: args[4] === null ? undefined : args[4] });
     const text = await response.text();
     let parsed = null; try { parsed = text ? JSON.parse(text) : null; } catch { parsed = { unparsable: text.slice(0, 80) }; }
     return { status: response.status, body: parsed, etag: response.headers.get('ETag'), cache: response.headers.get('Cache-Control') };`,
-  config.frontend, method, path, 'Bearer ' + bearer, body === undefined ? null : JSON.stringify(body));
+  config.frontend, method, path, 'Bearer ' + bearer, body === undefined ? null : JSON.stringify(body), extraHeaders);
   const sessionPath = id => `/api/decks/${deckId}/generation-sessions/${id}`;
   const getSession = async id => {
     const result = await api('GET', sessionPath(id));
@@ -463,6 +463,9 @@ export async function runWorkshop(ctx) {
     await until(() => has('section.workshop app-batch-pager .dot'), 'the batch Workshop did not render its pager');
     const terminal = session => session.artifacts.every(artifact => ['PROPOSED', 'FAILED'].includes(artifact.state));
     await until(async () => terminal(await getSession(sessionId)), 'the batch did not settle (every artifact PROPOSED or FAILED)', 120_000);
+    // Reload once the batch has settled: the first material to review is chosen when the page opens.
+    await navigate(`${deckPath}/workshop/${sessionId}`, tab);
+    await until(() => has('section.workshop app-batch-pager .dot'), 'the batch Workshop did not render its pager after the reload');
     const session = await getSession(sessionId);
     const states = artifactSnapshot(session);
     evidence.batchApi = states.map(({ ordinal, state, errorCode }) => ({ ordinal, state, errorCode }));
@@ -489,7 +492,7 @@ export async function runWorkshop(ctx) {
     need(initial.summary === '2 готово · 2 не удались', `the batch summary says «${initial.summary}»`);
     need(JSON.stringify(initial.dots.map(dot => dot.status)) === JSON.stringify(['ready', 'ready', 'failed', 'failed']),
       `the dot shapes are ${initial.dots.map(dot => dot.status)}`);
-    need(initial.dots[0].current === 'step' && initial.position === '1 из 4', 'the first material to review is not selected');
+    need(initial.dots[0].current === 'step' && initial.position === '1 из 4', `the first material to review is not selected: ${JSON.stringify(initial)}`);
     need(initial.dots[2].label === 'Материал 3 из 4, не удался', `a failed dot is named «${initial.dots[2].label}»`);
     await page(`document.querySelector('.dot[aria-current=step]').focus(); return true;`);
     const keyed = [];
@@ -675,17 +678,333 @@ export async function runWorkshop(ctx) {
   evidence.sessions = { composer: 'prompt-only through the UI (1 artifact)', batch: `${NOTES.length} notes through the API (2 proposed, 1 timeout, 1 refusal)`, stopped: 'UI, cancelled by «Стоп»' };
 
   // Part B is a separate function boundary: it needs the #288 backend.
-  evidence.approval = await runWorkshopApproval(ctx, { ...shared, api, page, press, stage, snapshotUi, artifactSnapshot, getSession, activeSessions });
+  evidence.approval = await runWorkshopApproval(ctx, { ...shared, api, page, press, insertText, stage, has, need, settle, metrics, desktop, awaitCapability,
+    getSession, activeSessions, sessionPath, location, evidence, KEY: KEYS });
   record('workshop_composer_stub_real_api', evidence);
   return evidence;
 }
 
+
 /**
- * Part B of #289: approve one (the material is in Browse), «Одобрить все готовые (N)» with the in-page confirmation, reject and
- * «Вернуть», «Править самому» (the editor shows the same content, then publish), retry of the failed material, hold-to-delete of a
- * session. It needs the #288 backend (approve, bulk approve, reject/undo, hand-off, retry, delete), which is not merged into this
- * branch yet. `shared` carries the batch part A left behind (`sessions.batch`, `batchStates`) and the helpers it used.
+ * Part B of #289 (the #288 backend): approve one, reject and «Вернуть» (also after the last rejection closed the session), retry,
+ * «Одобрить все готовые (N)» with the in-page confirmation, «Править самому» into the editor and publish, and hold-to-delete of a
+ * session. Everything is driven through the real Workshop UI and checked against the real API and Browse.
+ *
+ * The Stub is deterministic, so a retry of a `[[stub:timeout]]` material fails again (its pins and prompt are unchanged): that
+ * retry is asserted as a real re-run (the artifact leaves FAILED, the session runs, the second failure arrives). The retry that
+ * ends PROPOSED is the one of a STALE material: its note was edited after it was written, approval found the drift, and the
+ * retry writes it again against the note as it is now.
  */
-export async function runWorkshopApproval(_ctx, _shared) {
-  return { skipped: true, reason: 'part B waits for the #288 backend (approve, bulk approve, reject/undo, hand-off, retry, delete)' };
+export async function runWorkshopApproval(ctx, h) {
+  const { tab, config, SafeFailure, until, navigate, saveScreenshot, setStep, deckPath, deckId } = { ...ctx, ...h };
+  const { api, page, press, insertText, stage, has, need, settle, metrics, desktop, awaitCapability, getSession, activeSessions, sessionPath,
+    location, evidence, KEY } = h;
+  const out = {};
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+  // ---- helpers -------------------------------------------------------------------------------------------------------
+  const view = () => page(`const workshop = document.querySelector('section.workshop');
+    if (!workshop) return null;
+    const article = workshop.querySelector('app-proposal-view article');
+    const active = document.activeElement;
+    const notes = [...workshop.querySelectorAll('.notice')].map(node => node.textContent.replace(/\\s+/g, ' ').trim());
+    return { dots: [...workshop.querySelectorAll('.dot')].map(dot => ({ status: dot.dataset.status, current: dot.getAttribute('aria-current') === 'step', label: dot.getAttribute('aria-label') })),
+      position: workshop.querySelector('.pager .position')?.textContent.trim() ?? null,
+      summary: (workshop.querySelector('.summary')?.textContent ?? '').replaceAll('\\u00a0', ' ').trim(),
+      h2: article?.querySelector('h2')?.textContent.replace(/\\s+/g, ' ').trim() ?? null, state: article?.dataset.state ?? null,
+      title: (article?.querySelector('.final h1, .final h2, .final h3, .final p')?.textContent ?? '').replace(/\\s+/g, ' ').trim(),
+      text: (article?.querySelector('.final')?.textContent ?? '').replace(/\\s+/g, '').trim(),
+      buttons: [...workshop.querySelectorAll('button, a.button')].map(node => node.textContent.replace(/\\s+/g, ' ').trim()),
+      actions: [...workshop.querySelectorAll('.proposal-actions button, .proposal-actions a')].map(node => node.textContent.trim()),
+      notes, regions: workshop.querySelectorAll('[role=status]').length, alerts: workshop.querySelectorAll('[role=alert]').length,
+      focus: active === document.body ? 'body' : { tag: active.tagName.toLowerCase(), id: active.id, cls: String(active.className).slice(0, 30),
+        text: (active.getAttribute('aria-label') ?? active.textContent ?? '').replace(/\\s+/g, ' ').trim().slice(0, 40), inProposal: Boolean(active.closest('app-proposal-view')),
+        inWorkshop: Boolean(active.closest('section.workshop')) } };`);
+  const oneStatus = async label => { const v = await view(); need(v.regions === 1, `${label}: the Workshop has ${v.regions} role=status regions`); return v; };
+  /** A real click on the visible button (or link) with exactly this text inside the Workshop. */
+  const press_ = async (text, scope = 'section.workshop') => {
+    need(await page(`const node = [...document.querySelectorAll(args[1] + ' button, ' + args[1] + ' a')].find(item => item.textContent.replace(/\\s+/g, ' ').trim() === args[0]);
+      if (!node) return false; if (node.getAttribute('aria-disabled') === 'true') return 'disabled'; node.click(); return true;`, text, scope) === true, `«${text}» is not pressable in the Workshop`);
+  };
+  const pickDot = async index => {
+    need(await page(`const dot = document.querySelectorAll('section.workshop .dot')[args[0]]; if (!dot) return false; dot.click(); return true;`, index), `dot ${index} is absent`);
+    await until(async () => (await view()).dots[index]?.current === true, `the pager did not select material ${index + 1}`, 8_000);
+  };
+  const states = async id => (await getSession(id)).artifacts.map(artifact => ({ state: artifact.state, code: artifact.errorCode ?? null, ref: artifact.publishedRef?.kind ?? null }));
+  const openWorkshop = async (id, position) => {
+    await navigate(`${deckPath}/workshop/${id}${position ? `?n=${position}` : ''}`, tab);
+    await until(async () => (await has('section.workshop app-batch-pager .dot')) && (await view())?.summary.length > 0, 'the Workshop did not load', 25_000);
+  };
+  const makeBatch = async (label, texts, effort = 'SHORT') => {
+    await awaitCapability();   // the retried timeout material trips the provider's circuit breaker
+    const notes = [];
+    for (const text of texts) {
+      const created = await api('POST', '/api/capture-notes', { commandId: crypto.randomUUID(), deckId, source: `workshop-harness-${label}`, text });
+      need(created.status === 201, `POST capture-notes answered ${created.status}`);
+      notes.push({ noteId: created.body.capture.noteId, rowVersion: String(created.body.capture.rowVersion) });
+    }
+    const created = await api('POST', `/api/decks/${deckId}/generation-sessions`, { commandId: crypto.randomUUID(), spec: {
+      kind: 'MATERIALS', prompt: 'Объясни коротко', sources: notes.map(note => ({ role: 'SOURCE', type: 'NOTE', noteId: note.noteId, noteRowVersion: note.rowVersion })),
+      settings: { effort, notesMode: 'ONE_PER_NOTE', media: { audio: { enabled: false, lang: 'ru', voice: null }, imageSearch: false },
+        factCheck: false, similarToDeck: false, planFirst: false, budgetPercent: null } } });
+    need(created.status === 201, `POST generation-sessions answered ${created.status} ${JSON.stringify(created.body?.code ?? created.body?.detail ?? null)}`);
+    const sessionId = created.body.sessionId;
+    await until(async () => (await getSession(sessionId)).artifacts.every(artifact => ['PROPOSED', 'FAILED'].includes(artifact.state)), `batch ${label} did not settle`, 90_000);
+    return { sessionId, notes };
+  };
+  const browseText = async memberKey => {
+    await navigate(`${deckPath}/materials/${memberKey}`, tab);
+    await until(() => has('app-native-document-renderer article'), 'the published material did not render in Browse', 25_000);
+    return page(`return document.querySelector('app-native-document-renderer article').textContent.replace(/\\s+/g, '').trim();`);
+  };
+  const itemsInDeck = async () => {
+    const response = await api('GET', `/api/decks/${deckId}/items?limit=100`);
+    need(response.status === 200, `GET deck items answered ${response.status}`);
+    return response.body.items ?? [];
+  };
+  await desktop();
+  await awaitCapability();
+  const materialsBefore = (await itemsInDeck()).length;
+
+  // =====================================================================================================================
+  // 1. Approve one, then reject/«Вернуть», then the retries, on the batch of part A
+  // =====================================================================================================================
+  await stage('approve_one', async () => {
+    const id = h.sessions.batch;
+    await openWorkshop(id);
+    const first = await oneStatus('batch opened');
+    need(first.state === 'PROPOSED' && first.actions.includes('Одобрить и далее →'), `material 1 has actions ${JSON.stringify(first.actions)}`);
+    const title = first.title;
+    await saveScreenshot('workshop-approval-proposal-1440.png', tab);
+    await metrics(390, 844, 1, true); await settle();
+    need(!(await page(`return document.documentElement.scrollWidth > document.documentElement.clientWidth;`)), 'the proposal overflows at 390 px');
+    need(await page(`return [...document.querySelectorAll('section.workshop .proposal-actions .button')].every(node => node.getBoundingClientRect().height >= 43.5);`), 'a proposal action is below 44 px at 390');
+    await saveScreenshot('workshop-approval-proposal-390.png', tab);
+    await desktop(); await settle();
+    // Approve: the real button, then the next material to review is shown and its title takes focus.
+    await press_('Одобрить и далее →');
+    await until(async () => (await states(id))[0].state === 'PUBLISHED', 'the API did not publish material 1', 20_000);
+    await until(async () => (await view()).dots[1]?.current === true, 'the pager did not advance to the next material', 10_000);
+    const after = await oneStatus('after approve');
+    need(after.focus !== 'body' && after.focus.tag === 'h2' && after.focus.inProposal, `after «Одобрить и далее» focus is ${JSON.stringify(after.focus)}, not the next material's title`);
+    need(after.dots[0].status === 'done' && after.dots[0].label.endsWith('в колоде'), `the approved dot is ${JSON.stringify(after.dots[0])}`);
+    // The summary is a throttled live region (at most one change per 2 s): wait for it.
+    await until(async () => { const text = (await view()).summary; return text.includes('1 в колоде') && text.includes('1 готово'); }, `the summary after approve did not say «1 готово … 1 в колоде» (${after.summary})`, 8_000);
+    const ref = (await getSession(id)).artifacts[0].publishedRef;
+    need(ref?.kind === 'ITEM' && ref.memberKey, 'the published artifact has no item reference');
+    const approvedSummary = (await view()).summary;
+    // The approved material shows its own state with a link into Browse (a real click), and Browse renders it.
+    await pickDot(0);
+    const published = await oneStatus('approved material');
+    need(published.notes.some(note => note.startsWith('Материал одобрен и добавлен в колоду')), `the approved material says ${JSON.stringify(published.notes)}`);
+    need(await page(`const link = [...document.querySelectorAll('section.workshop app-proposal-view a')].find(item => item.textContent.trim() === 'Открыть материал'); if (!link) return false; link.click(); return true;`), '«Открыть материал» is absent');
+    await until(async () => (await location()).endsWith(`/materials/${ref.memberKey}`) && await has('app-native-document-renderer article'), 'the link did not open the material in Browse', 25_000);
+    const browsed = await page(`return document.querySelector('app-native-document-renderer article').textContent.replace(/\\s+/g, ' ').trim();`);
+    need(browsed.includes(title.slice(0, 20)) || browsed.length > 10, 'Browse shows no content of the approved material');
+    const inDeck = await itemsInDeck();
+    need(inDeck.length === materialsBefore + 1, `the deck has ${inDeck.length} materials, expected ${materialsBefore + 1}`);
+    out.approveOne = { advanced: true, focusAfter: after.focus, summary: approvedSummary, memberKey: ref.memberKey, browseChars: browsed.length, deckMaterials: inDeck.length };
+    return out.approveOne;
+  });
+
+  await stage('reject_undo_retry', async () => {
+    const id = h.sessions.batch;
+    await openWorkshop(id, 2);
+    need((await view()).state === 'PROPOSED', 'material 2 is not PROPOSED');
+    await press_('Отклонить');
+    await until(async () => (await states(id))[1].state === 'REJECTED', 'the API did not reject material 2', 20_000);
+    await until(async () => (await view()).actions.includes('Вернуть'), '«Вернуть» did not appear after the rejection');
+    const rejected = await oneStatus('after reject');
+    need(rejected.focus !== 'body', `after «Отклонить» focus fell to the page (${JSON.stringify(rejected.focus)})`);
+    need(rejected.notes.some(note => note.startsWith('Вы отклонили этот материал')), 'the rejection is not stated');
+    await saveScreenshot('workshop-approval-rejected-1440.png', tab);
+    await press_('Вернуть');
+    await until(async () => (await states(id))[1].state === 'PROPOSED', 'the API did not restore material 2', 20_000);
+    await until(async () => (await view()).actions.includes('Одобрить и далее →'), 'the proposal did not come back after «Вернуть»');
+    const restored = await oneStatus('after undo');
+    need(restored.focus !== 'body', `after «Вернуть» focus fell to the page (${JSON.stringify(restored.focus)})`);
+
+    // Retry of the timeout material: a real re-run, which the Stub fails again.
+    await awaitCapability();
+    await pickDot(2);
+    const timeout = await view();
+    need(timeout.actions.includes('Попробовать снова'), 'the timed-out material offers no retry');
+    const before = (await getSession(id)).artifacts[2];
+    await press_('Попробовать снова');
+    await until(async () => { const a = (await getSession(id)).artifacts[2]; return a.state !== 'FAILED' || a.rowVersion !== before.rowVersion; }, 'the retry did not start (the artifact stayed FAILED)', 15_000);
+    const running = await getSession(id);
+    out.retryFailed = { leftFailed: true, sessionAfterRetry: running.state, artifactAfterRetry: running.artifacts[2].state };
+    await until(async () => (await getSession(id)).artifacts[2].state === 'FAILED' && (await getSession(id)).artifacts[2].rowVersion !== before.rowVersion,
+      'the retried timeout material did not fail again', 90_000);
+    await until(async () => (await view()).actions.includes('Попробовать снова'), 'the second failure shows no retry again', 20_000);
+    out.retryFailed.endedFailedAgain = true;
+    const settled = await oneStatus('after retry');
+    out.rejectUndo = { rejectedNote: true, restored: true, focusAfterReject: rejected.focus, focusAfterUndo: restored.focus };
+    return { ...out.rejectUndo, retryFailed: out.retryFailed, summary: settled.summary };
+  });
+
+  // =====================================================================================================================
+  // 2. Hand-off: «Править самому» opens the editor on the same content; publishing it puts the material in Browse
+  // =====================================================================================================================
+  await stage('handoff_publish', async () => {
+    const id = h.sessions.composer;
+    await openWorkshop(id);
+    const shown = await oneStatus('composer session');
+    need(shown.actions.includes('Править самому'), `the single material offers ${JSON.stringify(shown.actions)}`);
+    const count = (await itemsInDeck()).length;
+    await press_('Править самому');
+    await until(async () => (await location()).includes('/materials/new') && (await location()).includes('draft='), '«Править самому» did not open the editor on a draft', 25_000);
+    await until(() => has('app-item-editor-page .ProseMirror'), 'the editor did not load', 25_000);
+    await until(async () => (await page(`return document.querySelector('app-item-editor-page .ProseMirror')?.textContent.replace(/\\s+/g, '').length ?? 0;`)) > 5, 'the editor is empty');
+    const editorText = await page(`return document.querySelector('app-item-editor-page .ProseMirror').textContent.replace(/\\s+/g, '');`);
+    const artifact = (await getSession(id)).artifacts[0];
+    need(artifact.state === 'HANDED_OFF', `the artifact is ${artifact.state} after the hand-off`);
+    // Same content: every character the Workshop showed (ruby readings are rendered by both) is in the editor.
+    const missing = [...new Set(shown.text)].filter(char => !editorText.includes(char));
+    need(missing.length <= Math.ceil(shown.text.length * 0.02), `the editor lacks content the Workshop showed: ${missing.join('').slice(0, 40)}`);
+    await saveScreenshot('workshop-approval-handoff-editor-1440.png', tab);
+    need(await page(`const button = [...document.querySelectorAll('app-item-editor-page button')].find(item => item.textContent.trim() === 'Опубликовать'); if (!button || button.disabled) return false; button.click(); return true;`), 'the editor cannot publish the handed-off material');
+    await until(async () => (await itemsInDeck()).length === count + 1, 'the published material is not in the deck', 30_000);
+    const memberKey = (await itemsInDeck()).map(item => item.memberKey ?? item.itemId).find(Boolean);
+    await until(async () => /\/materials\/[0-9a-f-]{36}$/u.test(await location()) || await has('app-native-document-renderer article'), 'the editor did not land in Browse after publishing', 25_000);
+    need(await has('app-native-document-renderer article'), 'Browse does not show the published material');
+    const after = (await getSession(id)).state;
+    out.handoff = { editorHasSameContent: true, charsCompared: editorText.length, artifactState: artifact.state, deckMaterials: count + 1, sessionAfter: after, memberKey: Boolean(memberKey) };
+    return out.handoff;
+  });
+
+  // =====================================================================================================================
+  // 3. «Одобрить все готовые (N)» with its in-page confirmation; the closed, empty session
+  // =====================================================================================================================
+  await stage('approve_all', async () => {
+    const { sessionId } = await makeBatch('all', ['Правило: глагол い-типа меняет конец на ない.', 'Правило: частица は отмечает тему.', 'Правило: числительные и счётные слова.']);
+    out.approveAllSession = sessionId;
+    await openWorkshop(sessionId);
+    const ready = await oneStatus('approve-all batch');
+    need(ready.summary === '3 готово', `the batch says «${ready.summary}»`);
+    const trigger = ready.buttons.find(label => label.startsWith('Одобрить все готовые'));
+    need(trigger?.replaceAll(' ', ' ') === 'Одобрить все готовые (3)', `the approve-all button says «${trigger}»`);
+    await press_(trigger);
+    await until(async () => (await view()).notes.some(note => note.includes('Одобрить материалов: 3?')), 'the in-page confirmation did not appear');
+    const asked = await oneStatus('confirmation');
+    need(asked.focus !== 'body' && asked.focus.text === 'Да, одобрить', `focus on the confirmation is ${JSON.stringify(asked.focus)}, not «Да, одобрить»`);
+    need((await getSession(sessionId)).artifacts.every(artifact => artifact.state === 'PROPOSED'), 'something was approved before the confirmation');
+    await saveScreenshot('workshop-approve-all-confirm-1440.png', tab);
+    await metrics(390, 844, 1, true); await settle();
+    need(!(await page(`return document.documentElement.scrollWidth > document.documentElement.clientWidth;`)), 'the confirmation overflows at 390 px');
+    await page(`document.querySelector('section.workshop .confirm')?.scrollIntoView({ block: 'center' }); return true;`);
+    await saveScreenshot('workshop-approve-all-confirm-390.png', tab);
+    await desktop(); await settle();
+    // Escape or «Отмена» gives the focus back to the button that asked.
+    await press_('Отмена');
+    const dismissed = await oneStatus('dismissed');
+    await until(async () => (await view()).focus?.text?.startsWith('Одобрить все готовые'), 'focus did not return to «Одобрить все готовые»', 5_000);
+    need((await getSession(sessionId)).artifacts.every(artifact => artifact.state === 'PROPOSED'), 'the cancelled confirmation approved something');
+    await press_(trigger);
+    await until(async () => (await view()).notes.some(note => note.includes('Одобрить материалов: 3?')), 'the confirmation did not reopen');
+    const count = (await itemsInDeck()).length;
+    await press_('Да, одобрить');
+    await until(async () => (await getSession(sessionId)).artifacts.every(artifact => artifact.state === 'PUBLISHED'), 'not every material was approved', 30_000);
+    await until(async () => (await view()).summary === '3 в колоде', 'the summary did not say «3 в колоде»', 15_000);
+    const done = await oneStatus('after approve all');
+    need(done.focus !== 'body' && done.focus.tag === 'h2', `after approve-all focus is ${JSON.stringify(done.focus)}`);
+    need((await itemsInDeck()).length === count + 3, 'the three approved materials are not in the deck');
+    await until(async () => (await getSession(sessionId)).state === 'CLOSED', 'the session did not close', 15_000);
+    await until(async () => (await view()).notes.some(note => note.includes('Все материалы разобраны')), 'the closed session does not say it is finished', 15_000);
+    need(!(await view()).buttons.some(label => label.startsWith('Одобрить все')), 'approve-all is still offered in a finished session');
+    await saveScreenshot('workshop-closed-session-1440.png', tab);
+    await metrics(390, 844, 1, true); await settle();
+    await saveScreenshot('workshop-closed-session-390.png', tab);
+    await desktop(); await settle();
+    out.approveAll = { count: 3, confirmationFocus: asked.focus, cancelRestoredFocus: true, allPublished: true, deckGrewBy: 3, sessionState: 'CLOSED', summary: done.summary };
+    return out.approveAll;
+  });
+
+  // =====================================================================================================================
+  // 4. A material whose note changed: approval finds it STALE; its retry writes it again and ends PROPOSED
+  // =====================================================================================================================
+  await stage('stale_retry', async () => {
+    await awaitCapability();
+    const { sessionId, notes } = await makeBatch('stale', ['Заметка о счётных словах: 本, 枚, 個.']);
+    const note = await api('GET', `/api/capture-notes/${notes[0].noteId}`);
+    need(note.status === 200 && note.etag, `GET capture note answered ${note.status}`);
+    const updated = await api('PUT', `/api/capture-notes/${notes[0].noteId}`, { source: 'workshop-harness-stale', text: 'Заметка о счётных словах, исправленная: 本, 枚, 個, 匹, 冊.' }, { 'If-Match': note.etag });
+    need(updated.status === 200, `PUT capture note answered ${updated.status}`);
+    await openWorkshop(sessionId);
+    const before = (await getSession(sessionId)).artifacts[0];
+    await press_('Одобрить и далее →');
+    await until(async () => (await getSession(sessionId)).artifacts[0].state === 'STALE', 'approval did not find the changed note (artifact not STALE)', 20_000);
+    await until(async () => (await view()).actions.includes('Попробовать снова'), 'a STALE material offers no retry', 15_000);
+    const stale = await oneStatus('stale');
+    need(stale.notes.some(note => note.includes('Заметка изменилась')), `the stale material says ${JSON.stringify(stale.notes)}`);
+    await saveScreenshot('workshop-approval-stale-1440.png', tab);
+    await press_('Попробовать снова');
+    await until(async () => (await getSession(sessionId)).artifacts[0].state === 'PROPOSED' && (await getSession(sessionId)).artifacts[0].rowVersion !== before.rowVersion,
+      'the retried STALE material did not end PROPOSED', 60_000);
+    await until(async () => (await view()).actions.includes('Одобрить и далее →'), 'the rewritten material is not offered for approval', 15_000);
+    await oneStatus('after stale retry');
+    out.staleRetry = { staleAfterApproval: true, retryEndedProposed: true, newRevision: (await getSession(sessionId)).artifacts[0].currentRevisionId !== before.currentRevisionId };
+    out.staleSession = sessionId;
+    return out.staleRetry;
+  });
+
+  // =====================================================================================================================
+  // 5. The last rejection closes the session; «Вернуть» still works and the reopened session is polled again; hold-to-delete
+  // =====================================================================================================================
+  await stage('last_reject_undo_delete', async () => {
+    await awaitCapability();
+    const { sessionId } = await makeBatch('last', ['Короткая заметка о частице を.']);
+    await openWorkshop(sessionId);
+    await press_('Отклонить');
+    await until(async () => (await getSession(sessionId)).state === 'CLOSED', 'rejecting the last material did not close the session', 20_000);
+    await until(async () => (await view()).actions.includes('Вернуть'), '«Вернуть» is gone after the last rejection closed the session', 15_000);
+    const closed = await oneStatus('closed by the last rejection');
+    await saveScreenshot('workshop-last-rejected-1440.png', tab);
+    await press_('Вернуть');
+    await until(async () => (await getSession(sessionId)).state === 'REVIEW', 'undoing the last rejection did not reopen the session', 20_000);
+    await until(async () => (await view()).actions.includes('Одобрить и далее →'), 'the reopened session does not offer the material');
+    // Polling resumed: a change made behind the page's back (a second reject through the API) shows up without any interaction.
+    const artifact = (await getSession(sessionId)).artifacts[0];
+    const rejected = await api('POST', `${sessionPath(sessionId)}/artifacts/${artifact.artifactId}/rejection`, { commandId: crypto.randomUUID(), expectedArtifactVersion: String(artifact.rowVersion) });
+    need(rejected.status === 200, `the outside rejection answered ${rejected.status} ${JSON.stringify(rejected.body?.code ?? null)}`);
+    await until(async () => (await view()).actions.includes('Вернуть'), 'the reopened session is not polled: an outside rejection never appeared', 25_000);
+    out.lastReject = { closedByLastRejection: true, undoOffered: true, reopenedState: 'REVIEW', pollingResumed: true, endNoteWhileClosed: closed.notes.length > 0 };
+    // Back to PROPOSED (so the Workshop is "active"), then hold-to-delete with the keyboard.
+    await press_('Вернуть');
+    await until(async () => (await getSession(sessionId)).state === 'REVIEW', 'the second undo did not reopen the session', 20_000);
+    const listedBefore = await activeSessions();
+    need(listedBefore.some(session => session.sessionId === sessionId), 'the reopened session is not in the active list');
+    await until(async () => (await view()).actions.includes('Одобрить и далее →'), 'the session is not ready for the delete check');
+    const focusDelete = await page(`const button = document.querySelector('section.workshop app-hold-to-delete-button button'); if (!button) return false; button.focus(); return document.activeElement === button;`);
+    need(focusDelete, '«Удалить мастерскую» cannot take focus');
+    // Space arms the button; a second, uninterrupted press of 3 s deletes (as in the hub scenario).
+    await page(`const button = document.querySelector('section.workshop app-hold-to-delete-button button'); button.focus(); return true;`);
+    await tab.call('Input.dispatchKeyEvent', { type: 'keyDown', text: ' ', unmodifiedText: ' ', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
+    await tab.call('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
+    await settle();
+    const armed = await page(`const button = document.querySelector('section.workshop app-hold-to-delete-button button');
+      return { armed: button.getAttribute('aria-pressed') === 'true', consequence: document.querySelector('section.workshop .consequence')?.textContent.trim() ?? null };`);
+    need(armed.armed && armed.consequence?.startsWith('Неодобренные материалы исчезнут'), `the delete button is not armed with its consequence: ${JSON.stringify(armed)}`);
+    const startedAt = Date.now();
+    await tab.call('Input.dispatchKeyEvent', { type: 'keyDown', text: ' ', unmodifiedText: ' ', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
+    await sleep(800);
+    need((await getSession(sessionId)).state === 'REVIEW', 'the session was deleted before the 3 s hold was over');
+    await until(async () => (await api('GET', sessionPath(sessionId))).status === 404, 'the hold did not delete the session', 20_000);
+    const heldMs = Date.now() - startedAt;
+    await tab.call('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
+    need(heldMs >= 3000, `the session was deleted after only ${heldMs} ms`);
+    const again = await api('DELETE', sessionPath(sessionId));
+    need(again.status === 404, `deleting a deleted session answered ${again.status}`);
+    await until(async () => (await location()) === deckPath, 'deleting did not return to the Deck page', 20_000);
+    await until(() => has('nav.hub-actions'), 'the Deck page did not load after the deletion');
+    const links = await page(`return [...document.querySelectorAll('app-deck-workshops a')].map(link => new URL(link.href).pathname);`);
+    need(!links.some(path => path.endsWith(sessionId)), 'the deleted session is still listed on the Deck page');
+    const activeAfter = await activeSessions();
+    need(!activeAfter.some(session => session.sessionId === sessionId), 'the deleted session is still in the active list');
+    out.deleteSession = { keyboardHoldMs: heldMs, api: 404, secondDelete: 404, returnedToDeck: true, notListed: true, activeBefore: listedBefore.length, activeAfter: activeAfter.length };
+    return { ...out.lastReject, ...out.deleteSession };
+  });
+
+  out.notes = 'RESOURCE_LIMIT_EXCEEDED (ACTIVE_SESSIONS) on retry and note archival are covered by backend and component tests, not driven here';
+  return out;
 }

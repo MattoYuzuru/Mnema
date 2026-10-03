@@ -360,6 +360,11 @@ module.main()
         self.assertNotIn("Fetch.fulfillRequest", source)
         self.assertNotIn("route.fulfill", source)
         self.assertIn("Input.imeSetComposition", source)
+        # Part B: approval, rejection and undo, retry, hand-off, bulk approval and the real 3 s hold, no placeholder left.
+        self.assertIn("export async function runWorkshopApproval", source)
+        self.assertNotIn("skipped: true", source)
+        for step in ("approve_one", "reject_undo_retry", "handoff_publish", "approve_all", "stale_retry", "last_reject_undo_delete"):
+            self.assertIn(step, source)
         node = shutil.which("node")
         if node is not None:
             result = subprocess.run([node, "--check", str(Path(__file__).with_name("workshop.mjs"))], capture_output=True)
