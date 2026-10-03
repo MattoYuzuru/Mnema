@@ -110,6 +110,17 @@ public class CaptureService {
         return own(actor, noteId).summary();
     }
 
+    /**
+     * Archives one note for another module (the Workshop's "archive the notes it used"): the same command as
+     * {@link #archive(UUID, UUID, long, AuthoringCommands.CaptureArchive)} with the caller's expected row version.
+     *
+     * @throws VersionConflictException the note changed since {@code expected} was read
+     */
+    @Transactional(timeout = 10)
+    public void archive(UUID actor, UUID noteId, long expected) {
+        archive(actor, noteId, expected, new AuthoringCommands.CaptureArchive(true));
+    }
+
     @Transactional(timeout = 10)
     public void delete(UUID actor, UUID noteId, long expected) {
         own(actor, noteId);

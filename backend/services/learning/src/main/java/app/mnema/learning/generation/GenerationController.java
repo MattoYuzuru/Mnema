@@ -9,6 +9,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,13 +22,15 @@ import tools.jackson.databind.node.ObjectNode;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.util.Collections;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
 /**
- * The HTTP surface of generation sessions ({@code contracts/generation/http.json}) that this task implements: create,
- * list (one deck and the account's active sessions), read, cancel, events and artifact. Approval, rejection, hand-off,
- * edits, retry and delete come with AI-05 and later and have no route here. Every response is
+ * The HTTP surface of generation sessions ({@code contracts/generation/http.json}) that exists so far: create, list (one
+ * deck and the account's active sessions), read, cancel, events, artifact, approval (one and bulk), rejection and its undo,
+ * hand-off, retry, delete and the archival of used notes. Edits and revert come with AI-11. Every response is
  * {@code Cache-Control: private, no-store}; the owner is the token subject and nothing else; ids and queries are checked
  * before the service is called, and a body is read (bounded) before any transaction starts.
  */
@@ -35,9 +38,11 @@ import java.util.UUID;
 @RequestMapping(produces = MediaType.APPLICATION_JSON_VALUE)
 class GenerationController {
     private final SessionService service;
+    private final ReviewService review;
 
-    GenerationController(SessionService service) {
+    GenerationController(SessionService service, ReviewService review) {
         this.service = service;
+        this.review = review;
     }
 
     @PostMapping(value = "/decks/{deckId}/generation-sessions", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -132,6 +137,101 @@ class GenerationController {
         String revision = parameter(request, "revisionId");
         ObjectNode body = service.artifact(owner, deck, session, artifact, revision == null ? null : entity(revision, "revisionId"));
         return ResponseEntity.ok().headers(privateHeaders()).eTag(quoted(body.path("rowVersion").stringValue("0"))).body(body);
+    }
+
+    // ----------------------------------------------------------- review commands
+
+    private static final String ARTIFACT = "/decks/{deckId}/generation-sessions/{sessionId}/artifacts/{artifactId}";
+
+    @PostMapping(value = ARTIFACT + "/approval", consumes = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<JsonNode> approve(@AuthenticationPrincipal Jwt identity, @PathVariable String deckId,
+                                     @PathVariable String sessionId, @PathVariable String artifactId,
+                                     HttpServletRequest request, InputStream body) {
+        UUID owner = owner(identity);
+        ReviewService.Result result = review.approve(owner, entity(deckId, "deckId"), entity(sessionId, "sessionId"),
+                entity(artifactId, "artifactId"), ifMatch(request), read(body));
+        return answer(HttpStatus.OK, result);
+    }
+
+    @PostMapping(value = "/decks/{deckId}/generation-sessions/{sessionId}/approvals", consumes = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<JsonNode> approveMany(@AuthenticationPrincipal Jwt identity, @PathVariable String deckId,
+                                         @PathVariable String sessionId, HttpServletRequest request, InputStream body) {
+        UUID owner = owner(identity);
+        ReviewService.Result result = review.approveMany(owner, entity(deckId, "deckId"), entity(sessionId, "sessionId"),
+                ifMatch(request), read(body));
+        return answer(HttpStatus.OK, result);
+    }
+
+    @PostMapping(value = ARTIFACT + "/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<JsonNode> reject(@AuthenticationPrincipal Jwt identity, @PathVariable String deckId,
+                                    @PathVariable String sessionId, @PathVariable String artifactId, InputStream body) {
+        UUID owner = owner(identity);
+        return answer(HttpStatus.OK, review.reject(owner, entity(deckId, "deckId"), entity(sessionId, "sessionId"),
+                entity(artifactId, "artifactId"), read(body)));
+    }
+
+    @DeleteMapping(ARTIFACT + "/rejection")
+    ResponseEntity<JsonNode> undoReject(@AuthenticationPrincipal Jwt identity, @PathVariable String deckId,
+                                        @PathVariable String sessionId, @PathVariable String artifactId,
+                                        HttpServletRequest request) {
+        UUID owner = owner(identity);
+        UUID deck = entity(deckId, "deckId");
+        UUID session = entity(sessionId, "sessionId");
+        UUID artifact = entity(artifactId, "artifactId");
+        query(request, Set.of());
+        return answer(HttpStatus.OK, review.undoReject(owner, deck, session, artifact, ifMatch(request)));
+    }
+
+    @PostMapping(value = ARTIFACT + "/handoff", consumes = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<JsonNode> handoff(@AuthenticationPrincipal Jwt identity, @PathVariable String deckId,
+                                     @PathVariable String sessionId, @PathVariable String artifactId, InputStream body) {
+        UUID owner = owner(identity);
+        ReviewService.Result result = review.handoff(owner, entity(deckId, "deckId"), entity(sessionId, "sessionId"),
+                entity(artifactId, "artifactId"), read(body));
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(HttpStatus.CREATED).headers(privateHeaders());
+        String draft = result.body().path("draft").path("draftId").stringValue("");
+        response.location(URI.create("/api/editing-drafts/" + draft));
+        if (result.replayed()) response.header("Idempotency-Replayed", "true");
+        else if (result.etag() != null) response.eTag(quoted(result.etag()));
+        return response.body(result.body());
+    }
+
+    @PostMapping(value = ARTIFACT + "/retry", consumes = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<JsonNode> retry(@AuthenticationPrincipal Jwt identity, @PathVariable String deckId,
+                                   @PathVariable String sessionId, @PathVariable String artifactId, InputStream body) {
+        UUID owner = owner(identity);
+        return answer(HttpStatus.OK, review.retry(owner, entity(deckId, "deckId"), entity(sessionId, "sessionId"),
+                entity(artifactId, "artifactId"), read(body)));
+    }
+
+    @PostMapping(value = "/decks/{deckId}/generation-sessions/{sessionId}/note-archival", consumes = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<JsonNode> archiveNotes(@AuthenticationPrincipal Jwt identity, @PathVariable String deckId,
+                                          @PathVariable String sessionId, InputStream body) {
+        UUID owner = owner(identity);
+        return answer(HttpStatus.OK, review.archiveNotes(owner, entity(deckId, "deckId"), entity(sessionId, "sessionId"), read(body)));
+    }
+
+    @DeleteMapping("/decks/{deckId}/generation-sessions/{sessionId}")
+    ResponseEntity<Void> delete(@AuthenticationPrincipal Jwt identity, @PathVariable String deckId,
+                                @PathVariable String sessionId, HttpServletRequest request) {
+        UUID owner = owner(identity);
+        UUID deck = entity(deckId, "deckId");
+        UUID session = entity(sessionId, "sessionId");
+        query(request, Set.of());
+        review.delete(owner, deck, session);
+        return ResponseEntity.noContent().headers(privateHeaders()).build();
+    }
+
+    /** A command's answer: the stored original with {@code Idempotency-Replayed} on a replay, else its {@code ETag}. */
+    private static ResponseEntity<JsonNode> answer(HttpStatus status, ReviewService.Result result) {
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(status).headers(privateHeaders());
+        if (result.replayed()) response.header("Idempotency-Replayed", "true");
+        else if (result.etag() != null) response.eTag(quoted(result.etag()));
+        return response.body(result.body());
+    }
+
+    private static List<String> ifMatch(HttpServletRequest request) {
+        return Collections.list(request.getHeaders(HttpHeaders.IF_MATCH));
     }
 
     // ------------------------------------------------------------------ helpers

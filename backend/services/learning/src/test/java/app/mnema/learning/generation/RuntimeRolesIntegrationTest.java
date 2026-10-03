@@ -17,6 +17,9 @@ class RuntimeRolesIntegrationTest extends PostgresIntegrationTest {
     @Test
     void anApiProcessServesGenerationButNeverClaimsAStep() {
         assertThat(context.getBeanNamesForType(StepDispatcher.class)).isEmpty();
+        // the retention sweep is the worker's too; the service it runs exists (a command may need it) but nothing schedules it
+        assertThat(context.getBeanNamesForType(RetentionWorker.class)).isEmpty();
+        assertThat(context.getBeanNamesForType(SessionRetention.class)).hasSize(1);
         assertThat(context.getBeanNamesForType(GenerationController.class)).hasSize(1);
         assertThat(context.getBeanNamesForType(TextDraftExecutor.class)).hasSize(1);
         assertThat(context.getBean(RuntimeRoles.class).runsWorker()).isFalse();

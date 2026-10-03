@@ -44,6 +44,14 @@ class GenerationGate implements GenerationBoundary {
         if (facts.research()) capabilities.requireWebSearch();
     }
 
+    /** The capabilities a retried material needs: text, and what its spec declared (audio, image search, web research). */
+    void requireFor(MaterialsSpec spec) {
+        capabilities.requireAiGeneration();
+        if (spec.audio()) capabilities.requireTextToSpeech();
+        if (spec.imageSearch()) capabilities.requireImageSearch();
+        if (spec.factCheck() && !spec.workingEffort().equals("SHORT")) capabilities.requireWebSearch();
+    }
+
     /** An owned note whose row version moved, or a {@code SOURCE} material that is no longer the head: 409. */
     private void requireCurrent(UUID owner, UUID deckId, SpecFacts facts, Map<UUID, Long> notes) {
         List<SourceUnavailableException.Unavailable> stale = new ArrayList<>();

@@ -156,6 +156,35 @@ class StepRepository {
                 .param("id", sessionId).query(STEP).list();
     }
 
+    /** {@code sessionId -> retry reservation ids} of the steps of these sessions (one statement; absent sessions have none). */
+    java.util.Map<UUID, List<UUID>> reservationIds(Collection<UUID> sessions) {
+        java.util.Map<UUID, List<UUID>> result = new java.util.HashMap<>();
+        if (sessions.isEmpty()) return result;
+        jdbc.sql("SELECT DISTINCT session_id,(input->>'reservationId')::uuid AS reservation FROM app_learning.generation_step "
+                        + "WHERE session_id IN (:ids) AND input->>'reservationId' IS NOT NULL").param("ids", sessions)
+                .query((row, ignored) -> result.computeIfAbsent(row.getObject("session_id", UUID.class), key -> new java.util.ArrayList<>())
+                        .add(row.getObject("reservation", UUID.class))).list();
+        return result;
+    }
+
+    /** How many TEXT_DRAFT steps the artifact has had: the next one is numbered after them. */
+    int draftCount(UUID artifactId) {
+        return jdbc.sql("SELECT count(*)::integer FROM app_learning.generation_step WHERE artifact_id=:id AND kind='TEXT_DRAFT'")
+                .param("id", artifactId).query(Integer.class).single();
+    }
+
+    /**
+     * The artifact is regenerated from scratch: its waiting media steps (of the revision being replaced) are cancelled and
+     * running ones asked to stop.
+     */
+    void cancelMedia(UUID artifactId) {
+        jdbc.sql("UPDATE app_learning.generation_step SET state='CANCELLED',updated_at=CURRENT_TIMESTAMP WHERE artifact_id=:id "
+                        + "AND kind<>'TEXT_DRAFT' AND state IN ('WAITING_DEPENDENCIES','READY','WAITING_EXTERNAL')")
+                .param("id", artifactId).update();
+        jdbc.sql("UPDATE app_learning.generation_step SET cancel_requested=TRUE,updated_at=CURRENT_TIMESTAMP WHERE artifact_id=:id "
+                        + "AND kind<>'TEXT_DRAFT' AND state='RUNNING'").param("id", artifactId).update();
+    }
+
     /** A READY step, locked, for a decision taken without a claim (its lifetime ran out while it waited). */
     Optional<Step> lockReady(UUID stepId) {
         return jdbc.sql("SELECT " + COLUMNS + " FROM app_learning.generation_step WHERE step_id=:id AND state='READY' FOR UPDATE")

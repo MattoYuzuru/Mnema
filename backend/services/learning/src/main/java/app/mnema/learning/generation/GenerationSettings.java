@@ -16,6 +16,8 @@ import java.time.Duration;
  * @param usdRubRate roubles per US dollar: the ledger keeps cost in millionths of a rouble, the provider layer in
  *                   micro-dollars (an approximation, like the price table)
  * @param similarTitle similarity (0..1) above which a new title is reported as similar to an existing one
+ * @param retention the retention worker: how often it runs, how long an expired session stays readable, when the owner is
+ *                  warned and how long the events of an ended session are kept
  */
 @ConfigurationProperties("learning.generation")
 record GenerationSettings(
@@ -26,7 +28,8 @@ record GenerationSettings(
         @DefaultValue Worker worker,
         @DefaultValue Step step,
         @DefaultValue Stream stream,
-        @DefaultValue Context context) {
+        @DefaultValue Context context,
+        @DefaultValue Retention retention) {
 
     GenerationSettings {
         if (sessionRetention.isNegative() || sessionRetention.isZero() || maxActiveSessions < 1 || maxActiveSessions > 100
@@ -110,6 +113,26 @@ record GenerationSettings(
             if (outlineLines < 1 || latestMaterials < 0 || topK < 0 || exemplarTokens < 100
                     || exemplarsTotalTokens < exemplarTokens || notesTokens < 100 || outlineTokens < 100) {
                 throw new IllegalArgumentException("Invalid generation context settings");
+            }
+        }
+    }
+
+    /**
+     * Retention of sessions ({@code learning.generation.retention.*}; the span itself is {@code session-retention}).
+     *
+     * @param interval how often the worker runs
+     * @param expiredReadable how long an EXPIRED session stays readable before the purge deletes it
+     * @param warnBefore how long before {@code expires_at} the owner is told what would be deleted
+     * @param eventsAfterEnd how long the events of a CLOSED, CANCELLED or EXPIRED session are kept
+     * @param batch sessions handled per step of one run (a run repeats a step until it finds less than a batch)
+     */
+    record Retention(@DefaultValue("PT10M") Duration interval, @DefaultValue("P1D") Duration expiredReadable,
+                     @DefaultValue("P3D") Duration warnBefore, @DefaultValue("P1D") Duration eventsAfterEnd,
+                     @DefaultValue("50") int batch) {
+        Retention {
+            if (interval.isNegative() || interval.isZero() || expiredReadable.isNegative() || warnBefore.isNegative()
+                    || warnBefore.isZero() || eventsAfterEnd.isNegative() || batch < 1 || batch > 1_000) {
+                throw new IllegalArgumentException("Invalid generation retention settings");
             }
         }
     }

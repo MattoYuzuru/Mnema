@@ -4,6 +4,7 @@ import app.mnema.learning.catalog.item.BulkSelectionTooLargeException;
 import app.mnema.learning.catalog.item.ExemplarLimitReachedException;
 import app.mnema.learning.generation.GenerationStateConflictException;
 import app.mnema.learning.generation.SourceUnavailableException;
+import app.mnema.learning.generation.StaleArtifactsException;
 import app.mnema.learning.platform.concurrency.VersionConflictException;
 import app.mnema.learning.media.MediaStorageUnavailableException;
 import app.mnema.learning.media.MediaUploadConflictException;
@@ -109,6 +110,11 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
             HttpServletRequest request
     ) {
         return response(ApiErrorCode.IDEMPOTENCY_CONFLICT, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(StaleArtifactsException.class)
+    ResponseEntity<Object> handleStaleArtifacts(StaleArtifactsException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.VERSION_CONFLICT, request, exception);
     }
 
     @ExceptionHandler(VersionConflictException.class)

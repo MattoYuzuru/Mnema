@@ -140,8 +140,9 @@ fair-use buckets, `GET /api/usage` and the estimate. Migration `V26__usage_ledge
 
 `app.mnema.learning.generation` implements the core of the Workshop ([`contracts/generation`](../../../contracts/generation/README.md),
 [architecture §3-§6](../../../docs/architecture/ai-generation-platform.md)): sessions, artifacts, durable steps, events, the
-`TEXT_DRAFT` step and its HTTP surface. Not here yet: approval and rejection (AI-05, #288), hand-off, edits, retry, delete,
-exercises, the planner and the media executors; their tables exist (V28), their routes do not.
+`TEXT_DRAFT` step and its HTTP surface. Approval, rejection, hand-off, retry, delete, note archival and retention are
+"Review commands (#288)" below. Not here yet: edits, exercises, the planner and the media executors; their tables exist (V28),
+their routes do not.
 
 - **HTTP** (`GenerationController`, every response `private, no-store`; unknown query parameters and body fields are `400`):
   `POST /api/decks/{deckId}/generation-sessions` (201, `Location`, `ETag`; an exact retry answers 201 with
@@ -221,16 +222,78 @@ exercises, the planner and the media executors; their tables exist (V28), their 
   `expireUnattached`, reference validation and the GC's blob check): while the session has not expired its assets stay
   readable and out of the sweeps. It is written by the media steps (AI-09, AI-10); the table has a composite foreign key to
   `media_asset(asset_id, owner_id)`.
-- **Retention** of sessions (`expires_at` = last activity + `learning.generation.session-retention`, event TTL) has no worker
-  yet: TODO(AI-05 or the retention task, owner: the epic that deletes unpublished sessions): purge sessions past `expires_at`
-  like `StudyRetentionWorker`, mark `EXPIRED` for the readable window, and delete `generation_event` rows a day after close.
+- **Retention** of sessions: see "Review commands (#288)" below.
 - **Configuration** is in `application.properties` (`learning.runtime.roles`, `learning.generation.*`) and the
   [runtime policy index](../../../docs/engineering/runtime-policy-index.md). Tests: `app.mnema.learning.generation`
   (`GenerationSessionIntegrationTest`, `GenerationHttpContractTest`, `GenerationWorkerIntegrationTest`,
-  `GenerationContextIntegrationTest`, `GenerationUnitTest`, `RuntimeRolesIntegrationTest`) run on the Stub with a decorator
+  `GenerationContextIntegrationTest`, `GenerationUnitTest`, `RuntimeRolesIntegrationTest` and, for #288, `GenerationReviewIntegrationTest`,
+  `GenerationReviewContractTest`, `GenerationRetentionIntegrationTest` on the shared `GenerationReviewSupport`) run on the Stub with a decorator
   that records calls and simulates failures (`GenerationTestConfiguration`); `GenerationLiveProviderTest` is the opt-in run on
   DeepSeek. The test default is `learning.runtime.roles=api` (`src/test/resources/config/application.properties`), because the
   dispatcher claims steps of the whole shared test database; generation tests opt in with `roles=all`.
+
+## Review commands (#288)
+
+The commands that take a proposal out of review, in `app.mnema.learning.generation` (`ReviewService`, `GenerationController`; wire
+shapes and decisions: [`contracts/generation`](../../../contracts/generation/README.md), decision 12). The order of evaluation of
+`http.json` holds in every command: ownership (the opaque 404), receipt replay, request validation (400), preconditions (428, 412),
+state (409) and usage (409, last, inside the transaction that changes state).
+
+- **Approve** (`POST .../artifacts/{id}/approval`, `POST .../approvals`, at most 20). The generation module owns the caller-owned
+  port `GeneratedItemPublisher` (and `GeneratedDraftOpener`); `catalog.item.GeneratedItemPublicationAdapter` implements it with the
+  pattern of `CaptureItemPublicationAdapter` (accepted dependency, architecture §2: catalog adapters implement generation-owned
+  ports, like `CaptureItemPublisher` the other way round; catalog domain code never calls `generation`, and `study` and `media`
+  import nothing of it): one `ItemService.publish` of N `create` changes (member keys and the command id derived from the request's `commandId`, so
+  a repeat is the same command) whose completion runs **in the publication's transaction**. Before it, in this order and without a
+  long transaction: the deck's version and revision (412), the artifacts' versions and revisions (412, `artifactIds` for a bulk),
+  the state (409 `ILLEGAL_STATE`), source drift (a `PROPOSED` artifact whose note pin moved or is gone, or whose `SOURCE` material is no
+  longer the head, becomes `STALE` in `SourceDrift.markStale`, a short transaction of its own that commits before the 409
+  `SOURCE_STALE`) and the media slots (409 `MEDIA_NOT_READY`: every slot of the current revision must be `READY` or `REMOVED`).
+  The completion repeats what a concurrent command could change (it locks the session row first, then re-reads each artifact),
+  then per artifact: `PUBLISHED`, `published_ref` (`{kind: ITEM, memberKey, itemRevisionId, ordinal}`), `publication_command_id`,
+  a `generation_provenance` row (model routes and prompt versions of its revisions; never returned by any API), the release of
+  its `generation_media_ref` holds (`ItemService` binds the assets of the stored document in the same transaction), the
+  `ARTIFACT_STATE` event, and, once, the session's close when nothing is left to review, and stores the acknowledgement as the
+  command's receipt. A replay of `commandId` is the stored acknowledgement with `Idempotency-Replayed: true` and no `ETag`
+  (`ETag` is the new deck version). Lock order: deck row (the catalog's CAS), then the session row; nothing takes them the other way.
+- **Reject / undo** (`POST .../rejection` with a body, `DELETE .../rejection` with `If-Match` = the artifact's version): `PROPOSED` or
+  `STALE` to `REJECTED` and back. A session `REVIEW` or `CANCELLED` with nothing left to review, retry or wait for becomes `CLOSED`
+  (`SessionLifecycle.closeIfDone`); the undo is still allowed in a `CLOSED` session until the purge and reopens it (`REVIEW`, or
+  `CANCELLED` if it ended through cancellation; activity and expiry refresh); an `EXPIRED` one refuses it.
+- **Hand-off** (`POST .../handoff`, 201, `Location`, `ETag` of the draft): `GeneratedDraftAdapter` creates an ordinary
+  `EditingDraft` (`member_key` null) through `DraftService.create` in the same transaction as the artifact's `HANDED_OFF`; media nodes
+  whose assets are not `READY` are left out of the draft document, and the artifact's waiting media steps are cancelled and its open slots settled `FAILED(CANCELLED)` in the same transaction. The account's draft quota is `422 RESOURCE_LIMIT_EXCEEDED`
+  (`limit: EDITING_DRAFTS`) and rolls the hand-off back.
+- **Retry** (`POST .../retry`): `FAILED` (not `REFUSAL`: 409 `NOT_RETRYABLE`) or `STALE` back to `QUEUED` in a `RUNNING` or `REVIEW`
+  session. In one transaction: version (412), state (409), sources (`SourceDrift`: a stale artifact is re-pinned to what exists, a
+  failed one needs its pins to hold, a deleted source is 409 `SOURCE_UNAVAILABLE` for both), capabilities (409), the active-session limit when a leftover-only `REVIEW` session would count again (422, admission lock first), a new `STEP`
+  reservation of the material's weight (409 `USAGE_LIMIT_REACHED` rolls everything back), then the replaced revision's slots, holds
+  and waiting media steps are dropped, the artifact is requeued, a new `TEXT_DRAFT` step (`draft:{artifactId}:{n}`) carries its
+  `reservationId` in its input, and a `REVIEW` session returns to `RUNNING`. The step's debit draws from that reservation
+  (`SessionReservations.forStep`); the session's `usage`, the `USAGE_UPDATED` events, the renewal and the release at `REVIEW` entry,
+  cancel, expiry and delete cover all the holds of the session (its initial batch and these).
+- **Delete** (`DELETE .../generation-sessions/{id}`, 204 then 404, no `If-Match`): releases the credit holds and deletes the session row;
+  steps, artifacts, revisions, slots, holds, sources and events go by cascade. A running worker finds its session gone and writes nothing.
+  Published materials, handed-off drafts and provenance stay.
+- **Note archival** (`POST .../note-archival`, `NoteArchival`): archives the `NOTE` sources of `PUBLISHED` or `HANDED_OFF` artifacts
+  through `CaptureService.archive` with the pinned `row_version` (the note rows are locked first, so the pin holds); a note that an
+  artifact still in play pins is not "used" (archiving would turn that sibling `STALE`); changed, already
+  archived and deleted notes are reported in `skipped`. `sessionDetail.notes` is `{used, archivable}`.
+- **Retention** (`SessionRetention`, scheduled by `RetentionWorker` for `learning.runtime.roles=worker|all`): every
+  `retention.interval` (`PT10M`) a pass (1) ends live sessions past `expires_at` as `EXPIRED` (stops steps, fails unfinished artifacts as
+  cancelled, releases holds, emits `SESSION_STATE`; `expires_at` and activity do not move), (2) purges `CLOSED` and `CANCELLED`
+  sessions past `expires_at` and `EXPIRED` ones `retention.expired-readable` (`P1D`) after it (holds released, rows cascaded; published
+  content and provenance stay; afterwards every read is 404 and the media GC may collect the assets, since the hold is gone), (3)
+  warns the owner `retention.warn-before` (`P3D`) before expiry with `GENERATION_SESSION_EXPIRING` (`pendingCount` = `PROPOSED`,
+  `REVISING` and `STALE` artifacts; key per expiry date) and (4) deletes the events of sessions that ended more than
+  `retention.events-after-end` (`P1D`) ago. Each session is handled in a transaction of its own under its row lock with the due
+  condition re-read, so activity since it was found wins. Keys are in `application.properties` and the
+  [runtime policy index](../../../docs/engineering/runtime-policy-index.md).
+- **Tests**: `GenerationReviewIntegrationTest` (approve, replay, 412/428/400, not-ready slot with a real `READY` asset bound to the
+  revision, drift to `STALE`, bulk atomicity and 20-limit, hand-off, quota, reject/undo, retry with and without budget, delete, note
+  archival, session states), `GenerationReviewContractTest` (every answer has the members of its `http.json` example),
+  `GenerationRetentionIntegrationTest` (expiry, readable window, purge with media GC, warning, events). A READY media slot is made in
+  tests by giving the slot's pre-allocated asset id a real `READY` asset (`GenerationReviewSupport.readyAsset`).
 
 ## Shared platform contracts
 

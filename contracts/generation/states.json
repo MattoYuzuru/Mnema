@@ -40,8 +40,8 @@
         "description": "No artifact is QUEUED or GENERATING and at least one is PROPOSED, REVISING, STALE or a retryable FAILED (errorCode other than REFUSAL); the user reviews, edits, approves and retries. FAILED artifacts keep the session here so a retry or undo stays possible."
       },
       "CLOSED": {
-        "terminal": true,
-        "description": "No artifact is PROPOSED, REVISING, STALE, QUEUED, GENERATING or retryable FAILED: the rest is PUBLISHED, HANDED_OFF, REJECTED or FAILED with errorCode REFUSAL (not retryable). Terminal; the client offers to archive used notes (N). REJECTED and REFUSAL leftovers do not keep a session open."
+        "terminal": false,
+        "description": "No artifact is PROPOSED, REVISING, STALE, QUEUED, GENERATING or retryable FAILED: the rest is PUBLISHED, HANDED_OFF, REJECTED or FAILED with errorCode REFUSAL (not retryable). Not purged yet: only an undo of a rejection reopens it (CLOSED to REVIEW, or to CANCELLED for a cancelled session); the client offers to archive used notes (N). REJECTED and REFUSAL leftovers do not keep a session open."
       },
       "CANCELLED": {
         "terminal": false,
@@ -219,12 +219,24 @@
         "emits": [
           "SESSION_STATE"
         ]
+      },
+      {
+        "from": "CLOSED",
+        "to": "REVIEW",
+        "trigger": "user undoes a rejection (artifact REJECTED to PROPOSED); a session that ended through cancellation returns to CANCELLED instead",
+        "actor": "USER",
+        "guard": "the session is not purged",
+        "emits": [
+          "SESSION_STATE",
+          "ARTIFACT_STATE"
+        ],
+        "note": "Architect decision AI-05: rejecting the last open artifact closes the session and the undo toast must still work. last_activity_at and expires_at are refreshed."
       }
     ],
     "retention": {
       "expiresAt": "last_activity_at + learning.generation.session-retention (P30D), for every state.",
-      "purge": "At expires_at the retention worker deletes the unpublished rows of any session (CLOSED, CANCELLED, EXPIRED or still active): artifacts, revisions, turns, slots, media holds. Published refs stay in the catalog.",
-      "events": "generation_event rows are kept until the session is closed (or cancelled or expired) plus P1D (architecture section 5), then deleted.",
+      "purge": "At expires_at the retention worker moves a live session (PLANNING, PLAN_READY, RUNNING, REVIEW) to EXPIRED, which stays readable for learning.generation.retention.expired-readable (P1D); then it deletes the unpublished rows of the session: artifacts, revisions, turns, slots, media holds, steps and events, and releases its credit holds. CLOSED and CANCELLED sessions are deleted at their expires_at directly. Published refs stay in the catalog, handed-off drafts in the editor, provenance for audit.",
+      "events": "generation_event rows are kept until the session is closed (or cancelled or expired) plus P1D (learning.generation.retention.events-after-end, architecture section 5), then deleted; the purge deletes them with the session. Three days before expires_at (retention.warn-before) the owner gets GENERATION_SESSION_EXPIRING while PROPOSED, REVISING or STALE artifacts remain.",
       "afterPurge": "getSession, getArtifact, listEvents and deleteSession answer 404. An EXPIRED session is readable only until the worker purges it."
     },
     "limits": {
@@ -249,14 +261,16 @@
         "listEvents",
         "getArtifact",
         "cancelSession",
-        "deleteSession"
+        "deleteSession",
+        "archiveUsedNotes"
       ],
       "PLAN_READY": [
         "getSession",
         "listEvents",
         "getArtifact",
         "cancelSession",
-        "deleteSession"
+        "deleteSession",
+        "archiveUsedNotes"
       ],
       "RUNNING": [
         "getSession",
@@ -271,7 +285,8 @@
         "revertArtifact",
         "retryArtifact",
         "cancelSession",
-        "deleteSession"
+        "deleteSession",
+        "archiveUsedNotes"
       ],
       "REVIEW": [
         "getSession",
@@ -286,13 +301,16 @@
         "revertArtifact",
         "retryArtifact",
         "cancelSession",
-        "deleteSession"
+        "deleteSession",
+        "archiveUsedNotes"
       ],
       "CLOSED": [
         "getSession",
         "listEvents",
         "getArtifact",
-        "deleteSession"
+        "deleteSession",
+        "archiveUsedNotes",
+        "undoRejectArtifact"
       ],
       "CANCELLED": [
         "getSession",
@@ -304,13 +322,15 @@
         "undoRejectArtifact",
         "handoffArtifact",
         "editArtifact",
-        "deleteSession"
+        "deleteSession",
+        "archiveUsedNotes"
       ],
       "EXPIRED": [
         "getSession",
         "listEvents",
         "getArtifact",
-        "deleteSession"
+        "deleteSession",
+        "archiveUsedNotes"
       ]
     },
     "operationNotes": {
@@ -479,7 +499,7 @@
         "to": "PROPOSED",
         "trigger": "user undoes the rejection",
         "actor": "USER",
-        "guard": "session is not CLOSED",
+        "guard": "session is REVIEW, RUNNING, CANCELLED or CLOSED (an undo in CLOSED reopens it); not EXPIRED, not purged",
         "emits": [
           "ARTIFACT_STATE"
         ]

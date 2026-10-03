@@ -100,6 +100,24 @@ public final class ItemPublicationCommand {
     }
 
     /**
+     * A server-built bulk of {@code create} changes with caller-chosen member keys, byte-for-byte what {@link #readBulk}
+     * would parse from the same wire body: the approval of generated materials names the keys so that a repeated command
+     * is the same command.
+     */
+    static ItemPublicationCommand creates(UUID commandId, UUID expectedDeckRevisionId, List<Create> creates) {
+        ObjectNode body = JsonNodeFactory.instance.objectNode().put("commandId", commandId.toString())
+                .put("expectedDeckRevisionId", expectedDeckRevisionId.toString());
+        var changes = body.putArray("changes");
+        creates.forEach(create -> {
+            ObjectNode change = changes.addObject().put("operation", "create").put("memberKey", create.memberKey().toString());
+            if (create.ordinal() != null) change.put("ordinal", create.ordinal());
+            change.set("document", create.document().toJson());
+        });
+        uniqueMembers(List.copyOf(creates));
+        return new ItemPublicationCommand(commandId, expectedDeckRevisionId, List.copyOf(creates), body);
+    }
+
+    /**
      * A server-built bulk of {@code delete} changes, byte-for-byte what {@link #readBulk} would parse from the same
      * wire body, so the bulk-delete route reuses the publication path and its receipts unchanged.
      */

@@ -121,8 +121,10 @@ class TextDraftExecutor implements StepExecutor {
         }
 
         int credits = claim.input().path("credits").asInt(0);
-        Optional<Reservation> reservation = session.reservationId() == null ? Optional.empty()
-                : ledger.reservation(claim.ownerId(), session.reservationId());
+        // a retried artifact draws from its own reservation (step input), every other from the session's initial batch
+        UUID reservationId = SessionReservations.forStep(session, claim.input());
+        Optional<Reservation> reservation = reservationId == null ? Optional.empty()
+                : ledger.reservation(claim.ownerId(), reservationId);
         if (reservation.isEmpty() || reservation.get().heldRemaining() < credits) {
             // The reservation cannot pay for this material: no provider call is made, a retry reserves again.
             finish(claim, Failure.fail("ESTIMATE_EXCEEDED"));
