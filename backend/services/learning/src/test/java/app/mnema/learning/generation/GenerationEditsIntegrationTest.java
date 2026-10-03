@@ -1041,10 +1041,12 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
         UUID deck = deck(owner);
         Proposal proposal = proposal(owner, deck, spec(MULTI));
         UUID target = id(blocks(detail(owner, deck, proposal)).get(1));
-        UUID turn = forgedEdit(owner, proposal, target, "READY");
+        // forged as not yet due, then aged and made due in ONE statement: a step that is due before it is aged could be
+        // claimed in between and would run instead of expiring
+        UUID turn = forgedEdit(owner, proposal, target, "PARKED");
         jdbc.sql("UPDATE app_learning.generation_artifact_turn SET status='QUEUED' WHERE turn_id=:id").param("id", turn).update();
-        jdbc.sql("UPDATE app_learning.generation_step SET created_at=CURRENT_TIMESTAMP - interval '3 minutes' WHERE step_id=:id")
-                .param("id", stepOfTurn(turn)).update();
+        jdbc.sql("UPDATE app_learning.generation_step SET created_at=CURRENT_TIMESTAMP - interval '3 minutes',next_attempt_at=CURRENT_TIMESTAMP "
+                        + "WHERE step_id=:id").param("id", stepOfTurn(turn)).update();
 
         awaitTurn(turn, "FAILED");
 
