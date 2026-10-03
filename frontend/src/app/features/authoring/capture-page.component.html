@@ -12,14 +12,38 @@
       <div class="actions"><button class="button primary" type="submit" [disabled]="busy() || form.invalid || recovery() === 'retry'">{{ busy() ? 'Сохраняем…' : 'Сохранить на потом' }}</button></div>
     </form>
     <p class="capture-total" aria-live="polite">{{ totalLabel() }}</p>
+    @if (generationAvailable() && notes().length > 0) {
+      <div class="selection-head">
+        <label class="select-all"><input type="checkbox" [checked]="allState() === 'checked'" [indeterminate]="allState() === 'mixed'"
+          (change)="toggleLoaded()" /><span>Выбрать все загруженные</span></label>
+        <p class="selection-count" id="selection-count">Выбрано: {{ selectedCount() }}</p>
+      </div>
+      <!-- The one status region of the selection: it speaks only when a pick is refused or cut short. -->
+      <p class="selection-limit" role="status">{{ limitText() }}</p>
+    }
     <ul class="capture-list">
       @for (note of notes(); track note.noteId) {
-        <li class="capture-card"><p>{{ note.text }}</p><div class="actions">
-          <button class="button" type="button" [disabled]="busy() || recovery() === 'retry'" (click)="convert(note)">Превратить в материал</button>
-          <button class="button" type="button" [disabled]="busy() || recovery() === 'retry'" (click)="deleteNote(note)" [attr.aria-label]="'Убрать заметку: ' + note.text.slice(0, 80)">Убрать заметку</button>
-        </div></li>
+        <li class="capture-card" [class.is-selected]="isSelected(note)">
+          @if (generationAvailable()) {
+            <label class="note-check"><input type="checkbox" [checked]="isSelected(note)" [attr.aria-label]="'Выбрать заметку: ' + excerptOf(note)"
+              (change)="toggleNote(note, $event)" /></label>
+          }
+          <div class="note-body"><p>{{ note.text }}</p><div class="actions">
+            <button class="button" type="button" [disabled]="busy() || recovery() === 'retry'" (click)="convert(note)">Превратить в материал</button>
+            <button class="button" type="button" [disabled]="busy() || recovery() === 'retry'" (click)="deleteNote(note)" [attr.aria-label]="'Убрать заметку: ' + note.text.slice(0, 80)">Убрать заметку</button>
+          </div></div>
+        </li>
       } @empty { <li class="notice">Заметок для этой колоды пока нет.</li> }
     </ul>
+    @if (generationAvailable() && selectedCount() > 0) {
+      <section class="selection-bar" role="region" aria-label="Действия с выбранными заметками">
+        <p class="selection-bar-count"><strong>Выбрано: {{ selectedCount() }}</strong></p>
+        <div class="actions">
+          <button class="button primary" type="button" (click)="createMaterials()">Создать материалы с ИИ</button>
+          <button class="button quiet" type="button" (click)="clearSelection()">Снять выбор</button>
+        </div>
+      </section>
+    }
     @if (nextCursor()) {
       <div #loadSentinel class="list-sentinel" aria-live="polite">
         @if (loadingMore()) { <p role="status">Загружаем следующие заметки…</p> }
