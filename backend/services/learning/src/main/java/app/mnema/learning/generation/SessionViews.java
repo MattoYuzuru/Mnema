@@ -8,6 +8,9 @@ import org.springframework.stereotype.Component;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
+import tools.jackson.databind.JsonNode;
+
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -103,7 +106,7 @@ class SessionViews {
         ObjectNode node = artifactSummary(artifact, repository.slotCounts(List.of(artifact.artifactId())).get(artifact.artifactId()));
         node.put("sessionId", session.sessionId().toString());
         node.put("deckId", session.deckId().toString());
-        node.set("sourceRefs", artifact.sourceRefs().deepCopy());
+        node.set("sourceRefs", withNoteStatus(session, artifact.sourceRefs()));
         if (revision == null) {
             node.putNull("revision");
         } else {
@@ -128,6 +131,34 @@ class SessionViews {
         }
         node.putArray("turns");
         return node;
+    }
+
+    /**
+     * The pins with a read-time {@code status} on NOTE entries (#290): {@code CURRENT} while the note is at the pinned
+     * {@code row_version}; {@code DELETED} when it is gone; otherwise {@code ARCHIVED} when it is archived and its text still
+     * is the pinned snapshot (archiving is the only change), else {@code CHANGED}. Informational: it never changes the artifact.
+     */
+    private ArrayNode withNoteStatus(Session session, JsonNode refs) {
+        List<UUID> ids = new ArrayList<>();
+        for (JsonNode ref : refs) if (ref.path("type").stringValue("").equals("NOTE")) ids.add(UUID.fromString(ref.path("noteId").stringValue("")));
+        Map<UUID, GenerationRepository.NoteLook> looks = repository.noteLooks(session.ownerId(), session.deckId(), ids);
+        ArrayNode result = Json.array();
+        for (JsonNode ref : refs) {
+            ObjectNode copy = (ObjectNode) ref.deepCopy();
+            if (copy.path("type").stringValue("").equals("NOTE")) {
+                UUID note = UUID.fromString(copy.path("noteId").stringValue(""));
+                long pin = Long.parseLong(copy.path("noteRowVersion").stringValue("0"));
+                GenerationRepository.NoteLook look = looks.get(note);
+                String status;
+                if (look == null) status = "DELETED";
+                else if (look.rowVersion() == pin) status = "CURRENT";
+                else if (look.archived() && repository.pinnedNoteText(session.sessionId(), note, pin).filter(look.text()::equals).isPresent()) status = "ARCHIVED";
+                else status = "CHANGED";
+                copy.put("status", status);
+            }
+            result.add(copy);
+        }
+        return result;
     }
 
     /** {@code {events, cursor, session, activeSteps}} of {@code events.json}. */

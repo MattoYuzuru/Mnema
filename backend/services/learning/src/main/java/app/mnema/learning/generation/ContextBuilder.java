@@ -91,7 +91,8 @@ class ContextBuilder {
         Brief brief = context.brief(owner, deck).orElseThrow(SourceGoneException::new);
         GenerationSettings.Context budgets = settings.context();
 
-        List<String> sourceTexts = sourceTexts(owner, deck, artifact);
+        MaterialsSpec.Effective effective = spec.forArtifact(artifact.sourceRefs());
+        List<String> sourceTexts = sourceTexts(session, artifact);
         String request = spec.prompt().isBlank() ? "по источникам выше" : spec.prompt();
 
         Map<UUID, String> exemplarTexts = exemplarTexts(owner, deck, spec);
@@ -119,25 +120,29 @@ class ContextBuilder {
                 .block("allowed_links", PromptBlocks.allowedLinks(links(sourceTexts)))
                 .block("note_blocks", noteBlocks(sourceTexts, budgets.notesTokens()))
                 .block("search_result_blocks", PromptBlocks.empty())
-                .text("request", request).text("task.skill", "free").number("task.words", wordsFor(spec.workingEffort()))
-                .text("task.media", media(spec));
+                .text("request", request).text("task.skill", "free").number("task.words", wordsFor(effective.workingEffort()))
+                .text("task.media", media(effective));
         AssembledPrompt prompt = assembler.assemble(PromptTask.MATERIAL, values);
-        MbmOptions options = MbmOptions.create().withAllowedLinks(links(sourceTexts)).withMaxMedia(spec.maxMedia());
-        return new DraftContext(prompt, options, maxTokens(spec.workingEffort()), TEMPERATURE);
+        MbmOptions options = MbmOptions.create().withAllowedLinks(links(sourceTexts)).withMaxMedia(effective.maxMedia());
+        return new DraftContext(prompt, options, maxTokens(effective.workingEffort()), TEMPERATURE);
     }
 
     // ---------------------------------------------------------------- sources
 
-    /** The text of every source of this artifact, in pin order; a note or material that changed is {@link SourceGoneException}. */
-    private List<String> sourceTexts(UUID owner, UUID deck, Artifact artifact) {
+    /**
+     * The text of every source of this artifact, in pin order. A note is read from the snapshot taken at the pinned
+     * {@code row_version} (admission, or a re-pin), so an edit after the pin never reaches the prompt; a material that is no
+     * longer readable is {@link SourceGoneException}.
+     */
+    private List<String> sourceTexts(Session session, Artifact artifact) {
+        UUID owner = session.ownerId();
+        UUID deck = session.deckId();
         List<String> texts = new ArrayList<>();
         for (JsonNode ref : artifact.sourceRefs()) {
             if (ref.path("type").stringValue("").equals("NOTE")) {
                 UUID noteId = UUID.fromString(ref.path("noteId").stringValue(""));
                 long version = Long.parseLong(ref.path("noteRowVersion").stringValue("0"));
-                var note = repository.note(owner, deck, noteId).filter(found -> found.rowVersion() == version)
-                        .orElseThrow(SourceGoneException::new);
-                texts.add(note.text());
+                texts.add(repository.pinnedNoteText(session.sessionId(), noteId, version).orElseThrow(SourceGoneException::new));
             } else {
                 UUID member = UUID.fromString(ref.path("memberKey").stringValue(""));
                 UUID revision = UUID.fromString(ref.path("itemRevisionId").stringValue(""));
@@ -294,7 +299,7 @@ class ContextBuilder {
         return value == null || value.isBlank() ? "не указано" : value;
     }
 
-    private static String media(MaterialsSpec spec) {
+    private static String media(MaterialsSpec.Effective spec) {
         List<String> media = new ArrayList<>();
         if (spec.audio()) media.add("аудио (::audio)");
         if (spec.imageSearch()) media.add("картинка из поиска (::image mode=search)");

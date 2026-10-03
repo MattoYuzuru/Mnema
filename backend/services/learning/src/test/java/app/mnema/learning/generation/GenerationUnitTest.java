@@ -272,19 +272,19 @@ class GenerationUnitTest {
         assertThat(parsed.items()).hasSize(1);
         assertThat(parsed.styleExamples()).hasSize(1);
         assertThat(parsed.artifactCount()).isEqualTo(2);
-        assertThat(parsed.maxMedia()).isEqualTo(2);
+        assertThat(parsed.defaults().maxMedia()).isEqualTo(2);
         assertThat(parsed.audio()).isTrue();
         assertThat(parsed.audioLanguage()).isEqualTo("ja");
         assertThat(parsed.similarToDeck()).isTrue();
         assertThat(parsed.factCheck()).isTrue();
         // no planner: AUTO is written and charged as MEDIUM
         assertThat(parsed.effort()).isEqualTo("AUTO");
-        assertThat(parsed.workingEffort()).isEqualTo("MEDIUM");
+        assertThat(parsed.defaults().workingEffort()).isEqualTo("MEDIUM");
 
         MaterialsSpec plain = MaterialsSpec.read(JSON.readTree("{\"kind\":\"MATERIALS\",\"prompt\":\"p\"}"));
         assertThat(plain.outputLanguage()).isEqualTo("ru");
         assertThat(plain.artifactCount()).isOne();
-        assertThat(plain.maxMedia()).isZero();
+        assertThat(plain.defaults().maxMedia()).isZero();
         assertThat(plain.mergeNotes()).isFalse();
         MaterialsSpec merged = MaterialsSpec.read(JSON.readTree("""
                 {"kind":"MATERIALS","settings":{"notesMode":"MERGE_INTO_ONE","effort":"DETAILED"},"sources":[
@@ -292,10 +292,33 @@ class GenerationUnitTest {
                   {"role":"SOURCE","type":"NOTE","noteId":"20700000-0000-4000-8000-000000000002","noteRowVersion":"3"}]}
                 """));
         assertThat(merged.artifactCount()).isOne();
-        assertThat(merged.workingEffort()).isEqualTo("DETAILED");
+        assertThat(merged.defaults().workingEffort()).isEqualTo("DETAILED");
         assertThat(AdmissionPricing.materialOperation("SHORT")).isEqualTo("MATERIAL_SHORT");
+        assertThat(parsed.defaults().audio()).isTrue();
         assertThat(AdmissionPricing.materialOperation("MEDIUM")).isEqualTo("MATERIAL_MEDIUM");
         assertThat(AdmissionPricing.materialOperation("DETAILED")).isEqualTo("MATERIAL_DETAILED");
         assertThat(AdmissionPricing.materialOperation("AUTO")).isEqualTo("MATERIAL_MEDIUM");
+    }
+
+    @Test
+    void perNoteOverridesChangeOnlyTheirOwnMaterialsSettings() throws Exception {
+        MaterialsSpec spec = MaterialsSpec.read(JSON.readTree("""
+                {"kind":"MATERIALS","settings":{"effort":"SHORT","media":{"imageSearch":true}},"sources":[
+                  {"role":"SOURCE","type":"NOTE","noteId":"20700000-0000-4000-8000-000000000001","noteRowVersion":"1",
+                   "overrides":{"effort":"DETAILED","media":{"audio":{"enabled":true,"lang":"ko","voice":null},"imageSearch":false}}},
+                  {"role":"SOURCE","type":"NOTE","noteId":"20700000-0000-4000-8000-000000000002","noteRowVersion":"1"}]}
+                """));
+        tools.jackson.databind.JsonNode first = JSON.readTree("[{\"type\":\"NOTE\",\"noteId\":\"20700000-0000-4000-8000-000000000001\",\"noteRowVersion\":\"1\"}]");
+        tools.jackson.databind.JsonNode second = JSON.readTree("[{\"type\":\"NOTE\",\"noteId\":\"20700000-0000-4000-8000-000000000002\",\"noteRowVersion\":\"1\"}]");
+        MaterialsSpec.Effective overridden = spec.forArtifact(first);
+        assertThat(overridden.workingEffort()).isEqualTo("DETAILED");
+        assertThat(overridden.audio()).isTrue();
+        assertThat(overridden.audioLanguage()).isEqualTo("ko");
+        assertThat(overridden.imageSearch()).isFalse();
+        assertThat(overridden.maxMedia()).isOne();
+        MaterialsSpec.Effective plain = spec.forArtifact(second);
+        assertThat(plain.workingEffort()).isEqualTo("SHORT");
+        assertThat(plain.audio()).isFalse();
+        assertThat(plain.imageSearch()).isTrue();
     }
 }
