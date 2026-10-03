@@ -1,7 +1,9 @@
 import { SegmentedOption } from '../../shared/segmented-choice.component';
+import { Capability } from '../authoring/capabilities-api.service';
 import { GenerationProblem } from './generation-problem';
 import {
-    ArtifactErrorCode, ArtifactSummary, BlockingBucket, Effort, GenerationEstimate, NoteArchiveResult, NoteSkipReason, NotesMode, SessionKind, SessionSummary, SlotKind, SlotState
+    ArtifactErrorCode, ArtifactSummary, ArtifactTurn, BlockingBucket, EditAction, EditPreset, Effort, GenerationEstimate, NoteArchiveResult, NoteSkipReason,
+    NotesMode, SessionKind, SessionSummary, SlotKind, SlotState
 } from './generation.models';
 
 /** Texts and small pure helpers of the composer and the Workshop. Voice: calm and bookish, «Мнема» in dialogue, «ИИ» in labels. */
@@ -272,4 +274,140 @@ export function describeNoteArchive(result: Pick<NoteArchiveResult, 'archived' |
     const reasons = counts.size === 1 ? SKIP_REASONS[[...counts.keys()][0]!]
         : [...counts].map(([reason, count]) => `${SKIP_REASONS[reason]}: ${count}`).join(', ');
     return `Архивировано: ${archived}, пропущено: ${skipped} — ${reasons}`;
+}
+
+// --- Selection edits (AI-11, #293) ---
+
+/** The four quick requests of «Попросить Мнему…», in the order they are offered. */
+export const EDIT_PRESET_OPTIONS: readonly { readonly value: EditPreset; readonly label: string }[] = [
+    { value: 'SIMPLER', label: 'Проще' }, { value: 'SHORTER', label: 'Короче' },
+    { value: 'EXAMPLE', label: 'Пример' }, { value: 'LONGER', label: 'Подробнее' }
+];
+
+const PRESET_LABELS: Readonly<Record<EditPreset, string>> = { SIMPLER: 'Проще', SHORTER: 'Короче', EXAMPLE: 'Пример', LONGER: 'Подробнее' };
+
+/** What a turn asked for, in a few words: «Проще», «Проще: сделай ближе к разговорной речи», the instruction itself or «Убрано медиа». */
+export function describeTurnAsk(turn: Pick<ArtifactTurn, 'action' | 'preset' | 'instruction'>): string {
+    switch (turn.action) {
+        case 'REMOVE_MEDIA': return 'Убрано медиа';
+        case 'IMAGE_SEARCH': return 'Поиск похожего изображения';
+        case 'IMAGE_GENERATE': return 'Создание изображения';
+        case 'AUDIO_REGENERATE': return 'Озвучка заново';
+        default: {
+            const preset = turn.preset === null ? null : PRESET_LABELS[turn.preset];
+            const instruction = turn.instruction;
+            if (preset !== null && instruction !== null) return `${preset}: ${instruction}`;
+            return preset ?? instruction ?? 'Переписано заново';
+        }
+    }
+}
+
+/** How a turn stands, for the history list. */
+export function describeTurnStatus(turn: Pick<ArtifactTurn, 'status' | 'action'>): string {
+    switch (turn.status) {
+        case 'QUEUED': return 'ждёт очереди';
+        case 'RUNNING': return 'пишется';
+        case 'APPLIED': return turn.action === 'REMOVE_MEDIA' ? 'сделано' : 'применено';
+        case 'FAILED': return 'не удалось';
+        case 'CANCELLED': return 'остановлено';
+    }
+}
+
+/** Why a rewrite failed, in words; the text on the screen did not change and the limit was not charged. */
+export function turnFailureReason(code: ArtifactErrorCode | null): string {
+    switch (code) {
+        case 'INVALID_OUTPUT': return 'Мнема не смогла собрать корректный текст.';
+        case 'REFUSAL': return 'Мнема отказалась переписывать этот фрагмент.';
+        case 'SOURCE_UNAVAILABLE': return 'Заметка, из которой писался материал, изменилась или удалена.';
+        case 'PROVIDER_UNAVAILABLE': return 'Сервис ИИ временно недоступен.';
+        case 'ESTIMATE_EXCEEDED': return 'Результат вышел больше, чем рассчитывалось.';
+        case 'DEADLINE_EXCEEDED': return 'Мнема не успела вовремя.';
+        default: return 'Что-то пошло не так.';
+    }
+}
+
+/** «≈ 0,3 % лимита»: the cost of one edit against the whole allowance (a finer figure than the integer percent of the estimate). */
+export function describeEditCost(estimate: GenerationEstimate, allowance: number | null): string {
+    if (allowance !== null && allowance > 0) {
+        const percent = estimate.credits.p95 / allowance * 100;
+        if (percent < 0.1) return `менее 0,1${NBSP}% лимита`;
+        const text = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: percent < 10 ? 1 : 0 }).format(percent);
+        return `≈${NBSP}${text}${NBSP}% лимита`;
+    }
+    return describeEstimate(estimate);
+}
+
+const EDIT_REFUSALS: Readonly<Record<string, string>> = {
+    TARGET_NOT_CONTIGUOUS: 'Выделение изменилось: выделите нужные абзацы заново.',
+    TARGET_UNSUPPORTED_BLOCK: 'В выделении есть блок, который Мнема пока не умеет переписывать (например, видео, формула или заголовок глубокого уровня). Выделите только текст вокруг него.',
+    TARGET_PERSONAL_DATA: 'В выделении есть e-mail или телефон — Мнема не переписывает такие фрагменты.',
+    TARGET_MEDIA_ONLY: 'В выделении только медиа. Для изображения или аудио используйте действия под ним.'
+};
+
+const CAPABILITY_WORDS: Readonly<Record<string, string>> = {
+    imageSearch: 'Поиск изображений пока недоступен.', imageGeneration: 'Создание изображений пока недоступно.',
+    textToSpeech: 'Озвучивание пока недоступно.', aiGeneration: 'ИИ сейчас недоступен. Попробуйте позже или правьте текст сами.'
+};
+
+/**
+ * What the window of «Попросить Мнему…» says about a refused edit. The explanation of `EDIT_IN_PROGRESS` is the one the issue asks
+ * for; the 400 `reason` names why a fragment cannot be rewritten; every other refusal falls back to the common words.
+ */
+export function editProblemMessage(problem: GenerationProblem): string {
+    if (!problem.uncertain) {
+        if (problem.status === 400) {
+            return (problem.reason !== null ? EDIT_REFUSALS[problem.reason] : undefined) ?? 'Этот фрагмент нельзя переписать с помощью Мнемы.';
+        }
+        if (problem.status === 412) return 'Материал обновился, пока вы выбирали фрагмент. Выделите его заново.';
+        if (problem.status === 409) {
+            switch (problem.code) {
+                case 'EDIT_IN_PROGRESS': return 'Мнема ещё переписывает предыдущий фрагмент — дождитесь окончания.';
+                case 'USAGE_LIMIT_REACHED': return 'Не хватает лимита ИИ на эту правку. Подробности — в профиле, в блоке «ИИ-бюджет».';
+                case 'CAPABILITY_UNAVAILABLE':
+                    return CAPABILITY_WORDS[problem.capability ?? 'aiGeneration'] ?? CAPABILITY_WORDS['aiGeneration']!;
+                case 'GENERATION_STATE_CONFLICT':
+                    return problem.reason === 'ILLEGAL_STATE'
+                        ? 'Сейчас этот материал нельзя править: его состояние изменилось или правки для него ещё не поддерживаются.'
+                        : problemMessage(problem);
+                default: break;
+            }
+        }
+        if (problem.status === 422) {
+            switch (problem.limit) {
+                case 'EDIT_TARGET_SIZE': return 'Фрагмент слишком большой для одной правки. Выделите меньше — несколько абзацев.';
+                case 'TURNS_PER_ARTIFACT': return 'Для этого материала исчерпан предел правок (50). Одобрите его или правьте сами.';
+                case 'REVISIONS_PER_ARTIFACT': return 'Для этого материала исчерпан предел версий. Одобрите его или правьте сами.';
+                default: break;
+            }
+        }
+    }
+    return problemMessage(problem);
+}
+
+/** «Мнема переписала фрагмент.» and the like: the sentence the summary live region adds when an edit ends. */
+export function editOutcomeNote(status: ArtifactTurn['status'], action: EditAction): string {
+    switch (status) {
+        case 'APPLIED': return action === 'REMOVE_MEDIA' ? 'Медиа убрано.' : 'Мнема переписала фрагмент.';
+        case 'FAILED': return 'Не удалось переписать фрагмент: текст не изменился.';
+        case 'CANCELLED': return 'Правка остановлена: текст не изменился.';
+        default: return '';
+    }
+}
+
+/** «Вернули прежнюю версию.» for the live region after a revert. */
+export const REVERTED_NOTE = 'Вернули выбранную версию.';
+
+const MEDIA_ACTION_WHAT: Readonly<Record<'search' | 'generate' | 'speech', string>> = {
+    search: 'Подбор изображений', generate: 'Создание изображений', speech: 'Озвучивание'
+};
+
+/** Why a media action is not offered yet, for the toggletip next to its disabled button. The capability is the server's word. */
+export function mediaActionReason(action: 'search' | 'generate' | 'speech', capability: Capability): string {
+    const what = MEDIA_ACTION_WHAT[action];
+    if (!capability.available) {
+        return capability.reason === 'TEMPORARILY_UNAVAILABLE'
+            ? `${what} сейчас временно недоступно. Попробуйте позже.`
+            : `${what} появится позже: сервис ещё не подключён. Пока можно убрать медиа или заменить его в редакторе («Править самому»).`;
+    }
+    return `${what} пока недоступно. Можно убрать медиа или заменить его в редакторе («Править самому»).`;
 }
