@@ -54,10 +54,11 @@
       "title": "Version conflict",
       "detail": "The resource changed after the supplied version was read.",
       "origin": "existing",
-      "when": "Stale If-Match, expectedArtifactVersion, expectedRevisionId or expectedDeckRevisionId. Read the resource again and retry with a new commandId.",
+      "when": "Stale If-Match, expectedArtifactVersion, expectedRevisionId, expectedDeckRevisionId or (approvePlan) expectedSessionVersion. Read the resource again and retry with a new commandId.",
       "endpoints": [
         "approveArtifact",
         "approveArtifacts",
+        "approvePlan",
         "editArtifact",
         "handoffArtifact",
         "rejectArtifact",
@@ -92,6 +93,7 @@
       "endpoints": [
         "approveArtifact",
         "approveArtifacts",
+        "approvePlan",
         "archiveUsedNotes",
         "cancelSession",
         "createSession",
@@ -108,8 +110,9 @@
       "title": "Resource limit exceeded",
       "detail": "The account or resource limit would be exceeded.",
       "origin": "existing",
-      "when": "More than 3 active sessions (PLANNING, PLAN_READY, RUNNING, and REVIEW with a PROPOSED, REVISING or STALE artifact), more than 20 artifacts (MATERIALS) or 60 exercises (EXERCISES) in a session, more than 20 exercise targets or 10 exercises per target, EditingDraft quota on hand-off, more than 50 turns or 30 revisions on one artifact. No silent clamp. Also an edit whose blocks to rewrite exceed the output bound (EDIT_TARGET_SIZE, limits.maxEditTargetTokens). REVISE_ITEM rewrites the whole material in one turn: a material that weighs more than the output bound (EDIT_TARGET_SIZE at createSession); a revise session counts toward the 3 active sessions.",
+      "when": "More than 3 active sessions (PLANNING, PLAN_READY, RUNNING, and REVIEW with a PROPOSED, REVISING or STALE artifact), more than 20 artifacts (MATERIALS) or 60 exercises (EXERCISES) in a session, more than 20 exercise targets or 10 exercises per target, EditingDraft quota on hand-off, more than 50 turns or 30 revisions on one artifact. No silent clamp. Also an edit whose blocks to rewrite exceed the output bound (EDIT_TARGET_SIZE, limits.maxEditTargetTokens). REVISE_ITEM rewrites the whole material in one turn: a material that weighs more than the output bound (EDIT_TARGET_SIZE at createSession); a revise session counts toward the 3 active sessions. approvePlan: a plan the owner edited above 10 exercises per material, 60 exercises or 20 materials (limit EXERCISES_PER_TARGET, EXERCISES_PER_SESSION or ARTIFACTS_PER_SESSION; never clamped).",
       "endpoints": [
+        "approvePlan",
         "createSession",
         "editArtifact",
         "estimateGeneration",
@@ -142,7 +145,7 @@
       "title": "Spec not supported",
       "detail": "The generation spec is valid but not supported yet.",
       "origin": "new",
-      "when": "settings.planFirst true (MATERIALS or EXERCISES) until the planner (AI-14, #295). REVISE_ITEM and REVISE_EXERCISE were refused with it until AI-16 (#294); they are supported now. A new code because 422 RESOURCE_LIMIT_EXCEEDED would mislead.",
+      "when": "settings.planFirst true (MATERIALS or EXERCISES) while the planner is disabled (learning.generation.planner.enabled=false; on by default since AI-14, #295). REVISE_ITEM and REVISE_EXERCISE were refused with it until AI-16 (#294); they are supported now. A new code because 422 RESOURCE_LIMIT_EXCEEDED would mislead.",
       "endpoints": [
         "createSession",
         "estimateGeneration"
@@ -191,6 +194,7 @@
       "origin": "new",
       "when": "A reservation or debit does not fit a bucket: the credit bar (also its weekly unlock on Free), the daily burst, a count cap (podcasts, quality images, high fact check, smart plan) or a fair-use bucket (speech-to-text, answer checks). The button is never disabled in advance; pressing it shows this outcome with the options. Evaluated last, inside the admission transaction, before any state change.",
       "endpoints": [
+        "approvePlan",
         "createSession",
         "editArtifact",
         "retryArtifact"
@@ -311,6 +315,7 @@
       "endpoints": [
         "approveArtifact",
         "approveArtifacts",
+        "approvePlan",
         "cancelSession",
         "editArtifact",
         "handoffArtifact",

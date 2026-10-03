@@ -6,7 +6,7 @@
     "caching": "Every response is Cache-Control: private, no-store.",
     "ids": "Canonical lowercase UUID strings. commandId is UUIDv4 or UUIDv7; entity IDs are any registered version.",
     "versions": "rowVersion, deckVersion and event cursors are decimal strings. ETag is the quoted rowVersion; If-Match is exactly one quoted canonical decimal (no weak validator, wildcard, list or leading zeros).",
-    "preconditions": "Missing required precondition 428 PRECONDITION_REQUIRED, malformed 400 INVALID_REQUEST, stale 412 VERSION_CONFLICT. Approval pins the Deck version in If-Match and the artifact version, revision and Deck revision in the body. Cancel and delete need no If-Match: they are state-idempotent. A session's rowVersion bumps on every row change and is exposed as ETag for reads; no session command uses it as a precondition.",
+    "preconditions": "Missing required precondition 428 PRECONDITION_REQUIRED, malformed 400 INVALID_REQUEST, stale 412 VERSION_CONFLICT. Approval pins the Deck version in If-Match and the artifact version, revision and Deck revision in the body. Cancel and delete need no If-Match: they are state-idempotent. A session's rowVersion bumps on every row change and is exposed as ETag for reads; the one session command that takes it is approvePlan, in the body as expectedSessionVersion.",
     "evaluationOrder": "1 authentication and ownership (foreign or unknown IDs, including an unknown or foreign note ID in sources, are 404: no existence oracle); 2 command receipt replay (same commandId and body returns the stored response with Idempotency-Replayed: true, before anything else is re-evaluated); 3 request validation (400); 4 preconditions (428, then 412 on If-Match and expected versions); 5 state (409 GENERATION_STATE_CONFLICT, EDIT_IN_PROGRESS, SOURCE_UNAVAILABLE, CAPABILITY_UNAVAILABLE, 422 limits); 6 usage (409 USAGE_LIMIT_REACHED, last, inside the admission transaction). Nothing changes state before step 6 passes.",
     "problemExtensions": "Problem extension members (capability, reason, bucket, limits ...) are added by the run-2 tasks through a small typed ProblemExtension map in platform.api; AI-01 (#281) is the first user. ApiErrorCode itself keeps its fixed status, title and detail.",
     "idempotency": "Every POST command carries commandId. An exact retry returns the stored original status and body with Idempotency-Replayed: true and no ETag; changed reuse is 409 IDEMPOTENCY_CONFLICT. Replays are not current reads: reconcile with GET.",
@@ -82,7 +82,7 @@
         {
           "status": 422,
           "code": "SPEC_NOT_SUPPORTED",
-          "when": "settings.planFirst true (MATERIALS or EXERCISES) until the planner exists (AI-14, #295)."
+          "when": "settings.planFirst true (MATERIALS or EXERCISES) while the planner is disabled (learning.generation.planner.enabled=false; it is on by default since AI-14, #295)."
         },
         {
           "status": 422,
@@ -94,7 +94,8 @@
       "notes": [
         "Owned by AI-01 (#281): the endpoint, the rate-card math and the reservation. The generation module supplies the spec interpretation and the personal-data scan hooks as they land (AI-04 and later).",
         "Not keyed by commandId: it is a pure function of the spec, the rate card and the current balance.",
-        "REVISE_ITEM and REVISE_EXERCISE (AI-16, #294) are priced as one edit turn (EDIT_SELECTION) when there is an instruction, plus one text-to-speech clip (TTS_CLIP_30S) when the spec has a media action; the target is checked as for createSession (404 unknown or foreign, 409 not the head, 409 capability)."
+        "REVISE_ITEM and REVISE_EXERCISE (AI-16, #294) are priced as one edit turn (EDIT_SELECTION) when there is an instruction, plus one text-to-speech clip (TTS_CLIP_30S) when the spec has a media action; the target is checked as for createSession (404 unknown or foreign, 409 not the head, 409 capability).",
+        "With settings.planFirst the breakdown has its own line SMART_PLAN_FLASH (1 unit, 20 credits on rc-v1) before the batch lines, so the cost of the plan is shown apart from the cost of what it would generate; a budgetPercent caps the batch, the plan comes on top; a full smart-plan count cap is a blockingBuckets entry (SMART_PLAN)."
       ]
     },
     {
@@ -198,7 +199,7 @@
         {
           "status": 409,
           "code": "USAGE_LIMIT_REACHED",
-          "when": "The reservation or debit does not fit a credit, cap, fair-use or daily-burst limit."
+          "when": "The reservation or debit does not fit a credit, cap, fair-use or daily-burst limit. With settings.planFirst the plan's own hold and the smart-plan count cap (bucket SMART_PLAN; offered false on a plan without smart plans) are checked too, together with the batch hold."
         },
         {
           "status": 409,
@@ -218,7 +219,7 @@
         {
           "status": 422,
           "code": "SPEC_NOT_SUPPORTED",
-          "when": "settings.planFirst true (MATERIALS or EXERCISES) until the planner exists (AI-14, #295)."
+          "when": "settings.planFirst true (MATERIALS or EXERCISES) while the planner is disabled (learning.generation.planner.enabled=false; it is on by default since AI-14, #295)."
         },
         {
           "status": 422,
@@ -230,7 +231,7 @@
       ],
       "notes": [
         "Exact retry returns the stored 201 with Idempotency-Replayed: true and no ETag; reconcile with getSession.",
-        "Initial state is RUNNING, or PLANNING when spec.settings.planFirst.",
+        "Initial state is RUNNING, or PLANNING when spec.settings.planFirst (decision 17): no artifact exists yet, two holds are taken (the batch hold exactly as it would be without the plan, so a plan that fits it always fits the reservation, and the plan's own price, SMART_PLAN_FLASH, held by the PLAN step and debited apart when the plan is ready) and one PLAN step is enqueued. The notes and materials of the spec are pinned as usual.",
         "The session reservation covers the initial batch only (contracts/usage reservation lifecycle).",
         "A pinned NOTE or ITEM that is unknown or foreign is 404; SOURCE_UNAVAILABLE is only for an owned source whose version no longer matches the pin.",
         "EXERCISES (AI-13, decision 14 of the README): the targets are pinned as SOURCE items; the resolved quantity is spread over the targets in processing order (UNCOVERED_FIRST: fewest enabled exercises first; BALANCED: request order); one QUEUED artifact exists per exercise (targetKind EXERCISE, ordinal in processing order, then index) and one TEXT_DRAFT step per target fills them. A target that is not the material's head is 409 SOURCE_UNAVAILABLE.",
@@ -385,6 +386,83 @@
       ],
       "notes": [
         "State-idempotent, no If-Match: cancelling an already CANCELLED session answers 200 with the current state. CLOSED and EXPIRED sessions answer 409."
+      ]
+    },
+    {
+      "operationId": "approvePlan",
+      "method": "POST",
+      "path": "/api/decks/{deckId}/generation-sessions/{sessionId}/plan-approval",
+      "summary": "Launch the plan of a PLAN_READY session: the plan the model proposed with the owner's edits (rows removed or reordered, counts, mechanics, efforts and titles changed) becomes the session's work; exactly the planned artifacts and steps are created and the session is RUNNING.",
+      "requestBody": {
+        "fields": {
+          "commandId": "UUIDv4/v7",
+          "expectedSessionVersion": "decimal string: the session rowVersion the owner saw (the plan they edited); stale is 412 VERSION_CONFLICT",
+          "plan": "{items: [..]}, exact members. EXERCISES item: {memberKey, mechanics: non-empty subset of the spec's allowed mechanics, count: integer >= 1}; MATERIALS item: {source: noteId|null, title: 1..160 characters, effort: SHORT|MEDIUM|DETAILED}. memberKey and source must be targets and notes of the session's spec (a memberKey once at most); with notes ONE_PER_NOTE source is required and a note may appear in several items, otherwise source is null. At least one item. why, creditsByEffort and every other member of a shown item are not sent."
+        },
+        "example": {
+          "$ref": "#/examples/planApprovalRequest"
+        },
+        "exampleMaterials": {
+          "$ref": "#/examples/planApprovalRequestMaterials"
+        }
+      },
+      "success": {
+        "status": 200,
+        "headers": {
+          "ETag": "Quoted new session rowVersion",
+          "Cache-Control": "private, no-store"
+        },
+        "body": {
+          "$ref": "#/examples/sessionDetailPlanApproved"
+        },
+        "readyExample": {
+          "$ref": "#/examples/sessionDetailPlanReady"
+        }
+      },
+      "errors": [
+        {
+          "status": 400,
+          "code": "INVALID_REQUEST",
+          "when": "Malformed or unknown field, duplicate JSON key, bad UUID or version; an empty plan; a memberKey or note that is not in the spec or is repeated; a mechanic that is not allowed; a count below 1; an effort or a title that is not valid."
+        },
+        {
+          "status": 404,
+          "code": "RESOURCE_NOT_FOUND",
+          "when": "Foreign or absent deck or session: one opaque boundary."
+        },
+        {
+          "status": 409,
+          "code": "IDEMPOTENCY_CONFLICT",
+          "when": "commandId was used for a different command."
+        },
+        {
+          "status": 409,
+          "code": "GENERATION_STATE_CONFLICT",
+          "when": "The session is not PLAN_READY (still PLANNING, already launched, cancelled, closed, expired) or is not a plan-first session.",
+          "reason": "ILLEGAL_STATE"
+        },
+        {
+          "status": 409,
+          "code": "USAGE_LIMIT_REACHED",
+          "when": "The plan as approved costs more than the batch hold and the balance cannot pay the difference. The hold is re-sized to the plan inside this transaction (the old one is released first, so what it held counts); a refusal changes nothing."
+        },
+        {
+          "status": 412,
+          "code": "VERSION_CONFLICT",
+          "when": "expectedSessionVersion is stale: the session changed since the owner read it (its state or plan moved). Read it again and send the plan with the new version and a new commandId."
+        },
+        {
+          "status": 422,
+          "code": "RESOURCE_LIMIT_EXCEEDED",
+          "when": "A count above 10 per material, more than 60 exercises, or more than 20 materials in the plan. Nothing is clamped.",
+          "limit": "EXERCISES_PER_TARGET | EXERCISES_PER_SESSION | ARTIFACTS_PER_SESSION"
+        }
+      ],
+      "notes": [
+        "Decision 17. Evaluation: ownership (404), receipt replay, shape and identifiers (400), expectedSessionVersion (412), state (409 ILLEGAL_STATE), limits (422), usage (409, last).",
+        "In one transaction: the artifacts and steps of exactly the planned items are created through the same code as an unplanned admission (EXERCISES: one QUEUED artifact per exercise in plan order and one TEXT_DRAFT step per target, carrying the mechanics the plan chose for that target; MATERIALS: one artifact per item, written at the item's effort on the item's title), the batch hold is released and a new one of exactly the cost of the plan is made, the plan is stored as approved and the session is RUNNING (SESSION_STATE, one ARTIFACT_STATE per artifact, USAGE_UPDATED).",
+        "The plan's own cost was debited when the plan became ready (SMART_PLAN_FLASH, apart from the batch) and stays debited whatever happens next, also when the session is cancelled or deleted in PLAN_READY; the batch hold of a PLAN_READY session is not renewed and lapses after learning.usage.reservation-ttl, so an approval later than that reserves again and may be refused as USAGE_LIMIT_REACHED.",
+        "Exact retry returns the stored 200 with Idempotency-Replayed: true and no ETag; reconcile with getSession. A cost above the hold extends it: the owner saw the cost of the plan before launching it."
       ]
     },
     {
@@ -1153,7 +1231,7 @@
           "media": "{audio: {enabled, lang, voice: female|male|null}, imageSearch: boolean}; per-note overrides: see sources",
           "factCheck": "boolean: web research by effort (architecture section 14)",
           "similarToDeck": "boolean: add deck exemplars to the brief ('Похоже на: как в колоде')",
-          "planFirst": "boolean: PLANNING first (needs the planner, AI-14 #295)",
+          "planFirst": "boolean: «Сначала показать план» (AI-14, #295, decision 17): the session starts PLANNING with no artifact; a PLAN step proposes the plan, the owner edits and launches it (planApproval). Adds the separate estimate line SMART_PLAN_FLASH and uses one smart plan of the cap. 422 SPEC_NOT_SUPPORTED (kind MATERIALS) only when the planner is disabled (learning.generation.planner.enabled=false).",
           "budgetPercent": "null or 1..100: spend at most this share of the current remaining budget on the session"
         },
         "artifacts": "ONE_PER_NOTE creates one artifact per NOTE source; MERGE_INTO_ONE or prompt-only creates one. More than 20 is RESOURCE_LIMIT_EXCEEDED.",
@@ -1165,7 +1243,7 @@
           "mechanics": "AUTO or a nonempty set of SELF_CHECK, FREE_RESPONSE, CLOZE, CHOICE, MATCH, ORDER, CATEGORIZE (server registry)",
           "priority": "UNCOVERED_FIRST (default): the targets with the fewest enabled exercises are processed first | BALANCED: the order of the request. With BUDGET_PERCENT the resolved total is spread over the targets in that order, so a short budget serves the first ones.",
           "quantity": "{mode: AUTO} | {mode: EXACT, perTarget: 1..10} | {mode: BUDGET_PERCENT, percent: 1..100}; mutually exclusive by mode. The resolved total is at most 60 exercises per session (owner decision 2026-10-02). There is NO silent clamp: above the limits the answer is 422 RESOURCE_LIMIT_EXCEEDED with limit and the limits, and the client offers to split into several sessions.",
-          "planFirst": "boolean; true is 422 SPEC_NOT_SUPPORTED (kind EXERCISES) until the planner exists (AI-14)",
+          "planFirst": "boolean: «Сначала показать план» (AI-14, #295, decision 17); the same as for MATERIALS. 422 SPEC_NOT_SUPPORTED (kind EXERCISES) only when the planner is disabled.",
           "budgetPercent": "null or 1..100 (same meaning as for MATERIALS)"
         }
       },
@@ -1188,7 +1266,8 @@
       "artifactCounts": "one integer per artifact state",
       "approvableCount": "Number of artifacts that can be approved now: PROPOSED with every media slot READY or REMOVED (not STALE, not REVISING). The pager summary ('7 ready') and the GENERATION_READY notification use it; the client derives 'writing' from QUEUED + GENERATING and 'failed' from FAILED.",
       "usage": "{reservedCredits, spentCredits}: the session's initial-batch reservation (ACTIVE holds only), see contracts/usage",
-      "notes": "{used, archivable}: used = distinct NOTE sources (role SOURCE) referenced by at least one PUBLISHED or HANDED_OFF artifact and by no artifact still in play (QUEUED, GENERATING, PROPOSED, REVISING, STALE, retryable FAILED); archivable = used notes that are not archived and whose row_version still equals the pinned one. The UI shows 'Archive the used notes (k)' when k > 0 (operation archiveUsedNotes). Detail only, not in summaries."
+      "notes": "{used, archivable}: used = distinct NOTE sources (role SOURCE) referenced by at least one PUBLISHED or HANDED_OFF artifact and by no artifact still in play (QUEUED, GENERATING, PROPOSED, REVISING, STALE, retryable FAILED); archivable = used notes that are not archived and whose row_version still equals the pinned one. The UI shows 'Archive the used notes (k)' when k > 0 (operation archiveUsedNotes). Detail only, not in summaries.",
+      "plan": "null for a session without a plan; for a plan-first session (decision 17) the plan: null while PLANNING, the model's plan from PLAN_READY on (approved false), and the owner's approved plan once launched (approved true). Detail only, not in summaries. Shape: schemas.plan."
     },
     "artifactSummary": {
       "title": "Preview title of the current revision (first heading or paragraph, at most 240 code points) for the pager",
@@ -1217,6 +1296,20 @@
       "assetId": "the asset the audio block uses; with the Stub speech executor it never changes (the redo records the voice only), so a client that sees the same assetId as before says «Озвучка обновится, когда подключим синтез речи»",
       "state": "READY (a redo ends READY; a slot is never PENDING for an exercise)",
       "voice": "female | male | null: the voice of the last redo, null before one ran"
+    },
+    "plan": {
+      "description": "The plan of a plan-first session (getSession.plan). The identifiers are the owner's own: the memberKey of a target material, the noteId of a source note. The model's handles (m1, n2) never leave the server.",
+      "kind": "EXERCISES | MATERIALS",
+      "approved": "false while the owner may still edit (PLAN_READY), true once launched; after that it is what was launched",
+      "items": "EXERCISES: [{memberKey, title, mechanics: [..], count: 1..10, why}]; MATERIALS: [{source: noteId|null, title: 1..160, effort: SHORT|MEDIUM|DETAILED, why, creditsByEffort: {SHORT, MEDIUM, DETAILED}}]. In the order the work is done; why is the model's reason (at most 200 characters, empty for an item the owner added).",
+      "targets": "EXERCISES: [{memberKey, title, exercises}] every material of the spec with the number of exercises it has (the rows the owner may drop or take back)",
+      "sources": "MATERIALS: [{noteId, label}] every note of the spec with the first line of its pinned text (at most 60 characters)",
+      "totals": "{items, artifacts}: the rows and the artifacts the plan creates (one per exercise, one per material)",
+      "cost": "{planCredits: what the plan itself cost (debited apart), batchCredits: what the artifacts of the plan cost, holdCredits: what the batch hold covers, barCredits: the credit bar of the period (the percentages are a share of it)}. At PLAN_READY batchCredits <= holdCredits; after the owner's edits the approval re-sizes the hold to batchCredits.",
+      "rates": "EXERCISES: {exercisesPerFive: 8}, so the client prices an edit as ceil(8 x n / 5); MATERIALS: {note}, the price of an item is creditsByEffort of its own",
+      "limits": "EXERCISES: {maxExercisesPerTarget, maxExercisesPerSession}; MATERIALS: {maxArtifactsPerSession}",
+      "allowedMechanics": "EXERCISES only: the mechanics the spec allows, in registry order",
+      "notes": "[{code, text}] what the server did to the model's plan: TRIMMED_TO_BUDGET (items taken off the end because the plan cost more than the hold)"
     }
   },
   "examples": {
@@ -1403,6 +1496,7 @@
         "used": 0,
         "archivable": 0
       },
+      "plan": null,
       "artifacts": [
         {
           "artifactId": "a7a70000-0000-4000-8000-000000000001",
@@ -1505,6 +1599,7 @@
         "used": 0,
         "archivable": 0
       },
+      "plan": null,
       "artifacts": [
         {
           "artifactId": "a7a70000-0000-4000-8000-000000000001",
@@ -1607,6 +1702,7 @@
         "used": 0,
         "archivable": 0
       },
+      "plan": null,
       "artifacts": [
         {
           "artifactId": "a7a70000-0000-4000-8000-000000000001",
@@ -2192,6 +2288,391 @@
         {
           "code": "UNSUPPORTED",
           "text": "Это я пока не умею: могу сделать упражнения или поправить текст."
+        }
+      ]
+    },
+    "sessionDetailPlanReady": {
+      "sessionId": "5e550000-0000-4000-8000-000000000002",
+      "deckId": "11111111-1111-4111-8111-111111111111",
+      "kind": "EXERCISES",
+      "state": "PLAN_READY",
+      "rowVersion": "3",
+      "endReason": null,
+      "createdAt": "2026-10-04T09:00:00Z",
+      "lastActivityAt": "2026-10-04T09:00:21Z",
+      "expiresAt": "2026-11-03T09:00:21Z",
+      "artifactCounts": {
+        "QUEUED": 0,
+        "GENERATING": 0,
+        "PROPOSED": 0,
+        "REVISING": 0,
+        "FAILED": 0,
+        "REJECTED": 0,
+        "STALE": 0,
+        "PUBLISHED": 0,
+        "HANDED_OFF": 0
+      },
+      "approvableCount": 0,
+      "usage": {
+        "reservedCredits": 10,
+        "spentCredits": 20
+      },
+      "spec": {
+        "kind": "EXERCISES",
+        "outputLanguage": "ru",
+        "targets": [
+          {
+            "memberKey": "44444444-4444-4444-8444-444444444444",
+            "itemRevisionId": "55555555-5555-4555-8555-555555555555"
+          },
+          {
+            "memberKey": "44444444-4444-4444-8444-444444444445",
+            "itemRevisionId": "55555555-5555-4555-8555-555555555556"
+          }
+        ],
+        "settings": {
+          "mechanics": "AUTO",
+          "priority": "UNCOVERED_FIRST",
+          "quantity": {
+            "mode": "EXACT",
+            "perTarget": 3
+          },
+          "planFirst": true,
+          "budgetPercent": null
+        }
+      },
+      "notes": {
+        "used": 0,
+        "archivable": 0
+      },
+      "plan": {
+        "kind": "EXERCISES",
+        "approved": false,
+        "items": [
+          {
+            "memberKey": "44444444-4444-4444-8444-444444444445",
+            "title": "Статистика и ANALYZE",
+            "mechanics": [
+              "CLOZE",
+              "CHOICE"
+            ],
+            "count": 3,
+            "why": "Упражнений на этот материал пока нет."
+          },
+          {
+            "memberKey": "44444444-4444-4444-8444-444444444444",
+            "title": "Seq Scan и Index Scan",
+            "mechanics": [
+              "CHOICE",
+              "ORDER"
+            ],
+            "count": 3,
+            "why": "Есть только самопроверка."
+          }
+        ],
+        "targets": [
+          {
+            "memberKey": "44444444-4444-4444-8444-444444444444",
+            "title": "Seq Scan и Index Scan",
+            "exercises": 2
+          },
+          {
+            "memberKey": "44444444-4444-4444-8444-444444444445",
+            "title": "Статистика и ANALYZE",
+            "exercises": 0
+          }
+        ],
+        "totals": {
+          "items": 2,
+          "artifacts": 6
+        },
+        "cost": {
+          "planCredits": 20,
+          "batchCredits": 10,
+          "holdCredits": 10,
+          "barCredits": 360
+        },
+        "rates": {
+          "exercisesPerFive": 8
+        },
+        "limits": {
+          "maxExercisesPerTarget": 10,
+          "maxExercisesPerSession": 60
+        },
+        "allowedMechanics": [
+          "SELF_CHECK",
+          "FREE_RESPONSE",
+          "CLOZE",
+          "CHOICE",
+          "MATCH",
+          "ORDER",
+          "CATEGORIZE"
+        ],
+        "notes": []
+      },
+      "artifacts": []
+    },
+    "planApprovalRequest": {
+      "commandId": "018f1d98-5c10-7abc-8abc-0123456789c1",
+      "expectedSessionVersion": "3",
+      "plan": {
+        "items": [
+          {
+            "memberKey": "44444444-4444-4444-8444-444444444445",
+            "mechanics": [
+              "CLOZE"
+            ],
+            "count": 4
+          },
+          {
+            "memberKey": "44444444-4444-4444-8444-444444444444",
+            "mechanics": [
+              "CHOICE",
+              "ORDER"
+            ],
+            "count": 2
+          }
+        ]
+      }
+    },
+    "planApprovalRequestMaterials": {
+      "commandId": "018f1d98-5c10-7abc-8abc-0123456789c2",
+      "expectedSessionVersion": "3",
+      "plan": {
+        "items": [
+          {
+            "source": "20700000-0000-4000-8000-000000000001",
+            "title": "Seq Scan: когда он быстрее",
+            "effort": "SHORT"
+          },
+          {
+            "source": null,
+            "title": "Общая картина планировщика",
+            "effort": "DETAILED"
+          }
+        ]
+      }
+    },
+    "sessionDetailPlanApproved": {
+      "sessionId": "5e550000-0000-4000-8000-000000000002",
+      "deckId": "11111111-1111-4111-8111-111111111111",
+      "kind": "EXERCISES",
+      "state": "RUNNING",
+      "rowVersion": "4",
+      "endReason": null,
+      "createdAt": "2026-10-04T09:00:00Z",
+      "lastActivityAt": "2026-10-04T09:00:21Z",
+      "expiresAt": "2026-11-03T09:00:21Z",
+      "artifactCounts": {
+        "QUEUED": 6,
+        "GENERATING": 0,
+        "PROPOSED": 0,
+        "REVISING": 0,
+        "FAILED": 0,
+        "REJECTED": 0,
+        "STALE": 0,
+        "PUBLISHED": 0,
+        "HANDED_OFF": 0
+      },
+      "approvableCount": 0,
+      "usage": {
+        "reservedCredits": 10,
+        "spentCredits": 20
+      },
+      "spec": {
+        "kind": "EXERCISES",
+        "outputLanguage": "ru",
+        "targets": [
+          {
+            "memberKey": "44444444-4444-4444-8444-444444444444",
+            "itemRevisionId": "55555555-5555-4555-8555-555555555555"
+          },
+          {
+            "memberKey": "44444444-4444-4444-8444-444444444445",
+            "itemRevisionId": "55555555-5555-4555-8555-555555555556"
+          }
+        ],
+        "settings": {
+          "mechanics": "AUTO",
+          "priority": "UNCOVERED_FIRST",
+          "quantity": {
+            "mode": "EXACT",
+            "perTarget": 3
+          },
+          "planFirst": true,
+          "budgetPercent": null
+        }
+      },
+      "notes": {
+        "used": 0,
+        "archivable": 0
+      },
+      "plan": {
+        "kind": "EXERCISES",
+        "approved": true,
+        "items": [
+          {
+            "memberKey": "44444444-4444-4444-8444-444444444445",
+            "title": "Статистика и ANALYZE",
+            "mechanics": [
+              "CLOZE"
+            ],
+            "count": 4,
+            "why": "Упражнений на этот материал пока нет."
+          },
+          {
+            "memberKey": "44444444-4444-4444-8444-444444444444",
+            "title": "Seq Scan и Index Scan",
+            "mechanics": [
+              "CHOICE",
+              "ORDER"
+            ],
+            "count": 2,
+            "why": "Есть только самопроверка."
+          }
+        ],
+        "targets": [
+          {
+            "memberKey": "44444444-4444-4444-8444-444444444444",
+            "title": "Seq Scan и Index Scan",
+            "exercises": 2
+          },
+          {
+            "memberKey": "44444444-4444-4444-8444-444444444445",
+            "title": "Статистика и ANALYZE",
+            "exercises": 0
+          }
+        ],
+        "totals": {
+          "items": 2,
+          "artifacts": 6
+        },
+        "cost": {
+          "planCredits": 20,
+          "batchCredits": 10,
+          "holdCredits": 10,
+          "barCredits": 360
+        },
+        "rates": {
+          "exercisesPerFive": 8
+        },
+        "limits": {
+          "maxExercisesPerTarget": 10,
+          "maxExercisesPerSession": 60
+        },
+        "allowedMechanics": [
+          "SELF_CHECK",
+          "FREE_RESPONSE",
+          "CLOZE",
+          "CHOICE",
+          "MATCH",
+          "ORDER",
+          "CATEGORIZE"
+        ],
+        "notes": []
+      },
+      "artifacts": [
+        {
+          "artifactId": "a7a70000-0000-4000-8000-000000000100",
+          "ordinal": 0,
+          "targetKind": "EXERCISE",
+          "state": "QUEUED",
+          "rowVersion": "0",
+          "title": "",
+          "currentRevisionId": null,
+          "mediaSlotCounts": {
+            "total": 0,
+            "ready": 0,
+            "failed": 0
+          },
+          "errorCode": null,
+          "repinStatus": null,
+          "publishedRef": null
+        },
+        {
+          "artifactId": "a7a70000-0000-4000-8000-000000000101",
+          "ordinal": 1,
+          "targetKind": "EXERCISE",
+          "state": "QUEUED",
+          "rowVersion": "0",
+          "title": "",
+          "currentRevisionId": null,
+          "mediaSlotCounts": {
+            "total": 0,
+            "ready": 0,
+            "failed": 0
+          },
+          "errorCode": null,
+          "repinStatus": null,
+          "publishedRef": null
+        },
+        {
+          "artifactId": "a7a70000-0000-4000-8000-000000000102",
+          "ordinal": 2,
+          "targetKind": "EXERCISE",
+          "state": "QUEUED",
+          "rowVersion": "0",
+          "title": "",
+          "currentRevisionId": null,
+          "mediaSlotCounts": {
+            "total": 0,
+            "ready": 0,
+            "failed": 0
+          },
+          "errorCode": null,
+          "repinStatus": null,
+          "publishedRef": null
+        },
+        {
+          "artifactId": "a7a70000-0000-4000-8000-000000000103",
+          "ordinal": 3,
+          "targetKind": "EXERCISE",
+          "state": "QUEUED",
+          "rowVersion": "0",
+          "title": "",
+          "currentRevisionId": null,
+          "mediaSlotCounts": {
+            "total": 0,
+            "ready": 0,
+            "failed": 0
+          },
+          "errorCode": null,
+          "repinStatus": null,
+          "publishedRef": null
+        },
+        {
+          "artifactId": "a7a70000-0000-4000-8000-000000000104",
+          "ordinal": 4,
+          "targetKind": "EXERCISE",
+          "state": "QUEUED",
+          "rowVersion": "0",
+          "title": "",
+          "currentRevisionId": null,
+          "mediaSlotCounts": {
+            "total": 0,
+            "ready": 0,
+            "failed": 0
+          },
+          "errorCode": null,
+          "repinStatus": null,
+          "publishedRef": null
+        },
+        {
+          "artifactId": "a7a70000-0000-4000-8000-000000000105",
+          "ordinal": 5,
+          "targetKind": "EXERCISE",
+          "state": "QUEUED",
+          "rowVersion": "0",
+          "title": "",
+          "currentRevisionId": null,
+          "mediaSlotCounts": {
+            "total": 0,
+            "ready": 0,
+            "failed": 0
+          },
+          "errorCode": null,
+          "repinStatus": null,
+          "publishedRef": null
         }
       ]
     }
