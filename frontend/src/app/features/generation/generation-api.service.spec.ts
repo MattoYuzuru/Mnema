@@ -27,7 +27,7 @@ describe('GenerationApiService', () => {
     /** The request of an operation, checked against its method and path in http.json. */
     function expectOperation(operationId: string, values: Record<string, string> = {}, query = '') {
         const contract = httpContract['endpoints'].find((endpoint: any) => endpoint.operationId === operationId);
-        const request = http.expectOne(candidate => candidate.url === `${pathOf(operationId, values).replace(/^\/api/, '/api')}`
+        const request = http.expectOne(candidate => candidate.url === pathOf(operationId, values)
             && (query === '' || candidate.urlWithParams.endsWith(`?${query}`)));
         expect(request.request.method, operationId).toBe(contract.method);
         return request;
