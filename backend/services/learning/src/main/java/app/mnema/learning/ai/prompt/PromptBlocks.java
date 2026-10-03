@@ -89,6 +89,16 @@ public final class PromptBlocks {
         return new PromptBlock(jsonSchema);
     }
 
+    /**
+     * The exercise to revise, as the JSON of the output form inside {@code <current_exercise>}: redacted like every user text, and
+     * only {@code & < >} escaped (a JSON quote stays a quote, so the model copies valid JSON; the strings of its answer are decoded
+     * again before validation, as for every exercise).
+     */
+    public static PromptBlock currentExercise(String json) {
+        return new PromptBlock("<current_exercise>\n" + PromptRenderer.escape(Redactor.redact(Redactor.requireWithin(json, "current exercise")), false)
+                + "\n</current_exercise>");
+    }
+
     /** Joins already rendered blocks. */
     public static PromptBlock join(List<PromptBlock> blocks) {
         return new PromptBlock(blocks.stream().map(PromptBlock::text).collect(Collectors.joining("\n")));

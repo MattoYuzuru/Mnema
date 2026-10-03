@@ -7,6 +7,7 @@ import app.mnema.learning.generation.Rows.Artifact;
 import app.mnema.learning.generation.Rows.Revision;
 import app.mnema.learning.generation.Rows.Session;
 import app.mnema.learning.generation.Rows.Turn;
+import app.mnema.learning.generation.exercise.ExerciseValidator;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.ProblemExtension;
 import app.mnema.learning.platform.api.ResourceLimitExceededException;
@@ -61,8 +62,11 @@ class ArtifactEdits {
     /** Sessions in which an edit can be made; a CANCELLED one only lets media go ({@code REMOVE_MEDIA}). */
     private static final Set<String> EDITABLE = Set.of("RUNNING", "REVIEW");
 
-    /** A request after strict parsing; {@code targets} is null when the body had none. */
-    private record Request(UUID expectedRevision, String action, String preset, String instruction, List<UUID> targets) { }
+    /** A request after strict parsing; {@code targets} is null when the body had none, {@code voice} when the action is not a redo of audio. */
+    private record Request(UUID expectedRevision, String action, String preset, String instruction, List<UUID> targets, String voice) { }
+
+    /** The actions an exercise of a REVISE_EXERCISE session accepts: a free rewrite and the redo of its audio. */
+    private static final Set<String> EXERCISE_ACTIONS = Set.of("FREE", "AUDIO_REGENERATE");
 
     private final GenerationRepository repository;
     private final StepRepository steps;
@@ -97,7 +101,7 @@ class ArtifactEdits {
         session(owner, deckId, sessionId);
         Artifact known = repository.artifact(sessionId, artifactId).orElseThrow(ResourceNotFoundException::new);
         JsonNode body = Commands.read(raw);
-        Commands.fields(body, Set.of("commandId", "expectedRevisionId", "action"), Set.of("target", "preset", "instruction"));
+        Commands.fields(body, Set.of("commandId", "expectedRevisionId", "action"), Set.of("target", "preset", "instruction", "voice"));
         UUID commandId = Commands.commandId(body);
         ObjectNode envelope = envelope(deckId, sessionId, body).put("artifactId", artifactId.toString());
         CommandIdentity identity = new CommandIdentity(commandId, owner, SCOPE, "artifact.edit");
@@ -126,9 +130,19 @@ class ArtifactEdits {
         }
         if (action.equals("FREE") && instruction == null) throw new InvalidRequestException();
         List<UUID> targets = targets(body.get("target"));
-        // a material is edited by blocks; an exercise has no blocks (its edit flow is AI-16)
-        if (known.targetKind().equals("ITEM") && targets == null) throw new InvalidRequestException();
-        return new Request(expectedRevision, action, preset, action.equals("REMOVE_MEDIA") ? null : instruction, targets);
+        String voice = optionalText(body, "voice");
+        if (voice != null && !(voice.equals("female") || voice.equals("male"))) throw new InvalidRequestException();
+        if (known.targetKind().equals("ITEM")) {
+            // a material is edited by blocks, and has no voice to change
+            if (targets == null || voice != null) throw new InvalidRequestException();
+        } else {
+            // an exercise has no blocks: the whole exercise is rewritten (FREE) or its audio redone (AUDIO_REGENERATE, which needs a voice)
+            if (targets != null || !EXERCISE_ACTIONS.contains(action) || action.equals("AUDIO_REGENERATE") != (voice != null)) {
+                throw new InvalidRequestException();
+            }
+        }
+        return new Request(expectedRevision, action, preset, action.equals("REMOVE_MEDIA") || action.equals("AUDIO_REGENERATE") ? null : instruction,
+                targets, voice);
     }
 
     /** A string member that may be absent or null. */
@@ -174,7 +188,8 @@ class ArtifactEdits {
         EditTarget target = material ? target(revision, request) : null;
 
         boolean removal = request.action().equals("REMOVE_MEDIA");
-        if (!(EDITABLE.contains(tx.state) || removal && tx.state.equals("CANCELLED")) || !material) {
+        // an exercise is edited only in a session that revises it (AI-16): the proposals of an EXERCISES session are written once
+        if (!(EDITABLE.contains(tx.state) || removal && tx.state.equals("CANCELLED")) || !(material || tx.session.kind().equals(ReviseSpec.EXERCISE))) {
             throw new GenerationStateConflictException(Reason.ILLEGAL_STATE);
         }
         if (artifact.state().equals("REVISING")) {
@@ -182,13 +197,20 @@ class ArtifactEdits {
                     .orElseGet(() -> new GenerationStateConflictException(Reason.ILLEGAL_STATE));
         }
         if (!artifact.state().equals("PROPOSED")) throw new GenerationStateConflictException(Reason.ILLEGAL_STATE);
-        gate.requireEdit(request.action());
+        if (material) gate.requireEdit(request.action());
+        else if (request.action().equals("FREE")) gate.requireText();
+        else gate.requireVoiceRevision();
+        if (!material && request.action().equals("AUDIO_REGENERATE") && repository.slotsOf(artifactId).stream()
+                .noneMatch(slot -> slot.kind().equals("AUDIO") && !slot.state().equals("REMOVED"))) {
+            throw InvalidRequestException.because("TARGET_NO_AUDIO");
+        }
         if (!removal && repository.countedTurns(artifactId) >= MAX_TURNS) throw limit("TURNS_PER_ARTIFACT");
         // a removal only takes media away (at most eight directives), so it may use the headroom the table leaves above the cap
         if (artifact.revisionCount() >= (removal ? MAX_REVISIONS_REMOVAL : MAX_REVISIONS)) throw limit("REVISIONS_PER_ARTIFACT");
-        if (!removal && contexts.tokens(target) > EditContexts.MAX_TARGET_TOKENS) throw limit("EDIT_TARGET_SIZE");
+        if (!removal && material && contexts.tokens(target) > EditContexts.MAX_TARGET_TOKENS) throw limit("EDIT_TARGET_SIZE");
 
-        return removal ? removeMedia(tx, artifact, revision, target, request) : rewrite(tx, artifact, target, request);
+        if (removal) return removeMedia(tx, artifact, revision, target, request);
+        return request.action().equals("AUDIO_REGENERATE") && !material ? redoAudio(tx, artifact, request) : rewrite(tx, artifact, target, request);
     }
 
     /**
@@ -217,7 +239,7 @@ class ArtifactEdits {
         return target;
     }
 
-    private static ResourceLimitExceededException limit(String name) {
+    static ResourceLimitExceededException limit(String name) {
         return new ResourceLimitExceededException(ProblemExtension.builder().put("limit", name)
                 .put("limits", Map.of("maxTurnsPerArtifact", MAX_TURNS, "maxRevisionsPerArtifact", MAX_REVISIONS,
                         "maxEditTargetTokens", EditContexts.MAX_TARGET_TOKENS)).build());
@@ -233,14 +255,42 @@ class ArtifactEdits {
         Reservation reservation = ledger.reserve(session.ownerId(), ReservationScope.TURN, session.sessionId(), turnId, Math.max(1, credits));
 
         UUID stepId = UUID.randomUUID();
-        List<UUID> nodeIds = target.blocks().stream().map(EditDocument::id).toList();
+        // an exercise is rewritten whole: its turn names no blocks
+        List<UUID> nodeIds = target == null ? List.of() : target.blocks().stream().map(EditDocument::id).toList();
         repository.insertTurn(new Turn(turnId, artifact.artifactId(), session.sessionId(), session.ownerId(), "QUEUED", request.action(),
-                request.preset(), request.instruction(), nodeIds, stepId, null, null, true, null));
+                request.preset(), request.instruction(), nodeIds, stepId, null, null, true, null, null));
         ObjectNode input = Json.object().put("turnId", turnId.toString()).put("action", request.action())
                 .put("revisionId", artifact.currentRevisionId().toString()).put("operation", EditLifecycle.OPERATION)
                 .put("credits", credits).put("reservationId", reservation.reservationId().toString());
         steps.insert(stepId, session.sessionId(), artifact.artifactId(), session.ownerId(), EditExecutor.KIND, "TEXT", input,
                 "edit:" + turnId);
+        Artifact revising = repository.transition(artifact, "REVISING", null, null, null, artifact.revisionCount());
+        tx.events.add(SessionLifecycle.artifactEvent(revising));
+        tx.events.add(lifecycle.usageEvent(session, null));
+        lifecycle.flush(tx);
+        wakeAfterCommit();
+        return answer(repository.turn(turnId).orElseThrow(), revising);
+    }
+
+    // ----------------------------------------------------------- AUDIO_REGENERATE
+
+    /**
+     * The redo of the audio of an exercise ({@code REVISE_EXERCISE}, #294): a turn with its own hold (one text-to-speech clip) and a
+     * {@code TTS} step that the Stub speech executor runs until real synthesis comes with AI-09 (#297). The artifact is REVISING until it ends.
+     */
+    private JsonNode redoAudio(SessionLifecycle.Tx tx, Artifact artifact, Request request) {
+        Session session = tx.session;
+        UUID turnId = UUID.randomUUID();
+        int credits = pricing.credits(EditLifecycle.MEDIA_OPERATION);
+        // usage is last: a refusal rolls this transaction back, so nothing above has changed
+        Reservation reservation = ledger.reserve(session.ownerId(), ReservationScope.TURN, session.sessionId(), turnId, Math.max(1, credits));
+        UUID stepId = UUID.randomUUID();
+        repository.insertTurn(new Turn(turnId, artifact.artifactId(), session.sessionId(), session.ownerId(), "QUEUED", request.action(), null, null,
+                List.of(), stepId, null, null, true, null, request.voice()));
+        ObjectNode input = Json.object().put("turnId", turnId.toString()).put("action", request.action()).put("voice", request.voice())
+                .put("operation", EditLifecycle.MEDIA_OPERATION).put("credits", credits)
+                .put("reservationId", reservation.reservationId().toString());
+        steps.insert(stepId, session.sessionId(), artifact.artifactId(), session.ownerId(), "TTS", "TTS", input, "media:" + turnId);
         Artifact revising = repository.transition(artifact, "REVISING", null, null, null, artifact.revisionCount());
         tx.events.add(SessionLifecycle.artifactEvent(revising));
         tx.events.add(lifecycle.usageEvent(session, null));
@@ -279,7 +329,7 @@ class ArtifactEdits {
         UUID turnId = UUID.randomUUID();
         List<UUID> nodeIds = target.blocks().stream().map(EditDocument::id).toList();
         repository.insertTurn(new Turn(turnId, artifact.artifactId(), session.sessionId(), session.ownerId(), "APPLIED", request.action(),
-                null, null, nodeIds, null, revisionId, null, false, null));
+                null, null, nodeIds, null, revisionId, null, false, null, null));
         tx.events.add(SessionLifecycle.artifactEvent(proposed));
         tx.events.addAll(slotEvents);
         lifecycle.flush(tx);
@@ -326,8 +376,9 @@ class ArtifactEdits {
         if (tx == null) throw new ResourceNotFoundException();
         Artifact artifact = repository.artifact(sessionId, artifactId).orElseThrow(ResourceNotFoundException::new);
         if (artifact.rowVersion() != expected) throw new VersionConflictException();
-        // a turn in flight (REVISING) is never undone under its feet; an exercise has no edit history to walk (AI-16)
-        if (!EDITABLE.contains(tx.state) || !artifact.state().equals("PROPOSED") || !artifact.targetKind().equals("ITEM")) {
+        // a turn in flight (REVISING) is never undone under its feet; the proposals of an EXERCISES session have no edit history to walk
+        boolean material = artifact.targetKind().equals("ITEM");
+        if (!EDITABLE.contains(tx.state) || !artifact.state().equals("PROPOSED") || !(material || tx.session.kind().equals(ReviseSpec.EXERCISE))) {
             throw new GenerationStateConflictException(Reason.ILLEGAL_STATE);
         }
         Revision target = repository.revision(artifactId, to).orElseThrow(ResourceNotFoundException::new);
@@ -336,14 +387,26 @@ class ArtifactEdits {
         if (target.revisionNo() < repository.generationStart(artifactId)) throw new GenerationStateConflictException(Reason.ILLEGAL_STATE);
         if (to.equals(artifact.currentRevisionId())) return summary(artifact);
 
-        JsonNode document = target.payload().path("document");
         String title;
-        try {
-            title = NativeDocumentPreview.title(new NativeDocumentReader().read(document.toString().getBytes(StandardCharsets.UTF_8)));
-        } catch (IllegalArgumentException unreadable) {
-            throw new IllegalStateException("A stored revision is not readable");
+        List<Rows.EventDraft> slotEvents;
+        if (material) {
+            JsonNode document = target.payload().path("document");
+            try {
+                title = NativeDocumentPreview.title(new NativeDocumentReader().read(document.toString().getBytes(StandardCharsets.UTF_8)));
+            } catch (IllegalArgumentException unreadable) {
+                throw new IllegalStateException("A stored revision is not readable");
+            }
+            slotEvents = edits.followSlots(artifact, to, EditDocument.idSet(document), true);
+        } else {
+            // an exercise: its title is the first text of its prompt (or its objective's), and its slots (the audio) follow the revision
+            JsonNode command = target.payload().path("command");
+            JsonNode objective = command.path("objective");
+            title = ExerciseValidator.title(command.path("exercise"), repository.objectiveTitle(tx.session.ownerId(), tx.session.deckId(),
+                    UUID.fromString(objective.path("objectiveId").stringValue("")),
+                    UUID.fromString(objective.path("objectiveRevisionId").stringValue(""))).orElse(""));
+            repository.attachAllSlots(artifactId, to);
+            slotEvents = List.of();
         }
-        List<Rows.EventDraft> slotEvents = edits.followSlots(artifact, to, EditDocument.idSet(document), true);
         Artifact moved = repository.transition(artifact, "PROPOSED", null, to, title, artifact.revisionCount());
         tx.events.add(SessionLifecycle.artifactEvent(moved));
         tx.events.addAll(slotEvents);

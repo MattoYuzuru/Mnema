@@ -18,12 +18,12 @@
       "title": "Invalid request",
       "detail": "The request is invalid or cannot be read.",
       "origin": "existing",
-      "when": "Strict-JSON, field, UUID, version, cursor, limit or enum violations; also an AI edit target the edit cannot use (reason TARGET_NOT_CONTIGUOUS: not consecutive top-level blocks of the current revision; TARGET_UNSUPPORTED_BLOCK: MBM cannot express it; TARGET_PERSONAL_DATA: its text holds an e-mail address, a telephone or a card number, which the prompt layer would redact and the rewrite would overwrite; TARGET_MEDIA_ONLY), a preset without REWRITE, an EXERCISE hand-off, an approval replacement that is not a valid exercise about the proposal's subject material (or on an ITEM artifact, or in a bulk entry).",
+      "when": "Strict-JSON, field, UUID, version, cursor, limit or enum violations; also an AI edit target the edit cannot use (reason TARGET_NOT_CONTIGUOUS: not consecutive top-level blocks of the current revision; TARGET_UNSUPPORTED_BLOCK: MBM cannot express it; TARGET_PERSONAL_DATA: its text holds an e-mail address, a telephone or a card number, which the prompt layer would redact and the rewrite would overwrite; TARGET_MEDIA_ONLY), a preset without REWRITE, an EXERCISE hand-off, an approval replacement that is not a valid exercise about the proposal's subject material (or on an ITEM artifact, or in a bulk entry). A REVISE_ITEM or REVISE_EXERCISE spec that cannot be revised, named by reason (createSession): TARGET_UNSUPPORTED_BLOCK (a material block MBM cannot express, or an exercise the output form has no room for: an image, a video, a YouTube block, a rubric, a speech answer, a quote of another material), TARGET_PERSONAL_DATA (an e-mail address, a telephone or a card number in the text), TARGET_MEDIA_ONLY (a material with no text block), TARGET_NO_AUDIO (a voice change for an exercise without audio; also editArtifact). A bulk approval of a revise session, and an exercise edit that has a target, a REWRITE or REMOVE_MEDIA action, a voice on FREE or no voice on AUDIO_REGENERATE.",
       "endpoints": [
         "all"
       ],
       "extensionMembers": {
-        "reason": "editArtifact only, additive: TARGET_NOT_CONTIGUOUS | TARGET_UNSUPPORTED_BLOCK | TARGET_PERSONAL_DATA | TARGET_MEDIA_ONLY (absent for every other 400)"
+        "reason": "createSession and editArtifact, additive: TARGET_NOT_CONTIGUOUS | TARGET_UNSUPPORTED_BLOCK | TARGET_PERSONAL_DATA | TARGET_MEDIA_ONLY | TARGET_NO_AUDIO (absent for every other 400)"
       }
     },
     "AUTHENTICATION_REQUIRED": {
@@ -108,7 +108,7 @@
       "title": "Resource limit exceeded",
       "detail": "The account or resource limit would be exceeded.",
       "origin": "existing",
-      "when": "More than 3 active sessions (PLANNING, PLAN_READY, RUNNING, and REVIEW with a PROPOSED, REVISING or STALE artifact), more than 20 artifacts (MATERIALS) or 60 exercises (EXERCISES) in a session, more than 20 exercise targets or 10 exercises per target, EditingDraft quota on hand-off, more than 50 turns or 30 revisions on one artifact. No silent clamp. Also an edit whose blocks to rewrite exceed the output bound (EDIT_TARGET_SIZE, limits.maxEditTargetTokens).",
+      "when": "More than 3 active sessions (PLANNING, PLAN_READY, RUNNING, and REVIEW with a PROPOSED, REVISING or STALE artifact), more than 20 artifacts (MATERIALS) or 60 exercises (EXERCISES) in a session, more than 20 exercise targets or 10 exercises per target, EditingDraft quota on hand-off, more than 50 turns or 30 revisions on one artifact. No silent clamp. Also an edit whose blocks to rewrite exceed the output bound (EDIT_TARGET_SIZE, limits.maxEditTargetTokens). REVISE_ITEM rewrites the whole material in one turn: a material that weighs more than the output bound (EDIT_TARGET_SIZE at createSession); a revise session counts toward the 3 active sessions.",
       "endpoints": [
         "createSession",
         "editArtifact",
@@ -142,7 +142,7 @@
       "title": "Spec not supported",
       "detail": "The generation spec is valid but not supported yet.",
       "origin": "new",
-      "when": "REVISE_ITEM or REVISE_EXERCISE before AI-16 (#294) defines their flow, and settings.planFirst true (MATERIALS or EXERCISES) until the planner (AI-14, #295). A new code because 422 RESOURCE_LIMIT_EXCEEDED would mislead.",
+      "when": "settings.planFirst true (MATERIALS or EXERCISES) until the planner (AI-14, #295). REVISE_ITEM and REVISE_EXERCISE were refused with it until AI-16 (#294); they are supported now. A new code because 422 RESOURCE_LIMIT_EXCEEDED would mislead.",
       "endpoints": [
         "createSession",
         "estimateGeneration"
@@ -157,8 +157,9 @@
       "title": "Capability unavailable",
       "detail": "The requested learning capability is not available.",
       "origin": "existing",
-      "when": "A capability the operation needs is off: flag disabled, adapter not configured, or temporarily unavailable.",
+      "when": "A capability the operation needs is off: flag disabled, adapter not configured, or temporarily unavailable. createIntent needs aiGeneration (also reason TEMPORARILY_UNAVAILABLE when the provider cannot answer); the voice redo of a REVISE_EXERCISE media action needs the Stub speech executor or, later, a real speech adapter (AI-09, #297): without either it is textToSpeech / PROVIDER_NOT_CONFIGURED.",
       "endpoints": [
+        "createIntent",
         "createSession",
         "editArtifact",
         "estimateGeneration",
@@ -225,6 +226,29 @@
         "plan": "PLUS"
       }
     },
+    "RATE_LIMITED": {
+      "status": 429,
+      "type": "urn:mnema:problem:rate-limited",
+      "title": "Rate limited",
+      "detail": "Too many requests; retry after the time in Retry-After.",
+      "origin": "new",
+      "when": "createIntent more than learning.generation.intent.per-hour (30) times in a rolling hour for one account. A free call, so credits are not the limit; the model is not asked.",
+      "endpoints": [
+        "createIntent"
+      ],
+      "extensionMembers": {
+        "retryAfter": "whole seconds until the oldest call of the window leaves it, at least 1; the same number is the Retry-After header"
+      },
+      "example": {
+        "type": "urn:mnema:problem:rate-limited",
+        "title": "Rate limited",
+        "status": 429,
+        "detail": "Too many requests; retry after the time in Retry-After.",
+        "instance": "/api/decks/11111111-1111-4111-8111-111111111111/generation-intents",
+        "code": "RATE_LIMITED",
+        "retryAfter": 1740
+      }
+    },
     "EDIT_IN_PROGRESS": {
       "status": 409,
       "type": "urn:mnema:problem:edit-in-progress",
@@ -254,13 +278,13 @@
       "title": "Source unavailable",
       "detail": "A pinned source is no longer available.",
       "origin": "new",
-      "when": "An OWNED pinned note or material exists but its version no longer matches the pin, or it was deleted since (createSession, retryArtifact). An unknown or foreign ID is 404. During a run the same condition is not an HTTP error: the artifact becomes FAILED(SOURCE_UNAVAILABLE) or STALE.",
+      "when": "An OWNED pinned note or material exists but its version no longer matches the pin, or it was deleted since (createSession, retryArtifact). An unknown or foreign ID is 404. During a run the same condition is not an HTTP error: the artifact becomes FAILED(SOURCE_UNAVAILABLE) or STALE. A REVISE_ITEM or REVISE_EXERCISE target that is no longer the head of its material or exercise (type ITEM or EXERCISE), an exercise whose material was deleted or whose quoted blocks cannot follow the head of its material.",
       "endpoints": [
         "createSession",
         "retryArtifact"
       ],
       "extensionMembers": {
-        "sources": "[{type: NOTE|ITEM, id}] identifiers of the unavailable pins; ids are the client's own, no titles or text"
+        "sources": "[{type: NOTE|ITEM|EXERCISE, id}] identifiers of the unavailable pins; ids are the client's own, no titles or text"
       },
       "example": {
         "type": "urn:mnema:problem:source-unavailable",
@@ -283,7 +307,7 @@
       "title": "Generation state conflict",
       "detail": "The operation is not allowed in the current state.",
       "origin": "new",
-      "when": "A command that states.json allowedOperations does not permit in the current session or artifact state (for example approve on a REJECTED artifact, cancel of a CLOSED session), approval while a media slot is neither READY nor REMOVED, approval of a STALE artifact, retry of a REFUSAL failure. Decision beyond the architecture: it names no code for illegal transitions, and 412 is reserved for stale versions. Also editArtifact and revertArtifact on an EXERCISE artifact (until AI-16 #294), revertArtifact while a turn runs or to a revision from before the artifact was last retried, and editArtifact on a session that is not RUNNING or REVIEW (a CANCELLED one accepts REMOVE_MEDIA only).",
+      "when": "A command that states.json allowedOperations does not permit in the current session or artifact state (for example approve on a REJECTED artifact, cancel of a CLOSED session), approval while a media slot is neither READY nor REMOVED, approval of a STALE artifact, retry of a REFUSAL failure. Decision beyond the architecture: it names no code for illegal transitions, and 412 is reserved for stale versions. Also editArtifact and revertArtifact on an EXERCISE artifact of an EXERCISES session (only the exercise of a REVISE_EXERCISE session is edited and reverted, AI-16 #294), revertArtifact while a turn runs or to a revision from before the artifact was last retried, and editArtifact on a session that is not RUNNING or REVIEW (a CANCELLED one accepts REMOVE_MEDIA only). A retry of a REVISE_ITEM or REVISE_EXERCISE artifact is reason NOT_RETRYABLE (a stale revision is replaced by a new session, «Ещё раз» is an edit).",
       "endpoints": [
         "approveArtifact",
         "approveArtifacts",

@@ -25,18 +25,34 @@ public interface GenerationBoundary {
     }
 
     /**
+     * The exercise a {@code REVISE_EXERCISE} spec targets: it must exist, and (an admission) {@code exerciseRevisionId} must still be
+     * its head.
+     */
+    record ExerciseRef(UUID exerciseId, UUID exerciseRevisionId) { }
+
+    /**
      * The facts of a validated spec that decide ownership and capabilities.
      *
-     * @param kind {@code MATERIALS} or {@code EXERCISES}
+     * @param kind {@code MATERIALS}, {@code EXERCISES}, {@code REVISE_ITEM} or {@code REVISE_EXERCISE}
+     * @param exercises the exercise of a {@code REVISE_EXERCISE} spec
      * @param audio {@code settings.media.audio.enabled}
      * @param imageSearch {@code settings.media.imageSearch}
      * @param research the spec asks for web research (a fact check on an effort above short)
+     * @param voiceRevision the spec asks to redo the audio of an exercise ({@code media.action AUDIO_REGENERATE}): a capability of its
+     *                      own, not {@code audio} (which is the audio a new material declares)
      */
-    record SpecFacts(String kind, List<NoteRef> notes, List<ItemRef> items, boolean audio, boolean imageSearch,
-                     boolean research) {
+    record SpecFacts(String kind, List<NoteRef> notes, List<ItemRef> items, List<ExerciseRef> exercises, boolean audio,
+                     boolean imageSearch, boolean research, boolean voiceRevision) {
         public SpecFacts {
             notes = List.copyOf(notes);
             items = List.copyOf(items);
+            exercises = List.copyOf(exercises);
+        }
+
+        /** The facts of a spec that revises no exercise. */
+        public SpecFacts(String kind, List<NoteRef> notes, List<ItemRef> items, boolean audio, boolean imageSearch,
+                         boolean research) {
+            this(kind, notes, items, List.of(), audio, imageSearch, research, false);
         }
     }
 

@@ -25,6 +25,9 @@ public record ExerciseContext(UUID commandId, UUID expectedDeckRevisionId, Map<S
     public static final Set<String> ALL_MECHANICS = Set.of("SELF_CHECK", "FREE_RESPONSE", "CLOZE", "CHOICE", "MATCH", "ORDER",
             "CATEGORIZE");
 
+    /** The registry of the seven mechanics in the order of the contract: the one list prompts, specs and chips share. */
+    public static final List<String> MECHANICS_IN_ORDER = List.of("SELF_CHECK", "FREE_RESPONSE", "CLOZE", "CHOICE", "MATCH", "ORDER", "CATEGORIZE");
+
     public ExerciseContext {
         materials = Map.copyOf(materials);
         objectives = Map.copyOf(objectives);
@@ -60,8 +63,7 @@ public record ExerciseContext(UUID commandId, UUID expectedDeckRevisionId, Map<S
 
     /** The ordered set of mechanics, for prompts: the registry order of the contract, not the hash order. */
     public List<String> mechanicsInOrder() {
-        Set<String> ordered = new LinkedHashSet<>(List.of("SELF_CHECK", "FREE_RESPONSE", "CLOZE", "CHOICE", "MATCH", "ORDER",
-                "CATEGORIZE"));
+        Set<String> ordered = new LinkedHashSet<>(MECHANICS_IN_ORDER);
         ordered.retainAll(allowedMechanics);
         return List.copyOf(ordered);
     }

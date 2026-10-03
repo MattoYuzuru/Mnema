@@ -3,7 +3,7 @@ import { Capability } from '../authoring/capabilities-api.service';
 import { GenerationProblem } from './generation-problem';
 import {
     ArtifactErrorCode, ArtifactSummary, ArtifactTurn, BlockingBucket, EditAction, EditPreset, Effort, GenerationEstimate, NoteArchiveResult, NoteSkipReason,
-    NotesMode, SessionKind, SessionSummary, SlotKind, SlotState
+    NotesMode, SessionKind, SessionSummary, SlotKind, SlotState, SpeechVoice
 } from './generation.models';
 
 /** Texts and small pure helpers of the composer and the Workshop. Voice: calm and bookish, «Мнема» in dialogue, «ИИ» in labels. */
@@ -231,14 +231,19 @@ function conflictMessage(problem: GenerationProblem, kind: SessionKind): string 
                 case 'MEDIA_NOT_READY': return 'Медиа ещё не готовы. Подождите или правьте материал сами.';
                 case 'SOURCE_STALE': return kind === 'EXERCISES'
                     ? 'Материал изменился, пока писалось упражнение. Мы обновили список: пересоздайте такие упражнения или отклоните их.'
+                    : kind === 'REVISE_ITEM' ? 'Материал изменился с тех пор, как Мнема начала его править. В колоде остался прежний текст: начните правку заново.'
+                    : kind === 'REVISE_EXERCISE' ? 'Упражнение изменилось с тех пор, как Мнема начала его править. В колоде осталась прежняя версия: начните правку заново.'
                     : 'Заметка изменилась, пока писался материал. Попробуйте снова или правьте сам материал.';
-                case 'NOT_RETRYABLE': return 'Мнема отказалась писать этот материал: повтор не поможет.';
+                case 'NOT_RETRYABLE': return kind === 'REVISE_ITEM' || kind === 'REVISE_EXERCISE'
+                    ? 'Эту правку нельзя повторить: начните новую.' : 'Мнема отказалась писать этот материал: повтор не поможет.';
                 default: return 'Это действие уже недоступно: состояние изменилось. Мы обновили данные.';
             }
         case 'USAGE_LIMIT_REACHED': return 'Не хватает лимита ИИ. Подробности — в профиле, в блоке «ИИ-бюджет».';
         case 'CAPABILITY_UNAVAILABLE': return 'ИИ сейчас недоступен. Попробуйте позже или напишите материал сами.';
         case 'SOURCE_UNAVAILABLE': return kind === 'EXERCISES'
             ? 'Материал, по которому писались упражнения, изменился или удалён. Выберите материалы заново.'
+            : kind === 'REVISE_ITEM' ? 'Материал уже изменился. Обновите страницу и попросите Мнему ещё раз.'
+            : kind === 'REVISE_EXERCISE' ? 'Упражнение или его материал уже изменились. Обновите страницу и попросите Мнему ещё раз.'
             : 'Заметка, из которой писался материал, изменилась или удалена.';
         case 'IDEMPOTENCY_CONFLICT': return 'Эта команда уже использована с другими данными. Повторите действие.';
         default: return 'Действие сейчас невозможно. Мы обновили данные.';
@@ -287,12 +292,12 @@ export const EDIT_PRESET_OPTIONS: readonly { readonly value: EditPreset; readonl
 const PRESET_LABELS: Readonly<Record<EditPreset, string>> = { SIMPLER: 'Проще', SHORTER: 'Короче', EXAMPLE: 'Пример', LONGER: 'Подробнее' };
 
 /** What a turn asked for, in a few words: «Проще», «Проще: сделай ближе к разговорной речи», the instruction itself or «Убрано медиа». */
-export function describeTurnAsk(turn: Pick<ArtifactTurn, 'action' | 'preset' | 'instruction'>): string {
+export function describeTurnAsk(turn: Pick<ArtifactTurn, 'action' | 'preset' | 'instruction'> & { readonly voice?: SpeechVoice | null }): string {
     switch (turn.action) {
         case 'REMOVE_MEDIA': return 'Убрано медиа';
         case 'IMAGE_SEARCH': return 'Поиск похожего изображения';
         case 'IMAGE_GENERATE': return 'Создание изображения';
-        case 'AUDIO_REGENERATE': return 'Озвучка заново';
+        case 'AUDIO_REGENERATE': return turn.voice === undefined || turn.voice === null ? 'Озвучка заново' : `Озвучка заново: ${voiceName(turn.voice)} голос`;
         default: {
             const preset = turn.preset === null ? null : PRESET_LABELS[turn.preset];
             const instruction = turn.instruction;
@@ -351,7 +356,8 @@ const EDIT_REFUSALS: Readonly<Record<string, string>> = {
     TARGET_NOT_CONTIGUOUS: 'Выделение изменилось: выделите нужные абзацы заново.',
     TARGET_UNSUPPORTED_BLOCK: 'В выделении есть блок, который Мнема пока не умеет переписывать (например, видео, формула или заголовок глубокого уровня). Выделите только текст вокруг него.',
     TARGET_PERSONAL_DATA: 'В выделении есть e-mail или телефон — Мнема не переписывает такие фрагменты.',
-    TARGET_MEDIA_ONLY: 'В выделении только медиа. Для изображения или аудио используйте действия под ним.'
+    TARGET_MEDIA_ONLY: 'В выделении только медиа. Для изображения или аудио используйте действия под ним.',
+    TARGET_NO_AUDIO: 'В этом упражнении нет аудио, голос менять не у чего.'
 };
 
 const CAPABILITY_WORDS: Readonly<Record<string, string>> = {
@@ -395,11 +401,15 @@ export function editProblemMessage(problem: GenerationProblem): string {
 }
 
 /** «Мнема переписала фрагмент.» and the like: the sentence the summary live region adds when an edit ends. */
-export function editOutcomeNote(status: ArtifactTurn['status'], action: EditAction): string {
+export function editOutcomeNote(status: ArtifactTurn['status'], action: EditAction, exercise = false): string {
     switch (status) {
-        case 'APPLIED': return action === 'REMOVE_MEDIA' ? 'Медиа убрано.' : 'Мнема переписала фрагмент.';
-        case 'FAILED': return 'Не удалось переписать фрагмент: текст не изменился.';
-        case 'CANCELLED': return 'Правка остановлена: текст не изменился.';
+        case 'APPLIED':
+            if (action === 'REMOVE_MEDIA') return 'Медиа убрано.';
+            if (action === 'AUDIO_REGENERATE') return 'Голос записан.';
+            return exercise ? 'Мнема переписала упражнение.' : 'Мнема переписала фрагмент.';
+        case 'FAILED': return action === 'AUDIO_REGENERATE' ? 'Не удалось сменить голос.'
+            : exercise ? 'Не удалось переписать упражнение: оно не изменилось.' : 'Не удалось переписать фрагмент: текст не изменился.';
+        case 'CANCELLED': return exercise ? 'Правка остановлена: упражнение не изменилось.' : 'Правка остановлена: текст не изменился.';
         default: return '';
     }
 }
@@ -420,4 +430,91 @@ export function mediaActionReason(action: 'search' | 'generate' | 'speech', capa
             : `${what} появится позже: сервис ещё не подключён. Пока можно убрать медиа или заменить его в редакторе («Править самому»).`;
     }
     return `${what} пока недоступно. Можно убрать медиа или заменить его в редакторе («Править самому»).`;
+}
+
+
+// --- «Попросить Мнему…» and the revision of what exists (AI-16, #294) ---
+
+/** «мужской» / «женский»: the voice in the genitive-free form the chips use («Голос: мужской»). */
+export function voiceName(voice: SpeechVoice): string {
+    return voice === 'male' ? 'мужской' : 'женский';
+}
+
+/** The chip of a voice change, in the intent and in the result of a revision. */
+export function voiceChipText(voice: SpeechVoice): string {
+    return `Голос: ${voiceName(voice)}`;
+}
+
+/** What the result of a voice change says when the audio is the one the exercise had: only the Stub speech executor runs until real synthesis (AI-09). */
+export const STUB_VOICE_NOTE = 'Озвучка обновится, когда подключим синтез речи.';
+
+/** The wait of a `429` in words: «5 секунд», «2 минуты». */
+export function waitText(seconds: number | null): string {
+    if (seconds === null || seconds <= 0) return 'немного';
+    if (seconds < 60) return `${seconds}${NBSP}${plural(seconds, 'секунду', 'секунды', 'секунд')}`;
+    const minutes = Math.ceil(seconds / 60);
+    return `${minutes}${NBSP}${plural(minutes, 'минуту', 'минуты', 'минут')}`;
+}
+
+/** What the composer of «Попросить Мнему…» says when the free intent call fails. Nothing was reserved or debited by it. */
+export function intentProblemMessage(problem: GenerationProblem): string {
+    // An answer that was received but does not read (or is not about this material or exercise) is not a network failure.
+    if (problem.status === -1) return 'Мнема ответила так, что мы не смогли это разобрать. Попробуйте ещё раз или перефразируйте запрос: этот шаг бесплатный.';
+    if (problem.uncertain) return 'Не удалось связаться с Мнемой. Попробуйте ещё раз: этот шаг бесплатный и ничего не списал.';
+    switch (problem.status) {
+        case 429: return `Вы часто просите Мнему. Подождите ${waitText(problem.retryAfter)} и попробуйте снова: этот шаг бесплатный, но у него есть почасовой предел.`;
+        case 409: return problem.code === 'CAPABILITY_UNAVAILABLE'
+            ? 'Мнема сейчас недоступна. Попробуйте позже или сделайте это сами.' : 'Сейчас это невозможно. Обновите страницу.';
+        case 404: return 'Материал или упражнение больше недоступны. Обновите страницу.';
+        case 400: return 'Не удалось разобрать запрос. Перефразируйте его короче.';
+        default: return 'Не удалось разобрать запрос. Попробуйте ещё раз.';
+    }
+}
+
+const REVISE_REFUSALS: Readonly<Record<string, string>> = {
+    TARGET_UNSUPPORTED_BLOCK: 'В этом тексте есть блок, который Мнема пока не умеет переписывать (например, изображение, видео или формула). Поправьте его сами.',
+    TARGET_PERSONAL_DATA: 'В тексте есть e-mail, телефон или номер карты — Мнема не переписывает такое. Поправьте его сами.',
+    TARGET_MEDIA_ONLY: 'В материале нет текста, который можно переписать: только медиа.',
+    TARGET_NO_AUDIO: 'В этом упражнении нет аудио, голос менять не у чего.'
+};
+
+/** Why the session of a revision could not start, in words. Nothing was reserved: a refusal comes before the usage. */
+export function reviseStartMessage(problem: GenerationProblem, kind: 'REVISE_ITEM' | 'REVISE_EXERCISE'): string {
+    if (!problem.uncertain) {
+        if (problem.status === 400 && problem.reason !== null && REVISE_REFUSALS[problem.reason] !== undefined) return REVISE_REFUSALS[problem.reason]!;
+        if (problem.status === 422 && problem.limit === 'EDIT_TARGET_SIZE') {
+            return 'Материал слишком длинный, чтобы Мнема переписала его целиком за один раз. Поправьте его сами.';
+        }
+        if (problem.status === 409 && problem.code === 'CAPABILITY_UNAVAILABLE' && problem.capability === 'textToSpeech') {
+            return 'Озвучивание пока недоступно. Остальное можно попросить отдельно.';
+        }
+    }
+    return problemMessage(problem, kind);
+}
+
+/** The Workshop heading of a session of this kind. */
+export function workshopHeading(kind: SessionKind): string {
+    switch (kind) {
+        case 'EXERCISES': return 'Мастерская упражнений';
+        case 'REVISE_ITEM': return 'Правка материала';
+        case 'REVISE_EXERCISE': return 'Правка упражнения';
+        default: return 'Мастерская';
+    }
+}
+
+/** The one sentence the live region of a revision announces: what Мнема is doing, or what the owner can do now. */
+export function reviseSummary(artifact: ArtifactSummary | null, kind: SessionKind): string {
+    if (artifact === null) return '';
+    const what = kind === 'REVISE_EXERCISE' ? 'упражнение' : 'материал';
+    switch (artifact.state) {
+        case 'QUEUED':
+        case 'GENERATING':
+        case 'REVISING': return `Мнема правит ${what}…`;
+        case 'PROPOSED': return `Правка готова: оставьте её, верните прежний ${kind === 'REVISE_EXERCISE' ? 'вид' : 'текст'} или попросите ещё раз`;
+        case 'PUBLISHED': return `Новая версия сохранена`;
+        case 'REJECTED': return 'Правка отклонена';
+        case 'STALE': return `${kind === 'REVISE_EXERCISE' ? 'Упражнение' : 'Материал'} изменился: правку нельзя сохранить`;
+        case 'FAILED': return 'Правка не удалась';
+        case 'HANDED_OFF': return 'Правка передана в редактор';
+    }
 }

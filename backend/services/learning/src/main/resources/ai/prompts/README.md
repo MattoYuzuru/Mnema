@@ -24,6 +24,8 @@ seen it in two requests). L0-L2 are byte-identical for every user within a `prom
 | `v1/material.md` | L6-L7 sources and task for a material | per call | up to 12k + 0.5k |
 | `v1/edit.md` | L7 for an EDIT step (after the document and history) | per call | 0.5-0.65k |
 | `v1/exercises.md` | exercise skill, schema and task | per call | 1.0-1.3k + schema |
+| `v1/exercise-edit.md` | revise ONE existing exercise (REVISE_EXERCISE, #294): the exercise in the output form, the material, the instruction | per call | 0.7-0.9k + schema |
+| `v1/intent.md` | intent of «Попросить Мнему…» (#294): one sentence to one operation of a closed vocabulary | per call | 0.8-1.0k |
 | `v1/assessment.md` | grader core and answer (own prefix, not part of the generation prefix) | per exercise | 0.6-0.8k + data |
 
 Working input is 12-25k tokens per generation call with a hard ceiling of 32k for Flash non-thinking. The task and the
@@ -43,7 +45,9 @@ purpose: "one sentence"
 
 A section's body is never edited after `v1` is released: a change is a new directory (`v2`) so cached prefixes,
 artifact provenance and the golden eval stay comparable. Typos in a released version are fixed by a new version, not
-in place.
+in place. **Adding a section to a released version is allowed** (it changes no released byte and no cached prefix): AI-16
+([#294](https://github.com/MattoYuzuru/Mnema/issues/294)) added `exercise-edit` and `intent` to `v1`; every section that
+existed stays byte-stable, and a change to one of them is still a new version.
 
 ## Placeholders
 
@@ -70,7 +74,7 @@ One syntax only, in the runtime-filled sections (`deck-brief`, `material`, `edit
   `neighbor_lines`, `criteria_lines`, `misconception_lines`, `allowed_links` (one URL per line).
 - `{{schema}}` is rendered from `contracts/generation/exercises/output.schema.json`; AI-13 keeps a classpath copy
   `ai/exercises/output.schema.json` (a test keeps the two identical) and the prompt carries it minified.
-- The exercise section is assembled with the `<data_policy>` block of `system.md` in front of it as its own cacheable segment, taken
+- The exercise section, the exercise revision and the intent are assembled with the `<data_policy>` block of `system.md` in front of them as their own cacheable segment, taken
   verbatim (the section carries the material, the objectives and the existing exercises as data; the rest of the core describes the MBM
   format and does not apply to a JSON answer). `task.mechanics` renders `Механики: A, B, C` (registry names, comma separated) and may add a
   variety request after it; the Stub reads the count and the mechanics from there.
@@ -87,6 +91,8 @@ Placeholder names used by v1 and their owners:
 | `material` | `allowed_links`, `note_blocks`, `search_result_blocks`, `request`, `task.{skill,words,media}`, `lang.output`, `level` |
 | `edit` | `document` (rendered by code: the outline of the material as `[[bN]] first line`, at most 200 lines, then the tags `<context_before>`, `<target>` with the handles `b(index + 1)` and `<context_after>`), `history` (the last five finished instructions, one per line), `preset` (the Russian label «Проще», «Короче», «Пример», «Подробнее», or none), `instruction` (user text, or «без дополнительных указаний») |
 | `exercises` | `schema`, `material_blocks`, `objective_lines`, `existing_exercise_lines`, `neighbor_lines`, `task.{count,mechanics}`, `lang.output` |
+| `exercise-edit` | `schema`, `material_blocks`, `objective_lines`, `current_exercise_blocks` (rendered by code: the exercise in the output form as JSON inside `<current_exercise>`, redacted, only `& < >` escaped so the model copies valid JSON), `instruction` (user text), `lang.output` |
+| `intent` | `context.{kind,title,operations,mechanics}` (kind `MATERIAL` or `EXERCISE`, the title of what the owner looks at, the operations the context allows, the mechanics of the registry), `request` (user text: the owner's sentence) |
 | `assessment` | `exercise.{prompt,reference}`, `criteria_lines`, `misconception_lines`, `material_fragment`, `feedback_language`, `answer_source`, `learner_answer_json` |
 
 ### Skills: names, files and `task.skill`

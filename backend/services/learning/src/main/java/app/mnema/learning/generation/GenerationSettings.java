@@ -16,8 +16,8 @@ import java.time.Duration;
  * @param usdRubRate roubles per US dollar: the ledger keeps cost in millionths of a rouble, the provider layer in
  *                   micro-dollars (an approximation, like the price table)
  * @param similarTitle similarity (0..1) above which a new title is reported as similar to an existing one
- * @param edit the interactive edit steps
  * @param edit the interactive edit steps (queue timeout)
+ * @param intent the free intent call of «Попросить Мнему…» (rate limit and deadline)
  * @param retention the retention worker: how often it runs, how long an expired session stays readable, when the owner is
  *                  warned and how long the events of an ended session are kept
  */
@@ -32,7 +32,8 @@ record GenerationSettings(
         @DefaultValue Stream stream,
         @DefaultValue Context context,
         @DefaultValue Retention retention,
-        @DefaultValue Edit edit) {
+        @DefaultValue Edit edit,
+        @DefaultValue Intent intent) {
 
     GenerationSettings {
         if (sessionRetention.isNegative() || sessionRetention.isZero() || maxActiveSessions < 1 || maxActiveSessions > 100
@@ -150,6 +151,20 @@ record GenerationSettings(
         Edit {
             if (queueTimeout.isNegative() || queueTimeout.isZero() || queueTimeout.compareTo(Duration.ofHours(1)) > 0) {
                 throw new IllegalArgumentException("Invalid generation edit settings");
+            }
+        }
+    }
+
+    /**
+     * The intent call (#294): one cheap model call that turns a sentence into a spec, free of credits and never reserving anything.
+     *
+     * @param perHour calls per account and hour; above it the answer is {@code 429 RATE_LIMITED} with {@code Retry-After}
+     * @param deadline the whole call, repair included
+     */
+    record Intent(@DefaultValue("30") int perHour, @DefaultValue("PT20S") Duration deadline) {
+        Intent {
+            if (perHour < 1 || perHour > 10_000 || deadline.isNegative() || deadline.isZero() || deadline.compareTo(Duration.ofMinutes(2)) > 0) {
+                throw new IllegalArgumentException("Invalid generation intent settings");
             }
         }
     }

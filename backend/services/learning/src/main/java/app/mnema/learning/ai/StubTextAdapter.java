@@ -23,7 +23,9 @@ import java.util.List;
  * answered by {@link StubAssessments}, which documents the {@code [[stub:assess-*]]} markers of the learner answer
  * ({@code complete}, {@code shallow}, {@code partial}, {@code contradicted}, {@code offtopic}, {@code unclear}, {@code asr},
  * {@code disagree}, {@code injection}, {@code invalid}, and {@code slow}, which waits 8 s for the harness) and the lexical heuristic that decides without one. An edit request (the prompt carries {@code <task kind="edit">}) is answered by {@link StubEdits}:
- * the target blocks with their handles, each plain paragraph with one sentence added. Usage is estimated; cost is zero.
+ * the target blocks with their handles, each plain paragraph with one sentence added. An intent request ({@code <task kind="intent">}) is
+ * answered by {@link StubIntents} (a keyword mapping of the request) and an exercise revision ({@code <task kind="exercise-edit">}) by
+ * {@link StubExerciseEdits} (the exercise with one sentence added). Usage is estimated; cost is zero.
  */
 final class StubTextAdapter implements TextAdapter {
     static final String PROVIDER = "stub";
@@ -69,6 +71,10 @@ final class StubTextAdapter implements TextAdapter {
                 if (wait.compareTo(StubAssessments.SLOW) < 0) return AiResult.failed(new AiFailure.Timeout());
             }
             text = StubAssessments.answer(prompt, request.attempt());
+        } else if (request.output() == OutputContract.JSON && StubIntents.isIntentRequest(prompt)) {
+            text = StubIntents.answer(prompt, repair);
+        } else if (request.output() == OutputContract.JSON && StubExerciseEdits.isExerciseEditRequest(prompt)) {
+            text = StubExerciseEdits.answer(prompt, repair);
         } else if (request.output() == OutputContract.JSON && StubExercises.isExerciseRequest(prompt)) {
             text = StubExercises.answer(prompt, repair);
         } else if (request.output() == OutputContract.JSON) {

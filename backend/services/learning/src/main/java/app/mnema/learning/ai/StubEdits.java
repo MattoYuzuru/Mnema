@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
  * The Stub's answer to an edit request (the prompt carries {@code <task kind="edit">}): the blocks of the {@code <target>} echoed in
  * their order, each with its {@code [[bN]]} handle, and every plain paragraph rewritten by one added sentence that names the preset
  * ({@code Переписано: Проще.}), so an edit visibly changes the text while the handles, headings, lists, code and tables stay as they
- * were. A block that is not a plain paragraph is returned unchanged. The answer is valid MBM for exactly the target's handles; the Stub's
+ * were. A block that is not a plain paragraph (a divider included) is returned unchanged. The answer is valid MBM for exactly the target's handles; the Stub's
  * failure markers ({@code [[stub:refusal]]} and the others) still apply to the whole prompt, so an instruction can carry one.
  */
 final class StubEdits {
@@ -17,7 +17,7 @@ final class StubEdits {
     private static final Pattern TARGET = Pattern.compile("</context_before>\\n<target>(.*?)</target>\\n<context_after>", Pattern.DOTALL);
     private static final Pattern PRESET = Pattern.compile("Пресет: ([^.\\n]+)\\.");
     private static final Pattern HANDLE = Pattern.compile("^(\\[\\[[A-Za-z][0-9]+]])(?: (.*))?$", Pattern.DOTALL);
-    private static final Pattern STRUCTURED = Pattern.compile("^(?:#|[-*] |\\d+[.)] |>|::|```|\\|).*", Pattern.DOTALL);
+    private static final Pattern STRUCTURED = Pattern.compile("^(?:#|[-*] |\\d+[.)] |>|::|```|\\||-{3,}$).*", Pattern.DOTALL);
 
     private StubEdits() { }
 

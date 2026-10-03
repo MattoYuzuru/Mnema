@@ -22,6 +22,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
@@ -58,6 +59,13 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(UsageContentionException.class)
     ResponseEntity<Object> handleUsageContention(UsageContentionException exception, HttpServletRequest request) {
         return response(ApiErrorCode.USAGE_UNAVAILABLE, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(RateLimitedException.class)
+    ResponseEntity<Object> handleRateLimited(RateLimitedException exception, HttpServletRequest request) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set(HttpHeaders.RETRY_AFTER, Long.toString(exception.retryAfterSeconds()));
+        return response(ApiErrorCode.RATE_LIMITED, HttpStatus.TOO_MANY_REQUESTS, request.getRequestURI(), headers, exception.extension());
     }
 
     @ExceptionHandler(SpecNotSupportedException.class)

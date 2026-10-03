@@ -141,7 +141,7 @@ class ReviewService {
         if (body.has("replacement")) {
             // only a proposed exercise can be replaced by an edited one: a material or a bulk entry has no such member
             if (!known.targetKind().equals("EXERCISE")) throw new InvalidRequestException();
-            replacement = replacement(body.get("replacement"), known);
+            replacement = replacement(body.get("replacement"), known, session);
         }
         Plan plan = new Plan(artifactId, Commands.version(body, "expectedArtifactVersion"), Commands.entity(body, "expectedRevisionId"),
                 replacement);
@@ -155,7 +155,7 @@ class ReviewService {
      * The edited exercise of an approval: exactly {@code {objective, exercise}}, parsed by the publication parser (with the
      * placeholders the approval supplies) and about the same subject material as the proposal. Any failure is a 400.
      */
-    private JsonNode replacement(JsonNode edited, Artifact artifact) {
+    private JsonNode replacement(JsonNode edited, Artifact artifact, Session session) {
         if (!edited.isObject()) throw new InvalidRequestException();
         Commands.fields(edited, Set.of("objective", "exercise"), Set.of());
         ObjectNode command = Json.object().put("commandId", ExerciseContexts.PLACEHOLDER_COMMAND.toString())
@@ -170,12 +170,22 @@ class ReviewService {
         }
         String member = artifact.sourceRefs().path(0).path("memberKey").stringValue("");
         if (!parsed.exercise().subject().memberKey().toString().equals(member)) throw new InvalidRequestException();
+        if (session.kind().equals(ReviseSpec.EXERCISE)) {
+            // a revision of an exercise stays on its own objective: the replacement reuses it (a new or another objective is a different exercise)
+            JsonNode own = repository.revision(artifact.artifactId(), artifact.currentRevisionId()).orElseThrow().payload().path("command").path("objective");
+            if (!(parsed.objective() instanceof ExerciseCommand.ReuseObjective reuse)
+                    || !reuse.objectiveId().toString().equals(own.path("objectiveId").stringValue(""))) {
+                throw new InvalidRequestException();
+            }
+        }
         return edited;
     }
 
     /** {@code approveArtifacts}: up to 20 proposals as one atomic bulk publication. */
     Result approveMany(UUID owner, UUID deckId, UUID sessionId, List<String> ifMatch, byte[] raw) {
         Session session = session(owner, deckId, sessionId);
+        // the one artifact of a revision is approved on its own: it is not a batch (and has no bulk publication to join)
+        if (SessionLifecycle.isRevision(session)) throw new InvalidRequestException();
         JsonNode body = Commands.read(raw);
         Commands.fields(body, Set.of("commandId", "expectedDeckRevisionId", "artifacts"), Set.of());
         UUID commandId = Commands.commandId(body);
@@ -230,6 +240,10 @@ class ReviewService {
         Session current = repository.session(session.sessionId()).orElseThrow(ResourceNotFoundException::new);
         check(current, plans, artifacts, bulk, true);
 
+        if (session.kind().equals(ReviseSpec.ITEM)) {
+            return reviseItem(session, identity, envelope, commandId, deckVersion, deckRevision, plans.getFirst(), artifacts.get(plans.getFirst().artifactId()),
+                    publicationCommand);
+        }
         boolean exercises = artifacts.values().stream().anyMatch(artifact -> artifact.targetKind().equals("EXERCISE"));
         if (exercises) return publishWithExercises(session, identity, envelope, commandId, deckVersion, deckRevision, plans, artifacts,
                 bulk, publicationCommand);
@@ -259,6 +273,36 @@ class ReviewService {
                     return apply(session.sessionId(), commandId, plans, published, new Chain(
                             Long.parseLong(publication.path("deckVersion").stringValue("0")),
                             UUID.fromString(publication.path("deckRevisionId").stringValue(""))), bulk);
+                }));
+        String etag = applied[0] ? acknowledgement[0].path("deckVersion").stringValue(null) : null;
+        return new Result(acknowledgement[0], !applied[0], etag);
+    }
+
+    /**
+     * The approval of a revised material ({@code REVISE_ITEM}): the revised document is saved as the next revision of the material it was
+     * made of, at the place it has, in one transaction with the artifact's move to {@code PUBLISHED}. {@code publishedRef} names the new
+     * revision of that very material. The material cannot have moved: approval found drift before this and made the artifact STALE.
+     */
+    private Result reviseItem(Session session, CommandIdentity identity, ObjectNode envelope, UUID commandId, long deckVersion, UUID deckRevision,
+                              Plan plan, Artifact artifact, UUID publicationCommand) {
+        Revision revision = repository.revision(artifact.artifactId(), artifact.currentRevisionId()).orElseThrow();
+        JsonNode pin = artifact.sourceRefs().path(0);
+        JsonNode[] acknowledgement = new JsonNode[1];
+        boolean[] applied = {false};
+        publisher.revise(session.ownerId(), session.deckId(), deckVersion, publicationCommand, deckRevision,
+                UUID.fromString(pin.path("memberKey").stringValue("")), UUID.fromString(pin.path("itemRevisionId").stringValue("")),
+                document(revision.payload().path("document")), (publication, replayed) -> acknowledgement[0] = receipts.execute(identity, envelope, () -> {
+                    applied[0] = true;
+                    JsonNode change = publication.path("changes").path(0);
+                    if (publication.path("changes").size() != 1) throw new IllegalStateException("Publication does not match the approval");
+                    Map<UUID, Published> published = new LinkedHashMap<>();
+                    published.put(plan.artifactId(), new Published(Json.object().put("kind", "ITEM")
+                            .put("memberKey", change.path("memberKey").stringValue(null))
+                            .put("itemRevisionId", change.path("itemRevisionId").stringValue(null))
+                            .put("ordinal", change.path("ordinal").intValue()), publicationCommand, false));
+                    return apply(session.sessionId(), commandId, List.of(plan), published, new Chain(
+                            Long.parseLong(publication.path("deckVersion").stringValue("0")),
+                            UUID.fromString(publication.path("deckRevisionId").stringValue(""))), false);
                 }));
         String etag = applied[0] ? acknowledgement[0].path("deckVersion").stringValue(null) : null;
         return new Result(acknowledgement[0], !applied[0], etag);
@@ -340,8 +384,16 @@ class ReviewService {
                 UUID child = Commands.derive(commandId, artifact.artifactId().toString());
                 JsonNode ack;
                 try {
-                    ack = exercisePublisher.create(session.ownerId(), session.deckId(), position.version(), child, position.revisionId(),
-                            command.path("objective"), command.path("exercise"));
+                    if (session.kind().equals(ReviseSpec.EXERCISE)) {
+                        // a revised exercise is the next revision of the exercise it was made of, in place
+                        JsonNode target = artifact.sourceRefs().path(1);
+                        ack = exercisePublisher.revise(session.ownerId(), session.deckId(), position.version(), child, position.revisionId(),
+                                UUID.fromString(target.path("exerciseId").stringValue("")), UUID.fromString(target.path("exerciseRevisionId").stringValue("")),
+                                command.path("objective"), command.path("exercise"));
+                    } else {
+                        ack = exercisePublisher.create(session.ownerId(), session.deckId(), position.version(), child, position.revisionId(),
+                                command.path("objective"), command.path("exercise"));
+                    }
                 } catch (ResourceNotFoundException | GeneratedExercisePublisher.ObjectiveUnavailableException gone) {
                     // the catalog answers an opaque 404 for a pin that is not the head any more: for this command it is a moved source
                     throw new SourceMoved(artifact.artifactId());
@@ -394,9 +446,13 @@ class ReviewService {
             Map<UUID, Long> drifted = new LinkedHashMap<>();
             for (Map.Entry<UUID, Long> entry : proposed.entrySet()) {
                 Artifact artifact = artifacts.get(entry.getKey());
-                if (drift.drifted(session, artifact).isEmpty()) continue;
+                List<Drift> moved = drift.drifted(session, artifact);
+                if (moved.isEmpty()) continue;
                 Plan plan = plans.stream().filter(candidate -> candidate.artifactId().equals(artifact.artifactId())).findFirst().orElseThrow();
-                if (artifact.targetKind().equals("EXERCISE") && plan.replacement() == null) {
+                if (moved.stream().anyMatch(each -> each.source().type().equals("EXERCISE"))) {
+                    // the exercise a revision was made of changed since: the owner edited a copy of what no longer is, so it is never re-pinned
+                    drifted.put(entry.getKey(), entry.getValue());
+                } else if (artifact.targetKind().equals("EXERCISE") && plan.replacement() == null) {
                     // a pure re-pin: the exercise is the same, its pins follow the material, so the user's approval just works
                     Optional<Artifact> repinned = repins.repin(session.sessionId(), artifact.artifactId(), artifact.rowVersion());
                     if (repinned.isPresent()) {
@@ -569,8 +625,12 @@ class ReviewService {
             Artifact artifact = reviewable(tx, sessionId, artifactId, expected, expectedRevision, false, "PROPOSED", "STALE");
             JsonNode draft;
             try {
-                draft = drafts.open(tx.session.ownerId(), deckId, Commands.derive(commandId, "draft:" + artifactId),
-                        handoffDocument(artifact));
+                UUID draftCommand = Commands.derive(commandId, "draft:" + artifactId);
+                // a revised material is handed off as a draft of that material (its base is the revision it was made of), a new one as a new draft
+                draft = tx.session.kind().equals(ReviseSpec.ITEM)
+                        ? drafts.openRevision(tx.session.ownerId(), deckId, draftCommand, UUID.fromString(artifact.sourceRefs().path(0).path("memberKey").stringValue("")),
+                                UUID.fromString(artifact.sourceRefs().path(0).path("itemRevisionId").stringValue("")), handoffDocument(artifact))
+                        : drafts.open(tx.session.ownerId(), deckId, draftCommand, handoffDocument(artifact));
             } catch (ResourceLimitExceededException limit) {
                 throw new ResourceLimitExceededException(ProblemExtension.builder().put("limit", "EDITING_DRAFTS").build());
             }
@@ -658,6 +718,8 @@ class ReviewService {
         if (!RETRYABLE.contains(tx.state) || !(stale || artifact.state().equals("FAILED"))) {
             throw new GenerationStateConflictException(Reason.ILLEGAL_STATE);
         }
+        // a revision is a copy of what existed: when what existed moved there is nothing to write again, the owner starts a new one ("Ещё раз" is an edit)
+        if (SessionLifecycle.isRevision(tx.session)) throw new GenerationStateConflictException(Reason.NOT_RETRYABLE);
         if (!stale && "REFUSAL".equals(artifact.errorCode())) throw new GenerationStateConflictException(Reason.NOT_RETRYABLE);
 
         Session session = tx.session;

@@ -103,11 +103,16 @@ class GenerationHttpContractTest extends GenerationIntegrationTest {
                 .getBytes(StandardCharsets.UTF_8);
         problem(send(owner, post(path).contentType("application/json").content(huge)), 400, "INVALID_REQUEST");
 
+        // the revise specs are supported (AI-16): they need their exact shape, an owned target and an instruction or a media action
         for (String kind : List.of("REVISE_ITEM", "REVISE_EXERCISE")) {
-            MockHttpServletResponse revise = create(owner, deck, JSON.createObjectNode().put("kind", kind), UUID.randomUUID());
-            problem(revise, 422, "SPEC_NOT_SUPPORTED");
-            assertThat(problemBody(revise).path("kind").stringValue(null)).isEqualTo(kind);
+            problem(create(owner, deck, JSON.createObjectNode().put("kind", kind), UUID.randomUUID()), 400, "INVALID_REQUEST");
         }
+        ObjectNode noInstruction = JSON.createObjectNode().put("kind", "REVISE_EXERCISE");
+        noInstruction.putObject("target").put("exerciseId", UUID.randomUUID().toString()).put("exerciseRevisionId", UUID.randomUUID().toString());
+        problem(create(owner, deck, noInstruction, UUID.randomUUID()), 400, "INVALID_REQUEST");
+        ObjectNode unknownMember = JSON.createObjectNode().put("kind", "REVISE_ITEM").put("instruction", "проще");
+        unknownMember.putObject("target").put("memberKey", UUID.randomUUID().toString()).put("itemRevisionId", UUID.randomUUID().toString());
+        problem(create(owner, deck, unknownMember, UUID.randomUUID()), 404, "RESOURCE_NOT_FOUND");
 
         ObjectNode exercises = JSON.createObjectNode().put("kind", "EXERCISES");
         exercises.putArray("targets").addObject().put("memberKey", UUID.randomUUID().toString()).put("itemRevisionId", UUID.randomUUID().toString());

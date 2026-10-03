@@ -1,6 +1,6 @@
 {
   "contract": "generation-v1",
-  "description": "HTTP contract of Workshop sessions, artifacts, approval and edits under /api (Learning context path). Authority: docs/architecture/ai-generation-platform.md sections 3-5 and 7. Implemented so far: AI-04 (#287: sessions, events, artifact) and AI-05 (#288: approval, rejection, hand-off, retry, delete, note archival). AI-13 (#291) adds EXERCISES sessions and the exercise side of approval, re-pin and retry; AI-11 (#293) and AI-06 (#289) implement or consume the rest.",
+  "description": "HTTP contract of Workshop sessions, artifacts, approval and edits under /api (Learning context path). Authority: docs/architecture/ai-generation-platform.md sections 3-5 and 7. Implemented so far: AI-04 (#287: sessions, events, artifact) and AI-05 (#288: approval, rejection, hand-off, retry, delete, note archival). AI-13 (#291) adds EXERCISES sessions and the exercise side of approval, re-pin and retry; AI-11 (#293) and AI-06 (#289) implement or consume the rest. AI-16 (#294) adds the intent of «Попросить Мнему…» (createIntent), REVISE_ITEM and REVISE_EXERCISE sessions and the exercise edits.",
   "conventions": {
     "owner": "The JWT subject is the only owner input. Foreign or absent deck, session or artifact IDs share one opaque 404.",
     "caching": "Every response is Cache-Control: private, no-store.",
@@ -82,7 +82,7 @@
         {
           "status": 422,
           "code": "SPEC_NOT_SUPPORTED",
-          "when": "A REVISE_ITEM or REVISE_EXERCISE spec before AI-16 (#294)."
+          "when": "settings.planFirst true (MATERIALS or EXERCISES) until the planner exists (AI-14, #295)."
         },
         {
           "status": 422,
@@ -93,7 +93,66 @@
       ],
       "notes": [
         "Owned by AI-01 (#281): the endpoint, the rate-card math and the reservation. The generation module supplies the spec interpretation and the personal-data scan hooks as they land (AI-04 and later).",
-        "Not keyed by commandId: it is a pure function of the spec, the rate card and the current balance."
+        "Not keyed by commandId: it is a pure function of the spec, the rate card and the current balance.",
+        "REVISE_ITEM and REVISE_EXERCISE (AI-16, #294) are priced as one edit turn (EDIT_SELECTION) when there is an instruction, plus one text-to-speech clip (TTS_CLIP_30S) when the spec has a media action; the target is checked as for createSession (404 unknown or foreign, 409 not the head, 409 capability)."
+      ]
+    },
+    {
+      "operationId": "createIntent",
+      "method": "POST",
+      "path": "/api/decks/{deckId}/generation-intents",
+      "summary": "«Попросить Мнему…»: one sentence of the owner, with the material or the exercise they are looking at, becomes a spec, editable chips and notes. Free: nothing is reserved or debited, no session is created.",
+      "requestBody": {
+        "fields": {
+          "context": "{kind: MATERIAL, memberKey} (a current member of the deck) or {kind: EXERCISE, exerciseId} (an exercise on the deck's roster); exact fields",
+          "text": "1..2000 code points, not blank"
+        },
+        "example": {
+          "context": {
+            "kind": "MATERIAL",
+            "memberKey": "44444444-4444-4444-8444-444444444444"
+          },
+          "text": "Сделай все типы упражнений по 3"
+        }
+      },
+      "success": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "private, no-store"
+        },
+        "body": {
+          "$ref": "#/examples/intentExercises"
+        }
+      },
+      "errors": [
+        {
+          "status": 400,
+          "code": "INVALID_REQUEST",
+          "when": "Malformed or unknown field, duplicate JSON key, bad UUID, an unknown context kind, a text that is blank or longer than 2000 code points."
+        },
+        {
+          "status": 404,
+          "code": "RESOURCE_NOT_FOUND",
+          "when": "Foreign or absent deck, a material that is not a current member of the deck, an exercise that is not on its roster: one opaque boundary."
+        },
+        {
+          "status": 409,
+          "code": "CAPABILITY_UNAVAILABLE",
+          "when": "aiGeneration is off, or the provider cannot answer now (reason TEMPORARILY_UNAVAILABLE or PROVIDER_NOT_CONFIGURED)."
+        },
+        {
+          "status": 429,
+          "code": "RATE_LIMITED",
+          "when": "More than learning.generation.intent.per-hour (30) calls by the account in a rolling hour.",
+          "retryAfter": "whole seconds, also the Retry-After header"
+        }
+      ],
+      "notes": [
+        "Free and stateless: no reservation, no debit, no commandId, no receipt (a retry is another call and another place of the hour). The model call is journaled (ai_provider_call, with its cost) like any other. The credits are taken by the session that the owner starts afterwards from the spec, which is the only step that reserves (architecture section 13).",
+        "Order: 404 deck, 400 body, 404 context, 409 capability, 429, the call. One call on the fast text route, strict JSON, temperature 0.2; an answer outside the closed vocabulary is sent back once, then (and for a refusal) the answer is UNSUPPORTED; a provider that is down is 409 CAPABILITY_UNAVAILABLE.",
+        "The model chooses only operation (EXERCISES | REVISE_ITEM | REVISE_EXERCISE | UNSUPPORTED), mechanics (AUTO or registry names), a number (perTarget), a sentence (instruction, at most 2000 code points) and a voice (female | male). The SERVER builds the spec: the target is the request's context pinned at its head (never the model's); mechanics are filtered by the registry; perTarget is clamped to 1..learning.generation.max-exercises-per-target (10) with a note PER_TARGET_CLAMPED («Не больше 10 на материал»); budgetPercent is never set; every member the vocabulary does not have is dropped. So no sentence can produce a spec above the limits.",
+        "Context matrix: MATERIAL allows EXERCISES and REVISE_ITEM; EXERCISE allows EXERCISES (for the material the exercise is about) and REVISE_EXERCISE. Any other operation, a voice change for an exercise without audio (NO_AUDIO) or when the redo cannot run (MEDIA_UNAVAILABLE), and an instruction the model did not give (NO_INSTRUCTION) are UNSUPPORTED with spec null, chips [] and a note in words.",
+        "spec is exactly what createSession and estimateGeneration accept (post it with a commandId); chips are its editable parameters ({kind: OPERATION | MECHANICS | PER_TARGET | INSTRUCTION | VOICE, value, ...}); notes are [{code, text, limit?}] with texts built by the server, never the model's own words."
       ]
     },
     {
@@ -128,7 +187,8 @@
         {
           "status": 400,
           "code": "INVALID_REQUEST",
-          "when": "Malformed or unknown field, duplicate JSON key, bad UUID or version."
+          "when": "Malformed or unknown field, duplicate JSON key, bad UUID or version. A REVISE_ITEM or REVISE_EXERCISE spec of the wrong shape, or whose target cannot be revised, named by the additive `reason` member: TARGET_UNSUPPORTED_BLOCK, TARGET_PERSONAL_DATA, TARGET_MEDIA_ONLY or TARGET_NO_AUDIO.",
+          "reason": "TARGET_UNSUPPORTED_BLOCK | TARGET_PERSONAL_DATA | TARGET_MEDIA_ONLY | TARGET_NO_AUDIO (REVISE_* only; absent for the other 400s)"
         },
         {
           "status": 404,
@@ -148,7 +208,7 @@
         {
           "status": 409,
           "code": "SOURCE_UNAVAILABLE",
-          "when": "A pinned owned note or material exists but no longer matches the pin (an EXERCISES target that is no longer the material's head), or has been deleted since."
+          "when": "A pinned owned note or material exists but no longer matches the pin (an EXERCISES target that is no longer the material's head), or has been deleted since. A REVISE_ITEM target that is not the head of its material, a REVISE_EXERCISE target that is not the head of its exercise (sources type EXERCISE), an exercise whose material is gone or cannot be followed."
         },
         {
           "status": 409,
@@ -158,13 +218,13 @@
         {
           "status": 422,
           "code": "SPEC_NOT_SUPPORTED",
-          "when": "REVISE_ITEM or REVISE_EXERCISE before AI-16 (#294) defines their flow; settings.planFirst true (MATERIALS or EXERCISES) until the planner exists (AI-14, #295)."
+          "when": "settings.planFirst true (MATERIALS or EXERCISES) until the planner exists (AI-14, #295)."
         },
         {
           "status": 422,
           "code": "RESOURCE_LIMIT_EXCEEDED",
           "when": "More than 3 active sessions (PLANNING, PLAN_READY, RUNNING, and REVIEW with a PROPOSED, REVISING or STALE artifact; the problem lists activeSessionIds), too many artifacts, targets or exercises.",
-          "limit": "ACTIVE_SESSIONS | ARTIFACTS_PER_SESSION | EXERCISE_TARGETS | EXERCISES_PER_TARGET | EXERCISES_PER_SESSION",
+          "limit": "ACTIVE_SESSIONS | ARTIFACTS_PER_SESSION | EXERCISE_TARGETS | EXERCISES_PER_TARGET | EXERCISES_PER_SESSION | EDIT_TARGET_SIZE (REVISE_ITEM: the whole material is too long to rewrite in one turn)",
           "activeSessionIds": "uuids, only for ACTIVE_SESSIONS"
         }
       ],
@@ -173,7 +233,9 @@
         "Initial state is RUNNING, or PLANNING when spec.settings.planFirst.",
         "The session reservation covers the initial batch only (contracts/usage reservation lifecycle).",
         "A pinned NOTE or ITEM that is unknown or foreign is 404; SOURCE_UNAVAILABLE is only for an owned source whose version no longer matches the pin.",
-        "EXERCISES (AI-13, decision 14 of the README): the targets are pinned as SOURCE items; the resolved quantity is spread over the targets in processing order (UNCOVERED_FIRST: fewest enabled exercises first; BALANCED: request order); one QUEUED artifact exists per exercise (targetKind EXERCISE, ordinal in processing order, then index) and one TEXT_DRAFT step per target fills them. A target that is not the material's head is 409 SOURCE_UNAVAILABLE."
+        "EXERCISES (AI-13, decision 14 of the README): the targets are pinned as SOURCE items; the resolved quantity is spread over the targets in processing order (UNCOVERED_FIRST: fewest enabled exercises first; BALANCED: request order); one QUEUED artifact exists per exercise (targetKind EXERCISE, ordinal in processing order, then index) and one TEXT_DRAFT step per target fills them. A target that is not the material's head is 409 SOURCE_UNAVAILABLE.",
+        "REVISE_ITEM (AI-16, decision 16): one artifact (target ITEM, sourceRefs the target) whose INITIAL revision is the head document copied without a model call, and one turn FREE over every top-level block with the spec's instruction (one EDIT step). The target must be the material's head (409 SOURCE_UNAVAILABLE otherwise). The session has no batch reservation: its holds are the turns' own (EDIT_SELECTION, 4 credits on rc-v1), taken here. The artifact is REVISING at creation and PROPOSED when the turn ends; the session is RUNNING meanwhile and REVIEW afterwards. No GENERATION_* notification is published for a revise session.",
+        "REVISE_EXERCISE (AI-16, decision 16): one artifact (target EXERCISE, sourceRefs [the material pin, the exercise pin]) whose INITIAL revision is the exercise's command copied without a model call ({objective: reuse the current one, exercise}), with a READY slot for each of its AUDIO blocks on the asset it already uses. instruction (when not blank) is one EDIT turn FREE that rewrites the exercise through the exercise pipeline; media {action: AUDIO_REGENERATE, voice} is one turn that redoes the audio on the Stub speech executor (until real synthesis, AI-09 #297: the audio does not change, the slot records the voice and keeps its asset) and starts after the rewrite is APPLIED. Each turn takes its own hold at creation (EDIT_SELECTION 4 credits; TTS_CLIP_30S 10 credits, released unspent by the Stub)."
       ]
     },
     {
@@ -533,7 +595,8 @@
         "Item approval publishes through the caller-owned port into ItemService; exercise approval through ExerciseService with objective.operation=reuse where the target objective is unchanged.",
         "The catalog command carries a command id derived from commandId and artifactId (a name-based hash shaped as a version-4 UUID, because a version-5 value is not a legal command id), so a repeat is the same command. A session CLOSED, EXPIRED, PLANNING or PLAN_READY answers ILLEGAL_STATE; a rowVersion or revision mismatch is 412 before any state conflict.",
         "A PROPOSED EXERCISE artifact whose target material has a newer head is re-pinned by the server before the publish transaction (no model call): if every block the model was shown is unchanged in the head, every MATERIAL node of the exercise still reads as text in the new revision and the exercise passes the checks that read the material text, the publication command and the probes again, a REPIN revision replaces the current one, repinStatus is AUTO_REPINNED and the approval goes on with it; otherwise the artifact becomes STALE (NEEDS_USER_DECISION) in a short transaction of its own and the answer is 409 SOURCE_STALE.",
-        "Exercise approval publishes through the caller-owned port GeneratedExercisePublisher into ExerciseService with a child command id derived from commandId and artifactId and marks the exercise «Новое» (contracts/study). A create objective whose normalized title equals the title of an objective already bound to the same subject material is published as a reuse of it, so approving three exercises of one direction creates one objective. A reuse objective whose head moved is published against the current head while it is still bound to the subject member; a gone or foreign-bound objective makes the artifact STALE (NEEDS_USER_DECISION, 409 SOURCE_STALE)."
+        "Exercise approval publishes through the caller-owned port GeneratedExercisePublisher into ExerciseService with a child command id derived from commandId and artifactId and marks the exercise «Новое» (contracts/study). A create objective whose normalized title equals the title of an objective already bound to the same subject material is published as a reuse of it, so approving three exercises of one direction creates one objective. A reuse objective whose head moved is published against the current head while it is still bound to the subject member; a gone or foreign-bound objective makes the artifact STALE (NEEDS_USER_DECISION, 409 SOURCE_STALE).",
+        "REVISE_ITEM / REVISE_EXERCISE (AI-16): approval is an ordinary revise with the same preconditions (If-Match deck version, expected artifact version, revision and deck revision). A material is saved as the next revision of the member it was made of, at its place, with the structural edits the revision needs (publishedRef {kind: ITEM, memberKey (the target's), itemRevisionId (the new one), ordinal}); an exercise as the next revision of the exercise in place, its objective the current one (publishedRef {kind: EXERCISE, exerciseId (the same), exerciseRevisionId (the new one), ...}) and it is not marked «Новое». The old revision stays in history. A head that moved since the copy makes the artifact STALE (409 GENERATION_STATE_CONFLICT, reason SOURCE_STALE) and is never re-pinned for a material or when the exercise itself moved; an exercise whose material only moved is re-pinned like any proposed exercise."
       ],
       "requestBodyOptional": {
         "replacement": "EXERCISE artifacts only: {objective, exercise}, the exercise the owner edited in the exercise editor before saving (the shape of getArtifact payload.command). It is read by ExerciseCommand.readCreate only (a human edit is not linted), must keep the proposal's exercise.subject.memberKey and is published INSTEAD of the revision payload; provenance records edited: true. Not valid on an ITEM artifact or inside a bulk entry (INVALID_REQUEST). It is never auto re-pinned: it is published when it already stands on the head of its material (subject and quotes carry the head revision), otherwise the proposal becomes STALE (409 SOURCE_STALE, never 412)."
@@ -611,7 +674,8 @@
         "All or nothing, in ONE database transaction: the catalog is called in-process through the caller-owned port. Items only (AI-05): ONE bulk publication, one deck revision, with a command id derived from commandId and the sorted artifact ids; with exercises (AI-13) the materials go first as one bulk publication, then ExerciseService is called once per exercise with a child command id derived from commandId and the artifact id, each on the deck revision and version the previous publication left (chained). Any failure rolls everything back.",
         "The list is capped at 20 (the MATERIALS session maximum); the client splits a larger selection (an exercise session can hold 60) into several commands, each atomic.",
         "The response lists one acknowledgement per artifact (ITEM and EXERCISE shapes) and the final Deck revision.",
-        "The client lists exactly the artifacts it showed as approvable ('Approve all ready (N)'); an artifact that stopped being approvable fails the whole command."
+        "The client lists exactly the artifacts it showed as approvable ('Approve all ready (N)'); an artifact that stopped being approvable fails the whole command.",
+        "A REVISE_ITEM or REVISE_EXERCISE session has one artifact and is approved with approveArtifact: a bulk approval of it is 400 INVALID_REQUEST."
       ]
     },
     {
@@ -803,7 +867,8 @@
       "notes": [
         "ITEM artifacts only; an EXERCISE hand-off is INVALID_REQUEST (the owner edits an exercise before saving it: approveArtifact with replacement).",
         "The client then restores the draft with GET /api/editing-drafts/{draftId}.",
-        "The draft holds the revision's document without the media nodes whose assets are not READY (they cannot be saved); READY media stays."
+        "The draft holds the revision's document without the media nodes whose assets are not READY (they cannot be saved); READY media stays.",
+        "A REVISE_ITEM artifact is handed off as an EditingDraft of the EXISTING material (member_key = the target, base_revision_id = the revision it was made of); an exercise (any session) is still 400."
       ]
     },
     {
@@ -815,10 +880,11 @@
         "fields": {
           "commandId": "UUIDv4/v7",
           "expectedRevisionId": "the artifact's current revision as the client shows it (stale is 412 VERSION_CONFLICT)",
-          "target": "{nodeIds: 1..50 distinct node IDs of CONSECUTIVE top-level blocks of the current revision}; required for a material (absent or null is INVALID_REQUEST); null only for an EXERCISE, whose every edit is refused until AI-16",
-          "action": "REWRITE | IMAGE_SEARCH | IMAGE_GENERATE | AUDIO_REGENERATE | FREE | REMOVE_MEDIA",
+          "target": "{nodeIds: 1..50 distinct node IDs of CONSECUTIVE top-level blocks of the current revision}; required for a material (absent or null is INVALID_REQUEST); absent or null for an EXERCISE (the whole exercise is edited), where a target is INVALID_REQUEST",
+          "action": "REWRITE | IMAGE_SEARCH | IMAGE_GENERATE | AUDIO_REGENERATE | FREE | REMOVE_MEDIA; an exercise of a REVISE_EXERCISE session accepts FREE and AUDIO_REGENERATE only",
           "preset": "optional SIMPLER | SHORTER | EXAMPLE | LONGER; valid only with REWRITE (else INVALID_REQUEST); null is the same as absent",
-          "instruction": "text or speech transcript, 1..2000 code points, not blank; required for FREE, optional otherwise (ignored and stored as null for REMOVE_MEDIA); null is the same as absent"
+          "instruction": "text or speech transcript, 1..2000 code points, not blank; required for FREE, optional otherwise (ignored and stored as null for REMOVE_MEDIA); null is the same as absent",
+          "voice": "optional female | male (AI-16): required for and only for AUDIO_REGENERATE on an exercise (the redo of its audio), else INVALID_REQUEST; never on a material; null is the same as absent"
         },
         "example": {
           "commandId": "018f1d98-5c10-7abc-8abc-0123456789b6",
@@ -865,8 +931,8 @@
         {
           "status": 400,
           "code": "INVALID_REQUEST",
-          "when": "Malformed or unknown field, duplicate JSON key, bad UUID or version; a preset without REWRITE; FREE without an instruction; a media action on blocks of the wrong kind; or a target the edit cannot use, named by the additive `reason` member: TARGET_NOT_CONTIGUOUS (a nested node, an unknown or repeated ID, a gap), TARGET_UNSUPPORTED_BLOCK (a block MBM cannot express), TARGET_PERSONAL_DATA (a block whose text holds an e-mail address, a telephone or a card number) or TARGET_MEDIA_ONLY (a rewrite of media blocks only).",
-          "reason": "TARGET_NOT_CONTIGUOUS | TARGET_UNSUPPORTED_BLOCK | TARGET_PERSONAL_DATA | TARGET_MEDIA_ONLY (absent for the other 400s)"
+          "when": "Malformed or unknown field, duplicate JSON key, bad UUID or version; a preset without REWRITE; FREE without an instruction; a media action on blocks of the wrong kind; or a target the edit cannot use, named by the additive `reason` member: TARGET_NOT_CONTIGUOUS (a nested node, an unknown or repeated ID, a gap), TARGET_UNSUPPORTED_BLOCK (a block MBM cannot express), TARGET_PERSONAL_DATA (a block whose text holds an e-mail address, a telephone or a card number) or TARGET_MEDIA_ONLY (a rewrite of media blocks only). For an exercise: a target, an action other than FREE and AUDIO_REGENERATE, a voice on FREE, AUDIO_REGENERATE without a voice, or TARGET_NO_AUDIO (the exercise has no audio to redo).",
+          "reason": "TARGET_NOT_CONTIGUOUS | TARGET_UNSUPPORTED_BLOCK | TARGET_PERSONAL_DATA | TARGET_MEDIA_ONLY | TARGET_NO_AUDIO (absent for the other 400s)"
         },
         {
           "status": 404,
@@ -887,7 +953,7 @@
         {
           "status": 409,
           "code": "CAPABILITY_UNAVAILABLE",
-          "when": "A capability the operation needs is off: aiGeneration for REWRITE and FREE; imageSearch, imageGeneration or textToSpeech for the media actions, which stay refused (reason PROVIDER_NOT_CONFIGURED when the gate itself passes) until their executors exist (AI-09, AI-10)."
+          "when": "A capability the operation needs is off: aiGeneration for REWRITE and FREE; imageSearch, imageGeneration or textToSpeech for the media actions, which stay refused (reason PROVIDER_NOT_CONFIGURED when the gate itself passes) until their executors exist (AI-09, AI-10). AUDIO_REGENERATE of an exercise (with a voice) needs aiGeneration for the session and the Stub speech executor (local runs and CI) or, later, a real speech adapter: textToSpeech / PROVIDER_NOT_CONFIGURED without them."
         },
         {
           "status": 412,
@@ -897,7 +963,7 @@
         {
           "status": 409,
           "code": "GENERATION_STATE_CONFLICT",
-          "when": "Operation not allowed in the current session or artifact state (states.json allowedOperations): the session is not RUNNING or REVIEW (a CANCELLED one accepts REMOVE_MEDIA only), the artifact is not PROPOSED, or the artifact is an EXERCISE (every edit, until AI-16 #294).",
+          "when": "Operation not allowed in the current session or artifact state (states.json allowedOperations): the session is not RUNNING or REVIEW (a CANCELLED one accepts REMOVE_MEDIA only), the artifact is not PROPOSED, or the artifact is an EXERCISE of an EXERCISES session (only the exercise of a REVISE_EXERCISE session is edited).",
           "reason": "ILLEGAL_STATE"
         },
         {
@@ -919,10 +985,11 @@
         "A rewrite is 202 with the turn QUEUED and the artifact REVISING; the worker runs one EDIT step (PT2M, at most three model calls: the answer, one repair, one on the strong route). The result is a new revision (cause EDIT), the turn APPLIED with resultRevisionId and the artifact PROPOSED on it; on failure the turn is FAILED with an errorCode, the artifact PROPOSED on the unchanged revision and nothing is debited. The client follows ARTIFACT_STATE and re-reads getArtifact (turns[], revisions[]).",
         "REMOVE_MEDIA (extension to the architecture list) is free and deterministic: no model call, no reservation. It answers 202 like every edit, with the turn already APPLIED (example turnRemoveMedia), cause MEDIA, creates a revision without the media nodes (their slots become REMOVED and the hold on their assets ends) and does not count toward the 50 turns. It is the only action accepted in a CANCELLED session.",
         "A rewrite never shows media to the model and never drops it: each media block of the target run stays in the document (same node, same slot, now attached to the new revision) right after the rewritten block that carries the node ID of the nearest text block before it in the run, in its original order; a media block that opened the run stays first, and one whose anchor did not survive the rewrite (gone or changed type) goes to the end of the range.",
-        "EXERCISE artifacts: every edit answers 409 GENERATION_STATE_CONFLICT with reason ILLEGAL_STATE until AI-16 (#294) defines the exercise edit flow.",
         "Every block outside the target is the same JSON in the new revision (same node IDs); a rewritten block whose type is unchanged keeps its node ID (MBM handle rule), its descendants and new blocks get new IDs.",
         "The blocks to rewrite may weigh at most 2050 estimated tokens (the output bound of 4500 holds them again and a longer rewrite): a bigger target is 422 RESOURCE_LIMIT_EXCEEDED with limit EDIT_TARGET_SIZE and limits.maxEditTargetTokens; the client splits the selection.",
-        "The edit is interactive: its step is offered to workers before drafts, is never parked by the daily burst, and fails its turn with DEADLINE_EXCEEDED (hold released) when no worker claimed it within learning.generation.edit.queue-timeout (PT2M)."
+        "The edit is interactive: its step is offered to workers before drafts, is never parked by the daily burst, and fails its turn with DEADLINE_EXCEEDED (hold released) when no worker claimed it within learning.generation.edit.queue-timeout (PT2M).",
+        "EXERCISE artifacts (AI-16, decision 16): the exercise of a REVISE_EXERCISE session accepts FREE (instruction required, no target: the exercise is rewritten whole through the exercise pipeline, one EDIT turn, EDIT_SELECTION) and AUDIO_REGENERATE (voice required: one TTS turn, TTS_CLIP_30S held, executed by the Stub speech executor, released unspent). The turn's targetNodeIds is []. The proposals of an EXERCISES session still refuse every edit with 409 GENERATION_STATE_CONFLICT / ILLEGAL_STATE (decision 15).",
+        "Every turn carries `voice` (female | male | null, set for an AUDIO_REGENERATE turn of an exercise)."
       ]
     },
     {
@@ -976,7 +1043,8 @@
         "toRevisionId must be one of the revisions listed by getArtifact (the current generation of the draft, at most 30 for rewrites): earlier or later than the current one; the current revision is a 200 no-op. A revision from before the artifact was last retried (a retry writes a new INITIAL revision from other pins) is history, readable with ?revisionId= but never restored: 409 ILLEGAL_STATE. No revision is created and none is deleted, so the history (revisions, turns) stays and a revert can be undone by another revert; an edit made after a revert is a new revision (a branch).",
         "Evaluation order: 404, receipt replay, 400 body, 412 expectedArtifactVersion, 409 state, 404 unknown revision.",
         "Media slots follow the shown revision: a slot whose node the revision holds is attached to it, one whose node it does not hold becomes REMOVED. Restoring a revision whose media node had its slot REMOVED shows the node without a ready asset (the hold ended): the slot is FAILED with errorCode NO_RESULT (a MEDIA_SLOT_STATE event), so approval answers 409 MEDIA_NOT_READY until REMOVE_MEDIA removes the node again.",
-        "Events: ARTIFACT_STATE (PROPOSED, new artifactVersion and currentRevisionId) and MEDIA_SLOT_STATE for each slot that changed state."
+        "Events: ARTIFACT_STATE (PROPOSED, new artifactVersion and currentRevisionId) and MEDIA_SLOT_STATE for each slot that changed state.",
+        "The exercise of a REVISE_EXERCISE session can be reverted to any revision of its draft (its audio slots follow the revision shown); the proposals of an EXERCISES session cannot (409 ILLEGAL_STATE)."
       ]
     },
     {
@@ -1064,13 +1132,14 @@
         "Cancels any QUEUED or RUNNING turn of the artifact.",
         "A new STEP reservation of the artifact's weight is made first (409 USAGE_LIMIT_REACHED leaves nothing changed); the debit of the new run draws from it and it ends with the session's return to REVIEW. A STALE artifact is regenerated against the pins as they are now (the artifact's sourceRefs are replaced); a FAILED one needs its pins to hold (SOURCE_UNAVAILABLE otherwise). The slots and holds of the replaced revision are dropped.",
         "A REVIEW session that holds only FAILED or REJECTED leftovers does not count as active; retrying makes it count again, so the 3-active-sessions limit is checked first (422 RESOURCE_LIMIT_EXCEEDED, limit ACTIVE_SESSIONS, before usage).",
-        "An EXERCISE artifact is written again as ONE exercise (one TEXT_DRAFT step with count 1, a STEP reservation of one exercise's credits); a STALE one is regenerated against the pins as they are now."
+        "An EXERCISE artifact is written again as ONE exercise (one TEXT_DRAFT step with count 1, a STEP reservation of one exercise's credits); a STALE one is regenerated against the pins as they are now.",
+        "A REVISE_ITEM or REVISE_EXERCISE artifact is not retried (409 GENERATION_STATE_CONFLICT, reason NOT_RETRYABLE): it is a copy of what existed, a stale one is replaced by a new session and «Ещё раз» is a new edit."
       ]
     }
   ],
   "schemas": {
     "generationSpec": {
-      "description": "Immutable after create. The server clamps values and echoes the stored spec back so the client can show it as chips. Unknown fields are INVALID_REQUEST. Provisional parts are marked; the owning task finalizes them without changing the rest.",
+      "description": "Immutable after create. The server clamps values and echoes the stored spec back so the client can show it as chips. Unknown fields are INVALID_REQUEST. REVISE_ITEM and REVISE_EXERCISE are final since AI-16 (#294).",
       "common": {
         "kind": "MATERIALS | EXERCISES | REVISE_ITEM | REVISE_EXERCISE",
         "outputLanguage": "BCP 47 per the native-v1 lexical profile; default is the deck language, else the UI language"
@@ -1101,12 +1170,16 @@
         }
       },
       "REVISE_ITEM": {
-        "target": "{memberKey, itemRevisionId}",
-        "status": "Shape provisional: AI-16 (#294) finalizes it. createSession and estimateGeneration answer 422 SPEC_NOT_SUPPORTED until then."
+        "shape": "{kind: REVISE_ITEM, target: {memberKey, itemRevisionId}, instruction, outputLanguage?}",
+        "target": "the material and the revision the owner saw, which must still be the head (409 SOURCE_UNAVAILABLE); an unknown or foreign material or an unknown revision is the opaque 404",
+        "instruction": "1..2000 code points, not blank",
+        "notes": "Exact fields (unknown is INVALID_REQUEST). No budget, no effort: a revision is one EDIT_SELECTION turn over the whole material. The client builds it from the intent (createIntent) or by hand."
       },
       "REVISE_EXERCISE": {
-        "target": "{exerciseId, exerciseRevisionId}",
-        "status": "Shape provisional: AI-16 (#294) finalizes it. createSession and estimateGeneration answer 422 SPEC_NOT_SUPPORTED until then."
+        "shape": "{kind: REVISE_EXERCISE, target: {exerciseId, exerciseRevisionId}, instruction?, media?: {action: AUDIO_REGENERATE, voice: female|male}, outputLanguage?}",
+        "target": "the exercise and the revision the owner saw, which must still be its head",
+        "instruction": "0..2000 code points; blank or absent only with media (at least one of the two)",
+        "media": "redo the audio of the exercise: an edit of the exercise's audio slots with a voice. Delivered as the model, the turn, the slot and a Stub executor (AI-16, owner decision 2026-10-03): the audio does not change and the slot records the voice; real synthesis and its acceptance are AI-09 (#297)."
       }
     },
     "sessionDetail": {
@@ -1133,7 +1206,17 @@
       "targetNodeIds": "the block node IDs the edit addressed, in document order",
       "resultRevisionId": "null until APPLIED: the revision the turn made",
       "errorCode": "null, or an artifact error code when FAILED (INVALID_OUTPUT, REFUSAL, SOURCE_UNAVAILABLE, PROVIDER_UNAVAILABLE, ESTIMATE_EXCEEDED, DEADLINE_EXCEEDED)",
-      "createdAt": "RFC 3339 UTC"
+      "createdAt": "RFC 3339 UTC",
+      "voice": "null, or female | male for an AUDIO_REGENERATE turn of an exercise (always present)"
+    },
+    "mediaSlotExercise": {
+      "description": "mediaSlots of a REVISE_EXERCISE artifact (an exercise has no nodes): one slot per AUDIO block of the exercise.",
+      "slotKey": "audio1, audio2, ... in order of the blocks",
+      "kind": "AUDIO",
+      "nodeId": "an id of the slot itself (there is no node in the exercise)",
+      "assetId": "the asset the audio block uses; with the Stub speech executor it never changes (the redo records the voice only), so a client that sees the same assetId as before says «Озвучка обновится, когда подключим синтез речи»",
+      "state": "READY (a redo ends READY; a slot is never PENDING for an exercise)",
+      "voice": "female | male | null: the voice of the last redo, null before one ran"
     }
   },
   "examples": {
@@ -1863,7 +1946,8 @@
       "instruction": "Проще, с примером",
       "resultRevisionId": null,
       "errorCode": null,
-      "createdAt": "2026-10-02T09:00:42Z"
+      "createdAt": "2026-10-02T09:00:42Z",
+      "voice": null
     },
     "turnRemoveMedia": {
       "turnId": "7a7a0000-0000-4000-8000-000000000001",
@@ -1876,7 +1960,8 @@
       "instruction": null,
       "resultRevisionId": "4e700000-0000-4000-8000-000000000003",
       "errorCode": null,
-      "createdAt": "2026-10-02T09:00:42Z"
+      "createdAt": "2026-10-02T09:00:42Z",
+      "voice": null
     },
     "capabilities": {
       "aiAssessment": {
@@ -1936,7 +2021,8 @@
       "instruction": "Проще, с примером",
       "resultRevisionId": "4e700000-0000-4000-8000-000000000002",
       "errorCode": null,
-      "createdAt": "2026-10-02T09:00:42Z"
+      "createdAt": "2026-10-02T09:00:42Z",
+      "voice": null
     },
     "turnFailed": {
       "turnId": "7a7a0000-0000-4000-8000-000000000002",
@@ -1949,7 +2035,165 @@
       "instruction": "Сделай подробнее",
       "resultRevisionId": null,
       "errorCode": "INVALID_OUTPUT",
-      "createdAt": "2026-10-02T09:05:10Z"
+      "createdAt": "2026-10-02T09:05:10Z",
+      "voice": null
+    },
+    "specReviseItem": {
+      "kind": "REVISE_ITEM",
+      "target": {
+        "memberKey": "44444444-4444-4444-8444-444444444444",
+        "itemRevisionId": "55555555-5555-4555-8555-555555555555"
+      },
+      "instruction": "Сделай объяснение проще"
+    },
+    "specReviseExercise": {
+      "kind": "REVISE_EXERCISE",
+      "target": {
+        "exerciseId": "66666666-6666-4666-8666-666666666666",
+        "exerciseRevisionId": "77777777-7777-4777-8777-777777777777"
+      },
+      "media": {
+        "action": "AUDIO_REGENERATE",
+        "voice": "male"
+      }
+    },
+    "intentExercises": {
+      "operation": "EXERCISES",
+      "spec": {
+        "kind": "EXERCISES",
+        "targets": [
+          {
+            "memberKey": "44444444-4444-4444-8444-444444444444",
+            "itemRevisionId": "55555555-5555-4555-8555-555555555555"
+          }
+        ],
+        "settings": {
+          "mechanics": "AUTO",
+          "priority": "UNCOVERED_FIRST",
+          "quantity": {
+            "mode": "EXACT",
+            "perTarget": 3
+          }
+        }
+      },
+      "chips": [
+        {
+          "kind": "OPERATION",
+          "value": "EXERCISES"
+        },
+        {
+          "kind": "MECHANICS",
+          "value": "AUTO",
+          "options": [
+            "SELF_CHECK",
+            "FREE_RESPONSE",
+            "CLOZE",
+            "CHOICE",
+            "MATCH",
+            "ORDER",
+            "CATEGORIZE"
+          ]
+        },
+        {
+          "kind": "PER_TARGET",
+          "value": 3,
+          "min": 1,
+          "max": 10
+        }
+      ],
+      "notes": []
+    },
+    "intentClamped": {
+      "operation": "EXERCISES",
+      "spec": {
+        "kind": "EXERCISES",
+        "targets": [
+          {
+            "memberKey": "44444444-4444-4444-8444-444444444444",
+            "itemRevisionId": "55555555-5555-4555-8555-555555555555"
+          }
+        ],
+        "settings": {
+          "mechanics": "AUTO",
+          "priority": "UNCOVERED_FIRST",
+          "quantity": {
+            "mode": "EXACT",
+            "perTarget": 10
+          }
+        }
+      },
+      "chips": [
+        {
+          "kind": "OPERATION",
+          "value": "EXERCISES"
+        },
+        {
+          "kind": "MECHANICS",
+          "value": "AUTO",
+          "options": [
+            "SELF_CHECK",
+            "FREE_RESPONSE",
+            "CLOZE",
+            "CHOICE",
+            "MATCH",
+            "ORDER",
+            "CATEGORIZE"
+          ]
+        },
+        {
+          "kind": "PER_TARGET",
+          "value": 10,
+          "min": 1,
+          "max": 10
+        }
+      ],
+      "notes": [
+        {
+          "code": "PER_TARGET_CLAMPED",
+          "text": "Не больше 10 на материал",
+          "limit": 10
+        }
+      ]
+    },
+    "intentReviseExercise": {
+      "operation": "REVISE_EXERCISE",
+      "spec": {
+        "kind": "REVISE_EXERCISE",
+        "target": {
+          "exerciseId": "66666666-6666-4666-8666-666666666666",
+          "exerciseRevisionId": "77777777-7777-4777-8777-777777777777"
+        },
+        "media": {
+          "action": "AUDIO_REGENERATE",
+          "voice": "male"
+        }
+      },
+      "chips": [
+        {
+          "kind": "OPERATION",
+          "value": "REVISE_EXERCISE"
+        },
+        {
+          "kind": "VOICE",
+          "value": "male",
+          "options": [
+            "female",
+            "male"
+          ]
+        }
+      ],
+      "notes": []
+    },
+    "intentUnsupported": {
+      "operation": "UNSUPPORTED",
+      "spec": null,
+      "chips": [],
+      "notes": [
+        {
+          "code": "UNSUPPORTED",
+          "text": "Это я пока не умею: могу сделать упражнения или поправить текст."
+        }
+      ]
     }
   }
 }

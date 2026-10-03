@@ -1,0 +1,18 @@
+@if (entries().length > 0) {
+  <details class="edit-history">
+    <summary>История правок ({{ entries().length - 1 }})</summary>
+    <ol class="history-list">
+      @for (entry of entries(); track entry.key) {
+        <li class="history-entry" [class.is-current]="entry.current">
+          <span class="history-ask">{{ entry.label }}</span>
+          @if (entry.status) { <span class="history-status">{{ entry.status }}</span> }
+          @if (entry.time) { <time class="history-time" [attr.datetime]="entry.datetime">{{ entry.time }}</time> }
+          @if (entry.current) { <span class="history-now">сейчас показана</span> }
+          @else if (entry.revertTo) {
+            <button type="button" class="strip-button" [attr.aria-disabled]="disabled() ? 'true' : null" (click)="pick(entry)">Вернуть к этой версии</button>
+          }
+        </li>
+      }
+    </ol>
+  </details>
+}

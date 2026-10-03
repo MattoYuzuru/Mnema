@@ -177,10 +177,20 @@ class UsageApiTest extends UsageIntegrationTest {
         UUID owner = owner(Plan.PLUS);
         UUID deck = deck(owner);
 
+        // a revise spec is supported now (AI-16): without its target and instruction it is malformed, with them it is one edit turn
         var revise = estimate(owner, deck, "{\"spec\":{\"kind\":\"REVISE_ITEM\"}}");
-        assertThat(revise.getStatus()).isEqualTo(422);
-        assertThat(body(revise).path("code").stringValue(null)).isEqualTo("SPEC_NOT_SUPPORTED");
-        assertThat(body(revise).path("kind").stringValue(null)).isEqualTo("REVISE_ITEM");
+        assertThat(revise.getStatus()).isEqualTo(400);
+        assertThat(body(revise).path("code").stringValue(null)).isEqualTo("INVALID_REQUEST");
+        var priced = estimate(owner, deck, "{\"spec\":{\"kind\":\"REVISE_ITEM\",\"instruction\":\"проще\",\"target\":"
+                + "{\"memberKey\":\"44444444-4444-4444-8444-444444444444\",\"itemRevisionId\":\"55555555-5555-4555-8555-555555555555\"}}}");
+        assertThat(priced.getStatus()).isEqualTo(200);
+        assertThat(body(priced).path("breakdown").get(0).path("operation").stringValue(null)).isEqualTo("EDIT_SELECTION");
+        assertThat(body(priced).path("credits").path("p95").intValue()).isEqualTo(4);
+        var planned = estimate(owner, deck, "{\"spec\":{\"kind\":\"EXERCISES\",\"targets\":[{\"memberKey\":\"44444444-4444-4444-8444-444444444444\","
+                + "\"itemRevisionId\":\"55555555-5555-4555-8555-555555555555\"}],\"settings\":{\"planFirst\":true}}}");
+        assertThat(planned.getStatus()).isEqualTo(422);
+        assertThat(body(planned).path("code").stringValue(null)).isEqualTo("SPEC_NOT_SUPPORTED");
+        assertThat(body(planned).path("kind").stringValue(null)).isEqualTo("EXERCISES");
 
         String targets = String.join(",", java.util.stream.IntStream.rangeClosed(1, 21).mapToObj(i ->
                 "{\"memberKey\":\"44444444-4444-4444-8444-4444444444%02d\",\"itemRevisionId\":\"55555555-5555-4555-8555-555555555555\"}"

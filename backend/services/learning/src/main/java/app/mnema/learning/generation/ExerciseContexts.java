@@ -7,6 +7,7 @@ import app.mnema.learning.ai.prompt.PromptBlock;
 import app.mnema.learning.ai.prompt.PromptBlocks;
 import app.mnema.learning.ai.prompt.PromptTask;
 import app.mnema.learning.ai.prompt.PromptValues;
+import app.mnema.learning.ai.prompt.Redactor;
 import app.mnema.learning.catalog.content.ItemPreviews;
 import app.mnema.learning.generation.ContextBuilder.SourceGoneException;
 import app.mnema.learning.generation.ContextRepository.ExerciseLine;
@@ -15,6 +16,7 @@ import app.mnema.learning.generation.ContextRepository.ObjectiveLine;
 import app.mnema.learning.generation.PinnedMaterials.Pinned;
 import app.mnema.learning.generation.Rows.Session;
 import app.mnema.learning.generation.exercise.ExerciseContext;
+import app.mnema.learning.generation.exercise.ExerciseDecompiler;
 import app.mnema.learning.generation.exercise.ExerciseOutputSchema;
 import app.mnema.learning.generation.exercise.ExerciseValidator;
 import org.springframework.stereotype.Component;
@@ -27,6 +29,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -67,16 +70,39 @@ class ExerciseContexts {
         }
     }
 
+    /**
+     * What one revision run of an exercise needs: the prompt, the context that validates the answer (the pinned material as {@code m1}, the
+     * exercise's objective as {@code t1}, only the exercise's own mechanic allowed), the exercise as the model is shown it and the output bounds.
+     */
+    record EditRequest(AssembledPrompt prompt, ExerciseContext context, ExerciseDecompiler.Decompiled current, int maxTokens, double temperature) { }
+
+    /** An exercise the model cannot be given to revise; {@code reason} is the stable reason of the 400 at admission. */
+    static final class Refusal extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+        private final String reason;
+
+        Refusal(String reason) {
+            super("The exercise cannot be shown to the model", null, false, false);
+            this.reason = reason;
+        }
+
+        String reason() {
+            return reason;
+        }
+    }
+
     private final ContextRepository context;
+    private final GenerationRepository repository;
     private final PinnedMaterials materials;
     private final ItemPreviews previews;
     private final PromptAssembler assembler;
     private final GenerationSettings settings;
     private final String compactSchema;
 
-    ExerciseContexts(ContextRepository context, PinnedMaterials materials, ItemPreviews previews, PromptAssembler assembler,
-                     ExerciseOutputSchema schema, GenerationSettings settings) {
+    ExerciseContexts(ContextRepository context, GenerationRepository repository, PinnedMaterials materials, ItemPreviews previews,
+                     PromptAssembler assembler, ExerciseOutputSchema schema, GenerationSettings settings) {
         this.context = context;
+        this.repository = repository;
         this.materials = materials;
         this.previews = previews;
         this.assembler = assembler;
@@ -128,6 +154,50 @@ class ExerciseContexts {
         ExerciseContext validation = new ExerciseContext(PLACEHOLDER_COMMAND, PLACEHOLDER_DECK_REVISION,
                 Map.of("m1", new ExerciseContext.Material(member, revision, blocks)), objectives, spec.allowedSet());
         return new Request(prompt, validation, Math.min(16_000, 800 + 800 * count), TEMPERATURE, existingKeys);
+    }
+
+    /**
+     * The context of revising one existing exercise (REVISE_EXERCISE, #294): the exercise of {@code command} ({@code {objective, exercise}},
+     * pinned to {@code member}'s {@code revision}) in the output form, the offered blocks of that material and the owner's instruction.
+     *
+     * @throws Refusal the model cannot be given this exercise: {@code TARGET_UNSUPPORTED_BLOCK} (a feature the output form has not, a quote
+     *                 outside the offered blocks) or {@code TARGET_PERSONAL_DATA} (an e-mail, a telephone or a card number in its text, which the
+     *                 prompt layer would redact and the rewrite would overwrite): the owner edits it by hand
+     * @throws SourceGoneException the pinned revision is not readable any more
+     * @throws app.mnema.learning.ai.prompt.PromptException the prompt exceeds its budget
+     */
+    EditRequest buildEdit(Session session, UUID member, UUID revision, JsonNode command, String instruction, String language) {
+        UUID owner = session.ownerId();
+        UUID deck = session.deckId();
+        Pinned pinned = materials.read(owner, deck, member, revision).orElseThrow(SourceGoneException::new);
+        List<PinnedMaterials.Block> shown = withinBudget(pinned.blocks());
+        Map<String, ExerciseContext.Block> blocks = new LinkedHashMap<>();
+        for (PinnedMaterials.Block block : shown) blocks.put(block.handle(), new ExerciseContext.Block(block.nodeId(), block.text()));
+        List<PromptBlocks.HandleLine> lines = shown.stream().map(block -> new PromptBlocks.HandleLine(block.handle(), block.text())).toList();
+
+        JsonNode objective = command.path("objective");
+        String title = repository.objectiveTitle(owner, deck, UUID.fromString(objective.path("objectiveId").stringValue("")),
+                UUID.fromString(objective.path("objectiveRevisionId").stringValue(""))).orElse("");
+        Map<String, ExerciseContext.Objective> objectives = Map.of("t1", new ExerciseContext.Objective(
+                UUID.fromString(objective.path("objectiveId").stringValue("")),
+                UUID.fromString(objective.path("objectiveRevisionId").stringValue("")), title));
+        JsonNode exercise = command.path("exercise");
+        ExerciseContext validation = new ExerciseContext(PLACEHOLDER_COMMAND, PLACEHOLDER_DECK_REVISION,
+                Map.of("m1", new ExerciseContext.Material(member, revision, blocks)), objectives,
+                Set.of(exercise.path("type").stringValue("")));
+        Optional<ExerciseDecompiler.Decompiled> current = ExerciseDecompiler.decompile(exercise, validation);
+        if (current.isEmpty()) throw new Refusal("TARGET_UNSUPPORTED_BLOCK");
+        String json = current.get().model().toString();
+        // a text the prompt layer would redact (an e-mail, a telephone, a card number) cannot be rewritten without losing it
+        if (!Redactor.redact(json).equals(json)) throw new Refusal("TARGET_PERSONAL_DATA");
+
+        PromptValues values = PromptValues.create().block("schema", PromptBlocks.schema(compactSchema))
+                .block("material_blocks", PromptBlocks.material("m1", lines))
+                .block("objective_lines", PromptBlocks.lines(List.of("t1 · " + clip(title, TITLE_CHARACTERS))))
+                .block("current_exercise_blocks", PromptBlocks.currentExercise(json))
+                .text("instruction", instruction).text("lang.output", language);
+        AssembledPrompt prompt = assembler.assemble(PromptTask.EXERCISE_EDIT, values);
+        return new EditRequest(prompt, validation, current.get(), 4_000, TEMPERATURE);
     }
 
     /** The blocks that fit the token budget of the material (the rest are not offered, so no handle names them). */

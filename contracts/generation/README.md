@@ -12,7 +12,7 @@ steps, events, the `TEXT_DRAFT` step and the operations `estimateGeneration`, `c
 `undoRejectArtifact`, `handoffArtifact`, `retryArtifact`, `deleteSession`, `archiveUsedNotes` and the retention worker (see
 the decisions below for what they settled); AI-13 ([#291](https://github.com/MattoYuzuru/Mnema/issues/291)) implements `EXERCISES`
 sessions, the exercise side of approval, re-pin and retry, and the «Новое» mark (decision 14); AI-11 ([#293](https://github.com/MattoYuzuru/Mnema/issues/293))
-implements `editArtifact` and `revertArtifact` for materials (decision 15); the planner, the exercise edit flow and the media executors do not exist yet. Each file says which task implements it. The accepted sources, which this contract must not contradict:
+implements `editArtifact` and `revertArtifact` for materials (decision 15); AI-16 ([#294](https://github.com/MattoYuzuru/Mnema/issues/294)) implements the intent of «Попросить Мнему…» (`createIntent`), `REVISE_ITEM` and `REVISE_EXERCISE` sessions, the exercise edits and a Stub speech executor (decision 16); the planner and the real media executors do not exist yet. Each file says which task implements it. The accepted sources, which this contract must not contradict:
 
 - [AI generation platform](../../docs/architecture/ai-generation-platform.md) — §3 domain model and states,
   §4 steps, §5 events, §6 MBM and exercises, §7 edits, §9 capabilities, §10 usage, §12 notifications;
@@ -30,7 +30,7 @@ output lives in
 | File | Content | Implemented by |
 |---|---|---|
 | [`states.json`](states.json) | State machines of session, artifact, step, turn and media slot; triggers, actors, guards, error codes, allowed operations per state | AI-04 [#287](https://github.com/MattoYuzuru/Mnema/issues/287), AI-05 [#288](https://github.com/MattoYuzuru/Mnema/issues/288) |
-| [`http.json`](http.json) | 19 operations: capabilities, estimate, sessions (deck-scoped and account-wide active list), events, artifact, approval (single and bulk), reject/undo, hand-off, edits, revert, retry, note archival; headers, bodies, examples, errors; the evaluation order of checks | AI-04, AI-05, AI-11 [#293](https://github.com/MattoYuzuru/Mnema/issues/293), AI-13 [#291](https://github.com/MattoYuzuru/Mnema/issues/291) |
+| [`http.json`](http.json) | 20 operations: capabilities, estimate, intent («Попросить Мнему…»), sessions (deck-scoped and account-wide active list), events, artifact, approval (single and bulk), reject/undo, hand-off, edits, revert, retry, note archival; headers, bodies, examples, errors; the evaluation order of checks | AI-04, AI-05, AI-11 [#293](https://github.com/MattoYuzuru/Mnema/issues/293), AI-13 [#291](https://github.com/MattoYuzuru/Mnema/issues/291), AI-16 [#294](https://github.com/MattoYuzuru/Mnema/issues/294) |
 | [`events.json`](events.json) | Polling envelope, per-session `seq` allocation, one example per event type | AI-04, AI-06 [#289](https://github.com/MattoYuzuru/Mnema/issues/289) |
 | [`errors.json`](errors.json) | RFC 9457 codes of generation, usage and notifications; extension members | all |
 | [`mbm-v1/`](mbm-v1/README.md) | Grammar, directives, limits, handles, allowlist, error codes, golden fixtures `mbm → native-v1` | AI-03 [#283](https://github.com/MattoYuzuru/Mnema/issues/283) |
@@ -80,7 +80,7 @@ by the owning task with a note here.
 
 1. **`GENERATION_STATE_CONFLICT` (409)** for a command that the current state forbids (reasons `ILLEGAL_STATE`, `MEDIA_NOT_READY`,
    `SOURCE_STALE`, `NOT_RETRYABLE`); 412 stays for stale versions only. `EDIT_IN_PROGRESS` remains the code for a second edit.
-   `SPEC_NOT_SUPPORTED` (422) answers a `REVISE_*` spec until AI-16 (#294); a new code because `RESOURCE_LIMIT_EXCEEDED` would mislead.
+   `SPEC_NOT_SUPPORTED` (422) answers `settings.planFirst` until the planner (AI-14, #295; it answered a `REVISE_*` spec until AI-16, #294); a new code because `RESOURCE_LIMIT_EXCEEDED` would mislead.
 2. **Edit actions** gain `REMOVE_MEDIA` (deterministic, free, answers 202 like every edit, creates a revision, does not count toward the
    50 turns) because approval requires slots to be `READY` or "explicitly removed" and no other way to remove exists; edits take an
    optional `preset` valid only with `REWRITE`.
@@ -101,7 +101,7 @@ by the owning task with a note here.
    plan-approval operation belongs to AI-14 ([#295](https://github.com/MattoYuzuru/Mnema/issues/295)).
 6. **Events**: per-session `seq` (a decimal string) allocated under the session row lock with `UNIQUE (session_id, seq)`;
    `BLOCKS_APPENDED.generation` is an artifact-scoped counter; draft node IDs are provisional.
-7. **Spec**: prompt ≤2000 characters, ≤20 sources, request bodies ≤64 KiB; the `REVISE_*` spec shapes are provisional (AI-16 #294); the
+7. **Spec**: prompt ≤2000 characters, ≤20 sources, request bodies ≤64 KiB; the `REVISE_*` spec shapes are final since AI-16 (decision 16); the
    exercise `priority` values `UNCOVERED_FIRST` and `BALANCED` are settled by decision 14.
 8. **Evaluation order** of every command: authentication and ownership (a foreign or unknown ID, including a note ID in `sources`, is 404:
    no existence oracle), receipt replay, request validation, preconditions (428, 412), state (409), usage (409, last, inside the
@@ -272,7 +272,7 @@ by the owning task with a note here.
     - **Actions.** `REWRITE` (optional `preset` and `instruction`) and `FREE` (`instruction` required) run the EDIT step; `REMOVE_MEDIA` is deterministic and free (media
       nodes only); `IMAGE_SEARCH`, `IMAGE_GENERATE` and `AUDIO_REGENERATE` need blocks of their kind and answer `409 CAPABILITY_UNAVAILABLE` (the capability gate's
       reason, `PROVIDER_NOT_CONFIGURED` when the gate passes) until AI-09 and AI-10 provide their executors, so those tasks only flip the capability. An `EXERCISE` artifact
-      refuses every edit and every revert with `409 GENERATION_STATE_CONFLICT` (`ILLEGAL_STATE`) until AI-16 (#294). An edit is allowed in a `RUNNING` or `REVIEW` session
+      of an `EXERCISES` session refuses every edit and every revert with `409 GENERATION_STATE_CONFLICT` (`ILLEGAL_STATE`); the exercise of a `REVISE_EXERCISE` session is edited and reverted (decision 16). An edit is allowed in a `RUNNING` or `REVIEW` session
       on a `PROPOSED` artifact (a `CANCELLED` session accepts `REMOVE_MEDIA` only); an artifact with a turn in flight is `REVISING`: a second edit is `409 EDIT_IN_PROGRESS`
       with the running turn's `turnId`, and approve, reject, hand-off and revert are `ILLEGAL_STATE`.
     - **Context** (architecture section 7, `ai/prompts/v1/edit.md` used verbatim). The cacheable prefix is the material's own (core, style, skills, deck brief), then
@@ -313,6 +313,43 @@ by the owning task with a note here.
       historic revision's `mediaSlots` are the slots of the media nodes it holds. The Stub answers an edit with the target blocks and their handles, each plain paragraph with one
       added sentence `Переписано: <preset label>.`
 
+16. **AI-16 (#294) settled these** (revisable by the owning task with a note here). Owner decision 2026-10-03: the media part of `REVISE_EXERCISE` («замени аудио на мужской голос») is delivered as
+    the model, the turn, the slot and a **Stub** executor now; real synthesis and its acceptance are AI-09 (#297).
+    - **Intent** (`createIntent`, `POST /api/decks/{deckId}/generation-intents`). Free and stateless: no reservation, no debit, no `commandId`, no receipt; «text never spends credits without a
+      confirmed plan» (architecture section 13). The body is `{context, text}` (`context {kind: MATERIAL, memberKey}` or `{kind: EXERCISE, exerciseId}`, `text` 1..2000). One call on the fast text route, strict JSON, temperature 0.2, the
+      dedicated `intent` section of the prompt library (a new section: released sections stay byte-stable and a section may be added to `v1`). The model answers in a closed vocabulary
+      `{operation: EXERCISES | REVISE_ITEM | REVISE_EXERCISE | UNSUPPORTED, mechanics: AUTO | [..], perTarget: n | null, instruction, media: {action: AUDIO_REGENERATE, voice} | null}`; the **server** builds the spec:
+      the target is the request's context pinned at its head (never the model's), mechanics are filtered by the registry, `perTarget` is clamped to `1..max-exercises-per-target` with a note chip `PER_TARGET_CLAMPED`
+      («Не больше 10 на материал»; the owner's own numbers are refused, a model's are clamped), `budgetPercent` is never set, unknown members are dropped. An answer outside the vocabulary is sent back once, then (and for a
+      refusal) the answer is `UNSUPPORTED`: `200` with `spec: null`, `chips: []` and a note in words. The answer is `{operation, spec, chips, notes}`: `spec` is what `createSession` accepts, `chips` its editable
+      parameters (`OPERATION`, `MECHANICS`, `PER_TARGET`, `INSTRUCTION`, `VOICE`) and `notes` `[{code, text, limit?}]` with server-built texts. Rate limit `learning.generation.intent.per-hour` (30) per account and hour, kept in the
+      database: over it `429 RATE_LIMITED` (a new code) with `Retry-After` and the member `retryAfter`. Capability `aiGeneration` (409 otherwise; a provider that cannot answer is the same 409 with `TEMPORARILY_UNAVAILABLE`). No database
+      transaction is open during the call; it is journaled in `ai_provider_call` with its cost and never metered in credits. The context matrix: MATERIAL allows `EXERCISES` and `REVISE_ITEM`, EXERCISE allows `EXERCISES`
+      (for the exercise's material) and `REVISE_EXERCISE`; a voice change for an exercise without audio or when the redo cannot run is `UNSUPPORTED` with the note `NO_AUDIO` or `MEDIA_UNAVAILABLE`.
+    - **REVISE_ITEM.** Spec `{kind, target: {memberKey, itemRevisionId}, instruction}`; the target must be the head (`409 SOURCE_UNAVAILABLE`). Admission creates one artifact (`target_kind ITEM`, `sourceRefs` the target, the target pinned as a `SOURCE` of the
+      session) whose INITIAL revision is the head document copied **without a model call**, and one turn `FREE` over **every top-level block** (the #293 pipeline, one `EDIT` step); a material that exceeds the edit target bound (2050 tokens), has no
+      text block, holds a block MBM cannot express or personal data is refused at admission (`422 EDIT_TARGET_SIZE`, `400` with `reason` `TARGET_MEDIA_ONLY`, `TARGET_UNSUPPORTED_BLOCK`, `TARGET_PERSONAL_DATA`). The session has **no batch reservation**:
+      its holds are the turns' own (`TURN` scope, `EDIT_SELECTION`), taken at admission and settled with the turn. The session is `RUNNING` while the first turn runs (the artifact `REVISING`) and `REVIEW` afterwards; no `GENERATION_*`
+      notification is published (the owner is waiting in the Workshop). **Approve** is a revise of that material: `ItemService.publish` with a `save` of the member (expected item revision = the pinned one, its current ordinal, the
+      structural edits the revision needs, derived by `NativeRevisionPlanner`: children matched by position and type take the old identifiers, the rest is insert/delete, a block that cannot be edited in place is replaced as a whole), `If-Match` deck version.
+      A head that moved is never re-pinned (the owner edited a snapshot): `409 GENERATION_STATE_CONFLICT` `SOURCE_STALE` and `STALE`; `retry` of a revise artifact is `NOT_RETRYABLE` («Ещё раз» is an edit). `publishedRef` is
+      `{kind: ITEM, memberKey, itemRevisionId, ordinal}` of the new revision of the same member. Hand-off opens an `EditingDraft` of the existing member (`member_key` = the target, `base_revision_id` = the pinned revision).
+    - **REVISE_EXERCISE.** Spec `{kind, target: {exerciseId, exerciseRevisionId}, instruction?, media?: {action: AUDIO_REGENERATE, voice}}` (at least one of instruction and media). Admission creates one artifact (`target_kind EXERCISE`,
+      `sourceRefs [material pin, exercise pin]`) whose INITIAL revision is the exercise's command copied without a model call (`{objective: reuse the current one, exercise}`; its subject and quotes are moved to the head of the material when that
+      moved and every quoted block still reads there, else `409 SOURCE_UNAVAILABLE`), with a READY slot (`audio1`, ...) for each `AUDIO` block on the asset it already uses. A non-blank instruction is one `EDIT` turn `FREE` with no target nodes:
+      the model gets the exercise in the strict-JSON output form of the exercise pipeline (`ExerciseDecompiler`: local ids rebuilt from the command, quoted blocks as handles, audio blocks of the prompt set aside), answers ONE exercise of
+      the SAME mechanic, which goes through schema, lint, compile (with the identifiers the model kept), `readCreate` and self-evaluation; one repair, then the strong route, then `FAILED(INVALID_OUTPUT)`. An exercise the output form has no room for
+      (an image, a video, a YouTube block, a rubric, a speech answer, a quote of another material, personal data) is refused at admission with `400 reason TARGET_UNSUPPORTED_BLOCK` and is edited by hand. The objective is never changed by a revision and the
+      enabled flag stays. A `media` action is one `AUDIO_REGENERATE` turn with a `voice` (a new column of the turn, returned as `voice` on every turn) and one `TTS` step; with an instruction it waits (`WAITING_DEPENDENCIES`) for the rewrite and starts when it is
+      `APPLIED` (never when it fails; its hold is then released). Its executor is the **Stub speech executor** (exists only with `learning.ai.provider=stub`, claims only the steps of a media turn): no provider call, no new audio, it re-points every audio slot to the
+      asset it already has (`READY`, the voice in the slot's spec), makes a revision (cause `MEDIA`) of the same exercise and releases the turn's hold unspent; with no Stub the action is `409 CAPABILITY_UNAVAILABLE`
+      (`textToSpeech`, `PROVIDER_NOT_CONFIGURED`): production stays fail-closed. A slot's `assetId` is the asset the block already used, so the client can tell the audio did not change («Озвучка обновится, когда подключим синтез речи»). `getArtifact` shows the slots of an
+      exercise artifact in `mediaSlots` (`voice` additive). The exercise artifact accepts the edits `FREE` (no `target`) and `AUDIO_REGENERATE` (with the new optional body member `voice`, required for and only for that action on an exercise) and
+      `revertArtifact`; EXERCISES-session artifacts still refuse them (decision 15). **Approve** is `ExerciseService` revise in place (`pathExerciseId`, `expectedExerciseRevisionId`, `If-Match` deck version; the objective the current one, no «Новое»): the old revision
+      stays in history. The exercise head moved: `SOURCE_STALE`; only its material moved: re-pinned like any proposed exercise. `publishedRef` is `{kind: EXERCISE, exerciseId (the same), exerciseRevisionId, objectiveId, objectiveRevisionId}`. A hand-off of an exercise is still `400`.
+    - **Usage.** The intent is free. Every revise turn reserves like an #293 turn (`TURN` scope: `EDIT_SELECTION` 4 credits; the media turn `TTS_CLIP_30S` 10 credits, which the Stub releases unspent), at admission, and the debit of a rewrite is its own. `estimateGeneration`
+      prices a revise spec as one edit turn plus one clip when it has a media action. A revise session counts toward the 3 active sessions; a bulk approval of a revise session is `400`.
+
 ## Owner decisions (2026-10-02)
 
 Final. Values live in config keys, so a change is a configuration change. Details: [usage contract](../usage/README.md#owner-decisions-2026-10-02).
@@ -345,7 +382,7 @@ Resolved in favour of the architecture document unless stated. These are recorde
 ## Open questions
 
 - Whether `GET /api/capabilities` should add per-capability usage hints.
-- Media redo of a block in place (`IMAGE_SEARCH`, `IMAGE_GENERATE`, `AUDIO_REGENERATE`): whether the asset is kept or replaced when the slot spec is unchanged (AI-09, AI-10). A rewrite never touches media (decision 15).
+- Media redo of a block in place (`IMAGE_SEARCH`, `IMAGE_GENERATE`, and `AUDIO_REGENERATE` of a material): whether the asset is kept or replaced when the slot spec is unchanged (AI-09, AI-10). A rewrite never touches media (decision 15). The redo of an exercise's audio is the Stub today (decision 16); real synthesis, the replacement of the asset in the block and the audio acceptance are AI-09 (#297).
 
 ## Verification
 

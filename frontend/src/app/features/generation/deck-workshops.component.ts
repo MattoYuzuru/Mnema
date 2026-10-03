@@ -3,7 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 
 import { GenerationApiService } from './generation-api.service';
-import { describeSessionProgress, formatWorkshopStart } from './generation-view';
+import { describeSessionProgress, formatWorkshopStart, workshopHeading } from './generation-view';
 import { SessionSummary } from './generation.models';
 
 /**
@@ -20,7 +20,7 @@ import { SessionSummary } from './generation.models';
           <ul>
             @for (session of sessions(); track session.sessionId) {
               <li>
-                <a [routerLink]="['/decks', deckId(), 'workshop', session.sessionId]">{{ session.kind === 'EXERCISES' ? 'Мастерская упражнений' : 'Мастерская' }} от {{ startedAt(session) }}</a>
+                <a [routerLink]="['/decks', deckId(), 'workshop', session.sessionId]">{{ title(session) }} от {{ startedAt(session) }}</a>
                 <span class="progress">{{ progress(session) }}</span>
               </li>
             }
@@ -67,6 +67,8 @@ export class DeckWorkshopsComponent {
             onCleanup(() => request.unsubscribe());
         });
     }
+
+    protected readonly title = (session: SessionSummary): string => workshopHeading(session.kind);
 
     protected startedAt(session: SessionSummary): string {
         return formatWorkshopStart(session.createdAt);

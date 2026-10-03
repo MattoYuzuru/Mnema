@@ -420,6 +420,44 @@ module.main()
             result = subprocess.run([node, "--check", str(Path(__file__).with_name("selection-edits.mjs"))], capture_output=True)
             self.assertEqual(0, result.returncode)
 
+    def test_ask_mnema_scenario_is_wired_stub_only_and_syntactically_valid(self):
+        runner = Path(__file__).with_name("run.py").read_text()
+        workshop = Path(__file__).with_name("workshop.mjs").read_text()
+        driver = Path(__file__).with_name("browser.mjs").read_text()
+        source = Path(__file__).with_name("ask-mnema.mjs").read_text()
+        self.assertIn("import { runWorkshopAsk } from './ask-mnema.mjs'", workshop)
+        self.assertIn("runWorkshopAsk(ctx", workshop)
+        self.assertIn('"ask-mnema.mjs"', runner)
+        self.assertIn('"onlyAsk": self.args.only_ask', runner)
+        self.assertIn("audioAssetId: config.media ? uploadedAudioAssetId : null", driver)
+        self.assertIn("export async function runWorkshopAsk", source)
+        # The whole path is the real UI on the real API: no stubbed answers, no key of any provider.
+        self.assertNotIn("Fetch.fulfillRequest", source)
+        self.assertNotIn("route.fulfill", source)
+        self.assertNotIn("DEEPSEEK", source)
+        for step in ("fixture", "profile_collapsed_and_open", "exercises_chips_edit_and_start", "injection_is_clamped", "unsupported",
+                     "revise_item_result", "revise_item_give_back_and_again", "revise_item_keep", "exercise_editor_voice", "exercise_editor_keep"):
+            self.assertIn(f"step('{step}'", source)
+        # Evidence at both widths: the composer collapsed and open, the chips, and both results.
+        for name in ("collapsed", "open", "chips", "revise-item-result", "chips-voice", "revise-exercise-result"):
+            self.assertIn(f"'{name}'", source)
+        node = shutil.which("node")
+        if node is not None:
+            result = subprocess.run([node, "--check", str(Path(__file__).with_name("ask-mnema.mjs"))], capture_output=True)
+            self.assertEqual(0, result.returncode)
+
+    def test_only_ask_is_a_development_aid_that_needs_generation(self):
+        with patch.object(sys, "argv", ["run.py", "--dist", str(self.dist), "--authoring", "--only-ask"]), \
+                contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as exit_code:
+            HARNESS.main()
+        self.assertEqual(2, exit_code.exception.code)
+
+    def test_only_ask_and_only_edits_exclude_each_other(self):
+        with patch.object(sys, "argv", ["run.py", "--dist", str(self.dist), "--authoring", "--generation", "--only-ask", "--only-edits"]), \
+                contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as exit_code:
+            HARNESS.main()
+        self.assertEqual(2, exit_code.exception.code)
+
     def test_cdp_timeout_is_ten_seconds_unless_the_runner_environment_says_otherwise(self):
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("MNEMA_HARNESS_CDP_TIMEOUT_MS", None)

@@ -12,8 +12,11 @@ import app.mnema.learning.usage.ReservationNotActiveException;
 import app.mnema.learning.usage.UsageLedger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ObjectNode;
 
@@ -38,28 +41,48 @@ class EditLifecycle {
     private static final Logger LOG = LoggerFactory.getLogger(EditLifecycle.class);
     /** The rate-card operation an edit is debited under. */
     static final String OPERATION = "EDIT_SELECTION";
+    /** The rate-card operation the redo of the audio of an exercise is reserved under. */
+    static final String MEDIA_OPERATION = "TTS_CLIP_30S";
 
     private final GenerationRepository repository;
     private final StepRepository steps;
     private final SessionLifecycle lifecycle;
     private final UsageLedger ledger;
     private final GenerationSettings settings;
+    private final ObjectProvider<StepDispatcher> dispatcher;
 
     EditLifecycle(GenerationRepository repository, StepRepository steps, SessionLifecycle lifecycle, UsageLedger ledger,
-                  GenerationSettings settings) {
+                  GenerationSettings settings, ObjectProvider<StepDispatcher> dispatcher) {
         this.repository = repository;
         this.steps = steps;
         this.lifecycle = lifecycle;
         this.ledger = ledger;
         this.settings = settings;
+        this.dispatcher = dispatcher;
     }
 
     /**
-     * What a valid rewrite produced: the new document (the old one with the target range replaced), its title, validation and
-     * handles, the route and prompt version that wrote it and what the provider calls cost.
+     * What a valid rewrite produced: the payload of the new revision, its title, validation and handles, the route and prompt version
+     * that wrote it and what the provider calls cost. For a material {@code document} is the new document (the old one with the target
+     * range replaced) and tells which media slots survive; for an exercise it is null (the payload is {@code EXERCISE_COMMAND}).
      */
-    record Result(JsonNode document, String title, JsonNode validation, String promptVersion, String modelRoute, long costMicros,
-                  Map<String, UUID> handles) { }
+    record Result(JsonNode payload, JsonNode document, String title, JsonNode validation, String promptVersion, String modelRoute,
+                  long costMicros, Map<String, UUID> handles) {
+        static Result ofDocument(JsonNode document, String title, JsonNode validation, String promptVersion, String modelRoute,
+                                 long costMicros, Map<String, UUID> handles) {
+            ObjectNode payload = Json.object().put("kind", "NATIVE_DOCUMENT");
+            payload.set("document", document);
+            return new Result(payload, document, title, validation, promptVersion, modelRoute, costMicros, handles);
+        }
+
+        /** @param command {@code {objective, exercise}} */
+        static Result ofExercise(JsonNode command, String title, JsonNode validation, String promptVersion, String modelRoute,
+                                 long costMicros) {
+            ObjectNode payload = Json.object().put("kind", "EXERCISE_COMMAND");
+            payload.set("command", command);
+            return new Result(payload, null, title, validation, promptVersion, modelRoute, costMicros, Map.of());
+        }
+    }
 
     // ---------------------------------------------------------------------- begin
 
@@ -129,20 +152,79 @@ class EditLifecycle {
 
         UUID revisionId = UUID.randomUUID();
         int revisionNo = artifact.revisionCount() + 1;
-        ObjectNode payload = Json.object().put("kind", "NATIVE_DOCUMENT");
-        payload.set("document", result.document());
         ObjectNode handles = Json.object();
         result.handles().forEach((handle, nodeId) -> handles.put(handle, nodeId.toString()));
-        repository.insertRevision(new Revision(revisionId, artifact.artifactId(), revisionNo, "EDIT", payload, handles,
+        repository.insertRevision(new Revision(revisionId, artifact.artifactId(), revisionNo, "EDIT", result.payload(), handles,
                 result.promptVersion(), result.modelRoute(), result.validation(), Instant.now()), tx.session.sessionId(),
                 tx.session.ownerId());
-        List<Rows.EventDraft> slotEvents = followSlots(artifact, revisionId, EditDocument.idSet(result.document()), false);
-        Artifact proposed = repository.transition(artifact, "PROPOSED", null, revisionId, result.title(), revisionNo);
+        List<Rows.EventDraft> slotEvents = List.of();
+        if (result.document() != null) {
+            slotEvents = followSlots(artifact, revisionId, EditDocument.idSet(result.document()), false);
+        } else {
+            // an exercise has no nodes to tell its slots apart by: every slot (its audio) follows the new revision
+            repository.attachAllSlots(artifact.artifactId(), revisionId);
+        }
         repository.updateTurn(turn.turnId(), "APPLIED", revisionId, null);
         steps.finish(claim.stepId(), "SUCCEEDED", null, revisionId.toString());
+        // a media turn that was waiting for this rewrite starts now (the artifact stays REVISING, on the new revision)
+        List<Step> promoted = steps.promoteDependents(claim.stepId());
+        for (Step next : promoted) {
+            repository.insertTurn(new Turn(UUID.fromString(next.input().path("turnId").stringValue("")), artifact.artifactId(),
+                    tx.session.sessionId(), tx.session.ownerId(), "QUEUED", next.input().path("action").stringValue("AUDIO_REGENERATE"),
+                    null, null, List.of(), next.stepId(), null, null, true, null, next.input().path("voice").stringValue(null)));
+        }
+        Artifact moved = repository.transition(artifact, promoted.isEmpty() ? "PROPOSED" : "REVISING", null, revisionId, result.title(),
+                revisionNo);
+        tx.events.add(SessionLifecycle.artifactEvent(moved));
+        tx.events.addAll(slotEvents);
+        tx.events.add(lifecycle.usageEvent(tx.session, null));
+        if (promoted.isEmpty()) lifecycle.settleRevision(tx);
+        lifecycle.flush(tx);
+        if (!promoted.isEmpty()) wakeAfterCommit();
+        return true;
+    }
+
+    /**
+     * The one result transaction of a media turn of an exercise (the Stub speech executor, #294): the turn's hold is released unspent
+     * (nothing was synthesized, so nothing is debited), a new revision (cause MEDIA) carries the same exercise, every audio slot is READY
+     * on the asset it already had with {@code voice} recorded in its spec, the turn is APPLIED and the artifact PROPOSED. Returns false,
+     * writing nothing, when the lease token no longer holds.
+     */
+    @Transactional
+    boolean succeedMedia(StepClaim claim, String voice, String modelRoute) {
+        Tx tx = lifecycle.lock(claim.sessionId());
+        if (tx == null) return false;
+        Optional<Step> held = steps.lockHeld(claim.stepId(), claim.token());
+        if (held.isEmpty()) return false;
+        Turn turn = turn(held.get());
+        Artifact artifact = repository.artifact(claim.sessionId(), claim.artifactId()).orElse(null);
+        if (held.get().cancelRequested() || turn == null || !turn.open() || artifact == null || !artifact.state().equals("REVISING")
+                || !SessionLifecycle.runnable(tx.session)) {
+            steps.finish(claim.stepId(), "CANCELLED", null, null);
+            if (turn != null && turn.open() && artifact != null) cancelTurn(tx, held.get(), turn, artifact);
+            return false;
+        }
+        Revision current = repository.revision(artifact.artifactId(), artifact.currentRevisionId()).orElseThrow();
+        release(tx, reservation(held.get()));
+        UUID revisionId = UUID.randomUUID();
+        int revisionNo = artifact.revisionCount() + 1;
+        repository.insertRevision(new Revision(revisionId, artifact.artifactId(), revisionNo, "MEDIA", current.payload(), current.handles(),
+                current.promptVersion(), modelRoute, current.validation(), Instant.now()), tx.session.sessionId(), tx.session.ownerId());
+        repository.attachAllSlots(artifact.artifactId(), revisionId);
+        List<Rows.EventDraft> slotEvents = new ArrayList<>();
+        for (Slot slot : repository.slotsOf(artifact.artifactId())) {
+            if (!slot.kind().equals("AUDIO") || slot.state().equals("REMOVED")) continue;
+            ObjectNode spec = Json.object().put("mode", "existing").put("voice", voice);
+            repository.readySlot(artifact.artifactId(), slot.slotKey(), spec, slot.assetId());
+            slotEvents.add(SessionLifecycle.slotEvent(artifact.artifactId(), slot.slotKey(), slot.kind(), "READY", slot.assetId()));
+        }
+        repository.updateTurn(turn.turnId(), "APPLIED", revisionId, null);
+        steps.finish(claim.stepId(), "SUCCEEDED", null, revisionId.toString());
+        Artifact proposed = repository.transition(artifact, "PROPOSED", null, revisionId, null, revisionNo);
         tx.events.add(SessionLifecycle.artifactEvent(proposed));
         tx.events.addAll(slotEvents);
         tx.events.add(lifecycle.usageEvent(tx.session, null));
+        lifecycle.settleRevision(tx);
         lifecycle.flush(tx);
         return true;
     }
@@ -255,8 +337,10 @@ class EditLifecycle {
         steps.finish(step.stepId(), "FAILED", errorCode, null);
         repository.updateTurn(turn.turnId(), "FAILED", null, errorCode);
         release(tx, reservation(step));
+        releaseDependents(tx, step);
         backToProposed(tx, artifact);
         tx.events.add(lifecycle.usageEvent(tx.session, null));
+        lifecycle.settleRevision(tx);
         lifecycle.flush(tx);
         LOG.info("generation_edit_failed step_id={} session_id={} turn_id={} error_code={}", step.stepId(), step.sessionId(),
                 turn.turnId(), errorCode);
@@ -266,9 +350,26 @@ class EditLifecycle {
     private void cancelTurn(Tx tx, Step step, Turn turn, Artifact artifact) {
         repository.updateTurn(turn.turnId(), "CANCELLED", null, null);
         release(tx, reservation(step));
+        releaseDependents(tx, step);
         backToProposed(tx, artifact);
         tx.events.add(lifecycle.usageEvent(tx.session, null));
+        lifecycle.settleRevision(tx);
         lifecycle.flush(tx);
+    }
+
+    /** A rewrite that did not produce a revision: the media turn that waited for it is not started and its hold is released. */
+    private void releaseDependents(Tx tx, Step step) {
+        for (Step dependent : steps.cancelDependents(step.stepId())) release(tx, reservation(dependent));
+    }
+
+    private void wakeAfterCommit() {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) return;
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                dispatcher.ifAvailable(StepDispatcher::wake);
+            }
+        });
     }
 
     private void backToProposed(Tx tx, Artifact artifact) {

@@ -81,14 +81,20 @@ class ExerciseRepin {
     private record Moved(Revision previous, ObjectNode payload) { }
 
     /**
-     * What the model was shown is what the exercise stands on: every block it saw (the node ids kept on the revision; all quotable
+     * What the model was shown is what the exercise stands on (for a REVISE_EXERCISE session: the blocks the exercise quotes): every block it saw (the node ids kept on the revision; all quotable
      * blocks of the pinned revision when there are none) must exist in the head with exactly the same plain text. A material that was
      * edited in a block the model read is a different material for the question, even when every quoted node still exists.
      */
-    private static boolean unchanged(Revision previous, Pinned seen, Pinned head) {
+    private static boolean unchanged(Revision previous, Pinned seen, Pinned head, boolean revision) {
         List<UUID> shown = new ArrayList<>();
-        previous.handles().forEach(entry -> shown.add(UUID.fromString(entry.stringValue(""))));
-        if (shown.isEmpty()) seen.blocks().forEach(block -> shown.add(block.nodeId()));
+        if (revision) {
+            // a revised exercise stands on the blocks it quotes (the model was shown the whole material, but the exercise is the owner's own)
+            SessionViews.quoted(previous.payload().path("command").path("exercise").path("content"),
+                    quote -> shown.add(UUID.fromString(quote.path("nodeId").stringValue(""))));
+        } else {
+            previous.handles().forEach(entry -> shown.add(UUID.fromString(entry.stringValue(""))));
+            if (shown.isEmpty()) seen.blocks().forEach(block -> shown.add(block.nodeId()));
+        }
         for (UUID node : shown) {
             Optional<String> before = seen.text(node);
             if (before.isEmpty() || !before.equals(head.text(node))) return false;
@@ -105,7 +111,7 @@ class ExerciseRepin {
         Optional<Pinned> pinned = materials.read(session.ownerId(), session.deckId(), member, head);
         Optional<Pinned> seen = materials.read(session.ownerId(), session.deckId(), member,
                 UUID.fromString(artifact.sourceRefs().path(0).path("itemRevisionId").stringValue("")));
-        if (previous.isEmpty() || pinned.isEmpty() || seen.isEmpty() || !unchanged(previous.get(), seen.get(), pinned.get())) return Optional.empty();
+        if (previous.isEmpty() || pinned.isEmpty() || seen.isEmpty() || !unchanged(previous.get(), seen.get(), pinned.get(), SessionLifecycle.isRevision(session))) return Optional.empty();
         JsonNode command = previous.get().payload().path("command");
         ObjectNode exercise = (ObjectNode) command.path("exercise").deepCopy();
         if (!exercise.path("subject").path("memberKey").stringValue("").equals(member.toString())) return Optional.empty();

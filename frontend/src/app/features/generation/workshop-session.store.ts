@@ -12,7 +12,7 @@ import { GenerationProblem, readProblem } from './generation-problem';
 import { REVERTED_NOTE, describeEditCost, describeEditLimit, describeNoteArchive, editOutcomeNote, editProblemMessage, problemMessage } from './generation-view';
 import {
     ApprovalAck, ArtifactDetail, ArtifactSummary, ArtifactTurn, EditAction, EditPreset, GenerationEvent, HandoffResult, MAX_APPROVALS_PER_COMMAND,
-    NoteArchiveResult, SessionDetail, UsageUpdate, ActiveStep,
+    NoteArchiveResult, SessionDetail, SpeechVoice, UsageUpdate, ActiveStep,
     allows, isApprovable, isRetryable, isTerminalSession, sessionAllows
 } from './generation.models';
 import { AppliedEvents, Arrival, DraftBlocks, WorkshopModel, applyEvents, isNewer, mergeSession } from './workshop-events';
@@ -59,6 +59,10 @@ export interface EditAsk {
     readonly anchorAfter: string | null;
     readonly preset?: EditPreset | null;
     readonly instruction?: string | null;
+    /** The edit is on the exercise of a `REVISE_EXERCISE` session (AI-16): there are no blocks, `nodeIds` is empty and the anchors are `null`. */
+    readonly exercise?: boolean;
+    /** The voice of an `AUDIO_REGENERATE` of an exercise. */
+    readonly voice?: SpeechVoice | null;
     /**
      * «Ещё раз»: the turn this asks again. The request goes out as a command of its own (its own reservation), named by this turn and
      * the revision on screen, so an answer that never arrived is repeated with the same command, not charged twice.
@@ -151,7 +155,7 @@ export class WorkshopSessionStore {
     /** Bumps on every `open` and on dispose: answers of an earlier open are dropped. */
     private epoch = 0;
     private readonly commandIds = new Map<string, string>();
-    private readonly revisions = new Map<string, Promise<NativeDocument | null>>();
+    private readonly revisions = new Map<string, Promise<ArtifactDetail | null>>();
     private allowance: Promise<number | null> | null = null;
     private noteTimer: ReturnType<typeof setTimeout> | null = null;
     private readonly refetched = new Set<string>();
@@ -305,7 +309,9 @@ export class WorkshopSessionStore {
                         expectedRevisionId: current.currentRevisionId! }, pin, id));
                 if (outcome.ok) {
                     this.published(outcome.value);
-                    this.toast.echo('Материал одобрен');
+                    const kind = session.kind;
+                    this.toast.echo(kind === 'REVISE_ITEM' ? 'Новая версия материала сохранена' : kind === 'REVISE_EXERCISE'
+                        ? 'Новая версия упражнения сохранена' : 'Материал одобрен');
                     return true;
                 }
                 if (outcome.problem.status === 412 && attempt === 0) {
@@ -517,7 +523,8 @@ export class WorkshopSessionStore {
         const refuse = (message: string): EditOutcome => ({ ok: false, message, aborted: false });
         if (artifact === null || session === null) return refuse('Материал больше недоступен.');
         if (this.isBusy(artifactId)) return refuse('Подождите: предыдущее действие ещё выполняется.');
-        const rewrite = ask.action === 'REWRITE' || ask.action === 'FREE';
+        // A voice redo of an exercise runs a model-side turn like a rewrite: a cancelled session does not take it.
+        const rewrite = ask.action === 'REWRITE' || ask.action === 'FREE' || (ask.exercise === true && ask.action === 'AUDIO_REGENERATE');
         if (!allows(session.state, artifact.state, 'editArtifact') || (rewrite && session.state === 'CANCELLED')) {
             return refuse('Сейчас этот материал нельзя править: состояние изменилось.');
         }
@@ -528,10 +535,10 @@ export class WorkshopSessionStore {
         this.begin(artifactId);
         try {
             const key = ask.againOf !== undefined ? `again:${expected}:${ask.againOf}`
-                : [expected, ask.action, ask.preset ?? '', ask.instruction ?? '', ask.nodeIds.join(',')].join('|');
+                : [expected, ask.action, ask.preset ?? '', ask.instruction ?? '', ask.voice ?? '', ask.nodeIds.join(',')].join('|');
             const outcome = await this.send('edit', `${artifactId}:${key}`, id => this.api.editArtifact(this.deckId, this.sessionId, artifactId,
                 { expectedRevisionId: expected, action: ask.action, nodeIds: ask.nodeIds, preset: ask.preset ?? null,
-                    instruction: ask.instruction ?? null }, id), signal);
+                    instruction: ask.instruction ?? null, ...(ask.exercise === true ? { exercise: true, voice: ask.voice ?? null } : {}) }, id), signal);
             if (!outcome.ok) {
                 if (outcome.aborted) {
                     // The server may have taken it: read the truth, and the turn it made, if any.
@@ -548,7 +555,7 @@ export class WorkshopSessionStore {
             this.patch(accepted);
             this.addTurn(artifactId, turn);
             if (turn.status === 'APPLIED') {
-                this.setNote(editOutcomeNote('APPLIED', turn.action));
+                this.setNote(editOutcomeNote('APPLIED', turn.action, ask.exercise === true));
             } else {
                 const { againOf: _againOf, ...stored } = ask;
                 this.edits.update(memos => ({ ...memos, [artifactId]: { turnId: turn.turnId, ask: stored, baseRevisionId: expected,
@@ -596,19 +603,23 @@ export class WorkshopSessionStore {
         if (memo !== undefined && !memo.dismissed) this.edits.update(memos => ({ ...memos, [artifactId]: { ...memo, dismissed: true } }));
     }
 
-    /** The document of one revision of an artifact (a revision never changes, so each is read once). `null` when it cannot be read. */
-    loadRevision(artifactId: string, revisionId: string): Promise<NativeDocument | null> {
+    /** One revision of an artifact as `getArtifact?revisionId=` reads it (a revision never changes, so each is read once). `null` when it cannot be read. */
+    loadRevisionDetail(artifactId: string, revisionId: string): Promise<ArtifactDetail | null> {
         const key = `${artifactId}:${revisionId}`;
         let held = this.revisions.get(key);
         if (held === undefined) {
             const epoch = this.epoch;
-            held = firstValueFrom(this.api.getArtifact(this.deckId, this.sessionId, artifactId, revisionId))
-                .then(detail => detail.revision?.payload.kind === 'NATIVE_DOCUMENT' ? detail.revision.payload.document : null)
-                .catch(() => null);
+            held = firstValueFrom(this.api.getArtifact(this.deckId, this.sessionId, artifactId, revisionId)).catch(() => null);
             this.revisions.set(key, held);
-            void held.then(document => { if (document === null && epoch === this.epoch) this.revisions.delete(key); });
+            void held.then(detail => { if (detail === null && epoch === this.epoch) this.revisions.delete(key); });
         }
         return held;
+    }
+
+    /** The document of one revision of a material. `null` when it cannot be read, and for an exercise. */
+    async loadRevision(artifactId: string, revisionId: string): Promise<NativeDocument | null> {
+        const payload = (await this.loadRevisionDetail(artifactId, revisionId))?.revision?.payload;
+        return payload?.kind === 'NATIVE_DOCUMENT' ? payload.document : null;
     }
 
     /** The cost line of a rewrite of `blocks` blocks: «≈ 0,3 % лимита». `null` when the estimate cannot be read (the window then says nothing). */
@@ -843,7 +854,7 @@ export class WorkshopSessionStore {
         const turn = detail.turns.find(held => held.turnId === memo.turnId);
         if (turn === undefined || turn.status === 'QUEUED' || turn.status === 'RUNNING') return;
         this.edits.update(memos => ({ ...memos, [artifactId]: { ...memo, announced: true } }));
-        this.setNote(editOutcomeNote(turn.status, turn.action));
+        this.setNote(editOutcomeNote(turn.status, turn.action, memo.ask.exercise === true));
     }
 
     private setNote(note: string | null): void {

@@ -16,8 +16,10 @@ import { MnemaSelectComponent, MnemaSelectOption } from '../../core/controls/mne
 import { HoldToDeleteButtonComponent } from '../../shared/hold-to-delete-button.component';
 import { NewBadgeComponent } from '../../shared/new-badge.component';
 import { ToastService } from '../../core/notifications/toast.service';
+import { AskMnemaComponent } from '../generation/ask-mnema.component';
 import { ExerciseProposal, quoteContext, readProposal } from '../generation/exercise-proposal';
 import { GenerationApiService } from '../generation/generation-api.service';
+import { IntentContext } from '../generation/generation-intent';
 import { readProblem } from '../generation/generation-problem';
 import { problemMessage } from '../generation/generation-view';
 import { ArtifactDetail } from '../generation/generation.models';
@@ -120,7 +122,7 @@ function stepOwns(step: StepId, key: string): boolean {
     selector: 'app-exercise-authoring-page',
     imports: [RouterLink, MnemaSelectComponent, HoldToDeleteButtonComponent, NewBadgeComponent, MechanicPickerComponent, ExercisePreviewHostComponent,
         ExerciseSlotEditorComponent, FreeResponseEditorComponent, ClozeEditorComponent, ChoiceEditorComponent, MatchEditorComponent,
-        OrderEditorComponent, CategoryGroupsEditorComponent, CategorizeItemsEditorComponent],
+        OrderEditorComponent, CategoryGroupsEditorComponent, CategorizeItemsEditorComponent, AskMnemaComponent],
     templateUrl: './exercise-authoring-page.component.html',
     styleUrl: './exercise-authoring-page.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -196,6 +198,13 @@ export class ExerciseAuthoringPageComponent {
         if (this.titleEdited()) return this.objectiveTitle();
         return this.objectiveMode() === 'create' ? this.suggestedTitle() : this.selectedObjective()?.title ?? '';
     });
+    /** «Попросить Мнему…» is for an exercise that is saved and not a Workshop proposal: the server pins it at its head. */
+    readonly askContext = computed<IntentContext | null>(() => {
+        const detail = this.exercise();
+        return detail === null || this.proposalEdit() !== null || !this.capabilities().aiGeneration.available
+            ? null : { kind: 'EXERCISE', exerciseId: detail.exerciseId };
+    });
+    readonly askBuilderQuery = computed(() => ({ members: this.item()?.memberKey ?? '' }));
     readonly errorSummary = computed(() => distinctMessages(this.fieldErrors()));
     readonly stepProblems = computed(() => distinctMessages(this.stepErrors()));
     readonly visibleErrors = computed<DraftErrors>(() => ({ ...this.stepErrors(), ...this.fieldErrors() }));

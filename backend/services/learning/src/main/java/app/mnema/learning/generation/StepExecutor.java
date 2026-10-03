@@ -10,6 +10,12 @@ interface StepExecutor {
     /** The {@code generation_step.kind} this executor runs. */
     String kind();
 
+    /**
+     * The member a step's input must have for this executor to claim it, or null for every step of its kind. The Stub speech executor
+     * runs the media turns of an exercise ({@code turnId}) and leaves the media steps of a material's slots alone.
+     */
+    default String requiredInput() { return null; }
+
     /** The provider capability whose per-instance permit the run takes. */
     AiCapability capability();
 

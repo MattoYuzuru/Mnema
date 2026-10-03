@@ -44,6 +44,13 @@ describe('DeckWorkshopsComponent', () => {
         expect(links[1]).toMatch(/^Мастерская от /u);
     });
 
+    it('names a revision of a material or of an exercise as such (AI-16)', () => {
+        create(of({ items: [session('1', { kind: 'REVISE_ITEM' }), session('2', { kind: 'REVISE_EXERCISE' })], nextCursor: null }));
+        const links = [...root().querySelectorAll<HTMLAnchorElement>('li a')].map(link => link.textContent!);
+        expect(links[0]).toMatch(/^Правка материала от /u);
+        expect(links[1]).toMatch(/^Правка упражнения от /u);
+    });
+
     it('declines the Russian plural: 1 активная, 2 активные, 5 активных, 11 активных, 21 активная', () => {
         const heading = (count: number): string => {
             create(of({ items: Array.from({ length: count }, (_, position) => session(String(position + 1))), nextCursor: null }));

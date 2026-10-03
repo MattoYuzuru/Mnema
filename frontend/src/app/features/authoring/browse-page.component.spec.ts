@@ -127,6 +127,39 @@ describe('BrowsePageComponent', () => {
         });
     });
 
+    describe('«Попросить Мнему…» (AI-16)', () => {
+        const ask = () => (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('app-ask-mnema');
+
+        it('is one collapsed button under the material actions when the server offers generation, and about this material', () => {
+            capabilities = { ...CAPABILITIES_UNAVAILABLE, aiGeneration: { available: true, reason: null } };
+            const { detail } = openMaterial();
+            expect(ask()?.querySelector('.ask-trigger')?.textContent).toContain('Попросить Мнему…');
+            expect(ask()?.querySelector('textarea')).toBeNull();
+            // between the header and the sheet
+            const sheet = (fixture.nativeElement as HTMLElement).querySelector('article.sheet')!;
+            expect(ask()!.compareDocumentPosition(sheet) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+            ask()!.querySelector<HTMLButtonElement>('.ask-trigger')!.click();
+            fixture.detectChanges();
+            expect(ask()?.querySelector('textarea')).not.toBeNull();
+            expect(ask()?.textContent).toContain('Сделай все типы упражнений по 3');
+            void detail;
+            fixture.destroy();
+        });
+
+        it('is not there when generation is off', () => {
+            openMaterial();
+            expect(ask()).toBeNull();
+            fixture.destroy();
+        });
+
+        it('is not there when the capabilities cannot be read (fail closed)', () => {
+            capabilities = 'error';
+            openMaterial();
+            expect(ask()).toBeNull();
+            fixture.destroy();
+        });
+    });
+
     it('returns to the deck hub, which now lists the materials', () => {
         openMaterial();
         const back = (fixture.nativeElement as HTMLElement).querySelector<HTMLAnchorElement>('a.back-link');

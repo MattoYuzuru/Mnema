@@ -32,15 +32,27 @@ public final class ExerciseCompiler {
     private final ExerciseIds ids;
     private final Map<String, UUID> allocated = new LinkedHashMap<>();
 
-    private ExerciseCompiler(JsonNode source, ExerciseContext context, ExerciseIds ids) {
+    private ExerciseCompiler(JsonNode source, ExerciseContext context, ExerciseIds ids, Map<String, UUID> known) {
         this.source = source;
         this.context = context;
         this.ids = ids;
+        this.allocated.putAll(known);
     }
 
     /** @throws IllegalArgumentException the exercise was not validated by the schema and the lint first */
     public static Compiled compile(JsonNode exercise, ExerciseContext context, ExerciseIds ids) {
-        return new ExerciseCompiler(exercise, context, ids).compile();
+        return new ExerciseCompiler(exercise, context, ids, Map.of()).compile();
+    }
+
+    /**
+     * Compiles a revision of an existing exercise: {@code known} maps the local IDs the model was shown to the identifiers they had, so an
+     * option, pair, item, category or blank that the model keeps under its local ID keeps its identifier; only the local IDs that are new
+     * get one from {@code ids}.
+     *
+     * @throws IllegalArgumentException the exercise was not validated by the schema and the lint first
+     */
+    public static Compiled compile(JsonNode exercise, ExerciseContext context, ExerciseIds ids, Map<String, UUID> known) {
+        return new ExerciseCompiler(exercise, context, ids, known).compile();
     }
 
     private Compiled compile() {

@@ -8,6 +8,10 @@ public enum PromptTask {
     MATERIAL("material", true),
     EDIT("edit", true),
     EXERCISES("exercises", false),
+    /** Revising ONE existing exercise (REVISE_EXERCISE, #294): the exercise in the output form, the material and the instruction. */
+    EXERCISE_EDIT("exercise-edit", false),
+    /** The intent of «Попросить Мнему…» (#294): one sentence to one operation of a closed vocabulary. */
+    INTENT("intent", false),
     ASSESSMENT("assessment", false);
 
     private final String section;

@@ -1053,7 +1053,7 @@ try {
       step = 'workshop_prepare';
       await runWorkshop({
         tab: second, config, record, SafeFailure, until, exists, navigate, saveScreenshot, clickText, setStep: value => { step = value; },
-        deckPath, bearer: secondBearer, inflight: inflightNow });
+        deckPath, bearer: secondBearer, inflight: inflightNow, audioAssetId: config.media ? uploadedAudioAssetId : null });
     }
     // The semantic assessment of explanations (#292): the rubric editor and the learner's side, with the Stub grader.
     if (config.assessment) {

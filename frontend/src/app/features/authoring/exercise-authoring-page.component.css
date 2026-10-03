@@ -11,6 +11,9 @@ h1 { max-inline-size: 20ch; margin: 0; font-size: clamp(2.25rem, 6vw, 4.25rem); 
 .lede { margin-block: 1rem 0; max-inline-size: 46rem; }
 .jump-link { display: inline-flex; min-block-size: 2.75rem; align-items: center; color: var(--mn-ink); font-weight: 650; text-underline-offset: .2em; }
 
+/* «Попросить Мнему…» sits between the heading and the sheet: collapsed it is one quiet line. */
+.ask-mnema { max-inline-size: 46rem; margin-block-end: clamp(1.5rem, 4vw, 2.5rem); }
+
 /* One open sheet: type, preview, then the steps of the chosen exercise; no nested frames and no side columns. */
 .inspector { min-inline-size: 0; display: grid; gap: clamp(2rem, 5vw, 3rem); }
 .preview-anchor { min-inline-size: 0; scroll-margin-block-start: 1rem; }

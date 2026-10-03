@@ -125,9 +125,9 @@ describe('edits on the wire (contracts/generation, AI-11)', () => {
         it('has a clear Russian message for every reason of a refused target the contract lists', () => {
             const listed = ((httpContract['endpoints'].find((e: any) => e.operationId === 'editArtifact').errors.find((e: any) => e.status === 400).reason) as string)
                 .split('(')[0]!.split('|').map(reason => reason.trim());
-            expect(listed).toEqual(['TARGET_NOT_CONTIGUOUS', 'TARGET_UNSUPPORTED_BLOCK', 'TARGET_PERSONAL_DATA', 'TARGET_MEDIA_ONLY']);
+            expect(listed).toEqual(['TARGET_NOT_CONTIGUOUS', 'TARGET_UNSUPPORTED_BLOCK', 'TARGET_PERSONAL_DATA', 'TARGET_MEDIA_ONLY', 'TARGET_NO_AUDIO']);
             const messages = listed.map(reason => editProblemMessage(readProblem(problemResponse(400, { code: 'INVALID_REQUEST', reason }))));
-            expect(new Set(messages).size).toBe(4);
+            expect(new Set(messages).size).toBe(5);
             expect(messages[2]).toBe('В выделении есть e-mail или телефон — Мнема не переписывает такие фрагменты.');
             for (const message of messages) expect(message).toMatch(/[А-Яа-я]/u);
             expect(editProblemMessage(readProblem(problemResponse(400, { code: 'INVALID_REQUEST' })))).toBe('Этот фрагмент нельзя переписать с помощью Мнемы.');

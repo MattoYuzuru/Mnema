@@ -71,13 +71,13 @@ class GenerationRepository {
             row.getString("state"), row.getString("error_code"));
 
     private static final String TURN_COLUMNS = "turn_id,artifact_id,session_id,owner_id,status,action,preset,instruction,"
-            + "target_node_ids::text AS target_node_ids,step_id,result_revision_id,error_code,counts_toward_limit,created_at";
+            + "target_node_ids::text AS target_node_ids,step_id,result_revision_id,error_code,counts_toward_limit,created_at,voice";
     private static final RowMapper<Turn> TURN = (row, ignored) -> new Turn(row.getObject("turn_id", UUID.class),
             row.getObject("artifact_id", UUID.class), row.getObject("session_id", UUID.class), row.getObject("owner_id", UUID.class),
             row.getString("status"), row.getString("action"), row.getString("preset"), row.getString("instruction"),
             uuidArray(row.getString("target_node_ids")), row.getObject("step_id", UUID.class),
             row.getObject("result_revision_id", UUID.class), row.getString("error_code"), row.getBoolean("counts_toward_limit"),
-            instant(row, "created_at"));
+            instant(row, "created_at"), row.getString("voice"));
 
     private final JdbcClient jdbc;
 
@@ -554,10 +554,25 @@ class GenerationRepository {
     void insertSlot(Slot slot, UUID sessionId, UUID owner) {
         jdbc.sql("INSERT INTO app_learning.generation_media_slot(artifact_id,slot_key,session_id,owner_id,revision_id,node_id,"
                         + "kind,spec,asset_id,state,created_at,updated_at) VALUES (:artifact,:key,:session,:owner,:revision,:node,"
-                        + ":kind,CAST(:spec AS jsonb),:asset,'PENDING',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)")
+                        + ":kind,CAST(:spec AS jsonb),:asset,:state,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)")
                 .param("artifact", slot.artifactId()).param("key", slot.slotKey()).param("session", sessionId)
                 .param("owner", owner).param("revision", slot.revisionId()).param("node", slot.nodeId())
-                .param("kind", slot.kind()).param("spec", Json.write(slot.spec())).param("asset", slot.assetId()).update();
+                .param("kind", slot.kind()).param("spec", Json.write(slot.spec())).param("asset", slot.assetId())
+                .param("state", slot.state()).update();
+    }
+
+    /** Every slot of the artifact follows its new current revision (an exercise has no node ids to tell its slots apart by). */
+    void attachAllSlots(UUID artifactId, UUID revisionId) {
+        jdbc.sql("UPDATE app_learning.generation_media_slot SET revision_id=:revision,updated_at=CURRENT_TIMESTAMP "
+                        + "WHERE artifact_id=:artifact AND revision_id<>:revision").param("revision", revisionId)
+                .param("artifact", artifactId).update();
+    }
+
+    /** The redo of a slot's audio finished: its spec records what was asked for and the slot is READY on {@code assetId}. */
+    void readySlot(UUID artifactId, String slotKey, JsonNode spec, UUID assetId) {
+        jdbc.sql("UPDATE app_learning.generation_media_slot SET state='READY',error_code=NULL,spec=CAST(:spec AS jsonb),asset_id=:asset,"
+                        + "updated_at=CURRENT_TIMESTAMP WHERE artifact_id=:artifact AND slot_key=:key")
+                .param("spec", Json.write(spec)).param("asset", assetId).param("artifact", artifactId).param("key", slotKey).update();
     }
 
     List<Slot> slots(UUID artifactId, UUID revisionId) {
@@ -677,15 +692,15 @@ class GenerationRepository {
 
     void insertTurn(Turn turn) {
         jdbc.sql("INSERT INTO app_learning.generation_artifact_turn(turn_id,artifact_id,session_id,owner_id,status,action,preset,"
-                        + "instruction,target_node_ids,step_id,result_revision_id,error_code,counts_toward_limit,created_at) VALUES "
+                        + "instruction,target_node_ids,step_id,result_revision_id,error_code,counts_toward_limit,created_at,voice) VALUES "
                         + "(:id,:artifact,:session,:owner,:status,:action,:preset,:instruction,CAST(:nodes AS uuid[]),:step,:result,"
-                        + ":error,:counts,CURRENT_TIMESTAMP)")
+                        + ":error,:counts,CURRENT_TIMESTAMP,:voice)")
                 .param("id", turn.turnId()).param("artifact", turn.artifactId()).param("session", turn.sessionId())
                 .param("owner", turn.ownerId()).param("status", turn.status()).param("action", turn.action())
                 .param("preset", turn.preset()).param("instruction", turn.instruction())
                 .param("nodes", uuidLiteral(turn.targetNodeIds())).param("step", turn.stepId())
                 .param("result", turn.resultRevisionId()).param("error", turn.errorCode())
-                .param("counts", turn.countsTowardLimit()).update();
+                .param("counts", turn.countsTowardLimit()).param("voice", turn.voice()).update();
     }
 
     Optional<Turn> turn(UUID turnId) {
@@ -821,6 +836,13 @@ class GenerationRepository {
                 .query((row, ignored) -> result.put(row.getObject("member_key", UUID.class), row.getObject("revision_id", UUID.class)))
                 .list();
         return result;
+    }
+
+    /** The head revision of an exercise of the owner's live deck, empty when the exercise is not on its roster (unknown, foreign or deleted). */
+    Optional<UUID> exerciseHeadRevision(UUID owner, UUID deck, UUID exercise) {
+        return jdbc.sql("SELECT h.revision_id FROM app_learning.deck_head_exercise h JOIN app_learning.deck d ON d.deck_id=h.deck_id "
+                        + "WHERE d.owner_id=:owner AND d.deleted_at IS NULL AND h.deck_id=:deck AND h.exercise_id=:exercise")
+                .param("owner", owner).param("deck", deck).param("exercise", exercise).query(UUID.class).optional();
     }
 
     /** The title of an objective revision of the owner's deck (for the proposal's display), empty when it is gone. */

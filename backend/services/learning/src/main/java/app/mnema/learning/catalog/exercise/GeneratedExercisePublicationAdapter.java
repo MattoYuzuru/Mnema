@@ -13,7 +13,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Approval of generated exercises: one {@link ExerciseService#publish} in the caller's transaction. The generated command is
+ * Approval of generated exercises, and of a revised one: one {@link ExerciseService#publish} in the caller's transaction. The generated command is
  * read by the very parser the publication endpoint uses, an objective that the material already has under the same title is
  * reused rather than created again, and the published exercise gets its «Новое» mark in the same transaction.
  */
@@ -42,6 +42,18 @@ final class GeneratedExercisePublicationAdapter implements GeneratedExercisePubl
         JsonNode acknowledgement = exercises.publish(actor, deckId, null, expectedDeckVersion, command).acknowledgement();
         marks.mark(actor, deckId, UUID.fromString(acknowledgement.path("exerciseId").stringValue("")));
         return acknowledgement;
+    }
+
+    @Override
+    public JsonNode revise(UUID actor, UUID deckId, long expectedDeckVersion, UUID commandId, UUID expectedDeckRevisionId, UUID exerciseId,
+                           UUID expectedExerciseRevisionId, JsonNode objective, JsonNode exercise) {
+        ObjectNode envelope = JSON.createObjectNode().put("commandId", commandId.toString())
+                .put("expectedDeckRevisionId", expectedDeckRevisionId.toString())
+                .put("expectedExerciseRevisionId", expectedExerciseRevisionId.toString());
+        envelope.set("objective", current(actor, deckId, objective, exercise.path("subject").path("memberKey").stringValue("")));
+        envelope.set("exercise", exercise.deepCopy());
+        ExerciseCommand command = ExerciseCommand.readUpdate(new ByteArrayInputStream(envelope.toString().getBytes(StandardCharsets.UTF_8)));
+        return exercises.publish(actor, deckId, exerciseId, expectedDeckVersion, command).acknowledgement();
     }
 
     /**

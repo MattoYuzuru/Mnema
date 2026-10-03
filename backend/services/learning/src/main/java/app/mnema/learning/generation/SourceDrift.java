@@ -44,14 +44,26 @@ class SourceDrift {
         List<UUID> notes = new ArrayList<>();
         List<UUID> members = new ArrayList<>();
         for (JsonNode ref : artifact.sourceRefs()) {
-            if (ref.path("type").stringValue("").equals("NOTE")) notes.add(UUID.fromString(ref.path("noteId").stringValue("")));
-            else members.add(UUID.fromString(ref.path("memberKey").stringValue("")));
+            String type = ref.path("type").stringValue("");
+            if (type.equals("NOTE")) notes.add(UUID.fromString(ref.path("noteId").stringValue("")));
+            else if (!type.equals("EXERCISE")) members.add(UUID.fromString(ref.path("memberKey").stringValue("")));
         }
         Map<UUID, NoteState> states = repository.noteStates(session.ownerId(), session.deckId(), notes, false);
         Map<UUID, UUID> heads = repository.headRevisions(session.ownerId(), session.deckId(), members);
         List<Drift> drifted = new ArrayList<>();
         for (JsonNode ref : artifact.sourceRefs()) {
-            if (ref.path("type").stringValue("").equals("NOTE")) {
+            if (ref.path("type").stringValue("").equals("EXERCISE")) {
+                // the exercise a REVISE_EXERCISE artifact was made of: its head must still be that revision
+                UUID exercise = UUID.fromString(ref.path("exerciseId").stringValue(""));
+                UUID revision = UUID.fromString(ref.path("exerciseRevisionId").stringValue(""));
+                UUID head = repository.exerciseHeadRevision(session.ownerId(), session.deckId(), exercise).orElse(null);
+                if (head == null) {
+                    drifted.add(new Drift(new SourceUnavailableException.Unavailable("EXERCISE", exercise), true, null));
+                } else if (!head.equals(revision)) {
+                    drifted.add(new Drift(new SourceUnavailableException.Unavailable("EXERCISE", exercise), false,
+                            Json.object().put("type", "EXERCISE").put("exerciseId", exercise.toString()).put("exerciseRevisionId", head.toString())));
+                }
+            } else if (ref.path("type").stringValue("").equals("NOTE")) {
                 UUID note = UUID.fromString(ref.path("noteId").stringValue(""));
                 NoteState state = states.get(note);
                 long pin = Long.parseLong(ref.path("noteRowVersion").stringValue("0"));
@@ -91,7 +103,9 @@ class SourceDrift {
         for (Drift drift : drifted) replacement.put(drift.source().type() + ":" + drift.source().id(), drift.current());
         ArrayNode refs = Json.array();
         for (JsonNode ref : artifact.sourceRefs()) {
-            String id = ref.path("type").stringValue("").equals("NOTE") ? ref.path("noteId").stringValue("") : ref.path("memberKey").stringValue("");
+            String type = ref.path("type").stringValue("");
+            String id = type.equals("NOTE") ? ref.path("noteId").stringValue("")
+                    : type.equals("EXERCISE") ? ref.path("exerciseId").stringValue("") : ref.path("memberKey").stringValue("");
             JsonNode replaced = replacement.get(ref.path("type").stringValue("") + ":" + id);
             refs.add(replaced == null ? ref.deepCopy() : replaced);
         }

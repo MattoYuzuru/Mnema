@@ -28,7 +28,8 @@ class StepQueue {
 
         record Claimed(StepClaim claim) implements Look { }
 
-        record Expired(UUID stepId, UUID sessionId, String kind) implements Look { }
+        /** @param turn the step belongs to a turn of an artifact (an edit or a media turn): it fails the turn, not an artifact */
+        record Expired(UUID stepId, UUID sessionId, String kind, boolean turn) implements Look { }
     }
 
     private static final int MAX_LOOKS = 25;
@@ -53,8 +54,13 @@ class StepQueue {
 
     /** The next due step of one of {@code kinds}, claimed with a new lease token; empty when nothing is due. */
     Optional<StepClaim> claim(Collection<String> kinds) {
+        return claim(kinds, null);
+    }
+
+    /** As {@link #claim(Collection)}, and only a step whose input has the member {@code requiredInput} when one is given. */
+    Optional<StepClaim> claim(Collection<String> kinds, String requiredInput) {
         for (int look = 0; look < MAX_LOOKS; look++) {
-            Look result = transaction.execute(status -> lookOnce(kinds));
+            Look result = transaction.execute(status -> lookOnce(kinds, requiredInput));
             switch (result) {
                 case Look.Empty ignored -> {
                     return Optional.empty();
@@ -64,7 +70,7 @@ class StepQueue {
                 }
                 case Look.Parked parked -> lifecycle.parked(parked.sessionId(), parked.until());
                 case Look.Expired expired -> {
-                    if (expired.kind().equals(EditExecutor.KIND)) edits.expire(expired.stepId());
+                    if (expired.turn()) edits.expire(expired.stepId());
                     else lifecycle.expire(expired.stepId());
                 }
             }
@@ -72,23 +78,25 @@ class StepQueue {
         return Optional.empty();
     }
 
-    private Look lookOnce(Collection<String> kinds) {
-        Optional<Step> due = steps.pickDue(kinds, settings.worker().accountCap());
+    private Look lookOnce(Collection<String> kinds, String requiredInput) {
+        Optional<Step> due = steps.pickDue(kinds, settings.worker().accountCap(), requiredInput);
         if (due.isEmpty()) return new Look.Empty();
         Step step = due.get();
+        // an edit and the media turn of an exercise are interactive: a person waits for them
+        boolean turn = step.kind().equals(EditExecutor.KIND) || step.input().has("turnId");
         // The whole step has a lifetime from its first claim: past it, no further run is started.
         if (step.firstClaimedAt() != null
                 && step.firstClaimedAt().plus(settings.step().maxLifetime()).isBefore(java.time.Instant.now())) {
-            return new Look.Expired(step.stepId(), step.sessionId(), step.kind());
+            return new Look.Expired(step.stepId(), step.sessionId(), step.kind(), turn);
         }
         // A person waits for an edit: one that no worker claimed in time is given up, its turn fails and its hold is released
-        if (step.kind().equals(EditExecutor.KIND) && step.firstClaimedAt() == null && step.createdAt() != null
+        if (turn && step.firstClaimedAt() == null && step.createdAt() != null
                 && step.createdAt().plus(settings.edit().queueTimeout()).isBefore(java.time.Instant.now())) {
-            return new Look.Expired(step.stepId(), step.sessionId(), step.kind());
+            return new Look.Expired(step.stepId(), step.sessionId(), step.kind(), turn);
         }
         int credits = step.input().path("credits").asInt(0);
         // An edit is interactive and costs a few credits: the daily burst never parks it for a day (a turn that waits is a turn that hangs)
-        if (credits > 0 && !step.kind().equals(EditExecutor.KIND)) {
+        if (credits > 0 && !turn) {
             var room = ledger.dailyDebitRoom(step.ownerId());
             if (room.isPresent() && room.get().remainingTodayCredits() < credits) {
                 steps.defer(step.stepId(), room.get().resetsAt());

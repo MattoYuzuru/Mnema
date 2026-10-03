@@ -251,13 +251,41 @@ class StandardSpecInterpreterTest {
                         failure -> assertThat(failure.extension().members()).containsEntry("kind", "EXERCISES"));
     }
 
+    private static final String ITEM_TARGET = "\"target\":{\"memberKey\":\"44444444-4444-4444-8444-444444444444\",\"itemRevisionId\":\"55555555-5555-4555-8555-555555555555\"}";
+    private static final String EXERCISE_TARGET = "\"target\":{\"exerciseId\":\"66666666-6666-4666-8666-666666666666\",\"exerciseRevisionId\":\"77777777-7777-4777-8777-777777777777\"}";
+
     @Test
-    void reviseSpecsAreNotSupportedYet() {
-        for (String kind : List.of("REVISE_ITEM", "REVISE_EXERCISE")) {
-            assertThatThrownBy(() -> interpret("{\"kind\":\"" + kind + "\",\"target\":{}}"))
-                    .isInstanceOfSatisfying(SpecNotSupportedException.class,
-                            failure -> assertThat(failure.extension().members()).containsEntry("kind", kind));
+    void aReviseSpecIsOneEditTurnAndTheRedoOfAnExercisesAudioIsOneClipOnTopOfIt() {
+        assertThat(lines(interpret("{\"kind\":\"REVISE_ITEM\"," + ITEM_TARGET + ",\"instruction\":\"Сделай проще\"}"))).containsExactly("EDIT_SELECTIONx1");
+        assertThat(lines(interpret("{\"kind\":\"REVISE_EXERCISE\"," + EXERCISE_TARGET + ",\"instruction\":\"Короче\"}"))).containsExactly("EDIT_SELECTIONx1");
+        assertThat(lines(interpret("{\"kind\":\"REVISE_EXERCISE\"," + EXERCISE_TARGET
+                + ",\"media\":{\"action\":\"AUDIO_REGENERATE\",\"voice\":\"male\"}}"))).containsExactly("TTS_CLIP_30Sx1");
+        assertThat(lines(interpret("{\"kind\":\"REVISE_EXERCISE\"," + EXERCISE_TARGET + ",\"instruction\":\"Короче\",\"outputLanguage\":\"ru\","
+                + "\"media\":{\"action\":\"AUDIO_REGENERATE\",\"voice\":\"female\"}}"))).containsExactly("EDIT_SELECTIONx1", "TTS_CLIP_30Sx1");
+        // nothing sizes a revision: no budget, whatever the remaining credits
+        assertThat(interpret("{\"kind\":\"REVISE_ITEM\"," + ITEM_TARGET + ",\"instruction\":\"x\"}", 0).budgetPercent()).isNull();
+    }
+
+    @Test
+    void aReviseSpecHasExactlyItsShape() {
+        for (String bad : List.of("{\"kind\":\"REVISE_ITEM\"}", "{\"kind\":\"REVISE_ITEM\"," + ITEM_TARGET + "}",
+                "{\"kind\":\"REVISE_ITEM\"," + ITEM_TARGET + ",\"instruction\":\"   \"}",
+                "{\"kind\":\"REVISE_ITEM\"," + ITEM_TARGET + ",\"instruction\":\"x\",\"budgetPercent\":5}",
+                "{\"kind\":\"REVISE_ITEM\"," + ITEM_TARGET + ",\"instruction\":\"" + "я".repeat(2_001) + "\"}",
+                "{\"kind\":\"REVISE_ITEM\",\"target\":{\"memberKey\":\"44444444-4444-4444-8444-444444444444\"},\"instruction\":\"x\"}",
+                "{\"kind\":\"REVISE_ITEM\",\"target\":{\"exerciseId\":\"44444444-4444-4444-8444-444444444444\"},\"instruction\":\"x\"}",
+                "{\"kind\":\"REVISE_EXERCISE\"," + EXERCISE_TARGET + "}", "{\"kind\":\"REVISE_EXERCISE\"," + EXERCISE_TARGET + ",\"instruction\":\"\"}",
+                "{\"kind\":\"REVISE_EXERCISE\"," + EXERCISE_TARGET + ",\"media\":{\"action\":\"AUDIO_REGENERATE\"}}",
+                "{\"kind\":\"REVISE_EXERCISE\"," + EXERCISE_TARGET + ",\"media\":{\"action\":\"AUDIO_REGENERATE\",\"voice\":\"robot\"}}",
+                "{\"kind\":\"REVISE_EXERCISE\"," + EXERCISE_TARGET + ",\"media\":{\"action\":\"DELETE\",\"voice\":\"male\"}}",
+                "{\"kind\":\"REVISE_EXERCISE\"," + EXERCISE_TARGET + ",\"instruction\":\"x\",\"outputLanguage\":\"not a language\"}")) {
+            assertThatThrownBy(() -> interpret(bad)).as(bad).isInstanceOf(InvalidRequestException.class);
         }
+        // a null media is no media; an instruction of exactly the limit is accepted
+        assertThat(lines(interpret("{\"kind\":\"REVISE_EXERCISE\"," + EXERCISE_TARGET + ",\"instruction\":\"x\",\"media\":null}")))
+                .containsExactly("EDIT_SELECTIONx1");
+        assertThat(lines(interpret("{\"kind\":\"REVISE_ITEM\"," + ITEM_TARGET + ",\"instruction\":\"" + "я".repeat(2_000) + "\"}")))
+                .containsExactly("EDIT_SELECTIONx1");
     }
 
     private static String noteWith(int n, String overrides) {

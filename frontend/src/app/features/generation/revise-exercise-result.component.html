@@ -1,0 +1,114 @@
+<article class="revision" [attr.aria-busy]="writing()" [attr.aria-labelledby]="headingId" [attr.data-state]="artifact().state">
+  <header class="revision-heading">
+    <h2 [id]="headingId" tabindex="-1">Правка упражнения<span class="status-word">, {{ status().word }}</span></h2>
+  </header>
+
+  @switch (artifact().state) {
+    @case ('PUBLISHED') {
+      <section class="notice success">
+        <p><strong>Новая версия упражнения сохранена.</strong> Прежняя осталась в истории упражнения.</p>
+        @if (published(); as ref) { <p><a class="text-link" [routerLink]="['/decks', deckId(), 'exercises', ref.exerciseId, 'edit']">Открыть упражнение</a></p> }
+      </section>
+    }
+    @case ('HANDED_OFF') {
+      <section class="notice"><p><strong>Правка передана в редактор.</strong></p></section>
+    }
+    @case ('FAILED') {
+      <section class="notice error">
+        <p><strong>{{ failureText() }}</strong></p>
+        @if (failureNote(); as note) { <p>{{ note }}</p> }
+      </section>
+    }
+    @default {
+      @if (writing()) {
+        <p class="muted">Мнема правит упражнение. Оно изменится, когда правка будет готова.</p>
+      }
+      @if (artifact().state === 'REJECTED') {
+        <section class="notice"><p><strong>Вы отклонили правку.</strong> Упражнение в колоде осталось прежним.</p></section>
+        <div class="actions">
+          @if (canUndoReject()) { <button class="button primary" type="button" [attr.aria-disabled]="busy() ? 'true' : null" (click)="undoReject()">Вернуть правку</button> }
+          <a class="button" [routerLink]="['/decks', deckId()]">К колоде</a>
+        </div>
+      } @else if (artifact().state === 'STALE') {
+        <section class="notice error">
+          <p><strong>Упражнение изменилось, пока Мнема его правила.</strong></p>
+          <p>В колоде осталась его новая версия: правку нельзя сохранить поверх неё. Начните заново в редакторе упражнения.</p>
+        </section>
+        <div class="actions">
+          @if (canReject()) { <button class="button" type="button" [attr.aria-disabled]="busy() ? 'true' : null" (click)="reject()">Закрыть правку</button> }
+        </div>
+      }
+
+      @if (artifact().state === 'PROPOSED' && detail() !== null) {
+        <section class="result-card" role="group" aria-labelledby="result-title" [class.is-failed]="failure() !== null">
+          @if (failure(); as reason) {
+            <p class="result-title is-error" id="result-title">@if (changedFromOriginal()) {Повтор не удался — показан прежний результат. Лимит не списан.} @else { {{ reason }} Упражнение не изменилось, лимит не списан.}</p>
+          } @else if (changedFromOriginal()) {
+            <p class="result-title" id="result-title">Мнема изменила упражнение</p>
+          } @else {
+            <p class="result-title" id="result-title">Сейчас показана прежняя версия: если оставить её, ничего не изменится.</p>
+          }
+          @if (voiceChip(); as chip) {
+            <ul class="result-chips" aria-label="Что изменено в упражнении"><li class="result-chip" data-voice-chip>{{ chip }}</li></ul>
+          }
+          @if (stubNoteShown()) { <p class="result-note" data-stub-note>{{ stubNote }}</p> }
+          <div class="result-actions">
+            @if (changedFromOriginal()) {
+              <button class="button primary" type="button" data-keep [attr.aria-disabled]="(busy() || !canApprove() || !shownIsCurrent()) ? 'true' : null"
+                [attr.aria-describedby]="approveWait() ? 'approve-wait' : null" (click)="keep()">Оставить</button>
+            }
+            @if (changedFromOriginal()) {
+              <button class="button" type="button" data-give-back [attr.aria-disabled]="(busy() || !canRevert()) ? 'true' : null" (click)="giveBack()">Вернуть</button>
+            }
+            @if (canAskAgain()) {
+              <button class="button" type="button" data-again [attr.aria-disabled]="busy() ? 'true' : null" (click)="again()">Ещё раз</button>
+            }
+            @if (canReject()) {
+              <button class="button" type="button" data-reject [attr.aria-disabled]="busy() ? 'true' : null" (click)="reject()">{{ changedFromOriginal() ? 'Отклонить' : 'Закрыть без изменений' }}</button>
+            }
+          </div>
+          @if (repeatNote(); as note) { <p class="muted" data-repeat-note>{{ note }}</p> }
+          @if (approveWait(); as wait) { <p class="muted" id="approve-wait">{{ wait }}</p> }
+          @if (changedFromOriginal() && diff().phase !== 'idle') {
+            <details class="revise-diff" open>
+              <summary>Что изменилось в тексте</summary>
+              @switch (diff().phase) {
+                @case ('loading') { <p class="muted">Считаем изменения…</p> }
+                @case ('error') { <p class="muted is-error">Не удалось загрузить прежнюю версию.</p> }
+                @case ('ready') {
+                  @if (diff(); as state) {
+                    @if (state.phase === 'ready') {
+                      @if (!state.changed) { <p class="diff-same">Текст упражнения не изменился.</p> }
+                      @else { @for (paragraph of state.paragraphs; track $index) {
+                        <p class="diff-paragraph">@for (segment of paragraph.segments; track $index) {@switch (segment.kind) {
+                          @case ('del') {<del><span class="sr-only">удалено: </span>{{ segment.text }}</del>}
+                          @case ('ins') {<ins><span class="sr-only">добавлено: </span>{{ segment.text }}</ins>}
+                          @default {<span>{{ segment.text }}</span>}
+                        }}</p>
+                      } }
+                    }
+                  }
+                }
+              }
+            </details>
+          }
+        </section>
+      }
+
+      @if (presentation(); as shown) {
+        <app-exercise-preview-host [presentation]="shown" idPrefix="revise-preview" [heading]="'Проба: ' + title()" [compact]="true" />
+      } @else if (entry()?.phase === 'error') {
+        <section class="notice error" role="alert">
+          <p>Не удалось загрузить упражнение.</p>
+          <button class="button" type="button" (click)="reload()">Повторить</button>
+          @if (canReject()) { <button class="button" type="button" data-reject [attr.aria-disabled]="busy() ? 'true' : null" (click)="reject()">Отклонить</button> }
+        </section>
+      } @else if (artifact().state !== 'PUBLISHED' && artifact().state !== 'HANDED_OFF') {
+        <p class="muted">Загружаем упражнение…</p>
+        <div class="skeleton" aria-hidden="true"><span></span><span></span><span></span></div>
+      }
+
+      <app-edit-history [detail]="detail()" [current]="artifact().currentRevisionId" [disabled]="busy() || !canRevert()" (revert)="revertTo($event)" />
+    }
+  }
+</article>

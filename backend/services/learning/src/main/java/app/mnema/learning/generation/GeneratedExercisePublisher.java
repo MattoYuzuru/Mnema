@@ -31,6 +31,17 @@ public interface GeneratedExercisePublisher {
                     JsonNode objective, JsonNode exercise);
 
     /**
+     * Publishes the next revision of an existing exercise ({@code REVISE_EXERCISE}, #294): an ordinary update of that exercise, in place.
+     * The objective is the one the exercise has ({@code reuse}, published against its current revision); the exercise is not marked «Новое».
+     *
+     * @param expectedExerciseRevisionId the revision the revision was made of, which must still be the exercise's head
+     * @throws app.mnema.learning.platform.api.InvalidRequestException the command is not a valid exercise publication
+     * @throws ObjectiveUnavailableException the objective is gone or belongs to another material
+     */
+    JsonNode revise(UUID actor, UUID deckId, long expectedDeckVersion, UUID commandId, UUID expectedDeckRevisionId, UUID exerciseId,
+                    UUID expectedExerciseRevisionId, JsonNode objective, JsonNode exercise);
+
+    /**
      * A {@code reuse} objective that is gone or is no longer bound to the exercise's subject material: the proposal rests on something
      * that does not exist any more, so the approval answers {@code SOURCE_STALE} and never a version conflict. (A reused objective
      * whose head revision merely moved is not this: the implementation publishes against the current revision.)

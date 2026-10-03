@@ -24,10 +24,13 @@ final class Rows {
     record Slot(UUID artifactId, String slotKey, UUID revisionId, UUID nodeId, String kind, JsonNode spec, UUID assetId,
                 String state, String errorCode) { }
 
-    /** One user instruction on an artifact ({@code generation_artifact_turn}); {@code instruction} is the user's own text. */
+    /**
+     * One user instruction on an artifact ({@code generation_artifact_turn}); {@code instruction} is the user's own text and
+     * {@code voice} ({@code female} or {@code male}) the voice of an {@code AUDIO_REGENERATE} turn of an exercise, else null.
+     */
     record Turn(UUID turnId, UUID artifactId, UUID sessionId, UUID ownerId, String status, String action, String preset,
                 String instruction, List<UUID> targetNodeIds, UUID stepId, UUID resultRevisionId, String errorCode,
-                boolean countsTowardLimit, Instant createdAt) {
+                boolean countsTowardLimit, Instant createdAt, String voice) {
         /** QUEUED or RUNNING: the turn that makes the artifact REVISING. */
         boolean open() {
             return status.equals("QUEUED") || status.equals("RUNNING");
