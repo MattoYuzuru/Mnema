@@ -249,7 +249,7 @@ describe('Generation wire contract (contracts/generation)', () => {
         });
 
         it('reads the status of the pinned note of an artifact, and tolerates its absence and a status it does not know', () => {
-            expect(parseArtifactDetail(examples['artifactDetailItem']).noteSources).toEqual([{ noteId: '20700000-0000-4000-8000-000000000001', noteRowVersion: '3', status: null }]);
+            expect(parseArtifactDetail(examples['artifactDetailItem']).noteSources).toEqual([{ noteId: '20700000-0000-4000-8000-000000000001', noteRowVersion: '3', status: 'CURRENT' }]);
             expect(parseArtifactDetail(examples['artifactDetailExercise']).noteSources).toEqual([]);
             for (const status of ['CURRENT', 'CHANGED', 'ARCHIVED', 'DELETED']) {
                 expect(parseArtifactDetail(artifactDetailWithNote(status)).noteSources).toEqual([{ noteId: noteIds.first, noteRowVersion: '3', status }]);
@@ -275,6 +275,16 @@ describe('Generation wire contract (contracts/generation)', () => {
             expect(sourcesOf(built(note({})))[0]).not.toHaveProperty('overrides');
             expect(sourcesOf(built(note({ media: {} })))[0]).not.toHaveProperty('overrides');
             expect(JSON.stringify(built(note({}), note({ media: {} }, 'SOURCE', noteIds.second)))).not.toContain('overrides');
+        });
+
+        it('sends the sources of the contract example unchanged, and reads its echo (overrides are not part of the echo the UI keeps)', () => {
+            const example = examples['specMaterialsOverrides'];
+            const sent = serializeMaterialsSpec({ ...buildMaterialsSpec('', DEFAULT_SETTINGS, [], { image: true, audio: true }),
+                sources: example.sources.map((source: any) => note(source.overrides, 'SOURCE', source.noteId)).map((source: SpecSource, index: number) =>
+                    ({ ...source, noteRowVersion: example.sources[index].noteRowVersion } as SpecSource)) });
+            expect(sourcesOf(sent)).toEqual(example.sources);
+            const echoed = parseSessionDetail({ ...examples['sessionDetail'], spec: example });
+            expect(echoed.spec).toMatchObject({ kind: 'MATERIALS', outputLanguage: 'ru' });
         });
 
         it('refuses overrides where they do not apply: a style example, or any mode but ONE_PER_NOTE', () => {

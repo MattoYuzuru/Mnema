@@ -680,6 +680,8 @@ export async function runWorkshop(ctx) {
   // Part B is a separate function boundary: it needs the #288 backend.
   evidence.approval = await runWorkshopApproval(ctx, { ...shared, api, page, press, insertText, stage, has, need, settle, metrics, desktop, awaitCapability,
     getSession, activeSessions, sessionPath, location, evidence, KEY: KEYS });
+  evidence.notes = await runWorkshopNotes(ctx, { ...shared, api, page, stage, has, need, settle, metrics, desktop, awaitCapability, getSession,
+    activeSessions, sessionPath, location });
   record('workshop_composer_stub_real_api', evidence);
   return evidence;
 }
@@ -1006,5 +1008,251 @@ export async function runWorkshopApproval(ctx, h) {
   });
 
   out.notes = 'RESOURCE_LIMIT_EXCEEDED (ACTIVE_SESSIONS) on retry and note archival are covered by backend and component tests, not driven here';
+  return out;
+}
+
+
+/**
+ * Notes as sources (#290): the real capture page → checkboxes → «Создать материалы с ИИ» → the composer with one chip per note,
+ * the grouping choice and a per-note setting → the Workshop (one material per note, each sourced from its note) → a note edited
+ * behind the Workshop's back is marked «заметка изменилась» → «Архивировать использованные заметки (k)» archives exactly the
+ * used notes and is harmless the second time → a MERGE_INTO_ONE run: two notes, one material with two sources.
+ * Only the notes themselves and the edit that makes one of them change are written through the API.
+ */
+export async function runWorkshopNotes(ctx, h) {
+  const { tab, SafeFailure, until, navigate, saveScreenshot, deckPath, deckId } = { ...ctx, ...h };
+  const { api, page, stage, has, need, settle, metrics, desktop, awaitCapability, getSession, activeSessions, sessionPath, location } = h;
+  const out = {};
+  const run = Math.random().toString(36).slice(2, 7);
+  const tokens = [1, 2, 3, 4].map(index => `Узел${run}${index}`);
+  const texts = tokens.map((token, index) => `${token}: слово номер ${index + 1}, коротко и с одним примером.`);
+
+  const press = async (text, scope) => need(await page(`const node = [...document.querySelectorAll(args[1] + ' button, ' + args[1] + ' a')]
+      .find(item => item.textContent.replace(/\\s+/g, ' ').trim() === args[0]);
+    if (!node) return false; if (node.getAttribute('aria-disabled') === 'true') return 'disabled'; node.click(); return true;`, text, scope) === true,
+    `«${text}» is not pressable in ${scope}`);
+  const createNotes = async list => {
+    const made = [];
+    for (const text of list) {
+      const created = await api('POST', '/api/capture-notes', { commandId: crypto.randomUUID(), deckId, source: 'workshop-harness-notes', text });
+      need(created.status === 201, `POST capture-notes answered ${created.status}`);
+      made.push({ noteId: created.body.capture.noteId, rowVersion: String(created.body.capture.rowVersion), text });
+    }
+    return made;
+  };
+  const noteState = async noteId => {
+    const response = await api('GET', `/api/capture-notes/${noteId}`);
+    need(response.status === 200, `GET capture note answered ${response.status}`);
+    return { archived: response.body.archived === true, rowVersion: String(response.body.rowVersion), etag: response.etag };
+  };
+  const captureView = () => page(`return { checked: [...document.querySelectorAll('.capture-card input[type=checkbox]')].filter(box => box.checked).length,
+    boxes: document.querySelectorAll('.capture-card input[type=checkbox]').length,
+    count: document.querySelector('.selection-count')?.textContent.trim() ?? null,
+    bar: document.querySelector('.selection-bar-count')?.textContent.trim() ?? null,
+    overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth };`);
+  const tick = token => page(`const box = [...document.querySelectorAll('.capture-card input[type=checkbox]')].find(item => (item.getAttribute('aria-label') ?? '').includes(args[0]));
+    if (!box) return false; box.click(); return box.checked;`, token);
+  const openCapture = async () => {
+    await navigate(`${deckPath}/capture`, tab);
+    await until(async () => (await captureView()).boxes > 0, 'the capture page shows no selectable notes', 25_000);
+  };
+  const toComposer = async (count, label) => {
+    await until(() => has('.selection-bar button.primary'), `${label}: the selection bar did not appear`);
+    await press('Создать материалы с ИИ', '.selection-bar');
+    await until(() => has('app-generation-composer textarea'), `${label}: the composer did not open`, 25_000);
+    await until(async () => (await page(`return document.querySelectorAll('.source-chip').length;`)) === count, `${label}: the composer does not show ${count} chips`, 15_000);
+  };
+  const composerFacts = () => page(`const root = document.querySelector('app-generation-composer');
+    return { chips: [...root.querySelectorAll('.source-chip > span:first-child')].map(chip => chip.textContent.trim()),
+      prompt: root.querySelector('textarea').value,
+      placeholder: root.querySelector('textarea').placeholder,
+      grouping: [...root.querySelectorAll('.notes-options input[type=radio]')].map(input => ({ label: input.closest('label').textContent.trim(), checked: input.checked })),
+      perNote: Boolean(root.querySelector('details.per-note')), perNoteSummary: root.querySelector('details.per-note .count')?.textContent.trim() ?? null,
+      overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+      estimate: root.querySelector('.estimate')?.textContent.replaceAll('\\u00a0', ' ').trim() ?? null };`);
+  const submitComposer = async label => {
+    await press('Создать', 'app-generation-composer .action-row');
+    await until(async () => /\/workshop\/[0-9a-f-]{36}$/u.test(await location()), `${label}: the composer did not open the Workshop`, 30_000);
+    const id = (await location()).match(/\/workshop\/([0-9a-f-]{36})$/u)[1];
+    await until(async () => (await getSession(id)).artifacts.every(artifact => ['PROPOSED', 'FAILED'].includes(artifact.state)), `${label}: the batch did not settle`, 90_000);
+    return id;
+  };
+  const artifactDetail = async (sessionId, artifactId) => {
+    const response = await api('GET', `${sessionPath(sessionId)}/artifacts/${artifactId}`);
+    need(response.status === 200, `GET artifact answered ${response.status}`);
+    return response.body;
+  };
+  const dotCount = () => page(`return document.querySelectorAll('section.workshop .dot').length;`);
+  const workshopView = () => page(`const workshop = document.querySelector('section.workshop');
+    return { position: workshop?.querySelector('.pager .position')?.textContent.trim() ?? null,
+      changedTags: workshop?.querySelectorAll('.note-changed-tag').length ?? 0,
+      changedText: workshop?.querySelector('.note-changed')?.textContent.replace(/\\s+/g, ' ').trim() ?? null,
+      archiveButton: [...(workshop?.querySelectorAll('.note-archive button') ?? [])].map(node => node.textContent.trim()),
+      result: workshop?.querySelector('.note-archive-result')?.textContent.trim() ?? null,
+      actions: [...(workshop?.querySelectorAll('.proposal-actions button, .proposal-actions a') ?? [])].map(node => node.textContent.trim()),
+      regions: workshop?.querySelectorAll('[role=status]').length ?? 0 };`);
+
+  await desktop();
+  await awaitCapability();
+  // A batch from earlier in the run may still be active; the account limit is not what this scenario tests.
+  for (const session of await activeSessions()) {
+    const gone = await api('DELETE', sessionPath(session.sessionId));
+    need([204, 404].includes(gone.status), `deleting an earlier session answered ${gone.status}`);
+  }
+
+  // ---- 1. capture page: select four notes ---------------------------------------------------------------------------
+  let notes = [];
+  await stage('notes_capture_selection', async () => {
+    // The capture list is newest first and the composer keeps the list order: from here on index 0 is the first chip.
+    notes = (await createNotes(texts)).reverse(); tokens.reverse(); texts.reverse();
+    await openCapture();
+    const loaded = await captureView();
+    // «Выбрать все загруженные»: the counter follows, and «Снять выбор» clears it.
+    need(await page(`const box = document.querySelector('.select-all input'); if (!box) return false; box.click(); return true;`), '«Выбрать все загруженные» is absent');
+    await until(async () => (await captureView()).checked > 0, 'the select-all checkbox picked nothing');
+    const all = await captureView();
+    need(all.checked === Math.min(loaded.boxes, 20) && all.count === `Выбрано: ${all.checked}`, `select-all: ${JSON.stringify(all)}`);
+    await press('Снять выбор', '.selection-bar');
+    await until(async () => (await captureView()).checked === 0, '«Снять выбор» did not clear the selection');
+    for (const token of tokens) need(await tick(token), `the checkbox of note ${token} could not be ticked`);
+    const picked = await captureView();
+    need(picked.checked === 4 && picked.count === 'Выбрано: 4' && picked.bar === 'Выбрано: 4', `the counters after four picks: ${JSON.stringify(picked)}`);
+    await desktop(); await settle();
+    await saveScreenshot('workshop-notes-capture-selection-1440.png', tab);
+    await metrics(390, 844, 1, true); await settle();
+    const narrow = await captureView();
+    need(!narrow.overflow, 'the capture selection overflows at 390 px');
+    await page(`document.querySelector('.selection-bar')?.scrollIntoView({ block: 'end' }); return true;`);
+    await saveScreenshot('workshop-notes-capture-selection-390.png', tab);
+    await desktop(); await settle();
+    return { loadedBoxes: loaded.boxes, selectAllPicked: all.checked, selectAllCounter: all.count, pickedCounter: picked.count, bar: picked.bar };
+  });
+
+  // ---- 2. composer: chips, empty prompt, grouping, one per-note setting --------------------------------------------------
+  let sessionId = null;
+  await stage('notes_composer_submit', async () => {
+    await toComposer(4, 'composer');
+    const facts = await composerFacts();
+    need(facts.chips.length === 4 && tokens.every((token, index) => facts.chips[index]?.startsWith(token)), `the chips are ${JSON.stringify(facts.chips)}`);
+    need(facts.prompt === '', `the prompt is not empty: «${facts.prompt}»`);
+    need(facts.grouping.length === 2 && facts.grouping.find(option => option.checked)?.label === 'Материал на заметку', `the grouping is ${JSON.stringify(facts.grouping)}`);
+    need(facts.perNote, 'the per-note settings are absent for four notes');
+    // «Настроить для каждой заметки отдельно»: open it and give the second note «Подробно».
+    await page(`document.querySelector('details.per-note summary').click(); return true;`);
+    await until(() => has('details.per-note[open] .rows .row'), 'the per-note settings did not open');
+    need(await page(`const trigger = [...document.querySelectorAll('details.per-note button[role=combobox]')]
+      .find(item => item.getAttribute('aria-label').startsWith('Подробность для заметки') && item.getAttribute('aria-label').includes(args[0])); if (!trigger) return false; trigger.click(); return true;`, tokens[1]),
+      'the effort control of the second note is absent');
+    await until(() => has('details.per-note .options [role=option]'), 'the effort options did not open');
+    need(await page(`const option = [...document.querySelectorAll('details.per-note .options [role=option]')].find(item => item.textContent.trim() === 'Подробно'); if (!option) return false; option.click(); return true;`),
+      'the option «Подробно» is absent');
+    await until(async () => (await composerFacts()).perNoteSummary !== facts.perNoteSummary, 'the per-note summary did not change');
+    const edited = await composerFacts();
+    need(/1/u.test(edited.perNoteSummary ?? ''), `the per-note summary reads «${edited.perNoteSummary}»`);
+    await metrics(1440, 1500, 1, false); await settle();   // tall: chips, grouping and the open per-note settings in one frame
+    await saveScreenshot('workshop-notes-composer-chips-1440.png', tab);
+    await metrics(390, 2200, 1, true); await settle();
+    need(!(await composerFacts()).overflow, 'the composer with chips overflows at 390 px');
+    await saveScreenshot('workshop-notes-composer-chips-390.png', tab);
+    await desktop(); await settle();
+    sessionId = await submitComposer('notes');
+    const session = await getSession(sessionId);
+    need(session.artifacts.length === 4, `${session.artifacts.length} artifacts for four notes`);
+    const sources = session.spec.sources;
+    need(sources.length === 4 && sources.every((source, index) => source.noteId === notes[index].noteId && source.noteRowVersion === notes[index].rowVersion),
+      `the stored pins differ from the notes: ${JSON.stringify(sources)}`);
+    need(JSON.stringify(sources[1].overrides) === JSON.stringify({ effort: 'DETAILED' }), `the echo of the overridden note: ${JSON.stringify(sources[1].overrides)}`);
+    need([0, 2, 3].every(index => !('overrides' in sources[index])), 'a note without a setting echoes overrides');
+    need(session.spec.prompt === '' || session.spec.prompt === null || session.spec.prompt === undefined, `the stored prompt is «${session.spec.prompt}»`);
+    need(session.spec.settings.notesMode === 'ONE_PER_NOTE', 'the stored grouping is not ONE_PER_NOTE');
+    const refs = [];
+    for (const artifact of session.artifacts) {
+      const detail = await artifactDetail(sessionId, artifact.artifactId);
+      const noteRefs = detail.sourceRefs.filter(ref => ref.type === 'NOTE');
+      need(noteRefs.length === 1, `artifact ${artifact.ordinal} has ${noteRefs.length} note sources`);
+      refs.push({ ordinal: artifact.ordinal, noteId: noteRefs[0].noteId, status: noteRefs[0].status });
+    }
+    need(refs.every((ref, index) => ref.noteId === notes[index].noteId && ref.status === 'CURRENT'), `sourceRefs: ${JSON.stringify(refs)}`);
+    return { chips: facts.chips.length, promptEmpty: true, grouping: 'Материал на заметку', overrideSummary: edited.perNoteSummary, estimate: edited.estimate,
+      artifacts: 4, sourceRefs: refs, specEcho: { overrides: sources.map(source => source.overrides ?? null), notesMode: session.spec.settings.notesMode } };
+  });
+
+  // ---- 3. a note changed behind the Workshop's back; approvals; archive the used notes -----------------------------------
+  await stage('notes_workshop_archive', async () => {
+    const before = await noteState(notes[3].noteId);
+    const edit = await api('PUT', `/api/capture-notes/${notes[3].noteId}`, { source: 'workshop-harness-notes', text: `${texts[3]} Дополнено позже.` }, { 'If-Match': before.etag });
+    need(edit.status === 200, `PUT capture note answered ${edit.status}`);
+    await navigate(`${deckPath}/workshop/${sessionId}?n=4`, tab);
+    await until(async () => (await dotCount()) === 4, 'the Workshop did not render four materials', 25_000);
+    await until(async () => (await workshopView()).changedTags === 1, 'the edited note is not marked «заметка изменилась»', 20_000);
+    const tagged = await workshopView();
+    need(tagged.position === '4 из 4' && tagged.changedText?.startsWith('заметка изменилась'), `the changed-note tag: ${JSON.stringify(tagged)}`);
+    const detail = await artifactDetail(sessionId, (await getSession(sessionId)).artifacts[3].artifactId);
+    need(detail.sourceRefs.find(ref => ref.type === 'NOTE')?.status === 'CHANGED', `the API status of the edited note is ${JSON.stringify(detail.sourceRefs)}`);
+    const untouched = await artifactDetail(sessionId, (await getSession(sessionId)).artifacts[0].artifactId);
+    need(untouched.sourceRefs.find(ref => ref.type === 'NOTE')?.status === 'CURRENT', 'an untouched note is not CURRENT');
+    // Approve the first three through the UI.
+    await navigate(`${deckPath}/workshop/${sessionId}?n=1`, tab);
+    await until(async () => (await workshopView()).actions.some(action => action.startsWith('Одобрить')), 'the first material offers no approval', 25_000);
+    need((await workshopView()).changedTags === 0, 'an unchanged note is marked as changed');
+    for (let index = 0; index < 3; index++) {
+      need(await page(`const node = [...document.querySelectorAll('section.workshop .proposal-actions button')].find(item => item.textContent.trim().startsWith('Одобрить')); if (!node) return false; node.click(); return true;`),
+        `material ${index + 1} cannot be approved`);
+      await until(async () => (await getSession(sessionId)).artifacts.filter(artifact => artifact.state === 'PUBLISHED').length === index + 1, `material ${index + 1} was not published`, 25_000);
+      if (index < 2) {
+        await until(async () => { const now = await workshopView(); return now.position === `${index + 2} из 4` && now.actions.some(action => action.startsWith('Одобрить')); },
+          `the Workshop did not move on to material ${index + 2}`, 15_000);
+      }
+    }
+    const published = (await getSession(sessionId)).artifacts.map(artifact => artifact.state);
+    need(JSON.stringify(published) === JSON.stringify(['PUBLISHED', 'PUBLISHED', 'PUBLISHED', 'PROPOSED']), `states after three approvals: ${published}`);
+    await navigate(`${deckPath}/workshop/${sessionId}?n=4`, tab);
+    await until(async () => (await workshopView()).archiveButton.length === 1 && (await workshopView()).changedTags === 1, 'the archive action or the changed tag is missing', 25_000);
+    const view = await workshopView();
+    need(view.archiveButton[0] === 'Архивировать использованные заметки (3)', `the archive action reads «${view.archiveButton[0]}»`);
+    need((await getSession(sessionId)).notes.used === 3 && (await getSession(sessionId)).notes.archivable === 3, `the API notes counters: ${JSON.stringify((await getSession(sessionId)).notes)}`);
+    await metrics(1440, 1500, 1, false); await settle();   // tall: the changed-note tag and the archive action in one frame
+    await saveScreenshot('workshop-notes-changed-archive-1440.png', tab);
+    await desktop(); await settle();
+    await press('Архивировать использованные заметки (3)', 'section.workshop .note-archive');
+    await until(async () => (await workshopView()).result !== null || (await workshopView()).archiveButton.length === 0, 'archiving gave no answer', 25_000);
+    await until(async () => (await getSession(sessionId)).notes.archivable === 0, 'the archivable counter did not drop to 0', 25_000);
+    const states = [];
+    for (const note of notes) states.push((await noteState(note.noteId)).archived);
+    need(JSON.stringify(states) === JSON.stringify([true, true, true, false]), `archived flags after the archive action: ${states}`);
+    await until(async () => (await workshopView()).archiveButton.length === 0, 'the archive action is still offered after archiving', 15_000);
+    const after = await workshopView();
+    // A second request (a new command id) is harmless: everything is already archived.
+    const second = await api('POST', `${sessionPath(sessionId)}/note-archival`, { commandId: crypto.randomUUID() });
+    need(second.status === 200 && second.body.archived.length === 0, `the second archival answered ${second.status} ${JSON.stringify(second.body)}`);
+    const flagsAfter = [];
+    for (const note of notes) flagsAfter.push((await noteState(note.noteId)).archived);
+    need(JSON.stringify(flagsAfter) === JSON.stringify(states), 'the second archival changed notes');
+    return { archiveAction: view.archiveButton[0], resultText: after.result, archivedFlags: states, secondRequest: { status: second.status, archived: second.body.archived.length,
+      skipped: second.body.skipped.map(entry => entry.reason) }, changedNoteApiStatus: 'CHANGED', changedTag: tagged.changedText, notesCounters: { used: 3, archivable: 3 } };
+  });
+
+  // ---- 4. MERGE_INTO_ONE: two notes, one material with two sources ----------------------------------------------------------
+  await stage('notes_merge_into_one', async () => {
+    await awaitCapability();
+    const mergeTokens = [`Слияние${run}1`, `Слияние${run}2`];
+    const merged = await createNotes(mergeTokens.map(token => `${token}: про частицы は и が, коротко.`));
+    await openCapture();
+    for (const token of mergeTokens) need(await tick(token), `the checkbox of note ${token} could not be ticked`);
+    need((await captureView()).checked === 2, 'two notes are not selected');
+    await toComposer(2, 'merge');
+    need(await page(`const input = [...document.querySelectorAll('.notes-options input[type=radio]')].find(item => item.closest('label').textContent.trim() === 'Объединить в один'); if (!input) return false; input.click(); return true;`),
+      '«Объединить в один» is absent');
+    await until(async () => !(await composerFacts()).perNote, 'the per-note settings stay under MERGE_INTO_ONE');
+    const id = await submitComposer('merge');
+    const session = await getSession(id);
+    need(session.spec.settings.notesMode === 'MERGE_INTO_ONE', 'the stored grouping is not MERGE_INTO_ONE');
+    need(session.artifacts.length === 1, `MERGE_INTO_ONE made ${session.artifacts.length} artifacts`);
+    const detail = await artifactDetail(id, session.artifacts[0].artifactId);
+    const refs = detail.sourceRefs.filter(ref => ref.type === 'NOTE');
+    need(refs.length === 2 && merged.every(note => refs.some(ref => ref.noteId === note.noteId)), `the merged material's sources: ${JSON.stringify(detail.sourceRefs)}`);
+    need(session.spec.sources.every(source => !('overrides' in source)), 'overrides were sent under MERGE_INTO_ONE');
+    return { artifacts: 1, noteSources: refs.map(ref => ({ noteId: ref.noteId, status: ref.status })), notesMode: 'MERGE_INTO_ONE' };
+  });
   return out;
 }
