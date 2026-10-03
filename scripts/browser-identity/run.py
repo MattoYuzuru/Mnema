@@ -541,6 +541,8 @@ def main():
         parser.error("--only-edits requires --generation")
     if args.only_ask and not args.generation:
         parser.error("--only-ask requires --generation")
+    if args.only_ask and args.only_edits:
+        parser.error("--only-ask and --only-edits are separate development aids: choose one")
     if args.timeout is None:
         args.timeout = 600 if args.mechanics else 180
         if args.generation or args.assessment:

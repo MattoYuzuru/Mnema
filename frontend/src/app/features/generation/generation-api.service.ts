@@ -59,7 +59,7 @@ export class GenerationApiService {
         return defer(() => this.http.post<unknown>(`${this.deckPath(deckId)}/generation-intents`, serializeIntentRequest(context, text),
             { observe: 'response' })).pipe(map(response => {
             requireStatus(response, 200);
-            return parseIntent(response.body);
+            return parseIntent(response.body, context);
         }));
     }
 

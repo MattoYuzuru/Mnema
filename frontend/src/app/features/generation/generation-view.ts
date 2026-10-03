@@ -458,6 +458,8 @@ export function waitText(seconds: number | null): string {
 
 /** What the composer of «Попросить Мнему…» says when the free intent call fails. Nothing was reserved or debited by it. */
 export function intentProblemMessage(problem: GenerationProblem): string {
+    // An answer that was received but does not read (or is not about this material or exercise) is not a network failure.
+    if (problem.status === -1) return 'Мнема ответила так, что мы не смогли это разобрать. Попробуйте ещё раз или перефразируйте запрос: этот шаг бесплатный.';
     if (problem.uncertain) return 'Не удалось связаться с Мнемой. Попробуйте ещё раз: этот шаг бесплатный и ничего не списал.';
     switch (problem.status) {
         case 429: return `Вы часто просите Мнему. Подождите ${waitText(problem.retryAfter)} и попробуйте снова: этот шаг бесплатный, но у него есть почасовой предел.`;

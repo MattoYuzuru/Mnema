@@ -1,8 +1,8 @@
 import { MECHANICS, Mechanic } from '../../content/exercise/exercise-content.models';
 import { AuthoringProtocolError, requireEntity, requireObject } from '../authoring/authoring.models';
 import {
-    EXERCISE_PRIORITIES, ExerciseQuantity, ExercisesSpec, GenerationSpec, MAX_INSTRUCTION_LENGTH, RequestValidationError, ReviseExerciseSpec,
-    ReviseItemSpec, SPEECH_VOICES, SpeechVoice
+    EXERCISE_PRIORITIES, ExerciseQuantity, ExercisesSpec, GenerationSpec, MAX_EXERCISES_PER_TARGET, MAX_INSTRUCTION_LENGTH, RequestValidationError,
+    ReviseExerciseSpec, ReviseItemSpec, SPEECH_VOICES, SpeechVoice
 } from './generation.models';
 
 /**
@@ -73,6 +73,16 @@ function object(value: unknown): Record<string, unknown> {
     return value as Record<string, unknown>;
 }
 
+/** An object whose members are exactly `required`, plus any of `optional` that it carries: an unknown member is a protocol error. */
+function members(value: unknown, required: readonly string[], optional: readonly string[] = []): Record<string, unknown> {
+    const read = object(value);
+    const keys = Object.keys(read);
+    if (required.some(key => !keys.includes(key)) || keys.some(key => !required.includes(key) && !optional.includes(key))) {
+        throw new AuthoringProtocolError('Unexpected response shape.');
+    }
+    return read;
+}
+
 function pin(value: unknown, keys: readonly [string, string]): Record<string, string> {
     const read = requireObject(value, keys);
     return { [keys[0]]: requireEntity(read[keys[0]]), [keys[1]]: requireEntity(read[keys[1]]) };
@@ -80,9 +90,10 @@ function pin(value: unknown, keys: readonly [string, string]): Record<string, st
 
 function parseQuantity(value: unknown): ExerciseQuantity {
     const read = object(value);
+    members(read, ['mode'], ['perTarget', 'percent']);
     switch (read['mode']) {
         case 'AUTO': return { mode: 'AUTO' };
-        case 'EXACT': return { mode: 'EXACT', perTarget: integer(read['perTarget'], 1, 100) };
+        case 'EXACT': return { mode: 'EXACT', perTarget: integer(read['perTarget'], 1, MAX_EXERCISES_PER_TARGET) };
         case 'BUDGET_PERCENT': return { mode: 'BUDGET_PERCENT', percent: integer(read['percent'], 1, 100) };
         default: throw new AuthoringProtocolError('Invalid quantity.');
     }
@@ -102,7 +113,8 @@ function parseSpec(value: unknown): GenerationSpec {
     const language = typeof read['outputLanguage'] === 'string' ? { outputLanguage: read['outputLanguage'] } : {};
     switch (read['kind']) {
         case 'EXERCISES': {
-            const settings = object(read['settings']);
+            members(read, ['kind', 'targets', 'settings'], ['outputLanguage']);
+            const settings = members(read['settings'], ['mechanics', 'priority', 'quantity'], ['planFirst', 'budgetPercent']);
             const targets = read['targets'];
             if (!Array.isArray(targets) || targets.length === 0 || targets.length > 20) throw new AuthoringProtocolError('Invalid targets.');
             const spec: ExercisesSpec = {
@@ -114,6 +126,7 @@ function parseSpec(value: unknown): GenerationSpec {
             return spec;
         }
         case 'REVISE_ITEM': {
+            members(read, ['kind', 'target', 'instruction'], ['outputLanguage']);
             if (typeof read['instruction'] !== 'string') throw new AuthoringProtocolError('Invalid instruction.');
             const spec: ReviseItemSpec = { kind: 'REVISE_ITEM', ...language,
                 target: pin(read['target'], ['memberKey', 'itemRevisionId']) as { memberKey: string; itemRevisionId: string },
@@ -121,6 +134,7 @@ function parseSpec(value: unknown): GenerationSpec {
             return spec;
         }
         case 'REVISE_EXERCISE': {
+            members(read, ['kind', 'target'], ['instruction', 'media', 'outputLanguage']);
             const instruction = read['instruction'];
             if (instruction !== undefined && typeof instruction !== 'string') throw new AuthoringProtocolError('Invalid instruction.');
             const media = read['media'] === undefined ? null : requireObject(read['media'], ['action', 'voice']);
@@ -144,8 +158,8 @@ function parseChip(value: unknown): IntentChip | null {
             return { kind: 'MECHANICS', value: parseMechanics(read['value']), options: read['options'].map(entry => oneOf(entry, MECHANICS, 'mechanic')) };
         }
         case 'PER_TARGET':
-            return { kind: 'PER_TARGET', value: read['value'] === null ? null : integer(read['value'], 1, 1000), min: integer(read['min'], 1, 1000),
-                max: integer(read['max'], 1, 1000) };
+            return { kind: 'PER_TARGET', value: read['value'] === null ? null : integer(read['value'], 1, MAX_EXERCISES_PER_TARGET),
+                min: integer(read['min'], 1, MAX_EXERCISES_PER_TARGET), max: integer(read['max'], 1, MAX_EXERCISES_PER_TARGET) };
         case 'INSTRUCTION':
             if (typeof read['value'] !== 'string') throw new AuthoringProtocolError('Invalid instruction.');
             return { kind: 'INSTRUCTION', value: read['value'], maxLength: integer(read['maxLength'], 1, MAX_INSTRUCTION_LENGTH) };
@@ -157,7 +171,7 @@ function parseChip(value: unknown): IntentChip | null {
 }
 
 function parseNote(value: unknown): IntentNote {
-    const read = object(value);
+    const read = members(value, ['code', 'text'], ['limit']);
     const text = read['text'];
     const code = read['code'];
     if (typeof code !== 'string' || code.length === 0 || code.length > 64 || typeof text !== 'string' || text.length === 0 || text.length > 400) {
@@ -167,8 +181,17 @@ function parseNote(value: unknown): IntentNote {
     return { code, text, limit: typeof limit === 'number' && Number.isInteger(limit) ? limit : null };
 }
 
-/** `200` of `createIntent`: `{operation, spec, chips, notes}`; `spec` is `null` and `chips` empty for `UNSUPPORTED`. */
-export function parseIntent(value: unknown): IntentResult {
+/** What each context can ask for: a material its exercises or a rewrite, an exercise its own revision or the exercises of its material. */
+const ALLOWED: Readonly<Record<IntentContext['kind'], readonly IntentOperation[]>> = {
+    MATERIAL: ['EXERCISES', 'REVISE_ITEM', 'UNSUPPORTED'], EXERCISE: ['EXERCISES', 'REVISE_EXERCISE', 'UNSUPPORTED']
+};
+
+/**
+ * `200` of `createIntent`: `{operation, spec, chips, notes}`; `spec` is `null` and `chips` empty for `UNSUPPORTED`. With the `context` the
+ * request was made with, the answer must be about it: an operation the context does not allow, or a revision of another material or exercise,
+ * is not a spec the owner asked for and is refused as an unreadable answer.
+ */
+export function parseIntent(value: unknown, context: IntentContext | null = null): IntentResult {
     const read = requireObject(value, ['operation', 'spec', 'chips', 'notes']);
     const operation = oneOf(read['operation'], INTENT_OPERATIONS, 'operation');
     if (!Array.isArray(read['chips']) || read['chips'].length > 16 || !Array.isArray(read['notes']) || read['notes'].length > 16) {
@@ -176,6 +199,14 @@ export function parseIntent(value: unknown): IntentResult {
     }
     const spec = read['spec'] === null ? null : parseSpec(read['spec']);
     if ((operation === 'UNSUPPORTED') !== (spec === null) || (spec !== null && spec.kind !== operation)) throw new AuthoringProtocolError('Invalid intent.');
+    if (context !== null) {
+        if (!ALLOWED[context.kind].includes(operation)) throw new AuthoringProtocolError('Invalid intent.');
+        const aboutOther = spec?.kind === 'REVISE_ITEM' ? context.kind !== 'MATERIAL' || spec.target.memberKey !== context.memberKey
+            : spec?.kind === 'REVISE_EXERCISE' ? context.kind !== 'EXERCISE' || spec.target.exerciseId !== context.exerciseId
+                : spec?.kind === 'EXERCISES' && context.kind === 'MATERIAL'
+                    && (spec.targets.length !== 1 || spec.targets[0]!.memberKey !== context.memberKey);
+        if (aboutOther) throw new AuthoringProtocolError('Invalid intent.');
+    }
     return {
         operation, spec,
         chips: read['chips'].map(parseChip).filter((chip): chip is IntentChip => chip !== null),

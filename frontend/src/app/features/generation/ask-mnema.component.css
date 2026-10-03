@@ -56,3 +56,4 @@
   .voice-chip, .note-chip { border-color: ButtonText; }
   .voice-chip:has(:checked) { border-color: Highlight; }
 }
+.ask-body { display: grid; gap: 1rem; min-inline-size: 0; }

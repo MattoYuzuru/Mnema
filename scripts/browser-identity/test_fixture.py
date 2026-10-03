@@ -452,6 +452,12 @@ module.main()
             HARNESS.main()
         self.assertEqual(2, exit_code.exception.code)
 
+    def test_only_ask_and_only_edits_exclude_each_other(self):
+        with patch.object(sys, "argv", ["run.py", "--dist", str(self.dist), "--authoring", "--generation", "--only-ask", "--only-edits"]), \
+                contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as exit_code:
+            HARNESS.main()
+        self.assertEqual(2, exit_code.exception.code)
+
     def test_cdp_timeout_is_ten_seconds_unless_the_runner_environment_says_otherwise(self):
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("MNEMA_HARNESS_CDP_TIMEOUT_MS", None)

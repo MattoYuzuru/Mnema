@@ -80,12 +80,8 @@ export class ReviseExerciseResultComponent {
     protected readonly textTurn = computed(() => this.lastOf('FREE'));
     protected readonly voiceTurn = computed(() => this.lastOf('AUDIO_REGENERATE'));
     private readonly lastTurn = computed(() => this.detail()?.turns.at(-1) ?? null);
-    /** The voice that was recorded: the last redo that was applied (or the slot's own record), else the one asked for. */
-    protected readonly voice = computed<SpeechVoice | null>(() => {
-        const applied = this.detail()?.turns.filter(turn => turn.action === 'AUDIO_REGENERATE' && turn.status === 'APPLIED').at(-1);
-        return applied?.voice ?? this.detail()?.mediaSlots.find(slot => slot.voice !== null)?.voice ?? this.requestVoice();
-    });
-    protected readonly voiceApplied = computed(() => this.voiceTurn()?.status === 'APPLIED');
+    /** The voice of the revision on screen: what its audio slots record (a revert to the original goes back to none). */
+    protected readonly voice = computed<SpeechVoice | null>(() => this.detail()?.mediaSlots.find(slot => slot.voice !== null)?.voice ?? null);
     /** The audio did not change, only the voice was recorded: the same assets as in the exercise the revision started from. */
     protected readonly audioUnchanged = signal(false);
     protected readonly failure = computed(() => {
@@ -113,14 +109,16 @@ export class ReviseExerciseResultComponent {
         return !this.shownIsCurrent() || original === null || proposal === null || proposal.revisionId === original ? null : `${original}:${proposal.revisionId}`;
     });
     protected readonly approveWait = computed(() => this.artifact().state === 'PROPOSED' && !this.shownIsCurrent() ? 'Упражнение обновилось. Загружаем новую версию…' : null);
-    /** «Голос: мужской» once the redo is applied (a failed or stopped one changed nothing, so it says nothing). */
+    /** «Голос: мужской» when the revision on screen records a voice. */
     protected readonly voiceChip = computed(() => {
         const voice = this.voice();
-        const turn = this.voiceTurn();
-        return voice === null || !this.changedFromOriginal() || (turn !== null && turn.status !== 'APPLIED') ? null : voiceChipText(voice);
+        return voice === null || !this.changedFromOriginal() ? null : voiceChipText(voice);
     });
+    /** «Ещё раз» of a request for the text and the voice repeats the text only (the voice is already recorded). */
+    protected readonly repeatNote = computed(() => this.textTurn() !== null && this.voiceTurn() !== null && this.canAskAgain()
+        ? '«Ещё раз» повторит только правку текста: голос уже записан.' : null);
     protected readonly stubNote = STUB_VOICE_NOTE;
-    protected readonly stubNoteShown = computed(() => this.voiceApplied() && this.audioUnchanged());
+    protected readonly stubNoteShown = computed(() => this.voiceChip() !== null && this.audioUnchanged());
 
     constructor() {
         effect(() => {
