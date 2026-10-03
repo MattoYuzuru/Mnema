@@ -1,28 +1,34 @@
 import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, input, output, signal, untracked, viewChild } from '@angular/core';
+import {
+    ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, input, output, signal,
+    untracked, viewChild
+} from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { Subscription } from 'rxjs';
+import { Subscription, catchError, forkJoin, map, of } from 'rxjs';
 
 import { AuthService } from '../../auth.service';
 import { ToggletipComponent } from '../../shared/toggletip.component';
-import { newCommandId } from '../authoring/authoring.models';
+import { SegmentedChoiceComponent } from '../../shared/segmented-choice.component';
+import { AuthoringApiService } from '../authoring/authoring-api.service';
+import { CaptureNote, newCommandId } from '../authoring/authoring.models';
 import { CAPABILITIES_UNAVAILABLE, LearningCapabilities } from '../authoring/capabilities-api.service';
 import { GenerationApiService } from './generation-api.service';
 import { GenerationProblem, readProblem } from './generation-problem';
 import { DEFAULT_SETTINGS, GenerationSettingsComponent, GenerationSettingsValue } from './generation-settings.component';
 import {
-    UsageExplanation, describeEstimate, describeUsageLimit, problemMessage
+    NOTES_MODE_OPTIONS, UsageExplanation, describeEstimate, describeUsageLimit, problemMessage
 } from './generation-view';
 import {
-    GenerationEstimate, MAX_PROMPT_LENGTH, MaterialsSpec, SessionDetail, SessionSummary, SpecSource, serializeMaterialsSpec
+    GenerationEstimate, MAX_PROMPT_LENGTH, MaterialsSpec, NotesMode, SessionDetail, SessionSummary, SpecSource, serializeMaterialsSpec
 } from './generation.models';
+import { NoteOverridesComponent } from './note-overrides.component';
+import {
+    ComposerSource, NoteOverrideMap, customizedCount, overridesOf, refusalMessage, refusalOf, sourceKey
+} from './note-sources';
 
 /** How long the composer waits after the last change before it asks the server for the cost. */
 export const ESTIMATE_DEBOUNCE_MS = 400;
-
-/** A pinned source shown as a chip (a note of «На потом» for AI-08 #290). `label` is the text the user recognises it by. */
-export interface ComposerSource { readonly spec: SpecSource; readonly label: string; }
 
 type EstimateState =
     | { readonly phase: 'idle' }
@@ -32,11 +38,23 @@ type EstimateState =
 
 interface PendingCreation { readonly key: string; readonly commandId: string; }
 
-/** The spec the composer sends, from what is on the screen. Media is requested only where the capability exists. */
+/**
+ * The spec the composer sends, from what is on the screen. Media is requested only where the capability exists. The spec is the
+ * session defaults plus the sparse per-note `overrides` (only members the user changed; none at all unless there are two or more
+ * `SOURCE` notes and each becomes its own material).
+ */
 export function buildMaterialsSpec(prompt: string, settings: GenerationSettingsValue, sources: readonly SpecSource[],
-                                   available: { readonly image: boolean; readonly audio: boolean }): MaterialsSpec {
+                                   available: { readonly image: boolean; readonly audio: boolean },
+                                   overrides: NoteOverrideMap = {}): MaterialsSpec {
+    const notes = sources.filter(source => source.type === 'NOTE' && source.role === 'SOURCE');
+    const perNote = settings.notesMode === 'ONE_PER_NOTE' && notes.length > 1;
     return {
-        kind: 'MATERIALS', prompt: prompt.trim(), sources,
+        kind: 'MATERIALS', prompt: prompt.trim(),
+        sources: sources.map(source => {
+            if (!perNote || source.type !== 'NOTE' || source.role !== 'SOURCE') return source;
+            const own = overridesOf(overrides[source.noteId], settings, available);
+            return own === undefined ? source : { ...source, overrides: own };
+        }),
         settings: {
             effort: settings.effort, notesMode: settings.notesMode,
             media: { audio: { enabled: settings.audio && available.audio, lang: settings.audioLang,
@@ -61,11 +79,14 @@ let nextComposer = 0;
  * explains the options. It creates the session and reports it through `created`; the page decides where to go.
  *
  * `sources` are the pinned sources of the request (note chips for AI-08, #290): with a `SOURCE` among them the prompt is
- * optional, as in the contract.
+ * optional, as in the contract. With two or more notes the user picks the grouping («Материал на заметку» by default, or
+ * «Объединить в один») and can tune each note separately. Before the session is created every note is read again, so the
+ * pin is the version that is current at that moment; a note that is gone, archived or from another deck is reported and
+ * taken off the list, never sent.
  */
 @Component({
     selector: 'app-generation-composer',
-    imports: [DatePipe, RouterLink, GenerationSettingsComponent, ToggletipComponent],
+    imports: [DatePipe, RouterLink, GenerationSettingsComponent, ToggletipComponent, SegmentedChoiceComponent, NoteOverridesComponent],
     templateUrl: './generation-composer.component.html',
     styleUrls: ['../authoring/authoring-page.css', './generation-composer.component.css'],
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -77,6 +98,10 @@ export class GenerationComposerComponent {
     readonly capabilities = input<LearningCapabilities>(CAPABILITIES_UNAVAILABLE);
     readonly created = output<SessionDetail>();
     readonly sourceRemoved = output<ComposerSource>();
+    /** Per-note settings by note id, edited in «Настроить для каждой заметки отдельно». */
+    readonly overrides = signal<NoteOverrideMap>({});
+    /** The overrides were dropped because the user switched to «Объединить в один»: said once, in words. */
+    readonly overridesCleared = signal(false);
 
     readonly prompt = signal('');
     readonly settings = signal<GenerationSettingsValue>(DEFAULT_SETTINGS);
@@ -88,13 +113,18 @@ export class GenerationComposerComponent {
     /** The other workshops that hold the three places, when a new one is refused for that reason. */
     readonly activeWorkshops = signal<readonly SessionSummary[]>([]);
     readonly promptField = viewChild<ElementRef<HTMLTextAreaElement>>('promptField');
+    private readonly chips = viewChild<ElementRef<HTMLElement>>('chips');
 
     protected readonly uid = `mn-composer-${nextComposer++}`;
     protected readonly maxLength = MAX_PROMPT_LENGTH;
     protected readonly imageAvailable = computed(() => this.capabilities().imageSearch.available);
     protected readonly audioAvailable = computed(() => this.capabilities().textToSpeech.available);
 
+    protected readonly groupingOptions = NOTES_MODE_OPTIONS;
+    protected readonly sourceKey = sourceKey;
     private readonly auth = inject(AuthService);
+    private readonly authoring = inject(AuthoringApiService);
+    private readonly injector = inject(Injector);
     private readonly api = inject(GenerationApiService);
     private readonly destroyRef = inject(DestroyRef);
     private pending: PendingCreation | null = null;
@@ -108,8 +138,17 @@ export class GenerationComposerComponent {
 
     /** A prompt is required unless a `SOURCE` is pinned. */
     readonly valid = computed(() => this.prompt().trim().length > 0 || this.sources().some(source => source.spec.role === 'SOURCE'));
-    readonly spec = computed(() => buildMaterialsSpec(this.prompt(), this.settings(), this.sources().map(source => source.spec),
-        { image: this.imageAvailable(), audio: this.audioAvailable() }));
+    /** The notes that are the material (`SOURCE`), in order. */
+    protected readonly noteSources = computed(() => this.sources().filter(source => source.spec.type === 'NOTE' && source.spec.role === 'SOURCE'));
+    protected readonly hasNotes = computed(() => this.noteSources().length > 0);
+    /** Grouping and per-note settings mean something only for two or more notes. */
+    protected readonly groupable = computed(() => this.noteSources().length > 1);
+    /** Row versions read again at submit; they replace the ones the chips were made with. */
+    private readonly freshPins = signal<ReadonlyMap<string, string>>(new Map());
+    readonly spec = computed(() => buildMaterialsSpec(this.prompt(), this.settings(), this.sources().map(source => {
+        const pin = source.spec.type === 'NOTE' ? this.freshPins().get(source.spec.noteId) : undefined;
+        return pin === undefined || source.spec.type !== 'NOTE' ? source.spec : { ...source.spec, noteRowVersion: pin };
+    }), { image: this.imageAvailable(), audio: this.audioAvailable() }, this.overrides()));
     protected readonly overBudget = computed(() => {
         const state = this.estimate();
         return state.phase === 'ready' && !state.estimate.canStart;
@@ -166,6 +205,23 @@ export class GenerationComposerComponent {
         this.resetOutcome();
     }
 
+    onOverrides(value: NoteOverrideMap): void {
+        this.overrides.set(value);
+        this.resetOutcome();
+    }
+
+    /** «Материал на заметку» / «Объединить в один». Merging leaves nothing to tune per note, so those settings are dropped, visibly. */
+    setNotesMode(mode: NotesMode): void {
+        const customized = customizedCount(this.overrides(), this.noteSources().map(sourceKey));
+        if (mode === 'MERGE_INTO_ONE' && customized > 0) {
+            this.overrides.set({});
+            this.overridesCleared.set(true);
+        } else if (mode === 'ONE_PER_NOTE') {
+            this.overridesCleared.set(false);
+        }
+        this.onSettings({ ...this.settings(), notesMode: mode });
+    }
+
     onKeydown(event: KeyboardEvent): void {
         if (!isSendKey(event)) return;
         event.preventDefault();
@@ -189,11 +245,67 @@ export class GenerationComposerComponent {
             this.explainLimit(state.estimate.blockingBuckets[0]);
             return;
         }
-        this.create();
+        if (!this.hasNotes()) { this.create(); return; }
+        this.createFromCurrentNotes();
     }
 
     removeSource(source: ComposerSource): void {
         this.sourceRemoved.emit(source);
+        // The chip that held focus is gone: focus goes to the next one, or to the request field when none is left.
+        afterNextRender(() => {
+            const next = this.chipRemoveButtons()[0];
+            if (next !== undefined) next.focus(); else this.promptField()?.nativeElement.focus();
+        }, { injector: this.injector });
+    }
+
+    private chipRemoveButtons(): HTMLElement[] {
+        return Array.from(this.chips()?.nativeElement.querySelectorAll<HTMLElement>('.chip-remove') ?? []);
+    }
+
+    /**
+     * Reads every pinned note again, so the session pins what the notes say now. Refused notes (archived, from another deck,
+     * deleted) are named and taken off the list; the user presses «Создать» again for the rest. A failed read creates nothing.
+     */
+    private createFromCurrentNotes(): void {
+        const deckId = this.deckId().toLowerCase();
+        const wanted = this.noteSources().flatMap(source => source.spec.type === 'NOTE' ? [{ source, noteId: source.spec.noteId }] : []);
+        this.creating.set(true);
+        this.resetOutcome();
+        forkJoin(wanted.map(entry => this.authoring.readCapture(entry.noteId).pipe(
+            map((note): { readonly note: CaptureNote } | { readonly gone: true } | { readonly failed: true } => ({ note })),
+            catchError((error: unknown) => of(isNotFound(error) ? { gone: true as const } : { failed: true as const }))
+        ))).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(answers => {
+            if (answers.some(answer => 'failed' in answer)) {
+                this.creating.set(false);
+                this.failure.set('Не удалось проверить заметки. Ничего не создано: попробуйте ещё раз.');
+                return;
+            }
+            const refused: ComposerSource[] = [];
+            let archived = 0;
+            let elsewhere = 0;
+            let missing = 0;
+            const pins = new Map<string, string>();
+            answers.forEach((answer, position) => {
+                const source = wanted[position]!.source;
+                if ('note' in answer) {
+                    const refusal = refusalOf(answer.note, deckId);
+                    if (refusal === null) { pins.set(answer.note.noteId, answer.note.rowVersion); return; }
+                    if (refusal === 'ARCHIVED') archived += 1; else elsewhere += 1;
+                } else {
+                    missing += 1;
+                }
+                refused.push(source);
+            });
+            if (refused.length > 0) {
+                this.creating.set(false);
+                this.failure.set(refusalMessage(archived, elsewhere, missing));
+                refused.forEach(source => this.sourceRemoved.emit(source));
+                return;
+            }
+            this.freshPins.set(pins);
+            this.creating.set(false);
+            this.create();
+        });
     }
 
     private create(): void {
@@ -245,4 +357,8 @@ export class GenerationComposerComponent {
         this.failure.set(null);
         this.activeWorkshops.set([]);
     }
+}
+
+function isNotFound(error: unknown): boolean {
+    return typeof error === 'object' && error !== null && 'status' in error && (error as { status: unknown }).status === 404;
 }

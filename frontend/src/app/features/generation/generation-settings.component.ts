@@ -9,8 +9,8 @@ import { AUDIO_LANGUAGES, EFFORT_OPTIONS } from './generation-view';
 export type VoiceChoice = 'any' | 'female' | 'male';
 
 /**
- * What the composer lets the user tune for a Materials session. `notesMode` has no control yet: the note chips, the
- * grouping choice and per-note overrides arrive with AI-08 (#290) and extend this value without changing the composer.
+ * What the composer lets the user tune for a Materials session. `notesMode` is chosen next to the note chips («Как оформить
+ * заметки», AI-08 #290), not here; the per-note overrides are drafts of the composer and are not part of this value.
  */
 export interface GenerationSettingsValue {
     readonly effort: Effort;

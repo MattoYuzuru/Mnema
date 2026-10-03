@@ -6,23 +6,31 @@ import { Subject, of, throwError } from 'rxjs';
 
 import { AuthService } from '../../auth.service';
 import { spyObj, type SpyObj } from '../../../testing/mocks';
+import { AuthoringApiService } from '../authoring/authoring-api.service';
+import { CaptureNote } from '../authoring/authoring.models';
 import { CAPABILITIES_UNAVAILABLE, LearningCapabilities } from '../authoring/capabilities-api.service';
 import { GenerationApiService } from './generation-api.service';
-import { ComposerSource, ESTIMATE_DEBOUNCE_MS, GenerationComposerComponent, buildMaterialsSpec } from './generation-composer.component';
+import { ESTIMATE_DEBOUNCE_MS, GenerationComposerComponent, buildMaterialsSpec } from './generation-composer.component';
+import { ComposerSource } from './note-sources';
 import { DEFAULT_SETTINGS } from './generation-settings.component';
-import { GenerationEstimate, SessionDetail, parseEstimate, parseSessionDetail } from './generation.models';
+import { GenerationEstimate, MaterialsSpec, SessionDetail, parseEstimate, parseSessionDetail } from './generation.models';
 import { NBSP } from './generation-view';
 import { clone, examples, ids, problemResponse, usageContract } from './generation-test-data';
 
 describe('GenerationComposerComponent', () => {
     let fixture: ComponentFixture<GenerationComposerComponent>;
     let api: SpyObj<GenerationApiService>;
+    let authoring: SpyObj<AuthoringApiService>;
     let user: ReturnType<typeof signal<{ displayName: string | null; profileUsername: string | null; email: string } | null>>;
     const created = parseSessionDetail(examples['sessionDetailCreated']);
     const affordable = (): GenerationEstimate => parseEstimate(usageContract['estimateResponse']);
     const short = (): GenerationEstimate => parseEstimate(usageContract['estimateResponseShortfall']);
     const capabilities = (overrides: Partial<LearningCapabilities> = {}): LearningCapabilities => ({
         ...CAPABILITIES_UNAVAILABLE, aiGeneration: { available: true, reason: null }, ...overrides });
+
+    const noteOf = (noteId: string, rowVersion: string, patch: Partial<CaptureNote> = {}): CaptureNote => ({
+        noteId, deckId: ids.deckId, rowVersion, source: 'manual', text: 'Заметка', contentBytes: 14, archived: false,
+        createdAt: '2026-10-01T09:00:00Z', updatedAt: '2026-10-01T09:00:00Z', conversion: null, ...patch });
 
     const root = (): HTMLElement => fixture.nativeElement as HTMLElement;
     const field = (): HTMLTextAreaElement => root().querySelector('textarea')!;
@@ -50,8 +58,10 @@ describe('GenerationComposerComponent', () => {
             listActiveSessions: vi.fn().mockName('listActiveSessions') });
         api.estimate.mockReturnValue(of(affordable()));
         api.createSession.mockReturnValue(of({ session: created, replayed: false }));
+        authoring = spyObj<AuthoringApiService>({ readCapture: vi.fn().mockName('readCapture') });
+        authoring.readCapture.mockImplementation((noteId: string) => of(noteOf(noteId, '3')));
         user = signal(options.name === null ? null : { displayName: options.name ?? 'Юзуру Мацуда', profileUsername: 'yuzuru', email: 'yuzuru@example.test' });
-        TestBed.configureTestingModule({ providers: [provideRouter([]), { provide: GenerationApiService, useValue: api },
+        TestBed.configureTestingModule({ providers: [provideRouter([]), { provide: GenerationApiService, useValue: api }, { provide: AuthoringApiService, useValue: authoring },
             { provide: AuthService, useValue: { user } }] });
         fixture = TestBed.createComponent(GenerationComposerComponent);
         fixture.componentRef.setInput('deckId', ids.deckId);
@@ -379,6 +389,164 @@ describe('GenerationComposerComponent', () => {
             expect(api.estimate).not.toHaveBeenCalled();
             button().click();
             expect(api.createSession).not.toHaveBeenCalled();
+        });
+
+        describe('several notes: grouping, per-note settings and the pins read at submit', () => {
+            const noteId = (position: number): string => `20700000-0000-4000-8000-00000000000${position}`;
+            const noteAt = (position: number): ComposerSource => ({ label: `Заметка ${position}`,
+                spec: { role: 'SOURCE', type: 'NOTE', noteId: noteId(position), noteRowVersion: '3' } });
+            const effortOf = (position: number) => ({ [noteId(position)]: { effort: 'DETAILED' as const, imageSearch: null, audio: null } });
+            const lastSpec = () => api.createSession.mock.calls.at(-1)![1];
+            const wire = (spec: MaterialsSpec) => spec.sources as unknown as { overrides?: unknown; noteRowVersion?: string }[];
+
+            it('offers the grouping only for two or more notes: «Материал на заметку» is the default', () => {
+                create({ sources: [noteAt(1)] });
+                expect(root().querySelector('app-note-overrides')).toBeNull();
+                expect(root().textContent).not.toContain('Как оформить заметки');
+                TestBed.resetTestingModule();
+                create({ sources: [noteAt(1), noteAt(2)] });
+                const radios = Array.from(root().querySelectorAll<HTMLInputElement>('.notes-options input[type=radio]'));
+                expect(radios.map(radio => radio.value)).toEqual(['ONE_PER_NOTE', 'MERGE_INTO_ONE']);
+                expect(radios.find(radio => radio.checked)?.value).toBe('ONE_PER_NOTE');
+                expect(root().textContent).toContain('Материал на заметку');
+                expect(root().textContent).toContain('Объединить в один');
+                expect(root().querySelector('details.per-note summary')?.textContent).toContain('Настроить для каждой заметки отдельно');
+                expect(root().querySelector('details.per-note')?.hasAttribute('open')).toBe(false);
+            });
+
+            it('sends the grouping with every note and no overrides by default', () => {
+                create({ sources: [noteAt(1), noteAt(2)] });
+                button().click();
+                expect(lastSpec().settings.notesMode).toBe('ONE_PER_NOTE');
+                expect(wire(lastSpec()).map(source => source.overrides)).toEqual([undefined, undefined]);
+                TestBed.resetTestingModule();
+                create({ sources: [noteAt(1), noteAt(2)] });
+                root().querySelector<HTMLInputElement>('.notes-options input[value=MERGE_INTO_ONE]')!.click();
+                render();
+                button().click();
+                expect(lastSpec().settings.notesMode).toBe('MERGE_INTO_ONE');
+                expect(lastSpec().sources).toHaveLength(2);
+            });
+
+            it('sends sparse overrides for the changed notes only, and the estimate prices them too', () => {
+                create({ sources: [noteAt(1), noteAt(2), noteAt(3)] });
+                vi.advanceTimersByTime(ESTIMATE_DEBOUNCE_MS);
+                api.estimate.mockClear();
+                fixture.componentInstance.onOverrides({ ...effortOf(2), [noteId(3)]: { effort: null, imageSearch: null, audio: true } });
+                render();
+                expect(root().querySelector('details.per-note .count')?.textContent).toContain('2 заметки настроены отдельно');
+                vi.advanceTimersByTime(ESTIMATE_DEBOUNCE_MS);
+                const estimated = wire(api.estimate.mock.calls.at(-1)![1]);
+                expect(estimated[0]!.overrides).toBeUndefined();
+                expect(estimated[1]!.overrides).toEqual({ effort: 'DETAILED' });
+                button().click();
+                const sent = wire(lastSpec());
+                expect(sent[0]!.overrides).toBeUndefined();
+                expect(sent[1]!.overrides).toEqual({ effort: 'DETAILED' });
+                // Audio is a capability the caps of this test do not offer: the override is dropped, not sent as a request the server refuses.
+                expect(sent[2]!.overrides).toBeUndefined();
+            });
+
+            it('sends an audio override with the session language when speech is available', () => {
+                create({ sources: [noteAt(1), noteAt(2)], caps: capabilities({ textToSpeech: { available: true, reason: null } }) });
+                fixture.componentInstance.onOverrides({ [noteId(2)]: { effort: null, imageSearch: null, audio: true } });
+                render();
+                button().click();
+                expect((wire(lastSpec()))[1]!.overrides)
+                    .toEqual({ media: { audio: { enabled: true, lang: 'ru', voice: null } } });
+            });
+
+            it('drops every per-note setting when merging, says so, and never sends an empty overrides object', () => {
+                create({ sources: [noteAt(1), noteAt(2)] });
+                fixture.componentInstance.onOverrides(effortOf(1));
+                render();
+                root().querySelector<HTMLInputElement>('.notes-options input[value=MERGE_INTO_ONE]')!.click();
+                render();
+                expect(fixture.componentInstance.overrides()).toEqual({});
+                expect(root().querySelector('app-note-overrides')).toBeNull();
+                expect(root().querySelector('.notes-options .cleared-note')?.textContent).toContain('сброшены');
+                button().click();
+                expect(JSON.stringify(lastSpec())).not.toContain('overrides');
+                root().querySelector<HTMLInputElement>('.notes-options input[value=ONE_PER_NOTE]')!.click();
+                render();
+                expect(root().querySelector('.notes-options .cleared-note')).toBeNull();
+                expect(root().querySelector('app-note-overrides')).not.toBeNull();
+            });
+
+            it('ignores overrides of a single note: it has no one to differ from', () => {
+                create({ sources: [noteAt(1)] });
+                fixture.componentInstance.onOverrides(effortOf(1));
+                button().click();
+                expect(JSON.stringify(lastSpec())).not.toContain('overrides');
+            });
+
+            it('reads every note again and pins the version that is current at submit time', () => {
+                create({ sources: [noteAt(1), noteAt(2)] });
+                authoring.readCapture.mockImplementation((id: string) => of(noteOf(id, id === noteId(2) ? '9' : '3')));
+                button().click();
+                expect(authoring.readCapture).toHaveBeenCalledTimes(2);
+                expect(wire(lastSpec()).map(source => source.noteRowVersion)).toEqual(['3', '9']);
+            });
+
+            it('names a note that was archived or moved, takes it off the list and creates nothing', () => {
+                create({ sources: [noteAt(1), noteAt(2)] });
+                const removed: ComposerSource[] = [];
+                fixture.componentInstance.sourceRemoved.subscribe(source => removed.push(source));
+                authoring.readCapture.mockImplementation((id: string) => of(noteOf(id, '3', id === noteId(2) ? { archived: true } : {})));
+                button().click();
+                render();
+                expect(api.createSession).not.toHaveBeenCalled();
+                expect(removed.map(source => source.label)).toEqual(['Заметка 2']);
+                expect(root().querySelector('.notice.error')?.textContent).toContain('Одна заметка уже в архиве');
+                expect(button().textContent).toContain('Создать');
+                authoring.readCapture.mockImplementation((id: string) => of(noteOf(id, '3', { deckId: '99999999-9999-4999-8999-999999999999' })));
+                button().click();
+                render();
+                expect(removed).toHaveLength(3);
+                expect(root().querySelector('.notice.error')?.textContent).toContain('Заметок из другой колоды: 2');
+                expect(api.createSession).not.toHaveBeenCalled();
+            });
+
+            it('treats a note that cannot be found as gone, and a failed read as «try again», never as a created session', () => {
+                create({ sources: [noteAt(1)] });
+                const removed: ComposerSource[] = [];
+                fixture.componentInstance.sourceRemoved.subscribe(source => removed.push(source));
+                authoring.readCapture.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+                button().click();
+                render();
+                expect(removed).toHaveLength(1);
+                expect(root().querySelector('.notice.error')?.textContent).toContain('не удалось найти');
+                authoring.readCapture.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+                button().click();
+                render();
+                expect(removed).toHaveLength(1);
+                expect(root().querySelector('.notice.error')?.textContent).toContain('Не удалось проверить заметки');
+                expect(api.createSession).not.toHaveBeenCalled();
+            });
+
+            it('retries an unknown outcome with the same command while the notes are unchanged', () => {
+                create({ sources: [noteAt(1), noteAt(2)] });
+                api.createSession.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 0 }))).mockReturnValueOnce(of({ session: created, replayed: true }));
+                button().click();
+                render();
+                button().click();
+                expect(api.createSession.mock.calls[1]![2]).toBe(api.createSession.mock.calls[0]![2]);
+            });
+
+            it('puts focus on the next chip after one is removed, and on the request field after the last', () => {
+                create({ sources: [noteAt(1), noteAt(2)] });
+                document.body.append(root());
+                root().querySelector<HTMLButtonElement>('.chip-remove')!.click();
+                fixture.componentRef.setInput('sources', [noteAt(2)]);
+                render();
+                fixture.whenStable();
+                expect(document.activeElement).toBe(root().querySelector('.chip-remove'));
+                root().querySelector<HTMLButtonElement>('.chip-remove')!.click();
+                fixture.componentRef.setInput('sources', []);
+                render();
+                expect(document.activeElement).toBe(field());
+                root().remove();
+            });
         });
     });
 });

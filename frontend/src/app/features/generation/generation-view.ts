@@ -1,7 +1,7 @@
 import { SegmentedOption } from '../../shared/segmented-choice.component';
 import { GenerationProblem } from './generation-problem';
 import {
-    ArtifactErrorCode, ArtifactSummary, BlockingBucket, Effort, GenerationEstimate, SessionSummary, SlotKind, SlotState
+    ArtifactErrorCode, ArtifactSummary, BlockingBucket, Effort, GenerationEstimate, NoteArchiveResult, NoteSkipReason, NotesMode, SessionSummary, SlotKind, SlotState
 } from './generation.models';
 
 /** Texts and small pure helpers of the composer and the Workshop. Voice: calm and bookish, «Мнема» in dialogue, «ИИ» in labels. */
@@ -14,6 +14,12 @@ export const EFFORT_OPTIONS: readonly SegmentedOption<Effort>[] = [
     { value: 'SHORT', label: 'Кратко', hint: 'Кратко: определение и один пример.' },
     { value: 'MEDIUM', label: 'Средне', hint: 'Средне: объяснение и пара примеров.' },
     { value: 'DETAILED', label: 'Подробно', hint: 'Подробно: объяснение, 3–5 примеров, исключения.' }
+];
+
+/** «Как оформить заметки»: one material per note (the default) or all notes in one. */
+export const NOTES_MODE_OPTIONS: readonly SegmentedOption<NotesMode>[] = [
+    { value: 'ONE_PER_NOTE', label: 'Материал на заметку', hint: 'Из каждой заметки получится отдельный материал.' },
+    { value: 'MERGE_INTO_ONE', label: 'Объединить в один', hint: 'Из всех заметок получится один материал.' }
 ];
 
 /** Languages offered for the audio of a material (BCP 47). */
@@ -224,4 +230,24 @@ function limitMessage(problem: GenerationProblem): string {
         case 'SOURCES': return 'Слишком много материалов или заметок для одной мастерской. Разделите запрос.';
         default: return 'Достигнут предел. Сократите запрос и повторите.';
     }
+}
+
+const SKIP_REASONS: Readonly<Record<NoteSkipReason, string>> = {
+    CHANGED: 'заметка изменилась', ALREADY_ARCHIVED: 'уже в архиве', DELETED: 'заметка удалена'
+};
+
+/**
+ * What «Архивировать использованные заметки» did: «Архивировано: 3, пропущено: 1 — заметка изменилась». A note that changed after
+ * the pin is skipped, never archived silently; with several reasons each is counted.
+ */
+export function describeNoteArchive(result: Pick<NoteArchiveResult, 'archived' | 'skipped'>): string {
+    const archived = result.archived.length;
+    const skipped = result.skipped.length;
+    if (archived === 0 && skipped === 0) return 'Архивировать нечего.';
+    if (skipped === 0) return `Архивировано: ${archived}`;
+    const counts = new Map<NoteSkipReason, number>();
+    for (const entry of result.skipped) counts.set(entry.reason, (counts.get(entry.reason) ?? 0) + 1);
+    const reasons = counts.size === 1 ? SKIP_REASONS[[...counts.keys()][0]!]
+        : [...counts].map(([reason, count]) => `${SKIP_REASONS[reason]}: ${count}`).join(', ');
+    return `Архивировано: ${archived}, пропущено: ${skipped} — ${reasons}`;
 }
