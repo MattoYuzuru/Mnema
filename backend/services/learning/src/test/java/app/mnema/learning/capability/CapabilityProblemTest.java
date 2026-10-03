@@ -53,7 +53,7 @@ class CapabilityProblemTest {
 
     private static MockMvc mvc(CapabilityFlags flags, AiAvailability ai) {
         var factory = new StaticListableBeanFactory();
-        var capabilities = new LearningCapabilities(flags, factory.getBeanProvider(SemanticAssessmentProvider.class),
+        var capabilities = new LearningCapabilities(flags,
                 factory.getBeanProvider(SpeechToTextProvider.class), ai,
                 factory.getBeanProvider(app.mnema.learning.ai.SpeechSynthesis.class),
                 factory.getBeanProvider(app.mnema.learning.ai.ImageSearch.class),
@@ -66,6 +66,8 @@ class CapabilityProblemTest {
     private static AiAvailability availability(AiAvailability.State text) {
         return new AiAvailability() {
             @Override public State text() { return text; }
+
+            @Override public State assessment() { return text; }
 
             @Override public State port(AiCapability capability, boolean present) { return State.NOT_CONFIGURED; }
         };

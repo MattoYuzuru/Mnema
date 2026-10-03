@@ -40,6 +40,10 @@ stable `code`. Credits are integers; timestamps are UTC RFC 3339.
 - **Fair-use buckets** outside the bar: speech-to-text (metered in **seconds**, shown as whole minutes rounded up; MAX is
   `limit: null` with a `velocityPerDay` of 120) and AI answer checks, with monthly and daily limits; quiet counters that appear
   above 80%. **Count caps** for podcasts, quality images, high-effort fact check and smart plans.
+  An AI answer check (`ASSESSMENT_ANSWER`, the `ai-semantic` assessment of [#292](../study/README.md#ai-assessment-of-free-explanations-ai-semantic-292)) is a counter, not a hold:
+  the read-only `UsageLedger.fairUseFits` refuses early (the answer goes straight to self-check with `USAGE_LIMIT`, never a `409`), and `UsageLedger.consume` counts one check, key
+  `assessment:{attemptId}`, in the transaction that stores a delivered grade. A self-check, a provider failure, an uncertain or late grade and a deadline cost nothing; a dispute
+  keeps the count (the model did grade). If the limit is reached between the early check and the grade, that transaction rolls back and the answer ends in self-check.
 - **Ledger** — append-only (`GRANT`, `DEBIT`, `REFUND`, `ADJUSTMENT`, `EXPIRE`) with `costMicros`, `rateCardVersion` and `periodId`;
   the balance is materialized in the same transaction.
 - **Entitlement** — consumption lives in Learning; purchases, promo codes and periods live in the future billing context,

@@ -30,13 +30,18 @@ public final class PromptAssembler {
             "skill-code", "skill-exam-summary");
     private static final String DATA_POLICY_OPEN = "<data_policy>";
     private static final String DATA_POLICY_CLOSE = "</data_policy>";
+    private static final String ANSWER_SOURCE_OPEN = "<answer_source>";
     private static final Set<String> SKILLS = Set.of("vocabulary", "grammar", "concept", "code", "exam_notes", "free");
-    /** Ceilings in estimated tokens; the static ones guard against accidental growth of the cached prefix. */
+    /**
+     * Ceilings in estimated tokens; the static ones guard against accidental growth of the cached prefix. The assessment ceiling covers the
+     * largest exercise the contract allows (the question cut to 16,000 characters, a 4,000-character reference, ten 500-character criteria,
+     * ten 300-character misconceptions, thirty 80-character terms, a 4 KiB answer), so a published rubric is always gradable.
+     */
     private static final Map<String, Integer> CEILINGS = Map.ofEntries(
             Map.entry("system", 3_500), Map.entry("style", 2_500), Map.entry("skill-vocabulary", 1_800),
             Map.entry("skill-grammar", 1_800), Map.entry("skill-stem-concept", 1_800), Map.entry("skill-code", 1_800),
             Map.entry("skill-exam-summary", 1_800), Map.entry("deck-brief", 14_000), Map.entry("material", 14_000),
-            Map.entry("edit", 10_000), Map.entry("exercises", 14_000), Map.entry("assessment", 5_000));
+            Map.entry("edit", 10_000), Map.entry("exercises", 14_000), Map.entry("assessment", 24_000));
 
     private final PromptLibrary library;
     private final PromptRenderer renderer = new PromptRenderer();
@@ -57,7 +62,8 @@ public final class PromptAssembler {
             total += add(segments, sizes, "deck-brief", values, true, TextRequest.Role.USER);
         }
         if (task == PromptTask.EXERCISES) total += addDataPolicy(segments, sizes);
-        total += add(segments, sizes, task.section(), values, false, TextRequest.Role.USER);
+        total += task == PromptTask.ASSESSMENT ? addAssessment(segments, sizes, values)
+                : add(segments, sizes, task.section(), values, false, TextRequest.Role.USER);
         if (total > limits.maxInputTokens()) throw new PromptException("Prompt exceeds the input ceiling");
         return new AssembledPrompt(library.version(), segments, total, sizes, total > limits.workingInputTokens());
     }
@@ -71,6 +77,25 @@ public final class PromptAssembler {
             throw new PromptException("Section " + name + " exceeds its budget");
         }
         segments.add(new TextRequest.Segment(role, text, cacheable));
+        sizes.put(name, tokens);
+        return tokens;
+    }
+
+    /**
+     * The grading section as two segments: the grader rules and the exercise (prompt, reference, criteria, misconceptions,
+     * material) are the same for every answer to one exercise, so they form a cacheable head; the answer source and the learner
+     * answer, volatile, follow. The head ends where the volatile {@code <answer_source>} line starts. Values are escaped, so an
+     * answer cannot contain that tag; the rules mention the tag in running text only, never at the start of a line.
+     */
+    private int addAssessment(List<TextRequest.Segment> segments, Map<String, Integer> sizes, PromptValues values) {
+        String name = PromptTask.ASSESSMENT.section();
+        String text = renderer.render(library.section(name), values);
+        int split = text.lastIndexOf("\n" + ANSWER_SOURCE_OPEN) + 1;
+        if (split < 1) throw new PromptException("The assessment section has no answer source line");
+        int tokens = TokenCounter.estimate(text);
+        if (tokens > CEILINGS.getOrDefault(name, Integer.MAX_VALUE)) throw new PromptException("Section " + name + " exceeds its budget");
+        segments.add(new TextRequest.Segment(TextRequest.Role.USER, text.substring(0, split), true));
+        segments.add(new TextRequest.Segment(TextRequest.Role.USER, text.substring(split), false));
         sizes.put(name, tokens);
         return tokens;
     }

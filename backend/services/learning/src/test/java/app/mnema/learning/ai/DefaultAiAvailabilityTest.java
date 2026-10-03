@@ -32,6 +32,41 @@ class DefaultAiAvailabilityTest {
 
     private static final String SECRET = "0123456789abcdef0123456789abcdef";
 
+    /** A rig whose only route is {@code assess}, so that the other routes cannot make it available. */
+    private Rig assessRig(String provider, String secret) {
+        AiProperties base = AiTestSupport.properties(provider, AiTestSupport.routes(List.of(), List.of(),
+                List.of("deepseek:deepseek-flash", "gigachat:GigaChat-2")), Map.of());
+        AiProperties properties = new AiProperties(base.provider(), base.routes(), base.providers(), base.models(), base.transport(),
+                base.retry(), base.breaker(), base.permits(), base.budget(), new AiProperties.UserKey(secret, "k1"), base.prompt());
+        var breakers = new BreakerRegistry(clock, properties.breaker());
+        var routing = new AiRouting(properties, Map.of("deepseek", deepseek, "gigachat", gigachat, "stub", new StubTextAdapter()));
+        var budget = new AiBudget(properties.budget(), (capability, since) -> spent.get(), clock);
+        return new Rig(new DefaultAiAvailability(routing, breakers, budget, new UserKeys(properties.userKey()), "stub".equals(provider)), breakers);
+    }
+
+    @Test
+    void assessmentFollowsItsOwnRouteBreakerAndBudget() {
+        assertThat(assessRig("", SECRET).availability().assessment()).isEqualTo(AiAvailability.State.AVAILABLE);
+        assertThat(assessRig("", SECRET).availability().text()).as("no text route").isEqualTo(AiAvailability.State.NOT_CONFIGURED);
+        assertThat(assessRig("", "").availability().assessment()).as("a key needs the user-key secret").isEqualTo(AiAvailability.State.NOT_CONFIGURED);
+        assertThat(assessRig("stub", "").availability().assessment()).as("the Stub needs neither").isEqualTo(AiAvailability.State.AVAILABLE);
+        Rig rig = assessRig("", SECRET);
+        for (String provider : List.of("deepseek", "gigachat")) {
+            for (int index = 0; index < 5; index++) {
+                var breaker = rig.breakers().of(provider, AiCapability.ASSESS);
+                breaker.onFailure(breaker.tryAcquire());
+            }
+        }
+        assertThat(rig.availability().assessment()).isEqualTo(AiAvailability.State.TEMPORARILY_UNAVAILABLE);
+        Rig other = assessRig("", SECRET);
+        spent.set(5_000_000);
+        assertThat(other.availability().assessment()).as("the daily assess budget is spent").isEqualTo(AiAvailability.State.TEMPORARILY_UNAVAILABLE);
+        spent.set(0);
+        deepseek.unconfigured();
+        gigachat.unconfigured();
+        assertThat(assessRig("", SECRET).availability().assessment()).isEqualTo(AiAvailability.State.NOT_CONFIGURED);
+    }
+
     @Test
     void withoutAUsableAdapterOrTheUserKeySecretTextIsNotConfigured() {
         deepseek.unconfigured();

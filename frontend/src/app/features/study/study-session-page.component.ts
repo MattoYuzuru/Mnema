@@ -1,13 +1,14 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { map, timer } from 'rxjs';
 
-import { Mechanic } from '../../content/exercise/exercise-content.models';
+import { LearnerContent, Mechanic } from '../../content/exercise/exercise-content.models';
 import { QuietZone } from '../../core/notifications/quiet-zone';
 import { MnemaSelectComponent, MnemaSelectOption } from '../../core/controls/mnema-select.component';
 import { NewBadgeComponent } from '../../shared/new-badge.component';
+import { AssessmentSelfCheckComponent, AssessmentWaitingComponent } from './assessment-views.component';
 import { LearnerExerciseComponent, PairChecker } from './learner-exercise.component';
 import { LearnerFeedbackComponent, feedbackTitle } from './learner-feedback.component';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
@@ -16,25 +17,35 @@ import { StudyApiService } from './study-api.service';
 import {
     AttemptCommand,
     AttemptOutcome,
+    AttemptState,
+    AssessingAttempt,
     MaterialProgress,
     PracticeOrder,
     ReadyStudySession,
     ReplaySource,
     ScheduledStudyPreset,
+    SelfCheckAttempt,
     StudyResponse,
     StudySession,
-    StudyStartIntent
+    StudyStartIntent,
+    isAssessing,
+    isAttemptOutcome,
+    isFreeResponseFeedback
 } from './study.models';
+import { StudyAssessmentFlow } from './study-assessment-flow';
 import { StudyRecoveryService } from './study-recovery.service';
 
-type Phase = 'setup' | 'loading' | 'preparing' | 'answering' | 'revealed' | 'submitting' | 'feedback'
+type Phase = 'setup' | 'loading' | 'preparing' | 'answering' | 'revealed' | 'submitting' | 'assessing' | 'self-check' | 'feedback'
     | 'unknown' | 'conflict' | 'empty' | 'complete' | 'expired' | 'unavailable' | 'error';
+type DisputeStep = 'idle' | 'confirm' | 'sending';
 
-const TASK_OPEN: readonly Phase[] = ['answering', 'revealed', 'submitting'];
+const TASK_OPEN: readonly Phase[] = ['answering', 'revealed', 'submitting', 'self-check'];
 
 @Component({
     selector: 'app-study-session-page',
-    imports: [RouterLink, MnemaSelectComponent, LearnerExerciseComponent, LearnerFeedbackComponent, NewBadgeComponent],
+    imports: [RouterLink, MnemaSelectComponent, LearnerExerciseComponent, LearnerFeedbackComponent, NewBadgeComponent,
+        AssessmentWaitingComponent, AssessmentSelfCheckComponent],
+    providers: [StudyAssessmentFlow],
     templateUrl: './study-session-page.component.html',
     styleUrl: './study-session-page.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -53,6 +64,11 @@ export class StudySessionPageComponent {
     readonly transcriptLoading = signal(false);
     readonly hintPending = signal<string | null>(null);
     readonly feedback = signal<AttemptOutcome | null>(null);
+    /** «Оспорить оценку»: asked, confirmed inline (not a modal), sent. */
+    readonly disputeStep = signal<DisputeStep>('idle');
+    readonly disputeProblem = signal<string | null>(null);
+    /** The server refused to take the grade back (a later answer exists); the offer is withdrawn. */
+    readonly disputeBlocked = signal(false);
     readonly message = signal<string | null>(null);
     readonly pending = signal<AttemptCommand | null>(null);
     readonly progress = signal<readonly MaterialProgress[]>([]);
@@ -72,6 +88,19 @@ export class StudySessionPageComponent {
     readonly scheduledPreset = signal<ScheduledStudyPreset>('STANDARD');
     readonly supportLoading = signal(true);
     readonly current = computed(() => this.session()?.presentations[0] ?? null);
+    /** The text of the answer in assessment, `null` when this tab no longer holds it (a reload after it was sent). */
+    readonly submittedText = computed(() => { const value = this.submitted(); return value?.kind === 'TEXT' ? value.text : null; });
+    /**
+     * After a reload that found the answer already graded while the queue had moved on: the content of the answered card is
+     * gone from the session, so the result is shown over a minimal free-response shell and «Продолжить» keeps the whole queue.
+     */
+    readonly recoveredContent = signal<LearnerContent | null>(null);
+    readonly feedbackContent = computed<LearnerContent | null>(() => this.recoveredContent() ?? this.current());
+    /** The outcome is an AI grade that can be taken back. */
+    readonly disputable = computed(() => {
+        const outcome = this.feedback();
+        return outcome !== null && !outcome.disputed && isFreeResponseFeedback(outcome.feedback) && outcome.feedback.assessment !== undefined;
+    });
     readonly hints = computed<Readonly<Record<string, string>>>(() => Object.fromEntries(
         (this.current()?.hints ?? []).map(hint => [hint.blankId, hint.firstLetter])));
     /** Pair checks go to the server; the board never decides correctness itself. */
@@ -94,17 +123,32 @@ export class StudySessionPageComponent {
     private readonly api = inject(StudyApiService);
     private readonly recovery = inject(StudyRecoveryService);
     private readonly quietZone = inject(QuietZone);
+    readonly flow = inject(StudyAssessmentFlow);
     private readonly destroyRef = inject(DestroyRef);
     private readonly injector = inject(Injector);
     private readonly element: ElementRef<HTMLElement> = inject(ElementRef);
     readonly deckId: string;
     private presentedAt = 0;
+    private disputeCommandId = '';
+    /** The last dispute request may have reached the server (no answer, a 5xx): a retry must reuse its command id. */
+    private disputeOutcomeUnknown = false;
+    private assessmentStartedAt: number | null = null;
     private pollCount = 0;
 
     constructor() {
         // A task is open (answering, revealing, sending): new toasts wait. Feedback, the end of the session and
         // leaving the page are the natural pauses where they may show.
         effect(() => this.quietZone.set(TASK_OPEN.includes(this.phase())));
+        // The grader may hand the learner to self-check while the waiting card is on screen.
+        effect(() => {
+            const stage = this.flow.stage();
+            untracked(() => {
+                if (stage === 'self-check' && this.phase() === 'assessing') {
+                    this.phase.set('self-check');
+                    this.focusAfterRender('#self-check-title');
+                }
+            });
+        });
         this.destroyRef.onDestroy(() => this.quietZone.set(false));
         effect(onCleanup => {
             const sentinel = this.progressSentinel()?.nativeElement;
@@ -128,6 +172,7 @@ export class StudySessionPageComponent {
         if (recovered === null) this.phase.set('setup');
         else {
             this.pending.set(recovered.pending);
+            this.assessmentStartedAt = recovered.assessmentStartedAt ?? null;
             this.submitted.set(recovered.pending?.response ?? null);
             this.resume(recovered.sessionId, recovered.pending !== null);
         }
@@ -202,9 +247,15 @@ export class StudySessionPageComponent {
 
     next(): void {
         const session = this.session();
-        if (session === null || this.phase() !== 'feedback') return;
+        if (session === null || this.phase() !== 'feedback' || this.disputeStep() === 'sending') return;
+        const recovered = this.recoveredContent() !== null;
         this.feedback.set(null);
         this.resetAnswer();
+        if (recovered) {
+            // The answered card was already gone from the queue: nothing to drop.
+            this.apply(session, false);
+            return;
+        }
         const remaining = session.presentations.slice(1);
         if (remaining.length === 0) {
             this.phase.set('loading');
@@ -281,6 +332,7 @@ export class StudySessionPageComponent {
     feedbackTitle(outcome: AttemptOutcome): string { return feedbackTitle(outcome.feedback); }
 
     progressMessage(outcome: AttemptOutcome): string {
+        if (outcome.disputed) return 'Оценка снята, прогресс не изменился.';
         const transition = outcome.transition;
         if (!transition) return 'Дополнительная практика помогает закрепить материал.';
         const delta = transition.afterLevel - transition.beforeLevel;
@@ -335,10 +387,8 @@ export class StudySessionPageComponent {
                 const pending = this.pending();
                 if (reconciling && pending !== null
                     && !session.presentations.some(item => item.presentationId === pending.presentationId)) {
-                    this.pending.set(null);
-                    this.resetAnswer();
-                    this.recovery.save({ deckId: this.deckId, sessionId, pending: null });
-                    this.message.set('Предыдущий ответ уже учтён. Его результат пока недоступен, но прогресс не будет записан повторно.');
+                    if (pending.response.kind === 'TEXT') { this.recoverGradedAttempt(session, sessionId, pending); return; }
+                    this.forgetAccountedAnswer(sessionId);
                 }
                 this.apply(session, reconciling && this.pending() !== null);
             },
@@ -350,7 +400,45 @@ export class StudySessionPageComponent {
         });
     }
 
+    /** The answer was counted but its card is gone from the queue: say so, as before. */
+    private forgetAccountedAnswer(sessionId: string): void {
+        this.pending.set(null);
+        this.resetAnswer();
+        this.recovery.save({ deckId: this.deckId, sessionId, pending: null });
+        this.message.set('Предыдущий ответ уже учтён. Его результат пока недоступен, но прогресс не будет записан повторно.');
+    }
+
+    /**
+     * A text answer whose card left the queue may be an explanation that was graded while the page was closed: read the attempt
+     * and show its result (with «Оспорить оценку») or its self-check view. Only when it cannot be read does the old note appear.
+     */
+    private recoverGradedAttempt(session: ReadyStudySession, sessionId: string, pending: AttemptCommand): void {
+        this.api.attempt(this.deckId, sessionId, pending.attemptId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+            next: state => {
+                if (isAttemptOutcome(state) && !isFreeResponseFeedback(state.feedback)) {
+                    this.forgetAccountedAnswer(sessionId);
+                    this.apply(session, false);
+                    return;
+                }
+                this.session.set(session);
+                this.recoveredContent.set({ type: 'FREE_RESPONSE', content: { prompt: [], responseInput: 'TEXT' } });
+                if (isAttemptOutcome(state)) this.showOutcome(sessionId, state);
+                else this.enterAssessment(sessionId, state);
+            },
+            error: () => {
+                this.forgetAccountedAnswer(sessionId);
+                this.apply(session, false);
+            }
+        });
+    }
+
     private resetAnswer(): void {
+        this.flow.stop();
+        this.recoveredContent.set(null);
+        this.disputeOutcomeUnknown = false;
+        this.disputeStep.set('idle');
+        this.disputeProblem.set(null);
+        this.disputeBlocked.set(false);
         this.submitted.set(null);
         this.answerDirty.set(false);
         this.hintPending.set(null);
@@ -371,7 +459,13 @@ export class StudySessionPageComponent {
             this.message.set('Пока не удалось продолжить занятие. Попробуйте восстановить его.');
             return;
         }
-        this.recovery.save({ deckId: this.deckId, sessionId: session.sessionId, pending: this.pending() });
+        this.recovery.save({ deckId: this.deckId, sessionId: session.sessionId, pending: this.pending(),
+            assessmentStartedAt: this.assessmentStartedAt });
+        const graded = session.presentations[0].assessment;
+        if (graded !== undefined) {
+            this.resumeAssessment(session.sessionId, graded.attemptId);
+            return;
+        }
         if (pendingUnknown) {
             this.phase.set('unknown');
             this.message.set('Результат предыдущего ответа пока неизвестен. Повторите отправку того же ответа или проверьте занятие.');
@@ -400,13 +494,7 @@ export class StudySessionPageComponent {
         this.phase.set('submitting');
         this.message.set(null);
         this.api.submit(this.deckId, sessionId, command).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-            next: result => {
-                this.pending.set(null);
-                this.recovery.save({ deckId: this.deckId, sessionId, pending: null });
-                this.feedback.set(result.value);
-                this.phase.set('feedback');
-                this.focusAfterRender('#feedback-title');
-            },
+            next: result => this.accept(sessionId, result.value),
             error: error => {
                 const code = this.errorCode(error);
                 if (error instanceof HttpErrorResponse && error.status === 0) {
@@ -418,6 +506,125 @@ export class StudySessionPageComponent {
                 } else if (code === 'SESSION_EXPIRED' || code === 'PRESENTATION_EXPIRED') {
                     this.phase.set('expired'); this.recovery.clear();
                 } else this.handle(error, 'Не удалось принять ответ. Он остался в этой вкладке.');
+            }
+        });
+    }
+
+    /** A stored outcome ends the answer; an answer still in assessment keeps its command so a reload resumes it. */
+    private accept(sessionId: string, state: AttemptState): void {
+        if (isAttemptOutcome(state)) {
+            this.showOutcome(sessionId, state);
+            return;
+        }
+        this.assessmentStartedAt = this.recovery.now();
+        this.recovery.save({ deckId: this.deckId, sessionId, pending: this.pending(), assessmentStartedAt: this.assessmentStartedAt });
+        this.enterAssessment(sessionId, state);
+    }
+
+    private enterAssessment(sessionId: string, state: AssessingAttempt | SelfCheckAttempt): void {
+        this.flow.begin(this.deckId, sessionId, state, outcome => this.showOutcome(sessionId, outcome), error => this.assessmentLost(error));
+        this.phase.set(isAssessing(state) ? 'assessing' : 'self-check');
+        this.focusAfterRender(isAssessing(state) ? '#assessing-title' : '#self-check-title');
+    }
+
+    /** Polling cannot continue: an expired session is the same page as everywhere, anything else keeps the answer in the tab. */
+    private assessmentLost(error: unknown): void {
+        const code = this.errorCode(error);
+        if (code === 'SESSION_EXPIRED' || code === 'PRESENTATION_EXPIRED') {
+            this.phase.set('expired'); this.recovery.clear();
+        } else this.handle(error, 'Не удалось узнать результат проверки. Ответ принят и остался в этой вкладке: проверьте занятие.');
+    }
+
+    private resumeAssessment(sessionId: string, attemptId: string): void {
+        const pending = this.pending();
+        if (pending !== null && pending.attemptId !== attemptId) {
+            this.pending.set(null);
+            this.submitted.set(null);
+            this.assessmentStartedAt = null;
+            this.recovery.save({ deckId: this.deckId, sessionId, pending: null });
+        }
+        const elapsed = this.assessmentStartedAt === null ? 0 : this.recovery.now() - this.assessmentStartedAt;
+        this.flow.resume(this.deckId, sessionId, attemptId, outcome => this.showOutcome(sessionId, outcome),
+            error => this.assessmentLost(error), elapsed);
+        this.phase.set('assessing');
+        this.focusAfterRender('#assessing-title');
+    }
+
+    private showOutcome(sessionId: string, outcome: AttemptOutcome): void {
+        this.pending.set(null);
+        this.assessmentStartedAt = null;
+        this.recovery.save({ deckId: this.deckId, sessionId, pending: null });
+        this.disputeStep.set('idle');
+        this.disputeProblem.set(null);
+        this.disputeBlocked.set(false);
+        this.feedback.set(outcome);
+        this.phase.set('feedback');
+        this.focusAfterRender('#feedback-title');
+    }
+
+    /** «Оспорить оценку», step 1: ask in place (not a modal) what taking the grade back means. */
+    askDispute(): void {
+        if (this.phase() !== 'feedback' || !this.disputable() || this.disputeStep() !== 'idle') return;
+        if (!this.disputeOutcomeUnknown) this.disputeCommandId = crypto.randomUUID();
+        this.disputeProblem.set(null);
+        this.disputeStep.set('confirm');
+        this.focusAfterRender('[data-dispute-confirm]');
+    }
+
+    cancelDispute(): void {
+        if (this.disputeStep() !== 'confirm') return;
+        this.disputeStep.set('idle');
+        this.focusAfterRender('[data-dispute-open]');
+    }
+
+    /** Step 2: the same command id is reused on a retry, so a lost reply can never take two grades back. */
+    confirmDispute(): void {
+        const outcome = this.feedback();
+        const session = this.session();
+        if (this.disputeStep() !== 'confirm' || outcome === null || session === null) return;
+        this.disputeStep.set('sending');
+        this.disputeProblem.set(null);
+        this.api.dispute(this.deckId, session.sessionId, outcome.attemptId, this.disputeCommandId)
+            .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+                next: result => this.disputed(result.value),
+                error: error => {
+                    const unknown = !(error instanceof HttpErrorResponse) || error.status === 0 || error.status >= 500;
+                    if (this.errorCode(error) === 'DISPUTE_NOT_ALLOWED') {
+                        // After a request whose answer was lost the grade may already be taken back: read it instead of guessing.
+                        if (this.disputeOutcomeUnknown) this.rereadDisputed(session.sessionId, outcome.attemptId);
+                        else this.disputeRefused();
+                        return;
+                    }
+                    if (unknown) this.disputeOutcomeUnknown = true;
+                    this.disputeStep.set('confirm');
+                    this.disputeProblem.set('Не удалось снять оценку. Прогресс не изменился; попробуйте ещё раз.');
+                    this.focusAfterRender('[data-dispute-confirm]');
+                }
+            });
+    }
+
+    private disputed(outcome: AttemptOutcome): void {
+        this.disputeOutcomeUnknown = false;
+        this.disputeStep.set('idle');
+        this.disputeProblem.set(null);
+        this.feedback.set(outcome);
+        this.focusAfterRender('#feedback-title');
+    }
+
+    private disputeRefused(): void {
+        this.disputeStep.set('idle');
+        this.disputeBlocked.set(true);
+        this.disputeProblem.set('Эту оценку уже нельзя снять: после неё прогресс изменился.');
+        this.focusAfterRender('#feedback-title');
+    }
+
+    private rereadDisputed(sessionId: string, attemptId: string): void {
+        this.api.attempt(this.deckId, sessionId, attemptId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+            next: state => { if (isAttemptOutcome(state) && state.disputed) this.disputed(state); else this.disputeRefused(); },
+            error: () => {
+                this.disputeStep.set('confirm');
+                this.disputeProblem.set('Не удалось проверить, снята ли оценка. Попробуйте ещё раз.');
+                this.focusAfterRender('[data-dispute-confirm]');
             }
         });
     }

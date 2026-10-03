@@ -13,7 +13,9 @@ public abstract class PostgresIntegrationTest {
             new PostgreSQLContainer(DockerImageName.parse("postgres:18"))
                     .withDatabaseName("mnema_learning")
                     .withUsername("mnema")
-                    .withPassword("mnema");
+                    .withPassword("mnema")
+                    // every distinct Spring test context keeps its own pool open for the whole JVM: leave room for them
+                    .withCommand("postgres", "-c", "max_connections=300");
 
     static {
         // One fail-closed container survives Spring's context cache for the whole test JVM.

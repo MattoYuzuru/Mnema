@@ -55,6 +55,32 @@ class UsageConsumptionTest extends UsageIntegrationTest {
     }
 
     @Test
+    void fairUseFitsIsAReadThatAgreesWithConsumeWithoutWritingOrRollingBack() {
+        UUID owner = owner(Plan.FREE);
+        // Free: 5 answer checks a day, 50 a month
+        assertThat(ledger.fairUseFits(owner, Bucket.ASSESSMENT, 5)).isTrue();
+        assertThat(ledger.fairUseFits(owner, Bucket.ASSESSMENT, 6)).isFalse();
+        consume(owner, Bucket.ASSESSMENT, 4, "fits-1");
+        assertThat(ledger.fairUseFits(owner, Bucket.ASSESSMENT, 1)).isTrue();
+        assertThat(ledger.fairUseFits(owner, Bucket.ASSESSMENT, 2)).as("the day would be exceeded").isFalse();
+        // it is asked inside the caller's transaction and a refusal there does not mark it rollback-only
+        assertThat(inTx(() -> ledger.fairUseFits(owner, Bucket.ASSESSMENT, 2))).isFalse();
+        assertThat(usage.read(owner).fairUse().assessment().used()).as("nothing was counted").isEqualTo(4);
+        // tomorrow the day window is fresh again
+        clock.set("2026-10-03T09:00:00Z");
+        assertThat(ledger.fairUseFits(owner, Bucket.ASSESSMENT, 5)).isTrue();
+        // a plan without the bucket never fits; the bar and the burst are not consumable
+        assertThat(ledger.fairUseFits(owner(Plan.FREE), Bucket.PODCASTS, 1)).isFalse();
+        assertThatThrownBy(() -> ledger.fairUseFits(owner, Bucket.CREDITS, 1)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> ledger.fairUseFits(owner, Bucket.ASSESSMENT, 0)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> ledger.fairUseFits(owner, null, 1)).isInstanceOf(NullPointerException.class);
+        // a paid plan with room for many
+        UUID plus = owner(Plan.PLUS);
+        assertThat(ledger.fairUseFits(plus, Bucket.ASSESSMENT, 40)).isTrue();
+        assertThat(ledger.fairUseFits(plus, Bucket.ASSESSMENT, 41)).isFalse();
+    }
+
+    @Test
     void aRepeatedKeyChangesNothingAndARefusalWritesNothing() {
         UUID owner = owner(Plan.FREE);
         consume(owner, Bucket.ASSESSMENT, 3, "a-1");

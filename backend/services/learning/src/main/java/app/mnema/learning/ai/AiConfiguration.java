@@ -66,6 +66,12 @@ class AiConfiguration {
         return new PromptAssembler(library, properties.prompt());
     }
 
+    /** The {@code ai-semantic} grader; whether it may run is {@code AiAvailability.assessment()}, not the presence of this bean. */
+    @Bean(destroyMethod = "close")
+    SemanticGrader semanticGrader(TextGeneration text, PromptAssembler assembler, UserKeys userKeys, AiProperties properties) {
+        return new SemanticGrader(text, assembler, userKeys, AiProperties.STUB.equals(properties.provider()));
+    }
+
     static Map<String, TextAdapter> adapters(AiProperties properties, ChatHttp http, Clock clock) {
         Map<String, TextAdapter> adapters = new LinkedHashMap<>();
         if (AiProperties.STUB.equals(properties.provider())) {

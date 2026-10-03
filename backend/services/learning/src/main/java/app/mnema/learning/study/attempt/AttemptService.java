@@ -1,7 +1,6 @@
 package app.mnema.learning.study.attempt;
 
 import app.mnema.learning.catalog.exercise.AnswerKey;
-import app.mnema.learning.catalog.exercise.ExerciseNewMarks;
 import app.mnema.learning.catalog.exercise.ExerciseType;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.api.InvalidRequestException;
@@ -10,8 +9,6 @@ import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
 import app.mnema.learning.platform.json.CanonicalJsonHasher;
 import app.mnema.learning.media.MediaCatalog;
 import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.node.JsonNodeFactory;
-import tools.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -20,25 +17,26 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashSet;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
 public class AttemptService {
     private static final Logger LOG = LoggerFactory.getLogger(AttemptService.class);
-    private static final Duration RAW_RETENTION = Duration.ofDays(30);
     private static final Duration COMPACT_RECEIPT_RETENTION = Duration.ofHours(24);
     private final AttemptRepository repository;
     private final CanonicalJsonHasher hasher;
     private final MediaCatalog mediaCatalog;
-    private final ExerciseNewMarks newMarks;
-    private final BaselineReducer reducer = new BaselineReducer();
+    private final AttemptConclusion conclusion;
+    private final AssessmentService assessments;
 
     public AttemptService(AttemptRepository repository, CanonicalJsonHasher hasher, MediaCatalog mediaCatalog,
-                          ExerciseNewMarks newMarks) {
+                          AttemptConclusion conclusion, AssessmentService assessments) {
         this.repository = repository;
         this.hasher = hasher;
         this.mediaCatalog = mediaCatalog;
-        this.newMarks = newMarks;
+        this.conclusion = conclusion;
+        this.assessments = assessments;
     }
 
     @Transactional(timeout = 10)
@@ -74,6 +72,10 @@ public class AttemptService {
         return correct;
     }
 
+    /**
+     * Records one answer. A deterministic answer is evaluated and concluded here; an answer to an {@code ai-semantic} exercise is
+     * accepted and handed to {@link AssessmentService} (answer {@code 202}): the grading happens later, outside any transaction.
+     */
     @Transactional(timeout = 10)
     public SubmitResult submit(UUID actor, UUID deck, UUID session, AttemptCommand command) {
         UuidPolicy.requireEntityId(actor, "actor");
@@ -83,10 +85,14 @@ public class AttemptService {
         byte[] hash = hasher.hash(command.envelope(deck, session)).sha256();
         var fast = repository.receipt(command.attemptId());
         if (fast.isPresent()) return replay(fast.orElseThrow(), actor, deck, session, command, hash);
+        var pendingFast = assessments.replay(command, actor, deck, session, hash);
+        if (pendingFast.isPresent()) return pendingFast.orElseThrow();
 
         repository.lockAttempt(command.attemptId());
         var serialized = repository.receipt(command.attemptId());
         if (serialized.isPresent()) return replay(serialized.orElseThrow(), actor, deck, session, command, hash);
+        var pending = assessments.replay(command, actor, deck, session, hash);
+        if (pending.isPresent()) return pending.orElseThrow();
         repository.lockSession(actor, deck, session);
         AttemptRepository.Presentation presentation = repository.presentationForUpdate(actor, deck, session,
                 command.presentationId()).orElseThrow(ResourceNotFoundException::new);
@@ -96,13 +102,25 @@ public class AttemptService {
         if (repository.terminal(actor, session, command.presentationId()).isPresent()) {
             throw new IdempotencyConflictException();
         }
+        // An answer already being assessed under another attempt id owns the presentation until it ends.
+        if (assessments.holds(actor, session, command.presentationId())) throw new IdempotencyConflictException();
 
         // Media is checked for every mechanic: an unavailable asset must never turn into a wrong answer.
         // The response shape is validated first inside the evaluation, so a malformed response consumes nothing.
         boolean mediaReady = command.response() instanceof AttemptCommand.CancelResponse
                 || mediaCatalog.exerciseMediaReady(actor, deck, presentation.exerciseId(),
                         presentation.exerciseRevisionId());
-        AttemptEvaluation evaluation = AttemptEvaluation.evaluate(subject(presentation), command.response(), mediaReady);
+        AttemptEvaluation evaluation;
+        if (mediaReady && command.response() instanceof AttemptCommand.TextResponse text
+                && AssessmentService.semantic(presentation)) {
+            AttemptEvaluation.requireShape(subject(presentation), text);
+            Optional<SubmitResult> accepted = assessments.begin(actor, deck, session, presentation, command, hash, text, now);
+            if (accepted.isPresent()) return accepted.orElseThrow();
+            // the learning epoch moved on: nothing is graded, nothing is spent
+            evaluation = AttemptConclusion.oldEpoch();
+        } else {
+            evaluation = AttemptEvaluation.evaluate(subject(presentation), command.response(), mediaReady);
+        }
         if (presentation.exerciseType().equals(ExerciseType.MATCH.name())
                 && evaluation.result() == AttemptEvaluation.Result.CORRECT
                 && repository.hasPairMistakes(actor, session, command.presentationId())) {
@@ -114,48 +132,7 @@ public class AttemptService {
                 presentation.evaluator().path("id").asString(""), presentation.evaluator().path("version").asString(""),
                 evaluation.feedback().path("appliedRules"), evaluation.reasonCodes(),
                 evaluation.feedback().path("result").asString(""));
-        if (!presentation.mode().equals("SCHEDULED")) {
-            ObjectNode outcome = feedbackOnly(command, presentation, evaluation);
-            repository.insertReceipt(command, actor, deck, session, hash, presentation.mode(),
-                    evaluation.status().name(), outcome, now, now.plus(COMPACT_RECEIPT_RETENTION));
-            newMarks.clear(actor, deck, presentation.exerciseId());
-            repository.completeSessionIfTerminal(actor, deck, session, now);
-            return new SubmitResult(outcome, false);
-        }
-        if (evaluation.status() != AttemptEvaluation.Status.ASSESSED) {
-            ObjectNode outcome = noTransition(command, presentation, evaluation);
-            repository.insertReceipt(command, actor, deck, session, hash, presentation.mode(),
-                    evaluation.status().name(), outcome, now, null);
-            newMarks.clear(actor, deck, presentation.exerciseId());
-            repository.completeSessionIfTerminal(actor, deck, session, now);
-            return new SubmitResult(outcome, false);
-        }
-
-        AttemptRepository.State state = repository.stateForUpdate(actor, deck, presentation.objectiveId());
-        if (state.learningEpoch() != presentation.learningEpoch()) {
-            AttemptEvaluation oldEpoch = new AttemptEvaluation(AttemptEvaluation.Status.NOT_ASSESSED, null, null,
-                    java.util.List.of("OLD_LEARNING_EPOCH"),
-                    JsonNodeFactory.instance.objectNode().put("result", "NOT_ASSESSED"));
-            ObjectNode outcome = noTransition(command, presentation, oldEpoch);
-            repository.insertReceipt(command, actor, deck, session, hash, presentation.mode(),
-                    oldEpoch.status().name(), outcome, now, null);
-            newMarks.clear(actor, deck, presentation.exerciseId());
-            repository.completeSessionIfTerminal(actor, deck, session, now);
-            return new SubmitResult(outcome, false);
-        }
-        BaselineReducer.Transition transition = reducer.apply(new BaselineReducer.State(state.level(),
-                state.correctStreak(), state.lapseCount()), evaluation.result(), evaluation.evidenceClass(), now);
-        ObjectNode outcome = assessed(command, presentation, state, evaluation, transition);
-        repository.insertReceipt(command, actor, deck, session, hash, presentation.mode(), "ASSESSED", outcome,
-                now, null);
-        repository.insertEvidence(command, presentation, evaluation, now);
-        repository.insertTransition(command, presentation, state, transition);
-        repository.updateState(state, transition, presentation.configId());
-        repository.insertRaw(command.attemptId(), command.payload().path("response"), now.plus(RAW_RETENTION));
-        // the learner has met the exercise: its «Новое» mark goes with the terminal result, in this transaction
-        newMarks.clear(actor, deck, presentation.exerciseId());
-        repository.completeSessionIfTerminal(actor, deck, session, now);
-        return new SubmitResult(outcome, false);
+        return conclusion.conclude(actor, deck, session, command, presentation, evaluation, presentation.evaluator(), hash, now);
     }
 
     private SubmitResult replay(AttemptRepository.Receipt receipt, UUID actor, UUID deck, UUID session,
@@ -165,74 +142,21 @@ public class AttemptService {
                 || !AttemptRepository.same(receipt.payloadHash(), hash) || receipt.outcome() == null) {
             throw new IdempotencyConflictException();
         }
-        return new SubmitResult(receipt.outcome(), true);
+        return new SubmitResult(receipt.outcome(), true, false);
     }
 
-    private static AttemptEvaluation.Subject subject(AttemptRepository.Presentation presentation) {
+    static AttemptEvaluation.Subject subject(AttemptRepository.Presentation presentation) {
         return new AttemptEvaluation.Subject(
                 ExerciseType.fromWire(presentation.exerciseType()).orElseThrow(IllegalStateException::new),
                 presentation.evaluator(), presentation.answerKey(), presentation.content(), presentation.reveal(),
                 new HashSet<>(presentation.hintedBlanks()), presentation.transcriptRevealed());
     }
 
-    private static ObjectNode assessed(AttemptCommand command, AttemptRepository.Presentation presentation,
-                                       AttemptRepository.State state, AttemptEvaluation evaluation,
-                                       BaselineReducer.Transition transition) {
-        ObjectNode outcome = base(command, presentation, "ASSESSED");
-        outcome.set("evidence", evidence(presentation, evaluation));
-        outcome.set("feedback", evaluation.feedback().deepCopy());
-        outcome.set("transition", transition(presentation, state, transition));
-        return outcome;
-    }
-
-    private static ObjectNode noTransition(AttemptCommand command, AttemptRepository.Presentation presentation,
-                                           AttemptEvaluation evaluation) {
-        ObjectNode outcome = base(command, presentation, evaluation.status().name());
-        outcome.putNull("evidence");
-        outcome.set("feedback", evaluation.feedback().deepCopy());
-        outcome.putNull("transition");
-        return outcome;
-    }
-
-    private static ObjectNode feedbackOnly(AttemptCommand command, AttemptRepository.Presentation presentation,
-                                           AttemptEvaluation evaluation) {
-        ObjectNode outcome = base(command, presentation, evaluation.status().name());
-        outcome.putNull("evidence");
-        outcome.set("feedback", evaluation.feedback().deepCopy());
-        outcome.putNull("transition");
-        outcome.put("canonicalEffects", false);
-        return outcome;
-    }
-
-    private static ObjectNode base(AttemptCommand command, AttemptRepository.Presentation presentation,
-                                   String status) {
-        return JsonNodeFactory.instance.objectNode().put("attemptId", command.attemptId().toString())
-                .put("presentationId", presentation.presentationId().toString())
-                .put("mode", presentation.mode()).put("status", status);
-    }
-
-    private static ObjectNode evidence(AttemptRepository.Presentation presentation, AttemptEvaluation evaluation) {
-        ObjectNode value = JsonNodeFactory.instance.objectNode()
-                .put("objectiveId", presentation.objectiveId().toString())
-                .put("objectiveRevisionId", presentation.objectiveRevisionId().toString())
-                .put("result", evaluation.result().name())
-                .put("evidenceClass", evaluation.evidenceClass().name());
-        var reasons = value.putArray("reasonCodes");
-        evaluation.reasonCodes().forEach(reasons::add);
-        return value;
-    }
-
-    private static ObjectNode transition(AttemptRepository.Presentation presentation, AttemptRepository.State state,
-                                         BaselineReducer.Transition transition) {
-        return JsonNodeFactory.instance.objectNode().put("learningEpoch", Long.toString(state.learningEpoch()))
-                .put("sequence", Long.toString(state.transitionSequence() + 1))
-                .put("beforeLevel", transition.beforeLevel()).put("afterLevel", transition.afterLevel())
-                .put("acceptedAt", transition.acceptedAt().toString()).put("nextDue", transition.nextDue().toString())
-                .put("reducerId", presentation.reducerId()).put("reducerVersion", presentation.reducerVersion())
-                .put("configId", presentation.configId().toString()).put("configHash", presentation.configHash());
-    }
-
-    public record SubmitResult(JsonNode outcome, boolean replayed) {
+    /**
+     * What a submit answers: the stored or fresh outcome ({@code 200}), or, while an {@code ai-semantic} answer is assessed or
+     * waits for the learner's own rating, its current state ({@code accepted}, {@code 202}).
+     */
+    public record SubmitResult(JsonNode outcome, boolean replayed, boolean accepted) {
         public SubmitResult { outcome = outcome.deepCopy(); }
         @Override public JsonNode outcome() { return outcome.deepCopy(); }
     }

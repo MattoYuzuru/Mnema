@@ -300,6 +300,7 @@ browser-facing Learning service, never the media processor or the frontend.
 | `MNEMA_AI_OPENROUTER_API_KEY` | OpenRouter (optional; no default route uses it) |
 | `MNEMA_AI_USER_KEY_SECRET` | At least 16 random characters: HMAC secret of the opaque per-account user id sent to providers. Required for a real provider; generate once and keep it (`openssl rand -hex 32`) |
 | `LEARNING_FEATURES_AI_GENERATION_ENABLED` | `true` turns `aiGeneration` on (default `false`) |
+| `LEARNING_FEATURES_AI_ASSESSMENT_ENABLED` | `true` turns `aiAssessment` on (default `false`): the AI check of free explanations (`ai-semantic` exercises). It needs a usable `assess` route: a DeepSeek key with the user-key secret, or `LEARNING_AI_PROVIDER=stub`. Without it publishing such an exercise is `409 CAPABILITY_UNAVAILABLE` |
 | `LEARNING_AI_PROVIDER` | `stub` selects the deterministic Stub for every text route (no key needed); empty uses the real routes |
 | `MNEMA_RUNTIME_ROLES` | Optional (`api`, `worker` or `all`; default `all`). Generation steps are executed by the worker half only; the local stack runs both in one process, so nothing needs to be set. A process with `api` creates and reads sessions but never claims a step |
 

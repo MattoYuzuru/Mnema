@@ -231,11 +231,16 @@ class Fixture(BASE.Fixture):
         if self.args.media:
             self.start_media_store()
         super().start()
-        if getattr(self.args, "generation", False):
+        if self.stub_instance():
             # A second Learning on the same database with the Stub provider. Every ordinary scenario keeps running against the
-            # first one (generation off, as shipped); the Workshop scenario flips the proxy with POST /__fixture/learning-generation.
+            # first one (generation and AI assessment off, as shipped); the Workshop and assessment scenarios flip the proxy
+            # with POST /__fixture/learning-generation.
             self.generation_port = BASE.free_port()
             self.boot("learning", self.generation_port, "learning_fixture", generation=True)
+
+    def stub_instance(self):
+        """`--generation` and `--assessment` share one second Learning: Stub provider, both AI features on."""
+        return bool(getattr(self.args, "generation", False) or getattr(self.args, "assessment", False))
 
     def start_media_store(self):
         image = ("ghcr.io/l33tlamer/minio-backup@sha256:"
@@ -319,11 +324,12 @@ class Fixture(BASE.Fixture):
                 # Stub provider only: deterministic text, no network, no real key. The user-key secret is a per-run
                 # random value that only has to exist (HMAC of the opaque account id sent to a provider); PRO gives the
                 # fixture account room for several materials (the Free plan opens 13 credits a week).
-                environment.update({"LEARNING_FEATURES_AI_GENERATION_ENABLED": "true", "LEARNING_AI_PROVIDER": "stub",
+                environment.update({"LEARNING_FEATURES_AI_GENERATION_ENABLED": "true", "LEARNING_FEATURES_AI_ASSESSMENT_ENABLED": "true",
+                                    "LEARNING_AI_PROVIDER": "stub",
                                     "MNEMA_AI_USER_KEY_SECRET": uuid.uuid4().hex + uuid.uuid4().hex,
                                     "LEARNING_USAGE_ENTITLEMENTS_DEFAULT_PLAN": "PRO"})
-            elif getattr(self.args, "generation", False):
-                # The ordinary instance of a `--generation` run has generation off; as an `api` process it has no step
+            elif self.stub_instance():
+                # The ordinary instance of a `--generation` or `--assessment` run has the AI features off; as an `api` process it has no step
                 # dispatcher, so it can never claim a step of the second (Stub) instance that shares the database.
                 environment["MNEMA_RUNTIME_ROLES"] = "api"
             arguments += [f"--learning.identity.transport-base=http://127.0.0.1:{self.identity_port}",
@@ -389,8 +395,8 @@ class Fixture(BASE.Fixture):
                   "password": BASE.PASSWORD, "readySelector": self.args.ready_selector,
                   "logoutSelector": self.args.logout_selector, "errorSelector": self.args.error_selector,
                   "authoring": self.args.authoring, "media": self.args.media, "mechanics": self.args.mechanics,
-                  "generation": self.args.generation, "onlyEdits": self.args.only_edits,
-                  "cdpTimeoutMs": cdp_timeout_ms(),
+                  "generation": self.args.generation, "assessment": self.args.assessment,
+                  "onlyEdits": self.args.only_edits, "cdpTimeoutMs": cdp_timeout_ms(),
                   "diagnosticsDir": str(self.tmp) if self.args.mechanics and self.args.keep_on_failure else None,
                   "mediaOrigin": self.media_origin, "mediaClips": media_clips}
         private_config = self.tmp / "browser.json"
@@ -404,7 +410,8 @@ class Fixture(BASE.Fixture):
         evidence = {"fixture": self.results, "frontend_tree_sha256": digest.hexdigest(),
                     "scripts": {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
                                 for name in ("run.py", "browser.mjs", "mechanics.mjs", "notifications.mjs", "hub.mjs",
-                                             "code-block.mjs", "usage.mjs", "workshop.mjs", "exercises.mjs", "selection-edits.mjs")}}
+                                             "code-block.mjs", "usage.mjs", "workshop.mjs", "exercises.mjs", "selection-edits.mjs",
+                                             "assessment.mjs")}}
         (self.args.output / "fixture.json").write_text(json.dumps(evidence, indent=2))
         runner = self.launch_group([self.args.node, str(Path(__file__).with_name("browser.mjs")), str(private_config)], "browser")
         self.control("browser_running")
@@ -506,6 +513,10 @@ def main():
     parser.add_argument("--generation", action="store_true",
                         help="boot Learning with the Stub generation provider (never a real one) and drive the composer and "
                              "the Workshop through the real UI after the authoring scenarios (requires --authoring)")
+    parser.add_argument("--assessment", action="store_true",
+                        help="boot Learning with the Stub provider and AI assessment on (never a real provider) and drive the rubric editor "
+                             "and the learner's check of an explanation (waiting, «Оценить себя», result, self-check, dispute) through "
+                             "the real UI (requires --authoring)")
     parser.add_argument("--only-edits", action="store_true",
                         help="development aid: after the base flow run only the Workshop selection-edit scenario (requires --generation); "
                              "never a substitute for the full run")
@@ -521,11 +532,13 @@ def main():
         parser.error("--mechanics requires --authoring --media")
     if args.generation and not args.authoring:
         parser.error("--generation requires --authoring")
+    if args.assessment and not args.authoring:
+        parser.error("--assessment requires --authoring")
     if args.only_edits and not args.generation:
         parser.error("--only-edits requires --generation")
     if args.timeout is None:
         args.timeout = 600 if args.mechanics else 180
-        if args.generation:
+        if args.generation or args.assessment:
             args.timeout = max(args.timeout, 840)
     if not 30 <= args.timeout <= 900:
         parser.error("--timeout must be between 30 and 900 seconds")

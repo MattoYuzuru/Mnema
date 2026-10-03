@@ -1,10 +1,14 @@
 import { Observable, of } from 'rxjs';
 
+import assessmentFixture from '../../../../../contracts/study/assessment.json';
 import mechanicsFixture from '../../../../../contracts/study/mechanics.json';
 import previewFixture from '../../../../../contracts/study/preview.json';
 
 /** Canonical wire fixtures shared with the backend. Specs read them; production code never imports this file. */
 export const mechanics = mechanicsFixture as unknown as Record<string, any>;
+
+/** AI assessment wire fixtures (contracts/study/assessment.json, #292), shared with the backend. */
+export const assessment = assessmentFixture as unknown as Record<string, any>;
 
 /** Author preview wire fixtures (contracts/study/preview.json), shared with the backend. */
 export const previews = previewFixture as unknown as Record<string, any>;

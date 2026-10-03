@@ -6,19 +6,22 @@ import { ExclusivePlaybackDirective } from '../../content/exercise/exclusive-pla
 import { LearnerContent } from '../../content/exercise/exercise-content.models';
 import { itemLabel } from '../../content/exercise/item-label';
 import { LearnerBlocksComponent } from '../../content/exercise/learner-blocks.component';
+import { AssessmentResultComponent } from './assessment-views.component';
 import {
-    AttemptFeedback, SelfRating, StudyResponse, isCategorizeFeedback, isChoiceFeedback, isClozeFeedback, isFreeResponseFeedback,
-    isMatchFeedback, isOrderFeedback, isUnassessed
+    AttemptFeedback, SELF_RATING_LABELS, SelfRating, StudyResponse, isCategorizeFeedback, isChoiceFeedback, isClozeFeedback,
+    isFreeResponseFeedback, isMatchFeedback, isOrderFeedback, isUnassessed
 } from './study.models';
 
-const RATING_LABELS: Readonly<Record<SelfRating, string>> = {
-    NOT_RECALLED: 'Не вспомнил', HINTED: 'Вспомнил с подсказкой', PARTIAL: 'Вспомнил частично', FULL: 'Вспомнил полностью'
-};
+const JUDGEMENT_TITLES = { COMPLETE: 'Засчитано', PARTIAL: 'Частично', INSUFFICIENT: 'Пока не засчитано' } as const;
 const TITLES = { CORRECT: 'Верно', PARTIAL: 'Частично', UNSURE: 'Неуверенно', INCORRECT: 'Нужно повторить',
     NOT_ASSESSED: 'Без оценки', UNAVAILABLE: 'Проверка недоступна' } as const;
 
 /** Heading of one evaluation result, shared by Study and the author preview. */
-export function feedbackTitle(feedback: AttemptFeedback): string { return TITLES[feedback.result]; }
+export function feedbackTitle(feedback: AttemptFeedback): string {
+    if (isFreeResponseFeedback(feedback) && feedback.assessment !== undefined) return JUDGEMENT_TITLES[feedback.assessment.judgement];
+    if (isUnassessed(feedback) && feedback.reasonCodes.includes('AI_DISPUTED')) return 'Оценка снята';
+    return TITLES[feedback.result];
+}
 
 /**
  * The evaluated result of one attempt next to the learner's own answer: per-blank verdicts, the correct
@@ -27,12 +30,16 @@ export function feedbackTitle(feedback: AttemptFeedback): string { return TITLES
  */
 @Component({
     selector: 'app-learner-feedback',
-    imports: [LearnerBlocksComponent, ClozePassageComponent, ChoiceListComponent, ExclusivePlaybackDirective],
+    imports: [LearnerBlocksComponent, ClozePassageComponent, ChoiceListComponent, ExclusivePlaybackDirective, AssessmentResultComponent],
     template: `
       <div class="feedback" appExclusivePlayback>
         @if (unassessed(); as value) {
-          @if (value.reasonCodes.includes('MEDIA_NOT_READY')) {
+          @if (value.reasonCodes.includes('AI_DISPUTED')) {
+            <!-- The host states what the dispute did; the reference below stays for comparing. -->
+          } @else if (value.reasonCodes.includes('MEDIA_NOT_READY')) {
             <p class="notice" role="status">Запись стала недоступна. Ответ не оценён и не изменил расписание; попробуйте упражнение позже.</p>
+          } @else if (value.reasonCodes.includes('EVALUATOR_UNAVAILABLE') && content().type === 'FREE_RESPONSE') {
+            <p class="notice" role="status">В предпросмотре ИИ не проверяет ответ. На занятии Мнема сверит ответ с вашими пунктами, а если не будет уверена, ученик оценит себя сам.</p>
           } @else {
             <p class="notice" role="status">Проверка сейчас недоступна. Это не ошибка ученика: ответ не изменил расписание.</p>
           }
@@ -46,9 +53,10 @@ export function feedbackTitle(feedback: AttemptFeedback): string { return TITLES
             @if (rating(); as value) { <p class="reference-line"><strong>Ваша оценка:</strong> {{ ratingLabel(value) }}</p> }
           }
           @case ('FREE_RESPONSE') {
-            @if (freeResponse(); as value) {
+            @if (freeResponse()?.assessment; as assessment) { <app-assessment-result [assessment]="assessment" /> }
+            @if (referenceView(); as value) {
               <dl class="comparison">
-                <div><dt>Ваш ответ</dt><dd class="answer-text">{{ submittedText() || 'Пустой ответ' }}</dd></div>
+                <div><dt>Ваш ответ</dt><dd class="answer-text">{{ submittedText() === null ? 'Ответ принят. Его текст не сохранился в этой вкладке.' : submittedText() || 'Пустой ответ' }}</dd></div>
                 <div><dt>Эталон</dt><dd class="answer-text">{{ value.reference }}</dd></div>
               </dl>
               @if (value.referenceContent.length > 0) {
@@ -166,6 +174,13 @@ export class LearnerFeedbackComponent {
     readonly order = computed(() => { const value = this.feedback(); return isOrderFeedback(value) ? value : null; });
     readonly categorizeFeedback = computed(() => { const value = this.feedback(); return isCategorizeFeedback(value) ? value : null; });
     readonly freeResponse = computed(() => { const value = this.feedback(); return isFreeResponseFeedback(value) ? value : null; });
+    /** The reference shown after the answer: a graded or self-rated explanation, or a disputed grade that keeps it. */
+    readonly referenceView = computed(() => {
+        const value = this.feedback();
+        if (isFreeResponseFeedback(value)) return value;
+        return isUnassessed(value) && value.reference !== undefined && value.referenceContent !== undefined
+            ? { reference: value.reference, referenceContent: value.referenceContent } : null;
+    });
     readonly retryNote = computed(() => {
         const value = this.feedback();
         return !isUnassessed(value) && value.appliedRules.includes('PAIR_RETRY');
@@ -180,7 +195,8 @@ export class LearnerFeedbackComponent {
         return value === null ? null : Object.fromEntries(value.blanks.map(blank => [blank.blankId,
             { correct: blank.correct, hinted: blank.hinted, reference: blank.reference }]));
     });
-    readonly submittedText = computed(() => { const value = this.submitted(); return value?.kind === 'TEXT' ? value.text : ''; });
+    /** `null` when the tab no longer holds the answer (a reload after it was sent); an empty answer is an empty string. */
+    readonly submittedText = computed(() => { const value = this.submitted(); return value?.kind === 'TEXT' ? value.text : value === null ? null : ''; });
     readonly submittedClozeValues = computed<Readonly<Record<string, string>>>(() => {
         const value = this.submitted();
         return value?.kind === 'CLOZE' ? Object.fromEntries(value.blanks.map(blank => [blank.blankId, blank.text])) : {};
@@ -188,7 +204,7 @@ export class LearnerFeedbackComponent {
     readonly submittedOptionIds = computed(() => { const value = this.submitted(); return value?.kind === 'CHOICE' ? value.optionIds : []; });
     readonly rating = computed(() => { const value = this.submitted(); return value?.kind === 'SELF_CHECK' ? value.rating : null; });
 
-    ratingLabel(rating: SelfRating): string { return RATING_LABELS[rating]; }
+    ratingLabel(rating: SelfRating): string { return SELF_RATING_LABELS[rating]; }
 
     /** Issued item of the answered ORDER content, with its stable 1-based ordinal for generated names. */
     orderItem(itemId: string) { return this.orderContent()?.items.find(item => item.itemId === itemId) ?? null; }

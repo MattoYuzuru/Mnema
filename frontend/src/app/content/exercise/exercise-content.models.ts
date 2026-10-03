@@ -97,8 +97,15 @@ export const LIMITS = {
     orderItems: { min: 2, max: 12 },
     categories: { min: 2, max: 6, label: 80 },
     categorizeItems: { min: 2, max: 12 },
-    aiCriteria: { min: 1, max: 10, description: 500 },
-    aiReferenceAnswer: 4000
+    /** Rubric v1 of `ai-semantic` (contracts/study/README.md): the server rejects anything outside these bounds. */
+    aiRubric: {
+        referenceAnswer: 4000,
+        description: 500,
+        criteria: { max: 10 },
+        tiers: { CORE: { min: 2, max: 3 }, DETAIL: { min: 1, max: 4 }, TERM: { min: 0, max: 2 } },
+        misconceptions: { max: 10, length: 300 },
+        acceptableTerms: { max: 30, length: 80 }
+    }
 } as const;
 
 // ---------------------------------------------------------------------------------------------
@@ -169,12 +176,23 @@ export interface CategorizeKey {
     readonly assignments: readonly { readonly itemId: string; readonly categoryId: string }[];
 }
 
-export type AiLevel = 'COMPLETE' | 'PARTIAL' | 'INSUFFICIENT';
-export const AI_LEVELS: readonly AiLevel[] = ['COMPLETE', 'PARTIAL', 'INSUFFICIENT'];
+/** CORE = the essence, DETAIL = completeness, TERM = exact terminology. The model never sees tiers or weights. */
+export type CriterionTier = 'CORE' | 'DETAIL' | 'TERM';
+export const CRITERION_TIERS: readonly CriterionTier[] = ['CORE', 'DETAIL', 'TERM'];
+export type CriterionWeight = 1 | 2 | 3;
+export const CRITERION_WEIGHTS: readonly CriterionWeight[] = [1, 2, 3];
+export interface AiCriterion {
+    readonly criterionId: string;
+    readonly description: string;
+    readonly tier: CriterionTier;
+    readonly weight: CriterionWeight;
+}
+/** Rubric v1: the reference answer for the grader, 3..9 key points, typical mistakes and accepted terms. */
 export interface AiRubric {
     readonly referenceAnswer: string;
-    readonly criteria: readonly { readonly criterionId: string; readonly description: string; readonly critical: boolean }[];
-    readonly levels: readonly { readonly level: AiLevel; readonly description: string }[];
+    readonly criteria: readonly AiCriterion[];
+    readonly misconceptions: readonly string[];
+    readonly acceptableTerms: readonly string[];
 }
 export interface EvaluatorRef<I extends string> { readonly id: I; readonly version: '1'; }
 export interface AiSemanticPolicy extends EvaluatorRef<'ai-semantic'> { readonly rubric: AiRubric; }

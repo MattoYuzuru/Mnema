@@ -82,13 +82,31 @@ const PROMPT_HINTS: Readonly<Partial<Record<Mechanic, string>>> = {
 };
 const STEPS_WITH_PROMPT: ReadonlySet<StepId> = new Set<StepId>(['prompt', 'context']);
 
+/**
+ * The messages of a set of field errors for a summary: each text once, and one line for all key points of a rubric (their messages
+ * are the same sentence), so a screen reader is not read the same line three times.
+ */
+function distinctMessages(errors: DraftErrors): readonly string[] {
+    const seen = new Set<string>();
+    let criterion = false;
+    for (const [key, text] of Object.entries(errors)) {
+        if (text === undefined) continue;
+        if (key.startsWith('rubric:criterion:')) {
+            if (criterion) continue;
+            criterion = true;
+        }
+        seen.add(text);
+    }
+    return [...seen];
+}
+
 /** Whether a validation key belongs to the given step, so «Продолжить» only checks what the step just asked for. */
 function stepOwns(step: StepId, key: string): boolean {
     switch (step) {
         case 'prompt':
         case 'context': return key === 'prompt';
         case 'reference': return key === 'reference';
-        case 'answers': return key === 'accepted' || key === 'reference';
+        case 'answers': return key === 'accepted' || key === 'reference' || key.startsWith('rubric:');
         case 'passage': return key === 'passage' || key.startsWith('blank:');
         case 'options': return key === 'options' || key === 'selection' || key.startsWith('option:');
         case 'pairs': return key === 'pairs' || key.startsWith('left:') || key.startsWith('right:');
@@ -178,8 +196,8 @@ export class ExerciseAuthoringPageComponent {
         if (this.titleEdited()) return this.objectiveTitle();
         return this.objectiveMode() === 'create' ? this.suggestedTitle() : this.selectedObjective()?.title ?? '';
     });
-    readonly errorSummary = computed(() => Object.values(this.fieldErrors()).filter((text): text is string => text !== undefined));
-    readonly stepProblems = computed(() => Object.values(this.stepErrors()).filter((text): text is string => text !== undefined));
+    readonly errorSummary = computed(() => distinctMessages(this.fieldErrors()));
+    readonly stepProblems = computed(() => distinctMessages(this.stepErrors()));
     readonly visibleErrors = computed<DraftErrors>(() => ({ ...this.stepErrors(), ...this.fieldErrors() }));
     readonly staleProjection = computed(() => {
         const detail = this.exercise();
@@ -363,7 +381,11 @@ export class ExerciseAuthoringPageComponent {
     }
 
     stepNumber(index: number): number { return index + 2; }
-    titleOf(step: StepId): string { return stepTitle(this.mechanic()!, step); }
+    titleOf(step: StepId): string {
+        const mechanic = this.mechanic()!;
+        return mechanic === 'FREE_RESPONSE' && step === 'answers' && this.drafts().FREE_RESPONSE.aiRubric !== null
+            ? 'Эталон и пункты проверки' : stepTitle(mechanic, step);
+    }
     typeTitle(type: Mechanic): string { return catalogEntry(type).title; }
     promptLabel(step: StepId): string { return PROMPT_LABELS[step]; }
     promptHint(): string | null { return PROMPT_HINTS[this.mechanic()!] ?? null; }

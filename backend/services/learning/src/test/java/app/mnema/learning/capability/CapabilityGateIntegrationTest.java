@@ -82,7 +82,7 @@ class CapabilityGateIntegrationTest extends PostgresIntegrationTest {
         assertThat(fixtures.deckVersion(material)).isEqualTo(before);
         // structural errors are reported before any capability question
         ObjectNode broken = mechanic("rejectedAiAssessment");
-        broken.withObject("exercise").withObject("evaluatorPolicy").withObject("rubric").remove("levels");
+        broken.withObject("exercise").withObject("evaluatorPolicy").withObject("rubric").remove("acceptableTerms");
         assertThatThrownBy(() -> ExerciseCommand.readCreate(bytes(broken))).isInstanceOf(InvalidRequestException.class);
         fixtures.publish(material, fixtures.freeResponse(material, blocks(text("Q")), blocks(), "typed"));
     }

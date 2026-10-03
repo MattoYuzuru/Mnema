@@ -29,7 +29,8 @@ public class AttemptController {
                                     @PathVariable String sessionId, InputStream body) {
         AttemptService.SubmitResult result = service.submit(id(identity.getSubject()), id(deckId), id(sessionId),
                 AttemptCommand.read(body));
-        ResponseEntity.BodyBuilder response = ResponseEntity.ok().headers(privateHeaders());
+        // 202 while an ai-semantic answer is being assessed (or waits for the learner's own rating), 200 for a terminal outcome
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(result.accepted() ? 202 : 200).headers(privateHeaders());
         if (result.replayed()) response.header("Idempotency-Replayed", "true");
         return response.body(result.outcome());
     }

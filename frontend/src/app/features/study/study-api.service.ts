@@ -4,11 +4,17 @@ import { Observable, defer, map } from 'rxjs';
 
 import { appConfig } from '../../app.config';
 import { LearnerContent, MECHANICS, Mechanic, allLearnerBlocks } from '../../content/exercise/exercise-content.models';
-import { parseLearnerContent } from '../../content/exercise/exercise-content.parse';
+import { parseLearnerBlock, parseLearnerContent } from '../../content/exercise/exercise-content.parse';
 import { parseAttemptFeedback } from './attempt-feedback.parse';
 import {
+    AssessingAttempt,
     AttemptCommand,
     AttemptOutcome,
+    AttemptState,
+    SELF_RATINGS,
+    SelfCheckAttempt,
+    SelfCheckReason,
+    SelfRating,
     HintResult,
     MaterialProgress,
     PreparingStudySession,
@@ -116,7 +122,11 @@ export class StudyApiService {
         }));
     }
 
-    submit(deckId: string, sessionId: string, command: AttemptCommand): Observable<StudyWriteResult<AttemptOutcome>> {
+    /**
+     * Sends one answer. A deterministic answer returns its stored outcome (200); an `ai-semantic` answer returns 202 with
+     * the grading state (still grading, or already self-check), which the caller follows with `attempt`.
+     */
+    submit(deckId: string, sessionId: string, command: AttemptCommand): Observable<StudyWriteResult<AttemptState>> {
         return defer(() => {
             validateCommand(command);
             return this.http.post<unknown>(
@@ -124,14 +134,46 @@ export class StudyApiService {
                 command, { observe: 'response' }
             );
         }).pipe(map(response => {
-            if (response.status !== 200) throw protocol('Unexpected attempt status.');
+            if (response.status !== 200 && response.status !== 202) throw protocol('Unexpected attempt status.');
             privateResponse(response);
-            const value = parseOutcome(response.body);
+            const value = response.status === 202 ? parseAssessmentState(response.body) : parseOutcome(response.body);
             if (value.attemptId !== command.attemptId || value.presentationId !== command.presentationId) {
                 throw protocol('Attempt acknowledgement mismatch.');
             }
             return { value, replayed: replayHeader(response.headers) };
         }));
+    }
+
+    /** Current state of an answer: still grading, self-check, or the stored outcome. Never returns an error for a slow grader. */
+    attempt(deckId: string, sessionId: string, attemptId: string): Observable<AttemptState> {
+        return defer(() => this.http.get<unknown>(this.attemptUrl(deckId, sessionId, attemptId), { observe: 'response' }))
+            .pipe(map(response => this.attemptState(response, attemptId)));
+    }
+
+    /** «Оценить себя»: the learner stops waiting for the model. Idempotent; the grade may already have won the race. */
+    selfCheck(deckId: string, sessionId: string, attemptId: string): Observable<AttemptState> {
+        return defer(() => this.http.post<unknown>(`${this.attemptUrl(deckId, sessionId, attemptId)}/self-check`, {},
+            { observe: 'response' })).pipe(map(response => this.attemptState(response, attemptId)));
+    }
+
+    /** The learner's own rating completes the same attempt from the self-check view. */
+    selfRate(deckId: string, sessionId: string, attemptId: string, rating: SelfRating): Observable<StudyWriteResult<AttemptOutcome>> {
+        return defer(() => {
+            if (!SELF_RATINGS.includes(rating)) throw protocol('Invalid rating.');
+            return this.http.post<unknown>(`${this.attemptUrl(deckId, sessionId, attemptId)}/self-rating`, { rating },
+                { observe: 'response' });
+        }).pipe(map(response => this.outcomeOf(response, attemptId, 'Unexpected self-rating status.')));
+    }
+
+    /** «Оспорить оценку»: takes the AI grade back. Replaying the same command id returns the same result. */
+    dispute(deckId: string, sessionId: string, attemptId: string, commandId: string): Observable<StudyWriteResult<AttemptOutcome>> {
+        return defer(() => this.http.post<unknown>(`${this.attemptUrl(deckId, sessionId, attemptId)}/dispute`,
+            { commandId: commandIdValue(commandId) }, { observe: 'response' }))
+            .pipe(map(response => {
+                const result = this.outcomeOf(response, attemptId, 'Unexpected dispute status.');
+                if (!result.value.disputed) throw protocol('The grade was not disputed.');
+                return result;
+            }));
     }
 
     checkPair(deckId: string, sessionId: string, presentationId: string, nonce: string,
@@ -185,6 +227,28 @@ export class StudyApiService {
             if (!hasTranscript(content)) throw protocol('Transcript was not revealed.');
             return { presentationId: presentationId.toLowerCase(), content };
         }));
+    }
+
+    private attemptUrl(deckId: string, sessionId: string, attemptId: string): string {
+        return `${this.baseUrl}/decks/${entity(deckId)}/study-sessions/${entity(sessionId)}/attempts/${entity(attemptId)}`;
+    }
+
+    private attemptState(response: HttpResponse<unknown>, attemptId: string): AttemptState {
+        if (response.status !== 200) throw protocol('Unexpected attempt status.');
+        privateResponse(response);
+        const body = response.body;
+        const value = isRecord(body) && (body['status'] === 'ASSESSING' || body['status'] === 'SELF_CHECK')
+            ? parseAssessmentState(body) : parseOutcome(body);
+        if (value.attemptId !== entity(attemptId)) throw protocol('Attempt acknowledgement mismatch.');
+        return value;
+    }
+
+    private outcomeOf(response: HttpResponse<unknown>, attemptId: string, message: string): StudyWriteResult<AttemptOutcome> {
+        if (response.status !== 200) throw protocol(message);
+        privateResponse(response);
+        const value = parseOutcome(response.body);
+        if (value.attemptId !== entity(attemptId)) throw protocol('Attempt acknowledgement mismatch.');
+        return { value, replayed: replayHeader(response.headers) };
     }
 }
 
@@ -312,9 +376,10 @@ const EVALUATORS: Readonly<Record<Mechanic, readonly string[]>> = {
 };
 
 function parsePresentation(value: unknown): StudyPresentation {
+    const graded = isRecord(value) && 'assessment' in value;
     const object = exact(value, [
         'presentationId', 'nonce', 'ordinal', 'exerciseRevisionId', 'type', 'objectiveId', 'objectiveRevisionId',
-        'learningEpoch', 'isNew', 'content', 'transcriptRevealed', 'hints', 'evaluator'
+        'learningEpoch', 'isNew', 'content', 'transcriptRevealed', 'hints', 'evaluator', ...(graded ? ['assessment'] : [])
     ]);
     if (typeof object['isNew'] !== 'boolean') throw protocol('Invalid new mark.');
     const type = exerciseType(object['type']);
@@ -323,13 +388,20 @@ function parsePresentation(value: unknown): StudyPresentation {
     const evaluator = exact(object['evaluator'], ['id', 'version']);
     if (!EVALUATORS[type].includes(text(evaluator['id'], 100))) throw protocol('Evaluator does not match the exercise.');
     const hints = parseHints(object['hints'], learner);
+    let assessment: StudyPresentation['assessment'];
+    if (graded) {
+        if (type !== 'FREE_RESPONSE') throw protocol('Only a free response can be in assessment.');
+        const state = exact(object['assessment'], ['attemptId', 'status']);
+        if (state['status'] !== 'ASSESSING' && state['status'] !== 'SELF_CHECK') throw protocol('Invalid assessment state.');
+        assessment = { attemptId: entity(state['attemptId']), status: state['status'] };
+    }
     return {
         presentationId: entity(object['presentationId']), nonce: text(object['nonce'], 100, 16),
         ordinal: count(object['ordinal'], 99), exerciseRevisionId: entity(object['exerciseRevisionId']),
         objectiveId: entity(object['objectiveId']), objectiveRevisionId: entity(object['objectiveRevisionId']),
         learningEpoch: unsigned(object['learningEpoch']), transcriptRevealed: object['transcriptRevealed'],
         hints, evaluator: { id: text(evaluator['id'], 100), version: text(evaluator['version'], 100) },
-        isNew: object['isNew'], ...learner
+        isNew: object['isNew'], ...(assessment === undefined ? {} : { assessment }), ...learner
     };
 }
 
@@ -355,11 +427,12 @@ function hasTranscript(content: LearnerContent): boolean {
 function parseOutcome(value: unknown): AttemptOutcome {
     if (!isRecord(value)) throw protocol('Invalid attempt outcome.');
     const practice = 'canonicalEffects' in value;
-    const object = exact(value, practice
-        ? ['attemptId', 'presentationId', 'mode', 'status', 'evidence', 'feedback', 'transition', 'canonicalEffects']
-        : ['attemptId', 'presentationId', 'mode', 'status', 'evidence', 'feedback', 'transition']);
+    const disputed = 'disputed' in value;
+    const object = exact(value, ['attemptId', 'presentationId', 'mode', 'status', 'evidence', 'feedback', 'transition',
+        ...(practice ? ['canonicalEffects'] : []), ...(disputed ? ['disputed'] : [])]);
     const status = object['status'];
     if (status !== 'ASSESSED' && status !== 'NOT_ASSESSED' && status !== 'UNAVAILABLE') throw protocol('Invalid outcome status.');
+    if (disputed && object['disputed'] !== true) throw protocol('Invalid dispute mark.');
     const parsedMode = mode(object['mode']);
     if (practice && (object['canonicalEffects'] !== false || parsedMode === 'SCHEDULED')) throw protocol('Invalid practice effect.');
     const transition = object['transition'] === null ? null : parseTransition(object['transition']);
@@ -367,7 +440,43 @@ function parseOutcome(value: unknown): AttemptOutcome {
     parseEvidence(object['evidence'], status, parsedMode);
     return { attemptId: commandIdValue(object['attemptId']), presentationId: entity(object['presentationId']),
         mode: parsedMode, status, feedback: parseAttemptFeedback(object['feedback']),
-        canonicalEffects: practice ? false : parsedMode === 'SCHEDULED', transition };
+        canonicalEffects: practice ? false : parsedMode === 'SCHEDULED', transition, disputed };
+}
+
+const SELF_CHECK_REASONS: readonly SelfCheckReason[] = ['LEARNER_CHOICE', 'PROVIDER_UNCERTAIN', 'PROVIDER_UNAVAILABLE',
+    'USAGE_LIMIT', 'CAPABILITY_UNAVAILABLE', 'DEADLINE', 'BUSY'];
+
+/** The 202 body and the polled state of an answer that is not terminal yet. */
+function parseAssessmentState(value: unknown): AssessingAttempt | SelfCheckAttempt {
+    if (!isRecord(value)) throw protocol('Invalid assessment state.');
+    if (value['status'] === 'ASSESSING') {
+        const object = exact(value, ['attemptId', 'presentationId', 'mode', 'status', 'retryAfterMs']);
+        const retryAfterMs = object['retryAfterMs'];
+        if (typeof retryAfterMs !== 'number' || !Number.isSafeInteger(retryAfterMs) || retryAfterMs < 100 || retryAfterMs > 60_000) {
+            throw protocol('Invalid retry delay.');
+        }
+        return { attemptId: commandIdValue(object['attemptId']), presentationId: entity(object['presentationId']),
+            mode: mode(object['mode']), status: 'ASSESSING', retryAfterMs };
+    }
+    const object = exact(value, ['attemptId', 'presentationId', 'mode', 'status', 'reason', 'selfCheck']);
+    if (object['status'] !== 'SELF_CHECK') throw protocol('Invalid assessment status.');
+    const reason = object['reason'];
+    if (!SELF_CHECK_REASONS.includes(reason as SelfCheckReason)) throw protocol('Invalid self-check reason.');
+    const view = exact(object['selfCheck'], ['reference', 'referenceContent', 'criteria']);
+    if (!Array.isArray(view['referenceContent']) || view['referenceContent'].length > 8
+        || !Array.isArray(view['criteria']) || view['criteria'].length < 3 || view['criteria'].length > 10) {
+        throw protocol('Invalid self-check view.');
+    }
+    const criteria = view['criteria'].map(item => {
+        const entry = exact(item, ['criterionId', 'description']);
+        return { criterionId: entity(entry['criterionId']), description: text(entry['description'], 2048, 1) };
+    });
+    if (new Set(criteria.map(item => item.criterionId)).size !== criteria.length) throw protocol('Duplicate key point.');
+    return { attemptId: commandIdValue(object['attemptId']), presentationId: entity(object['presentationId']),
+        mode: mode(object['mode']), status: 'SELF_CHECK', reason: reason as SelfCheckReason,
+        selfCheck: { reference: text(view['reference'], 16384, 0),
+            referenceContent: view['referenceContent'].map(block => guard(() => parseLearnerBlock(block, 'REFERENCE', null))),
+            criteria } };
 }
 
 function parseEvidence(value: unknown, status: AttemptOutcome['status'], parsedMode: StudyMode): void {

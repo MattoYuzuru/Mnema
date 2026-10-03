@@ -4,7 +4,7 @@ import { LearnerContent } from '../../content/exercise/exercise-content.models';
 import { LearnerFeedbackComponent, feedbackTitle } from './learner-feedback.component';
 import { MEDIA_PLAYBACK_RESOLVER } from './media-playback-resolver';
 import { AttemptFeedback, StudyResponse } from './study.models';
-import { clone, fakePlayback, mechanics } from './study-test-data';
+import { assessment, clone, fakePlayback, mechanics } from './study-test-data';
 
 describe('LearnerFeedbackComponent', () => {
     const presentations = mechanics['presentations'];
@@ -88,5 +88,38 @@ describe('LearnerFeedbackComponent', () => {
         expect(wrong[0].textContent).toContain('Правильная группа: Существительное');
         expect(rows.filter(row => row.textContent?.includes('Правильная группа')).length).toBe(1);
         expect(rows.some(row => row.querySelector('app-learner-media'))).toBe(true); // the audio item can be heard again
+    });
+
+    describe('AI assessment (#292)', () => {
+        const free = (): LearnerContent => learner('freeResponse');
+        const graded = (name: string): AttemptFeedback => clone(assessment[name].feedback);
+
+        it('titles a model grade with the judgement in words and a disputed one with what happened', () => {
+            expect(feedbackTitle(graded('resultComplete'))).toBe('Засчитано');
+            expect(feedbackTitle(graded('resultPartialStrict'))).toBe('Частично');
+            expect(feedbackTitle(graded('resultOffTopic'))).toBe('Пока не засчитано');
+            expect(feedbackTitle(graded('disputeOutcome'))).toBe('Оценка снята');
+            expect(feedbackTitle(graded('selfRatingOutcome'))).toBe('Частично');
+        });
+
+        it('shows covered and missing points beside the answer and the reference, in that order', () => {
+            const root = create(free(), graded('resultComplete'), { kind: 'TEXT', text: 'мой ответ' });
+            const order = [...root.querySelectorAll('app-assessment-result h3, .comparison')].map(node => node.id || node.className);
+            expect(order).toEqual(['assessment-covered-title', 'assessment-missing-title', 'comparison']);
+            expect(root.querySelector('.comparison')?.textContent).toContain('мой ответ');
+        });
+
+        it('keeps the reference of a disputed grade for comparing and says nothing about an unavailable check', () => {
+            const root = create(free(), graded('disputeOutcome'), { kind: 'TEXT', text: 'мой ответ' });
+            expect(root.querySelector('.comparison')?.textContent).toContain('Инерция — свойство тела');
+            expect(root.querySelector('.notice')).toBeNull();
+            expect(root.querySelector('app-assessment-result')).toBeNull();
+        });
+
+        it('tells an author that the preview does not run the AI, for a free response only', () => {
+            const unavailable: AttemptFeedback = { result: 'UNAVAILABLE', reasonCodes: ['EVALUATOR_UNAVAILABLE'] };
+            expect(create(free(), unavailable, { kind: 'TEXT', text: 'x' }).querySelector('.notice')?.textContent).toContain('В предпросмотре ИИ не проверяет ответ');
+            expect(create(learner('selfCheck'), unavailable, null).querySelector('.notice')?.textContent).toContain('Проверка сейчас недоступна');
+        });
     });
 });

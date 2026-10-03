@@ -377,8 +377,9 @@ def provision_additional_mechanic(web, access, account, state_file, mechanic):
 
 def capability_smoke(web, access, account):
     status, headers, capabilities = web.request("GET", "/api/capabilities", bearer=access)
-    # Eight capability keys (#282). Every flag is off by default; only aiGeneration may be switched on for the local stack
-    # (LEARNING_FEATURES_AI_GENERATION_ENABLED, passed by the launcher), and then it is either usable or names why not.
+    # Eight capability keys (#282). Every flag is off by default; only aiGeneration and aiAssessment may be switched on for the local
+    # stack (LEARNING_FEATURES_AI_GENERATION_ENABLED / LEARNING_FEATURES_AI_ASSESSMENT_ENABLED, passed by the launcher), and then each
+    # is either usable or names why not.
     disabled = {"available": False, "reason": "DISABLED"}
     expected = {key: disabled for key in ("aiAssessment", "speechToText", "aiGeneration", "textToSpeech", "imageSearch",
                                           "imageGeneration", "videoGeneration", "webSearch")}
@@ -390,25 +391,37 @@ def capability_smoke(web, access, account):
                                {"available": False, "reason": "PROVIDER_NOT_CONFIGURED"},
                                {"available": False, "reason": "TEMPORARILY_UNAVAILABLE"}),
                 f"enabled aiGeneration must be available or name its reason: {generation}")
+    if os.environ.get("LEARNING_FEATURES_AI_ASSESSMENT_ENABLED", "").lower() == "true" and isinstance(actual, dict):
+        assessment = actual.pop("aiAssessment", None)
+        expected.pop("aiAssessment")
+        require(assessment in ({"available": True, "reason": None}, {"available": True},
+                               {"available": False, "reason": "PROVIDER_NOT_CONFIGURED"},
+                               {"available": False, "reason": "TEMPORARILY_UNAVAILABLE"}),
+                f"enabled aiAssessment must be available or name its reason: {assessment}")
     require(status == 200 and actual == expected, f"AI capabilities must default to disabled: {capabilities}")
     require_private(headers, "capabilities")
     member, revision = account["studyMemberKey"], account["studyItemRevisionId"]
     base = mechanic_exercise("FREE_RESPONSE", member, revision, account["studyAnswerNodeId"], None, {})
     ai = json.loads(json.dumps(base))
+    # rubric v1: 2..3 CORE, 1..4 DETAIL, 0..2 TERM points with a weight of 1..3, misconceptions and acceptable terms (all four members)
     ai["evaluatorPolicy"] = {"id": "ai-semantic", "version": "1", "rubric": {
         "referenceAnswer": "Memory retains learned information.",
-        "criteria": [{"criterionId": str(uuid.uuid4()), "description": "Mentions retention", "critical": True}],
-        "levels": [{"level": "COMPLETE", "description": "All criteria"},
-                   {"level": "PARTIAL", "description": "Critical criteria only"},
-                   {"level": "INSUFFICIENT", "description": "A critical criterion is missing"}],
+        "criteria": [
+            {"criterionId": str(uuid.uuid4()), "description": "Says that memory retains information", "tier": "CORE", "weight": 3},
+            {"criterionId": str(uuid.uuid4()), "description": "Says that what is retained was learned", "tier": "CORE", "weight": 2},
+            {"criterionId": str(uuid.uuid4()), "description": "Gives an example of remembering", "tier": "DETAIL", "weight": 1}],
+        "misconceptions": ["Memory is a place in the brain where facts are stored unchanged"],
+        "acceptableTerms": ["retention"],
     }}
     speech = json.loads(json.dumps(base))
     speech["content"]["responseInput"] = "TEXT_OR_SPEECH"
     legacy = json.loads(json.dumps(base))
     legacy["type"] = "TYPED"
-    for label, exercise, expected, code in (("ai-semantic", ai, 409, "CAPABILITY_UNAVAILABLE"),
-                                            ("speech input", speech, 409, "CAPABILITY_UNAVAILABLE"),
-                                            ("retired type", legacy, 400, "INVALID_REQUEST")):
+    probes = [("speech input", speech, 409, "CAPABILITY_UNAVAILABLE"), ("retired type", legacy, 400, "INVALID_REQUEST")]
+    if os.environ.get("LEARNING_FEATURES_AI_ASSESSMENT_ENABLED", "").lower() != "true":
+        # with the flag off a structurally valid ai-semantic exercise is a capability conflict (with it on, and the Stub, it would publish)
+        probes.insert(0, ("ai-semantic", ai, 409, "CAPABILITY_UNAVAILABLE"))
+    for label, exercise, expected, code in probes:
         deck = deck_head(web, access, account["deckId"])
         status, _, problem = web.request("POST", f"/api/decks/{account['deckId']}/exercises", {
             "commandId": str(uuid.uuid4()), "expectedDeckRevisionId": deck["revisionId"],

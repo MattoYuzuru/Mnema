@@ -22,7 +22,6 @@ import org.springframework.stereotype.Component;
 public final class LearningCapabilities {
     private final CapabilityFlags flags;
     private final AiAvailability ai;
-    private final boolean semanticProvider;
     private final boolean speechProvider;
     private final boolean synthesis;
     private final boolean imageSearch;
@@ -32,7 +31,6 @@ public final class LearningCapabilities {
 
     public LearningCapabilities(
             CapabilityFlags flags,
-            ObjectProvider<SemanticAssessmentProvider> semanticProviders,
             ObjectProvider<SpeechToTextProvider> speechProviders,
             AiAvailability ai,
             ObjectProvider<SpeechSynthesis> synthesisPorts,
@@ -42,7 +40,6 @@ public final class LearningCapabilities {
             ObjectProvider<WebSearch> webSearchPorts) {
         this.flags = flags;
         this.ai = ai;
-        this.semanticProvider = semanticProviders.getIfAvailable() != null;
         this.speechProvider = speechProviders.getIfAvailable() != null;
         this.synthesis = synthesisPorts.getIfAvailable() != null;
         this.imageSearch = imageSearchPorts.getIfAvailable() != null;
@@ -51,7 +48,10 @@ public final class LearningCapabilities {
         this.webSearch = webSearchPorts.getIfAvailable() != null;
     }
 
-    public Status aiAssessment() { return status(flags.aiAssessment().enabled(), semanticProvider); }
+    /** Semantic grading: flag, a usable adapter on the {@code assess} route (a key or the Stub) and a healthy route. */
+    public Status aiAssessment() {
+        return flags.aiAssessment().enabled() ? map(ai.assessment()) : new Status(false, Reason.DISABLED);
+    }
 
     public Status speechToText() { return status(flags.speechToText().enabled(), speechProvider); }
 

@@ -85,8 +85,12 @@ class PromptAssemblerTest {
         assertThat(exercises.sectionTokens()).containsKeys("data-policy", "exercises");
 
         AssembledPrompt assessment = assembler.assemble(PromptTask.ASSESSMENT, PromptFixtures.assessment());
-        assertThat(assessment.segments()).hasSize(1);
-        assertThat(assessment.segments().get(0).text()).contains("<grader>").contains("<learner_answer>");
+        // the grader rules and the exercise are a cacheable head, the answer source and the learner answer the volatile tail
+        assertThat(assessment.segments()).hasSize(2);
+        assertThat(assessment.segments().get(0).cacheable()).isTrue();
+        assertThat(assessment.segments().get(0).text()).contains("<grader>").contains("<criteria>").doesNotContain("<learner_answer>\"");
+        assertThat(assessment.segments().get(1).cacheable()).isFalse();
+        assertThat(assessment.segments().get(1).text()).startsWith("<answer_source>TYPED</answer_source>").contains("<learner_answer>");
     }
 
     @Test

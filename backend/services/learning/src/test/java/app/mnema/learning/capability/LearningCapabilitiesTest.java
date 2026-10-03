@@ -21,8 +21,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class LearningCapabilitiesTest {
     private static final JsonMapper JSON = JsonMapper.builder().build();
-    private static final SemanticAssessmentProvider SEMANTIC = (rubric, response) ->
-            new SemanticAssessmentProvider.Judgement(SemanticAssessmentProvider.Level.UNSURE, "test");
     private static final SpeechToTextProvider SPEECH = asset -> new SpeechToTextProvider.Transcription("text");
     private static final ImageSearch IMAGE_SEARCH = request -> null;
     private static final WebSearch WEB_SEARCH = request -> null;
@@ -34,6 +32,8 @@ class LearningCapabilitiesTest {
         return new AiAvailability() {
             @Override public State text() { return text; }
 
+            @Override public State assessment() { return text; }
+
             @Override public State port(AiCapability capability, boolean present) {
                 if (!present) return State.NOT_CONFIGURED;
                 return temporarilyUnavailable.contains(capability) ? State.TEMPORARILY_UNAVAILABLE : State.AVAILABLE;
@@ -43,7 +43,7 @@ class LearningCapabilitiesTest {
 
     @Test
     void flagsOffMeanDisabledRegardlessOfProviders() {
-        LearningCapabilities capabilities = capabilities(CapabilityFlags.off(), TEXT_AVAILABLE, true, true, true, true);
+        LearningCapabilities capabilities = capabilities(CapabilityFlags.off(), TEXT_AVAILABLE, true, true, true);
         assertThat(capabilities.aiAssessment()).isEqualTo(new LearningCapabilities.Status(false,
                 LearningCapabilities.Reason.DISABLED));
         assertThat(capabilities.speechToText().reason()).isEqualTo(LearningCapabilities.Reason.DISABLED);
@@ -59,7 +59,7 @@ class LearningCapabilitiesTest {
     @Test
     void aFlagWithoutAProviderStaysUnavailableAndNeverFakesSuccess() {
         LearningCapabilities capabilities = capabilities(allOn(), availability(AiAvailability.State.NOT_CONFIGURED, Set.of()),
-                false, false, false, false);
+                false, false, false);
         assertThat(capabilities.aiAssessment().available()).isFalse();
         assertThat(capabilities.aiAssessment().reason()).isEqualTo(LearningCapabilities.Reason.PROVIDER_NOT_CONFIGURED);
         assertThat(capabilities.speechToText().reason()).isEqualTo(LearningCapabilities.Reason.PROVIDER_NOT_CONFIGURED);
@@ -75,9 +75,9 @@ class LearningCapabilitiesTest {
 
     @Test
     void aProviderWithoutItsFlagIsStillDisabledAndBothTogetherAreAvailable() {
-        LearningCapabilities providerOnly = capabilities(CapabilityFlags.off(), TEXT_AVAILABLE, true, true, true, true);
+        LearningCapabilities providerOnly = capabilities(CapabilityFlags.off(), TEXT_AVAILABLE, true, true, true);
         assertThat(providerOnly.aiAssessment().available()).isFalse();
-        LearningCapabilities both = capabilities(allOn(), TEXT_AVAILABLE, true, true, true, true);
+        LearningCapabilities both = capabilities(allOn(), TEXT_AVAILABLE, true, true, true);
         assertThat(both.aiAssessment()).isEqualTo(new LearningCapabilities.Status(true, null));
         assertThat(both.speechToText()).isEqualTo(new LearningCapabilities.Status(true, null));
         assertThat(both.aiGeneration()).isEqualTo(new LearningCapabilities.Status(true, null));
@@ -87,7 +87,7 @@ class LearningCapabilitiesTest {
         both.requireSpeechToText();
         // the capabilities are independent
         LearningCapabilities onlyAi = capabilities(CapabilityFlags.of(true, false, false, false, false, false, false, false),
-                TEXT_AVAILABLE, true, true, true, true);
+                TEXT_AVAILABLE, true, true, true);
         assertThat(onlyAi.aiAssessment().available()).isTrue();
         assertThat(onlyAi.speechToText().available()).isFalse();
         assertThat(onlyAi.aiGeneration().reason()).isEqualTo(LearningCapabilities.Reason.DISABLED);
@@ -99,9 +99,11 @@ class LearningCapabilitiesTest {
         AiAvailability live = new AiAvailability() {
             @Override public State text() { return state[0]; }
 
+            @Override public State assessment() { return state[0]; }
+
             @Override public State port(AiCapability capability, boolean present) { return State.AVAILABLE; }
         };
-        LearningCapabilities capabilities = capabilities(allOn(), live, false, false, false, false);
+        LearningCapabilities capabilities = capabilities(allOn(), live, false, false, false);
         assertThat(capabilities.aiGeneration()).isEqualTo(new LearningCapabilities.Status(false,
                 LearningCapabilities.Reason.TEMPORARILY_UNAVAILABLE));
         state[0] = AiAvailability.State.AVAILABLE;
@@ -111,17 +113,17 @@ class LearningCapabilitiesTest {
     @Test
     void theEndpointPayloadMatchesTheStudyContractFixtures() {
         CapabilityController.Capabilities disabled = new CapabilityController(capabilities(CapabilityFlags.off(), TEXT_AVAILABLE,
-                false, false, false, false)).read().getBody();
+                false, false, false)).read().getBody();
         assertThat(JSON.<JsonNode>valueToTree(disabled)).isEqualTo(fixture("mechanics.json").path("capabilities"));
         CapabilityController.Capabilities flagOnly = new CapabilityController(capabilities(
-                CapabilityFlags.of(true, false, false, false, false, false, false, false), TEXT_AVAILABLE, false, false, false,
-                false)).read().getBody();
+                CapabilityFlags.of(true, false, false, false, false, false, false, false),
+                availability(AiAvailability.State.NOT_CONFIGURED, Set.of()), false, false, false)).read().getBody();
         JsonNode expected = fixture("mechanics.json").path("capabilitiesFlagWithoutProvider");
         assertThat(JSON.<JsonNode>valueToTree(flagOnly)).isEqualTo(expected);
-        var response = new CapabilityController(capabilities(CapabilityFlags.off(), TEXT_AVAILABLE, false, false, false, false)).read();
+        var response = new CapabilityController(capabilities(CapabilityFlags.off(), TEXT_AVAILABLE, false, false, false)).read();
         assertThat(response.getHeaders().getFirst("Cache-Control")).isEqualTo("private, no-store");
         // an available capability reports an explicit null reason and no provider detail
-        JsonNode available = JSON.valueToTree(new CapabilityController(capabilities(allOn(), TEXT_AVAILABLE, true, true, true,
+        JsonNode available = JSON.valueToTree(new CapabilityController(capabilities(allOn(), TEXT_AVAILABLE, true, true,
                 true)).read().getBody());
         assertThat(available.path("aiAssessment").path("available").booleanValue()).isTrue();
         assertThat(available.path("aiAssessment").path("reason").isNull()).isTrue();
@@ -134,7 +136,7 @@ class LearningCapabilitiesTest {
         // videoGeneration off, webSearch with an adapter but a spent budget: the example of getCapabilities.
         var flags = CapabilityFlags.of(false, false, true, true, true, false, false, true);
         var capabilities = capabilities(flags, availability(AiAvailability.State.AVAILABLE, Set.of(AiCapability.SEARCH)),
-                false, false, true, true);
+                false, true, true);
         JsonNode payload = JSON.valueToTree(new CapabilityController(capabilities).read().getBody());
         assertThat(payload).isEqualTo(http().path("examples").path("capabilities"));
     }
@@ -147,14 +149,13 @@ class LearningCapabilitiesTest {
 
     private static CapabilityFlags allOn() { return CapabilityFlags.of(true, true, true, true, true, true, true, true); }
 
-    private static LearningCapabilities capabilities(CapabilityFlags flags, AiAvailability ai, boolean aiProvider,
-                                                     boolean speechProvider, boolean imageSearchPort, boolean webSearchPort) {
+    private static LearningCapabilities capabilities(CapabilityFlags flags, AiAvailability ai, boolean speechProvider,
+                                                     boolean imageSearchPort, boolean webSearchPort) {
         var factory = new StaticListableBeanFactory();
-        if (aiProvider) factory.addBean("semantic", SEMANTIC);
         if (speechProvider) factory.addBean("speech", SPEECH);
         if (imageSearchPort) factory.addBean("imageSearch", IMAGE_SEARCH);
         if (webSearchPort) factory.addBean("webSearch", WEB_SEARCH);
-        return new LearningCapabilities(flags, factory.getBeanProvider(SemanticAssessmentProvider.class),
+        return new LearningCapabilities(flags,
                 factory.getBeanProvider(SpeechToTextProvider.class), ai,
                 factory.getBeanProvider(app.mnema.learning.ai.SpeechSynthesis.class), factory.getBeanProvider(ImageSearch.class),
                 factory.getBeanProvider(app.mnema.learning.ai.ImageGeneration.class),

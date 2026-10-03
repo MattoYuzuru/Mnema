@@ -90,3 +90,10 @@ summary { min-block-size: var(--mn-touch-min, 2.75rem); color: var(--mn-ink); fo
 .animated-underline span::after { content: ''; position: absolute; inset: auto 0 -.25rem; height: 2px; border-radius: 50%; background: currentColor; opacity: 0; transform: scaleX(0); transition: transform .36s .18s ease, opacity .08s .54s ease; }
 .animated-underline:is(:hover, :focus-visible) span::after { opacity: 1; transform: scaleX(1); transition: transform .42s .07s ease, opacity .08s ease; }
 @media (max-width: 36rem) { .mode-grid { grid-template-rows: none; } .mode-panel { grid-template-rows: auto auto auto auto auto; } }
+
+.dispute { display: grid; gap: .75rem; margin-block: 1rem; border-inline-start: 4px solid var(--mn-ink); padding: .9rem 1rem; background: var(--mn-soft); }
+.dispute p { margin: 0; }
+.dispute-actions { display: flex; flex-wrap: wrap; gap: .6rem; }
+@media (max-width: 25rem) { .dispute-actions .button { inline-size: 100%; } }
+.progress-note { margin-block: 1.5rem 1rem; }
+.button[aria-disabled='true'] { cursor: not-allowed; opacity: .58; }

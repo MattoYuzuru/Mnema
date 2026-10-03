@@ -9,14 +9,10 @@ import { LearnerBlock, LearnerContent, allLearnerBlocks } from '../../content/ex
 import { LearnerBlocksComponent } from '../../content/exercise/learner-blocks.component';
 import { MatchBoardComponent, MatchPair } from '../../content/exercise/match-board.component';
 import { OrderBoardComponent } from '../../content/exercise/order-board.component';
-import { SelfRating, StudyResponse } from './study.models';
+import { SELF_RATINGS, SELF_RATING_LABELS, SelfRating, StudyResponse } from './study.models';
 
 export type PairChecker = (pair: MatchPair) => Observable<boolean>;
 
-const RATINGS: readonly SelfRating[] = ['NOT_RECALLED', 'HINTED', 'PARTIAL', 'FULL'];
-const RATING_LABELS: Readonly<Record<SelfRating, string>> = {
-    NOT_RECALLED: 'Не вспомнил', HINTED: 'Вспомнил с подсказкой', PARTIAL: 'Вспомнил частично', FULL: 'Вспомнил полностью'
-};
 const VOICE_REASON = 'Голосовой ответ пока недоступен: распознавание речи не подключено. Напишите ответ текстом.';
 
 /**
@@ -67,7 +63,7 @@ export class LearnerExerciseComponent {
     readonly orderIds = signal<readonly string[] | null>(null);
     readonly assignments = signal<Readonly<Record<string, string>>>({});
 
-    readonly ratings = RATINGS;
+    readonly ratings = SELF_RATINGS;
     readonly voiceReason = VOICE_REASON;
 
     readonly selfCheck = computed(() => { const value = this.exercise(); return value.type === 'SELF_CHECK' ? value.content : null; });
@@ -136,7 +132,7 @@ export class LearnerExerciseComponent {
         this.destroyRef.onDestroy(() => this.pairCheck?.unsubscribe());
     }
 
-    ratingLabel(rating: SelfRating): string { return RATING_LABELS[rating]; }
+    ratingLabel(rating: SelfRating): string { return SELF_RATING_LABELS[rating]; }
 
     reveal(): void {
         if (this.revealed()) return;

@@ -500,6 +500,24 @@ class StudySessionRepository {
                 .query(PRESENTATION).list();
     }
 
+    /**
+     * The attempt id and state of every answer of the session that is still in AI assessment (being graded, or waiting for the
+     * learner's own rating), by presentation: what a reload needs to resume it. State only: no answer, reference or criteria.
+     */
+    java.util.Map<UUID, JsonNode> pendingAssessments(UUID actor, UUID session) {
+        java.util.Map<UUID, JsonNode> pending = new java.util.HashMap<>();
+        jdbc.sql("""
+                SELECT presentation_id,attempt_id,state FROM app_learning.study_assessment
+                 WHERE account_id=:actor AND session_id=:session AND state<>'DONE'
+                """).param("actor", actor).param("session", session).query((row, ignored) -> {
+            pending.put(row.getObject("presentation_id", UUID.class), JSON.createObjectNode()
+                    .put("attemptId", row.getObject("attempt_id", UUID.class).toString())
+                    .put("status", row.getString("state").equals("ASSESSING") ? "ASSESSING" : "SELF_CHECK"));
+            return 0;
+        }).list();
+        return pending;
+    }
+
     /** An unexpired, unanswered presentation of this owner and nonce: the precondition of any reveal. */
     Optional<Presentation> pendingForReveal(UUID actor, UUID deck, UUID session, UUID presentation,
                                             String nonce, Instant now) {
