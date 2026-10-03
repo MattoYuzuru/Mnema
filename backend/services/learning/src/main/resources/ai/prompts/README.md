@@ -68,8 +68,12 @@ One syntax only, in the runtime-filled sections (`deck-brief`, `material`, `edit
   (`<material id="m1">` with one `[[b3]]` handle line per top-level block), `outline.lines`
   (`m12 · title · first line, 120 characters · exercises: 3`), `objective_lines`, `existing_exercise_lines`,
   `neighbor_lines`, `criteria_lines`, `misconception_lines`, `allowed_links` (one URL per line).
-- `{{schema}}` is rendered from `contracts/generation/exercises/output.schema.json`; the build of AI-13 copies it into the
-  resources.
+- `{{schema}}` is rendered from `contracts/generation/exercises/output.schema.json`; AI-13 keeps a classpath copy
+  `ai/exercises/output.schema.json` (a test keeps the two identical) and the prompt carries it minified.
+- The exercise section is assembled with the `<data_policy>` block of `system.md` in front of it as its own cacheable segment, taken
+  verbatim (the section carries the material, the objectives and the existing exercises as data; the rest of the core describes the MBM
+  format and does not apply to a JSON answer). `task.mechanics` renders `Механики: A, B, C` (registry names, comma separated) and may add a
+  variety request after it; the Stub reads the count and the mechanics from there.
 - No personal data ever enters a placeholder (account IDs, email, names, payment data). The server **always redacts** email,
   phone and card-number patterns in all user text before rendering (mandatory, not optional); the preflight warning that lets the
   user exclude other PII-looking fragments is an additional, user-facing step (`PERSONAL_DATA_SUSPECTED`). The model is also told

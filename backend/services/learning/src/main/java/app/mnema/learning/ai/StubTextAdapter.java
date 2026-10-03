@@ -14,7 +14,12 @@ import java.util.List;
  * {@code [[stub:rate-limit]]}, {@code [[stub:transient]]}, {@code [[stub:timeout]]}, {@code [[stub:refusal]]},
  * {@code [[stub:invalid]]} (empty content) and {@code [[stub:invalid-mbm]]} (a document the MBM compiler rejects).
  * The two {@code invalid} markers stop applying once the request carries a repair segment, so a repair succeeds.
- * Usage is estimated; cost is zero.
+ *
+ * <p>An exercise request (JSON output whose prompt carries the exercise task) is answered with a valid
+ * {@code {"exercises": [...]}} built from the material in the prompt ({@link StubExercises}); two markers in the material text
+ * break it: {@code [[stub:broken-key]]} (the first exercise of the first answer has two correct options in a SINGLE choice, the
+ * repair is valid) and {@code [[stub:broken-key-always]]} (also broken after the repair and on the strong route, so the
+ * artifact fails with {@code INVALID_OUTPUT}). Usage is estimated; cost is zero.
  */
 final class StubTextAdapter implements TextAdapter {
     static final String PROVIDER = "stub";
@@ -46,6 +51,8 @@ final class StubTextAdapter implements TextAdapter {
         String text;
         if (!repair && prompt.contains("[[stub:invalid-mbm]]")) {
             text = invalidDocument;
+        } else if (request.output() == OutputContract.JSON && StubExercises.isExerciseRequest(prompt)) {
+            text = StubExercises.answer(prompt, repair);
         } else if (request.output() == OutputContract.JSON) {
             text = "{\"stub\":true,\"digest\":\"" + fingerprint.substring(0, 16) + "\"}";
         } else {

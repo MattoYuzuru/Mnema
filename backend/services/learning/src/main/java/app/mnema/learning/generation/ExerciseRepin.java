@@ -1,0 +1,115 @@
+package app.mnema.learning.generation;
+
+import app.mnema.learning.generation.PinnedMaterials.Pinned;
+import app.mnema.learning.generation.Rows.Artifact;
+import app.mnema.learning.generation.Rows.Revision;
+import app.mnema.learning.generation.SourceDrift.Drift;
+import app.mnema.learning.generation.exercise.ExerciseValidator;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
+
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * The server-side re-pin of a proposed exercise whose material has a newer head revision (decision 8 of the generation contract),
+ * with no model call. It succeeds only if every {@code MATERIAL} block of the exercise still reads as text in the new revision
+ * (by the stable node ids), and the exercise, with its pins moved, passes the same checks that read the material text, the
+ * publication parser and the probes. Then a {@code REPIN} revision replaces the current one and the artifact stays PROPOSED with
+ * {@code repinStatus AUTO_REPINNED}; otherwise (a vanished or unreadable node, a deleted material, a failed check) it becomes
+ * STALE with {@code NEEDS_USER_DECISION}. Each outcome is one short transaction of its own, committed before the approval goes on.
+ */
+@Component
+class ExerciseRepin {
+    private static final int MAX_REVISIONS = 30;
+
+    private final GenerationRepository repository;
+    private final SessionLifecycle lifecycle;
+    private final SourceDrift drift;
+    private final PinnedMaterials materials;
+    private final ExerciseValidator validator;
+
+    ExerciseRepin(GenerationRepository repository, SessionLifecycle lifecycle, SourceDrift drift, PinnedMaterials materials,
+                  ExerciseValidator validator) {
+        this.repository = repository;
+        this.lifecycle = lifecycle;
+        this.drift = drift;
+        this.materials = materials;
+        this.validator = validator;
+    }
+
+    /**
+     * @param expectedVersion the version of the artifact the caller read; a newer one is not touched (the caller's own checks
+     *                        answer it)
+     * @return the artifact as it is now (unchanged when no pin moved, or re-pinned), or empty when it became STALE
+     */
+    @Transactional
+    Optional<Artifact> repin(UUID sessionId, UUID artifactId, long expectedVersion) {
+        SessionLifecycle.Tx tx = lifecycle.lock(sessionId);
+        if (tx == null) return Optional.empty();
+        Artifact artifact = repository.artifact(sessionId, artifactId).orElse(null);
+        if (artifact == null) return Optional.empty();
+        if (!artifact.state().equals("PROPOSED") || artifact.rowVersion() != expectedVersion) return Optional.of(artifact);
+        List<Drift> drifted = drift.drifted(tx.session, artifact);
+        if (drifted.isEmpty()) return Optional.of(artifact);
+
+        Optional<Moved> moved = drifted.stream().anyMatch(Drift::gone) || artifact.revisionCount() >= MAX_REVISIONS ? Optional.empty()
+                : move(tx.session, artifact, drifted);
+        if (moved.isEmpty()) {
+            tx.events.add(SessionLifecycle.artifactEvent(repository.markStale(artifact)));
+            lifecycle.flush(tx);
+            return Optional.empty();
+        }
+        UUID revisionId = UUID.randomUUID();
+        Revision old = moved.get().previous();
+        repository.insertRevision(new Revision(revisionId, artifactId, artifact.revisionCount() + 1, "REPIN", moved.get().payload(),
+                Json.object(), old.promptVersion(), old.modelRoute(), old.validation(), Instant.now()), sessionId, tx.session.ownerId());
+        Artifact repinned = repository.repin(artifact, revisionId, drift.repinned(artifact, drifted), artifact.title(),
+                artifact.revisionCount() + 1);
+        tx.events.add(SessionLifecycle.artifactEvent(repinned));
+        lifecycle.flush(tx);
+        return Optional.of(repinned);
+    }
+
+    private record Moved(Revision previous, ObjectNode payload) { }
+
+    /** The payload with its pins moved to the head, or empty when the exercise cannot honestly follow the material. */
+    private Optional<Moved> move(Rows.Session session, Artifact artifact, List<Drift> drifted) {
+        JsonNode current = drifted.getFirst().current();
+        UUID member = UUID.fromString(current.path("memberKey").stringValue(""));
+        UUID head = UUID.fromString(current.path("itemRevisionId").stringValue(""));
+        Optional<Revision> previous = repository.revision(artifact.artifactId(), artifact.currentRevisionId());
+        Optional<Pinned> pinned = materials.read(session.ownerId(), session.deckId(), member, head);
+        if (previous.isEmpty() || pinned.isEmpty()) return Optional.empty();
+        JsonNode command = previous.get().payload().path("command");
+        ObjectNode exercise = (ObjectNode) command.path("exercise").deepCopy();
+        if (!exercise.path("subject").path("memberKey").stringValue("").equals(member.toString())) return Optional.empty();
+        ((ObjectNode) exercise.path("subject")).put("itemRevisionId", head.toString());
+        boolean[] followable = {true};
+        SessionViews.quoted(exercise.path("content"), quote -> {
+            UUID node = UUID.fromString(quote.path("nodeId").stringValue(""));
+            if (!quote.path("memberKey").stringValue("").equals(member.toString()) || !pinned.get().quotable(node)) followable[0] = false;
+            else ((ObjectNode) quote).put("itemRevisionId", head.toString());
+        });
+        if (!followable[0]) return Optional.empty();
+
+        ObjectNode full = Json.object().put("commandId", ExerciseContexts.PLACEHOLDER_COMMAND.toString())
+                .put("expectedDeckRevisionId", ExerciseContexts.PLACEHOLDER_DECK_REVISION.toString());
+        full.set("objective", command.path("objective").deepCopy());
+        full.set("exercise", exercise);
+        List<String> blockTexts = new ArrayList<>();
+        pinned.get().blocks().forEach(block -> blockTexts.add(block.text()));
+        if (!validator.revalidate(full, pinned.get()::text, blockTexts).isEmpty()) return Optional.empty();
+
+        ObjectNode payload = Json.object().put("kind", "EXERCISE_COMMAND");
+        ObjectNode moved = payload.putObject("command");
+        moved.set("objective", command.path("objective").deepCopy());
+        moved.set("exercise", exercise);
+        return Optional.of(new Moved(previous.get(), payload));
+    }
+}

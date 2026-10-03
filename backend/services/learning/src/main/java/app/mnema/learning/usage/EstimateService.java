@@ -85,7 +85,7 @@ class EstimateService {
     }
 
     /** What an admission holds and the refusal, if any, that usage must raise last (after the other admission checks). */
-    record Hold(int credits, UsageLimitReachedException.Block block) { }
+    record Hold(int credits, UsageLimitReachedException.Block block, int exercises) { }
 
     /**
      * What an admission of {@code spec} holds: the p95 of the spec, capped by {@code settings.budgetPercent} of the remaining
@@ -103,12 +103,15 @@ class EstimateService {
                 credits.remaining());
         int p95 = 0;
         int material = 0;
+        int exercises = 0;
         UsageLimitReachedException.Block block = null;
         for (GenerationSpecInterpreter.Line line : interpretation.lines()) {
             if (line.count() < 1) continue;
             RateCard.Operation operation = rateCard.operation(line.operation());
             if (operation.availability() != RateCard.Availability.AVAILABLE) throw unavailable(operation);
             p95 += rateCard.credits(line.operation(), line.count());
+            // the resolved quantity of an EXERCISES spec: the generation module spreads it over the targets
+            if (line.operation().equals(RateCard.EXERCISES)) exercises += line.count();
             if (line.operation().startsWith("MATERIAL_")) material = rateCard.credits(line.operation(), 1);
             if (block == null && operation.cap() != null && operation.cap().isCap()) {
                 block = capBlock(resolved, operation.cap(), line.count(), now).orElse(null);
@@ -121,12 +124,17 @@ class EstimateService {
         held = Math.max(held, 0);
         // A hold below the price of one material would admit a session whose every artifact fails: refuse it instead.
         if (block == null && material > 0 && held < material) block = state.creditsBlock(credits, material);
-        return new Hold(held, block);
+        return new Hold(held, block, exercises);
     }
 
     /** The credits one run of {@code operation} charges (a rate-card weight, an integer). */
     int credits(String operation) {
         return rateCard.credits(operation, 1);
+    }
+
+    /** The p95 credits of {@code count} exercises: eight per five, rounded up once on the whole. */
+    int exerciseCredits(int count) {
+        return rateCard.credits(RateCard.EXERCISES, count);
     }
 
     private static JsonNode parse(byte[] raw) {

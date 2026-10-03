@@ -1,8 +1,6 @@
 package app.mnema.learning.generation;
 
 import app.mnema.learning.ai.AiCapability;
-import app.mnema.learning.ai.AiFailure;
-import app.mnema.learning.ai.AiProperties;
 import app.mnema.learning.ai.AiResult;
 import app.mnema.learning.ai.AiRoute;
 import app.mnema.learning.ai.OpaqueUserKey;
@@ -10,7 +8,6 @@ import app.mnema.learning.ai.OutputContract;
 import app.mnema.learning.ai.TextGeneration;
 import app.mnema.learning.ai.TextRequest;
 import app.mnema.learning.ai.TextResponse;
-import app.mnema.learning.ai.UserKeys;
 import app.mnema.learning.ai.prompt.PromptException;
 import app.mnema.learning.catalog.content.NativeDocument;
 import app.mnema.learning.catalog.content.NativeDocumentPreview;
@@ -65,7 +62,6 @@ import java.util.UUID;
 class TextDraftExecutor implements StepExecutor {
     static final String KIND = "TEXT_DRAFT";
     private static final Logger LOG = LoggerFactory.getLogger(TextDraftExecutor.class);
-    private static final UserKeys STUB_KEYS = UserKeys.withSecret("stub-user-key-secret-not-for-production", "stub");
     private static final int ROUNDS = 3;
 
     private final TextGeneration text;
@@ -74,23 +70,23 @@ class TextDraftExecutor implements StepExecutor {
     private final SessionLifecycle lifecycle;
     private final ContextBuilder contexts;
     private final UsageLedger ledger;
-    private final UserKeys userKeys;
-    private final AiProperties ai;
+    private final ProviderKeys keys;
+    private final ExerciseDraftExecutor exercises;
     private final GenerationSettings settings;
     private final MeterRegistry meters;
     private final MbmCompiler compiler = new MbmCompiler();
 
     TextDraftExecutor(TextGeneration text, GenerationRepository repository, ContextRepository contextRepository,
-                      SessionLifecycle lifecycle, ContextBuilder contexts, UsageLedger ledger, UserKeys userKeys,
-                      AiProperties ai, GenerationSettings settings, MeterRegistry meters) {
+                      SessionLifecycle lifecycle, ContextBuilder contexts, UsageLedger ledger, ProviderKeys keys,
+                      ExerciseDraftExecutor exercises, GenerationSettings settings, MeterRegistry meters) {
         this.text = text;
         this.repository = repository;
         this.contextRepository = contextRepository;
         this.lifecycle = lifecycle;
         this.contexts = contexts;
         this.ledger = ledger;
-        this.userKeys = userKeys;
-        this.ai = ai;
+        this.keys = keys;
+        this.exercises = exercises;
         this.settings = settings;
         this.meters = meters;
     }
@@ -101,6 +97,11 @@ class TextDraftExecutor implements StepExecutor {
 
     @Override
     public void execute(StepClaim claim, StepControl control) {
+        // An EXERCISES step shares the kind (it is a text generation) but fills several artifacts and has its own validation.
+        if (ExerciseDraftExecutor.OPERATION.equals(claim.input().path("operation").stringValue(""))) {
+            exercises.execute(claim, control);
+            return;
+        }
         Optional<Integer> began = lifecycle.begin(claim);
         if (began.isEmpty()) return;
         Session session = repository.session(claim.sessionId()).orElse(null);
@@ -133,7 +134,7 @@ class TextDraftExecutor implements StepExecutor {
 
         OpaqueUserKey key;
         try {
-            key = (userKeys.configured() ? userKeys : stubKeys()).opaque(claim.ownerId());
+            key = keys.opaque(claim.ownerId());
         } catch (IllegalStateException notConfigured) {
             finish(claim, Failure.fail("PROVIDER_UNAVAILABLE"));
             return;
@@ -143,11 +144,6 @@ class TextDraftExecutor implements StepExecutor {
                 () -> control.cancelled() || control.lost(), settings.stream().checkpointInterval(),
                 settings.stream().maxEventBytes(), began.get());
         run(claim, control, session, context, key, streamer);
-    }
-
-    private UserKeys stubKeys() {
-        if (!AiProperties.STUB.equals(ai.provider())) throw new IllegalStateException("learning.ai.user-key.secret is not configured");
-        return STUB_KEYS;
     }
 
     private void run(StepClaim claim, StepControl control, Session session, DraftContext context, OpaqueUserKey key,
@@ -184,7 +180,7 @@ class TextDraftExecutor implements StepExecutor {
                 return;
             }
             if (result instanceof AiResult.Failed<TextResponse> failed) {
-                finish(claim, failure(failed.failure(), claim));
+                finish(claim, ProviderFailures.of(failed.failure(), claim, lifecycle));
                 return;
             }
             TextResponse response = ((AiResult.Ok<TextResponse>) result).value();
@@ -258,22 +254,6 @@ class TextDraftExecutor implements StepExecutor {
         }
     }
 
-    /** Maps what the provider layer gave up with to a step-level retry or a final failure. */
-    private Failure failure(AiFailure failure, StepClaim claim) {
-        return switch (failure) {
-            case AiFailure.RateLimited limited -> Failure.retry("PROVIDER_UNAVAILABLE",
-                    max(limited.retryAfter(), lifecycle.backoff(claim.attempt())));
-            case AiFailure.Transient ignored -> Failure.retry("PROVIDER_UNAVAILABLE", lifecycle.backoff(claim.attempt()));
-            case AiFailure.CircuitOpen ignored -> Failure.retry("PROVIDER_UNAVAILABLE", lifecycle.backoff(claim.attempt()));
-            case AiFailure.Timeout ignored -> Instant.now().isBefore(claim.deadlineAt())
-                    ? Failure.retry("PROVIDER_UNAVAILABLE", lifecycle.backoff(claim.attempt())) : Failure.fail("DEADLINE_EXCEEDED");
-            case AiFailure.InvalidOutput ignored -> Failure.fail("INVALID_OUTPUT");
-            case AiFailure.Refusal ignored -> Failure.fail("REFUSAL");
-            case AiFailure.BudgetExhausted ignored -> Failure.fail("PROVIDER_UNAVAILABLE");
-            case AiFailure.NotConfigured ignored -> Failure.fail("PROVIDER_UNAVAILABLE");
-        };
-    }
-
     private void finish(StepClaim claim, Failure failure) {
         boolean stored = lifecycle.fail(claim, failure);
         LOG.info("generation_step_done step_id={} session_id={} kind={} attempt={} outcome={} error_code={} stored={}", claim.stepId(),
@@ -284,5 +264,4 @@ class TextDraftExecutor implements StepExecutor {
 
     private static Duration min(Duration left, Duration right) { return left.compareTo(right) <= 0 ? left : right; }
 
-    private static Duration max(Duration left, Duration right) { return left.compareTo(right) >= 0 ? left : right; }
 }

@@ -74,8 +74,15 @@ class PromptAssemblerTest {
         assertThat(edit.segments().get(8).text()).contains("<task kind=\"edit\">");
 
         AssembledPrompt exercises = assembler.assemble(PromptTask.EXERCISES, PromptFixtures.exercises());
-        assertThat(exercises.segments()).hasSize(1);
-        assertThat(exercises.segments().get(0).cacheable()).isFalse();
+        // the data policy of the core (stable, cacheable), then the exercise section (volatile)
+        assertThat(exercises.segments()).hasSize(2);
+        assertThat(exercises.segments().get(0).cacheable()).isTrue();
+        assertThat(exercises.segments().get(0).role()).isEqualTo(TextRequest.Role.SYSTEM);
+        assertThat(exercises.segments().get(0).text()).startsWith("<data_policy>").endsWith("</data_policy>")
+                .contains("<material>").contains("<objectives>").contains("<existing_exercises>").contains("<neighbors>");
+        assertThat(exercises.segments().get(1).cacheable()).isFalse();
+        assertThat(exercises.segments().get(1).text()).contains("<task kind=\"exercises\">");
+        assertThat(exercises.sectionTokens()).containsKeys("data-policy", "exercises");
 
         AssembledPrompt assessment = assembler.assemble(PromptTask.ASSESSMENT, PromptFixtures.assessment());
         assertThat(assessment.segments()).hasSize(1);

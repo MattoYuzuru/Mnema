@@ -746,18 +746,6 @@ class GenerationReviewIntegrationTest extends GenerationReviewSupport {
     }
 
     @Test
-    void anExerciseArtifactIsNotApprovableUntilTheExerciseTask() throws Exception {
-        UUID owner = UUID.randomUUID();
-        UUID deck = deck(owner);
-        Proposal proposal = proposal(owner, deck, spec("20 глаголов движения"));
-        jdbc.sql("UPDATE app_learning.generation_artifact SET target_kind='EXERCISE' WHERE artifact_id=:id").param("id", proposal.artifact()).update();
-        MockHttpServletResponse refused = approve(owner, deck, proposal, UUID.randomUUID());
-        problem(refused, 409, "GENERATION_STATE_CONFLICT");
-        assertThat(json(refused).path("reason").stringValue(null)).isEqualTo("ILLEGAL_STATE");
-        assertThat(materials(owner, deck)).isZero();
-    }
-
-    @Test
     void aNoteThatASiblingArtifactStillPinsIsNotUsedAndIsNeitherCountedNorArchived() throws Exception {
         UUID owner = UUID.randomUUID();
         UUID deck = deck(owner);

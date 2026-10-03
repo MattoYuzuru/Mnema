@@ -1,6 +1,6 @@
 {
   "contract": "generation-v1",
-  "description": "HTTP contract of Workshop sessions, artifacts, approval and edits under /api (Learning context path). Authority: docs/architecture/ai-generation-platform.md sections 3-5 and 7. Implemented so far: AI-04 (#287: sessions, events, artifact) and AI-05 (#288: approval, rejection, hand-off, retry, delete, note archival). AI-11 (#293), AI-13 (#291) and AI-06 (#289) implement or consume the rest.",
+  "description": "HTTP contract of Workshop sessions, artifacts, approval and edits under /api (Learning context path). Authority: docs/architecture/ai-generation-platform.md sections 3-5 and 7. Implemented so far: AI-04 (#287: sessions, events, artifact) and AI-05 (#288: approval, rejection, hand-off, retry, delete, note archival). AI-13 (#291) adds EXERCISES sessions and the exercise side of approval, re-pin and retry; AI-11 (#293) and AI-06 (#289) implement or consume the rest.",
   "conventions": {
     "owner": "The JWT subject is the only owner input. Foreign or absent deck, session or artifact IDs share one opaque 404.",
     "caching": "Every response is Cache-Control: private, no-store.",
@@ -148,7 +148,7 @@
         {
           "status": 409,
           "code": "SOURCE_UNAVAILABLE",
-          "when": "A pinned owned note or material exists but no longer matches the pin, or has been deleted since."
+          "when": "A pinned owned note or material exists but no longer matches the pin (an EXERCISES target that is no longer the material's head), or has been deleted since."
         },
         {
           "status": 409,
@@ -158,7 +158,7 @@
         {
           "status": 422,
           "code": "SPEC_NOT_SUPPORTED",
-          "when": "REVISE_ITEM or REVISE_EXERCISE before AI-16 (#294) defines their flow."
+          "when": "REVISE_ITEM or REVISE_EXERCISE before AI-16 (#294) defines their flow; settings.planFirst true (MATERIALS or EXERCISES) until the planner exists (AI-14, #295)."
         },
         {
           "status": 422,
@@ -172,7 +172,8 @@
         "Exact retry returns the stored 201 with Idempotency-Replayed: true and no ETag; reconcile with getSession.",
         "Initial state is RUNNING, or PLANNING when spec.settings.planFirst.",
         "The session reservation covers the initial batch only (contracts/usage reservation lifecycle).",
-        "A pinned NOTE or ITEM that is unknown or foreign is 404; SOURCE_UNAVAILABLE is only for an owned source whose version no longer matches the pin."
+        "A pinned NOTE or ITEM that is unknown or foreign is 404; SOURCE_UNAVAILABLE is only for an owned source whose version no longer matches the pin.",
+        "EXERCISES (AI-13, decision 14 of the README): the targets are pinned as SOURCE items; the resolved quantity is spread over the targets in processing order (UNCOVERED_FIRST: fewest enabled exercises first; BALANCED: request order); one QUEUED artifact exists per exercise (targetKind EXERCISE, ordinal in processing order, then index) and one TEXT_DRAFT step per target fills them. A target that is not the material's head is 409 SOURCE_UNAVAILABLE."
       ]
     },
     {
@@ -460,6 +461,7 @@
       ],
       "notes": [
         "ITEM payload is a native-v1 document; EXERCISE payload is the objective and exercise members of the exercise publication command (contracts/study); commandId and expectedDeckRevisionId are supplied at approval.",
+        "An EXERCISE detail adds the read-only display {mechanic, objectiveTitle, quotes}: the mechanic, the title of the objective the exercise evidences (the offered or the new one) and the plain text of every MATERIAL node the exercise quotes, by node id, as it reads in the pinned revision (so a client renders MATERIAL blocks without further requests). It is absent for ITEM artifacts and when revision is null. The artifact title is the first TEXT block of the prompt, else the objective title.",
         "Model route, prompt version and provenance are never returned.",
         "Read-only: never changes state."
       ]
@@ -529,8 +531,12 @@
         "Exact retry returns the stored acknowledgement with Idempotency-Replayed: true and no ETag.",
         "Item approval publishes through the caller-owned port into ItemService; exercise approval through ExerciseService with objective.operation=reuse where the target objective is unchanged.",
         "The catalog command carries a command id derived from commandId and artifactId (a name-based hash shaped as a version-4 UUID, because a version-5 value is not a legal command id), so a repeat is the same command. A session CLOSED, EXPIRED, PLANNING or PLAN_READY answers ILLEGAL_STATE; a rowVersion or revision mismatch is 412 before any state conflict.",
-        "An EXERCISE artifact is answered 409 ILLEGAL_STATE until AI-13 (#291)."
-      ]
+        "A PROPOSED EXERCISE artifact whose target material has a newer head is re-pinned by the server before the publish transaction (no model call): if every MATERIAL node of the exercise still reads as text in the new revision and the exercise passes the checks that read the material text, the publication command and the probes again, a REPIN revision replaces the current one, repinStatus is AUTO_REPINNED and the approval goes on with it; otherwise the artifact becomes STALE (NEEDS_USER_DECISION) in a short transaction of its own and the answer is 409 SOURCE_STALE.",
+        "Exercise approval publishes through the caller-owned port GeneratedExercisePublisher into ExerciseService with a child command id derived from commandId and artifactId and marks the exercise «Новое» (contracts/study). A create objective whose normalized title equals the title of an objective already bound to the same subject material is published as a reuse of it, so approving three exercises of one direction creates one objective."
+      ],
+      "requestBodyOptional": {
+        "replacement": "EXERCISE artifacts only: {objective, exercise}, the exercise the owner edited in the exercise editor before saving (the shape of getArtifact payload.command). It is read by ExerciseCommand.readCreate only (a human edit is not linted), must keep the proposal's exercise.subject.memberKey and is published INSTEAD of the revision payload; provenance records edited: true. Not valid on an ITEM artifact or inside a bulk entry (INVALID_REQUEST). It is never auto re-pinned: if the material moved, the proposal becomes STALE (SOURCE_STALE)."
+      }
     },
     {
       "operationId": "approveArtifacts",
@@ -601,7 +607,7 @@
         }
       ],
       "notes": [
-        "All or nothing, in ONE database transaction: the catalog is called in-process through the caller-owned port. Items only (AI-05): ONE bulk publication, one deck revision, with a command id derived from commandId and the sorted artifact ids; with exercises (AI-13) ItemService and ExerciseService are called sequentially with child command IDs derived per artifact and chained deck revisions. Any failure rolls everything back.",
+        "All or nothing, in ONE database transaction: the catalog is called in-process through the caller-owned port. Items only (AI-05): ONE bulk publication, one deck revision, with a command id derived from commandId and the sorted artifact ids; with exercises (AI-13) the materials go first as one bulk publication, then ExerciseService is called once per exercise with a child command id derived from commandId and the artifact id, each on the deck revision and version the previous publication left (chained). Any failure rolls everything back.",
         "The list is capped at 20 (the MATERIALS session maximum); the client splits a larger selection (an exercise session can hold 60) into several commands, each atomic.",
         "The response lists one acknowledgement per artifact (ITEM and EXERCISE shapes) and the final Deck revision.",
         "The client lists exactly the artifacts it showed as approvable ('Approve all ready (N)'); an artifact that stopped being approvable fails the whole command."
@@ -794,7 +800,7 @@
         }
       ],
       "notes": [
-        "ITEM artifacts only; an EXERCISE hand-off is defined by AI-13 (#291) and is INVALID_REQUEST here.",
+        "ITEM artifacts only; an EXERCISE hand-off is INVALID_REQUEST (the owner edits an exercise before saving it: approveArtifact with replacement).",
         "The client then restores the draft with GET /api/editing-drafts/{draftId}.",
         "The draft holds the revision's document without the media nodes whose assets are not READY (they cannot be saved); READY media stays."
       ]
@@ -1046,7 +1052,8 @@
       "notes": [
         "Cancels any QUEUED or RUNNING turn of the artifact.",
         "A new STEP reservation of the artifact's weight is made first (409 USAGE_LIMIT_REACHED leaves nothing changed); the debit of the new run draws from it and it ends with the session's return to REVIEW. A STALE artifact is regenerated against the pins as they are now (the artifact's sourceRefs are replaced); a FAILED one needs its pins to hold (SOURCE_UNAVAILABLE otherwise). The slots and holds of the replaced revision are dropped.",
-        "A REVIEW session that holds only FAILED or REJECTED leftovers does not count as active; retrying makes it count again, so the 3-active-sessions limit is checked first (422 RESOURCE_LIMIT_EXCEEDED, limit ACTIVE_SESSIONS, before usage)."
+        "A REVIEW session that holds only FAILED or REJECTED leftovers does not count as active; retrying makes it count again, so the 3-active-sessions limit is checked first (422 RESOURCE_LIMIT_EXCEEDED, limit ACTIVE_SESSIONS, before usage).",
+        "An EXERCISE artifact is written again as ONE exercise (one TEXT_DRAFT step with count 1, a STEP reservation of one exercise's credits); a STALE one is regenerated against the pins as they are now."
       ]
     }
   ],
@@ -1076,9 +1083,9 @@
         "targets": "1..20 materials {memberKey, itemRevisionId}: multi-select or one material profile. A deck-wide selection beyond 20 materials is split by the client into several sessions (uncovered materials first). Limit: owner decision 2026-10-02, key learning.generation.max-exercise-targets.",
         "settings": {
           "mechanics": "AUTO or a nonempty set of SELF_CHECK, FREE_RESPONSE, CLOZE, CHOICE, MATCH, ORDER, CATEGORIZE (server registry)",
-          "priority": "UNCOVERED_FIRST | BALANCED (provisional: AI-13, #291)",
+          "priority": "UNCOVERED_FIRST (default): the targets with the fewest enabled exercises are processed first | BALANCED: the order of the request. With BUDGET_PERCENT the resolved total is spread over the targets in that order, so a short budget serves the first ones.",
           "quantity": "{mode: AUTO} | {mode: EXACT, perTarget: 1..10} | {mode: BUDGET_PERCENT, percent: 1..100}; mutually exclusive by mode. The resolved total is at most 60 exercises per session (owner decision 2026-10-02). There is NO silent clamp: above the limits the answer is 422 RESOURCE_LIMIT_EXCEEDED with limit and the limits, and the client offers to split into several sessions.",
-          "planFirst": "boolean",
+          "planFirst": "boolean; true is 422 SPEC_NOT_SUPPORTED (kind EXERCISES) until the planner exists (AI-14)",
           "budgetPercent": "null or 1..100 (same meaning as for MATERIALS)"
         }
       },
@@ -1102,7 +1109,7 @@
     "artifactSummary": {
       "title": "Preview title of the current revision (first heading or paragraph, at most 240 code points) for the pager",
       "mediaSlotCounts": "{total, ready, failed} counts of slots of the current revision; the slots themselves are in getArtifact mediaSlots",
-      "repinStatus": "null | AUTO_REPINNED | NEEDS_USER_DECISION (only with STALE)",
+      "repinStatus": "null | AUTO_REPINNED | NEEDS_USER_DECISION. NEEDS_USER_DECISION comes with STALE. AUTO_REPINNED (exercises only) comes with PROPOSED: the server moved the pins of a proposed exercise to the current head of its material without a model (a REPIN revision); it is cleared when the artifact is published or retried.",
       "publishedRef": "null until PUBLISHED: {kind: ITEM, memberKey, itemRevisionId, ordinal} or {kind: EXERCISE, exerciseId, exerciseRevisionId, objectiveId, objectiveRevisionId}",
       "errorCode": "null or an artifact error code (states.json artifact.errorCodes)"
     },
@@ -1743,6 +1750,13 @@
               }
             }
           }
+        }
+      },
+      "display": {
+        "mechanic": "SELF_CHECK",
+        "objectiveTitle": "Выбор между Seq Scan и Index Scan",
+        "quotes": {
+          "00000000-0000-4000-8000-000000000004": "Планировщик выбирает план с наименьшей оценкой стоимости."
         }
       },
       "mediaSlots": [],

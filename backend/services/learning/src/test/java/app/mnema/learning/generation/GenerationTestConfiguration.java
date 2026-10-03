@@ -40,7 +40,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  * open the shared circuit breaker),
  * {@code [[fake:block]]} (the call waits until released or interrupted: a long provider call to cancel),
  * {@code [[fake:crash-once]]} (the first call of each step throws, as a worker that dies mid-step) and
- * {@code [[fake:audio]]} (a valid document with one {@code ::audio} directive). {@link Scripted#outage} makes every call a
+ * {@code [[fake:audio]]} (a valid document with one {@code ::audio} directive). For exercise requests (JSON output):
+ * {@code [[fake:not-json]]} (every answer is prose), {@code [[fake:fenced]]} (the Stub's answer inside a code fence) and
+ * {@code [[fake:length-once]]} (the first answer is cut off by the output limit, the repair is answered by the Stub). {@link Scripted#outage} makes every call a
  * transport failure (a provider that is down) until a test clears it, to fail an artifact and retry it.
  */
 @TestConfiguration(proxyBeanMethods = false)
@@ -112,6 +114,15 @@ class GenerationTestConfiguration {
             if (prompt.contains("[[fake:always-invalid-mbm]]")) return ok(request, INVALID_DOCUMENT);
             if (prompt.contains("[[fake:invalid-once]]") && !repair) return ok(request, INVALID_DOCUMENT);
             if (prompt.contains("[[fake:audio]]")) return ok(request, AUDIO_DOCUMENT);
+            if (prompt.contains("[[fake:not-json]]")) return ok(request, "это не json");
+            if (prompt.contains("[[fake:length-once]]") && !repair) {
+                return AiResult.ok(new TextResponse("{\"exercises\":[{\"mechanic\":\"CHO", TextResponse.FinishReason.LENGTH,
+                        new Usage(100, 0, 100, 50), 0, "fake", new TextResponse.RouteUsed("stub", "stub")));
+            }
+            if (prompt.contains("[[fake:fenced]]")) {
+                AiResult<TextResponse> answer = real.generate(request);
+                return answer instanceof AiResult.Ok<TextResponse> success ? ok(request, "```json\n" + success.value().text() + "\n```") : answer;
+            }
             if (prompt.contains("[[fake:multiblock]]")) return ok(request, MULTI_DOCUMENT);
             StreamListener original = request.listener();
             StreamListener probe = new StreamListener() {

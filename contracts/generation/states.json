@@ -10,7 +10,7 @@
     ],
     "kindSupport": {
       "MATERIALS": "AI-04",
-      "EXERCISES": "AI-13",
+      "EXERCISES": "AI-13 (settings.planFirst true is 422 SPEC_NOT_SUPPORTED until the planner, AI-14)",
       "REVISE_ITEM": "AI-16 (createSession answers 422 SPEC_NOT_SUPPORTED until then)",
       "REVISE_EXERCISE": "AI-16 (createSession answers 422 SPEC_NOT_SUPPORTED until then)"
     },
@@ -371,7 +371,7 @@
       },
       "STALE": {
         "terminal": false,
-        "description": "A pinned source changed after generation (reason SOURCE_STALE). The server re-pins by stable node IDs without a model call; if nodes vanished the user decides: reject, hand off (edit the stale proposal oneself) or retry (regenerate against the new source revision). There is no 'keep anyway' approve."
+        "description": "A pinned source changed after generation (reason SOURCE_STALE). For an EXERCISE the server first re-pins by stable node IDs without a model call (approval, decision 14 of the README): when every quoted node still reads as text in the new revision and the exercise passes its checks again it stays PROPOSED with repinStatus AUTO_REPINNED and the approval goes on; otherwise (a node vanished, the material is gone, a check fails, or the exercise was edited by the owner) it becomes STALE with repinStatus NEEDS_USER_DECISION and the user decides: reject, hand off (an ITEM: edit the stale proposal oneself) or retry (regenerate against the new source revision). There is no 'keep anyway' approve."
       },
       "PUBLISHED": {
         "terminal": true,
