@@ -131,16 +131,20 @@ function mediaFailed(params: Readonly<Record<string, unknown>>): string | null {
 }
 
 /**
- * Route key to a client destination. TODO(AI-06 #289): WORKSHOP opens the deck page until the workshop route exists;
- * then map it to the workshop of `sessionId` and relabel the link «Открыть мастерскую». PLANS has no plans page yet
- * (paywall: AI-19 #301), so it opens the «ИИ-бюджет» block of the profile (`/profile#ai-budget`); NONE stays a plain
- * sentence.
+ * Route key to a client destination. WORKSHOP opens the Workshop of `sessionId` (`/decks/:deckId/workshop/:sessionId`); a
+ * WORKSHOP notification without a usable session falls back to the deck page. PLANS has no plans page yet (paywall:
+ * AI-19 #301), so it opens the «ИИ-бюджет» block of the profile (`/profile#ai-budget`); NONE stays a plain sentence.
  */
 function routeLink(notification: AppNotification): NotificationLink | null {
     if (notification.route === 'PLANS') return { label: 'Открыть ИИ-бюджет', commands: ['/profile'], fragment: 'ai-budget' };
     if (notification.route !== 'WORKSHOP' && notification.route !== 'DECK') return null;
     const deckId = notification.params['deckId'];
-    return typeof deckId === 'string' && UUID.test(deckId) ? { label: 'Открыть колоду', commands: ['/decks', deckId] } : null;
+    if (typeof deckId !== 'string' || !UUID.test(deckId)) return null;
+    const sessionId = notification.params['sessionId'];
+    if (notification.route === 'WORKSHOP' && typeof sessionId === 'string' && UUID.test(sessionId)) {
+        return { label: 'Открыть мастерскую', commands: ['/decks', deckId, 'workshop', sessionId] };
+    }
+    return { label: 'Открыть колоду', commands: ['/decks', deckId] };
 }
 
 function artifactNoun(params: Readonly<Record<string, unknown>>): Plural | null {

@@ -138,6 +138,7 @@
     </section>
     }
 
+    <app-deck-workshops [deckId]="deck.deckId" />
     <app-deck-insights [deckId]="deck.deckId" [state]="insights()" (retry)="loadInsights()" (showMissing)="showMaterialsWithoutExercises()" />
     <app-deck-materials [deckId]="deck.deckId" [generationAvailable]="generationAvailable()" (changed)="loadInsights()" />
   }
