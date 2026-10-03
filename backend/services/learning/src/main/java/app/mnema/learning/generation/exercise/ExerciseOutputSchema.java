@@ -153,7 +153,8 @@ public final class ExerciseOutputSchema {
         boolean closed = rule.path("additionalProperties").isBoolean() && !rule.path("additionalProperties").booleanValue(true);
         for (String name : value.propertyNames()) {
             if (properties.has(name)) validate(value.path(name), properties.path(name), path + "." + name, out);
-            else if (closed) out.add(path + "." + name);
+            // a name the model chose is never echoed: it is data, and a finding is a code and a path made of schema names only
+            else if (closed) out.add(path + ".?");
         }
     }
 

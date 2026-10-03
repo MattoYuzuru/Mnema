@@ -276,7 +276,35 @@ class ReviewService {
         boolean[] applied = {false};
         TransactionTemplate chain = new TransactionTemplate(transactions);
         chain.setTimeout(CHAIN_TIMEOUT_SECONDS);
-        JsonNode acknowledgement = chain.execute(status -> receipts.execute(identity, envelope, () -> {
+        JsonNode acknowledgement;
+        try {
+            acknowledgement = publishChain(session, identity, envelope, commandId, deckVersion, deckRevision, plans, artifacts, bulk, itemsCommand,
+                    chain, applied);
+        } catch (SourceMoved moved) {
+            // the transaction rolled back with everything in it; the proposal that no longer has its source is made stale in a short one
+            Plan plan = plans.stream().filter(candidate -> candidate.artifactId().equals(moved.artifactId)).findFirst().orElseThrow();
+            List<UUID> stale = drift.markStale(session.sessionId(), Map.of(plan.artifactId(), plan.artifactVersion()));
+            throw conflict(Reason.SOURCE_STALE, stale.isEmpty() ? List.of(plan.artifactId()) : stale, bulk);
+        }
+        String etag = applied[0] ? acknowledgement.path("deckVersion").stringValue(null) : null;
+        return new Result(acknowledgement, !applied[0], etag);
+    }
+
+    /** An exercise could not be published because what it stands on is gone (a material pin, a reused objective). */
+    private static final class SourceMoved extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+        private final transient UUID artifactId;
+
+        SourceMoved(UUID artifactId) {
+            super("The source of a proposal moved", null, false, false);
+            this.artifactId = artifactId;
+        }
+    }
+
+    private JsonNode publishChain(Session session, CommandIdentity identity, ObjectNode envelope, UUID commandId, long deckVersion,
+                                  UUID deckRevision, List<Plan> plans, Map<UUID, Artifact> artifacts, boolean bulk, UUID itemsCommand,
+                                  TransactionTemplate chain, boolean[] applied) {
+        return chain.execute(status -> receipts.execute(identity, envelope, () -> {
             applied[0] = true;
             Map<UUID, Published> published = new LinkedHashMap<>();
             Chain position = new Chain(deckVersion, deckRevision);
@@ -310,8 +338,14 @@ class ReviewService {
                 JsonNode command = plan.replacement() != null ? plan.replacement()
                         : repository.revision(artifact.artifactId(), artifact.currentRevisionId()).orElseThrow().payload().path("command");
                 UUID child = Commands.derive(commandId, artifact.artifactId().toString());
-                JsonNode ack = exercisePublisher.create(session.ownerId(), session.deckId(), position.version(), child, position.revisionId(),
-                        command.path("objective"), command.path("exercise"));
+                JsonNode ack;
+                try {
+                    ack = exercisePublisher.create(session.ownerId(), session.deckId(), position.version(), child, position.revisionId(),
+                            command.path("objective"), command.path("exercise"));
+                } catch (ResourceNotFoundException | GeneratedExercisePublisher.ObjectiveUnavailableException gone) {
+                    // the catalog answers an opaque 404 for a pin that is not the head any more: for this command it is a moved source
+                    throw new SourceMoved(artifact.artifactId());
+                }
                 published.put(artifact.artifactId(), new Published(Json.object().put("kind", "EXERCISE")
                         .put("exerciseId", ack.path("exerciseId").stringValue(null))
                         .put("exerciseRevisionId", ack.path("exerciseRevisionId").stringValue(null))
@@ -322,8 +356,6 @@ class ReviewService {
             }
             return apply(session.sessionId(), commandId, plans, published, position, bulk);
         }));
-        String etag = applied[0] ? acknowledgement.path("deckVersion").stringValue(null) : null;
-        return new Result(acknowledgement, !applied[0], etag);
     }
 
     /**
@@ -372,6 +404,9 @@ class ReviewService {
                     } else {
                         stale.add(artifact.artifactId());
                     }
+                } else if (plan.replacement() != null && followsHead(session, artifact, plan.replacement())) {
+                    // the owner's edit was written against the head as it is now: the artifact's own pin is of no concern
+                    continue;
                 } else {
                     drifted.put(entry.getKey(), entry.getValue());
                 }
@@ -388,6 +423,17 @@ class ReviewService {
             }
         }
         if (!unready.isEmpty()) throw conflict(Reason.MEDIA_NOT_READY, unready, bulk);
+    }
+
+    /** Whether the edited exercise stands on the head of its material: its subject and every quoted material are pinned at it. */
+    private boolean followsHead(Session session, Artifact artifact, JsonNode replacement) {
+        List<Drift> drifted = drift.drifted(session, artifact);
+        if (drifted.size() != 1 || drifted.getFirst().gone()) return false;
+        String head = drifted.getFirst().current().path("itemRevisionId").stringValue("");
+        JsonNode exercise = replacement.path("exercise");
+        boolean[] pinned = {exercise.path("subject").path("itemRevisionId").stringValue("").equals(head)};
+        SessionViews.quoted(exercise.path("content"), quote -> pinned[0] &= quote.path("itemRevisionId").stringValue("").equals(head));
+        return pinned[0];
     }
 
     /** The plan of a re-pinned artifact now names its new version and revision (the user saw this exercise: it only follows its material). */
@@ -617,10 +663,12 @@ class ReviewService {
         Session session = tx.session;
         List<Drift> drifted = drift.drifted(session, artifact);
         // a stale artifact is regenerated against what the sources are now; a failed one needs its pins to hold
-        if (drifted.stream().anyMatch(Drift::gone) || (!stale && !drifted.isEmpty())) {
+        // an exercise that failed while its material moved is written again against the head, as a stale one is: it has no pins to hold
+        boolean exercise = artifact.targetKind().equals("EXERCISE");
+        if (drifted.stream().anyMatch(Drift::gone) || (!stale && !exercise && !drifted.isEmpty())) {
             throw new SourceUnavailableException(drifted.stream().map(Drift::source).toList());
         }
-        if (artifact.targetKind().equals("EXERCISE")) return requeueExercise(tx, artifact, stale, drifted);
+        if (exercise) return requeueExercise(tx, artifact, !drifted.isEmpty(), drifted);
         MaterialsSpec spec = MaterialsSpec.read(session.spec());
         MaterialsSpec.Effective effective = spec.forArtifact(artifact.sourceRefs());
         gate.requireFor(effective);
@@ -673,7 +721,7 @@ class ReviewService {
      * one (the artifact's pin follows the material's head). One exercise is priced as one exercise: a step reservation of its credits is
      * made first and a refusal changes nothing.
      */
-    private JsonNode requeueExercise(SessionLifecycle.Tx tx, Artifact artifact, boolean stale, List<Drift> drifted) {
+    private JsonNode requeueExercise(SessionLifecycle.Tx tx, Artifact artifact, boolean moved, List<Drift> drifted) {
         Session session = tx.session;
         gate.requireText();
         requireRoomWhenReopened(tx, session);
@@ -681,7 +729,7 @@ class ReviewService {
         // usage is last: a refusal rolls this transaction back, so nothing above has changed
         Reservation reservation = ledger.reserve(session.ownerId(), ReservationScope.STEP, session.sessionId(), null, Math.max(1, credits));
         repository.cancelTurns(artifact.artifactId());
-        JsonNode pins = stale ? drift.repinned(artifact, drifted) : artifact.sourceRefs();
+        JsonNode pins = moved ? drift.repinned(artifact, drifted) : artifact.sourceRefs();
         Artifact queued = repository.requeue(artifact, pins);
         ObjectNode input = Json.object().put("operation", ExerciseDraftExecutor.OPERATION)
                 .put("memberKey", pins.path(0).path("memberKey").stringValue(""))

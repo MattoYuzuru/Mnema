@@ -220,7 +220,7 @@ by the owning task with a note here.
       exercise of a mechanic outside the allowed set is the new lint code `MECHANIC_NOT_ALLOWED`. The answer must hold exactly `count` exercises: the first
       `count` are used, missing ones are repaired like invalid ones. Each exercise passes SCHEMA, LINT, COMPILE, `ExerciseCommand.readCreate` and
       SELF_EVALUATION (the probes of the exercises README through the same `AttemptEvaluation` as `/exercise-previews`) before it is shown. The ones that fail
-      get ONE repair call (the findings `{index, code, path}` and "exactly K replacements", the valid ones are kept), then one call on the strong route, then
+      get ONE repair call (the findings `{index, code, path}` and "exactly K replacements", the valid ones are kept and listed as accepted, so the model does not repeat them), then one call on the strong route, then
       the artifacts that still lack an exercise end `FAILED(INVALID_OUTPUT)` and are never shown. A `COMMAND_REJECTED` is logged as a gap of the compiler or the
       lint, never as a fault of the model. The Stub answers an exercise request from the material in the prompt; `[[stub:broken-key]]` in the material breaks the
       first exercise of the first answer, `[[stub:broken-key-always]]` breaks it on every call.
@@ -230,7 +230,7 @@ by the owning task with a note here.
     - **Artifact payload and view.** The revision payload is `{"kind": "EXERCISE_COMMAND", "command": {objective, exercise}}`; `whyWrong` is dropped before it is
       stored. `getArtifact` adds the read-only `display {mechanic, objectiveTitle, quotes {nodeId: plain text}}` (the quotes are the text of every `MATERIAL`
       block in the pinned revision) so a client renders without further requests. `artifactSummary.title` is the first `TEXT` block of the prompt (at most 240
-      code points), else the objective title. `getArtifact` runs in a read-write transaction (reading an immutable snapshot takes row locks); nothing is written.
+      code points), else the objective title. `getArtifact` is read-only; only the `display` part reads the material (`FOR KEY SHARE` row locks, refused in a read-only transaction) in a second, ordinary transaction; nothing is written.
     - **Approval** (single and bulk, items and exercises mixed, at most 20, ONE transaction) goes through the caller-owned port `GeneratedExercisePublisher`
       (implemented in `catalog.exercise`): the materials first as one bulk publication, then each exercise through `ExerciseService.publish` with the child
       command id `derive(commandId, artifactId)` and the deck revision and version the previous publication left. `publishedRef` is `{kind: EXERCISE, exerciseId,
@@ -239,15 +239,25 @@ by the owning task with a note here.
       is published instead of the payload and the provenance records `edited: true`; on an `ITEM` artifact or in a bulk entry it is `400 INVALID_REQUEST`.
       `handoffArtifact` stays `ITEM`-only (an `EXERCISE` hand-off is `400 INVALID_REQUEST`).
     - **STALE and re-pin (no model).** When an approval finds that the head of the target material moved, a proposed exercise that was not edited is re-pinned in
-      a short transaction of its own, committed before the approval goes on: if every `MATERIAL` node of the exercise still reads as text in the new head revision
+      a short transaction of its own, committed before the approval goes on, **only when every block the model was shown is unchanged in the head**: the blocks
+      of the old pinned revision that the exercise's context offered (the clipped material the prompt carried) are compared by text with the same nodes of the head, and
+      a block that changed or vanished anywhere in what the model saw (not only in the ones the exercise quotes) is a stale exercise, because the model's other
+      choices (the objective, the distractors, the answer key) rested on it. If that holds, every `MATERIAL` node of the exercise still reads as text in the head
       (not blank, at most 4000 characters) and the exercise passes the lint rules that read the material text, `readCreate` and the probes again, a `REPIN`
       revision with the new pins replaces the current one, `repinStatus` is `AUTO_REPINNED`, the artifact stays `PROPOSED` and the approval continues with it;
-      otherwise (a node vanished, the material is deleted, a check fails, the owner's `replacement` is attached) the artifact becomes `STALE` with
-      `NEEDS_USER_DECISION` and the answer is `409 SOURCE_STALE`. A retry regenerates one exercise against the head (one `TEXT_DRAFT` step with `count 1`, a `STEP`
-      reservation of one exercise's credits).
+      otherwise (a shown block changed, a node vanished, the material is deleted, a check fails) the artifact becomes `STALE` with
+      `NEEDS_USER_DECISION` and the answer is `409 SOURCE_STALE`. An owner's `replacement` is never re-pinned: it is published when it already stands on the head
+      (its subject and every quoted material carry the head revision, whatever the proposal's own pin is) and otherwise the artifact is `STALE`
+      (`409 SOURCE_STALE`, never `412`). A retry of a `FAILED` or `STALE` exercise regenerates one exercise against the head, also when the material moved (one
+      `TEXT_DRAFT` step with `count 1`, a `STEP` reservation of one exercise's credits).
+    - **A reused objective that moved.** A `reuse` objective (offered at compile time, or found by title at approval) is published against the head of that
+      objective at the moment of the publication: when its revision moved after the proposal, the current head is substituted if it is still bound to the proposal's
+      subject member. When the objective is gone, or is bound to another member, the artifact is `STALE` with `NEEDS_USER_DECISION` and the answer is
+      `409 SOURCE_STALE`; a missing objective is never an opaque `404` and a moved one is never `412`. Two approvals that race for the same direction serialize
+      on the deck version (one wins, the other is `412 PRECONDITION_FAILED` and is repeated with the new version) and end with one objective.
     - **«Новое».** The catalog owns a mark per exercise (`exercise_new_mark`, `learning.exercise.new-mark-ttl`, `P7D`) written by the approval in its
       transaction. Exercise list entries and Study presentations carry `isNew`; the mark is cleared when the exercise is opened (`DELETE
-      /api/decks/{deckId}/exercises/{exerciseId}/new-mark`, 204, idempotent) or answered in Study (the attempt's own transaction). No notification kind is
+      /api/decks/{deckId}/exercises/{exerciseId}/new-mark`, 204, idempotent) or answered in Study (the attempt's own transaction, any terminal result, `CANCEL` included: a presented and then terminated exercise counts as opened). No notification kind is
       added: `GENERATION_READY`, `_PARTIAL` and `_FAILED` carry `sessionKind: EXERCISES`; the client announces «Новые упражнения: N — уже в колоде».
 
 ## Owner decisions (2026-10-02)

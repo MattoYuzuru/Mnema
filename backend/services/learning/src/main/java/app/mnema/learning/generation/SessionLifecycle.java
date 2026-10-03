@@ -573,8 +573,11 @@ class SessionLifecycle {
      * What an {@code EXERCISES} run produced: the exercises that passed validation (at most one per open artifact of the step, in the
      * order of the artifacts; the artifacts without one fail with {@code INVALID_OUTPUT}). {@code credits} is the step's share of the
      * session hold and {@code planned} the exercises it was asked for: the debit is that share for the exercises that were produced.
+     * {@code handles} are the blocks the model was shown ({@code m1:b3 -> node id}), kept on every revision: a re-pin may follow the
+     * material only if all of them are unchanged. {@code failureCode} is the error of the artifacts that got no exercise.
      */
-    record ExerciseDraft(String promptVersion, String modelRoute, List<Proposal> proposals, long costMicros, int credits, int planned) { }
+    record ExerciseDraft(String promptVersion, String modelRoute, List<Proposal> proposals, long costMicros, int credits, int planned,
+                         Map<String, String> handles, String failureCode) { }
 
     /**
      * The worker starts an {@code EXERCISES} step: its QUEUED artifacts become GENERATING. There is no draft stream: a proposal
@@ -639,7 +642,7 @@ class SessionLifecycle {
         for (Artifact artifact : open) {
             Proposal proposal = proposals.get(artifact.artifactId());
             if (proposal == null) {
-                failArtifact(tx, artifact, "INVALID_OUTPUT");
+                failArtifact(tx, artifact, draft.failureCode());
                 continue;
             }
             UUID revisionId = UUID.randomUUID();
@@ -648,12 +651,14 @@ class SessionLifecycle {
             payload.set("command", proposal.command());
             ObjectNode validation = Json.object();
             validation.putArray("warnings");
-            repository.insertRevision(new Revision(revisionId, artifact.artifactId(), revisionNo, "INITIAL", payload, Json.object(),
+            ObjectNode handles = Json.object();
+            draft.handles().forEach(handles::put);
+            repository.insertRevision(new Revision(revisionId, artifact.artifactId(), revisionNo, "INITIAL", payload, handles,
                     draft.promptVersion(), draft.modelRoute(), validation, Instant.now()), tx.session.sessionId(), tx.session.ownerId());
             tx.events.add(artifactEvent(repository.transition(artifact, "PROPOSED", null, revisionId, proposal.title(), revisionNo)));
             if (firstRevision == null) firstRevision = revisionId.toString();
         }
-        if (proposals.isEmpty()) steps.finish(claim.stepId(), "FAILED", "INVALID_OUTPUT", null);
+        if (proposals.isEmpty()) steps.finish(claim.stepId(), "FAILED", draft.failureCode(), null);
         else steps.finish(claim.stepId(), "SUCCEEDED", null, firstRevision);
         if (!proposals.isEmpty()) tx.events.add(usageEvent(tx.session, null));
         settle(tx);

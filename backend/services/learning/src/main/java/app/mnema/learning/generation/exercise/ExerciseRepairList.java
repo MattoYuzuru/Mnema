@@ -15,6 +15,7 @@ import java.util.Set;
 public final class ExerciseRepairList {
     /** The repair segment is cut by the provider layer at 2000 characters; the list stays below it. */
     public static final int MAX_CHARACTERS = 1_800;
+    private static final int MAX_ACCEPTED = 10;
 
     private ExerciseRepairList() { }
 
@@ -23,8 +24,20 @@ public final class ExerciseRepairList {
      * @param needed how many exercises the next answer must hold (the rejected ones plus the ones that were missing)
      */
     public static String format(List<ExerciseFinding> findings, int needed) {
+        return format(findings, needed, List.of());
+    }
+
+    /**
+     * @param accepted the first lines of the exercises already accepted: the model is told what is kept (and must not repeat), as the
+     *                 answer it replaces is asked for again from the start
+     */
+    public static String format(List<ExerciseFinding> findings, int needed, List<String> accepted) {
         StringBuilder text = new StringBuilder("Верни json {\"exercises\": […]} ровно из ").append(needed)
                 .append(" упражнений: только замены отклонённым, принятые не повторяй.");
+        if (!accepted.isEmpty()) {
+            append(text, "\nУже приняты, не повторяй их:");
+            for (String line : accepted.stream().limit(MAX_ACCEPTED).toList()) append(text, "\n- " + clip(line));
+        }
         Set<String> lines = new LinkedHashSet<>();
         Map<ExerciseCode, ExerciseCode> codes = new LinkedHashMap<>();
         for (ExerciseFinding finding : findings) {
@@ -37,6 +50,11 @@ public final class ExerciseRepairList {
         for (String line : lines) append(text, "\n" + line);
         for (ExerciseCode code : codes.keySet()) append(text, "\n" + code.name() + ": " + code.rule());
         return text.toString();
+    }
+
+    private static String clip(String line) {
+        String flat = line.replaceAll("\\s+", " ");
+        return flat.length() <= 80 ? flat : flat.substring(0, 80) + "…";
     }
 
     private static void append(StringBuilder text, String line) {

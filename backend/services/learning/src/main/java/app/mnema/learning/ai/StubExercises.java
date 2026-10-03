@@ -37,6 +37,8 @@ final class StubExercises {
     private static final Pattern MATERIAL = Pattern.compile("<material id=\"m1\">\\n(.*?)\\n</material>", Pattern.DOTALL);
     private static final Pattern LINE = Pattern.compile("^\\[\\[(b[0-9]+)]] (.*)$");
     private static final Pattern WORD = Pattern.compile("[\\p{L}\\p{N}]{2,40}");
+    private static final Pattern EXISTING = Pattern.compile("<existing_exercises>\\n(.*?)\\n?</existing_exercises>", Pattern.DOTALL);
+    private static final Pattern KEPT = Pattern.compile("Уже приняты, не повторяй их:\\n((?:- [^\\n]*\\n?)+)");
     private static final int SNIPPET = 300;
 
     private record Block(String handle, String text) { }
@@ -54,8 +56,11 @@ final class StubExercises {
         List<Block> blocks = blocks(prompt);
         ArrayNode exercises = JSON.createArrayNode();
         if (!blocks.isEmpty()) {
+            // the variant number keeps a question from repeating one of the material's current exercises (the task lists them) or one
+            // that the repair message says is kept: a real model is told not to repeat them, and the server drops a repeat
+            int variant = lines(EXISTING, prompt) + (repair ? 50 + 10 * lines(KEPT, prompt) : 0);
             for (int index = 0; index < count; index++) {
-                exercises.add(exercise(index, mechanics.get(index % mechanics.size()), blocks.get(index % blocks.size())));
+                exercises.add(exercise(variant + index, mechanics.get(index % mechanics.size()), blocks.get(index % blocks.size())));
             }
             boolean broken = prompt.contains(BROKEN_ALWAYS) || (!repair && prompt.contains(BROKEN_ONCE));
             if (broken && !exercises.isEmpty()) exercises.set(0, brokenChoice(blocks.getFirst()));
@@ -68,6 +73,12 @@ final class StubExercises {
     private static int number(Pattern pattern, String prompt, int fallback) {
         Matcher matcher = pattern.matcher(prompt);
         return matcher.find() ? Math.max(1, Integer.parseInt(matcher.group(1))) : fallback;
+    }
+
+    private static int lines(Pattern pattern, String prompt) {
+        Matcher matcher = pattern.matcher(prompt);
+        if (!matcher.find()) return 0;
+        return (int) matcher.group(1).lines().filter(line -> !line.isBlank()).count();
     }
 
     private static List<String> mechanics(String prompt) {
@@ -86,6 +97,11 @@ final class StubExercises {
             if (matcher.matches() && !matcher.group(2).isBlank()) blocks.add(new Block(matcher.group(1), unescape(matcher.group(2))));
         }
         return blocks;
+    }
+
+    /** What the prompt did to the text the model saw: a copy of a fragment carries the four entities, like a real model's. */
+    private static String escape(String text) {
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
     }
 
     private static String unescape(String text) {
@@ -126,7 +142,7 @@ final class StubExercises {
         String answer = longest(snippet, 3);
         if (answer == null) return selfCheck(block, variant);
         String hidden = Pattern.compile(Pattern.quote(answer), Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE).matcher(snippet).replaceAll("…");
-        String prompt = "Вспомните пропущенное слово" + variant + ": " + hidden;
+        String prompt = "Вспомните пропущенное слово" + variant + ": " + escape(hidden);
         // the fixed words of the question must not hand the answer over either (a material about the word "слово")
         if (prompt.toLowerCase(Locale.ROOT).contains(answer.toLowerCase(Locale.ROOT))) return selfCheck(block, variant);
         ObjectNode exercise = base("FREE_RESPONSE", prompt);
@@ -149,10 +165,10 @@ final class StubExercises {
         }
         ObjectNode exercise = base("CLOZE", "Заполните пропуск" + variant + ".");
         ArrayNode passage = exercise.putArray("passage");
-        if (!before.isEmpty()) passage.addObject().put("kind", "TEXT").put("text", before);
+        if (!before.isEmpty()) passage.addObject().put("kind", "TEXT").put("text", escape(before));
         ObjectNode blank = passage.addObject().put("kind", "BLANK").put("blank", "bl1").put("firstLetterHint", false);
         blank.putObject("size").put("mode", "ANSWER_LENGTH");
-        if (!after.isEmpty()) passage.addObject().put("kind", "TEXT").put("text", after);
+        if (!after.isEmpty()) passage.addObject().put("kind", "TEXT").put("text", escape(after));
         ObjectNode key = exercise.putArray("blanks").addObject().put("blank", "bl1");
         key.putArray("accepted").add(answer);
         key.put("matchingMode", "STRICT");
@@ -163,12 +179,12 @@ final class StubExercises {
         ObjectNode exercise = base("CHOICE", "Какое утверждение соответствует материалу" + variant + "?");
         exercise.put("selectionMode", "SINGLE");
         ArrayNode options = exercise.putArray("options");
-        options.addObject().put("id", "o1").put("text", clip(snippet, 120)).put("correct", true);
-        ObjectNode second = options.addObject().put("id", "o2").put("text", "Противоположное: " + clip(snippet, 60)).put("correct", broken);
+        options.addObject().put("id", "o1").put("text", escape(clip(snippet, 120))).put("correct", true);
+        ObjectNode second = options.addObject().put("id", "o2").put("text", "Противоположное: " + escape(clip(snippet, 60))).put("correct", broken);
         if (!broken) second.put("whyWrong", "Это противоречит материалу.");
         options.addObject().put("id", "o3").put("text", "В материале об этом не сказано").put("correct", false)
                 .put("whyWrong", "Материал говорит об этом прямо.");
-        options.addObject().put("id", "o4").put("text", "Зависит от обстоятельств: " + clip(snippet, 40)).put("correct", false)
+        options.addObject().put("id", "o4").put("text", "Зависит от обстоятельств: " + escape(clip(snippet, 40))).put("correct", false)
                 .put("whyWrong", "Материал не ставит это в зависимость.");
         return exercise;
     }

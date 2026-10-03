@@ -5,6 +5,7 @@ import app.mnema.learning.generation.Rows.Artifact;
 import app.mnema.learning.generation.Rows.Revision;
 import app.mnema.learning.generation.SourceDrift.Drift;
 import app.mnema.learning.generation.exercise.ExerciseValidator;
+import app.mnema.learning.platform.concurrency.VersionConflictException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
@@ -54,7 +55,8 @@ class ExerciseRepin {
         if (tx == null) return Optional.empty();
         Artifact artifact = repository.artifact(sessionId, artifactId).orElse(null);
         if (artifact == null) return Optional.empty();
-        if (!artifact.state().equals("PROPOSED") || artifact.rowVersion() != expectedVersion) return Optional.of(artifact);
+        // the caller has just checked both: a change in between is a lost race, which the version precondition answers (412)
+        if (!artifact.state().equals("PROPOSED") || artifact.rowVersion() != expectedVersion) throw new VersionConflictException();
         List<Drift> drifted = drift.drifted(tx.session, artifact);
         if (drifted.isEmpty()) return Optional.of(artifact);
 
@@ -68,7 +70,7 @@ class ExerciseRepin {
         UUID revisionId = UUID.randomUUID();
         Revision old = moved.get().previous();
         repository.insertRevision(new Revision(revisionId, artifactId, artifact.revisionCount() + 1, "REPIN", moved.get().payload(),
-                Json.object(), old.promptVersion(), old.modelRoute(), old.validation(), Instant.now()), sessionId, tx.session.ownerId());
+                old.handles(), old.promptVersion(), old.modelRoute(), old.validation(), Instant.now()), sessionId, tx.session.ownerId());
         Artifact repinned = repository.repin(artifact, revisionId, drift.repinned(artifact, drifted), artifact.title(),
                 artifact.revisionCount() + 1);
         tx.events.add(SessionLifecycle.artifactEvent(repinned));
@@ -78,6 +80,22 @@ class ExerciseRepin {
 
     private record Moved(Revision previous, ObjectNode payload) { }
 
+    /**
+     * What the model was shown is what the exercise stands on: every block it saw (the node ids kept on the revision; all quotable
+     * blocks of the pinned revision when there are none) must exist in the head with exactly the same plain text. A material that was
+     * edited in a block the model read is a different material for the question, even when every quoted node still exists.
+     */
+    private static boolean unchanged(Revision previous, Pinned seen, Pinned head) {
+        List<UUID> shown = new ArrayList<>();
+        previous.handles().forEach(entry -> shown.add(UUID.fromString(entry.stringValue(""))));
+        if (shown.isEmpty()) seen.blocks().forEach(block -> shown.add(block.nodeId()));
+        for (UUID node : shown) {
+            Optional<String> before = seen.text(node);
+            if (before.isEmpty() || !before.equals(head.text(node))) return false;
+        }
+        return true;
+    }
+
     /** The payload with its pins moved to the head, or empty when the exercise cannot honestly follow the material. */
     private Optional<Moved> move(Rows.Session session, Artifact artifact, List<Drift> drifted) {
         JsonNode current = drifted.getFirst().current();
@@ -85,7 +103,9 @@ class ExerciseRepin {
         UUID head = UUID.fromString(current.path("itemRevisionId").stringValue(""));
         Optional<Revision> previous = repository.revision(artifact.artifactId(), artifact.currentRevisionId());
         Optional<Pinned> pinned = materials.read(session.ownerId(), session.deckId(), member, head);
-        if (previous.isEmpty() || pinned.isEmpty()) return Optional.empty();
+        Optional<Pinned> seen = materials.read(session.ownerId(), session.deckId(), member,
+                UUID.fromString(artifact.sourceRefs().path(0).path("itemRevisionId").stringValue("")));
+        if (previous.isEmpty() || pinned.isEmpty() || seen.isEmpty() || !unchanged(previous.get(), seen.get(), pinned.get())) return Optional.empty();
         JsonNode command = previous.get().payload().path("command");
         ObjectNode exercise = (ObjectNode) command.path("exercise").deepCopy();
         if (!exercise.path("subject").path("memberKey").stringValue("").equals(member.toString())) return Optional.empty();

@@ -52,10 +52,13 @@ public final class ExerciseValidator {
     }
 
     /** Validates the exercise at {@code index} of an answer. */
-    public Verdict validate(int index, JsonNode exercise, ExerciseContext context, ExerciseIds ids) {
+    public Verdict validate(int index, JsonNode answered, ExerciseContext context, ExerciseIds ids) {
+        // the prompt escaped and redacted the material: the model's copies are brought back to what the material really says
+        JsonNode exercise = ModelStrings.normalize(answered, context);
         List<String> violations = schema.exercise(exercise);
         if (!violations.isEmpty()) {
-            String paths = String.join(", ", violations.subList(0, Math.min(MAX_PATHS, violations.size())));
+            // a path is made of schema member names and indexes only: nothing the model wrote reaches a finding
+            String paths = String.join(", ", violations.subList(0, Math.min(MAX_PATHS, violations.size()))).replaceAll("[^A-Za-z0-9_$.\\[\\], ?]", "?");
             return new Invalid(index, List.of(new ExerciseFinding(index, ExerciseCode.SCHEMA_INVALID, paths)));
         }
         List<ExerciseFinding> lint = ExerciseLint.lint(exercise, context);
@@ -106,6 +109,21 @@ public final class ExerciseValidator {
             }
         }
         return findings.stream().distinct().toList();
+    }
+
+    /**
+     * The comparison key of an exercise for the duplicate rule: the normalized TEXT blocks of its prompt, and for a cloze the
+     * passage with every blank as an underscore. {@code content} is the {@code content} of a compiled or stored exercise.
+     */
+    public static String promptKey(JsonNode content) {
+        StringBuilder key = new StringBuilder();
+        for (JsonNode block : content.path("prompt")) {
+            if (block.path("kind").stringValue("").equals("TEXT")) key.append(block.path("text").stringValue("")).append('\n');
+        }
+        for (JsonNode segment : content.path("passage")) {
+            key.append(segment.path("kind").stringValue("").equals("TEXT") ? segment.path("text").stringValue("") : "_");
+        }
+        return ExerciseTexts.normalize(key.toString());
     }
 
     /**

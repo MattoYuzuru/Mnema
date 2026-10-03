@@ -78,7 +78,7 @@ class ExerciseValidationFixtureTest {
         }
         assertThat(failing).isGreaterThanOrEqualTo(20);
         // every code of lint.json that a fixture can express is executed by one
-        Set<String> exempt = Set.of("COMMAND_REJECTED", "SELF_EVALUATION_KEY_NOT_CORRECT", "SELF_EVALUATION_PROBE_ACCEPTED");
+        Set<String> exempt = Set.of("COMMAND_REJECTED", "SELF_EVALUATION_KEY_NOT_CORRECT", "SELF_EVALUATION_PROBE_ACCEPTED", "DUPLICATE_EXERCISE");
         Set<String> all = new TreeSet<>();
         for (ExerciseCode code : ExerciseCode.values()) all.add(code.name());
         all.removeAll(exempt);

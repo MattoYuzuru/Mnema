@@ -118,13 +118,13 @@ class ContextRepository {
                         row.getString("types").isEmpty() ? List.<String>of() : List.of(row.getString("types").split(",")))).list();
     }
 
-    /** The current enabled exercises assessed on a material, in deck order (the model must not repeat them). */
+    /** The newest current enabled exercises assessed on a material (the model must not repeat them), newest first. */
     List<ExerciseLine> exercises(UUID deck, UUID member, int limit) {
         return jdbc.sql("SELECT er.exercise_type,er.content::text AS content FROM app_learning.exercise_content_binding b "
                         + "JOIN app_learning.deck_head_exercise he ON he.deck_id=b.deck_id AND he.exercise_id=b.exercise_id "
                         + "AND he.revision_id=b.exercise_revision_id JOIN app_learning.exercise_revision er ON er.deck_id=he.deck_id "
                         + "AND er.exercise_id=he.exercise_id AND er.revision_id=he.revision_id AND er.enabled "
-                        + "WHERE b.deck_id=:deck AND b.role='ASSESSED' AND b.member_key=:member ORDER BY he.ordinal LIMIT :limit")
+                        + "WHERE b.deck_id=:deck AND b.role='ASSESSED' AND b.member_key=:member ORDER BY he.ordinal DESC LIMIT :limit")
                 .param("deck", deck).param("member", member).param("limit", limit)
                 .query((row, ignored) -> new ExerciseLine(row.getString("exercise_type"), row.getString("content"))).list();
     }

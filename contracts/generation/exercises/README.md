@@ -130,7 +130,9 @@ Findings are stable codes in [`lint.json`](lint.json) (`{code, path?}`, never ec
 | `MATCH` | 2..6 pairs, bijection, sides distinct, labels do not give a pair away | schema bounds, `MATCH_NOT_BIJECTION`, `MATCH_LABELS_NOT_DISTINCT`, `MATCH_LABEL_LEAKS_PAIR` |
 | `ORDER` | at least 2 distinguishable items, unambiguous order | `ORDER_ITEMS_NOT_DISTINGUISHABLE` (an unambiguous order needs the optional critic) |
 | `CATEGORIZE` | at least 2 non-empty categories, each item in exactly one | `CATEGORIZE_UNKNOWN_CATEGORY`, `CATEGORIZE_TOO_FEW_NON_EMPTY_CATEGORIES` (exactly-one is structural: `category` is a single field) |
-| all | handles and local IDs are consistent; the mechanic is one the task allows | `REF_UNKNOWN_HANDLE`, `REF_UNKNOWN_OBJECTIVE`, `DUPLICATE_LOCAL_ID`, `MECHANIC_NOT_ALLOWED` |
+| all | handles and local IDs are consistent; the mechanic is one the task allows | `REF_UNKNOWN_HANDLE`, `REF_UNKNOWN_OBJECTIVE`, `DUPLICATE_LOCAL_ID`, `MECHANIC_NOT_ALLOWED`, `DUPLICATE_EXERCISE` (the same mechanic and normalized prompt as an accepted exercise of the session or a current exercise of the material; not fixture-testable: it needs the session) |
+
+**Normalization before the lint.** Every string of an exercise first gets exactly `&quot; &lt; &gt; &amp;` decoded in one pass (the prompt escapes them) and a `[email]`, `[phone]` or `[card]` placeholder restored only by an exact match against the raw text of a block (`ModelStrings`); anything else is linted as the model wrote it.
 
 **Lint semantics are executed** by `ExerciseValidationFixtureTest`: every valid fixture compiles to exactly its `expectedCommand` and `expectedIdMap`
 (golden allocator) and passes the probes; every failing fixture produces exactly its `expectedLint`. Implementation choices that the table leaves open:

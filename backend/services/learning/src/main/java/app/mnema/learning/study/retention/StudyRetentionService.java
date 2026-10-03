@@ -24,9 +24,5 @@ public class StudyRetentionService {
                 newMarks.purgeExpired(BATCH_SIZE));
     }
 
-    public record PurgeResult(int rawResponses, int compactOutcomes, int pairInteractions, int newMarks) {
-        public PurgeResult(int rawResponses, int compactOutcomes, int pairInteractions) {
-            this(rawResponses, compactOutcomes, pairInteractions, 0);
-        }
-    }
+    public record PurgeResult(int rawResponses, int compactOutcomes, int pairInteractions, int newMarks) { }
 }

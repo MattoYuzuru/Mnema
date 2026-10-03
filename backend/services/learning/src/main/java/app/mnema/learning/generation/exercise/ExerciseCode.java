@@ -11,6 +11,7 @@ public enum ExerciseCode {
     REF_UNKNOWN_OBJECTIVE(Phase.LINT, "objective.ref должен быть одним из handle из <objectives>"),
     DUPLICATE_LOCAL_ID(Phase.LINT, "локальные идентификаторы внутри упражнения уникальны"),
     MECHANIC_NOT_ALLOWED(Phase.LINT, "механика не входит в разрешённый список из <task>"),
+    DUPLICATE_EXERCISE(Phase.LINT, "условие повторяет уже принятое или существующее упражнение: придумай другое"),
     SELF_CHECK_REFERENCE_BLANK(Phase.LINT, "эталон SELF_CHECK не должен быть пустым"),
     SELF_CHECK_REFERENCE_EQUALS_PROMPT(Phase.LINT, "эталон SELF_CHECK не должен повторять условие"),
     FREE_RESPONSE_ANSWER_IN_PROMPT(Phase.LINT, "правильный ответ не должен встречаться в условии"),

@@ -35,9 +35,11 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -132,13 +134,15 @@ class ExerciseDraftExecutor {
                      OpaqueUserKey key) {
         AiRoute route = AiRoute.TEXT_FAST;
         List<ExerciseValidator.Accepted> accepted = new ArrayList<>();
+        // what an exercise may not repeat: the material's current exercises, then the ones of this batch that were accepted
+        Set<String> keys = new HashSet<>(request.existingKeys());
         String violations = null;
         long costMicros = 0;
         String modelRoute = "";
         for (int round = 0; round < ROUNDS; round++) {
             Duration remaining = Duration.between(Instant.now(), claim.deadlineAt());
             if (remaining.compareTo(Duration.ofMillis(250)) < 0) {
-                finish(claim, Failure.fail("DEADLINE_EXCEEDED"));
+                endEarly(claim, control, session, artifacts, accepted, request, modelRoute, costMicros, count, Failure.fail("DEADLINE_EXCEEDED"));
                 return;
             }
             if (round > 0) meters.counter("mnema_generation_repairs_total", "route", route.name().toLowerCase(Locale.ROOT)).increment();
@@ -160,7 +164,8 @@ class ExerciseDraftExecutor {
                 return;
             }
             if (result instanceof AiResult.Failed<TextResponse> failed) {
-                finish(claim, ProviderFailures.of(failed.failure(), claim, lifecycle));
+                endEarly(claim, control, session, artifacts, accepted, request, modelRoute, costMicros, count,
+                        ProviderFailures.of(failed.failure(), claim, lifecycle));
                 return;
             }
             TextResponse response = ((AiResult.Ok<TextResponse>) result).value();
@@ -170,14 +175,14 @@ class ExerciseDraftExecutor {
             if (response.finishReason() == TextResponse.FinishReason.LENGTH) {
                 findings.add(new ExerciseFinding(-1, ExerciseCode.SCHEMA_INVALID, "$"));
             } else {
-                validate(claim, response.text(), needed, request, accepted, findings);
+                validate(claim, response.text(), needed, request, accepted, keys, findings);
             }
             if (accepted.size() >= count) {
-                commit(claim, control, session, artifacts, accepted, request, modelRoute, costMicros, count);
+                commit(claim, control, session, artifacts, accepted, request, modelRoute, costMicros, count, "INVALID_OUTPUT");
                 return;
             }
             findings.forEach(finding -> meters.counter("mnema_generation_exercise_findings_total", "code", finding.code().name()).increment());
-            violations = ExerciseRepairList.format(findings, count - accepted.size());
+            violations = ExerciseRepairList.format(findings, count - accepted.size(), accepted.stream().map(ExerciseValidator.Accepted::title).toList());
             route = round == 0 ? route : AiRoute.TEXT_STRONG;
         }
         // every round is used: what passed is stored, the artifacts that got nothing end FAILED(INVALID_OUTPUT)
@@ -186,7 +191,7 @@ class ExerciseDraftExecutor {
             finish(claim, Failure.fail("INVALID_OUTPUT"));
             return;
         }
-        commit(claim, control, session, artifacts, accepted, request, modelRoute, costMicros, count);
+        commit(claim, control, session, artifacts, accepted, request, modelRoute, costMicros, count, "INVALID_OUTPUT");
     }
 
     /**
@@ -194,7 +199,7 @@ class ExerciseDraftExecutor {
      * ignored; an answer that is not the expected object, or holds fewer, fails the exercises it lacks.
      */
     private void validate(StepClaim claim, String answer, int needed, Request request, List<ExerciseValidator.Accepted> accepted,
-                          List<ExerciseFinding> findings) {
+                          Set<String> keys, List<ExerciseFinding> findings) {
         JsonNode root = parse(answer);
         JsonNode exercises = root == null ? null : root.path("exercises");
         if (exercises == null || !exercises.isArray() || exercises.isEmpty()) {
@@ -205,7 +210,14 @@ class ExerciseDraftExecutor {
         for (int index = 0; index < considered; index++) {
             ExerciseValidator.Verdict verdict = validator.validate(index, exercises.get(index), request.context(), ExerciseIds.random());
             switch (verdict) {
-                case ExerciseValidator.Valid valid -> accepted.add(valid.exercise());
+                case ExerciseValidator.Valid valid -> {
+                    // an exercise that asks what another one of the batch or of the material already asks is dropped like an invalid one
+                    if (keys.add(ExerciseValidator.promptKey(valid.exercise().command().path("exercise").path("content")))) {
+                        accepted.add(valid.exercise());
+                    } else {
+                        findings.add(new ExerciseFinding(index, ExerciseCode.DUPLICATE_EXERCISE, null));
+                    }
+                }
                 case ExerciseValidator.Invalid invalid -> {
                     findings.addAll(invalid.findings());
                     if (invalid.findings().stream().anyMatch(finding -> finding.code() == ExerciseCode.COMMAND_REJECTED)) {
@@ -233,9 +245,23 @@ class ExerciseDraftExecutor {
         }
     }
 
+    /**
+     * A run that cannot go on (a provider failure, the deadline) after some exercises were accepted: those are stored and paid and
+     * only the artifacts that got none fail, with the code of the failure; with nothing accepted the step ends (or retries) as
+     * a whole. A cancellation stores nothing.
+     */
+    private void endEarly(StepClaim claim, StepControl control, Session session, List<UUID> artifacts, List<ExerciseValidator.Accepted> accepted,
+                          Request request, String modelRoute, long costMicros, int count, Failure failure) {
+        if (accepted.isEmpty() || failure.kind() == Failure.Kind.CANCELLED || failure.errorCode() == null) {
+            finish(claim, failure);
+            return;
+        }
+        commit(claim, control, session, artifacts, accepted, request, modelRoute, costMicros, count, failure.errorCode());
+    }
+
     private void commit(StepClaim claim, StepControl control, Session session, List<UUID> artifacts,
                         List<ExerciseValidator.Accepted> accepted, Request request, String modelRoute, long providerCostMicros,
-                        int count) {
+                        int count, String failureCode) {
         List<Proposal> proposals = new ArrayList<>();
         for (int index = 0; index < Math.min(accepted.size(), artifacts.size()); index++) {
             ExerciseValidator.Accepted exercise = accepted.get(index);
@@ -243,7 +269,7 @@ class ExerciseDraftExecutor {
         }
         BigDecimal rubMicros = BigDecimal.valueOf(providerCostMicros).multiply(settings.usdRubRate()).setScale(0, RoundingMode.CEILING);
         ExerciseDraft draft = new ExerciseDraft(request.prompt().promptVersion(), modelRoute, proposals, rubMicros.longValueExact(),
-                claim.input().path("credits").asInt(0), count);
+                claim.input().path("credits").asInt(0), count, request.shown(), failureCode);
         if (control.lost()) return;
         boolean stored = lifecycle.succeedExercises(claim, draft);
         meters.counter("mnema_generation_steps_total", "kind", TextDraftExecutor.KIND, "outcome", stored ? "succeeded" : "void").increment();

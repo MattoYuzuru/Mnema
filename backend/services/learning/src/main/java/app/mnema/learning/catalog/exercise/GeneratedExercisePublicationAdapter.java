@@ -44,8 +44,26 @@ final class GeneratedExercisePublicationAdapter implements GeneratedExercisePubl
         return acknowledgement;
     }
 
+    /**
+     * A {@code reuse} is of the objective's current revision: the revision the proposal named may have moved (the owner revised the
+     * objective since), and a reuse of a stale revision would be a version conflict that no retry can cure. An objective that is gone or
+     * bound to another material cannot be reused at all.
+     */
+    private JsonNode current(UUID actor, UUID deckId, JsonNode objective, String member) {
+        try {
+            ExerciseRepository.ObjectiveRow head = repository.objectiveHead(actor, deckId,
+                    UUID.fromString(objective.path("objectiveId").stringValue(""))).orElse(null);
+            if (head == null || !head.memberKey().toString().equals(member)) throw new ObjectiveUnavailableException();
+            return JSON.createObjectNode().put("operation", "reuse").put("objectiveId", head.objectiveId().toString())
+                    .put("objectiveRevisionId", head.revisionId().toString());
+        } catch (IllegalArgumentException malformed) {
+            throw new ObjectiveUnavailableException();
+        }
+    }
+
     /** A {@code create} objective whose title the material already carries is the existing objective (its current revision). */
     private JsonNode known(UUID actor, UUID deckId, JsonNode objective, String member) {
+        if (objective.path("operation").stringValue("").equals("reuse")) return current(actor, deckId, objective, member);
         if (!objective.path("operation").stringValue("").equals("create") || member.isEmpty()) return objective.deepCopy();
         String wanted = TitleNormalizer.normalize(objective.path("title").stringValue(""));
         UUID memberKey;

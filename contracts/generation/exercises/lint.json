@@ -39,6 +39,13 @@
       "rule": "The exercise's mechanic must be one of the mechanics the task allows (the session's settings.mechanics; AUTO allows all seven). The context of a fixture may carry allowedMechanics; without it all seven are allowed."
     },
     {
+      "code": "DUPLICATE_EXERCISE",
+      "mechanic": "ALL",
+      "phase": "LINT",
+      "rule": "Within one answer, an exercise whose normalized prompt (the TEXT blocks of the prompt and, for a CLOZE, the passage with its blanks marked) equals that of an exercise already accepted in the batch or of one of the material's current exercises (the existing_exercises of the task) is dropped like an invalid one and asked for again. Needs the batch and the deck, so no single-exercise fixture exists.",
+      "fixtureExempt": true
+    },
+    {
       "code": "SELF_CHECK_REFERENCE_BLANK",
       "mechanic": "SELF_CHECK",
       "phase": "LINT",

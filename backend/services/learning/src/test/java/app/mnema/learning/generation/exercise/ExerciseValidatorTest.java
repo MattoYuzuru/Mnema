@@ -234,6 +234,43 @@ class ExerciseValidatorTest {
         assertThat(ExerciseRepairList.format(many, 400)).hasSizeLessThanOrEqualTo(ExerciseRepairList.MAX_CHARACTERS).startsWith("Верни json");
     }
 
+    @Test
+    void entitiesAndPlaceholdersCopiedFromThePromptAreNormalizedBeforeTheLint() {
+        Map<String, ExerciseContext.Block> blocks = new LinkedHashMap<>();
+        blocks.put("b1", new ExerciseContext.Block(NODE_1, "Планировщик \"выбирает\" план & <стоимость>. Пишите на ivan@example.com."));
+        ExerciseContext special = new ExerciseContext(UUID.fromString("018f1d98-5c10-4abc-8abc-0123456789c1"),
+                UUID.fromString("22222222-2222-4222-8222-222222222222"),
+                Map.of("m1", new ExerciseContext.Material(UUID.fromString("44444444-4444-4444-8444-444444444444"),
+                        UUID.fromString("55555555-5555-4555-8555-555555555555"), blocks)), Map.of(), ExerciseContext.ALL_MECHANICS);
+        // the fragments as the model copies them from the escaped prompt
+        assertThat(validate(cloze(text("Планировщик &quot;выбирает&quot; план &amp; &lt;") + "," + blank("bl1") + "," + text("&gt;."), key("bl1", "стоимость")),
+                special)).isInstanceOf(ExerciseValidator.Valid.class);
+        assertThat(validate(cloze(text("Пишите на ") + "," + blank("bl1") + "," + text("."), key("bl1", "ivan@example.com")), special))
+                .isInstanceOf(ExerciseValidator.Valid.class);
+        assertThat(validate(cloze(text("Пишите на [email]") + "," + blank("bl1") + "," + text("."), key("bl1", "ivan@example.com")), special))
+                .isInstanceOf(ExerciseValidator.Invalid.class);
+        // a free response whose accepted answer is a decoded form of the entity text is accepted, not leaked
+        assertThat(validate(freeResponse(text("Какой оператор планировщик ставит перед стоимостью?"), "&amp; &lt;"), special))
+                .isInstanceOf(ExerciseValidator.Valid.class);
+    }
+
+    @Test
+    void aSchemaFindingNeverEchoesAPropertyNameTheModelInvented() {
+        ExerciseValidator.Verdict verdict = validate("{\"mechanic\":\"CHOICE\",\"subject\":\"m1\",\"objective\":{\"title\":\"Кошка\"},"
+                + "\"prompt\":[" + text("Выберите.") + "],\"selectionMode\":\"SINGLE\",\"options\":[" + right("o1", "Да") + "," + wrong("o2", "Нет")
+                + "],\"СЕКРЕТНОЕ-свойство\":1}");
+        assertThat(((ExerciseValidator.Invalid) verdict).findings()).extracting(ExerciseFinding::path)
+                .allSatisfy(path -> assertThat(path).doesNotContain("СЕКРЕТНОЕ"));
+    }
+
+    @Test
+    void theRepairListNamesWhatIsKeptAndDropsADuplicateLine() {
+        String list = ExerciseRepairList.format(List.of(new ExerciseFinding(1, ExerciseCode.DUPLICATE_EXERCISE, "prompt")), 1,
+                List.of("CHOICE · Первый вопрос", "CHOICE · " + "x".repeat(200)));
+        assertThat(list).contains("Уже приняты, не повторяй их:").contains("- CHOICE · Первый вопрос").contains("упражнение 2: DUPLICATE_EXERCISE (prompt)")
+                .doesNotContain("x".repeat(100));
+    }
+
     // --------------------------------------------------------------------------- objectives
 
     @Test

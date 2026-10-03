@@ -346,12 +346,15 @@ reuse the session, step, event, usage and notification machinery above; what is 
   GeneratedExercisePublicationAdapter`: `ExerciseCommand.readCreate`, `ExerciseService.publish` joining the transaction, objective reuse by
   normalized title via `ExerciseRepository.objectivesOf`, `ExerciseNewMarks.mark`), each on the deck revision and version the previous one left, then
   `apply` (PUBLISHED, `publishedRef`, provenance with `edited`, events). An approval without exercises keeps the old path (the completion of the
-  item publication). `replacement` is validated by `readCreate` and the subject member; with a drifted target it is never re-pinned.
+  item publication). `replacement` is validated by `readCreate` and the subject member; with a drifted target it is never re-pinned: it is published when it
+  already stands on the head, else `STALE`. A reused objective is published against its current head (`repository.objectiveHead`) while it is bound to the subject
+  member, else `ObjectiveUnavailableException` makes the artifact `STALE` (409 `SOURCE_STALE`).
 - **Re-pin** (`ExerciseRepin`, called from `ReviewService.check` before the publish transaction): see decision 14; one transaction per artifact,
-  `REPIN` revision plus `repinStatus AUTO_REPINNED` (`GenerationRepository.repin`), or `markStale`. `SourceDrift` treats the one pin of an exercise
+  `REPIN` revision plus `repinStatus AUTO_REPINNED` (`GenerationRepository.repin`) only when every block the model was shown is unchanged in the head
+  (`ExerciseRepin.unchanged`), or `markStale`. `SourceDrift` treats the one pin of an exercise
   artifact as bound to the head even when a retry moved it past the session's source row. Retry of an exercise (`requeueExercise`) is one
   step with `count 1` and a `STEP` reservation of `exerciseCredits(1)`.
-- **`getArtifact`** adds `display` (`SessionViews.display`); because reading the material takes `FOR SHARE` row locks it runs in a read-write
+- **`getArtifact`** adds `display` (`SessionViews.display`); because reading the material takes `FOR KEY SHARE` row locks that part runs in a second, ordinary
   transaction.
 
 ### New mark («Новое»)

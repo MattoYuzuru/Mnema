@@ -118,7 +118,6 @@ class SessionViews {
             rev.put("createdAt", Json.time(revision.createdAt()));
             rev.set("validation", revision.validation().deepCopy());
             rev.set("payload", revision.payload().deepCopy());
-            if (artifact.targetKind().equals("EXERCISE")) node.set("display", display(session, revision));
         }
         ArrayNode slots = node.putArray("mediaSlots");
         if (revision != null) {
@@ -141,7 +140,7 @@ class SessionViews {
      * the objective it evidences (the offered one or the new one) and the plain text of every material node it quotes, by node id,
      * as that node reads in the pinned revision. A node whose revision cannot be read is simply absent.
      */
-    private ObjectNode display(Session session, Revision revision) {
+    ObjectNode display(Session session, Revision revision) {
         JsonNode command = revision.payload().path("command");
         JsonNode exercise = command.path("exercise");
         ObjectNode display = Json.object().put("mechanic", exercise.path("type").stringValue(""));

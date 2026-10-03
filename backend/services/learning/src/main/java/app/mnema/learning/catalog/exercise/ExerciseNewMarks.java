@@ -23,7 +23,7 @@ public class ExerciseNewMarks {
     private final Duration ttl;
 
     public ExerciseNewMarks(JdbcClient jdbc, @Value("${learning.exercise.new-mark-ttl:P7D}") Duration ttl) {
-        if (ttl.isNegative() || ttl.isZero()) throw new IllegalArgumentException("Invalid new-mark ttl");
+        if (ttl.compareTo(Duration.ofSeconds(1)) < 0) throw new IllegalArgumentException("Invalid new-mark ttl");
         this.jdbc = jdbc;
         this.ttl = ttl;
     }

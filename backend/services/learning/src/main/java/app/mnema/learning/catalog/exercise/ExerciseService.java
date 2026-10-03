@@ -32,6 +32,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Duration;
@@ -211,10 +212,10 @@ public class ExerciseService {
                 applied[0] = true;
                 return apply(actor, deckId, pathExerciseId, expectedDeckVersion, command, prepared);
             }));
-            if (!applied[0]) cleanup(prepared);
+            if (!applied[0]) cleanup(prepared, false);
             return new WriteResult(result, !applied[0]);
         } catch (RuntimeException failure) {
-            try { cleanup(prepared); }
+            try { cleanup(prepared, true); }
             catch (RuntimeException cleanupFailure) { failure.addSuppressed(cleanupFailure); }
             throw failure;
         }
@@ -446,7 +447,17 @@ public class ExerciseService {
         return new TreeRoot(new ObjectRef(scope, root), page.payload().path("treeHeight").intValue(), count);
     }
 
-    private void cleanup(Prepared prepared) {
+    /**
+     * Releases the staging pins of a preparation that was not used. Outside a transaction that is a transaction of its own, so the
+     * release survives the failure. Inside one (an approval publishes several exercises in one transaction) a second connection
+     * would be needed, and the pins were staged in the same transaction: after a failure its rollback removes them, and after a replay
+     * they are released in it.
+     */
+    private void cleanup(Prepared prepared, boolean failed) {
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            if (!failed) release(prepared);
+            return;
+        }
         cleanup.executeWithoutResult(ignored -> release(prepared));
     }
 

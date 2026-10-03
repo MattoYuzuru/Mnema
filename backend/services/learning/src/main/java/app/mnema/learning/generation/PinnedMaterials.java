@@ -50,15 +50,43 @@ class PinnedMaterials {
         }
     }
 
-    private final ItemService items;
-    private final NativeDocumentReader reader = new NativeDocumentReader();
+    /** A revision never changes, so what was read of it is kept briefly: a Workshop page asks for many proposals of one material. */
+    private static final int CACHED = 32;
+    private static final long KEPT_NANOS = java.time.Duration.ofSeconds(60).toNanos();
 
-    PinnedMaterials(ItemService items) {
+    private record Kept(Pinned pinned, long at) { }
+
+    private final ItemService items;
+    private final GenerationRepository repository;
+    private final NativeDocumentReader reader = new NativeDocumentReader();
+    private final Map<List<UUID>, Kept> cache = java.util.Collections.synchronizedMap(new LinkedHashMap<>(16, 0.75f, true) {
+        private static final long serialVersionUID = 1L;
+
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<List<UUID>, Kept> eldest) {
+            return size() > CACHED;
+        }
+    });
+
+    PinnedMaterials(ItemService items, GenerationRepository repository) {
         this.items = items;
+        this.repository = repository;
     }
 
-    /** The revision's blocks, or empty when the material or the revision is gone. */
+    /**
+     * The revision's blocks, or empty when the material or the revision is gone. A cached read is used only while the owner still owns
+     * a live deck of that id (the ownership check is the cheap one; the material read it saves is the costly one).
+     */
     Optional<Pinned> read(UUID owner, UUID deck, UUID member, UUID revision) {
+        List<UUID> key = List.of(deck, member, revision);
+        Kept kept = cache.get(key);
+        if (kept != null && System.nanoTime() - kept.at() < KEPT_NANOS && repository.deckOwned(owner, deck)) return Optional.of(kept.pinned());
+        Optional<Pinned> read = load(owner, deck, member, revision);
+        read.ifPresent(pinned -> cache.put(key, new Kept(pinned, System.nanoTime())));
+        return read;
+    }
+
+    private Optional<Pinned> load(UUID owner, UUID deck, UUID member, UUID revision) {
         try {
             JsonNode detail = items.read(owner, deck, member, revision);
             NativeDocument document = reader.readRetained(detail.path("document").toString().getBytes(StandardCharsets.UTF_8));

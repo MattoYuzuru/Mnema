@@ -115,6 +115,31 @@ class GenerationExercisesIntegrationTest extends GenerationReviewSupport {
                 .put("text", SECOND + " (уточнено)"), null);
     }
 
+    /** A new revision of the material with a paragraph appended: every node that was there is as it was. */
+    private UUID reviseAppendingParagraph(StudyFixtures.Material material) {
+        UUID paragraph = UUID.randomUUID();
+        JsonNode head = items.read(material.actor(), material.deck(), material.member(), null);
+        JsonNode deck = decks.read(material.actor(), material.deck());
+        ObjectNode document = (ObjectNode) head.path("document").deepCopy();
+        ArrayNode content = (ArrayNode) document.path("root").path("content");
+        int index = content.size();
+        ObjectNode node = content.addObject().put("id", paragraph.toString()).put("type", "paragraph").put("version", 1);
+        node.putObject("attrs");
+        ObjectNode text = node.putArray("content").addObject().put("id", UUID.randomUUID().toString()).put("type", "text").put("version", 1);
+        text.putObject("attrs").put("text", "Добавленный абзац");
+        text.putArray("content");
+        ObjectNode body = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString())
+                .put("expectedDeckRevisionId", deck.path("revisionId").stringValue(null))
+                .put("expectedItemRevisionId", head.path("itemRevisionId").stringValue(null)).put("expectedOrdinal", 0);
+        body.set("document", document);
+        body.putArray("edits").addObject().put("type", "insert").put("nodeId", paragraph.toString())
+                .put("parentId", material.root().toString()).put("childIndex", index);
+        JsonNode ack = items.publish(material.actor(), material.deck(), Long.parseLong(deck.path("rowVersion").stringValue(null)),
+                ItemPublicationCommand.readSave(new ByteArrayInputStream(body.toString().getBytes(StandardCharsets.UTF_8)), material.member()))
+                .acknowledgement();
+        return UUID.fromString(ack.path("changes").get(0).path("itemRevisionId").stringValue(null));
+    }
+
     /** A new revision of the material without its second paragraph (a quoted node vanishes). */
     private UUID reviseWithoutSecondParagraph(StudyFixtures.Material material) {
         return revise(material, document -> {
@@ -364,6 +389,107 @@ class GenerationExercisesIntegrationTest extends GenerationReviewSupport {
         await("the aborted step to end", java.time.Duration.ofSeconds(10), () -> steps.step(stepOf(session)).orElseThrow().state().equals("CANCELLED"));
         assertThat(states(session)).containsOnly("FAILED");
         assertThat(debits(owner)).isEqualTo(4);
+    }
+
+    @Test
+    void entitiesAndQuotesInTheMaterialSurviveTheRoundTripThroughThePrompt() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        StudyFixtures.Material material = fixtures.addMaterial(owner, deck, "Планировщик \"выбирает\" план & <стоимость> [[t:escape]]",
+                "Статистика \"таблицы\" & <индексы> обновляется командой ANALYZE");
+        UUID session = started(owner, deck, exercisesSpec(EXACT_3, material));
+        assertThat(states(session)).containsOnly("PROPOSED");
+        // the model saw the escaped text and copied it; what is stored is the material as it is
+        assertThat(exerciseCalls("[[t:escape]]").getFirst().prompt()).contains("&quot;выбирает&quot;").contains("&amp;").contains("&lt;стоимость&gt;");
+        List<Proposal> proposals = proposals(owner, deck, session);
+        String stored = JSON.writeValueAsString(proposals.stream().map(proposal -> {
+            try {
+                return command(owner, deck, proposal);
+            } catch (Exception failure) {
+                throw new IllegalStateException(failure);
+            }
+        }).toList());
+        assertThat(stored).doesNotContain("&quot;").doesNotContain("&amp;").doesNotContain("&lt;").doesNotContain("&gt;");
+        assertThat(mechanics(owner, deck, proposals)).contains("CLOZE", "FREE_RESPONSE");
+        JsonNode cloze = command(owner, deck, proposals.get(2)).path("exercise").path("content").path("passage");
+        assertThat(cloze.toString()).contains("\\\"выбирает\\\"").contains("& <стоимость>");
+    }
+
+    @Test
+    void aLaterFailureKeepsTheExercisesAlreadyAcceptedAndFailsOnlyTheRest() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        StudyFixtures.Material material = material(owner, deck, "[[t:partial]] [[stub:broken-key]] [[fake:fail-on-repair]]");
+        UUID session = started(owner, deck, exercisesSpec(EXACT_3, material));
+
+        // the first answer had two good exercises and one broken; the repair call failed: the two are kept and paid, the third fails alone
+        assertThat(states(session)).containsExactly("PROPOSED", "PROPOSED", "FAILED");
+        assertThat(artifactErrors(session)).containsExactly("-", "-", "PROVIDER_UNAVAILABLE");
+        assertThat(exerciseCalls("[[t:partial]]")).extracting(GenerationTestConfiguration.Call::repair).containsExactly(false, true);
+        assertThat(debits(owner)).isEqualTo(4);
+        assertThat(notificationKinds(owner)).contains("GENERATION_PARTIAL");
+    }
+
+    @Test
+    void anExerciseThatAsksWhatAnotherOneAlreadyAsksIsDroppedAndTheRepairNamesWhatIsKept() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        StudyFixtures.Material material = material(owner, deck, "[[t:dup]] [[fake:no-variants]]");
+        ObjectNode spec = exercisesSpec(EXACT_2, material);
+        ((ObjectNode) spec.path("settings")).putArray("mechanics").add("CHOICE");
+        UUID session = started(owner, deck, spec);
+
+        // both questions came back as "variant 1": the second repeats the first, so it is asked for again
+        assertThat(states(session)).containsOnly("PROPOSED");
+        List<GenerationTestConfiguration.Call> calls = exerciseCalls("[[t:dup]]");
+        assertThat(calls).extracting(GenerationTestConfiguration.Call::repair).containsExactly(false, true);
+        assertThat(calls.get(1).prompt()).contains("ровно из 1 упражнений").contains("Уже приняты, не повторяй их:")
+                .contains("упражнение 2: DUPLICATE_EXERCISE").contains("Какое утверждение соответствует материалу (вариант 1)?");
+        Proposal first = proposals(owner, deck, session).getFirst();
+        assertThat(approve(owner, deck, first, UUID.randomUUID()).getStatus()).isEqualTo(200);
+
+        // and a later session that repeats a current exercise of the material is told so the same way
+        UUID later = started(owner, deck, spec(EXACT_1, current(owner, deck, material), "CHOICE"));
+        assertThat(states(later)).containsOnly("PROPOSED");
+        List<GenerationTestConfiguration.Call> laterCalls = exerciseCalls("[[t:dup]]").stream().filter(call -> call.stepId().equals(stepOf(later))).toList();
+        assertThat(laterCalls).extracting(GenerationTestConfiguration.Call::repair).containsExactly(false, true);
+        assertThat(laterCalls.get(0).prompt()).contains("CHOICE · Какое утверждение соответствует материалу (вариант 1)?");
+    }
+
+    private ObjectNode spec(String quantity, StudyFixtures.Material material, String mechanic) throws Exception {
+        ObjectNode spec = exercisesSpec(quantity, material);
+        ((ObjectNode) spec.path("settings")).putArray("mechanics").add(mechanic);
+        return spec;
+    }
+
+    @Test
+    void twoApprovalsRacingForTheSameObjectiveLeaveOneObjective() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        StudyFixtures.Material material = material(owner, deck, "[[t:race-objective]]");
+        UUID firstSession = started(owner, deck, exercisesSpec(EXACT_1, material));
+        UUID secondSession = started(owner, deck, exercisesSpec(EXACT_1, current(owner, deck, material)));
+        Proposal first = proposals(owner, deck, firstSession).getFirst();
+        Proposal second = proposals(owner, deck, secondSession).getFirst();
+        UUID revision = deckRevision(deck);
+        String match = ifMatch(deck);
+        ObjectNode firstBody = approvalBody(UUID.randomUUID(), first, revision);
+        ObjectNode secondBody = approvalBody(UUID.randomUUID(), second, revision);
+
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            var one = pool.submit(() -> approve(owner, deck, first, firstBody, match).getStatus());
+            var two = pool.submit(() -> approve(owner, deck, second, secondBody, match).getStatus());
+            List<Integer> statuses = List.of(one.get(), two.get());
+            // the deck version is a compare-and-set: one approval wins, the other is a stale precondition (412), never a second objective
+            assertThat(statuses).containsExactlyInAnyOrder(200, 412);
+        } finally {
+            pool.shutdownNow();
+        }
+        Proposal loser = artifactState(first.artifact()).equals("PUBLISHED") ? fresh(owner, deck, second) : fresh(owner, deck, first);
+        assertThat(approve(owner, deck, loser, UUID.randomUUID()).getStatus()).isEqualTo(200);
+        assertThat(objectivesOf(material)).isEqualTo(1);
+        assertThat(materialsAndExercises(owner, deck, material)).isEqualTo(2);
     }
 
     // -------------------------------------------------------------------------- admission
@@ -631,57 +757,62 @@ class GenerationExercisesIntegrationTest extends GenerationReviewSupport {
     // ---------------------------------------------------------------------------------- re-pin
 
     @Test
-    void aMovedMaterialIsFollowedWhenTheExerciseCanFollowAndOtherwiseTheProposalIsStale() throws Exception {
+    void aMovedMaterialIsFollowedOnlyWhenEverythingTheModelSawIsUnchanged() throws Exception {
         UUID owner = UUID.randomUUID();
         UUID deck = deck(owner);
         StudyFixtures.Material material = fixtures.addMaterial(owner, deck, FIRST, SECOND);
         UUID session = started(owner, deck, exercisesSpec(EXACT_2, material));
         List<Proposal> two = proposals(owner, deck, session);
-        // exercise 1 quotes the first paragraph, exercise 2 the second one
-        assertThat(jdbc.sql("SELECT payload::text FROM app_learning.generation_artifact_revision WHERE revision_id=:id")
-                .param("id", two.get(1).revision()).query(String.class).single()).contains(material.distractor().toString());
 
-        // the second paragraph vanishes: exercise 2 cannot follow, exercise 1 can
-        UUID head = reviseWithoutSecondParagraph(material);
-        MockHttpServletResponse stale = approveMany(owner, deck, session, bulkBody(UUID.randomUUID(), deckRevision(deck), two), ifMatch(deck));
+        // a paragraph is appended: every block the model read is as it was, so the proposal follows the material silently
+        UUID appended = reviseAppendingParagraph(material);
+        MockHttpServletResponse approved = approve(owner, deck, two.get(0), UUID.randomUUID());
+        assertThat(approved.getStatus()).as(approved.getContentAsString()).isEqualTo(200);
+        UUID exercise = UUID.fromString(json(approved).path("artifacts").get(0).path("publishedRef").path("exerciseId").stringValue(null));
+        assertThat(exercises.read(owner, deck, exercise, null).path("subject").path("itemRevisionId").stringValue(null)).isEqualTo(appended.toString());
+        JsonNode followed = artifact(owner, deck, session, two.get(0).artifact());
+        assertThat(followed.path("revision").path("cause").stringValue(null)).isEqualTo("REPIN");
+        assertThat(followed.path("revisions")).hasSize(2);
+        assertThat(json(events(owner, deck, session, "?after=0&limit=100")).path("events").toString()).contains("AUTO_REPINNED");
+
+        // a block the model read now says something else: the exercise was written about a different text, so the user decides
+        UUID edited = reviseText(material);
+        MockHttpServletResponse stale = approve(owner, deck, fresh(owner, deck, two.get(1)), UUID.randomUUID());
         problem(stale, 409, "GENERATION_STATE_CONFLICT");
         assertThat(json(stale).path("reason").stringValue(null)).isEqualTo("SOURCE_STALE");
-        assertThat(json(stale).path("artifactIds")).hasSize(1);
-        assertThat(json(stale).path("artifactIds").get(0).stringValue(null)).isEqualTo(two.get(1).artifact().toString());
-
-        // the first was re-pinned in its own short transaction, which stays: PROPOSED, AUTO_REPINNED, a REPIN revision on the new head
-        JsonNode followed = artifact(owner, deck, session, two.get(0).artifact());
-        assertThat(followed.path("state").stringValue(null)).isEqualTo("PROPOSED");
-        assertThat(followed.path("repinStatus").stringValue(null)).isEqualTo("AUTO_REPINNED");
-        assertThat(followed.path("sourceRefs").get(0).path("itemRevisionId").stringValue(null)).isEqualTo(head.toString());
-        assertThat(followed.path("revision").path("cause").stringValue(null)).isEqualTo("REPIN");
-        assertThat(followed.path("revision").path("payload").path("command").path("exercise").path("subject").path("itemRevisionId")
-                .stringValue(null)).isEqualTo(head.toString());
-        assertThat(followed.path("revisions")).hasSize(2);
-        // the second one is STALE and needs the user
         JsonNode lost = artifact(owner, deck, session, two.get(1).artifact());
         assertThat(lost.path("state").stringValue(null)).isEqualTo("STALE");
         assertThat(lost.path("repinStatus").stringValue(null)).isEqualTo("NEEDS_USER_DECISION");
-        assertThat(json(events(owner, deck, session, "?after=0&limit=100")).path("events").toString()).contains("AUTO_REPINNED");
 
-        // approving the followed one just works, and the published exercise is about the new revision
-        Proposal ready = fresh(owner, deck, two.get(0));
-        MockHttpServletResponse approved = approve(owner, deck, ready, UUID.randomUUID());
-        assertThat(approved.getStatus()).as(approved.getContentAsString()).isEqualTo(200);
-        UUID exercise = UUID.fromString(json(approved).path("artifacts").get(0).path("publishedRef").path("exerciseId").stringValue(null));
-        assertThat(exercises.read(owner, deck, exercise, null).path("subject").path("itemRevisionId").stringValue(null)).isEqualTo(head.toString());
-
-        // a stale proposal is regenerated against the head by a retry, with its own small reservation
+        // a retry regenerates it against the head, with its own small reservation, and the new proposal can be approved
         Proposal staleOne = fresh(owner, deck, two.get(1));
         MockHttpServletResponse retried = retry(owner, deck, staleOne, UUID.randomUUID(), staleOne.version());
         assertThat(retried.getStatus()).as(retried.getContentAsString()).isEqualTo(200);
-        assertThat(json(retried).path("state").stringValue(null)).isEqualTo("QUEUED");
         awaitState(session, "REVIEW");
         JsonNode regenerated = artifact(owner, deck, session, two.get(1).artifact());
         assertThat(regenerated.path("state").stringValue(null)).isEqualTo("PROPOSED");
-        assertThat(regenerated.path("sourceRefs").get(0).path("itemRevisionId").stringValue(null)).isEqualTo(head.toString());
+        assertThat(regenerated.path("sourceRefs").get(0).path("itemRevisionId").stringValue(null)).isEqualTo(edited.toString());
         assertThat(regenerated.path("repinStatus").isNull()).isTrue();
         assertThat(reservationsOf(owner)).doesNotContain("ACTIVE");
+        assertThat(approve(owner, deck, fresh(owner, deck, two.get(1)), UUID.randomUUID()).getStatus()).isEqualTo(200);
+    }
+
+    @Test
+    void aFailedExerciseWhoseMaterialMovedIsWrittenAgainAgainstTheHead() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        StudyFixtures.Material material = material(owner, deck, "[[t:failed-moved]] [[stub:broken-key-always]]");
+        UUID session = started(owner, deck, exercisesSpec(EXACT_2, material));
+        assertThat(states(session)).containsExactly("PROPOSED", "FAILED");
+        UUID head = reviseText(material);
+
+        Proposal failed = proposals(owner, deck, session).get(1);
+        assertThat(retry(owner, deck, failed, UUID.randomUUID(), failed.version()).getStatus()).isEqualTo(200);
+        awaitState(session, "REVIEW");
+        // the marker still breaks the first exercise of every answer: the point is the pin, which followed the head
+        JsonNode again = artifact(owner, deck, session, failed.artifact());
+        assertThat(again.path("sourceRefs").get(0).path("itemRevisionId").stringValue(null)).isEqualTo(head.toString());
+        assertThat(exerciseCalls("[[t:failed-moved]]").getLast().prompt()).contains("(уточнено)");
     }
 
     @Test
@@ -715,33 +846,104 @@ class GenerationExercisesIntegrationTest extends GenerationReviewSupport {
     }
 
     @Test
-    void aTextChangeThatKeepsTheNodesIsFollowedByEveryExerciseAndAnEditedProposalDoesNotFollow() throws Exception {
+    void anEditedProposalIsPublishedOnlyWhenItStandsOnTheHeadAndOtherwiseItIsStaleNeverAnOpaque404() throws Exception {
         UUID owner = UUID.randomUUID();
         UUID deck = deck(owner);
         StudyFixtures.Material material = fixtures.addMaterial(owner, deck, FIRST, SECOND);
         UUID session = started(owner, deck, exercisesSpec(EXACT_3, material));
         List<Proposal> three = proposals(owner, deck, session);
-        UUID head = reviseText(material);
+        UUID head = reviseAppendingParagraph(material);
 
-        // one approval of an unedited exercise follows the material; the others are still on the old revision until they are approved
-        MockHttpServletResponse approved = approve(owner, deck, three.getFirst(), UUID.randomUUID());
-        assertThat(approved.getStatus()).as(approved.getContentAsString()).isEqualTo(200);
-        assertThat(artifactState(three.get(1).artifact())).isEqualTo("PROPOSED");
-
-        // an edited exercise is the owner's text for the pins it was written against: the proposal becomes STALE instead
-        ObjectNode edited = (ObjectNode) command(owner, deck, fresh(owner, deck, three.get(1))).deepCopy();
-        ObjectNode body = approvalBody(UUID.randomUUID(), fresh(owner, deck, three.get(1)), deckRevision(deck));
-        body.set("replacement", edited);
-        MockHttpServletResponse stale = approve(owner, deck, fresh(owner, deck, three.get(1)), body, ifMatch(deck));
+        // written against the old revision: its pins are not the head
+        ObjectNode old = (ObjectNode) command(owner, deck, three.get(1)).deepCopy();
+        ObjectNode oldBody = approvalBody(UUID.randomUUID(), three.get(1), deckRevision(deck));
+        oldBody.set("replacement", old);
+        MockHttpServletResponse stale = approve(owner, deck, three.get(1), oldBody, ifMatch(deck));
         problem(stale, 409, "GENERATION_STATE_CONFLICT");
         assertThat(json(stale).path("reason").stringValue(null)).isEqualTo("SOURCE_STALE");
         assertThat(artifactState(three.get(1).artifact())).isEqualTo("STALE");
 
-        // the rest of the batch follows the material as it is approved
-        MockHttpServletResponse rest = approve(owner, deck, fresh(owner, deck, three.get(2)), UUID.randomUUID());
-        assertThat(rest.getStatus()).as(rest.getContentAsString()).isEqualTo(200);
-        UUID exercise = UUID.fromString(json(rest).path("artifacts").get(0).path("publishedRef").path("exerciseId").stringValue(null));
+        // written against the head (the editor pinned it there): published, whatever the proposal's own pin says
+        ObjectNode current = (ObjectNode) command(owner, deck, three.get(0)).deepCopy();
+        ((ObjectNode) current.path("exercise").path("subject")).put("itemRevisionId", head.toString());
+        SessionViews.quoted(current.path("exercise").path("content"), quote -> ((ObjectNode) quote).put("itemRevisionId", head.toString()));
+        ObjectNode body = approvalBody(UUID.randomUUID(), three.get(0), deckRevision(deck));
+        body.set("replacement", current);
+        MockHttpServletResponse approved = approve(owner, deck, three.get(0), body, ifMatch(deck));
+        assertThat(approved.getStatus()).as(approved.getContentAsString()).isEqualTo(200);
+        UUID exercise = UUID.fromString(json(approved).path("artifacts").get(0).path("publishedRef").path("exerciseId").stringValue(null));
         assertThat(exercises.read(owner, deck, exercise, null).path("subject").path("itemRevisionId").stringValue(null)).isEqualTo(head.toString());
+        // an edit made when the head had not moved is still published by an approval that has no drift to deal with
+        assertThat(artifactState(three.get(0).artifact())).isEqualTo("PUBLISHED");
+    }
+
+    @Test
+    void aReusedObjectiveWhoseRevisionMovedIsPublishedAgainstItsHeadAndAGoneOneMakesTheProposalStale() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        StudyFixtures.Material material = material(owner, deck, "[[t:objective-moved]]");
+        // the material already has an objective, so the proposals reuse it (t1)
+        UUID first = started(owner, deck, exercisesSpec(EXACT_1, material));
+        assertThat(approve(owner, deck, proposals(owner, deck, first).getFirst(), UUID.randomUUID()).getStatus()).isEqualTo(200);
+        StudyFixtures.Material current = current(owner, deck, material);
+        UUID second = started(owner, deck, exercisesSpec(EXACT_2, current));
+        List<Proposal> two = proposals(owner, deck, second);
+        JsonNode reuse = command(owner, deck, two.get(0)).path("objective");
+        assertThat(reuse.path("operation").stringValue(null)).isEqualTo("reuse");
+
+        // the owner renames the objective since: its revision moved
+        UUID objectiveId = UUID.fromString(reuse.path("objectiveId").stringValue(null));
+        ObjectNode revise = fixtures.createBody(current, fixtures.selfCheck(current, StudyFixtures.blocks(StudyFixtures.text("Ручное")),
+                StudyFixtures.blocks(StudyFixtures.quote(current, current.node()))), "ignored");
+        revise.putObject("objective").put("operation", "revise").put("objectiveId", objectiveId.toString())
+                .put("expectedObjectiveRevisionId", reuse.path("objectiveRevisionId").stringValue(null)).put("title", "Новое название цели");
+        exercises.publish(owner, deck, null, deckVersion(deck), ExerciseCommand.readCreate(new ByteArrayInputStream(revise.toString().getBytes(StandardCharsets.UTF_8))));
+
+        MockHttpServletResponse approved = approve(owner, deck, two.get(0), UUID.randomUUID());
+        assertThat(approved.getStatus()).as(approved.getContentAsString()).isEqualTo(200);
+        String revisionNow = jdbc.sql("SELECT revision_id::text FROM app_learning.objective_head WHERE objective_id=:id").param("id", objectiveId)
+                .query(String.class).single();
+        assertThat(json(approved).path("artifacts").get(0).path("publishedRef").path("objectiveRevisionId").stringValue(null)).isEqualTo(revisionNow);
+
+        // an objective that does not exist (behind the contract's back) is a moved source, not a version conflict
+        corruptObjective(two.get(1).revision());
+        MockHttpServletResponse gone = approve(owner, deck, fresh(owner, deck, two.get(1)), UUID.randomUUID());
+        problem(gone, 409, "GENERATION_STATE_CONFLICT");
+        assertThat(json(gone).path("reason").stringValue(null)).isEqualTo("SOURCE_STALE");
+        assertThat(artifactState(two.get(1).artifact())).isEqualTo("STALE");
+    }
+
+    private void corruptObjective(UUID revision) {
+        new TransactionTemplate(transactions).executeWithoutResult(status -> {
+            jdbc.sql("SET LOCAL session_replication_role = replica").update();
+            jdbc.sql("UPDATE app_learning.generation_artifact_revision SET payload=jsonb_set(payload,'{command,objective,objectiveId}',to_jsonb(CAST(:id AS text))) "
+                    + "WHERE revision_id=:revision").param("id", UUID.randomUUID().toString()).param("revision", revision).update();
+        });
+    }
+
+    @Test
+    void aPinThatIsNotTheHeadWhenTheCatalogIsReachedIsAMovedSourceAndNotAnOpaque404() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        StudyFixtures.Material material = material(owner, deck, "[[t:race]]");
+        UUID session = started(owner, deck, exercisesSpec(EXACT_2, material));
+        List<Proposal> two = proposals(owner, deck, session);
+        // the proposal's subject pin names a revision that is not the head, with no drift visible in its source refs (a lost race)
+        new TransactionTemplate(transactions).executeWithoutResult(status -> {
+            jdbc.sql("SET LOCAL session_replication_role = replica").update();
+            jdbc.sql("UPDATE app_learning.generation_artifact_revision SET payload=jsonb_set(payload,'{command,exercise,subject,itemRevisionId}',"
+                    + "to_jsonb(CAST(:id AS text))) WHERE revision_id=:revision").param("id", UUID.randomUUID().toString())
+                    .param("revision", two.get(1).revision()).update();
+        });
+        long version = deckVersion(deck);
+        MockHttpServletResponse refused = approveMany(owner, deck, session, bulkBody(UUID.randomUUID(), deckRevision(deck), two), ifMatch(deck));
+        problem(refused, 409, "GENERATION_STATE_CONFLICT");
+        assertThat(json(refused).path("reason").stringValue(null)).isEqualTo("SOURCE_STALE");
+        assertThat(json(refused).path("artifactIds").get(0).stringValue(null)).isEqualTo(two.get(1).artifact().toString());
+        // the whole bulk rolled back, and only the proposal that lost its source is stale
+        assertThat(deckVersion(deck)).isEqualTo(version);
+        assertThat(artifactState(two.get(0).artifact())).isEqualTo("PROPOSED");
+        assertThat(artifactState(two.get(1).artifact())).isEqualTo("STALE");
     }
 
     // ---------------------------------------------------------------------------------- retry

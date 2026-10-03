@@ -25,7 +25,21 @@ public interface GeneratedExercisePublisher {
      * @return the publication acknowledgement of the catalog: {@code deckRevisionId}, {@code deckVersion}, {@code exerciseId},
      *         {@code exerciseRevisionId}, {@code objectiveId}, {@code objectiveRevisionId}
      * @throws app.mnema.learning.platform.api.InvalidRequestException the command is not a valid exercise publication
+     * @throws ObjectiveUnavailableException a reused objective is gone or belongs to another material
      */
     JsonNode create(UUID actor, UUID deckId, long expectedDeckVersion, UUID commandId, UUID expectedDeckRevisionId,
                     JsonNode objective, JsonNode exercise);
+
+    /**
+     * A {@code reuse} objective that is gone or is no longer bound to the exercise's subject material: the proposal rests on something
+     * that does not exist any more, so the approval answers {@code SOURCE_STALE} and never a version conflict. (A reused objective
+     * whose head revision merely moved is not this: the implementation publishes against the current revision.)
+     */
+    final class ObjectiveUnavailableException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        public ObjectiveUnavailableException() {
+            super("The objective of the proposal is no longer available", null, false, false);
+        }
+    }
 }

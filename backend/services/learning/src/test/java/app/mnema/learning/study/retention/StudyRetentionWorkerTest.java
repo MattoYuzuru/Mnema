@@ -10,7 +10,7 @@ class StudyRetentionWorkerTest {
     @Test
     void scheduledTickRunsOneBoundedBatch() {
         StudyRetentionService service = mock(StudyRetentionService.class);
-        when(service.purgeBatch()).thenReturn(new StudyRetentionService.PurgeResult(1, 2, 3));
+        when(service.purgeBatch()).thenReturn(new StudyRetentionService.PurgeResult(1, 2, 3, 4));
         new StudyRetentionWorker(service).purge();
         verify(service).purgeBatch();
     }

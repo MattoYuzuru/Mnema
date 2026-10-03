@@ -38,7 +38,7 @@ Deck/Item contracts.
 `?memberKey=`, which is the material profile) has `isNew: boolean`: true while the mark exists and is
 younger than the TTL. The mark ends when the owner opens the exercise (the editor calls
 `DELETE .../new-mark`), when an attempt on a presentation of the exercise reaches a terminal result in any
-Study mode (the same transaction as the attempt) or when the TTL passes (an expired row is purged by the
+Study mode, `CANCEL` (`NOT_ASSESSED`) included, since a presented and terminated exercise counts as opened (the same transaction as the attempt) or when the TTL passes (an expired row is purged by the
 Study retention worker, but a reader never trusts the row alone: it compares `markedAt`). The mark is a
 hint of the catalog: it never changes Study selection, evidence or `StudyState`.
 

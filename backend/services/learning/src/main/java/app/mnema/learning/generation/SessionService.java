@@ -20,8 +20,10 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
@@ -29,6 +31,7 @@ import tools.jackson.databind.node.ObjectNode;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -59,10 +62,12 @@ class SessionService {
     private final GenerationSettings settings;
     private final ContextRepository context;
     private final ObjectProvider<StepDispatcher> dispatcher;
+    private final TransactionTemplate reading;
+    private final TransactionTemplate quoting;
 
     SessionService(GenerationRepository repository, StepRepository steps, SessionLifecycle lifecycle, SessionViews views,
                    UsageLedger ledger, AdmissionPricing pricing, CommandReceiptService receipts, GenerationSettings settings,
-                   ContextRepository context, ObjectProvider<StepDispatcher> dispatcher) {
+                   ContextRepository context, ObjectProvider<StepDispatcher> dispatcher, PlatformTransactionManager transactions) {
         this.repository = repository;
         this.steps = steps;
         this.lifecycle = lifecycle;
@@ -73,6 +78,9 @@ class SessionService {
         this.settings = settings;
         this.context = context;
         this.dispatcher = dispatcher;
+        this.reading = new TransactionTemplate(transactions);
+        reading.setReadOnly(true);
+        this.quoting = new TransactionTemplate(transactions);
     }
 
     // --------------------------------------------------------------------- create
@@ -334,17 +342,23 @@ class SessionService {
     }
 
     /**
-     * {@code getArtifact}. Not a read-only transaction: the proposal of an exercise shows the text of the material nodes it quotes, and
-     * reading an immutable storage snapshot takes row locks ({@code FOR SHARE}), which PostgreSQL refuses in a read-only transaction.
-     * Nothing is written.
+     * {@code getArtifact}: a read-only transaction. The proposal of an exercise also shows the text of the material nodes it quotes
+     * ({@code display}); reading an immutable storage snapshot takes {@code FOR KEY SHARE} row locks, which PostgreSQL refuses in a
+     * read-only transaction, so that part runs in a second, ordinary transaction. Nothing is written by either.
      */
-    @Transactional
     ObjectNode artifact(UUID owner, UUID deckId, UUID sessionId, UUID artifactId, UUID revisionId) {
-        Session session = repository.session(owner, deckId, sessionId).orElseThrow(ResourceNotFoundException::new);
-        Artifact artifact = repository.artifact(sessionId, artifactId).orElseThrow(ResourceNotFoundException::new);
-        UUID wanted = revisionId == null ? artifact.currentRevisionId() : revisionId;
-        Revision revision = wanted == null ? null
-                : repository.revision(artifactId, wanted).orElseThrow(ResourceNotFoundException::new);
-        return views.artifactDetail(session, artifact, revision);
+        Loaded loaded = Objects.requireNonNull(reading.execute(status -> {
+            Session session = repository.session(owner, deckId, sessionId).orElseThrow(ResourceNotFoundException::new);
+            Artifact artifact = repository.artifact(sessionId, artifactId).orElseThrow(ResourceNotFoundException::new);
+            UUID wanted = revisionId == null ? artifact.currentRevisionId() : revisionId;
+            Revision revision = wanted == null ? null : repository.revision(artifactId, wanted).orElseThrow(ResourceNotFoundException::new);
+            return new Loaded(views.artifactDetail(session, artifact, revision), session, artifact, revision);
+        }));
+        if (loaded.revision() != null && loaded.artifact().targetKind().equals("EXERCISE")) {
+            loaded.detail().set("display", Objects.requireNonNull(quoting.execute(status -> views.display(loaded.session(), loaded.revision()))));
+        }
+        return loaded.detail();
     }
+
+    private record Loaded(ObjectNode detail, Session session, Artifact artifact, Revision revision) { }
 }

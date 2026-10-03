@@ -16,6 +16,7 @@ import app.mnema.learning.generation.PinnedMaterials.Pinned;
 import app.mnema.learning.generation.Rows.Session;
 import app.mnema.learning.generation.exercise.ExerciseContext;
 import app.mnema.learning.generation.exercise.ExerciseOutputSchema;
+import app.mnema.learning.generation.exercise.ExerciseValidator;
 import org.springframework.stereotype.Component;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
@@ -23,8 +24,10 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -55,7 +58,14 @@ class ExerciseContexts {
     static final UUID PLACEHOLDER_DECK_REVISION = UUID.fromString("22222222-2222-4222-8222-222222222222");
 
     /** What one run needs: the assembled prompt, the context that validates the answer and the output bounds. */
-    record Request(AssembledPrompt prompt, ExerciseContext context, int maxTokens, double temperature) { }
+    record Request(AssembledPrompt prompt, ExerciseContext context, int maxTokens, double temperature, Set<String> existingKeys) {
+        /** The blocks the model was shown, as {@code m1:b3 -> node id}: what a later re-pin compares with the head of the material. */
+        Map<String, String> shown() {
+            Map<String, String> shown = new LinkedHashMap<>();
+            context.materials().get("m1").blocks().forEach((handle, block) -> shown.put("m1:" + handle, block.nodeId().toString()));
+            return shown;
+        }
+    }
 
     private final ContextRepository context;
     private final PinnedMaterials materials;
@@ -98,9 +108,12 @@ class ExerciseContexts {
                     + (objective.types().isEmpty() ? "" : " · " + String.join(", ", objective.types())));
         }
         List<String> existing = new ArrayList<>();
+        Set<String> existingKeys = new LinkedHashSet<>();
         for (ExerciseLine exercise : context.exercises(deck, member, MAX_EXISTING)) {
             String line = firstLine(exercise.content());
             if (!line.isBlank()) existing.add(exercise.type() + " · " + line);
+            String known = key(exercise.content());
+            if (!known.isBlank()) existingKeys.add(known);
         }
 
         List<String> mechanics = spec.allowedMechanics();
@@ -114,7 +127,7 @@ class ExerciseContexts {
         AssembledPrompt prompt = assembler.assemble(PromptTask.EXERCISES, values);
         ExerciseContext validation = new ExerciseContext(PLACEHOLDER_COMMAND, PLACEHOLDER_DECK_REVISION,
                 Map.of("m1", new ExerciseContext.Material(member, revision, blocks)), objectives, spec.allowedSet());
-        return new Request(prompt, validation, Math.min(16_000, 800 + 800 * count), TEMPERATURE);
+        return new Request(prompt, validation, Math.min(16_000, 800 + 800 * count), TEMPERATURE, existingKeys);
     }
 
     /** The blocks that fit the token budget of the material (the rest are not offered, so no handle names them). */
@@ -173,6 +186,14 @@ class ExerciseContexts {
             }
             String line = text.strip().lines().findFirst().orElse("");
             return clip(line, FIRST_LINE);
+        } catch (JacksonException unreadable) {
+            return "";
+        }
+    }
+
+    private static String key(String content) {
+        try {
+            return ExerciseValidator.promptKey(JSON.readTree(content));
         } catch (JacksonException unreadable) {
             return "";
         }
