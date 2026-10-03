@@ -47,7 +47,8 @@ artifact:
    [architecture](./architecture/ai-generation-platform.md),
    [refinement](./engineering/epic-77-refinement.md) и
    [промпты прогонов](./engineering/prompts/epic-77-ai-layer.md), evidence
-   [прогона 1](./engineering/evidence/epic-77/run-1/README.md) и [прогона 2](./engineering/evidence/epic-77/run-2/README.md),
+   [прогона 1](./engineering/evidence/epic-77/run-1/README.md), [прогона 2](./engineering/evidence/epic-77/run-2/README.md) и
+   [прогона 3](./engineering/evidence/epic-77/run-3/README.md) (Мастерская: composer → одобрение в колоду),
    исполняемые контракты — [generation](../contracts/generation/README.md),
    [usage](../contracts/usage/README.md), [notifications](../contracts/notifications/README.md).
 
@@ -90,7 +91,7 @@ artifact:
 | current | [Learning API guide](../backend/services/learning/guide.md) | Content, exercise, Study и media runtime. |
 | current | [Learning runtime policy index](./engineering/runtime-policy-index.md) | Реестр runtime policies Learning. |
 | current | Контракты: [study](../contracts/study/README.md), [authoring](../contracts/authoring/README.md), [decks](../contracts/decks/README.md), [items](../contracts/items/README.md), [native content](../contracts/content/native-v1/README.md) | Общие fixtures backend/frontend. |
-| accepted | AI-контракты: [generation](../contracts/generation/README.md) (состояния, HTTP, события, ошибки, [MBM v1](../contracts/generation/mbm-v1/README.md), [упражнения](../contracts/generation/exercises/README.md)), [usage](../contracts/usage/README.md), [notifications](../contracts/notifications/README.md) и [prompt library](../backend/services/learning/src/main/resources/ai/prompts/README.md) | Только контракт и fixtures (AI-00, #279); реализуют AI-01…AI-13. |
+| accepted | AI-контракты: [generation](../contracts/generation/README.md) (состояния, HTTP, события, ошибки, [MBM v1](../contracts/generation/mbm-v1/README.md), [упражнения](../contracts/generation/exercises/README.md)), [usage](../contracts/usage/README.md), [notifications](../contracts/notifications/README.md) и [prompt library](../backend/services/learning/src/main/resources/ai/prompts/README.md) | Контракт и fixtures (AI-00, #279); реализованы сессии, события, одобрение, handoff, retention и заметки как источники (#287–#290); упражнения, правки и медиа — AI-09…AI-13. |
 | historical | [`v1-apache-final`](https://github.com/MattoYuzuru/Mnema/tree/v1-apache-final) | Последний полный срез старых сервисов и миграций. |
 
 ## Media (Epic #76)
