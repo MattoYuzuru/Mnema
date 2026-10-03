@@ -2,6 +2,7 @@ package app.mnema.learning.platform.api;
 
 import app.mnema.learning.catalog.item.BulkSelectionTooLargeException;
 import app.mnema.learning.catalog.item.ExemplarLimitReachedException;
+import app.mnema.learning.generation.EditInProgressException;
 import app.mnema.learning.generation.GenerationStateConflictException;
 import app.mnema.learning.generation.SourceUnavailableException;
 import app.mnema.learning.generation.StaleArtifactsException;
@@ -66,6 +67,11 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     ResponseEntity<Object> handleGenerationStateConflict(GenerationStateConflictException exception,
                                                          HttpServletRequest request) {
         return response(ApiErrorCode.GENERATION_STATE_CONFLICT, request, exception);
+    }
+
+    @ExceptionHandler(EditInProgressException.class)
+    ResponseEntity<Object> handleEditInProgress(EditInProgressException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.EDIT_IN_PROGRESS, request, exception);
     }
 
     @ExceptionHandler(SourceUnavailableException.class)

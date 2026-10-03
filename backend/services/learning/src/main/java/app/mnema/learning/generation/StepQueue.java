@@ -28,21 +28,23 @@ class StepQueue {
 
         record Claimed(StepClaim claim) implements Look { }
 
-        record Expired(UUID stepId, UUID sessionId) implements Look { }
+        record Expired(UUID stepId, UUID sessionId, String kind) implements Look { }
     }
 
     private static final int MAX_LOOKS = 25;
 
     private final StepRepository steps;
     private final SessionLifecycle lifecycle;
+    private final EditLifecycle edits;
     private final UsageLedger ledger;
     private final GenerationSettings settings;
     private final TransactionTemplate transaction;
 
-    StepQueue(StepRepository steps, SessionLifecycle lifecycle, UsageLedger ledger, GenerationSettings settings,
+    StepQueue(StepRepository steps, SessionLifecycle lifecycle, EditLifecycle edits, UsageLedger ledger, GenerationSettings settings,
               PlatformTransactionManager transactions) {
         this.steps = steps;
         this.lifecycle = lifecycle;
+        this.edits = edits;
         this.ledger = ledger;
         this.settings = settings;
         this.transaction = new TransactionTemplate(transactions);
@@ -61,7 +63,10 @@ class StepQueue {
                     return Optional.of(claimed.claim());
                 }
                 case Look.Parked parked -> lifecycle.parked(parked.sessionId(), parked.until());
-                case Look.Expired expired -> lifecycle.expire(expired.stepId());
+                case Look.Expired expired -> {
+                    if (expired.kind().equals(EditExecutor.KIND)) edits.expire(expired.stepId());
+                    else lifecycle.expire(expired.stepId());
+                }
             }
         }
         return Optional.empty();
@@ -74,10 +79,11 @@ class StepQueue {
         // The whole step has a lifetime from its first claim: past it, no further run is started.
         if (step.firstClaimedAt() != null
                 && step.firstClaimedAt().plus(settings.step().maxLifetime()).isBefore(java.time.Instant.now())) {
-            return new Look.Expired(step.stepId(), step.sessionId());
+            return new Look.Expired(step.stepId(), step.sessionId(), step.kind());
         }
         int credits = step.input().path("credits").asInt(0);
-        if (credits > 0) {
+        // An edit is interactive and costs a few credits: the daily burst never parks it for a day (a turn that waits is a turn that hangs)
+        if (credits > 0 && !step.kind().equals(EditExecutor.KIND)) {
             var room = ledger.dailyDebitRoom(step.ownerId());
             if (room.isPresent() && room.get().remainingTodayCredits() < credits) {
                 steps.defer(step.stepId(), room.get().resetsAt());

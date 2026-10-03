@@ -179,10 +179,28 @@ class StepRepository {
      */
     void cancelMedia(UUID artifactId) {
         jdbc.sql("UPDATE app_learning.generation_step SET state='CANCELLED',updated_at=CURRENT_TIMESTAMP WHERE artifact_id=:id "
-                        + "AND kind<>'TEXT_DRAFT' AND state IN ('WAITING_DEPENDENCIES','READY','WAITING_EXTERNAL')")
+                        + "AND kind NOT IN ('TEXT_DRAFT','EDIT') AND state IN ('WAITING_DEPENDENCIES','READY','WAITING_EXTERNAL')")
                 .param("id", artifactId).update();
         jdbc.sql("UPDATE app_learning.generation_step SET cancel_requested=TRUE,updated_at=CURRENT_TIMESTAMP WHERE artifact_id=:id "
-                        + "AND kind<>'TEXT_DRAFT' AND state='RUNNING'").param("id", artifactId).update();
+                        + "AND kind NOT IN ('TEXT_DRAFT','EDIT') AND state='RUNNING'").param("id", artifactId).update();
+    }
+
+    /** The media steps of these slots (of one artifact) are not needed any more: waiting ones are cancelled, running ones asked to stop. */
+    void cancelMediaOfSlots(UUID artifactId, Collection<String> slotKeys) {
+        if (slotKeys.isEmpty()) return;
+        jdbc.sql("UPDATE app_learning.generation_step SET state='CANCELLED',updated_at=CURRENT_TIMESTAMP WHERE artifact_id=:id "
+                        + "AND kind NOT IN ('TEXT_DRAFT','EDIT') AND input->>'slotKey' IN (:keys) "
+                        + "AND state IN ('WAITING_DEPENDENCIES','READY','WAITING_EXTERNAL')").param("id", artifactId).param("keys", slotKeys).update();
+        jdbc.sql("UPDATE app_learning.generation_step SET cancel_requested=TRUE,updated_at=CURRENT_TIMESTAMP WHERE artifact_id=:id "
+                        + "AND kind NOT IN ('TEXT_DRAFT','EDIT') AND input->>'slotKey' IN (:keys) AND state='RUNNING'")
+                .param("id", artifactId).param("keys", slotKeys).update();
+    }
+
+    /** The holds of the edit steps that still work (READY or RUNNING): a session leaving RUNNING must not release them. */
+    List<UUID> openEditReservations(UUID sessionId) {
+        return jdbc.sql("SELECT (input->>'reservationId')::uuid FROM app_learning.generation_step WHERE session_id=:id AND kind='EDIT' "
+                        + "AND state IN ('READY','RUNNING') AND input->>'reservationId' IS NOT NULL").param("id", sessionId)
+                .query(UUID.class).list();
     }
 
     /** A READY step, locked, for a decision taken without a claim (its lifetime ran out while it waited). */

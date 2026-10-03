@@ -48,6 +48,7 @@ class StepDispatcher implements DisposableBean {
     private final StepRepository steps;
     private final GenerationRepository repository;
     private final SessionLifecycle lifecycle;
+    private final EditLifecycle edits;
     private final GenerationSettings settings;
     private final Map<String, StepExecutor> executors;
     private final Map<AiCapability, Semaphore> permits = new EnumMap<>(AiCapability.class);
@@ -59,11 +60,12 @@ class StepDispatcher implements DisposableBean {
     private volatile Instant lastRenewal = Instant.EPOCH;
 
     StepDispatcher(StepQueue queue, StepRepository steps, GenerationRepository repository, SessionLifecycle lifecycle,
-                   GenerationSettings settings, AiProperties ai, List<StepExecutor> executors, MeterRegistry meters) {
+                   EditLifecycle edits, GenerationSettings settings, AiProperties ai, List<StepExecutor> executors, MeterRegistry meters) {
         this.queue = queue;
         this.steps = steps;
         this.repository = repository;
         this.lifecycle = lifecycle;
+        this.edits = edits;
         this.settings = settings;
         this.executors = executors.stream().collect(java.util.stream.Collectors.toUnmodifiableMap(StepExecutor::kind, e -> e));
         for (StepExecutor executor : executors) {
@@ -106,7 +108,9 @@ class StepDispatcher implements DisposableBean {
     void recoverExpired() {
         for (UUID step : steps.expiredRunning(RECOVERY_BATCH)) {
             try {
-                lifecycle.recover(step);
+                // an edit step fails its turn, not an artifact: it has its own recovery
+                if (steps.step(step).filter(found -> found.kind().equals(EditExecutor.KIND)).isPresent()) edits.recover(step);
+                else lifecycle.recover(step);
             } catch (RuntimeException failure) {
                 LOG.warn("generation_recovery_failed step_id={} error_type={}", step, failure.getClass().getSimpleName());
             }

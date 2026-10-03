@@ -1,6 +1,8 @@
 package app.mnema.learning.generation;
 
 import app.mnema.learning.capability.LearningCapabilities;
+import app.mnema.learning.platform.api.CapabilityUnavailableException;
+import app.mnema.learning.platform.api.ProblemExtension;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.usage.GenerationBoundary;
 import org.springframework.stereotype.Component;
@@ -47,6 +49,35 @@ class GenerationGate implements GenerationBoundary {
     /** The capability a retried exercise needs: text generation (its mechanics are deterministic, no media, no research). */
     void requireText() {
         capabilities.requireAiGeneration();
+    }
+
+    /**
+     * The capability an edit action needs. A rewrite needs text generation. The media actions need their provider, and their executors
+     * come with AI-09 and AI-10: until then even a configured provider cannot run them, so they are refused as not configured
+     * (the reason of the capability gate wins when it is the one that is off).
+     */
+    void requireEdit(String action) {
+        switch (action) {
+            case "REWRITE", "FREE" -> capabilities.requireAiGeneration();
+            case "IMAGE_SEARCH" -> {
+                capabilities.requireImageSearch();
+                throw notRunnable("imageSearch");
+            }
+            case "IMAGE_GENERATE" -> {
+                capabilities.requireImageGeneration();
+                throw notRunnable("imageGeneration");
+            }
+            case "AUDIO_REGENERATE" -> {
+                capabilities.requireTextToSpeech();
+                throw notRunnable("textToSpeech");
+            }
+            default -> { }
+        }
+    }
+
+    private static CapabilityUnavailableException notRunnable(String capability) {
+        return new CapabilityUnavailableException(ProblemExtension.builder().put("capability", capability)
+                .put("reason", "PROVIDER_NOT_CONFIGURED").build());
     }
 
     /** The capabilities a retried material needs: text, and what its effective settings declare (audio, image search, web research). */
