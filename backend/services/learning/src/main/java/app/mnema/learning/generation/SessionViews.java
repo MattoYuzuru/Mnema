@@ -4,15 +4,12 @@ import app.mnema.learning.generation.Rows.Artifact;
 import app.mnema.learning.generation.Rows.Revision;
 import app.mnema.learning.generation.Rows.Session;
 import app.mnema.learning.generation.Rows.Slot;
-import app.mnema.learning.usage.Reservation;
-import app.mnema.learning.usage.UsageLedger;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -23,11 +20,13 @@ import java.util.UUID;
 @Component
 class SessionViews {
     private final GenerationRepository repository;
-    private final UsageLedger ledger;
+    private final SessionReservations reservations;
+    private final NoteArchival notes;
 
-    SessionViews(GenerationRepository repository, UsageLedger ledger) {
+    SessionViews(GenerationRepository repository, SessionReservations reservations, NoteArchival notes) {
         this.repository = repository;
-        this.ledger = ledger;
+        this.reservations = reservations;
+        this.notes = notes;
     }
 
     ObjectNode summary(Session session) {
@@ -39,11 +38,12 @@ class SessionViews {
         List<UUID> ids = sessions.stream().map(Session::sessionId).toList();
         Map<UUID, Map<String, Integer>> counts = repository.artifactCounts(ids);
         Map<UUID, Integer> approvable = repository.approvableCounts(ids);
+        Map<UUID, SessionReservations.Totals> usage = reservations.totals(sessions);
         return sessions.stream().map(session -> summary(session, counts.get(session.sessionId()),
-                approvable.get(session.sessionId()))).toList();
+                approvable.get(session.sessionId()), usage.get(session.sessionId()))).toList();
     }
 
-    private ObjectNode summary(Session session, Map<String, Integer> counts, int approvable) {
+    private ObjectNode summary(Session session, Map<String, Integer> counts, int approvable, SessionReservations.Totals usage) {
         ObjectNode node = Json.object();
         node.put("sessionId", session.sessionId().toString());
         node.put("deckId", session.deckId().toString());
@@ -56,7 +56,7 @@ class SessionViews {
         node.put("expiresAt", Json.time(session.expiresAt()));
         node.set("artifactCounts", counts(counts));
         node.put("approvableCount", approvable);
-        node.set("usage", usage(session));
+        node.putObject("usage").put("reservedCredits", usage.reserved()).put("spentCredits", usage.spent());
         return node;
     }
 
@@ -66,22 +66,11 @@ class SessionViews {
         return node;
     }
 
-    private ObjectNode usage(Session session) {
-        int reserved = 0;
-        int spent = 0;
-        if (session.reservationId() != null) {
-            Optional<Reservation> reservation = ledger.reservation(session.ownerId(), session.reservationId());
-            if (reservation.isPresent()) {
-                reserved = reservation.get().heldRemaining();
-                spent = reservation.get().debitedCredits();
-            }
-        }
-        return Json.object().put("reservedCredits", reserved).put("spentCredits", spent);
-    }
-
     ObjectNode detail(Session session) {
         ObjectNode node = summary(session);
         node.set("spec", session.spec().deepCopy());
+        NoteArchival.Counts used = notes.counts(session);
+        node.putObject("notes").put("used", used.used()).put("archivable", used.archivable());
         List<Artifact> artifacts = repository.artifacts(session.sessionId());
         Map<UUID, int[]> slots = repository.slotCounts(artifacts.stream().map(Artifact::artifactId).toList());
         ArrayNode list = node.putArray("artifacts");

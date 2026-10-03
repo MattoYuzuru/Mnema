@@ -40,7 +40,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  * open the shared circuit breaker),
  * {@code [[fake:block]]} (the call waits until released or interrupted: a long provider call to cancel),
  * {@code [[fake:crash-once]]} (the first call of each step throws, as a worker that dies mid-step) and
- * {@code [[fake:audio]]} (a valid document with one {@code ::audio} directive).
+ * {@code [[fake:audio]]} (a valid document with one {@code ::audio} directive). {@link Scripted#outage} makes every call a
+ * transport failure (a provider that is down) until a test clears it, to fail an artifact and retry it.
  */
 @TestConfiguration(proxyBeanMethods = false)
 class GenerationTestConfiguration {
@@ -68,6 +69,7 @@ class GenerationTestConfiguration {
         private final TextGeneration real;
         final List<Call> calls = new CopyOnWriteArrayList<>();
         final List<DeltaObservation> deltas = new CopyOnWriteArrayList<>();
+        volatile boolean outage;
         volatile CountDownLatch blockedEntered = new CountDownLatch(1);
         volatile CountDownLatch release = new CountDownLatch(1);
         private final Set<UUID> crashed = ConcurrentHashMap.newKeySet();
@@ -75,6 +77,7 @@ class GenerationTestConfiguration {
         Scripted(TextGeneration real) { this.real = real; }
 
         void reset() {
+            outage = false;
             calls.clear();
             deltas.clear();
             crashed.clear();
@@ -104,6 +107,7 @@ class GenerationTestConfiguration {
                     return AiResult.failed(new AiFailure.Transient("interrupted"));
                 }
             }
+            if (outage) return AiResult.failed(new AiFailure.Transient("fake_outage"));
             if (prompt.contains("[[fake:transient]]")) return AiResult.failed(new AiFailure.Transient("fake_transient"));
             if (prompt.contains("[[fake:always-invalid-mbm]]")) return ok(request, INVALID_DOCUMENT);
             if (prompt.contains("[[fake:invalid-once]]") && !repair) return ok(request, INVALID_DOCUMENT);

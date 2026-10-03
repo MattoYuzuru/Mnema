@@ -11,7 +11,6 @@ import app.mnema.learning.notification.NotificationKind;
 import app.mnema.learning.notification.NotificationPublisher;
 import app.mnema.learning.notification.NotificationRoute;
 import app.mnema.learning.usage.EstimateExceededException;
-import app.mnema.learning.usage.Reservation;
 import app.mnema.learning.usage.ReservationNotActiveException;
 import app.mnema.learning.usage.UsageLedger;
 import org.slf4j.Logger;
@@ -55,14 +54,16 @@ class SessionLifecycle {
     private final UsageLedger ledger;
     private final NotificationPublisher notifications;
     private final GenerationSettings settings;
+    private final SessionReservations reservations;
 
     SessionLifecycle(GenerationRepository repository, StepRepository steps, UsageLedger ledger,
-                     NotificationPublisher notifications, GenerationSettings settings) {
+                     NotificationPublisher notifications, GenerationSettings settings, SessionReservations reservations) {
         this.repository = repository;
         this.steps = steps;
         this.ledger = ledger;
         this.notifications = notifications;
         this.settings = settings;
+        this.reservations = reservations;
     }
 
     /** The mutable state of one transaction on one locked session. Not thread-safe; never leaves the transaction. */
@@ -185,7 +186,7 @@ class SessionLifecycle {
             return false;
         }
         try {
-            ledger.settle(tx.session.ownerId(), new UsageLedger.Debit(tx.session.reservationId(),
+            ledger.settle(tx.session.ownerId(), new UsageLedger.Debit(SessionReservations.forStep(tx.session, held.get().input()),
                     "debit:" + claim.stepId() + ":" + claim.attempt(), draft.operation(), draft.credits(),
                     draft.costMicros(), claim.stepId().toString()));
         } catch (EstimateExceededException | ReservationNotActiveException exceeded) {
@@ -364,14 +365,15 @@ class SessionLifecycle {
         flush(tx);
     }
 
-    /** Keeps the initial-batch hold of a running session from expiring as an orphan; a no-op once it ended. */
+    /** Keeps the holds of a running session (its initial batch and its retried artifacts) from expiring as orphans. */
     @Transactional
     void renew(Session session) {
-        if (session.reservationId() == null) return;
-        try {
-            ledger.renew(session.ownerId(), session.reservationId());
-        } catch (ReservationNotActiveException | IllegalArgumentException ended) {
-            LOG.info("generation_reservation_not_renewed session_id={}", session.sessionId());
+        for (UUID reservation : reservations.ids(session)) {
+            try {
+                ledger.renew(session.ownerId(), reservation);
+            } catch (ReservationNotActiveException | IllegalArgumentException ended) {
+                LOG.info("generation_reservation_not_renewed session_id={}", session.sessionId());
+            }
         }
     }
 
@@ -382,6 +384,13 @@ class SessionLifecycle {
      * {@code cancel_requested}, unfinished artifacts FAILED(CANCELLED), the reservation released except what was consumed.
      */
     void cancel(Tx tx) {
+        stopWork(tx);
+        tx.state = "CANCELLED";
+        tx.endReason = "USER_CANCELLED";
+    }
+
+    /** Waiting steps stop, running ones are told to, unfinished artifacts fail as cancelled and the holds are released. */
+    private void stopWork(Tx tx) {
         steps.cancelWaiting(tx.session.sessionId());
         steps.requestCancel(tx.session.sessionId());
         // media slots whose steps were just cancelled end FAILED(CANCELLED) (states.json mediaSlot) and announce it
@@ -396,8 +405,37 @@ class SessionLifecycle {
             }
         }
         releaseReservation(tx);
-        tx.state = "CANCELLED";
-        tx.endReason = "USER_CANCELLED";
+    }
+
+    /**
+     * The session reached {@code expires_at} without being closed: it stops as {@link #cancel} does and ends EXPIRED, which
+     * stays readable until the retention worker purges it. Expiry and activity do not move (the purge is timed from them),
+     * so this writes the row itself instead of {@link #flush}.
+     */
+    void expire(Tx tx) {
+        stopWork(tx);
+        tx.state = "EXPIRED";
+        tx.endReason = "EXPIRED";
+        ObjectNode payload = Json.object().put("state", "EXPIRED").put("rowVersion", Long.toString(tx.session.rowVersion() + 1));
+        payload.set("artifactCounts", SessionViews.counts(repository.artifactCounts(tx.session.sessionId())));
+        tx.events.add(new EventDraft("SESSION_STATE", null, payload));
+        long first = repository.expire(tx.session.sessionId(), tx.events.size());
+        repository.insertEvents(tx.session.sessionId(), first, tx.events);
+    }
+
+    /**
+     * After an artifact left review (approved, handed off, rejected): a REVIEW session with nothing to review, retry or wait
+     * for, or a CANCELLED one with no proposal left, is CLOSED (contract decision 3). The caller flushes.
+     */
+    void closeIfDone(Tx tx) {
+        if (!tx.state.equals("REVIEW") && !tx.state.equals("CANCELLED")) return;
+        Map<String, Integer> counts = repository.artifactCounts(tx.session.sessionId());
+        boolean open = counts.get("PROPOSED") + counts.get("REVISING") + counts.get("STALE") > 0;
+        if (tx.state.equals("REVIEW")) {
+            open = open || counts.get("QUEUED") + counts.get("GENERATING") > 0
+                    || repository.retryableFailures(tx.session.sessionId()) > 0;
+        }
+        if (!open) tx.state = "CLOSED";
     }
 
     // ------------------------------------------------------------ session settling
@@ -418,15 +456,22 @@ class SessionLifecycle {
         notifyOutcome(tx, counts);
     }
 
-    private void releaseReservation(Tx tx) {
-        if (tx.session.reservationId() == null) return;
-        try {
-            ledger.release(tx.session.ownerId(), tx.session.reservationId());
-        } catch (IllegalArgumentException unknown) {
-            LOG.warn("generation_reservation_missing session_id={}", tx.session.sessionId());
-            return;
+    /** Ends every hold of the session (initial batch and retries); what was consumed stays consumed. */
+    void releaseReservation(Tx tx) {
+        if (releaseHolds(tx.session)) tx.events.add(usageEvent(tx.session, null));
+    }
+
+    /** Ends every hold of the session in the caller's transaction, announcing nothing; false when it had none. */
+    boolean releaseHolds(Session session) {
+        List<UUID> held = reservations.ids(session);
+        for (UUID reservation : held) {
+            try {
+                ledger.release(session.ownerId(), reservation);
+            } catch (IllegalArgumentException unknown) {
+                LOG.warn("generation_reservation_missing session_id={}", session.sessionId());
+            }
         }
-        tx.events.add(usageEvent(tx.session, null));
+        return !held.isEmpty();
     }
 
     /**
@@ -482,16 +527,8 @@ class SessionLifecycle {
 
     /** {@code USAGE_UPDATED}: the session's holds and spending now, and the account's remaining credits. */
     EventDraft usageEvent(Session session, Instant deferredUntil) {
-        int reserved = 0;
-        int spent = 0;
-        if (session.reservationId() != null) {
-            Optional<Reservation> reservation = ledger.reservation(session.ownerId(), session.reservationId());
-            if (reservation.isPresent()) {
-                reserved = reservation.get().heldRemaining();
-                spent = reservation.get().debitedCredits();
-            }
-        }
-        ObjectNode payload = Json.object().put("reservedCredits", reserved).put("spentCredits", spent)
+        SessionReservations.Totals totals = reservations.totals(session);
+        ObjectNode payload = Json.object().put("reservedCredits", totals.reserved()).put("spentCredits", totals.spent())
                 .put("balanceRemainingCredits", ledger.remainingCredits(session.ownerId()));
         payload.put("deferredUntil", deferredUntil == null ? null : Json.time(deferredUntil));
         return new EventDraft("USAGE_UPDATED", null, payload);

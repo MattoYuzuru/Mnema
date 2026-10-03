@@ -214,6 +214,119 @@ class GenerationRepository {
                         row.getObject("member_key", UUID.class), row.getObject("item_revision_id", UUID.class))).list();
     }
 
+    // ------------------------------------------------------------ used notes
+
+    /** A note a published or handed-off artifact was written from, with the row version the session pinned. */
+    record UsedNote(UUID noteId, long pinnedRowVersion) { }
+
+    /**
+     * The distinct NOTE sources of the artifacts that left the Workshop as material or draft, by note id, that no artifact
+     * still in play pins: archiving bumps the note's row version, which would turn a sibling that still pins it STALE.
+     * "In play" is QUEUED, GENERATING, PROPOSED, REVISING, STALE and a retryable FAILED.
+     */
+    List<UsedNote> usedNotes(UUID sessionId) {
+        return jdbc.sql("SELECT note_id,pin FROM (SELECT ref->>'noteId' AS note_id,max((ref->>'noteRowVersion')::bigint) AS pin "
+                        + "FROM app_learning.generation_artifact a,jsonb_array_elements(a.source_refs) ref "
+                        + "WHERE a.session_id=:id AND a.state IN ('PUBLISHED','HANDED_OFF') AND ref->>'type'='NOTE' "
+                        + "GROUP BY ref->>'noteId') used WHERE NOT EXISTS (SELECT 1 FROM app_learning.generation_artifact b,"
+                        + "jsonb_array_elements(b.source_refs) other WHERE b.session_id=:id AND other->>'type'='NOTE' "
+                        + "AND other->>'noteId'=used.note_id AND (b.state IN ('QUEUED','GENERATING','PROPOSED','REVISING','STALE') "
+                        + "OR (b.state='FAILED' AND b.error_code IS DISTINCT FROM 'REFUSAL'))) ORDER BY note_id")
+                .param("id", sessionId).query((row, ignored) -> new UsedNote(UUID.fromString(row.getString("note_id")),
+                        row.getLong("pin"))).list();
+    }
+
+    /** What a note is now: its row version and whether it is archived. Deleted notes are absent from the result. */
+    record NoteState(long rowVersion, boolean archived) { }
+
+    /** The owner's notes of this deck by id; {@code lock} takes row locks in id order (the archive that follows is a CAS). */
+    Map<UUID, NoteState> noteStates(UUID owner, UUID deck, Collection<UUID> notes, boolean lock) {
+        Map<UUID, NoteState> result = new HashMap<>();
+        if (notes.isEmpty()) return result;
+        jdbc.sql("SELECT note_id,row_version,archived FROM app_learning.capture_note WHERE owner_id=:owner AND deck_id=:deck "
+                        + "AND note_id IN (:ids) ORDER BY note_id" + (lock ? " FOR UPDATE" : ""))
+                .param("owner", owner).param("deck", deck).param("ids", notes)
+                .query((row, ignored) -> result.put(row.getObject("note_id", UUID.class),
+                        new NoteState(row.getLong("row_version"), row.getBoolean("archived")))).list();
+        return result;
+    }
+
+    // ------------------------------------------------------------------ retention
+
+    /** Live sessions whose {@code expires_at} has passed: they become EXPIRED and stay readable for a while. */
+    List<UUID> dueForExpiry(int limit) {
+        return jdbc.sql("SELECT session_id FROM app_learning.generation_session WHERE state IN ('PLANNING','PLAN_READY','RUNNING','REVIEW') "
+                        + "AND expires_at<=CURRENT_TIMESTAMP ORDER BY expires_at,session_id LIMIT :limit")
+                .param("limit", limit).query(UUID.class).list();
+    }
+
+    /** Sessions to delete: CLOSED and CANCELLED ones at {@code expires_at}, EXPIRED ones {@code grace} later. */
+    List<UUID> dueForPurge(Duration grace, int limit) {
+        return jdbc.sql("SELECT session_id FROM app_learning.generation_session WHERE (state IN ('CLOSED','CANCELLED') "
+                        + "AND expires_at<=CURRENT_TIMESTAMP) OR (state='EXPIRED' AND expires_at+(:grace * interval '1 second')<=CURRENT_TIMESTAMP) "
+                        + "ORDER BY expires_at,session_id LIMIT :limit")
+                .param("grace", grace.toSeconds()).param("limit", limit).query(UUID.class).list();
+    }
+
+    /** The session's expiry has passed now (the database clock decides, as in the queries that found it). */
+    boolean expiredNow(UUID sessionId) {
+        return jdbc.sql("SELECT expires_at<=CURRENT_TIMESTAMP FROM app_learning.generation_session WHERE session_id=:id")
+                .param("id", sessionId).query(Boolean.class).optional().orElse(false);
+    }
+
+    /** An EXPIRED session whose readable window ({@code grace} after expiry) has passed now. */
+    boolean purgeDueNow(UUID sessionId, Duration grace) {
+        return jdbc.sql("SELECT expires_at+(:grace * interval '1 second')<=CURRENT_TIMESTAMP FROM app_learning.generation_session "
+                        + "WHERE session_id=:id").param("grace", grace.toSeconds()).param("id", sessionId)
+                .query(Boolean.class).optional().orElse(false);
+    }
+
+    /**
+     * Events of sessions that ended (CLOSED, CANCELLED, EXPIRED) more than {@code after} ago: nobody polls them any more
+     * (architecture section 5). An EXPIRED session ended at its expiry, the others at their last activity.
+     */
+    int deleteOldEvents(Duration after, int limit) {
+        return jdbc.sql("DELETE FROM app_learning.generation_event e WHERE (e.session_id,e.seq) IN (SELECT e2.session_id,e2.seq "
+                        + "FROM app_learning.generation_event e2 JOIN app_learning.generation_session s ON s.session_id=e2.session_id "
+                        + "WHERE s.state IN ('CLOSED','CANCELLED','EXPIRED') AND CASE WHEN s.state='EXPIRED' THEN s.expires_at "
+                        + "ELSE s.last_activity_at END+(:after * interval '1 second')<=CURRENT_TIMESTAMP LIMIT :limit)")
+                .param("after", after.toSeconds()).param("limit", limit).update();
+    }
+
+    /**
+     * Live sessions that expire within {@code lead} (and not yet), by id after {@code after}, that still need a warning: a
+     * proposal remains that an expiry would delete, and no notification exists for this expiry date yet (the dedupe key of
+     * {@code contracts/notifications}); the pages of one sweep.
+     */
+    List<Session> expiring(Duration lead, UUID after, int limit) {
+        return jdbc.sql("SELECT " + SESSION_COLUMNS + " FROM app_learning.generation_session WHERE state IN "
+                        + "('PLANNING','PLAN_READY','RUNNING','REVIEW') AND expires_at>CURRENT_TIMESTAMP "
+                        + "AND expires_at<=CURRENT_TIMESTAMP+(:lead * interval '1 second') AND session_id>:after "
+                        + "AND EXISTS (SELECT 1 FROM app_learning.generation_artifact a WHERE a.session_id=generation_session.session_id "
+                        + "AND a.state IN ('PROPOSED','REVISING','STALE')) "
+                        + "AND NOT EXISTS (SELECT 1 FROM app_learning.notification n WHERE n.owner_id=generation_session.owner_id "
+                        + "AND n.dedupe_key='generation:'||generation_session.session_id||':expiring:'"
+                        + "||to_char(generation_session.expires_at AT TIME ZONE 'UTC','YYYY-MM-DD')) "
+                        + "ORDER BY session_id LIMIT :limit")
+                .param("lead", lead.toSeconds()).param("after", after).param("limit", limit).query(SESSION).list();
+    }
+
+    /** The artifacts the user could still act on: what an expiry would delete. */
+    int pendingArtifacts(UUID sessionId) {
+        return jdbc.sql("SELECT count(*)::integer FROM app_learning.generation_artifact WHERE session_id=:id "
+                + "AND state IN ('PROPOSED','REVISING','STALE')").param("id", sessionId).query(Integer.class).single();
+    }
+
+    /**
+     * The session ends as EXPIRED without moving its expiry or its activity: {@code events} consecutive event numbers and a
+     * version bump, nothing else. @return the first event number
+     */
+    long expire(UUID sessionId, int events) {
+        return jdbc.sql("UPDATE app_learning.generation_session SET state='EXPIRED',end_reason='EXPIRED',row_version=row_version+1,"
+                        + "last_event_seq=last_event_seq+:events WHERE session_id=:id RETURNING last_event_seq-:events+1")
+                .param("events", events).param("id", sessionId).query(Long.class).single();
+    }
+
     // ------------------------------------------------------------------ artifacts
 
     void insertArtifact(UUID artifactId, UUID sessionId, UUID owner, int ordinal, JsonNode sourceRefs) {
@@ -244,10 +357,43 @@ class GenerationRepository {
     Artifact transition(Artifact artifact, String state, String errorCode, UUID revision, String title, int revisionCount) {
         return jdbc.sql("UPDATE app_learning.generation_artifact SET state=:state,error_code=:error,"
                         + "current_revision_id=COALESCE(:revision,current_revision_id),title=COALESCE(:title,title),"
-                        + "revision_count=:revisions,row_version=row_version+1,updated_at=CURRENT_TIMESTAMP "
+                        + "revision_count=:revisions,repin_status=CASE WHEN :state='PROPOSED' THEN NULL ELSE repin_status END,"
+                        + "row_version=row_version+1,updated_at=CURRENT_TIMESTAMP "
                         + "WHERE artifact_id=:id AND row_version=:version RETURNING " + ARTIFACT_COLUMNS)
                 .param("state", state).param("error", errorCode).param("revision", revision).param("title", title)
                 .param("revisions", revisionCount).param("id", artifact.artifactId()).param("version", artifact.rowVersion())
+                .query(ARTIFACT).optional().orElseThrow(() -> new IllegalStateException("Artifact changed under the session lock"));
+    }
+
+    /**
+     * PROPOSED to PUBLISHED: the catalog reference and the id of the publication command are written with the state.
+     *
+     * @return the artifact after the update
+     */
+    Artifact publish(Artifact artifact, JsonNode publishedRef, UUID publicationCommandId) {
+        return jdbc.sql("UPDATE app_learning.generation_artifact SET state='PUBLISHED',error_code=NULL,repin_status=NULL,"
+                        + "published_ref=CAST(:ref AS jsonb),publication_command_id=:command,row_version=row_version+1,"
+                        + "updated_at=CURRENT_TIMESTAMP WHERE artifact_id=:id AND row_version=:version RETURNING " + ARTIFACT_COLUMNS)
+                .param("ref", Json.write(publishedRef)).param("command", publicationCommandId)
+                .param("id", artifact.artifactId()).param("version", artifact.rowVersion())
+                .query(ARTIFACT).optional().orElseThrow(() -> new IllegalStateException("Artifact changed under the session lock"));
+    }
+
+    /** PROPOSED to STALE: a pinned source changed; no re-pin job exists yet, so the user decides. */
+    Artifact markStale(Artifact artifact) {
+        return jdbc.sql("UPDATE app_learning.generation_artifact SET state='STALE',repin_status='NEEDS_USER_DECISION',"
+                        + "row_version=row_version+1,updated_at=CURRENT_TIMESTAMP WHERE artifact_id=:id AND row_version=:version "
+                        + "RETURNING " + ARTIFACT_COLUMNS)
+                .param("id", artifact.artifactId()).param("version", artifact.rowVersion())
+                .query(ARTIFACT).optional().orElseThrow(() -> new IllegalStateException("Artifact changed under the session lock"));
+    }
+
+    /** FAILED or STALE back to QUEUED for a retry: the error and the re-pin status are cleared, the pins replaced. */
+    Artifact requeue(Artifact artifact, JsonNode sourceRefs) {
+        return jdbc.sql("UPDATE app_learning.generation_artifact SET state='QUEUED',error_code=NULL,repin_status=NULL,"
+                        + "source_refs=CAST(:refs AS jsonb),row_version=row_version+1,updated_at=CURRENT_TIMESTAMP "
+                        + "WHERE artifact_id=:id AND row_version=:version RETURNING " + ARTIFACT_COLUMNS)
+                .param("refs", Json.write(sourceRefs)).param("id", artifact.artifactId()).param("version", artifact.rowVersion())
                 .query(ARTIFACT).optional().orElseThrow(() -> new IllegalStateException("Artifact changed under the session lock"));
     }
 
@@ -310,6 +456,15 @@ class GenerationRepository {
         return jdbc.sql("SELECT count(*)::integer FROM app_learning.generation_artifact WHERE session_id=:id AND state='FAILED' "
                 + "AND error_code IS DISTINCT FROM 'REFUSAL'").param("id", sessionId).query(Integer.class).single();
     }
+
+    /** The head of the owner's live deck: its revision and row version, for the preconditions of an approval. */
+    Optional<DeckHead> deckHead(UUID owner, UUID deck) {
+        return jdbc.sql("SELECT head_revision_id,row_version FROM app_learning.deck WHERE deck_id=:deck AND owner_id=:owner "
+                        + "AND deleted_at IS NULL").param("deck", deck).param("owner", owner)
+                .query((row, ignored) -> new DeckHead(row.getObject("head_revision_id", UUID.class), row.getLong("row_version"))).optional();
+    }
+
+    record DeckHead(UUID revisionId, long version) { }
 
     boolean ownsArtifact(UUID owner, UUID deck, UUID sessionId, UUID artifactId) {
         return jdbc.sql("SELECT EXISTS(SELECT 1 FROM app_learning.generation_artifact a JOIN app_learning.generation_session s "
@@ -377,6 +532,14 @@ class GenerationRepository {
                 .param("code", errorCode).param("id", sessionId).query(SLOT).list();
     }
 
+    /** Ends every PENDING or GENERATING slot of one artifact as FAILED with {@code errorCode} and returns them. */
+    List<Slot> failOpenSlotsOf(UUID artifactId, String errorCode) {
+        return jdbc.sql("UPDATE app_learning.generation_media_slot SET state='FAILED',error_code=:code,updated_at=CURRENT_TIMESTAMP "
+                        + "WHERE artifact_id=:id AND state IN ('PENDING','GENERATING') RETURNING artifact_id,slot_key,revision_id,node_id,"
+                        + "kind,spec::text AS spec,asset_id,state,error_code")
+                .param("code", errorCode).param("id", artifactId).query(SLOT).list();
+    }
+
     /** {@code {total, ready, failed}} of the slots of each artifact's current revision. */
     Map<UUID, int[]> slotCounts(Collection<UUID> artifacts) {
         Map<UUID, int[]> result = new HashMap<>();
@@ -388,6 +551,63 @@ class GenerationRepository {
                 .param("ids", artifacts).query((row, ignored) -> result.put(row.getObject("artifact_id", UUID.class),
                         new int[] {row.getInt("total"), row.getInt("ready"), row.getInt("failed")})).list();
         return result;
+    }
+
+    /**
+     * A retried artifact is written again from scratch: the slots of its earlier revisions (their keys and pre-allocated
+     * assets would collide with the new ones) and the media holds on their assets go.
+     */
+    void dropMedia(UUID artifactId) {
+        jdbc.sql("DELETE FROM app_learning.generation_media_ref WHERE artifact_id=:id").param("id", artifactId).update();
+        jdbc.sql("DELETE FROM app_learning.generation_media_slot WHERE artifact_id=:id").param("id", artifactId).update();
+    }
+
+    /** The media holds of an artifact that left the Workshop (published, handed off): the catalog or the draft holds now. */
+    void releaseMediaHolds(UUID artifactId) {
+        jdbc.sql("DELETE FROM app_learning.generation_media_ref WHERE artifact_id=:id").param("id", artifactId).update();
+    }
+
+    /** The turns of an artifact that is regenerated no longer apply. */
+    void cancelTurns(UUID artifactId) {
+        jdbc.sql("UPDATE app_learning.generation_artifact_turn SET status='CANCELLED' WHERE artifact_id=:id "
+                + "AND status IN ('QUEUED','RUNNING')").param("id", artifactId).update();
+    }
+
+    /** Distinct model routes and prompt versions of the revisions of an artifact: the provenance of what is published. */
+    Provenance provenance(UUID artifactId) {
+        List<String> routes = jdbc.sql("SELECT DISTINCT model_route FROM app_learning.generation_artifact_revision "
+                + "WHERE artifact_id=:id ORDER BY 1").param("id", artifactId).query(String.class).list();
+        List<String> prompts = jdbc.sql("SELECT DISTINCT prompt_version FROM app_learning.generation_artifact_revision "
+                + "WHERE artifact_id=:id ORDER BY 1").param("id", artifactId).query(String.class).list();
+        return new Provenance(routes, prompts);
+    }
+
+    record Provenance(List<String> modelRoutes, List<String> promptVersions) { }
+
+    /** Origin of a published artifact: audit and economics only, never returned by any API. */
+    void insertProvenance(UUID owner, UUID sessionId, UUID artifactId, UUID revisionId, JsonNode publishedRef,
+                          Provenance provenance) {
+        jdbc.sql("INSERT INTO app_learning.generation_provenance(provenance_id,owner_id,session_id,artifact_id,revision_id,"
+                        + "published_ref,model_routes,prompt_versions,created_at) VALUES (:id,:owner,:session,:artifact,:revision,"
+                        + "CAST(:ref AS jsonb),CAST(:routes AS text[]),CAST(:prompts AS text[]),CURRENT_TIMESTAMP)")
+                .param("id", UUID.randomUUID()).param("owner", owner).param("session", sessionId).param("artifact", artifactId)
+                .param("revision", revisionId).param("ref", Json.write(publishedRef))
+                .param("routes", arrayLiteral(provenance.modelRoutes())).param("prompts", arrayLiteral(provenance.promptVersions()))
+                .update();
+    }
+
+    private static String arrayLiteral(List<String> values) {
+        StringBuilder text = new StringBuilder("{");
+        for (int i = 0; i < values.size(); i++) {
+            if (i > 0) text.append(',');
+            text.append('"').append(values.get(i).replace("\\", "\\\\").replace("\"", "\\\"")).append('"');
+        }
+        return text.append('}').toString();
+    }
+
+    /** Deletes the session and, by cascade, its sources, artifacts, revisions, slots, holds, steps and events. */
+    void deleteSession(UUID sessionId) {
+        jdbc.sql("DELETE FROM app_learning.generation_session WHERE session_id=:id").param("id", sessionId).update();
     }
 
     // --------------------------------------------------------------------- events

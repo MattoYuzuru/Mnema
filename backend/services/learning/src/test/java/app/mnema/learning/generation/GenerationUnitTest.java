@@ -2,6 +2,8 @@ package app.mnema.learning.generation;
 
 import app.mnema.learning.generation.mbm.MbmOptions;
 import app.mnema.learning.platform.api.InvalidRequestException;
+import app.mnema.learning.platform.concurrency.VersionPreconditionRequiredException;
+import app.mnema.learning.platform.id.UuidPolicy;
 import app.mnema.learning.usage.AdmissionPricing;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
@@ -157,6 +159,45 @@ class GenerationUnitTest {
         }
     }
 
+    // ---------------------------------------------------------------- command inputs
+
+    @Test
+    void aDerivedCommandIdIsALegalCommandIdThatDependsOnItsParentAndItsNameOnly() {
+        UUID parent = UUID.randomUUID();
+        UUID derived = Commands.derive(parent, "artifact-1");
+        assertThat(Commands.derive(parent, "artifact-1")).isEqualTo(derived);
+        assertThat(Commands.derive(parent, "artifact-2")).isNotEqualTo(derived);
+        assertThat(Commands.derive(UUID.randomUUID(), "artifact-1")).isNotEqualTo(derived);
+        assertThat(derived).isNotEqualTo(parent);
+        // it is a command id the catalog accepts: version 4, IETF variant
+        assertThat(UuidPolicy.requireCommandId(derived)).isEqualTo(derived);
+        assertThat(derived.version()).isEqualTo(4);
+        assertThat(derived.variant()).isEqualTo(2);
+    }
+
+    @Test
+    void anIfMatchIsExactlyOneQuotedCanonicalDecimalAndAnyOtherShapeIsRefused() {
+        assertThat(Commands.ifMatch(List.of("\"0\""))).isZero();
+        assertThat(Commands.ifMatch(List.of("\"12\""))).isEqualTo(12);
+        assertThat(Commands.ifMatch(List.of("\"999999999999999999\""))).isEqualTo(999_999_999_999_999_999L);
+        assertThatThrownBy(() -> Commands.ifMatch(List.of())).isInstanceOf(VersionPreconditionRequiredException.class);
+        assertThatThrownBy(() -> Commands.ifMatch(null)).isInstanceOf(VersionPreconditionRequiredException.class);
+        for (String malformed : List.of("12", "W/\"12\"", "*", "\"012\"", "\"-1\"", "\"\"", "\"1.5\"", "\"1000000000000000000\"", " \"1\"")) {
+            assertThatThrownBy(() -> Commands.ifMatch(List.of(malformed))).as(malformed).isInstanceOf(InvalidRequestException.class);
+        }
+        assertThatThrownBy(() -> Commands.ifMatch(List.of("\"1\"", "\"2\""))).isInstanceOf(InvalidRequestException.class);
+        assertThat(Commands.raw(List.of())).isNull();
+        assertThat(Commands.raw(List.of("\"3\""))).isEqualTo("\"3\"");
+    }
+
+    @Test
+    void aBodyVersionIsADecimalStringAndNothingElse() throws Exception {
+        assertThat(Commands.version(JSON.readTree("{\"v\":\"7\"}"), "v")).isEqualTo(7);
+        for (String bad : List.of("{\"v\":7}", "{\"v\":\"07\"}", "{\"v\":\"-1\"}", "{\"v\":\"\"}", "{}", "{\"v\":null}")) {
+            assertThatThrownBy(() -> Commands.version(JSON.readTree(bad), "v")).as(bad).isInstanceOf(InvalidRequestException.class);
+        }
+    }
+
     // ----------------------------------------------------------------- settings
 
     @Test
@@ -165,16 +206,23 @@ class GenerationUnitTest {
                 new GenerationSettings.Worker(Duration.ofSeconds(30), Duration.ofSeconds(3), Duration.ofSeconds(2), 4, Duration.ofMinutes(10)),
                 new GenerationSettings.Step(3, Duration.ofSeconds(5), Duration.ofMinutes(2), Duration.ofMinutes(6), Duration.ofHours(1)),
                 new GenerationSettings.Stream(Duration.ofMillis(750), 24_576),
-                new GenerationSettings.Context(200, 40, 40, 2_500, 6_000, 12_000, 5_000));
+                new GenerationSettings.Context(200, 40, 40, 2_500, 6_000, 12_000, 5_000),
+                new GenerationSettings.Retention(Duration.ofMinutes(10), Duration.ofDays(1), Duration.ofDays(3), Duration.ofDays(1), 50));
         assertThat(defaults.maxActiveSessions()).isEqualTo(3);
         assertThatThrownBy(() -> new GenerationSettings(Duration.ZERO, 3, java.math.BigDecimal.ONE, 0.5, defaults.worker(), defaults.step(),
-                defaults.stream(), defaults.context())).isInstanceOf(IllegalArgumentException.class);
+                defaults.stream(), defaults.context(), defaults.retention())).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new GenerationSettings(Duration.ofDays(1), 0, java.math.BigDecimal.ONE, 0.5, defaults.worker(), defaults.step(),
-                defaults.stream(), defaults.context())).isInstanceOf(IllegalArgumentException.class);
+                defaults.stream(), defaults.context(), defaults.retention())).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new GenerationSettings(Duration.ofDays(1), 3, java.math.BigDecimal.ZERO, 0.5, defaults.worker(), defaults.step(),
-                defaults.stream(), defaults.context())).isInstanceOf(IllegalArgumentException.class);
+                defaults.stream(), defaults.context(), defaults.retention())).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new GenerationSettings(Duration.ofDays(1), 3, java.math.BigDecimal.ONE, 1.5, defaults.worker(), defaults.step(),
-                defaults.stream(), defaults.context())).isInstanceOf(IllegalArgumentException.class);
+                defaults.stream(), defaults.context(), defaults.retention())).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new GenerationSettings.Retention(Duration.ZERO, Duration.ofDays(1), Duration.ofDays(3), Duration.ofDays(1), 50))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new GenerationSettings.Retention(Duration.ofMinutes(1), Duration.ofDays(1), Duration.ZERO, Duration.ofDays(1), 50))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new GenerationSettings.Retention(Duration.ofMinutes(1), Duration.ofDays(1), Duration.ofDays(3), Duration.ofDays(1), 0))
+                .isInstanceOf(IllegalArgumentException.class);
         // the heartbeat must be shorter than the lease it renews
         assertThatThrownBy(() -> new GenerationSettings.Worker(Duration.ofSeconds(3), Duration.ofSeconds(3), Duration.ofSeconds(2), 4,
                 Duration.ofMinutes(1))).isInstanceOf(IllegalArgumentException.class);
