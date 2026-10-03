@@ -301,6 +301,7 @@ browser-facing Learning service, never the media processor or the frontend.
 | `MNEMA_AI_USER_KEY_SECRET` | At least 16 random characters: HMAC secret of the opaque per-account user id sent to providers. Required for a real provider; generate once and keep it (`openssl rand -hex 32`) |
 | `LEARNING_FEATURES_AI_GENERATION_ENABLED` | `true` turns `aiGeneration` on (default `false`) |
 | `LEARNING_AI_PROVIDER` | `stub` selects the deterministic Stub for every text route (no key needed); empty uses the real routes |
+| `MNEMA_RUNTIME_ROLES` | Optional (`api`, `worker` or `all`; default `all`). Generation steps are executed by the worker half only; the local stack runs both in one process, so nothing needs to be set. A process with `api` creates and reads sessions but never claims a step |
 
 **Enable it locally.** Put the names above in the private `.env`, then restart with the launcher. With a DeepSeek key,
 the user-key secret and the flag, `GET /api/capabilities` reports `aiGeneration: {available: true}`; without a key it
@@ -322,7 +323,11 @@ cd backend && MNEMA_AI_EVAL=stub ./gradlew :services:learning:cleanTest :service
 cd backend && MNEMA_AI_EVAL=live ./gradlew :services:learning:cleanTest :services:learning:test --tests '*AiEvalRunner*'
 
 # Live smoke test of the DeepSeek adapter (three tiny calls: plain, streamed, JSON); the key is read from the environment
-cd backend && MNEMA_AI_LIVE=true ./gradlew :services:learning:cleanTest :services:learning:test --tests '*LiveProviderTest*'
+cd backend && MNEMA_AI_LIVE=true ./gradlew :services:learning:cleanTest :services:learning:test --tests 'app.mnema.learning.ai.eval.LiveProviderTest'
+
+# Live generation: the real worker path creates a session from «20 глаголов движения» on DeepSeek, expects REVIEW within six
+# minutes, a valid native-v1 revision and the ledger debit with the measured cost (a few cents; needs the key)
+cd backend && MNEMA_AI_LIVE=true ./gradlew :services:learning:cleanTest :services:learning:test --tests '*GenerationLiveProviderTest*'
 ```
 
 The eval renders the prompt of every MBM valid fixture as a material task, compiles the answer with the MBM compiler,

@@ -5,8 +5,11 @@ edits, errors, the MBM v1 output format for materials and the strict-JSON output
 shared input of the backend tasks (AI-01..AI-05, AI-07, AI-13) and of the frontend, so they can proceed in
 parallel without re-deciding wire shapes.
 
-**Status: contract only.** Nothing described here is implemented; no runtime code, migration or UI exists. Each file
-says which task implements it. The accepted sources, which this contract must not contradict:
+**Status: partly implemented.** AI-04 ([#287](https://github.com/MattoYuzuru/Mnema/issues/287)) implements sessions, artifacts,
+steps, events, the `TEXT_DRAFT` step and the operations `estimateGeneration`, `createSession`, `listSessions`,
+`listActiveSessions`, `getSession`, `cancelSession`, `listEvents` and `getArtifact` (see the decisions below for what it
+settled); approval, rejection, hand-off, edits, retry, delete, exercises, the planner and the media executors do not exist yet.
+Each file says which task implements it. The accepted sources, which this contract must not contradict:
 
 - [AI generation platform](../../docs/architecture/ai-generation-platform.md) — §3 domain model and states,
   §4 steps, §5 events, §6 MBM and exercises, §7 edits, §9 capabilities, §10 usage, §12 notifications;
@@ -105,6 +108,37 @@ by the owning task with a note here.
 10. **Errors**: the artifact error `BUDGET_EXHAUSTED` is split into `USAGE_LIMIT` (the user's limit) and `ESTIMATE_EXCEEDED`
     (under-reservation; a retry re-reserves); `MEDIA_SLOT_STATE.errorCode` and a failed turn's `errorCode` are enumerated in `states.json`.
 
+11. **AI-04 settled these** (revisable by the owning task with a note here):
+    - `planFirst: true` is `422 SPEC_NOT_SUPPORTED` (`kind: MATERIALS`) in the estimate and in `createSession` until the planner
+      exists (`learning.generation.planner.enabled`, AI-14); `kind: EXERCISES` is `422 SPEC_NOT_SUPPORTED` (`kind: EXERCISES`) in
+      `createSession` until AI-13 (the estimate still prices it). `AUTO` effort is priced (estimate and hold) and run as `MEDIUM` until the planner and auto-effort land.
+    - The checks of `createSession` run in this order: deck (404), receipt replay, shape and limits (400, 422), sources (404 for an
+      unknown, foreign or other-deck note or material, 409 `SOURCE_UNAVAILABLE` for a note whose `row_version` moved or a
+      `SOURCE` material that is no longer the head; a `STYLE_EXAMPLE` only has to exist), capabilities (409; `textToSpeech`
+      for audio, `imageSearch`, `webSearch` for a fact check above short effort), active sessions (422, with `activeSessionIds`
+      and `limits.maxActiveSessions`), usage (409, strictly last: a full count cap, a `budgetPercent` hold that cannot pay for
+      one material at its effort, then the reservation). The estimate runs the same interpretation, so it answers the same 400, 404,
+      409 `CAPABILITY_UNAVAILABLE` and 422.
+    - A note source must belong to the deck of the session. The estimate's `edit` form answers an opaque 404 for a session or an
+      artifact that is not the owner's deck's.
+    - `listSessions` takes `limit`, `cursor` and `active`; `listActiveSessions` takes a required `state=active`, `limit` and
+      `cursor`; any other query parameter is `400`. Both order by `(lastActivityAt, sessionId)` descending.
+    - `USAGE_UPDATED` is emitted after a committed debit and after the reservation is released (so a session that finishes
+      has two), and with `deferredUntil` when the daily burst parks a step. A `BLOCKS_APPENDED` checkpoint appends events
+      without bumping the session `rowVersion`; every transaction that changes the session does.
+    - `GENERATION_READY` is published when every artifact is approvable and none failed, `GENERATION_PARTIAL` and
+      `GENERATION_FAILED` as the notification contract says; a REVIEW session whose proposals still wait for media and has no
+      failure publishes nothing until the media tasks (AI-09, AI-10) resolve the slots. The producer of the three kinds is AI-04.
+    - Media directives are bounded by the declared media: `maxMedia` is one for enabled audio plus one for image search, so a
+      model that emits more is repaired (`MBM_TOO_MANY_MEDIA`); `::image mode="generate"` and `::video` stay refused
+      (`MBM_CAPABILITY_OFF`) until their executors exist.
+    - Step time: a run has `PT6M` (`TEXT_DRAFT`); a requeue delay is at most `learning.generation.step.backoff-cap`; a step
+      older than `learning.generation.step.max-lifetime` (`PT1H`, from its first claim) is `FAILED(DEADLINE_EXCEEDED)`.
+    - Cancelling `FAILED(CANCELLED)`s the media slots of the cancelled media steps and emits `MEDIA_SLOT_STATE`.
+    - A step ends `FAILED(ESTIMATE_EXCEEDED)` without a provider call when the remaining hold does not cover the material's
+      weight; a debit that no longer fits (a parallel step used the hold) fails the artifact the same way after the call, with
+      no debit. A failed run is debited nothing; a repair inside a successful step is.
+
 ## Owner decisions (2026-10-02)
 
 Final. Values live in config keys, so a change is a configuration change. Details: [usage contract](../usage/README.md#owner-decisions-2026-10-02).
@@ -131,7 +165,7 @@ Resolved in favour of the architecture document unless stated. These are recorde
 | research `context-and-quality.md` (the `::verify` block) vs architecture §6 | The research prompt uses a `::verify` block; MBM v1 has none | Not in MBM v1 nor in the prompts |
 | research (edit context: whole document up to 8k tokens) vs architecture §7 (outline + target ± neighbour) | Edit context size | Prompt placeholders allow both; AI-11 |
 | architecture §6 (swapped pair is `INCORRECT`) vs `AttemptEvaluation` | A swapped pair among 3+ gives `PARTIAL` | Probes shift **all** pairs so `INCORRECT` is well defined |
-| architecture §4 (at most 20 artifacts per session) vs owner decision (60 exercises) | Different limits | 20 for `MATERIALS`, 60 for `EXERCISES`; architecture to be updated with the AI-04 task |
+| architecture §4 (at most 20 artifacts per session) vs owner decision (60 exercises) | Different limits | 20 for `MATERIALS`, 60 for `EXERCISES`; architecture §4 updated by AI-04 |
 | `docs/product/ai-layer-2026-10.md` (¼ of the bar every Monday, i.e. 12.5) | Not an integer | Replaced by the owner decision: portions 13, 13, 12, 12 |
 
 ## Open questions

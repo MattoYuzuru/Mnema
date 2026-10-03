@@ -81,7 +81,7 @@ app.mnema.learning.capability        существующий fail-closed gate, 
 | `generation_media_slot` | медиа-место в AST: `slot_key` (стабилен между ревизиями), `kind`, `spec` (голос, язык, prompt/query), `asset_id`, `state` | под CAS |
 | `generation_media_ref` | hold для GC, аналог `draft_media_ref`, с `owner_id` и композитными FK как в `V10` | удаляется при закрытии/истечении |
 | `generation_step` | durable job (§4) | lease-поля |
-| `generation_event` | курсор прогресса: `event_id` bigserial, `session_id`, `artifact_id`, `type`, малый `payload` | append-only, TTL |
+| `generation_event` | курсор прогресса: `session_id` + `seq` (per-session, выдаётся под row lock сессии, `UNIQUE(session_id, seq)`; не bigserial), `artifact_id`, `type`, малый `payload` | append-only, TTL |
 | `ai_provider_call` | аудит и стоимость: `step_id`, `attempt`, `provider`, `model`, `request_hash`, `usage`, `cost_micros`, `provider_request_id`, `outcome`, `latency_ms`; без текстов промптов; 90 дней | append-only |
 | `generation_provenance` | происхождение опубликованного: revision → session, model routes, prompt versions; **не показывается в UI** (решение владельца), служит аудиту и экономике | immutable |
 
@@ -168,8 +168,8 @@ N:M не вводится.
   capability со свободным локальным слотом, мягкий per-account cap; затем новый
   `lease_token`, `lease_until`, `attempts+1`. Heartbeat на virtual thread продлевает
   lease только при совпадении токена; запись результата проверяет токен.
-- **Жёсткие лимиты на admission**: ≤3 активные сессии, ≤20 артефактов в сессии,
-  reservation. Семафоры per capability на инстанс (config): text 16, tts 4, image 2,
+- **Жёсткие лимиты на admission**: ≤3 активные сессии, ≤20 артефактов в сессии `MATERIALS` (60 упражнений в сессии
+  `EXERCISES`, решение владельца 2026-10-02), reservation. Семафоры per capability на инстанс (config): text 16, tts 4, image 2,
   video 1, search 4, assess 16.
 - **Ни одна DB-транзакция не открыта во время вызова провайдера.** Checkpoint и
   завершение — короткие отдельные транзакции.
