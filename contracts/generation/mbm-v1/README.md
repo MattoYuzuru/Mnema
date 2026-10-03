@@ -313,10 +313,11 @@ have a valid fixture and, where an attribute or body can be wrong, an invalid on
   **not** in v1; the system prompt does not mention it.
 - Native → MBM serialization (the edit context) is specified only through the handle rule above. Nodes that
   MBM cannot express (`youtube`, opaque `math`, a retained `code_block` that is not valid v1, future versions) cannot be inside an AI
-  edit target; AI-11 must refuse such a target before any model call. Whether they appear as read-only
-  placeholders in context is open.
-- Media blocks with handles: a rewritten media block keeps its node ID, but whether its `assetId` is kept
-  when the spec is unchanged is a runtime rule for the media tasks (AI-09, AI-10), not fixed here.
+  edit target; AI-11 refuses such a target before any model call (`400 INVALID_REQUEST`, [decision 15](../README.md)). As neighbours they are
+  shown in the edit context by their first line.
+- Media blocks with handles: AI-11 never shows a media block to the model as a target (it is shown as a placeholder line in the outline) and
+  never drops it in a rewrite, so no handle is declared for it; whether a media redo keeps the `assetId` when the spec is unchanged is a runtime
+  rule for the media tasks (AI-09, AI-10), not fixed here.
 - Handles for list items and table rows (exercise `MATERIAL` references cite blocks) are not in v1.
 - Inline markup inside table cells is literal in v1 (cells are only trimmed).
 - Column positions are code points; CJK width and grapheme clusters are not modeled.

@@ -18,7 +18,7 @@
       "title": "Invalid request",
       "detail": "The request is invalid or cannot be read.",
       "origin": "existing",
-      "when": "Strict-JSON, field, UUID, version, cursor, limit or enum violations; also an AI edit target that MBM cannot express, a preset without REWRITE, an EXERCISE hand-off, an approval replacement that is not a valid exercise about the proposal's subject material (or on an ITEM artifact, or in a bulk entry).",
+      "when": "Strict-JSON, field, UUID, version, cursor, limit or enum violations; also an AI edit target that MBM cannot express or whose text holds an e-mail address, a telephone or a card number (the prompt layer would redact it and the rewrite would overwrite it), an edit target that is not consecutive top-level blocks of the current revision, a preset without REWRITE, an EXERCISE hand-off, an approval replacement that is not a valid exercise about the proposal's subject material (or on an ITEM artifact, or in a bulk entry).",
       "endpoints": [
         "all"
       ]
@@ -280,7 +280,7 @@
       "title": "Generation state conflict",
       "detail": "The operation is not allowed in the current state.",
       "origin": "new",
-      "when": "A command that states.json allowedOperations does not permit in the current session or artifact state (for example approve on a REJECTED artifact, cancel of a CLOSED session), approval while a media slot is neither READY nor REMOVED, approval of a STALE artifact, retry of a REFUSAL failure. Decision beyond the architecture: it names no code for illegal transitions, and 412 is reserved for stale versions.",
+      "when": "A command that states.json allowedOperations does not permit in the current session or artifact state (for example approve on a REJECTED artifact, cancel of a CLOSED session), approval while a media slot is neither READY nor REMOVED, approval of a STALE artifact, retry of a REFUSAL failure. Decision beyond the architecture: it names no code for illegal transitions, and 412 is reserved for stale versions. Also editArtifact and revertArtifact on an EXERCISE artifact (until AI-16 #294), revertArtifact while a turn runs, and editArtifact on a session that is not RUNNING or REVIEW (a CANCELLED one accepts REMOVE_MEDIA only).",
       "endpoints": [
         "approveArtifact",
         "approveArtifacts",

@@ -461,6 +461,7 @@
       ],
       "notes": [
         "ITEM payload is a native-v1 document; EXERCISE payload is the objective and exercise members of the exercise publication command (contracts/study); commandId and expectedDeckRevisionId are supplied at approval.",
+        "turns lists every turn of the artifact, oldest first, in the turn shape (REMOVE_MEDIA turns included); revisions lists every revision {revisionId, cause INITIAL | EDIT | MEDIA | REPIN, createdAt}, oldest first; ?revisionId= returns any revision's payload (an unknown one is 404) while currentRevisionId stays the pointer, so a client builds the diff of an edit from the previous and the result revision. mediaSlots are the slots of the media nodes the shown revision holds, whichever revision each slot is attached to now.",
         "An EXERCISE detail adds the read-only display {mechanic, objectiveTitle, quotes}: the mechanic, the title of the objective the exercise evidences (the offered or the new one) and the plain text of every MATERIAL node the exercise quotes, by node id, as it reads in the pinned revision (so a client renders MATERIAL blocks without further requests). It is absent for ITEM artifacts and when revision is null. The artifact title is the first TEXT block of the prompt, else the objective title.",
         "Model route, prompt version and provenance are never returned.",
         "Read-only: never changes state."
@@ -809,15 +810,15 @@
       "operationId": "editArtifact",
       "method": "POST",
       "path": "/api/decks/{deckId}/generation-sessions/{sessionId}/artifacts/{artifactId}/edits",
-      "summary": "Edit by selection, instruction or media redo. One edit per artifact at a time.",
+      "summary": "Edit by selection, instruction or media redo. One edit per artifact at a time. A rewrite is accepted (202, turn QUEUED) and runs on the worker; REMOVE_MEDIA is applied before the answer.",
       "requestBody": {
         "fields": {
           "commandId": "UUIDv4/v7",
-          "expectedRevisionId": "current revision",
-          "target": "{nodeIds: 1..50 block node IDs} or null (EXERCISE)",
+          "expectedRevisionId": "the artifact's current revision as the client shows it (stale is 412 VERSION_CONFLICT)",
+          "target": "{nodeIds: 1..50 distinct node IDs of CONSECUTIVE top-level blocks of the current revision}; required for a material (absent or null is INVALID_REQUEST); null only for an EXERCISE, whose every edit is refused until AI-16",
           "action": "REWRITE | IMAGE_SEARCH | IMAGE_GENERATE | AUDIO_REGENERATE | FREE | REMOVE_MEDIA",
-          "preset": "optional SIMPLER | SHORTER | EXAMPLE | LONGER; valid only with REWRITE (else INVALID_REQUEST)",
-          "instruction": "text or speech transcript, 1..2000 characters; required for FREE, optional otherwise"
+          "preset": "optional SIMPLER | SHORTER | EXAMPLE | LONGER; valid only with REWRITE (else INVALID_REQUEST); null is the same as absent",
+          "instruction": "text or speech transcript, 1..2000 code points, not blank; required for FREE, optional otherwise (ignored and stored as null for REMOVE_MEDIA); null is the same as absent"
         },
         "example": {
           "commandId": "018f1d98-5c10-7abc-8abc-0123456789b6",
@@ -864,7 +865,7 @@
         {
           "status": 400,
           "code": "INVALID_REQUEST",
-          "when": "Malformed or unknown field, duplicate JSON key, bad UUID or version."
+          "when": "Malformed or unknown field, duplicate JSON key, bad UUID or version; a preset without REWRITE; FREE without an instruction; a target that is not consecutive top-level blocks of the current revision (a nested node, an unknown or repeated ID, a gap); a rewrite target the model cannot be given (a block MBM cannot express, a block whose text holds an e-mail, a telephone or a card number, a run of media only); a media action on blocks of the wrong kind."
         },
         {
           "status": 404,
@@ -885,7 +886,7 @@
         {
           "status": 409,
           "code": "CAPABILITY_UNAVAILABLE",
-          "when": "A capability the operation needs is off."
+          "when": "A capability the operation needs is off: aiGeneration for REWRITE and FREE; imageSearch, imageGeneration or textToSpeech for the media actions, which stay refused (reason PROVIDER_NOT_CONFIGURED when the gate itself passes) until their executors exist (AI-09, AI-10)."
         },
         {
           "status": 412,
@@ -895,7 +896,7 @@
         {
           "status": 409,
           "code": "GENERATION_STATE_CONFLICT",
-          "when": "Operation not allowed in the current session or artifact state (states.json allowedOperations).",
+          "when": "Operation not allowed in the current session or artifact state (states.json allowedOperations): the session is not RUNNING or REVIEW (a CANCELLED one accepts REMOVE_MEDIA only), the artifact is not PROPOSED, or the artifact is an EXERCISE (every edit, until AI-16 #294).",
           "reason": "ILLEGAL_STATE"
         },
         {
@@ -911,17 +912,21 @@
         }
       ],
       "notes": [
-        "A block is the unit: a selection inside a paragraph widens to its block. nodeIds must be top-level blocks of the current revision (else INVALID_REQUEST).",
-        "Every chargeable action (REWRITE and FREE as EDIT_SELECTION, IMAGE_SEARCH, IMAGE_GENERATE, AUDIO_REGENERATE as TTS; mapping in usage.json) creates its own small turn-scoped reservation at admission; insufficient means 409 USAGE_LIMIT_REACHED before any state change.",
-        "REMOVE_MEDIA (extension to the architecture list) is free and deterministic: no model call, no reservation. It answers 202 like every edit, with the turn already APPLIED (example turnRemoveMedia), cause MEDIA, creates a revision and does not count toward the 50 turns. It is the only action accepted in a CANCELLED session.",
-        "EXERCISE artifacts accept only FREE with target null; the exercise edit flow is AI-16 (#294)."
+        "A block is the unit: a selection inside a paragraph widens to its block. nodeIds must be CONSECUTIVE top-level blocks of the current revision, in any request order, and include every block the selection touches, media blocks inside the run too (a skipped media block is a gap); anything else is INVALID_REQUEST.",
+        "Evaluation order: 404, receipt replay, 400 body, 412 expectedRevisionId, 400 target (it can only be judged against the current revision), 409 state (session, artifact, EDIT_IN_PROGRESS, EXERCISE), 409 capability, 422 limits, 409 usage last. Nothing changes state before the usage step passes.",
+        "REWRITE and FREE (as EDIT_SELECTION, 4 credits on rc-v1) create their own turn-scoped reservation (scope TURN) at admission; insufficient means 409 USAGE_LIMIT_REACHED before any state change. The hold is debited when the turn is APPLIED and released unspent when it FAILS or is CANCELLED. «Ещё раз» is a new edit with a new commandId and takes its own hold. IMAGE_SEARCH, IMAGE_GENERATE and AUDIO_REGENERATE (priced as in usage.json) are refused with 409 CAPABILITY_UNAVAILABLE until AI-09 and AI-10 (decision 15).",
+        "A rewrite is 202 with the turn QUEUED and the artifact REVISING; the worker runs one EDIT step (PT2M, at most three model calls: the answer, one repair, one on the strong route). The result is a new revision (cause EDIT), the turn APPLIED with resultRevisionId and the artifact PROPOSED on it; on failure the turn is FAILED with an errorCode, the artifact PROPOSED on the unchanged revision and nothing is debited. The client follows ARTIFACT_STATE and re-reads getArtifact (turns[], revisions[]).",
+        "REMOVE_MEDIA (extension to the architecture list) is free and deterministic: no model call, no reservation. It answers 202 like every edit, with the turn already APPLIED (example turnRemoveMedia), cause MEDIA, creates a revision without the media nodes (their slots become REMOVED and the hold on their assets ends) and does not count toward the 50 turns. It is the only action accepted in a CANCELLED session.",
+        "A rewrite never shows media to the model and never drops it: the media blocks of the target run stay in the document (same node, same slot, now attached to the new revision) and end up after the rewritten blocks of the run.",
+        "EXERCISE artifacts: every edit answers 409 GENERATION_STATE_CONFLICT with reason ILLEGAL_STATE until AI-16 (#294) defines the exercise edit flow.",
+        "Every block outside the target is the same JSON in the new revision (same node IDs); a rewritten block whose type is unchanged keeps its node ID (MBM handle rule), its descendants and new blocks get new IDs."
       ]
     },
     {
       "operationId": "revertArtifact",
       "method": "POST",
       "path": "/api/decks/{deckId}/generation-sessions/{sessionId}/artifacts/{artifactId}/revert",
-      "summary": "Move the current-revision pointer to an earlier revision of the same artifact (undo/redo of edits).",
+      "summary": "Move the current-revision pointer to another revision of the same artifact (undo and redo of edits). Creates and deletes nothing.",
       "requestBody": {
         "commandId": "018f1d98-5c10-7abc-8abc-0123456789b7",
         "expectedArtifactVersion": "5",
@@ -945,7 +950,7 @@
         {
           "status": 404,
           "code": "RESOURCE_NOT_FOUND",
-          "when": "Foreign or absent deck, session or artifact: one opaque boundary."
+          "when": "Foreign or absent deck, session or artifact, or a revision that is not one of this artifact's: one opaque boundary."
         },
         {
           "status": 412,
@@ -955,7 +960,7 @@
         {
           "status": 409,
           "code": "GENERATION_STATE_CONFLICT",
-          "when": "Operation not allowed in the current session or artifact state (states.json allowedOperations).",
+          "when": "Operation not allowed in the current session or artifact state: the session is not RUNNING or REVIEW, the artifact is not PROPOSED (a turn in flight makes it REVISING, which refuses a revert), or it is an EXERCISE (until AI-16 #294).",
           "reason": "ILLEGAL_STATE"
         },
         {
@@ -965,7 +970,10 @@
         }
       ],
       "notes": [
-        "toRevisionId must be one of the artifact's revisions (at most 30). No new revision is created."
+        "toRevisionId must be one of the artifact's revisions (at most 30), earlier or later than the current one; the current revision is a 200 no-op. No revision is created and none is deleted, so the history (revisions, turns) stays and a revert can be undone by another revert; an edit made after a revert is a new revision (a branch).",
+        "Evaluation order: 404, receipt replay, 400 body, 412 expectedArtifactVersion, 409 state, 404 unknown revision.",
+        "Media slots follow the shown revision: a slot whose node the revision holds is attached to it, one whose node it does not hold becomes REMOVED. Restoring a revision whose media node had its slot REMOVED shows the node without a ready asset (the hold ended): the slot is FAILED with errorCode NO_RESULT (a MEDIA_SLOT_STATE event), so approval answers 409 MEDIA_NOT_READY until REMOVE_MEDIA removes the node again.",
+        "Events: ARTIFACT_STATE (PROPOSED, new artifactVersion and currentRevisionId) and MEDIA_SLOT_STATE for each slot that changed state."
       ]
     },
     {
@@ -1114,9 +1122,15 @@
       "errorCode": "null or an artifact error code (states.json artifact.errorCodes)"
     },
     "turn": {
+      "turnId": "uuid",
       "status": "QUEUED | RUNNING | APPLIED | FAILED | CANCELLED (states.json turn.states)",
-      "errorCode": "null, or an artifact error code when FAILED",
-      "instruction": "echoed text; a speech transcript is stored as text, the audio is never kept"
+      "action": "REWRITE | IMAGE_SEARCH | IMAGE_GENERATE | AUDIO_REGENERATE | FREE | REMOVE_MEDIA",
+      "preset": "null, or SIMPLER | SHORTER | EXAMPLE | LONGER (REWRITE only)",
+      "instruction": "echoed text; a speech transcript is stored as text, the audio is never kept; null for REMOVE_MEDIA",
+      "targetNodeIds": "the block node IDs the edit addressed, in document order",
+      "resultRevisionId": "null until APPLIED: the revision the turn made",
+      "errorCode": "null, or an artifact error code when FAILED (INVALID_OUTPUT, REFUSAL, SOURCE_UNAVAILABLE, PROVIDER_UNAVAILABLE, ESTIMATE_EXCEEDED, DEADLINE_EXCEEDED)",
+      "createdAt": "RFC 3339 UTC"
     }
   },
   "examples": {
@@ -1907,6 +1921,32 @@
           "reason": "CHANGED"
         }
       ]
+    },
+    "turnApplied": {
+      "turnId": "7a7a0000-0000-4000-8000-000000000001",
+      "status": "APPLIED",
+      "action": "REWRITE",
+      "preset": "SIMPLER",
+      "targetNodeIds": [
+        "00000000-0000-4000-8000-000000000004"
+      ],
+      "instruction": "Проще, с примером",
+      "resultRevisionId": "4e700000-0000-4000-8000-000000000002",
+      "errorCode": null,
+      "createdAt": "2026-10-02T09:00:42Z"
+    },
+    "turnFailed": {
+      "turnId": "7a7a0000-0000-4000-8000-000000000002",
+      "status": "FAILED",
+      "action": "FREE",
+      "preset": null,
+      "targetNodeIds": [
+        "00000000-0000-4000-8000-000000000004"
+      ],
+      "instruction": "Сделай подробнее",
+      "resultRevisionId": null,
+      "errorCode": "INVALID_OUTPUT",
+      "createdAt": "2026-10-02T09:05:10Z"
     }
   }
 }
