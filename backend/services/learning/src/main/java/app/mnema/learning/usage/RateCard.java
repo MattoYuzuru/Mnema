@@ -24,6 +24,8 @@ final class RateCard {
     /** The 0.6 of the contract: an rc-v1 placeholder until measured weights exist (14 days of measurements). */
     static final BigDecimal TYPICAL_FACTOR = new BigDecimal("0.6");
     static final String EXERCISES = "EXERCISES_PER_MATERIAL";
+    /** The operation a plan-first spec adds and the planner debits: the Flash plan (the Pro plan is not selectable in v1). */
+    static final String PLAN = "SMART_PLAN_FLASH";
     private static final int EXERCISES_PER_UNIT = 5;
 
     enum Pricing { CREDITS, FAIR_USE }
