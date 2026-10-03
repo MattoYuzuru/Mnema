@@ -15,6 +15,7 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { runWorkshopExercises } from './exercises.mjs';
+import { runWorkshopEdits } from './selection-edits.mjs';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -288,6 +289,13 @@ export async function runWorkshop(ctx) {
   // From here on the proxy forwards to the second Learning of this run: the Stub text provider, aiGeneration on.
   const switched = await page(`const response = await fetch('/__fixture/learning-generation', { method: 'POST' }); return response.status;`);
   need(switched === 204, `the proxy did not switch to the Stub Learning (status ${switched})`);
+  if (config.onlyEdits) {
+    // Development aid (`run.py --only-edits`): the selection-edit scenario alone, after the base flow. Never the gate.
+    evidence.edits = await runWorkshopEdits(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
+      activeSessions, sessionPath, location });
+    record('workshop_selection_edits_only', evidence);
+    return evidence;
+  }
   const capabilities = await api('GET', '/api/capabilities');
   need(capabilities.status === 200 && capabilities.body?.aiGeneration?.available === true,
     `GET /api/capabilities does not report aiGeneration available (Stub configuration): ${JSON.stringify(capabilities.body?.aiGeneration ?? null)}`);
@@ -687,6 +695,9 @@ export async function runWorkshop(ctx) {
     activeSessions, sessionPath, location });
   // #291 (AI-13): exercise generation, batch review, «Новое». Its own deck, so it never disturbs the scenarios above.
   evidence.exercises = await runWorkshopExercises(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
+    activeSessions, sessionPath, location });
+  // #293 (AI-11): selection edits in the Workshop, in a deck of its own.
+  evidence.edits = await runWorkshopEdits(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
     activeSessions, sessionPath, location });
   evidence.durationMs = Date.now() - startedAt;
   record('workshop_composer_stub_real_api', evidence);

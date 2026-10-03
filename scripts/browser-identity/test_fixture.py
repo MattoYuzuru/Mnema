@@ -394,6 +394,40 @@ module.main()
             result = subprocess.run([node, "--check", str(Path(__file__).with_name("exercises.mjs"))], capture_output=True)
             self.assertEqual(0, result.returncode)
 
+    def test_selection_edit_scenario_is_wired_stub_only_and_syntactically_valid(self):
+        runner = Path(__file__).with_name("run.py").read_text()
+        workshop = Path(__file__).with_name("workshop.mjs").read_text()
+        source = Path(__file__).with_name("selection-edits.mjs").read_text()
+        self.assertIn("import { runWorkshopEdits } from './selection-edits.mjs'", workshop)
+        self.assertIn("runWorkshopEdits(ctx", workshop)
+        self.assertIn('"selection-edits.mjs"', runner)
+        self.assertIn("export async function runWorkshopEdits", source)
+        # The whole path is the real UI on the real API: no stubbed answers, no key of any provider. A blocked URL is a failing
+        # request, never an invented one.
+        self.assertNotIn("Fetch.fulfillRequest", source)
+        self.assertNotIn("route.fulfill", source)
+        self.assertNotIn("DEEPSEEK", source)
+        self.assertIn("Network.setBlockedURLs", source)
+        for step in ("fixture", "open", "select_and_window", "rewrite_simpler", "diff", "again_and_undo", "history", "failed_rewrite",
+                     "mobile_sheet", "edit_in_progress", "approve_and_browse"):
+            self.assertIn(f"step('{step}'", source)
+        # Evidence at both widths: the window and the diff at 1440, the sheet and the strip at 390.
+        for name in ("workshop-edit-window-1440.png", "workshop-edit-rewriting-1440.png", "workshop-edit-diff-1440.png", "workshop-edit-sheet-390.png",
+                     "workshop-edit-rewriting-390.png", "workshop-edit-strip-390.png", "workshop-edit-diff-390.png"):
+            self.assertIn(name, source)
+        node = shutil.which("node")
+        if node is not None:
+            result = subprocess.run([node, "--check", str(Path(__file__).with_name("selection-edits.mjs"))], capture_output=True)
+            self.assertEqual(0, result.returncode)
+
+    def test_only_edits_is_a_development_aid_that_needs_generation(self):
+        with patch.object(sys, "argv", ["run.py", "--dist", str(self.dist), "--authoring", "--only-edits"]), \
+                contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as exit_code:
+            HARNESS.main()
+        self.assertEqual(2, exit_code.exception.code)
+        runner = Path(__file__).with_name("run.py").read_text()
+        self.assertIn('"onlyEdits": self.args.only_edits', runner)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -180,10 +180,12 @@ class Handler(BaseHTTPRequestHandler):
         if not self.server.identity:
             headers = {name: value for name, value in headers.items() if name.lower() != "cookie"}
         connection = http.client.HTTPConnection("127.0.0.1", port, timeout=8)
+        started = time.monotonic()
         try:
             connection.request(self.command, self.path, body if length else None, headers)
             response = connection.getresponse()
             content = response.read(MAX_BODY + 1)
+            fixture.note_slow(self.command, self.path, response.status, time.monotonic() - started)
             if len(content) > MAX_BODY:
                 return self.reply(502)
             self.send_response(response.status)
@@ -211,6 +213,12 @@ class Fixture(BASE.Fixture):
         self.active_learning_port = None
         self.media_container = None
         self.media_origin = None
+
+    def note_slow(self, method, path, status, seconds):
+        """A proxied request that took two seconds or more: method, path without its query, status and time (kept with the private logs)."""
+        if seconds >= 2:
+            with (self.tmp / "slow-requests.log").open("a") as log:
+                log.write(f"{time.strftime('%H:%M:%S')} {method} {urlsplit(path).path} {status} {seconds:.1f}s\n")
 
     def start(self):
         if self.args.media:
@@ -374,7 +382,7 @@ class Fixture(BASE.Fixture):
                   "password": BASE.PASSWORD, "readySelector": self.args.ready_selector,
                   "logoutSelector": self.args.logout_selector, "errorSelector": self.args.error_selector,
                   "authoring": self.args.authoring, "media": self.args.media, "mechanics": self.args.mechanics,
-                  "generation": self.args.generation,
+                  "generation": self.args.generation, "onlyEdits": self.args.only_edits,
                   "diagnosticsDir": str(self.tmp) if self.args.mechanics and self.args.keep_on_failure else None,
                   "mediaOrigin": self.media_origin, "mediaClips": media_clips}
         private_config = self.tmp / "browser.json"
@@ -388,7 +396,7 @@ class Fixture(BASE.Fixture):
         evidence = {"fixture": self.results, "frontend_tree_sha256": digest.hexdigest(),
                     "scripts": {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
                                 for name in ("run.py", "browser.mjs", "mechanics.mjs", "notifications.mjs", "hub.mjs",
-                                             "code-block.mjs", "usage.mjs", "workshop.mjs", "exercises.mjs")}}
+                                             "code-block.mjs", "usage.mjs", "workshop.mjs", "exercises.mjs", "selection-edits.mjs")}}
         (self.args.output / "fixture.json").write_text(json.dumps(evidence, indent=2))
         runner = self.launch_group([self.args.node, str(Path(__file__).with_name("browser.mjs")), str(private_config)], "browser")
         self.control("browser_running")
@@ -490,6 +498,9 @@ def main():
     parser.add_argument("--generation", action="store_true",
                         help="boot Learning with the Stub generation provider (never a real one) and drive the composer and "
                              "the Workshop through the real UI after the authoring scenarios (requires --authoring)")
+    parser.add_argument("--only-edits", action="store_true",
+                        help="development aid: after the base flow run only the Workshop selection-edit scenario (requires --generation); "
+                             "never a substitute for the full run")
     parser.add_argument("--timeout", type=int, default=None, metavar="SECONDS",
                         help="global deadline, 30-900 seconds (default 180, or 600 with --mechanics)")
     parser.add_argument("--keep-on-failure", action="store_true",
@@ -502,6 +513,8 @@ def main():
         parser.error("--mechanics requires --authoring --media")
     if args.generation and not args.authoring:
         parser.error("--generation requires --authoring")
+    if args.only_edits and not args.generation:
+        parser.error("--only-edits requires --generation")
     if args.timeout is None:
         args.timeout = 600 if args.mechanics else 180
         if args.generation:
