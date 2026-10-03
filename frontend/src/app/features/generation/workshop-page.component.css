@@ -8,3 +8,6 @@ h1 { font-size: clamp(2.25rem, 5vw, 3.75rem); }
 .footer-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem 1.5rem; border-block-start: 1px solid var(--mn-rule); padding-block-start: 1rem; }
 .confirm { margin: 0; }
 @media (min-width: 48rem) { .pager-row { grid-template-columns: minmax(0, 1fr) auto; align-items: center; } }
+.note-archive { display: grid; gap: .35rem; max-inline-size: 36rem; }
+.note-archive .muted { margin: 0; font-size: .9rem; }
+.note-archive-result { flex-basis: 100%; margin: 0; }

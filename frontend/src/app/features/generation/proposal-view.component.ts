@@ -80,6 +80,9 @@ export class ProposalViewComponent {
         const payload = this.detail()?.revision?.payload;
         return payload?.kind === 'NATIVE_DOCUMENT' ? payload.document : null;
     });
+    /** A pinned note changed after the request (`sourceRefs[].status`): informational, the material stays as it was written. */
+    protected readonly noteChanged = computed(() => this.artifact().state !== 'STALE'
+        && (this.detail()?.noteSources ?? []).some(source => source.status === 'CHANGED'));
     protected readonly isExercise = computed(() => this.artifact().targetKind === 'EXERCISE');
     /** The draft without its media blocks: their place is held by the paper frames below, and nothing there pretends to play. */
     protected readonly preview = computed(() => {

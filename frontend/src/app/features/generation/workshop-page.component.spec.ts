@@ -14,10 +14,11 @@ import { GenerationApiService } from './generation-api.service';
 import { ANNOUNCE_GAP_MS, WorkshopPageComponent } from './workshop-page.component';
 import { WorkshopSessionStore } from './workshop-session.store';
 import {
-    parseApprovalAck, parseArtifactDetail, parseArtifactSummary, parseEventsPage, parseHandoff, parseSessionDetail
+    parseApprovalAck, parseArtifactDetail, parseArtifactSummary, parseEventsPage, parseHandoff, parseNoteArchive, parseSessionDetail
 } from './generation.models';
 import {
-    activeStep, artifactWith, clone, deckFixture, eventsEnvelope, examples, httpContract, ids, problemResponse, sessionWith, wireBlocks, wireEvent
+    activeStep, artifactDetailWithNote, artifactWith, clone, deckFixture, eventsEnvelope, examples, httpContract, ids, noteArchiveAnswer, noteIds, problemResponse,
+    sessionWith, sessionWithNotes, wireBlocks, wireEvent
 } from './generation-test-data';
 
 const third = 'a7a70000-0000-4000-8000-000000000003';
@@ -56,7 +57,7 @@ describe('WorkshopPageComponent', () => {
         vi.useFakeTimers();
         vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
         api = spyObj<GenerationApiService>({ getSession: vi.fn(), listEvents: vi.fn(), getArtifact: vi.fn(), approveArtifact: vi.fn(), approveArtifacts: vi.fn(),
-            rejectArtifact: vi.fn(), undoRejectArtifact: vi.fn(), retryArtifact: vi.fn(), handoffArtifact: vi.fn(), cancelSession: vi.fn(), deleteSession: vi.fn() });
+            rejectArtifact: vi.fn(), undoRejectArtifact: vi.fn(), retryArtifact: vi.fn(), handoffArtifact: vi.fn(), cancelSession: vi.fn(), deleteSession: vi.fn(), archiveUsedNotes: vi.fn() });
         decks = spyObj<OwnDecksApiService>({ detail: vi.fn() });
         toast = { echo: vi.fn() };
         transition = { navigate: vi.fn().mockResolvedValue(true) };
@@ -493,6 +494,72 @@ describe('WorkshopPageComponent', () => {
             await vi.advanceTimersByTimeAsync(30_000);
             expect(api.listEvents).toHaveBeenCalledTimes(calls);
             expect(wireEvent).toBeDefined();
+        });
+    });
+
+    describe('notes of the batch (#290)', () => {
+        const done = (archivable: number): Record<string, unknown> => sessionWithNotes({ used: 3, archivable },
+            [artifactWith(ids.first, 0, 'PUBLISHED', { rowVersion: '5' }), proposed(ids.second, 1)], { state: 'REVIEW', approvableCount: 1 });
+        const archiveButton = (): HTMLButtonElement | undefined => [...root().querySelectorAll<HTMLButtonElement>('.note-archive button')][0];
+
+        it('offers «Архивировать использованные заметки (k)» as a secondary action only while some note can be archived', async () => {
+            await open(done(2));
+            const button = archiveButton()!;
+            expect(button.textContent!.trim()).toBe('Архивировать использованные заметки (2)');
+            expect(button.classList.contains('primary')).toBe(false);
+            expect(button.getAttribute('aria-describedby')).toBe('note-archive-hint');
+            expect(root().querySelector('#note-archive-hint')?.textContent).toContain('Изменённые заметки останутся');
+            expect(root().querySelector('.footer-row')?.contains(button)).toBe(true);
+            await open(done(0));
+            expect(archiveButton()).toBeUndefined();
+            await open(sessionWith([proposed(ids.first, 0)], { state: 'REVIEW', approvableCount: 1 }));
+            expect(archiveButton()).toBeUndefined();
+        });
+
+        it('archives, shows what was archived and what was skipped and why, and the button is gone once nothing is left', async () => {
+            await open(done(2));
+            api.archiveUsedNotes.mockReturnValue(of(parseNoteArchive(noteArchiveAnswer([noteIds.first], [{ noteId: noteIds.second, reason: 'CHANGED' }]), false)));
+            api.getSession.mockReturnValue(of(parseSessionDetail(done(0))));
+            archiveButton()!.click();
+            await settle();
+            expect(api.archiveUsedNotes).toHaveBeenCalledTimes(1);
+            expect(api.archiveUsedNotes.mock.calls[0]!.slice(0, 2)).toEqual([ids.deckId, ids.sessionId]);
+            expect(root().querySelector('.note-archive-result')?.textContent).toContain('Архивировано: 1, пропущено: 1 — заметка изменилась');
+            expect(toast.echo).toHaveBeenCalledWith('Архивировано: 1, пропущено: 1 — заметка изменилась');
+            expect(archiveButton()).toBeUndefined();
+        });
+
+        it('is idempotent in the interface: a press while archiving does nothing, and an unknown outcome is retried with the same command', async () => {
+            await open(done(2));
+            const pending = new Subject<ReturnType<typeof parseNoteArchive>>();
+            api.archiveUsedNotes.mockReturnValueOnce(pending);
+            archiveButton()!.click();
+            fixture.detectChanges();
+            expect(archiveButton()!.getAttribute('aria-disabled')).toBe('true');
+            archiveButton()!.click();
+            expect(api.archiveUsedNotes).toHaveBeenCalledTimes(1);
+            pending.error(new HttpErrorResponse({ status: 0 }));
+            await settle();
+            expect(archiveButton()).toBeDefined();
+            expect(root().querySelector('.notice.error')).not.toBeNull();
+            api.archiveUsedNotes.mockReturnValueOnce(of(parseNoteArchive(noteArchiveAnswer([noteIds.first]), true)));
+            archiveButton()!.click();
+            await settle();
+            expect(api.archiveUsedNotes.mock.calls[1]![2]).toBe(api.archiveUsedNotes.mock.calls[0]![2]);
+            expect(root().querySelector('.note-archive-result')?.textContent).toContain('Архивировано: 1');
+        });
+
+        it('marks a proposal whose note changed, near its heading and outside any live region', async () => {
+            await open(reviewing());
+            api.getArtifact.mockImplementation((_deck, _session, artifactId) => of(parseArtifactDetail({ ...artifactDetailWithNote('CHANGED'), artifactId,
+                ordinal: artifactId === ids.first ? 0 : 1, currentRevisionId: revisionOf(artifactId),
+                revision: { ...clone(examples['artifactDetailItem']).revision, revisionId: revisionOf(artifactId) } })));
+            store.loadDetail(ids.first);
+            await settle();
+            const tag = root().querySelector('app-proposal-view .note-changed-tag')!;
+            expect(tag.textContent).toBe('заметка изменилась');
+            expect(root().querySelector('app-proposal-view header')?.contains(tag)).toBe(true);
+            expect(tag.closest('[role=status], [role=alert], [aria-live]')).toBeNull();
         });
     });
 });

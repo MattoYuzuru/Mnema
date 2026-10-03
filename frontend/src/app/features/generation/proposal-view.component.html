@@ -1,6 +1,9 @@
 <article class="proposal" [attr.aria-busy]="writing()" [attr.aria-labelledby]="headingId" [attr.data-state]="artifact().state">
   <header class="proposal-heading">
     <h2 [id]="headingId" tabindex="-1">{{ position() }}<span class="status-word">, {{ status().word }}</span></h2>
+    @if (noteChanged()) {
+      <p class="note-changed"><span class="note-changed-tag">заметка изменилась</span> Материал написан по её прежней версии.</p>
+    }
   </header>
 
   @switch (artifact().state) {

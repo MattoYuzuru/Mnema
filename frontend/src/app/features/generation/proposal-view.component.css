@@ -25,3 +25,6 @@ h2:focus-visible { outline: none; }
 }
 /* A command in flight or a waiting reason: the button stays focusable (and its reason reachable), it just does nothing. */
 .proposal-actions .button[aria-disabled='true'] { cursor: not-allowed; opacity: .6; }
+.note-changed { margin: .25rem 0 0; color: var(--mn-body); font-size: .95rem; }
+.note-changed-tag { display: inline-block; margin-inline-end: .35rem; border: 1px solid var(--mn-ink); padding: 0 .5rem; color: var(--mn-ink); background: var(--mn-soft); font-weight: 700; }
+@media (forced-colors: active) { .note-changed-tag { border-color: CanvasText; } }

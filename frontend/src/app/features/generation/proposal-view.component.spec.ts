@@ -7,7 +7,7 @@ import { ARRIVE_MS, ProposalViewComponent } from './proposal-view.component';
 import { Arrival, DraftBlocks } from './workshop-events';
 import { DetailEntry } from './workshop-session.store';
 import { ArtifactSummary, SessionState, parseArtifactDetail, parseArtifactSummary, parseEventsPage } from './generation.models';
-import { artifactWith, clone, eventsEnvelope, examples, ids, wireBlocks } from './generation-test-data';
+import { artifactDetailWithNote, artifactWith, clone, eventsEnvelope, examples, ids, wireBlocks } from './generation-test-data';
 
 describe('ProposalViewComponent', () => {
     let fixture: ComponentFixture<ProposalViewComponent>;
@@ -296,6 +296,40 @@ describe('ProposalViewComponent', () => {
             expect(root().querySelector('h2')?.getAttribute('tabindex')).toBe('-1');
             root().remove();
             expect(signal(1)()).toBe(1);
+        });
+    });
+
+    describe('the note it was written from (#290)', () => {
+        const withStatus = (status: string | null, state = 'PROPOSED'): DetailEntry => ({ phase: 'ready', forRevision: ids.revision, stale: false,
+            detail: parseArtifactDetail({ ...artifactDetailWithNote(status), state }) });
+        const tag = (): HTMLElement | null => root().querySelector<HTMLElement>('.note-changed-tag');
+
+        it('says «заметка изменилась» in the header when the pinned note changed, and that the text was written from the earlier one', () => {
+            create(summary('PROPOSED'), { entry: withStatus('CHANGED') });
+            expect(tag()?.textContent).toBe('заметка изменилась');
+            expect(root().querySelector('header')?.contains(tag())).toBe(true);
+            expect(root().querySelector('.note-changed')?.textContent).toContain('Материал написан по её прежней версии.');
+            expect(tag()?.closest('[role], [aria-live]')).toBeNull();
+        });
+
+        it('stays silent for a note that is current, archived, deleted, not reported or not loaded yet, and for another source', () => {
+            for (const status of ['CURRENT', 'ARCHIVED', 'DELETED', null]) {
+                create(summary('PROPOSED'), { entry: withStatus(status) });
+                expect(tag(), String(status)).toBeNull();
+            }
+            create(summary('PROPOSED'));
+            expect(tag()).toBeNull();
+            create(summary('PROPOSED'), { entry: { phase: 'ready', forRevision: ids.revision, stale: false,
+                detail: parseArtifactDetail({ ...clone(examples['artifactDetailItem']), sourceRefs: [{ type: 'ITEM', memberKey: ids.first, itemRevisionId: ids.revision }] }) } });
+            expect(tag()).toBeNull();
+        });
+
+        it('does not repeat itself for a stale material, which already says its note changed, and changes nothing in the actions', () => {
+            create(summary('STALE'), { entry: withStatus('CHANGED', 'STALE') });
+            expect(tag()).toBeNull();
+            expect(root().textContent).toContain('Заметка изменилась, пока писался материал.');
+            create(summary('PROPOSED'), { entry: withStatus('CHANGED') });
+            expect(buttons()).toEqual(['Одобрить и далее →', 'Править самому', 'Отклонить']);
         });
     });
 });

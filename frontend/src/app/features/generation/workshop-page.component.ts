@@ -8,7 +8,7 @@ import { ToastService } from '../../core/notifications/toast.service';
 import { HoldToDeleteButtonComponent } from '../../shared/hold-to-delete-button.component';
 import { PageTransition } from '../../shared/page-transition.service';
 import { BatchPagerComponent } from './batch-pager.component';
-import { NBSP, formatDay, positionLabel, promptExcerpt, summarize } from './generation-view';
+import { NBSP, describeNoteArchive, formatDay, positionLabel, promptExcerpt, summarize } from './generation-view';
 import { ArtifactState, ArtifactSummary, sessionAllows } from './generation.models';
 import { ProposalViewComponent } from './proposal-view.component';
 import { WorkshopSessionStore } from './workshop-session.store';
@@ -91,6 +91,12 @@ export class WorkshopPageComponent {
     protected readonly canApproveAll = computed(() => {
         const session = this.session();
         return session !== null && sessionAllows(session.state, 'approveArtifacts') && this.approvableCount() > 0;
+    });
+    protected readonly archivableNotes = this.store.archivableNotes;
+    protected readonly notesBusy = computed(() => this.store.busy().has('notes'));
+    protected readonly archiveSummary = computed(() => {
+        const result = this.store.noteArchive();
+        return result === null ? null : describeNoteArchive(result);
     });
     protected readonly sessionBusy = computed(() => this.store.busy().has('session'));
     protected readonly artifactBusy = computed(() => {
@@ -208,6 +214,10 @@ export class WorkshopPageComponent {
             await this.transition.navigate(['/decks', this.deckId(), 'materials', 'new'],
                 { queryParams: { write: 1, draft: result.draft.draftId } });
         }
+    }
+
+    async archiveNotes(): Promise<void> {
+        await this.store.archiveNotes();
     }
 
     async stop(): Promise<void> {
