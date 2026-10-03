@@ -28,7 +28,9 @@ class LearnerContentTest {
             LearnerContent.Resolved resolved = LearnerContent.issue(type, exercise.path("content"),
                     AnswerKey.parse(type, exercise.path("answerKey")), new Random(1), material -> MATERIAL_TEXT);
             JsonNode expected = fixture("mechanics.json").path("presentations").path(entry.getValue()).path("content");
-            assertThat(LearnerContent.view(resolved.content(), false)).as(entry.getKey()).isEqualTo(expected);
+            // the fixture shows CHOICE options in authored order; issue shuffles them (see the CHOICE test)
+            assertThat(byOptionId(LearnerContent.view(resolved.content(), false))).as(entry.getKey())
+                    .isEqualTo(byOptionId(expected));
             String learner = resolved.content().toString();
             // media titles and the key never enter learner content; the transcript is stored but filtered
             for (String forbidden : new String[] {"Моё объяснение", "Слово 12", "Опыт 3", "Шипение", "accepted",
@@ -189,6 +191,29 @@ class LearnerContentTest {
     }
 
     @Test
+    void choiceOptionsAreShuffledFromTheSuppliedSourceAndNeverByTheKey() {
+        ObjectNode exercise = mechanic("createChoiceVideoMultiple").withObject("exercise");
+        List<String> authored = optionIds(exercise.path("content").path("options"));
+        // four options: nextInt(4), nextInt(3), nextInt(2); (0,0,0) is a full rotation of the list
+        JsonNode rotated = issueChoice(exercise, new ScriptedSource(0, 0, 0));
+        assertThat(optionIds(rotated.path("options"))).containsExactlyInAnyOrderElementsOf(authored)
+                .isNotEqualTo(authored);
+        assertThat(optionIds(rotated.path("options")).getFirst()).as("the authored first option moved")
+                .isNotEqualTo(authored.getFirst());
+        // the identity draws keep the authored order: every arrangement stays reachable
+        assertThat(optionIds(issueChoice(exercise, new ScriptedSource(3, 2, 1)).path("options")))
+                .containsExactlyElementsOf(authored);
+        assertThat(issueChoice(exercise, new Random(7))).as("same source, same order")
+                .isEqualTo(issueChoice(exercise, new Random(7)));
+        // a different key never changes the arrangement
+        ObjectNode otherKey = exercise.deepCopy();
+        otherKey.withObject("answerKey").putArray("correctOptionIds").add(authored.getLast());
+        assertThat(issueChoice(otherKey, new ScriptedSource(0, 0, 0))).isEqualTo(rotated);
+        assertThat(rotated.path("selectionMode").stringValue(null)).isEqualTo("MULTIPLE");
+        assertThat(rotated.toString()).doesNotContain("correctOptionIds", "\"title\"");
+    }
+
+    @Test
     void categorizeShufflesItemsOnlyAndKeepsTheAuthoredCategoryOrderAndLabels() {
         ObjectNode exercise = mechanic("createCategorize").withObject("exercise");
         List<String> authored = ids(exercise.path("content").path("items"));
@@ -260,6 +285,28 @@ class LearnerContentTest {
     private static JsonNode issueOrder(ObjectNode exercise, RandomGenerator random) {
         return LearnerContent.issue(ExerciseType.ORDER, exercise.path("content"),
                 AnswerKey.parse(ExerciseType.ORDER, exercise.path("answerKey")), random, m -> MATERIAL_TEXT).content();
+    }
+
+    private static JsonNode issueChoice(ObjectNode exercise, RandomGenerator random) {
+        return LearnerContent.issue(ExerciseType.CHOICE, exercise.path("content"),
+                AnswerKey.parse(ExerciseType.CHOICE, exercise.path("answerKey")), random, m -> MATERIAL_TEXT).content();
+    }
+
+    private static List<String> optionIds(JsonNode options) {
+        List<String> ids = new ArrayList<>();
+        options.forEach(option -> ids.add(option.path("optionId").stringValue(null)));
+        return ids;
+    }
+
+    /** CHOICE content with its options in ID order, so a shuffled issue compares to the authored fixture. */
+    private static JsonNode byOptionId(JsonNode content) {
+        if (!content.has("options")) return content;
+        ObjectNode copy = (ObjectNode) content.deepCopy();
+        List<JsonNode> options = new ArrayList<>();
+        content.path("options").forEach(options::add);
+        options.sort(java.util.Comparator.comparing(option -> option.path("optionId").stringValue("")));
+        copy.putArray("options").addAll(options);
+        return copy;
     }
 
     private static JsonNode issueCategorize(ObjectNode exercise, RandomGenerator random) {

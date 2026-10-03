@@ -94,7 +94,7 @@ do not modify the source LearningItem.
 
 At most 32 media blocks per exercise. Text is never truncated; limits are validation errors.
 
-**Mechanic rules.** `CHOICE` has 2..12 options with stable `optionId`s in authored order;
+**Mechanic rules.** `CHOICE` has 2..12 options with stable `optionId`s, stored in authored order and shuffled at issue (see Learner presentation);
 `SINGLE` requires exactly one correct ID and one selected ID, `MULTIPLE` grades the exact selected
 set against one or more correct IDs. `CLOZE` blanks are explicit passage segments with a stable
 `blankId`, `size` (`FIXED` 5..20 or `ANSWER_LENGTH`) and a per-blank `firstLetterHint` flag; the key
@@ -230,7 +230,9 @@ transcriptRevealed, hints, evaluator}`. `isNew` says whether the exercise was «
 presentation was issued; it is decided once, stored with the presentation and replayed verbatim by
 read/resume, and a `REPLAY` copy is always `false`. `content` is resolved once at issue and replayed verbatim:
 `MATERIAL` becomes `TEXT`, media blocks expose only `assetId` (+ image `alt`) and
-`transcriptAvailable`, `MATCH` sides are shuffled independently by a secure random source at issue
+`transcriptAvailable`, `CHOICE` options are shuffled by a secure random source at issue and persisted (authors and models
+place the correct option predictably; the key is never consulted, so the authored order is one possible arrangement and
+the `presentations.choice` fixture shows it), `MATCH` sides are shuffled independently by a secure random source at issue
 and persisted; the answer key never adjusts the permutation (any arrangement, including
 rows that happen to line up, is possible), `CLOZE` blanks expose only `blankId`,
 `size {mode,length}` and `firstLetterHint`. No presentation contains an answer key, accepted

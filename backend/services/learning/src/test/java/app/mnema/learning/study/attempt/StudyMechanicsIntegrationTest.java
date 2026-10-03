@@ -302,14 +302,15 @@ class StudyMechanicsIntegrationTest extends PostgresIntegrationTest {
                         .add(option(wrong, text("plain"))), correct));
         Issued presentation = fixtures.issueOne(material);
         assertThat(presentation.json().toString()).doesNotContain("SECRET-OPTION-TRANSCRIPT");
-        assertThat(presentation.content().path("options").get(0).path("blocks").get(0).path("transcriptAvailable").booleanValue()).isTrue();
+        // options are shuffled at issue: the audio option is found by its identifier
+        assertThat(issuedOption(presentation.content(), correct).path("blocks").get(0).path("transcriptAvailable").booleanValue()).isTrue();
         assertThatThrownBy(() -> sessions.revealTranscript(material.actor(), material.deck(), presentation.session(),
                 presentation.id(), "wrong-nonce-0000000")).isInstanceOf(ResourceNotFoundException.class);
         JsonNode revealed = sessions.revealTranscript(material.actor(), material.deck(), presentation.session(),
                 presentation.id(), presentation.nonce());
         assertThat(revealed.path("transcriptRevealed").booleanValue()).isTrue();
         assertThat(revealed.path("presentationId").stringValue(null)).isEqualTo(presentation.id().toString());
-        assertThat(revealed.path("content").path("options").get(0).path("blocks").get(0).path("transcript").stringValue(null))
+        assertThat(issuedOption(revealed.path("content"), correct).path("blocks").get(0).path("transcript").stringValue(null))
                 .isEqualTo("SECRET-OPTION-TRANSCRIPT");
         assertThat(sessions.revealTranscript(material.actor(), material.deck(), presentation.session(),
                 presentation.id(), presentation.nonce())).isEqualTo(revealed);
@@ -536,4 +537,10 @@ class StudyMechanicsIntegrationTest extends PostgresIntegrationTest {
                 .param("value", value).query(Long.class).single();
     }
 
+    private static JsonNode issuedOption(JsonNode content, UUID optionId) {
+        for (JsonNode option : content.path("options")) {
+            if (optionId.toString().equals(option.path("optionId").stringValue(null))) return option;
+        }
+        throw new AssertionError("option " + optionId + " was not issued");
+    }
 }

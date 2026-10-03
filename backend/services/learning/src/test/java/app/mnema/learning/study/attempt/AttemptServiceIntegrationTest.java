@@ -142,8 +142,12 @@ class AttemptServiceIntegrationTest extends PostgresIntegrationTest {
                 attempt(UUID.randomUUID(), choice, "CHOICE", UUID.randomUUID().toString(), null)))
                 .isInstanceOf(app.mnema.learning.platform.api.InvalidRequestException.class);
 
+        // options are shuffled at issue, so the correct one is found through the server-side key
+        String correctOption = jdbc.sql("SELECT answer_key->'correctOptionIds'->>0 FROM app_learning.study_presentation "
+                + "WHERE presentation_id=:id").param("id", choice.id()).query(String.class).single();
+        assertThat(choice.options()).contains(UUID.fromString(correctOption));
         JsonNode choiceOutcome = service.submit(choiceFixture.actor(), choiceFixture.deck(), choice.session(),
-                attempt(UUID.randomUUID(), choice, "CHOICE", choice.options().get(0).toString(), null))
+                attempt(UUID.randomUUID(), choice, "CHOICE", correctOption, null))
                 .outcome();
         assertThat(choiceOutcome.path("evidence").path("result").stringValue(null)).isEqualTo("CORRECT");
         assertThat(choiceOutcome.path("evidence").path("evidenceClass").stringValue(null)).isEqualTo("LOW");
