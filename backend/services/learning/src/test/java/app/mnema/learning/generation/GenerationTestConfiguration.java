@@ -39,6 +39,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * {@code [[fake:transient]]} (a transport failure the router already gave up on; the Stub's own transient marker would
  * open the shared circuit breaker),
  * {@code [[fake:block]]} (the call waits until released or interrupted: a long provider call to cancel),
+ * {@code [[fake:hold-edit]]} (the same for an edit call only, with its own latches),
  * {@code [[fake:crash-once]]} (the first call of each step throws, as a worker that dies mid-step) and
  * {@code [[fake:audio]]} (a valid document with one {@code ::audio} directive). For exercise requests (JSON output):
  * {@code [[fake:not-json]]} (every answer is prose), {@code [[fake:fenced]]} (the Stub's answer inside a code fence) and
@@ -76,6 +77,9 @@ class GenerationTestConfiguration {
         volatile boolean outage;
         volatile CountDownLatch blockedEntered = new CountDownLatch(1);
         volatile CountDownLatch release = new CountDownLatch(1);
+        /** The latches of {@code [[fake:hold-edit]]}: an edit call that waits while a draft call, held by {@code [[fake:block]]}, runs on. */
+        volatile CountDownLatch editEntered = new CountDownLatch(1);
+        volatile CountDownLatch editRelease = new CountDownLatch(1);
         private final Set<UUID> crashed = ConcurrentHashMap.newKeySet();
 
         Scripted(TextGeneration real) { this.real = real; }
@@ -87,6 +91,8 @@ class GenerationTestConfiguration {
             crashed.clear();
             release = new CountDownLatch(1);
             blockedEntered = new CountDownLatch(1);
+            editRelease = new CountDownLatch(1);
+            editEntered = new CountDownLatch(1);
         }
 
         List<Call> callsOf(String marker) {
@@ -101,6 +107,15 @@ class GenerationTestConfiguration {
                     TransactionSynchronizationManager.isActualTransactionActive(), Connections.held()));
             if (prompt.contains("[[fake:crash-once]]" ) && crashed.add(request.stepId())) {
                 throw new IllegalStateException("simulated worker crash");
+            }
+            if (prompt.contains("[[fake:hold-edit]]") && prompt.contains("<task kind=\"edit\">")) {
+                editEntered.countDown();
+                try {
+                    editRelease.await(30, TimeUnit.SECONDS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    return AiResult.failed(new AiFailure.Transient("interrupted"));
+                }
             }
             if (prompt.contains("[[fake:block]]")) {
                 blockedEntered.countDown();
