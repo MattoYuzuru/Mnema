@@ -63,7 +63,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
         "learning.generation.context.top-k=2",
         // small pool: every distinct test context keeps its own pool and the shared test PostgreSQL has a connection cap
         "spring.datasource.hikari.maximum-pool-size=8"})
-@Import(GenerationTestConfiguration.class)
+// MiddayUsageClock: a daily-burst park must outlast the test at any wall-clock time (no Moscow midnight inside a run)
+@Import({GenerationTestConfiguration.class, app.mnema.learning.usage.MiddayUsageClock.class})
 abstract class GenerationIntegrationTest extends PostgresIntegrationTest {
     static final JsonMapper JSON = JsonMapper.builder().build();
 
@@ -218,7 +219,8 @@ abstract class GenerationIntegrationTest extends PostgresIntegrationTest {
 
     /**
      * A session whose only step the daily burst parks (PLUS may debit 35% of 360 = 126 credits a day, and 125 are spent
-     * first), so no worker touches it and a test can change the world or play a crash before the step runs.
+     * first), so no worker touches it and a test can change the world or play a crash before the step runs. The park ends at
+     * the next usage day start, which {@link app.mnema.learning.usage.MiddayUsageClock} keeps at least twelve hours away.
      */
     protected UUID parkedSession(UUID owner, UUID deck, ObjectNode spec) throws Exception {
         new TransactionTemplate(transactions).executeWithoutResult(status -> {
