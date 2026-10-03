@@ -31,6 +31,9 @@ stable `code`. Credits are integers; timestamps are UTC RFC 3339.
   `p50` = the same formula with typical weights = weight × 0.6 per operation, rounded up once on the sum, until measured
   weights exist (the 0.6 is an rc-v1 placeholder). Exercises are pro-rated per exercise: `ceil(8 × n / 5)`. The estimate prices only
   the media counts the spec declares, and the MBM compiler rejects excess (at most 8 media directives per artifact).
+- **Revise specs (AI-16, #294).** `REVISE_ITEM` is one `EDIT_SELECTION`; `REVISE_EXERCISE` is one `EDIT_SELECTION` when it has an instruction plus one `TTS_CLIP_30S` when it has a media
+  action (the redo of the audio). Each turn reserves its own hold at admission (there is no batch hold); the media turn of the Stub speech executor releases its hold unspent (nothing is
+  synthesized), real synthesis (AI-09, #297) debits it. The intent call that builds such a spec (`createIntent`) is free: it reserves and debits nothing and is limited per hour, not per credit.
 - **Edit action → operation:** `REWRITE`, `FREE` → `EDIT_SELECTION`; `IMAGE_SEARCH` → `IMAGE_SEARCH`; `IMAGE_GENERATE` →
   `IMAGE_GENERATE_*`; `AUDIO_REGENERATE` → `TTS_CLIP_30S`; `REMOVE_MEDIA` → free (0, no reservation).
 - **Bar.** One "AI budget" bar for creation. Paid plans get the whole month at once; the **daily burst** limits the **debits** of one

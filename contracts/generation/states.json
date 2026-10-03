@@ -11,8 +11,8 @@
     "kindSupport": {
       "MATERIALS": "AI-04",
       "EXERCISES": "AI-13 (settings.planFirst true is 422 SPEC_NOT_SUPPORTED until the planner, AI-14)",
-      "REVISE_ITEM": "AI-16 (createSession answers 422 SPEC_NOT_SUPPORTED until then)",
-      "REVISE_EXERCISE": "AI-16 (createSession answers 422 SPEC_NOT_SUPPORTED until then)"
+      "REVISE_ITEM": "AI-16 (#294): one artifact (target ITEM) that starts as a copy of the material's head and is rewritten whole by one FREE turn; approval is a revise of that material",
+      "REVISE_EXERCISE": "AI-16 (#294): one artifact (target EXERCISE) that starts as a copy of the exercise's head, rewritten by an EDIT turn and/or its audio redone by a media turn (Stub speech executor until AI-09, #297); approval is a revision of that exercise"
     },
     "endReason": {
       "values": [
@@ -33,7 +33,7 @@
       },
       "RUNNING": {
         "terminal": false,
-        "description": "At least one artifact is QUEUED or GENERATING."
+        "description": "At least one artifact is QUEUED or GENERATING. A REVISE_ITEM or REVISE_EXERCISE session is RUNNING from its creation (its artifact is REVISING, the first turn is queued) until that turn ends (the artifact is PROPOSED again), then REVIEW; later turns (a repeat, a voice change) happen in REVIEW."
       },
       "REVIEW": {
         "terminal": false,
@@ -766,7 +766,7 @@
     ]
   },
   "turn": {
-    "description": "generation_artifact_turn: one user instruction on an artifact (at most 2000 characters, text or speech transcript; at most 50 per artifact). REMOVE_MEDIA is also recorded as a turn (cause MEDIA, creates a revision) but does not count toward the 50. A turn is made by editArtifact and listed by getArtifact (turns).",
+    "description": "generation_artifact_turn: one user instruction on an artifact (at most 2000 characters, text or speech transcript; at most 50 per artifact). REMOVE_MEDIA is also recorded as a turn (cause MEDIA, creates a revision) but does not count toward the 50. A turn is made by editArtifact and listed by getArtifact (turns). Of a REVISE_EXERCISE session an exercise turn is FREE (the whole exercise, no target nodes) or AUDIO_REGENERATE (with a voice; its step is kind TTS): when a spec has both, the media turn is created when the rewrite is APPLIED (its step waits in WAITING_DEPENDENCIES) and is never created when the rewrite fails.",
     "states": {
       "QUEUED": {
         "terminal": false,
