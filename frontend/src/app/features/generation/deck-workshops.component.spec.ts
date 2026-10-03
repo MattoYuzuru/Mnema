@@ -32,7 +32,7 @@ describe('DeckWorkshopsComponent', () => {
         const links = [...root().querySelectorAll<HTMLAnchorElement>('li a')];
         expect(links.map(link => link.getAttribute('href'))).toEqual([
             `/decks/${ids.deckId}/workshop/5e550000-0000-4000-8000-000000000001`, `/decks/${ids.deckId}/workshop/5e550000-0000-4000-8000-000000000002`]);
-        expect(links[0]!.textContent).toContain('Мастерская от');
+        expect(links[0]!.textContent).toMatch(/Мастерская от \d+ [а-я]+/u);
         expect(root().querySelector('.progress')?.textContent).toContain('6\u00a0готово');
         expect(root().querySelector('section')?.getAttribute('aria-labelledby')).toBe('deck-workshops-title');
     });

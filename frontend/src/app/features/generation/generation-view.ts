@@ -30,6 +30,13 @@ export function formatDay(instant: string | null): string | null {
     return Number.isFinite(time) ? new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' }).format(new Date(time)) : null;
 }
 
+/** «3 октября, 11:53»: when a Workshop was started. Russian whatever the app locale (Angular's `date` pipe has only `en-US` here). */
+export function formatWorkshopStart(instant: string): string {
+    const time = Date.parse(instant);
+    return Number.isFinite(time)
+        ? new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }).format(new Date(time)) : '';
+}
+
 /** The preflight sentence next to the button: «≈ 6 % лимита». The estimate is a p95 figure: what a reservation holds. */
 export function describeEstimate(estimate: GenerationEstimate): string {
     const percent = estimate.percentOfPeriodAllowance.p95;

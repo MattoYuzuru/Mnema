@@ -1,4 +1,3 @@
-import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, input, output, signal, untracked, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
@@ -12,7 +11,7 @@ import { GenerationApiService } from './generation-api.service';
 import { GenerationProblem, readProblem } from './generation-problem';
 import { DEFAULT_SETTINGS, GenerationSettingsComponent, GenerationSettingsValue } from './generation-settings.component';
 import {
-    UsageExplanation, describeEstimate, describeUsageLimit, problemMessage
+    UsageExplanation, describeEstimate, describeUsageLimit, formatWorkshopStart, problemMessage
 } from './generation-view';
 import {
     GenerationEstimate, MAX_PROMPT_LENGTH, MaterialsSpec, SessionDetail, SessionSummary, SpecSource, serializeMaterialsSpec
@@ -65,7 +64,7 @@ let nextComposer = 0;
  */
 @Component({
     selector: 'app-generation-composer',
-    imports: [DatePipe, RouterLink, GenerationSettingsComponent, ToggletipComponent],
+    imports: [RouterLink, GenerationSettingsComponent, ToggletipComponent],
     templateUrl: './generation-composer.component.html',
     styleUrls: ['../authoring/authoring-page.css', './generation-composer.component.css'],
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -110,6 +109,7 @@ export class GenerationComposerComponent {
     readonly valid = computed(() => this.prompt().trim().length > 0 || this.sources().some(source => source.spec.role === 'SOURCE'));
     readonly spec = computed(() => buildMaterialsSpec(this.prompt(), this.settings(), this.sources().map(source => source.spec),
         { image: this.imageAvailable(), audio: this.audioAvailable() }));
+    protected readonly startedAt = (workshop: SessionSummary): string => formatWorkshopStart(workshop.createdAt);
     protected readonly overBudget = computed(() => {
         const state = this.estimate();
         return state.phase === 'ready' && !state.estimate.canStart;
