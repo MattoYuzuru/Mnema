@@ -1,0 +1,455 @@
+{
+  "submitText": {
+    "attemptId": "cccccccc-cccc-4ccc-8ccc-ccccccccccc6",
+    "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb6",
+    "nonce": "c3R1ZHktbm9uY2UtdjY",
+    "response": {
+      "kind": "TEXT",
+      "text": "Тело продолжает двигаться с той же скоростью, пока на него что-то не подействует"
+    },
+    "confidence": null,
+    "durationMs": 21000
+  },
+  "submitSpeech": {
+    "attemptId": "cccccccc-cccc-4ccc-8ccc-ccccccccccc7",
+    "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb6",
+    "nonce": "c3R1ZHktbm9uY2UtdjY",
+    "response": {
+      "kind": "TEXT",
+      "text": "инерция это когда тело сохраняет скорость пока другие тела не действуют",
+      "answerSource": "SPEECH"
+    },
+    "confidence": null,
+    "durationMs": 21000
+  },
+  "accepted": {
+    "attemptId": "cccccccc-cccc-4ccc-8ccc-ccccccccccc6",
+    "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb6",
+    "mode": "SCHEDULED",
+    "status": "ASSESSING",
+    "retryAfterMs": 700
+  },
+  "polledAssessing": {
+    "attemptId": "cccccccc-cccc-4ccc-8ccc-ccccccccccc6",
+    "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb6",
+    "mode": "SCHEDULED",
+    "status": "ASSESSING",
+    "retryAfterMs": 1500
+  },
+  "polledSelfCheck": {
+    "attemptId": "cccccccc-cccc-4ccc-8ccc-ccccccccccc6",
+    "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb6",
+    "mode": "SCHEDULED",
+    "status": "SELF_CHECK",
+    "reason": "PROVIDER_UNCERTAIN",
+    "selfCheck": {
+      "reference": "Инерция — свойство тела сохранять скорость, пока на него не действуют другие тела.",
+      "referenceContent": [],
+      "criteria": [
+        {
+          "criterionId": "c0000000-0000-4000-8000-000000000001",
+          "description": "Говорит о сохранении скорости или состояния движения"
+        },
+        {
+          "criterionId": "c0000000-0000-4000-8000-000000000002",
+          "description": "Называет условие: скорость меняется только при воздействии других тел"
+        },
+        {
+          "criterionId": "c0000000-0000-4000-8000-000000000003",
+          "description": "Приводит следствие или пример, например движение по инерции после выключения двигателя"
+        },
+        {
+          "criterionId": "c0000000-0000-4000-8000-000000000004",
+          "description": "Называет явление словом «инерция» или «инертность»"
+        }
+      ]
+    }
+  },
+  "selfCheckUsageLimit": {
+    "attemptId": "cccccccc-cccc-4ccc-8ccc-ccccccccccc6",
+    "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb6",
+    "mode": "SCHEDULED",
+    "status": "SELF_CHECK",
+    "reason": "USAGE_LIMIT",
+    "selfCheck": {
+      "reference": "Инерция — свойство тела сохранять скорость, пока на него не действуют другие тела.",
+      "referenceContent": [],
+      "criteria": [
+        {
+          "criterionId": "c0000000-0000-4000-8000-000000000001",
+          "description": "Говорит о сохранении скорости или состояния движения"
+        },
+        {
+          "criterionId": "c0000000-0000-4000-8000-000000000002",
+          "description": "Называет условие: скорость меняется только при воздействии других тел"
+        },
+        {
+          "criterionId": "c0000000-0000-4000-8000-000000000003",
+          "description": "Приводит следствие или пример, например движение по инерции после выключения двигателя"
+        },
+        {
+          "criterionId": "c0000000-0000-4000-8000-000000000004",
+          "description": "Называет явление словом «инерция» или «инертность»"
+        }
+      ]
+    }
+  },
+  "resultComplete": {
+    "attemptId": "cccccccc-cccc-4ccc-8ccc-ccccccccccc6",
+    "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb6",
+    "mode": "SCHEDULED",
+    "status": "ASSESSED",
+    "evidence": {
+      "objectiveId": "77777777-7777-4777-8777-777777777771",
+      "objectiveRevisionId": "77777777-7777-4777-8777-777777777773",
+      "result": "CORRECT",
+      "evidenceClass": "LOW",
+      "reasonCodes": [
+        "AI_SEMANTIC",
+        "STRICTNESS_S1",
+        "RUBRIC_V1"
+      ]
+    },
+    "feedback": {
+      "result": "CORRECT",
+      "appliedRules": [
+        "AI_SEMANTIC",
+        "STRICTNESS_S1",
+        "RUBRIC_V1"
+      ],
+      "reference": "Инерция — свойство тела сохранять скорость, пока на него не действуют другие тела.",
+      "referenceContent": [],
+      "assessment": {
+        "strictness": "S1",
+        "judgement": "COMPLETE",
+        "covered": [
+          {
+            "criterionId": "c0000000-0000-4000-8000-000000000001",
+            "description": "Говорит о сохранении скорости или состояния движения",
+            "quote": "продолжает двигаться с той же скоростью",
+            "partial": false
+          },
+          {
+            "criterionId": "c0000000-0000-4000-8000-000000000002",
+            "description": "Называет условие: скорость меняется только при воздействии других тел",
+            "quote": "пока на него что-то не подействует",
+            "partial": true
+          }
+        ],
+        "missing": [
+          {
+            "criterionId": "c0000000-0000-4000-8000-000000000002",
+            "description": "Называет условие: скорость меняется только при воздействии других тел",
+            "partial": true
+          },
+          {
+            "criterionId": "c0000000-0000-4000-8000-000000000003",
+            "description": "Приводит следствие или пример, например движение по инерции после выключения двигателя",
+            "partial": false
+          },
+          {
+            "criterionId": "c0000000-0000-4000-8000-000000000004",
+            "description": "Называет явление словом «инерция» или «инертность»",
+            "partial": false
+          }
+        ],
+        "contradicted": [],
+        "nextStricter": true
+      }
+    },
+    "transition": {
+      "learningEpoch": "0",
+      "sequence": "1",
+      "beforeLevel": 0,
+      "afterLevel": 1,
+      "acceptedAt": "2026-09-20T09:00:21Z",
+      "nextDue": "2026-09-20T09:10:21Z",
+      "reducerId": "mnema-baseline",
+      "reducerVersion": "1",
+      "configId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+      "configHash": "sha256:9b70f5513a223f50f8358fd1033798b0037d5dcbc66e5f908239b8f3f8421718"
+    }
+  },
+  "resultPartialStrict": {
+    "attemptId": "cccccccc-cccc-4ccc-8ccc-ccccccccccc6",
+    "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb6",
+    "mode": "SCHEDULED",
+    "status": "ASSESSED",
+    "evidence": {
+      "objectiveId": "77777777-7777-4777-8777-777777777771",
+      "objectiveRevisionId": "77777777-7777-4777-8777-777777777773",
+      "result": "PARTIAL",
+      "evidenceClass": "MEDIUM",
+      "reasonCodes": [
+        "AI_SEMANTIC",
+        "STRICTNESS_S2",
+        "RUBRIC_V1"
+      ]
+    },
+    "feedback": {
+      "result": "PARTIAL",
+      "appliedRules": [
+        "AI_SEMANTIC",
+        "STRICTNESS_S2",
+        "RUBRIC_V1"
+      ],
+      "reference": "Инерция — свойство тела сохранять скорость, пока на него не действуют другие тела.",
+      "referenceContent": [],
+      "assessment": {
+        "strictness": "S2",
+        "judgement": "PARTIAL",
+        "covered": [
+          {
+            "criterionId": "c0000000-0000-4000-8000-000000000001",
+            "description": "Говорит о сохранении скорости или состояния движения",
+            "quote": "сохраняет скорость",
+            "partial": false
+          }
+        ],
+        "missing": [
+          {
+            "criterionId": "c0000000-0000-4000-8000-000000000002",
+            "description": "Называет условие: скорость меняется только при воздействии других тел",
+            "partial": false
+          },
+          {
+            "criterionId": "c0000000-0000-4000-8000-000000000003",
+            "description": "Приводит следствие или пример, например движение по инерции после выключения двигателя",
+            "partial": false
+          },
+          {
+            "criterionId": "c0000000-0000-4000-8000-000000000004",
+            "description": "Называет явление словом «инерция» или «инертность»",
+            "partial": false
+          }
+        ],
+        "contradicted": [],
+        "nextStricter": false
+      }
+    },
+    "transition": {
+      "learningEpoch": "0",
+      "sequence": "3",
+      "beforeLevel": 2,
+      "afterLevel": 1,
+      "acceptedAt": "2026-09-23T09:00:21Z",
+      "nextDue": "2026-09-23T13:00:21Z",
+      "reducerId": "mnema-baseline",
+      "reducerVersion": "1",
+      "configId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+      "configHash": "sha256:9b70f5513a223f50f8358fd1033798b0037d5dcbc66e5f908239b8f3f8421718"
+    }
+  },
+  "resultOffTopic": {
+    "attemptId": "cccccccc-cccc-4ccc-8ccc-ccccccccccc6",
+    "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb6",
+    "mode": "SCHEDULED",
+    "status": "ASSESSED",
+    "evidence": {
+      "objectiveId": "77777777-7777-4777-8777-777777777771",
+      "objectiveRevisionId": "77777777-7777-4777-8777-777777777773",
+      "result": "INCORRECT",
+      "evidenceClass": "LOW",
+      "reasonCodes": [
+        "AI_SEMANTIC",
+        "STRICTNESS_S1",
+        "RUBRIC_V1"
+      ]
+    },
+    "feedback": {
+      "result": "INCORRECT",
+      "appliedRules": [
+        "AI_SEMANTIC",
+        "STRICTNESS_S1",
+        "RUBRIC_V1"
+      ],
+      "reference": "Инерция — свойство тела сохранять скорость, пока на него не действуют другие тела.",
+      "referenceContent": [],
+      "assessment": {
+        "strictness": "S1",
+        "judgement": "INSUFFICIENT",
+        "covered": [],
+        "missing": [
+          {
+            "criterionId": "c0000000-0000-4000-8000-000000000001",
+            "description": "Говорит о сохранении скорости или состояния движения",
+            "partial": false
+          },
+          {
+            "criterionId": "c0000000-0000-4000-8000-000000000002",
+            "description": "Называет условие: скорость меняется только при воздействии других тел",
+            "partial": false
+          },
+          {
+            "criterionId": "c0000000-0000-4000-8000-000000000003",
+            "description": "Приводит следствие или пример, например движение по инерции после выключения двигателя",
+            "partial": false
+          },
+          {
+            "criterionId": "c0000000-0000-4000-8000-000000000004",
+            "description": "Называет явление словом «инерция» или «инертность»",
+            "partial": false
+          }
+        ],
+        "contradicted": [],
+        "nextStricter": false
+      }
+    },
+    "transition": {
+      "learningEpoch": "0",
+      "sequence": "1",
+      "beforeLevel": 0,
+      "afterLevel": 0,
+      "acceptedAt": "2026-09-20T09:00:21Z",
+      "nextDue": "2026-09-20T09:10:21Z",
+      "reducerId": "mnema-baseline",
+      "reducerVersion": "1",
+      "configId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+      "configHash": "sha256:9b70f5513a223f50f8358fd1033798b0037d5dcbc66e5f908239b8f3f8421718"
+    }
+  },
+  "resultPractice": {
+    "attemptId": "cccccccc-cccc-4ccc-8ccc-ccccccccccc6",
+    "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb6",
+    "mode": "PRACTICE",
+    "status": "ASSESSED",
+    "evidence": null,
+    "feedback": {
+      "result": "CORRECT",
+      "appliedRules": [
+        "AI_SEMANTIC",
+        "STRICTNESS_S1",
+        "RUBRIC_V1"
+      ],
+      "reference": "Инерция — свойство тела сохранять скорость, пока на него не действуют другие тела.",
+      "referenceContent": [],
+      "assessment": {
+        "strictness": "S1",
+        "judgement": "COMPLETE",
+        "covered": [
+          {
+            "criterionId": "c0000000-0000-4000-8000-000000000001",
+            "description": "Говорит о сохранении скорости или состояния движения",
+            "quote": "сохраняет скорость",
+            "partial": false
+          },
+          {
+            "criterionId": "c0000000-0000-4000-8000-000000000002",
+            "description": "Называет условие: скорость меняется только при воздействии других тел",
+            "quote": "пока на него не действуют",
+            "partial": false
+          }
+        ],
+        "missing": [
+          {
+            "criterionId": "c0000000-0000-4000-8000-000000000003",
+            "description": "Приводит следствие или пример, например движение по инерции после выключения двигателя",
+            "partial": false
+          },
+          {
+            "criterionId": "c0000000-0000-4000-8000-000000000004",
+            "description": "Называет явление словом «инерция» или «инертность»",
+            "partial": false
+          }
+        ],
+        "contradicted": [],
+        "nextStricter": false
+      }
+    },
+    "transition": null,
+    "canonicalEffects": false
+  },
+  "selfCheckCommand": {},
+  "selfRatingCommand": {
+    "rating": "PARTIAL"
+  },
+  "selfRatingOutcome": {
+    "attemptId": "cccccccc-cccc-4ccc-8ccc-ccccccccccc6",
+    "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb6",
+    "mode": "SCHEDULED",
+    "status": "ASSESSED",
+    "evidence": {
+      "objectiveId": "77777777-7777-4777-8777-777777777771",
+      "objectiveRevisionId": "77777777-7777-4777-8777-777777777773",
+      "result": "PARTIAL",
+      "evidenceClass": "LOW",
+      "reasonCodes": [
+        "SELF_REPORT",
+        "PARTIAL",
+        "AI_FALLBACK",
+        "PROVIDER_UNCERTAIN"
+      ]
+    },
+    "feedback": {
+      "result": "PARTIAL",
+      "appliedRules": [
+        "SELF_REPORT"
+      ],
+      "reference": "Инерция — свойство тела сохранять скорость, пока на него не действуют другие тела.",
+      "referenceContent": []
+    },
+    "transition": {
+      "learningEpoch": "0",
+      "sequence": "2",
+      "beforeLevel": 1,
+      "afterLevel": 0,
+      "acceptedAt": "2026-09-20T09:00:40Z",
+      "nextDue": "2026-09-20T09:10:40Z",
+      "reducerId": "mnema-baseline",
+      "reducerVersion": "1",
+      "configId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+      "configHash": "sha256:9b70f5513a223f50f8358fd1033798b0037d5dcbc66e5f908239b8f3f8421718"
+    }
+  },
+  "disputeCommand": {
+    "commandId": "018f1d98-5c10-7abc-8abc-012345678951",
+    "shareExample": false
+  },
+  "disputeOutcome": {
+    "attemptId": "cccccccc-cccc-4ccc-8ccc-ccccccccccc6",
+    "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb6",
+    "mode": "SCHEDULED",
+    "status": "NOT_ASSESSED",
+    "disputed": true,
+    "evidence": null,
+    "feedback": {
+      "result": "NOT_ASSESSED",
+      "reasonCodes": [
+        "AI_DISPUTED"
+      ],
+      "reference": "Инерция — свойство тела сохранять скорость, пока на него не действуют другие тела.",
+      "referenceContent": []
+    },
+    "transition": null
+  },
+  "presentationInFlight": {
+    "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb6",
+    "nonce": "c3R1ZHktbm9uY2UtdjY",
+    "ordinal": 0,
+    "exerciseRevisionId": "88888888-8888-4888-8888-888888888886",
+    "type": "FREE_RESPONSE",
+    "objectiveId": "77777777-7777-4777-8777-777777777771",
+    "objectiveRevisionId": "77777777-7777-4777-8777-777777777773",
+    "learningEpoch": "0",
+    "isNew": false,
+    "content": {
+      "prompt": [
+        {
+          "kind": "TEXT",
+          "text": "Объясните своими словами, что такое инерция."
+        }
+      ],
+      "responseInput": "TEXT"
+    },
+    "transcriptRevealed": false,
+    "hints": [],
+    "evaluator": {
+      "id": "ai-semantic",
+      "version": "1"
+    },
+    "assessment": {
+      "attemptId": "cccccccc-cccc-4ccc-8ccc-ccccccccccc6",
+      "status": "ASSESSING"
+    }
+  }
+}
