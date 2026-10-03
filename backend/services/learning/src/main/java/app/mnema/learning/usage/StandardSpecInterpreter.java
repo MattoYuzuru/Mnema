@@ -103,6 +103,8 @@ final class StandardSpecInterpreter implements GenerationSpecInterpreter {
         List<GenerationBoundary.NoteRef> noteRefs = new ArrayList<>();
         List<GenerationBoundary.ItemRef> itemRefs = new ArrayList<>();
         List<JsonNode> noteOverrides = new ArrayList<>();
+        Set<UUID> seenNotes = new HashSet<>();
+        Set<String> seenItems = new HashSet<>();
         if (spec.has("sources")) {
             JsonNode sources = array(spec, "sources");
             if (sources.size() > limits.maxSources) throw limits.exceeded("SOURCES");
@@ -115,11 +117,15 @@ final class StandardSpecInterpreter implements GenerationSpecInterpreter {
                     noteOverrides.add(source.get("overrides"));
                     UUID noteId = uuid(source, "noteId");
                     if (!DECIMAL.matcher(text(source, "noteRowVersion")).matches()) throw invalid();
+                    // a note is pinned once: overrides and artifacts are positional, so a repeat has no single meaning
+                    if (!seenNotes.add(noteId)) throw invalid();
                     noteRefs.add(new GenerationBoundary.NoteRef(noteId, Long.parseLong(text(source, "noteRowVersion"))));
                 } else if (type.equals("ITEM")) {
                     keys(source, Set.of("role", "type", "memberKey", "itemRevisionId"), Set.of());
-                    itemRefs.add(new GenerationBoundary.ItemRef(uuid(source, "memberKey"), uuid(source, "itemRevisionId"),
-                            role.equals("SOURCE")));
+                    UUID member = uuid(source, "memberKey");
+                    UUID revision = uuid(source, "itemRevisionId");
+                    if (!seenItems.add(member + ":" + revision)) throw invalid();
+                    itemRefs.add(new GenerationBoundary.ItemRef(member, revision, role.equals("SOURCE")));
                 } else {
                     throw invalid();
                 }
@@ -176,6 +182,8 @@ final class StandardSpecInterpreter implements GenerationSpecInterpreter {
         boolean anyOverride = noteOverrides.stream().anyMatch(java.util.Objects::nonNull);
         if (anyOverride && !(notesMode.equals("ONE_PER_NOTE") && notes > 0)) throw invalid();
         Map<String, Integer> counts = new LinkedHashMap<>();
+        Map<String, Integer> extras = new LinkedHashMap<>();
+        for (String extra : List.of("TTS_CLIP_30S", "IMAGE_SEARCH", "FACTCHECK_LOW")) extras.put(extra, 0);
         boolean anyAudio = false;
         boolean anyImage = false;
         boolean research = false;
@@ -188,16 +196,18 @@ final class StandardSpecInterpreter implements GenerationSpecInterpreter {
                 case "DETAILED" -> "MATERIAL_DETAILED";
                 default -> "MATERIAL_MEDIUM";
             }, 1, Integer::sum);
-            if (effective.audio) counts.merge("TTS_CLIP_30S", 1, Integer::sum);
-            if (effective.image) counts.merge("IMAGE_SEARCH", 1, Integer::sum);
+            if (effective.audio) extras.merge("TTS_CLIP_30S", 1, Integer::sum);
+            if (effective.image) extras.merge("IMAGE_SEARCH", 1, Integer::sum);
             boolean checks = factCheck && !effective.effort.equals("SHORT");
-            if (checks) counts.merge("FACTCHECK_LOW", 1, Integer::sum);
+            if (checks) extras.merge("FACTCHECK_LOW", 1, Integer::sum);
             anyAudio |= effective.audio;
             anyImage |= effective.image;
             research |= checks;
         }
         List<Line> lines = new ArrayList<>();
+        // the material line(s) first, then the media and research lines, as for a spec without overrides
         counts.forEach((operation, count) -> lines.add(new Line(operation, count)));
+        extras.forEach((operation, count) -> { if (count > 0) lines.add(new Line(operation, count)); });
         check(owner, deckId, new GenerationBoundary.SpecFacts("MATERIALS", noteRefs, itemRefs, anyAudio, anyImage, research), admission);
         return new Interpretation(lines, budget, List.of());
     }

@@ -301,4 +301,23 @@ class StandardSpecInterpreterTest {
         var result = interpreter.interpret(UUID.randomUUID(), UUID.randomUUID(), ContractExamples.generation("specMaterialsOverrides"), 308);
         assertThat(lines(result)).containsExactlyInAnyOrder("MATERIAL_DETAILEDx1", "MATERIAL_SHORTx1", "TTS_CLIP_30Sx1", "IMAGE_SEARCHx1");
     }
+
+    @Test
+    void aRepeatedNotePinOrMaterialPinIsInvalid() {
+        assertThatThrownBy(() -> interpret(materials(note(1) + "," + note(1), "{}"))).isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> interpret(materials(noteWith(1, "{\"effort\":\"SHORT\"}") + "," + note(1), "{}")))
+                .isInstanceOf(InvalidRequestException.class);
+        String item = "{\"role\":\"SOURCE\",\"type\":\"ITEM\",\"memberKey\":\"44444444-4444-4444-8444-444444444444\","
+                + "\"itemRevisionId\":\"55555555-5555-4555-8555-555555555555\"}";
+        assertThatThrownBy(() -> interpret(materials(item + "," + item, "{}"))).isInstanceOf(InvalidRequestException.class);
+        // different notes, or the same material at another revision, are fine
+        assertThat(lines(interpret(materials(note(1) + "," + note(2), "{}")))).containsExactly("MATERIAL_MEDIUMx2");
+    }
+
+    @Test
+    void theBreakdownKeepsTheMaterialLinesFirstThenMediaAndResearch() {
+        String sources = noteWith(1, "{\"effort\":\"DETAILED\",\"media\":{\"audio\":{\"enabled\":true}}}") + "," + note(2);
+        assertThat(lines(interpret(materials(sources, "{\"effort\":\"SHORT\",\"media\":{\"imageSearch\":true},\"factCheck\":true}"))))
+                .containsExactly("MATERIAL_DETAILEDx1", "MATERIAL_SHORTx1", "TTS_CLIP_30Sx1", "IMAGE_SEARCHx2", "FACTCHECK_LOW" + "x1");
+    }
 }

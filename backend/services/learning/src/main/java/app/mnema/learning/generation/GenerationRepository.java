@@ -661,8 +661,10 @@ class GenerationRepository {
      * @return false when the note is not at {@code rowVersion} (or is not the owner's) and no snapshot exists
      */
     boolean snapshotNote(UUID sessionId, UUID owner, UUID noteId, long rowVersion) {
+        // the deck is the session's own: a note of the owner's other deck is never copied (defence in depth)
         jdbc.sql("INSERT INTO app_learning.generation_note_snapshot(session_id,owner_id,note_id,note_row_version,note_text) "
                         + "SELECT :session,:owner,n.note_id,n.row_version,n.note_text FROM app_learning.capture_note n "
+                        + "JOIN app_learning.generation_session s ON s.session_id=:session AND s.owner_id=n.owner_id AND s.deck_id=n.deck_id "
                         + "WHERE n.note_id=:note AND n.owner_id=:owner AND n.row_version=:version ON CONFLICT DO NOTHING")
                 .param("session", sessionId).param("owner", owner).param("note", noteId).param("version", rowVersion).update();
         return pinnedNoteText(sessionId, noteId, rowVersion).isPresent();
