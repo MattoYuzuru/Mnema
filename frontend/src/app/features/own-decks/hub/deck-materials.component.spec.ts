@@ -1,7 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import { Observable, Subject, of, throwError } from 'rxjs';
 
 import hub from '../../../../../../contracts/decks/hub.json';
@@ -480,6 +480,39 @@ describe('DeckMaterialsComponent', () => {
             await open(of(page(0, 20, 50)), { generationAvailable: true });
             await select(0);
             expect(bar()!.textContent).toContain('Упражнения с ИИ для выбранных');
+        });
+
+        it('opens the exercise builder with the selected members: the address carries member keys, never revisions (AI-13)', async () => {
+            const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+            await open(of(page(0, 20, 50)), { generationAvailable: true });
+            await select(0, 2);
+            buttonWith('Упражнения с ИИ для выбранных')!.click();
+            expect(navigate).toHaveBeenCalledWith(['/decks', deckId, 'exercises', 'generate'], { queryParams: { members: `${key(0)},${key(2)}` } });
+            expect(JSON.stringify(navigate.mock.calls)).not.toContain('5555');
+        });
+
+        it('opens it for «все материалы колоды» with the exceptions, and without a list of keys for none', async () => {
+            const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+            const component = await open(of(page(0, 20, 50)), { generationAvailable: true });
+            (component as unknown as { selection: { selectAllInDeck(): void; toggle(key: string, order: string[]): void } }).selection.selectAllInDeck();
+            await settle(300);
+            buttonWith('Упражнения с ИИ для выбранных')!.click();
+            expect(navigate).toHaveBeenLastCalledWith(['/decks', deckId, 'exercises', 'generate'], { queryParams: { all: 1, except: null } });
+            checkbox(1).click();
+            await settle(300);
+            buttonWith('Упражнения с ИИ для выбранных')!.click();
+            expect(navigate).toHaveBeenLastCalledWith(['/decks', deckId, 'exercises', 'generate'], { queryParams: { all: 1, except: key(1) } });
+        });
+
+        it('says so instead of opening the builder when more than 100 materials are selected explicitly', async () => {
+            const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+            const component = await open(of(page(0, 20, 150)), { generationAvailable: true });
+            (component as unknown as { selection: { replace(keys: string[]): void } }).selection.replace(Array.from({ length: 101 }, (_, index) => key(index)));
+            await settle(300);
+            buttonWith('Упражнения с ИИ для выбранных')!.click();
+            fixture.detectChanges();
+            expect(navigate).not.toHaveBeenCalled();
+            expect(root().querySelector('[role=alert]')?.textContent).toContain('не больше 100 материалов');
         });
     });
 

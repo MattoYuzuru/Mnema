@@ -1,0 +1,147 @@
+<section class="page narrow composer builder" [attr.aria-busy]="creating()" aria-labelledby="builder-title">
+  @if (phase() === 'loading') {
+    <h1 id="builder-title" tabindex="-1">Упражнения с ИИ</h1>
+    <p class="notice" role="status">Готовим страницу…</p>
+  } @else {
+    <a class="back-link" [routerLink]="backLink()"><span aria-hidden="true">←</span> {{ backLabel() }}</a>
+    <p class="eyebrow">Упражнения с ИИ@if (deckTitle(); as title) { · {{ title }} }</p>
+    <h1 id="builder-title" tabindex="-1">Упражнения с ИИ</h1>
+  }
+
+  @switch (phase()) {
+    @case ('empty') {
+      <section class="notice">
+        <p>Выберите материалы в колоде, и Мнема напишет по ним упражнения.</p>
+        <p><a class="button" [routerLink]="['/decks', deckId()]">К колоде</a></p>
+      </section>
+    }
+    @case ('unavailable') {
+      <section class="notice" role="status">
+        @if (!aiAvailable()) {
+          <p>Помощник Мнема сейчас недоступен, поэтому ИИ не напишет упражнения. Их можно составить самому в редакторе.</p>
+        } @else {
+          <p>Выбранных материалов больше нет в колоде. Выберите их заново.</p>
+        }
+        <p class="actions">
+          @if (targets().length > 0) { <a class="button primary" [routerLink]="manualLink()">Открыть редактор упражнений</a> }
+          <a class="button" [routerLink]="['/decks', deckId()]">К колоде</a>
+        </p>
+      </section>
+    }
+    @case ('ready') {
+      @if (skipped() > 0) {
+        <p class="notice" role="status">Часть выбранного недоступна: материалов, которые не удалось прочитать или которых больше нет, — {{ skipped() }}. Они пропущены.</p>
+      }
+      @if (truncated()) {
+        <p class="notice" role="status">Материалов в колоде очень много: Мнема берёт первые {{ targets().length }}, сначала без упражнений.</p>
+      }
+
+      <form class="composer-form" novalidate (submit)="onSubmit($event)">
+        <section class="targets" aria-labelledby="targets-title">
+          <h2 id="targets-title" class="targets-title">{{ summary() }}</h2>
+          <details class="targets-list">
+            <summary>Показать материалы</summary>
+            <ul>
+              @for (target of targets(); track target.memberKey) {
+                <li><span class="target-title">{{ target.title }}</span>
+                  @if (target.exerciseCount !== null) { <span class="muted"> · упражнений: {{ target.exerciseCount }}</span> }</li>
+              }
+            </ul>
+          </details>
+        </section>
+
+        <fieldset class="group mechanics" [attr.aria-describedby]="uid + '-mechanics-hint'">
+          <legend>Типы упражнений</legend>
+          <div class="chips">
+            <label class="chip">
+              <input type="checkbox" name="mechanics-auto" [checked]="auto()" (change)="setAuto($event)" />
+              <span>Авто</span>
+            </label>
+            @for (choice of mechanicChoices; track choice.value) {
+              <label class="chip">
+                <input type="checkbox" [name]="'mechanic-' + choice.value" [checked]="hasMechanic(choice.value)" (change)="setMechanic(choice.value, $event)" />
+                <span>{{ choice.label }}</span>
+              </label>
+            }
+          </div>
+          <p class="hint" [id]="uid + '-mechanics-hint'" aria-live="polite">{{ auto()
+            ? 'Авто: Мнема подберёт разные типы — вспомнить, ввести, выбрать, сопоставить.'
+            : 'Только выбранные типы. Если снять все, вернётся «Авто».' }}</p>
+        </fieldset>
+
+        @if (showPriority()) {
+          <app-segmented-choice legend="Что сначала" [options]="priorityOptions" [name]="uid + '-priority'"
+            [value]="value().priority" (valueChange)="setPriority($event)" />
+        }
+
+        <div class="quantity">
+          <app-segmented-choice legend="Сколько упражнений" [options]="quantityOptions" [name]="uid + '-quantity'"
+            [value]="value().quantityMode" (valueChange)="setQuantityMode($event)" />
+          @switch (value().quantityMode) {
+            @case ('EXACT') {
+              <div class="range-row">
+                <label [for]="uid + '-per-target'">Упражнений на материал</label>
+                <input type="range" [id]="uid + '-per-target'" min="1" max="10" step="1" [value]="value().perTarget"
+                  [attr.aria-valuetext]="perTargetText(value().perTarget)" (input)="setPerTarget($event)" />
+                <output [for]="uid + '-per-target'" aria-live="off">{{ perTargetText(value().perTarget) }}</output>
+              </div>
+            }
+            @case ('BUDGET_PERCENT') {
+              <div class="range-row">
+                <label [for]="uid + '-percent'">Доля лимита</label>
+                <input type="range" [id]="uid + '-percent'" min="1" max="100" step="1" [value]="value().percent"
+                  [attr.aria-valuetext]="percentText(value().percent)" (input)="setPercent($event)" />
+                <output [for]="uid + '-percent'" aria-live="off">{{ percentText(value().percent) }}</output>
+              </div>
+            }
+          }
+        </div>
+
+        @if (splitText(); as text) { <p class="notice" role="status">{{ text }}</p> }
+
+        <div class="action-row">
+          <p class="estimate" [id]="uid + '-estimate'" [class.is-problem]="estimate().phase === 'limit'">{{ estimateText() }}</p>
+          <span class="what"><span class="what-label">Что это?</span>
+            <app-toggletip topic="Мнема и ИИ">
+              <p>Мнема пишет упражнения по выбранным материалам с помощью ИИ, поэтому проверяйте их.</p>
+              <p>Ничего не попадает в колоду и в занятия, пока вы не сохраните: сначала можно попробовать каждое упражнение.</p>
+            </app-toggletip></span>
+          <button type="submit" class="generate-cta" [attr.aria-disabled]="creating() || overBudget() ? 'true' : null"
+            [attr.aria-describedby]="uid + '-estimate'">{{ creating() ? 'Создаём…' : 'Создать упражнения' }}</button>
+        </div>
+
+        @if (personalData()) {
+          <p class="notice">Похоже, в материалах есть личные данные: почта, телефон или номер карты. Мы скроем их перед отправкой ИИ.</p>
+        }
+        <div role="status" class="outcome">
+          @if (creating()) { <p class="notice">Мнема открывает мастерскую…</p> }
+          @if (usageExplanation(); as explanation) {
+            <section class="notice limit" [attr.aria-label]="explanation.headline">
+              <p><strong>{{ explanation.headline }}</strong></p>
+              <ul>@for (option of explanation.options; track option) { <li>{{ option }}</li> }</ul>
+              @if (explanation.plansLink) { <p><a class="text-link" routerLink="/profile" fragment="ai-budget">Посмотреть ИИ-бюджет</a></p> }
+            </section>
+          }
+        </div>
+        @if (failure(); as message) {
+          <section class="notice error" role="alert">
+            <p>{{ message }}</p>
+            @if (opened().length > 0) {
+              <ul class="workshop-links">@for (workshop of opened(); track workshop.sessionId) {
+                <li><a class="text-link" [routerLink]="['/decks', workshop.deckId, 'workshop', workshop.sessionId]">Открыть мастерскую от {{ startedAt(workshop) }}</a></li>
+              }</ul>
+            }
+            @if (activeWorkshops().length > 0) {
+              <ul class="workshop-links">@for (workshop of activeWorkshops(); track workshop.sessionId) {
+                <li><a class="text-link" [routerLink]="['/decks', workshop.deckId, 'workshop', workshop.sessionId]">Открыть мастерскую от {{ startedAt(workshop) }}</a></li>
+              }</ul>
+            }
+            <p><a class="text-link" [routerLink]="manualLink()">Составить упражнение самому</a></p>
+          </section>
+        }
+      </form>
+
+      <p class="write-myself"><a class="text-link" [routerLink]="manualLink()">Или составьте упражнение сами →</a></p>
+    }
+  }
+</section>

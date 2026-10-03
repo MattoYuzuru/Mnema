@@ -18,6 +18,8 @@ export interface GenerationProblem {
     readonly capability: string | null;
     readonly artifactIds: readonly string[];
     readonly activeSessionIds: readonly string[];
+    /** `RESOURCE_LIMIT_EXCEEDED.limits`: the configured limits that apply (`maxExerciseTargets`, ...), or `null`. */
+    readonly limits: Readonly<Record<string, number>> | null;
     /** The members of `USAGE_LIMIT_REACHED`, when they are all present and well formed. */
     readonly usage: BlockingBucket | null;
     /**
@@ -40,6 +42,14 @@ function memberText(body: Record<string, unknown>, key: string): string | null {
 function memberIds(body: Record<string, unknown>, key: string): readonly string[] {
     const value = body[key];
     return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string' && UUID.test(entry)).slice(0, 20) : [];
+}
+
+function readLimitMembers(body: Record<string, unknown>): Readonly<Record<string, number>> | null {
+    const value = body['limits'];
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
+    const entries = Object.entries(value as Record<string, unknown>)
+        .filter((entry): entry is [string, number] => /^max[A-Za-z]{1,40}$/u.test(entry[0]) && count(entry[1]) !== null);
+    return entries.length === 0 ? null : Object.fromEntries(entries);
 }
 
 function count(value: unknown): number | null {
@@ -74,7 +84,7 @@ export function readProblem(error: unknown): GenerationProblem {
         return {
             status: error.status, code, reason: memberText(body, 'reason'), limit: memberText(body, 'limit'),
             capability: memberText(body, 'capability'), artifactIds: memberIds(body, 'artifactIds'),
-            activeSessionIds: memberIds(body, 'activeSessionIds'),
+            activeSessionIds: memberIds(body, 'activeSessionIds'), limits: readLimitMembers(body),
             usage: code === 'USAGE_LIMIT_REACHED' ? readUsage(body) : null,
             uncertain: error.status === 0 || error.status >= 500
         };
@@ -82,7 +92,7 @@ export function readProblem(error: unknown): GenerationProblem {
     // A protocol error means the command may well have been applied: the answer could not be read.
     const unreadable = error instanceof AuthoringProtocolError;
     return { status: unreadable ? -1 : 0, code: null, reason: null, limit: null, capability: null, artifactIds: [],
-        activeSessionIds: [], usage: null, uncertain: true };
+        activeSessionIds: [], limits: null, usage: null, uncertain: true };
 }
 
 export function isStatus(problem: GenerationProblem, status: number, code?: string): boolean {

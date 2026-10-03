@@ -8,6 +8,7 @@ import { NativeMediaSurfaceComponent } from '../../content/rendering/native-medi
 import { HoldToDeleteButtonComponent } from '../../shared/hold-to-delete-button.component';
 import { OwnDeck } from '../own-decks/own-deck.models';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
+import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService } from './capabilities-api.service';
 import { ItemApiService } from './item-api.service';
 import { ItemDetail, newCommandId } from './authoring.models';
 
@@ -27,17 +28,26 @@ export class BrowsePageComponent {
     readonly deleting = signal(false);
     readonly deleteMessage = signal<string | null>(null);
     readonly positionError = signal(false);
+    /** The server offers AI generation: «Упражнения с ИИ» is shown only then (fail closed: unknown counts as unavailable). */
+    readonly aiAvailable = signal(false);
 
     private readonly route = inject(ActivatedRoute);
     private readonly router = inject(Router);
     private readonly decks = inject(OwnDecksApiService);
     private readonly items = inject(ItemApiService);
+    private readonly capabilityApi = inject(CapabilitiesApiService);
     private readonly destroyRef = inject(DestroyRef);
     private deletionSnapshot: { version: string; revisionId: string; ordinal: number } | null = null;
     private pendingDeletion: { deckId: string; memberKey: string; itemRevisionId: string;
         version: string; revisionId: string; ordinal: number; commandId: string } | null = null;
 
-    constructor() { this.load(); }
+    constructor() {
+        this.load();
+        this.capabilityApi.read().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+            next: capabilities => this.aiAvailable.set(capabilities.aiGeneration.available),
+            error: () => this.aiAvailable.set(CAPABILITIES_UNAVAILABLE.aiGeneration.available)
+        });
+    }
 
     load(): void {
         const deckId = this.route.snapshot.paramMap.get('deckId');

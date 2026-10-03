@@ -3,13 +3,15 @@ import { Injectable, inject } from '@angular/core';
 import { Observable, defer, map } from 'rxjs';
 
 import { appConfig } from '../../app.config';
+import { ObjectiveCommand, ExerciseSpec } from '../../content/exercise/exercise-content.models';
+import { ExerciseContentError, parseExerciseSpec, parseObjectiveCommand } from '../../content/exercise/exercise-content.parse';
 import { AuthoringProtocolError, requireCommand, requireCursor, requireEntity, requireVersion } from '../authoring/authoring.models';
 import { expectedEtag } from '../own-decks/own-deck.models';
 import {
     ApprovalAck, ArtifactDetail, ArtifactSummary, CreatedSession, EventsPage, GenerationEstimate, HandoffResult,
-    MAX_APPROVALS_PER_COMMAND, MaterialsSpec, NoteArchiveResult, SessionDetail, SessionPage, parseApprovalAck, parseArtifactDetail,
+    GenerationSpec, MAX_APPROVALS_PER_COMMAND, NoteArchiveResult, SessionDetail, SessionPage, parseApprovalAck, parseArtifactDetail,
     parseArtifactSummary, parseEstimate, parseEventsPage, parseHandoff, parseNoteArchive, parseSessionDetail, parseSessionPage,
-    serializeMaterialsSpec
+    serializeSpec
 } from './generation.models';
 
 /** The Deck version an approval is pinned to (`If-Match` and `expectedDeckRevisionId`). */
@@ -23,6 +25,12 @@ export interface ApprovalTarget {
 }
 
 /**
+ * The exercise a user edited before saving it («Изменить», decision D7): published instead of the proposed revision. The server
+ * checks it with the exercise command reader only (a human edit is not linted) and keeps the material it is about.
+ */
+export interface ApprovalReplacement { readonly objective: ObjectiveCommand; readonly exercise: ExerciseSpec; }
+
+/**
  * HTTP boundary of AI generation (`contracts/generation/http.json`): the preflight estimate, Workshop sessions, polling
  * events and the artifact commands. Every answer is parsed strictly; a command answer that does not parse is reported as
  * an {@link AuthoringProtocolError}, which the caller treats as an unknown outcome (retry the same command).
@@ -32,18 +40,18 @@ export class GenerationApiService {
     private readonly http = inject(HttpClient);
     private readonly baseUrl = appConfig.learningApiBaseUrl.replace(/\/$/, '');
 
-    estimate(deckId: string, spec: MaterialsSpec): Observable<GenerationEstimate> {
+    estimate(deckId: string, spec: GenerationSpec): Observable<GenerationEstimate> {
         return defer(() => this.http.post<unknown>(`${this.deckPath(deckId)}/generation-estimates`,
-            { spec: serializeMaterialsSpec(spec) }, { observe: 'response' }))
+            { spec: serializeSpec(spec) }, { observe: 'response' }))
             .pipe(map(response => {
                 requireStatus(response, 200);
                 return parseEstimate(response.body);
             }));
     }
 
-    createSession(deckId: string, spec: MaterialsSpec, commandId: string): Observable<CreatedSession> {
+    createSession(deckId: string, spec: GenerationSpec, commandId: string): Observable<CreatedSession> {
         return defer(() => this.http.post<unknown>(this.sessions(deckId),
-            { commandId: requireCommand(commandId), spec: serializeMaterialsSpec(spec) }, { observe: 'response' }))
+            { commandId: requireCommand(commandId), spec: serializeSpec(spec) }, { observe: 'response' }))
             .pipe(map(response => {
                 requireStatus(response, 201);
                 const replayed = replayHeader(response);
@@ -116,11 +124,12 @@ export class GenerationApiService {
             }));
     }
 
-    approveArtifact(deckId: string, sessionId: string, target: ApprovalTarget, deck: DeckPin, commandId: string):
-        Observable<ApprovalAck> {
+    approveArtifact(deckId: string, sessionId: string, target: ApprovalTarget, deck: DeckPin, commandId: string,
+                    replacement: ApprovalReplacement | null = null): Observable<ApprovalAck> {
         return defer(() => this.http.post<unknown>(`${this.artifact(deckId, sessionId, target.artifactId)}/approval`, {
             commandId: requireCommand(commandId), expectedArtifactVersion: requireVersion(target.expectedArtifactVersion),
-            expectedRevisionId: requireEntity(target.expectedRevisionId), expectedDeckRevisionId: requireEntity(deck.revisionId)
+            expectedRevisionId: requireEntity(target.expectedRevisionId), expectedDeckRevisionId: requireEntity(deck.revisionId),
+            ...(replacement === null ? {} : { replacement: serializeReplacement(replacement) })
         }, { headers: ifMatch(deck.rowVersion), observe: 'response' })).pipe(map(response => {
             const ack = this.approval(response, deckId, commandId);
             if (ack.artifacts.length !== 1 || ack.artifacts[0]!.artifactId !== target.artifactId.toLowerCase()) {
@@ -252,6 +261,16 @@ export class GenerationApiService {
             requireEtag(response, artifact.rowVersion);
         }
         return artifact;
+    }
+}
+
+/** The edited exercise as the server reads it; a command that does not read is a protocol error, never sent. */
+function serializeReplacement(replacement: ApprovalReplacement): Record<string, unknown> {
+    try {
+        return { objective: parseObjectiveCommand(replacement.objective), exercise: parseExerciseSpec(replacement.exercise) };
+    } catch (error) {
+        if (error instanceof ExerciseContentError) throw new AuthoringProtocolError(error.message);
+        throw error;
     }
 }
 

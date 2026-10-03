@@ -8,6 +8,7 @@ import { CapturePageComponent } from './features/authoring/capture-page.componen
 import { ItemEditorPageComponent } from './features/authoring/item-editor-page.component';
 import { ExerciseAuthoringPageComponent } from './features/authoring/exercise-authoring-page.component';
 import { NewMaterialPageComponent } from './features/generation/new-material-page.component';
+import { ExerciseBuilderPageComponent } from './features/generation/exercise-builder-page.component';
 import { WorkshopPageComponent } from './features/generation/workshop-page.component';
 import { StudySessionPageComponent } from './features/study/study-session-page.component';
 
@@ -27,7 +28,7 @@ describe('appRoutes', () => {
 
         const deckPaths = paths.filter(path => path?.startsWith('decks'));
         expect(deckPaths).toEqual([
-            'decks', 'decks/new', 'decks/:deckId/study', 'decks/:deckId/materials/new',
+            'decks', 'decks/new', 'decks/:deckId/study', 'decks/:deckId/materials/new', 'decks/:deckId/exercises/generate',
             'decks/:deckId/materials/:memberKey/exercises/new', 'decks/:deckId/exercises/:exerciseId/edit',
             'decks/:deckId/materials/:memberKey/edit',
             'decks/:deckId/materials/:memberKey', 'decks/:deckId/capture', 'decks/:deckId/workshop/:sessionId', 'decks/:deckId'
@@ -53,6 +54,7 @@ describe('appRoutes', () => {
         expect(await load('decks/new')).toBe(OwnDeckCreatePageComponent);
         expect(await load('decks/:deckId/study')).toBe(StudySessionPageComponent);
         expect(await load('decks/:deckId/materials/new')).toBe(NewMaterialPageComponent);
+        expect(await load('decks/:deckId/exercises/generate')).toBe(ExerciseBuilderPageComponent);
         expect(await load('decks/:deckId/workshop/:sessionId')).toBe(WorkshopPageComponent);
         expect(await load('decks/:deckId/materials/:memberKey/edit')).toBe(ItemEditorPageComponent);
         expect(await load('decks/:deckId/materials/:memberKey/exercises/new')).toBe(ExerciseAuthoringPageComponent);

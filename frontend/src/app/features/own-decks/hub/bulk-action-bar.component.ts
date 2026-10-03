@@ -40,12 +40,7 @@ export class BulkActionBarComponent {
     readonly generationAvailable = input(false);
     readonly clear = output<void>();
     readonly deleteConfirmed = output<void>();
-    /**
-     * TODO(AI-13, #291): the exercise builder does not exist yet, so the owner binds nothing to this output and the
-     * button above is hidden while `aiGeneration` is unavailable. Wire it to open the builder with the selection
-     * (`MaterialSelection.selection()`: explicit ids or all-in-deck minus exceptions) when #291 lands; keep the button
-     * fail-closed behind the capability.
-     */
+    /** «Упражнения с ИИ для выбранных»: the owner opens the exercise builder with the selection (AI-13, #291). */
     readonly generate = output<void>();
 
     protected noun(): string { return materialsText(this.count()).replace(/^\d+\s/, ''); }
