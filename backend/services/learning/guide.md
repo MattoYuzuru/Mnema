@@ -30,8 +30,9 @@ exercise mechanics into the seven below. Epic #76 added the greenfield media lif
   `app_learning`, `baseline-on-migrate=false`. It never scans a legacy migration
   directory.
 - AI layer (Epic #77): run 2 delivered the notification center, the usage ledger (`app.mnema.learning.usage`), the MBM
-  compiler (`generation.mbm`), the `code_block` node and the provider foundation (`app.mnema.learning.ai`, below); generation
-  sessions, steps and approval (`contracts/generation`) start with AI-04 (#287) in run 3.
+  compiler (`generation.mbm`), the `code_block` node and the provider foundation (`app.mnema.learning.ai`, below); run 3 adds
+  generation sessions, steps and the text draft (`app.mnema.learning.generation`, "Generation sessions (#287)" below); approval,
+  edits and media execution follow (AI-05 and later).
 - MBM compiler (#283): `app.mnema.learning.generation.mbm` is a pure package (no Spring, I/O or clock; identifiers come from
   the injected `IdAllocator`) that compiles MBM v1 to a native-v1 document and renders native-v1 back to MBM.
   `MbmCompiler.compile(source, MbmOptions, IdAllocator)` returns `MbmResult.Success` (document already read by
@@ -93,6 +94,8 @@ fair-use buckets, `GET /api/usage` and the estimate. Migration `V26__usage_ledge
   1st, the next on each following Monday 00:00 in the zone, accumulating within the month, nothing carried over; a fifth
   Monday unlocks nothing extra. Each opening is one `GRANT` ledger entry written when the account next reserves. A refusal
   names `window: WEEK`, the next unlock as `renewsAt`, and `fitsAfterRenewal` computed from what that portion will free.
+- **Session list order** is by the mutable `last_activity_at` (the contract's order): a session touched between two pages may
+  repeat or move; clients reconcile by `sessionId`.
 - **Daily burst.** On paid plans the debits of one calendar day are limited to `learning.usage.daily-burst-fraction` of the
   bar. It never fails an admission or a `settle`; `UsageLedger.dailyDebitRoom(owner)` is the query the step scheduler (AI-04)
   uses to park steps until `resetsAt`. `GET /api/usage` reports `deferredUntil: null`: only the scheduler knows which
@@ -109,7 +112,7 @@ fair-use buckets, `GET /api/usage` and the estimate. Migration `V26__usage_ledge
   weekly Free window fires every week, the last Free window (from the fourth unlock) is its own instance and a day and a
   month that start together never share a key, all inside the transaction of the debit or consumption.
 - **Estimate.** `GenerationSpecInterpreter` is the port for what a spec implies; `StandardSpecInterpreter` validates the
-  shape strictly and prices MATERIALS (one artifact per NOTE source or one when merged; `AUTO` effort is priced as detailed (a hold covers the worst case the planner may choose);
+  shape strictly and prices MATERIALS (one artifact per NOTE source or one when merged; `AUTO` effort is priced and run as medium until the planner and auto-effort land (this also lets a Free account start an `AUTO` session in its first week);
   one audio clip and one image search per artifact when declared; a low fact check per artifact unless the effort is
   short) and EXERCISES (`EXACT`, `AUTO` = five per target or what the session limit allows, `BUDGET_PERCENT` = what the
   share of the remaining budget buys, at least one per target). `REVISE_*` is `422 SPEC_NOT_SUPPORTED`. Limits above
@@ -132,6 +135,102 @@ fair-use buckets, `GET /api/usage` and the estimate. Migration `V26__usage_ledge
 - **Tests.** `app.mnema.learning.usage`: PostgreSQL integration tests with a movable clock (`UsageTestConfiguration`) cover
   parallel reservations, idempotent settlement, expiry and rollover, the Free schedule across months, the burst, the buckets
   and the notifications; `UsageContractTest` reproduces the examples of `contracts/usage/usage.json` from database state.
+
+## Generation sessions (#287)
+
+`app.mnema.learning.generation` implements the core of the Workshop ([`contracts/generation`](../../../contracts/generation/README.md),
+[architecture §3-§6](../../../docs/architecture/ai-generation-platform.md)): sessions, artifacts, durable steps, events, the
+`TEXT_DRAFT` step and its HTTP surface. Not here yet: approval and rejection (AI-05, #288), hand-off, edits, retry, delete,
+exercises, the planner and the media executors; their tables exist (V28), their routes do not.
+
+- **HTTP** (`GenerationController`, every response `private, no-store`; unknown query parameters and body fields are `400`):
+  `POST /api/decks/{deckId}/generation-sessions` (201, `Location`, `ETag`; an exact retry answers 201 with
+  `Idempotency-Replayed: true` and no `ETag`), `GET` the same path (`limit` 1..100, `cursor`, `active`), `GET
+  /api/generation-sessions?state=active` (every PLANNING, PLAN_READY, RUNNING and REVIEW session of the account; `state` is
+  required), `GET .../{sessionId}`, `POST .../{sessionId}/cancellation`, `GET .../{sessionId}/events?after=&limit=` and `GET
+  .../artifacts/{artifactId}?revisionId=`. A body is read (at most 64 KiB) before any transaction. Order of evaluation as in
+  `http.json`: ownership (404), receipt replay, validation (400, 422 limits), sources (404, then 409 `SOURCE_UNAVAILABLE`),
+  capabilities (409), active sessions (422, listing their ids), usage (409, inside the admission transaction, so a refusal
+  leaves nothing). `EXERCISES` is `422 SPEC_NOT_SUPPORTED` on create (AI-13), the estimate still prices it.
+- **Tables** (`V28__generation.sql`, composite owner-scoped foreign keys as `V10`): `generation_session` (immutable `spec`,
+  `row_version`, `last_event_seq`, `expires_at`), `generation_session_source` (pins), `generation_artifact`,
+  `generation_artifact_revision` (immutable, at most 30, `payload` + `handles` + `prompt_version` + `model_route` +
+  `validation`), `generation_artifact_turn` and `generation_provenance` (written by AI-05 and later), `generation_media_slot`
+  (the compiler's pre-allocated `assetId` per slot), `generation_media_ref` (the media GC hold, see below), `generation_step`
+  (the queue) and `generation_event` (append-only). Revisions, events, sources and provenance reject `UPDATE` by trigger.
+- **One lock per session.** Every state change runs in one short transaction that locks the session row first, then the
+  artifact and the step (`SessionLifecycle`). Event numbers are `UPDATE ... SET last_event_seq = last_event_seq + n` under
+  that lock, with `UNIQUE (session_id, seq)`: consecutive in commit order, so a poller never skips one (a test races eight
+  writers against a poller). The session `row_version` bumps with every transaction that changes something visible (state,
+  pointers, activity); a `BLOCKS_APPENDED` checkpoint appends events without bumping it. Usage is called after the domain
+  writes and notifications last (reservation, balance, notification cursor).
+- **Create** reserves the p95 of the spec (capped by `budgetPercent`) in the same transaction as the session, its sources,
+  one artifact per note (or one when merged or prompt-only; at most 20) and one `TEXT_DRAFT` step each, and emits
+  `SESSION_STATE` and `ARTIFACT_STATE(QUEUED)`; an advisory lock per owner serializes the count of active sessions. `afterCommit`
+  wakes the dispatcher.
+- **Dispatcher** (`StepDispatcher`, only for `learning.runtime.roles=worker|all`, default `all`; an `api` process has no
+  dispatcher and needs no provider key). `StepQueue` claims `READY`, due steps of a kind that has an executor, in a RUNNING or
+  REVIEW session, `FOR UPDATE SKIP LOCKED`, under a soft cap of `learning.generation.worker.account-cap` running steps per
+  account; the claim sets a new `lease_token`, `lease_until`, `attempts + 1` and the run's `deadline_at` (PT6M for
+  `TEXT_DRAFT`) and never takes the session lock. Each run is a virtual thread; its heartbeat (`worker.heartbeat`) extends the
+  lease only if the token matches, reads `cancel_requested` and, on a cancellation or a lost lease, interrupts the run so the
+  provider call ends. Every result write checks the token (`StepRepository.lockHeld`): a late worker writes nothing. One permit
+  per capability and instance comes from `learning.ai.permits.*` (text 16). The sweeper (`worker.sweep-interval`, 2 s) recovers
+  expired leases (back to `READY` with backoff, or `FAILED(PROVIDER_UNAVAILABLE | DEADLINE_EXCEEDED)` after
+  `step.max-attempts` claims, or when the step is older than `step.max-lifetime` counted from its first claim; a claim near
+  the end of that lifetime gets only what is left, and a requeue delay is never longer than `step.backoff-cap`), claims due
+  steps (also those of a REVIEW session, for the media kinds) and renews, in pages, the reservations of all running sessions.
+  A clean shutdown waits a few seconds for the runs, then hands every run still going back (`READY` at once, the attempt not
+  counted). The heartbeat interrupts a run only while it is inside the provider call; elsewhere a cooperative flag is enough. The media child steps
+  (`TTS`, `IMAGE_SEARCH`, ...) are created `READY` with their slots and stay unclaimed until an executor registers.
+- **Daily burst.** Before a claim, `UsageLedger.dailyDebitRoom` is read; a step that would exceed the day's room stays `READY`
+  with `next_attempt_at` at the next day start and the session gets `USAGE_UPDATED.deferredUntil`; its hold is renewed.
+- **`TEXT_DRAFT`.** `ContextBuilder` assembles the prompt through `PromptAssembler`: the deck brief (title, description,
+  outline from `item_preview` titles, at most two exemplars (the pinned `STYLE_EXAMPLE`s, then with `similarToDeck` the starred
+  materials) and the most recent material, deck terms from bold words of those), the sources as untrusted `<note>` blocks
+  (redacted and escaped by `PromptBlocks`), the links of the user's own sources as the allowlist, and the task. Budgets in
+  estimated tokens: sources 12k, exemplar 2.5k and 6k together (longer ones become a skeleton), outline 5k; a deck of at most 200
+  materials is outlined whole, a larger one shows every starred material, the 40 latest and the top 40 by `word_similarity` of
+  the cached title (needs `pg_trgm`; without it that part is skipped), and says how many it left out. `max_tokens` follows the
+  effort (900 / 2400 / 4500; `AUTO` is `MEDIUM` until the planner), `thinking` is off, `user_id` is the opaque HMAC key.
+  Before the call the remaining hold must cover the material's weight, else `ESTIMATE_EXCEEDED` with no provider call. The call
+  streams: `DraftStreamer` compiles the text up to the last block boundary and appends `BLOCKS_APPENDED` at most every
+  `stream.checkpoint-interval` (750 ms), at most 24 KiB of blocks per event, with the artifact's `generation` counter (a restart for any
+  reason increments it). The answer goes through `MbmAutoFixer` and `MbmCompiler`; a rejection is sent back once with the
+  compact `MbmRepairList` (same route), once more on `text-strong`, then `FAILED(INVALID_OUTPUT)` with no debit. Success is one
+  transaction: `DEBIT` (`debit:{stepId}:{attempt}`, the weight of `MATERIAL_*`, cost in millionths of a rouble from the
+  provider cost times `learning.generation.usd-rub-rate`; it covers the successful calls of the step only, the full cost of every call,
+  failed ones included, is in `ai_provider_call`), the revision (`INITIAL`, handles `b1..bn` of the top-level blocks,
+  warnings: compiler warnings, `TITLE_MISSING`, `SIMILAR_TITLE` when `pg_trgm` finds a title above
+  `learning.generation.similar-title`), media slots (`PENDING`) with their child steps, the artifact's move to `PROPOSED`, the
+  step's `SUCCEEDED`, the events and, when no artifact is `QUEUED` or `GENERATING`, the session's move to `REVIEW` (or `CLOSED`)
+  with the reservation released (the consumed part is kept) and the notification. Provider failures the router gave up on are
+  retried with backoff up to `step.max-attempts`, then fail the artifact (`PROVIDER_UNAVAILABLE`, `DEADLINE_EXCEEDED`); a
+  refusal is `REFUSAL`, no retry. **No transaction or connection is held during a provider call** (the router also refuses to
+  run in one); `GenerationSessionIntegrationTest` asserts it at the call and at every streamed delta with a per-thread
+  connection counter.
+- **Notifications** (in the transaction that ends the run): `GENERATION_READY` when every artifact is approvable and none
+  failed, `GENERATION_PARTIAL` with approvable and failed ones, `GENERATION_FAILED` (most frequent error code) only when
+  no proposal is left to review (nothing `PROPOSED`, `REVISING` or `STALE`), never for a cancellation. A proposal with media still being made is not approvable and, with no failure, publishes
+  nothing yet. TODO(AI-09, AI-10: media steps): publish `GENERATION_READY` when the last slot of a REVIEW session resolves.
+- **Cancel** (`POST .../cancellation`, no `If-Match`, state-idempotent): waiting steps `CANCELLED`, running ones get
+  `cancel_requested` (their heartbeat aborts the call and ends the step), `QUEUED` and `GENERATING` artifacts `FAILED(CANCELLED)`,
+  the reservation released except what was consumed, and the media slots of the cancelled steps `FAILED(CANCELLED)` with
+  `MEDIA_SLOT_STATE` events; a `CANCELLED` session answers 200 again, `CLOSED` and `EXPIRED` 409.
+- **Media GC.** `generation_media_ref` is checked beside `draft_media_ref` in every hold of the media module (resolve,
+  `expireUnattached`, reference validation and the GC's blob check): while the session has not expired its assets stay
+  readable and out of the sweeps. It is written by the media steps (AI-09, AI-10); the table has a composite foreign key to
+  `media_asset(asset_id, owner_id)`.
+- **Retention** of sessions (`expires_at` = last activity + `learning.generation.session-retention`, event TTL) has no worker
+  yet: TODO(AI-05 or the retention task, owner: the epic that deletes unpublished sessions): purge sessions past `expires_at`
+  like `StudyRetentionWorker`, mark `EXPIRED` for the readable window, and delete `generation_event` rows a day after close.
+- **Configuration** is in `application.properties` (`learning.runtime.roles`, `learning.generation.*`) and the
+  [runtime policy index](../../../docs/engineering/runtime-policy-index.md). Tests: `app.mnema.learning.generation`
+  (`GenerationSessionIntegrationTest`, `GenerationHttpContractTest`, `GenerationWorkerIntegrationTest`,
+  `GenerationContextIntegrationTest`, `GenerationUnitTest`, `RuntimeRolesIntegrationTest`) run on the Stub with a decorator
+  that records calls and simulates failures (`GenerationTestConfiguration`); `GenerationLiveProviderTest` is the opt-in run on
+  DeepSeek. The test default is `learning.runtime.roles=api` (`src/test/resources/config/application.properties`), because the
+  dispatcher claims steps of the whole shared test database; generation tests opt in with `roles=all`.
 
 ## Shared platform contracts
 
@@ -388,8 +487,8 @@ code adds.
   dismissal, expiry or eviction change it and the query hash keeps different `limit`/`after`/`cursor` apart. A matching
   `If-None-Match` is a 304 without a body and without reading the page. The list is read in one `REPEATABLE READ`
   snapshot. Scopes are the blanket rule of the security chain: `learning.read` for GET, `learning.write` for the rest.
-- **`activeWork`** is `0` until generation exists: `ActiveWorkCounter` is satisfied by the placeholder `NoActiveWork`.
-  TODO(AI-04, #287): replace it with the owner's count of sessions in `PLANNING` or `RUNNING` and delete the placeholder.
+- **`activeWork`** is the owner's count of generation sessions in `PLANNING` or `RUNNING` (`ActiveGenerationWork`, #287); media
+  processing of generated assets does not count yet (an open question of the contract).
 - **Retention.** `expires_at = created_at + learning.notifications.retention` (default 30 days) is fixed at publication.
   `NotificationRetentionWorker` deletes expired rows in locked batches of 500 (at most 20 batches per tick;
   `learning.notifications.cleanup-initial-delay` `PT5M`, `cleanup-interval` `PT1H`). The cap needs no sweep because
@@ -459,7 +558,8 @@ and the UI (AI-04+) build on it; nothing here debits the user's quota, it only r
   documented in [selfhost-local](../../../docs/deploy/selfhost-local.md#ai-provider-layer-local).
 - Keys are listed in the [runtime policy index](../../../docs/engineering/runtime-policy-index.md).
 
-Fresh Learning migrations V1–V27 are the database source of truth. V27 adds `ai_provider_call` (the provider-call journal). V21 (unified exercise
+Fresh Learning migrations V1–V28 are the database source of truth. V28 adds the generation tables (below) and, where the role
+may, `pg_trgm`. V27 adds `ai_provider_call` (the provider-call journal). V21 (unified exercise
 mechanics) fails closed when pre-#266 exercise data exists: use a fresh local database. V23
 only widens the exercise type and answer-key kind constraints for `ORDER` and `CATEGORIZE`
 (no data rewrite); V24 adds the notification tables; V25 adds `deck_item_exemplar` and two indexes (assessed-binding by

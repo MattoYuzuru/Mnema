@@ -95,6 +95,53 @@ class MediaCatalogIntegrationTest extends PostgresIntegrationTest {
 
 
     @Test
+    void aGenerationSessionHoldsItsAssetsLikeAnActiveDraftUntilTheSessionExpires() {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        UUID asset = reserve(owner);
+        UUID blob = verifiedBlob();
+        processing(asset);
+        assertThat(catalog.ready(asset, 0, blob)).isTrue();
+        UUID session = UUID.randomUUID();
+        UUID artifact = UUID.randomUUID();
+        jdbc.sql("INSERT INTO app_learning.generation_session(session_id,owner_id,deck_id,kind,state,spec,row_version,last_event_seq,"
+                        + "created_at,last_activity_at,expires_at) VALUES (:session,:owner,:deck,'MATERIALS','REVIEW','{}'::jsonb,0,0,"
+                        + "CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP + interval '30 days')")
+                .param("session", session).param("owner", owner).param("deck", deck).update();
+        jdbc.sql("INSERT INTO app_learning.generation_artifact(artifact_id,session_id,owner_id,target_kind,ordinal,state,row_version,"
+                        + "created_at,updated_at) VALUES (:artifact,:session,:owner,'ITEM',0,'QUEUED',0,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)")
+                .param("artifact", artifact).param("session", session).param("owner", owner).update();
+        jdbc.sql("INSERT INTO app_learning.generation_media_ref(artifact_id,node_id,session_id,owner_id,asset_id) "
+                        + "VALUES (:artifact,:node,:session,:owner,:asset)")
+                .param("artifact", artifact).param("node", UUID.randomUUID()).param("session", session).param("owner", owner)
+                .param("asset", asset).update();
+        jdbc.sql("UPDATE app_learning.media_asset SET owner_hold_until=CURRENT_TIMESTAMP-interval '1 day' WHERE asset_id=:asset")
+                .param("asset", asset).update();
+
+        // the hold keeps the asset readable and out of the unattached sweep, and the GC leaves its bytes alone
+        assertThat(catalog.resolve(owner, asset, null)).isNotNull();
+        assertThat(catalog.expireUnattached(10)).isZero();
+        String key = "verified/" + blob;
+        gc.discover(1000);
+        gc.scanKey(key, 0);
+        assertThat(gcState(key)).isEqualTo("TRACKED");
+
+        // an expired session releases the hold exactly as an expired draft does
+        jdbc.sql("UPDATE app_learning.generation_session SET expires_at=CURRENT_TIMESTAMP-interval '1 minute' WHERE session_id=:session")
+                .param("session", session).update();
+        assertThatThrownBy(() -> catalog.resolve(owner, asset, null)).isInstanceOf(ResourceNotFoundException.class);
+        assertThat(catalog.expireUnattached(10)).isEqualTo(1);
+        gc.scanKey(key, 0);
+        assertThat(gcState(key)).isEqualTo("FIRST");
+        // the hold is owner-scoped: another owner's session cannot reference this asset at all
+        assertThatThrownBy(() -> jdbc.sql("INSERT INTO app_learning.generation_media_ref(artifact_id,node_id,session_id,owner_id,asset_id) "
+                        + "VALUES (:artifact,:node,:session,:owner,:asset)").param("artifact", artifact).param("node", UUID.randomUUID())
+                .param("session", session).param("owner", owner).param("asset", reserve(UUID.randomUUID())).update())
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+
+    @Test
     void newManifestPinResetsGcCandidateAndExpiredManifestDoesNotHold() {
         UUID owner = UUID.randomUUID();
         UUID deck = deck(owner);
