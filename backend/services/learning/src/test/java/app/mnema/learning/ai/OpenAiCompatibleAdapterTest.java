@@ -96,6 +96,18 @@ class OpenAiCompatibleAdapterTest {
     }
 
     @Test
+    void thePlannerRoutesSwitchThinkingOnAndEveryOtherRouteKeepsItOff() throws Exception {
+        provider.enqueue(Reply.fixtureJson("chat-ok.json"), Reply.fixtureJson("chat-ok.json"), Reply.fixtureJson("chat-ok.json"));
+        deepseek().attempt("deepseek-flash", AiTestSupport.request().withRoute(AiRoute.PLAN), BUDGET);
+        deepseek().attempt("deepseek-v4-pro", AiTestSupport.request().withRoute(AiRoute.PLAN_STRONG), BUDGET);
+        deepseek().attempt("deepseek-flash", AiTestSupport.request().withRoute(AiRoute.TEXT_STRONG), BUDGET);
+
+        assertThat(JSON.readTree(provider.requests().get(0).body()).path("thinking").path("type").stringValue()).isEqualTo("enabled");
+        assertThat(JSON.readTree(provider.requests().get(1).body()).path("thinking").path("type").stringValue()).isEqualTo("enabled");
+        assertThat(JSON.readTree(provider.requests().get(2).body()).path("thinking").path("type").stringValue()).isEqualTo("disabled");
+    }
+
+    @Test
     void aJsonContractAsksForAJsonObjectAndRejectsAnythingElse() throws Exception {
         provider.enqueue(Reply.fixtureJson("chat-json-ok.json"), Reply.fixtureJson("chat-json-array.json"),
                 Reply.fixtureJson("chat-json-truncated.json"));

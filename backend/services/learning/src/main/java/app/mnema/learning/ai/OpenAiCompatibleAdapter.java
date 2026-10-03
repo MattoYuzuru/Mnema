@@ -27,7 +27,10 @@ import java.util.regex.Pattern;
 final class OpenAiCompatibleAdapter implements TextAdapter {
     /** Per-provider request and usage quirks. */
     enum Dialect {
-        /** {@code thinking} is disabled explicitly (on by default, it multiplies output cost); user field is {@code user_id}. */
+        /**
+         * {@code thinking} is disabled explicitly (on by default, it multiplies output cost) except on the planner routes, which enable it
+         * (https://api-docs.deepseek.com/guides/thinking_mode); user field is {@code user_id}.
+         */
         DEEPSEEK,
         /** Plain OpenAI shape; cached prompt tokens arrive as {@code precached_prompt_tokens}. */
         GIGACHAT,
@@ -121,7 +124,8 @@ final class OpenAiCompatibleAdapter implements TextAdapter {
         }
         switch (dialect) {
             case DEEPSEEK -> {
-                body.putObject("thinking").put("type", "disabled");
+                // reasoning is on only for the planner routes (AI-14); the temperature is ignored by the provider in that mode
+                body.putObject("thinking").put("type", request.route().thinking() ? "enabled" : "disabled");
                 body.put("user_id", request.userKey().value());
             }
             case GIGACHAT -> { }
