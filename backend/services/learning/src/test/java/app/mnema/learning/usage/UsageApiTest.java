@@ -239,8 +239,8 @@ class UsageApiTest extends UsageIntegrationTest {
         JsonNode tiny = body(estimate(free, deck(free), spec("{\"budgetPercent\":10}")));
         // 10% of the 13 spendable credits is 1: the plan is trimmed to that hold, which fits.
         assertThat(tiny.path("budget").path("capCredits").intValue()).isOne();
-        // Effort AUTO is priced as the worst case (detailed): the hold must cover whatever the planner picks.
-        assertThat(tiny.path("credits").path("p95").intValue()).isEqualTo(22);
+        // Effort AUTO is priced and run as medium until the planner and auto-effort exist.
+        assertThat(tiny.path("credits").path("p95").intValue()).isEqualTo(10);
         assertThat(tiny.path("canStart").booleanValue()).isTrue();
     }
 

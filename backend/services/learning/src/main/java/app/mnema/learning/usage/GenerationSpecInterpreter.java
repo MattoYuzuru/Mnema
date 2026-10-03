@@ -34,4 +34,9 @@ public interface GenerationSpecInterpreter {
      * @throws app.mnema.learning.platform.api.ResourceLimitExceededException    a session limit is exceeded
      */
     Interpretation interpret(UUID owner, UUID deckId, JsonNode spec, int remainingCredits);
+
+    /** The same interpretation for the admission of a session, which also refuses stale pins. */
+    default Interpretation interpretForAdmission(UUID owner, UUID deckId, JsonNode spec, int remainingCredits) {
+        return interpret(owner, deckId, spec, remainingCredits);
+    }
 }

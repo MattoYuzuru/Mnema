@@ -33,6 +33,16 @@ enum ApiErrorCode {
             "Spec not supported",
             "The generation spec is valid but not supported yet."
     ),
+    GENERATION_STATE_CONFLICT(
+            HttpStatus.CONFLICT,
+            "Generation state conflict",
+            "The operation is not allowed in the current state."
+    ),
+    SOURCE_UNAVAILABLE(
+            HttpStatus.CONFLICT,
+            "Source unavailable",
+            "A pinned source is no longer available."
+    ),
     MEDIA_UPLOAD_CONFLICT(HttpStatus.CONFLICT, "Media upload conflict", "The upload state or parts do not match the command."),
     MEDIA_STORAGE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "Media storage unavailable", "Media storage is temporarily unavailable."),
     VERSION_CONFLICT(

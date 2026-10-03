@@ -6,6 +6,8 @@ import app.mnema.learning.platform.api.ProblemExtension;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.id.UuidPolicy;
 import app.mnema.learning.platform.json.ContentJsonReader;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
@@ -37,14 +39,23 @@ class EstimateService {
     private final RateCard rateCard;
     private final GenerationSpecInterpreter interpreter;
     private final UsageClock clock;
+    private final ObjectProvider<GenerationBoundary> boundary;
 
+    /** Without a generation boundary: nothing about an edit's session and artifact is checked (unit tests). */
     EstimateService(UsageRepository repository, UsageState state, RateCard rateCard,
                     GenerationSpecInterpreter interpreter, UsageClock clock) {
+        this(repository, state, rateCard, interpreter, clock, null);
+    }
+
+    @Autowired
+    EstimateService(UsageRepository repository, UsageState state, RateCard rateCard,
+                    GenerationSpecInterpreter interpreter, UsageClock clock, ObjectProvider<GenerationBoundary> boundary) {
         this.repository = repository;
         this.state = state;
         this.rateCard = rateCard;
         this.interpreter = interpreter;
         this.clock = clock;
+        this.boundary = boundary;
     }
 
     EstimateView estimate(UUID owner, UUID deckId, JsonNode body) {
@@ -69,8 +80,53 @@ class EstimateService {
         UsageState.Credits credits = state.credits(resolved);
         GenerationSpecInterpreter.Interpretation interpretation = body.has("spec")
                 ? interpreter.interpret(owner, deckId, body.get("spec"), credits.remaining())
-                : new GenerationSpecInterpreter.Interpretation(editLines(body.get("edit")), null, List.of());
+                : new GenerationSpecInterpreter.Interpretation(editLines(owner, deckId, body.get("edit")), null, List.of());
         return price(resolved, credits, interpretation, now);
+    }
+
+    /** What an admission holds and the refusal, if any, that usage must raise last (after the other admission checks). */
+    record Hold(int credits, UsageLimitReachedException.Block block) { }
+
+    /**
+     * What an admission of {@code spec} holds: the p95 of the spec, capped by {@code settings.budgetPercent} of the remaining
+     * budget. The spec goes through the same interpretation as the estimate, so a spec that the estimate accepts is the one
+     * that is admitted. Usage refusals are returned, not thrown, so the caller can raise them strictly last: a count cap that
+     * is full, and a hold (a small {@code budgetPercent}) that cannot pay for even one material at its effort. A credit
+     * shortfall is refused by {@link UsageLedger#reserve}, inside the admission transaction.
+     */
+    @Transactional(readOnly = true)
+    Hold hold(UUID owner, UUID deckId, JsonNode spec) {
+        Instant now = clock.now();
+        UsageState.Resolved resolved = state.resolve(owner, now);
+        UsageState.Credits credits = state.credits(resolved);
+        GenerationSpecInterpreter.Interpretation interpretation = interpreter.interpretForAdmission(owner, deckId, spec,
+                credits.remaining());
+        int p95 = 0;
+        int material = 0;
+        UsageLimitReachedException.Block block = null;
+        for (GenerationSpecInterpreter.Line line : interpretation.lines()) {
+            if (line.count() < 1) continue;
+            RateCard.Operation operation = rateCard.operation(line.operation());
+            if (operation.availability() != RateCard.Availability.AVAILABLE) throw unavailable(operation);
+            p95 += rateCard.credits(line.operation(), line.count());
+            if (line.operation().startsWith("MATERIAL_")) material = rateCard.credits(line.operation(), 1);
+            if (block == null && operation.cap() != null && operation.cap().isCap()) {
+                block = capBlock(resolved, operation.cap(), line.count(), now).orElse(null);
+            }
+        }
+        int held = p95;
+        if (interpretation.budgetPercent() != null) {
+            held = Math.min(p95, (int) ((long) interpretation.budgetPercent() * credits.remaining() / 100));
+        }
+        held = Math.max(held, 0);
+        // A hold below the price of one material would admit a session whose every artifact fails: refuse it instead.
+        if (block == null && material > 0 && held < material) block = state.creditsBlock(credits, material);
+        return new Hold(held, block);
+    }
+
+    /** The credits one run of {@code operation} charges (a rate-card weight, an integer). */
+    int credits(String operation) {
+        return rateCard.credits(operation, 1);
     }
 
     private static JsonNode parse(byte[] raw) {
@@ -141,17 +197,18 @@ class EstimateService {
     }
 
     /** One edit turn: {@code {sessionId, artifactId, action, targetNodeCount?}}; a free action prices nothing. */
-    private List<GenerationSpecInterpreter.Line> editLines(JsonNode edit) {
+    private List<GenerationSpecInterpreter.Line> editLines(UUID owner, UUID deckId, JsonNode edit) {
         if (!edit.isObject()) throw new InvalidRequestException();
         for (String name : edit.propertyNames()) {
             if (!Set.of("sessionId", "artifactId", "action", "targetNodeCount").contains(name)) {
                 throw new InvalidRequestException();
             }
         }
-        // TODO(AI-04, #287): when generation sessions exist, answer an opaque 404 for a session or artifact that does
-        // not belong to this deck and owner; until then the ids are validated and priced by action only.
-        entityId(edit, "sessionId");
-        entityId(edit, "artifactId");
+        UUID session = entityId(edit, "sessionId");
+        UUID artifact = entityId(edit, "artifactId");
+        // A session or artifact that is unknown, foreign or of another deck is the opaque 404 (no existence oracle).
+        GenerationBoundary gate = boundary == null ? null : boundary.getIfAvailable();
+        if (gate != null && !gate.ownsArtifact(owner, deckId, session, artifact)) throw new ResourceNotFoundException();
         if (edit.has("targetNodeCount")) {
             JsonNode count = edit.get("targetNodeCount");
             if (!count.isIntegralNumber() || !count.canConvertToInt() || count.intValue() < 1
@@ -166,11 +223,12 @@ class EstimateService {
                 .map(operation -> List.of(new GenerationSpecInterpreter.Line(operation.id(), 1))).orElse(List.of());
     }
 
-    private static void entityId(JsonNode node, String name) {
+    private static UUID entityId(JsonNode node, String name) {
         try {
             if (!node.has(name) || !node.get(name).isString()) throw new InvalidRequestException();
             UUID id = UuidPolicy.requireEntityId(UUID.fromString(node.get(name).stringValue()), name);
             if (!id.toString().equals(node.get(name).stringValue())) throw new InvalidRequestException();
+            return id;
         } catch (IllegalArgumentException failure) {
             throw new InvalidRequestException();
         }
