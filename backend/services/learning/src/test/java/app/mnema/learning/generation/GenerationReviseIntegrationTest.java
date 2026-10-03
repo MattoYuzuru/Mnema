@@ -586,6 +586,154 @@ class GenerationReviseIntegrationTest extends GenerationEditsSupport {
         return UUID.fromString(ack.path("changes").get(0).path("itemRevisionId").stringValue(null));
     }
 
+    // ------------------------------------------------------------------- review findings
+
+    @Test
+    void aVoiceChangeThatWaitedForALongRewriteIsNotExpiredByTheTimeItWaited() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        StudyFixtures.Material material = fixtures.addMaterial(owner, deck, "Планировщик выбирает план", "Статистика обновляется командой ANALYZE");
+        Published published = withAudio(material, "Как это произносится?", fixtures.readyAsset(owner, "audio/mpeg"));
+
+        UUID session = start(owner, deck, reviseExercise(published.exercise(), published.revision(), "[[fake:block]] медленно", "male"));
+        assertThat(provider.blockedEntered.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+        // the rewrite has taken longer than the queue timeout: the step that waits for it was created long ago
+        jdbc.sql("UPDATE app_learning.generation_step SET created_at=CURRENT_TIMESTAMP - interval '10 minutes' WHERE session_id=:id AND kind='TTS'")
+                .param("id", session).update();
+        provider.release.countDown();
+
+        awaitState(session, "REVIEW");
+        Proposal proposal = proposals(owner, deck, session).getFirst();
+        JsonNode detail = detail(owner, deck, proposal);
+        assertThat(detail.path("turns")).hasSize(2);
+        assertThat(detail.path("turns").get(1).path("action").stringValue(null)).isEqualTo("AUDIO_REGENERATE");
+        assertThat(detail.path("turns").get(1).path("status").stringValue(null)).isEqualTo("APPLIED");
+        assertThat(detail.path("mediaSlots").get(0).path("voice").stringValue(null)).isEqualTo("male");
+    }
+
+    /** SELF_CHECK that quotes the first paragraph of the material. */
+    private Published quoting(StudyFixtures.Material material) {
+        ObjectNode exercise = fixtures.selfCheck(material, StudyFixtures.blocks(StudyFixtures.text("Что сказано в первом абзаце?")),
+                StudyFixtures.blocks(StudyFixtures.quote(material, material.node())));
+        JsonNode ack = fixtures.publish(material, exercise, "Первый абзац");
+        return new Published(UUID.fromString(ack.path("exerciseId").stringValue(null)), UUID.fromString(ack.path("exerciseRevisionId").stringValue(null)));
+    }
+
+    @Test
+    void anEditOfABlockTheExerciseDoesNotQuoteIsFollowedAndOfOneItQuotesMakesTheProposalStale() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        StudyFixtures.Material material = fixtures.addMaterial(owner, deck, "Планировщик выбирает план", "Статистика обновляется командой ANALYZE");
+        Published published = quoting(material);
+
+        Proposal unrelated = proposal(owner, deck, reviseExercise(published.exercise(), published.revision(), "Проще", null));
+        reviseTheMaterial(owner, deck, material, 1);
+        MockHttpServletResponse followed = approve(owner, deck, unrelated, UUID.randomUUID());
+        assertThat(followed.getStatus()).as(followed.getContentAsString()).isEqualTo(200);
+        List<String> causes = new java.util.ArrayList<>();
+        detail(owner, deck, unrelated).path("revisions").forEach(revision -> causes.add(revision.path("cause").stringValue(null)));
+        assertThat(causes).containsExactly("INITIAL", "EDIT", "REPIN");
+
+        // the exercise now stands on the new head; editing the paragraph it quotes is a change to what it asks about
+        JsonNode head = exerciseHead(owner, deck, published.exercise());
+        Proposal quoted = proposal(owner, deck, reviseExercise(published.exercise(), head.path("exerciseRevisionId").stringValue(null) == null ? published.revision()
+                : UUID.fromString(head.path("exerciseRevisionId").stringValue(null)), "Короче", null));
+        reviseTheMaterial(owner, deck, material, 0);
+        MockHttpServletResponse stale = approve(owner, deck, quoted, UUID.randomUUID());
+        problem(stale, 409, "GENERATION_STATE_CONFLICT");
+        assertThat(json(stale).path("reason").stringValue(null)).isEqualTo("SOURCE_STALE");
+        assertThat(artifactState(quoted.artifact())).isEqualTo("STALE");
+    }
+
+    @Test
+    void aReplacementOfARevisionKeepsTheExercisesOwnObjective() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        StudyFixtures.Material material = fixtures.addMaterial(owner, deck, "Планировщик выбирает план", "Статистика обновляется командой ANALYZE");
+        Published published = choice(material, "Что делает планировщик?");
+        Proposal proposal = proposal(owner, deck, reviseExercise(published.exercise(), published.revision(), "Проще", null));
+        JsonNode command = detail(owner, deck, proposal).path("revision").path("payload").path("command");
+
+        for (ObjectNode objective : List.of(
+                JSON.createObjectNode().put("operation", "create").put("title", "Другая цель"),
+                JSON.createObjectNode().put("operation", "reuse").put("objectiveId", UUID.randomUUID().toString())
+                        .put("objectiveRevisionId", command.path("objective").path("objectiveRevisionId").stringValue(null)))) {
+            ObjectNode body = approvalBody(UUID.randomUUID(), proposal, deckRevision(deck));
+            ObjectNode replacement = body.putObject("replacement");
+            replacement.set("objective", objective);
+            replacement.set("exercise", command.path("exercise").deepCopy());
+            problem(approve(owner, deck, proposal, body, "\"" + deckVersion(deck) + "\""), 400, "INVALID_REQUEST");
+        }
+        assertThat(artifactState(proposal.artifact())).isEqualTo("PROPOSED");
+
+        ObjectNode body = approvalBody(UUID.randomUUID(), proposal, deckRevision(deck));
+        ObjectNode replacement = body.putObject("replacement");
+        replacement.set("objective", command.path("objective").deepCopy());
+        ObjectNode edited = (ObjectNode) command.path("exercise").deepCopy();
+        ((ObjectNode) edited.path("content").path("prompt").get(0)).put("text", "Своя формулировка");
+        replacement.set("exercise", edited);
+        MockHttpServletResponse approved = approve(owner, deck, proposal, body, "\"" + deckVersion(deck) + "\"");
+        assertThat(approved.getStatus()).as(approved.getContentAsString()).isEqualTo(200);
+        assertThat(promptText(exerciseHead(owner, deck, published.exercise()).path("content"))).isEqualTo("Своя формулировка");
+    }
+
+    @Test
+    void anExerciseWithPersonalDataInItsTextIsRefusedForTheModelWithItsOwnReason() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        StudyFixtures.Material material = fixtures.addMaterial(owner, deck, "Планировщик выбирает план", "Статистика обновляется командой ANALYZE");
+        Published phone = choice(material, "Позвоните +7 (495) 123-45-67 и выберите ответ");
+
+        MockHttpServletResponse refused = create(owner, deck, reviseExercise(phone.exercise(), phone.revision(), "Проще", null), UUID.randomUUID());
+        problem(refused, 400, "INVALID_REQUEST");
+        assertThat(json(refused).path("reason").stringValue(null)).isEqualTo("TARGET_PERSONAL_DATA");
+        assertThat(reservationStates(owner)).isEmpty();
+    }
+
+    @Test
+    void anApprovalIsReplayedForBothKindsAndRefusedForStaleVersionsAndStrangers() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID stranger = UUID.randomUUID();
+        UUID deck = deck(owner);
+        StudyFixtures.Material material = fixtures.addMaterial(owner, deck, "один абзац", "два абзаца");
+        Published published = choice(material, "Что делает планировщик?");
+        Proposal item = proposal(owner, deck, reviseItem(material, "Сделай короче"));
+        Proposal exercise = proposal(owner, deck, reviseExercise(published.exercise(), published.revision(), "Проще", null));
+
+        // a stranger sees nothing: the opaque 404 on approval and on edit
+        problem(approve(stranger, deck, item, approvalBody(UUID.randomUUID(), item, deckRevision(deck)), "\"" + deckVersion(deck) + "\""), 404, "RESOURCE_NOT_FOUND");
+        ObjectNode voice = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString()).put("expectedRevisionId", exercise.revision().toString())
+                .put("action", "FREE").put("instruction", "x");
+        problem(edit(stranger, deck, exercise, voice), 404, "RESOURCE_NOT_FOUND");
+
+        // a stale deck version or deck revision is 412 and changes nothing
+        String ifMatch = "\"" + deckVersion(deck) + "\"";
+        ObjectNode stale = approvalBody(UUID.randomUUID(), item, deckRevision(deck));
+        problem(approve(owner, deck, item, stale, "\"" + (deckVersion(deck) + 7) + "\""), 412, "VERSION_CONFLICT");
+        ObjectNode wrongRevision = approvalBody(UUID.randomUUID(), item, UUID.randomUUID());
+        problem(approve(owner, deck, item, wrongRevision, ifMatch), 412, "VERSION_CONFLICT");
+        assertThat(artifactState(item.artifact())).isEqualTo("PROPOSED");
+
+        // the same command again answers what it answered, flagged as a replay
+        ObjectNode itemBody = approvalBody(UUID.randomUUID(), item, deckRevision(deck));
+        MockHttpServletResponse first = approve(owner, deck, item, itemBody, ifMatch);
+        assertThat(first.getStatus()).as(first.getContentAsString()).isEqualTo(200);
+        MockHttpServletResponse again = approve(owner, deck, item, itemBody, ifMatch);
+        assertThat(again.getStatus()).isEqualTo(200);
+        assertThat(again.getHeader("Idempotency-Replayed")).isEqualTo("true");
+        assertThat(json(again)).isEqualTo(json(first));
+
+        String next = "\"" + deckVersion(deck) + "\"";
+        ObjectNode exerciseBody = approvalBody(UUID.randomUUID(), exercise, deckRevision(deck));
+        MockHttpServletResponse second = approve(owner, deck, exercise, exerciseBody, next);
+        assertThat(second.getStatus()).as(second.getContentAsString()).isEqualTo(200);
+        MockHttpServletResponse replay = approve(owner, deck, exercise, exerciseBody, next);
+        assertThat(replay.getStatus()).isEqualTo(200);
+        assertThat(replay.getHeader("Idempotency-Replayed")).isEqualTo("true");
+        assertThat(json(replay)).isEqualTo(json(second));
+        assertThat(exercises.list(owner, deck, null, null).path("total").intValue()).isEqualTo(1);
+    }
+
     /** The exercise as the update command wants it, with a different question. */
     private static JsonNode reducedExercise(JsonNode head) {
         ObjectNode exercise = JSON.createObjectNode().put("type", head.path("type").stringValue(null)).put("schemaVersion", 2).put("enabled", true);
@@ -600,10 +748,15 @@ class GenerationReviseIntegrationTest extends GenerationEditsSupport {
 
     /** The head of the material is replaced by another revision, as a second device would have saved it. */
     private void reviseTheMaterial(UUID owner, UUID deck, StudyFixtures.Material material) throws Exception {
+        reviseTheMaterial(owner, deck, material, 0);
+    }
+
+    /** As above, replacing the text of the paragraph at {@code paragraph}. */
+    private void reviseTheMaterial(UUID owner, UUID deck, StudyFixtures.Material material, int paragraph) throws Exception {
         JsonNode head = items.read(owner, deck, material.member(), null);
         JsonNode deckHead = decks.read(owner, deck);
         ObjectNode document = (ObjectNode) head.path("document").deepCopy();
-        ((ObjectNode) document.path("root").path("content").get(0).path("content").get(0).path("attrs")).put("text", "правка с другого устройства");
+        ((ObjectNode) document.path("root").path("content").get(paragraph).path("content").get(0).path("attrs")).put("text", "правка с другого устройства");
         ObjectNode body = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString())
                 .put("expectedDeckRevisionId", deckHead.path("revisionId").stringValue(null))
                 .put("expectedItemRevisionId", head.path("itemRevisionId").stringValue(null)).put("expectedOrdinal", head.path("ordinal").intValue());

@@ -47,6 +47,8 @@ public final class NativeRevisionPlanner {
         ObjectNode oldRoot = (ObjectNode) before.toJson().path("root").deepCopy();
         ObjectNode revised = (ObjectNode) after.toJson().deepCopy();
         ObjectNode newRoot = (ObjectNode) revised.path("root");
+        // the root is the same node whatever id the revised document gave it
+        newRoot.put("id", oldRoot.path("id").stringValue(""));
         Set<UUID> oldIds = new HashSet<>();
         ids(oldRoot, oldIds);
         Set<UUID> newIds = new HashSet<>();
@@ -63,7 +65,7 @@ public final class NativeRevisionPlanner {
 
     /**
      * Gives the new children the ids of the old ones they stand in for: first the children the revised tree kept by id are matched, then
-     * each child with an id the stored tree never had takes, in order, the first old child of its type that the revised tree no longer uses.
+     * each child with an id the stored tree never had takes the first old child of its type that the revised tree no longer uses and that lies between the stored neighbours of the kept siblings around it.
      */
     private static void harmonize(ObjectNode old, ObjectNode revised, Set<UUID> oldIds, Set<UUID> newIds) {
         ArrayNode before = (ArrayNode) old.path("content");
@@ -79,15 +81,36 @@ public final class NativeRevisionPlanner {
         before.forEach(child -> {
             if (!newIds.contains(id((ObjectNode) child))) free.add((ObjectNode) child);
         });
-        for (JsonNode child : after) {
-            ObjectNode now = (ObjectNode) child;
+        Map<UUID, Integer> position = new HashMap<>();
+        for (int index = 0; index < before.size(); index++) position.put(id((ObjectNode) before.get(index)), index);
+        for (int index = 0; index < after.size(); index++) {
+            ObjectNode now = (ObjectNode) after.get(index);
             UUID newId = id(now);
             // a child whose id the stored tree has is not new, even when it moved or changed type
             if (oldIds.contains(newId)) continue;
-            for (int index = 0; index < free.size(); index++) {
-                ObjectNode candidate = free.get(index);
-                if (!type(candidate).equals(type(now))) continue;
-                free.remove(index);
+            // the stored children that stay on both sides of this place bound the ones it may stand in for: taking an id from outside them would
+            // put a kept sibling out of order, and an edit here cannot move it
+            int low = -1;
+            for (int left = index - 1; left >= 0; left--) {
+                Integer at = position.get(id((ObjectNode) after.get(left)));
+                if (at != null) {
+                    low = at;
+                    break;
+                }
+            }
+            int high = before.size();
+            for (int right = index + 1; right < after.size(); right++) {
+                Integer at = position.get(id((ObjectNode) after.get(right)));
+                if (at != null) {
+                    high = at;
+                    break;
+                }
+            }
+            for (int candidateIndex = 0; candidateIndex < free.size(); candidateIndex++) {
+                ObjectNode candidate = free.get(candidateIndex);
+                int at = position.get(id(candidate));
+                if (!type(candidate).equals(type(now)) || at <= low || at >= high) continue;
+                free.remove(candidateIndex);
                 newIds.remove(newId);
                 newIds.add(id(candidate));
                 now.put("id", candidate.path("id").stringValue(""));

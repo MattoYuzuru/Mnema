@@ -69,9 +69,12 @@ class StepRepository {
                 .param("input", Json.write(input)).param("key", idempotencyKey).update();
     }
 
-    /** The steps that waited for {@code stepId} become READY (it succeeded); returns them. */
+    /**
+     * The steps that waited for {@code stepId} become READY (it succeeded); returns them. Their {@code created_at} restarts here: the queue
+     * timeout of an interactive step counts from the moment it can be claimed, not from admission, so a long rewrite does not expire the step after it.
+     */
     List<Step> promoteDependents(UUID stepId) {
-        return jdbc.sql("UPDATE app_learning.generation_step SET state='READY',next_attempt_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP "
+        return jdbc.sql("UPDATE app_learning.generation_step SET state='READY',next_attempt_at=CURRENT_TIMESTAMP,created_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP "
                         + "WHERE state='WAITING_DEPENDENCIES' AND :id=ANY(depends_on) RETURNING " + COLUMNS)
                 .param("id", stepId).query(STEP).list();
     }

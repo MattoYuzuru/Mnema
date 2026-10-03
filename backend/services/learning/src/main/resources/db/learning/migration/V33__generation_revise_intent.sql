@@ -12,8 +12,9 @@ CREATE INDEX generation_intent_use_owner ON app_learning.generation_intent_use(o
 CREATE INDEX generation_intent_use_age ON app_learning.generation_intent_use(used_at);
 
 -- 2. A REVISE_EXERCISE session copies the exercise it revises, and the slot of one of its audio blocks names the asset that block
---    already uses (the Stub speech executor keeps it; real synthesis, #297, replaces it with a new one). Two sessions may revise the
---    same exercise, so an asset is no longer unique among slots; a slot is still one per (artifact, slot key).
+--    already uses (spec mode "existing": the Stub speech executor keeps it; real synthesis, #297, replaces it with a new one and must then
+--    write the generation_media_ref hold for it). Two sessions may revise the same exercise, so an "existing" slot may share its asset with
+--    another slot; every other slot (a material's media, a real synthesis) still has a pre-allocated asset of its own, unique as before.
 DO $$
 DECLARE
     found record;
@@ -29,7 +30,10 @@ BEGIN
     END LOOP;
 END
 $$;
-CREATE INDEX generation_media_slot_asset ON app_learning.generation_media_slot(asset_id);
+CREATE UNIQUE INDEX generation_media_slot_asset ON app_learning.generation_media_slot(asset_id)
+    WHERE spec ->> 'mode' IS DISTINCT FROM 'existing';
+CREATE INDEX generation_media_slot_existing_asset ON app_learning.generation_media_slot(asset_id)
+    WHERE spec ->> 'mode' = 'existing';
 
 -- 3. The voice of a turn that redoes the audio of an exercise (female or male); null for every other turn.
 ALTER TABLE app_learning.generation_artifact_turn

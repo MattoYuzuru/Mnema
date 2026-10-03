@@ -86,16 +86,14 @@ class ExerciseEditExecutor {
         JsonNode pin = artifact.sourceRefs().path(0);
         EditRequest request;
         try {
-            Optional<EditRequest> built = contexts.buildEdit(session, UUID.fromString(pin.path("memberKey").stringValue("")),
+            request = contexts.buildEdit(session, UUID.fromString(pin.path("memberKey").stringValue("")),
                     UUID.fromString(pin.path("itemRevisionId").stringValue("")), revision.payload().path("command"),
                     turn.instruction() == null ? "" : turn.instruction(), session.spec().path("outputLanguage").stringValue(MaterialsSpec.DEFAULT_LANGUAGE));
-            if (built.isEmpty()) {
-                // admission checked this very exercise; reaching here means the revision on the artifact has no output form: a gap, not the model's fault
-                LOG.warn("generation_exercise_edit_context_unreadable step_id={} session_id={}", claim.stepId(), claim.sessionId());
-                finish(claim, Failure.fail("INVALID_OUTPUT"));
-                return;
-            }
-            request = built.get();
+        } catch (ExerciseContexts.Refusal refused) {
+            // admission checked this very exercise; reaching here means the revision on the artifact has no output form: a gap, not the model's fault
+            LOG.warn("generation_exercise_edit_context_unreadable step_id={} session_id={} reason={}", claim.stepId(), claim.sessionId(), refused.reason());
+            finish(claim, Failure.fail("INVALID_OUTPUT"));
+            return;
         } catch (SourceGoneException gone) {
             finish(claim, Failure.fail("SOURCE_UNAVAILABLE"));
             return;

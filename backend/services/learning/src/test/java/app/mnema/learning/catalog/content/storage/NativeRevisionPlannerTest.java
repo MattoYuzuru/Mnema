@@ -154,4 +154,110 @@ class NativeRevisionPlannerTest {
         assertThat(plan.edits()).isEmpty();
         assertThat(plan.document().toJson()).isEqualTo(before);
     }
+
+    @Test
+    void aNewcomerNeverTakesAnIdThatWouldPutAKeptSiblingOutOfOrder() {
+        // p2 is dropped, p3 is kept and a new paragraph follows it: the newcomer must not stand in for p2 (it would sit after p3)
+        ObjectNode stored = document(node(2, "paragraph", text(3, "один")), node(4, "paragraph", text(5, "два")), node(6, "paragraph", text(7, "три")));
+        ObjectNode revised = document(node(2, "paragraph", text(30, "один")), node(6, "paragraph", text(70, "три")), node(10, "paragraph", text(11, "новый")));
+
+        NativeRevisionPlanner.Plan plan = saved(stored, revised);
+
+        // the kept block keeps its id and place; the dropped one is a delete and the new one an insert
+        assertThat(blockIds(plan.document()).subList(0, 2)).containsExactly(id(2).toString(), id(6).toString());
+        assertThat(blockIds(plan.document()).get(2)).isNotEqualTo(id(4).toString());
+        assertThat(types(plan.edits())).containsExactlyInAnyOrder("Delete", "Insert");
+
+        // the same newcomer in the gap it fits keeps taking the id of the paragraph it replaces
+        NativeRevisionPlanner.Plan inGap = saved(stored, document(node(2, "paragraph", text(30, "один")), node(10, "paragraph", text(11, "новый")),
+                node(6, "paragraph", text(70, "три"))));
+        assertThat(blockIds(inGap.document())).containsExactly(id(2).toString(), id(4).toString(), id(6).toString());
+        assertThat(inGap.edits()).isEmpty();
+    }
+
+    @Test
+    void theRootAndNestedListsAndHeadingsWithAttributesFollowTheStoredIdentity() {
+        ObjectNode heading = node(2, "heading", text(3, "Заголовок"));
+        heading.withObject("attrs").put("level", 2);
+        ObjectNode nested = node(4, "bullet_list", node(5, "list_item", node(6, "paragraph", text(7, "а")),
+                node(8, "bullet_list", node(9, "list_item", node(10, "paragraph", text(11, "вложенный"))))));
+        ObjectNode stored = document(heading, nested);
+        ObjectNode newHeading = node(20, "heading", text(21, "Новый заголовок"));
+        newHeading.withObject("attrs").put("level", 3);
+        ObjectNode newNested = node(4, "bullet_list", node(50, "list_item", node(60, "paragraph", text(70, "а")),
+                node(80, "bullet_list", node(90, "list_item", node(100, "paragraph", text(110, "вложенный"))),
+                        node(91, "list_item", node(101, "paragraph", text(111, "ещё один"))))));
+        newHeading.put("id", id(2).toString());
+        ObjectNode revised = document(newHeading, newNested);
+        // the revised document may even give its root another id
+        ((ObjectNode) revised.path("root")).put("id", id(999).toString());
+
+        NativeRevisionPlanner.Plan plan = saved(stored, revised);
+
+        assertThat(plan.document().toJson().path("root").path("id").asString()).isEqualTo(id(1).toString());
+        assertThat(blockIds(plan.document())).containsExactly(id(2).toString(), id(4).toString());
+        assertThat(plan.document().toJson().path("root").path("content").get(0).path("attrs").path("level").intValue()).isEqualTo(3);
+        // everything that was there stands in for itself down to the nested paragraph; only the one new item is structural
+        assertThat(types(plan.edits())).containsExactly("Insert");
+    }
+
+    @Test
+    void anyShapeOfRewriteIsAcceptedByTheStorageEditorAndKeptBlocksKeepTheirIds() {
+        java.util.Random random = new java.util.Random(294);
+        int[] next = {1};
+        for (int round = 0; round < 300; round++) {
+            next[0] = 1;
+            int blocks = 1 + random.nextInt(7);
+            List<ObjectNode> oldBlocks = new ArrayList<>();
+            List<Integer> oldIds = new ArrayList<>();
+            for (int index = 0; index < blocks; index++) {
+                int type = random.nextInt(3);
+                oldBlocks.add(randomBlock(random, ++next[0], type, 1 + random.nextInt(3), next));
+                oldIds.add(next[0] - 0);
+            }
+            ObjectNode stored = document(oldBlocks.toArray(ObjectNode[]::new));
+            // the revision: every block that stays keeps its id and gets all-new inline ids; some are dropped, some added, some grow or shrink
+            List<ObjectNode> revisedBlocks = new ArrayList<>();
+            List<String> keptOrder = new ArrayList<>();
+            for (ObjectNode old : oldBlocks) {
+                if (random.nextInt(5) == 0) continue;
+                String type = old.path("type").asString();
+                ObjectNode copy = type.equals("bullet_list") ? randomList(random, 1000 + next[0]++, 1 + random.nextInt(3), next)
+                        : randomBlock(random, 1000 + next[0]++, type.equals("heading") ? 1 : 0, 1, next);
+                copy.put("id", old.path("id").asString());
+                revisedBlocks.add(copy);
+                keptOrder.add(old.path("id").asString());
+                if (random.nextInt(4) == 0) revisedBlocks.add(randomBlock(random, 1000 + next[0]++, random.nextInt(3), 1 + random.nextInt(2), next));
+            }
+            if (revisedBlocks.isEmpty()) revisedBlocks.add(randomBlock(random, 1000 + next[0]++, 0, 1, next));
+            boolean swapped = revisedBlocks.size() > 1 && random.nextInt(6) == 0;
+            if (swapped) java.util.Collections.swap(revisedBlocks, 0, revisedBlocks.size() - 1);
+            ObjectNode revised = document(revisedBlocks.toArray(ObjectNode[]::new));
+
+            NativeRevisionPlanner.Plan plan = saved(stored, revised);
+
+            if (!swapped) {
+                // without a reordering every block of the revision that was in the stored document stays exactly where it was
+                List<String> after = blockIds(plan.document());
+                for (String kept : keptOrder) assertThat(after).as("round " + round).contains(kept);
+            }
+        }
+    }
+
+    private static ObjectNode randomBlock(java.util.Random random, int id, int type, int items, int[] next) {
+        if (type == 2) return randomList(random, id, items, next);
+        ObjectNode block = type == 1 ? node(id, "heading", text(++next[0] + 5_000, "заголовок " + random.nextInt(100)))
+                : node(id, "paragraph", text(++next[0] + 5_000, "текст " + random.nextInt(100)));
+        if (type == 1) block.withObject("attrs").put("level", 1 + random.nextInt(3));
+        return block;
+    }
+
+    private static ObjectNode randomList(java.util.Random random, int id, int items, int[] next) {
+        ObjectNode[] children = new ObjectNode[items];
+        for (int index = 0; index < items; index++) {
+            int base = 10_000 + (++next[0]) * 10;
+            children[index] = node(base, "list_item", node(base + 1, "paragraph", text(base + 2, "пункт " + random.nextInt(100))));
+        }
+        return node(id, "bullet_list", children);
+    }
 }

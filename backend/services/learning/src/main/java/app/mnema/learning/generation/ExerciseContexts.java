@@ -76,6 +76,21 @@ class ExerciseContexts {
      */
     record EditRequest(AssembledPrompt prompt, ExerciseContext context, ExerciseDecompiler.Decompiled current, int maxTokens, double temperature) { }
 
+    /** An exercise the model cannot be given to revise; {@code reason} is the stable reason of the 400 at admission. */
+    static final class Refusal extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+        private final String reason;
+
+        Refusal(String reason) {
+            super("The exercise cannot be shown to the model", null, false, false);
+            this.reason = reason;
+        }
+
+        String reason() {
+            return reason;
+        }
+    }
+
     private final ContextRepository context;
     private final GenerationRepository repository;
     private final PinnedMaterials materials;
@@ -145,12 +160,13 @@ class ExerciseContexts {
      * The context of revising one existing exercise (REVISE_EXERCISE, #294): the exercise of {@code command} ({@code {objective, exercise}},
      * pinned to {@code member}'s {@code revision}) in the output form, the offered blocks of that material and the owner's instruction.
      *
-     * @return the request, or empty when the model cannot be given this exercise (a feature the output form has not, a quote outside the
-     *         offered blocks, personal data in its text): the owner edits it by hand
+     * @throws Refusal the model cannot be given this exercise: {@code TARGET_UNSUPPORTED_BLOCK} (a feature the output form has not, a quote
+     *                 outside the offered blocks) or {@code TARGET_PERSONAL_DATA} (an e-mail, a telephone or a card number in its text, which the
+     *                 prompt layer would redact and the rewrite would overwrite): the owner edits it by hand
      * @throws SourceGoneException the pinned revision is not readable any more
      * @throws app.mnema.learning.ai.prompt.PromptException the prompt exceeds its budget
      */
-    Optional<EditRequest> buildEdit(Session session, UUID member, UUID revision, JsonNode command, String instruction, String language) {
+    EditRequest buildEdit(Session session, UUID member, UUID revision, JsonNode command, String instruction, String language) {
         UUID owner = session.ownerId();
         UUID deck = session.deckId();
         Pinned pinned = materials.read(owner, deck, member, revision).orElseThrow(SourceGoneException::new);
@@ -170,10 +186,10 @@ class ExerciseContexts {
                 Map.of("m1", new ExerciseContext.Material(member, revision, blocks)), objectives,
                 Set.of(exercise.path("type").stringValue("")));
         Optional<ExerciseDecompiler.Decompiled> current = ExerciseDecompiler.decompile(exercise, validation);
-        if (current.isEmpty()) return Optional.empty();
+        if (current.isEmpty()) throw new Refusal("TARGET_UNSUPPORTED_BLOCK");
         String json = current.get().model().toString();
         // a text the prompt layer would redact (an e-mail, a telephone, a card number) cannot be rewritten without losing it
-        if (!Redactor.redact(json).equals(json)) return Optional.empty();
+        if (!Redactor.redact(json).equals(json)) throw new Refusal("TARGET_PERSONAL_DATA");
 
         PromptValues values = PromptValues.create().block("schema", PromptBlocks.schema(compactSchema))
                 .block("material_blocks", PromptBlocks.material("m1", lines))
@@ -181,7 +197,7 @@ class ExerciseContexts {
                 .block("current_exercise_blocks", PromptBlocks.currentExercise(json))
                 .text("instruction", instruction).text("lang.output", language);
         AssembledPrompt prompt = assembler.assemble(PromptTask.EXERCISE_EDIT, values);
-        return Optional.of(new EditRequest(prompt, validation, current.get(), 4_000, TEMPERATURE));
+        return new EditRequest(prompt, validation, current.get(), 4_000, TEMPERATURE);
     }
 
     /** The blocks that fit the token budget of the material (the rest are not offered, so no handle names them). */

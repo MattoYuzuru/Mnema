@@ -45,7 +45,7 @@ record ExercisesSpec(List<Source> targets, String outputLanguage, List<String> m
      * which AI-20 generates).
      */
     List<String> allowedMechanics() {
-        Set<String> allowed = new LinkedHashSet<>(List.of("SELF_CHECK", "FREE_RESPONSE", "CLOZE", "CHOICE", "MATCH", "ORDER", "CATEGORIZE"));
+        Set<String> allowed = new LinkedHashSet<>(ExerciseContext.MECHANICS_IN_ORDER);
         if (mechanics != null) allowed.retainAll(mechanics);
         return List.copyOf(allowed);
     }

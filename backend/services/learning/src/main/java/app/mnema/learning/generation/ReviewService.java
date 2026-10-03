@@ -141,7 +141,7 @@ class ReviewService {
         if (body.has("replacement")) {
             // only a proposed exercise can be replaced by an edited one: a material or a bulk entry has no such member
             if (!known.targetKind().equals("EXERCISE")) throw new InvalidRequestException();
-            replacement = replacement(body.get("replacement"), known);
+            replacement = replacement(body.get("replacement"), known, session);
         }
         Plan plan = new Plan(artifactId, Commands.version(body, "expectedArtifactVersion"), Commands.entity(body, "expectedRevisionId"),
                 replacement);
@@ -155,7 +155,7 @@ class ReviewService {
      * The edited exercise of an approval: exactly {@code {objective, exercise}}, parsed by the publication parser (with the
      * placeholders the approval supplies) and about the same subject material as the proposal. Any failure is a 400.
      */
-    private JsonNode replacement(JsonNode edited, Artifact artifact) {
+    private JsonNode replacement(JsonNode edited, Artifact artifact, Session session) {
         if (!edited.isObject()) throw new InvalidRequestException();
         Commands.fields(edited, Set.of("objective", "exercise"), Set.of());
         ObjectNode command = Json.object().put("commandId", ExerciseContexts.PLACEHOLDER_COMMAND.toString())
@@ -170,6 +170,14 @@ class ReviewService {
         }
         String member = artifact.sourceRefs().path(0).path("memberKey").stringValue("");
         if (!parsed.exercise().subject().memberKey().toString().equals(member)) throw new InvalidRequestException();
+        if (session.kind().equals(ReviseSpec.EXERCISE)) {
+            // a revision of an exercise stays on its own objective: the replacement reuses it (a new or another objective is a different exercise)
+            JsonNode own = repository.revision(artifact.artifactId(), artifact.currentRevisionId()).orElseThrow().payload().path("command").path("objective");
+            if (!(parsed.objective() instanceof ExerciseCommand.ReuseObjective reuse)
+                    || !reuse.objectiveId().toString().equals(own.path("objectiveId").stringValue(""))) {
+                throw new InvalidRequestException();
+            }
+        }
         return edited;
     }
 

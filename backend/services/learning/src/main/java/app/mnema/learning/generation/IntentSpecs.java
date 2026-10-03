@@ -1,5 +1,6 @@
 package app.mnema.learning.generation;
 
+import app.mnema.learning.generation.exercise.ExerciseContext;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
@@ -28,7 +29,7 @@ import java.util.UUID;
  */
 final class IntentSpecs {
     /** The seven mechanics of the registry, in the order of the contract. */
-    static final List<String> MECHANICS = List.of("SELF_CHECK", "FREE_RESPONSE", "CLOZE", "CHOICE", "MATCH", "ORDER", "CATEGORIZE");
+    static final List<String> MECHANICS = ExerciseContext.MECHANICS_IN_ORDER;
     static final int MAX_INSTRUCTION = 2_000;
     private static final Set<String> OPERATIONS = Set.of("EXERCISES", "REVISE_ITEM", "REVISE_EXERCISE", "UNSUPPORTED");
 

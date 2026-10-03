@@ -1,11 +1,11 @@
 package app.mnema.learning.generation;
 
-import app.mnema.learning.ai.AiProperties;
 import app.mnema.learning.capability.LearningCapabilities;
 import app.mnema.learning.platform.api.CapabilityUnavailableException;
 import app.mnema.learning.platform.api.ProblemExtension;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.usage.GenerationBoundary;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,12 +23,12 @@ import java.util.UUID;
 class GenerationGate implements GenerationBoundary {
     private final GenerationRepository repository;
     private final LearningCapabilities capabilities;
-    private final AiProperties ai;
+    private final ObjectProvider<StubSpeechExecutor> stubSpeech;
 
-    GenerationGate(GenerationRepository repository, LearningCapabilities capabilities, AiProperties ai) {
+    GenerationGate(GenerationRepository repository, LearningCapabilities capabilities, ObjectProvider<StubSpeechExecutor> stubSpeech) {
         this.repository = repository;
         this.capabilities = capabilities;
-        this.ai = ai;
+        this.stubSpeech = stubSpeech;
     }
 
     @Override
@@ -94,7 +94,8 @@ class GenerationGate implements GenerationBoundary {
      * satisfies yet (fail closed, as for every media action of #293).
      */
     void requireVoiceRevision() {
-        if (AiProperties.STUB.equals(ai.provider())) return;
+        // the Stub executor is the one that can run it: the gate asks for the bean, not for the property that registers it
+        if (stubSpeech.getIfAvailable() != null) return;
         capabilities.requireTextToSpeech();
         throw notRunnable("textToSpeech");
     }

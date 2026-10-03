@@ -170,9 +170,9 @@ class ReviseAdmission {
             // the model is shown the exercise in the output form: one it has no such form for is edited by hand
             Session probe = new Session(sessionId, owner, deckId, ReviseSpec.EXERCISE, "RUNNING", null, spec, null, 0, 0, null, null, null);
             try {
-                if (exerciseContexts.buildEdit(probe, member, pinned, command, parsed.instruction(), parsed.outputLanguage()).isEmpty()) {
-                    throw InvalidRequestException.because("TARGET_UNSUPPORTED_BLOCK");
-                }
+                exerciseContexts.buildEdit(probe, member, pinned, command, parsed.instruction(), parsed.outputLanguage());
+            } catch (ExerciseContexts.Refusal refused) {
+                throw InvalidRequestException.because(refused.reason());
             } catch (SourceGoneException gone) {
                 throw new SourceUnavailableException(List.of(new SourceUnavailableException.Unavailable("ITEM", member)));
             } catch (app.mnema.learning.ai.prompt.PromptException tooBig) {

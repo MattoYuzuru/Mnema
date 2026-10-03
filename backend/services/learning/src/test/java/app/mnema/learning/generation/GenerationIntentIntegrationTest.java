@@ -18,6 +18,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * is {@code UNSUPPORTED}, and the call is rate limited per account and hour.
  */
 class GenerationIntentIntegrationTest extends GenerationEditsSupport {
+    @org.springframework.beans.factory.annotation.Autowired private IntentUses uses;
+
     // ------------------------------------------------------------------------ helpers
 
     private static ObjectNode material(UUID member) {
@@ -324,8 +326,44 @@ class GenerationIntentIntegrationTest extends GenerationEditsSupport {
         // a refused call was not taken and the model was not asked; another account is not affected
         assertThat(intentCalls()).hasSize(1);
         assertThat(intent(other, otherDeck, material(theirs.member()), "Сделай проще").getStatus()).isEqualTo(200);
-        // the rows of two hours ago are gone with the next call, and a worker pass purges the others
+        // rows older than a day are deleted with the account's next call; the retention worker purges the ones older than two hours
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.generation_intent_use WHERE owner_id=:owner AND used_at < CURRENT_TIMESTAMP - interval '1 hour'")
                 .param("owner", owner).query(Integer.class).single()).isEqualTo(50);
+        assertThat(uses.purge()).isGreaterThanOrEqualTo(50);
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.generation_intent_use WHERE owner_id=:owner").param("owner", owner).query(Integer.class).single())
+                .isEqualTo(30);
+    }
+
+    @Test
+    void callsAtTheSameTimeCannotTakeMoreThanTheHourHolds() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        StudyFixtures.Material material = fixtures.addMaterial(owner, deck, "один", "два");
+        jdbc.sql("INSERT INTO app_learning.generation_intent_use(owner_id,used_at) SELECT :owner,CURRENT_TIMESTAMP - interval '10 minutes' "
+                + "FROM generate_series(1,25)").param("owner", owner).update();
+
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(12);
+        java.util.concurrent.CountDownLatch go = new java.util.concurrent.CountDownLatch(1);
+        List<java.util.concurrent.Future<Integer>> results = new java.util.ArrayList<>();
+        for (int call = 0; call < 12; call++) {
+            results.add(pool.submit(() -> {
+                go.await();
+                return intent(owner, deck, material(material.member()), "Сделай проще").getStatus();
+            }));
+        }
+        go.countDown();
+        int accepted = 0;
+        int limited = 0;
+        for (java.util.concurrent.Future<Integer> result : results) {
+            int status = result.get(60, java.util.concurrent.TimeUnit.SECONDS);
+            if (status == 200) accepted++;
+            else if (status == 429) limited++;
+        }
+        pool.shutdown();
+
+        // five places were left in the hour: exactly five calls are answered, the others are told to wait
+        assertThat(accepted).isEqualTo(5);
+        assertThat(limited).isEqualTo(7);
+        assertThat(intentCalls()).hasSize(5);
     }
 }
