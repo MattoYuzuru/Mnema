@@ -61,7 +61,8 @@ public record TextRule(List<String> accepted, List<String> normalization, boolea
         return rules;
     }
 
-    private String canonical(String value) {
+    /** The comparison form of a string under this rule; two strings match exactly when their canonical forms are equal. */
+    public String canonical(String value) {
         String result = value;
         for (String rule : normalization) {
             result = switch (rule) {

@@ -33,6 +33,12 @@
       "rule": "Local IDs are unique within one exercise (options, blanks, items, categories, left and right items)."
     },
     {
+      "code": "MECHANIC_NOT_ALLOWED",
+      "mechanic": "ALL",
+      "phase": "LINT",
+      "rule": "The exercise's mechanic must be one of the mechanics the task allows (the session's settings.mechanics; AUTO allows all seven). The context of a fixture may carry allowedMechanics; without it all seven are allowed."
+    },
+    {
       "code": "SELF_CHECK_REFERENCE_BLANK",
       "mechanic": "SELF_CHECK",
       "phase": "LINT",
