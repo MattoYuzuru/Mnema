@@ -120,7 +120,8 @@ export class NoteOverridesComponent {
     protected setAudio(note: ComposerSource, value: string): void { this.patch(note, { audio: readSwitch(value) }); }
 
     protected reset(note: ComposerSource): void {
-        const { [sourceKey(note)]: _removed, ...rest } = this.value();
+        const rest = { ...this.value() };
+        delete rest[sourceKey(note)];
         this.value.set(rest);
     }
 

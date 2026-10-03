@@ -218,11 +218,13 @@ describe('CapturePageComponent', () => {
             await load(25);
             pick(headerBox());
             expect(counter()).toBe('Выбрано: 20');
-            expect(headerBox().indeterminate).toBe(true);
             expect(root().querySelector('.selection-limit')?.textContent).toContain('Выбрали первые 20 из 25 загруженных');
             expect(boxes().filter(box => box.checked)).toHaveLength(20);
+            expect(headerBox().checked).toBe(true);
+            expect(headerBox().indeterminate).toBe(false);
             pick(headerBox());
-            expect(counter()).toBe('Выбрано: 20');
+            expect(counter()).toBe('Выбрано: 0');
+            pick(headerBox());
             fixture.componentInstance.clearSelection();
             fixture.detectChanges();
             expect(counter()).toBe('Выбрано: 0');
@@ -285,7 +287,7 @@ describe('CapturePageComponent', () => {
             fixture.componentInstance.deleteNote(notes[0]!);
             fixture.detectChanges();
             expect(counter()).toBe('Выбрано: 1');
-            root().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+            boxes()[0]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
             fixture.detectChanges();
             expect(counter()).toBe('Выбрано: 0');
             expect(bar()).toBeNull();
@@ -295,6 +297,36 @@ describe('CapturePageComponent', () => {
             fixture.detectChanges();
             expect(counter()).toBe('Выбрано: 0');
             expect(bar()).toBeNull();
+        });
+
+        it('puts focus on «Выбрать все загруженные» when the bar and its button go away', async () => {
+            await load(2);
+            document.body.append(root());
+            pick(boxes()[0]!);
+            const quiet = [...root().querySelectorAll<HTMLButtonElement>('.selection-bar button')].find(button => button.textContent!.trim() === 'Снять выбор')!;
+            quiet.focus();
+            quiet.click();
+            fixture.detectChanges();
+            await fixture.whenStable();
+            expect(document.activeElement).toBe(headerBox());
+            pick(boxes()[0]!);
+            boxes()[0]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+            fixture.detectChanges();
+            await fixture.whenStable();
+            expect(document.activeElement).toBe(headerBox());
+            root().remove();
+        });
+
+        it('keeps the picks when Escape is pressed while typing in the note field or outside the list', async () => {
+            await load(2);
+            pick(boxes()[0]!);
+            const field = root().querySelector<HTMLTextAreaElement>('#capture-text')!;
+            field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+            fixture.detectChanges();
+            expect(counter()).toBe('Выбрано: 1');
+            root().querySelector('h1')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+            fixture.detectChanges();
+            expect(counter()).toBe('Выбрано: 1');
         });
     });
 });

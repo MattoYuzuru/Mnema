@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -37,6 +37,8 @@ export class CapturePageComponent {
     readonly nextCursor = signal<string | null>(null);
     readonly loadingMore = signal(false);
     readonly moreError = signal(false);
+    private readonly selectAllBox = viewChild<ElementRef<HTMLInputElement>>('selectAll');
+    private readonly injector = inject(Injector);
     readonly loadSentinel = viewChild<ElementRef<HTMLElement>>('loadSentinel');
     readonly busy = signal(false);
     readonly error = signal<string | null>(null);
@@ -56,7 +58,8 @@ export class CapturePageComponent {
         const notes = this.notes();
         const picked = this.selectedCount();
         if (notes.length === 0 || picked === 0) return 'unchecked';
-        return picked === notes.length ? 'checked' : 'mixed';
+        // With more than 20 loaded, 20 is as many as can be picked: that is «all», and the next press clears.
+        return picked === Math.min(notes.length, MAX_NOTES) ? 'checked' : 'mixed';
     });
     /** The limit sentence: standing while the maximum is picked, and the explanation of a pick that was cut short. */
     readonly limitText = computed(() => this.selectionNote()
@@ -235,13 +238,20 @@ export class CapturePageComponent {
             ? `Выбрали первые ${MAX_NOTES} из ${notes.length} загруженных: за один раз можно не больше ${MAX_NOTES} заметок.` : null);
     }
 
+    /** Clears the picks. The bar (and its focused button) goes away, so focus moves to «Выбрать все загруженные». */
     clearSelection(): void {
+        const hadBar = this.selectedCount() > 0;
         this.selected.set(new Set());
         this.selectionNote.set(null);
+        if (hadBar) afterNextRender(() => this.selectAllBox()?.nativeElement.focus(), { injector: this.injector });
     }
 
+    /** Escape clears the picks only from the list or the bar, never while typing in a field (the note field, a toggletip). */
     clearSelectionFromKeyboard(event: Event): void {
-        if (this.selectedCount() === 0 || event.defaultPrevented) return;
+        const target = event.target as HTMLElement | null;
+        if (this.selectedCount() === 0 || event.defaultPrevented || target === null) return;
+        if (target.closest('textarea, input:not([type=checkbox]), select, [contenteditable]') !== null) return;
+        if (target.closest('.capture-list, .selection-bar, .selection-head') === null) return;
         this.clearSelection();
     }
 

@@ -14,7 +14,7 @@
     <p class="capture-total" aria-live="polite">{{ totalLabel() }}</p>
     @if (generationAvailable() && notes().length > 0) {
       <div class="selection-head">
-        <label class="select-all"><input type="checkbox" [checked]="allState() === 'checked'" [indeterminate]="allState() === 'mixed'"
+        <label class="select-all"><input #selectAll type="checkbox" [checked]="allState() === 'checked'" [indeterminate]="allState() === 'mixed'"
           (change)="toggleLoaded()" /><span>Выбрать все загруженные</span></label>
         <p class="selection-count" id="selection-count">Выбрано: {{ selectedCount() }}</p>
       </div>
@@ -36,7 +36,7 @@
       } @empty { <li class="notice">Заметок для этой колоды пока нет.</li> }
     </ul>
     @if (generationAvailable() && selectedCount() > 0) {
-      <section class="selection-bar" role="region" aria-label="Действия с выбранными заметками">
+      <section class="selection-bar" aria-label="Действия с выбранными заметками">
         <p class="selection-bar-count"><strong>Выбрано: {{ selectedCount() }}</strong></p>
         <div class="actions">
           <button class="button primary" type="button" (click)="createMaterials()">Создать материалы с ИИ</button>

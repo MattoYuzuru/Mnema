@@ -529,6 +529,21 @@ describe('WorkshopPageComponent', () => {
             expect(archiveButton()).toBeUndefined();
         });
 
+        it('moves focus to the result when the button goes away', async () => {
+            await open(done(2));
+            document.body.append(root());
+            api.archiveUsedNotes.mockReturnValue(of(parseNoteArchive(noteArchiveAnswer([noteIds.first]), false)));
+            api.getSession.mockReturnValue(of(parseSessionDetail(done(0))));
+            archiveButton()!.focus();
+            archiveButton()!.click();
+            await settle();
+            await vi.advanceTimersByTimeAsync(0);
+            const result = root().querySelector<HTMLElement>('.note-archive-result')!;
+            expect(result.getAttribute('tabindex')).toBe('-1');
+            expect(document.activeElement).toBe(result);
+            root().remove();
+        });
+
         it('is idempotent in the interface: a press while archiving does nothing, and an unknown outcome is retried with the same command', async () => {
             await open(done(2));
             const pending = new Subject<ReturnType<typeof parseNoteArchive>>();

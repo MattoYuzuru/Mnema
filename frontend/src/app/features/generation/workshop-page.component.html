@@ -74,7 +74,7 @@
               <p class="muted" id="note-archive-hint">Заметки уйдут из «На потом»: материалы по ним уже в колоде. Изменённые заметки останутся.</p>
             </div>
           }
-          @if (archiveSummary(); as summary) { <p class="notice note-archive-result">{{ summary }}</p> }
+          @if (archiveSummary(); as summary) { <p class="notice note-archive-result" tabindex="-1" #archiveResult>{{ summary }}</p> }
           <a class="text-link" [routerLink]="['/decks', deckId()]">Выйти в колоду</a>
         </div>
       }

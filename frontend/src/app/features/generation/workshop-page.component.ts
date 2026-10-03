@@ -42,6 +42,7 @@ export class WorkshopPageComponent {
     /** The summary as announced: throttled to one change per {@link ANNOUNCE_GAP_MS}. */
     readonly statusText = signal('');
     readonly proposal = viewChild(ProposalViewComponent);
+    private readonly archiveResult = viewChild<ElementRef<HTMLElement>>('archiveResult');
     private readonly confirmButton = viewChild<ElementRef<HTMLElement>>('confirmApprove');
     private readonly approveAllTrigger = viewChild<ElementRef<HTMLElement>>('approveAllTrigger');
 
@@ -216,8 +217,11 @@ export class WorkshopPageComponent {
         }
     }
 
+    /** The button goes away once nothing is left to archive: focus moves to the result, which says what happened. */
     async archiveNotes(): Promise<void> {
-        await this.store.archiveNotes();
+        if (await this.store.archiveNotes()) {
+            afterNextRender(() => this.archiveResult()?.nativeElement.focus(), { injector: this.injector });
+        }
     }
 
     async stop(): Promise<void> {

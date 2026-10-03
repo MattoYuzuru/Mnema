@@ -245,15 +245,22 @@ export class GenerationComposerComponent {
             this.explainLimit(state.estimate.blockingBuckets[0]);
             return;
         }
-        if (!this.hasNotes()) { this.create(); return; }
+        // After an unknown outcome the very same request is retried with the pins it was first sent with: reading the notes
+        // again could change a pin, and then the server would see a new command instead of replaying the stored answer.
+        // The trade-off: a retry of an unchanged request does not notice a note edited meanwhile; the approval stays safe, because
+        // the server compares the pin with the note and the Workshop marks it «заметка изменилась».
+        if (!this.hasNotes() || this.pending?.key === JSON.stringify(serializeMaterialsSpec(this.spec()))) { this.create(); return; }
         this.createFromCurrentNotes();
     }
 
     removeSource(source: ComposerSource): void {
+        const index = this.sources().indexOf(source);
         this.sourceRemoved.emit(source);
-        // The chip that held focus is gone: focus goes to the next one, or to the request field when none is left.
+        // The chip that held focus is gone: focus goes to the chip now at its place (the last one when it was last), or to the
+        // request field when none is left.
         afterNextRender(() => {
-            const next = this.chipRemoveButtons()[0];
+            const buttons = this.chipRemoveButtons();
+            const next = buttons[Math.min(Math.max(index, 0), buttons.length - 1)];
             if (next !== undefined) next.focus(); else this.promptField()?.nativeElement.focus();
         }, { injector: this.injector });
     }

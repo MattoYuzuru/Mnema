@@ -109,6 +109,16 @@ describe('GenerationComposerComponent', () => {
         });
     });
 
+    describe('the placeholder', () => {
+        it('invites a request without notes, and says the request is optional with a note chip', () => {
+            create();
+            expect(field().placeholder).toMatch(/^Например/u);
+            TestBed.resetTestingModule();
+            create({ sources: [{ label: 'Глаголы', spec: { role: 'SOURCE', type: 'NOTE', noteId: ids.first, noteRowVersion: '3' } }] });
+            expect(field().placeholder).toMatch(/^Необязательно/u);
+        });
+    });
+
     describe('sending with the keyboard', () => {
         it('sends on Enter and keeps Shift+Enter for a new line', () => {
             create();
@@ -524,6 +534,20 @@ describe('GenerationComposerComponent', () => {
                 expect(api.createSession).not.toHaveBeenCalled();
             });
 
+            it('retries an unknown outcome without reading the notes again, so the same command and pins go out', () => {
+                create({ sources: [noteAt(1), noteAt(2)] });
+                authoring.readCapture.mockImplementation((id: string) => of(noteOf(id, '5')));
+                api.createSession.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 0 }))).mockReturnValueOnce(of({ session: created, replayed: true }));
+                button().click();
+                render();
+                expect(authoring.readCapture).toHaveBeenCalledTimes(2);
+                authoring.readCapture.mockImplementation((id: string) => of(noteOf(id, '6')));
+                button().click();
+                expect(authoring.readCapture).toHaveBeenCalledTimes(2);
+                expect(api.createSession.mock.calls[1]![2]).toBe(api.createSession.mock.calls[0]![2]);
+                expect(JSON.stringify(api.createSession.mock.calls[1]![1])).toBe(JSON.stringify(api.createSession.mock.calls[0]![1]));
+            });
+
             it('retries an unknown outcome with the same command while the notes are unchanged', () => {
                 create({ sources: [noteAt(1), noteAt(2)] });
                 api.createSession.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 0 }))).mockReturnValueOnce(of({ session: created, replayed: true }));
@@ -531,6 +555,22 @@ describe('GenerationComposerComponent', () => {
                 render();
                 button().click();
                 expect(api.createSession.mock.calls[1]![2]).toBe(api.createSession.mock.calls[0]![2]);
+            });
+
+            it('keeps focus at the removed place: the chip now there, the last one when the last was removed, the request field when none is left', () => {
+                create({ sources: [noteAt(1), noteAt(2), noteAt(3)] });
+                document.body.append(root());
+                const remove = (position: number) => root().querySelectorAll<HTMLButtonElement>('.chip-remove')[position]!.click();
+                const focused = () => [...root().querySelectorAll('.chip-remove')].indexOf(document.activeElement as Element);
+                remove(1);
+                fixture.componentRef.setInput('sources', [noteAt(1), noteAt(3)]);
+                render();
+                expect(focused()).toBe(1);
+                remove(1);
+                fixture.componentRef.setInput('sources', [noteAt(1)]);
+                render();
+                expect(focused()).toBe(0);
+                root().remove();
             });
 
             it('puts focus on the next chip after one is removed, and on the request field after the last', () => {

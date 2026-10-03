@@ -7,7 +7,7 @@
 
     <div class="field prompt-field">
       <textarea #promptField [id]="uid + '-prompt'" name="prompt" rows="3" enterkeyhint="send" [maxLength]="maxLength"
-        :placeholder="hasNotes() ? 'Необязательно: например, «добавь примеры из аниме»' : 'Например: 20 глаголов движения с примерами из аниме'" autocomplete="off"
+        [placeholder]="hasNotes() ? 'Необязательно: например, «добавь примеры из аниме»' : 'Например: 20 глаголов движения с примерами из аниме'" autocomplete="off"
         [value]="prompt()" [attr.aria-invalid]="promptMissing() ? 'true' : null"
         [attr.aria-describedby]="uid + '-prompt-help' + (promptMissing() ? ' ' + uid + '-prompt-error' : '')"
         (input)="onInput($event)" (keydown)="onKeydown($event)"></textarea>
