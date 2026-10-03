@@ -111,6 +111,8 @@ class Handler(BaseHTTPRequestHandler):
             target = urlsplit(self.path)
             if target.scheme or target.netloc or not self.path.startswith("/"):
                 return self.reply(400)
+            if not self.server.identity and urlsplit(self.path).path.startswith("/__fixture/learning-"):
+                return self.switch_learning(urlsplit(self.path).path)
             if self.server.identity or urlsplit(self.path).path.startswith("/api/"):
                 return self.forward()
             if self.command not in ("GET", "HEAD"):
@@ -131,6 +133,19 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply(502)
             except OSError:
                 pass
+
+    def switch_learning(self, path):
+        """`--generation` only: choose which of the two loopback Learning instances the /api proxy forwards to."""
+        fixture = self.server.fixture
+        if self.command != "POST" or not fixture.generation_port:
+            return self.reply(404)
+        if path == "/__fixture/learning-generation":
+            fixture.active_learning_port = fixture.generation_port
+        elif path == "/__fixture/learning-default":
+            fixture.active_learning_port = None
+        else:
+            return self.reply(404)
+        self.reply(204)
 
     do_POST = do_GET
     do_PUT = do_GET
@@ -157,7 +172,7 @@ class Handler(BaseHTTPRequestHandler):
             fixture.logout_requests.append({"bearer": self.headers.get("Authorization", "").startswith("Bearer "),
                                             "cookie": "Cookie" in self.headers,
                                             "csrf": "X-CSRF-TOKEN" in self.headers})
-        port = fixture.identity_port if self.server.identity else fixture.learning_port
+        port = fixture.identity_port if self.server.identity else (fixture.active_learning_port or fixture.learning_port)
         headers = {name: value for name, value in self.headers.items()
                    if name.lower() not in {"host", "connection", "content-length", "transfer-encoding", "accept-encoding"}}
         headers["Host"] = urlsplit(self.server.origin).netloc
@@ -192,6 +207,8 @@ class Fixture(BASE.Fixture):
         self.logout_requests = []
         self.browser_cleanup_result = None
         self.identity_port = self.learning_port = 0
+        self.generation_port = 0
+        self.active_learning_port = None
         self.media_container = None
         self.media_origin = None
 
@@ -199,6 +216,11 @@ class Fixture(BASE.Fixture):
         if self.args.media:
             self.start_media_store()
         super().start()
+        if getattr(self.args, "generation", False):
+            # A second Learning on the same database with the Stub provider. Every ordinary scenario keeps running against the
+            # first one (generation off, as shipped); the Workshop scenario flips the proxy with POST /__fixture/learning-generation.
+            self.generation_port = BASE.free_port()
+            self.boot("learning", self.generation_port, "learning_fixture", generation=True)
 
     def start_media_store(self):
         image = ("ghcr.io/l33tlamer/minio-backup@sha256:"
@@ -248,7 +270,7 @@ class Fixture(BASE.Fixture):
         BASE.ISSUER = self.identity_origin
         BASE.REDIRECT = self.frontend_origin + "/auth/callback"
 
-    def boot(self, module, port, username):
+    def boot(self, module, port, username, generation=False):
         jar = ROOT / f"backend/services/{module}/build/libs/{module}-0.0.1-SNAPSHOT.jar"
         BASE.require(jar.is_file(), "missing built " + module + " jar")
         environment = child_environment()
@@ -278,9 +300,20 @@ class Fixture(BASE.Fixture):
                                     "LEARNING_MEDIA_PROCESSING_ENABLED": "true",
                                     "LEARNING_MEDIA_PROCESSING_INITIAL_DELAY": "PT1S",
                                     "LEARNING_MEDIA_PROCESSING_SCAN_INTERVAL": "PT2S"})
+            if generation:
+                # Stub provider only: deterministic text, no network, no real key. The user-key secret is a per-run
+                # random value that only has to exist (HMAC of the opaque account id sent to a provider); PRO gives the
+                # fixture account room for several materials (the Free plan opens 13 credits a week).
+                environment.update({"LEARNING_FEATURES_AI_GENERATION_ENABLED": "true", "LEARNING_AI_PROVIDER": "stub",
+                                    "MNEMA_AI_USER_KEY_SECRET": uuid.uuid4().hex + uuid.uuid4().hex,
+                                    "LEARNING_USAGE_ENTITLEMENTS_DEFAULT_PLAN": "PRO"})
+            elif getattr(self.args, "generation", False):
+                # The ordinary instance of a `--generation` run has generation off; as an `api` process it has no step
+                # dispatcher, so it can never claim a step of the second (Stub) instance that shares the database.
+                environment["MNEMA_RUNTIME_ROLES"] = "api"
             arguments += [f"--learning.identity.transport-base=http://127.0.0.1:{self.identity_port}",
                           "--learning.identity.allow-loopback-http=true"]
-        log = (self.tmp / (module + ".log")).open("wb")
+        log = (self.tmp / (module + ("-generation" if generation else "") + ".log")).open("wb")
         self.logs.append(log)
         process = subprocess.Popen(arguments, env=environment, stdout=log, stderr=subprocess.STDOUT)
         self.processes.append(process)
@@ -341,6 +374,7 @@ class Fixture(BASE.Fixture):
                   "password": BASE.PASSWORD, "readySelector": self.args.ready_selector,
                   "logoutSelector": self.args.logout_selector, "errorSelector": self.args.error_selector,
                   "authoring": self.args.authoring, "media": self.args.media, "mechanics": self.args.mechanics,
+                  "generation": self.args.generation,
                   "diagnosticsDir": str(self.tmp) if self.args.mechanics and self.args.keep_on_failure else None,
                   "mediaOrigin": self.media_origin, "mediaClips": media_clips}
         private_config = self.tmp / "browser.json"
@@ -354,7 +388,7 @@ class Fixture(BASE.Fixture):
         evidence = {"fixture": self.results, "frontend_tree_sha256": digest.hexdigest(),
                     "scripts": {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
                                 for name in ("run.py", "browser.mjs", "mechanics.mjs", "notifications.mjs", "hub.mjs",
-                                             "code-block.mjs", "usage.mjs")}}
+                                             "code-block.mjs", "usage.mjs", "workshop.mjs")}}
         (self.args.output / "fixture.json").write_text(json.dumps(evidence, indent=2))
         runner = self.launch_group([self.args.node, str(Path(__file__).with_name("browser.mjs")), str(private_config)], "browser")
         self.control("browser_running")
@@ -453,6 +487,9 @@ def main():
     parser.add_argument("--mechanics", action="store_true",
                         help="after authoring, create/save/reopen/study all five exercise mechanics through the real UI "
                              "(requires --authoring --media; uses Chrome's synthetic microphone, not a real device)")
+    parser.add_argument("--generation", action="store_true",
+                        help="boot Learning with the Stub generation provider (never a real one) and drive the composer and "
+                             "the Workshop through the real UI after the authoring scenarios (requires --authoring)")
     parser.add_argument("--timeout", type=int, default=None, metavar="SECONDS",
                         help="global deadline, 30-900 seconds (default 180, or 600 with --mechanics)")
     parser.add_argument("--keep-on-failure", action="store_true",
@@ -463,8 +500,12 @@ def main():
         parser.error("--media requires --authoring")
     if args.mechanics and not (args.authoring and args.media):
         parser.error("--mechanics requires --authoring --media")
+    if args.generation and not args.authoring:
+        parser.error("--generation requires --authoring")
     if args.timeout is None:
         args.timeout = 600 if args.mechanics else 180
+        if args.generation:
+            args.timeout = max(args.timeout, 600)
     if not 30 <= args.timeout <= 900:
         parser.error("--timeout must be between 30 and 900 seconds")
     args.dist = args.dist.resolve()

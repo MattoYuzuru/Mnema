@@ -340,6 +340,31 @@ module.main()
             result = subprocess.run([node, "--check", str(Path(__file__).with_name("usage.mjs"))], capture_output=True)
             self.assertEqual(0, result.returncode)
 
+    def test_generation_scenario_is_wired_uses_only_the_stub_and_is_syntactically_valid(self):
+        for arguments in (["--generation"],):
+            with self.subTest(arguments=arguments), patch.object(sys, "argv", ["run.py", "--dist", str(self.dist), *arguments]), \
+                    contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as exit_code:
+                HARNESS.main()
+            self.assertEqual(2, exit_code.exception.code)
+        runner = Path(__file__).with_name("run.py").read_text()
+        driver = Path(__file__).with_name("browser.mjs").read_text()
+        source = Path(__file__).with_name("workshop.mjs").read_text()
+        self.assertIn("import { runWorkshop } from './workshop.mjs'", driver)
+        self.assertIn("record('workshop_composer_stub_real_api'", source)
+        self.assertIn('"workshop.mjs"', runner)
+        # Stub provider only, a per-run random secret, and the ordinary Learning has no step dispatcher.
+        self.assertIn('"LEARNING_AI_PROVIDER": "stub"', runner)
+        self.assertIn('"MNEMA_RUNTIME_ROLES"] = "api"', runner)
+        self.assertNotIn("DEEPSEEK", runner)
+        self.assertNotIn(".env", source)
+        self.assertNotIn("Fetch.fulfillRequest", source)
+        self.assertNotIn("route.fulfill", source)
+        self.assertIn("Input.imeSetComposition", source)
+        node = shutil.which("node")
+        if node is not None:
+            result = subprocess.run([node, "--check", str(Path(__file__).with_name("workshop.mjs"))], capture_output=True)
+            self.assertEqual(0, result.returncode)
+
 
 if __name__ == "__main__":
     unittest.main()
