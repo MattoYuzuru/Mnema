@@ -1,0 +1,101 @@
+<section class="ask" [class.is-open]="open()" aria-label="Попросить Мнему">
+  <button #trigger type="button" class="ask-trigger" [attr.aria-expanded]="open()" [attr.aria-controls]="open() ? uid + '-panel' : null" (click)="toggle()">
+    <span class="ask-trigger-text">Попросить Мнему…</span>
+    <span class="ask-trigger-mark" aria-hidden="true">{{ open() ? '−' : '+' }}</span>
+  </button>
+
+  @if (open()) {
+    <div class="ask-panel" [id]="uid + '-panel'" [attr.aria-busy]="parsing() || starting()" (keydown.escape)="onEscape($any($event))">
+      @if (intent() === null) {
+        <form class="ask-form" novalidate (submit)="$event.preventDefault(); analyze()">
+          <label class="ask-label" [for]="uid + '-text'">Что вы хотите?</label>
+          <textarea #field class="ask-field" rows="3" enterkeyhint="send" autocomplete="off" [id]="uid + '-text'" [attr.maxlength]="maxLength"
+            [value]="text()" [readOnly]="parsing()" [attr.aria-describedby]="uid + '-help' + (intentError() ? ' ' + uid + '-error' : '')"
+            [attr.aria-invalid]="intentError() ? 'true' : null"
+            (input)="onInput($event)" (keydown)="onKeydown($event)" (compositionstart)="onCompositionStart()" (compositionend)="onCompositionEnd()"></textarea>
+          <p class="ask-help" [id]="uid + '-help'">
+            Например:
+            @for (example of examples(); track example; let last = $last) {
+              <button type="button" class="ask-example" (click)="useExample(example)">«{{ example }}»</button>{{ last ? '' : ' · ' }}
+            }
+          </p>
+          <p class="ask-help">Enter — разобрать, Shift+Enter — новая строка. Пока вы не нажмёте «Запустить», ничего не списывается.</p>
+          @if (unsaved()) { <p class="ask-help">Мнема работает с сохранённой версией: несохранённые изменения на странице она не увидит.</p> }
+          @if (intentError(); as message) { <p class="ask-error" [id]="uid + '-error'" role="alert">{{ message }}</p> }
+          <div class="actions">
+            <button type="submit" class="button primary" [attr.aria-disabled]="parsing() || empty() ? 'true' : null">{{ parsing() ? 'Разбираю…' : 'Разобрать' }}</button>
+            <button type="button" class="button" (click)="close()">Свернуть</button>
+          </div>
+        </form>
+      } @else {
+        <div class="ask-result">
+          <h2 #chipsHeading class="ask-heading" tabindex="-1">{{ operation() === 'UNSUPPORTED' ? 'Мнема пока не умеет это' : 'Мнема поняла так' }}</h2>
+          <p class="ask-quote">«{{ text() }}»</p>
+
+          @if (notes().length > 0) {
+            <ul class="ask-notes" aria-label="Что Мнема учла">
+              @for (note of notes(); track note.code) { <li class="note-chip" [attr.data-note]="note.code">{{ note.text }}</li> }
+            </ul>
+          }
+
+          @if (operation() === 'UNSUPPORTED') {
+            <div class="actions">
+              <button type="button" class="button primary" (click)="editRequest()">Изменить запрос</button>
+              @if (builderLink(); as link) { <a class="button" data-ask-builder [routerLink]="link" [queryParams]="builderQuery()">Открыть билдер упражнений</a> }
+              @if (editLink(); as link) { <a class="button" data-ask-edit [routerLink]="link" [queryParams]="editQuery()">Править самому</a> }
+            </div>
+          } @else {
+            <form class="ask-chips" novalidate (submit)="$event.preventDefault(); start()" (keydown.enter)="blockImplicitSubmit($event)">
+              @if (isExercises()) {
+                <p class="ask-for">Упражнения для {{ targetWord() }}.</p>
+                <app-exercise-settings-fields [value]="value()" [uid]="uid" [quantityModes]="quantityModes()" (valueChange)="onValue($event)" />
+              }
+              @if (isRevision()) {
+                @if (hasInstructionChip() || voice() === 'NONE') {
+                  <div class="ask-instruction">
+                    <label class="ask-label" [for]="uid + '-instruction'">{{ instructionRequired() ? 'Что изменить' : 'Что изменить в тексте (необязательно)' }}</label>
+                    <textarea class="ask-field" rows="2" autocomplete="off" [id]="uid + '-instruction'" [attr.maxlength]="maxInstruction"
+                      [value]="instruction()" [attr.aria-invalid]="instructionRequired() && instruction().trim().length === 0 ? 'true' : null"
+                      (input)="onInstruction($event)"></textarea>
+                  </div>
+                }
+                @if (hasVoiceChip()) {
+                  <fieldset class="ask-voice" [attr.aria-describedby]="uid + '-voice-hint'">
+                    <legend>Голос озвучки</legend>
+                    <div class="voice-chips">
+                      <label class="voice-chip"><input type="radio" [name]="uid + '-voice'" value="NONE" [checked]="voice() === 'NONE'" (change)="setVoice('NONE')" /><span>Не менять</span></label>
+                      @for (option of voices; track option) {
+                        <label class="voice-chip"><input type="radio" [name]="uid + '-voice'" [value]="option" [checked]="voice() === option" (change)="setVoice(option)" /><span>{{ voiceChipText(option) }}</span></label>
+                      }
+                    </div>
+                    <p class="ask-help" [id]="uid + '-voice-hint'">Синтез речи пока не подключён: Мнема запишет голос в упражнении, а сам звук обновится позже.</p>
+                  </fieldset>
+                }
+              }
+
+              <div class="ask-start">
+                <p class="estimate" [id]="uid + '-estimate'" [class.is-problem]="estimate().phase === 'limit'">{{ estimateText() }}</p>
+                <button type="submit" class="generate-cta" [attr.aria-disabled]="starting() || overBudget() || spec() === null ? 'true' : null"
+                  [attr.aria-describedby]="uid + '-estimate'">{{ starting() ? 'Запускаем…' : 'Запустить' }}</button>
+                <button type="button" class="button" (click)="editRequest()">Изменить запрос</button>
+              </div>
+            </form>
+          }
+        </div>
+      }
+
+      <div role="status" class="ask-status">
+        @if (parsing()) { <p class="notice">Мнема разбирает запрос…</p> }
+        @if (starting()) { <p class="notice">Мнема открывает мастерскую…</p> }
+        @if (usageExplanation(); as explanation) {
+          <section class="notice limit" [attr.aria-label]="explanation.headline">
+            <p><strong>{{ explanation.headline }}</strong></p>
+            @if (explanation.options.length > 0) { <ul>@for (option of explanation.options; track option) { <li>{{ option }}</li> }</ul> }
+            @if (explanation.plansLink) { <p><a class="text-link" routerLink="/profile" fragment="ai-budget">Посмотреть ИИ-бюджет</a></p> }
+          </section>
+        }
+      </div>
+      @if (failure(); as message) { <section class="notice error" role="alert"><p>{{ message }}</p></section> }
+    </div>
+  }
+</section>

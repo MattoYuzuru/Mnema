@@ -1593,6 +1593,43 @@ describe('ExerciseAuthoringPageComponent', () => {
         });
     });
 
+    describe('«Попросить Мнему…» (AI-16)', () => {
+        const available: LearningCapabilities = { ...CAPABILITIES_UNAVAILABLE, aiGeneration: { available: true, reason: null } };
+        const ask = () => page().querySelector<HTMLElement>('app-ask-mnema');
+
+        it('is one collapsed line above the sheet of a saved exercise when the server offers generation, about this exercise', () => {
+            const detail = detailOf(mechanics['createSelfCheck'].exercise);
+            configure(detail, available);
+            refresh();
+            expect(ask()).not.toBeNull();
+            expect(ask()!.querySelector('.ask-trigger')?.textContent).toContain('Попросить Мнему…');
+            expect(ask()!.querySelector('textarea')).toBeNull();
+            expect(ask()!.compareDocumentPosition(page().querySelector('form.inspector')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+            expect(component().askContext()).toEqual({ kind: 'EXERCISE', exerciseId: detail.exerciseId });
+            ask()!.querySelector<HTMLButtonElement>('.ask-trigger')!.click();
+            refresh();
+            expect(ask()!.textContent).toContain('Замени аудио на мужской голос');
+            expect(ask()!.textContent).not.toContain('сохранённой версией');
+            component().setEnabled(false);
+            refresh();
+            expect(ask()!.textContent).toContain('сохранённой версией');
+        });
+
+        it('is not offered for a new exercise, without the capability (or when it cannot be read), and not for a Workshop proposal', () => {
+            configure(null, available);
+            refresh();
+            expect(ask()).toBeNull();
+            TestBed.resetTestingModule();
+            configure(detailOf(mechanics['createSelfCheck'].exercise), CAPABILITIES_UNAVAILABLE);
+            refresh();
+            expect(ask()).toBeNull();
+            TestBed.resetTestingModule();
+            configure(detailOf(mechanics['createSelfCheck'].exercise), 'error');
+            refresh();
+            expect(ask()).toBeNull();
+        });
+    });
+
     describe('editing a Workshop proposal («Изменить», AI-13)', () => {
         const sessionId = generationIds.sessionId;
         const artifactId = 'a7a70000-0000-4000-8000-000000000001';

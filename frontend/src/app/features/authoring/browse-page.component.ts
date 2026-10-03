@@ -1,11 +1,13 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 
 import { NativeMediaSurfaceComponent } from '../../content/rendering/native-media-surface.component';
 import { HoldToDeleteButtonComponent } from '../../shared/hold-to-delete-button.component';
+import { AskMnemaComponent } from '../generation/ask-mnema.component';
+import { IntentContext } from '../generation/generation-intent';
 import { OwnDeck } from '../own-decks/own-deck.models';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService } from './capabilities-api.service';
@@ -14,7 +16,7 @@ import { ItemDetail, newCommandId } from './authoring.models';
 
 @Component({
     selector: 'app-browse-page',
-    imports: [RouterLink, NativeMediaSurfaceComponent, HoldToDeleteButtonComponent],
+    imports: [RouterLink, NativeMediaSurfaceComponent, HoldToDeleteButtonComponent, AskMnemaComponent],
     templateUrl: './browse-page.component.html',
     styleUrl: './authoring-page.css',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -30,6 +32,14 @@ export class BrowsePageComponent {
     readonly positionError = signal(false);
     /** The server offers AI generation: «Упражнения с ИИ» is shown only then (fail closed: unknown counts as unavailable). */
     readonly aiAvailable = signal(false);
+
+    /** «Попросить Мнему…» is about this material at its head (the server pins it). */
+    protected readonly askContext = computed<IntentContext | null>(() => {
+        const item = this.item();
+        return item === null ? null : { kind: 'MATERIAL', memberKey: item.memberKey };
+    });
+    protected readonly askBuilderQuery = computed(() => ({ members: this.item()?.memberKey ?? '' }));
+    protected readonly askEditQuery = computed(() => ({ ordinal: String(this.selectedOrdinal() ?? '') }));
 
     private readonly route = inject(ActivatedRoute);
     private readonly router = inject(Router);

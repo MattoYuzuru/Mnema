@@ -41,6 +41,10 @@
   }
 
   @if (item(); as currentItem) {
+    @if (askContext(); as ask) {
+      <app-ask-mnema class="ask-mnema" [deckId]="currentItem.deckId" [context]="ask" [unsaved]="dirty()"
+        [builderLink]="['/decks', currentItem.deckId, 'exercises', 'generate']" [builderQuery]="askBuilderQuery()" />
+    }
     @if (context(); as slotContext) {
       <form class="inspector" (submit)="$event.preventDefault(); submit()" novalidate>
         @if (errorSummary().length > 0) {
