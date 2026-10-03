@@ -1,0 +1,32 @@
+.composer { display: grid; gap: 1rem; align-content: start; }
+.composer-form { display: grid; gap: 1.25rem; min-inline-size: 0; }
+h1 { font-size: clamp(2rem, 5vw, 3.5rem); max-inline-size: 24ch; }
+h1 label { font: inherit; font-weight: inherit; cursor: text; }
+.prompt-field { margin-block: 0; }
+.prompt-field textarea {
+    min-block-size: 8rem;
+    max-block-size: 24rem;
+    resize: vertical;
+    /* Grows with the text where `field-sizing` exists; elsewhere the field keeps its height and scrolls. */
+    field-sizing: content;
+    border-color: var(--mn-field-border);
+    background: var(--mn-sheet);
+    font-size: 1.1rem;
+    line-height: 1.55;
+}
+.hint { margin: 0; color: var(--mn-muted); font-size: .9rem; line-height: 1.5; }
+.source-chips { display: flex; flex-wrap: wrap; gap: .5rem; margin: 0; padding: 0; list-style: none; }
+.source-chip { display: inline-flex; align-items: center; gap: .25rem; border: 1px solid var(--mn-ink); padding: 0 0 0 .75rem; background: var(--mn-soft); color: var(--mn-ink); font-weight: 600; overflow-wrap: anywhere; }
+.chip-remove { min-inline-size: var(--mn-touch-min, 2.75rem); min-block-size: var(--mn-touch-min, 2.75rem); border: 0; background: transparent; color: var(--mn-ink); font-size: 1.25rem; cursor: pointer; }
+.chip-remove:focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: -3px; }
+.action-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .5rem 1rem; border-block-start: 1px solid var(--mn-ink); padding-block-start: 1rem; }
+.estimate:empty { display: none; }
+.estimate { flex: 1 1 14rem; min-block-size: 1.5em; margin: 0; color: var(--mn-body); font-weight: 600; overflow-wrap: anywhere; }
+.what { display: inline-flex; align-items: center; color: var(--mn-muted); font-size: .9rem; }
+.generate-cta[aria-disabled='true'] { cursor: pointer; opacity: .8; }
+.limit ul, .workshop-links { margin-block: .5rem; padding-inline-start: 1.25rem; }
+.write-myself { margin: 0; }
+@media (max-width: 30rem) {
+    .action-row { justify-content: stretch; }
+    .generate-cta { inline-size: 100%; }
+}

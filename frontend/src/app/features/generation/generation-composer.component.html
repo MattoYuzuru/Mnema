@@ -1,0 +1,71 @@
+<section class="page narrow composer" [attr.aria-busy]="creating()">
+  <a class="back-link" [routerLink]="['/decks', deckId()]"><span aria-hidden="true">←</span> К колоде</a>
+  <p class="eyebrow">Новый материал@if (deckTitle(); as title) { · {{ title }} }</p>
+
+  <form class="composer-form" novalidate (submit)="onSubmit($event)">
+    <h1 tabindex="-1"><label [for]="uid + '-prompt'">{{ greeting() }}</label></h1>
+
+    <div class="field prompt-field">
+      <textarea #promptField [id]="uid + '-prompt'" name="prompt" rows="3" enterkeyhint="send" [maxLength]="maxLength"
+        placeholder="Например: 20 глаголов движения с примерами из аниме" autocomplete="off"
+        [value]="prompt()" [attr.aria-invalid]="promptMissing() ? 'true' : null"
+        [attr.aria-describedby]="uid + '-prompt-help' + (promptMissing() ? ' ' + uid + '-prompt-error' : '')"
+        (input)="onInput($event)" (keydown)="onKeydown($event)"></textarea>
+      <p class="hint" [id]="uid + '-prompt-help'">Enter — отправить, Shift+Enter — новая строка.</p>
+      @if (promptMissing()) {
+        <p class="field-error" [id]="uid + '-prompt-error'" role="alert">Напишите, что вы хотите выучить, или прикрепите заметки.</p>
+      }
+    </div>
+
+    @if (sources().length > 0) {
+      <ul class="source-chips" aria-label="Источники запроса">
+        @for (source of sources(); track source.label) {
+          <li class="source-chip"><span>{{ source.label }}</span>
+            <button type="button" class="chip-remove" [attr.aria-label]="'Убрать: ' + source.label" (click)="removeSource(source)"><span aria-hidden="true">×</span></button></li>
+        }
+      </ul>
+    }
+
+    <div class="action-row">
+      <p class="estimate" [id]="uid + '-estimate'">{{ estimateText() }}</p>
+      <span class="what"><span class="what-label">Что это?</span>
+        <app-toggletip topic="Мнема и ИИ">
+          <p>Мнема — помощник Mnema. Она предлагает черновики материалов с помощью ИИ, поэтому проверяйте факты.</p>
+          <p>Ничего не попадает в колоду и в занятия, пока вы не одобрите.</p>
+        </app-toggletip></span>
+      <button type="submit" class="generate-cta" [attr.aria-disabled]="creating() || overBudget() ? 'true' : null"
+        [attr.aria-describedby]="uid + '-estimate'">{{ creating() ? 'Создаём…' : 'Создать' }}</button>
+    </div>
+
+    @if (personalData()) {
+      <p class="notice">Похоже, в тексте есть личные данные: почта, телефон или номер карты. Мы скроем их перед отправкой ИИ, но лучше убрать всё лишнее.</p>
+    }
+    <!-- The one status region of the composer: what is happening, or what the budget allows. -->
+    <div role="status" class="outcome">
+      @if (creating()) { <p class="notice">Мнема открывает мастерскую…</p> }
+      @if (usageExplanation(); as explanation) {
+        <section class="notice limit" [attr.aria-label]="explanation.headline">
+          <p><strong>{{ explanation.headline }}</strong></p>
+          <ul>@for (option of explanation.options; track option) { <li>{{ option }}</li> }</ul>
+          @if (explanation.plansLink) { <p><a class="text-link" routerLink="/profile" fragment="ai-budget">Посмотреть ИИ-бюджет</a></p> }
+        </section>
+      }
+    </div>
+    @if (failure(); as message) {
+      <section class="notice error" role="alert">
+        <p>{{ message }}</p>
+        @if (activeWorkshops().length > 0) {
+          <ul class="workshop-links">@for (workshop of activeWorkshops(); track workshop.sessionId) {
+            <li><a class="text-link" [routerLink]="['/decks', workshop.deckId, 'workshop', workshop.sessionId]">Открыть мастерскую от {{ workshop.createdAt | date:'d MMMM, HH:mm' }}</a></li>
+          }</ul>
+        }
+        <p><a class="text-link" [routerLink]="['/decks', deckId(), 'materials', 'new']" [queryParams]="{ write: 1 }">Написать материал самому</a></p>
+      </section>
+    }
+
+    <app-generation-settings [value]="settings()" (valueChange)="onSettings($event)" [imageAvailable]="imageAvailable()"
+      [audioAvailable]="audioAvailable()" />
+  </form>
+
+  <p class="write-myself"><a class="text-link" [routerLink]="['/decks', deckId(), 'materials', 'new']" [queryParams]="{ write: 1 }">Или откройте пустой редактор →</a></p>
+</section>

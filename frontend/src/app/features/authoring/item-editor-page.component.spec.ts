@@ -21,7 +21,7 @@ describe('ItemEditorPageComponent recovery', () => {
         memberCount: 0, exerciseCount: 0
     };
 
-    function configure(memberKey: string | null = null, ordinal: string | null = null): {
+    function configure(memberKey: string | null = null, ordinal: string | null = null, draftParam: string | null = null): {
         readonly decks: SpyObj<OwnDecksApiService>;
         readonly items: SpyObj<ItemApiService>;
         readonly authoring: SpyObj<AuthoringApiService>;
@@ -51,7 +51,7 @@ describe('ItemEditorPageComponent recovery', () => {
                         snapshot: {
                             paramMap: convertToParamMap(memberKey === null
                                 ? { deckId: deck.deckId } : { deckId: deck.deckId, memberKey }),
-                            queryParamMap: convertToParamMap(ordinal === null ? {} : { ordinal })
+                            queryParamMap: convertToParamMap({ ...(ordinal === null ? {} : { ordinal }), ...(draftParam === null ? {} : { draft: draftParam }) })
                         }
                     } },
                 { provide: Router, useValue: router },
@@ -136,5 +136,59 @@ describe('ItemEditorPageComponent recovery', () => {
         expect(component.phase()).toBe('conflict');
         expect(component.conflict()).toBe('draft');
         expect(component.document()).toBe(document);
+    });
+
+    describe('a draft named in the URL (a material handed over from the Workshop)', () => {
+        const summary = (draftId: string, overrides: Partial<DraftDetail> = {}) => ({
+            draftId, deckId: deck.deckId, memberKey: null, baseRevisionId: null, rowVersion: '0', contentBytes: 100,
+            createdAt: '2026-09-19T10:00:00Z', acknowledgedAt: '2026-09-19T10:00:00Z', expiresAt: '2026-10-19T10:00:00Z', ...overrides
+        });
+        const detail = (draftId: string): DraftDetail => ({ ...summary(draftId), document: createEmptyNativeDocument() });
+
+        it('opens exactly that draft, even when another new-material draft is newer', () => {
+            const { authoring } = configure(null, null, id('3'));
+            authoring.listAllDrafts.mockReturnValue(of({ items: [
+                summary(id('4'), { acknowledgedAt: '2026-09-19T12:00:00Z' }), summary(id('3'))], nextCursor: null }));
+            authoring.readDraft.mockReturnValue(of(detail(id('3'))));
+            const component = TestBed.runInInjectionContext(() => new ItemEditorPageComponent());
+
+            expect(authoring.readDraft).toHaveBeenCalledWith(id('3'));
+            expect(authoring.createDraft).not.toHaveBeenCalled();
+            expect(component.draft()?.draftId).toBe(id('3'));
+        });
+
+        it('reads a named draft by id when the list does not show it, and never creates a blank one', () => {
+            const { authoring } = configure(null, null, id('3'));
+            authoring.listAllDrafts.mockReturnValue(of({ items: [], nextCursor: null }));
+            authoring.readDraft.mockReturnValue(of(detail(id('3'))));
+            const component = TestBed.runInInjectionContext(() => new ItemEditorPageComponent());
+            expect(authoring.readDraft).toHaveBeenCalledWith(id('3'));
+            expect(authoring.createDraft).not.toHaveBeenCalled();
+            expect(component.draft()?.draftId).toBe(id('3'));
+        });
+
+        it('says so when the named draft cannot be read or belongs elsewhere, and creates nothing', () => {
+            const { authoring } = configure(null, null, id('3'));
+            authoring.listAllDrafts.mockReturnValue(of({ items: [], nextCursor: null }));
+            authoring.readDraft.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+            const gone = TestBed.runInInjectionContext(() => new ItemEditorPageComponent());
+            expect(gone.phase()).toBe('error');
+            expect(gone.message()).toContain('Не удалось открыть черновик');
+            authoring.readDraft.mockReturnValue(of({ ...detail(id('3')), memberKey: id('9') }));
+            const other = TestBed.runInInjectionContext(() => new ItemEditorPageComponent());
+            expect(other.message()).toContain('другому материалу');
+            expect(authoring.createDraft).not.toHaveBeenCalled();
+        });
+
+        it('does not take a draft of an existing material or another deck for the named one: it reads it by id and refuses it', () => {
+            const { authoring } = configure(null, null, id('3'));
+            authoring.listAllDrafts.mockReturnValue(of({ items: [summary(id('3'), { memberKey: id('9') }), summary(id('4'))], nextCursor: null }));
+            authoring.readDraft.mockReturnValue(of({ ...detail(id('3')), memberKey: id('9') }));
+            const component = TestBed.runInInjectionContext(() => new ItemEditorPageComponent());
+
+            expect(authoring.readDraft).toHaveBeenCalledWith(id('3'));
+            expect(component.message()).toContain('другому материалу');
+            expect(authoring.createDraft).not.toHaveBeenCalled();
+        });
     });
 });
