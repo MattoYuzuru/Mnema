@@ -9,7 +9,8 @@ import { NativeMediaSurfaceComponent } from '../../content/rendering/native-medi
 import { ToggletipComponent } from '../../shared/toggletip.component';
 import { CAPABILITIES_UNAVAILABLE, Capability, LearningCapabilities } from '../authoring/capabilities-api.service';
 import { AiPromptAsk, AiPromptWindowComponent } from './ai-prompt-window.component';
-import { describeTurnAsk, describeTurnStatus, formatWorkshopStart, mediaActionReason, turnFailureReason } from './generation-view';
+import { EditHistoryComponent } from './edit-history.component';
+import { mediaActionReason, turnFailureReason } from './generation-view';
 import { AnchorRect, placeNear, viewport } from './place-near';
 import { ArtifactDetail, ArtifactSummary, ArtifactTurn, EditAction, SessionState, allows } from './generation.models';
 import { SelectionTarget, clearTarget, endRect, paintTarget, readSelection, runBetween } from './selection-targets';
@@ -45,23 +46,6 @@ type DiffState =
     | { readonly phase: 'error' }
     | { readonly phase: 'ready'; readonly paragraphs: readonly DiffParagraph[]; readonly changed: boolean };
 
-interface HistoryEntry {
-    readonly key: string;
-    readonly label: string;
-    readonly status: string | null;
-    readonly time: string | null;
-    readonly datetime: string | null;
-    readonly current: boolean;
-    /** The revision «Вернуть к этой версии» goes to; `null` when it cannot (the current one, or a turn that made none). */
-    readonly revertTo: string | null;
-}
-
-/** «не удалось — Мнема отказалась переписывать этот фрагмент»: how a turn stands, and for a failed one the reason in words. */
-function turnStatusWithReason(turn: ArtifactTurn): string {
-    const status = describeTurnStatus(turn);
-    return turn.status === 'FAILED' ? `${status} — ${turnFailureReason(turn.errorCode).replace(/\.$/u, '')}` : status;
-}
-
 let nextDocument = 0;
 const HOLD_MS = 800;
 /** The floating group is small and its size is known well enough to place it (it grows by one line when it explains itself). */
@@ -80,7 +64,7 @@ const GROUP_SIZE = { width: 300, height: 64 } as const;
  */
 @Component({
     selector: 'app-proposal-document',
-    imports: [NativeMediaSurfaceComponent, AiPromptWindowComponent, ToggletipComponent],
+    imports: [NativeMediaSurfaceComponent, AiPromptWindowComponent, ToggletipComponent, EditHistoryComponent],
     templateUrl: './proposal-document.component.html',
     styleUrls: ['../authoring/authoring-page.css', './proposal-document.component.css'],
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -94,6 +78,11 @@ export class ProposalDocumentComponent {
     readonly capabilities = input<LearningCapabilities>(CAPABILITIES_UNAVAILABLE);
     /** A command on this artifact is in flight. */
     readonly busy = input(false);
+    /**
+     * The strip under a rewritten range («Переписано · Оставить · Вернуть · Ещё раз»). A revision of a whole material (AI-16, #294) draws its own
+     * result card above the document, where «Оставить» saves the new version, so the strip's own «Оставить» would mean something else.
+     */
+    readonly showStrip = input(true);
 
     private readonly store = inject(WorkshopSessionStore);
     private readonly injector = inject(Injector);
@@ -181,7 +170,7 @@ export class ProposalDocumentComponent {
     protected readonly review = computed<Review | null>(() => {
         const memo = this.memo();
         const detail = this.detail();
-        if (detail === null || this.artifact().state !== 'PROPOSED' || !this.shownIsCurrent()) return null;
+        if (!this.showStrip() || detail === null || this.artifact().state !== 'PROPOSED' || !this.shownIsCurrent()) return null;
         const order = this.order();
         if (memo === null) return this.readFailure(detail, order);
         if (memo.dismissed) return null;
@@ -229,25 +218,6 @@ export class ProposalDocumentComponent {
     });
     protected readonly overlay = computed<BlockOverlay>(() => ({ busy: this.busyIds(), marked: this.marked(), hidden: this.hiddenIds(),
         before: this.beforeIds(), after: this.afterIds(), template: this.slot() }));
-    protected readonly history = computed<readonly HistoryEntry[]>(() => {
-        const detail = this.detail();
-        if (detail === null || detail.turns.length === 0) return [];
-        const current = this.artifact().currentRevisionId;
-        const listed = new Set(detail.revisions.map(revision => revision.revisionId));
-        const target = (revisionId: string | null): string | null => revisionId !== null && revisionId !== current && listed.has(revisionId) ? revisionId : null;
-        const first = detail.revisions[0];
-        const entries: HistoryEntry[] = [];
-        if (first !== undefined) {
-            entries.push({ key: first.revisionId, label: 'Исходная версия', status: null, time: formatWorkshopStart(first.createdAt),
-                datetime: first.createdAt, current: first.revisionId === current, revertTo: target(first.revisionId) });
-        }
-        for (const turn of detail.turns) {
-            entries.push({ key: turn.turnId, label: describeTurnAsk(turn), status: turnStatusWithReason(turn), time: formatWorkshopStart(turn.createdAt),
-                datetime: turn.createdAt, current: turn.status === 'APPLIED' && turn.resultRevisionId === current,
-                revertTo: turn.status === 'APPLIED' ? target(turn.resultRevisionId) : null });
-        }
-        return entries;
-    });
     protected readonly failure = computed(() => {
         const review = this.review();
         if (review === null || review.kind !== 'failed') return null;
@@ -606,9 +576,9 @@ export class ProposalDocumentComponent {
         else if (outcome.ok && action === 'REMOVE_MEDIA') this.focusHost();
     }
 
-    protected revertTo(entry: HistoryEntry): void {
-        if (entry.revertTo === null || this.busy() || !this.canRevert()) return;
-        void this.store.revert(this.artifact().artifactId, entry.revertTo);
+    protected revertTo(revisionId: string): void {
+        if (this.busy() || !this.canRevert()) return;
+        void this.store.revert(this.artifact().artifactId, revisionId);
     }
 }
 

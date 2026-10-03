@@ -1,0 +1,46 @@
+<fieldset class="group mechanics" [attr.aria-describedby]="uid() + '-mechanics-hint'">
+  <legend>Типы упражнений</legend>
+  <div class="chips">
+    <label class="chip">
+      <input type="checkbox" name="mechanics-auto" [checked]="auto()" (change)="setAuto($event)" />
+      <span>Авто</span>
+    </label>
+    @for (choice of mechanicChoices; track choice.value) {
+      <label class="chip">
+        <input type="checkbox" [name]="'mechanic-' + choice.value" [checked]="hasMechanic(choice.value)" (change)="setMechanic(choice.value, $event)" />
+        <span>{{ choice.label }}</span>
+      </label>
+    }
+  </div>
+  <p class="hint" [id]="uid() + '-mechanics-hint'" aria-live="polite">{{ auto()
+    ? 'Авто: Мнема подберёт разные типы — вспомнить, ввести, выбрать, сопоставить.'
+    : 'Только выбранные типы. Если снять все, вернётся «Авто».' }}</p>
+</fieldset>
+
+@if (showPriority()) {
+  <app-segmented-choice legend="Что сначала" [options]="priorityOptions" [name]="uid() + '-priority'"
+    [value]="value().priority" (valueChange)="setPriority($event)" />
+}
+
+<div class="quantity">
+  <app-segmented-choice legend="Сколько упражнений" [options]="quantityOptions()" [name]="uid() + '-quantity'"
+    [value]="value().quantityMode" (valueChange)="setQuantityMode($event)" />
+  @switch (value().quantityMode) {
+    @case ('EXACT') {
+      <div class="range-row">
+        <label [for]="uid() + '-per-target'">Упражнений на материал</label>
+        <input type="range" [id]="uid() + '-per-target'" min="1" max="10" step="1" [value]="value().perTarget"
+          [attr.aria-valuetext]="perTargetText(value().perTarget)" (input)="setPerTarget($event)" />
+        <output [for]="uid() + '-per-target'" aria-live="off">{{ perTargetText(value().perTarget) }}</output>
+      </div>
+    }
+    @case ('BUDGET_PERCENT') {
+      <div class="range-row">
+        <label [for]="uid() + '-percent'">Доля лимита</label>
+        <input type="range" [id]="uid() + '-percent'" min="1" max="100" step="1" [value]="value().percent"
+          [attr.aria-valuetext]="percentText(value().percent)" (input)="setPercent($event)" />
+        <output [for]="uid() + '-percent'" aria-live="off">{{ percentText(value().percent) }}</output>
+      </div>
+    }
+  }
+</div>

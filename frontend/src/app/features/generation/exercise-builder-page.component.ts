@@ -5,20 +5,18 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Subscription, catchError, firstValueFrom, forkJoin, map, of } from 'rxjs';
 
-import { Mechanic } from '../../content/exercise/exercise-content.models';
 import { ToastService } from '../../core/notifications/toast.service';
 import { PageTransition } from '../../shared/page-transition.service';
-import { SegmentedChoiceComponent } from '../../shared/segmented-choice.component';
 import { ToggletipComponent } from '../../shared/toggletip.component';
 import { newCommandId } from '../authoring/authoring.models';
 import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService, LearningCapabilities } from '../authoring/capabilities-api.service';
 import { ItemApiService } from '../authoring/item-api.service';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import {
-    BuilderTarget, BuilderValue, DEFAULT_BUILDER_VALUE, MECHANIC_CHOICES, PRIORITY_OPTIONS, QUANTITY_OPTIONS, QuantityMode,
-    buildExercisesSpec, capSessions, describeExerciseLimit, describeExerciseUsage, materialsCount, percentText, perTargetText, readLimits, splitNotice, splitTargets,
-    targetsSummary, toggleMechanic
+    BuilderTarget, BuilderValue, DEFAULT_BUILDER_VALUE, buildExercisesSpec, capSessions, describeExerciseLimit, describeExerciseUsage, materialsCount,
+    readLimits, splitNotice, splitTargets, targetsSummary
 } from './exercise-builder';
+import { ExerciseSettingsFieldsComponent } from './exercise-settings-fields.component';
 import { ResolvedTargets, TargetRequest, parseTargetRequest, resolveTargets } from './exercise-targets';
 import { GenerationApiService } from './generation-api.service';
 import { blockImplicitSubmit } from './implicit-submit';
@@ -46,7 +44,7 @@ type EstimateState =
  */
 @Component({
     selector: 'app-exercise-builder-page',
-    imports: [RouterLink, SegmentedChoiceComponent, ToggletipComponent],
+    imports: [RouterLink, ExerciseSettingsFieldsComponent, ToggletipComponent],
     templateUrl: './exercise-builder-page.component.html',
     styleUrls: ['../authoring/authoring-page.css', './generation-composer.component.css', './exercise-builder-page.component.css'],
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -73,16 +71,10 @@ export class ExerciseBuilderPageComponent {
     readonly activeWorkshops = signal<readonly SessionSummary[]>([]);
 
     protected readonly uid = 'mn-exercise-builder';
-    protected readonly mechanicChoices = MECHANIC_CHOICES;
-    protected readonly priorityOptions = PRIORITY_OPTIONS;
-    protected readonly quantityOptions = QUANTITY_OPTIONS;
-    protected readonly perTargetText = perTargetText;
-    protected readonly percentText = percentText;
     protected readonly materialsCount = materialsCount;
     protected readonly blockImplicitSubmit = blockImplicitSubmit;
 
     protected readonly aiAvailable = computed(() => this.capabilities()?.aiGeneration.available === true);
-    protected readonly auto = computed(() => this.value().mechanics.length === 0);
     protected readonly summary = computed(() => targetsSummary(this.targets().length));
     /** The sessions the selection becomes: at most 20 materials each, the ones without exercises first when asked. */
     private readonly allSessions = computed(() => splitTargets(this.targets(), this.value().priority));
@@ -176,35 +168,10 @@ export class ExerciseBuilderPageComponent {
         this.destroyRef.onDestroy(() => this.load?.unsubscribe());
     }
 
-    protected setAuto(event: Event): void {
-        const input = event.target as HTMLInputElement;
-        // «Авто» is the state of no mechanic chosen: checking it clears them; unchecking it with none chosen changes nothing.
-        if (!input.checked) { input.checked = true; return; }
-        this.patch({ mechanics: [] });
-    }
-
-    protected setMechanic(mechanic: Mechanic, event: Event): void {
-        this.patch({ mechanics: toggleMechanic(this.value().mechanics, mechanic, (event.target as HTMLInputElement).checked) });
-    }
-
-    protected hasMechanic(mechanic: Mechanic): boolean {
-        return this.value().mechanics.includes(mechanic);
-    }
-
-    protected setPriority(priority: BuilderValue['priority'] | null): void {
-        if (priority !== null) this.patch({ priority });
-    }
-
-    protected setQuantityMode(mode: QuantityMode | null): void {
-        if (mode !== null) this.patch({ quantityMode: mode });
-    }
-
-    protected setPerTarget(event: Event): void {
-        this.patch({ perTarget: Number((event.target as HTMLInputElement).value) });
-    }
-
-    protected setPercent(event: Event): void {
-        this.patch({ percent: Number((event.target as HTMLInputElement).value) });
+    /** The next choices of the mechanics, the order and the quantity; any change of the request clears what was said about the last one. */
+    protected onValue(next: BuilderValue): void {
+        this.value.set(next);
+        this.resetOutcome();
     }
 
     protected onSubmit(event: Event): void {
@@ -279,11 +246,6 @@ export class ExerciseBuilderPageComponent {
             this.truncated.set(result.targets.truncated);
             this.phase.set(!result.capabilities.aiGeneration.available || result.targets.targets.length === 0 ? 'unavailable' : 'ready');
         });
-    }
-
-    private patch(change: Partial<BuilderValue>): void {
-        this.value.set({ ...this.value(), ...change });
-        this.resetOutcome();
     }
 
     private resetOutcome(): void {
