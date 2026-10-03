@@ -644,6 +644,7 @@
       "objectiveId": "77777777-7777-4777-8777-777777777711",
       "objectiveRevisionId": "77777777-7777-4777-8777-777777777712",
       "learningEpoch": "0",
+      "isNew": false,
       "content": {
         "prompt": [
           {
@@ -684,6 +685,7 @@
       "objectiveId": "77777777-7777-4777-8777-777777777721",
       "objectiveRevisionId": "77777777-7777-4777-8777-777777777722",
       "learningEpoch": "0",
+      "isNew": false,
       "content": {
         "prompt": [
           {
@@ -714,6 +716,7 @@
       "objectiveId": "77777777-7777-4777-8777-777777777721",
       "objectiveRevisionId": "77777777-7777-4777-8777-777777777722",
       "learningEpoch": "0",
+      "isNew": false,
       "content": {
         "prompt": [
           {
@@ -745,6 +748,7 @@
       "objectiveId": "77777777-7777-4777-8777-777777777731",
       "objectiveRevisionId": "77777777-7777-4777-8777-777777777732",
       "learningEpoch": "0",
+      "isNew": false,
       "content": {
         "prompt": [
           {
@@ -815,6 +819,7 @@
       "objectiveId": "77777777-7777-4777-8777-777777777741",
       "objectiveRevisionId": "77777777-7777-4777-8777-777777777742",
       "learningEpoch": "0",
+      "isNew": false,
       "content": {
         "prompt": [
           {
@@ -889,6 +894,7 @@
       "objectiveId": "77777777-7777-4777-8777-777777777751",
       "objectiveRevisionId": "77777777-7777-4777-8777-777777777752",
       "learningEpoch": "0",
+      "isNew": false,
       "content": {
         "prompt": [
           {
@@ -993,6 +999,7 @@
       "objectiveId": "77777777-7777-4777-8777-777777777761",
       "objectiveRevisionId": "77777777-7777-4777-8777-777777777762",
       "learningEpoch": "0",
+      "isNew": false,
       "content": {
         "prompt": [
           {
@@ -1074,6 +1081,7 @@
       "objectiveId": "77777777-7777-4777-8777-777777777771",
       "objectiveRevisionId": "77777777-7777-4777-8777-777777777772",
       "learningEpoch": "0",
+      "isNew": false,
       "content": {
         "prompt": [
           {

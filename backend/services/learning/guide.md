@@ -141,8 +141,8 @@ fair-use buckets, `GET /api/usage` and the estimate. Migration `V26__usage_ledge
 `app.mnema.learning.generation` implements the core of the Workshop ([`contracts/generation`](../../../contracts/generation/README.md),
 [architecture §3-§6](../../../docs/architecture/ai-generation-platform.md)): sessions, artifacts, durable steps, events, the
 `TEXT_DRAFT` step and its HTTP surface. Approval, rejection, hand-off, retry, delete, note archival and retention are
-"Review commands (#288)" below. Not here yet: edits, exercises, the planner and the media executors; their tables exist (V28),
-their routes do not.
+"Review commands (#288)" below, exercise sessions "Exercise generation (#291)". Not here yet: edits, the planner and the media
+executors; their tables exist (V28), their routes do not.
 
 - **HTTP** (`GenerationController`, every response `private, no-store`; unknown query parameters and body fields are `400`):
   `POST /api/decks/{deckId}/generation-sessions` (201, `Location`, `ETag`; an exact retry answers 201 with
@@ -152,7 +152,7 @@ their routes do not.
   .../artifacts/{artifactId}?revisionId=`. A body is read (at most 64 KiB) before any transaction. Order of evaluation as in
   `http.json`: ownership (404), receipt replay, validation (400, 422 limits), sources (404, then 409 `SOURCE_UNAVAILABLE`),
   capabilities (409), active sessions (422, listing their ids), usage (409, inside the admission transaction, so a refusal
-  leaves nothing). `EXERCISES` is `422 SPEC_NOT_SUPPORTED` on create (AI-13), the estimate still prices it.
+  leaves nothing). `EXERCISES` is supported (#291, below); only `planFirst: true` is `422 SPEC_NOT_SUPPORTED`, in the estimate too.
 - **Tables** (`V28__generation.sql`, composite owner-scoped foreign keys as `V10`): `generation_session` (immutable `spec`,
   `row_version`, `last_event_seq`, `expires_at`), `generation_session_source` (pins), `generation_artifact`,
   `generation_artifact_revision` (immutable, at most 30, `payload` + `handles` + `prompt_version` + `model_route` +
@@ -307,6 +307,67 @@ state (409) and usage (409, last, inside the transaction that changes state).
   reads only the snapshot. The rows are append-only and cascade with the session.
 - **Status** of a NOTE pin in `getArtifact` (`SessionViews.withNoteStatus`): equal row version `CURRENT`; missing `DELETED`;
   moved and archived with unchanged text `ARCHIVED`; otherwise `CHANGED`. It never writes anything.
+
+## Exercise generation (#291)
+
+`kind: EXERCISES` sessions ([decision 14](../../../contracts/generation/README.md), [exercises contract](../../../contracts/generation/exercises/README.md))
+reuse the session, step, event, usage and notification machinery above; what is specific is below.
+
+- **Admission** (`SessionService.admitExercises`): the targets are `SOURCE` items of the session (a target that is not the head is
+  `409 SOURCE_UNAVAILABLE`, checked by `GenerationGate`); `AdmissionPricing.Hold.exercises` is the quantity the usage interpreter resolved
+  (`AUTO`, `EXACT`, `BUDGET_PERCENT`: unchanged numbers); `ExercisesSpec.spread` spreads it over the targets in processing order
+  (`UNCOVERED_FIRST` sorts by `ContextRepository.exerciseCounts`, stable). One QUEUED artifact per exercise (`EXERCISE`, `source_refs` the
+  target pin, ordinal in processing order) and one `TEXT_DRAFT` step per target with `input {operation: EXERCISES, memberKey,
+  itemRevisionId, count, credits, artifactIds}`; `TextDraftExecutor` hands such a step to `ExerciseDraftExecutor`. `credits` is the step's
+  share of the hold (the rounded-up price of the exercises up to it minus the price of those before it), so the shares sum to the
+  reservation.
+- **Context** (`ExerciseContexts`): the `<data_policy>` block of the core (a cacheable segment put in front by `PromptAssembler`), then
+  the section of `ai/prompts/v1/exercises.md` verbatim: the schema (minified), `<material id="m1">` with `[[b1]]..` lines for the
+  top-level blocks that read as text (`PinnedMaterials`; not blank, at most 4000 characters, within 5.5k tokens), `<objectives>`
+  (`t1 · title · mechanics`), `<existing_exercises>` (first line of the prompt of each current enabled exercise, at most 30),
+  `<neighbors>` (titles of other materials) and the task (`count`, `Механики: A, B, C`, language). Temperature 0.4, JSON output,
+  `max_tokens` `800 + 800 x count` (at most 16k).
+- **Run** (`ExerciseDraftExecutor`): `beginExercises` (the artifacts become GENERATING), the context, the reservation check
+  (`ESTIMATE_EXCEEDED` without a call), then up to three provider calls with no transaction or connection open: the answer is parsed (a code
+  fence is tolerated), the first `needed` exercises go through `ExerciseValidator` one by one (schema, lint, compile, `readCreate`,
+  probes through `ExerciseProbeEvaluator`), the failures get `ExerciseRepairList` (the instruction "exactly K replacements" first, then
+  `упражнение N: CODE (path)` lines and the rule of each code, at most 1800 characters) appended as a repair segment, the second repair goes to the strong
+  route. `succeedExercises` is one transaction: the debit (`debit:{stepId}:{attempt}`, `EXERCISES_PER_MATERIAL`, the step's share in proportion
+  to the exercises produced), an `INITIAL` revision `{kind: EXERCISE_COMMAND, command}` and PROPOSED for each exercise that passed (in artifact
+  order), `FAILED(INVALID_OUTPUT)` for the artifacts that got none, the step's end and the events. There is no `BLOCKS_APPENDED`. `fail`, `recover`
+  and `expire` of `SessionLifecycle` act on every open artifact named by the step input. Metrics: `mnema_generation_exercise_findings_total{code}`.
+  A `COMMAND_REJECTED` is logged as `generation_exercise_command_rejected` (ids and index only).
+- **Pipeline classes** (`generation.exercise`, pure and Spring-free): `ExerciseOutputSchema` (the classpath copy
+  `ai/exercises/output.schema.json`; a test keeps it equal to the contract), `ExerciseLint`, `ExerciseCompiler` (the id allocator is injected:
+  `ExerciseIds`), `ExerciseValidator`, `ExerciseRelint` (the rules that read the material text, for a re-pin), `ExerciseRepairList`.
+  `study.attempt.ExerciseProbeEvaluator` is the only door to `AttemptEvaluation` for the generator.
+- **Approval** (`ReviewService.publishWithExercises`): ONE transaction (timeout 120 s): the receipt of the approval, the materials as one bulk
+  publication (`GeneratedItemPublisher`), then each exercise through `GeneratedExercisePublisher` (adapter `catalog.exercise.
+  GeneratedExercisePublicationAdapter`: `ExerciseCommand.readCreate`, `ExerciseService.publish` joining the transaction, objective reuse by
+  normalized title via `ExerciseRepository.objectivesOf`, `ExerciseNewMarks.mark`), each on the deck revision and version the previous one left, then
+  `apply` (PUBLISHED, `publishedRef`, provenance with `edited`, events). An approval without exercises keeps the old path (the completion of the
+  item publication). `replacement` is validated by `readCreate` and the subject member; with a drifted target it is never re-pinned: it is published when it
+  already stands on the head, else `STALE`. A reused objective is published against its current head (`repository.objectiveHead`) while it is bound to the subject
+  member, else `ObjectiveUnavailableException` makes the artifact `STALE` (409 `SOURCE_STALE`).
+- **Re-pin** (`ExerciseRepin`, called from `ReviewService.check` before the publish transaction): see decision 14; one transaction per artifact,
+  `REPIN` revision plus `repinStatus AUTO_REPINNED` (`GenerationRepository.repin`) only when every block the model was shown is unchanged in the head
+  (`ExerciseRepin.unchanged`), or `markStale`. `SourceDrift` treats the one pin of an exercise
+  artifact as bound to the head even when a retry moved it past the session's source row. Retry of an exercise (`requeueExercise`) is one
+  step with `count 1` and a `STEP` reservation of `exerciseCredits(1)`.
+- **`getArtifact`** adds `display` (`SessionViews.display`); because reading the material takes `FOR KEY SHARE` row locks that part runs in a second, ordinary
+  transaction.
+
+### New mark («Новое»)
+
+`V30__exercise_new_mark.sql`: `exercise_new_mark(deck_id, exercise_id, owner_id, marked_at)`, owned by `catalog.exercise` (`ExerciseNewMarks`,
+`learning.exercise.new-mark-ttl`, `P7D`); Study and the lists never read generation tables. The approval marks each published exercise in its
+transaction. `isNew` = a row younger than the TTL: on every entry of `ExerciseService.list` (the whole deck and `?memberKey=`, which is the
+material profile) and on Study presentations (`study_presentation.is_new`, decided and stored when the presentation is issued; a REPLAY copy keeps
+the column default `false`). The mark is deleted by `DELETE /api/decks/{deckId}/exercises/{exerciseId}/new-mark` (204, idempotent, opaque 404) and
+by `AttemptService.submit` on every terminal result (the attempt's transaction). Expired rows are purged by `StudyRetentionService.purgeBatch`
+(hourly), the closest existing worker; readers compare `marked_at`, so an unpurged row is never shown. `V30` also adds
+`generation_provenance.edited`. Tests: `GenerationExercisesIntegrationTest`, `ExerciseValidationFixtureTest`, `ExerciseValidatorTest`,
+`StubExercisesTest`.
 
 ## Shared platform contracts
 

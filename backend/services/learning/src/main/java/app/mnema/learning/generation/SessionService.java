@@ -20,8 +20,10 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
@@ -29,6 +31,7 @@ import tools.jackson.databind.node.ObjectNode;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -57,11 +60,14 @@ class SessionService {
     private final AdmissionPricing pricing;
     private final CommandReceiptService receipts;
     private final GenerationSettings settings;
+    private final ContextRepository context;
     private final ObjectProvider<StepDispatcher> dispatcher;
+    private final TransactionTemplate reading;
+    private final TransactionTemplate quoting;
 
     SessionService(GenerationRepository repository, StepRepository steps, SessionLifecycle lifecycle, SessionViews views,
                    UsageLedger ledger, AdmissionPricing pricing, CommandReceiptService receipts, GenerationSettings settings,
-                   ObjectProvider<StepDispatcher> dispatcher) {
+                   ContextRepository context, ObjectProvider<StepDispatcher> dispatcher, PlatformTransactionManager transactions) {
         this.repository = repository;
         this.steps = steps;
         this.lifecycle = lifecycle;
@@ -70,7 +76,11 @@ class SessionService {
         this.pricing = pricing;
         this.receipts = receipts;
         this.settings = settings;
+        this.context = context;
         this.dispatcher = dispatcher;
+        this.reading = new TransactionTemplate(transactions);
+        reading.setReadOnly(true);
+        this.quoting = new TransactionTemplate(transactions);
     }
 
     // --------------------------------------------------------------------- create
@@ -96,25 +106,100 @@ class SessionService {
         // Shape, limits, ownership of the sources (404) and capabilities (409): the same interpretation as the estimate.
         AdmissionPricing.Hold hold = pricing.hold(owner, deckId, spec);
         String kind = spec.path("kind").stringValue("");
-        if (!kind.equals("MATERIALS")) throw new SpecNotSupportedException(kind);
-        MaterialsSpec parsed = MaterialsSpec.read(spec);
-
         boolean[] applied = {false};
-        JsonNode acknowledgement = receipts.execute(identity, envelope, () -> {
-            applied[0] = true;
-            return admit(owner, deckId, spec, parsed, hold);
-        });
+        JsonNode acknowledgement;
+        switch (kind) {
+            case "MATERIALS" -> {
+                MaterialsSpec parsed = MaterialsSpec.read(spec);
+                acknowledgement = receipts.execute(identity, envelope, () -> {
+                    applied[0] = true;
+                    return admit(owner, deckId, spec, parsed, hold);
+                });
+            }
+            case "EXERCISES" -> {
+                ExercisesSpec parsed = ExercisesSpec.read(spec);
+                acknowledgement = receipts.execute(identity, envelope, () -> {
+                    applied[0] = true;
+                    return admitExercises(owner, deckId, spec, parsed, hold);
+                });
+            }
+            default -> throw new SpecNotSupportedException(kind);
+        }
         return new Written(acknowledgement, !applied[0]);
     }
 
-    private JsonNode admit(UUID owner, UUID deckId, JsonNode spec, MaterialsSpec parsed, AdmissionPricing.Hold hold) {
-        repository.lockAdmission(owner);
+    /** The 422 of a full house: the owner already has the most active sessions, named in the problem. */
+    private void requireRoomForASession(UUID owner) {
         List<UUID> active = repository.activeSessionIds(owner);
         if (active.size() >= settings.maxActiveSessions()) {
             throw new ResourceLimitExceededException(ProblemExtension.builder().put("limit", "ACTIVE_SESSIONS")
                     .put("limits", Map.of("maxActiveSessions", settings.maxActiveSessions()))
                     .put("activeSessionIds", active.stream().map(UUID::toString).toList()).build());
         }
+    }
+
+    /**
+     * Admits an {@code EXERCISES} session ({@code contracts/generation/exercises}, decision 14): the targets are pinned as
+     * {@code SOURCE} items; the resolved quantity of the spec is spread over the targets in their processing order (uncovered
+     * materials first with {@code UNCOVERED_FIRST}, the request order with {@code BALANCED}); one QUEUED artifact exists per
+     * exercise and one {@code TEXT_DRAFT} step per target fills them. A step's share of the hold is the difference of the
+     * rounded-up price of the exercises up to it and before it, so the shares add up to the reservation.
+     */
+    private JsonNode admitExercises(UUID owner, UUID deckId, JsonNode spec, ExercisesSpec parsed, AdmissionPricing.Hold hold) {
+        repository.lockAdmission(owner);
+        requireRoomForASession(owner);
+        UUID sessionId = UUID.randomUUID();
+        hold.requireFits();
+        Reservation reservation = ledger.reserve(owner, ReservationScope.SESSION, sessionId, null, Math.max(1, hold.credits()));
+        Session session = new Session(sessionId, owner, deckId, "EXERCISES", "RUNNING", null, spec, reservation.reservationId(),
+                0, 0, null, null, null);
+        repository.insertSession(session, settings.sessionRetention());
+        for (Source target : parsed.targets()) repository.insertSource(sessionId, owner, target);
+
+        List<Source> order = new ArrayList<>(parsed.targets());
+        if (parsed.priority().equals(ExercisesSpec.UNCOVERED_FIRST)) {
+            Map<UUID, Integer> covered = context.exerciseCounts(deckId, order.stream().map(Source::memberKey).toList());
+            // a stable sort: materials with the same number of exercises keep the order of the request
+            order.sort(java.util.Comparator.comparingInt(target -> covered.getOrDefault(target.memberKey(), 0)));
+        }
+        int total = Math.max(hold.exercises(), order.size());
+        int[] counts = ExercisesSpec.spread(total, order.size());
+        ObjectNode queued = Json.object();
+        for (String state : GenerationRepository.ARTIFACT_STATES) queued.put(state, state.equals("QUEUED") ? total : 0);
+        ObjectNode started = Json.object().put("state", "RUNNING").put("rowVersion", "1");
+        started.set("artifactCounts", queued);
+        List<EventDraft> events = new ArrayList<>();
+        events.add(new EventDraft("SESSION_STATE", null, started));
+        int ordinal = 0;
+        int planned = 0;
+        for (int index = 0; index < order.size(); index++) {
+            Source target = order.get(index);
+            int count = counts[index];
+            ArrayNode artifactIds = Json.array();
+            for (int exercise = 0; exercise < count; exercise++) {
+                UUID artifactId = UUID.randomUUID();
+                artifactIds.add(artifactId.toString());
+                repository.insertArtifact(artifactId, sessionId, owner, "EXERCISE", ordinal++, Json.array().add(itemRef(target)));
+                events.add(new EventDraft("ARTIFACT_STATE", artifactId, queuedPayload()));
+            }
+            int share = pricing.exerciseCredits(planned + count) - pricing.exerciseCredits(planned);
+            planned += count;
+            ObjectNode input = Json.object().put("operation", ExerciseDraftExecutor.OPERATION)
+                    .put("memberKey", target.memberKey().toString()).put("itemRevisionId", target.itemRevisionId().toString())
+                    .put("count", count).put("credits", share);
+            input.set("artifactIds", artifactIds);
+            steps.insert(UUID.randomUUID(), sessionId, UUID.fromString(artifactIds.get(0).stringValue("")), owner, "TEXT_DRAFT", "TEXT",
+                    input, "draft:" + artifactIds.get(0).stringValue("") + ":1");
+        }
+        long[] allocated = repository.update(sessionId, "RUNNING", null, true, events.size(), settings.sessionRetention());
+        repository.insertEvents(sessionId, allocated[0], events);
+        wakeAfterCommit();
+        return views.detail(repository.session(sessionId).orElseThrow());
+    }
+
+    private JsonNode admit(UUID owner, UUID deckId, JsonNode spec, MaterialsSpec parsed, AdmissionPricing.Hold hold) {
+        repository.lockAdmission(owner);
+        requireRoomForASession(owner);
         UUID sessionId = UUID.randomUUID();
         // Usage is strictly last: a full cap or a hold too small for one material, then the reservation itself: a refusal rolls this whole transaction back, so nothing has changed (contract step 6).
         hold.requireFits();
@@ -256,13 +341,24 @@ class SessionService {
         return views.eventEnvelope(session, after, repository.events(sessionId, after, limit), steps.activeSteps(sessionId));
     }
 
-    @Transactional(readOnly = true)
+    /**
+     * {@code getArtifact}: a read-only transaction. The proposal of an exercise also shows the text of the material nodes it quotes
+     * ({@code display}); reading an immutable storage snapshot takes {@code FOR KEY SHARE} row locks, which PostgreSQL refuses in a
+     * read-only transaction, so that part runs in a second, ordinary transaction. Nothing is written by either.
+     */
     ObjectNode artifact(UUID owner, UUID deckId, UUID sessionId, UUID artifactId, UUID revisionId) {
-        Session session = repository.session(owner, deckId, sessionId).orElseThrow(ResourceNotFoundException::new);
-        Artifact artifact = repository.artifact(sessionId, artifactId).orElseThrow(ResourceNotFoundException::new);
-        UUID wanted = revisionId == null ? artifact.currentRevisionId() : revisionId;
-        Revision revision = wanted == null ? null
-                : repository.revision(artifactId, wanted).orElseThrow(ResourceNotFoundException::new);
-        return views.artifactDetail(session, artifact, revision);
+        Loaded loaded = Objects.requireNonNull(reading.execute(status -> {
+            Session session = repository.session(owner, deckId, sessionId).orElseThrow(ResourceNotFoundException::new);
+            Artifact artifact = repository.artifact(sessionId, artifactId).orElseThrow(ResourceNotFoundException::new);
+            UUID wanted = revisionId == null ? artifact.currentRevisionId() : revisionId;
+            Revision revision = wanted == null ? null : repository.revision(artifactId, wanted).orElseThrow(ResourceNotFoundException::new);
+            return new Loaded(views.artifactDetail(session, artifact, revision), session, artifact, revision);
+        }));
+        if (loaded.revision() != null && loaded.artifact().targetKind().equals("EXERCISE")) {
+            loaded.detail().set("display", Objects.requireNonNull(quoting.execute(status -> views.display(loaded.session(), loaded.revision()))));
+        }
+        return loaded.detail();
     }
+
+    private record Loaded(ObjectNode detail, Session session, Artifact artifact, Revision revision) { }
 }

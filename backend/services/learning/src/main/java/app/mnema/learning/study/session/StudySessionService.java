@@ -4,6 +4,7 @@ import app.mnema.learning.capability.LearningCapabilities;
 import app.mnema.learning.catalog.content.NativeNodeIndex;
 import app.mnema.learning.catalog.content.storage.NativeStorageBatches;
 import app.mnema.learning.catalog.exercise.AnswerKey;
+import app.mnema.learning.catalog.exercise.ExerciseNewMarks;
 import app.mnema.learning.catalog.exercise.ExerciseType;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
@@ -31,6 +32,7 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -41,15 +43,17 @@ public class StudySessionService {
     private final CommandReceiptService receipts;
     private final NativeStorageBatches nativeBatches;
     private final LearningCapabilities capabilities;
+    private final ExerciseNewMarks newMarks;
     // MATCH order must not be reproducible from identifiers a client holds.
     private final RandomGenerator shuffle = new SecureRandom();
 
     public StudySessionService(StudySessionRepository repository, CommandReceiptService receipts,
-                               ImmutableStorage storage, LearningCapabilities capabilities) {
+                               ImmutableStorage storage, LearningCapabilities capabilities, ExerciseNewMarks newMarks) {
         this.repository = repository;
         this.receipts = receipts;
         this.nativeBatches = new NativeStorageBatches(storage);
         this.capabilities = capabilities;
+        this.newMarks = newMarks;
     }
 
     @Transactional(timeout = 10)
@@ -253,8 +257,11 @@ public class StudySessionService {
         LearnerContent.TextSource texts = materialText(session.deckId());
         int scanSize = Math.min(generation.candidateCount(), target * BoundedCandidatePlanner.SCAN_MULTIPLIER);
         int cursor = (int) (((long) start + scanSize) % generation.candidateCount());
+        // «Новое» is decided once, when the presentation is issued, and stored with it
+        Set<UUID> fresh = newMarks.fresh(session.accountId(), session.deckId(),
+                candidates.stream().map(StudySessionRepository.Candidate::exerciseId).toList());
         for (StudySessionRepository.Candidate candidate : candidates) {
-            insert(session, candidate, session.issuedCount() + batch++, now, texts);
+            insert(session, candidate, session.issuedCount() + batch++, now, texts, fresh.contains(candidate.exerciseId()));
             // Only scheduled sessions have a new-objective budget; practice may include unseen material freely.
             if (session.mode() == StudySessionCommand.Mode.SCHEDULED && !candidate.introduced()) newObjectives++;
             if (batch == target) break;
@@ -295,7 +302,7 @@ public class StudySessionService {
     }
 
     private void insert(StudySessionRepository.Session session, StudySessionRepository.Candidate candidate,
-                        int ordinal, Instant now, LearnerContent.TextSource texts) {
+                        int ordinal, Instant now, LearnerContent.TextSource texts, boolean isNew) {
         ExerciseType type = ExerciseType.fromWire(candidate.type()).orElseThrow(IllegalStateException::new);
         UUID presentation = UUID.randomUUID();
         // Resolved and shuffled once: reads and replays return exactly what was persisted here.
@@ -307,7 +314,7 @@ public class StudySessionService {
                 : repository.stateEpoch(session.accountId(), session.deckId(), candidate.objectiveId()).orElse(0L);
         repository.insertPresentation(session.accountId(), session.sessionId(), session.deckId(),
                 session.generationId(), candidate, presentation, ordinal, nonce(), epoch, learner.content(),
-                learner.reveal(), now, now.plus(SESSION_LIFETIME));
+                learner.reveal(), isNew, now, now.plus(SESSION_LIFETIME));
         if (session.mode() == StudySessionCommand.Mode.SCHEDULED) {
             repository.insertExposure(session.accountId(), session.sessionId(), presentation, session.deckId(),
                     candidate.objectiveId(), epoch, now);
@@ -361,7 +368,7 @@ public class StudySessionService {
                 .put("exerciseRevisionId", row.exerciseRevisionId().toString()).put("type", row.type())
                 .put("objectiveId", row.objectiveId().toString())
                 .put("objectiveRevisionId", row.objectiveRevisionId().toString())
-                .put("learningEpoch", Long.toString(row.learningEpoch()));
+                .put("learningEpoch", Long.toString(row.learningEpoch())).put("isNew", row.isNew());
         result.set("content", LearnerContent.view(row.content(), row.transcriptRevealed()));
         result.put("transcriptRevealed", row.transcriptRevealed());
         ArrayNode hints = result.putArray("hints");

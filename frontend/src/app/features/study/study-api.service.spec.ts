@@ -33,6 +33,19 @@ describe('StudyApiService', () => {
         expect((await result).value.status).toBe('ACTIVE');
     });
 
+    it('reads the «Новое» mark of a presentation (AI-13): exactly what it says, and a missing or non-boolean mark is refused', async () => {
+        const read = async (presentation: unknown) => {
+            const result = firstValueFrom(api.start(deckId, commandId, { mode: 'SCHEDULED', preset: 'STANDARD' }));
+            http.expectOne(`/api/decks/${deckId}/study-sessions`).flush(readySession([presentation]), created);
+            return result;
+        };
+        expect((await read({ ...selfCheck, isNew: true })).value).toMatchObject({ presentations: [{ isNew: true }] });
+        expect((await read({ ...selfCheck, isNew: false })).value).toMatchObject({ presentations: [{ isNew: false }] });
+        const { isNew: _omitted, ...withoutMark } = selfCheck;
+        await expect(read(withoutMark)).rejects.toThrowError();
+        await expect(read({ ...selfCheck, isNew: 'yes' })).rejects.toThrowError();
+    });
+
     it('maps the quick preset to one bounded scheduler budget', () => {
         api.start(deckId, commandId, { mode: 'SCHEDULED', preset: 'QUICK' }).subscribe();
         const request = http.expectOne(`/api/decks/${deckId}/study-sessions`);

@@ -71,7 +71,7 @@ class StudySessionRepository {
                         UUID exerciseId, UUID exerciseRevisionId, String type, UUID objectiveId,
                         UUID objectiveRevisionId, long learningEpoch, JsonNode content, JsonNode reveal,
                         JsonNode evaluator, JsonNode answerKey, boolean transcriptRevealed,
-                        List<UUID> hintedBlanks, Instant issuedAt, Instant expiresAt) { }
+                        List<UUID> hintedBlanks, Instant issuedAt, Instant expiresAt, boolean isNew) { }
     record Material(UUID memberKey, UUID itemRevisionId, UUID scopeId, UUID contentRootId) { }
     record ReplaySource(UUID sessionId, Instant completedAt, int presentationCount) { }
 
@@ -108,7 +108,7 @@ class StudySessionRepository {
             json(row.getString("evaluator")), json(row.getString("answer_key")),
             row.getBoolean("transcript_revealed"), blankIds(json(row.getString("hinted_blanks"))),
             row.getTimestamp("issued_at").toInstant(),
-            row.getTimestamp("expires_at").toInstant());
+            row.getTimestamp("expires_at").toInstant(), row.getBoolean("is_new"));
 
     Optional<DeckHead> deck(UUID actor, UUID deck) {
         return jdbc.sql("""
@@ -395,15 +395,15 @@ class StudySessionRepository {
 
     void insertPresentation(UUID actor, UUID session, UUID deck, UUID generation, Candidate candidate, UUID id,
                             int ordinal, String nonce, long learningEpoch, JsonNode content, JsonNode reveal,
-                            Instant now, Instant expires) {
+                            boolean isNew, Instant now, Instant expires) {
         jdbc.sql("""
                 INSERT INTO app_learning.study_presentation(account_id,session_id,presentation_id,presentation_ordinal,
                     nonce,deck_id,generation_id,candidate_ordinal,exercise_id,exercise_revision_id,exercise_type,
                     objective_id,objective_revision_id,learning_epoch,content,reveal,evaluator,answer_key,
-                    issued_at,expires_at)
+                    issued_at,expires_at,is_new)
                 VALUES (:actor,:session,:id,:ordinal,:nonce,:deck,:generation,:candidateOrdinal,:exercise,
                     :exerciseRevision,:type,:objective,:objectiveRevision,:epoch,CAST(:content AS jsonb),
-                    CAST(:reveal AS jsonb),CAST(:evaluator AS jsonb),CAST(:answerKey AS jsonb),:now,:expires)
+                    CAST(:reveal AS jsonb),CAST(:evaluator AS jsonb),CAST(:answerKey AS jsonb),:now,:expires,:isNew)
                 """).param("actor", actor).param("session", session).param("id", id).param("ordinal", ordinal)
                 .param("nonce", nonce).param("deck", deck).param("generation", generation)
                 .param("candidateOrdinal", candidate.ordinal()).param("exercise", candidate.exerciseId())
@@ -412,8 +412,8 @@ class StudySessionRepository {
                 .param("epoch", learningEpoch)
                 .param("content", content.toString()).param("reveal", reveal.toString())
                 .param("evaluator", evaluatorIdentity(candidate.evaluator()).toString())
-                .param("answerKey", candidate.answerKey().toString()).param("now", Timestamp.from(now))
-                .param("expires", Timestamp.from(expires)).update();
+                .param("answerKey", candidate.answerKey().toString()).param("isNew", isNew)
+                .param("now", Timestamp.from(now)).param("expires", Timestamp.from(expires)).update();
     }
 
     long ensureState(UUID actor, UUID deck, UUID objective, UUID config, Instant now) {

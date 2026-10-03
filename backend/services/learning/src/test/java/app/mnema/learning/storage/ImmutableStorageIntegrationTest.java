@@ -67,7 +67,7 @@ class ImmutableStorageIntegrationTest extends PostgresIntegrationTest {
                 + "app_learning.study_presentation, app_learning.study_session, "
                 + "app_learning.study_candidate, app_learning.study_candidate_generation, "
                 + "app_learning.capture_note, app_learning.editing_draft, "
-                + "app_learning.exercise_content_binding, app_learning.deck_head_exercise, "
+                + "app_learning.exercise_new_mark, app_learning.exercise_content_binding, app_learning.deck_head_exercise, "
                 + "app_learning.deck_exercise_change, app_learning.exercise_revision, "
                 + "app_learning.exercise_definition, app_learning.objective_head, "
                 + "app_learning.objective_revision, app_learning.memory_objective, app_learning.deck_head_item, "

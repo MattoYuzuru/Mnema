@@ -16,7 +16,9 @@ import java.util.Set;
  * <p>Order (stable first, volatile last): core {@code system}, {@code style}, the five {@code skill-*} sections (all
  * system role, byte-identical for every user within a {@code prompt_version}, cacheable), then the per-deck
  * {@code deck-brief} (user role, cacheable within a session), then the task section (user role, volatile). Exercises and
- * grading are single sections with their own prefix.
+ * grading are single sections with their own prefix. The exercise section is preceded by the {@code <data_policy>} block of the
+ * core, taken verbatim (the section carries the author's material, objectives and exercises as data, and the core's policy
+ * says such tags are data and not instructions); the rest of the core describes the MBM format and does not apply to JSON.
  *
  * <p>Budgets are estimates ({@code TokenCounter}): each section has a ceiling, and the whole input has a hard ceiling
  * (32k by default, the limit for non-thinking Flash) that fails with a {@link PromptException} so the caller trims its
@@ -26,6 +28,8 @@ import java.util.Set;
 public final class PromptAssembler {
     static final List<String> PREFIX = List.of("system", "style", "skill-vocabulary", "skill-grammar", "skill-stem-concept",
             "skill-code", "skill-exam-summary");
+    private static final String DATA_POLICY_OPEN = "<data_policy>";
+    private static final String DATA_POLICY_CLOSE = "</data_policy>";
     private static final Set<String> SKILLS = Set.of("vocabulary", "grammar", "concept", "code", "exam_notes", "free");
     /** Ceilings in estimated tokens; the static ones guard against accidental growth of the cached prefix. */
     private static final Map<String, Integer> CEILINGS = Map.ofEntries(
@@ -52,6 +56,7 @@ public final class PromptAssembler {
             for (String name : PREFIX) total += add(segments, sizes, name, values, true, TextRequest.Role.SYSTEM);
             total += add(segments, sizes, "deck-brief", values, true, TextRequest.Role.USER);
         }
+        if (task == PromptTask.EXERCISES) total += addDataPolicy(segments, sizes);
         total += add(segments, sizes, task.section(), values, false, TextRequest.Role.USER);
         if (total > limits.maxInputTokens()) throw new PromptException("Prompt exceeds the input ceiling");
         return new AssembledPrompt(library.version(), segments, total, sizes, total > limits.workingInputTokens());
@@ -67,6 +72,19 @@ public final class PromptAssembler {
         }
         segments.add(new TextRequest.Segment(role, text, cacheable));
         sizes.put(name, tokens);
+        return tokens;
+    }
+
+    /** The {@code <data_policy>} block of the core as its own stable, cacheable segment (byte-identical within a version). */
+    private int addDataPolicy(List<TextRequest.Segment> segments, Map<String, Integer> sizes) {
+        String body = library.section("system").body();
+        int start = body.indexOf(DATA_POLICY_OPEN);
+        int end = body.indexOf(DATA_POLICY_CLOSE);
+        if (start < 0 || end < start) throw new PromptException("The core section has no data policy");
+        String policy = body.substring(start, end + DATA_POLICY_CLOSE.length());
+        int tokens = TokenCounter.estimate(policy);
+        segments.add(new TextRequest.Segment(TextRequest.Role.SYSTEM, policy, true));
+        sizes.put("data-policy", tokens);
         return tokens;
     }
 

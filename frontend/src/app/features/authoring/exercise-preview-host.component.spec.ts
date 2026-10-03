@@ -411,4 +411,45 @@ describe('ExercisePreviewHostComponent', () => {
         expect(call.request.url).not.toMatch(/study-sessions|attempts|pair-checks|hints|transcript/);
         call.flush({ blankId: action(call).blankId, firstLetter: 'м' }, { headers: { 'Cache-Control': 'private, no-store' } });
     });
+
+    describe('a Workshop proposal in a batch card (AI-13)', () => {
+        const proposal = () => presentationOf(catalogEntry('SELF_CHECK').demo.exercise, 'PROPOSAL', 'proposal:1');
+
+        it('says it is proposed by Мнема, not the author\'s own exercise', () => {
+            show(proposal());
+            expect(root().querySelector('.badge')?.textContent?.trim()).toBe('Предложено Мнемой');
+            expect(root().querySelector('[data-preview-caption]')?.textContent).toContain('Пройдите упражнение как ученик');
+            expect(root().querySelector('[data-preview-caption]')?.textContent).not.toContain('своё');
+            expect(root().querySelector('[role="status"].visually-hidden')?.textContent).toBe('Показано предложенное упражнение.');
+        });
+
+        it('gives every id, the result heading and the focus target its own prefix, so several hosts can share a page', () => {
+            show(demo('SELF_CHECK'));
+            fixture.componentRef.setInput('idPrefix', 'ex-1');
+            refresh();
+            expect(root().querySelector('h2')?.id).toBe('ex-1-title');
+            expect(root().querySelector('section.preview')?.getAttribute('aria-labelledby')).toBe('ex-1-title');
+            click('[data-answer-control]');
+            click('[data-first-rating]', 0);
+            request().flush({ feedback: { result: 'CORRECT', appliedRules: ['SELF_REPORT'] } }, { headers: { 'Cache-Control': 'private, no-store' } });
+            refresh();
+            expect(root().querySelector('#ex-1-result-title')?.textContent).toBe('Верно');
+            expect(document.activeElement?.id).toBe('ex-1-result-title');
+            expect(root().querySelector('#preview-result-title')).toBeNull();
+        });
+
+        it('compact: the heading and caption stay for assistive technology only, and the region is named by the card', () => {
+            show(proposal());
+            fixture.componentRef.setInput('compact', true);
+            fixture.componentRef.setInput('heading', 'Проба: Вспомнить и сверить');
+            refresh();
+            const section = root().querySelector('section.preview')!;
+            expect(section.classList.contains('compact')).toBe(true);
+            expect(section.getAttribute('aria-label')).toBe('Проба: Вспомнить и сверить');
+            expect(section.getAttribute('aria-labelledby')).toBeNull();
+            expect(root().querySelector('.preview-head')?.getAttribute('aria-hidden')).toBe('true');
+            expect(root().querySelector('[data-preview-caption]')?.getAttribute('aria-hidden')).toBe('true');
+            expect(root().querySelector('[role="status"].visually-hidden')).toBeNull();
+        });
+    });
 });

@@ -117,8 +117,12 @@ class GenerationHttpContractTest extends GenerationIntegrationTest {
         ObjectNode ownExercises = JSON.createObjectNode().put("kind", "EXERCISES");
         ownExercises.putArray("targets").addObject().put("memberKey", material.member().toString())
                 .put("itemRevisionId", material.itemRevision().toString());
-        problem(create(owner, deck, ownExercises, UUID.randomUUID()), 422, "SPEC_NOT_SUPPORTED");
-        assertThat(problemBody(create(owner, deck, ownExercises, UUID.randomUUID())).path("kind").stringValue(null)).isEqualTo("EXERCISES");
+        // an exercises spec is supported (AI-13); only a planned one waits for the planner
+        ObjectNode plannedExercises = ownExercises.deepCopy();
+        plannedExercises.putObject("settings").put("planFirst", true);
+        MockHttpServletResponse plannedExercisesResponse = create(owner, deck, plannedExercises, UUID.randomUUID());
+        problem(plannedExercisesResponse, 422, "SPEC_NOT_SUPPORTED");
+        assertThat(problemBody(plannedExercisesResponse).path("kind").stringValue(null)).isEqualTo("EXERCISES");
 
         ObjectNode planFirst = spec("p");
         ((ObjectNode) planFirst.path("settings")).put("planFirst", true);

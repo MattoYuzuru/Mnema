@@ -48,6 +48,8 @@ import java.util.UUID;
 class SessionLifecycle {
     private static final Logger LOG = LoggerFactory.getLogger(SessionLifecycle.class);
     private static final String MEDIA_CAPABILITY_TTS = "TTS";
+    /** The rate-card operation an {@code EXERCISES} step is debited under (five exercises per unit). */
+    static final String EXERCISES_OPERATION = "EXERCISES_PER_MATERIAL";
 
     private final GenerationRepository repository;
     private final StepRepository steps;
@@ -190,7 +192,7 @@ class SessionLifecycle {
                     "debit:" + claim.stepId() + ":" + claim.attempt(), draft.operation(), draft.credits(),
                     draft.costMicros(), claim.stepId().toString()));
         } catch (EstimateExceededException | ReservationNotActiveException exceeded) {
-            fail(tx, claim, artifact, Failure.fail("ESTIMATE_EXCEEDED"));
+            fail(tx, claim, List.of(artifact), Failure.fail("ESTIMATE_EXCEEDED"));
             return true;
         }
         UUID revisionId = UUID.randomUUID();
@@ -257,16 +259,17 @@ class SessionLifecycle {
         if (tx == null) return false;
         Optional<Step> held = steps.lockHeld(claim.stepId(), claim.token());
         if (held.isEmpty()) return false;
-        Artifact artifact = repository.artifact(claim.sessionId(), claim.artifactId()).orElse(null);
-        if (artifact == null || failure.kind() == Failure.Kind.CANCELLED || held.get().cancelRequested() || !open(artifact)) {
+        List<Artifact> open = openArtifacts(held.get());
+        if (open.isEmpty() || failure.kind() == Failure.Kind.CANCELLED || held.get().cancelRequested()) {
             steps.finish(claim.stepId(), "CANCELLED", null, null);
             return true;
         }
-        fail(tx, claim, artifact, failure);
+        fail(tx, claim, open, failure);
         return true;
     }
 
-    private void fail(Tx tx, StepClaim claim, Artifact artifact, Failure failure) {
+    /** One run that did not produce a result: a retry later (nothing changes) or the end of every artifact it still owed. */
+    private void fail(Tx tx, StepClaim claim, List<Artifact> artifacts, Failure failure) {
         Step step = steps.step(claim.stepId()).orElseThrow();
         if (failure.kind() == Failure.Kind.RETRY && step.attempts() < settings.step().maxAttempts() && !expired(step)) {
             long delay = Math.min(Math.max(0, failure.delay().toSeconds()), settings.step().backoffCap().toSeconds());
@@ -277,9 +280,25 @@ class SessionLifecycle {
         }
         String code = failure.kind() == Failure.Kind.RETRY && expired(step) ? "DEADLINE_EXCEEDED" : failure.errorCode();
         steps.finish(step.stepId(), "FAILED", code, null);
-        failArtifact(tx, artifact, code);
+        for (Artifact artifact : artifacts) failArtifact(tx, artifact, code);
         settle(tx);
         flush(tx);
+    }
+
+    /**
+     * The artifacts a step works on that are still being written: the {@code artifactIds} of its input (an {@code EXERCISES} step
+     * fills several), else its own artifact. Artifacts that left QUEUED and GENERATING (cancelled, failed, stale) are not listed.
+     */
+    private List<Artifact> openArtifacts(Step step) {
+        List<UUID> ids = new ArrayList<>();
+        if (step.input().path("artifactIds").isArray()) {
+            step.input().path("artifactIds").forEach(id -> ids.add(UUID.fromString(id.stringValue(""))));
+        } else if (step.artifactId() != null) {
+            ids.add(step.artifactId());
+        }
+        List<Artifact> open = new ArrayList<>();
+        for (UUID id : ids) repository.artifact(step.sessionId(), id).filter(SessionLifecycle::open).ifPresent(open::add);
+        return open;
     }
 
     private void failArtifact(Tx tx, Artifact artifact, String errorCode) {
@@ -301,15 +320,15 @@ class SessionLifecycle {
         if (tx == null) return;
         Step step = steps.lockExpired(stepId).orElse(null);
         if (step == null) return;
-        Artifact artifact = step.artifactId() == null ? null : repository.artifact(step.sessionId(), step.artifactId()).orElse(null);
-        if (step.cancelRequested() || artifact == null || !open(artifact)) {
+        List<Artifact> open = openArtifacts(step);
+        if (step.cancelRequested() || open.isEmpty()) {
             steps.finish(stepId, "CANCELLED", null, null);
             return;
         }
         if (step.attempts() >= settings.step().maxAttempts() || expired(step)) {
             boolean late = expired(step) || step.deadlineAt() != null && step.deadlineAt().isBefore(Instant.now());
             steps.finish(stepId, "FAILED", late ? "DEADLINE_EXCEEDED" : "PROVIDER_UNAVAILABLE", null);
-            failArtifact(tx, artifact, late ? "DEADLINE_EXCEEDED" : "PROVIDER_UNAVAILABLE");
+            for (Artifact artifact : open) failArtifact(tx, artifact, late ? "DEADLINE_EXCEEDED" : "PROVIDER_UNAVAILABLE");
             settle(tx);
             flush(tx);
             return;
@@ -332,10 +351,10 @@ class SessionLifecycle {
         if (tx == null) return;
         Step step = steps.lockReady(stepId).orElse(null);
         if (step == null) return;
-        Artifact artifact = step.artifactId() == null ? null : repository.artifact(step.sessionId(), step.artifactId()).orElse(null);
+        List<Artifact> open = openArtifacts(step);
         steps.finish(stepId, "FAILED", "DEADLINE_EXCEEDED", null);
-        if (artifact != null && open(artifact)) {
-            failArtifact(tx, artifact, "DEADLINE_EXCEEDED");
+        if (!open.isEmpty()) {
+            for (Artifact artifact : open) failArtifact(tx, artifact, "DEADLINE_EXCEEDED");
             settle(tx);
             flush(tx);
         }
@@ -543,5 +562,107 @@ class SessionLifecycle {
 
     private static boolean open(Artifact artifact) {
         return artifact.state().equals("QUEUED") || artifact.state().equals("GENERATING");
+    }
+
+    // ------------------------------------------------------------------ exercises
+
+    /** One validated exercise of an {@code EXERCISES} step: the artifact it fills and the command it proposes. */
+    record Proposal(UUID artifactId, ObjectNode command, String title) { }
+
+    /**
+     * What an {@code EXERCISES} run produced: the exercises that passed validation (at most one per open artifact of the step, in the
+     * order of the artifacts; the artifacts without one fail with {@code INVALID_OUTPUT}). {@code credits} is the step's share of the
+     * session hold and {@code planned} the exercises it was asked for: the debit is that share for the exercises that were produced.
+     * {@code handles} are the blocks the model was shown ({@code m1:b3 -> node id}), kept on every revision: a re-pin may follow the
+     * material only if all of them are unchanged. {@code failureCode} is the error of the artifacts that got no exercise.
+     */
+    record ExerciseDraft(String promptVersion, String modelRoute, List<Proposal> proposals, long costMicros, int credits, int planned,
+                         Map<String, String> handles, String failureCode) { }
+
+    /**
+     * The worker starts an {@code EXERCISES} step: its QUEUED artifacts become GENERATING. There is no draft stream: a proposal
+     * appears whole, when the step has validated it.
+     *
+     * @return false when the claim is void (lease lost, session cancelled, nothing left to write)
+     */
+    @Transactional
+    boolean beginExercises(StepClaim claim) {
+        Tx tx = lock(claim.sessionId());
+        if (tx == null) return false;
+        Optional<Step> held = steps.lockHeld(claim.stepId(), claim.token());
+        if (held.isEmpty()) return false;
+        List<Artifact> open = openArtifacts(held.get());
+        if (held.get().cancelRequested() || !runnable(tx.session) || open.isEmpty()) {
+            steps.finish(claim.stepId(), "CANCELLED", null, null);
+            return false;
+        }
+        boolean changed = false;
+        for (Artifact artifact : open) {
+            if (!artifact.state().equals("QUEUED")) continue;
+            tx.events.add(artifactEvent(repository.transition(artifact, "GENERATING", null, null, null, artifact.revisionCount())));
+            changed = true;
+        }
+        if (!changed) tx.touch = false;
+        flush(tx);
+        return true;
+    }
+
+    /**
+     * The one result transaction of an {@code EXERCISES} step: the debit for the exercises produced, one INITIAL revision and the
+     * move to PROPOSED for each, FAILED({@code INVALID_OUTPUT}) for the artifacts that got none, the step's end and the events. If the
+     * reservation cannot pay, every artifact of the step fails with {@code ESTIMATE_EXCEEDED} and nothing is debited. Returns false,
+     * writing nothing, when the lease token no longer holds.
+     */
+    @Transactional
+    boolean succeedExercises(StepClaim claim, ExerciseDraft draft) {
+        Tx tx = lock(claim.sessionId());
+        if (tx == null) return false;
+        Optional<Step> held = steps.lockHeld(claim.stepId(), claim.token());
+        if (held.isEmpty()) return false;
+        List<Artifact> open = openArtifacts(held.get());
+        if (held.get().cancelRequested() || !runnable(tx.session) || open.isEmpty()) {
+            steps.finish(claim.stepId(), "CANCELLED", null, null);
+            return false;
+        }
+        Map<UUID, Proposal> proposals = new HashMap<>();
+        draft.proposals().forEach(proposal -> proposals.put(proposal.artifactId(), proposal));
+        if (!proposals.isEmpty()) {
+            // the step's share of the hold, in proportion to what was produced: the shares of all steps add up to the hold
+            int credits = (int) (((long) draft.credits() * proposals.size() + draft.planned() - 1) / draft.planned());
+            try {
+                ledger.settle(tx.session.ownerId(), new UsageLedger.Debit(SessionReservations.forStep(tx.session, held.get().input()),
+                        "debit:" + claim.stepId() + ":" + claim.attempt(), EXERCISES_OPERATION, credits, draft.costMicros(),
+                        claim.stepId().toString()));
+            } catch (EstimateExceededException | ReservationNotActiveException exceeded) {
+                fail(tx, claim, open, Failure.fail("ESTIMATE_EXCEEDED"));
+                return true;
+            }
+        }
+        String firstRevision = null;
+        for (Artifact artifact : open) {
+            Proposal proposal = proposals.get(artifact.artifactId());
+            if (proposal == null) {
+                failArtifact(tx, artifact, draft.failureCode());
+                continue;
+            }
+            UUID revisionId = UUID.randomUUID();
+            int revisionNo = artifact.revisionCount() + 1;
+            ObjectNode payload = Json.object().put("kind", "EXERCISE_COMMAND");
+            payload.set("command", proposal.command());
+            ObjectNode validation = Json.object();
+            validation.putArray("warnings");
+            ObjectNode handles = Json.object();
+            draft.handles().forEach(handles::put);
+            repository.insertRevision(new Revision(revisionId, artifact.artifactId(), revisionNo, "INITIAL", payload, handles,
+                    draft.promptVersion(), draft.modelRoute(), validation, Instant.now()), tx.session.sessionId(), tx.session.ownerId());
+            tx.events.add(artifactEvent(repository.transition(artifact, "PROPOSED", null, revisionId, proposal.title(), revisionNo)));
+            if (firstRevision == null) firstRevision = revisionId.toString();
+        }
+        if (proposals.isEmpty()) steps.finish(claim.stepId(), "FAILED", draft.failureCode(), null);
+        else steps.finish(claim.stepId(), "SUCCEEDED", null, firstRevision);
+        if (!proposals.isEmpty()) tx.events.add(usageEvent(tx.session, null));
+        settle(tx);
+        flush(tx);
+        return true;
     }
 }

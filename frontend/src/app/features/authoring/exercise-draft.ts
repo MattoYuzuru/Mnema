@@ -6,7 +6,7 @@ import {
 } from '../../content/exercise/exercise-content.models';
 import { blockProblem, isEntityId, slotProblem } from '../../content/exercise/exercise-content.parse';
 import { NativeDocument } from '../../content/native-document';
-import { ExerciseDetail, ExerciseProjection } from './exercise.models';
+import { ExerciseProjection } from './exercise.models';
 
 /**
  * Editable state of one exercise per mechanic. Drafts are plain immutable values: switching the mechanic
@@ -88,6 +88,9 @@ export interface SlotContext {
     readonly projections: readonly ExerciseProjection[];
 }
 
+/** All that is needed to show the quoted text of a `MATERIAL` block: a proposal has no document, only the quotes the server sent. */
+export type MaterialContext = Pick<SlotContext, 'projections'>;
+
 export type DraftErrors = Readonly<Partial<Record<string, string>>>;
 
 export function newId(): string { return crypto.randomUUID(); }
@@ -137,8 +140,11 @@ function answerDraft(answer: { readonly accepted: readonly string[]; readonly no
     return { rows: answer.accepted.map(value => ({ id: newId(), value })), normalization: answer.normalization, matchingMode: answer.matchingMode };
 }
 
-/** Loads a persisted exercise into the drafts, leaving the other mechanics at their defaults. */
-export function draftsFromDetail(detail: ExerciseDetail): ExerciseDrafts {
+/**
+ * Loads a persisted exercise, or a proposal of the same shape, into the drafts, leaving the other mechanics at their defaults.
+ * A persisted exercise is an `ExerciseSpec` with an envelope, so it fits.
+ */
+export function draftsFromDetail(detail: ExerciseSpec): ExerciseDrafts {
     const drafts = emptyDrafts();
     switch (detail.type) {
         case 'SELF_CHECK': return { ...drafts, SELF_CHECK: { prompt: detail.content.prompt, reference: detail.content.reference } };
@@ -249,7 +255,7 @@ export function buildSpec(type: Mechanic, drafts: ExerciseDrafts, subject: Exerc
 // ---------------------------------------------------------------------------------------------
 
 /** Resolved text of a MATERIAL block, or null when the fragment is not in the loaded revision. */
-export function materialText(block: AuthoringBlock, context: SlotContext): string | null {
+export function materialText(block: AuthoringBlock, context: MaterialContext): string | null {
     if (block.kind !== 'MATERIAL') return null;
     return context.projections.find(projection => projection.nodeId === block.nodeId)?.text ?? null;
 }
@@ -519,13 +525,13 @@ export const PREVIEW_PLACEHOLDERS = {
 
 export interface LearnerProjection {
     /** Resolves MATERIAL blocks; a demo has no material. */
-    readonly context: SlotContext | null;
+    readonly context: MaterialContext | null;
     readonly revealed: boolean;
     /** Show placeholders for unfinished parts instead of dropping them (an incomplete author draft). */
     readonly placeholders: boolean;
 }
 
-function learnerBlocks(blocks: readonly AuthoringBlock[], context: SlotContext | null, revealed: boolean): readonly LearnerBlock[] {
+function learnerBlocks(blocks: readonly AuthoringBlock[], context: MaterialContext | null, revealed: boolean): readonly LearnerBlock[] {
     return blocks.flatMap((block): LearnerBlock[] => {
         switch (block.kind) {
             case 'TEXT': return isBlank(block.text) ? [] : [{ kind: 'TEXT', text: block.text }];

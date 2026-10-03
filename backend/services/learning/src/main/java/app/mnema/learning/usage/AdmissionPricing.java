@@ -25,11 +25,15 @@ public final class AdmissionPricing {
      */
     public Hold hold(UUID owner, UUID deckId, JsonNode spec) {
         EstimateService.Hold hold = estimates.hold(owner, deckId, spec);
-        return new Hold(hold.credits(), hold.block());
+        return new Hold(hold.credits(), hold.block(), hold.exercises());
     }
 
-    /** @see #hold */
-    public record Hold(int credits, UsageLimitReachedException.Block block) {
+    /**
+     * @see #hold
+     * @param exercises for an {@code EXERCISES} spec the resolved quantity (the spec's mode, the limits and, for
+     *                  {@code BUDGET_PERCENT}, the budget decide it); zero for every other spec
+     */
+    public record Hold(int credits, UsageLimitReachedException.Block block, int exercises) {
         /** Raises the refusal, if there is one; call it as the very last admission check before the reservation. */
         public void requireFits() {
             if (block != null) throw new UsageLimitReachedException(block);
@@ -48,5 +52,10 @@ public final class AdmissionPricing {
     /** What one run of {@code operation} charges (the weight of the rate card in force). */
     public int credits(String operation) {
         return estimates.credits(operation);
+    }
+
+    /** What {@code count} generated exercises charge together: 8 credits per five, rounded up (the rate card's exercise unit). */
+    public int exerciseCredits(int count) {
+        return estimates.exerciseCredits(count);
     }
 }

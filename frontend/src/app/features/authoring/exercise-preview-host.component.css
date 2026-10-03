@@ -17,3 +17,8 @@ h3 { margin: 0; color: var(--mn-ink); font: 500 1.5rem/1.2 var(--mn-font-display
 .visually-hidden { position: absolute; inline-size: 1px; block-size: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 :where(button, h3):focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 3px; }
 @media (forced-colors: active) { .surface, .badge { border-color: CanvasText; } }
+/* Compact (a batch card): the exercise leads; the caption and the large heading stay for assistive technology only. */
+.preview.compact { gap: .6rem; border-block: 0; padding-block: 0; }
+.preview.compact .preview-head, .preview.compact .caption { position: absolute; inline-size: 1px; block-size: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.preview.compact .surface { max-inline-size: none; }
+.compact-note { margin: 0; color: var(--mn-muted); font-size: .9rem; line-height: 1.4; }

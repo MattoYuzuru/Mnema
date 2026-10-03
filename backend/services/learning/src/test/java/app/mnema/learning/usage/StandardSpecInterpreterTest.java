@@ -240,8 +240,15 @@ class StandardSpecInterpreterTest {
         invalid(exercises(1, "{\"mechanics\":[3]}"));
         invalid(exercises(1, "{\"priority\":\"RANDOM\"}"));
         invalid(exercises(1, "{\"extra\":1}"));
-        assertThat(lines(interpret(exercises(1, "{\"mechanics\":[\"CLOZE\",\"ORDER\"],\"priority\":\"BALANCED\",\"planFirst\":true}"))))
+        assertThat(lines(interpret(exercises(1, "{\"mechanics\":[\"CLOZE\",\"ORDER\"],\"priority\":\"BALANCED\",\"planFirst\":false}"))))
                 .containsExactly("EXERCISES_PER_MATERIALx5");
+    }
+
+    @Test
+    void aPlannedExercisesSpecIsNotSupportedUntilThePlannerExists() {
+        assertThatThrownBy(() -> interpret(exercises(1, "{\"planFirst\":true}")))
+                .isInstanceOfSatisfying(SpecNotSupportedException.class,
+                        failure -> assertThat(failure.extension().members()).containsEntry("kind", "EXERCISES"));
     }
 
     @Test

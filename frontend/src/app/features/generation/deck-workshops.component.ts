@@ -20,7 +20,7 @@ import { SessionSummary } from './generation.models';
           <ul>
             @for (session of sessions(); track session.sessionId) {
               <li>
-                <a [routerLink]="['/decks', deckId(), 'workshop', session.sessionId]">Мастерская от {{ startedAt(session) }}</a>
+                <a [routerLink]="['/decks', deckId(), 'workshop', session.sessionId]">{{ session.kind === 'EXERCISES' ? 'Мастерская упражнений' : 'Мастерская' }} от {{ startedAt(session) }}</a>
                 <span class="progress">{{ progress(session) }}</span>
               </li>
             }

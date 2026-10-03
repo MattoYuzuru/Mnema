@@ -59,7 +59,7 @@
   @if (current(); as presentation) {
     @if (phase() === 'answering' || phase() === 'submitting') {
       <article class="study-card" [attr.aria-busy]="phase() === 'submitting'">
-        <p class="eyebrow">Вспомните без подсказки</p>
+        <p class="eyebrow">Вспомните без подсказки@if (presentation.isNew) { <app-new-badge /> }</p>
         <h2>{{ heading(presentation.type) }}</h2>
         <app-learner-exercise [exercise]="presentation" [transcriptRevealed]="presentation.transcriptRevealed"
           [resetKey]="presentation.presentationId" [hints]="hints()" [hintPending]="hintPending()"

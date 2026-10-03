@@ -8,6 +8,7 @@ import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { ItemDetail, ItemSummary } from './authoring.models';
 import { createEmptyNativeDocument } from '../../content/editing/native-editor-adapter';
 import { BrowsePageComponent } from './browse-page.component';
+import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService, LearningCapabilities } from './capabilities-api.service';
 import { ItemApiService } from './item-api.service';
 import { spyObj, type SpyObj } from '../../../testing/mocks';
 
@@ -22,8 +23,10 @@ describe('BrowsePageComponent', () => {
     });
     let api: SpyObj<ItemApiService>;
     let fixture: ComponentFixture<BrowsePageComponent>;
+    let capabilities: LearningCapabilities | 'error' = CAPABILITIES_UNAVAILABLE;
 
     beforeEach(() => {
+        capabilities = CAPABILITIES_UNAVAILABLE;
         api = spyObj<ItemApiService>({
             read: vi.fn().mockName("ItemApiService.read"),
             delete: vi.fn().mockName("ItemApiService.delete")
@@ -37,6 +40,7 @@ describe('BrowsePageComponent', () => {
                 { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ deckId }),
                             queryParamMap: convertToParamMap({}) } } },
                 { provide: OwnDecksApiService, useValue: decks },
+                { provide: CapabilitiesApiService, useValue: { read: () => capabilities === 'error' ? throwError(() => new HttpErrorResponse({ status: 500 })) : of(capabilities) } },
                 { provide: ItemApiService, useValue: api }
             ] });
     });
@@ -95,6 +99,32 @@ describe('BrowsePageComponent', () => {
         expect(component.selectedOrdinal()).toBeNull();
         expect(api.delete).not.toHaveBeenCalled();
         fixture.destroy();
+    });
+
+    describe('«Упражнения с ИИ» (AI-13)', () => {
+        const aiLink = () => (fixture.nativeElement as HTMLElement).querySelector<HTMLAnchorElement>('a[data-ai-exercises]');
+
+        it('is offered next to «Упражнения» only when the server offers generation, and opens the builder for this material', () => {
+            capabilities = { ...CAPABILITIES_UNAVAILABLE, aiGeneration: { available: true, reason: null } };
+            const { detail } = openMaterial();
+            expect(aiLink()?.textContent).toBe('Упражнения с ИИ');
+            expect(aiLink()?.getAttribute('href')).toBe(`/decks/${deckId}/exercises/generate?members=${detail.memberKey}`);
+            fixture.destroy();
+        });
+
+        it('is not there when generation is off: no dead button', () => {
+            openMaterial();
+            expect(aiLink()).toBeNull();
+            expect((fixture.nativeElement as HTMLElement).textContent).toContain('Упражнения');
+            fixture.destroy();
+        });
+
+        it('is not there when the capabilities cannot be read (fail closed)', () => {
+            capabilities = 'error';
+            openMaterial();
+            expect(aiLink()).toBeNull();
+            fixture.destroy();
+        });
     });
 
     it('returns to the deck hub, which now lists the materials', () => {

@@ -65,7 +65,9 @@ class SourceDrift {
             } else {
                 UUID member = UUID.fromString(ref.path("memberKey").stringValue(""));
                 UUID revision = UUID.fromString(ref.path("itemRevisionId").stringValue(""));
-                if (!isSource(sources, member, revision)) continue;
+                // a material pin is bound to the head when it is a SOURCE of the session; an exercise's one pin always is (it is the
+                // material the exercise is about), also after a retry moved it to a revision the session did not pin
+                if (!artifact.targetKind().equals("EXERCISE") && !isSource(sources, member, revision)) continue;
                 UUID head = heads.get(member);
                 if (head == null) {
                     drifted.add(new Drift(new SourceUnavailableException.Unavailable("ITEM", member), true, null));

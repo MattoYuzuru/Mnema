@@ -20,10 +20,10 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Runs every {@code expectedSelfEvaluation} probe of {@code contracts/generation/exercises/fixtures} through the real
- * {@link AttemptEvaluation}, the evaluator behind {@code /exercise-previews}. It lives in this package because
- * {@code AttemptEvaluation} is package-private; like the preview service it passes the authored content as the learner content.
- * The lint of those fixtures is not run here: its semantics are executed by AI-13.
+ * Runs every {@code expectedSelfEvaluation} probe of {@code contracts/generation/exercises/fixtures} through
+ * {@link ExerciseProbeEvaluator}, the public door to {@link AttemptEvaluation}, the evaluator behind {@code /exercise-previews}
+ * (the generation step uses the same facade); like the preview service it passes the authored content as the learner content.
+ * The lint and compile of those fixtures are executed by {@code ExerciseValidationFixtureTest}.
  */
 class ExerciseSelfEvaluationFixtureTest {
     private static final JsonMapper JSON = JsonMapper.builder().build();
@@ -42,12 +42,9 @@ class ExerciseSelfEvaluationFixtureTest {
                 ExerciseCommand command = ExerciseCommand.readCreate(new ByteArrayInputStream(
                         fixture.path("expectedCommand").toString().getBytes(StandardCharsets.UTF_8)));
                 mechanics.add(command.exercise().type().name());
-                AttemptEvaluation.Subject subject = new AttemptEvaluation.Subject(command.exercise().type(),
-                        command.exercise().evaluatorPolicy(), command.exercise().answerKey(), command.exercise().content(),
-                        JSON.createObjectNode(), Set.of(), false);
                 for (JsonNode probe : fixture.path("expectedSelfEvaluation")) {
-                    AttemptEvaluation result = AttemptEvaluation.evaluate(subject, response(probe.path("response"), fixture.path("expectedIdMap")));
-                    assertThat(result.result().name()).as(file.getFileName() + " " + probe.path("probe").stringValue(null))
+                    String result = ExerciseProbeEvaluator.evaluate(command.exercise(), response(probe.path("response"), fixture.path("expectedIdMap")));
+                    assertThat(result).as(file.getFileName() + " " + probe.path("probe").stringValue(null))
                             .isEqualTo(probe.path("expectedResult").stringValue(null));
                     probes++;
                 }

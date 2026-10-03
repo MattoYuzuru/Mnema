@@ -1,5 +1,6 @@
 package app.mnema.learning.study.attempt;
 
+import app.mnema.learning.catalog.exercise.ExerciseNewMarks;
 import app.mnema.learning.platform.json.CanonicalJsonHasher;
 import app.mnema.learning.media.MediaCatalog;
 import tools.jackson.databind.json.JsonMapper;
@@ -23,7 +24,8 @@ class AttemptServiceTest {
     @Test
     void expiredPresentationStopsBeforeEvaluationOrAnyWrite() {
         AttemptRepository repository = mock(AttemptRepository.class);
-        AttemptService service = new AttemptService(repository, new CanonicalJsonHasher(), mock(MediaCatalog.class));
+        AttemptService service = new AttemptService(repository, new CanonicalJsonHasher(), mock(MediaCatalog.class),
+                mock(ExerciseNewMarks.class));
         UUID actor = UUID.randomUUID(), deck = UUID.randomUUID(), session = UUID.randomUUID();
         AttemptCommand command = new AttemptCommand(UUID.randomUUID(), UUID.randomUUID(), "1234567890123456",
                 new AttemptCommand.TextResponse("answer"), null, 10, JSON.createObjectNode());

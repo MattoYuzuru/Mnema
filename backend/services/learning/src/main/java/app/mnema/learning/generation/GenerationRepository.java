@@ -330,11 +330,16 @@ class GenerationRepository {
     // ------------------------------------------------------------------ artifacts
 
     void insertArtifact(UUID artifactId, UUID sessionId, UUID owner, int ordinal, JsonNode sourceRefs) {
+        insertArtifact(artifactId, sessionId, owner, "ITEM", ordinal, sourceRefs);
+    }
+
+    /** A QUEUED artifact of a new session; {@code targetKind} is {@code ITEM} (a material) or {@code EXERCISE}. */
+    void insertArtifact(UUID artifactId, UUID sessionId, UUID owner, String targetKind, int ordinal, JsonNode sourceRefs) {
         jdbc.sql("INSERT INTO app_learning.generation_artifact(artifact_id,session_id,owner_id,target_kind,ordinal,state,"
-                        + "source_refs,row_version,created_at,updated_at) VALUES (:id,:session,:owner,'ITEM',:ordinal,'QUEUED',"
+                        + "source_refs,row_version,created_at,updated_at) VALUES (:id,:session,:owner,:kind,:ordinal,'QUEUED',"
                         + "CAST(:refs AS jsonb),0,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)")
-                .param("id", artifactId).param("session", sessionId).param("owner", owner).param("ordinal", ordinal)
-                .param("refs", Json.write(sourceRefs)).update();
+                .param("id", artifactId).param("session", sessionId).param("owner", owner).param("kind", targetKind)
+                .param("ordinal", ordinal).param("refs", Json.write(sourceRefs)).update();
     }
 
     List<Artifact> artifacts(UUID sessionId) {
@@ -385,6 +390,20 @@ class GenerationRepository {
                         + "row_version=row_version+1,updated_at=CURRENT_TIMESTAMP WHERE artifact_id=:id AND row_version=:version "
                         + "RETURNING " + ARTIFACT_COLUMNS)
                 .param("id", artifact.artifactId()).param("version", artifact.rowVersion())
+                .query(ARTIFACT).optional().orElseThrow(() -> new IllegalStateException("Artifact changed under the session lock"));
+    }
+
+    /**
+     * A PROPOSED exercise whose pins the server moved to the current head without a model (decision 8): a new current revision, the
+     * new pins and {@code repin_status AUTO_REPINNED}; the state stays PROPOSED.
+     */
+    Artifact repin(Artifact artifact, UUID revision, JsonNode sourceRefs, String title, int revisionCount) {
+        return jdbc.sql("UPDATE app_learning.generation_artifact SET repin_status='AUTO_REPINNED',current_revision_id=:revision,"
+                        + "source_refs=CAST(:refs AS jsonb),title=:title,revision_count=:revisions,row_version=row_version+1,"
+                        + "updated_at=CURRENT_TIMESTAMP WHERE artifact_id=:id AND row_version=:version AND state='PROPOSED' "
+                        + "RETURNING " + ARTIFACT_COLUMNS)
+                .param("revision", revision).param("refs", Json.write(sourceRefs)).param("title", title)
+                .param("revisions", revisionCount).param("id", artifact.artifactId()).param("version", artifact.rowVersion())
                 .query(ARTIFACT).optional().orElseThrow(() -> new IllegalStateException("Artifact changed under the session lock"));
     }
 
@@ -587,13 +606,19 @@ class GenerationRepository {
     /** Origin of a published artifact: audit and economics only, never returned by any API. */
     void insertProvenance(UUID owner, UUID sessionId, UUID artifactId, UUID revisionId, JsonNode publishedRef,
                           Provenance provenance) {
+        insertProvenance(owner, sessionId, artifactId, revisionId, publishedRef, provenance, false);
+    }
+
+    /** {@code edited}: the owner changed the proposal in the editor before saving it (exercises only). */
+    void insertProvenance(UUID owner, UUID sessionId, UUID artifactId, UUID revisionId, JsonNode publishedRef,
+                          Provenance provenance, boolean edited) {
         jdbc.sql("INSERT INTO app_learning.generation_provenance(provenance_id,owner_id,session_id,artifact_id,revision_id,"
-                        + "published_ref,model_routes,prompt_versions,created_at) VALUES (:id,:owner,:session,:artifact,:revision,"
-                        + "CAST(:ref AS jsonb),CAST(:routes AS text[]),CAST(:prompts AS text[]),CURRENT_TIMESTAMP)")
+                        + "published_ref,model_routes,prompt_versions,edited,created_at) VALUES (:id,:owner,:session,:artifact,:revision,"
+                        + "CAST(:ref AS jsonb),CAST(:routes AS text[]),CAST(:prompts AS text[]),:edited,CURRENT_TIMESTAMP)")
                 .param("id", UUID.randomUUID()).param("owner", owner).param("session", sessionId).param("artifact", artifactId)
                 .param("revision", revisionId).param("ref", Json.write(publishedRef))
                 .param("routes", arrayLiteral(provenance.modelRoutes())).param("prompts", arrayLiteral(provenance.promptVersions()))
-                .update();
+                .param("edited", edited).update();
     }
 
     private static String arrayLiteral(List<String> values) {
@@ -644,6 +669,15 @@ class GenerationRepository {
                 .query((row, ignored) -> result.put(row.getObject("member_key", UUID.class), row.getObject("revision_id", UUID.class)))
                 .list();
         return result;
+    }
+
+    /** The title of an objective revision of the owner's deck (for the proposal's display), empty when it is gone. */
+    Optional<String> objectiveTitle(UUID owner, UUID deck, UUID objective, UUID revision) {
+        return jdbc.sql("SELECT r.descriptor ->> 'title' FROM app_learning.deck d JOIN app_learning.objective_revision r "
+                        + "ON r.deck_id=d.deck_id WHERE d.owner_id=:owner AND d.deleted_at IS NULL AND r.deck_id=:deck "
+                        + "AND r.objective_id=:objective AND r.revision_id=:revision")
+                .param("owner", owner).param("deck", deck).param("objective", objective).param("revision", revision)
+                .query(String.class).optional();
     }
 
     /** Whether the material revision exists in the owner's deck (a head or a historical revision). */

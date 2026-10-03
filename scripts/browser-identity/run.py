@@ -388,7 +388,7 @@ class Fixture(BASE.Fixture):
         evidence = {"fixture": self.results, "frontend_tree_sha256": digest.hexdigest(),
                     "scripts": {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
                                 for name in ("run.py", "browser.mjs", "mechanics.mjs", "notifications.mjs", "hub.mjs",
-                                             "code-block.mjs", "usage.mjs", "workshop.mjs")}}
+                                             "code-block.mjs", "usage.mjs", "workshop.mjs", "exercises.mjs")}}
         (self.args.output / "fixture.json").write_text(json.dumps(evidence, indent=2))
         runner = self.launch_group([self.args.node, str(Path(__file__).with_name("browser.mjs")), str(private_config)], "browser")
         self.control("browser_running")
@@ -505,7 +505,7 @@ def main():
     if args.timeout is None:
         args.timeout = 600 if args.mechanics else 180
         if args.generation:
-            args.timeout = max(args.timeout, 600)
+            args.timeout = max(args.timeout, 840)
     if not 30 <= args.timeout <= 900:
         parser.error("--timeout must be between 30 and 900 seconds")
     args.dist = args.dist.resolve()

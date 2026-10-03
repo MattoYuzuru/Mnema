@@ -28,7 +28,7 @@ public final class NativeNodeIndex {
         return of(decoder.snapshot().document());
     }
 
-    static NativeNodeIndex of(NativeDocument document) {
+    public static NativeNodeIndex of(NativeDocument document) {
         Map<UUID, JsonNode> nodes = new HashMap<>();
         ArrayDeque<JsonNode> pending = new ArrayDeque<>();
         pending.add(document.toJson().path("root"));

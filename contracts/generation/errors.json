@@ -18,7 +18,7 @@
       "title": "Invalid request",
       "detail": "The request is invalid or cannot be read.",
       "origin": "existing",
-      "when": "Strict-JSON, field, UUID, version, cursor, limit or enum violations; also an AI edit target that MBM cannot express, a preset without REWRITE, an EXERCISE hand-off.",
+      "when": "Strict-JSON, field, UUID, version, cursor, limit or enum violations; also an AI edit target that MBM cannot express, a preset without REWRITE, an EXERCISE hand-off, an approval replacement that is not a valid exercise about the proposal's subject material (or on an ITEM artifact, or in a bulk entry).",
       "endpoints": [
         "all"
       ]
@@ -139,7 +139,7 @@
       "title": "Spec not supported",
       "detail": "The generation spec is valid but not supported yet.",
       "origin": "new",
-      "when": "REVISE_ITEM or REVISE_EXERCISE before AI-16 (#294) defines their flow. A new code because 422 RESOURCE_LIMIT_EXCEEDED would mislead.",
+      "when": "REVISE_ITEM or REVISE_EXERCISE before AI-16 (#294) defines their flow, and settings.planFirst true (MATERIALS or EXERCISES) until the planner (AI-14, #295). A new code because 422 RESOURCE_LIMIT_EXCEEDED would mislead.",
       "endpoints": [
         "createSession",
         "estimateGeneration"

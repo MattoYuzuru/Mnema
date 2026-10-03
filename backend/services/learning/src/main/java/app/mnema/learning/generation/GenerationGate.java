@@ -44,6 +44,11 @@ class GenerationGate implements GenerationBoundary {
         if (facts.research()) capabilities.requireWebSearch();
     }
 
+    /** The capability a retried exercise needs: text generation (its mechanics are deterministic, no media, no research). */
+    void requireText() {
+        capabilities.requireAiGeneration();
+    }
+
     /** The capabilities a retried material needs: text, and what its effective settings declare (audio, image search, web research). */
     void requireFor(MaterialsSpec.Effective settings) {
         capabilities.requireAiGeneration();

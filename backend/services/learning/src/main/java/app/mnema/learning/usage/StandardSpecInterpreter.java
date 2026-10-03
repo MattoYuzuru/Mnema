@@ -257,7 +257,8 @@ final class StandardSpecInterpreter implements GenerationSpecInterpreter {
             UUID revision = uuid(target, "itemRevisionId");
             UUID member = uuid(target, "memberKey");
             if (!members.add(member)) throw invalid();
-            targetRefs.add(new GenerationBoundary.ItemRef(member, revision));
+            // an exercise is written about the material as it is now: a target that is no longer the head is SOURCE_UNAVAILABLE
+            targetRefs.add(new GenerationBoundary.ItemRef(member, revision, true));
         }
         int count = targets.size();
 
@@ -270,7 +271,9 @@ final class StandardSpecInterpreter implements GenerationSpecInterpreter {
             keys(settings, Set.of(), Set.of("mechanics", "priority", "quantity", "planFirst", "budgetPercent"));
             if (settings.has("mechanics")) mechanics(settings.get("mechanics"));
             if (settings.has("priority")) oneOf(settings, "priority", PRIORITIES);
-            if (settings.has("planFirst")) flag(settings, "planFirst");
+            if (settings.has("planFirst") && flag(settings, "planFirst") && !plannerEnabled) {
+                throw new SpecNotSupportedException("EXERCISES");
+            }
             budget = budget(settings);
             if (settings.has("quantity")) {
                 JsonNode node = object(settings, "quantity");

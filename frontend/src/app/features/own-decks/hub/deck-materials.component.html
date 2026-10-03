@@ -45,7 +45,7 @@
         @if (selectionCount() > 0) {
           <app-bulk-action-bar #bar [count]="selectionCount()" [consequence]="consequence()" [deleteDisabled]="deleteDisabled()"
             [hint]="deleteHint()" [generationAvailable]="generationAvailable()" (clear)="clearSelection()"
-            (deleteConfirmed)="deleteSelected()" />
+            (generate)="generateExercises()" (deleteConfirmed)="deleteSelected()" />
         }
       }
     }

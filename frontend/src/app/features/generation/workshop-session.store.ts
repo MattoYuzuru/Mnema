@@ -278,6 +278,49 @@ export class WorkshopSessionStore {
         return published;
     }
 
+    /**
+     * Saves the chosen proposals of an exercise batch (AI-13), 20 per atomic command, each chunk its own `commandId`. The deck pin
+     * is chained: the next chunk goes out with the version and revision the previous acknowledgement returned. A `412` (the deck
+     * or an artifact moved) refreshes both and tries a chunk once more when its proposals are unchanged. Resolves with the number
+     * of exercises that are now in the deck; a refusal is reported through `notice` and stops the rest.
+     */
+    async approveSelected(artifactIds: readonly string[]): Promise<number> {
+        const session = this.session();
+        if (session === null || this.isBusy('session') || !sessionAllows(session.state, 'approveArtifacts')) return 0;
+        const wanted = new Set(artifactIds);
+        // Only what the user was shown as it is now, like a single approval: a loaded revision that is not the current one, or a load
+        // marked out of date, is never published unseen.
+        const targets = this.approvable().filter(artifact => wanted.has(artifact.artifactId) && this.shownAsCurrent(artifact))
+            .map(artifact => artifact.artifactId);
+        if (targets.length === 0) return 0;
+        this.begin('session');
+        let published = 0;
+        try {
+            for (let start = 0; start < targets.length; start += MAX_APPROVALS_PER_COMMAND) {
+                const result = await this.approveChunk(targets.slice(start, start + MAX_APPROVALS_PER_COMMAND));
+                if (!result.ok) {
+                    // `null`: the chunk was never sent and the notice already says why.
+                    if (result.problem !== null) this.failed(result.problem, published);
+                    break;
+                }
+                published += result.count;
+            }
+        } finally {
+            this.end('session');
+        }
+        if (published > 0) this.toast.echo(`Новые упражнения: ${published} — уже в колоде`);
+        return published;
+    }
+
+    /** Rejects proposals one by one (each is its own command); resolves with how many were rejected. */
+    async rejectMany(artifactIds: readonly string[]): Promise<number> {
+        let rejected = 0;
+        for (const artifactId of artifactIds) {
+            if (await this.reject(artifactId)) rejected += 1;
+        }
+        return rejected;
+    }
+
     async reject(artifactId: string): Promise<boolean> {
         const artifact = this.find(artifactId);
         const session = this.session();
@@ -571,6 +614,40 @@ export class WorkshopSessionStore {
         }
     }
 
+    private shownAsCurrent(artifact: ArtifactSummary): boolean {
+        const entry = this.details()[artifact.artifactId];
+        return entry?.detail != null && !entry.stale && entry.detail.currentRevisionId === artifact.currentRevisionId;
+    }
+
+    /** One bulk command for `ids`; a `412` is retried once when every proposal in it is still the one that was sent. */
+    private async approveChunk(ids: readonly string[]):
+        Promise<{ readonly ok: true; readonly count: number } | { readonly ok: false; readonly problem: GenerationProblem | null }> {
+        let sent = ids.map(id => this.find(id)).filter((artifact): artifact is ArtifactSummary => artifact !== null && isApprovable(artifact));
+        for (let attempt = 0; attempt < 2; attempt++) {
+            const pin = await this.pin();
+            if (pin === null) return { ok: false, problem: null };
+            if (sent.length === 0) {
+                this.notice.set({ tone: 'info', text: 'Эти упражнения уже недоступны: состояние изменилось. Мы обновили список.' });
+                return { ok: false, problem: null };
+            }
+            const key = sent.map(artifact => `${artifact.artifactId}:${artifact.rowVersion}`).join(',') + `:${pin.rowVersion}`;
+            const outcome = await this.send('approve-selected', key, id => this.api.approveArtifacts(this.deckId, this.sessionId,
+                sent.map(artifact => ({ artifactId: artifact.artifactId, expectedArtifactVersion: artifact.rowVersion,
+                    expectedRevisionId: artifact.currentRevisionId! })), pin, id));
+            if (outcome.ok) { this.published(outcome.value); return { ok: true, count: outcome.value.artifacts.length }; }
+            if (outcome.problem.status === 412 && attempt === 0) {
+                await Promise.all([this.refreshDeck(), this.refresh()]);
+                const unchanged = sent.every(artifact => {
+                    const now = this.find(artifact.artifactId);
+                    return now !== null && isApprovable(now) && now.currentRevisionId === artifact.currentRevisionId;
+                });
+                if (unchanged) { sent = sent.map(artifact => this.find(artifact.artifactId)!); continue; }
+            }
+            return outcome;
+        }
+        return { ok: false, problem: null };
+    }
+
     private async summaryCommand(artifactId: string, kind: string, version: string,
                                  request: (commandId: string) => Observable<ArtifactSummary>): Promise<boolean> {
         this.begin(artifactId);
@@ -605,8 +682,9 @@ export class WorkshopSessionStore {
     }
 
     private failed(problem: GenerationProblem, published = 0): void {
-        const prefix = published > 0 ? `Одобрено материалов: ${published}. ` : '';
-        this.notice.set({ tone: 'error', text: prefix + problemMessage(problem) });
+        const kind = this.session()?.kind ?? 'MATERIALS';
+        const prefix = published > 0 ? (kind === 'EXERCISES' ? `Сохранено упражнений: ${published}. ` : `Одобрено материалов: ${published}. `) : '';
+        this.notice.set({ tone: 'error', text: prefix + problemMessage(problem, kind) });
         if (problem.status === 404) { this.gone(); return; }
         // The state moved under the user's hands: show the server's truth.
         if (!problem.uncertain && problem.status !== 400) { void this.refresh(); void this.refreshDeck(); }

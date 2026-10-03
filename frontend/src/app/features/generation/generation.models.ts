@@ -1,3 +1,4 @@
+import { MECHANICS, Mechanic } from '../../content/exercise/exercise-content.models';
 import { NativeDocument, NativeNode } from '../../content/native-document';
 import { readRetainedNativeDocument } from '../../content/native-document-boundary';
 import {
@@ -11,6 +12,12 @@ import {
  * decimal-string versions) like the other API services; events of an unknown type are the one deliberate exception
  * (`events.json`: "A client ignores unknown types").
  */
+
+/**
+ * A request the client refused to build (a spec or an edited exercise that does not satisfy the contract). Nothing was sent, so the
+ * outcome is not unknown: it is reported as a validation problem, never as a command to retry.
+ */
+export class RequestValidationError extends AuthoringProtocolError {}
 
 export const SESSION_KINDS = ['MATERIALS', 'EXERCISES', 'REVISE_ITEM', 'REVISE_EXERCISE'] as const;
 export type SessionKind = (typeof SESSION_KINDS)[number];
@@ -70,6 +77,8 @@ export interface SpecEcho {
     readonly kind: SessionKind;
     readonly outputLanguage: string | null;
     readonly prompt: string | null;
+    /** The pinned materials of an `EXERCISES` session, in the order they were requested; empty for every other kind. */
+    readonly targets: readonly ExerciseTarget[];
 }
 
 export interface MediaSlotCounts { readonly total: number; readonly ready: number; readonly failed: number; }
@@ -118,7 +127,7 @@ export interface MediaSlot {
 
 export interface ArtifactRevisionRef { readonly revisionId: string; readonly cause: string; readonly createdAt: string; }
 
-/** Item payload is a native-v1 document; an exercise payload is kept opaque (its preview belongs to AI-13). */
+/** Item payload is a native-v1 document; an exercise payload is kept opaque here and read by `exercise-proposal.ts`. */
 export type ArtifactPayload =
     | { readonly kind: 'NATIVE_DOCUMENT'; readonly document: NativeDocument }
     | { readonly kind: 'EXERCISE_COMMAND'; readonly command: unknown };
@@ -135,6 +144,17 @@ export type NoteStatus = (typeof NOTE_STATUSES)[number];
 /** A NOTE entry of the artifact's `sourceRefs`; `status` is null while the server does not report it. */
 export interface NoteSourceRef { readonly noteId: string; readonly noteRowVersion: string; readonly status: NoteStatus | null; }
 
+/**
+ * What the server adds to an `EXERCISE` artifact so the client can show it without more requests (contract decision 14,
+ * AI-13): the mechanic, the objective title (offered or new) and the plain text of every `MATERIAL` node the exercise quotes,
+ * as it is in the pinned revision.
+ */
+export interface ExerciseDisplay {
+    readonly mechanic: Mechanic;
+    readonly objectiveTitle: string;
+    readonly quotes: Readonly<Record<string, string>>;
+}
+
 export interface ArtifactDetail extends ArtifactSummary {
     readonly sessionId: string;
     readonly noteSources: readonly NoteSourceRef[];
@@ -143,6 +163,8 @@ export interface ArtifactDetail extends ArtifactSummary {
     readonly mediaSlots: readonly MediaSlot[];
     readonly revisions: readonly ArtifactRevisionRef[];
     readonly turnCount: number;
+    /** Only an `EXERCISE` artifact has it; `null` for an item (or while the server does not send it). */
+    readonly display: ExerciseDisplay | null;
 }
 
 /** Acknowledgement of one approval (single or bulk): the new Deck pin and the published artifacts. */
@@ -319,12 +341,13 @@ export function isRetryable(artifact: ArtifactSummary): boolean {
 }
 
 /**
- * Approvable now: proposed, with every media slot ready. An artifact whose media is still being made, or failed, waits;
- * removing media is a later task (AI-11), so a failed slot is resolved by editing the material oneself.
+ * Approvable now: proposed, with every media slot ready (an exercise has no slots, so it is approvable as soon as it is
+ * proposed). An artifact whose media is still being made, or failed, waits; removing media is a later task (AI-11), so a
+ * failed slot is resolved by editing the material oneself.
  */
 export function isApprovable(artifact: ArtifactSummary): boolean {
     const { total, ready } = artifact.mediaSlotCounts;
-    return artifact.state === 'PROPOSED' && artifact.targetKind === 'ITEM' && artifact.currentRevisionId !== null && ready === total;
+    return artifact.state === 'PROPOSED' && artifact.currentRevisionId !== null && ready === total;
 }
 
 export function isTerminalSession(state: SessionState): boolean {
@@ -388,6 +411,19 @@ export function parseSessionSummary(value: unknown): SessionSummary {
     return parseSummaryFields(requireObject(value, SUMMARY_KEYS));
 }
 
+/** Targets of the echoed spec; the echo is provisional, so anything that is not a list of well-formed pins reads as «none». */
+function parseEchoTargets(value: unknown): readonly ExerciseTarget[] {
+    if (!Array.isArray(value) || value.length > MAX_EXERCISE_TARGETS) return [];
+    try {
+        return value.map(entry => {
+            const object = requireObject(entry, ['memberKey', 'itemRevisionId']);
+            return { memberKey: requireEntity(object['memberKey']), itemRevisionId: requireEntity(object['itemRevisionId']) };
+        });
+    } catch {
+        return [];
+    }
+}
+
 function parseSpecEcho(value: unknown): SpecEcho {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new AuthoringProtocolError('Invalid spec.');
     const object = value as Record<string, unknown>;
@@ -396,7 +432,8 @@ function parseSpecEcho(value: unknown): SpecEcho {
     return {
         kind: oneOf(object['kind'], SESSION_KINDS, 'spec kind'),
         outputLanguage: typeof language === 'string' ? language : null,
-        prompt: typeof prompt === 'string' ? prompt : null
+        prompt: typeof prompt === 'string' ? prompt : null,
+        targets: parseEchoTargets(object['targets'])
     };
 }
 
@@ -500,19 +537,39 @@ function parseNoteSourceRef(value: unknown): readonly NoteSourceRef[] {
         status: typeof status === 'string' && (NOTE_STATUSES as readonly string[]).includes(status) ? status as NoteStatus : null }];
 }
 
+const MAX_QUOTES = 100;
+const MAX_QUOTE_LENGTH = 20_000;
+
+function parseDisplay(value: unknown): ExerciseDisplay {
+    const object = requireObject(value, ['mechanic', 'objectiveTitle', 'quotes']);
+    const quotes = object['quotes'];
+    if (quotes === null || typeof quotes !== 'object' || Array.isArray(quotes)) throw new AuthoringProtocolError('Invalid quotes.');
+    const entries = Object.entries(quotes as Record<string, unknown>);
+    if (entries.length > MAX_QUOTES) throw new AuthoringProtocolError('Too many quotes.');
+    return {
+        mechanic: oneOf(object['mechanic'], MECHANICS, 'mechanic'), objectiveTitle: text(object['objectiveTitle'], 960),
+        quotes: Object.fromEntries(entries.map(([nodeId, quote]) => [requireEntity(nodeId), text(quote, MAX_QUOTE_LENGTH, true)]))
+    };
+}
+
+const ARTIFACT_DETAIL_KEYS = [...ARTIFACT_SUMMARY_KEYS, 'sessionId', 'deckId', 'sourceRefs', 'revision', 'mediaSlots', 'revisions', 'turns'];
+
 export function parseArtifactDetail(value: unknown): ArtifactDetail {
-    const object = requireObject(value, [...ARTIFACT_SUMMARY_KEYS, 'sessionId', 'deckId', 'sourceRefs', 'revision', 'mediaSlots',
-        'revisions', 'turns']);
+    // `display` belongs to an exercise artifact with a revision, and only to it: absent for an item and while there is no revision.
+    const hasDisplay = value !== null && typeof value === 'object' && !Array.isArray(value) && 'display' in value;
+    const object = requireObject(value, hasDisplay ? [...ARTIFACT_DETAIL_KEYS, 'display'] : ARTIFACT_DETAIL_KEYS);
     const noteSources = list(object['sourceRefs'], 20).flatMap(parseNoteSourceRef);
     const revision = nullable(object['revision'], parseRevision);
     if (revision !== null && revision.revisionId !== object['currentRevisionId']) {
         throw new AuthoringProtocolError('Artifact revision does not match the current one.');
     }
+    if (hasDisplay !== (revision?.payload.kind === 'EXERCISE_COMMAND')) throw new AuthoringProtocolError('Artifact display does not match its payload.');
     return {
         ...parseSummaryOf(Object.fromEntries(ARTIFACT_SUMMARY_KEYS.map(key => [key, object[key]]))),
         sessionId: requireEntity(object['sessionId']), deckId: requireEntity(object['deckId']), noteSources, revision,
         mediaSlots: list(object['mediaSlots'], 64).map(parseMediaSlot),
-        revisions: list(object['revisions'], 30).map(parseRevisionRef), turnCount: list(object['turns'], 50).length
+        revisions: list(object['revisions'], 30).map(parseRevisionRef), turnCount: list(object['turns'], 50).length,
+        display: hasDisplay ? parseDisplay(object['display']) : null
     };
 }
 
@@ -706,7 +763,7 @@ function serializeSource(source: SpecSource, notesMode: NotesMode): Record<strin
         const overrides = source.overrides === undefined ? null : serializeOverrides(source.overrides);
         if (overrides !== null) {
             if (source.role !== 'SOURCE' || notesMode !== 'ONE_PER_NOTE') {
-                throw new AuthoringProtocolError('Overrides apply to SOURCE notes with ONE_PER_NOTE only.');
+                throw new RequestValidationError('Overrides apply to SOURCE notes with ONE_PER_NOTE only.');
             }
             body['overrides'] = overrides;
         }
@@ -721,7 +778,7 @@ function serializeSource(source: SpecSource, notesMode: NotesMode): Record<strin
  */
 export function serializeMaterialsSpec(spec: MaterialsSpec): Record<string, unknown> {
     if (spec.prompt.length > MAX_PROMPT_LENGTH || spec.sources.length > MAX_SOURCES) {
-        throw new AuthoringProtocolError('The spec exceeds its limits.');
+        throw new RequestValidationError('The spec exceeds its limits.');
     }
     const { settings } = spec;
     const body: Record<string, unknown> = { kind: 'MATERIALS' };
@@ -735,6 +792,84 @@ export function serializeMaterialsSpec(spec: MaterialsSpec): Record<string, unkn
         factCheck: settings.factCheck, similarToDeck: settings.similarToDeck, planFirst: false, budgetPercent: settings.budgetPercent
     };
     return body;
+}
+
+// --- Exercises spec (`generationSpec.EXERCISES`, AI-13 #291) ---
+
+export const EXERCISE_PRIORITIES = ['UNCOVERED_FIRST', 'BALANCED'] as const;
+export type ExercisePriority = (typeof EXERCISE_PRIORITIES)[number];
+
+/** How many exercises per material: the server's choice, an exact number, or a share of the remaining budget (mutually exclusive). */
+export type ExerciseQuantity =
+    | { readonly mode: 'AUTO' }
+    | { readonly mode: 'EXACT'; readonly perTarget: number }
+    | { readonly mode: 'BUDGET_PERCENT'; readonly percent: number };
+
+/** A pinned material of an exercise session: the member and the revision that was current when the user chose it. */
+export interface ExerciseTarget { readonly memberKey: string; readonly itemRevisionId: string; }
+
+export interface ExercisesSettings {
+    /** `AUTO` lets the server use every mechanic that is available; otherwise a non-empty set. */
+    readonly mechanics: 'AUTO' | readonly Mechanic[];
+    readonly priority: ExercisePriority;
+    readonly quantity: ExerciseQuantity;
+}
+
+export interface ExercisesSpec {
+    readonly kind: 'EXERCISES';
+    readonly outputLanguage?: string;
+    readonly targets: readonly ExerciseTarget[];
+    readonly settings: ExercisesSettings;
+}
+
+/** Either spec the composers send. */
+export type GenerationSpec = MaterialsSpec | ExercisesSpec;
+
+/** The server's limits (`limits.maxExerciseTargets` and its siblings): one session holds at most this many materials. */
+export const MAX_EXERCISE_TARGETS = 20;
+export const MAX_EXERCISES_PER_TARGET = 10;
+export const MAX_EXERCISES_PER_SESSION = 60;
+
+/** The exact request body of an Exercises spec; unknown fields are `INVALID_REQUEST`. `planFirst` is always `false` until AI-14. */
+export function serializeExercisesSpec(spec: ExercisesSpec): Record<string, unknown> {
+    if (spec.targets.length === 0 || spec.targets.length > MAX_EXERCISE_TARGETS) throw new RequestValidationError('The spec exceeds its limits.');
+    const { mechanics, quantity } = spec.settings;
+    const body: Record<string, unknown> = { kind: 'EXERCISES' };
+    if (spec.outputLanguage !== undefined) body['outputLanguage'] = spec.outputLanguage;
+    body['targets'] = spec.targets.map(target => ({ memberKey: requireEntity(target.memberKey), itemRevisionId: requireEntity(target.itemRevisionId) }));
+    let wireQuantity: Record<string, unknown>;
+    switch (quantity.mode) {
+        case 'AUTO': wireQuantity = { mode: 'AUTO' }; break;
+        case 'EXACT':
+            if (!Number.isInteger(quantity.perTarget) || quantity.perTarget < 1 || quantity.perTarget > MAX_EXERCISES_PER_TARGET) {
+                throw new RequestValidationError('Invalid quantity.');
+            }
+            wireQuantity = { mode: 'EXACT', perTarget: quantity.perTarget };
+            break;
+        case 'BUDGET_PERCENT':
+            if (!Number.isInteger(quantity.percent) || quantity.percent < 1 || quantity.percent > 100) throw new RequestValidationError('Invalid quantity.');
+            wireQuantity = { mode: 'BUDGET_PERCENT', percent: quantity.percent };
+            break;
+    }
+    if (mechanics !== 'AUTO' && (mechanics.length === 0 || new Set(mechanics).size !== mechanics.length
+        || mechanics.some(mechanic => !(MECHANICS as readonly string[]).includes(mechanic)))) throw new RequestValidationError('Invalid mechanics.');
+    body['settings'] = {
+        // Canonical order, so the same choice always produces the same request (and the same idempotency key).
+        mechanics: mechanics === 'AUTO' ? 'AUTO' : MECHANICS.filter(mechanic => mechanics.includes(mechanic)),
+        priority: oneOf(spec.settings.priority, EXERCISE_PRIORITIES, 'priority'), quantity: wireQuantity, planFirst: false, budgetPercent: null
+    };
+    return body;
+}
+
+/** The body of either spec. */
+export function serializeSpec(spec: GenerationSpec): Record<string, unknown> {
+    try {
+        return spec.kind === 'MATERIALS' ? serializeMaterialsSpec(spec) : serializeExercisesSpec(spec);
+    } catch (error) {
+        // A malformed id inside the spec is the same kind of refusal: nothing was sent.
+        if (error instanceof AuthoringProtocolError && !(error instanceof RequestValidationError)) throw new RequestValidationError(error.message);
+        throw error;
+    }
 }
 
 // --- Archiving the used notes (`archiveUsedNotes`, #290) ---

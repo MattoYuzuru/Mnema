@@ -30,6 +30,12 @@ class ContextRepository {
     /** One current material: its head revision, where its content lives and its cached preview title (null if not cached). */
     record Head(UUID memberKey, UUID revisionId, UUID scopeId, UUID contentRootId, String title, boolean starred) { }
 
+    /** A current objective of a material: its revision, its title and the mechanics of the enabled exercises that evidence it. */
+    record ObjectiveLine(UUID objectiveId, UUID revisionId, String title, List<String> types) { }
+
+    /** The content of a current enabled exercise of a material: its mechanic and the JSON of its content. */
+    record ExerciseLine(String type, String content) { }
+
     /** A material whose title resembles another one. */
     record Similar(UUID memberKey, String title, double score) { }
 
@@ -92,6 +98,35 @@ class ContextRepository {
                         + "GROUP BY binding.member_key").param("deck", deck).param("members", members)
                 .query((row, ignored) -> result.put(row.getObject("member_key", UUID.class), row.getInt("n"))).list();
         return result;
+    }
+
+    /** The current objectives bound to a material, oldest first, with the mechanics of the exercises that evidence each one. */
+    List<ObjectiveLine> objectives(UUID deck, UUID member, int limit) {
+        return jdbc.sql("SELECT o.objective_id,r.revision_id,r.descriptor ->> 'title' AS title,"
+                        + "COALESCE((SELECT string_agg(DISTINCT er.exercise_type, ',') FROM app_learning.exercise_content_binding b "
+                        + "JOIN app_learning.deck_head_exercise he ON he.deck_id=b.deck_id AND he.exercise_id=b.exercise_id "
+                        + "AND he.revision_id=b.exercise_revision_id JOIN app_learning.exercise_revision er ON er.deck_id=he.deck_id "
+                        + "AND er.exercise_id=he.exercise_id AND er.revision_id=he.revision_id AND er.enabled "
+                        + "WHERE b.deck_id=o.deck_id AND b.role='ASSESSED' AND b.objective_id=o.objective_id),'') AS types "
+                        + "FROM app_learning.memory_objective o JOIN app_learning.objective_head h ON h.deck_id=o.deck_id "
+                        + "AND h.objective_id=o.objective_id JOIN app_learning.objective_revision r ON r.deck_id=h.deck_id "
+                        + "AND r.objective_id=h.objective_id AND r.revision_id=h.revision_id "
+                        + "WHERE o.deck_id=:deck AND o.member_key=:member ORDER BY o.created_at,o.objective_id LIMIT :limit")
+                .param("deck", deck).param("member", member).param("limit", limit)
+                .query((row, ignored) -> new ObjectiveLine(row.getObject("objective_id", UUID.class),
+                        row.getObject("revision_id", UUID.class), row.getString("title"),
+                        row.getString("types").isEmpty() ? List.<String>of() : List.of(row.getString("types").split(",")))).list();
+    }
+
+    /** The newest current enabled exercises assessed on a material (the model must not repeat them), newest first. */
+    List<ExerciseLine> exercises(UUID deck, UUID member, int limit) {
+        return jdbc.sql("SELECT er.exercise_type,er.content::text AS content FROM app_learning.exercise_content_binding b "
+                        + "JOIN app_learning.deck_head_exercise he ON he.deck_id=b.deck_id AND he.exercise_id=b.exercise_id "
+                        + "AND he.revision_id=b.exercise_revision_id JOIN app_learning.exercise_revision er ON er.deck_id=he.deck_id "
+                        + "AND er.exercise_id=he.exercise_id AND er.revision_id=he.revision_id AND er.enabled "
+                        + "WHERE b.deck_id=:deck AND b.role='ASSESSED' AND b.member_key=:member ORDER BY he.ordinal DESC LIMIT :limit")
+                .param("deck", deck).param("member", member).param("limit", limit)
+                .query((row, ignored) -> new ExerciseLine(row.getString("exercise_type"), row.getString("content"))).list();
     }
 
     /**

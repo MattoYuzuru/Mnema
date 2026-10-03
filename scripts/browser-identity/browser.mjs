@@ -144,9 +144,11 @@ try {
       networkRequests++;
       if (url.origin === config.identity) identityRequests++;
       // Authoring exercises several full navigations and their local assets; keep a finite request budget.
-      // The Workshop scenario (`--generation`) polls the real events endpoint and loads the app several times.
-      if (networkRequests > (config.mechanics ? 3000 : config.media ? 1250 : config.authoring ? 1000 : 500) + (config.generation ? 1500 : 0)
-          || identityRequests > 150) asynchronousFailure = true;
+      // The Workshop scenarios (`--generation`) poll the real events endpoint and load the app several times; the exercise
+      // generation scenario (#291) adds a batch review, an editor round trip and a Study session on top of them (each full page load
+      // also asks Identity, so its budget grows with `--generation` too).
+      if (networkRequests > (config.mechanics ? 3000 : config.media ? 1250 : config.authoring ? 1000 : 500) + (config.generation ? 3500 : 0)
+          || identityRequests > 150 + (config.generation ? 100 : 0)) asynchronousFailure = true;
       if (!allowed.has(url.origin) || asynchronousFailure) {
         externalRequests++;
         run(interception(tab.call('Fetch.failRequest', { requestId: event.requestId, errorReason: 'BlockedByClient' })));

@@ -25,11 +25,13 @@ class SessionViews {
     private final GenerationRepository repository;
     private final SessionReservations reservations;
     private final NoteArchival notes;
+    private final PinnedMaterials materials;
 
-    SessionViews(GenerationRepository repository, SessionReservations reservations, NoteArchival notes) {
+    SessionViews(GenerationRepository repository, SessionReservations reservations, NoteArchival notes, PinnedMaterials materials) {
         this.repository = repository;
         this.reservations = reservations;
         this.notes = notes;
+        this.materials = materials;
     }
 
     ObjectNode summary(Session session) {
@@ -131,6 +133,44 @@ class SessionViews {
         }
         node.putArray("turns");
         return node;
+    }
+
+    /**
+     * What a client needs to show an exercise proposal without further requests (read-only, never stored): its mechanic, the title of
+     * the objective it evidences (the offered one or the new one) and the plain text of every material node it quotes, by node id,
+     * as that node reads in the pinned revision. A node whose revision cannot be read is simply absent.
+     */
+    ObjectNode display(Session session, Revision revision) {
+        JsonNode command = revision.payload().path("command");
+        JsonNode exercise = command.path("exercise");
+        ObjectNode display = Json.object().put("mechanic", exercise.path("type").stringValue(""));
+        display.put("objectiveTitle", objectiveTitle(session, command.path("objective")));
+        ObjectNode quotes = display.putObject("quotes");
+        Map<String, PinnedMaterials.Pinned> pinned = new java.util.HashMap<>();
+        quoted(exercise.path("content"), quote -> {
+            String key = quote.path("memberKey").stringValue("") + ":" + quote.path("itemRevisionId").stringValue("");
+            PinnedMaterials.Pinned material = pinned.computeIfAbsent(key, ignored -> materials.read(session.ownerId(), session.deckId(),
+                    UUID.fromString(quote.path("memberKey").stringValue("")), UUID.fromString(quote.path("itemRevisionId").stringValue(""))).orElse(null));
+            if (material == null) return;
+            material.text(UUID.fromString(quote.path("nodeId").stringValue(""))).ifPresent(text -> quotes.put(quote.path("nodeId").stringValue(""), text));
+        });
+        return display;
+    }
+
+    private String objectiveTitle(Session session, JsonNode objective) {
+        if (objective.path("operation").stringValue("").equals("create")) return objective.path("title").stringValue("");
+        try {
+            return repository.objectiveTitle(session.ownerId(), session.deckId(), UUID.fromString(objective.path("objectiveId").stringValue("")),
+                    UUID.fromString(objective.path("objectiveRevisionId").stringValue(""))).orElse("");
+        } catch (IllegalArgumentException malformed) {
+            return "";
+        }
+    }
+
+    /** Every {@code MATERIAL} block in a content tree. */
+    static void quoted(JsonNode node, java.util.function.Consumer<JsonNode> visit) {
+        if (node.isObject() && node.path("kind").stringValue("").equals("MATERIAL")) visit.accept(node);
+        node.forEach(child -> quoted(child, visit));
     }
 
     /**
