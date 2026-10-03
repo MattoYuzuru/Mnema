@@ -466,7 +466,8 @@ class ReviewService {
             throw new SourceUnavailableException(drifted.stream().map(Drift::source).toList());
         }
         MaterialsSpec spec = MaterialsSpec.read(session.spec());
-        gate.requireFor(spec);
+        MaterialsSpec.Effective effective = spec.forArtifact(artifact.sourceRefs());
+        gate.requireFor(effective);
         // a REVIEW session with only failed or rejected leftovers does not count as active; retrying makes it count again
         if (tx.state.equals("REVIEW") && repository.artifactCounts(sessionId).entrySet().stream()
                 .noneMatch(entry -> Set.of("PROPOSED", "REVISING", "STALE").contains(entry.getKey()) && entry.getValue() > 0)) {
@@ -477,7 +478,7 @@ class ReviewService {
                         .put("activeSessionIds", active.stream().map(UUID::toString).toList()).build());
             }
         }
-        String operation = AdmissionPricing.materialOperation(spec.workingEffort());
+        String operation = AdmissionPricing.materialOperation(effective.workingEffort());
         int credits = pricing.credits(operation);
         // usage is last: a refusal rolls this transaction back, so nothing above has changed
         Reservation reservation = ledger.reserve(session.ownerId(), ReservationScope.STEP, session.sessionId(), null, Math.max(1, credits));
@@ -485,8 +486,17 @@ class ReviewService {
         repository.dropMedia(artifactId);
         repository.cancelTurns(artifactId);
         steps.cancelMedia(artifactId);
-        Artifact queued = repository.requeue(artifact, stale ? drift.repinned(artifact, drifted) : artifact.sourceRefs());
-        ObjectNode input = Json.object().put("effort", spec.workingEffort()).put("operation", operation).put("credits", credits)
+        JsonNode pins = stale ? drift.repinned(artifact, drifted) : artifact.sourceRefs();
+        // a re-pinned note is read at its new version from a snapshot taken now (a note that moved again meanwhile is a 409)
+        for (Drift moved : drifted) {
+            if (moved.current() != null && moved.current().path("type").stringValue("").equals("NOTE")
+                    && !repository.snapshotNote(sessionId, session.ownerId(), moved.source().id(),
+                    Long.parseLong(moved.current().path("noteRowVersion").stringValue("0")))) {
+                throw new SourceUnavailableException(List.of(moved.source()));
+            }
+        }
+        Artifact queued = repository.requeue(artifact, pins);
+        ObjectNode input = Json.object().put("effort", effective.workingEffort()).put("operation", operation).put("credits", credits)
                 .put("reservationId", reservation.reservationId().toString());
         steps.insert(UUID.randomUUID(), sessionId, artifactId, session.ownerId(), TextDraftExecutor.KIND, "TEXT", input,
                 "draft:" + artifactId + ":" + (steps.draftCount(artifactId) + 1));

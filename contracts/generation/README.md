@@ -189,6 +189,19 @@ by the owning task with a note here.
     - **Media holds** of an artifact are released in the approval's or hand-off's own transaction (the catalog or the draft holds the
       assets by then), not after the commit.
 
+13. **AI-08 (#290) settled these** (notes as sources):
+    - **Per-note `overrides`** on a `NOTE` + `SOURCE` source (`http.json` `generationSpec.MATERIALS.sources`): strict and sparse
+      (`effort`, `media`; `{}` or an empty `media` is `INVALID_REQUEST`), only with `ONE_PER_NOTE` and a note source, echoed
+      unchanged. The estimate and the hold price every material with its effective settings; capabilities are checked on the
+      effective values; the step input (`operation`, `credits`) and the context of a material use its own note's effective effort
+      and media. A retry uses the same effective settings.
+    - **Pinned text**: notes are mutable in place and keep no history, so the text is copied at the pin into
+      `generation_note_snapshot` (`V29`; at admission, and again when a retry re-pins). The context reads the snapshot, so an
+      edit after the pin (before or during the step) never reaches the material; the old "edited before the step ran fails with
+      `SOURCE_UNAVAILABLE`" behavior is gone. Drift is still detected by approval (decision 4) and by retry.
+    - **`getArtifact.sourceRefs[].status`** on NOTE entries: `CURRENT` (row_version equals the pin), `DELETED` (gone), `ARCHIVED`
+      (moved, archived, and the text equals the snapshot: archiving is the only change we can see), else `CHANGED`. Read-only.
+
 ## Owner decisions (2026-10-02)
 
 Final. Values live in config keys, so a change is a configuration change. Details: [usage contract](../usage/README.md#owner-decisions-2026-10-02).

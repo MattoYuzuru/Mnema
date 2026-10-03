@@ -295,6 +295,19 @@ state (409) and usage (409, last, inside the transaction that changes state).
   `GenerationRetentionIntegrationTest` (expiry, readable window, purge with media GC, warning, events). A READY media slot is made in
   tests by giving the slot's pre-allocated asset id a real `READY` asset (`GenerationReviewSupport.readyAsset`).
 
+## Notes as sources (#290)
+- **Grouping**: `ONE_PER_NOTE` makes one artifact per NOTE source, whose `source_refs` hold that note (and the item sources);
+  `MERGE_INTO_ONE` makes one artifact pinning all notes. `MaterialsSpec.forArtifact(sourceRefs)` gives the effective settings
+  of a material (`MaterialsSpec.Effective`): the session's, with the sparse `overrides` of its note applied.
+- **Overrides** are parsed strictly by `StandardSpecInterpreter` (usage module: shape, one-per-note only, pricing and capability
+  facts per effective material) and stored in the spec as sent; `SessionService` and `ReviewService.requeue` write the effective
+  `effort`/`operation`/`credits` into each TEXT_DRAFT step input, `ContextBuilder` reads the effective effort and media.
+- **Pinned text**: `generation_note_snapshot` (`V29`) keeps the note text at the pinned `row_version`, written at admission
+  (`snapshotNote`, in the admission transaction; a moved note is `409 SOURCE_UNAVAILABLE`) and on a retry's re-pin. The context
+  reads only the snapshot. The rows are append-only and cascade with the session.
+- **Status** of a NOTE pin in `getArtifact` (`SessionViews.withNoteStatus`): equal row version `CURRENT`; missing `DELETED`;
+  moved and archived with unchanged text `ARCHIVED`; otherwise `CHANGED`. It never writes anything.
+
 ## Shared platform contracts
 
 - Entity identifiers are non-nil RFC 9562/IETF UUIDs stored as PostgreSQL `uuid`.

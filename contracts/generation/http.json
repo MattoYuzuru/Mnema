@@ -427,7 +427,7 @@
       "operationId": "getArtifact",
       "method": "GET",
       "path": "/api/decks/{deckId}/generation-sessions/{sessionId}/artifacts/{artifactId}",
-      "summary": "Current revision (or an exact one), media slots, revision list and turns.",
+      "summary": "Current revision (or an exact one), media slots, revision list and turns. NOTE entries of sourceRefs carry a read-time, informational status (decision 13): CURRENT (the note is at the pinned row_version), CHANGED (its row_version moved and it is not only archived), ARCHIVED (it moved, is archived and its text is still the pinned text) or DELETED. It never changes the artifact: staleness stays decision 4.",
       "query": {
         "revisionId": "optional: read this revision's payload; the current pointer is unchanged"
       },
@@ -1059,11 +1059,11 @@
       },
       "MATERIALS": {
         "prompt": "0..2000 characters; required when there is no SOURCE source. Limit chosen equal to the turn instruction limit (architecture section 3); revisit in AI-04.",
-        "sources": "0..20 pinned sources: {role: SOURCE|STYLE_EXAMPLE, type: NOTE, noteId, noteRowVersion} or {role, type: ITEM, memberKey, itemRevisionId}. At most 2 STYLE_EXAMPLE, items only. The pins are immutable for the session.",
+        "sources": "0..20 pinned sources: {role: SOURCE|STYLE_EXAMPLE, type: NOTE, noteId, noteRowVersion[, overrides]} or {role, type: ITEM, memberKey, itemRevisionId}. At most 2 STYLE_EXAMPLE, items only. The pins are immutable for the session. A NOTE + SOURCE entry may carry sparse per-note `overrides` (decision 13): {effort?, media?: {audio?: {enabled, lang?, voice?}, imageSearch?}}; every member optional, the object and its media member non-empty (`{}` is INVALID_REQUEST, send none); an absent member keeps the session value; an `audio` override replaces the whole clip setting. Allowed only with notesMode ONE_PER_NOTE (and at least one NOTE source); on any other entry, with MERGE_INTO_ONE, or malformed: 400 INVALID_REQUEST. Echoed unchanged in the stored spec. The estimate and the admission hold price each material with its effective settings, capability checks (audio -> textToSpeech, imageSearch) apply to the effective values, and the TEXT_DRAFT context of the note's material carries the effective effort and media directives of that note only.",
         "settings": {
           "effort": "AUTO | SHORT | MEDIUM | DETAILED",
           "notesMode": "ONE_PER_NOTE (default) | MERGE_INTO_ONE; ignored without NOTE sources",
-          "media": "{audio: {enabled, lang, voice: female|male|null}, imageSearch: boolean}; per-note overrides are provisional (AI-08, #290)",
+          "media": "{audio: {enabled, lang, voice: female|male|null}, imageSearch: boolean}; per-note overrides: see sources",
           "factCheck": "boolean: web research by effort (architecture section 14)",
           "similarToDeck": "boolean: add deck exemplars to the brief ('Похоже на: как в колоде')",
           "planFirst": "boolean: PLANNING first (needs the planner, AI-14 #295)",
@@ -1113,6 +1113,42 @@
     }
   },
   "examples": {
+    "specMaterialsOverrides": {
+      "kind": "MATERIALS",
+      "outputLanguage": "ru",
+      "sources": [
+        {
+          "role": "SOURCE",
+          "type": "NOTE",
+          "noteId": "20700000-0000-4000-8000-000000000001",
+          "noteRowVersion": "3",
+          "overrides": {
+            "effort": "DETAILED",
+            "media": {
+              "audio": {
+                "enabled": true,
+                "lang": "ko",
+                "voice": null
+              },
+              "imageSearch": false
+            }
+          }
+        },
+        {
+          "role": "SOURCE",
+          "type": "NOTE",
+          "noteId": "20700000-0000-4000-8000-000000000002",
+          "noteRowVersion": "0"
+        }
+      ],
+      "settings": {
+        "effort": "SHORT",
+        "notesMode": "ONE_PER_NOTE",
+        "media": {
+          "imageSearch": true
+        }
+      }
+    },
     "specMaterials": {
       "kind": "MATERIALS",
       "outputLanguage": "ru",
@@ -1540,7 +1576,8 @@
         {
           "type": "NOTE",
           "noteId": "20700000-0000-4000-8000-000000000001",
-          "noteRowVersion": "3"
+          "noteRowVersion": "3",
+          "status": "CURRENT"
         }
       ],
       "revision": {

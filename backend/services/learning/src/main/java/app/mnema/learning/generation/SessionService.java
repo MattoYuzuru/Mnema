@@ -122,11 +122,14 @@ class SessionService {
         Session session = new Session(sessionId, owner, deckId, "MATERIALS", "RUNNING", null, spec, reservation.reservationId(),
                 0, 0, null, null, null);
         repository.insertSession(session, settings.sessionRetention());
-        for (Source source : parsed.sources()) repository.insertSource(sessionId, owner, source);
+        for (Source source : parsed.sources()) {
+            repository.insertSource(sessionId, owner, source);
+            // the text is pinned with the row version: a note that moved since the check above is a 409, not a silent re-pin
+            if (source.type().equals("NOTE") && !repository.snapshotNote(sessionId, owner, source.noteId(), source.noteRowVersion())) {
+                throw new SourceUnavailableException(List.of(new SourceUnavailableException.Unavailable("NOTE", source.noteId())));
+            }
+        }
 
-        String effort = parsed.workingEffort();
-        String operation = AdmissionPricing.materialOperation(effort);
-        int credits = pricing.credits(operation);
         List<Source> notes = parsed.notes();
         List<EventDraft> events = new ArrayList<>();
         int count = parsed.artifactCount();
@@ -145,6 +148,10 @@ class SessionService {
             }
             parsed.items().forEach(item -> refs.add(itemRef(item)));
             repository.insertArtifact(artifactId, sessionId, owner, ordinal, refs);
+            // each material is charged and written at its own effective settings (the note's overrides over the session's)
+            String effort = parsed.forArtifact(refs).workingEffort();
+            String operation = AdmissionPricing.materialOperation(effort);
+            int credits = pricing.credits(operation);
             ObjectNode input = Json.object().put("effort", effort).put("operation", operation).put("credits", credits);
             steps.insert(UUID.randomUUID(), sessionId, artifactId, owner, "TEXT_DRAFT", "TEXT", input, "draft:" + artifactId + ":1");
             events.add(new EventDraft("ARTIFACT_STATE", artifactId, queuedPayload()));

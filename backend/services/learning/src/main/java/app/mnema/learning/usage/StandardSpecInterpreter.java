@@ -12,6 +12,8 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -100,6 +102,7 @@ final class StandardSpecInterpreter implements GenerationSpecInterpreter {
         int styleExamples = 0;
         List<GenerationBoundary.NoteRef> noteRefs = new ArrayList<>();
         List<GenerationBoundary.ItemRef> itemRefs = new ArrayList<>();
+        List<JsonNode> noteOverrides = new ArrayList<>();
         if (spec.has("sources")) {
             JsonNode sources = array(spec, "sources");
             if (sources.size() > limits.maxSources) throw limits.exceeded("SOURCES");
@@ -107,7 +110,9 @@ final class StandardSpecInterpreter implements GenerationSpecInterpreter {
                 String role = text(source, "role");
                 String type = text(source, "type");
                 if (type.equals("NOTE")) {
-                    keys(source, Set.of("role", "type", "noteId", "noteRowVersion"), Set.of());
+                    keys(source, Set.of("role", "type", "noteId", "noteRowVersion"), Set.of("overrides"));
+                    if (source.has("overrides") && !role.equals("SOURCE")) throw invalid();
+                    noteOverrides.add(source.get("overrides"));
                     UUID noteId = uuid(source, "noteId");
                     if (!DECIMAL.matcher(text(source, "noteRowVersion")).matches()) throw invalid();
                     noteRefs.add(new GenerationBoundary.NoteRef(noteId, Long.parseLong(text(source, "noteRowVersion"))));
@@ -167,18 +172,64 @@ final class StandardSpecInterpreter implements GenerationSpecInterpreter {
 
         int artifacts = notesMode.equals("MERGE_INTO_ONE") || notes == 0 ? 1 : notes;
         if (artifacts > limits.maxArtifactsPerSession) throw limits.exceeded("ARTIFACTS_PER_SESSION");
+        // Per-note overrides (#290): sparse, one artifact per note only; every material is priced at its effective settings.
+        boolean anyOverride = noteOverrides.stream().anyMatch(java.util.Objects::nonNull);
+        if (anyOverride && !(notesMode.equals("ONE_PER_NOTE") && notes > 0)) throw invalid();
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        boolean anyAudio = false;
+        boolean anyImage = false;
+        boolean research = false;
+        for (int index = 0; index < artifacts; index++) {
+            JsonNode override = notesMode.equals("ONE_PER_NOTE") && notes > 0 ? noteOverrides.get(index) : null;
+            Effective effective = override == null ? new Effective(effort, audio, imageSearch)
+                    : override(override, new Effective(effort, audio, imageSearch));
+            counts.merge(switch (effective.effort) {
+                case "SHORT" -> "MATERIAL_SHORT";
+                case "DETAILED" -> "MATERIAL_DETAILED";
+                default -> "MATERIAL_MEDIUM";
+            }, 1, Integer::sum);
+            if (effective.audio) counts.merge("TTS_CLIP_30S", 1, Integer::sum);
+            if (effective.image) counts.merge("IMAGE_SEARCH", 1, Integer::sum);
+            boolean checks = factCheck && !effective.effort.equals("SHORT");
+            if (checks) counts.merge("FACTCHECK_LOW", 1, Integer::sum);
+            anyAudio |= effective.audio;
+            anyImage |= effective.image;
+            research |= checks;
+        }
         List<Line> lines = new ArrayList<>();
-        lines.add(new Line(switch (effort) {
-            case "SHORT" -> "MATERIAL_SHORT";
-            case "DETAILED" -> "MATERIAL_DETAILED";
-            default -> "MATERIAL_MEDIUM";
-        }, artifacts));
-        if (audio) lines.add(new Line("TTS_CLIP_30S", artifacts));
-        if (imageSearch) lines.add(new Line("IMAGE_SEARCH", artifacts));
-        boolean research = factCheck && !effort.equals("SHORT");
-        if (research) lines.add(new Line("FACTCHECK_LOW", artifacts));
-        check(owner, deckId, new GenerationBoundary.SpecFacts("MATERIALS", noteRefs, itemRefs, audio, imageSearch, research), admission);
+        counts.forEach((operation, count) -> lines.add(new Line(operation, count)));
+        check(owner, deckId, new GenerationBoundary.SpecFacts("MATERIALS", noteRefs, itemRefs, anyAudio, anyImage, research), admission);
         return new Interpretation(lines, budget, List.of());
+    }
+
+    /** The settings of one material that pricing and capabilities depend on. */
+    private record Effective(String effort, boolean audio, boolean image) { }
+
+    /**
+     * A strict, sparse per-note override: a non-empty object of {@code effort} and {@code media} (itself non-empty, with
+     * {@code audio} and {@code imageSearch} shaped as in the session settings). Absent members keep the session value.
+     */
+    private Effective override(JsonNode override, Effective base) {
+        keys(override, Set.of(), Set.of("effort", "media"));
+        if (override.isEmpty()) throw invalid();
+        String effort = base.effort;
+        boolean audio = base.audio;
+        boolean image = base.image;
+        if (override.has("effort")) effort = oneOf(override, "effort", EFFORTS);
+        if (override.has("media")) {
+            JsonNode media = object(override, "media");
+            keys(media, Set.of(), Set.of("audio", "imageSearch"));
+            if (media.isEmpty()) throw invalid();
+            if (media.has("audio")) {
+                JsonNode clip = object(media, "audio");
+                keys(clip, Set.of("enabled"), Set.of("lang", "voice"));
+                audio = flag(clip, "enabled");
+                if (clip.has("lang") && !LANGUAGE.matcher(text(clip, "lang")).matches()) throw invalid();
+                if (clip.has("voice") && !clip.get("voice").isNull()) oneOf(clip, "voice", Set.of("female", "male"));
+            }
+            if (media.has("imageSearch")) image = flag(media, "imageSearch");
+        }
+        return new Effective(effort.equals("AUTO") ? "MEDIUM" : effort, audio, image);
     }
 
     // ---------------------------------------------------------------- EXERCISES
