@@ -4,7 +4,7 @@ import { TestBed } from '@angular/core/testing';
 import { firstValueFrom } from 'rxjs';
 
 import { StudyApiService } from './study-api.service';
-import { AttemptCommand, StudyProtocolError } from './study.models';
+import { AttemptCommand, AttemptOutcome, StudyProtocolError } from './study.models';
 import { assessedOutcome, clone, ids, mechanics, privateHeaders, readySession } from './study-test-data';
 
 describe('StudyApiService', () => {
@@ -77,7 +77,7 @@ describe('StudyApiService', () => {
         const request = http.expectOne(`${location}/attempts`);
         expect(request.request.body).toEqual(command);
         request.flush(assessedOutcome(command, mechanics['feedback']['freeResponse']), { headers: privateHeaders });
-        const outcome = (await result).value;
+        const outcome = (await result).value as AttemptOutcome;
         expect(outcome.status).toBe('ASSESSED');
         expect(outcome.feedback.result).toBe('CORRECT');
     });
@@ -120,7 +120,7 @@ describe('StudyApiService', () => {
             attemptId: command.attemptId, presentationId: command.presentationId, mode: 'PRACTICE', status: 'ASSESSED',
             canonicalEffects: false, evidence: null, transition: null, feedback: mechanics['feedback']['choice']
         }, { headers: privateHeaders });
-        const outcome = (await result).value;
+        const outcome = (await result).value as AttemptOutcome;
         expect(outcome.canonicalEffects).toBe(false);
         expect(outcome.transition).toBeNull();
     });

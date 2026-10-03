@@ -659,6 +659,6 @@ describe('StudySessionPageComponent', () => {
     function outcome(name: 'selfCheck' | 'freeResponse' | 'cloze' | 'choice' | 'match' | 'order' | 'categorize', command?: AttemptCommand): AttemptOutcome {
         return { attemptId: command?.attemptId ?? ids.commandId, presentationId: fixtures[name].presentationId, mode: 'SCHEDULED',
             status: 'ASSESSED', feedback: clone(mechanics['feedback'][name]), canonicalEffects: true,
-            transition: { beforeLevel: 0, afterLevel: 1, nextDue: '2026-10-02T10:00:00Z' } };
+            transition: { beforeLevel: 0, afterLevel: 1, nextDue: '2026-10-02T10:00:00Z' }, disputed: false };
     }
 });

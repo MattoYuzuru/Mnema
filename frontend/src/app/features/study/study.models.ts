@@ -4,6 +4,10 @@ export type StudyMode = 'SCHEDULED' | 'REPLAY' | 'PRACTICE';
 export type StudyStatus = 'ACTIVE' | 'EMPTY' | 'COMPLETE';
 export type StudyExerciseType = Mechanic;
 export type SelfRating = 'NOT_RECALLED' | 'HINTED' | 'PARTIAL' | 'FULL';
+export const SELF_RATINGS: readonly SelfRating[] = ['NOT_RECALLED', 'HINTED', 'PARTIAL', 'FULL'];
+export const SELF_RATING_LABELS: Readonly<Record<SelfRating, string>> = {
+    NOT_RECALLED: 'Не вспомнил', HINTED: 'Вспомнил с подсказкой', PARTIAL: 'Вспомнил частично', FULL: 'Вспомнил полностью'
+};
 export type PracticeOrder = 'SEEDED' | 'WEAKEST_FIRST';
 export type ScheduledStudyPreset = 'QUICK' | 'STANDARD';
 
@@ -31,6 +35,11 @@ interface PresentationBase {
      * presentation is never new.
      */
     readonly isNew: boolean;
+    /**
+     * Present only while an answer to this presentation is being graded (AI-20, #292): a reload resumes it instead of
+     * asking again. It never carries the rubric, criteria or reference.
+     */
+    readonly assessment?: { readonly attemptId: string; readonly status: 'ASSESSING' | 'SELF_CHECK' };
 }
 
 /**
@@ -95,11 +104,33 @@ export interface AttemptCommand {
 export type AssessedResult = 'CORRECT' | 'PARTIAL' | 'UNSURE' | 'INCORRECT';
 
 export interface SelfCheckFeedback { readonly result: AssessedResult; readonly appliedRules: readonly string[]; }
+export type AssessmentStrictness = 'S1' | 'S2' | 'S3';
+export type AssessmentJudgement = 'COMPLETE' | 'PARTIAL' | 'INSUFFICIENT';
+export interface CoveredPoint {
+    readonly criterionId: string;
+    readonly description: string;
+    /** The learner's own words, verbatim. */
+    readonly quote: string;
+    readonly partial: boolean;
+}
+export interface MissingPoint { readonly criterionId: string; readonly description: string; readonly partial: boolean; }
+export interface ContradictedPoint { readonly criterionId: string; readonly description: string; readonly note: string; }
+/** What the grader found in an `ai-semantic` answer; the server already aggregated it into `judgement`. */
+export interface AssessmentFeedback {
+    readonly strictness: AssessmentStrictness;
+    readonly judgement: AssessmentJudgement;
+    readonly covered: readonly CoveredPoint[];
+    readonly missing: readonly MissingPoint[];
+    readonly contradicted: readonly ContradictedPoint[];
+    readonly nextStricter: boolean;
+}
 export interface FreeResponseFeedback {
     readonly result: AssessedResult;
     readonly appliedRules: readonly string[];
     readonly reference: string;
     readonly referenceContent: readonly LearnerBlock[];
+    /** Only for an answer graded by the model; a self-rated one carries the reference alone. */
+    readonly assessment?: AssessmentFeedback;
 }
 export interface ClozeFeedback {
     readonly result: AssessedResult;
@@ -134,10 +165,15 @@ export interface CategorizeFeedback {
         readonly itemId: string; readonly selectedCategoryId: string; readonly correctCategoryId: string; readonly correct: boolean;
     }[];
 }
-/** NOT_ASSESSED / UNAVAILABLE: no learner verdict and no canonical effect. */
+/**
+ * NOT_ASSESSED / UNAVAILABLE: no learner verdict and no canonical effect. A disputed grade keeps the reference so the
+ * learner can still compare.
+ */
 export interface UnassessedFeedback {
     readonly result: 'NOT_ASSESSED' | 'UNAVAILABLE';
     readonly reasonCodes: readonly string[];
+    readonly reference?: string;
+    readonly referenceContent?: readonly LearnerBlock[];
 }
 export type AttemptFeedback = SelfCheckFeedback | FreeResponseFeedback | ClozeFeedback | ChoiceFeedback
     | MatchFeedback | OrderFeedback | CategorizeFeedback | UnassessedFeedback;
@@ -147,7 +183,9 @@ export function isChoiceFeedback(value: AttemptFeedback): value is ChoiceFeedbac
 export function isMatchFeedback(value: AttemptFeedback): value is MatchFeedback { return 'pairs' in value; }
 export function isOrderFeedback(value: AttemptFeedback): value is OrderFeedback { return 'correctSequence' in value; }
 export function isCategorizeFeedback(value: AttemptFeedback): value is CategorizeFeedback { return 'assignments' in value; }
-export function isFreeResponseFeedback(value: AttemptFeedback): value is FreeResponseFeedback { return 'referenceContent' in value; }
+export function isFreeResponseFeedback(value: AttemptFeedback): value is FreeResponseFeedback {
+    return 'referenceContent' in value && !('reasonCodes' in value);
+}
 export function isUnassessed(value: AttemptFeedback): value is UnassessedFeedback { return 'reasonCodes' in value; }
 
 export interface AttemptOutcome {
@@ -162,7 +200,43 @@ export interface AttemptOutcome {
         readonly afterLevel: number;
         readonly nextDue: string;
     } | null;
+    /** The learner disputed the AI grade; the progress it caused was taken back. */
+    readonly disputed: boolean;
 }
+
+/** Why the learner rates themselves instead of receiving a model grade. Never a provider detail. */
+export type SelfCheckReason = 'LEARNER_CHOICE' | 'PROVIDER_UNCERTAIN' | 'PROVIDER_UNAVAILABLE' | 'USAGE_LIMIT'
+    | 'CAPABILITY_UNAVAILABLE' | 'DEADLINE' | 'BUSY';
+
+/** An answer to an `ai-semantic` presentation that is still being graded. */
+export interface AssessingAttempt {
+    readonly attemptId: string;
+    readonly presentationId: string;
+    readonly mode: StudyMode;
+    readonly status: 'ASSESSING';
+    readonly retryAfterMs: number;
+}
+
+/** The learner compares and rates themselves: the reference and the key points appear only now, after the answer. */
+export interface SelfCheckAttempt {
+    readonly attemptId: string;
+    readonly presentationId: string;
+    readonly mode: StudyMode;
+    readonly status: 'SELF_CHECK';
+    readonly reason: SelfCheckReason;
+    readonly selfCheck: {
+        readonly reference: string;
+        readonly referenceContent: readonly LearnerBlock[];
+        readonly criteria: readonly { readonly criterionId: string; readonly description: string }[];
+    };
+}
+
+/** What a submit or a poll of one attempt returns: still grading, self-check, or the stored outcome. */
+export type AttemptState = AssessingAttempt | SelfCheckAttempt | AttemptOutcome;
+
+export function isAssessing(state: AttemptState): state is AssessingAttempt { return state.status === 'ASSESSING'; }
+export function isSelfCheckAttempt(state: AttemptState): state is SelfCheckAttempt { return state.status === 'SELF_CHECK'; }
+export function isAttemptOutcome(state: AttemptState): state is AttemptOutcome { return 'feedback' in state; }
 
 export interface HintResult {
     readonly presentationId: string;

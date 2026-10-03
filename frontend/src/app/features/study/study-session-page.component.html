@@ -69,12 +69,43 @@
       </article>
     }
 
+    @if (phase() === 'assessing') {
+      <article class="study-card assessing-card" aria-labelledby="assessing-title">
+        <p class="eyebrow">Ответ принят</p>
+        <h2 id="assessing-title" tabindex="-1">Мнема проверяет ответ…</h2>
+        <app-assessment-waiting [answer]="submittedText()" [offered]="flow.offered()" [busy]="flow.busy()"
+          [problem]="flow.problem()" (selfCheck)="flow.selfCheck()" (retry)="flow.retry()" />
+      </article>
+    }
+
+    @if (phase() === 'self-check' && flow.view(); as view) {
+      <article class="study-card">
+        <p class="eyebrow">Оцените себя</p>
+        <h2 id="self-check-title" tabindex="-1">Сверьтесь с эталоном</h2>
+        <app-assessment-self-check [view]="view" [answer]="submittedText()" [busy]="flow.busy()"
+          [problem]="flow.problem()" (rated)="flow.rate($event)" />
+      </article>
+    }
+
     @if (phase() === 'feedback' && feedback(); as outcome) {
       <article class="study-card feedback-card" [class.correct]="outcome.feedback.result === 'CORRECT'">
         <p class="eyebrow">Ответ принят</p>
         <h2 id="feedback-title" tabindex="-1">{{ feedbackTitle(outcome) }}</h2>
         <app-learner-feedback [content]="presentation" [feedback]="outcome.feedback" [submitted]="submitted()" />
         <p class="progress-note" [class.caution]="outcome.transition && outcome.transition.afterLevel < outcome.transition.beforeLevel">{{ progressMessage(outcome) }}</p>
+        @if (disputable() && !disputeBlocked() && disputeStep() === 'idle') {
+          <button class="button" type="button" data-dispute-open (click)="askDispute()">Оспорить оценку</button>
+        }
+        @if (disputeStep() !== 'idle') {
+          <div class="dispute" role="group" aria-labelledby="dispute-question">
+            <p id="dispute-question"><strong>Снять эту оценку?</strong> Прогресс по этой цели вернётся к состоянию до ответа. Ответ и эталон останутся на экране.</p>
+            <div class="dispute-actions">
+              <button class="button primary" type="button" data-dispute-confirm [disabled]="disputeStep() === 'sending'" (click)="confirmDispute()">{{ disputeStep() === 'sending' ? 'Снимаем…' : 'Да, снять оценку' }}</button>
+              <button class="button" type="button" [disabled]="disputeStep() === 'sending'" (click)="cancelDispute()">Не снимать</button>
+            </div>
+          </div>
+        }
+        @if (disputeProblem(); as problem) { <p class="notice error" role="alert">{{ problem }}</p> }
         <button class="button primary" type="button" (click)="next()">Продолжить</button>
       </article>
     }

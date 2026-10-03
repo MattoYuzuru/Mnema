@@ -9,7 +9,7 @@ import { CapabilitiesApiService } from '../authoring/capabilities-api.service';
 import { AuthoringProtocolError } from '../authoring/authoring.models';
 import { ExerciseApiService } from '../authoring/exercise-api.service';
 import { StudyApiService } from './study-api.service';
-import { AttemptCommand, StudyProtocolError } from './study.models';
+import { AttemptCommand, AttemptOutcome, StudyProtocolError } from './study.models';
 import { assessedOutcome, clone, ids, mechanics, privateHeaders, readySession, removed, removedNames } from './study-test-data';
 
 /**
@@ -139,7 +139,7 @@ describe('Mechanics wire contract (contracts/study/mechanics.json)', () => {
             const submitting = firstValueFrom(study.submit(deckId, ids.sessionId, command));
             http.expectOne(`/api/decks/${deckId}/study-sessions/${ids.sessionId}/attempts`)
                 .flush(assessedOutcome(command, mechanics['feedback'][name]), { headers: privateHeaders });
-            expect((await submitting).value.feedback).toEqual(mechanics['feedback'][name]);
+            expect(((await submitting).value as AttemptOutcome).feedback).toEqual(mechanics['feedback'][name]);
         });
     }
 
@@ -151,7 +151,7 @@ describe('Mechanics wire contract (contracts/study/mechanics.json)', () => {
                 attemptId: command.attemptId, presentationId: command.presentationId, mode: 'SCHEDULED', status,
                 evidence: null, feedback: mechanics['feedback'][name], transition: null
             }, { headers: privateHeaders });
-            expect((await submitting).value.feedback).toEqual(mechanics['feedback'][name]);
+            expect(((await submitting).value as AttemptOutcome).feedback).toEqual(mechanics['feedback'][name]);
         }
     });
 
