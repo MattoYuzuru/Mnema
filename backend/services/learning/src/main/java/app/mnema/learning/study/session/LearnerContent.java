@@ -26,8 +26,8 @@ import java.util.UUID;
  *
  * <p>MATERIAL becomes TEXT from the pinned revision; author labels (media titles), answer keys and
  * accepted strings never enter the result. Transcripts stay inside the stored content and are filtered
- * by {@link #view} until the learner reveals them. MATCH sides, ORDER items and CATEGORIZE items are shuffled
- * here with an unpredictable source and the result is persisted, so reads and replays return the same order;
+ * by {@link #view} until the learner reveals them. CHOICE options, MATCH sides, ORDER items and CATEGORIZE items
+ * are shuffled here with an unpredictable source and the result is persisted, so reads and replays return the same order;
  * the order is deliberately not derivable from any identifier a client holds.
  */
 public final class LearnerContent {
@@ -68,8 +68,11 @@ public final class LearnerContent {
             case ExerciseContent.Choice choice -> {
                 content.set("prompt", blocks(choice.prompt(), text));
                 content.put("selectionMode", choice.multiple() ? "MULTIPLE" : "SINGLE");
+                // Authors and models put the correct option in predictable positions; the key is never consulted.
+                List<ExerciseContent.Option> shuffled = new ArrayList<>(choice.options());
+                Collections.shuffle(shuffled, random);
                 ArrayNode options = content.putArray("options");
-                choice.options().forEach(option -> options.addObject().put("optionId", option.optionId().toString())
+                shuffled.forEach(option -> options.addObject().put("optionId", option.optionId().toString())
                         .set("blocks", blocks(option.blocks(), text)));
             }
             case ExerciseContent.Match match -> {
