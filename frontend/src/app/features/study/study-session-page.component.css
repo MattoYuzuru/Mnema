@@ -95,3 +95,5 @@ summary { min-block-size: var(--mn-touch-min, 2.75rem); color: var(--mn-ink); fo
 .dispute p { margin: 0; }
 .dispute-actions { display: flex; flex-wrap: wrap; gap: .6rem; }
 @media (max-width: 25rem) { .dispute-actions .button { inline-size: 100%; } }
+.progress-note { margin-block: 1.5rem 1rem; }
+.button[aria-disabled='true'] { cursor: not-allowed; opacity: .58; }

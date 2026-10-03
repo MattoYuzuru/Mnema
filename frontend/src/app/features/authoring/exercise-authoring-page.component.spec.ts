@@ -1884,6 +1884,9 @@ describe('ExerciseAuthoringPageComponent', () => {
             const details = page().querySelector<HTMLDetailsElement>('app-ai-rubric-editor details.fine')!;
             expect(details.open).toBe(false);
             expect(details.textContent).toContain('Тонкая настройка');
+            details.open = true;
+            details.dispatchEvent(new Event('toggle'));
+            refresh();
             buttonByText('+ Добавить ошибку').click();
             refresh();
             edit(page().querySelector<HTMLInputElement>('app-ai-rubric-editor details input[type="text"]')!, 'Скорость не сохраняется');
@@ -1892,6 +1895,14 @@ describe('ExerciseAuthoringPageComponent', () => {
             const inputs = page().querySelectorAll<HTMLInputElement>('app-ai-rubric-editor details input[type="text"]');
             edit(inputs[1], 'инертность');
             expect(details.open).toBe(true);
+            // Removing the last row of a list never collapses the section around the focus.
+            buttonByText('Убрать', page().querySelectorAll('app-rubric-text-list')[1]).click();
+            buttonByText('Убрать', page().querySelectorAll('app-rubric-text-list')[1]).click();
+            refresh();
+            expect(details.open).toBe(true);
+            buttonByText('+ Добавить термин').click();
+            refresh();
+            edit(page().querySelectorAll<HTMLInputElement>('app-ai-rubric-editor details input[type="text"]')[1], 'инертность');
             component().setObjectiveTitle('Инерция');
             component().save();
             refresh();
@@ -1955,6 +1966,54 @@ describe('ExerciseAuthoringPageComponent', () => {
             expect(points()[0].querySelector('textarea')?.getAttribute('aria-invalid')).toBe('true');
         });
 
+        it('announces a refused save once: one summary line per distinct message, and no second alert on the rubric fields', () => {
+            configure(null, AVAILABLE);
+            select('FREE_RESPONSE');
+            toggle().click();
+            refresh();
+            component().setPrompt([text('Вопрос')]);
+            component().setObjectiveTitle('Цель');
+            component().save();
+            refresh();
+            const lines = [...page().querySelectorAll('#exercise-errors li')].map(item => item.textContent?.trim());
+            expect(lines.filter(line => line === 'Опишите пункт или удалите его.').length).toBe(1);
+            expect(new Set(lines).size).toBe(lines.length);
+            expect(page().querySelector('#exercise-errors')?.getAttribute('role')).toBe('alert');
+            expect(page().querySelectorAll('app-ai-rubric-editor [role="alert"]').length).toBe(0);
+            expect(page().querySelectorAll('app-ai-rubric-editor .field-error').length).toBeGreaterThan(3);
+        });
+
+        it('announces a refused «Продолжить» once, in a single alert with distinct lines', () => {
+            configure(null, AVAILABLE);
+            select('FREE_RESPONSE', false);
+            component().setPrompt([text('Вопрос')]);
+            refresh();
+            moveOn();
+            toggle().click();
+            refresh();
+            moveOn();
+            const alert = page().querySelector('#step-answers [role="alert"]')!;
+            const lines = [...alert.querySelectorAll('.step-problem')].map(item => item.textContent?.trim());
+            expect(new Set(lines).size).toBe(lines.length);
+            expect(page().querySelectorAll('app-ai-rubric-editor [role="alert"]').length).toBe(0);
+        });
+
+        it('names the controls of a key point with their visible text: «Вид пункта», «Вес пункта», «Убрать»', () => {
+            configure(null, AVAILABLE);
+            select('FREE_RESPONSE');
+            toggle().click();
+            refresh();
+            const point = points()[0];
+            const labels = [...point.querySelectorAll('label')].map(label => label.textContent?.replace(/\s+/g, ' ').trim());
+            expect(labels).toContain('Вид пункта 1');
+            expect(labels).toContain('Вес пункта 1');
+            const remove = point.querySelector('button')!;
+            expect(remove.textContent?.trim()).toBe('Убрать');
+            expect(remove.getAttribute('aria-label')).toContain('Убрать');
+            expect(point.querySelector('select[id$="-tier"]')?.id).toBeTruthy();
+            expect(point.querySelector(`label[for="${point.querySelector('select[id$="-tier"]')!.id}"]`)).not.toBeNull();
+        });
+
         it('moves focus to the new key point on add and to the neighbour on remove, and never allows more than nine points', async () => {
             configure(null, AVAILABLE);
             select('FREE_RESPONSE');
@@ -1981,6 +2040,8 @@ describe('ExerciseAuthoringPageComponent', () => {
             expect(toggle().disabled).toBe(false);
             expect(points().length).toBe(4);
             expect(field('#free-response-rubric-reference').value).toContain('Инерция');
+            // The fixture carries typical mistakes and terms, so the fine settings open once, for what is already inside.
+            expect(page().querySelector<HTMLDetailsElement>('app-ai-rubric-editor details.fine')?.open).toBe(true);
             component().save();
             refresh();
             expect(lastCall(api.update)[6]).toEqual(ai);

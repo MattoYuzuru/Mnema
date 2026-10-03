@@ -30,6 +30,11 @@ export interface FreeResponseDraft {
     readonly responseInput: ResponseInput;
     /** Rubric v1 while «Проверять смысл ответа с ИИ» is on; `null` means the deterministic list of accepted answers. */
     readonly aiRubric: AiRubricDraft | null;
+    /**
+     * The TEXT answer key an AI-checked exercise was published with, and the reference answer it was published with. It is kept
+     * only while the reference answer is unchanged (see `aiAnswerKey`); `null` for a new exercise.
+     */
+    readonly loadedAiKey: { readonly referenceAnswer: string; readonly answer: TextAnswerDraft } | null;
 }
 export interface ClozeBlankDraft {
     readonly blankId: string;
@@ -123,7 +128,7 @@ export function newCategorizeItem(categoryId: string | null = null): CategorizeI
 export function emptyDrafts(): ExerciseDrafts {
     return {
         SELF_CHECK: { prompt: [textBlock()], reference: [textBlock()] },
-        FREE_RESPONSE: { prompt: [textBlock()], reference: [], answer: newAnswer(), responseInput: 'TEXT', aiRubric: null },
+        FREE_RESPONSE: { prompt: [textBlock()], reference: [], answer: newAnswer(), responseInput: 'TEXT', aiRubric: null, loadedAiKey: null },
         CLOZE: { prompt: [], texts: [''], blanks: [] },
         CHOICE: { prompt: [textBlock()], selectionMode: 'SINGLE', options: [newOption(), newOption()], correctIds: [] },
         MATCH: { prompt: [], pairs: [newPair(), newPair()] },
@@ -151,7 +156,9 @@ export function draftsFromDetail(detail: ExerciseSpec): ExerciseDrafts {
         case 'SELF_CHECK': return { ...drafts, SELF_CHECK: { prompt: detail.content.prompt, reference: detail.content.reference } };
         case 'FREE_RESPONSE': return { ...drafts, FREE_RESPONSE: { prompt: detail.content.prompt, reference: detail.content.reference,
             answer: answerDraft(detail.answerKey), responseInput: detail.content.responseInput,
-            aiRubric: detail.evaluatorPolicy.id === 'ai-semantic' ? rubricDraft(detail.evaluatorPolicy.rubric) : null } };
+            aiRubric: detail.evaluatorPolicy.id === 'ai-semantic' ? rubricDraft(detail.evaluatorPolicy.rubric) : null,
+            loadedAiKey: detail.evaluatorPolicy.id === 'ai-semantic'
+                ? { referenceAnswer: detail.evaluatorPolicy.rubric.referenceAnswer, answer: answerDraft(detail.answerKey) } : null } };
         case 'CLOZE': {
             const texts: string[] = [''];
             const blanks: ClozeBlankDraft[] = [];
@@ -198,14 +205,34 @@ function textKey(answer: TextAnswerDraft) {
 }
 
 /**
- * The server still requires a TEXT answer key for an AI-checked exercise although the grader never reads it. The
- * author is not asked for it: the typed list is kept when it is valid (an existing exercise round-trips unchanged),
- * otherwise the key is the first characters of the reference answer, compared strictly.
+ * The first characters of `text` that fit `limit` UTF-16 code units, never splitting a surrogate pair, trimmed.
+ */
+function cutToUnits(text: string, limit: number): string {
+    let result = '';
+    for (const symbol of text.trim()) {
+        if (result.length + symbol.length > limit) break;
+        result += symbol;
+    }
+    return result.trim();
+}
+
+/**
+ * The TEXT answer key of an AI-checked exercise.
+ *
+ * TODO(#292 follow-up, backend owner): the server still requires a TEXT `answerKey` for `ai-semantic` although the grader never
+ * reads it, so the editor derives one: the reference answer cut to 512 UTF-16 units, compared strictly. It is a made-up value in
+ * a field with no meaning here. The backend should accept a SELF_REPORT or an absent key for `ai-semantic`; then this function and
+ * `FreeResponseDraft.loadedAiKey` can be deleted. Risk until then: a deterministic-text evaluator mistakenly attached to the
+ * exercise would grade against the derived text.
+ *
+ * Whatever deterministic answers the author typed before switching AI checking on are never used (they are invisible in AI mode).
+ * A key an existing AI exercise was published with is kept only while its reference answer is unchanged, so editing the
+ * reference re-derives the key and an untouched exercise round-trips exactly.
  */
 function aiAnswerKey(draft: FreeResponseDraft, rubric: AiRubricDraft) {
-    if (answerErrorMessage(draft.answer, LIMITS.freeResponseAccepted) === null) return textKey(draft.answer);
-    const first = Array.from(rubric.referenceAnswer.trim()).slice(0, LIMITS.freeResponseAccepted.length).join('').trim();
-    return { accepted: [first], normalization: [...NORMALIZATION_RULES], matchingMode: 'STRICT' as const };
+    if (draft.loadedAiKey !== null && draft.loadedAiKey.referenceAnswer === rubric.referenceAnswer) return textKey(draft.loadedAiKey.answer);
+    return { accepted: [cutToUnits(rubric.referenceAnswer, LIMITS.freeResponseAccepted.length)],
+        normalization: [...NORMALIZATION_RULES], matchingMode: 'STRICT' as const };
 }
 
 /** Builds the publication payload for the selected mechanic. It may be invalid until `validateDraft` passes. */

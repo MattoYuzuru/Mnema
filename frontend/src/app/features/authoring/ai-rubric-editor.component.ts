@@ -1,5 +1,5 @@
 import {
-    ChangeDetectionStrategy, Component, ElementRef, Injector, afterNextRender, computed, inject, input, model, output
+    ChangeDetectionStrategy, Component, ElementRef, Injector, afterNextRender, effect, inject, input, model, output, signal, untracked
 } from '@angular/core';
 
 import {
@@ -26,13 +26,13 @@ const WEIGHT_LABELS: Readonly<Record<CriterionWeight, string>> = { 1: '1 · об
               <input type="text" [id]="idPrefix() + '-' + row.id" [value]="row.value" autocomplete="off"
                      [attr.aria-invalid]="error() ? 'true' : null" (input)="setValue(row.id, $any($event.target).value)" />
               <button type="button" class="button small" [attr.aria-label]="'Убрать: ' + rowLabel().toLowerCase() + ' ' + (index + 1)"
-                      (click)="remove(row.id, index)">−</button>
+                      (click)="remove(row.id, index)">Убрать</button>
             </div>
           </div>
         }
         <button type="button" class="button" data-add [disabled]="rows().length >= max()" (click)="add()">{{ addLabel() }}</button>
         <p class="counter" [class.over]="rows().length >= max()">{{ rows().length }} из {{ max() }}</p>
-        @if (error(); as message) { <p class="field-error" role="alert" [id]="idPrefix() + '-error'">{{ message }}</p> }
+        @if (error(); as message) { <p class="field-error" [id]="idPrefix() + '-error'">{{ message }}</p> }
       </fieldset>
     `,
     styleUrl: './exercise-fields.css',
@@ -96,11 +96,11 @@ export class RubricTextListComponent {
                   (input)="setReference($any($event.target).value)"></textarea>
         <p class="counter" [class.over]="rubric().referenceAnswer.length > limits.referenceAnswer">{{ rubric().referenceAnswer.length }} / {{ limits.referenceAnswer }}</p>
         @if (errors()['rubric:reference']; as message) {
-          <p class="field-error" role="alert" [id]="idPrefix() + '-reference-error'">{{ message }}</p>
+          <p class="field-error" [id]="idPrefix() + '-reference-error'">{{ message }}</p>
         }
       </div>
 
-      <fieldset class="points" [attr.aria-describedby]="idPrefix() + '-points-hint ' + idPrefix() + '-points-counts'">
+      <fieldset class="points" [attr.aria-describedby]="idPrefix() + '-points-hint ' + idPrefix() + '-points-counts' + (errors()['rubric:criteria'] ? ' ' + idPrefix() + '-points-error' : '')">
         <legend>Ключевые пункты</legend>
         <p class="hint" [id]="idPrefix() + '-points-hint'">Что должно быть в хорошем ответе, своими словами. «Суть» — без этого ответ не засчитают;
           «Детали» делают ответ полным; «Термины» — точные слова и обозначения.</p>
@@ -125,7 +125,7 @@ export class RubricTextListComponent {
                         (input)="setDescription(criterion.criterionId, $any($event.target).value)"></textarea>
               <div class="point-selects">
                 <div class="select-field">
-                  <label [for]="pointId(criterion.criterionId, 'tier')">Вид<span class="visually-hidden"> пункта {{ index + 1 }}</span></label>
+                  <label [for]="pointId(criterion.criterionId, 'tier')">Вид пункта<span class="visually-hidden"> {{ index + 1 }}</span></label>
                   <select [id]="pointId(criterion.criterionId, 'tier')" (change)="setTier(criterion.criterionId, $any($event.target).value)">
                     @for (tier of tiers; track tier) {
                       <option [value]="tier" [selected]="criterion.tier === tier">{{ tierLabels[tier] }} — {{ tierHints[tier] }}</option>
@@ -133,7 +133,7 @@ export class RubricTextListComponent {
                   </select>
                 </div>
                 <div class="select-field narrow">
-                  <label [for]="pointId(criterion.criterionId, 'weight')">Вес<span class="visually-hidden"> пункта {{ index + 1 }}</span></label>
+                  <label [for]="pointId(criterion.criterionId, 'weight')">Вес пункта<span class="visually-hidden"> {{ index + 1 }}</span></label>
                   <select [id]="pointId(criterion.criterionId, 'weight')" (change)="setWeight(criterion.criterionId, $any($event.target).value)">
                     @for (weight of weights; track weight) {
                       <option [value]="weight" [selected]="criterion.weight === weight">{{ weightLabels[weight] }}</option>
@@ -142,16 +142,16 @@ export class RubricTextListComponent {
                 </div>
               </div>
               @if (errors()['rubric:criterion:' + criterion.criterionId]; as message) {
-                <p class="field-error" role="alert" [id]="pointId(criterion.criterionId, 'error')">{{ message }}</p>
+                <p class="field-error" [id]="pointId(criterion.criterionId, 'error')">{{ message }}</p>
               }
             </li>
           }
         </ol>
         <button type="button" class="button" data-add-point [disabled]="rubric().criteria.length >= maxPoints" (click)="addCriterion()">+ Добавить пункт</button>
-        @if (errors()['rubric:criteria']; as message) { <p class="field-error" role="alert">{{ message }}</p> }
+        @if (errors()['rubric:criteria']; as message) { <p class="field-error" [id]="idPrefix() + '-points-error'">{{ message }}</p> }
       </fieldset>
 
-      <details class="fine" [open]="fineOpen()">
+      <details class="fine" [open]="fineOpen()" (toggle)="fineOpen.set($any($event.target).open)">
         <summary>Тонкая настройка</summary>
         <div class="fine-body">
           <app-rubric-text-list [rows]="rubric().misconceptions" (rowsChange)="setMisconceptions($event)"
@@ -198,12 +198,32 @@ export class AiRubricEditorComponent {
     readonly weightLabels = WEIGHT_LABELS;
     /** The tier maxima add up to 9: a tenth point can never satisfy the rule. */
     readonly maxPoints = CRITERION_TIERS.reduce((sum, tier) => sum + LIMITS.aiRubric.tiers[tier].max, 0);
-    /** Opens by itself when something sits inside, so a filled or invalid list is never hidden. */
-    readonly fineOpen = computed(() => this.rubric().misconceptions.length > 0 || this.rubric().acceptableTerms.length > 0
-        || this.errors()['rubric:misconceptions'] !== undefined || this.errors()['rubric:terms'] !== undefined);
+    /**
+     * «Тонкая настройка» is opened once for a rubric that already has typical mistakes or terms, and again when a message
+     * appears inside it; it is never closed from here, so removing the last row cannot collapse the section around the focus.
+     */
+    readonly fineOpen = signal(false);
+    private fineSeeded = false;
+    private fineHadError = false;
 
     private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
     private readonly injector = inject(Injector);
+
+    constructor() {
+        effect(() => {
+            const rubric = this.rubric();
+            const errors = this.errors();
+            const hasError = errors['rubric:misconceptions'] !== undefined || errors['rubric:terms'] !== undefined;
+            untracked(() => {
+                if (!this.fineSeeded) {
+                    this.fineSeeded = true;
+                    if (rubric.misconceptions.length > 0 || rubric.acceptableTerms.length > 0) this.fineOpen.set(true);
+                }
+                if (hasError && !this.fineHadError) this.fineOpen.set(true);
+                this.fineHadError = hasError;
+            });
+        });
+    }
 
     count(tier: CriterionTier): number { return tierCount(this.rubric(), tier); }
     min(tier: CriterionTier): number { return this.limits.tiers[tier].min; }

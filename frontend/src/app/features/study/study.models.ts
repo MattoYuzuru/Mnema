@@ -292,6 +292,8 @@ export interface StudyRecoverySnapshot {
     readonly deckId: string;
     readonly sessionId: string;
     readonly pending: AttemptCommand | null;
+    /** When an `ai-semantic` answer was accepted (202), so a reload keeps counting the 5 s before «Оценить себя». */
+    readonly assessmentStartedAt?: number | null;
 }
 
 export class StudyProtocolError extends Error {

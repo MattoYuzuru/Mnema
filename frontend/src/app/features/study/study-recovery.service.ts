@@ -21,7 +21,10 @@ export class StudyRecoveryService {
             if (value['version'] !== 3 || value['accountId'] !== this.accountId() || value['deckId'] !== deckId
                 || typeof value['updatedAt'] !== 'number' || this.browser.now() - value['updatedAt'] > TTL_MS
                 || !id(value['sessionId'])) throw new Error();
-            return { deckId, sessionId: value['sessionId'], pending: parsePending(value['pending']) };
+            const started = value['assessmentStartedAt'];
+            if (started !== undefined && started !== null && (typeof started !== 'number' || !Number.isFinite(started))) throw new Error();
+            return { deckId, sessionId: value['sessionId'], pending: parsePending(value['pending']),
+                assessmentStartedAt: started ?? null };
         } catch {
             this.clear();
             return null;

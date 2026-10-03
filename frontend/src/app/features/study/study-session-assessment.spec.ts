@@ -328,6 +328,65 @@ describe('StudySessionPageComponent, AI assessment', () => {
             expect(text()).toContain('не уверена');
         });
 
+        it('shows the stored result when the answer was graded while the page was closed and its card has left the queue', () => {
+            const next = { ...presentation(), presentationId: 'dddddddd-dddd-4ddd-8ddd-ddddddddddd1', ordinal: 1 };
+            recovery.restore.mockReturnValue({ deckId: deck.deckId, sessionId, pending: command() });
+            api.read.mockReturnValue(of(sessionOf([next])));
+            api.attempt.mockReturnValue(of(resultOf('resultComplete')));
+            fixture = TestBed.createComponent(StudySessionPageComponent);
+            refresh();
+            expect(api.attempt).toHaveBeenCalledWith(deck.deckId, sessionId, attemptId);
+            expect(page().querySelector('#feedback-title')?.textContent).toBe('Засчитано');
+            expect(page().querySelector('app-assessment-result #assessment-covered-title')?.textContent).toBe('Есть');
+            expect(page().querySelector('app-assessment-result #assessment-missing-title')?.textContent).toBe('Не хватает');
+            expect(page().querySelector('.comparison')?.textContent).toContain(answerText);
+            expect(button('Оспорить оценку')).toBeDefined();
+            expect(text()).not.toContain('Предыдущий ответ уже учтён');
+            expect(lastCall(recovery.save)[0].pending).toBeNull();
+            // «Продолжить» goes to the card that was waiting, it does not skip it.
+            click('Продолжить');
+            expect(page().querySelector('textarea')).not.toBeNull();
+            expect(page().querySelector('app-assessment-result')).toBeNull();
+            expect(page().querySelector('.folio')?.textContent).toContain('Задание 2');
+        });
+
+        it('shows the self-check view of such an answer, and finishes with the rating', () => {
+            const next = { ...presentation(), presentationId: 'dddddddd-dddd-4ddd-8ddd-ddddddddddd1', ordinal: 1 };
+            recovery.restore.mockReturnValue({ deckId: deck.deckId, sessionId, pending: command() });
+            api.read.mockReturnValue(of(sessionOf([next])));
+            api.attempt.mockReturnValue(of(polled('polledSelfCheck')));
+            fixture = TestBed.createComponent(StudySessionPageComponent);
+            refresh();
+            expect(page().querySelector('#self-check-title')).not.toBeNull();
+            api.selfRate.mockReturnValue(of({ value: resultOf('selfRatingOutcome'), replayed: false }));
+            click('Вспомнил частично');
+            expect(page().querySelector('#feedback-title')?.textContent).toBe('Частично');
+        });
+
+        it('falls back to the note that the answer is counted when its attempt cannot be read', () => {
+            const next = { ...presentation(), presentationId: 'dddddddd-dddd-4ddd-8ddd-ddddddddddd1', ordinal: 1 };
+            recovery.restore.mockReturnValue({ deckId: deck.deckId, sessionId, pending: command() });
+            api.read.mockReturnValue(of(sessionOf([next])));
+            api.attempt.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+            fixture = TestBed.createComponent(StudySessionPageComponent);
+            refresh();
+            expect(text()).toContain('Предыдущий ответ уже учтён');
+            expect(page().querySelector('textarea')).not.toBeNull();
+        });
+
+        it('counts the 5 seconds before «Оценить себя» from the stored send time', () => {
+            api.attempt.mockReturnValue(of(polled('polledAssessing')));
+            recovery.restore.mockReturnValue({ deckId: deck.deckId, sessionId, pending: command(), assessmentStartedAt: Date.now() - 4000 });
+            recovery.now.mockImplementation(() => Date.now());
+            api.read.mockReturnValue(of(sessionOf([clone(assessment['presentationInFlight'])])));
+            fixture = TestBed.createComponent(StudySessionPageComponent);
+            refresh();
+            tick(900);
+            expect(button('Оценить себя')).toBeUndefined();
+            tick(200);
+            expect(button('Оценить себя')).toBeDefined();
+        });
+
         it('does not treat an answer in assessment as a lost reply', () => {
             api.attempt.mockReturnValue(new Subject<AttemptState>());
             reload(command());
@@ -367,5 +426,124 @@ describe('StudySessionPageComponent, AI assessment', () => {
         expect(page().querySelector('app-assessment-result')).toBeNull();
         expect(button('Оспорить оценку')).toBeUndefined();
         expect(page().querySelector('.folio')?.textContent).toContain('Задание 2');
+    });
+
+    describe('polling that cannot continue', () => {
+        it('moves to the expired page on SESSION_EXPIRED instead of retrying', () => {
+            api.attempt.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 410, error: { code: 'SESSION_EXPIRED' } })));
+            answer();
+            tick(700);
+            expect(fixture.componentInstance.phase()).toBe('expired');
+            expect(recovery.clear).toHaveBeenCalled();
+            tick(60_000);
+            expect(api.attempt).toHaveBeenCalledTimes(1);
+        });
+
+        it('stops on a 404 and keeps the answer in the tab', () => {
+            api.attempt.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+            answer();
+            tick(700);
+            expect(fixture.componentInstance.phase()).toBe('error');
+            expect(text()).toContain('Ответ принят и остался в этой вкладке');
+            tick(60_000);
+            expect(api.attempt).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe('«Оспорить оценку» races', () => {
+        function graded(): void {
+            api.attempt.mockReturnValue(of(resultOf('resultComplete')));
+            answer();
+            tick(700);
+        }
+        const aria = (selector: string) => page().querySelector(selector)?.getAttribute('aria-disabled');
+
+        it('does not leave the card while the request is in flight, and keeps focus on the controls', () => {
+            graded();
+            const pendingReply = new Subject<{ value: AttemptOutcome; replayed: boolean }>();
+            api.dispute.mockReturnValue(pendingReply);
+            click('Оспорить оценку');
+            const confirmButton = page().querySelector<HTMLButtonElement>('[data-dispute-confirm]')!;
+            confirmButton.focus();
+            click('Да, снять оценку');
+            expect(aria('[data-dispute-confirm]')).toBe('true');
+            expect(confirmButton.disabled).toBe(false);
+            expect(document.activeElement).toBe(confirmButton);
+            const proceed = button('Продолжить')!;
+            expect(proceed.getAttribute('aria-disabled')).toBe('true');
+            proceed.click();
+            refresh();
+            expect(page().querySelector('#feedback-title')).not.toBeNull();
+            expect(page().querySelector('textarea')).toBeNull();
+            pendingReply.next({ value: { ...resultOf('disputeOutcome'), disputed: true }, replayed: false });
+            refresh();
+            expect(page().querySelector('#feedback-title')?.textContent).toBe('Оценка снята');
+        });
+
+        it('returns focus to the confirmation after a failed request and keeps the command id when the answer was lost', () => {
+            graded();
+            api.dispute.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 0 })));
+            click('Оспорить оценку');
+            click('Да, снять оценку');
+            const first = lastCall(api.dispute)[3];
+            expect(page().querySelector('[role="alert"]')?.textContent).toContain('Не удалось снять оценку');
+            // Cancelling and asking again must not mint a new command: the lost request may have been applied.
+            click('Не снимать');
+            click('Оспорить оценку');
+            api.dispute.mockReturnValueOnce(of({ value: { ...resultOf('disputeOutcome'), disputed: true }, replayed: true }));
+            click('Да, снять оценку');
+            expect(lastCall(api.dispute)[3]).toBe(first);
+        });
+
+        it('reads the attempt after a 409 that follows an unknown outcome: it may already be disputed', () => {
+            graded();
+            api.dispute.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 504 })));
+            click('Оспорить оценку');
+            click('Да, снять оценку');
+            api.dispute.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'DISPUTE_NOT_ALLOWED' } })));
+            api.attempt.mockReset();
+            api.attempt.mockReturnValue(of({ ...resultOf('disputeOutcome'), disputed: true }));
+            click('Да, снять оценку');
+            expect(api.attempt).toHaveBeenCalledWith(deck.deckId, sessionId, attemptId);
+            expect(page().querySelector('#feedback-title')?.textContent).toBe('Оценка снята');
+            expect(text()).not.toContain('уже нельзя снять');
+        });
+
+        it('says it cannot be taken back after a 409 without an unknown outcome and moves focus to the result', async () => {
+            graded();
+            api.dispute.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'DISPUTE_NOT_ALLOWED' } })));
+            click('Оспорить оценку');
+            click('Да, снять оценку');
+            await Promise.resolve();
+            refresh();
+            expect(page().querySelector('[role="alert"]')?.textContent).toContain('уже нельзя снять');
+            expect(button('Оспорить оценку')).toBeUndefined();
+        });
+    });
+
+    it('keeps focus on «Оценить себя» while the switch is in flight and on the rating while it is saved', () => {
+        api.attempt.mockReturnValue(of(polled('polledAssessing')));
+        answer();
+        tick(5000);
+        const offer = button('Оценить себя')!;
+        offer.focus();
+        const reply = new Subject<AttemptState>();
+        api.selfCheck.mockReturnValue(reply);
+        offer.click();
+        refresh();
+        expect(offer.disabled).toBe(false);
+        expect(offer.getAttribute('aria-disabled')).toBe('true');
+        expect(document.activeElement).toBe(offer);
+        reply.next(polled('polledSelfCheck'));
+        refresh();
+        const rating = page().querySelector<HTMLButtonElement>('.ratings button')!;
+        rating.focus();
+        const saved = new Subject<{ value: AttemptOutcome; replayed: boolean }>();
+        api.selfRate.mockReturnValue(saved);
+        rating.click();
+        refresh();
+        expect(page().querySelector('app-assessment-self-check fieldset')?.hasAttribute('disabled')).toBe(false);
+        expect(rating.getAttribute('aria-disabled')).toBe('true');
+        expect(document.activeElement).toBe(rating);
     });
 });

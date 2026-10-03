@@ -412,7 +412,7 @@ module.main()
         self.assertNotIn("Fetch.fulfillRequest", source)
         self.assertNotIn("route.fulfill", source)
         # The whole path is the real UI on the real API; the scenario names its steps and its evidence.
-        for step in ("capability_and_fixture", "rubric_editor", "preview_has_no_model", "api_exercises", "study", "wire"):
+        for step in ("capability_and_fixture", "rubric_editor", "preview_has_no_model", "api_exercises", "study", "resume_after_reload", "wire"):
             self.assertIn(f"step('{step}'", source)
         for name in ("rubric-editor", "result-complete", "result-partial", "result-offtopic", "self-check", "dispute-confirm", "disputed"):
             self.assertIn(f"'{name}'", source)

@@ -65,15 +65,29 @@ describe('AI rubric draft (rubric v1)', () => {
             expect(validateDraft('FREE_RESPONSE', { ...ai, FREE_RESPONSE: { ...ai.FREE_RESPONSE, aiRubric: null } }, context)['accepted']).toBeDefined();
         });
 
-        it('keeps a valid typed answer key and otherwise derives a strict one from the reference answer, cut at 512 characters', () => {
+        it('never uses invisible deterministic answers: the key is derived from the reference answer, cut at 512 UTF-16 units', () => {
             const drafts = emptyDrafts();
             const subject = { memberKey: 'm', itemRevisionId: 'i' };
-            const rubric = { ...valid(), referenceAnswer: 'ж'.repeat(600) };
-            const derived = buildSpec('FREE_RESPONSE', { ...drafts, FREE_RESPONSE: { ...drafts.FREE_RESPONSE, aiRubric: rubric } }, subject, true);
-            expect(derived.answerKey).toEqual({ kind: 'TEXT', accepted: ['ж'.repeat(512)], normalization: ['UNICODE_NFC', 'TRIM', 'CASE_FOLD'], matchingMode: 'STRICT' });
-            const typed = { ...drafts.FREE_RESPONSE, aiRubric: rubric, answer: { ...newAnswer(['свой ответ']), matchingMode: 'SOFT' as const } };
-            expect(buildSpec('FREE_RESPONSE', { ...drafts, FREE_RESPONSE: typed }, subject, true).answerKey)
-                .toMatchObject({ accepted: ['свой ответ'], matchingMode: 'SOFT' });
+            const build = (referenceAnswer: string, answer = drafts.FREE_RESPONSE.answer) => buildSpec('FREE_RESPONSE',
+                { ...drafts, FREE_RESPONSE: { ...drafts.FREE_RESPONSE, answer, aiRubric: { ...valid(), referenceAnswer } } }, subject, true).answerKey;
+            const typed = { ...newAnswer(['свой ответ']), matchingMode: 'SOFT' as const };
+            expect(build('ж'.repeat(600), typed)).toEqual({ kind: 'TEXT', accepted: ['ж'.repeat(512)],
+                normalization: ['UNICODE_NFC', 'TRIM', 'CASE_FOLD'], matchingMode: 'STRICT' });
+            // Surrogate pairs stay whole: 300 emoji are 600 units, so 256 fit.
+            const emoji = (build('😀'.repeat(300)) as unknown as { accepted: string[] }).accepted[0];
+            expect(emoji).toBe('😀'.repeat(256));
+            expect(emoji.length).toBeLessThanOrEqual(512);
+            expect(build('  Короткий эталон  ')).toMatchObject({ accepted: ['Короткий эталон'] });
+        });
+
+        it('keeps the published key only while the reference answer is unchanged, and re-derives it after an edit', () => {
+            const loaded = draftsFromDetail(detail());
+            const subject = mechanics['rejectedAiAssessment'].exercise.subject;
+            const published = mechanics['rejectedAiAssessment'].exercise.answerKey;
+            expect(buildSpec('FREE_RESPONSE', loaded, subject, true).answerKey).toEqual(published);
+            const edited = { ...loaded, FREE_RESPONSE: { ...loaded.FREE_RESPONSE,
+                aiRubric: { ...loaded.FREE_RESPONSE.aiRubric!, referenceAnswer: 'Новый эталон.' } } };
+            expect(buildSpec('FREE_RESPONSE', edited, subject, true).answerKey).toMatchObject({ accepted: ['Новый эталон.'], matchingMode: 'STRICT' });
         });
 
         it('loads a published rubric and rebuilds exactly the same specification', () => {

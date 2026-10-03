@@ -26,7 +26,7 @@ const SHARED_STYLES = `
   .answer-text { white-space: pre-wrap; overflow-wrap: anywhere; }
   .button { min-block-size: var(--mn-touch-min, 2.75rem); display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--mn-ink); border-radius: var(--mn-radius, 2px); padding: .65rem 1rem; color: var(--mn-ink); background: transparent; font: 650 .95rem/1.2 var(--mn-font-body, system-ui, sans-serif); text-align: center; cursor: pointer; }
   .button:not(:disabled):hover { text-decoration: underline; text-underline-offset: .2em; }
-  .button:disabled { cursor: not-allowed; opacity: .6; }
+  .button:disabled, .button[aria-disabled='true'] { cursor: not-allowed; opacity: .6; }
   :where(a, button, input, textarea, summary):focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 3px; }
   .visually-hidden { position: absolute; inline-size: 1px; block-size: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 `;
@@ -50,7 +50,7 @@ const SHARED_STYLES = `
         @if (offered()) {
           <div class="offer">
             <p class="hint">Можно не ждать: сверьтесь с эталоном и оцените себя сами. Если оценка придёт раньше, вы увидите её.</p>
-            <button class="button" type="button" data-self-check [disabled]="busy()" (click)="selfCheck.emit()">Оценить себя</button>
+            <button class="button" type="button" data-self-check [attr.aria-disabled]="busy() ? 'true' : null" (click)="selfCheck.emit()">Оценить себя</button>
           </div>
         }
         @if (problem(); as message) {
@@ -107,11 +107,11 @@ export class AssessmentWaitingComponent {
             @for (point of view().selfCheck.criteria; track point.criterionId) { <li>{{ point.description }}</li> }
           </ul>
         </section>
-        <fieldset [disabled]="busy()">
+        <fieldset [attr.aria-busy]="busy() ? 'true' : null">
           <legend>Как получилось на самом деле?</legend>
           <div class="ratings">
             @for (rating of ratings; track rating; let first = $first) {
-              <button class="button" type="button" [attr.data-first-rating]="first ? '' : null" (click)="rated.emit(rating)">{{ label(rating) }}</button>
+              <button class="button" type="button" [attr.data-first-rating]="first ? '' : null" [attr.aria-disabled]="busy() ? 'true' : null" (click)="rated.emit(rating)">{{ label(rating) }}</button>
             }
           </div>
         </fieldset>

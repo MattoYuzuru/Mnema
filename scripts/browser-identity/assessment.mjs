@@ -52,6 +52,11 @@ const EXERCISES = {
       ['DETAIL', 1, 'Упоминает обновление статистики для планировщика']], misconceptions: [], terms: [],
     answer: 'Удалённые и изменённые строки оставляют мёртвые версии, а автовакуум освобождает это место для повторного использования '
       + 'и обновляет статистику для планировщика.' },
+  resume: { prompt: 'Объясните, что такое индекс в базе данных.', objective: 'Индекс: объяснение',
+    reference: 'Индекс — отдельная структура, которая ускоряет поиск строк по значению столбца.',
+    points: [['CORE', 3, 'Говорит, что индекс — отдельная структура данных'], ['CORE', 3, 'Говорит, что индекс ускоряет поиск по значению столбца'],
+      ['DETAIL', 1, 'Упоминает цену: индекс замедляет запись']], misconceptions: [], terms: [],
+    answer: 'Индекс — это отдельная структура, которая ускоряет поиск строк по значению столбца. [[stub:assess-slow]]' },
   pancakes: { prompt: 'Объясните, как работает оптимизатор PostgreSQL.', objective: 'Оптимизатор: объяснение',
     reference: 'Оптимизатор сравнивает стоимость разных планов по статистике и выбирает самый дешёвый.',
     points: [['CORE', 3, 'Говорит, что оптимизатор сравнивает стоимость разных планов'], ['CORE', 3, 'Говорит, что оценки берутся из статистики таблиц'],
@@ -342,24 +347,31 @@ export async function runAssessment(ctx) {
     return { previewDoesNotCallAModel: true };
   });
 
-  // ---- 2. the other four exercises, through the same authenticated API the editor uses ------------------------------------------------
-  await step('api_exercises', async () => {
+  /** One more AI-checked exercise through the same authenticated API the editor uses. */
+  const createExercise = async (key, subject) => {
+    const entry = EXERCISES[key];
+    const current = await api('GET', `/api/decks/${deck.deckId}`);
+    need(current.status === 200 && current.etag, `GET deck answered ${current.status}`);
+    const made = await api('POST', `/api/decks/${deck.deckId}/exercises`, { commandId: randomUUID(), expectedDeckRevisionId: current.body.revisionId,
+      objective: { operation: 'create', title: entry.objective },
+      exercise: { type: 'FREE_RESPONSE', schemaVersion: 2, enabled: true, subject: { memberKey: subject.memberKey, itemRevisionId: subject.itemRevisionId },
+        content: { prompt: [{ kind: 'TEXT', text: entry.prompt }], reference: [], responseInput: 'TEXT' },
+        answerKey: { kind: 'TEXT', accepted: [entry.reference.slice(0, 200)], normalization: ['UNICODE_NFC', 'TRIM', 'CASE_FOLD'], matchingMode: 'STRICT' },
+        evaluatorPolicy: { id: 'ai-semantic', version: '1', rubric: rubricOf(entry) } } }, { 'If-Match': current.etag });
+    need(made.status === 201, `POST exercise «${key}» answered ${made.status} ${JSON.stringify(made.body?.code ?? made.body?.detail ?? null)}`);
+  };
+  const materialSubject = async () => {
     const items = await api('GET', `/api/decks/${deck.deckId}/items?limit=20`);
     need(items.status === 200, `GET items answered ${items.status}`);
     const subject = items.body.items.find(item => item.memberKey === deck.memberKey);
     need(subject?.itemRevisionId, 'the material has no revision');
-    for (const key of ['btree', 'transaction', 'vacuum', 'pancakes']) {
-      const entry = EXERCISES[key];
-      const current = await api('GET', `/api/decks/${deck.deckId}`);
-      need(current.status === 200 && current.etag, `GET deck answered ${current.status}`);
-      const made = await api('POST', `/api/decks/${deck.deckId}/exercises`, { commandId: randomUUID(), expectedDeckRevisionId: current.body.revisionId,
-        objective: { operation: 'create', title: entry.objective },
-        exercise: { type: 'FREE_RESPONSE', schemaVersion: 2, enabled: true, subject: { memberKey: subject.memberKey, itemRevisionId: subject.itemRevisionId },
-          content: { prompt: [{ kind: 'TEXT', text: entry.prompt }], reference: [], responseInput: 'TEXT' },
-          answerKey: { kind: 'TEXT', accepted: [entry.reference.slice(0, 200)], normalization: ['UNICODE_NFC', 'TRIM', 'CASE_FOLD'], matchingMode: 'STRICT' },
-          evaluatorPolicy: { id: 'ai-semantic', version: '1', rubric: rubricOf(entry) } } }, { 'If-Match': current.etag });
-      need(made.status === 201, `POST exercise «${key}» answered ${made.status} ${JSON.stringify(made.body?.code ?? made.body?.detail ?? null)}`);
-    }
+    return subject;
+  };
+
+  // ---- 2. the other four exercises, through the same authenticated API the editor uses ------------------------------------------------
+  await step('api_exercises', async () => {
+    const subject = await materialSubject();
+    for (const key of ['btree', 'transaction', 'vacuum', 'pancakes']) await createExercise(key, subject);
     return { exercises: 5 };
   });
 
@@ -520,9 +532,60 @@ export async function runAssessment(ctx) {
     return { order: done };
   });
 
+  // ---- 4. a reload while the grading is still running: the waiting card comes back, no second submit, the result arrives on its own ---------
+  await step('resume_after_reload', async () => {
+    await createExercise('resume', await materialSubject());
+    const entry = EXERCISES.resume;
+    await navigate(`/decks/${deck.deckId}/study`, tab);
+    await waitFor(() => has('.session-setup'), 'the second Study setup did not open', 25_000);
+    await click('.preset-card button', 'Начать стандартную');
+    // The disputed exercise is unassessed again and due at once, so it may come first: answer it and go on.
+    const answerOthers = async () => {
+      for (let guard = 0; guard < 3; guard++) {
+        await waitFor(async () => (await has('app-learner-exercise textarea[data-answer-control]')) || (await has('.completion')), 'the next card did not appear', 25_000);
+        if (await has('.completion')) return;
+        const prompt = await textOf('.exercise-prompt');
+        if (prompt?.includes(entry.prompt)) return;
+        need(prompt?.includes(EXERCISES.vacuum.prompt), `an unexpected card in the second session: «${prompt}»`);
+        await submitAnswer(EXERCISES.vacuum);
+        await awaitFeedback('second session');
+        await toNext();
+      }
+    };
+    await answerOthers();
+    need((await textOf('.exercise-prompt'))?.includes(entry.prompt), 'the second session did not hold the new exercise');
+    const sent = await submitAnswer(entry);
+    await waitFor(() => has('#assessing-title'), 'the waiting card did not appear', 6000);
+    const submitsBefore = out.wire.submits.length;
+    const pollsBefore = out.wire.polls;
+    await sleep(1000);
+    await tab.call('Page.reload', { ignoreCache: true });
+    await waitFor(() => has('#assessing-title'), 'the waiting card did not come back after a reload', 20_000);
+    const resumed = await page(`const card = document.querySelector('app-assessment-waiting');
+      return { answer: card?.querySelector('.answer-text')?.textContent ?? null, field: Boolean(document.querySelector('textarea')),
+        reference: document.body.innerText.includes(args[0]), title: document.querySelector('#assessing-title')?.textContent.trim() };`, entry.reference);
+    need(resumed.answer === entry.answer && !resumed.field && !resumed.reference, `the resumed card is ${JSON.stringify({ ...resumed, answer: resumed.answer?.slice(0, 20) })}`);
+    need(out.wire.submits.length === submitsBefore, 'the reload sent the answer again');
+    // The offer counts from the stored send time, not from the reload: it must not come 5 s after the reload.
+    await waitFor(() => buttonExists('Оценить себя'), '«Оценить себя» did not appear after the reload', 9000);
+    const offeredAfter = Date.now() - sent;
+    need(offeredAfter >= 4500 && offeredAfter <= 6600, `after the reload «Оценить себя» appeared ${offeredAfter} ms after sending (stored time expected: about 5000)`);
+    // Nothing is pressed: the grade arrives on its own (≈ 8 s after sending) and replaces the waiting card.
+    await waitFor(() => has('#feedback-title'), 'the result did not arrive after the reload', 15_000);
+    const facts = await cardFacts();
+    need(facts.title === 'Засчитано' && facts.hasResult && facts.covered.length >= 1 && !(await has('#self-check-title')),
+      `after the reload the result is ${JSON.stringify({ title: facts.title, covered: facts.covered.length, hasResult: facts.hasResult })}`);
+    need(facts.reference.includes(entry.answer) && facts.dispute, 'the answer or «Оспорить оценку» is missing on the resumed result');
+    need(out.wire.polls > pollsBefore, 'no poll followed the reload');
+    await toNext();
+    await answerOthers();
+    await waitFor(() => has('.completion'), 'the second session did not complete', 25_000);
+    return { offeredAfterMs: offeredAfter, noSecondSubmit: true, resultWithoutAnyPress: true, pollsAfterReload: out.wire.polls - pollsBefore };
+  });
+
   // ---- the wire: every AI answer was a 202, nothing leaked ---------------------------------------------------------------------------
   await step('wire', async () => {
-    need(out.wire.submits.length === 5 && out.wire.submits.every(status => status === 202), `the submits answered ${JSON.stringify(out.wire.submits)}`);
+    need(out.wire.submits.length >= 6 && out.wire.submits.length <= 7 && out.wire.submits.every(status => status === 202), `the submits answered ${JSON.stringify(out.wire.submits)}`);
     need(out.wire.selfChecks === 1 && out.wire.selfRatings === 1 && out.wire.disputes === 1, `self-checks ${out.wire.selfChecks}, ratings ${out.wire.selfRatings}, disputes ${out.wire.disputes}`);
     need(out.wire.polls >= 6, `only ${out.wire.polls} polls`);
     return { submits: out.wire.submits.length, polls: out.wire.polls };

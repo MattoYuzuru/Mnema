@@ -86,29 +86,29 @@
           [problem]="flow.problem()" (rated)="flow.rate($event)" />
       </article>
     }
+  }
 
-    @if (phase() === 'feedback' && feedback(); as outcome) {
-      <article class="study-card feedback-card" [class.correct]="outcome.feedback.result === 'CORRECT'">
-        <p class="eyebrow">Ответ принят</p>
-        <h2 id="feedback-title" tabindex="-1">{{ feedbackTitle(outcome) }}</h2>
-        <app-learner-feedback [content]="presentation" [feedback]="outcome.feedback" [submitted]="submitted()" />
-        <p class="progress-note" [class.caution]="outcome.transition && outcome.transition.afterLevel < outcome.transition.beforeLevel">{{ progressMessage(outcome) }}</p>
-        @if (disputable() && !disputeBlocked() && disputeStep() === 'idle') {
-          <button class="button" type="button" data-dispute-open (click)="askDispute()">Оспорить оценку</button>
-        }
-        @if (disputeStep() !== 'idle') {
-          <div class="dispute" role="group" aria-labelledby="dispute-question">
-            <p id="dispute-question"><strong>Снять эту оценку?</strong> Прогресс по этой цели вернётся к состоянию до ответа. Ответ и эталон останутся на экране.</p>
-            <div class="dispute-actions">
-              <button class="button primary" type="button" data-dispute-confirm [disabled]="disputeStep() === 'sending'" (click)="confirmDispute()">{{ disputeStep() === 'sending' ? 'Снимаем…' : 'Да, снять оценку' }}</button>
-              <button class="button" type="button" [disabled]="disputeStep() === 'sending'" (click)="cancelDispute()">Не снимать</button>
-            </div>
+  @if (phase() === 'feedback' && feedback(); as outcome) {
+    <article class="study-card feedback-card" [class.correct]="outcome.feedback.result === 'CORRECT'">
+      <p class="eyebrow">Ответ принят</p>
+      <h2 id="feedback-title" tabindex="-1">{{ feedbackTitle(outcome) }}</h2>
+      @if (feedbackContent(); as content) { <app-learner-feedback [content]="content" [feedback]="outcome.feedback" [submitted]="submitted()" /> }
+      <p class="progress-note" [class.caution]="outcome.transition && outcome.transition.afterLevel < outcome.transition.beforeLevel">{{ progressMessage(outcome) }}</p>
+      @if (disputable() && !disputeBlocked() && disputeStep() === 'idle') {
+        <button class="button" type="button" data-dispute-open (click)="askDispute()">Оспорить оценку</button>
+      }
+      @if (disputeStep() !== 'idle') {
+        <div class="dispute" role="group" aria-labelledby="dispute-question">
+          <p id="dispute-question"><strong>Снять эту оценку?</strong> Прогресс по этой цели вернётся к состоянию до ответа. Ответ и эталон останутся на экране.</p>
+          <div class="dispute-actions">
+            <button class="button primary" type="button" data-dispute-confirm [attr.aria-disabled]="disputeStep() === 'sending' ? 'true' : null" (click)="confirmDispute()">{{ disputeStep() === 'sending' ? 'Снимаем…' : 'Да, снять оценку' }}</button>
+            <button class="button" type="button" [attr.aria-disabled]="disputeStep() === 'sending' ? 'true' : null" (click)="cancelDispute()">Не снимать</button>
           </div>
-        }
-        @if (disputeProblem(); as problem) { <p class="notice error" role="alert">{{ problem }}</p> }
-        <button class="button primary" type="button" (click)="next()">Продолжить</button>
-      </article>
-    }
+        </div>
+      }
+      @if (disputeProblem(); as problem) { <p class="notice error" role="alert">{{ problem }}</p> }
+      <button class="button primary" type="button" [attr.aria-disabled]="disputeStep() === 'sending' ? 'true' : null" (click)="next()">Продолжить</button>
+    </article>
   }
 
   @if (phase() === 'empty' || phase() === 'complete') {

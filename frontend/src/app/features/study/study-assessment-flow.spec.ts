@@ -1,4 +1,5 @@
 import type { Mock } from 'vitest';
+import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { Subject, of, throwError } from 'rxjs';
 
@@ -175,5 +176,87 @@ describe('StudyAssessmentFlow', () => {
         TestBed.resetTestingModule();
         vi.advanceTimersByTime(60_000);
         expect(api.attempt).not.toHaveBeenCalled();
+    });
+
+    it('starts every attempt with a clean failure count', () => {
+        api.attempt.mockReturnValue(throwError(() => new Error('offline')));
+        begin();
+        vi.advanceTimersByTime(700 + 1400);
+        expect(api.attempt).toHaveBeenCalledTimes(2);
+        begin();
+        vi.advanceTimersByTime(700 + 1400);
+        expect(api.attempt).toHaveBeenCalledTimes(4);
+        expect(flow.problem()).toBeNull();
+    });
+
+    it('stops polling and tells the host when the session is gone, the attempt is not the account\'s or the sign-in ended', () => {
+        for (const failure of [new HttpErrorResponse({ status: 404 }), new HttpErrorResponse({ status: 401 }),
+            new HttpErrorResponse({ status: 410, error: { code: 'SESSION_EXPIRED' } })]) {
+            const fatal = vi.fn();
+            api.attempt.mockReset();
+            api.attempt.mockReturnValue(throwError(() => failure));
+            flow.begin(ids.deckId, ids.sessionId, assessing(), resolved, fatal);
+            vi.advanceTimersByTime(700);
+            expect(fatal).toHaveBeenCalledWith(failure);
+            expect(flow.stage()).toBe('idle');
+            vi.advanceTimersByTime(60_000);
+            expect(api.attempt).toHaveBeenCalledTimes(1);
+        }
+        // A 500 is transient and keeps retrying.
+        const fatal = vi.fn();
+        api.attempt.mockReset();
+        api.attempt.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+        flow.begin(ids.deckId, ids.sessionId, assessing(), resolved, fatal);
+        vi.advanceTimersByTime(700 + 1400);
+        expect(fatal).not.toHaveBeenCalled();
+        expect(api.attempt).toHaveBeenCalledTimes(2);
+    });
+
+    it('reports a fatal failure of «Оценить себя» and of the rating too', () => {
+        const fatal = vi.fn();
+        flow.begin(ids.deckId, ids.sessionId, assessing(), resolved, fatal);
+        api.selfCheck.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404 })));
+        flow.selfCheck();
+        expect(fatal).toHaveBeenCalledTimes(1);
+        flow.begin(ids.deckId, ids.sessionId, selfCheckView(), resolved, fatal);
+        api.selfRate.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 410, error: { code: 'SESSION_EXPIRED' } })));
+        flow.rate('FULL');
+        expect(fatal).toHaveBeenCalledTimes(2);
+    });
+
+    it('treats a poll that hangs for five seconds as a failed poll', () => {
+        api.attempt.mockReturnValue(new Subject<AttemptState>());
+        begin();
+        vi.advanceTimersByTime(700);
+        expect(api.attempt).toHaveBeenCalledTimes(1);
+        vi.advanceTimersByTime(5000);
+        // The timeout counts as a failure and the next poll follows.
+        vi.advanceTimersByTime(1400);
+        expect(api.attempt).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not poll while the tab is hidden and polls at once when it is visible again', () => {
+        api.attempt.mockReturnValue(of(assessing(700) as AttemptState));
+        let hidden = true;
+        vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+        begin();
+        vi.advanceTimersByTime(10_000);
+        expect(api.attempt).not.toHaveBeenCalled();
+        hidden = false;
+        document.dispatchEvent(new Event('visibilitychange'));
+        vi.advanceTimersByTime(0);
+        expect(api.attempt).toHaveBeenCalledTimes(1);
+    });
+
+    it('counts the offer from the time already waited when it resumes', () => {
+        api.attempt.mockReturnValue(of(assessing() as AttemptState));
+        flow.resume(ids.deckId, ids.sessionId, attemptId, resolved, () => undefined, 4000);
+        vi.advanceTimersByTime(999);
+        expect(flow.offered()).toBe(false);
+        vi.advanceTimersByTime(1);
+        expect(flow.offered()).toBe(true);
+        flow.stop();
+        flow.resume(ids.deckId, ids.sessionId, attemptId, resolved, () => undefined, 9000);
+        expect(flow.offered()).toBe(true);
     });
 });

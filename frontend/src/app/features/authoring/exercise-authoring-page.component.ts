@@ -82,6 +82,24 @@ const PROMPT_HINTS: Readonly<Partial<Record<Mechanic, string>>> = {
 };
 const STEPS_WITH_PROMPT: ReadonlySet<StepId> = new Set<StepId>(['prompt', 'context']);
 
+/**
+ * The messages of a set of field errors for a summary: each text once, and one line for all key points of a rubric (their messages
+ * are the same sentence), so a screen reader is not read the same line three times.
+ */
+function distinctMessages(errors: DraftErrors): readonly string[] {
+    const seen = new Set<string>();
+    let criterion = false;
+    for (const [key, text] of Object.entries(errors)) {
+        if (text === undefined) continue;
+        if (key.startsWith('rubric:criterion:')) {
+            if (criterion) continue;
+            criterion = true;
+        }
+        seen.add(text);
+    }
+    return [...seen];
+}
+
 /** Whether a validation key belongs to the given step, so «Продолжить» only checks what the step just asked for. */
 function stepOwns(step: StepId, key: string): boolean {
     switch (step) {
@@ -178,8 +196,8 @@ export class ExerciseAuthoringPageComponent {
         if (this.titleEdited()) return this.objectiveTitle();
         return this.objectiveMode() === 'create' ? this.suggestedTitle() : this.selectedObjective()?.title ?? '';
     });
-    readonly errorSummary = computed(() => Object.values(this.fieldErrors()).filter((text): text is string => text !== undefined));
-    readonly stepProblems = computed(() => Object.values(this.stepErrors()).filter((text): text is string => text !== undefined));
+    readonly errorSummary = computed(() => distinctMessages(this.fieldErrors()));
+    readonly stepProblems = computed(() => distinctMessages(this.stepErrors()));
     readonly visibleErrors = computed<DraftErrors>(() => ({ ...this.stepErrors(), ...this.fieldErrors() }));
     readonly staleProjection = computed(() => {
         const detail = this.exercise();
