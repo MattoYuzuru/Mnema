@@ -304,7 +304,8 @@ class Fixture(BASE.Fixture):
                 # Stub provider only: deterministic text, no network, no real key. The user-key secret is a per-run
                 # random value that only has to exist (HMAC of the opaque account id sent to a provider); PRO gives the
                 # fixture account room for several materials (the Free plan opens 13 credits a week).
-                environment.update({"LEARNING_FEATURES_AI_GENERATION_ENABLED": "true", "LEARNING_AI_PROVIDER": "stub",
+                environment.update({"LEARNING_FEATURES_AI_GENERATION_ENABLED": "true", "LEARNING_FEATURES_AI_ASSESSMENT_ENABLED": "true",
+                                    "LEARNING_AI_PROVIDER": "stub",
                                     "MNEMA_AI_USER_KEY_SECRET": uuid.uuid4().hex + uuid.uuid4().hex,
                                     "LEARNING_USAGE_ENTITLEMENTS_DEFAULT_PLAN": "PRO"})
             elif getattr(self.args, "generation", False):

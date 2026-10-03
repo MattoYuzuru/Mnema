@@ -52,6 +52,7 @@ x-learning-environment: &learning-environment
 # unavailable. Only the browser-facing Learning instance gets them; the media processor (Docker socket) does not.
 x-ai-environment: &ai-environment
   LEARNING_FEATURES_AI_GENERATION_ENABLED: ${LEARNING_FEATURES_AI_GENERATION_ENABLED:-false}
+  LEARNING_FEATURES_AI_ASSESSMENT_ENABLED: ${LEARNING_FEATURES_AI_ASSESSMENT_ENABLED:-false}
   LEARNING_AI_PROVIDER: ${LEARNING_AI_PROVIDER:-}
   MNEMA_AI_DEEPSEEK_API_KEY: ${MNEMA_AI_DEEPSEEK_API_KEY:-}
   MNEMA_AI_GIGACHAT_AUTH_KEY: ${MNEMA_AI_GIGACHAT_AUTH_KEY:-}
