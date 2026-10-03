@@ -160,6 +160,8 @@ export class WorkshopSessionStore {
                 if (epoch !== this.epoch) return;
                 this.session.set(mergeSession(this.session(), fresh));
                 this.phase.set('ready');
+                // An undo reopened a CLOSED session (#288): the loop stopped at CLOSED and must run again.
+                if (!isTerminalSession(fresh.state) && this.timer === null && this.poll === null && this.started && !this.disposed) this.schedule(POLL_IDLE_MS);
             },
             (error: unknown) => {
                 if (epoch === this.epoch && readProblem(error).status === 404) this.gone();

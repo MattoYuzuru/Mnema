@@ -93,9 +93,14 @@ export interface ArtifactSummary {
     readonly publishedRef: PublishedRef | null;
 }
 
+/** `used`: notes of published or handed-off materials that nothing in play still pins; `archivable`: those not yet archived. */
+export interface SessionNotes { readonly used: number; readonly archivable: number; }
+
 export interface SessionDetail extends SessionSummary {
     readonly spec: SpecEcho;
     readonly artifacts: readonly ArtifactSummary[];
+    /** Detail only (#288): what the «Архивировать использованные заметки (k)» offer is based on. */
+    readonly notes: SessionNotes;
 }
 
 export interface SessionPage { readonly items: readonly SessionSummary[]; readonly nextCursor: string | null; }
@@ -257,7 +262,8 @@ const SESSION_OPERATIONS: Readonly<Record<SessionState, readonly UiOperation[]>>
         'cancelSession', 'deleteSession'],
     REVIEW: ['approveArtifact', 'approveArtifacts', 'rejectArtifact', 'undoRejectArtifact', 'handoffArtifact', 'retryArtifact',
         'cancelSession', 'deleteSession'],
-    CLOSED: ['deleteSession'],
+    // A rejection can still be undone in a CLOSED session (#288): it reopens it (REVIEW, or CANCELLED after a cancellation).
+    CLOSED: ['deleteSession', 'undoRejectArtifact'],
     CANCELLED: ['approveArtifact', 'approveArtifacts', 'rejectArtifact', 'undoRejectArtifact', 'handoffArtifact', 'deleteSession'],
     EXPIRED: ['deleteSession']
 };
@@ -374,9 +380,12 @@ function parseSpecEcho(value: unknown): SpecEcho {
 }
 
 export function parseSessionDetail(value: unknown): SessionDetail {
-    const object = requireObject(value, [...SUMMARY_KEYS, 'spec', 'artifacts']);
+    const object = requireObject(value, [...SUMMARY_KEYS, 'spec', 'artifacts', 'notes']);
     const artifacts = list(object['artifacts'], 200).map(parseArtifactSummary);
-    return { ...parseSummaryFields(object), spec: parseSpecEcho(object['spec']), artifacts };
+    const notes = requireObject(object['notes'], ['used', 'archivable']);
+    const counts = { used: requireCount(notes['used'], 100_000), archivable: requireCount(notes['archivable'], 100_000) };
+    if (counts.archivable > counts.used) throw new AuthoringProtocolError('Invalid note counts.');
+    return { ...parseSummaryFields(object), spec: parseSpecEcho(object['spec']), artifacts, notes: counts };
 }
 
 function parseMediaSlotCounts(value: unknown): MediaSlotCounts {

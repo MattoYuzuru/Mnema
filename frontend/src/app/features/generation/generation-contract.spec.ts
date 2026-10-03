@@ -25,6 +25,7 @@ describe('Generation wire contract (contracts/generation)', () => {
                 expect(session.spec.kind).toBe('MATERIALS');
                 expect(session.spec.prompt).toBe(examples[name].spec.prompt);
             }
+            expect(parseSessionDetail(examples['sessionDetail']).notes).toEqual({ used: 0, archivable: 0 });
             const summary = parseSessionSummary(examples['sessionSummary']);
             expect(summary).toMatchObject({ state: 'RUNNING', approvableCount: 6, usage: { reservedCredits: 21, spentCredits: 11 } });
             expect(summary.artifactCounts.PROPOSED).toBe(7);
@@ -208,7 +209,9 @@ describe('Generation wire contract (contracts/generation)', () => {
         it('stops polling in exactly the terminal session states the contract names', () => {
             const clientCadence = eventsContract['polling'].clientCadence as string;
             for (const state of ['CLOSED', 'CANCELLED', 'EXPIRED']) expect(clientCadence).toContain(state);
-            expect(statesContract['session'].states['CLOSED'].terminal).toBe(true);
+            // CLOSED is no longer terminal (#288): an undo of a rejection reopens it, so the store resumes polling after the undo.
+            expect(statesContract['session'].states['CLOSED'].terminal).toBe(false);
+            expect(statesContract['session'].allowedOperations['CLOSED']).toContain('undoRejectArtifact');
         });
 
         it('lists no operation the client implements under another method or path than http.json', () => {
@@ -218,7 +221,8 @@ describe('Generation wire contract (contracts/generation)', () => {
             const ids = (httpContract['endpoints'] as { operationId: string }[]).map(endpoint => endpoint.operationId);
             for (const operation of implemented) expect(ids, operation).toContain(operation);
             // Edits and reverts belong to AI-11 (#293): not part of this client yet.
-            expect(ids.filter(operation => !implemented.includes(operation)).sort()).toEqual(['editArtifact', 'revertArtifact']);
+            // Note archival (`archiveUsedNotes`) is offered by a later task of the epic.
+            expect(ids.filter(operation => !implemented.includes(operation)).sort()).toEqual(['archiveUsedNotes', 'editArtifact', 'revertArtifact']);
         });
 
         it('knows every problem code the contract lists for the operations it calls', () => {
