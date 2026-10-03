@@ -58,8 +58,8 @@ SELF_CHECK/FREE_RESPONSE `reference` may hold `MATERIAL` blocks):
 | `CATEGORIZE` | `categories` (2..6 `{id, label ≤80}`), `items` (2..12 `{id, text ≤300, category}`) | `content {prompt, categories, items}`, `answerKey {kind: CATEGORIZE, assignments}`, `deterministic-categorize`/`1` |
 
 `whyWrong` (the research draft calls it `why_wrong`) is the rationale of each distractor; it is used by lint and
-review, never shown to a learner. CHOICE options keep the model's order here; the learner-side shuffle is
-STUDY-01 ([#304](https://github.com/MattoYuzuru/Mnema/issues/304)).
+review, never shown to a learner. CHOICE options keep the model's order here; Study shuffles them at issue
+(STUDY-01, [#304](https://github.com/MattoYuzuru/Mnema/issues/304)).
 
 ## Compile rules
 

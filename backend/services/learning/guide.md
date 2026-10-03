@@ -451,7 +451,7 @@ capacity evidence.
   `zoneinfo` claim determines the local study date; invalid or absent values fall
   back to UTC, and clients cannot submit a timezone. Resume returns only
   presentations without a terminal attempt. A presentation carries learner
-  `content` resolved once at issue time (`MATERIAL` becomes `TEXT`; `MATCH` sides, `ORDER` items and `CATEGORIZE` items
+  `content` resolved once at issue time (`MATERIAL` becomes `TEXT`; `CHOICE` options, `MATCH` sides, `ORDER` items and `CATEGORIZE` items
   are shuffled once at issue with a `SecureRandom` source and persisted, so reads and replays
   repeat the same order; with three or more `ORDER` items a draw that already shows the
   solved class sequence is redrawn up to 16 times and then rotated, with two items the draw

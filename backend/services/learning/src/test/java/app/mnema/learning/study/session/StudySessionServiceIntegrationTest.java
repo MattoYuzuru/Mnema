@@ -346,6 +346,57 @@ class StudySessionServiceIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void choiceOptionsAreShuffledPerSessionReplayedVerbatimAndGradedByIdentifier() {
+        Material material = fixtures.material();
+        java.util.List<String> authored = new java.util.ArrayList<>();
+        tools.jackson.databind.node.ArrayNode options = blocks();
+        for (int index = 0; index < 12; index++) {
+            UUID id = UUID.randomUUID();
+            authored.add(id.toString());
+            options.add(option(id, text("Option " + index)));
+        }
+        UUID correct = UUID.fromString(authored.getFirst());
+        fixtures.publish(material, fixtures.choice(material, false, blocks(text("Pick the first")), options, correct));
+
+        JsonNode first = fixtures.session(material, "SCHEDULED", null);
+        UUID firstSession = UUID.fromString(first.path("sessionId").stringValue(null));
+        JsonNode firstContent = first.path("presentations").get(0).path("content");
+        assertThat(optionIds(firstContent)).containsExactlyInAnyOrderElementsOf(authored);
+        assertThat(service.read(material.actor(), material.deck(), firstSession).path("presentations").get(0)
+                .path("content")).as("a read returns the persisted order").isEqualTo(firstContent);
+        // the correct option is graded by its identifier wherever the shuffle put it
+        assertThat(attempts.submit(material.actor(), material.deck(), firstSession,
+                attempt(new StudyFixtures.Issued(firstSession, first.path("presentations").get(0)),
+                        JSON.createObjectNode().put("kind", "CHOICE").set("optionIds",
+                                JSON.createArrayNode().add(correct.toString()))))
+                .outcome().path("feedback").path("result").asString()).isEqualTo("CORRECT");
+        complete(material, firstSession);
+
+        JsonNode replay = fixtures.session(material, "REPLAY", firstSession);
+        assertThat(replay.path("presentations").get(0).path("content")).as("a replay keeps the issued order")
+                .isEqualTo(firstContent);
+        complete(material, UUID.fromString(replay.path("sessionId").stringValue(null)));
+
+        // a new session draws again; two identical draws of 12 options have probability 1/12!
+        JsonNode second = fixtures.session(material, "PRACTICE", null);
+        JsonNode secondContent = second.path("presentations").get(0).path("content");
+        assertThat(optionIds(secondContent)).containsExactlyInAnyOrderElementsOf(authored)
+                .isNotEqualTo(optionIds(firstContent));
+    }
+
+    private void complete(Material material, UUID session) {
+        jdbc.sql("UPDATE app_learning.study_session SET status='COMPLETE',completed_at=statement_timestamp() "
+                        + "WHERE account_id=:actor AND session_id=:session")
+                .param("actor", material.actor()).param("session", session).update();
+    }
+
+    private static java.util.List<String> optionIds(JsonNode content) {
+        java.util.List<String> ids = new java.util.ArrayList<>();
+        content.path("options").forEach(option -> ids.add(option.path("optionId").stringValue(null)));
+        return ids;
+    }
+
+    @Test
     void candidatesAreIssuedOnlyWhileEveryPinnedAssetIsReadyAndOfTheDeclaredKind() {
         Material material = fixtures.material();
         UUID sound = fixtures.pendingAsset(material.actor());
