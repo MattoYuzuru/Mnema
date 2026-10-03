@@ -9,6 +9,8 @@ import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 /**
  * The validation pipeline of one model exercise ({@code contracts/generation/exercises/README.md}), run before anything is shown:
@@ -53,6 +55,14 @@ public final class ExerciseValidator {
 
     /** Validates the exercise at {@code index} of an answer. */
     public Verdict validate(int index, JsonNode answered, ExerciseContext context, ExerciseIds ids) {
+        return validate(index, answered, context, ids, Map.of());
+    }
+
+    /**
+     * Validates the revision of an existing exercise: {@code known} maps the local IDs the model was shown to the identifiers they had,
+     * and the compiled command keeps them for what the model kept.
+     */
+    public Verdict validate(int index, JsonNode answered, ExerciseContext context, ExerciseIds ids, Map<String, UUID> known) {
         // the prompt escaped and redacted the material: the model's copies are brought back to what the material really says
         JsonNode exercise = ModelStrings.normalize(answered, context);
         List<String> violations = schema.exercise(exercise);
@@ -67,7 +77,7 @@ public final class ExerciseValidator {
         ExerciseCompiler.Compiled compiled;
         ExerciseCommand command;
         try {
-            compiled = ExerciseCompiler.compile(exercise, context, ids);
+            compiled = ExerciseCompiler.compile(exercise, context, ids, known);
             command = ExerciseCommand.readCreate(new ByteArrayInputStream(compiled.command().toString().getBytes(StandardCharsets.UTF_8)));
         } catch (RuntimeException rejected) {
             return new Invalid(index, List.of(new ExerciseFinding(index, ExerciseCode.COMMAND_REJECTED, null)));

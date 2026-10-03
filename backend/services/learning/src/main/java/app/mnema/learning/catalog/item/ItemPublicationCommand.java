@@ -118,6 +118,32 @@ public final class ItemPublicationCommand {
     }
 
     /**
+     * A server-built {@code save} of one existing material, byte-for-byte what {@link #readSave} would parse from the same wire body (with
+     * the structural edits the revision needs, no move): the approval of a revised material (REVISE_ITEM) replaces its document at its own place.
+     */
+    static ItemPublicationCommand revision(UUID commandId, UUID expectedDeckRevisionId, UUID memberKey, UUID expectedItemRevisionId,
+                                           int expectedOrdinal, NativeDocument document, List<NativeStructuralEdit> edits) {
+        ObjectNode body = JsonNodeFactory.instance.objectNode().put("commandId", commandId.toString())
+                .put("expectedDeckRevisionId", expectedDeckRevisionId.toString())
+                .put("expectedItemRevisionId", expectedItemRevisionId.toString()).put("expectedOrdinal", expectedOrdinal);
+        body.set("document", document.toJson());
+        if (!edits.isEmpty()) {
+            var listed = body.putArray("edits");
+            for (NativeStructuralEdit edit : edits) {
+                switch (edit) {
+                    case NativeStructuralEdit.Insert insert -> listed.addObject().put("type", "insert").put("nodeId", insert.nodeId().toString())
+                            .put("parentId", insert.parentId().toString()).put("childIndex", insert.childIndex());
+                    case NativeStructuralEdit.Delete delete -> listed.addObject().put("type", "delete").put("nodeId", delete.nodeId().toString());
+                    case NativeStructuralEdit.Move move -> listed.addObject().put("type", "move").put("nodeId", move.nodeId().toString())
+                            .put("parentId", move.parentId().toString()).put("childIndex", move.childIndexAfterRemoval());
+                }
+            }
+        }
+        return new ItemPublicationCommand(commandId, expectedDeckRevisionId,
+                List.of(new Save(memberKey, expectedItemRevisionId, expectedOrdinal, null, document, edits)), body);
+    }
+
+    /**
      * A server-built bulk of {@code delete} changes, byte-for-byte what {@link #readBulk} would parse from the same
      * wire body, so the bulk-delete route reuses the publication path and its receipts unchanged.
      */

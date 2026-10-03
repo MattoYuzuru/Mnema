@@ -1,5 +1,6 @@
 package app.mnema.learning.generation;
 
+import app.mnema.learning.ai.AiProperties;
 import app.mnema.learning.capability.LearningCapabilities;
 import app.mnema.learning.platform.api.CapabilityUnavailableException;
 import app.mnema.learning.platform.api.ProblemExtension;
@@ -22,10 +23,12 @@ import java.util.UUID;
 class GenerationGate implements GenerationBoundary {
     private final GenerationRepository repository;
     private final LearningCapabilities capabilities;
+    private final AiProperties ai;
 
-    GenerationGate(GenerationRepository repository, LearningCapabilities capabilities) {
+    GenerationGate(GenerationRepository repository, LearningCapabilities capabilities, AiProperties ai) {
         this.repository = repository;
         this.capabilities = capabilities;
+        this.ai = ai;
     }
 
     @Override
@@ -39,14 +42,18 @@ class GenerationGate implements GenerationBoundary {
                 throw new ResourceNotFoundException();
             }
         }
+        for (ExerciseRef exercise : facts.exercises()) {
+            if (repository.exerciseHeadRevision(owner, deckId, exercise.exerciseId()).isEmpty()) throw new ResourceNotFoundException();
+        }
         if (admission) requireCurrent(owner, deckId, facts, notes);
         capabilities.requireAiGeneration();
+        if (facts.voiceRevision()) requireVoiceRevision();
         if (facts.audio()) capabilities.requireTextToSpeech();
         if (facts.imageSearch()) capabilities.requireImageSearch();
         if (facts.research()) capabilities.requireWebSearch();
     }
 
-    /** The capability a retried exercise needs: text generation (its mechanics are deterministic, no media, no research). */
+    /** The capability a retried or revised exercise needs: text generation (its mechanics are deterministic, no media, no research). */
     void requireText() {
         capabilities.requireAiGeneration();
     }
@@ -80,6 +87,28 @@ class GenerationGate implements GenerationBoundary {
                 .put("reason", "PROVIDER_NOT_CONFIGURED").build());
     }
 
+    /**
+     * The capability of redoing the audio of an exercise (a REVISE_EXERCISE media action, #294). Synthesis itself is AI-09 (#297): until
+     * then only the Stub provider (local runs and CI) has an executor, a deliberate no-op that keeps the audio and records the voice, so
+     * with the Stub the action is available and everywhere else it is the capability gate of {@code textToSpeech}, which no provider
+     * satisfies yet (fail closed, as for every media action of #293).
+     */
+    void requireVoiceRevision() {
+        if (AiProperties.STUB.equals(ai.provider())) return;
+        capabilities.requireTextToSpeech();
+        throw notRunnable("textToSpeech");
+    }
+
+    /** Whether {@link #requireVoiceRevision} passes: the intent only offers the voice chip when the action can be run. */
+    boolean voiceRevisionAvailable() {
+        try {
+            requireVoiceRevision();
+            return true;
+        } catch (CapabilityUnavailableException unavailable) {
+            return false;
+        }
+    }
+
     /** The capabilities a retried material needs: text, and what its effective settings declare (audio, image search, web research). */
     void requireFor(MaterialsSpec.Effective settings) {
         capabilities.requireAiGeneration();
@@ -99,6 +128,12 @@ class GenerationGate implements GenerationBoundary {
         for (ItemRef item : sources) {
             if (!item.itemRevisionId().equals(heads.get(item.memberKey()))) {
                 stale.add(new SourceUnavailableException.Unavailable("ITEM", item.memberKey()));
+            }
+        }
+        for (ExerciseRef exercise : facts.exercises()) {
+            UUID head = repository.exerciseHeadRevision(owner, deckId, exercise.exerciseId()).orElse(null);
+            if (!exercise.exerciseRevisionId().equals(head)) {
+                stale.add(new SourceUnavailableException.Unavailable("EXERCISE", exercise.exerciseId()));
             }
         }
         if (!stale.isEmpty()) throw new SourceUnavailableException(stale);

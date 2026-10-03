@@ -231,7 +231,7 @@ class ExerciseDraftExecutor {
     }
 
     /** The answer as one JSON object (a leading code fence of the model is tolerated), or null when it is not. */
-    private static JsonNode parse(String answer) {
+    static JsonNode parse(String answer) {
         String body = answer.strip();
         if (body.startsWith("```")) {
             int firstLine = body.indexOf('\n');

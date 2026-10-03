@@ -25,6 +25,18 @@ public interface GeneratedItemPublisher {
     JsonNode create(UUID actor, UUID deckId, long expectedDeckVersion, UUID commandId, UUID expectedDeckRevisionId,
                     List<Material> materials, Completion completion);
 
+    /**
+     * Publishes {@code document} as the next revision of an existing material ({@code REVISE_ITEM}, #294): an ordinary save of that
+     * material, at its place in the deck.
+     *
+     * @param expectedItemRevisionId the revision the revision was made of, which must still be the material's head (else the catalog's
+     *                               {@code 412 VERSION_CONFLICT}; approval has already turned a moved head into {@code SOURCE_STALE})
+     * @return the publication acknowledgement of the catalog, as for {@link #create}: one {@code changes[]} entry
+     * @throws app.mnema.learning.platform.api.ResourceNotFoundException the material is gone
+     */
+    JsonNode revise(UUID actor, UUID deckId, long expectedDeckVersion, UUID commandId, UUID expectedDeckRevisionId, UUID memberKey,
+                    UUID expectedItemRevisionId, NativeDocument document, Completion completion);
+
     /** Runs in the publication transaction, also when the publication itself is a replay of a committed command. */
     @FunctionalInterface
     interface Completion {

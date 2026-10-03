@@ -73,10 +73,12 @@ class EditExecutor implements StepExecutor {
     private final ProviderKeys keys;
     private final GenerationSettings settings;
     private final MeterRegistry meters;
+    private final ExerciseEditExecutor exerciseEdits;
     private final MbmCompiler compiler = new MbmCompiler();
 
     EditExecutor(TextGeneration text, GenerationRepository repository, EditLifecycle edits, SessionLifecycle lifecycle,
-                 EditContexts contexts, UsageLedger ledger, ProviderKeys keys, GenerationSettings settings, MeterRegistry meters) {
+                 EditContexts contexts, UsageLedger ledger, ProviderKeys keys, GenerationSettings settings, MeterRegistry meters,
+                 ExerciseEditExecutor exerciseEdits) {
         this.text = text;
         this.repository = repository;
         this.edits = edits;
@@ -86,6 +88,7 @@ class EditExecutor implements StepExecutor {
         this.keys = keys;
         this.settings = settings;
         this.meters = meters;
+        this.exerciseEdits = exerciseEdits;
     }
 
     @Override public String kind() { return KIND; }
@@ -104,6 +107,12 @@ class EditExecutor implements StepExecutor {
         if (session == null || artifact == null || revision == null) {
             // nothing to rewrite: the turn must not stay RUNNING (a deleted session writes nothing and this is a no-op)
             finish(claim, Failure.fail("INVALID_OUTPUT"));
+            return;
+        }
+
+        // the revision of an exercise (REVISE_EXERCISE, #294) is written by the exercise pipeline, not by MBM
+        if (artifact.targetKind().equals("EXERCISE")) {
+            exerciseEdits.run(claim, control, session, artifact, revision, turn);
             return;
         }
 
@@ -237,7 +246,7 @@ class EditExecutor implements StepExecutor {
             }
         }
         BigDecimal rubMicros = BigDecimal.valueOf(providerCostMicros).multiply(settings.usdRubRate()).setScale(0, RoundingMode.CEILING);
-        return Optional.of(new EditLifecycle.Result(merged, title, validation, promptVersion, modelRoute, rubMicros.longValueExact(),
+        return Optional.of(EditLifecycle.Result.ofDocument(merged, title, validation, promptVersion, modelRoute, rubMicros.longValueExact(),
                 EditDocument.handles(merged)));
     }
 

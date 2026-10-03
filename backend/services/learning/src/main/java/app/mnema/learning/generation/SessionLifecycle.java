@@ -476,7 +476,21 @@ class SessionLifecycle {
                 + repository.retryableFailures(tx.session.sessionId()) > 0;
         releaseReservation(tx, true);
         tx.state = open ? "REVIEW" : "CLOSED";
-        notifyOutcome(tx, counts);
+        // a revision is made while the person waits in the Workshop: nothing to announce
+        if (!isRevision(tx.session)) notifyOutcome(tx, counts);
+    }
+
+    /** A REVISE_ITEM or REVISE_EXERCISE session (#294): one artifact, revised turn by turn. */
+    static boolean isRevision(Session session) {
+        return session.kind().startsWith("REVISE_");
+    }
+
+    /**
+     * After a turn of a revision ended with its artifact PROPOSED again: the session leaves RUNNING for REVIEW (a revision has no initial
+     * batch to wait for, only turns). Nothing for any other kind of session, whose artifacts settle through their own steps. The caller flushes.
+     */
+    void settleRevision(Tx tx) {
+        if (isRevision(tx.session)) settle(tx);
     }
 
     /**

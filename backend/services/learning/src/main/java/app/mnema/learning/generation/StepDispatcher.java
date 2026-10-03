@@ -112,8 +112,11 @@ class StepDispatcher implements DisposableBean {
         for (UUID step : steps.expiredRunning(RECOVERY_BATCH)) {
             try {
                 // an edit step fails its turn, not an artifact: it has its own recovery
-                if (steps.step(step).filter(found -> found.kind().equals(EditExecutor.KIND)).isPresent()) edits.recover(step);
-                else lifecycle.recover(step);
+                if (steps.step(step).filter(found -> found.kind().equals(EditExecutor.KIND) || found.input().has("turnId")).isPresent()) {
+                    edits.recover(step);
+                } else {
+                    lifecycle.recover(step);
+                }
             } catch (RuntimeException failure) {
                 LOG.warn("generation_recovery_failed step_id={} error_type={}", step, failure.getClass().getSimpleName());
             }
@@ -162,7 +165,7 @@ class StepDispatcher implements DisposableBean {
             if (!permit.tryAcquire()) continue;
             Optional<StepClaim> claim;
             try {
-                claim = queue.claim(List.of(executor.kind()));
+                claim = queue.claim(List.of(executor.kind()), executor.requiredInput());
             } catch (RuntimeException failure) {
                 permit.release();
                 throw failure;

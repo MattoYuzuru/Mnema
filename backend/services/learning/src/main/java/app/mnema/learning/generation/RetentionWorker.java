@@ -17,9 +17,11 @@ import org.springframework.stereotype.Component;
 class RetentionWorker {
     private static final Logger LOG = LoggerFactory.getLogger(RetentionWorker.class);
     private final SessionRetention retention;
+    private final IntentUses intents;
 
-    RetentionWorker(SessionRetention retention) {
+    RetentionWorker(SessionRetention retention, IntentUses intents) {
         this.retention = retention;
+        this.intents = intents;
     }
 
     @Scheduled(initialDelayString = "${learning.generation.retention.interval:PT10M}",
@@ -29,6 +31,11 @@ class RetentionWorker {
             retention.run();
         } catch (RuntimeException failure) {
             LOG.warn("generation_retention_failed error_type={}", failure.getClass().getSimpleName());
+        }
+        try {
+            intents.purge();
+        } catch (RuntimeException failure) {
+            LOG.warn("generation_intent_purge_failed error_type={}", failure.getClass().getSimpleName());
         }
     }
 }

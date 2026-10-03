@@ -6,8 +6,6 @@ import app.mnema.learning.generation.Rows.Revision;
 import app.mnema.learning.generation.Rows.Session;
 import app.mnema.learning.generation.Rows.Source;
 import app.mnema.learning.platform.api.InvalidRequestException;
-import app.mnema.learning.platform.api.ProblemExtension;
-import app.mnema.learning.platform.api.ResourceLimitExceededException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.idempotency.CommandIdentity;
 import app.mnema.learning.platform.idempotency.CommandReceiptService;
@@ -62,12 +60,15 @@ class SessionService {
     private final GenerationSettings settings;
     private final ContextRepository context;
     private final ObjectProvider<StepDispatcher> dispatcher;
+    private final AdmissionLimits limits;
+    private final ReviseAdmission revisions;
     private final TransactionTemplate reading;
     private final TransactionTemplate quoting;
 
     SessionService(GenerationRepository repository, StepRepository steps, SessionLifecycle lifecycle, SessionViews views,
                    UsageLedger ledger, AdmissionPricing pricing, CommandReceiptService receipts, GenerationSettings settings,
-                   ContextRepository context, ObjectProvider<StepDispatcher> dispatcher, PlatformTransactionManager transactions) {
+                   ContextRepository context, ObjectProvider<StepDispatcher> dispatcher, AdmissionLimits limits,
+                   ReviseAdmission revisions, PlatformTransactionManager transactions) {
         this.repository = repository;
         this.steps = steps;
         this.lifecycle = lifecycle;
@@ -78,6 +79,8 @@ class SessionService {
         this.settings = settings;
         this.context = context;
         this.dispatcher = dispatcher;
+        this.limits = limits;
+        this.revisions = revisions;
         this.reading = new TransactionTemplate(transactions);
         reading.setReadOnly(true);
         this.quoting = new TransactionTemplate(transactions);
@@ -123,19 +126,16 @@ class SessionService {
                     return admitExercises(owner, deckId, spec, parsed, hold);
                 });
             }
+            case "REVISE_ITEM", "REVISE_EXERCISE" -> {
+                ReviseSpec parsed = ReviseSpec.read(spec);
+                acknowledgement = receipts.execute(identity, envelope, () -> {
+                    applied[0] = true;
+                    return revisions.admit(owner, deckId, spec, parsed, hold);
+                });
+            }
             default -> throw new SpecNotSupportedException(kind);
         }
         return new Written(acknowledgement, !applied[0]);
-    }
-
-    /** The 422 of a full house: the owner already has the most active sessions, named in the problem. */
-    private void requireRoomForASession(UUID owner) {
-        List<UUID> active = repository.activeSessionIds(owner);
-        if (active.size() >= settings.maxActiveSessions()) {
-            throw new ResourceLimitExceededException(ProblemExtension.builder().put("limit", "ACTIVE_SESSIONS")
-                    .put("limits", Map.of("maxActiveSessions", settings.maxActiveSessions()))
-                    .put("activeSessionIds", active.stream().map(UUID::toString).toList()).build());
-        }
     }
 
     /**
@@ -147,7 +147,7 @@ class SessionService {
      */
     private JsonNode admitExercises(UUID owner, UUID deckId, JsonNode spec, ExercisesSpec parsed, AdmissionPricing.Hold hold) {
         repository.lockAdmission(owner);
-        requireRoomForASession(owner);
+        limits.requireRoom(owner);
         UUID sessionId = UUID.randomUUID();
         hold.requireFits();
         Reservation reservation = ledger.reserve(owner, ReservationScope.SESSION, sessionId, null, Math.max(1, hold.credits()));
@@ -199,7 +199,7 @@ class SessionService {
 
     private JsonNode admit(UUID owner, UUID deckId, JsonNode spec, MaterialsSpec parsed, AdmissionPricing.Hold hold) {
         repository.lockAdmission(owner);
-        requireRoomForASession(owner);
+        limits.requireRoom(owner);
         UUID sessionId = UUID.randomUUID();
         // Usage is strictly last: a full cap or a hold too small for one material, then the reservation itself: a refusal rolls this whole transaction back, so nothing has changed (contract step 6).
         hold.requireFits();

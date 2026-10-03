@@ -565,7 +565,8 @@ class GenerationContractFixtureTest {
             String body = text.substring(end + 5);
             assertThat(body).as(name).isNotBlank();
 
-            boolean runtimeFilled = List.of("deck-brief.md", "material.md", "edit.md", "exercises.md", "assessment.md").contains(name);
+            boolean runtimeFilled = List.of("deck-brief.md", "material.md", "edit.md", "exercises.md", "assessment.md", "intent.md",
+                    "exercise-edit.md").contains(name);
             Matcher matcher = PLACEHOLDER.matcher(body);
             int count = 0;
             while (matcher.find()) {
@@ -577,7 +578,7 @@ class GenerationContractFixtureTest {
             assertThat(body).as(name).doesNotContain("::verify");
         }
         assertThat(names).containsExactlyInAnyOrder("system", "style", "skill-vocabulary", "skill-grammar", "skill-stem-concept",
-                "skill-code", "skill-exam-summary", "deck-brief", "material", "edit", "exercises", "assessment");
+                "skill-code", "skill-exam-summary", "deck-brief", "material", "edit", "exercises", "assessment", "intent", "exercise-edit");
         assertThat(Files.readString(PROMPTS.resolve("README.md"))).contains("{{path.to.value}}");
     }
 

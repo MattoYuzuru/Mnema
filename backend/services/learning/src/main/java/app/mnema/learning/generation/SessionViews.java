@@ -130,6 +130,16 @@ class SessionViews {
                         .put("assetId", slot.assetId().toString()).put("state", slot.state()).put("errorCode", slot.errorCode());
             }
         }
+        if (revision != null && revision.payload().path("kind").stringValue("").equals("EXERCISE_COMMAND")) {
+            // the audio of an exercise revised by a session (REVISE_EXERCISE): a slot per audio block, on the asset the block uses, with the
+            // voice the owner asked for (null until a redo ran); the slot has no node in the document, its id is only its own
+            for (Slot slot : repository.slotsOf(artifact.artifactId())) {
+                if (slot.state().equals("REMOVED")) continue;
+                ObjectNode entry = slots.addObject().put("slotKey", slot.slotKey()).put("kind", slot.kind()).put("nodeId", slot.nodeId().toString())
+                        .put("assetId", slot.assetId().toString()).put("state", slot.state()).put("errorCode", slot.errorCode());
+                entry.put("voice", slot.spec().path("voice").stringValue(null));
+            }
+        }
         ArrayNode revisions = node.putArray("revisions");
         for (Revision listed : repository.revisionList(artifact.artifactId())) {
             revisions.addObject().put("revisionId", listed.revisionId().toString()).put("cause", listed.cause())
@@ -148,6 +158,7 @@ class SessionViews {
         node.put("action", turn.action());
         node.put("preset", turn.preset());
         node.put("instruction", turn.instruction());
+        node.put("voice", turn.voice());
         ArrayNode targets = node.putArray("targetNodeIds");
         turn.targetNodeIds().forEach(id -> targets.add(id.toString()));
         node.put("resultRevisionId", turn.resultRevisionId() == null ? null : turn.resultRevisionId().toString());

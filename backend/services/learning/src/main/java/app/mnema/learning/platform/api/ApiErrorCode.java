@@ -28,6 +28,11 @@ enum ApiErrorCode {
             "Usage unavailable",
             "The usage budget is busy; retry the request."
     ),
+    RATE_LIMITED(
+            HttpStatus.TOO_MANY_REQUESTS,
+            "Rate limited",
+            "Too many requests; retry after the time in Retry-After."
+    ),
     SPEC_NOT_SUPPORTED(
             HttpStatus.UNPROCESSABLE_CONTENT,
             "Spec not supported",

@@ -47,10 +47,40 @@ class StepRepository {
                 String idempotencyKey) {
         jdbc.sql("INSERT INTO app_learning.generation_step(step_id,session_id,artifact_id,owner_id,kind,capability,state,priority,input,"
                         + "idempotency_key,next_attempt_at,created_at,updated_at) VALUES (:id,:session,:artifact,:owner,:kind,"
-                        + ":capability,'READY',CASE WHEN :kind='EDIT' THEN 10 ELSE 0 END,CAST(:input AS jsonb),:key,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)")
+                        + ":capability,'READY',CASE WHEN :kind='EDIT' OR CAST(:input AS jsonb)->>'turnId' IS NOT NULL THEN 10 ELSE 0 END,CAST(:input AS jsonb),:key,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)")
                 .param("id", stepId).param("session", sessionId).param("artifact", artifactId).param("owner", owner)
                 .param("kind", kind).param("capability", capability).param("input", Json.write(input))
                 .param("key", idempotencyKey).update();
+    }
+
+    /**
+     * A step that waits for other steps ({@code WAITING_DEPENDENCIES}, {@code depends_on}): the media turn of a revision that first
+     * rewrites the text. It is promoted to READY by {@link #promoteDependents} when the step it waits for succeeds and cancelled by
+     * {@link #cancelDependents} when that one does not.
+     */
+    void insertWaiting(UUID stepId, UUID sessionId, UUID artifactId, UUID owner, String kind, String capability, JsonNode input,
+                       String idempotencyKey, UUID dependsOn) {
+        jdbc.sql("INSERT INTO app_learning.generation_step(step_id,session_id,artifact_id,owner_id,kind,capability,state,depends_on,"
+                        + "priority,input,idempotency_key,next_attempt_at,created_at,updated_at) VALUES (:id,:session,:artifact,:owner,:kind,"
+                        + ":capability,'WAITING_DEPENDENCIES',CAST(:depends AS uuid[]),10,CAST(:input AS jsonb),:key,CURRENT_TIMESTAMP,"
+                        + "CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)")
+                .param("id", stepId).param("session", sessionId).param("artifact", artifactId).param("owner", owner)
+                .param("kind", kind).param("capability", capability).param("depends", "{" + dependsOn + "}")
+                .param("input", Json.write(input)).param("key", idempotencyKey).update();
+    }
+
+    /** The steps that waited for {@code stepId} become READY (it succeeded); returns them. */
+    List<Step> promoteDependents(UUID stepId) {
+        return jdbc.sql("UPDATE app_learning.generation_step SET state='READY',next_attempt_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP "
+                        + "WHERE state='WAITING_DEPENDENCIES' AND :id=ANY(depends_on) RETURNING " + COLUMNS)
+                .param("id", stepId).query(STEP).list();
+    }
+
+    /** The steps that waited for {@code stepId} are not needed (it failed or was cancelled); returns them. */
+    List<Step> cancelDependents(UUID stepId) {
+        return jdbc.sql("UPDATE app_learning.generation_step SET state='CANCELLED',updated_at=CURRENT_TIMESTAMP "
+                        + "WHERE state='WAITING_DEPENDENCIES' AND :id=ANY(depends_on) RETURNING " + COLUMNS)
+                .param("id", stepId).query(STEP).list();
     }
 
     Optional<Step> step(UUID stepId) {
@@ -63,13 +93,22 @@ class StepRepository {
      * and of an owner below the soft cap of concurrently running steps.
      */
     Optional<Step> pickDue(Collection<String> kinds, int accountCap) {
+        return pickDue(kinds, accountCap, null);
+    }
+
+    /**
+     * As {@link #pickDue(Collection, int)}, and with {@code requiredInput} only a step whose input has that member: the Stub speech
+     * executor claims the steps of a media turn ({@code turnId}) and no other step of its kind.
+     */
+    Optional<Step> pickDue(Collection<String> kinds, int accountCap, String requiredInput) {
         return jdbc.sql("SELECT " + COLUMNS + " FROM app_learning.generation_step s WHERE s.state='READY' "
                         + "AND s.next_attempt_at<=CURRENT_TIMESTAMP AND s.kind IN (:kinds) "
+                        + "AND (CAST(:required AS text) IS NULL OR s.input->>CAST(:required AS text) IS NOT NULL) "
                         + "AND (SELECT count(*) FROM app_learning.generation_step r WHERE r.owner_id=s.owner_id "
                         + "AND r.state='RUNNING')<:cap AND EXISTS (SELECT 1 FROM app_learning.generation_session g "
                         + "WHERE g.session_id=s.session_id AND g.state IN ('RUNNING','REVIEW')) "
                         + "ORDER BY s.priority DESC,s.next_attempt_at,s.created_at,s.step_id LIMIT 1 FOR UPDATE OF s SKIP LOCKED")
-                .param("kinds", kinds).param("cap", accountCap).query(STEP).optional();
+                .param("kinds", kinds).param("cap", accountCap).param("required", requiredInput).query(STEP).optional();
     }
 
     /** READY to RUNNING: a new fencing token, a lease, {@code attempts + 1} and the run's deadline. */
@@ -196,11 +235,15 @@ class StepRepository {
                 .param("id", artifactId).param("keys", slotKeys).update();
     }
 
-    /** The holds of the edit steps that still work (READY or RUNNING): a session leaving RUNNING must not release them. */
+    /**
+     * The holds of the turns that still work: an EDIT step, or the step of a media turn (it has a {@code turnId}), READY or RUNNING, or
+     * waiting for the rewrite before it: a session leaving RUNNING must not release them.
+     */
     List<UUID> openEditReservations(UUID sessionId) {
-        return jdbc.sql("SELECT (input->>'reservationId')::uuid FROM app_learning.generation_step WHERE session_id=:id AND kind='EDIT' "
-                        + "AND state IN ('READY','RUNNING') AND input->>'reservationId' IS NOT NULL").param("id", sessionId)
-                .query(UUID.class).list();
+        return jdbc.sql("SELECT (input->>'reservationId')::uuid FROM app_learning.generation_step WHERE session_id=:id "
+                        + "AND input->>'reservationId' IS NOT NULL AND (kind='EDIT' AND state IN ('READY','RUNNING') "
+                        + "OR input->>'turnId' IS NOT NULL AND state IN ('WAITING_DEPENDENCIES','READY','RUNNING'))")
+                .param("id", sessionId).query(UUID.class).list();
     }
 
     /** A READY step, locked, for a decision taken without a claim (its lifetime ran out while it waited). */

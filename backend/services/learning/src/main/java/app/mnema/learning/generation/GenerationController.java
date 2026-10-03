@@ -40,11 +40,24 @@ class GenerationController {
     private final SessionService service;
     private final ReviewService review;
     private final ArtifactEdits edits;
+    private final IntentService intents;
 
-    GenerationController(SessionService service, ReviewService review, ArtifactEdits edits) {
+    GenerationController(SessionService service, ReviewService review, ArtifactEdits edits, IntentService intents) {
         this.service = service;
         this.review = review;
         this.edits = edits;
+        this.intents = intents;
+    }
+
+    /**
+     * {@code createIntent}: one sentence of «Попросить Мнему…» to a spec, chips and notes. Free (nothing is reserved or debited) and
+     * stateless: no body is stored and nothing is replayed.
+     */
+    @PostMapping(value = "/decks/{deckId}/generation-intents", consumes = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<JsonNode> intent(@AuthenticationPrincipal Jwt identity, @PathVariable String deckId, InputStream body) {
+        UUID owner = owner(identity);
+        UUID deck = entity(deckId, "deckId");
+        return ResponseEntity.ok().headers(privateHeaders()).body(intents.answer(owner, deck, read(body)));
     }
 
     @PostMapping(value = "/decks/{deckId}/generation-sessions", consumes = MediaType.APPLICATION_JSON_VALUE)

@@ -402,6 +402,41 @@ by `AttemptService.submit` on every terminal result (the attempt's transaction).
 - Tests: `GenerationEditsIntegrationTest` (real context, PostgreSQL and the Stub; `GenerationEditsSupport` has the requests and the built documents; the test provider's
   `[[fake:hold-edit]]` holds an edit call), `EditDocumentTest` (targets, handles, range replacement, the MBM round trip, what is editable), `StubEditsTest`.
 
+## «Попросить Мнему…»: intent and revisions (#294)
+
+Contract: `contracts/generation/README.md` decision 16 and `http.json` (`createIntent`, `specReviseItem`, `specReviseExercise`). Owner decision 2026-10-03: the media part of `REVISE_EXERCISE` is a **Stub**
+executor now; real synthesis and its acceptance are #297 (AI-09).
+
+- **Intent** (`IntentService`, `IntentSpecs`, `IntentUses`; `POST /decks/{deckId}/generation-intents` in `GenerationController`). Order: deck ownership (404), body (400, `Commands`), context
+  (404: a material that is not a head member of the deck, an exercise that is not on its roster), `GenerationGate.requireText` (409), `IntentUses.take` (hourly rate limit per account in `generation_intent_use`
+  under an advisory lock, `429 RATE_LIMITED` via `RateLimitedException` and `Retry-After`; `RetentionWorker` purges the rows), then ONE call (`PromptTask.INTENT`, `AiRoute.TEXT_FAST`, JSON,
+  temperature 0.2, `learning.generation.intent.deadline`), one repair, then `UNSUPPORTED`. The model's answer is read against a closed vocabulary (`IntentSpecs.read`: unknown members dropped, `perTarget` any integer) and the
+  spec is **built by the server** (`IntentSpecs.build`): the target is the request's context at its head, mechanics are filtered by the registry, `perTarget` is clamped (note `PER_TARGET_CLAMPED`), `budgetPercent` is never
+  set, the voice is dropped with a note when the exercise has no audio or `GenerationGate.voiceRevisionAvailable` is false. Nothing is reserved; the call is journaled by the provider layer. The Stub answers by keywords
+  (`StubIntents`: «все типы» → AUTO, a number → perTarget, «голос» → media, «проще» → revise, «лимит» → a hostile answer that the server must clamp; markers `[[stub:intent-invalid]]`, `[[stub:intent-invalid-always]]`).
+  New prompt sections `intent` and `exercise-edit` were added to `v1` (released sections stay byte-stable, `ai/prompts/README.md`).
+- **Admission** (`ReviseAdmission`, called by `SessionService.create` for `REVISE_ITEM` / `REVISE_EXERCISE` inside the receipt transaction; `StandardSpecInterpreter` validates and prices the spec, `GenerationGate.checkSpec`
+  checks ownership, head and capabilities, `ExerciseRef`/`voiceRevision` of `GenerationBoundary.SpecFacts`). Order: room (`AdmissionLimits`), the head re-read, target checks (400/422), `hold.requireFits`, the reservations (one `TURN` hold
+  per turn, no session batch hold: `generation_session.reservation_id` is null), then the session (`RUNNING`, spec echoed), its one `SOURCE` (the target material), the artifact with its INITIAL revision (a copy, no model call) and
+  its first turn and step. `SessionLifecycle.settleRevision` moves the session to REVIEW when a turn ends with the artifact PROPOSED (and `settle` publishes no notification for a revise session).
+  REVISE_ITEM: the whole material is the target of one `FREE` turn over all top-level blocks (`EditContexts` unchanged; `MaterialsSpec.read` of the revise spec gives the defaults). REVISE_EXERCISE: the exercise is read with
+  `ExerciseService.read`, moved to the head of its material when that moved (`ReviseAdmission.followHead`, the same checks as `ExerciseRepin`), `ExerciseDecompiler` must be able to show it to the model (else `TARGET_UNSUPPORTED_BLOCK`),
+  `sourceRefs` are `[ITEM pin, EXERCISE pin]` (`SourceDrift` knows the `EXERCISE` type: an exercise head that moved is stale, never re-pinned; a material head that moved re-pins through `ExerciseRepin`).
+- **Exercise rewrite** (`ExerciseEditExecutor`, called by `EditExecutor` when the artifact is an EXERCISE; `ExerciseContexts.buildEdit`): the current command is turned into the output form by `ExerciseDecompiler`
+  (local ids numbered by appearance and mapped to the identifiers; audio blocks of the prompt set aside; the result must compile back to the stored exercise, which is what guarantees that only exercises the form can express are shown),
+  the prompt is `PromptTask.EXERCISE_EDIT`, only the exercise's own mechanic is allowed, the answer's first exercise goes through `ExerciseValidator.validate(..., known ids)` (`ExerciseCompiler.compile` keeps the identifiers of local ids the model
+  kept), then the objective is restored to the current one, `enabled` stays, the audio blocks go back, `ExerciseCommand.readCreate` runs again. `EditLifecycle.succeed` stores `Result.ofExercise` (payload `EXERCISE_COMMAND`) and re-attaches the audio slots.
+- **Media turn** (`ArtifactEdits.redoAudio` for an edit, `ReviseAdmission` for a spec): a `TTS` step whose input has `turnId`, `voice`, `credits`, `reservationId`; with an instruction it is inserted `WAITING_DEPENDENCIES` (`depends_on` the EDIT step,
+  `StepRepository.insertWaiting`) and `EditLifecycle.succeed` promotes it (`promoteDependents`) and inserts its turn; a failed or cancelled rewrite cancels it (`cancelDependents`) and releases its hold. `StubSpeechExecutor` (only with `learning.ai.provider=stub`;
+  `StepExecutor.requiredInput() = turnId`, so it never claims the media steps of a material's slots) calls `EditLifecycle.succeedMedia`: revision `MEDIA`, every audio slot `READY` on the asset it had (`generation_media_slot.asset_id` is no longer unique: V33),
+  the voice in the slot's spec, the hold released unspent. `StepQueue`/`StepDispatcher` treat a step with `turnId` like an EDIT step (never parked by the daily burst, queue timeout, recovery through `EditLifecycle`).
+  `GenerationGate.requireVoiceRevision`: the Stub passes, any other provider needs a real `textToSpeech` (none exists yet: fail closed).
+- **Approval** (`ReviewService`): `reviseItem` calls `GeneratedItemPublisher.revise` (the catalog adapter reads the head, plans the structural edits with `NativeRevisionPlanner` and saves the member at its place with `ItemPublicationCommand.revision`);
+  the exercise chain calls `GeneratedExercisePublisher.revise` (`ExerciseService.publish` with `pathExerciseId`, the current objective, no «Новое» mark). Drift of the exercise head or of the material head is `SOURCE_STALE`; `retry` is `NOT_RETRYABLE`;
+  hand-off of a material opens a draft of the existing member (`GeneratedDraftOpener.openRevision`); a bulk approval of a revise session is 400.
+- **Edits on an exercise artifact** (`ArtifactEdits`): only in a `REVISE_EXERCISE` session, `FREE` (no target) or `AUDIO_REGENERATE` (+ `voice`, `TARGET_NO_AUDIO` without audio slots); `revert` too (title from the exercise, slots re-attached).
+  `SessionViews` returns the turn's `voice` and the exercise's audio slots (`mediaSlots`, `voice` additive).
+
 ## AI assessment of free explanations (#292)
 
 `evaluatorPolicy ai-semantic` of a `FREE_RESPONSE` ([contract](../../../contracts/study/README.md#ai-assessment-of-free-explanations-ai-semantic-292), architecture §11, research §5):

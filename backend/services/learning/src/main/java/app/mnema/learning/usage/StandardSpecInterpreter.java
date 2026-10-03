@@ -21,8 +21,8 @@ import java.util.regex.Pattern;
 
 /**
  * The default {@link GenerationSpecInterpreter}: validates the shape of a spec strictly (unknown fields are
- * {@code INVALID_REQUEST}) and prices the forms the contract defines, MATERIALS and EXERCISES. REVISE_ITEM and
- * REVISE_EXERCISE are {@code SPEC_NOT_SUPPORTED} until AI-16 (#294).
+ * {@code INVALID_REQUEST}) and prices the forms the contract defines: MATERIALS, EXERCISES and (AI-16, #294) REVISE_ITEM and
+ * REVISE_EXERCISE.
  *
  * <p>Interpretation of the declarative parts, all worst-case ("what a reservation holds"):
  * <ul>
@@ -50,6 +50,9 @@ final class StandardSpecInterpreter implements GenerationSpecInterpreter {
     private static final Set<String> MECHANICS = Set.of("SELF_CHECK", "FREE_RESPONSE", "CLOZE", "CHOICE", "MATCH", "ORDER",
             "CATEGORIZE");
     private static final Set<String> PRIORITIES = Set.of("UNCOVERED_FIRST", "BALANCED");
+    /** The rate-card operations of a revise spec: an edit turn, and the redo of the audio of an exercise. */
+    private static final String EDIT_TURN = "EDIT_SELECTION";
+    private static final String MEDIA_TURN = "TTS_CLIP_30S";
 
     private final GenerationLimits limits;
     private final ObjectProvider<GenerationBoundary> boundary;
@@ -84,7 +87,8 @@ final class StandardSpecInterpreter implements GenerationSpecInterpreter {
         return switch (kind) {
             case "MATERIALS" -> materials(owner, deckId, spec, admission);
             case "EXERCISES" -> exercises(owner, deckId, spec, remainingCredits, admission);
-            case "REVISE_ITEM", "REVISE_EXERCISE" -> throw new SpecNotSupportedException(kind);
+            case "REVISE_ITEM" -> reviseItem(owner, deckId, spec, admission);
+            case "REVISE_EXERCISE" -> reviseExercise(owner, deckId, spec, admission);
             default -> throw invalid();
         };
     }
@@ -310,6 +314,53 @@ final class StandardSpecInterpreter implements GenerationSpecInterpreter {
         if (total > limits.maxExercisesPerSession) throw limits.exceeded("EXERCISES_PER_SESSION");
         check(owner, deckId, new GenerationBoundary.SpecFacts("EXERCISES", List.of(), targetRefs, false, false, false), admission);
         return new Interpretation(List.of(new Line(RateCard.EXERCISES, (int) total)), budget, List.of());
+    }
+
+    // ------------------------------------------------------------------ REVISE_*
+
+    /** {@code {kind, target: {memberKey, itemRevisionId}, instruction: 1..2000, outputLanguage?}}: one edit turn over the whole material. */
+    private Interpretation reviseItem(UUID owner, UUID deckId, JsonNode spec, boolean admission) {
+        keys(spec, Set.of("kind", "target", "instruction"), Set.of("outputLanguage"));
+        language(spec);
+        JsonNode target = object(spec, "target");
+        keys(target, Set.of("memberKey", "itemRevisionId"), Set.of());
+        UUID member = uuid(target, "memberKey");
+        UUID revision = uuid(target, "itemRevisionId");
+        String instruction = text(spec, "instruction");
+        if (instruction.isBlank() || instruction.codePointCount(0, instruction.length()) > MAX_PROMPT) throw invalid();
+        // the target must be the head of the material: an edit of an older revision would overwrite what came later
+        check(owner, deckId, new GenerationBoundary.SpecFacts("REVISE_ITEM", List.of(),
+                List.of(new GenerationBoundary.ItemRef(member, revision, true)), false, false, false), admission);
+        return new Interpretation(List.of(new Line(EDIT_TURN, 1)), null, List.of());
+    }
+
+    /**
+     * {@code {kind, target: {exerciseId, exerciseRevisionId}, instruction?: 0..2000, media?: {action: AUDIO_REGENERATE, voice: female|male},
+     * outputLanguage?}}: an edit turn when there is an instruction, a text-to-speech clip when there is a media action, at least one of them.
+     */
+    private Interpretation reviseExercise(UUID owner, UUID deckId, JsonNode spec, boolean admission) {
+        keys(spec, Set.of("kind", "target"), Set.of("instruction", "media", "outputLanguage"));
+        language(spec);
+        JsonNode target = object(spec, "target");
+        keys(target, Set.of("exerciseId", "exerciseRevisionId"), Set.of());
+        UUID exercise = uuid(target, "exerciseId");
+        UUID revision = uuid(target, "exerciseRevisionId");
+        String instruction = spec.has("instruction") ? text(spec, "instruction") : "";
+        if (instruction.codePointCount(0, instruction.length()) > MAX_PROMPT) throw invalid();
+        boolean media = spec.has("media") && !spec.get("media").isNull();
+        if (media) {
+            JsonNode action = spec.get("media");
+            keys(action, Set.of("action", "voice"), Set.of());
+            oneOf(action, "action", Set.of("AUDIO_REGENERATE"));
+            oneOf(action, "voice", Set.of("female", "male"));
+        }
+        if (instruction.isBlank() && !media) throw invalid();
+        check(owner, deckId, new GenerationBoundary.SpecFacts("REVISE_EXERCISE", List.of(), List.of(),
+                List.of(new GenerationBoundary.ExerciseRef(exercise, revision)), false, false, false, media), admission);
+        List<Line> lines = new ArrayList<>();
+        if (!instruction.isBlank()) lines.add(new Line(EDIT_TURN, 1));
+        if (media) lines.add(new Line(MEDIA_TURN, 1));
+        return new Interpretation(lines, null, List.of());
     }
 
     private void mechanics(JsonNode node) {

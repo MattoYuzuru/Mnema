@@ -18,4 +18,9 @@ final class GeneratedDraftAdapter implements GeneratedDraftOpener {
     public JsonNode open(UUID actor, UUID deckId, UUID commandId, NativeDocument document) {
         return drafts.create(actor, new AuthoringCommands.DraftCreate(commandId, deckId, null, null, document)).acknowledgement();
     }
+
+    @Override
+    public JsonNode openRevision(UUID actor, UUID deckId, UUID commandId, UUID memberKey, UUID baseRevisionId, NativeDocument document) {
+        return drafts.create(actor, new AuthoringCommands.DraftCreate(commandId, deckId, memberKey, baseRevisionId, document)).acknowledgement();
+    }
 }

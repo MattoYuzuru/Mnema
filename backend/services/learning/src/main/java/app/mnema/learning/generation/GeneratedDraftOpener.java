@@ -16,4 +16,12 @@ public interface GeneratedDraftOpener {
      * @throws app.mnema.learning.platform.api.ResourceLimitExceededException the account's draft quota is reached
      */
     JsonNode open(UUID actor, UUID deckId, UUID commandId, NativeDocument document);
+
+    /**
+     * The hand-off of a revised material ({@code REVISE_ITEM}, #294): an {@code EditingDraft} of the <em>existing</em> material
+     * ({@code member_key} = {@code memberKey}, {@code base_revision_id} = {@code baseRevisionId}) holding the revised document.
+     *
+     * @throws app.mnema.learning.platform.api.ResourceLimitExceededException the account's draft quota is reached
+     */
+    JsonNode openRevision(UUID actor, UUID deckId, UUID commandId, UUID memberKey, UUID baseRevisionId, NativeDocument document);
 }
