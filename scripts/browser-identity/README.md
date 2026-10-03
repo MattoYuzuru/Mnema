@@ -210,6 +210,39 @@ The scenario records its own duration (`durationMs`, also for the whole Workshop
 
 Screenshots: `exercises-{builder,review,list}-{1440,390}.png`, `exercises-saved-1440.png`, `exercises-study-new-{1440,390}.png`.
 
+### Semantic assessment of explanations (`--authoring --assessment`)
+
+`assessment.mjs` (#292, AI-20) runs last of the authoring scenarios on the signed-in account's tab, in a deck of its own. The flag boots the
+same second Learning as `--generation` (Stub provider only, `LEARNING_FEATURES_AI_ASSESSMENT_ENABLED=true`, plan PRO, no key of any
+provider) and flips the proxy to it with `POST /__fixture/learning-generation`; the other scenarios keep running against the ordinary Learning
+(everything AI off). The Stub grades an answer by the markers inside it (`[[stub:assess-partial]]`, `[[stub:assess-slow]]`, see the Stub's
+Javadoc) and otherwise by a lexical heuristic; a marker is used only where a scenario needs an exact verdict or a delay.
+
+The whole path is the real Angular UI on the real HTTP surface. Only the fixture (the deck, one material and four of the five exercises) is
+made through the authenticated API; the first exercise is authored in the editor.
+
+| Stage | Assertions |
+|---|---|
+| `capability_and_fixture` | `GET /api/capabilities` reports `aiAssessment` available; a deck and a material |
+| `rubric_editor` | the AI switch is enabled and the answer list is the default until it is used; switching it on replaces the list with the rubric editor (step title «Эталон и пункты проверки»); the live counters read «Суть: 2 (нужно 2–3)…»; an empty rubric is refused with named fields and no save step; the reference answer, three points, a fourth point (focus lands on it), tier and weight selects (set through a `change` event: the keyboard route of a closed native select differs per OS), «Тонкая настройка» with a typical mistake and two terms; removing a point moves focus to its neighbour and the counters follow; save and a real reload restore every value; screenshots `assessment-rubric-editor-{1440,390}.png` (full page) |
+| `preview_has_no_model` | the preview answers `UNAVAILABLE` and says that the AI does not check in the preview |
+| `study` | one standard session of five new objectives; each card is answered by what it asks (below) |
+| `wire` | every AI answer was a `202`; one self-check, one self-rating, one dispute; the polls were made |
+
+What each answer proves (a card's prompt chooses its script, the order is the server's):
+
+| Answer | Proves |
+|---|---|
+| complete (heuristic) | title «Засчитано», all four points listed under «Есть» with quotes that are the learner's own words, nothing under «Не хватает», the note «В следующий раз проверка будет строже», the reference after the answer, «Оспорить оценку» offered, focus on the result; `assessment-result-complete-*` |
+| partial (`[[stub:assess-partial]]`) | «Частично», one point present and two missing, «В следующий раз я попрошу точнее: …» naming the missing points; `assessment-result-partial-*` |
+| «рецепт блинов» to a question about the PostgreSQL optimizer | «Пока не засчитано»: nothing present, every point missing; `assessment-result-offtopic-*` |
+| slow (`[[stub:assess-slow]]`, the Stub waits 8 s) | the waiting card «Мнема проверяет ответ…» takes focus, keeps the answer read-only and shows no reference; no «Оценить себя» before 5 s, it appears at 5 s as a secondary button (`assessment-assessing-{1440,390}.png`); pressing it opens the self-check mode (reason, answer next to the reference, the points, four ratings; `assessment-self-check-*`); the late grade at ≈ 8 s changes nothing; a reload resumes the self-check with the learner's own text; the rating completes the same attempt: «Частично», the reference, no AI result, no dispute |
+| complete, then dispute | «Оспорить оценку» asks in place (a `role="group"`, no modal, focus on the confirmation; `assessment-dispute-confirm-*`), «Да, снять оценку» gives «Оценка снята» and «Оценка снята, прогресс не изменился.»; the answer and the reference stay; `GET …/attempts/{id}` reads `NOT_ASSESSED` with `disputed: true` (`assessment-disputed-*`) |
+
+At every screenshot the page must not overflow horizontally at 1440 and 390 px and no `.button` may be shorter than 44 px. The time-based
+assertions (no offer before 5 s, the offer after 4.7 s) use wall-clock timers: a machine under load can throttle them, so rerun once before
+investigating a failure that names a timer.
+
 ## Assertions and envelope
 
 Two synthetic accounts and two same-profile browser tabs exercise:
