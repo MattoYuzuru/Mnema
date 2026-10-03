@@ -179,11 +179,11 @@ describe('AskMnemaComponent («Попросить Мнему…», AI-16)', () =
             fixture.detectChanges();
             expect(api.createIntent).toHaveBeenCalledTimes(1);
             expect(root().querySelector('[role="status"]')!.textContent).toContain('Мнема разбирает запрос');
-            expect(root().querySelector('.ask-panel')!.getAttribute('aria-busy')).toBe('true');
+            expect(root().querySelector('.ask-body')!.getAttribute('aria-busy')).toBe('true');
             pending.next(reviseItemAnswer());
             pending.complete();
             await settle();
-            expect(root().querySelector('.ask-panel')!.getAttribute('aria-busy')).toBe('false');
+            expect(root().querySelector('.ask-body')!.getAttribute('aria-busy')).toBe('false');
         });
     });
 
@@ -287,11 +287,20 @@ describe('AskMnemaComponent («Попросить Мнему…», AI-16)', () =
             instruction.value = '   ';
             instruction.dispatchEvent(new Event('input'));
             fixture.detectChanges();
-            expect(start().getAttribute('aria-disabled')).toBe('true');
-            expect(instruction.getAttribute('aria-invalid')).toBe('true');
+            // pressing says what is missing next to the field, linked to it, and sends nothing
             start().click();
             await settle();
             expect(api.createSession).not.toHaveBeenCalled();
+            expect(instruction.getAttribute('aria-invalid')).toBe('true');
+            expect(root().querySelector(`#${instruction.getAttribute('aria-describedby')}`)!.textContent).toContain('Напишите, что изменить');
+            expect(document.activeElement).toBe(instruction);
+            instruction.value = 'Сделай';
+            instruction.dispatchEvent(new Event('input'));
+            fixture.detectChanges();
+            expect(instruction.getAttribute('aria-invalid')).toBeNull();
+            instruction.value = '   ';
+            instruction.dispatchEvent(new Event('input'));
+            fixture.detectChanges();
             instruction.value = 'Сделай короче';
             instruction.dispatchEvent(new Event('input'));
             fixture.detectChanges();
@@ -320,7 +329,10 @@ describe('AskMnemaComponent («Попросить Мнему…», AI-16)', () =
             radios[0]!.click();
             fixture.detectChanges();
             expect(root().querySelector('.ask-instruction textarea')).not.toBeNull();
-            expect(start().getAttribute('aria-disabled')).toBe('true');
+            start().click();
+            await settle();
+            expect(api.createSession).not.toHaveBeenCalled();
+            expect(root().querySelector('.ask-instruction .ask-error')).not.toBeNull();
             const instruction = root().querySelector<HTMLTextAreaElement>('.ask-instruction textarea')!;
             instruction.value = 'Сделай вопрос короче';
             instruction.dispatchEvent(new Event('input'));
@@ -514,6 +526,108 @@ describe('AskMnemaComponent («Попросить Мнему…», AI-16)', () =
             start().click();
             await settle();
             expect(root().querySelector('.notice.error')!.textContent).toContain('На один материал');
+        });
+    });
+    describe('review fixes (AI-16)', () => {
+        it('shows a created session when the page does not let the owner move to it, and never makes a second one for the same request', async () => {
+            create(material, { unsaved: true });
+            await ask(reviseItemAnswer());
+            expect(root().textContent).toContain('несохранённые изменения');
+            await settle(ESTIMATE_DEBOUNCE_MS);
+            transition.navigate.mockResolvedValue(false);
+            api.createSession.mockReturnValue(created());
+            start().click();
+            await settle();
+            const launched = root().querySelector('[data-launched]')!;
+            expect(launched.textContent).toContain('Правка запущена');
+            expect(launched.querySelector('a')!.getAttribute('href')).toBe(`/decks/${ids.deckId}/workshop/${examples['sessionDetailCreated'].sessionId}`);
+            expect(start().getAttribute('aria-disabled')).toBe('true');
+            start().click();
+            await settle();
+            expect(api.createSession).toHaveBeenCalledTimes(1);
+            // another request is another session, with its own command
+            const instruction = root().querySelector<HTMLTextAreaElement>('.ask-instruction textarea')!;
+            instruction.value = 'Сделай короче';
+            instruction.dispatchEvent(new Event('input'));
+            fixture.detectChanges();
+            expect(start().getAttribute('aria-disabled')).toBeNull();
+            start().click();
+            await settle();
+            expect(api.createSession).toHaveBeenCalledTimes(2);
+            expect(api.createSession.mock.calls[1]![2]).not.toBe(api.createSession.mock.calls[0]![2]);
+        });
+
+        it('says «Мастерская запущена» for exercises, and names the material of an exercise in its own words', async () => {
+            create(exercise);
+            await ask(exercisesAnswer());
+            expect(root().querySelector('.ask-for')!.textContent).toContain('Упражнения для материала этого упражнения.');
+            await settle(ESTIMATE_DEBOUNCE_MS);
+            transition.navigate.mockResolvedValue(false);
+            api.createSession.mockReturnValue(created());
+            start().click();
+            await settle();
+            expect(root().querySelector('[data-launched]')!.textContent).toContain('Мастерская запущена');
+        });
+
+        it('never sends or prices an instruction the field no longer shows (the voice hid it)', async () => {
+            create(exercise);
+            await ask(voiceAnswer('male'), 'Замени аудио на мужской голос');
+            const radios = [...root().querySelectorAll<HTMLInputElement>('.ask-voice input')];
+            radios[0]!.click();
+            fixture.detectChanges();
+            const instruction = root().querySelector<HTMLTextAreaElement>('.ask-instruction textarea')!;
+            instruction.value = 'Сделай вопрос короче';
+            instruction.dispatchEvent(new Event('input'));
+            fixture.detectChanges();
+            radios[2]!.click();
+            fixture.detectChanges();
+            expect(root().querySelector('.ask-instruction')).toBeNull();
+            await settle(ESTIMATE_DEBOUNCE_MS);
+            expect(lastSpec()).toEqual(examples['specReviseExercise']);
+            api.createSession.mockReturnValue(created());
+            start().click();
+            await settle();
+            expect(sentSpec()).toEqual(examples['specReviseExercise']);
+        });
+
+        it('forgets the sentence, the answer and the commands when it is about another material or exercise', async () => {
+            create(material);
+            await ask(reviseItemAnswer());
+            expect(root().querySelector('h2')).not.toBeNull();
+            fixture.componentRef.setInput('context', { kind: 'MATERIAL', memberKey: '44444444-4444-4444-8444-444444444445' });
+            fixture.detectChanges();
+            await settle();
+            expect(root().querySelector('textarea')).toBeNull();
+            trigger().click();
+            fixture.detectChanges();
+            expect(field().value).toBe('');
+            expect(root().querySelector('h2')).toBeNull();
+            // the same context again changes nothing
+            field().value = 'Сделай проще';
+            field().dispatchEvent(new Event('input'));
+            fixture.componentRef.setInput('context', { kind: 'MATERIAL', memberKey: '44444444-4444-4444-8444-444444444445' });
+            fixture.detectChanges();
+            expect(field().value).toBe('Сделай проще');
+        });
+
+        it('lets the note about a clamped number go once the owner changes the number', async () => {
+            create();
+            await ask(exercisesAnswer('AUTO', 10, [{ code: 'PER_TARGET_CLAMPED', text: 'Не больше 10 на материал', limit: 10 }]), 'Сделай 1000 упражнений');
+            expect(root().querySelector('[data-note="PER_TARGET_CLAMPED"]')).not.toBeNull();
+            const slider = root().querySelector<HTMLInputElement>('input[type=range]')!;
+            slider.value = '4';
+            slider.dispatchEvent(new Event('input'));
+            fixture.detectChanges();
+            expect(root().querySelector('[data-note="PER_TARGET_CLAMPED"]')).toBeNull();
+        });
+
+        it('keeps the status region out of the busy part of the composer', async () => {
+            create();
+            trigger().click();
+            fixture.detectChanges();
+            expect(root().querySelector('.ask-body [role="status"]')).toBeNull();
+            expect(root().querySelector('[role="status"]')).not.toBeNull();
+            expect(root().querySelector('section[aria-label]')).toBeNull();
         });
     });
 });

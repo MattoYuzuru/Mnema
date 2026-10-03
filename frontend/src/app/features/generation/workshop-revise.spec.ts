@@ -143,7 +143,8 @@ describe('Workshop of a revision (REVISE_ITEM and REVISE_EXERCISE, AI-16)', () =
             expect(root().querySelector('app-batch-pager')).toBeNull();
             expect(root().querySelector('app-revise-item-result')).not.toBeNull();
             expect(root().querySelector('.result-title')!.textContent).toBe('Мнема переписала материал');
-            expect(root().querySelector('.result-request')!.textContent).toContain('Сделай объяснение проще');
+            // the request is said once, in the subtitle of the page
+            expect(root().querySelector('.result-request')).toBeNull();
             expect([...root().querySelectorAll('.result-actions button')].map(button => button.textContent!.trim())).toEqual(['Оставить', 'Вернуть', 'Ещё раз', 'Отклонить']);
             expect(root().querySelector('h2')!.textContent).toContain('Правка материала, готов');
             expect(summary()).toContain('Правка готова: оставьте её, верните прежний текст или попросите ещё раз');
@@ -255,6 +256,26 @@ describe('Workshop of a revision (REVISE_ITEM and REVISE_EXERCISE, AI-16)', () =
             expect(root().textContent).toContain('Правка разобрана');
             await openItem('FAILED');
             expect(root().querySelector('.notice.error')).not.toBeNull();
+        });
+
+        it('keeps «Оставить» when a repeat failed after a good result: the earlier result is still on screen and can be kept', async () => {
+            await openItem('PROPOSED', [turn(), turn({ turnId: VOICE_TURN, status: 'FAILED', errorCode: 'PROVIDER_UNAVAILABLE', resultRevisionId: null })]);
+            expect(root().querySelector('.result-title')!.textContent).toContain('Повтор не удался — показан прежний результат');
+            expect(labelled('Оставить')).toBeDefined();
+            expect(labelled('Оставить')!.getAttribute('aria-disabled')).toBeNull();
+            expect(labelled('Ещё раз')).toBeDefined();
+            await openItem('PROPOSED', [turn(), turn({ turnId: VOICE_TURN, status: 'CANCELLED', resultRevisionId: null })]);
+            expect(labelled('Оставить')).toBeDefined();
+        });
+
+        it('offers to reject the revision even when its text could not be loaded', async () => {
+            failCurrent = true;
+            await openItem();
+            expect(root().querySelector('.result-card')).toBeNull();
+            api.rejectArtifact.mockReturnValue(of(parseArtifactSummary(itemArtifact('REJECTED', { rowVersion: '6' }))));
+            labelled('Отклонить')!.click();
+            await settle();
+            expect(api.rejectArtifact).toHaveBeenCalled();
         });
 
         it('rejects the revision, and brings a rejected one back', async () => {
@@ -376,9 +397,11 @@ describe('Workshop of a revision (REVISE_ITEM and REVISE_EXERCISE, AI-16)', () =
         });
 
         it('says a failed voice change changed nothing, and shows the states of a revision that is running, stale, rejected or already saved', async () => {
-            await openExercise(voiceOnly, [voiceTurn({ status: 'FAILED', errorCode: 'PROVIDER_UNAVAILABLE', resultRevisionId: null })]);
+            await open(exerciseSession(exerciseArtifact('PROPOSED', ORIGINAL), voiceOnly), exerciseRevision(ORIGINAL, ASSET, 'Когда планировщик выберет Seq Scan?',
+                [voiceTurn({ status: 'FAILED', errorCode: 'PROVIDER_UNAVAILABLE', resultRevisionId: null })], null));
             expect(root().querySelector('.result-title')!.textContent).toContain('Не удалось сменить голос');
             expect(root().querySelector('[data-voice-chip]')).toBeNull();
+            expect(labelled('Оставить')).toBeUndefined();
             await openExercise(voiceOnly, [voiceTurn()], ASSET, 'STALE');
             expect(root().textContent).toContain('Упражнение изменилось, пока Мнема его правила');
             await openExercise(voiceOnly, [voiceTurn()], ASSET, 'REJECTED');
@@ -388,6 +411,31 @@ describe('Workshop of a revision (REVISE_ITEM and REVISE_EXERCISE, AI-16)', () =
             expect(root().querySelector('.result-card')).toBeNull();
             await openExercise(voiceOnly, [voiceTurn()], ASSET, 'FAILED');
             expect(root().querySelector('.notice.error')).not.toBeNull();
+        });
+
+        it('keeps «Оставить» when a repeat failed after a good result, and says «Ещё раз» repeats the text only for a request of text and voice', async () => {
+            await openExercise({ instruction: 'Сделай вопрос короче', ...voiceOnly }, [turn({ instruction: 'Сделай вопрос короче' }), voiceTurn(),
+                turn({ turnId: '7a7a0000-0000-4000-8000-0000000000b3', status: 'FAILED', errorCode: 'INVALID_OUTPUT', resultRevisionId: null, instruction: 'Сделай вопрос короче' })]);
+            expect(root().querySelector('.result-title')!.textContent).toContain('Повтор не удался — показан прежний результат');
+            expect(labelled('Оставить')).toBeDefined();
+            expect(root().querySelector('[data-repeat-note]')!.textContent).toContain('только правку текста');
+            await openExercise();
+            expect(root().querySelector('[data-repeat-note]')).toBeNull();
+        });
+
+        it('says the voice only when the revision on screen records it (its slots), not from the history of turns', async () => {
+            await open(exerciseSession(exerciseArtifact(), voiceOnly), exerciseRevision(MEDIA, ASSET, 'Когда планировщик выберет Seq Scan?', [voiceTurn()], null),
+                { [ORIGINAL]: exerciseRevision(ORIGINAL, ASSET, 'Когда планировщик выберет Seq Scan?', [], null) });
+            await settle();
+            expect(root().querySelector('[data-voice-chip]')).toBeNull();
+            expect(root().querySelector('[data-stub-note]')).toBeNull();
+        });
+
+        it('offers to reject an exercise revision that could not be loaded', async () => {
+            failCurrent = true;
+            await openExercise();
+            expect(root().querySelector('.result-card')).toBeNull();
+            expect(labelled('Отклонить')).toBeDefined();
         });
 
         it('goes back through the history to any version of the exercise', async () => {

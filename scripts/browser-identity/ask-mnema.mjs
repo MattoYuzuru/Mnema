@@ -359,6 +359,8 @@ export async function runWorkshopAsk(ctx, h) {
     const session = await getSession(reviseSession);
     need(session.kind === 'REVISE_ITEM' && session.artifacts.length === 1, `the session is ${session.kind} with ${session.artifacts.length} artifacts`);
     reviseArtifact = session.artifacts[0].artifactId;
+    // The word diff reads the original text first: it fills in a moment after the card.
+    await until(async () => ((await resultFacts('app-revise-item-result')).diff?.ins.length ?? 0) > 0, 'the word diff never filled in', 20_000);
     const result = await resultFacts('app-revise-item-result');
     need(result.heading === 'Правка материала', `the heading is «${result.heading}»`);
     need(/Сделай объяснение проще/u.test(result.lede), `the subtitle is «${result.lede}»`);

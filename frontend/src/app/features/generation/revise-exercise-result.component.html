@@ -42,19 +42,18 @@
       @if (artifact().state === 'PROPOSED' && detail() !== null) {
         <section class="result-card" role="group" aria-labelledby="result-title" [class.is-failed]="failure() !== null">
           @if (failure(); as reason) {
-            <p class="result-title is-error" id="result-title">{{ reason }} Упражнение не изменилось, лимит не списан.</p>
+            <p class="result-title is-error" id="result-title">@if (changedFromOriginal()) {Повтор не удался — показан прежний результат. Лимит не списан.} @else { {{ reason }} Упражнение не изменилось, лимит не списан.}</p>
           } @else if (changedFromOriginal()) {
             <p class="result-title" id="result-title">Мнема изменила упражнение</p>
           } @else {
             <p class="result-title" id="result-title">Сейчас показана прежняя версия: если оставить её, ничего не изменится.</p>
           }
-          @if (requestText(); as text) { <p class="result-request">Запрос: «{{ text }}»</p> }
           @if (voiceChip(); as chip) {
             <ul class="result-chips" aria-label="Что изменено в упражнении"><li class="result-chip" data-voice-chip>{{ chip }}</li></ul>
           }
           @if (stubNoteShown()) { <p class="result-note" data-stub-note>{{ stubNote }}</p> }
           <div class="result-actions">
-            @if (changedFromOriginal() && failure() === null) {
+            @if (changedFromOriginal()) {
               <button class="button primary" type="button" data-keep [attr.aria-disabled]="(busy() || !canApprove() || !shownIsCurrent()) ? 'true' : null"
                 [attr.aria-describedby]="approveWait() ? 'approve-wait' : null" (click)="keep()">Оставить</button>
             }
@@ -68,6 +67,7 @@
               <button class="button" type="button" data-reject [attr.aria-disabled]="busy() ? 'true' : null" (click)="reject()">{{ changedFromOriginal() ? 'Отклонить' : 'Закрыть без изменений' }}</button>
             }
           </div>
+          @if (repeatNote(); as note) { <p class="muted" data-repeat-note>{{ note }}</p> }
           @if (approveWait(); as wait) { <p class="muted" id="approve-wait">{{ wait }}</p> }
           @if (changedFromOriginal() && diff().phase !== 'idle') {
             <details class="revise-diff" open>
@@ -101,6 +101,7 @@
         <section class="notice error" role="alert">
           <p>Не удалось загрузить упражнение.</p>
           <button class="button" type="button" (click)="reload()">Повторить</button>
+          @if (canReject()) { <button class="button" type="button" data-reject [attr.aria-disabled]="busy() ? 'true' : null" (click)="reject()">Отклонить</button> }
         </section>
       } @else if (artifact().state !== 'PUBLISHED' && artifact().state !== 'HANDED_OFF') {
         <p class="muted">Загружаем упражнение…</p>

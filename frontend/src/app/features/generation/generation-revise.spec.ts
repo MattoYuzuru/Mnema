@@ -103,6 +103,39 @@ describe('REVISE_* specs, exercise edits and the intent (AI-16, contracts/genera
             expect(parseIntent(answer).spec).toMatchObject({ settings: { quantity: { mode: 'BUDGET_PERCENT', percent: 5 } } });
         });
 
+        it('refuses an answer that is about something else than the request: another target, a number above ten, an operation the context does not allow, an unknown member', () => {
+            const answer = () => clone(examples['intentExercises']);
+            const forMaterial: IntentContext = { kind: 'MATERIAL', memberKey: examples['intentExercises'].spec.targets[0].memberKey };
+            expect(parseIntent(answer(), forMaterial).operation).toBe('EXERCISES');
+            expect(() => parseIntent(answer(), { kind: 'MATERIAL', memberKey: '44444444-4444-4444-8444-444444444445' })).toThrow(AuthoringProtocolError);
+            expect(() => parseIntent(examples['intentReviseExercise'], forMaterial)).toThrow(AuthoringProtocolError);
+            expect(() => parseIntent(examples['intentReviseExercise'], { kind: 'EXERCISE', exerciseId: '66666666-6666-4666-8666-666666666667' })).toThrow(AuthoringProtocolError);
+            expect(parseIntent(examples['intentReviseExercise'], { kind: 'EXERCISE', exerciseId: examples['specReviseExercise'].target.exerciseId }).operation).toBe('REVISE_EXERCISE');
+            const item = { operation: 'REVISE_ITEM', spec: examples['specReviseItem'], chips: [], notes: [] };
+            expect(parseIntent(item, { kind: 'MATERIAL', memberKey: examples['specReviseItem'].target.memberKey }).operation).toBe('REVISE_ITEM');
+            expect(() => parseIntent(item, { kind: 'MATERIAL', memberKey: '44444444-4444-4444-8444-444444444445' })).toThrow(AuthoringProtocolError);
+            expect(() => parseIntent(item, exercise)).toThrow(AuthoringProtocolError);
+            const high = answer(); high.spec.settings.quantity = { mode: 'EXACT', perTarget: 11 };
+            expect(() => parseIntent(high)).toThrow(AuthoringProtocolError);
+            const chip = answer(); chip.chips[2].value = 11;
+            expect(() => parseIntent(chip)).toThrow(AuthoringProtocolError);
+            for (const change of [(a: any) => { a.spec.extra = 1; }, (a: any) => { a.spec.settings.extra = 1; }, (a: any) => { a.notes = [{ code: 'X', text: 'y', extra: 1 }]; },
+                (a: any) => { a.spec.settings.quantity.extra = 1; }]) {
+                const changed = answer(); change(changed);
+                expect(() => parseIntent(changed)).toThrow(AuthoringProtocolError);
+            }
+            const withOptional = answer(); withOptional.spec.settings.planFirst = false; withOptional.spec.settings.budgetPercent = null; withOptional.spec.outputLanguage = 'ru';
+            expect(parseIntent(withOptional).operation).toBe('EXERCISES');
+            const extraItem = clone(item); (extraItem.spec as any).extra = 1;
+            expect(() => parseIntent(extraItem)).toThrow(AuthoringProtocolError);
+            const extraExercise = clone(examples['intentReviseExercise']); extraExercise.spec.extra = 1;
+            expect(() => parseIntent(extraExercise)).toThrow(AuthoringProtocolError);
+        });
+
+        it('reports an answer that does not read as an unreadable answer, not as a network failure', () => {
+            expect(intentProblemMessage(readProblem(new AuthoringProtocolError('x')))).toContain('не смогли это разобрать');
+        });
+
         it('builds the request body: the context and the trimmed text, nothing else', () => {
             expect(serializeIntentRequest(material, '  Сделай все типы упражнений по 3 ')).toEqual({
                 context: { kind: 'MATERIAL', memberKey: material.memberKey }, text: 'Сделай все типы упражнений по 3' });

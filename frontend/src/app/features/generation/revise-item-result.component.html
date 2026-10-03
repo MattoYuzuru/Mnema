@@ -45,15 +45,14 @@
       @if (artifact().state === 'PROPOSED' && detail() !== null) {
         <section class="result-card" role="group" aria-labelledby="result-title" [class.is-failed]="failure() !== null">
           @if (failure(); as reason) {
-            <p class="result-title is-error" id="result-title">{{ reason }} Текст не изменился, лимит не списан.</p>
+            <p class="result-title is-error" id="result-title">@if (changedFromOriginal()) {Повтор не удался — показан прежний результат. Лимит не списан.} @else { {{ reason }} Текст не изменился, лимит не списан.}</p>
           } @else if (changedFromOriginal()) {
             <p class="result-title" id="result-title">Мнема переписала материал</p>
           } @else {
             <p class="result-title" id="result-title">Сейчас показан прежний текст: если оставить его, ничего не изменится.</p>
           }
-          @if (request(); as text) { <p class="result-request">Запрос: «{{ text }}»</p> }
           <div class="result-actions">
-            @if (changedFromOriginal() && failure() === null) {
+            @if (changedFromOriginal()) {
               <button class="button primary" type="button" data-keep [attr.aria-disabled]="(busy() || !canApprove() || !shownIsCurrent()) ? 'true' : null"
                 [attr.aria-describedby]="approveWait() ? 'approve-wait' : null" (click)="keep()">Оставить</button>
             }
@@ -103,6 +102,7 @@
         <section class="notice error" role="alert">
           <p>Не удалось загрузить материал.</p>
           <button class="button" type="button" (click)="reload()">Повторить</button>
+          @if (canReject()) { <button class="button" type="button" data-reject [attr.aria-disabled]="busy() ? 'true' : null" (click)="reject()">Отклонить</button> }
         </section>
       } @else if (artifact().state !== 'PUBLISHED' && artifact().state !== 'HANDED_OFF') {
         <p class="muted">Загружаем материал…</p>

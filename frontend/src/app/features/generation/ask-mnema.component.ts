@@ -90,6 +90,12 @@ export class AskMnemaComponent {
     readonly value = signal<BuilderValue>(DEFAULT_BUILDER_VALUE);
     readonly instruction = signal('');
     readonly voice = signal<VoiceChoice>('NONE');
+    /** A session was created but the Workshop did not open (a guard said no): where it is, and for which request. */
+    readonly launched = signal<{ readonly key: string; readonly sessionId: string } | null>(null);
+    /** The owner pressed «Запустить» with a revision that has nothing to ask: the field says so. */
+    readonly blank = signal(false);
+    /** What the quantity was when the answer came: the note about it goes once the owner changes it. */
+    private readonly adoptedQuantity = signal<{ readonly mode: string; readonly perTarget: number } | null>(null);
 
     private readonly api = inject(GenerationApiService);
     private readonly transition = inject(PageTransition);
@@ -105,7 +111,21 @@ export class AskMnemaComponent {
     protected readonly operation = computed(() => this.intent()?.operation ?? null);
     protected readonly base = computed<GenerationSpec | null>(() => this.intent()?.spec ?? null);
     protected readonly empty = computed(() => this.text().trim().length === 0);
-    protected readonly notes = computed<readonly IntentNote[]>(() => this.intent()?.notes ?? []);
+    protected readonly notes = computed<readonly IntentNote[]>(() => {
+        const adopted = this.adoptedQuantity();
+        const value = this.value();
+        const changed = adopted !== null && (adopted.mode !== value.quantityMode || adopted.perTarget !== value.perTarget);
+        return (this.intent()?.notes ?? []).filter(note => !(changed && (note.code === 'PER_TARGET_CLAMPED')));
+    });
+    /** The request as it would be sent, as a string: what a pending command and a launched session are named by. */
+    private readonly specKey = computed<string | null>(() => {
+        const spec = this.spec();
+        if (spec === null) return null;
+        try { return JSON.stringify(serializeSpec(spec)); } catch { return null; }
+    });
+    /** The session of exactly this request exists already: «Запустить» waits for the owner to change something. */
+    protected readonly alreadyLaunched = computed(() => this.launched() !== null && this.launched()!.key === this.specKey());
+    protected readonly launchedWord = computed(() => this.isRevision() ? 'Правка запущена' : 'Мастерская запущена');
     /** The spec the owner would start: the server's, with the chips' changes. `null` when it is not complete (a revision without a request). */
     protected readonly spec = computed<GenerationSpec | null>(() => {
         const base = this.base();
@@ -117,7 +137,8 @@ export class AskMnemaComponent {
                 return instruction.length === 0 ? null : { ...base, instruction } satisfies ReviseItemSpec;
             }
             case 'REVISE_EXERCISE': {
-                const instruction = this.instruction().trim();
+                // Only what the owner can see is sent and priced: a request typed into the field before the voice hid it is not.
+                const instruction = this.showInstruction() ? this.instruction().trim() : '';
                 const voice = this.voice();
                 const { instruction: _before, media: _media, ...rest } = base;
                 if (instruction.length === 0 && voice === 'NONE') return null;
@@ -127,11 +148,12 @@ export class AskMnemaComponent {
             default: return null;
         }
     });
+    /** The instruction field is on screen: a revision of a material always has it; of an exercise, when it came with the answer or no voice is chosen. */
+    protected readonly showInstruction = computed(() => this.base()?.kind === 'REVISE_ITEM'
+        || (this.base()?.kind === 'REVISE_EXERCISE' && (this.intent()?.chips.some(chip => chip.kind === 'INSTRUCTION') === true || this.voice() === 'NONE')));
     protected readonly isExercises = computed(() => this.base()?.kind === 'EXERCISES');
     protected readonly isRevision = computed(() => this.base()?.kind === 'REVISE_ITEM' || this.base()?.kind === 'REVISE_EXERCISE');
     protected readonly hasVoiceChip = computed(() => this.base()?.kind === 'REVISE_EXERCISE' && this.intent()?.chips.some(chip => chip.kind === 'VOICE') === true);
-    protected readonly hasInstructionChip = computed(() => this.base()?.kind === 'REVISE_ITEM'
-        || (this.base()?.kind === 'REVISE_EXERCISE' && this.intent()?.chips.some(chip => chip.kind === 'INSTRUCTION') === true));
     /** The instruction is optional only beside a voice change. */
     protected readonly instructionRequired = computed(() => this.base()?.kind === 'REVISE_ITEM' || this.voice() === 'NONE');
     protected readonly quantityModes = computed(() => {
@@ -154,9 +176,19 @@ export class AskMnemaComponent {
         const state = this.estimate();
         return state.phase === 'limit' || (state.phase === 'ready' && !state.estimate.canStart);
     });
-    protected readonly targetWord = computed(() => this.context().kind === 'MATERIAL' ? 'этого материала' : 'этого упражнения');
+    protected readonly targetWord = computed(() => this.context().kind === 'MATERIAL' ? 'этого материала' : 'материала этого упражнения');
 
     constructor() {
+        // The component outlives a reload of the page's material or exercise: what was asked about the old one is not about the new one.
+        let seen: string | null = null;
+        effect(() => {
+            const context = this.context();
+            const key = context.kind === 'MATERIAL' ? `M:${context.memberKey}` : `E:${context.exerciseId}`;
+            untracked(() => {
+                if (seen !== null && seen !== key) this.reset();
+                seen = key;
+            });
+        });
         // One estimate per pause: every change cancels the timer and the request in flight. Nothing is reserved by it.
         effect(onCleanup => {
             const spec = this.spec();
@@ -168,6 +200,22 @@ export class AskMnemaComponent {
                 error: (error: unknown) => this.estimate.set(this.estimateFailure(error, spec))
             }));
         });
+    }
+
+    /** Back to a composer that was never used: the sentence, the answer, the commands and any launched session are forgotten. */
+    private reset(): void {
+        this.parse += 1;
+        this.parsing.set(false);
+        this.text.set('');
+        this.intent.set(null);
+        this.intentError.set(null);
+        this.failure.set(null);
+        this.usageExplanation.set(null);
+        this.launched.set(null);
+        this.blank.set(false);
+        this.adoptedQuantity.set(null);
+        this.pending.clear();
+        this.open.set(false);
     }
 
     // --- Opening and reading the sentence ---
@@ -250,6 +298,7 @@ export class AskMnemaComponent {
 
     protected onInstruction(event: Event): void {
         this.instruction.set((event.target as HTMLTextAreaElement).value);
+        this.blank.set(false);
         this.resetOutcome();
     }
 
@@ -263,7 +312,13 @@ export class AskMnemaComponent {
     /** «Запустить»: creates the session and opens its Workshop. The same request keeps its command until it changes, so an unknown outcome replays. */
     protected async start(): Promise<void> {
         const spec = this.spec();
-        if (this.starting() || spec === null) return;
+        if (this.starting() || this.alreadyLaunched()) return;
+        if (spec === null) {
+            // A revision with nothing to ask: say so next to the field, never a silent press.
+            this.blank.set(true);
+            this.focusAfter(() => document.getElementById(`${this.uid}-instruction`) ?? undefined);
+            return;
+        }
         const state = this.estimate();
         if (state.phase === 'limit') { this.failure.set(state.message); return; }
         if (state.phase === 'ready' && !state.estimate.canStart) {
@@ -285,9 +340,12 @@ export class AskMnemaComponent {
         this.usageExplanation.set(null);
         try {
             const { session } = await firstValueFrom(this.api.createSession(this.deckId(), spec, commandId));
-            this.pending.delete(key);
+            // The session exists. The command stays: a repeat of the same request replays it and never makes a second session.
+            this.launched.set({ key, sessionId: session.sessionId });
             // The button stays busy until the Workshop is open: a second press can neither start another session nor lose this one.
-            await this.transition.navigate(['/decks', this.deckId(), 'workshop', session.sessionId]);
+            const opened = await this.transition.navigate(['/decks', this.deckId(), 'workshop', session.sessionId]);
+            // A page guard may refuse the move (unsaved changes): the session is still there, and the link below says so.
+            if (opened) { this.pending.delete(key); this.launched.set(null); }
         } catch (error) {
             const problem = readProblem(error);
             if (!problem.uncertain) this.pending.delete(key);
@@ -300,6 +358,9 @@ export class AskMnemaComponent {
     private adopt(result: IntentResult): void {
         this.intent.set(result);
         this.estimate.set({ phase: 'idle' });
+        this.launched.set(null);
+        this.blank.set(false);
+        this.adoptedQuantity.set(null);
         const spec = result.spec;
         if (spec === null) return;
         switch (spec.kind) {
@@ -310,6 +371,7 @@ export class AskMnemaComponent {
                     quantityMode: quantity.mode, perTarget: quantity.mode === 'EXACT' ? quantity.perTarget : DEFAULT_BUILDER_VALUE.perTarget,
                     percent: quantity.mode === 'BUDGET_PERCENT' ? quantity.percent : DEFAULT_BUILDER_VALUE.percent
                 });
+                this.adoptedQuantity.set({ mode: this.value().quantityMode, perTarget: this.value().perTarget });
                 break;
             }
             case 'REVISE_ITEM':

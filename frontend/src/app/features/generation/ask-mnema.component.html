@@ -1,11 +1,13 @@
-<section class="ask" [class.is-open]="open()" aria-label="Попросить Мнему">
+<div class="ask" [class.is-open]="open()">
   <button #trigger type="button" class="ask-trigger" [attr.aria-expanded]="open()" [attr.aria-controls]="open() ? uid + '-panel' : null" (click)="toggle()">
     <span class="ask-trigger-text">Попросить Мнему…</span>
     <span class="ask-trigger-mark" aria-hidden="true">{{ open() ? '−' : '+' }}</span>
   </button>
 
   @if (open()) {
-    <div class="ask-panel" [id]="uid + '-panel'" [attr.aria-busy]="parsing() || starting()" (keydown.escape)="onEscape($any($event))">
+    <div class="ask-panel" [id]="uid + '-panel'" (keydown.escape)="onEscape($any($event))">
+      <!-- aria-busy marks the working part only: the status region below must stay readable while it works. -->
+      <div class="ask-body" [attr.aria-busy]="parsing() || starting()">
       @if (intent() === null) {
         <form class="ask-form" novalidate (submit)="$event.preventDefault(); analyze()">
           <label class="ask-label" [for]="uid + '-text'">Что вы хотите?</label>
@@ -34,7 +36,7 @@
 
           @if (notes().length > 0) {
             <ul class="ask-notes" aria-label="Что Мнема учла">
-              @for (note of notes(); track note.code) { <li class="note-chip" [attr.data-note]="note.code">{{ note.text }}</li> }
+              @for (note of notes(); track $index + note.code) { <li class="note-chip" [attr.data-note]="note.code">{{ note.text }}</li> }
             </ul>
           }
 
@@ -46,17 +48,19 @@
             </div>
           } @else {
             <form class="ask-chips" novalidate (submit)="$event.preventDefault(); start()" (keydown.enter)="blockImplicitSubmit($event)">
+              @if (unsaved()) { <p class="ask-help">Мнема работает с сохранённой версией: несохранённые изменения на странице она не увидит.</p> }
               @if (isExercises()) {
                 <p class="ask-for">Упражнения для {{ targetWord() }}.</p>
                 <app-exercise-settings-fields [value]="value()" [uid]="uid" [quantityModes]="quantityModes()" (valueChange)="onValue($event)" />
               }
               @if (isRevision()) {
-                @if (hasInstructionChip() || voice() === 'NONE') {
+                @if (showInstruction()) {
                   <div class="ask-instruction">
                     <label class="ask-label" [for]="uid + '-instruction'">{{ instructionRequired() ? 'Что изменить' : 'Что изменить в тексте (необязательно)' }}</label>
                     <textarea class="ask-field" rows="2" autocomplete="off" [id]="uid + '-instruction'" [attr.maxlength]="maxInstruction"
-                      [value]="instruction()" [attr.aria-invalid]="instructionRequired() && instruction().trim().length === 0 ? 'true' : null"
+                      [value]="instruction()" [attr.aria-invalid]="blank() ? 'true' : null" [attr.aria-describedby]="blank() ? uid + '-blank' : null"
                       (input)="onInstruction($event)"></textarea>
+                    @if (blank()) { <p class="ask-error" [id]="uid + '-blank'">Напишите, что изменить, или выберите голос.</p> }
                   </div>
                 }
                 @if (hasVoiceChip()) {
@@ -68,6 +72,7 @@
                         <label class="voice-chip"><input type="radio" [name]="uid + '-voice'" [value]="option" [checked]="voice() === option" (change)="setVoice(option)" /><span>{{ voiceChipText(option) }}</span></label>
                       }
                     </div>
+                    <!-- TODO(#297): say this only while speech synthesis is not connected; derive it from the textToSpeech capability when AI-09 lands. -->
                     <p class="ask-help" [id]="uid + '-voice-hint'">Синтез речи пока не подключён: Мнема запишет голос в упражнении, а сам звук обновится позже.</p>
                   </fieldset>
                 }
@@ -75,7 +80,7 @@
 
               <div class="ask-start">
                 <p class="estimate" [id]="uid + '-estimate'" [class.is-problem]="estimate().phase === 'limit'">{{ estimateText() }}</p>
-                <button type="submit" class="generate-cta" [attr.aria-disabled]="starting() || overBudget() || spec() === null ? 'true' : null"
+                <button type="submit" class="generate-cta" [attr.aria-disabled]="starting() || alreadyLaunched() || overBudget() ? 'true' : null"
                   [attr.aria-describedby]="uid + '-estimate'">{{ starting() ? 'Запускаем…' : 'Запустить' }}</button>
                 <button type="button" class="button" (click)="editRequest()">Изменить запрос</button>
               </div>
@@ -83,10 +88,17 @@
           }
         </div>
       }
+      </div>
 
       <div role="status" class="ask-status">
         @if (parsing()) { <p class="notice">Мнема разбирает запрос…</p> }
         @if (starting()) { <p class="notice">Мнема открывает мастерскую…</p> }
+        @if (launched(); as made) {
+          <section class="notice success" data-launched>
+            <p><strong>{{ launchedWord() }}.</strong> Страница не дала перейти к ней: откройте её по ссылке.</p>
+            <p><a class="text-link" [routerLink]="['/decks', deckId(), 'workshop', made.sessionId]">Открыть мастерскую</a></p>
+          </section>
+        }
         @if (usageExplanation(); as explanation) {
           <section class="notice limit" [attr.aria-label]="explanation.headline">
             <p><strong>{{ explanation.headline }}</strong></p>
@@ -98,4 +110,4 @@
       @if (failure(); as message) { <section class="notice error" role="alert"><p>{{ message }}</p></section> }
     </div>
   }
-</section>
+</div>
