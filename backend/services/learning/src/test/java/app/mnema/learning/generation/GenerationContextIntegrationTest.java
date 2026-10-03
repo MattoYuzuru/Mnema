@@ -139,21 +139,27 @@ class GenerationContextIntegrationTest extends GenerationIntegrationTest {
     }
 
     @Test
-    void aSourceThatChangedBeforeTheStepRanFailsTheArtifactWithSourceUnavailableAndRefundsTheHold() throws Exception {
+    void aNoteEditedBeforeTheStepRanIsStillWrittenFromThePinnedTextAndReadsAsChanged() throws Exception {
         UUID owner = UUID.randomUUID();
         UUID deck = deck(owner);
-        UUID note = note(owner, deck, "заметка");
+        UUID note = note(owner, deck, "ТЕКСТ-НА-МОМЕНТ-ЗАКРЕПЛЕНИЯ");
         UUID session = parkedSession(owner, deck, spec(null, noteSource(note, 0)));
         // the note is edited while the step waits, and the burst relents (the day rolls over)
-        jdbc.sql("UPDATE app_learning.capture_note SET row_version=row_version+1,updated_at=updated_at WHERE note_id=:id").param("id", note).update();
+        jdbc.sql("UPDATE app_learning.capture_note SET row_version=row_version+1,note_text='ТЕКСТ-ПОСЛЕ-ПРАВКИ' WHERE note_id=:id")
+                .param("id", note).update();
         jdbc.sql("DELETE FROM app_learning.usage_ledger_entry WHERE owner_id=:owner AND kind='DEBIT'").param("owner", owner).update();
         jdbc.sql("UPDATE app_learning.generation_step SET next_attempt_at=CURRENT_TIMESTAMP WHERE session_id=:id").param("id", session).update();
         awaitState(session, "REVIEW");
 
-        assertThat(artifactErrors(session)).containsExactly("SOURCE_UNAVAILABLE");
-        assertThat(provider.calls).isEmpty();
-        assertThat(reservationState(session)).isEqualTo("RELEASED");
-        assertThat(notificationKinds(owner)).containsExactly("GENERATION_FAILED");
+        assertThat(artifactStates(session)).containsExactly("PROPOSED");
+        assertThat(provider.calls).hasSize(1);
+        assertThat(lastPrompt()).contains("ТЕКСТ-НА-МОМЕНТ-ЗАКРЕПЛЕНИЯ").doesNotContain("ТЕКСТ-ПОСЛЕ-ПРАВКИ");
+        UUID artifact = jdbc.sql("SELECT artifact_id FROM app_learning.generation_artifact WHERE session_id=:id").param("id", session)
+                .query(UUID.class).single();
+        JsonNode full = json(send(owner, org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
+                "/decks/" + deck + "/generation-sessions/" + session + "/artifacts/" + artifact)));
+        assertThat(full.path("sourceRefs").get(0).path("noteRowVersion").stringValue(null)).isEqualTo("0");
+        assertThat(full.path("sourceRefs").get(0).path("status").stringValue(null)).isEqualTo("CHANGED");
     }
 
     @Test

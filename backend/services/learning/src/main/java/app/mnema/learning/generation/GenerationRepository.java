@@ -654,12 +654,37 @@ class GenerationRepository {
                 .param("revision", revision).query(Boolean.class).single();
     }
 
-    /** A note's text and version, or empty when it is not the owner's note of this deck. */
-    Optional<NoteText> note(UUID owner, UUID deck, UUID noteId) {
-        return jdbc.sql("SELECT note_text,row_version FROM app_learning.capture_note WHERE note_id=:id AND owner_id=:owner "
-                        + "AND deck_id=:deck").param("id", noteId).param("owner", owner).param("deck", deck)
-                .query((row, ignored) -> new NoteText(row.getString("note_text"), row.getLong("row_version"))).optional();
+    /**
+     * Copies the text of the pinned note into the session's snapshot ({@code V29}); the row version is part of the copy's
+     * condition, so a note that moved since the pin was checked is not snapshotted. Idempotent for an existing snapshot.
+     *
+     * @return false when the note is not at {@code rowVersion} (or is not the owner's) and no snapshot exists
+     */
+    boolean snapshotNote(UUID sessionId, UUID owner, UUID noteId, long rowVersion) {
+        jdbc.sql("INSERT INTO app_learning.generation_note_snapshot(session_id,owner_id,note_id,note_row_version,note_text) "
+                        + "SELECT :session,:owner,n.note_id,n.row_version,n.note_text FROM app_learning.capture_note n "
+                        + "WHERE n.note_id=:note AND n.owner_id=:owner AND n.row_version=:version ON CONFLICT DO NOTHING")
+                .param("session", sessionId).param("owner", owner).param("note", noteId).param("version", rowVersion).update();
+        return pinnedNoteText(sessionId, noteId, rowVersion).isPresent();
     }
 
-    record NoteText(String text, long rowVersion) { }
+    /** The text of a note at the row version a session pinned, or empty when no snapshot exists. */
+    Optional<String> pinnedNoteText(UUID sessionId, UUID noteId, long rowVersion) {
+        return jdbc.sql("SELECT note_text FROM app_learning.generation_note_snapshot WHERE session_id=:session AND note_id=:note "
+                        + "AND note_row_version=:version").param("session", sessionId).param("note", noteId)
+                .param("version", rowVersion).query(String.class).optional();
+    }
+
+    /** A note as it is now: version, archive flag and text. Deleted notes are absent from the result. */
+    record NoteLook(long rowVersion, boolean archived, String text) { }
+
+    Map<UUID, NoteLook> noteLooks(UUID owner, UUID deck, Collection<UUID> notes) {
+        Map<UUID, NoteLook> result = new HashMap<>();
+        if (notes.isEmpty()) return result;
+        jdbc.sql("SELECT note_id,row_version,archived,note_text FROM app_learning.capture_note WHERE owner_id=:owner "
+                        + "AND deck_id=:deck AND note_id IN (:ids)").param("owner", owner).param("deck", deck).param("ids", notes)
+                .query((row, ignored) -> result.put(row.getObject("note_id", UUID.class),
+                        new NoteLook(row.getLong("row_version"), row.getBoolean("archived"), row.getString("note_text")))).list();
+        return result;
+    }
 }
