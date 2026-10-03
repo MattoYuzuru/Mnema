@@ -67,17 +67,18 @@ class StudyContractFixtureTest {
     @Test
     void everySharedFixtureValidatesAgainstTheStrictSharedSchema() throws Exception {
         JsonNode schema = fixture("study.schema.json");
-        var definitions = java.util.Map.of(
-                "authoring.json", "authoringDocument",
-                "mechanics.json", "mechanicsDocument",
-                "session.json", "sessionDocument",
-                "attempts.json", "attemptsDocument",
-                "reducer-v1.json", "reducerDocument",
-                "adversarial.json", "adversarialDocument",
-                "flows.json", "flowsDocument",
-                "progress.json", "progressDocument",
-                "replay-sources.json", "replaySourcesDocument",
-                "restart.json", "restartDocument");
+        var definitions = java.util.Map.ofEntries(
+                java.util.Map.entry("authoring.json", "authoringDocument"),
+                java.util.Map.entry("mechanics.json", "mechanicsDocument"),
+                java.util.Map.entry("session.json", "sessionDocument"),
+                java.util.Map.entry("attempts.json", "attemptsDocument"),
+                java.util.Map.entry("reducer-v1.json", "reducerDocument"),
+                java.util.Map.entry("adversarial.json", "adversarialDocument"),
+                java.util.Map.entry("flows.json", "flowsDocument"),
+                java.util.Map.entry("progress.json", "progressDocument"),
+                java.util.Map.entry("replay-sources.json", "replaySourcesDocument"),
+                java.util.Map.entry("restart.json", "restartDocument"),
+                java.util.Map.entry("assessment.json", "assessmentDocument"));
 
         definitions.forEach((file, definition) -> validate(fixtureUnchecked(file),
                 schema.path("$defs").path(definition), schema, "$"));

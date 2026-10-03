@@ -402,6 +402,47 @@ by `AttemptService.submit` on every terminal result (the attempt's transaction).
 - Tests: `GenerationEditsIntegrationTest` (real context, PostgreSQL and the Stub; `GenerationEditsSupport` has the requests and the built documents; the test provider's
   `[[fake:hold-edit]]` holds an edit call), `EditDocumentTest` (targets, handles, range replacement, the MBM round trip, what is editable), `StubEditsTest`.
 
+## AI assessment of free explanations (#292)
+
+`evaluatorPolicy ai-semantic` of a `FREE_RESPONSE` ([contract](../../../contracts/study/README.md#ai-assessment-of-free-explanations-ai-semantic-292), architecture §11, research §5):
+the model gives a verdict per rubric point, the server does the rest. Code in `study.attempt` (Study owns the flow and never depends on `generation`), the grader in `ai`, the rubric in `catalog.exercise`.
+
+- **Rubric v1** (`catalog.exercise.Rubric`, parsed by `EvaluatorPolicy`; replaces the earlier `critical`/`levels` shape, nothing could exist with it): `referenceAnswer`, 3..10 criteria
+  `{criterionId, description, tier CORE|DETAIL|TERM, weight 1..3}` with 2..3 CORE, 1..4 DETAIL, 0..2 TERM, `misconceptions`, `acceptableTerms`. Study reads it from the immutable
+  `exercise_revision.evaluator_policy` (a presentation stores only the evaluator identity, so a learner never gets it).
+- **Grader** (`ai.SemanticGrader implements capability.SemanticAssessmentProvider`; the port was reshaped to `grade(GradeRequest) -> GradeOutcome` and the old `Judgement/Level` removed):
+  prompt `ai/prompts/v1/assessment.md` rendered by `PromptAssembler` as two segments (grader rules + exercise cacheable, answer source + the answer as one JSON string volatile),
+  route `ASSESS` (no escalation), JSON output, 1 run at temperature 0.2 or 2 parallel virtual-thread runs at 0.3 (journal step id = the attempt id, attempt = the run), user key
+  = the HMAC of the account (a fixed non-secret key for the Stub). Server validation: every point `c1..cN` once, verdict enum, a `MET`/`PARTLY` quote must be a verbatim fragment of
+  the answer (NFC, whitespace, case, `…` fragments in order, the entities the renderer adds, or the redacted form), else `UNCLEAR`; one repair for output that does not fit, then
+  `Unavailable`. Provider failures map to stable reasons (`TIMEOUT`, `PROVIDER_ERROR`, `INVALID_OUTPUT`, `REFUSAL`, `BUDGET`, `NOT_CONFIGURED`, `CIRCUIT_OPEN`, `DEADLINE`, `PROMPT`).
+- **Policy** (`SemanticPolicy` = `ai-semantic-v1`, `SemanticStrictness`; pure, unit-tested by tables): strictness from the objective's state (S1 no assessed attempt in the epoch or level ≤ 1, S2 level 2–3,
+  S3 level ≥ 4 or streak ≥ 2; first attempt at an exercise in an epoch capped at S2), the thresholds of research §5.3, `OFF_TOPIC`/`CONTRADICTED`/no CORE ≥ PARTLY → INSUFFICIENT, uncertainty
+  (`ASR_GARBLED`, run disagreement, unclear CORE) → self-check. COMPLETE→CORRECT, PARTIAL→PARTIAL, INSUFFICIENT→INCORRECT; `LOW` at S1, `MEDIUM` at S2/S3, never `HIGH`; reason codes
+  `AI_SEMANTIC`, `STRICTNESS_Sx`, `RUBRIC_V1`.
+- **Flow** (`AttemptService.submit` → `AssessmentService.begin` in the same transaction; V32 `study_assessment`): the answer is stored `ASSESSING` (state `ASSESSING|DONE|SELF_CHECK|UNAVAILABLE`, strictness,
+  payload hash, the stored response only until terminal), `202 {…ASSESSING, retryAfterMs}`; an `AssessmentAccepted` event handled `AFTER_COMMIT` by `AssessmentRunner` (a virtual thread, bounded by
+  `learning.ai.assess.concurrency`) calls `prepare` (a read), the grader (no transaction, no connection held) and `complete` (a short `TransactionTemplate` transaction: advisory lock on the attempt,
+  session, presentation, assessment row, objective state; fair-use `consume` of one `ASSESSMENT` check; `AttemptConclusion.conclude` writes receipt, evidence, transition, raw response exactly like a
+  deterministic result; `nextStricter` from the reducer's preview). A `UsageLimitReachedException` rolls that transaction back and a second one ends the answer as `UNAVAILABLE/USAGE_LIMIT`.
+  Everything else that is not a grade is a compare-and-set on `ASSESSING`: «Оценить себя» (`self-check`), the deadline sweeper (`AssessmentSweeper`, `learning.ai.assess.sweep-interval`, `SKIP LOCKED`,
+  `learning.ai.assess.deadline` = `PT20S`), the grader's own `Unavailable`/uncertain outcome; a late grade finds the row moved and is discarded. A presentation keeps one terminal receipt: the learner's own rating
+  (`self-rating`, evidence `SELF_REPORT` `LOW`, evaluator `self-check`, reason codes `AI_FALLBACK` + the reason) completes the same attempt.
+  `AttemptConclusion` is the write half shared by `submit` and the assessment (it replaced the private tail of `AttemptService.submit`).
+- **Fair-use** is a counter, not a hold, so there is nothing to release: `UsageLedger.fairUseFits` (a read) refuses early (`USAGE_LIMIT`, straight to self-check), `consume` counts one answer check when a grade is
+  delivered (key `assessment:{attemptId}`); a self-check, a failure or a dispute leaves the count as it is (a dispute keeps it: the model did grade).
+- **Dispute** (`AssessmentService.dispute`, V32 `study_assessment_dispute`, `study_transition.kind/compensates_attempt_id/reason_code`, `attempt_id` nullable): allowed while the AI transition is the last
+  one of the objective in the current epoch (the state row is locked, then `sequence` and epoch are compared); the compensating transition restores the before-state (due = the previous transition's
+  `next_due`, else now), the receipt becomes `NOT_ASSESSED` + `disputed`, the evidence row stays; the journal row is counts only unless `shareExample`. `409 DISPUTE_NOT_ALLOWED` / `ASSESSMENT_STATE_CONFLICT`.
+- **Reads**: `GET .../attempts/{id}` (`AssessmentController`), and the session's presentation carries `assessment {attemptId, status}` while an answer is in assessment (`StudySessionRepository.pendingAssessments`),
+  so a reload resumes instead of answering again. Retention (`StudyRetentionService`) clears answers kept in assessment rows past the presentation's expiry.
+- **Stub** (`StubAssessments`): markers in the learner answer `[[stub:assess-complete|shallow|partial|contradicted|offtopic|unclear|asr|disagree|injection|invalid|slow]]` and a lexical heuristic (documented in its Javadoc);
+  `slow` waits 8 s for the harness. **Roles**: the grader runs where the `assess` route has a key (the process with the keys); with `learning.runtime.roles=api` and no key `aiAssessment` is unavailable
+  and an `ai-semantic` exercise cannot be published or issued there. **Permits**: an S2/S3 answer takes two `learning.ai.permits.assess` slots; keep it at least twice `learning.ai.assess.concurrency`.
+- Tests: `AssessmentFlowIntegrationTest`, `AssessmentDisputeIntegrationTest` (real context, PostgreSQL, the Stub, a blocking test double in `AssessmentTestConfiguration`), `SemanticPolicyTest`, `SemanticGraderTest`,
+  `StubAssessmentsTest`, `AssessmentGoldenPolicyTest` (`contracts/study/assessment-golden`, 12 × 10, status `proposed`), the contract fixture `assessment.json`; opt-in live eval `SemanticEvalRunner`
+  (`MNEMA_AI_EVAL=live MNEMA_AI_DEEPSEEK_API_KEY=... ./gradlew :services:learning:cleanTest :services:learning:test --tests '*SemanticEvalRunner*'`, report in `build/reports/assessment-eval/`).
+
 ## Shared platform contracts
 
 - Entity identifiers are non-nil RFC 9562/IETF UUIDs stored as PostgreSQL `uuid`.
@@ -530,14 +571,15 @@ capacity evidence.
   `bijection` for `MATCH` and `totalManyToOne` for `CATEGORIZE`, two distinct rule sets
   over one totality check, used for authored keys and learner responses.
 - `GET /api/capabilities` (authenticated, `private, no-store`) reports
-  `aiAssessment` and `speechToText` as `{available, reason}`. A capability is
-  available only when `learning.features.ai-assessment.enabled` /
-  `learning.features.speech-to-text.enabled` is true **and** a
-  `SemanticAssessmentProvider` / `SpeechToTextProvider` bean exists; there is no
-  implementation today, so both stay unavailable (`DISABLED` or
-  `PROVIDER_NOT_CONFIGURED`). Candidates whose evaluator needs an unavailable
-  capability are never issued and an `ai-semantic` answer is `UNAVAILABLE`, never
-  exact-matched.
+  `aiAssessment` and `speechToText` as `{available, reason}`. `speechToText` is
+  available only when `learning.features.speech-to-text.enabled` is true **and** a
+  `SpeechToTextProvider` bean exists (none today, so it stays `DISABLED` or
+  `PROVIDER_NOT_CONFIGURED`). `aiAssessment` is available when
+  `learning.features.ai-assessment.enabled` is true **and** the `assess` route has a usable
+  adapter (a key or the Stub) and a healthy route (`AiAvailability.assessment()`): see
+  [AI assessment (#292)](#ai-assessment-of-free-explanations-292). Candidates whose evaluator
+  needs an unavailable capability are never issued; an issued `ai-semantic` presentation whose
+  capability went away is answered with self-check, never exact-matched and never an error.
 - `/api/decks/{deckId}/study-sessions` starts and resumes owner-only
   `SCHEDULED`, `REPLAY` and `PRACTICE` snapshots. Candidate preparation reads at
   most 500 exercise rows per poll, selection scans at most 80 candidates and a
@@ -713,7 +755,7 @@ and the UI (AI-04+) build on it; nothing here debits the user's quota, it only r
   startup error): the answer is a pure function of the request, MBM output is one of
   five documents copied from the MBM valid fixtures (a test keeps them byte-equal to the contract and compiling), and the
   markers `[[stub:rate-limit]]`, `[[stub:transient]]`, `[[stub:timeout]]`, `[[stub:refusal]]`, `[[stub:invalid]]` and
-  `[[stub:invalid-mbm]]` simulate failures; the two `invalid` markers stop applying once a repair segment is present.
+  `[[stub:invalid-mbm]]` simulate failures; the two `invalid` markers stop applying once a repair segment is present. A grading request (the `<grader>` rules of the assessment prompt) is answered by `StubAssessments` (markers `[[stub:assess-*]]` in the learner answer, see AI assessment).
 - **Prompt library** (`ai.prompt`). `PromptLibrary` loads `ai/prompts/v*/**` strictly (front matter keys, version equals
   directory, no placeholder in the static layers). `PromptRenderer` fills `{{name}}` in one pass, so a placeholder inside
   data stays inert; text values are redacted (`Redactor`: e-mail, Luhn-valid cards, phone forms) and escaped, block values

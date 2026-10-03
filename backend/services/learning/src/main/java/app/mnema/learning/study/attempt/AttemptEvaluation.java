@@ -66,10 +66,13 @@ record AttemptEvaluation(Status status, Result result, EvidenceClass evidenceCla
         };
     }
 
-    private static void requireShape(Subject subject, AttemptCommand.Response response) {
+    /** @throws InvalidRequestException the response does not fit the issued presentation */
+    static void requireShape(Subject subject, AttemptCommand.Response response) {
         boolean fits = switch (subject.type()) {
             case SELF_CHECK -> response instanceof AttemptCommand.SelfCheckResponse;
-            case FREE_RESPONSE -> response instanceof AttemptCommand.TextResponse;
+            // a transcript of speech is accepted only where the exercise takes speech
+            case FREE_RESPONSE -> response instanceof AttemptCommand.TextResponse text
+                    && (text.typed() || "TEXT_OR_SPEECH".equals(subject.content().path("responseInput").stringValue(null)));
             case CLOZE -> response instanceof AttemptCommand.ClozeResponse cloze && blanksMatch(subject, cloze);
             case CHOICE -> response instanceof AttemptCommand.ChoiceResponse choice && optionsMatch(subject, choice);
             case MATCH -> response instanceof AttemptCommand.MatchResponse match && pairsMatch(subject, match);

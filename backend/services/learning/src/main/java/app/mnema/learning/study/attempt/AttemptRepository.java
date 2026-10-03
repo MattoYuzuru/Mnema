@@ -106,6 +106,15 @@ class AttemptRepository {
     }
 
     Optional<Presentation> presentationForUpdate(UUID actor, UUID deck, UUID session, UUID presentation) {
+        return presentation(actor, deck, session, presentation, true);
+    }
+
+    /** The same projection without a row lock: reads of an attempt that is being assessed. */
+    Optional<Presentation> presentation(UUID actor, UUID deck, UUID session, UUID presentation) {
+        return presentation(actor, deck, session, presentation, false);
+    }
+
+    private Optional<Presentation> presentation(UUID actor, UUID deck, UUID session, UUID presentation, boolean lock) {
         return jdbc.sql("""
                 SELECT p.*,s.mode,s.status AS session_status,s.reducer_config_id,c.reducer_id,c.reducer_version,
                        c.config_hash, EXISTS(SELECT 1 FROM app_learning.study_transcript_accommodation a
@@ -120,8 +129,7 @@ class AttemptRepository {
                   JOIN app_learning.scheduler_config c ON c.config_id=s.reducer_config_id
                  WHERE p.account_id=:actor AND p.deck_id=:deck AND p.session_id=:session
                    AND p.presentation_id=:presentation
-                 FOR UPDATE OF p
-                """).param("actor", actor).param("deck", deck).param("session", session)
+                """ + (lock ? " FOR UPDATE OF p" : "")).param("actor", actor).param("deck", deck).param("session", session)
                 .param("presentation", presentation).query((row, ignored) -> new Presentation(
                         row.getObject("account_id", UUID.class), row.getObject("session_id", UUID.class),
                         row.getObject("presentation_id", UUID.class), row.getObject("deck_id", UUID.class),
@@ -166,6 +174,12 @@ class AttemptRepository {
 
     void insertEvidence(AttemptCommand command, Presentation presentation, AttemptEvaluation evaluation,
                         Instant acceptedAt) {
+        insertEvidence(command, presentation, evaluation, presentation.evaluator(), acceptedAt);
+    }
+
+    /** {@code evaluator} is the identity recorded with the evidence: the exercise's own, or {@code self-check} for a fallback. */
+    void insertEvidence(AttemptCommand command, Presentation presentation, AttemptEvaluation evaluation,
+                        JsonNode evaluator, Instant acceptedAt) {
         jdbc.sql("""
                 INSERT INTO app_learning.study_evidence(attempt_id,account_id,deck_id,objective_id,
                     objective_revision_id,learning_epoch,result,evidence_class,reason_codes,evaluator_id,
@@ -178,8 +192,8 @@ class AttemptRepository {
                 .param("revision", presentation.objectiveRevisionId()).param("epoch", presentation.learningEpoch())
                 .param("result", evaluation.result().name()).param("strength", evaluation.evidenceClass().name())
                 .param("reasons", jsonArray(evaluation.reasonCodes()).toString())
-                .param("evaluatorId", presentation.evaluator().path("id").stringValue(null))
-                .param("evaluatorVersion", presentation.evaluator().path("version").stringValue(null))
+                .param("evaluatorId", evaluator.path("id").stringValue(null))
+                .param("evaluatorVersion", evaluator.path("version").stringValue(null))
                 .param("hints", jsonArray(presentation.hintedBlanks().stream()
                         .map(blank -> "FIRST_LETTER:" + blank)::iterator).toString()).param("confidence", command.confidence(),
                         java.sql.Types.VARCHAR).param("duration", command.durationMs())

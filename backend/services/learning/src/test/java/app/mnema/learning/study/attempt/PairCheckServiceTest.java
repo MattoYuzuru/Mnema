@@ -1,6 +1,5 @@
 package app.mnema.learning.study.attempt;
 
-import app.mnema.learning.catalog.exercise.ExerciseNewMarks;
 import app.mnema.learning.media.MediaCatalog;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
@@ -33,7 +32,7 @@ class PairCheckServiceTest {
     private final AttemptRepository repository = mock(AttemptRepository.class);
     private final MediaCatalog media = mock(MediaCatalog.class);
     private final AttemptService service = new AttemptService(repository, new CanonicalJsonHasher(), media,
-            mock(ExerciseNewMarks.class));
+            mock(AttemptConclusion.class), mock(AssessmentService.class));
 
     @Test
     void unauthorizedAndUnknownPresentationCannotProbePairs() {
