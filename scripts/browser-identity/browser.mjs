@@ -144,8 +144,9 @@ try {
       networkRequests++;
       if (url.origin === config.identity) identityRequests++;
       // Authoring exercises several full navigations and their local assets; keep a finite request budget.
-      // The Workshop scenario (`--generation`) polls the real events endpoint and loads the app several times.
-      if (networkRequests > (config.mechanics ? 3000 : config.media ? 1250 : config.authoring ? 1000 : 500) + (config.generation ? 1500 : 0)
+      // The Workshop scenarios (`--generation`) poll the real events endpoint and load the app several times; the exercise
+      // generation scenario (#291) adds a batch review, an editor round trip and a Study session on top of them.
+      if (networkRequests > (config.mechanics ? 3000 : config.media ? 1250 : config.authoring ? 1000 : 500) + (config.generation ? 3500 : 0)
           || identityRequests > 150) asynchronousFailure = true;
       if (!allowed.has(url.origin) || asynchronousFailure) {
         externalRequests++;

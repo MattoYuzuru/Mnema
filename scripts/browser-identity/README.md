@@ -186,6 +186,28 @@ After the successful callback returns to `/decks`, the harness exercises the can
 own-deck list, create, hub (metadata form behind «Изменить»), metadata-save and conflict UI against the real Learning API,
 then opens `/login` when it needs the profile/logout controls.
 
+### Exercise generation and batch review (`--authoring --generation`)
+
+`exercises.mjs` (#291, AI-13) runs at the end of the Workshop scenarios against the second Learning of the run (Stub text provider,
+`aiGeneration` on; never a real provider, no key), in a **deck of its own** so Study and the lists see only what it makes. Only the
+fixture is made through the authenticated API: the deck and three materials (one clean, one the Stub breaks once and repairs with
+`[[stub:broken-key]]`, one it never repairs with `[[stub:broken-key-always]]`) and three mechanics (the Stub breaks the CHOICE of a marked material). Everything the user does is the real Angular UI:
+
+| Step | What is driven and asserted |
+|---|---|
+| `hub_entry` | three materials ticked in the Deck hub, «Упражнения с ИИ для выбранных» opens the builder; the address carries member keys, never a revision |
+| `builder` | «Для 3 материалов», «Авто» exclusive with the mechanics, the priority group (three materials), «Точно» with a native range moved by ArrowRight/ArrowLeft and its `aria-valuetext` («5 упражнений на материал»), the percent range, three mechanics chosen by name, the preflight against the real `generation-estimates`, 1440/390 screenshots and overflow/44 px checks |
+| `create_and_stream` | «Создать упражнения» opens the Workshop; the batch settles as 8 proposed (at least three mechanics, payload `EXERCISE_COMMAND` with `display`) and 1 `FAILED(INVALID_OUTPUT)` (never shown as a proposal) |
+| `review_layout` | cards grouped by material and a «Не удались» group, eight «Оставить» checked, summary «8 готово · 1 не удался», «Сохранить выбранные (8)», no duplicate id, 1440/390 screenshots |
+| `preview_play` | a proposal is played in its preview with a real click path: only `POST /api/exercise-previews`, no Study endpoint, nothing saved |
+| `edit_proposal` | «Изменить» opens the editor with `?session=&artifact=`, the objective title is typed with the keyboard, «Сохранить в колоду» approves with the replacement and returns to the Workshop; the exercise is `isNew` |
+| `save_selected` | one proposal unchecked with a real click, «Сохранить выбранные (6)», the toast «Новые упражнения: 6 — уже в колоде», focus on the next footer control (not the heading), «Отклонить остальные (1)»; seven exercises in the deck, all new, sharing objectives by title |
+| `new_in_list` | «Новое» on every new row of the material's exercise list, 1440/390 screenshots |
+| `study_new` | the first Study card carries «Новое», 1440/390 screenshots |
+| `new_cleared_on_open` | opening an exercise clears its mark on the server (`DELETE .../new-mark`) and the list shows one mark fewer |
+
+Screenshots: `exercises-{builder,review,list}-{1440,390}.png`, `exercises-saved-1440.png`, `exercises-study-new-{1440,390}.png`.
+
 ## Assertions and envelope
 
 Two synthetic accounts and two same-profile browser tabs exercise:
