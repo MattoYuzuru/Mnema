@@ -11,7 +11,10 @@ Cataloged keys from before V15 are discovered incrementally.
 
 An object is held while its blob belongs to any non-DELETED asset, an owner hold
 is active, a published item or exercise revision references its asset, an active
-draft references the asset, or an unexpired offline manifest pins the blob. The
+draft references the asset, an unexpired generation session holds it
+(`generation_media_ref`, #287: the asset of a proposal in the Workshop is held like a
+draft until `generation_session.expires_at`), or an unexpired offline manifest pins the
+blob. The
 manifest also retains the logical asset's download route until its expiry.
 sealed source of a current VERIFYING, PROCESSING or FAILED_RETRYABLE generation
 also stays for worker or owner retry. A derived intent is held while its matching

@@ -230,7 +230,9 @@ class MediaGcRepository {
                         + "OR EXISTS (SELECT 1 FROM app_learning.exercise_media_ref r WHERE r.asset_id=a.asset_id) "
                         + "OR EXISTS (SELECT 1 FROM app_learning.draft_media_ref r "
                         + "JOIN app_learning.editing_draft d ON d.draft_id=r.draft_id "
-                        + "WHERE r.asset_id=a.asset_id AND d.expires_at>CURRENT_TIMESTAMP)) "
+                        + "WHERE r.asset_id=a.asset_id AND d.expires_at>CURRENT_TIMESTAMP) "
+                        + "OR EXISTS (SELECT 1 FROM app_learning.generation_media_ref r JOIN app_learning.generation_session s "
+                        + "ON s.session_id=r.session_id WHERE r.asset_id=a.asset_id AND s.expires_at>CURRENT_TIMESTAMP)) "
                         + "UNION ALL SELECT 1 FROM app_learning.media_manifest_blob_ref r "
                         + "JOIN app_learning.media_manifest m ON m.manifest_id=r.manifest_id "
                         + "WHERE r.blob_id=:blob AND m.expires_at>CURRENT_TIMESTAMP LIMIT 1")

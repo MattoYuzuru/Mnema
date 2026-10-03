@@ -79,7 +79,7 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                         "20:item preview projection:SUCCESS", "21:unified exercise mechanics:SUCCESS",
                         "22:media gc pin monotonic clock:SUCCESS",
                         "23:order and categorize mechanics:SUCCESS", "24:notifications:SUCCESS",
-                        "25:deck hub:SUCCESS", "26:usage ledger:SUCCESS", "27:ai provider call:SUCCESS");
+                        "25:deck hub:SUCCESS", "26:usage ledger:SUCCESS", "27:ai provider call:SUCCESS", "28:generation:SUCCESS");
 
         assertThat(jdbcClient.sql("""
                         SELECT schema_name
@@ -143,7 +143,7 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                         "studyProgressController", "mediaUploadController", "mediaPlaybackController",
                         "mediaProcessingController", "mediaManifestController", "capabilityController",
                         "notificationController", "itemHubController", "deckInsightsController",
-                        "usageController", "estimateController");
+                        "usageController", "estimateController", "generationController");
         assertThat(requestMappings.getHandlerMethods().keySet())
                 .flatExtracting(mapping -> mapping.getPatternValues())
                 .allSatisfy(route -> {
