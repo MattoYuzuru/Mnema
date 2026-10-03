@@ -25,6 +25,11 @@ export interface ExerciseSummary {
     readonly createdAt: string;
     readonly updatedAt: string;
     readonly objective: ExerciseObjective;
+    /**
+     * The server mark «Новое» (AI-13, #291): a generated exercise that was saved less than 7 days ago and has not been opened
+     * or answered yet. Absent from the wire means «not new».
+     */
+    readonly isNew: boolean;
 }
 
 export interface ExercisePage {

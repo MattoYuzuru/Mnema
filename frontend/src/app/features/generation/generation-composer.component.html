@@ -2,7 +2,7 @@
   <a class="back-link" [routerLink]="['/decks', deckId()]"><span aria-hidden="true">←</span> К колоде</a>
   <p class="eyebrow">Новый материал@if (deckTitle(); as title) { · {{ title }} }</p>
 
-  <form class="composer-form" novalidate (submit)="onSubmit($event)">
+  <form class="composer-form" novalidate (submit)="onSubmit($event)" (keydown.enter)="blockImplicitSubmit($event)">
     <h1 tabindex="-1"><label [for]="uid + '-prompt'">{{ greeting() }}</label></h1>
 
     <div class="field prompt-field">

@@ -66,3 +66,6 @@ textarea, input[type='text'], input[type='number'] { min-inline-size: 0; max-inl
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }
 @media (forced-colors: active) { .step, .existing, textarea, input { border-color: CanvasText; } }
+
+.row-heading { display: flex; flex-wrap: wrap; align-items: center; min-inline-size: 0; }
+.row-main .row-heading { color: inherit; }

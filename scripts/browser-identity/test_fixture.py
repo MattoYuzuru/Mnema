@@ -370,6 +370,30 @@ module.main()
             result = subprocess.run([node, "--check", str(Path(__file__).with_name("workshop.mjs"))], capture_output=True)
             self.assertEqual(0, result.returncode)
 
+    def test_exercise_generation_scenario_is_wired_stub_only_and_syntactically_valid(self):
+        runner = Path(__file__).with_name("run.py").read_text()
+        workshop = Path(__file__).with_name("workshop.mjs").read_text()
+        source = Path(__file__).with_name("exercises.mjs").read_text()
+        self.assertIn("import { runWorkshopExercises } from './exercises.mjs'", workshop)
+        self.assertIn("runWorkshopExercises(ctx", workshop)
+        self.assertIn('"exercises.mjs"', runner)
+        self.assertIn("export async function runWorkshopExercises", source)
+        # The whole path is the real UI on the real API: no stubbed network, no injected link, no key of any provider.
+        self.assertNotIn("Fetch.fulfillRequest", source)
+        self.assertNotIn("route.fulfill", source)
+        self.assertNotIn("DEEPSEEK", source)
+        for step in ("fixture", "hub_entry", "builder", "create_and_stream", "review_layout", "preview_play", "edit_proposal",
+                     "save_selected", "new_in_list", "study_new", "new_cleared_on_open"):
+            self.assertIn(f"step('{step}'", source)
+        # Evidence at both widths for the builder, the review, the list and Study.
+        for name in ("builder", "review", "list"):
+            self.assertIn(f"shots('{name}'", source)
+        self.assertIn("exercises-study-new-${tag}.png", source)
+        node = shutil.which("node")
+        if node is not None:
+            result = subprocess.run([node, "--check", str(Path(__file__).with_name("exercises.mjs"))], capture_output=True)
+            self.assertEqual(0, result.returncode)
+
 
 if __name__ == "__main__":
     unittest.main()

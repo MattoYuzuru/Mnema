@@ -1,12 +1,20 @@
 <section class="exercise-page" aria-labelledby="exercise-title">
   @if (deck(); as currentDeck) {
-    <a class="back-link" [routerLink]="['/decks', currentDeck.deckId, 'materials', item()?.memberKey]">← К материалу</a>
+    @if (proposalEdit(); as edit) {
+      <a class="back-link" data-back-workshop [routerLink]="['/decks', currentDeck.deckId, 'workshop', edit.sessionId]">← К мастерской</a>
+    } @else {
+      <a class="back-link" [routerLink]="['/decks', currentDeck.deckId, 'materials', item()?.memberKey]">← К материалу</a>
+    }
   }
   <header class="page-heading">
     <div>
-      <p class="eyebrow">{{ exercise() ? 'Настройка упражнения' : 'Новое упражнение' }}</p>
+      <p class="eyebrow">{{ proposalEdit() ? 'Правка упражнения Мнемы' : exercise() ? 'Настройка упражнения' : 'Новое упражнение' }}</p>
       <h1 id="exercise-title" tabindex="-1">Проверка знания</h1>
-      <p class="lede">Сделайте из одного материала несколько упражнений — так его легче запомнить.</p>
+      @if (proposalEdit()) {
+        <p class="lede">Это упражнение предложила Мнема. Поправьте, что нужно: оно попадёт в колоду, когда вы сохраните.</p>
+      } @else {
+        <p class="lede">Сделайте из одного материала несколько упражнений — так его легче запомнить.</p>
+      }
     </div>
     @if (page(); as listed) {
       @if (listed.total > 0) {
@@ -21,8 +29,9 @@
              [attr.role]="phase() === 'error' || phase() === 'conflict' || phase() === 'rejected' ? 'alert' : 'status'">
       <p>{{ currentMessage }}</p>
       @if (phase() === 'error') { <button class="button" type="button" (click)="retry()">Повторить попытку</button> }
-      @if (phase() === 'conflict') { <button class="button" type="button" (click)="load()">Загрузить свежую основу</button> }
-      @if (phase() === 'saved' && deck() && item()) {
+      @if (phase() === 'conflict' && !proposalEdit()) { <button class="button" type="button" (click)="load()">Загрузить свежую основу</button> }
+      @if ((phase() === 'error' || phase() === 'conflict') && workshopLink(); as link) { <a class="button" data-back-workshop [routerLink]="link">Вернуться в мастерскую</a> }
+      @if (phase() === 'saved' && deck() && item() && !proposalEdit()) {
         <a class="button" data-create-another [routerLink]="['/decks', deck()!.deckId, 'materials', item()!.memberKey, 'exercises', 'new']">Создать ещё</a>
       }
     </section>
@@ -132,7 +141,7 @@
                 <div class="save-actions">
                   @if (exercise()) { <button class="button" type="button" [disabled]="!dirty() || phase() === 'saving'" (click)="resetChanges()">Сбросить</button> }
                   @if (exercise()) { <app-hold-to-delete-button label="Удалить упражнение" [disabled]="phase() === 'saving'" (confirmed)="deleteExercise()" /> }
-                  <button class="button primary" type="submit" [disabled]="phase() === 'saving'">{{ exercise() ? 'Сохранить' : 'Создать упражнение' }}</button>
+                  <button class="button primary" type="submit" [disabled]="phase() === 'saving'">{{ exercise() ? 'Сохранить' : proposalEdit() ? 'Сохранить в колоду' : 'Создать упражнение' }}</button>
                 </div>
               </div>
             }
@@ -154,7 +163,7 @@
           <ul>
             @for (entry of currentPage.exercises; track entry.exerciseId) {
               <li [attr.data-exercise]="entry.exerciseId">
-                <div class="row-main"><strong>{{ typeTitle(entry.type) }}</strong><span>{{ entry.objective.title }}</span></div>
+                <div class="row-main"><span class="row-heading"><strong>{{ typeTitle(entry.type) }}</strong>@if (entry.isNew) { <app-new-badge /> }</span><span>{{ entry.objective.title }}</span></div>
                 @if (entry.exerciseId === exercise()?.exerciseId) {
                   <span class="row-open">Открыто сейчас</span>
                 } @else {

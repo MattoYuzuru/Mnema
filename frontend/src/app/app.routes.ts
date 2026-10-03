@@ -57,6 +57,13 @@ export const appRoutes: Routes = [
         canDeactivate: [lazyCanLeaveNewMaterial]
     },
     {
+        // The exercise builder (AI-13): `?members=<key>,<key>` or `?all=1&except=<key>`; the page reads the revisions itself.
+        path: 'decks/:deckId/exercises/generate',
+        loadComponent: () => import('./features/generation/exercise-builder-page.component')
+            .then(module => module.ExerciseBuilderPageComponent),
+        canActivate: [authGuard]
+    },
+    {
         path: 'decks/:deckId/materials/:memberKey/exercises/new',
         loadComponent: () => import('./features/authoring/exercise-authoring-page.component')
             .then(module => module.ExerciseAuthoringPageComponent),

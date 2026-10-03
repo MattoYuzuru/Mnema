@@ -1,11 +1,12 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, input, output, signal, untracked, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 
 import { SegmentedChoiceComponent, SegmentedOption } from '../../../shared/segmented-choice.component';
 import { ExemplarBudget, ItemPage, ItemSort, ItemSummary, newCommandId } from '../../authoring/authoring.models';
 import { ItemApiService } from '../../authoring/item-api.service';
+import { MAX_EXPLICIT_TARGETS, serializeIds } from '../../generation/exercise-targets';
 import { BulkActionBarComponent } from './bulk-action-bar.component';
 import { DeckHubApiService } from './deck-hub-api.service';
 import {
@@ -107,6 +108,7 @@ export class DeckMaterialsComponent {
     });
     protected readonly deleteDisabled = computed(() => this.preview().phase !== 'ready' || this.deleting());
 
+    private readonly router = inject(Router);
     private readonly items$ = inject(ItemApiService);
     private readonly hub = inject(DeckHubApiService);
     private readonly destroyRef = inject(DestroyRef);
@@ -198,6 +200,24 @@ export class DeckMaterialsComponent {
                     }
                 }
             });
+    }
+
+    /**
+     * «Упражнения с ИИ для выбранных»: opens the exercise builder with the selection. The address carries member keys (or
+     * «all except»), never revisions: the builder reads the current ones itself.
+     */
+    protected generateExercises(): void {
+        const selection = this.selection.selection();
+        if (selection === null) return;
+        const keys = 'allInDeck' in selection ? selection.except : selection.itemIds;
+        if (keys.length > MAX_EXPLICIT_TARGETS) {
+            this.problem.set(`Выбор слишком большой для упражнений с ИИ: отметьте не больше ${MAX_EXPLICIT_TARGETS} материалов за раз.`);
+            return;
+        }
+        this.problem.set(null);
+        const queryParams = 'allInDeck' in selection
+            ? { all: 1, except: keys.length === 0 ? null : serializeIds(keys) } : { members: serializeIds(keys) };
+        void this.router.navigate(['/decks', this.deckId(), 'exercises', 'generate'], { queryParams });
     }
 
     protected deleteSelected(): void {

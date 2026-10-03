@@ -86,6 +86,19 @@ export class ExerciseApiService {
         }));
     }
 
+    /**
+     * Clears the «Новое» mark of an exercise (the editor calls it when the exercise is opened). Idempotent; a foreign or absent
+     * exercise is an opaque 404. The mark is decoration, so a caller ignores every failure.
+     */
+    clearNewMark(deckId: string, exerciseId: string): Observable<void> {
+        return defer(() => this.http.delete(
+            `${this.baseUrl}/decks/${encodeURIComponent(requireEntity(deckId))}/exercises/${encodeURIComponent(requireEntity(exerciseId))}/new-mark`,
+            { observe: 'response', responseType: 'text' }
+        )).pipe(map(response => {
+            if (response.status !== 204) throw new AuthoringProtocolError('Invalid new-mark response.');
+        }));
+    }
+
     private write(method: 'POST' | 'PUT', deckId: string, exerciseId: string | null, deckVersion: string,
                   command: () => Record<string, unknown>, status: number): Observable<ExerciseWriteResult> {
         let body: Record<string, unknown> = {};
@@ -120,7 +133,7 @@ function parsePage(value: unknown): ExercisePage {
 function parseSummary(value: unknown): ExerciseSummary {
     const object = requireObject(value, [
         'exerciseId', 'exerciseRevisionId', 'exerciseVersion', 'ordinal', 'type', 'enabled', 'schemaVersion',
-        'createdAt', 'updatedAt', 'objective'
+        'createdAt', 'updatedAt', 'objective', 'isNew'
     ]);
     if (object['schemaVersion'] !== 2) throw new AuthoringProtocolError('Unsupported exercise schema.');
     return {
@@ -128,7 +141,7 @@ function parseSummary(value: unknown): ExerciseSummary {
         exerciseVersion: requireVersion(object['exerciseVersion']), ordinal: requireCount(object['ordinal'], 99_999),
         type: exerciseType(object['type']), enabled: boolean(object['enabled']), schemaVersion: 2,
         createdAt: requireInstant(object['createdAt']), updatedAt: requireInstant(object['updatedAt']),
-        objective: parseObjective(object['objective'])
+        objective: parseObjective(object['objective']), isNew: boolean(object['isNew'])
     };
 }
 

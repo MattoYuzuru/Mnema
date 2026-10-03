@@ -1,7 +1,7 @@
 import { SegmentedOption } from '../../shared/segmented-choice.component';
 import { GenerationProblem } from './generation-problem';
 import {
-    ArtifactErrorCode, ArtifactSummary, BlockingBucket, Effort, GenerationEstimate, NoteArchiveResult, NoteSkipReason, NotesMode, SessionSummary, SlotKind, SlotState
+    ArtifactErrorCode, ArtifactSummary, BlockingBucket, Effort, GenerationEstimate, NoteArchiveResult, NoteSkipReason, NotesMode, SessionKind, SessionSummary, SlotKind, SlotState
 } from './generation.models';
 
 /** Texts and small pure helpers of the composer and the Workshop. Voice: calm and bookish, «Мнема» in dialogue, «ИИ» in labels. */
@@ -96,6 +96,17 @@ export function failureReason(code: ArtifactErrorCode | null): string {
         case 'CANCELLED': return 'Остановлено вами.';
         case 'PLAN_FAILED': return 'Не удалось составить план.';
         case null: return 'Что-то пошло не так.';
+    }
+}
+
+/** Why one exercise failed, in words: the same codes as {@link failureReason}, said about an exercise and its material. */
+export function exerciseFailureReason(code: ArtifactErrorCode | null): string {
+    switch (code) {
+        case 'INVALID_OUTPUT': return 'Мнема не смогла собрать корректное упражнение: даже после повторной попытки ответ не прошёл проверку.';
+        case 'REFUSAL': return 'Мнема отказалась писать упражнения по этому материалу.';
+        case 'SOURCE_UNAVAILABLE': return 'Материал, по которому писалось упражнение, изменился или удалён.';
+        case 'ESTIMATE_EXCEEDED': return 'Упражнение вышло больше, чем рассчитывалось.';
+        default: return failureReason(code);
     }
 }
 
@@ -196,7 +207,7 @@ export function slotCaption(kind: SlotKind, state: SlotState): string {
 }
 
 /** What the page says about a failed command. `problem.uncertain` means the same command is sent again on retry. */
-export function problemMessage(problem: GenerationProblem): string {
+export function problemMessage(problem: GenerationProblem, kind: SessionKind = 'MATERIALS'): string {
     if (problem.uncertain) {
         return 'Не удалось подтвердить действие: связь прервалась или сервер не ответил. Повторите — будет отправлена та же команда.';
     }
@@ -205,24 +216,28 @@ export function problemMessage(problem: GenerationProblem): string {
         case 404: return 'Мастерская или материал больше недоступны.';
         case 412: return 'Материал или колода изменились. Мы обновили данные: проверьте и повторите.';
         case 428: return 'Не удалось подтвердить версию. Обновите страницу.';
-        case 409: return conflictMessage(problem);
+        case 409: return conflictMessage(problem, kind);
         case 422: return limitMessage(problem);
         default: return 'Не удалось выполнить действие. Попробуйте ещё раз.';
     }
 }
 
-function conflictMessage(problem: GenerationProblem): string {
+function conflictMessage(problem: GenerationProblem, kind: SessionKind): string {
     switch (problem.code) {
         case 'GENERATION_STATE_CONFLICT':
             switch (problem.reason) {
                 case 'MEDIA_NOT_READY': return 'Медиа ещё не готовы. Подождите или правьте материал сами.';
-                case 'SOURCE_STALE': return 'Заметка изменилась, пока писался материал. Попробуйте снова или правьте сам материал.';
+                case 'SOURCE_STALE': return kind === 'EXERCISES'
+                    ? 'Материал изменился, пока писалось упражнение. Мы обновили список: пересоздайте такие упражнения или отклоните их.'
+                    : 'Заметка изменилась, пока писался материал. Попробуйте снова или правьте сам материал.';
                 case 'NOT_RETRYABLE': return 'Мнема отказалась писать этот материал: повтор не поможет.';
                 default: return 'Это действие уже недоступно: состояние изменилось. Мы обновили данные.';
             }
         case 'USAGE_LIMIT_REACHED': return 'Не хватает лимита ИИ. Подробности — в профиле, в блоке «ИИ-бюджет».';
         case 'CAPABILITY_UNAVAILABLE': return 'ИИ сейчас недоступен. Попробуйте позже или напишите материал сами.';
-        case 'SOURCE_UNAVAILABLE': return 'Заметка, из которой писался материал, изменилась или удалена.';
+        case 'SOURCE_UNAVAILABLE': return kind === 'EXERCISES'
+            ? 'Материал, по которому писались упражнения, изменился или удалён. Выберите материалы заново.'
+            : 'Заметка, из которой писался материал, изменилась или удалена.';
         case 'IDEMPOTENCY_CONFLICT': return 'Эта команда уже использована с другими данными. Повторите действие.';
         default: return 'Действие сейчас невозможно. Мы обновили данные.';
     }

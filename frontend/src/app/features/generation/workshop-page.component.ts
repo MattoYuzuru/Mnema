@@ -8,6 +8,8 @@ import { ToastService } from '../../core/notifications/toast.service';
 import { HoldToDeleteButtonComponent } from '../../shared/hold-to-delete-button.component';
 import { PageTransition } from '../../shared/page-transition.service';
 import { BatchPagerComponent } from './batch-pager.component';
+import { ExerciseBatchReviewComponent } from './exercise-batch-review.component';
+import { targetsSummary } from './exercise-builder';
 import { NBSP, describeNoteArchive, formatDay, positionLabel, promptExcerpt, summarize } from './generation-view';
 import { ArtifactState, ArtifactSummary, sessionAllows } from './generation.models';
 import { ProposalViewComponent } from './proposal-view.component';
@@ -27,7 +29,7 @@ const UNREVIEWED: readonly ArtifactState[] = ['QUEUED', 'GENERATING', 'PROPOSED'
  */
 @Component({
     selector: 'app-workshop-page',
-    imports: [RouterLink, BatchPagerComponent, ProposalViewComponent, HoldToDeleteButtonComponent],
+    imports: [RouterLink, BatchPagerComponent, ProposalViewComponent, HoldToDeleteButtonComponent, ExerciseBatchReviewComponent],
     providers: [WorkshopSessionStore],
     templateUrl: './workshop-page.component.html',
     styleUrls: ['../authoring/authoring-page.css', './workshop-page.component.css'],
@@ -73,14 +75,23 @@ export class WorkshopPageComponent {
         const current = this.current();
         return current === null ? null : this.store.drafts()[current.artifactId] ?? null;
     });
+    /** An `EXERCISES` session has its own review: proposals grouped by material, playable, kept or not. */
+    protected readonly exercises = computed(() => this.session()?.kind === 'EXERCISES');
     protected readonly heading = computed(() => {
         switch (this.store.phase()) {
             case 'missing': return 'Мастерская недоступна';
             case 'error': return 'Не удалось открыть мастерскую';
-            default: return 'Мастерская';
+            default: return this.exercises() ? 'Мастерская упражнений' : 'Мастерская';
         }
     });
+    protected readonly deleteConsequence = computed(() => this.exercises()
+        ? 'Неодобренные упражнения исчезнут. Сохранённые останутся в колоде.' : 'Неодобренные материалы исчезнут. Одобренные останутся в колоде.');
     protected readonly excerpt = computed(() => promptExcerpt(this.session()?.spec.prompt ?? null));
+    /** «Для 7 материалов»: what the exercises of this Workshop are for, in place of the prompt a Materials Workshop quotes. */
+    protected readonly targetsLine = computed(() => {
+        const count = this.session()?.spec.targets.length ?? 0;
+        return count > 0 ? `${targetsSummary(count)}: проверьте упражнения и оставьте нужные.` : null;
+    });
     /** «Стоп» is there for as long as anything is being written (WCAG 2.2.2). */
     protected readonly canStop = computed(() => {
         const session = this.session();
@@ -115,9 +126,12 @@ export class WorkshopPageComponent {
     protected readonly deferredUntil = computed(() => formatDay(this.store.usage()?.deferredUntil ?? null));
     protected readonly endNote = computed(() => {
         const session = this.session();
+        const noun = session?.kind === 'EXERCISES' ? 'упражнения' : 'материалы';
         switch (session?.state) {
-            case 'CANCELLED': return 'Вы остановили мастерскую. Готовые материалы можно одобрить; новые писаться не будут.';
-            case 'CLOSED': return 'Все материалы разобраны.';
+            case 'CANCELLED': return session.kind === 'EXERCISES'
+                ? 'Вы остановили мастерскую. Готовые упражнения можно сохранить; новые писаться не будут.'
+                : 'Вы остановили мастерскую. Готовые материалы можно одобрить; новые писаться не будут.';
+            case 'CLOSED': return `Все ${noun} разобраны.`;
             case 'EXPIRED': return 'Срок мастерской вышел. Её можно только удалить: одобренное уже в колоде.';
             case 'PLANNING':
             case 'PLAN_READY': return 'Мнема составляет план. Планы пока не поддерживаются: остановите мастерскую и создайте материал заново.';

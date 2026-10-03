@@ -140,6 +140,22 @@ describe('GenerationComposerComponent', () => {
             expect(api.createSession).toHaveBeenCalledTimes(1);
         });
 
+        it('never lets Enter on a checkbox or a radio of the form start a session (implicit submission)', () => {
+            create();
+            type('Объясни Seq Scan');
+            const prevented = (target: Element) => {
+                const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+                target.dispatchEvent(event);
+                return event.defaultPrevented;
+            };
+            expect(prevented(root().querySelector('input[type=radio]')!)).toBe(true);
+            const checkbox = root().querySelector('input[type=checkbox]');
+            expect(checkbox).not.toBeNull();
+            expect(prevented(checkbox!)).toBe(true);
+            expect(prevented(button())).toBe(false);
+            expect(api.createSession).not.toHaveBeenCalled();
+        });
+
         it('asks for a request instead of sending an empty one, and moves focus to the field', () => {
             create();
             document.body.append(root());
@@ -191,7 +207,7 @@ describe('GenerationComposerComponent', () => {
             vi.advanceTimersByTime(ESTIMATE_DEBOUNCE_MS);
             render();
             expect(api.estimate).toHaveBeenCalledTimes(2);
-            expect(api.estimate.mock.calls[1]![1].settings.effort).toBe('SHORT');
+            expect((api.estimate.mock.calls[1]![1] as MaterialsSpec).settings.effort).toBe('SHORT');
         });
 
         it('says it could not estimate and lets the user go on', () => {
@@ -406,7 +422,7 @@ describe('GenerationComposerComponent', () => {
             const noteAt = (position: number): ComposerSource => ({ label: `Заметка ${position}`,
                 spec: { role: 'SOURCE', type: 'NOTE', noteId: noteId(position), noteRowVersion: '3' } });
             const effortOf = (position: number) => ({ [noteId(position)]: { effort: 'DETAILED' as const, imageSearch: null, audio: null } });
-            const lastSpec = () => api.createSession.mock.calls.at(-1)![1];
+            const lastSpec = () => api.createSession.mock.calls.at(-1)![1] as MaterialsSpec;
             const wire = (spec: MaterialsSpec) => spec.sources as unknown as { overrides?: unknown; noteRowVersion?: string }[];
 
             it('offers the grouping only for two or more notes: «Материал на заметку» is the default', () => {
@@ -446,7 +462,7 @@ describe('GenerationComposerComponent', () => {
                 render();
                 expect(root().querySelector('details.per-note .count')?.textContent).toContain('2 заметки настроены отдельно');
                 vi.advanceTimersByTime(ESTIMATE_DEBOUNCE_MS);
-                const estimated = wire(api.estimate.mock.calls.at(-1)![1]);
+                const estimated = wire(api.estimate.mock.calls.at(-1)![1] as MaterialsSpec);
                 expect(estimated[0]!.overrides).toBeUndefined();
                 expect(estimated[1]!.overrides).toEqual({ effort: 'DETAILED' });
                 button().click();

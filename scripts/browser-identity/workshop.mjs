@@ -14,6 +14,8 @@
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import { runWorkshopExercises } from './exercises.mjs';
+
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 const FIRST_PROMPT = 'Глаголы движения в японском';
@@ -74,6 +76,7 @@ export async function runWorkshop(ctx) {
   const deckId = deckPath.split('/').filter(Boolean).at(-1);
   const shared = { deckId, deckPath, sessions: {}, notes: [] };
   const evidence = { stub: true, provider: 'stub', plan: null, stages: {} };
+  const startedAt = Date.now();
 
   // ---- low-level helpers -------------------------------------------------------------------------------------------
   const press = async (name, { modifiers = 0, keyCode } = {}) => {
@@ -682,6 +685,10 @@ export async function runWorkshop(ctx) {
     getSession, activeSessions, sessionPath, location, evidence, KEY: KEYS });
   evidence.notes = await runWorkshopNotes(ctx, { ...shared, api, page, stage, has, need, settle, metrics, desktop, awaitCapability, getSession,
     activeSessions, sessionPath, location });
+  // #291 (AI-13): exercise generation, batch review, «Новое». Its own deck, so it never disturbs the scenarios above.
+  evidence.exercises = await runWorkshopExercises(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
+    activeSessions, sessionPath, location });
+  evidence.durationMs = Date.now() - startedAt;
   record('workshop_composer_stub_real_api', evidence);
   return evidence;
 }
@@ -1196,6 +1203,9 @@ export async function runWorkshopNotes(ctx, h) {
     await until(async () => (await workshopView()).actions.some(action => action.startsWith('Одобрить')), 'the first material offers no approval', 25_000);
     need((await workshopView()).changedTags === 0, 'an unchanged note is marked as changed');
     for (let index = 0; index < 3; index++) {
+      // The press is made only once the proposal's own content is rendered: a press while its detail is still loading is ignored by design
+      // (the store never approves a revision the user has not been shown), so waiting for what the user sees is the honest precondition.
+      await until(() => has('section.workshop app-proposal-view article[data-state=PROPOSED] .final'), `the proposal of material ${index + 1} did not render`, 25_000);
       need(await page(`const node = [...document.querySelectorAll('section.workshop .proposal-actions button')].find(item => item.textContent.trim().startsWith('Одобрить')); if (!node) return false; node.click(); return true;`),
         `material ${index + 1} cannot be approved`);
       await until(async () => (await getSession(sessionId)).artifacts.filter(artifact => artifact.state === 'PUBLISHED').length === index + 1, `material ${index + 1} was not published`, 25_000);

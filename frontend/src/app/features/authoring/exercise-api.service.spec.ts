@@ -17,7 +17,7 @@ describe('ExerciseApiService', () => {
     const headers = { 'Cache-Control': 'private, no-store', ETag: '"6"' };
     const summary = {
         exerciseId, exerciseRevisionId: detail.exerciseRevisionId, exerciseVersion: '0', ordinal: 0, type: 'CHOICE',
-        enabled: true, schemaVersion: 2, createdAt: detail.createdAt, updatedAt: detail.updatedAt, objective: detail.objective
+        enabled: true, schemaVersion: 2, createdAt: detail.createdAt, updatedAt: detail.updatedAt, objective: detail.objective, isNew: false
     };
     const acknowledgement = {
         commandId: create.commandId, deckId, deckRevisionId: '33333333-3333-4333-8333-333333333333', deckVersion: '7',
@@ -49,6 +49,37 @@ describe('ExerciseApiService', () => {
             exercises: [{ ...summary, type: removed.listenChoice, schemaVersion: 1 }], nextCursor: null
         }, { headers });
         await expect(legacy).rejects.toThrowError(AuthoringProtocolError);
+    });
+
+    it('reads the «Новое» mark of a listed exercise: a boolean is kept, a missing or other value is refused (AI-13)', async () => {
+        const memberKey = detail.objective.memberKey;
+        const page = (exercises: unknown[]) => {
+            const result = firstValueFrom(api.list(deckId, memberKey));
+            http.expectOne(`/api/decks/${deckId}/exercises?memberKey=${memberKey}&limit=20`).flush({
+                deckId, deckRevisionId: detail.deckRevisionId, deckVersion: '6', total: exercises.length, exercises, nextCursor: null }, { headers });
+            return result;
+        };
+        expect((await page([{ ...summary, isNew: true }])).exercises[0]!.isNew).toBe(true);
+        expect((await page([{ ...summary, isNew: false }])).exercises[0]!.isNew).toBe(false);
+        const { isNew: _omitted, ...withoutMark } = summary;
+        await expect(page([withoutMark])).rejects.toThrowError(AuthoringProtocolError);
+        await expect(page([{ ...summary, isNew: 1 }])).rejects.toThrowError(AuthoringProtocolError);
+    });
+
+    it('clears the «Новое» mark with a DELETE and accepts only a 204 (AI-13)', async () => {
+        const done = firstValueFrom(api.clearNewMark(deckId, exerciseId));
+        const request = http.expectOne(`/api/decks/${deckId}/exercises/${exerciseId}/new-mark`);
+        expect(request.request.method).toBe('DELETE');
+        request.flush('', { status: 204, statusText: 'No Content' });
+        await expect(done).resolves.toBeUndefined();
+
+        const odd = firstValueFrom(api.clearNewMark(deckId, exerciseId));
+        http.expectOne(`/api/decks/${deckId}/exercises/${exerciseId}/new-mark`).flush('x', { status: 200, statusText: 'OK' });
+        await expect(odd).rejects.toThrowError(AuthoringProtocolError);
+
+        const gone = firstValueFrom(api.clearNewMark(deckId, exerciseId));
+        http.expectOne(`/api/decks/${deckId}/exercises/${exerciseId}/new-mark`).flush('', { status: 404, statusText: 'Not Found' });
+        await expect(gone).rejects.toMatchObject({ status: 404 });
     });
 
     it('rejects a detail with an unknown field, a legacy projection or a foreign objective member', async () => {

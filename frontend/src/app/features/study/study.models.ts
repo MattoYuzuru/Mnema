@@ -26,6 +26,11 @@ interface PresentationBase {
     readonly transcriptRevealed: boolean;
     readonly hints: readonly StudyHint[];
     readonly evaluator: { readonly id: string; readonly version: string };
+    /**
+     * The exercise carries the server mark «Новое» (AI-13, #291), evaluated when the presentation was issued; a replayed
+     * presentation is never new.
+     */
+    readonly isNew: boolean;
 }
 
 /**

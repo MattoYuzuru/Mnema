@@ -14,6 +14,8 @@ import { CaptureNote, newCommandId } from '../authoring/authoring.models';
 import { CAPABILITIES_UNAVAILABLE, LearningCapabilities } from '../authoring/capabilities-api.service';
 import { GenerationApiService } from './generation-api.service';
 import { GenerationProblem, readProblem } from './generation-problem';
+import { blockImplicitSubmit } from './implicit-submit';
+import { scheduleEstimate } from './estimate-schedule';
 import { DEFAULT_SETTINGS, GenerationSettingsComponent, GenerationSettingsValue } from './generation-settings.component';
 import {
     NOTES_MODE_OPTIONS, UsageExplanation, describeEstimate, describeUsageLimit, formatWorkshopStart, problemMessage
@@ -26,8 +28,7 @@ import {
     ComposerSource, NoteOverrideMap, customizedCount, overridesOf, refusalMessage, refusalOf, sourceKey
 } from './note-sources';
 
-/** How long the composer waits after the last change before it asks the server for the cost. */
-export const ESTIMATE_DEBOUNCE_MS = 400;
+export { ESTIMATE_DEBOUNCE_MS } from './estimate-schedule';
 
 type EstimateState =
     | { readonly phase: 'idle' }
@@ -120,6 +121,7 @@ export class GenerationComposerComponent {
     protected readonly audioAvailable = computed(() => this.capabilities().textToSpeech.available);
 
     protected readonly groupingOptions = NOTES_MODE_OPTIONS;
+    protected readonly blockImplicitSubmit = blockImplicitSubmit;
     protected readonly sourceKey = sourceKey;
     private readonly auth = inject(AuthService);
     private readonly authoring = inject(AuthoringApiService);
@@ -180,17 +182,10 @@ export class GenerationComposerComponent {
                 return;
             }
             untracked(() => this.estimate.set({ phase: 'loading' }));
-            let request: Subscription | null = null;
-            const timer = setTimeout(() => {
-                request = this.api.estimate(deckId, spec).subscribe({
-                    next: estimate => this.estimate.set({ phase: 'ready', estimate }),
-                    error: () => this.estimate.set({ phase: 'error' })
-                });
-            }, ESTIMATE_DEBOUNCE_MS);
-            onCleanup(() => {
-                clearTimeout(timer);
-                request?.unsubscribe();
-            });
+            onCleanup(scheduleEstimate(next => this.api.estimate(deckId, next), spec, {
+                next: estimate => this.estimate.set({ phase: 'ready', estimate }),
+                error: () => this.estimate.set({ phase: 'error' })
+            }));
         });
     }
 

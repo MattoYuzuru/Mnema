@@ -12,6 +12,7 @@
     @if (item(); as currentItem) {
       <header class="page-heading material-heading"><div><p class="eyebrow">{{ selectedOrdinal() === null ? 'Материал' : 'Материал ' + (selectedOrdinal()! + 1) }}</p><h1 id="browse-title" tabindex="-1">{{ currentDeck.metadata.title }}</h1><p class="lede">Опубликованная версия материала</p></div>
         <div class="actions"><a class="button" [routerLink]="['/decks', currentDeck.deckId, 'materials', currentItem.memberKey, 'exercises', 'new']">Упражнения</a>
+        @if (aiAvailable()) { <a class="button" data-ai-exercises [routerLink]="['/decks', currentDeck.deckId, 'exercises', 'generate']" [queryParams]="{ members: currentItem.memberKey }">Упражнения с ИИ</a> }
         <app-hold-to-delete-button label="Удалить" [disabled]="deleting() || selectedOrdinal() === null" (confirmed)="deleteItem()" />
         @if (selectedOrdinal() !== null) { <a class="button primary" [routerLink]="['/decks', currentDeck.deckId, 'materials', currentItem.memberKey, 'edit']" [queryParams]="{ ordinal: selectedOrdinal() }">Редактировать</a> }</div>
       </header>
