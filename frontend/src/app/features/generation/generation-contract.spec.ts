@@ -200,7 +200,7 @@ describe('Generation wire contract (contracts/generation)', () => {
 
         it('offers an operation only where states.json allows it, for sessions and for artifacts', () => {
             const used = new Set(['approveArtifact', 'approveArtifacts', 'rejectArtifact', 'undoRejectArtifact', 'handoffArtifact', 'retryArtifact',
-                'cancelSession', 'deleteSession']);
+                'editArtifact', 'revertArtifact', 'cancelSession', 'deleteSession']);
             const only = (operations: string[]) => operations.filter(operation => used.has(operation)).sort();
             for (const [state, operations] of Object.entries(statesContract['session'].allowedOperations as Record<string, string[]>)) {
                 expect([...OPERATION_TABLES.session[state as keyof typeof OPERATION_TABLES.session]].sort(), state).toEqual(only(operations));
@@ -222,11 +222,10 @@ describe('Generation wire contract (contracts/generation)', () => {
             // `archiveUsedNotes` (#290) joins http.json with the backend; until then it cannot be looked up there.
             const implemented = ['getCapabilities', 'estimateGeneration', 'createSession', 'listSessions', 'listActiveSessions', 'getSession',
                 'cancelSession', 'deleteSession', 'listEvents', 'getArtifact', 'approveArtifact', 'approveArtifacts', 'rejectArtifact',
-                'undoRejectArtifact', 'handoffArtifact', 'retryArtifact', 'archiveUsedNotes'];
+                'undoRejectArtifact', 'handoffArtifact', 'retryArtifact', 'archiveUsedNotes', 'editArtifact', 'revertArtifact'];
             const ids = (httpContract['endpoints'] as { operationId: string }[]).map(endpoint => endpoint.operationId);
             for (const operation of implemented) expect(ids, operation).toContain(operation);
-            // Edits and reverts belong to AI-11 (#293): not part of this client yet.
-            expect(ids.filter(operation => !implemented.includes(operation)).sort()).toEqual(['editArtifact', 'revertArtifact']);
+            expect(ids.filter(operation => !implemented.includes(operation)).sort()).toEqual([]);
         });
 
         it('knows every problem code the contract lists for the operations it calls', () => {

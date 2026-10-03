@@ -11,10 +11,20 @@ import { runWorkshop } from './workshop.mjs';
 import { runAssessment } from './assessment.mjs';
 
 const config = JSON.parse(await readFile(process.argv[2], 'utf8'));
+const defaultCdpTimeout = Number.isInteger(config.cdpTimeoutMs) && config.cdpTimeoutMs >= 1000 && config.cdpTimeoutMs <= 120_000 ? config.cdpTimeoutMs : 10_000;
 const results = [];
 class SafeFailure extends Error {}
 const require = (value, label) => { if (!value) throw new SafeFailure(label); };
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+/**
+ * A plain CDP command fails after `config.cdpTimeoutMs` (10 s unless `MNEMA_HARNESS_CDP_TIMEOUT_MS` in the runner's environment says
+ * otherwise): it is answered by the browser at once, so a silence is a finding. A call that waits for the page itself (navigation,
+ * a screenshot, evaluating a script or a promise in it) may wait `SLOW_CDP_TIMEOUT_MS`: on a loaded machine (several browser harnesses
+ * can share one) a page is held for ten seconds and more without being broken.
+ */
+const SLOW_CDP_TIMEOUT_MS = 30_000;
+const SLOW_CDP_METHODS = new Set(['Page.navigate', 'Page.reload', 'Page.captureScreenshot', 'Runtime.evaluate', 'Runtime.callFunctionOn', 'Runtime.releaseObject']);
+
 class CDP {
   constructor(socket) {
     this.socket = socket; this.next = 0; this.pending = new Map(); this.listeners = new Map();
@@ -33,7 +43,7 @@ class CDP {
   call(method, params = {}) {
     return new Promise((resolve, reject) => {
       const id = ++this.next;
-      const timeout = setTimeout(() => { this.pending.delete(id); reject(new Error('CDP timeout')); }, 10000);
+      const timeout = setTimeout(() => { this.pending.delete(id); reject(new Error(`CDP timeout: ${method}`)); }, SLOW_CDP_METHODS.has(method) ? Math.max(SLOW_CDP_TIMEOUT_MS, defaultCdpTimeout) : defaultCdpTimeout);
       this.pending.set(id, { resolve, reject, timeout, method });
       this.socket.send(JSON.stringify({ id, method, params }));
     });
@@ -102,6 +112,12 @@ try {
   let browserErrors = 0, callback = null, networkRequests = 0, identityRequests = 0, profileReads = 0;
   let primaryDeckListRequests = 0;
   const authoringResponses = [];
+  /** Requests the page has sent and not seen finish (method, path without query, age): what a stalled page is waiting for. */
+  const inflight = new Map();
+  /** Requests paused for interception and not yet continued by this driver. */
+  const paused = new Map();
+  const inflightNow = () => [...paused.values()].map(entry => `PAUSED ${entry.what} ${Math.round((Date.now() - entry.at) / 100) / 10}s`)
+    .concat([...inflight.values()].filter(entry => Date.now() - entry.at > 2000).map(entry => `${entry.what} ${Math.round((Date.now() - entry.at) / 100) / 10}s`));
   const mediaResponses = [], mediaFailures = [], mediaApiResponses = [];
   const mediaRequestIds = new Set();
   let browseMediaState = null;
@@ -142,6 +158,8 @@ try {
     });
     tab.on('Fetch.requestPaused', event => {
       const url = new URL(event.request.url);
+      paused.set(event.requestId, { what: `${event.request.method} ${url.pathname}`.slice(0, 90), at: Date.now() });
+      const release = promise => promise.finally(() => paused.delete(event.requestId));
       networkRequests++;
       if (url.origin === config.identity) identityRequests++;
       // Authoring exercises several full navigations and their local assets; keep a finite request budget.
@@ -152,18 +170,19 @@ try {
           || identityRequests > 150 + (config.generation ? 100 : 0) + (config.assessment ? 50 : 0)) asynchronousFailure = true;
       if (!allowed.has(url.origin) || asynchronousFailure) {
         externalRequests++;
-        run(interception(tab.call('Fetch.failRequest', { requestId: event.requestId, errorReason: 'BlockedByClient' })));
+        run(interception(release(tab.call('Fetch.failRequest', { requestId: event.requestId, errorReason: 'BlockedByClient' }))));
       } else if (tamperNextCallback && url.origin === config.frontend && url.pathname === '/auth/callback'
           && url.searchParams.has('code')) {
         tamperNextCallback = false;
         url.searchParams.set('state', 'fixture-wrong-live-state');
         // A real navigation redirect changes location.search; an invisible request URL rewrite would not.
-        run(interception(tab.call('Fetch.fulfillRequest', { requestId: event.requestId, responseCode: 302,
-          responseHeaders: [{ name: 'Location', value: url.href }, { name: 'Cache-Control', value: 'no-store' }], body: '' })));
-      } else run(interception(tab.call('Fetch.continueRequest', { requestId: event.requestId })));
+        run(interception(release(tab.call('Fetch.fulfillRequest', { requestId: event.requestId, responseCode: 302,
+          responseHeaders: [{ name: 'Location', value: url.href }, { name: 'Cache-Control', value: 'no-store' }], body: '' }))));
+      } else run(interception(release(tab.call('Fetch.continueRequest', { requestId: event.requestId }))));
     });
     tab.on('Network.requestWillBeSent', event => {
       const url = new URL(event.request.url);
+      inflight.set(event.requestId, { what: `${event.request.method} ${url.pathname}`.slice(0, 90), at: Date.now() });
       if (tab === cdp && url.origin === config.frontend && url.pathname === '/api/decks'
           && event.request.method === 'GET') primaryDeckListRequests++;
       if (config.media && url.origin === config.mediaOrigin) mediaRequestIds.add(event.requestId);
@@ -205,9 +224,11 @@ try {
       if (url.pathname === '/api/accounts/me' && event.response.status === 200) profileReads++;
     });
     tab.on('Network.loadingFailed', event => {
+      inflight.delete(event.requestId);
       if (mediaRequestIds.has(event.requestId)) mediaFailures.push(event.errorText);
     });
     tab.on('Network.loadingFinished', event => {
+      inflight.delete(event.requestId);
       if (!tokenRequests.delete(event.requestId)) return;
       run(tab.call('Network.getResponseBody', { requestId: event.requestId }).then(result => {
         const body = JSON.parse(result.base64Encoded ? Buffer.from(result.body, 'base64').toString() : result.body);
@@ -1032,7 +1053,7 @@ try {
       step = 'workshop_prepare';
       await runWorkshop({
         tab: second, config, record, SafeFailure, until, exists, navigate, saveScreenshot, clickText, setStep: value => { step = value; },
-        deckPath, bearer: secondBearer });
+        deckPath, bearer: secondBearer, inflight: inflightNow });
     }
     // The semantic assessment of explanations (#292): the rubric editor and the learner's side, with the Stub grader.
     if (config.assessment) {

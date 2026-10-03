@@ -1,16 +1,18 @@
 import { DOCUMENT } from '@angular/common';
-import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
+import { DestroyRef, Injectable, Injector, computed, inject, signal } from '@angular/core';
 import { Observable, Subscription, firstValueFrom } from 'rxjs';
 
 import { ToastService } from '../../core/notifications/toast.service';
 import { newCommandId } from '../authoring/authoring.models';
+import { NativeDocument } from '../../content/native-document';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
+import { UsageApiService } from '../usage/usage-api.service';
 import { DeckPin, GenerationApiService } from './generation-api.service';
 import { GenerationProblem, readProblem } from './generation-problem';
-import { describeNoteArchive, problemMessage } from './generation-view';
+import { REVERTED_NOTE, describeEditCost, describeEditLimit, describeNoteArchive, editOutcomeNote, editProblemMessage, problemMessage } from './generation-view';
 import {
-    ApprovalAck, ArtifactDetail, ArtifactSummary, GenerationEvent, HandoffResult, MAX_APPROVALS_PER_COMMAND, NoteArchiveResult, SessionDetail,
-    UsageUpdate, ActiveStep,
+    ApprovalAck, ArtifactDetail, ArtifactSummary, ArtifactTurn, EditAction, EditPreset, GenerationEvent, HandoffResult, MAX_APPROVALS_PER_COMMAND,
+    NoteArchiveResult, SessionDetail, UsageUpdate, ActiveStep,
     allows, isApprovable, isRetryable, isTerminalSession, sessionAllows
 } from './generation.models';
 import { AppliedEvents, Arrival, DraftBlocks, WorkshopModel, applyEvents, isNewer, mergeSession } from './workshop-events';
@@ -25,8 +27,11 @@ const EVENTS_PAGE = 100;
 
 // Polling stops in CANCELLED as in CLOSED and EXPIRED: `events.json` polling.clientCadence says "stop when session.state is CLOSED,
 // CANCELLED or EXPIRED". A cancelled session still lets the user approve, reject or hand off what was proposed; those commands
-// answer with the new state and the store re-reads the session after each. Caveat for AI-09/AI-11: media of a proposal that is
-// still being made, or a running edit, would not be followed after a cancellation; revisit if cancellation can leave them running.
+// answer with the new state and the store re-reads the session after each. A rewrite that is running when the session is cancelled
+// ends with the cancellation itself (its turn is `CANCELLED`, the artifact is `PROPOSED` again, the hold is released): the answer of
+// the cancellation shows the artifact proposed, and the artifact's detail, which still lists the turn as running, is read again
+// (`needsDetail`). Caveat for AI-09: media of a proposal that is still being made would not be followed after a cancellation;
+// revisit if cancellation can leave them running.
 export type StorePhase = 'loading' | 'ready' | 'missing' | 'error';
 /** `recovered` is shown for one cycle after the connection returns: «Связь восстановлена». */
 export type Connection = 'online' | 'offline' | 'degraded' | 'recovered';
@@ -41,6 +46,45 @@ export interface DetailEntry {
 }
 
 export interface StoreNotice { readonly tone: 'error' | 'info'; readonly text: string; }
+
+/** How long the sentence about the end of an edit stays in the summary line (the live region announces it once). */
+export const EDIT_NOTE_MS = 8_000;
+
+/** One edit as the Workshop sends it. `nodeIds` are consecutive top-level blocks of the revision on screen; the anchors bound them. */
+export interface EditAsk {
+    readonly action: EditAction;
+    readonly nodeIds: readonly string[];
+    /** The blocks just before and just after the run: they find the run again in the revision the edit makes. */
+    readonly anchorBefore: string | null;
+    readonly anchorAfter: string | null;
+    readonly preset?: EditPreset | null;
+    readonly instruction?: string | null;
+    /**
+     * «Ещё раз»: the turn this asks again. The request goes out as a command of its own (its own reservation), named by this turn and
+     * the revision on screen, so an answer that never arrived is repeated with the same command, not charged twice.
+     */
+    readonly againOf?: string;
+}
+
+/** What this page remembers of the last rewrite it made on an artifact: the revision it started from, and whether its strip is closed. */
+export interface EditMemo {
+    readonly turnId: string;
+    readonly ask: Omit<EditAsk, 'againOf'>;
+    readonly baseRevisionId: string;
+    readonly dismissed: boolean;
+    /** The end of the turn was put into the summary line. */
+    readonly announced: boolean;
+}
+
+export type EditOutcome =
+    | { readonly ok: true; readonly turn: ArtifactTurn }
+    | { readonly ok: false; readonly message: string; readonly aborted: boolean };
+
+/** The cost line of a rewrite, and, when the budget does not let it start, the reason in words. */
+export interface EditCost { readonly text: string; readonly canStart: boolean; readonly blocked: string | null; }
+
+/** Thrown into a command that the user took back before the server answered. */
+class CommandAborted extends Error {}
 
 /**
  * State and commands of one open Workshop. It is provided by the page, so it lives and dies with it: closing the page
@@ -59,6 +103,7 @@ export class WorkshopSessionStore {
     private readonly toast = inject(ToastService);
     private readonly destroyRef = inject(DestroyRef);
     private readonly document = inject(DOCUMENT);
+    private readonly injector = inject(Injector);
 
     readonly phase = signal<StorePhase>('loading');
     readonly session = signal<SessionDetail | null>(null);
@@ -76,6 +121,12 @@ export class WorkshopSessionStore {
     readonly handoffs = signal<Readonly<Record<string, string>>>({});
     /** What the last «Архивировать использованные заметки» did (AI-08, #290); `null` until it ran in this page. */
     readonly noteArchive = signal<NoteArchiveResult | null>(null);
+    /** The last rewrite made in this page, by artifact id (AI-11, #293): drives the strip, the diff and «Ещё раз». */
+    readonly edits = signal<Readonly<Record<string, EditMemo>>>({});
+    /** Turns whose strip the user closed in this page: a failed strip derived from the turns after a reload is not drawn for them. */
+    readonly closedTurns = signal<ReadonlySet<string>>(new Set());
+    /** A sentence about how an edit ended; the page adds it to the summary line for a few seconds. */
+    readonly editNote = signal<string | null>(null);
 
     readonly artifacts = computed(() => this.session()?.artifacts ?? []);
     readonly approvable = computed(() => this.artifacts().filter(isApprovable));
@@ -100,6 +151,10 @@ export class WorkshopSessionStore {
     /** Bumps on every `open` and on dispose: answers of an earlier open are dropped. */
     private epoch = 0;
     private readonly commandIds = new Map<string, string>();
+    private readonly revisions = new Map<string, Promise<NativeDocument | null>>();
+    private allowance: Promise<number | null> | null = null;
+    private noteTimer: ReturnType<typeof setTimeout> | null = null;
+    private readonly refetched = new Set<string>();
     private readonly staleWhileLoading = new Set<string>();
     private readonly onVisibility = (): void => this.visibilityChanged();
     private readonly onOnline = (): void => this.wake();
@@ -130,6 +185,11 @@ export class WorkshopSessionStore {
         this.staleWhileLoading.clear();
         this.handoffs.set({});
         this.noteArchive.set(null);
+        this.edits.set({});
+        this.closedTurns.set(new Set());
+        this.refetched.clear();
+        this.setNote(null);
+        this.revisions.clear();
         this.document.addEventListener('visibilitychange', this.onVisibility);
         const view = this.document.defaultView;
         view?.addEventListener('online', this.onOnline);
@@ -185,7 +245,12 @@ export class WorkshopSessionStore {
         const entry = this.details()[artifact.artifactId];
         if (entry === undefined) return true;
         if (entry.phase === 'loading' || entry.phase === 'error') return false;
-        return entry.stale || entry.forRevision !== artifact.currentRevisionId;
+        // A turn still listed as running while the artifact is proposed again has ended (a failed or stopped rewrite leaves the
+        // revision where it was, so nothing else would tell): read it again.
+        // Once per turn: a server that keeps listing it as running is not asked again and again.
+        const unfinished = artifact.state === 'PROPOSED' && (entry.detail?.turns.some(turn => (turn.status === 'QUEUED' || turn.status === 'RUNNING')
+            && !this.refetched.has(`${artifact.artifactId}:${turn.turnId}:${artifact.rowVersion}`)) ?? false);
+        return entry.stale || entry.forRevision !== artifact.currentRevisionId || unfinished;
     }
 
     loadDetail(artifactId: string): void {
@@ -193,12 +258,20 @@ export class WorkshopSessionStore {
         const epoch = this.epoch;
         const forRevision = this.find(artifactId)?.currentRevisionId ?? null;
         const held = entry?.detail ?? null;
+        // One read per turn and artifact version: a server that keeps listing a turn as running under the same version is not asked again
+        // and again, but any later change of the artifact (the end of the rewrite, a cancellation) is read.
+        const artifact = this.find(artifactId);
+        if (artifact?.state === 'PROPOSED') {
+            for (const turn of held?.turns ?? []) if (turn.status === 'QUEUED' || turn.status === 'RUNNING') this.refetched.add(`${artifactId}:${turn.turnId}:${artifact.rowVersion}`);
+        }
         this.staleWhileLoading.delete(artifactId);
         this.setDetail(artifactId, { phase: 'loading', detail: held, forRevision, stale: false });
         this.api.getArtifact(this.deckId, this.sessionId, artifactId).subscribe({
             next: detail => {
                 // A media slot that moved while this was on its way makes the answer old on arrival: read again.
-                if (epoch === this.epoch) this.setDetail(artifactId, { phase: 'ready', detail, forRevision, stale: this.staleWhileLoading.delete(artifactId) });
+                if (epoch !== this.epoch) return;
+                this.setDetail(artifactId, { phase: 'ready', detail, forRevision, stale: this.staleWhileLoading.delete(artifactId) });
+                this.observeEdit(artifactId, detail);
             },
             error: (error: unknown) => {
                 if (epoch !== this.epoch) return;
@@ -429,8 +502,137 @@ export class WorkshopSessionStore {
         }
     }
 
+    // --- Selection edits (AI-11, #293) ---
+
+    /**
+     * Asks Мнема to change the blocks `ask` names, on the revision the user has on screen. Resolves when the server has answered:
+     * a rewrite is only accepted (the artifact is `REVISING` and the turn `QUEUED`; the end comes through the events and the next
+     * read of the artifact), `REMOVE_MEDIA` is applied at once. A refusal is returned in words for the window, never put in the page
+     * notice. `signal` takes an unsent request back: the command id is kept, so asking again replays the answer.
+     */
+    async edit(artifactId: string, ask: EditAsk, signal?: AbortSignal): Promise<EditOutcome> {
+        const artifact = this.find(artifactId);
+        const session = this.session();
+        const shown = this.details()[artifactId]?.detail;
+        const refuse = (message: string): EditOutcome => ({ ok: false, message, aborted: false });
+        if (artifact === null || session === null) return refuse('Материал больше недоступен.');
+        if (this.isBusy(artifactId)) return refuse('Подождите: предыдущее действие ещё выполняется.');
+        const rewrite = ask.action === 'REWRITE' || ask.action === 'FREE';
+        if (!allows(session.state, artifact.state, 'editArtifact') || (rewrite && session.state === 'CANCELLED')) {
+            return refuse('Сейчас этот материал нельзя править: состояние изменилось.');
+        }
+        const expected = shown?.currentRevisionId ?? null;
+        if (expected === null || expected !== artifact.currentRevisionId || this.details()[artifactId]?.stale === true) {
+            return refuse('Материал обновился. Подождите новую версию и выделите фрагмент заново.');
+        }
+        this.begin(artifactId);
+        try {
+            const key = ask.againOf !== undefined ? `again:${expected}:${ask.againOf}`
+                : [expected, ask.action, ask.preset ?? '', ask.instruction ?? '', ask.nodeIds.join(',')].join('|');
+            const outcome = await this.send('edit', `${artifactId}:${key}`, id => this.api.editArtifact(this.deckId, this.sessionId, artifactId,
+                { expectedRevisionId: expected, action: ask.action, nodeIds: ask.nodeIds, preset: ask.preset ?? null,
+                    instruction: ask.instruction ?? null }, id), signal);
+            if (!outcome.ok) {
+                if (outcome.aborted) {
+                    // The server may have taken it: read the truth, and the turn it made, if any.
+                    void this.refresh();
+                    this.markStale(artifactId);
+                    return { ok: false, message: '', aborted: true };
+                }
+                const problem = outcome.problem;
+                if (problem.status === 404) this.gone();
+                else if (!problem.uncertain && problem.status !== 400) { void this.refresh(); this.markStale(artifactId); }
+                return refuse(editProblemMessage(problem));
+            }
+            const { turn, artifact: accepted } = outcome.value;
+            this.patch(accepted);
+            this.addTurn(artifactId, turn);
+            if (turn.status === 'APPLIED') {
+                this.setNote(editOutcomeNote('APPLIED', turn.action));
+            } else {
+                const { againOf: _againOf, ...stored } = ask;
+                this.edits.update(memos => ({ ...memos, [artifactId]: { turnId: turn.turnId, ask: stored, baseRevisionId: expected,
+                    dismissed: false, announced: false } }));
+                // The turn may already have ended and been read (see `addTurn`): then this is the only moment to say so.
+                const read = this.details()[artifactId]?.detail;
+                if (read != null) this.observeEdit(artifactId, read);
+                this.wake();
+            }
+            void this.refresh();
+            return { ok: true, turn };
+        } finally {
+            this.end(artifactId);
+        }
+    }
+
+    /**
+     * Moves the artifact back (or forward) to `toRevisionId`, one of the revisions the artifact lists: nothing is deleted, so the
+     * move can be undone. Resolves `true` when the server did it; a refusal goes to the page notice.
+     */
+    async revert(artifactId: string, toRevisionId: string): Promise<boolean> {
+        const artifact = this.find(artifactId);
+        const session = this.session();
+        if (artifact === null || session === null || this.isBusy(artifactId) || !allows(session.state, artifact.state, 'revertArtifact')) return false;
+        this.begin(artifactId);
+        try {
+            const outcome = await this.send('revert', `${artifactId}:${artifact.rowVersion}:${toRevisionId}`,
+                id => this.api.revertArtifact(this.deckId, this.sessionId, artifactId, artifact.rowVersion, toRevisionId, id));
+            if (!outcome.ok) { this.failed(outcome.problem); return false; }
+            this.patch(outcome.value);
+            // Going to another revision ends the review of the last turn, whether this page made it or only read it.
+            this.dismissEdit(artifactId, this.details()[artifactId]?.detail?.turns.at(-1)?.turnId ?? null);
+            this.setNote(REVERTED_NOTE);
+            void this.refresh();
+            return true;
+        } finally {
+            this.end(artifactId);
+        }
+    }
+
+    /** Closes the strip under a rewritten range («Оставить», or after «Вернуть»). */
+    dismissEdit(artifactId: string, turnId: string | null = null): void {
+        if (turnId !== null) this.closedTurns.update(held => new Set(held).add(turnId));
+        const memo = this.edits()[artifactId];
+        if (memo !== undefined && !memo.dismissed) this.edits.update(memos => ({ ...memos, [artifactId]: { ...memo, dismissed: true } }));
+    }
+
+    /** The document of one revision of an artifact (a revision never changes, so each is read once). `null` when it cannot be read. */
+    loadRevision(artifactId: string, revisionId: string): Promise<NativeDocument | null> {
+        const key = `${artifactId}:${revisionId}`;
+        let held = this.revisions.get(key);
+        if (held === undefined) {
+            const epoch = this.epoch;
+            held = firstValueFrom(this.api.getArtifact(this.deckId, this.sessionId, artifactId, revisionId))
+                .then(detail => detail.revision?.payload.kind === 'NATIVE_DOCUMENT' ? detail.revision.payload.document : null)
+                .catch(() => null);
+            this.revisions.set(key, held);
+            void held.then(document => { if (document === null && epoch === this.epoch) this.revisions.delete(key); });
+        }
+        return held;
+    }
+
+    /** The cost line of a rewrite of `blocks` blocks: «≈ 0,3 % лимита». `null` when the estimate cannot be read (the window then says nothing). */
+    async editCost(artifactId: string, blocks: number): Promise<EditCost | null> {
+        const epoch = this.epoch;
+        try {
+            const estimate = await firstValueFrom(this.api.estimateEdit(this.deckId, { sessionId: this.sessionId, artifactId, action: 'REWRITE',
+                targetNodeCount: Math.min(blocks, 50) }));
+            const allowance = await this.budgetAllowance();
+            if (epoch !== this.epoch) return null;
+            return { text: describeEditCost(estimate, allowance), canStart: estimate.canStart,
+                blocked: estimate.canStart ? null : describeEditLimit(estimate.blockingBuckets[0]) };
+        } catch {
+            return null;
+        }
+    }
+
     clearNotice(): void {
         this.notice.set(null);
+    }
+
+    /** A refusal the window cannot show (the strip or the media actions have no field of their own) goes to the page notice. */
+    notify(text: string): void {
+        this.notice.set({ tone: 'error', text });
     }
 
     isBusy(key: string): boolean {
@@ -515,7 +717,9 @@ export class WorkshopSessionStore {
             return;
         }
         this.backgroundDelay = POLL_BACKGROUND_MIN_MS;
-        const working = state === 'PLANNING' || state === 'RUNNING' || this.activeSteps().length > 0;
+        // A rewrite in flight (an EDIT step is queued before a worker claims it) is followed at the busy cadence too.
+        const working = state === 'PLANNING' || state === 'RUNNING' || this.activeSteps().length > 0
+            || this.artifacts().some(artifact => artifact.state === 'REVISING');
         this.schedule(working ? POLL_ACTIVE_MS : POLL_IDLE_MS);
     }
 
@@ -543,6 +747,7 @@ export class WorkshopSessionStore {
     private dispose(final = true): void {
         if (final) { this.disposed = true; this.epoch++; }
         this.stopPolling();
+        if (this.noteTimer !== null) { clearTimeout(this.noteTimer); this.noteTimer = null; }
         if (!this.started) return;
         this.document.removeEventListener('visibilitychange', this.onVisibility);
         const view = this.document.defaultView;
@@ -598,20 +803,59 @@ export class WorkshopSessionStore {
      * Sends one command. An exact retry after an unknown outcome reuses its `commandId` (the server replays the stored
      * answer); a definitive answer, success or refusal, ends that command.
      */
-    private async send<T>(kind: string, key: string, request: (commandId: string) => Observable<T>):
-        Promise<{ readonly ok: true; readonly value: T } | { readonly ok: false; readonly problem: GenerationProblem }> {
+    private async send<T>(kind: string, key: string, request: (commandId: string) => Observable<T>, signal?: AbortSignal):
+        Promise<{ readonly ok: true; readonly value: T } | { readonly ok: false; readonly problem: GenerationProblem; readonly aborted: boolean }> {
         const id = `${kind}:${key}`;
         const commandId = this.commandIds.get(id) ?? newCommandId();
         this.commandIds.set(id, commandId);
         try {
-            const value = await firstValueFrom(request(commandId));
+            const value = await (signal === undefined ? firstValueFrom(request(commandId)) : abortable(request(commandId), signal));
             this.commandIds.delete(id);
             return { ok: true, value };
         } catch (error) {
             const problem = readProblem(error);
             if (!problem.uncertain) this.commandIds.delete(id);
-            return { ok: false, problem };
+            return { ok: false, problem, aborted: error instanceof CommandAborted };
         }
+    }
+
+    private markStale(artifactId: string): void {
+        const entry = this.details()[artifactId];
+        if (entry === undefined) return;
+        if (entry.phase === 'loading') this.staleWhileLoading.add(artifactId);
+        else this.setDetail(artifactId, { ...entry, stale: true });
+    }
+
+    /** Puts the turn the server just accepted into the detail that is on screen, so its blocks show as being rewritten at once. */
+    private addTurn(artifactId: string, turn: ArtifactTurn): void {
+        const entry = this.details()[artifactId];
+        if (entry?.detail == null) return;
+        // A turn that fails at once can be reported by the events, and read, before this answer arrives: never put it back to «queued».
+        if (entry.detail.turns.some(held => held.turnId === turn.turnId)) return;
+        const turns = [...entry.detail.turns.filter(held => held.turnId !== turn.turnId), turn];
+        this.setDetail(artifactId, { ...entry, detail: { ...entry.detail, turns } });
+    }
+
+    /** When a read shows the turn this page started has ended, says so once in the summary line. */
+    private observeEdit(artifactId: string, detail: ArtifactDetail): void {
+        const memo = this.edits()[artifactId];
+        if (memo === undefined || memo.announced) return;
+        const turn = detail.turns.find(held => held.turnId === memo.turnId);
+        if (turn === undefined || turn.status === 'QUEUED' || turn.status === 'RUNNING') return;
+        this.edits.update(memos => ({ ...memos, [artifactId]: { ...memo, announced: true } }));
+        this.setNote(editOutcomeNote(turn.status, turn.action));
+    }
+
+    private setNote(note: string | null): void {
+        if (this.noteTimer !== null) { clearTimeout(this.noteTimer); this.noteTimer = null; }
+        this.editNote.set(note);
+        if (note !== null) this.noteTimer = setTimeout(() => { this.noteTimer = null; this.editNote.set(null); }, EDIT_NOTE_MS);
+    }
+
+    /** The whole period allowance of the account, the figure a percent of the limit is measured against; read once, `null` when unreadable. */
+    private budgetAllowance(): Promise<number | null> {
+        this.allowance ??= firstValueFrom(this.injector.get(UsageApiService).load()).then(usage => usage.credits.total, () => null);
+        return this.allowance;
     }
 
     private shownAsCurrent(artifact: ArtifactSummary): boolean {
@@ -693,4 +937,13 @@ export class WorkshopSessionStore {
             if (entry !== undefined) this.setDetail(id, { ...entry, stale: true });
         }
     }
+}
+
+/** Awaits the first value of `source`; `signal` takes the request back, which cancels the subscription and rejects. */
+function abortable<T>(source: Observable<T>, signal: AbortSignal): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+        if (signal.aborted) { reject(new CommandAborted()); return; }
+        const subscription = source.subscribe({ next: resolve, error: reject, complete: () => reject(new Error('The request ended without an answer.')) });
+        signal.addEventListener('abort', () => { subscription.unsubscribe(); reject(new CommandAborted()); }, { once: true });
+    });
 }

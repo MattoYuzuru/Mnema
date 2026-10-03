@@ -1,0 +1,38 @@
+<ng-template #body>
+  <form class="window-form" novalidate (submit)="onSubmit($event)" (keydown.enter)="blockImplicitSubmit($event)">
+    <div class="window-head">
+      <h2 class="window-title" #title [id]="titleId" tabindex="-1">Попросить Мнему</h2>
+      <button type="button" class="window-close" aria-label="Закрыть окно" (click)="dismiss(true)"><span aria-hidden="true">×</span></button>
+    </div>
+    @if (quote()) { <p class="window-quote" [id]="quoteId">Выделено: «{{ quote() }}»</p> }
+    <div class="window-presets" role="group" aria-label="Быстрые правки">
+      @for (preset of presets; track preset.value) {
+        <button type="button" class="chip" [attr.aria-disabled]="sending() ? 'true' : null" (click)="sendPreset(preset.value)">{{ preset.label }}</button>
+      }
+    </div>
+    <label class="window-label" [for]="fieldId">Что изменить?</label>
+    <textarea #field class="window-field" rows="2" enterkeyhint="send" autocomplete="off" [id]="fieldId" [attr.maxlength]="maxLength"
+      [readOnly]="sending()" [value]="instruction()" [attr.aria-describedby]="describedBy()"
+      placeholder="Например: слишком сложно, объясни проще" (input)="onInput($event)" (keydown)="onKeydown($event)"
+      (compositionstart)="onCompositionStart()" (compositionend)="onCompositionEnd()"></textarea>
+    @if (cost(); as line) { <p class="window-cost" [id]="costId">{{ line }}</p> }
+    <p class="window-error" [id]="errorId" aria-live="polite">{{ error() }}</p>
+    <div class="window-actions">
+      @if (sending()) { <button type="button" class="window-button" (click)="retract.emit()">Отменить</button> }
+      <button type="submit" class="window-button primary" [attr.aria-disabled]="(sending() || (empty() && !limited())) ? 'true' : null">{{ sending() ? 'Отправляю…' : 'Отправить' }}</button>
+    </div>
+    @if (mode() === 'popover') { <p class="window-keys">Enter — отправить, Shift+Enter — новая строка, Esc — закрыть.</p> }
+  </form>
+</ng-template>
+
+@if (mode() === 'sheet') {
+  <dialog #surface class="window sheet" [attr.aria-labelledby]="titleId" (cancel)="onCancel($event)" (click)="onSheetClick($event)">
+    <div class="sheet-body"><ng-container [ngTemplateOutlet]="body" /></div>
+  </dialog>
+} @else {
+  <div #surface class="window floating" popover="manual" role="dialog" aria-modal="false" [attr.aria-labelledby]="titleId"
+    [style.top]="placement().top" [style.bottom]="placement().bottom" [style.left]="placement().left" [style.inline-size]="placement().width"
+    [style.max-block-size.px]="placement().maxHeight" (keydown.escape)="onEscape($any($event))">
+    <ng-container [ngTemplateOutlet]="body" />
+  </div>
+}

@@ -312,3 +312,20 @@
         overflow-wrap: anywhere;
     }
 }
+
+/* The Workshop's rewrite (AI-11): a block being rewritten stays fully readable, framed by a dashed paper line. */
+.native-document > .is-rewriting {
+    outline: 2px dashed var(--mn-ink);
+    outline-offset: 0.4rem;
+}
+
+/* The chosen blocks while the «Попросить Мнему» window is open, in browsers without the CSS Custom Highlight API. */
+.native-document > .is-target {
+    background: var(--mn-selection);
+    box-shadow: 0 0 0 0.25rem var(--mn-selection);
+}
+
+@media (forced-colors: active) {
+    .native-document > .is-rewriting { outline-color: CanvasText; }
+    .native-document > .is-target { background: Highlight; color: HighlightText; box-shadow: none; outline: 2px solid Highlight; }
+}
