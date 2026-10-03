@@ -32,6 +32,8 @@ describe('canonical bearer interceptor', () => {
             '/api/notifications', '/api/notifications?limit=20&after=40', '/api/notifications/read-cursor',
             '/api/notifications/0a000000-0000-4000-8000-000000000029',
             '/api/media-assets/upload-policy', '/api/media-assets/123/playback',
+            '/api/generation-sessions', '/api/generation-sessions?state=active&limit=20',
+            '/api/decks/123/generation-sessions/456/events?after=0',
             '/api/capabilities', '/api/exercise-previews', '/api/usage',
             `${identity}/api/accounts/me`, `${identity}/userinfo`]) {
             http.get(url).subscribe();
@@ -43,7 +45,7 @@ describe('canonical bearer interceptor', () => {
 
     it('refuses legacy APIs, lookalike hosts/path prefixes and routing encodings', () => {
         for (const url of ['/api/core/decks', '/api/user/me', '/api/media/x', '/api/decks-other', '/api/editing-drafts-other',
-            '/api/capture-notes-other', '/api/notifications-other', '/api/notifications%2fread-cursor', '/api/media-assets-other', '/api/other/../decks',
+            '/api/capture-notes-other', '/api/notifications-other', '/api/notifications%2fread-cursor', '/api/generation-sessions-other', '/api/generation-sessions%2fx', '/api/media-assets-other', '/api/other/../decks',
             '/api/capabilities/x', '/api/capabilities-other', '/api/exercise-previews/x', '/api/exercise-previews-other',
             '/api/usage/x', '/api/usage-other', '/api/usage%2fx',
             'https://storage.example.test/bucket/source?X-Amz-Signature=abc',
