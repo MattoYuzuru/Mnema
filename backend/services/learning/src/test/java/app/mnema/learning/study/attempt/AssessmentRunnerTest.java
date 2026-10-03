@@ -31,7 +31,7 @@ class AssessmentRunnerTest {
     private final UUID attempt = UUID.randomUUID();
 
     private AssessmentRunner runner(int concurrency, Duration deadline) {
-        return new AssessmentRunner(service, provider, new AssessmentSettings(deadline, Duration.ofSeconds(2), concurrency, "ru"));
+        return new AssessmentRunner(service, provider, new AssessmentSettings(deadline, Duration.ofMillis(500), concurrency, "ru", 3));
     }
 
     private GradeRequest request() {
@@ -123,6 +123,6 @@ class AssessmentRunnerTest {
         open.destroy();
         // after the shutdown a late event is dropped, not thrown
         assertThatCode(() -> open.accepted(new AssessmentAccepted(UUID.randomUUID()))).doesNotThrowAnyException();
-        assertThatThrownBy(() -> new AssessmentSettings(Duration.ofMillis(500), Duration.ofSeconds(2), 1, "ru")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new AssessmentSettings(Duration.ofMillis(500), Duration.ofSeconds(2), 1, "ru", 3)).isInstanceOf(IllegalArgumentException.class);
     }
 }

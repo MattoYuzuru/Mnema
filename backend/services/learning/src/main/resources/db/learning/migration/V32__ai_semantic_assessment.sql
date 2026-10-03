@@ -68,3 +68,23 @@ ALTER TABLE app_learning.study_transition
 ALTER TABLE app_learning.study_transition ADD CONSTRAINT study_transition_kind_shape CHECK (
     (kind = 'ATTEMPT' AND attempt_id IS NOT NULL AND compensates_attempt_id IS NULL AND reason_code IS NULL)
     OR (kind = 'COMPENSATION' AND attempt_id IS NULL AND compensates_attempt_id IS NOT NULL AND reason_code IS NOT NULL));
+
+-- A dispute of the first transition of an objective restores "never assessed": last_assessed_at goes back to NULL while the transition
+-- sequence (append-only history) stays above zero, and the objective is due again at once (as after a restart). The original check tied
+-- "last_assessed_at IS NULL" to "transition_sequence = 0" in both directions; only "sequence 0 implies NULL" is kept.
+DO $$
+DECLARE
+    found RECORD;
+BEGIN
+    FOR found IN SELECT conname FROM pg_constraint
+                  WHERE conrelid = 'app_learning.study_state'::regclass AND contype = 'c'
+                    AND pg_get_constraintdef(oid) LIKE '%last_assessed_at IS NULL%transition_sequence = 0%' LOOP
+        EXECUTE format('ALTER TABLE app_learning.study_state DROP CONSTRAINT %I', found.conname);
+    END LOOP;
+END $$;
+ALTER TABLE app_learning.study_state ADD CONSTRAINT study_state_unassessed_has_no_history
+    CHECK (transition_sequence > 0 OR last_assessed_at IS NULL);
+
+-- «Is this the first attempt at the exercise in the epoch» (strictness cap) and «how many answers are being checked right now»
+CREATE INDEX study_presentation_exercise ON app_learning.study_presentation(account_id, exercise_id);
+CREATE INDEX study_assessment_inflight ON app_learning.study_assessment(account_id) WHERE state = 'ASSESSING';

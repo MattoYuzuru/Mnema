@@ -185,6 +185,8 @@ with `tier ∈ CORE | DETAIL | TERM` and `weight` 1..3 inside the tier; `misconc
 `400 INVALID_REQUEST`. All four members are required (arrays may be empty). The model never sees tiers or weights. The `TEXT` answer key stays
 required and is not used by the evaluator; `content.reference` is shown after the answer as `referenceContent`.
 
+**Cost and limits.** The grader's prompt is bounded so that every valid exercise is gradable (question cut at 16,000 characters). One provider attempt of the `assess` route takes at most `learning.ai.routes.assess-attempt-cap` (8 s), so the fallback provider has time inside the 20 s deadline.
+
 **Roles.** The model only returns, per criterion, a verdict `MET | PARTLY | NOT_MET | CONTRADICTED | UNCLEAR` with a quote and a short note
 (prompt `ai/prompts/v1/assessment.md`, route `assess`: non-thinking Flash, never the strong route, rubric and exercise in the cacheable prefix,
 the answer as one JSON string of untrusted data). The server validates the output (every criterion once, `MET`/`PARTLY` need a quote that is a
@@ -201,12 +203,12 @@ in an epoch is capped at S2):
 | S3 «Владение» (2 runs, 0.3) | level ≥ 4 or `correctStreak` ≥ 2 | every CORE MET, ≥ 80 % of the DETAIL weight, every TERM MET | every CORE at least PARTLY | INSUFFICIENT |
 
 At every level an `OFF_TOPIC` answer, any `CONTRADICTED` criterion, or no CORE criterion at least PARTLY is INSUFFICIENT; an `UNCLEAR` criterion outside
-CORE counts as not met. When two runs differ by one step the lower verdict stands. Evidence: COMPLETE `CORRECT`, PARTIAL `PARTIAL`, INSUFFICIENT `INCORRECT`;
+CORE counts as not met. When two runs differ by one step the lower verdict stands, except that a criterion CONTRADICTED in some runs but not all (any tier) is uncertain; a contradiction every run sees is certain. Evidence: COMPLETE `CORRECT`, PARTIAL `PARTIAL`, INSUFFICIENT `INCORRECT`;
 class `LOW` at S1 and `MEDIUM` at S2/S3, **never `HIGH`**; reason codes `AI_SEMANTIC`, `STRICTNESS_S1|S2|S3`, `RUBRIC_V1`, plus `INJECTION` when the answer addressed
 the grader (the content is graded only) and `SPEECH` for a transcript.
 
 **Provider uncertainty is never a result.** Runs that disagree on the off-topic flag or on a CORE criterion by more than one step (MET against NOT_MET), an
-`UNCLEAR` CORE criterion and `ASR_GARBLED` speech send the learner to **self-check**: they see the reference and the criteria and rate themselves, which writes
+`UNCLEAR` CORE criterion and `ASR_GARBLED` speech (the flag counts only for an answer whose `answerSource` is `SPEECH`) send the learner to **self-check**: they see the reference and the criteria and rate themselves, which writes
 `SELF_REPORT` evidence of class `LOW`. `UNSURE` stays only for uncertainty the learner declares themselves (a reducer input); a provider never produces it. A provider
 failure, timeout, an exhausted fair-use allowance and a capability that went away are also self-check, never an error and never a penalty.
 
@@ -230,7 +232,7 @@ graded and not charged (plain `NOT_ASSESSED`).
 
 Assessment state (`$defs/assessmentState`): `{attemptId, presentationId, mode, status:"ASSESSING", retryAfterMs}` (700 ms during the first 3 s, then 1500) or
 `{…, status:"SELF_CHECK", reason, selfCheck:{reference, referenceContent, criteria:[{criterionId, description}]}}` with `reason ∈ LEARNER_CHOICE | PROVIDER_UNCERTAIN |
-PROVIDER_UNAVAILABLE | USAGE_LIMIT | CAPABILITY_UNAVAILABLE | DEADLINE` (never a provider detail). A presentation whose answer is in assessment carries one more optional member
+PROVIDER_UNAVAILABLE | USAGE_LIMIT | CAPABILITY_UNAVAILABLE | DEADLINE | BUSY` (never a provider detail; `BUSY` = the account already has `learning.ai.assess.max-in-flight` (3) answers being graded, a soft cap). A presentation whose answer is in assessment carries one more optional member
 `assessment {attemptId, status: ASSESSING|SELF_CHECK}`, so that a reload resumes it. The reference, criteria, quotes, verdicts and notes are **never** in a presentation or in an
 `ASSESSING` response: they appear only after the answer, in the feedback or in the self-check view.
 
@@ -241,12 +243,16 @@ criterion not fully met and not contradicted (a PARTLY criterion is in both with
 listed misconception; `nextStricter` is true when the next attempt will be graded at a stricter level (computed from the objective's state after this transition; false outside SCHEDULED).
 Fixtures: [assessment.json](assessment.json).
 
+**Quotes.** A `MET`/`PARTLY` verdict is kept only with a quote that is a verbatim fragment of the answer: at least 3 characters, at most 15 words and 200 characters, in at most
+three fragments (split at an ellipsis) of at least 3 characters each, found in order. The quote shown (`covered[].quote`) is the learner's own text, with their case and spacing.
+Because a scheduled receipt is kept until account deletion, **short quotes of the learner's answers stay in the receipt's `feedback`** (the answer itself is kept 30 days).
+
 **Dispute.** An AI grade (not a deterministic result, not a self-rating) can be disputed while its transition is the **last** transition of the objective in the current learning
 epoch (compare-and-set on the objective's state row, locked). The server appends a compensating transition (`study_transition.kind = COMPENSATION`, `compensates_attempt_id`,
-reason code `AI_DISPUTED`; append-only, no attempt of its own) that restores the before-state of the AI transition, makes the attempt `NOT_ASSESSED` with `disputed: true` and writes a
+reason code `AI_DISPUTED`; append-only, no attempt of its own) that restores the before-state of the AI transition (level, streak, lapses, and the objective's `last_assessed_at` and `next_due` exactly as the earlier attempt left them; for a first attempt: never assessed, due at once, as after a restart), makes the attempt `NOT_ASSESSED` with `disputed: true` and writes a
 counts-only row (`study_assessment_dispute`: strictness, judgement, exercise; **no answer text** unless the client sends `shareExample: true`, which the UI never does today). The AI
 evidence row stays as the audit trail. Otherwise `409 DISPUTE_NOT_ALLOWED`. In `PRACTICE`/`REPLAY` there is no transition and the dispute only marks the receipt and counts. The same
-`commandId` replays. The golden fixtures and the opt-in live eval are in [assessment-golden](assessment-golden/README.md).
+`commandId` replays. The golden fixtures (12 exercises × 12 answers) and the opt-in live eval are in [assessment-golden](assessment-golden/README.md).
 
 ## Session resources
 

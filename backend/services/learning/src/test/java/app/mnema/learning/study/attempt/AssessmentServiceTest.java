@@ -63,7 +63,7 @@ class AssessmentServiceTest {
     @BeforeEach
     void setUp() {
         service = new AssessmentService(assessments, attempts, conclusion, capabilities, ledger,
-                new AssessmentSettings(Duration.ofSeconds(20), Duration.ofSeconds(2), 16, "ru"), events,
+                new AssessmentSettings(Duration.ofSeconds(20), Duration.ofSeconds(2), 16, "ru", 3), events,
                 mock(PlatformTransactionManager.class), meters);
         when(attempts.now()).thenReturn(NOW);
         when(capabilities.aiAssessment()).thenReturn(new LearningCapabilities.Status(true, null));
@@ -277,6 +277,16 @@ class AssessmentServiceTest {
         assertThat(service.prepare(attemptId)).isEmpty();
     }
 
+    @Test
+    void aPathologicallyLongQuestionIsCutSoTheGradingPromptAlwaysFits() {
+        ObjectNode response = JSON.createObjectNode().put("kind", "TEXT").put("text", "ответ");
+        ObjectNode content = JSON.createObjectNode();
+        content.putArray("prompt").addObject().put("kind", "TEXT").put("text", "ы".repeat(20_000));
+        when(attempts.presentation(any(), any(), any(), any())).thenReturn(Optional.of(presentation("SCHEDULED", 0, content)));
+        when(assessments.find(attemptId)).thenReturn(Optional.of(row("ASSESSING", response, NOW.plusSeconds(10), "TYPED", "S1")));
+        assertThat(service.prepare(attemptId).orElseThrow().exercisePrompt()).hasSize(AssessmentService.MAX_PROMPT_CHARS);
+    }
+
     // ----------------------------------------------------------------------------------------- complete
 
     @Test
@@ -314,6 +324,7 @@ class AssessmentServiceTest {
         when(assessments.forUpdate(attemptId)).thenReturn(Optional.of(gone));
         service.complete(attemptId, new GradeOutcome.Graded(List.of(allMet(Verdict.MET))));
         verify(assessments).transition(attemptId, "ASSESSING", "UNAVAILABLE", "ANSWER_GONE", NOW);
+        assertThat(meters.counter("mnema_assessment_total", "outcome", "UNAVAILABLE", "reason", "ANSWER_GONE").count()).isEqualTo(1);
 
         ObjectNode response = JSON.createObjectNode().put("kind", "TEXT").put("text", "ответ");
         AssessmentRepository.Row waiting = row("ASSESSING", response, NOW.plusSeconds(10), "TYPED", "S1");
@@ -348,6 +359,67 @@ class AssessmentServiceTest {
         rubric.path("criteria").forEach(criteria::add);
         return new Run(criteria.stream().map(criterion -> new CriterionGrade(UUID.fromString(criterion.path("criterionId").stringValue(null)),
                 verdict, verdict == Verdict.MET ? "ответ" : null, "")).toList(), Set.of());
+    }
+
+    @Test
+    void aFinishedAssessmentIsAlwaysReadAsItsOutcomeNeverAsASelfCheckViewEvenWhenTheGradeLandsBetweenTheTwoReads() {
+        ObjectNode outcome = JSON.createObjectNode().put("attemptId", attemptId.toString()).put("status", "ASSESSED");
+        AttemptRepository.Presentation presentation = presentation("SCHEDULED", 0, textContent("Вопрос"));
+        AttemptRepository.Receipt receipt = new AttemptRepository.Receipt(attemptId, actor, session, presentation.presentationId(), deck,
+                new byte[32], "SCHEDULED", "ASSESSED", outcome, null);
+        when(attempts.ownsDeck(actor, deck)).thenReturn(true);
+        when(attempts.presentation(any(), any(), any(), any())).thenReturn(Optional.of(presentation));
+        AssessmentRepository.Row done = new AssessmentRepository.Row(attemptId, actor, session, presentation.presentationId(), deck, "DONE",
+                null, "S1", new byte[32], "TYPED", null, null, 1_000, NOW, NOW.plusSeconds(20), presentation.expiresAt());
+        when(assessments.find(attemptId)).thenReturn(Optional.of(done));
+        // the poll looked for the receipt before the grade was stored (none), found the row after it (DONE): the receipt is read again
+        when(attempts.receipt(attemptId)).thenReturn(Optional.empty()).thenReturn(Optional.of(receipt));
+        assertThat(service.read(actor, deck, session, attemptId)).isEqualTo(outcome);
+
+        // the same race for an exact retry of the submit: not «accepted», the stored outcome
+        when(attempts.receipt(attemptId)).thenReturn(Optional.of(receipt));
+        byte[] hash = new byte[32];
+        AttemptService.SubmitResult retry = service.replay(command(presentation), actor, deck, session, hash).orElseThrow();
+        assertThat(retry.outcome()).isEqualTo(outcome);
+        assertThat(retry.accepted()).isFalse();
+        assertThat(retry.replayed()).isTrue();
+    }
+
+    @Test
+    void anAccountWithTooManyAnswersInFlightIsBusyAndGoesStraightToSelfCheck() {
+        AttemptRepository.Presentation presentation = presentation("SCHEDULED", 0, textContent("Вопрос"));
+        when(assessments.state(actor, deck, objective)).thenReturn(Optional.of(state(0, 0, 0, 0)));
+        when(assessments.inFlight(actor)).thenReturn(2);
+        service.begin(actor, deck, session, presentation, command(presentation), new byte[32], new AttemptCommand.TextResponse("ответ"), NOW);
+        verify(events).publishEvent(new AssessmentAccepted(attemptId));
+        org.mockito.Mockito.clearInvocations(assessments, events);
+        when(assessments.inFlight(actor)).thenReturn(3);
+        AttemptService.SubmitResult busy = service.begin(actor, deck, session, presentation, command(presentation), new byte[32],
+                new AttemptCommand.TextResponse("ответ"), NOW).orElseThrow();
+        assertThat(busy.outcome().path("status").stringValue(null)).isEqualTo("SELF_CHECK");
+        assertThat(busy.outcome().path("reason").stringValue(null)).isEqualTo("BUSY");
+        assertThat(insertedRow().state()).isEqualTo("UNAVAILABLE");
+        verify(events, never()).publishEvent(any());
+    }
+
+    @Test
+    void aResultThatCannotBeStoredIsRetriedOnceAndThenEndsUnavailableAtOnceInsteadOfWaitingForTheSweeper() {
+        when(assessments.find(attemptId)).thenThrow(new IllegalStateException("deadlock")).thenReturn(Optional.empty());
+        service.complete(attemptId, new GradeOutcome.Unavailable("TIMEOUT"));
+        verify(assessments, org.mockito.Mockito.times(2)).find(attemptId);
+        verify(assessments, never()).transition(any(), anyString(), anyString(), anyString(), any());
+
+        org.mockito.Mockito.clearInvocations(assessments);
+        when(assessments.find(attemptId)).thenThrow(new IllegalStateException("deadlock"));
+        when(assessments.transition(attemptId, "ASSESSING", "UNAVAILABLE", "PROVIDER_UNAVAILABLE", NOW)).thenReturn(true);
+        service.complete(attemptId, new GradeOutcome.Unavailable("TIMEOUT"));
+        verify(assessments, org.mockito.Mockito.times(2)).find(attemptId);
+        verify(assessments).transition(attemptId, "ASSESSING", "UNAVAILABLE", "PROVIDER_UNAVAILABLE", NOW);
+        assertThat(meters.counter("mnema_assessment_total", "outcome", "UNAVAILABLE", "reason", "PROVIDER_UNAVAILABLE").count()).isEqualTo(1);
+
+        // even ending it can fail: the sweeper is the last resort, the caller never sees an error
+        when(assessments.transition(any(), anyString(), anyString(), anyString(), any())).thenThrow(new IllegalStateException("down"));
+        service.complete(attemptId, new GradeOutcome.Unavailable("TIMEOUT"));
     }
 
     // ------------------------------------------------------------------------------------------ sweepers

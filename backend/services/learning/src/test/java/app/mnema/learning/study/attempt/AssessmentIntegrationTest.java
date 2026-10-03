@@ -63,6 +63,7 @@ abstract class AssessmentIntegrationTest extends PostgresIntegrationTest {
     @Autowired protected MediaCatalog media;
     @Autowired protected JdbcClient jdbc;
     @Autowired protected UsageLedger ledger;
+    @Autowired protected io.micrometer.core.instrument.MeterRegistry meters;
     @Autowired protected PlatformTransactionManager transactions;
     @Autowired protected AssessmentTestConfiguration.Scripted provider;
     protected StudyFixtures fixtures;
@@ -169,6 +170,13 @@ abstract class AssessmentIntegrationTest extends PostgresIntegrationTest {
             }
         }
         throw new AssertionError("Timed out: " + what);
+    }
+
+    /** Results the service received for an answer that had left ASSESSING (self-check chosen, deadline passed): the hook late-result tests await. */
+    protected double discarded() { return meters.counter("mnema_assessment_total", "outcome", "DISCARDED", "reason", "NONE").count(); }
+
+    protected void awaitDiscarded(double before) {
+        eventually(() -> discarded() > before ? Boolean.TRUE : null, "the late grade was discarded");
     }
 
     protected String state(UUID attemptId) {

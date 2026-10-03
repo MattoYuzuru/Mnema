@@ -146,7 +146,7 @@ class SemanticGraderTest {
         assertThat(run.criteria()).extracting(CriterionGrade::criterionId)
                 .containsExactlyElementsOf(RUBRIC.criteria().stream().map(Rubric.Criterion::criterionId).toList());
         assertThat(run.criteria()).extracting(CriterionGrade::verdict).containsExactly(Verdict.MET, Verdict.MET, Verdict.NOT_MET);
-        assertThat(run.criteria().get(0).quote()).isEqualTo("перебирает планы");
+        assertThat(run.criteria().get(0).quote()).as("the learner's own letters").isEqualTo("перебирает ПЛАНЫ");
         assertThat(run.criteria().get(0).note()).isEqualTo("Есть.");
         assertThat(run.criteria().get(2).quote()).isNull();
         assertThat(run.flags()).isEmpty();
@@ -168,19 +168,59 @@ class SemanticGraderTest {
     }
 
     @Test
-    void aQuoteMayDifferInWhitespaceCaseQuotesEllipsisAndEscapedEntities() {
-        assertThat(SemanticGrader.verified("«Перебирает   планы»", SemanticGrader.normalize(ANSWER), "")).isEqualTo("Перебирает планы");
-        assertThat(SemanticGrader.verified("ОПТИМИЗАТОР … самый дешёвый", SemanticGrader.normalize(ANSWER), "")).isNotNull();
-        assertThat(SemanticGrader.verified("оптимизатор ... дешёвый", SemanticGrader.normalize(ANSWER), "")).isNotNull();
-        assertThat(SemanticGrader.verified("дешёвый … оптимизатор", SemanticGrader.normalize(ANSWER), ""))
-                .as("fragments must keep their order").isNull();
+    void aQuoteMayDifferInWhitespaceCaseQuotesEllipsisAndEscapedEntitiesAndIsShownAsTheLearnerWroteIt() {
+        assertThat(SemanticGrader.verified("«перебирает   планы»", ANSWER, "")).isEqualTo("перебирает ПЛАНЫ");
+        assertThat(SemanticGrader.verified("ОПТИМИЗАТОР … самый дешёвый", ANSWER, "")).isEqualTo("Оптимизатор … самый дешёвый");
+        assertThat(SemanticGrader.verified("оптимизатор ... дешёвый", ANSWER, "")).isEqualTo("Оптимизатор … дешёвый");
+        assertThat(SemanticGrader.verified("дешёвый … оптимизатор", ANSWER, "")).as("fragments must keep their order").isNull();
+        // the spacing of the answer is kept, the text is NFC
+        assertThat(SemanticGrader.verified("перебирает планы", "перебирает\n  планы!", "")).isEqualTo("перебирает\n  планы");
+        assertThat(SemanticGrader.verified("cafe", "Un cafe\u0301 ici", "")).as("e + combining acute is é").isNull();
+        assertThat(SemanticGrader.verified("café", "Un cafe\u0301 ici", "")).isEqualTo("café");
         // the prompt escapes & < >, so a model that copies the escaped text is read back as the character
-        String answer = "если a < b и c & d";
-        assertThat(SemanticGrader.verified("a &lt; b и c &amp; d", SemanticGrader.normalize(answer), "")).isEqualTo("a < b и c & d");
+        assertThat(SemanticGrader.verified("a &lt; b и c &amp; d", "если a < b и c & d", "")).isEqualTo("a < b и c & d");
         assertThat(SemanticGrader.verified(null, "x", "x")).isNull();
         assertThat(SemanticGrader.verified("   ", "x", "x")).isNull();
-        assertThat(SemanticGrader.verified("x".repeat(500), "x".repeat(600), "")).hasSize(400);
         assertThat(SemanticGrader.normalize(" Ёж\t\n  ЛЕС ")).isEqualTo("ёж лес");
+        // the redacted form of the answer is also a source
+        assertThat(SemanticGrader.verified("пишите на [email]", "Пишите на anna@example.com", "Пишите на [email]")).isEqualTo("Пишите на [email]");
+    }
+
+    @Test
+    void aQuoteIsShortMeaningfulAndNotMadeOfTinyPieces() {
+        String answer = "один два три четыре пять шесть семь восемь девять десять одиннадцать двенадцать тринадцать четырнадцать пятнадцать шестнадцать";
+        assertThat(SemanticGrader.verified("один два три четыре пять шесть семь восемь девять десять одиннадцать двенадцать тринадцать четырнадцать пятнадцать", answer, ""))
+                .as("15 words").isNotNull();
+        assertThat(SemanticGrader.verified(answer, answer, "")).as("16 words").isNull();
+        assertThat(SemanticGrader.verified("x".repeat(250), "x".repeat(300), "")).as("more than 200 characters").isNull();
+        assertThat(SemanticGrader.verified("ab", "ab cd", "")).as("fewer than three characters").isNull();
+        assertThat(SemanticGrader.verified("два", "один два три", "")).isEqualTo("два");
+        assertThat(SemanticGrader.verified("光合作", "光合作用", "")).as("three characters of a script without spaces").isEqualTo("光合作");
+        assertThat(SemanticGrader.verified("один … и … в", "один два и три в", "")).as("a fragment of two characters").isNull();
+        assertThat(SemanticGrader.verified("один … два … три … пять", "один два три четыре пять", "")).as("four fragments").isNull();
+        assertThat(SemanticGrader.verified("один … два … три", "один два три четыре пять", "")).isEqualTo("один … два … три");
+    }
+
+    @Test
+    void theLargestExerciseTheContractAllowsStillFitsThePromptAndIsGraded() {
+        List<Rubric.Criterion> criteria = new ArrayList<>();
+        for (int index = 0; index < 10; index++) {
+            criteria.add(new Rubric.Criterion(UUID.randomUUID(), "я".repeat(500), index < 3 ? Rubric.Tier.CORE : Rubric.Tier.DETAIL, 3));
+        }
+        List<String> misconceptions = new ArrayList<>();
+        for (int index = 0; index < 10; index++) misconceptions.add("ё".repeat(300));
+        List<String> terms = new ArrayList<>();
+        for (int index = 0; index < 30; index++) terms.add("ж".repeat(80));
+        Rubric largest = new Rubric("щ".repeat(4_000), criteria, misconceptions, terms);
+        StringBuilder out = new StringBuilder("[");
+        for (int index = 1; index <= 10; index++) out.append(index > 1 ? "," : "").append("{\"id\":\"c").append(index).append("\",\"verdict\":\"NOT_MET\"}");
+        fake.script = sent -> ok(valid(out.append("]").toString()));
+        // the question is cut to 16,000 characters by the service; the answer is the 4 KiB the command allows, all of it characters the prompt escapes
+        GradeRequest request = new GradeRequest(ACCOUNT, UUID.randomUUID(), "ы".repeat(16_000), "", largest, "<".repeat(4_096), AnswerSource.TYPED,
+                "ru", 1, Duration.ofSeconds(5));
+        assertThat(grader.grade(request)).isInstanceOf(GradeOutcome.Graded.class);
+        assertThat(fake.requests.getFirst().segments().stream().mapToInt(segment -> TokenCounter.estimate(segment.text())).sum())
+                .isLessThan(32_000);
     }
 
     @Test

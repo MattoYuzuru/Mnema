@@ -111,9 +111,9 @@ class SemanticEvalRunner {
                         AnswerSource source = AnswerSource.valueOf(answer.path("answerSource").stringValue(null));
                         GradeOutcome one = timed(grader, rubric, exercise, answer, source, 1, single);
                         GradeOutcome two = timed(grader, rubric, exercise, answer, source, 2, pair);
-                        actual.put("S1", label(rubric, SemanticStrictness.S1, one, id, unavailable));
-                        actual.put("S2", label(rubric, SemanticStrictness.S2, two, id, unavailable));
-                        actual.put("S3", label(rubric, SemanticStrictness.S3, two, id, unavailable));
+                        actual.put("S1", label(rubric, SemanticStrictness.S1, one, id, unavailable, source == AnswerSource.SPEECH));
+                        actual.put("S2", label(rubric, SemanticStrictness.S2, two, id, unavailable, source == AnswerSource.SPEECH));
+                        actual.put("S3", label(rubric, SemanticStrictness.S3, two, id, unavailable, source == AnswerSource.SPEECH));
                         Map<String, String> expected = new LinkedHashMap<>();
                         for (String level : List.of("S1", "S2", "S3")) expected.put(level, answer.path("expected").path(level).stringValue(null));
                         results.add(new Result(exercise.path("exerciseId").stringValue(null), id, answer.path("kind").stringValue(null), expected, actual));
@@ -124,7 +124,7 @@ class SemanticEvalRunner {
         ObjectNode report = report(live, results, single, pair, unavailable, metered);
         write(report);
 
-        assertThat(results).hasSize(120);
+        assertThat(results).hasSize(144);
         assertThat(metered.calls.get()).as("a single run and a pair for every answer").isGreaterThanOrEqualTo(360);
         if (!live) {
             assertThat(unavailable).as("the Stub always answers").isEmpty();
@@ -143,13 +143,14 @@ class SemanticEvalRunner {
         return outcome;
     }
 
-    private static String label(Rubric rubric, SemanticStrictness strictness, GradeOutcome outcome, String id, List<String> unavailable) {
+    private static String label(Rubric rubric, SemanticStrictness strictness, GradeOutcome outcome, String id, List<String> unavailable,
+                                boolean speech) {
         if (outcome instanceof GradeOutcome.Unavailable failed) {
             unavailable.add(id + ":" + strictness + ":" + failed.reason());
             return "UNAVAILABLE";
         }
         List<Run> runs = ((GradeOutcome.Graded) outcome).runs();
-        SemanticPolicy.Outcome result = SemanticPolicy.aggregate(rubric, strictness, runs);
+        SemanticPolicy.Outcome result = SemanticPolicy.aggregate(rubric, strictness, runs, speech);
         return result instanceof SemanticPolicy.Graded graded ? graded.judgement().name() : "SELF_CHECK";
     }
 

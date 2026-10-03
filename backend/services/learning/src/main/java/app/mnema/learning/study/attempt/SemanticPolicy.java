@@ -28,8 +28,9 @@ import java.util.UUID;
  *
  * <p>Provider uncertainty is not a judgement: garbled speech, passes that disagree on the off-topic flag or on a CORE point by more
  * than one step (MET and NOT_MET, say), and an UNCLEAR CORE point are {@link Uncertain}, and the learner rates themselves. A
- * contradiction or an off-topic answer that both passes agree on is certain, whatever else is unclear. When the passes differ
- * by one step the lower verdict stands.
+ * contradiction or an off-topic answer that all passes agree on is certain, whatever else is unclear; a criterion that only some
+ * passes find CONTRADICTED (any tier) is uncertain too. When the passes differ by one step otherwise, the lower verdict stands.
+ * ASR_GARBLED counts only for an answer that is a speech transcript.
  */
 final class SemanticPolicy {
     static final String ID = "ai-semantic-v1";
@@ -66,10 +67,14 @@ final class SemanticPolicy {
 
     private record Merged(Rubric.Criterion point, Verdict verdict, String quote, String note) { }
 
-    static Outcome aggregate(Rubric rubric, SemanticStrictness strictness, List<Run> runs) {
+    /**
+     * @param speech true when the answer is a transcript of speech: only then does {@code ASR_GARBLED} mean anything (a typed answer
+     *               cannot be a recognition error, so the flag is ignored there)
+     */
+    static Outcome aggregate(Rubric rubric, SemanticStrictness strictness, List<Run> runs, boolean speech) {
         if (runs.isEmpty()) throw new IllegalArgumentException("A grade needs at least one run");
         boolean injection = runs.stream().anyMatch(run -> run.flags().contains(Flag.INJECTION));
-        if (runs.stream().anyMatch(run -> run.flags().contains(Flag.ASR_GARBLED))) return new Uncertain(Reason.ASR_GARBLED);
+        if (speech && runs.stream().anyMatch(run -> run.flags().contains(Flag.ASR_GARBLED))) return new Uncertain(Reason.ASR_GARBLED);
         boolean offTopic = runs.stream().anyMatch(run -> run.flags().contains(Flag.OFF_TOPIC));
         if (offTopic != runs.stream().allMatch(run -> run.flags().contains(Flag.OFF_TOPIC))) {
             return new Uncertain(Reason.RUNS_DISAGREE);
@@ -86,15 +91,16 @@ final class SemanticPolicy {
         }
         List<Merged> core = merged.stream().filter(point -> point.point().tier() == Tier.CORE).toList();
         boolean agreedContradiction = false;
+        boolean splitContradiction = false;
         for (int index = 0; index < rubric.criteria().size(); index++) {
             int point = index;
-            agreedContradiction |= runs.stream().allMatch(run -> run.criteria().get(point).verdict() == Verdict.CONTRADICTED);
+            long contradicting = runs.stream().filter(run -> run.criteria().get(point).verdict() == Verdict.CONTRADICTED).count();
+            agreedContradiction |= contradicting == runs.size();
+            splitContradiction |= contradicting > 0 && contradicting < runs.size();
         }
         if (offTopic || agreedContradiction) return graded(Judgement.INSUFFICIENT, merged, injection);
-        if (coreDisagree) return new Uncertain(Reason.RUNS_DISAGREE);
-        if (merged.stream().anyMatch(point -> point.verdict() == Verdict.CONTRADICTED)) {
-            return graded(Judgement.INSUFFICIENT, merged, injection);
-        }
+        // a contradiction only some of the runs see (at any tier) is not a verdict to act on: the learner rates themselves
+        if (coreDisagree || splitContradiction) return new Uncertain(Reason.RUNS_DISAGREE);
         if (core.stream().anyMatch(point -> point.verdict() == Verdict.UNCLEAR)) return new Uncertain(Reason.CORE_UNCLEAR);
         if (core.stream().noneMatch(point -> credited(point.verdict()))) return graded(Judgement.INSUFFICIENT, merged, injection);
         boolean allCoreCredited = core.stream().allMatch(point -> credited(point.verdict()));

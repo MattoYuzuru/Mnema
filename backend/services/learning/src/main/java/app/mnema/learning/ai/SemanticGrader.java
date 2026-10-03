@@ -50,7 +50,10 @@ public final class SemanticGrader implements SemanticAssessmentProvider, AutoClo
     private static final double SINGLE_TEMPERATURE = 0.2;
     private static final double PAIR_TEMPERATURE = 0.3;
     private static final int MAX_NOTE = 240;
-    private static final int MAX_QUOTE = 400;
+    private static final int MAX_QUOTE = 200;
+    private static final int MAX_QUOTE_WORDS = 15;
+    private static final int MAX_FRAGMENTS = 3;
+    private static final int MIN_FRAGMENT = 3;
     private static final Pattern WHITESPACE = Pattern.compile("\\s+");
     private static final Pattern ELLIPSIS = Pattern.compile("…|\\.{3}");
     private static final Pattern EDGE = Pattern.compile("^[\\s\"'«»“”„‘’`.…]+|[\\s\"'«»“”„‘’`.…]+$");
@@ -181,8 +184,7 @@ public final class SemanticGrader implements SemanticAssessmentProvider, AutoClo
         List<Rubric.Criterion> points = request.rubric().criteria();
         UUID[] byPrompt = points.stream().map(Rubric.Criterion::criterionId).toArray(UUID[]::new);
         CriterionGrade[] grades = new CriterionGrade[points.size()];
-        String answer = normalize(request.answer());
-        String redacted = normalize(Redactor.redact(request.answer()));
+        String redacted = Redactor.redact(request.answer());
         for (JsonNode item : root.path("criteria")) {
             int index = index(item.path("id").stringValue(null), points.size());
             if (index < 0) return new Parsed(null, "неизвестный id критерия");
@@ -191,7 +193,7 @@ public final class SemanticGrader implements SemanticAssessmentProvider, AutoClo
             if (verdict == null) return new Parsed(null, "недопустимый verdict у c" + (index + 1));
             String quote = null;
             if (verdict == Verdict.MET || verdict == Verdict.PARTLY) {
-                quote = verified(item.path("quote").stringValue(null), answer, redacted);
+                quote = verified(item.path("quote").stringValue(null), request.answer(), redacted);
                 if (quote == null) verdict = Verdict.UNCLEAR;
             }
             grades[index] = new CriterionGrade(byPrompt[index], verdict, quote, note(item.path("note").stringValue(null)));
@@ -242,40 +244,95 @@ public final class SemanticGrader implements SemanticAssessmentProvider, AutoClo
     }
 
     /**
-     * The quote as the learner wrote it when it is a verbatim fragment of the answer (or of its redacted form), else null. The
-     * model sees the answer with {@code & < >} escaped, so a quote with those entities is read back as the character.
+     * The quote as the learner wrote it (their own letters, case and spacing) when it is a verbatim fragment of the answer (or of its
+     * redacted form), else null. The model sees the answer with {@code & < >} escaped, so a quote with those entities is read back as the
+     * character. A quote must be short and meaningful: at most 15 words and 200 characters, and made of at most three fragments (split at
+     * an ellipsis) of at least three characters each, found in order, so that a handful of tiny pieces cannot pass for evidence.
      */
-    static String verified(String quote, String normalizedAnswer, String normalizedRedacted) {
+    static String verified(String quote, String answer, String redactedAnswer) {
         if (quote == null || quote.isBlank()) return null;
-        for (String candidate : new String[] {quote, unescape(quote)}) {
-            if (contained(candidate, normalizedAnswer) || contained(candidate, normalizedRedacted)) {
-                String clean = EDGE.matcher(WHITESPACE.matcher(candidate).replaceAll(" ")).replaceAll("").strip();
-                return clean.length() <= MAX_QUOTE ? clean : clean.substring(0, MAX_QUOTE);
+        for (Folded source : new Folded[] {Folded.of(answer), Folded.of(redactedAnswer)}) {
+            for (String candidate : new String[] {quote, unescape(quote)}) {
+                String shown = locate(candidate, source);
+                if (shown != null) return shown;
             }
         }
         return null;
     }
 
-    /** True when every non-empty fragment of the quote (split at an ellipsis) occurs in the answer, in order. */
-    private static boolean contained(String quote, String normalizedAnswer) {
-        int from = 0;
-        boolean any = false;
+    private static String locate(String quote, Folded source) {
+        List<String> fragments = new ArrayList<>();
+        int words = 0;
         for (String fragment : ELLIPSIS.split(quote)) {
-            String needle = normalize(EDGE.matcher(fragment).replaceAll(""));
-            if (needle.isEmpty()) continue;
-            any = true;
-            int at = normalizedAnswer.indexOf(needle, from);
-            if (at < 0) return false;
-            from = at + needle.length();
+            String stripped = EDGE.matcher(fragment).replaceAll("");
+            if (stripped.isBlank()) continue;
+            fragments.add(Folded.of(stripped).folded);
+            words += WHITESPACE.split(stripped.strip()).length;
         }
-        return any;
+        if (fragments.isEmpty() || fragments.size() > MAX_FRAGMENTS || words > MAX_QUOTE_WORDS) return null;
+        StringBuilder shown = new StringBuilder();
+        int from = 0;
+        for (String needle : fragments) {
+            if (needle.codePointCount(0, needle.length()) < MIN_FRAGMENT) return null;
+            int at = source.folded.indexOf(needle, from);
+            if (at < 0) return null;
+            from = at + needle.length();
+            if (!shown.isEmpty()) shown.append(" … ");
+            shown.append(source.text, source.start[at], source.end[from - 1]);
+        }
+        return shown.length() <= MAX_QUOTE ? shown.toString() : null;
+    }
+
+    /**
+     * An answer in its comparison form (NFC, whitespace runs collapsed to one space, edges stripped, case folded) with, for every
+     * character of that form, the span of the NFC text it came from, so a match can be shown as the learner wrote it.
+     */
+    private static final class Folded {
+        final String text;
+        final String folded;
+        final int[] start;
+        final int[] end;
+
+        private Folded(String text, String folded, int[] start, int[] end) {
+            this.text = text;
+            this.folded = folded;
+            this.start = start;
+            this.end = end;
+        }
+
+        static Folded of(String source) {
+            String text = Normalizer.normalize(source, Normalizer.Form.NFC);
+            StringBuilder out = new StringBuilder(text.length());
+            int[] start = new int[text.length() * 2 + 2];
+            int[] end = new int[start.length];
+            for (int index = 0; index < text.length(); ) {
+                int codePoint = text.codePointAt(index);
+                int next = index + Character.charCount(codePoint);
+                if (Character.isWhitespace(codePoint) || Character.isSpaceChar(codePoint)) {
+                    if (out.length() > 0 && out.charAt(out.length() - 1) == ' ') {
+                        end[out.length() - 1] = next;
+                    } else if (out.length() > 0) {
+                        start[out.length()] = index;
+                        end[out.length()] = next;
+                        out.append(' ');
+                    }
+                } else {
+                    String lower = new String(Character.toChars(codePoint)).toLowerCase(Locale.ROOT);
+                    for (int unit = 0; unit < lower.length(); unit++) {
+                        start[out.length()] = index;
+                        end[out.length()] = next;
+                        out.append(lower.charAt(unit));
+                    }
+                }
+                index = next;
+            }
+            if (out.length() > 0 && out.charAt(out.length() - 1) == ' ') out.setLength(out.length() - 1);
+            return new Folded(text, out.toString(), start, end);
+        }
     }
 
     /** NFC, collapsed whitespace, case folded: what a quote is compared on. */
-    static String normalize(String value) {
-        String composed = Normalizer.normalize(value, Normalizer.Form.NFC);
-        return WHITESPACE.matcher(composed).replaceAll(" ").strip().toLowerCase(Locale.ROOT);
-    }
+    static String normalize(String value) { return Folded.of(value).folded; }
 
     private static String unescape(String value) {
         return value.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&");

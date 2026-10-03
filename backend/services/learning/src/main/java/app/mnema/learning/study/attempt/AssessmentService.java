@@ -61,12 +61,14 @@ public class AssessmentService {
     private static final JsonNodeFactory JSON = JsonNodeFactory.instance;
     private static final JsonNode SELF_CHECK_EVALUATOR = JSON.objectNode().put("id", "self-check").put("version", "1");
     private static final Set<String> PUBLIC_REASONS = Set.of("LEARNER_CHOICE", "PROVIDER_UNCERTAIN", "USAGE_LIMIT",
-            "CAPABILITY_UNAVAILABLE", "DEADLINE");
+            "CAPABILITY_UNAVAILABLE", "DEADLINE", "BUSY");
     /** Answers younger than this are polled fast, older ones slower: the client's backoff, as a hint. */
     private static final Duration FAST_POLL_WINDOW = Duration.ofSeconds(3);
     private static final int FAST_POLL_MS = 700;
     private static final int SLOW_POLL_MS = 1_500;
     private static final int SWEEP_BATCH = 100;
+    /** At most this much of the question goes to the grader (4000 per block, up to 8 blocks, are allowed to author). */
+    static final int MAX_PROMPT_CHARS = 16_000;
     private static final String PROMPT_FALLBACK = "(вопрос задан изображением или звуком)";
 
     private final AssessmentRepository assessments;
@@ -114,7 +116,9 @@ public class AssessmentService {
         }
         AttemptRepository.Presentation presentation = attempts.presentation(actor, deck, session, row.presentationId())
                 .orElseThrow(IllegalStateException::new);
-        return Optional.of(new AttemptService.SubmitResult(view(row, presentation), true, true));
+        JsonNode view = view(row, presentation);
+        // the grade may have been stored between the receipt lookup of the caller and this read: then it is the outcome, not «accepted»
+        return Optional.of(new AttemptService.SubmitResult(view, true, !row.state().equals("DONE")));
     }
 
     /** Whether an answer under any attempt id still holds the presentation. */
@@ -125,7 +129,9 @@ public class AssessmentService {
     /**
      * Accepts an answer to an {@code ai-semantic} presentation inside the submit transaction: derives the strictness, records
      * the answer as {@code ASSESSING} and (after the commit) starts the grading. When the capability is gone or the fair-use
-     * limit is spent the answer goes straight to self-check, never to an error. Empty when the learning epoch of a scheduled
+     * limit is spent, or the account already has {@code learning.ai.assess.max-in-flight} answers being graded ({@code BUSY}, a soft cap:
+     * two submits in different sessions at the same instant may both pass), the answer goes straight to self-check, never to an
+     * error. Empty when the learning epoch of a scheduled
      * presentation is no longer current: nothing is graded and nothing is spent.
      */
     Optional<AttemptService.SubmitResult> begin(UUID actor, UUID deck, UUID session,
@@ -142,7 +148,8 @@ public class AssessmentService {
                 current ? state.orElseThrow().level() : 0, current ? state.orElseThrow().correctStreak() : 0,
                 !assessments.attemptedExercise(actor, presentation.exerciseId(), presentation.learningEpoch()));
         String unavailable = !capabilities.aiAssessment().available() ? "CAPABILITY_UNAVAILABLE"
-                : !ledger.fairUseFits(actor, Bucket.ASSESSMENT, 1) ? "USAGE_LIMIT" : null;
+                : !ledger.fairUseFits(actor, Bucket.ASSESSMENT, 1) ? "USAGE_LIMIT"
+                : assessments.inFlight(actor) >= settings.maxInFlight() ? "BUSY" : null;
         AssessmentRepository.Row row = new AssessmentRepository.Row(command.attemptId(), actor, session,
                 presentation.presentationId(), deck, unavailable == null ? "ASSESSING" : "UNAVAILABLE", unavailable,
                 strictness.name(), hash, text.answerSource(), command.payload().path("response"), command.confidence(),
@@ -251,10 +258,25 @@ public class AssessmentService {
      * ASSESSING. A grade that the learner's fair-use no longer covers goes to self-check with {@code USAGE_LIMIT}.
      */
     public void complete(UUID attemptId, GradeOutcome outcome) {
-        try {
-            transaction.executeWithoutResult(status -> resolve(attemptId, outcome));
-        } catch (UsageLimitReachedException limit) {
-            transaction.executeWithoutResult(status -> end(attemptId, "USAGE_LIMIT"));
+        for (int attempt = 1; ; attempt++) {
+            try {
+                transaction.executeWithoutResult(status -> resolve(attemptId, outcome));
+                return;
+            } catch (UsageLimitReachedException limit) {
+                transaction.executeWithoutResult(status -> end(attemptId, "USAGE_LIMIT"));
+                return;
+            } catch (RuntimeException failure) {
+                // a stored result that could not be written (a deadlock, a dropped connection): once more, then the learner is not kept waiting
+                LOG.warn("assessment_complete_failed attempt_id={} attempt={} error_type={}", attemptId, attempt,
+                        failure.getClass().getSimpleName());
+                if (attempt < 2) continue;
+                try {
+                    transaction.executeWithoutResult(status -> end(attemptId, "PROVIDER_UNAVAILABLE"));
+                } catch (RuntimeException unwritable) {
+                    LOG.warn("assessment_end_failed attempt_id={} error_type={}", attemptId, unwritable.getClass().getSimpleName());
+                }
+                return;
+            }
         }
     }
 
@@ -284,12 +306,13 @@ public class AssessmentService {
                 row.sessionId(), row.presentationId()).orElseThrow(IllegalStateException::new);
         if (row.response() == null) {
             assessments.transition(attemptId, "ASSESSING", "UNAVAILABLE", "ANSWER_GONE", now);
+            count("UNAVAILABLE", "ANSWER_GONE");
             return;
         }
         Rubric rubric = rubric(presentation);
         SemanticStrictness strictness = SemanticStrictness.valueOf(row.strictness());
         SemanticPolicy.Outcome result = SemanticPolicy.aggregate(rubric, strictness,
-                ((GradeOutcome.Graded) outcome).runs());
+                ((GradeOutcome.Graded) outcome).runs(), row.answerSource().equals(AttemptCommand.SPEECH));
         if (result instanceof SemanticPolicy.Uncertain uncertain) {
             LOG.info("assessment_uncertain attempt_id={} strictness={} cause={}", attemptId, strictness, uncertain.reason());
             assessments.transition(attemptId, "ASSESSING", "SELF_CHECK", "PROVIDER_UNCERTAIN", now);
@@ -440,12 +463,16 @@ public class AssessmentService {
         if (original.learningEpoch() != state.learningEpoch() || original.sequence() != state.transitionSequence()) {
             throw new DisputeNotAllowedException();
         }
-        Instant due = assessments.dueBefore(actor, deck, presentation.objectiveId(), original.learningEpoch(),
-                original.sequence()).orElse(now);
+        // the before-state exactly: when the earlier attempt was accepted and when the objective fell due after it; with none, the
+        // objective was never assessed, so it is unassessed again and due at once (as after a restart)
+        Optional<AssessmentRepository.Standing> standing = assessments.standingBefore(actor, deck, presentation.objectiveId(),
+                original.learningEpoch(), original.sequence());
+        Instant due = standing.map(AssessmentRepository.Standing::nextDue).orElse(now);
+        Instant assessed = standing.map(AssessmentRepository.Standing::acceptedAt).orElse(null);
         BaselineReducer.Transition restore = new BaselineReducer.Transition(state.level(), original.beforeLevel(),
                 state.correctStreak(), original.beforeStreak(), state.lapseCount(), original.beforeLapses(), now, due);
         assessments.insertCompensation(attemptId, original, state, restore, "AI_DISPUTED");
-        attempts.updateState(state, restore, original.configId());
+        assessments.restoreState(state, restore, assessed, due, original.configId(), now);
     }
 
     private static ObjectNode disputed(JsonNode outcome, AttemptRepository.Presentation presentation) {
@@ -470,7 +497,16 @@ public class AssessmentService {
 
     // ------------------------------------------------------------------------------------------------------ views
 
-    private ObjectNode view(AssessmentRepository.Row row, AttemptRepository.Presentation presentation) {
+    /**
+     * The state a client polls. A {@code DONE} row means the attempt is terminal, so what is returned is its stored outcome, never a
+     * self-check view: the receipt is read again here, because the grade can be stored after a caller looked the receipt up and before
+     * it read the row.
+     */
+    private JsonNode view(AssessmentRepository.Row row, AttemptRepository.Presentation presentation) {
+        if (row.state().equals("DONE")) {
+            return attempts.receipt(row.attemptId()).map(AttemptRepository.Receipt::outcome)
+                    .orElseThrow(() -> new IllegalStateException("A finished assessment has no receipt"));
+        }
         ObjectNode view = JSON.objectNode().put("attemptId", row.attemptId().toString())
                 .put("presentationId", row.presentationId().toString()).put("mode", presentation.mode());
         if (row.state().equals("ASSESSING")) {
@@ -540,6 +576,7 @@ public class AssessmentService {
         }
     }
 
+    /** The question as text; a pathological prompt (a quoted material of any length) is cut so that the grading prompt always fits. */
     private static String promptText(AttemptRepository.Presentation presentation) {
         List<String> parts = new ArrayList<>();
         for (JsonNode block : presentation.content().path("prompt")) {
@@ -547,7 +584,9 @@ public class AssessmentService {
                 parts.add(block.path("text").stringValue());
             }
         }
-        return parts.isEmpty() ? PROMPT_FALLBACK : String.join("\n", parts);
+        String text = String.join("\n", parts);
+        if (text.length() > MAX_PROMPT_CHARS) text = text.substring(0, MAX_PROMPT_CHARS);
+        return parts.isEmpty() ? PROMPT_FALLBACK : text;
     }
 
     /** What a dispute asks: the command id (idempotency) and whether the learner shares the example (always false in the UI today). */

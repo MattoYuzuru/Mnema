@@ -5,7 +5,10 @@ import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
 import app.mnema.learning.support.StudyFixtures;
 import app.mnema.learning.support.StudyFixtures.Issued;
 import app.mnema.learning.support.StudyFixtures.Material;
+import app.mnema.learning.catalog.deck.DeckInsightsService;
+import app.mnema.learning.study.progress.StudyProgressService;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import tools.jackson.databind.JsonNode;
 
 import java.util.List;
@@ -22,6 +25,23 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * transition of its objective; the dispute is counted for the owner without the answer unless the learner shares it.
  */
 class AssessmentDisputeIntegrationTest extends AssessmentIntegrationTest {
+    @Autowired private StudyProgressService progress;
+    @Autowired private DeckInsightsService insights;
+
+    /** The «assessed» objective count and the last assessment time of the deck's only material, as the progress read model shows them. */
+    private JsonNode progressOf(Case learner) {
+        return progress.read(learner.actor(), learner.deck(), null, null).path("items").get(0);
+    }
+
+    /** True when the state row's two clock columns equal the given transition's accepted_at and next_due exactly. */
+    private boolean restoredTo(Case learner, int sequence) {
+        return jdbc.sql("""
+                SELECT s.last_assessed_at=t.accepted_at AND s.next_due=t.next_due FROM app_learning.study_state s
+                  JOIN app_learning.study_transition t ON t.account_id=s.account_id AND t.objective_id=s.objective_id
+                   AND t.learning_epoch=s.learning_epoch AND t.transition_sequence=:sequence
+                 WHERE s.account_id=:a
+                """).param("a", learner.actor()).param("sequence", sequence).query(Boolean.class).single();
+    }
 
     private AssessmentService.DisputeCommand dispute(boolean share) {
         return new AssessmentService.DisputeCommand(UUID.randomUUID(), share);
@@ -89,6 +109,15 @@ class AssessmentDisputeIntegrationTest extends AssessmentIntegrationTest {
         assertThatThrownBy(() -> assessments.dispute(learner.actor(), learner.deck(), learner.session(), attempt, dispute(false)))
                 .isInstanceOf(DisputeNotAllowedException.class);
         assertThat(count("study_transition", learner.actor())).isEqualTo(2);
+
+        // the objective is unassessed again and due at once, exactly as the progress read models and the scheduler see it
+        var clocks = jdbc.sql("SELECT last_assessed_at IS NULL AS never,next_due<=now() AS due FROM app_learning.study_state WHERE account_id=:a")
+                .param("a", learner.actor()).query().singleRow();
+        assertThat(clocks).containsEntry("never", true).containsEntry("due", true);
+        assertThat(progressOf(learner).path("objectiveCoverage").path("assessed").intValue()).as("«assessed» counts the objective no more").isZero();
+        assertThat(progressOf(learner).path("lastAssessedAt").isNull()).isTrue();
+        assertThat(insights.read(learner.actor(), learner.deck(), "UTC").path("states").path("DUE").intValue()).isOne();
+        assertThat(fixtures.session(learner.material(), "SCHEDULED", null).path("presentations")).as("a new session issues it").hasSize(1);
     }
 
     @Test
@@ -114,9 +143,35 @@ class AssessmentDisputeIntegrationTest extends AssessmentIntegrationTest {
         // the last one can be taken back, and the objective returns to the state after the first
         assessments.dispute(second.actor(), second.deck(), second.session(), two, dispute(false));
         assertThat(state(first)).isEqualTo(new Progress(1, 1, 0, 3));
-        // the objective is due as it was after the first attempt (its interval), not lost
-        assertThat(jdbc.sql("SELECT next_due FROM app_learning.study_state WHERE account_id=:a").param("a", first.actor())
-                .query(java.sql.Timestamp.class).single()).isNotNull();
+        // both clocks are the first attempt's, to the microsecond: accepted at, and due at its interval
+        assertThat(restoredTo(first, 1)).isTrue();
+        assertThat(progressOf(first).path("objectiveCoverage").path("assessed").intValue()).isOne();
+        assertThat(progressOf(first).path("lastAssessedAt").stringValue(null)).isNotNull();
+    }
+
+    @Test
+    void aSecondDisputeLooksThroughTheEarlierCompensationToTheAttemptBeforeIt() {
+        Case first = issued();
+        UUID one = UUID.randomUUID();
+        submit(first, one, "Планы выполнения [[stub:assess-complete]]");
+        settled(first, one);
+        Case second = sameObjective(first);
+        UUID two = UUID.randomUUID();
+        submit(second, two, "Планы выполнения [[stub:assess-complete]]");
+        settled(second, two);
+        assessments.dispute(second.actor(), second.deck(), second.session(), two, dispute(false));
+        assertThat(restoredTo(first, 1)).isTrue();
+        // a third attempt, then its dispute: the compensation in between is not an attempt, the standing is the first attempt's again
+        Case third = sameObjective(first);
+        UUID three = UUID.randomUUID();
+        submit(third, three, "Планы выполнения [[stub:assess-complete]]");
+        settled(third, three);
+        assertThat(restoredTo(first, 1)).isFalse();
+        assessments.dispute(third.actor(), third.deck(), third.session(), three, dispute(false));
+        assertThat(state(first)).isEqualTo(new Progress(1, 1, 0, 5));
+        assertThat(restoredTo(first, 1)).isTrue();
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.study_transition WHERE account_id=:a AND kind='COMPENSATION'")
+                .param("a", first.actor()).query(Long.class).single()).isEqualTo(2);
     }
 
     @Test

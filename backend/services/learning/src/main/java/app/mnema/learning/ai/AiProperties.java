@@ -1,6 +1,7 @@
 package app.mnema.learning.ai;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
 import java.net.URI;
@@ -45,12 +46,26 @@ public record AiProperties(
 
     /** Ordered {@code provider:model} lists; the first usable entry wins, the next ones are fallbacks. */
     public record Routes(@DefaultValue List<String> textFast, @DefaultValue List<String> textStrong,
-                         @DefaultValue List<String> assess) {
+                         @DefaultValue List<String> assess, @DefaultValue("PT8S") Duration assessAttemptCap) {
+        @ConstructorBinding
         public Routes {
             textFast = textFast == null ? List.of() : List.copyOf(textFast);
             textStrong = textStrong == null ? List.of() : List.copyOf(textStrong);
             assess = assess == null ? List.of() : List.copyOf(assess);
+            if (assessAttemptCap == null || assessAttemptCap.isNegative() || assessAttemptCap.isZero()) {
+                throw new IllegalArgumentException("Invalid assess attempt cap");
+            }
         }
+
+        public Routes(List<String> textFast, List<String> textStrong, List<String> assess) {
+            this(textFast, textStrong, assess, Duration.ofSeconds(8));
+        }
+
+        /**
+         * The longest one provider attempt of {@code route} may take, or null for no cap beyond the deadline of the call. The grading route has
+         * one so that a slow first provider leaves time for the fallback inside the 20 s deadline of an answer.
+         */
+        public Duration attemptCap(AiRoute route) { return route == AiRoute.ASSESS ? assessAttemptCap : null; }
 
         public List<String> of(AiRoute route) {
             return switch (route) {
@@ -149,9 +164,12 @@ public record AiProperties(
         }
     }
 
-    /** Per-instance concurrent calls per capability; callers beyond {@code queueWait} get a rate-limit failure. */
+    /**
+     * Per-instance concurrent calls per capability; callers beyond {@code queueWait} get a rate-limit failure. {@code assess} counts calls,
+     * and an answer at the strict levels makes two: keep it at least twice {@code learning.ai.assess.concurrency} (16), hence 32.
+     */
     public record Permits(@DefaultValue("16") int text, @DefaultValue("4") int tts, @DefaultValue("2") int image,
-                          @DefaultValue("1") int video, @DefaultValue("4") int search, @DefaultValue("16") int assess,
+                          @DefaultValue("1") int video, @DefaultValue("4") int search, @DefaultValue("32") int assess,
                           @DefaultValue("4") int imageSearch, @DefaultValue("2s") Duration queueWait) {
         public Permits {
             if (text < 1 || tts < 1 || image < 1 || video < 1 || search < 1 || assess < 1 || imageSearch < 1

@@ -32,12 +32,16 @@ public final class PromptAssembler {
     private static final String DATA_POLICY_CLOSE = "</data_policy>";
     private static final String ANSWER_SOURCE_OPEN = "<answer_source>";
     private static final Set<String> SKILLS = Set.of("vocabulary", "grammar", "concept", "code", "exam_notes", "free");
-    /** Ceilings in estimated tokens; the static ones guard against accidental growth of the cached prefix. */
+    /**
+     * Ceilings in estimated tokens; the static ones guard against accidental growth of the cached prefix. The assessment ceiling covers the
+     * largest exercise the contract allows (the question cut to 16,000 characters, a 4,000-character reference, ten 500-character criteria,
+     * ten 300-character misconceptions, thirty 80-character terms, a 4 KiB answer), so a published rubric is always gradable.
+     */
     private static final Map<String, Integer> CEILINGS = Map.ofEntries(
             Map.entry("system", 3_500), Map.entry("style", 2_500), Map.entry("skill-vocabulary", 1_800),
             Map.entry("skill-grammar", 1_800), Map.entry("skill-stem-concept", 1_800), Map.entry("skill-code", 1_800),
             Map.entry("skill-exam-summary", 1_800), Map.entry("deck-brief", 14_000), Map.entry("material", 14_000),
-            Map.entry("edit", 10_000), Map.entry("exercises", 14_000), Map.entry("assessment", 5_000));
+            Map.entry("edit", 10_000), Map.entry("exercises", 14_000), Map.entry("assessment", 24_000));
 
     private final PromptLibrary library;
     private final PromptRenderer renderer = new PromptRenderer();

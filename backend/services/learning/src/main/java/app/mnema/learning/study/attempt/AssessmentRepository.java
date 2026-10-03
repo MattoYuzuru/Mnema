@@ -19,7 +19,8 @@ import java.util.UUID;
  * <p>TODO(account-deletion task; owner: the epic that adds Learning's account purge): Learning has no account purge path yet, so no
  * {@code study_assessment} or {@code study_assessment_dispute} row is removed when an account is deleted. Both are keyed by
  * {@code account_id}; the purge must delete the dispute rows (they may hold a shared example) and then the assessment rows (they may hold
- * an answer until the presentation expires) before the attempt tombstones they reference.
+ * an answer until the presentation expires) before the attempt tombstones they reference. The tombstone outcomes of graded attempts also keep short quotes of the learner's
+ * answer ({@code feedback.assessment.covered[].quote}, at most 200 characters each) for the life of the receipt, so the purge deletes the tombstones' outcomes too.
  */
 @Repository
 class AssessmentRepository {
@@ -195,14 +196,59 @@ class AssessmentRepository {
                         row.getString("config_hash"))).optional();
     }
 
-    /** The {@code next_due} of the transition before {@code sequence}: when the before-state was due. */
-    Optional<Instant> dueBefore(UUID actor, UUID deck, UUID objective, long epoch, long sequence) {
-        return jdbc.sql("""
-                SELECT next_due FROM app_learning.study_transition
-                 WHERE account_id=:actor AND deck_id=:deck AND objective_id=:objective AND learning_epoch=:epoch
-                   AND transition_sequence=:sequence
-                """).param("actor", actor).param("deck", deck).param("objective", objective).param("epoch", epoch)
-                .param("sequence", sequence - 1).query((row, ignored) -> row.getTimestamp("next_due").toInstant()).optional();
+    /** What an earlier transition left the objective with: when it was accepted and when the objective fell due. */
+    record Standing(Instant acceptedAt, Instant nextDue) { }
+
+    /**
+     * The state the objective had before the transition at {@code sequence} (the AI transition being taken back): the accepted time and the
+     * due time of the closest earlier transition that is a real attempt. A compensating transition in between restored the values of the
+     * attempt before the one it compensated, so the search goes on from there. Empty when there is none: the objective was never assessed.
+     */
+    Optional<Standing> standingBefore(UUID actor, UUID deck, UUID objective, long epoch, long sequence) {
+        long position = sequence;
+        while (position > 1) {
+            var prior = jdbc.sql("""
+                    SELECT kind,accepted_at,next_due,compensates_attempt_id FROM app_learning.study_transition
+                     WHERE account_id=:actor AND deck_id=:deck AND objective_id=:objective AND learning_epoch=:epoch
+                       AND transition_sequence=:sequence
+                    """).param("actor", actor).param("deck", deck).param("objective", objective).param("epoch", epoch)
+                    .param("sequence", position - 1).query((row, ignored) -> new Object[] {row.getString("kind"),
+                            row.getTimestamp("accepted_at").toInstant(), row.getTimestamp("next_due").toInstant(),
+                            row.getObject("compensates_attempt_id", UUID.class)}).optional().orElse(null);
+            if (prior == null) return Optional.empty();
+            if (prior[0].equals("ATTEMPT")) return Optional.of(new Standing((Instant) prior[1], (Instant) prior[2]));
+            // a compensation: the state it left is the one before the transition it compensated
+            position = jdbc.sql("SELECT transition_sequence FROM app_learning.study_transition WHERE attempt_id=:attempt")
+                    .param("attempt", prior[3]).query(Long.class).optional().orElse(1L);
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * The dispute restores the state exactly, with a compare-and-set on the row version: level, streak and lapses of the before-state,
+     * {@code last_assessed_at} and {@code next_due} of the standing before (NULL and {@code now}: never assessed, due at once, for a
+     * first transition), and the history counter moves on.
+     */
+    void restoreState(AttemptRepository.State state, BaselineReducer.Transition restore, Instant lastAssessedAt, Instant nextDue,
+                      UUID config, Instant now) {
+        int changed = jdbc.sql("""
+                UPDATE app_learning.study_state SET level=:level,correct_streak=:streak,lapse_count=:lapses,
+                    last_assessed_at=:assessed,next_due=:due,reducer_config_id=:config,
+                    transition_sequence=transition_sequence+1,row_version=row_version+1,updated_at=:now
+                 WHERE account_id=:actor AND deck_id=:deck AND objective_id=:objective AND row_version=:version
+                """).param("level", restore.afterLevel()).param("streak", restore.afterCorrectStreak())
+                .param("lapses", restore.afterLapseCount())
+                .param("assessed", lastAssessedAt == null ? null : Timestamp.from(lastAssessedAt), java.sql.Types.TIMESTAMP)
+                .param("due", Timestamp.from(nextDue)).param("config", config).param("now", Timestamp.from(now))
+                .param("actor", state.accountId()).param("deck", state.deckId()).param("objective", state.objectiveId())
+                .param("version", state.rowVersion()).update();
+        if (changed != 1) throw new IllegalStateException("Study state changed while locked");
+    }
+
+    /** Answers of the account that are being graded right now (the soft cap on work in flight). */
+    int inFlight(UUID actor) {
+        return jdbc.sql("SELECT count(*) FROM app_learning.study_assessment WHERE account_id=:actor AND state='ASSESSING'")
+                .param("actor", actor).query(Integer.class).single();
     }
 
     /**

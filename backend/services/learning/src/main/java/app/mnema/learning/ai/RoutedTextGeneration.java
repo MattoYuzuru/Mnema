@@ -144,7 +144,10 @@ final class RoutedTextGeneration implements TextGeneration {
         while (true) {
             Duration remaining = remaining(deadline);
             if (remaining.isZero()) return AiResult.failed(new AiFailure.Timeout());
-            AiResult<TextResponse> result = attemptOnce(candidate, request, remaining);
+            // one attempt of a capped route (grading) may not eat the whole deadline: a slow provider hands over to the next candidate
+            Duration cap = properties.routes().attemptCap(first.route());
+            boolean capped = cap != null && cap.compareTo(remaining) < 0;
+            AiResult<TextResponse> result = attemptOnce(candidate, request, capped ? cap : remaining);
             if (result instanceof AiResult.Ok<TextResponse>) return result;
             AiFailure failure = ((AiResult.Failed<TextResponse>) result).failure();
             if (delivery != null) delivery.restart();
@@ -169,7 +172,7 @@ final class RoutedTextGeneration implements TextGeneration {
                 }
                 case AiFailure.Timeout ignored -> {
                     // The whole deadline passing is final; an idle or connect timeout inside it is retryable.
-                    if (remaining(deadline).isZero() || ++transientTries >= properties.retry().transientAttempts()) return result;
+                    if (capped || remaining(deadline).isZero() || ++transientTries >= properties.retry().transientAttempts()) return result;
                 }
                 case AiFailure.InvalidOutput invalid -> {
                     if (repaired) return result;

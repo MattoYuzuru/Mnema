@@ -201,7 +201,7 @@ class AssessmentFlowIntegrationTest extends AssessmentIntegrationTest {
     }
 
     @Test
-    void disagreeingRunsAtAStrictLevelAndGarbledSpeechAreUncertainNotAResult() {
+    void disagreeingRunsAtAStrictLevelAreUncertainAndTheGarbledFlagOfATypedAnswerIsIgnored() {
         Case first = issued();
         UUID one = UUID.randomUUID();
         submit(first, one, "Планы выполнения [[stub:assess-shallow]]");
@@ -222,11 +222,13 @@ class AssessmentFlowIntegrationTest extends AssessmentIntegrationTest {
         assertThat(provider.callsOf(three)).hasSize(2);
         assertThat(count("study_attempt_tombstone", third.actor())).isEqualTo(2);
 
-        Case speech = issued();
+        // «garbled speech» is a property of a transcript: a typed answer cannot be a recognition error, so the flag is ignored and it is graded
+        // (the SPEECH path itself is the policy's: SemanticPolicyTest; no speech-to-text capability exists to publish such an exercise yet)
+        Case typed = issued();
         UUID asr = UUID.randomUUID();
-        submit(speech, asr, "ну типа планы [[stub:assess-asr]]");
-        assertThat(settled(speech, asr).path("status").stringValue(null)).isEqualTo("SELF_CHECK");
-        assertThat(checks(speech.actor())).isZero();
+        submit(typed, asr, "ну типа планы [[stub:assess-asr]]");
+        assertThat(settled(typed, asr).path("status").stringValue(null)).isEqualTo("ASSESSED");
+        assertThat(checks(typed.actor())).isOne();
     }
 
     @Test
@@ -272,9 +274,10 @@ class AssessmentFlowIntegrationTest extends AssessmentIntegrationTest {
         // idempotent
         assertThat(assessments.selfCheck(learner.actor(), learner.deck(), learner.session(), attempt)).isEqualTo(chosen);
 
+        double before = discarded();
         provider.release.countDown();
         // the late grade finds the row no longer ASSESSING: nothing is written
-        Thread.sleep(400);
+        awaitDiscarded(before);
         assertThat(state(attempt)).isEqualTo("SELF_CHECK");
         assertThat(count("study_attempt_tombstone", learner.actor())).isZero();
         assertThat(count("study_evidence", learner.actor())).isZero();
@@ -315,8 +318,9 @@ class AssessmentFlowIntegrationTest extends AssessmentIntegrationTest {
         assertThat(view.path("reason").stringValue(null)).isEqualTo("DEADLINE");
         assertThat(state(attempt)).isEqualTo("UNAVAILABLE");
         // the provider answers after the deadline: discarded
+        double before = discarded();
         provider.release.countDown();
-        Thread.sleep(400);
+        awaitDiscarded(before);
         assertThat(state(attempt)).isEqualTo("UNAVAILABLE");
         assertThat(count("study_attempt_tombstone", learner.actor())).isZero();
         assertThat(checks(learner.actor())).isZero();
@@ -400,6 +404,37 @@ class AssessmentFlowIntegrationTest extends AssessmentIntegrationTest {
                 UUID.randomUUID(), wrong.issued(), JSON.createObjectNode().put("kind", "TEXT").put("text", "планы")
                         .put("answerSource", "SPEECH")))).isInstanceOf(InvalidRequestException.class);
         assertThat(count("study_assessment", wrong.actor())).isZero();
+    }
+
+    @Test
+    void anAccountWithTooManyAnswersBeingGradedGetsSelfCheckForTheNext() throws Exception {
+        Case first = issued();
+        List<Case> cases = new java.util.ArrayList<>(List.of(first));
+        for (int index = 0; index < 3; index++) cases.add(another(first, "SCHEDULED"));
+        List<UUID> attemptIds = new java.util.ArrayList<>();
+        for (int index = 0; index < 3; index++) {
+            UUID id = UUID.randomUUID();
+            attemptIds.add(id);
+            assertThat(submit(cases.get(index), id, "Планы [[fake:block]] [[stub:assess-complete]]").outcome().path("status").stringValue(null))
+                    .isEqualTo("ASSESSING");
+        }
+        assertThat(provider.entered.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+        // the fourth waits for nothing: straight to self-check, the attempt kept, nothing sent to the provider
+        UUID fourth = UUID.randomUUID();
+        AttemptService.SubmitResult busy = submit(cases.get(3), fourth, "Планы выполнения [[stub:assess-complete]]");
+        assertThat(busy.accepted()).isTrue();
+        assertThat(busy.outcome().path("status").stringValue(null)).isEqualTo("SELF_CHECK");
+        assertThat(busy.outcome().path("reason").stringValue(null)).isEqualTo("BUSY");
+        assertThat(provider.callsOf(fourth)).isEmpty();
+        assertThat(assessments.selfRate(first.actor(), first.deck(), cases.get(3).session(), fourth, AttemptCommand.SelfRating.FULL)
+                .outcome().path("status").stringValue(null)).isEqualTo("ASSESSED");
+        // when they are done the account can have answers graded again
+        provider.release.countDown();
+        for (int index = 0; index < 3; index++) settled(cases.get(index), attemptIds.get(index));
+        Case again = another(first, "SCHEDULED");
+        UUID next = UUID.randomUUID();
+        assertThat(submit(again, next, "Планы выполнения [[stub:assess-complete]]").outcome().path("status").stringValue(null)).isEqualTo("ASSESSING");
+        assertThat(settled(again, next).path("status").stringValue(null)).isEqualTo("ASSESSED");
     }
 
     @Test

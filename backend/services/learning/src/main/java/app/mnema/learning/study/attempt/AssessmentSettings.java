@@ -13,14 +13,19 @@ import java.time.Duration;
  * @param sweepInterval how often overdue answers are looked for (also the worst delay after a crashed process)
  * @param concurrency answers graded at the same moment by one instance; further ones wait for a slot (the provider layer has its
  *                    own limit, {@code learning.ai.permits.assess}, per call and a strict-level answer makes two calls)
- * @param feedbackLanguage the language of the model's short notes ({@code <feedback_language>} of the prompt)
+ * @param feedbackLanguage the language of the model's short notes ({@code <feedback_language>} of the prompt); decks carry no language, so this
+ *                         is the language of the interface
+ * @param maxInFlight answers of one account that may be graded at the same moment ({@code BUSY} beyond it: the answer goes straight to
+ *                    self-check); a soft cap, checked at submit without a lock across sessions
  */
 @ConfigurationProperties("learning.ai.assess")
 public record AssessmentSettings(@DefaultValue("PT20S") Duration deadline, @DefaultValue("PT2S") Duration sweepInterval,
-                                 @DefaultValue("16") int concurrency, @DefaultValue("ru") String feedbackLanguage) {
+                                 @DefaultValue("16") int concurrency, @DefaultValue("ru") String feedbackLanguage,
+                                 @DefaultValue("3") int maxInFlight) {
     public AssessmentSettings {
         if (deadline.compareTo(Duration.ofSeconds(1)) < 0 || deadline.compareTo(Duration.ofMinutes(5)) > 0
-                || sweepInterval.isNegative() || sweepInterval.isZero() || concurrency < 1 || concurrency > 256
+                || sweepInterval.isNegative() || sweepInterval.isZero() || sweepInterval.compareTo(deadline) >= 0
+                || concurrency < 1 || concurrency > 256 || maxInFlight < 1 || maxInFlight > 20
                 || feedbackLanguage == null || feedbackLanguage.isBlank() || feedbackLanguage.length() > 16) {
             throw new IllegalArgumentException("Invalid learning.ai.assess settings");
         }
