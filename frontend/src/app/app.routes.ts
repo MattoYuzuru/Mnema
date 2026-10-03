@@ -7,9 +7,12 @@ import { authGuard } from './core/guards/auth.guard';
 import type { ItemEditorPageComponent } from './features/authoring/item-editor-page.component';
 import type { ExerciseAuthoringPageComponent } from './features/authoring/exercise-authoring-page.component';
 import type { StudySessionPageComponent } from './features/study/study-session-page.component';
+import type { NewMaterialPageComponent } from './features/generation/new-material-page.component';
 
 const lazyCanLeaveItemEditor: CanDeactivateFn<ItemEditorPageComponent> = (...args) =>
     import('./features/authoring/item-editor-page.component').then(module => module.canLeaveItemEditor(args[0]));
+const lazyCanLeaveNewMaterial: CanDeactivateFn<NewMaterialPageComponent> = (...args) =>
+    import('./features/generation/new-material-page.component').then(module => module.canLeaveNewMaterial(args[0]));
 const lazyCanLeaveExerciseAuthoring: CanDeactivateFn<ExerciseAuthoringPageComponent> = (...args) =>
     import('./features/authoring/exercise-authoring-page.component')
         .then(module => module.canLeaveExerciseAuthoring(args[0]));
@@ -46,11 +49,12 @@ export const appRoutes: Routes = [
         canDeactivate: [lazyCanLeaveStudySession]
     },
     {
+        // The composer where AI generation is available, the plain editor (also reachable with ?write=1) where it is not.
         path: 'decks/:deckId/materials/new',
-        loadComponent: () => import('./features/authoring/item-editor-page.component')
-            .then(module => module.ItemEditorPageComponent),
+        loadComponent: () => import('./features/generation/new-material-page.component')
+            .then(module => module.NewMaterialPageComponent),
         canActivate: [authGuard],
-        canDeactivate: [lazyCanLeaveItemEditor]
+        canDeactivate: [lazyCanLeaveNewMaterial]
     },
     {
         path: 'decks/:deckId/materials/:memberKey/exercises/new',
@@ -83,6 +87,12 @@ export const appRoutes: Routes = [
         path: 'decks/:deckId/capture',
         loadComponent: () => import('./features/authoring/capture-page.component')
             .then(module => module.CapturePageComponent),
+        canActivate: [authGuard]
+    },
+    {
+        path: 'decks/:deckId/workshop/:sessionId',
+        loadComponent: () => import('./features/generation/workshop-page.component')
+            .then(module => module.WorkshopPageComponent),
         canActivate: [authGuard]
     },
     {

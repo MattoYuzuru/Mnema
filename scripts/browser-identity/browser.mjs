@@ -7,6 +7,7 @@ import { runMechanics } from './mechanics.mjs';
 import { runNotifications } from './notifications.mjs';
 import { runCodeBlock } from './code-block.mjs';
 import { runUsage } from './usage.mjs';
+import { runWorkshop } from './workshop.mjs';
 
 const config = JSON.parse(await readFile(process.argv[2], 'utf8'));
 const results = [];
@@ -143,7 +144,8 @@ try {
       networkRequests++;
       if (url.origin === config.identity) identityRequests++;
       // Authoring exercises several full navigations and their local assets; keep a finite request budget.
-      if (networkRequests > (config.mechanics ? 3000 : config.media ? 1250 : config.authoring ? 1000 : 500)
+      // The Workshop scenario (`--generation`) polls the real events endpoint and loads the app several times.
+      if (networkRequests > (config.mechanics ? 3000 : config.media ? 1250 : config.authoring ? 1000 : 500) + (config.generation ? 1500 : 0)
           || identityRequests > 150) asynchronousFailure = true;
       if (!allowed.has(url.origin) || asynchronousFailure) {
         externalRequests++;
@@ -1022,6 +1024,13 @@ try {
     await runUsage({
       tab: second, config, record, SafeFailure, until, exists, navigate, saveScreenshot, setStep: value => { step = value; },
       bearer: secondBearer });
+    // The generation composer and the Workshop (#289) against the real Learning API with the Stub text provider.
+    if (config.generation) {
+      step = 'workshop_prepare';
+      await runWorkshop({
+        tab: second, config, record, SafeFailure, until, exists, navigate, saveScreenshot, clickText, setStep: value => { step = value; },
+        deckPath, bearer: secondBearer });
+    }
   }
   step = 'first_tab_profile';
   // The first tab stayed in the background through the authoring, notification, mechanics and hub flows; bring it back

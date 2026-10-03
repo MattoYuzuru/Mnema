@@ -1,0 +1,27 @@
+:host { display: block; min-inline-size: 0; }
+.proposal { display: grid; gap: 1rem; align-content: start; min-inline-size: 0; }
+.proposal-heading { min-inline-size: 0; }
+/* The document brings its own title: this heading names the place in the batch and the status, once. */
+h2 { margin: 0; color: var(--mn-ink); font: 700 .9rem/1.4 var(--mn-font-mono, ui-monospace, monospace); letter-spacing: .09em; text-transform: uppercase; }
+.status-word { font-weight: 500; }
+h2:focus-visible { outline: none; }
+.muted { margin: 0; }
+.draft, .final { min-inline-size: 0; }
+.skeleton { display: grid; gap: .6rem; }
+.skeleton span { display: block; block-size: 1rem; border-block-end: 1px solid var(--mn-rule); background: var(--mn-soft); }
+.skeleton span:nth-child(2) { inline-size: 88%; }
+.skeleton span:nth-child(3) { inline-size: 64%; }
+.slots { display: grid; gap: .75rem; margin: 0; padding: 0; list-style: none; }
+/* The paper frame holds the place of media that is still on its way: its box is fixed, so nothing moves when it arrives. */
+.slot { display: grid; place-items: center; inline-size: min(100%, 32rem); aspect-ratio: 16 / 9; border: 1px dashed var(--mn-ink); padding: 1rem; background: var(--mn-sheet); color: var(--mn-ink); text-align: center; }
+.slot[data-kind='AUDIO'] { inline-size: 100%; aspect-ratio: 16 / 3; min-block-size: 4rem; }
+.slot.is-failed { border-color: var(--mn-danger); color: var(--mn-danger); }
+.slot-caption { font-weight: 600; overflow-wrap: anywhere; }
+.proposal-actions { margin-block-start: .5rem; border-block-start: 1px solid var(--mn-ink); padding-block-start: 1rem; }
+.proposal-actions:empty { display: none; }
+@media (forced-colors: active) {
+  .slot { border-color: CanvasText; }
+  .slot.is-failed { border-color: Mark; color: CanvasText; }
+}
+/* A command in flight or a waiting reason: the button stays focusable (and its reason reachable), it just does nothing. */
+.proposal-actions .button[aria-disabled='true'] { cursor: not-allowed; opacity: .6; }

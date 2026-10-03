@@ -14,6 +14,7 @@ import { HoldToDeleteButtonComponent } from '../../shared/hold-to-delete-button.
 import { DeckHubApiService } from './hub/deck-hub-api.service';
 import { DeckInsightsComponent, InsightsState } from './hub/deck-insights.component';
 import { DeckMaterialsComponent } from './hub/deck-materials.component';
+import { DeckWorkshopsComponent } from '../generation/deck-workshops.component';
 import { DeckRecoveryContext, OwnDeckRecoveryService } from './own-deck-recovery.service';
 import {
     OwnDecksStore,
@@ -28,7 +29,7 @@ import {
 @Component({
     selector: 'app-own-deck-detail-page',
     imports: [DatePipe, ReactiveFormsModule, RouterLink, DeckDescriptionComponent, HoldToDeleteButtonComponent,
-        DeckInsightsComponent, DeckMaterialsComponent],
+        DeckInsightsComponent, DeckMaterialsComponent, DeckWorkshopsComponent],
     providers: [OwnDecksStore],
     templateUrl: './own-deck-detail-page.component.html',
     styleUrl: './own-decks-page.css',

@@ -95,7 +95,12 @@ export class ItemEditorPageComponent {
                     const item = result.item;
                     this.deck.set(result.deck);
                     this.item.set(item);
-                    const matching = newestMatchingDraft(result.drafts.items, result.deck.deckId, item?.memberKey ?? null,
+                    // A draft named in the URL (a material handed over from the Workshop) wins; it must be a new-material draft
+                    // of this deck. Otherwise the newest draft for this material (or the newest new-material draft) is resumed.
+                    const wanted = item === null ? this.route.snapshot.queryParamMap.get('draft') : null;
+                    const requested = wanted === null ? null : requestedDraft(result.drafts.items, result.deck.deckId, wanted);
+                    if (wanted !== null && requested === null) { this.openNamedDraft(wanted, result.deck); return; }
+                    const matching = requested ?? newestMatchingDraft(result.drafts.items, result.deck.deckId, item?.memberKey ?? null,
                         item?.itemRevisionId ?? null);
                     if (matching === null) this.createDraft(result.deck, item);
                     else this.openDraft(matching);
@@ -286,6 +291,22 @@ export class ItemEditorPageComponent {
         });
     }
 
+    /** The URL names a draft the list did not show: read it by id. Never fall back to a blank draft: that would hide the user's material. */
+    private openNamedDraft(draftId: string, deck: OwnDeck): void {
+        let request;
+        try { request = this.authoring.readDraft(draftId); } catch { this.fail('Не удалось открыть черновик: ссылка неверна.'); return; }
+        request.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+            next: draft => {
+                if (draft.deckId !== deck.deckId || draft.memberKey !== null) { this.fail('Этот черновик относится к другому материалу.'); return; }
+                this.draft.set(draft);
+                this.document.set(draft.document);
+                this.dirty.set(false);
+                this.phase.set('ready');
+            },
+            error: () => this.fail('Не удалось открыть черновик. Он мог быть удалён или истечь; откройте мастерскую снова.')
+        });
+    }
+
     private createDraft(deck: OwnDeck, item: ItemDetail | null, retry = false): void {
         const pending = retry && this.pendingDraftCreation !== null ? this.pendingDraftCreation : {
             deck, item, commandId: newCommandId(), document: item?.document ?? createEmptyNativeDocument()
@@ -428,6 +449,11 @@ function newestMatchingDraft(drafts: readonly DraftSummary[], deckId: string, me
                              baseRevisionId: string | null): DraftSummary | null {
     return drafts.filter(draft => draft.deckId === deckId && draft.memberKey === memberKey
         && draft.baseRevisionId === baseRevisionId).sort((left, right) => right.acknowledgedAt.localeCompare(left.acknowledgedAt))[0] ?? null;
+}
+
+function requestedDraft(drafts: readonly DraftSummary[], deckId: string, draftId: string | null): DraftSummary | null {
+    if (draftId === null) return null;
+    return drafts.find(draft => draft.draftId === draftId.toLowerCase() && draft.deckId === deckId && draft.memberKey === null) ?? null;
 }
 
 function isUncertain(error: unknown): boolean {

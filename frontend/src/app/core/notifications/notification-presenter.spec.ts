@@ -73,8 +73,12 @@ describe('notification presenter', () => {
         const link = (route: AppNotification['route'], params: Record<string, unknown>): unknown =>
             presentNotification(make('GENERATION_READY', { sessionKind: 'MATERIALS', artifactCount: 2, ...params }, { route }))?.link;
         expect(link('DECK', { deckId: DECK })).toEqual({ label: 'Открыть колоду', commands: ['/decks', DECK] });
-        // WORKSHOP opens the deck page until the workshop route exists (AI-06 #289).
-        expect(link('WORKSHOP', { deckId: DECK, sessionId: DECK })).toEqual({ label: 'Открыть колоду', commands: ['/decks', DECK] });
+        // WORKSHOP opens the Workshop of the session; without a usable session it falls back to the deck page.
+        expect(link('WORKSHOP', { deckId: DECK, sessionId: DECK })).toEqual({
+            label: 'Открыть мастерскую', commands: ['/decks', DECK, 'workshop', DECK]
+        });
+        expect(link('WORKSHOP', { deckId: DECK })).toEqual({ label: 'Открыть колоду', commands: ['/decks', DECK] });
+        expect(link('WORKSHOP', { deckId: DECK, sessionId: '../x' })).toEqual({ label: 'Открыть колоду', commands: ['/decks', DECK] });
         // PLANS has no plans page yet: it opens the «ИИ-бюджет» block of the profile.
         expect(link('PLANS', { deckId: DECK })).toEqual({ label: 'Открыть ИИ-бюджет', commands: ['/profile'], fragment: 'ai-budget' });
         expect(link('NONE', { deckId: DECK })).toBeNull();

@@ -13,6 +13,7 @@ import { AuthoringApiService } from '../authoring/authoring-api.service';
 import { ItemPage } from '../authoring/authoring.models';
 import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService, LearningCapabilities } from '../authoring/capabilities-api.service';
 import { ItemApiService } from '../authoring/item-api.service';
+import { GenerationApiService } from '../generation/generation-api.service';
 import { DeckHubApiService } from './hub/deck-hub-api.service';
 import { DeckInsights } from './hub/deck-hub.models';
 import { OwnDecksApiService } from './own-decks-api.service';
@@ -26,6 +27,7 @@ describe('OwnDeckDetailPageComponent', () => {
     let hub: SpyObj<DeckHubApiService>;
     let items: SpyObj<ItemApiService>;
     let capabilities: SpyObj<CapabilitiesApiService>;
+    let generation: SpyObj<GenerationApiService>;
     const insights = hubFixture.insights.response as unknown as DeckInsights;
     const orderedPage = { ...hubFixture.items.orderedPageWithCounts.response, items: hubFixture.items.sortedPage.items } as unknown as ItemPage;
     const deck = metadataFixture.detail as unknown as OwnDeck;
@@ -65,6 +67,8 @@ describe('OwnDeckDetailPageComponent', () => {
         items.list.mockReturnValue(of(orderedPage));
         capabilities = spyObj<CapabilitiesApiService>({ read: vi.fn().mockName('CapabilitiesApiService.read') });
         capabilities.read.mockReturnValue(of(CAPABILITIES_UNAVAILABLE));
+        generation = spyObj<GenerationApiService>({ listSessions: vi.fn().mockName('GenerationApiService.listSessions') });
+        generation.listSessions.mockReturnValue(of({ items: [], nextCursor: null }));
         Object.defineProperty(store, 'detailState', { value: detail.asReadonly() });
         Object.defineProperty(store, 'mutationState', { value: mutation.asReadonly() });
         await TestBed.configureTestingModule({
@@ -77,6 +81,7 @@ describe('OwnDeckDetailPageComponent', () => {
                 { provide: DeckHubApiService, useValue: hub },
                 { provide: ItemApiService, useValue: items },
                 { provide: CapabilitiesApiService, useValue: capabilities },
+                { provide: GenerationApiService, useValue: generation },
                 { provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ deckId: deck.deckId })) } }
             ]
         }).overrideComponent(OwnDeckDetailPageComponent, {
@@ -84,6 +89,11 @@ describe('OwnDeckDetailPageComponent', () => {
         }).compileComponents();
         fixture = TestBed.createComponent(OwnDeckDetailPageComponent);
         fixture.detectChanges();
+    });
+
+    it('asks for the active Workshops of the deck and keeps the block out of the page while there are none', () => {
+        expect(generation.listSessions).toHaveBeenCalledWith(deck.deckId, { active: true });
+        expect((fixture.nativeElement as HTMLElement).querySelector('app-deck-workshops section')).toBeNull();
     });
 
     it('opens the route identity and saves exact edited metadata against the loaded deck', () => {
