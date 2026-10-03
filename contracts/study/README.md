@@ -30,6 +30,17 @@ Deck/Item contracts.
 | Create exercise and objective | `POST /api/decks/{deckId}/exercises` + `If-Match` | 201, publication acknowledgement |
 | Revise/re-enable exercise | `PUT /api/decks/{deckId}/exercises/{exerciseId}` + `If-Match` | 200, publication acknowledgement |
 | Remove exercise | `DELETE /api/decks/{deckId}/exercises/{exerciseId}` + `If-Match` | 204; history and attempts retained |
+| Clear the «Новое» mark | `DELETE /api/decks/{deckId}/exercises/{exerciseId}/new-mark` | 204, idempotent; opaque 404 for a foreign deck or an exercise not on the roster; no query |
+
+**«Новое» (#291).** An exercise published by the approval of generated exercises
+([generation contract](../generation/README.md), decision 14) carries a server-side mark for
+`learning.exercise.new-mark-ttl` (`P7D`). Every entry of the exercise list (the whole deck and
+`?memberKey=`, which is the material profile) has `isNew: boolean`: true while the mark exists and is
+younger than the TTL. The mark ends when the owner opens the exercise (the editor calls
+`DELETE .../new-mark`), when an attempt on a presentation of the exercise reaches a terminal result in any
+Study mode (the same transaction as the attempt) or when the TTL passes (an expired row is purged by the
+Study retention worker, but a reader never trusts the row alone: it compares `markedAt`). The mark is a
+hint of the catalog: it never changes Study selection, evidence or `StudyState`.
 
 The write command is atomic. `objective.operation=create` allocates a stable
 objective plus its first revision; `reuse` pins an existing exact revision;
@@ -214,8 +225,10 @@ does not cascade into exercise definitions or history; already issued presentati
 and explicit Replay retain their immutable snapshots.
 
 **Learner presentation.** Each issued presentation carries `{presentationId, nonce, ordinal,
-exerciseRevisionId, type, objectiveId, objectiveRevisionId, learningEpoch, content,
-transcriptRevealed, hints, evaluator}`. `content` is resolved once at issue and replayed verbatim:
+exerciseRevisionId, type, objectiveId, objectiveRevisionId, learningEpoch, isNew, content,
+transcriptRevealed, hints, evaluator}`. `isNew` says whether the exercise was «Новое» when the
+presentation was issued; it is decided once, stored with the presentation and replayed verbatim by
+read/resume, and a `REPLAY` copy is always `false`. `content` is resolved once at issue and replayed verbatim:
 `MATERIAL` becomes `TEXT`, media blocks expose only `assetId` (+ image `alt`) and
 `transcriptAvailable`, `MATCH` sides are shuffled independently by a secure random source at issue
 and persisted; the answer key never adjusts the permutation (any arrangement, including

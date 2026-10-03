@@ -56,12 +56,13 @@ public class ExerciseService {
     private final MediaCatalog mediaCatalog;
     private final NativeStorageBatches nativeBatches;
     private final LearningCapabilities capabilities;
+    private final ExerciseNewMarks newMarks;
     private final TransactionTemplate publication;
     private final TransactionTemplate cleanup;
 
     public ExerciseService(ExerciseRepository repository, CommandReceiptService receipts, CompareAndSetExecutor cas,
                            ImmutableStorage storage, MediaCatalog mediaCatalog, LearningCapabilities capabilities,
-                           PlatformTransactionManager transactions) {
+                           ExerciseNewMarks newMarks, PlatformTransactionManager transactions) {
         this.repository = repository;
         this.receipts = receipts;
         this.cas = cas;
@@ -69,6 +70,7 @@ public class ExerciseService {
         this.mediaCatalog = mediaCatalog;
         this.nativeBatches = new NativeStorageBatches(storage);
         this.capabilities = capabilities;
+        this.newMarks = newMarks;
         this.publication = new TransactionTemplate(transactions);
         publication.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
         publication.setTimeout(10);
@@ -98,7 +100,14 @@ public class ExerciseService {
                 .put("deckRevisionId", deck.revisionId().toString()).put("deckVersion", Long.toString(deck.version()))
                 .put("total", total);
         ArrayNode values = result.putArray("exercises");
-        rows.forEach(row -> values.add(summary(row.exercise()).set("objective", objective(row.objective()))));
+        // «Новое»: a mark within the TTL, written by an approval of generated exercises and cleared when the exercise is opened or answered
+        Set<UUID> fresh = newMarks.fresh(actor, deckId, rows.stream().map(row -> row.exercise().exerciseId()).toList());
+        rows.forEach(row -> {
+            ObjectNode entry = summary(row.exercise());
+            entry.put("isNew", fresh.contains(row.exercise().exerciseId()));
+            entry.set("objective", objective(row.objective()));
+            values.add(entry);
+        });
         if (more) result.put("nextCursor", new ExerciseCursor(deck.revisionId(), fetched.get(size).exercise().ordinal()).encode());
         else result.putNull("nextCursor");
         return result;
@@ -125,6 +134,18 @@ public class ExerciseService {
         result.set("answerKey", exercise.answerKey().deepCopy());
         result.set("evaluatorPolicy", exercise.evaluator().deepCopy());
         return result;
+    }
+
+    /**
+     * Clears the «Новое» mark of an exercise of the owner's deck: the editor calls it when the exercise is opened. Idempotent (an
+     * exercise without a mark answers the same); a foreign deck or an exercise that is not on the roster is the opaque 404.
+     */
+    @Transactional(timeout = 10)
+    public void clearNewMark(UUID actor, UUID deckId, UUID exerciseId) {
+        own(actor, deckId);
+        UuidPolicy.requireEntityId(exerciseId, "exerciseId");
+        repository.exerciseHead(actor, deckId, exerciseId).orElseThrow(ResourceNotFoundException::new);
+        newMarks.clear(actor, deckId, exerciseId);
     }
 
     /** Removes only the current exercise roster entry; pinned history and completed attempts remain valid. */

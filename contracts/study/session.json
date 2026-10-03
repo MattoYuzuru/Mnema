@@ -58,6 +58,7 @@
         "objectiveId": "77777777-7777-4777-8777-777777777771",
         "objectiveRevisionId": "77777777-7777-4777-8777-777777777773",
         "learningEpoch": "0",
+        "isNew": true,
         "content": {
           "prompt": [
             {

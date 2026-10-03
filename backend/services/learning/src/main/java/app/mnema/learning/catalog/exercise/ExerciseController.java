@@ -68,6 +68,15 @@ public class ExerciseController {
         return write(result, HttpStatus.OK).body(result.acknowledgement());
     }
 
+    /** The editor opened the exercise: its «Новое» mark goes. Idempotent; 204 whether or not a mark existed. */
+    @DeleteMapping("/{exerciseId}/new-mark")
+    ResponseEntity<Void> clearNewMark(@AuthenticationPrincipal Jwt identity, @PathVariable String deckId,
+                                      @PathVariable String exerciseId, HttpServletRequest request) {
+        if (!request.getParameterMap().isEmpty()) throw new InvalidRequestException();
+        service.clearNewMark(id(identity.getSubject()), id(deckId), id(exerciseId));
+        return ResponseEntity.noContent().headers(privateHeaders()).build();
+    }
+
     @DeleteMapping("/{exerciseId}")
     ResponseEntity<Void> delete(@AuthenticationPrincipal Jwt identity, @PathVariable String deckId,
                                 @PathVariable String exerciseId, HttpServletRequest request) {

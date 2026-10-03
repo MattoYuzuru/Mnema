@@ -84,6 +84,20 @@ class ExerciseRepository {
                 .query(OBJECTIVE).optional();
     }
 
+    /** The current objectives bound to a material, oldest first: the objectives an approval may reuse by title. */
+    List<ObjectiveRow> objectivesOf(UUID actor, UUID deck, UUID member) {
+        return jdbc.sql("""
+                SELECT o.objective_id,o.objective_key,o.member_key,r.revision_id,r.objective_sequence,
+                       r.descriptor ->> 'title' AS title,o.created_at,h.updated_at
+                  FROM app_learning.deck d JOIN app_learning.memory_objective o ON o.deck_id=d.deck_id
+                  JOIN app_learning.objective_head h ON h.deck_id=o.deck_id AND h.objective_id=o.objective_id
+                  JOIN app_learning.objective_revision r ON r.deck_id=h.deck_id AND r.objective_id=h.objective_id
+                    AND r.revision_id=h.revision_id
+                 WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND o.deck_id=:deck AND o.member_key=:member
+                 ORDER BY o.created_at,o.objective_id
+                """).param("actor", actor).param("deck", deck).param("member", member).query(OBJECTIVE).list();
+    }
+
     Optional<ObjectiveRow> objectiveRevision(UUID actor, UUID deck, UUID objective, UUID revision) {
         return jdbc.sql("""
                 SELECT o.objective_id,o.objective_key,o.member_key,r.revision_id,r.objective_sequence,

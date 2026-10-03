@@ -1,6 +1,7 @@
 package app.mnema.learning.study.attempt;
 
 import app.mnema.learning.catalog.exercise.AnswerKey;
+import app.mnema.learning.catalog.exercise.ExerciseNewMarks;
 import app.mnema.learning.catalog.exercise.ExerciseType;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.api.InvalidRequestException;
@@ -29,12 +30,15 @@ public class AttemptService {
     private final AttemptRepository repository;
     private final CanonicalJsonHasher hasher;
     private final MediaCatalog mediaCatalog;
+    private final ExerciseNewMarks newMarks;
     private final BaselineReducer reducer = new BaselineReducer();
 
-    public AttemptService(AttemptRepository repository, CanonicalJsonHasher hasher, MediaCatalog mediaCatalog) {
+    public AttemptService(AttemptRepository repository, CanonicalJsonHasher hasher, MediaCatalog mediaCatalog,
+                          ExerciseNewMarks newMarks) {
         this.repository = repository;
         this.hasher = hasher;
         this.mediaCatalog = mediaCatalog;
+        this.newMarks = newMarks;
     }
 
     @Transactional(timeout = 10)
@@ -114,6 +118,7 @@ public class AttemptService {
             ObjectNode outcome = feedbackOnly(command, presentation, evaluation);
             repository.insertReceipt(command, actor, deck, session, hash, presentation.mode(),
                     evaluation.status().name(), outcome, now, now.plus(COMPACT_RECEIPT_RETENTION));
+            newMarks.clear(actor, deck, presentation.exerciseId());
             repository.completeSessionIfTerminal(actor, deck, session, now);
             return new SubmitResult(outcome, false);
         }
@@ -121,6 +126,7 @@ public class AttemptService {
             ObjectNode outcome = noTransition(command, presentation, evaluation);
             repository.insertReceipt(command, actor, deck, session, hash, presentation.mode(),
                     evaluation.status().name(), outcome, now, null);
+            newMarks.clear(actor, deck, presentation.exerciseId());
             repository.completeSessionIfTerminal(actor, deck, session, now);
             return new SubmitResult(outcome, false);
         }
@@ -133,6 +139,7 @@ public class AttemptService {
             ObjectNode outcome = noTransition(command, presentation, oldEpoch);
             repository.insertReceipt(command, actor, deck, session, hash, presentation.mode(),
                     oldEpoch.status().name(), outcome, now, null);
+            newMarks.clear(actor, deck, presentation.exerciseId());
             repository.completeSessionIfTerminal(actor, deck, session, now);
             return new SubmitResult(outcome, false);
         }
@@ -145,6 +152,8 @@ public class AttemptService {
         repository.insertTransition(command, presentation, state, transition);
         repository.updateState(state, transition, presentation.configId());
         repository.insertRaw(command.attemptId(), command.payload().path("response"), now.plus(RAW_RETENTION));
+        // the learner has met the exercise: its «Новое» mark goes with the terminal result, in this transaction
+        newMarks.clear(actor, deck, presentation.exerciseId());
         repository.completeSessionIfTerminal(actor, deck, session, now);
         return new SubmitResult(outcome, false);
     }
