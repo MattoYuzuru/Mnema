@@ -23,9 +23,11 @@ interface TrialResult {
 const CAPTIONS: Readonly<Record<PreviewMode, string>> = {
     DEMO: 'Это пример упражнения. Заполните шаги ниже — здесь появится ваше задание.',
     AUTHOR_DRAFT: 'Так ученик увидит ваше упражнение. Проверить ответ можно, когда оно будет заполнено.',
-    AUTHOR_READY: 'Пройдите своё упражнение как ученик: ответ проверяет та же логика, что и на занятии. Ничего не сохраняется и не влияет на расписание.'
+    AUTHOR_READY: 'Пройдите своё упражнение как ученик: ответ проверяет та же логика, что и на занятии. Ничего не сохраняется и не влияет на расписание.',
+    PROPOSAL: 'Пройдите упражнение как ученик: ответ проверяет та же логика, что и на занятии. Ничего не сохраняется и не влияет на расписание.'
 };
-const BADGES: Readonly<Record<PreviewMode, string>> = { DEMO: 'Пример', AUTHOR_DRAFT: 'Ваше задание', AUTHOR_READY: 'Ваше задание' };
+const BADGES: Readonly<Record<PreviewMode, string>> = { DEMO: 'Пример', AUTHOR_DRAFT: 'Ваше задание', AUTHOR_READY: 'Ваше задание',
+    PROPOSAL: 'Предложено Мнемой' };
 
 /**
  * The preview area of the exercise editor: the real learner components in an isolated host. It shows either a
@@ -44,6 +46,15 @@ const BADGES: Readonly<Record<PreviewMode, string>> = { DEMO: 'Пример', AU
 })
 export class ExercisePreviewHostComponent {
     readonly presentation = input.required<PreviewPresentation>();
+    /**
+     * Prefix of every id inside the host (heading, result, answer controls and radio groups). Several hosts on one page (a
+     * Workshop batch) give each its own, so no id or radio group is shared.
+     */
+    readonly idPrefix = input('preview');
+    /** The heading of the host, for the region name; a batch card names its exercise here. */
+    readonly heading = input('Попробуйте, как это работает');
+    /** Without the large heading and the caption: the exercise itself is what the card shows. The heading stays for assistive technology. */
+    readonly compact = input(false);
 
     /** Increments on every restart or change of what is shown; also the reset key of the answer surface. */
     readonly attempt = signal(0);
@@ -114,7 +125,7 @@ export class ExercisePreviewHostComponent {
                 if (attempt !== this.attempt()) return;
                 this.busy.set(false);
                 this.result.set({ feedback, response, content });
-                this.focusAfterRender('#preview-result-title');
+                this.focusAfterRender(`#${this.idPrefix()}-result-title`);
             },
             error: () => {
                 if (attempt !== this.attempt()) return;

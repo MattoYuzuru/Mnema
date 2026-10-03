@@ -1,0 +1,115 @@
+@if (empty()) {
+  <section class="notice"><p>В этой мастерской пока нет упражнений.</p><p><a class="button" [routerLink]="['/decks', deckId()]">К колоде</a></p></section>
+} @else {
+  <div class="review">
+    @for (group of groups(); track group.key) {
+      <section class="group" [attr.aria-labelledby]="'group-' + group.key" [attr.data-group]="group.key">
+        <h2 class="group-title" [id]="'group-' + group.key">{{ group.title }}</h2>
+        <ul class="cards">
+          @for (card of group.cards; track card.artifact.artifactId) {
+            <li class="card" [attr.data-card]="card.artifact.artifactId" [attr.data-state]="card.artifact.state"
+                [attr.aria-busy]="writing(card) ? 'true' : null">
+              <article [attr.aria-labelledby]="'card-title-' + card.artifact.artifactId">
+                <header class="card-head">
+                  <h3 class="card-title" [id]="'card-title-' + card.artifact.artifactId" tabindex="-1">{{ title(card) }}</h3>
+                  <p class="card-state">{{ card.status.word }}</p>
+                </header>
+
+                @switch (card.artifact.state) {
+                  @case ('PROPOSED') {
+                    @if (card.presentation; as presentation) {
+                      @if (card.artifact.repinStatus === 'AUTO_REPINNED') {
+                        <p class="muted" data-repinned>Материал изменился: упражнение перепроверено и обновлено под его новую версию.</p>
+                      }
+                      <app-exercise-preview-host [presentation]="presentation" [idPrefix]="presentationId(card)"
+                        [heading]="'Проба: ' + title(card)" [compact]="true" />
+                      <div class="card-actions">
+                        <label class="keep" [attr.aria-describedby]="'card-title-' + card.artifact.artifactId">
+                          <input type="checkbox" [checked]="isKept(card)" (change)="toggleKept(card.artifact.artifactId, $any($event.target).checked)" />
+                          <span>Оставить</span>
+                        </label>
+                        <a class="button" data-edit [routerLink]="['/decks', deckId(), 'materials', card.proposal!.exercise.subject.memberKey, 'exercises', 'new']"
+                          [queryParams]="editQuery(card)">Изменить</a>
+                        <button class="button" type="button" data-reject [attr.aria-disabled]="busy(card) ? 'true' : null"
+                          (click)="rejectOne(card)">Отклонить</button>
+                      </div>
+                    } @else if (card.entry?.phase === 'error') {
+                      <p class="muted">Не удалось загрузить упражнение.</p>
+                      <div class="card-actions"><button class="button" type="button" (click)="reloadDetail(card)">Повторить загрузку</button></div>
+                    } @else {
+                      <div class="placeholder" aria-hidden="true"><span></span><span></span><span></span></div>
+                      <p class="muted">Открываем упражнение…</p>
+                    }
+                  }
+                  @case ('QUEUED') {
+                    <div class="placeholder" aria-hidden="true"><span></span><span></span><span></span></div>
+                    <p class="muted">Ждёт очереди: Мнема напишет его следом.</p>
+                  }
+                  @case ('GENERATING') {
+                    <div class="placeholder" aria-hidden="true"><span></span><span></span><span></span></div>
+                    <p class="muted">Мнема пишет упражнение…</p>
+                  }
+                  @case ('REVISING') {
+                    <div class="placeholder" aria-hidden="true"><span></span><span></span><span></span></div>
+                    <p class="muted">Мнема правит упражнение…</p>
+                  }
+                  @case ('FAILED') {
+                    <p class="notice error" role="status">{{ failureText(card) }}</p>
+                    @if (canRetry(card)) {
+                      <div class="card-actions">
+                        <button class="button" type="button" [attr.aria-disabled]="busy(card) ? 'true' : null" (click)="retryOne(card)">Повторить</button>
+                      </div>
+                    }
+                  }
+                  @case ('STALE') {
+                    <p class="notice" role="status"><strong>Материал изменился.</strong> Это упражнение написано по прежней версии: пересоздайте его по новой или отклоните.</p>
+                    <div class="card-actions">
+                      @if (canRetry(card)) {
+                        <button class="button" type="button" [attr.aria-disabled]="busy(card) ? 'true' : null" (click)="retryOne(card)">Пересоздать</button>
+                      }
+                      @if (canReject(card)) {
+                        <button class="button" type="button" data-reject [attr.aria-disabled]="busy(card) ? 'true' : null" (click)="rejectOne(card)">Отклонить</button>
+                      }
+                    </div>
+                  }
+                  @case ('PUBLISHED') {
+                    <p class="saved"><strong>Сохранено.</strong> <app-new-badge />
+                      @if (materialLink(card); as link) { <a class="text-link" [routerLink]="link">Открыть упражнение</a> }</p>
+                  }
+                  @case ('REJECTED') {
+                    <p class="muted">Отклонено: в колоду не попадёт.</p>
+                    @if (canUndo(card)) {
+                      <div class="card-actions">
+                        <button class="button" type="button" data-undo [attr.aria-disabled]="busy(card) ? 'true' : null" (click)="undoOne(card)">Вернуть</button>
+                      </div>
+                    }
+                  }
+                  @default {
+                    <p class="muted">{{ card.status.word }}</p>
+                  }
+                }
+              </article>
+            </li>
+          }
+        </ul>
+      </section>
+    }
+
+    <div class="review-footer" role="group" aria-label="Сохранение упражнений">
+      <p class="footer-note" role="status">
+        @if (savedCount() > 0) { В колоде: {{ savedCount() }}. }
+        @if (keptCount() === 0) { Ничего не выбрано для сохранения. }
+      </p>
+      <div class="footer-actions">
+        @if (leftOut().length > 0 && savedCount() > 0) {
+          <button class="button" type="button" data-after-save [attr.aria-disabled]="saving() ? 'true' : null"
+            (click)="rejectLeftOut()">Отклонить остальные ({{ leftOut().length }})</button>
+        }
+        <button class="button primary" type="button" data-save [attr.aria-disabled]="saving() || !canSave() ? 'true' : null"
+          (click)="save()">{{ saving() ? 'Сохраняем…' : 'Сохранить выбранные (' + keptCount() + ')' }}</button>
+      </div>
+    </div>
+    <!-- Outside the sticky bar: it is the way out, not an action on the batch, and on a phone the bar must stay short. -->
+    <p class="review-exit"><a class="button" [attr.data-after-save]="leftOut().length > 0 && savedCount() > 0 ? null : ''" [routerLink]="['/decks', deckId()]">К колоде</a></p>
+  </div>
+}
