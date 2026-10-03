@@ -140,6 +140,22 @@ describe('GenerationComposerComponent', () => {
             expect(api.createSession).toHaveBeenCalledTimes(1);
         });
 
+        it('never lets Enter on a checkbox or a radio of the form start a session (implicit submission)', () => {
+            create();
+            type('Объясни Seq Scan');
+            const prevented = (target: Element) => {
+                const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+                target.dispatchEvent(event);
+                return event.defaultPrevented;
+            };
+            expect(prevented(root().querySelector('input[type=radio]')!)).toBe(true);
+            const checkbox = root().querySelector('input[type=checkbox]');
+            expect(checkbox).not.toBeNull();
+            expect(prevented(checkbox!)).toBe(true);
+            expect(prevented(button())).toBe(false);
+            expect(api.createSession).not.toHaveBeenCalled();
+        });
+
         it('asks for a request instead of sending an empty one, and moves focus to the field', () => {
             create();
             document.body.append(root());

@@ -84,6 +84,8 @@ export class WorkshopPageComponent {
             default: return this.exercises() ? 'Мастерская упражнений' : 'Мастерская';
         }
     });
+    protected readonly deleteConsequence = computed(() => this.exercises()
+        ? 'Неодобренные упражнения исчезнут. Сохранённые останутся в колоде.' : 'Неодобренные материалы исчезнут. Одобренные останутся в колоде.');
     protected readonly excerpt = computed(() => promptExcerpt(this.session()?.spec.prompt ?? null));
     /** «Для 7 материалов»: what the exercises of this Workshop are for, in place of the prompt a Materials Workshop quotes. */
     protected readonly targetsLine = computed(() => {

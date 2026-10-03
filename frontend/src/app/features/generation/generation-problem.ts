@@ -1,7 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 
 import { AuthoringProtocolError } from '../authoring/authoring.models';
-import { BlockingBucket } from './generation.models';
+import { BlockingBucket, RequestValidationError } from './generation.models';
 
 /**
  * What a failed generation call tells the UI (`contracts/generation/errors.json`, RFC 9457 Problem Details with a stable
@@ -88,6 +88,11 @@ export function readProblem(error: unknown): GenerationProblem {
             usage: code === 'USAGE_LIMIT_REACHED' ? readUsage(body) : null,
             uncertain: error.status === 0 || error.status >= 500
         };
+    }
+    // A request the client refused to build was never sent: a definitive validation problem, not an unknown outcome.
+    if (error instanceof RequestValidationError) {
+        return { status: 400, code: null, reason: null, limit: null, capability: null, artifactIds: [], activeSessionIds: [], limits: null,
+            usage: null, uncertain: false };
     }
     // A protocol error means the command may well have been applied: the answer could not be read.
     const unreadable = error instanceof AuthoringProtocolError;

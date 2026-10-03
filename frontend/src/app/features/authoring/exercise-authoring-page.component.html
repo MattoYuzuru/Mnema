@@ -29,7 +29,7 @@
              [attr.role]="phase() === 'error' || phase() === 'conflict' || phase() === 'rejected' ? 'alert' : 'status'">
       <p>{{ currentMessage }}</p>
       @if (phase() === 'error') { <button class="button" type="button" (click)="retry()">Повторить попытку</button> }
-      @if (phase() === 'conflict') { <button class="button" type="button" (click)="load()">Загрузить свежую основу</button> }
+      @if (phase() === 'conflict' && !proposalEdit()) { <button class="button" type="button" (click)="load()">Загрузить свежую основу</button> }
       @if ((phase() === 'error' || phase() === 'conflict') && workshopLink(); as link) { <a class="button" data-back-workshop [routerLink]="link">Вернуться в мастерскую</a> }
       @if (phase() === 'saved' && deck() && item() && !proposalEdit()) {
         <a class="button" data-create-another [routerLink]="['/decks', deck()!.deckId, 'materials', item()!.memberKey, 'exercises', 'new']">Создать ещё</a>

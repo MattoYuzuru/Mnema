@@ -76,6 +76,7 @@ export async function runWorkshop(ctx) {
   const deckId = deckPath.split('/').filter(Boolean).at(-1);
   const shared = { deckId, deckPath, sessions: {}, notes: [] };
   const evidence = { stub: true, provider: 'stub', plan: null, stages: {} };
+  const startedAt = Date.now();
 
   // ---- low-level helpers -------------------------------------------------------------------------------------------
   const press = async (name, { modifiers = 0, keyCode } = {}) => {
@@ -687,6 +688,7 @@ export async function runWorkshop(ctx) {
   // #291 (AI-13): exercise generation, batch review, «Новое». Its own deck, so it never disturbs the scenarios above.
   evidence.exercises = await runWorkshopExercises(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
     activeSessions, sessionPath, location });
+  evidence.durationMs = Date.now() - startedAt;
   record('workshop_composer_stub_real_api', evidence);
   return evidence;
 }
@@ -1201,20 +1203,12 @@ export async function runWorkshopNotes(ctx, h) {
     await until(async () => (await workshopView()).actions.some(action => action.startsWith('Одобрить')), 'the first material offers no approval', 25_000);
     need((await workshopView()).changedTags === 0, 'an unchanged note is marked as changed');
     for (let index = 0; index < 3; index++) {
-      // Pressed only while the Workshop still shows this material: a press that lands after the page moved on would approve the next one.
-      const approveClick = () => page(`const position = document.querySelector('section.workshop .pager .position')?.textContent.trim();
-        if (position !== args[0]) return false;
-        const node = [...document.querySelectorAll('section.workshop .proposal-actions button')].find(item => item.textContent.trim().startsWith('Одобрить')); if (!node) return false; node.click(); return true;`, `${index + 1} из 4`);
-      need(await approveClick(), `material ${index + 1} cannot be approved`);
-      // A press made while the proposal's detail is still loading is ignored by design (the store never approves a revision the user has not
-      // been shown): press again until the server says it is published. A repeat is harmless (a published artifact is no longer approvable).
-      let presses = 1;
-      const publishedCount = async () => (await getSession(sessionId)).artifacts.filter(artifact => artifact.state === 'PUBLISHED').length;
-      await until(async () => {
-        if (await publishedCount() === index + 1) return true;
-        if (presses < 6) { presses += 1; await sleep(1500); if (await publishedCount() !== index + 1) await approveClick(); }
-        return false;
-      }, `material ${index + 1} was not published`, 40_000);
+      // The press is made only once the proposal's own content is rendered: a press while its detail is still loading is ignored by design
+      // (the store never approves a revision the user has not been shown), so waiting for what the user sees is the honest precondition.
+      await until(() => has('section.workshop app-proposal-view article[data-state=PROPOSED] .final'), `the proposal of material ${index + 1} did not render`, 25_000);
+      need(await page(`const node = [...document.querySelectorAll('section.workshop .proposal-actions button')].find(item => item.textContent.trim().startsWith('Одобрить')); if (!node) return false; node.click(); return true;`),
+        `material ${index + 1} cannot be approved`);
+      await until(async () => (await getSession(sessionId)).artifacts.filter(artifact => artifact.state === 'PUBLISHED').length === index + 1, `material ${index + 1} was not published`, 25_000);
       if (index < 2) {
         await until(async () => { const now = await workshopView(); return now.position === `${index + 2} из 4` && now.actions.some(action => action.startsWith('Одобрить')); },
           `the Workshop did not move on to material ${index + 2}`, 15_000);

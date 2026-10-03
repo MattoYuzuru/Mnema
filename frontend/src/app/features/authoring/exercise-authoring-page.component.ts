@@ -607,7 +607,7 @@ export class ExerciseAuthoringPageComponent {
     }
 
     /** Saves the edited proposal: the artifact is approved with the exercise as its `replacement`; then back to the Workshop. */
-    private approveProposal(edit: ProposalEdit, deck: OwnDeck, pending: PendingWrite): void {
+    private approveProposal(edit: ProposalEdit, deck: OwnDeck, pending: PendingWrite, retried = false): void {
         const artifact = edit.artifact;
         this.generation.approveArtifact(deck.deckId, edit.sessionId, { artifactId: artifact.artifactId,
             expectedArtifactVersion: artifact.rowVersion, expectedRevisionId: artifact.currentRevisionId! },
@@ -619,21 +619,55 @@ export class ExerciseAuthoringPageComponent {
                     this.toast.echo('Упражнение сохранено в колоду');
                     void this.router.navigate(['/decks', deck.deckId, 'workshop', edit.sessionId]);
                 },
-                error: (error: unknown) => this.proposalFailed(error)
+                error: (error: unknown) => this.proposalFailed(error, edit, deck, pending, retried)
             });
     }
 
-    private proposalFailed(error: unknown): void {
+    /**
+     * A `412` (the deck moved, or the proposal's version did) never costs the user their edits: only the pins are read again (the
+     * deck and the artifact) and the same edited exercise is sent once more as a new command. If the proposal is no longer open for
+     * a decision the edits stay in the form and the way back to the Workshop is offered.
+     */
+    private proposalFailed(error: unknown, edit: ProposalEdit, deck: OwnDeck, pending: PendingWrite, retried: boolean): void {
         const problem = readProblem(error);
         if (problem.uncertain) {
             this.phase.set('error');
             this.message.set('Не удалось проверить сохранение. Повторите попытку: будет отправлена та же команда.');
             return;
         }
+        if (problem.status === 412 && !retried) {
+            forkJoin({ deck: this.decks.detail(deck.deckId), artifact: this.generation.getArtifact(deck.deckId, edit.sessionId, edit.artifact.artifactId) })
+                .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+                    next: fresh => {
+                        const proposal = readProposal(fresh.artifact);
+                        if (proposal === null || fresh.artifact.state !== 'PROPOSED') {
+                            this.pending = null;
+                            this.phase.set('conflict');
+                            this.message.set('Предложение уже решено или изменилось. Ваши правки остались в форме, но сохранить их из него нельзя. Вернитесь в мастерскую.');
+                            return;
+                        }
+                        const next: ProposalEdit = { sessionId: edit.sessionId, artifact: fresh.artifact, proposal };
+                        this.deck.set(fresh.deck);
+                        this.proposalEdit.set(next);
+                        this.pending = { ...pending, commandId: newCommandId() };
+                        this.approveProposal(next, fresh.deck, this.pending, true);
+                    },
+                    error: () => {
+                        this.phase.set('error');
+                        this.message.set('Не удалось обновить данные колоды. Ваши правки остались в форме: повторите попытку.');
+                    }
+                });
+            return;
+        }
         this.pending = null;
+        if (problem.status === 409 && problem.reason === 'SOURCE_STALE') {
+            this.phase.set('conflict');
+            this.message.set('Материал изменился — предложение устарело. Ваши правки остались в форме, но сохранить их из этого предложения уже нельзя. Вернитесь в мастерскую: там упражнение можно пересоздать.');
+            return;
+        }
         if (problem.status === 412 || problem.status === 409) {
             this.phase.set('conflict');
-            this.message.set(`${problemMessage(problem, 'EXERCISES')} Загрузите упражнение заново или вернитесь в мастерскую.`);
+            this.message.set(`${problemMessage(problem, 'EXERCISES')} Ваши правки остались в форме; можно вернуться в мастерскую.`);
             return;
         }
         this.phase.set('rejected');

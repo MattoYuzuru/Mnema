@@ -1,6 +1,6 @@
 import {
     BuilderTarget, DEFAULT_BUILDER_VALUE, buildExercisesSpec, describeExerciseLimit, describeExerciseUsage, exercisesCount, materialsCount,
-    mechanicName, percentText, perTargetText, readLimits, splitNotice, splitTargets, targetsSummary, toggleMechanic
+    capSessions, mechanicName, percentText, perTargetText, readLimits, splitNotice, splitTargets, targetsSummary, toggleMechanic
 } from './exercise-builder';
 import { materialIds, materialRevisions } from './exercise-test-data';
 import { BlockingBucket, serializeExercisesSpec, serializeSpec } from './generation.models';
@@ -101,9 +101,25 @@ describe('exercise builder rules', () => {
         });
 
         it('says so before anything starts, and says nothing for one session', () => {
-            expect(splitNotice(45, 3)).toContain('3');
-            expect(splitNotice(45, 3)).toContain('в одной мастерской — не больше 20');
-            expect(splitNotice(5, 1)).toBeNull();
+            expect(splitNotice(45, 3, 'UNCOVERED_FIRST')).toContain('3');
+            expect(splitNotice(45, 3, 'UNCOVERED_FIRST')).toContain('в одной мастерской — не больше 20');
+            expect(splitNotice(5, 1, 'BALANCED')).toBeNull();
+        });
+
+        it('names the order only for «Сначала без упражнений»', () => {
+            expect(splitNotice(45, 3, 'UNCOVERED_FIRST')).toContain('сначала с материалами без упражнений');
+            expect(splitNotice(45, 3, 'BALANCED')).not.toContain('без упражнений');
+        });
+
+        it('opens at most three sessions at once and says which materials wait', () => {
+            const sessions = [[1], [2], [3], [4], [5]];
+            expect(capSessions(sessions)).toEqual([[1], [2], [3]]);
+            expect(capSessions(sessions, 1)).toEqual([[1], [2]]);
+            expect(capSessions(sessions, 5)).toEqual([]);
+            const note = splitNotice(100, 3, 'BALANCED', 40)!;
+            expect(note).toContain('не больше 3 мастерских');
+            expect(note).toContain('40');
+            expect(splitNotice(20, 1, 'BALANCED', 0)).toBeNull();
         });
     });
 

@@ -4,7 +4,7 @@
     <p class="notice" role="status">Готовим страницу…</p>
   } @else {
     <a class="back-link" [routerLink]="backLink()"><span aria-hidden="true">←</span> {{ backLabel() }}</a>
-    <p class="eyebrow">Упражнения с ИИ@if (deckTitle(); as title) { · {{ title }} }</p>
+    @if (deckTitle(); as title) { <p class="eyebrow">{{ title }}</p> }
     <h1 id="builder-title" tabindex="-1">Упражнения с ИИ</h1>
   }
 
@@ -36,7 +36,7 @@
         <p class="notice" role="status">Материалов в колоде очень много: Мнема берёт первые {{ targets().length }}, сначала без упражнений.</p>
       }
 
-      <form class="composer-form" novalidate (submit)="onSubmit($event)">
+      <form class="composer-form" novalidate (submit)="onSubmit($event)" (keydown.enter)="blockImplicitSubmit($event)">
         <section class="targets" aria-labelledby="targets-title">
           <h2 id="targets-title" class="targets-title">{{ summary() }}</h2>
           <details class="targets-list">
@@ -123,14 +123,17 @@
             </section>
           }
         </div>
+        @if (startedSessions().length > 0) {
+          <section class="notice" aria-label="Уже открытые мастерские">
+            <p>Уже открыто — эти материалы убраны из формы:</p>
+            <ul class="workshop-links">@for (workshop of startedSessions(); track workshop.sessionId) {
+              <li><a class="text-link" [routerLink]="['/decks', workshop.deckId, 'workshop', workshop.sessionId]">Открыть мастерскую от {{ startedAt(workshop) }}</a></li>
+            }</ul>
+          </section>
+        }
         @if (failure(); as message) {
           <section class="notice error" role="alert">
             <p>{{ message }}</p>
-            @if (opened().length > 0) {
-              <ul class="workshop-links">@for (workshop of opened(); track workshop.sessionId) {
-                <li><a class="text-link" [routerLink]="['/decks', workshop.deckId, 'workshop', workshop.sessionId]">Открыть мастерскую от {{ startedAt(workshop) }}</a></li>
-              }</ul>
-            }
             @if (activeWorkshops().length > 0) {
               <ul class="workshop-links">@for (workshop of activeWorkshops(); track workshop.sessionId) {
                 <li><a class="text-link" [routerLink]="['/decks', workshop.deckId, 'workshop', workshop.sessionId]">Открыть мастерскую от {{ startedAt(workshop) }}</a></li>

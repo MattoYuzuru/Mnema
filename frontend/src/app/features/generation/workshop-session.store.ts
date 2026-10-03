@@ -288,7 +288,10 @@ export class WorkshopSessionStore {
         const session = this.session();
         if (session === null || this.isBusy('session') || !sessionAllows(session.state, 'approveArtifacts')) return 0;
         const wanted = new Set(artifactIds);
-        const targets = this.approvable().filter(artifact => wanted.has(artifact.artifactId)).map(artifact => artifact.artifactId);
+        // Only what the user was shown as it is now, like a single approval: a loaded revision that is not the current one, or a load
+        // marked out of date, is never published unseen.
+        const targets = this.approvable().filter(artifact => wanted.has(artifact.artifactId) && this.shownAsCurrent(artifact))
+            .map(artifact => artifact.artifactId);
         if (targets.length === 0) return 0;
         this.begin('session');
         let published = 0;
@@ -609,6 +612,11 @@ export class WorkshopSessionStore {
             if (!problem.uncertain) this.commandIds.delete(id);
             return { ok: false, problem };
         }
+    }
+
+    private shownAsCurrent(artifact: ArtifactSummary): boolean {
+        const entry = this.details()[artifact.artifactId];
+        return entry?.detail != null && !entry.stale && entry.detail.currentRevisionId === artifact.currentRevisionId;
     }
 
     /** One bulk command for `ids`; a `412` is retried once when every proposal in it is still the one that was sent. */

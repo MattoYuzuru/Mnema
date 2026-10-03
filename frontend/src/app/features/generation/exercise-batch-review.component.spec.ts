@@ -13,7 +13,7 @@ import {
     ack, artifactIds, choice, createCommand, documentOf, exerciseArtifact, exerciseDetail, exerciseIds, exerciseSession, materialIds, materialRevisions, selfCheck
 } from './exercise-test-data';
 import { GenerationApiService } from './generation-api.service';
-import { groupCards, ReviewCard } from './exercise-batch-review.component';
+import { ReviewCard, withHeadings } from './exercise-batch-review.component';
 import { WorkshopPageComponent } from './workshop-page.component';
 import { WorkshopSessionStore } from './workshop-session.store';
 import { activeStep, deckFixture, eventsEnvelope, ids, problemResponse } from './generation-test-data';
@@ -99,6 +99,7 @@ describe('Exercise batch review (Workshop of an EXERCISES session)', () => {
 
     afterEach(() => {
         vi.useRealTimers();
+        sessionStorage.clear();
         titleOf = memberKey => memberKey === materialIds.first ? 'Планы запросов' : 'Индексы';
         failDetail = new Set<string>();
         holdDetails = false;
@@ -116,20 +117,44 @@ describe('Exercise batch review (Workshop of an EXERCISES session)', () => {
             expect(root().textContent).not.toContain('Одобрить все готовые');
         });
 
-        it('groups the proposals by material in the order they were requested, named by the material, then what is not ready', async () => {
+        it('keeps the cards in the server order and opens each material\'s run with a heading named by the material', async () => {
             await open();
-            const groups = [...root().querySelectorAll('.group')];
-            expect(groups.map(group => group.querySelector('.group-title')!.textContent)).toEqual(['Планы запросов', 'Индексы', 'Пишутся', 'Не удались']);
-            expect(groups[0]!.querySelectorAll('li.card')).toHaveLength(2);
-            expect(groups[1]!.querySelectorAll('li.card')).toHaveLength(1);
-            expect(groups.map(group => group.getAttribute('aria-labelledby')).every(id => root().querySelector(`#${id}`) !== null)).toBe(true);
+            const entries = [...root().querySelectorAll('li.entry')];
+            expect(entries.map(entry => entry.getAttribute('data-card'))).toEqual(artifactIds.slice(0, 5));
+            expect([...root().querySelectorAll('[data-material-heading]')].map(heading => heading.textContent)).toEqual(['Планы запросов', 'Индексы']);
+            expect(entries[0]!.querySelector('[data-material-heading]')).not.toBeNull();
+            expect(entries[1]!.querySelector('[data-material-heading]')).toBeNull();
+            expect(entries[2]!.querySelector('[data-material-heading]')).not.toBeNull();
+            // The written and the failed card stay where they are: no group of their own to jump into.
+            expect(entries[3]!.getAttribute('data-state')).toBe('GENERATING');
+            expect(entries[4]!.getAttribute('data-state')).toBe('FAILED');
         });
 
-        it('names a material «Материал» while its title is unknown, and keeps going when one cannot be read', async () => {
-            titleOf = memberKey => memberKey === materialIds.first ? null : 'Индексы';
+        it('does not move a card when its details arrive: the same element stays in the same place', async () => {
+            holdDetails = true;
+            held = [];
             await open();
-            const titles = [...root().querySelectorAll('.group-title')].map(title => title.textContent);
-            expect(titles.slice(0, 2)).toEqual(['Материал', 'Индексы']);
+            const before = [...root().querySelectorAll('li.entry')];
+            expect(before.map(entry => entry.getAttribute('data-card'))).toEqual(artifactIds.slice(0, 5));
+            for (const entry of held) { entry.subject.next(parseArtifactDetail(details[entry.id]!)); entry.subject.complete(); }
+            await settle();
+            const after = [...root().querySelectorAll('li.entry')];
+            expect(after.map(entry => entry.getAttribute('data-card'))).toEqual(artifactIds.slice(0, 5));
+            expect(after.every((entry, index) => entry === before[index])).toBe(true);
+        });
+
+        it('reads each material title once: a session refresh never restarts a read', async () => {
+            await open();
+            expect(items.read).toHaveBeenCalledTimes(2);
+            await store.refresh();
+            await store.refresh();
+            fixture.detectChanges();
+            expect(items.read).toHaveBeenCalledTimes(2);
+        });
+
+        it('states what deleting an exercise Workshop removes in words about exercises', async () => {
+            await open();
+            expect(root().querySelector('.consequence')?.textContent).toContain('Неодобренные упражнения исчезнут');
         });
 
         it('tells an empty batch from a loading one', async () => {
@@ -219,15 +244,15 @@ describe('Exercise batch review (Workshop of an EXERCISES session)', () => {
             expect(card.querySelector('app-exercise-preview-host')).toBeNull();
         });
 
-        it('shows a saved exercise with «Новое» and a link to it, and a rejected one with «Вернуть»', async () => {
+        it('shows a saved exercise with a link to it, and a rejected one with «Вернуть»', async () => {
             const published = exerciseArtifact(artifactIds[0]!, 0, 'PUBLISHED', { publishedRef: { kind: 'EXERCISE', exerciseId: exerciseIds.exercise,
                 exerciseRevisionId: exerciseIds.exerciseRevision, objectiveId: exerciseIds.objective, objectiveRevisionId: exerciseIds.objectiveRevision } });
             await open([published, exerciseArtifact(artifactIds[1]!, 1, 'REJECTED')], { state: 'REVIEW' });
             const saved = cardOf(0);
             expect(saved.textContent).toContain('Сохранено.');
-            expect(saved.querySelector('app-new-badge')).not.toBeNull();
+            // «Новое» is the server's mark: the list and Study show it, a card of the Workshop does not claim it.
+            expect(saved.querySelector('app-new-badge')).toBeNull();
             expect(saved.querySelector('a.text-link')?.getAttribute('href')).toBe(`/decks/${ids.deckId}/exercises/${exerciseIds.exercise}/edit`);
-            expect(cardOf(1).closest('.group')?.querySelector('.group-title')?.textContent).toBe('Планы запросов');
             expect(labelled(cardOf(1), 'Вернуть')).toBeDefined();
         });
 
@@ -356,23 +381,97 @@ describe('Exercise batch review (Workshop of an EXERCISES session)', () => {
             await settle();
             await settle();
             expect(root().querySelector('[role=alert]')?.textContent).toContain('Материал изменился, пока писалось упражнение');
-            expect(root().querySelectorAll('li.card').length).toBe(5);
+            expect(root().querySelectorAll('li.entry').length).toBe(5);
         });
     });
 
-    describe('grouping rules', () => {
+    describe('headings', () => {
         const card = (artifactId: string, state: string, member: string | null): ReviewCard => ({
             artifact: parseArtifactSummary(exerciseArtifact(artifactId, 0, state)), entry: null, presentation: null, mechanic: null,
             status: { shape: 'ready', word: 'готов' },
             proposal: member === null ? null : { artifactId, revisionId: ids.revision, mechanic: 'CHOICE', objective: { operation: 'create', title: 'x' }, objectiveTitle: 'x',
                 exercise: choice({ memberKey: member, itemRevisionId: materialRevisions.first }), quotes: {} } });
 
-        it('puts materials in the requested order, then those the request did not list, then the rest by kind', () => {
-            const groups = groupCards([card(artifactIds[0]!, 'PROPOSED', materialIds.second), card(artifactIds[1]!, 'PROPOSED', materialIds.third),
-                card(artifactIds[2]!, 'PROPOSED', materialIds.first), card(artifactIds[3]!, 'QUEUED', null), card(artifactIds[4]!, 'FAILED', null),
-                card(artifactIds[5]!, 'PUBLISHED', null)], [materialIds.first, materialIds.second], { [materialIds.first]: 'Первый' });
-            expect(groups.map(group => group.key)).toEqual([materialIds.first, materialIds.second, materialIds.third, 'writing', 'failed', 'saved']);
-            expect(groups.map(group => group.title)).toEqual(['Первый', 'Материал', 'Материал', 'Пишутся', 'Не удались', 'Уже в колоде']);
+        it('opens a heading where the material changes, never reorders, and leaves cards without a proposal where they are', () => {
+            const cards = [card(artifactIds[0]!, 'PROPOSED', materialIds.second), card(artifactIds[1]!, 'PROPOSED', materialIds.second),
+                card(artifactIds[2]!, 'QUEUED', null), card(artifactIds[3]!, 'PROPOSED', materialIds.first), card(artifactIds[4]!, 'FAILED', null),
+                card(artifactIds[5]!, 'PROPOSED', materialIds.third)];
+            const entries = withHeadings(cards, { [materialIds.first]: 'Первый' });
+            expect(entries.map(entry => entry.card)).toEqual(cards);
+            expect(entries.map(entry => entry.heading)).toEqual(['Материал', null, null, 'Первый', null, 'Материал']);
+        });
+    });
+
+    describe('what the user keeps and the controls of a card', () => {
+        const checkboxOf = (index: number) => cardOf(index).querySelector<HTMLInputElement>('input[type=checkbox]')!;
+        const saveButton = () => root().querySelector<HTMLButtonElement>('[data-save]')!;
+
+        it('keeps the «Оставить» choice per session: a page opened again (the way back from «Изменить») still has it', async () => {
+            await open();
+            checkboxOf(1).click();
+            fixture.detectChanges();
+            expect(saveButton().textContent!.trim()).toBe('Сохранить выбранные (2)');
+            expect(JSON.parse(sessionStorage.getItem(`mnema:exercise-review:${ids.sessionId}`)!)).toEqual([artifactIds[1]]);
+            fixture.destroy();
+            await open();
+            expect(checkboxOf(1).checked).toBe(false);
+            expect(checkboxOf(0).checked).toBe(true);
+            expect(saveButton().textContent!.trim()).toBe('Сохранить выбранные (2)');
+            checkboxOf(1).click();
+            fixture.detectChanges();
+            expect(sessionStorage.getItem(`mnema:exercise-review:${ids.sessionId}`)).toBeNull();
+        });
+
+        it('keeps it in memory when storage refuses access, and ignores what storage holds that is not a list', async () => {
+            vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new DOMException('blocked', 'SecurityError'); });
+            vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('blocked', 'SecurityError'); });
+            await open();
+            checkboxOf(2).click();
+            fixture.detectChanges();
+            fixture.destroy();
+            await open();
+            expect(checkboxOf(2).checked).toBe(false);
+            vi.restoreAllMocks();
+            sessionStorage.setItem(`mnema:exercise-review:${ids.sessionId}`, '{"not":"a list"}');
+            await open();
+            expect(checkboxOf(2).checked).toBe(true);
+        });
+
+        it('counts only what is shown as the server has it: a proposal whose loaded revision is not the current one waits', async () => {
+            await open();
+            expect(saveButton().textContent!.trim()).toBe('Сохранить выбранные (3)');
+            session = { ...session, artifacts: session['artifacts'].map((artifact: any) => artifact.artifactId === artifactIds[0]
+                ? { ...artifact, currentRevisionId: '4e700000-0000-4000-8000-0000000000ee' } : artifact) };
+            await store.refresh();
+            fixture.detectChanges();
+            expect(saveButton().textContent!.trim()).toBe('Сохранить выбранные (2)');
+        });
+
+        it('describes the checkbox and every button of a card by the card\'s own title', async () => {
+            await open([exerciseArtifact(artifactIds[0]!, 0, 'PROPOSED'), exerciseArtifact(artifactIds[1]!, 1, 'STALE'), exerciseArtifact(artifactIds[2]!, 2, 'REJECTED'),
+                exerciseArtifact(artifactIds[3]!, 3, 'FAILED', { errorCode: 'INVALID_OUTPUT', currentRevisionId: null })], { state: 'REVIEW' });
+            for (let index = 0; index < 4; index++) {
+                const id = `card-title-${artifactIds[index]}`;
+                const controls = [...cardOf(index).querySelectorAll<HTMLElement>('button, a.button, a.text-link, input[type=checkbox]')]
+                    .filter(element => element.closest('app-exercise-preview-host') === null);
+                expect(controls.length, `card ${index} has controls`).toBeGreaterThan(0);
+                for (const control of controls) expect(control.getAttribute('aria-describedby'), `${index}: ${control.textContent?.trim()}`).toBe(id);
+                expect(root().querySelector(`#${id}`)).not.toBeNull();
+            }
+            // The label itself carries no description: the checkbox does.
+            expect(cardOf(0).querySelector('label.keep')?.hasAttribute('aria-describedby')).toBe(false);
+        });
+
+        it('publishes the height of the sticky bar as scroll padding while it exists, and removes it afterwards', async () => {
+            await open();
+            expect(document.documentElement.style.getPropertyValue('--mn-bulk-bar-height')).toMatch(/^\d+px$/);
+            fixture.destroy();
+            expect(document.documentElement.style.getPropertyValue('--mn-bulk-bar-height')).toBe('');
+        });
+
+        it('says on the card, in a visible line, that playing it saves nothing and leaves the schedule alone', async () => {
+            await open();
+            expect(cardOf(0).querySelector('[data-try-note]')?.textContent).toContain('ничего не сохраняет и не меняет расписание');
         });
     });
 });

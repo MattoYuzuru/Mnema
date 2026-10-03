@@ -39,6 +39,16 @@ describe('WorkshopSessionStore: exercise batches (AI-13)', () => {
             { provide: OwnDecksApiService, useValue: decks }, { provide: ToastService, useValue: toast }] });
         store = TestBed.inject(WorkshopSessionStore);
         store.open(ids.deckId, ids.sessionId);
+        shown(artifacts.filter(artifact => artifact['currentRevisionId'] !== null).map(artifact => artifact['artifactId'] as string));
+    }
+
+    /** What the user has been shown: the loaded detail of each of these, as the server has it now. */
+    function shown(idList: readonly string[], stale = false): void {
+        store.details.update(held => ({ ...held, ...Object.fromEntries(idList.map(id => {
+            const artifact = store.artifacts().find(candidate => candidate.artifactId === id)!;
+            return [id, { phase: 'ready', forRevision: artifact.currentRevisionId, stale,
+                detail: { artifactId: id, currentRevisionId: artifact.currentRevisionId } as never }];
+        })) }));
     }
 
     afterEach(() => vi.useRealTimers());
@@ -63,6 +73,21 @@ describe('WorkshopSessionStore: exercise batches (AI-13)', () => {
         expect(pin).toEqual({ rowVersion: deckFixture.rowVersion, revisionId: deckFixture.revisionId });
         expect(commandId).toMatch(/^[0-9a-f-]{36}$/);
         expect(toast.echo).toHaveBeenCalledWith('Новые упражнения: 2 — уже в колоде');
+    });
+
+    it('saves only what the user was shown as it is now: no detail, a detail of another revision or one marked out of date is left out', async () => {
+        const list = many(3);
+        setup(proposedBatch(list));
+        store.details.set({});
+        shown([list[0]!]);
+        store.details.update(held => ({ ...held, [list[1]!]: { phase: 'ready', forRevision: 'x', stale: false,
+            detail: { artifactId: list[1], currentRevisionId: '4e700000-0000-4000-8000-0000000000ee' } as never } }));
+        shown([list[2]!], true);
+        api.approveArtifacts.mockImplementation(approveAnswer(list, '9', '33333333-3333-4333-8333-333333333333'));
+        expect(await store.approveSelected(list)).toBe(1);
+        expect(api.approveArtifacts.mock.calls[0]![2].map(target => target.artifactId)).toEqual([list[0]]);
+        expect(await store.approveSelected([list[1]!, list[2]!])).toBe(0);
+        expect(api.approveArtifacts).toHaveBeenCalledTimes(1);
     });
 
     it('saves more than 20 in chunks, each its own command, the deck pin chained from the previous acknowledgement', async () => {
@@ -163,6 +188,7 @@ describe('WorkshopSessionStore: exercise batches (AI-13)', () => {
         decks.detail.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
         // the pin was read when the store opened; forget it by opening against a deck that cannot be read
         store.open(ids.deckId, ids.sessionId);
+        shown(list);
         expect(await store.approveSelected(list)).toBe(0);
         expect(store.notice()?.text).toBe('Не удалось прочитать колоду. Попробуйте ещё раз.');
         expect(api.approveArtifacts).not.toHaveBeenCalled();

@@ -112,10 +112,24 @@ export function targetsSummary(count: number): string {
     return `Для${NBSP}${count}${NBSP}${one ? 'материала' : 'материалов'}`;
 }
 
-/** The sessions a big selection becomes, said before anything starts. */
-export function splitNotice(targets: number, sessions: number): string | null {
-    if (sessions <= 1) return null;
-    return `Выбрано ${materialsCount(targets)}, а в одной мастерской — не больше ${MAX_EXERCISE_TARGETS}. Мнема откроет ${sessions}${NBSP}${plural(sessions, 'мастерскую', 'мастерские', 'мастерских')}: сначала с материалами без упражнений.`;
+/** At most this many generation sessions may be active at once (`RESOURCE_LIMIT_EXCEEDED` / `ACTIVE_SESSIONS`). */
+export const MAX_ACTIVE_SESSIONS = 3;
+
+/** The sessions one press can open: no more than the account may have active at once, less the ones this request already opened. */
+export function capSessions<T>(sessions: readonly (readonly T[])[], alreadyOpen = 0): readonly (readonly T[])[] {
+    return sessions.slice(0, Math.max(0, MAX_ACTIVE_SESSIONS - alreadyOpen));
+}
+
+/**
+ * What a big selection becomes, said before anything starts: how many sessions (20 materials each), in what order (only when the
+ * priority is «Сначала без упражнений»), and, above what the active-session limit allows at once, which materials wait.
+ */
+export function splitNotice(targets: number, sessions: number, priority: ExercisePriority, deferred = 0): string | null {
+    if (sessions <= 1 && deferred === 0) return null;
+    const order = priority === 'UNCOVERED_FIRST' ? ': сначала с материалами без упражнений' : '';
+    const lead = `Выбрано ${materialsCount(targets)}, а в одной мастерской — не больше ${MAX_EXERCISE_TARGETS}. Мнема откроет ${sessions}${NBSP}${plural(sessions, 'мастерскую', 'мастерские', 'мастерских')}${order}.`;
+    if (deferred === 0) return lead;
+    return `${lead} Одновременно могут идти не больше ${MAX_ACTIVE_SESSIONS} мастерских, поэтому ${materialsCount(deferred)} в этот раз не войдут: выберите их снова после разбора.`;
 }
 
 /** `aria-valuetext` and the visible output of the «Точно» slider: «5 упражнений на материал». */

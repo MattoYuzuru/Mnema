@@ -27,7 +27,7 @@ import { NativeMediaUploadApi } from './native-media-upload.api';
 import { spyObj, type SpyObj, lastCall } from '../../../testing/mocks';
 import { ToastService } from '../../core/notifications/toast.service';
 import { GenerationApiService } from '../generation/generation-api.service';
-import { ArtifactDetail, parseApprovalAck, parseArtifactDetail } from '../generation/generation.models';
+import { ArtifactDetail, RequestValidationError, parseApprovalAck, parseArtifactDetail } from '../generation/generation.models';
 import { ack, createCommand, exerciseDetail } from '../generation/exercise-test-data';
 import { ids as generationIds, problemResponse } from '../generation/generation-test-data';
 
@@ -1690,17 +1690,71 @@ describe('ExerciseAuthoringPageComponent', () => {
             expect(generationApi.approveArtifact.mock.calls.at(-1)![4]).toBe(first);
         });
 
-        it('explains a stale material or a moved deck, and a refusal of the exercise, in words', () => {
+        it('explains a stale proposal in the editor\'s words, keeps the edits and offers the way back instead of reloading', () => {
             open();
+            component().setPrompt([text('Моя правка?')]);
             generationApi.approveArtifact.mockReturnValueOnce(throwError(() => problemResponse(409, { code: 'GENERATION_STATE_CONFLICT', reason: 'SOURCE_STALE' })));
             component().save();
             refresh();
             expect(component().phase()).toBe('conflict');
-            expect(component().message()).toContain('Материал изменился, пока писалось упражнение');
+            expect(component().message()).toContain('Материал изменился — предложение устарело');
+            expect(component().message()).toContain('правки остались в форме');
+            expect(page().querySelector('a[data-back-workshop]')).not.toBeNull();
+            // «Загрузить свежую основу» would throw the edits away: it is not offered for a proposal.
+            expect(page().textContent).not.toContain('Загрузить свежую основу');
+            expect(JSON.stringify(component().drafts())).toContain('Моя правка?');
+        });
+
+        it('on a 412 reads only the pins again and sends the same edit once more as a new command: the edits are never discarded', () => {
+            open();
+            component().setPrompt([text('Моя правка?')]);
+            approved();
+            generationApi.approveArtifact.mockReset();
             generationApi.approveArtifact.mockReturnValueOnce(throwError(() => problemResponse(412)));
+            generationApi.approveArtifact.mockImplementationOnce((_d, _s, target, _pin, commandId) => of(parseApprovalAck(ack(commandId, [target.artifactId]), false)));
+            const moved = { ...deck, rowVersion: '9', revisionId: id('88') };
+            decksApi.detail.mockReturnValue(of(moved));
+            generationApi.getArtifact.mockClear();
             component().save();
             refresh();
+            expect(generationApi.approveArtifact).toHaveBeenCalledTimes(2);
+            const [first, second] = generationApi.approveArtifact.mock.calls;
+            expect(first![3]).toEqual({ rowVersion: deck.rowVersion, revisionId: deck.revisionId });
+            expect(second![3]).toEqual({ rowVersion: '9', revisionId: id('88') });
+            expect(second![4]).not.toBe(first![4]);
+            expect(JSON.stringify(second![5]!.exercise)).toContain('Моя правка?');
+            expect(generationApi.getArtifact).toHaveBeenCalledTimes(1);
+            expect(router.navigate).toHaveBeenCalledWith(['/decks', deck.deckId, 'workshop', sessionId]);
+            expect(component().deck()!.rowVersion).toBe('9');
+        });
+
+        it('gives up after one retry, and when the proposal was decided meanwhile, with the edits still in the form', () => {
+            open();
+            component().setPrompt([text('Моя правка?')]);
+            generationApi.approveArtifact.mockReturnValue(throwError(() => problemResponse(412)));
+            component().save();
+            refresh();
+            expect(generationApi.approveArtifact).toHaveBeenCalledTimes(2);
             expect(component().phase()).toBe('conflict');
+            expect(component().message()).toContain('Ваши правки остались в форме');
+            expect(JSON.stringify(component().drafts())).toContain('Моя правка?');
+            generationApi.approveArtifact.mockClear();
+            generationApi.getArtifact.mockReturnValue(of(artifact(undefined, { state: 'PUBLISHED' })));
+            component().save();
+            refresh();
+            expect(generationApi.approveArtifact).toHaveBeenCalledTimes(1);
+            expect(component().message()).toContain('уже решено');
+            expect(JSON.stringify(component().drafts())).toContain('Моя правка?');
+        });
+
+        it('says so when the pins cannot be read again, and explains a refusal of the exercise in words', () => {
+            open();
+            generationApi.approveArtifact.mockReturnValueOnce(throwError(() => problemResponse(412)));
+            generationApi.getArtifact.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+            component().save();
+            refresh();
+            expect(component().phase()).toBe('error');
+            expect(component().message()).toContain('правки остались в форме');
             generationApi.approveArtifact.mockReturnValueOnce(throwError(() => problemResponse(400, { code: 'INVALID_REQUEST' })));
             component().save();
             refresh();
@@ -1710,6 +1764,16 @@ describe('ExerciseAuthoringPageComponent', () => {
             component().save();
             refresh();
             expect(component().message()).toContain('больше недоступны');
+        });
+
+        it('does not call a request the client refused to build an unknown outcome', () => {
+            open();
+            generationApi.approveArtifact.mockReturnValueOnce(throwError(() => new RequestValidationError('Invalid exercise.')));
+            component().save();
+            refresh();
+            expect(component().phase()).toBe('rejected');
+            expect(component().message()).toContain('Упражнение не принято');
+            expect(component().message()).not.toContain('та же команда');
         });
 
         it('does not send an exercise that does not validate', () => {

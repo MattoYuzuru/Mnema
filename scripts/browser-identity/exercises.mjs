@@ -43,6 +43,7 @@ export async function runWorkshopExercises(ctx, h) {
   const { tab, config, SafeFailure, until, navigate, saveScreenshot, setStep } = ctx;
   const { api, page, press, has, need, settle, metrics, desktop, awaitCapability, activeSessions, sessionPath: baseSessionPath, location } = h;
   const out = { stub: true, stages: {}, screenshots: [] };
+  const startedAt = Date.now();
   const baseDeckId = h.deckId;
 
   const failureShot = async name => { try { await saveScreenshot(`failure-exercises-${name}.png`, tab); } catch { /* the original failure is the verdict */ } };
@@ -285,15 +286,15 @@ export async function runWorkshopExercises(ctx, h) {
   });
 
   await step('review_layout', async () => {
-    await until(async () => (await page(`return document.querySelectorAll('app-exercise-batch-review li.card app-exercise-preview-host').length;`)) === counts.proposed,
+    await until(async () => (await page(`return document.querySelectorAll('app-exercise-batch-review li.entry app-exercise-preview-host').length;`)) === counts.proposed,
       `the ${counts.proposed} proposals did not render as playable previews`, 30_000);
     // The summary is a throttled live region (one change per two seconds) fed by polling: wait for it to catch up with the server.
     const expectedSummary = `${counts.proposed} готово · ${counts.failed} ${counts.failed === 1 ? 'не удался' : 'не удались'}`;
     await until(async () => (await page(`return document.querySelector('.exercise-summary')?.textContent.replaceAll('\\u00a0', ' ').trim();`)) === expectedSummary,
       `the summary never became «${expectedSummary}»`, 30_000);
     const view = await page(`const root = document.querySelector('app-exercise-batch-review');
-      return { groups: [...root.querySelectorAll('.group-title')].map(node => node.textContent.trim()),
-        cards: root.querySelectorAll('li.card').length, checked: [...root.querySelectorAll('li.card input[type=checkbox]')].filter(box => box.checked).length,
+      return { groups: [...root.querySelectorAll('[data-material-heading]')].map(node => node.textContent.trim()),
+        cards: root.querySelectorAll('li.entry').length, checked: [...root.querySelectorAll('li.entry input[type=checkbox]')].filter(box => box.checked).length,
         summary: document.querySelector('.exercise-summary')?.textContent.replaceAll('\\u00a0', ' ').trim(),
         save: root.querySelector('[data-save]')?.textContent.trim(), failedText: root.querySelector('[data-state=FAILED]')?.textContent.replace(/\\s+/g, ' ').trim() ?? null,
         failedRetry: Boolean([...root.querySelectorAll('[data-state=FAILED] button')].find(button => button.textContent.trim() === 'Повторить')),
@@ -301,7 +302,7 @@ export async function runWorkshopExercises(ctx, h) {
         regions: document.querySelectorAll('section.workshop [role=status]').length };`);
     need(view.cards === 9, `the review shows ${view.cards} cards, not nine`);
     for (const material of deck.materials.slice(0, 2)) need(view.groups.some(group => group.startsWith(material.title.slice(0, 20))), `no group is named after «${material.title}»`);
-    need(view.groups.includes('Не удались'), 'the failed exercises have no group of their own');
+    need(view.groups.length >= 2, `the review has ${view.groups.length} material headings`);
     need(view.checked === counts.proposed, `${view.checked} proposals are checked by default, not ${counts.proposed}`);
     need(view.summary === `${counts.proposed} готово · ${counts.failed} ${counts.failed === 1 ? 'не удался' : 'не удались'}`, `the summary is «${view.summary}»`);
     need(view.save === `Сохранить выбранные (${counts.proposed})`, `the primary button says «${view.save}»`);
@@ -319,7 +320,7 @@ export async function runWorkshopExercises(ctx, h) {
     const before = await listExercises(clean.memberKey);
     need(before.length === 0, 'an exercise exists before anything was saved');
     await page(`performance.clearResourceTimings(); return true;`);
-    const mechanicOf = await page(`return [...document.querySelectorAll('app-exercise-batch-review li.card[data-state=PROPOSED]')].map(card => ({
+    const mechanicOf = await page(`return [...document.querySelectorAll('app-exercise-batch-review li.entry[data-state=PROPOSED]')].map(card => ({
       id: card.dataset.card, title: card.querySelector('h3')?.textContent.trim(), reveal: Boolean(card.querySelector('[data-answer-control]')), choice: Boolean(card.querySelector('input[type=radio], input[type=checkbox][name]')) }));`);
     const target = mechanicOf.find(entry => entry.reveal) ?? null;
     need(target !== null, `no proposal can be played with a reveal button (${JSON.stringify(mechanicOf.map(entry => entry.title))})`);
@@ -344,6 +345,7 @@ export async function runWorkshopExercises(ctx, h) {
   // 5. «Изменить»: the proposal opens in the editor; saving approves it with the edited exercise
   // =====================================================================================================================
   let editedMember = null;
+  let leftOutId = null;
   await step('edit_proposal', async () => {
     const session = await getSession(sessionId);
     const details = [];
@@ -351,6 +353,11 @@ export async function runWorkshopExercises(ctx, h) {
     const mine = details.find(detail => detail.revision.payload.command.exercise.subject.memberKey === clean.memberKey);
     need(mine, 'no proposal of the clean material');
     editedMember = clean.memberKey;
+    // The choice «Оставить» survives the round trip through the editor: take it off one other proposal first, with a real click.
+    const others = await page(`return [...document.querySelectorAll('app-exercise-batch-review li.entry[data-state=PROPOSED]')].map(card => card.dataset.card).filter(id => id !== args[0]);`, mine.artifactId);
+    leftOutId = others.at(-1);
+    need(leftOutId, 'there is no other proposal to leave out');
+    await click('css:input[type=checkbox]', `[data-card="${leftOutId}"]`);
     await click('Изменить', `[data-card="${mine.artifactId}"]`);
     await until(async () => (await location()).includes('/exercises/new?session='), 'the «Изменить» link did not open the editor', 20_000);
     const path = await location();
@@ -375,7 +382,7 @@ export async function runWorkshopExercises(ctx, h) {
     const saved = (await listExercises(clean.memberKey)).find(exercise => exercise.objective.title === 'Правка: выбор метода чтения');
     need(saved, 'the saved exercise does not carry the edited objective title');
     need(saved.isNew === true, 'the exercise saved from a proposal is not marked «Новое»');
-    await until(() => has(`[data-card="${mine.artifactId}"] app-new-badge`), 'the card of the edited proposal does not say «Сохранено» with «Новое»', 20_000);
+    await until(async () => (await page(`return document.querySelector(args[0])?.textContent.includes('Сохранено.') ?? false;`, `[data-card="${mine.artifactId}"]`)), 'the card of the edited proposal does not say «Сохранено»', 20_000);
     out.edited = { objectiveTitle: saved.objective.title, isNew: saved.isNew };
     return out.edited;
   });
@@ -386,11 +393,13 @@ export async function runWorkshopExercises(ctx, h) {
   let savedIds = [];
   await step('save_selected', async () => {
     await until(() => has('app-exercise-batch-review [data-save]'), 'the review did not come back');
-    const open = await page(`return [...document.querySelectorAll('app-exercise-batch-review li.card[data-state=PROPOSED]')].map(card => card.dataset.card);`);
+    const open = await page(`return [...document.querySelectorAll('app-exercise-batch-review li.entry[data-state=PROPOSED]')].map(card => card.dataset.card);`);
     need(open.length === counts.proposed - 1, `${open.length} proposals are left to review, not ${counts.proposed - 1}`);
-    // Take the check off the last proposal with a real click: the count follows, and the proposal stays out.
-    const leftOut = open.at(-1);
-    await click('css:input[type=checkbox]', `[data-card="${leftOut}"]`);
+    // The proposal left out before «Изменить» is still left out after the round trip through the editor.
+    const leftOut = leftOutId;
+    need(open.includes(leftOut), 'the proposal left out before the editor is gone from the review');
+    need(await page(`return document.querySelector(args[0] + ' input[type=checkbox]').checked === false;`, `[data-card="${leftOut}"]`),
+      'the «Оставить» choice was lost on the round trip through the editor');
     const afterUncheck = await page(`return document.querySelector('app-exercise-batch-review [data-save]').textContent.trim();`);
     const kept = counts.proposed - 2;
     need(afterUncheck === `Сохранить выбранные (${kept})`, `after unchecking the button says «${afterUncheck}»`);
@@ -484,5 +493,6 @@ export async function runWorkshopExercises(ctx, h) {
     return { newBefore: before.badges.length, newAfter: after.badges.length };
   });
 
+  out.durationMs = Date.now() - startedAt;
   return out;
 }

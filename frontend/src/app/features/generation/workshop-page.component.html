@@ -15,7 +15,7 @@
           <button class="button" type="button" aria-label="Стоп: остановить генерацию" [attr.aria-disabled]="sessionBusy() ? 'true' : null" (click)="sessionBusy() || stop()">Стоп</button>
         }
         <app-hold-to-delete-button label="Удалить мастерскую" [disabled]="sessionBusy()"
-          consequence="Неодобренные материалы исчезнут. Одобренные останутся в колоде." (confirmed)="deleteSession()" />
+          [consequence]="deleteConsequence()" (confirmed)="deleteSession()" />
       </div>
     }
   </header>

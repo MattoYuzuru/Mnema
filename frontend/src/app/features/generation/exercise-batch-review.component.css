@@ -1,14 +1,15 @@
 :host { display: block; min-inline-size: 0; }
 * { box-sizing: border-box; }
 .review { display: grid; gap: 1.5rem; min-inline-size: 0; }
-.group { display: grid; gap: .75rem; min-inline-size: 0; }
-.group-title { margin: 0; border-block-end: 1px solid var(--mn-ink); padding-block-end: .4rem; color: var(--mn-ink); font: 500 clamp(1.25rem, 3vw, 1.6rem)/1.2 var(--mn-font-display, Georgia, serif); overflow-wrap: anywhere; }
 .cards { display: grid; gap: 1rem; margin: 0; padding: 0; list-style: none; }
-.card { min-inline-size: 0; border: 1px solid var(--mn-rule); border-block-start: 2px solid var(--mn-ink); padding: clamp(.75rem, 3vw, 1.25rem); background: var(--mn-sheet); }
-.card article { display: grid; gap: .75rem; min-inline-size: 0; }
-.card[data-state='REJECTED'] { background: var(--mn-soft); }
-.card[data-state='PUBLISHED'] { border-block-start-color: var(--mn-positive); }
-.card[data-state='FAILED'] { border-block-start-color: var(--mn-danger); }
+.entry { display: grid; gap: .75rem; min-inline-size: 0; }
+/* The heading of a material opens a run of its exercises; it sits in the card's own list item, so nothing moves when it appears. */
+.material-heading { margin: .75rem 0 0; border-block-end: 1px solid var(--mn-ink); padding-block-end: .4rem; color: var(--mn-ink); font: 500 clamp(1.25rem, 3vw, 1.6rem)/1.2 var(--mn-font-display, Georgia, serif); overflow-wrap: anywhere; }
+.entry:first-child > .material-heading { margin-block-start: 0; }
+.card { display: grid; gap: .75rem; min-inline-size: 0; border: 1px solid var(--mn-rule); border-block-start: 2px solid var(--mn-ink); padding: clamp(.75rem, 3vw, 1.25rem); background: var(--mn-sheet); }
+.entry[data-state='REJECTED'] > .card { background: var(--mn-soft); }
+.entry[data-state='PUBLISHED'] > .card { border-block-start-color: var(--mn-positive); }
+.entry[data-state='FAILED'] > .card { border-block-start-color: var(--mn-danger); }
 .card-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .25rem 1rem; min-inline-size: 0; }
 .card-title { margin: 0; color: var(--mn-ink); font: 500 1.15rem/1.3 var(--mn-font-display, Georgia, serif); overflow-wrap: anywhere; }
 .card-title:focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 3px; }
@@ -33,16 +34,18 @@
 /* The save bar stays in reach while a long batch scrolls; it respects the home indicator and never covers the last card. */
 .review-footer { position: sticky; inset-block-end: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; margin-block-start: .5rem; border-block-start: 2px solid var(--mn-ink); padding: .75rem 0 calc(.75rem + env(safe-area-inset-bottom, 0px)); background: var(--mn-paper, var(--mn-sheet)); }
 .footer-note { flex: 1 1 12rem; margin: 0; color: var(--mn-body); font-weight: 600; overflow-wrap: anywhere; }
-.footer-note:empty { display: none; }
+.footer-note:empty { flex-basis: 0; }
 .footer-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .5rem .75rem; min-inline-size: 0; margin-inline-start: auto; }
 .review-exit { margin: 0; }
 @media (max-width: 30rem) {
+  /* Buttons share a row when they fit and only stack when they do not: the bar stays as short as it can. */
   .footer-actions { inline-size: 100%; justify-content: stretch; }
-  .footer-actions .button { flex: 1 1 100%; }
+  .footer-actions .button { flex: 1 1 auto; padding-inline: .75rem; }
+  .footer-note { font-size: .9rem; }
   .keep { flex: 1 1 100%; }
 }
 @media (prefers-reduced-motion: no-preference) { .card { transition: background-color .2s ease; } }
 @media (forced-colors: active) {
-  .card, .group-title, .review-footer { border-color: CanvasText; }
+  .card, .material-heading, .review-footer { border-color: CanvasText; }
   .button { border-color: ButtonText; }
 }

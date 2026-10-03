@@ -9,7 +9,7 @@ import { AuthoringProtocolError, requireCommand, requireCursor, requireEntity, r
 import { expectedEtag } from '../own-decks/own-deck.models';
 import {
     ApprovalAck, ArtifactDetail, ArtifactSummary, CreatedSession, EventsPage, GenerationEstimate, HandoffResult,
-    GenerationSpec, MAX_APPROVALS_PER_COMMAND, NoteArchiveResult, SessionDetail, SessionPage, parseApprovalAck, parseArtifactDetail,
+    GenerationSpec, MAX_APPROVALS_PER_COMMAND, RequestValidationError, NoteArchiveResult, SessionDetail, SessionPage, parseApprovalAck, parseArtifactDetail,
     parseArtifactSummary, parseEstimate, parseEventsPage, parseHandoff, parseNoteArchive, parseSessionDetail, parseSessionPage,
     serializeSpec
 } from './generation.models';
@@ -269,7 +269,7 @@ function serializeReplacement(replacement: ApprovalReplacement): Record<string, 
     try {
         return { objective: parseObjectiveCommand(replacement.objective), exercise: parseExerciseSpec(replacement.exercise) };
     } catch (error) {
-        if (error instanceof ExerciseContentError) throw new AuthoringProtocolError(error.message);
+        if (error instanceof ExerciseContentError) throw new RequestValidationError(error.message);
         throw error;
     }
 }

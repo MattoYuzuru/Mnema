@@ -13,6 +13,12 @@ import {
  * (`events.json`: "A client ignores unknown types").
  */
 
+/**
+ * A request the client refused to build (a spec or an edited exercise that does not satisfy the contract). Nothing was sent, so the
+ * outcome is not unknown: it is reported as a validation problem, never as a command to retry.
+ */
+export class RequestValidationError extends AuthoringProtocolError {}
+
 export const SESSION_KINDS = ['MATERIALS', 'EXERCISES', 'REVISE_ITEM', 'REVISE_EXERCISE'] as const;
 export type SessionKind = (typeof SESSION_KINDS)[number];
 
@@ -757,7 +763,7 @@ function serializeSource(source: SpecSource, notesMode: NotesMode): Record<strin
         const overrides = source.overrides === undefined ? null : serializeOverrides(source.overrides);
         if (overrides !== null) {
             if (source.role !== 'SOURCE' || notesMode !== 'ONE_PER_NOTE') {
-                throw new AuthoringProtocolError('Overrides apply to SOURCE notes with ONE_PER_NOTE only.');
+                throw new RequestValidationError('Overrides apply to SOURCE notes with ONE_PER_NOTE only.');
             }
             body['overrides'] = overrides;
         }
@@ -772,7 +778,7 @@ function serializeSource(source: SpecSource, notesMode: NotesMode): Record<strin
  */
 export function serializeMaterialsSpec(spec: MaterialsSpec): Record<string, unknown> {
     if (spec.prompt.length > MAX_PROMPT_LENGTH || spec.sources.length > MAX_SOURCES) {
-        throw new AuthoringProtocolError('The spec exceeds its limits.');
+        throw new RequestValidationError('The spec exceeds its limits.');
     }
     const { settings } = spec;
     const body: Record<string, unknown> = { kind: 'MATERIALS' };
@@ -826,7 +832,7 @@ export const MAX_EXERCISES_PER_SESSION = 60;
 
 /** The exact request body of an Exercises spec; unknown fields are `INVALID_REQUEST`. `planFirst` is always `false` until AI-14. */
 export function serializeExercisesSpec(spec: ExercisesSpec): Record<string, unknown> {
-    if (spec.targets.length === 0 || spec.targets.length > MAX_EXERCISE_TARGETS) throw new AuthoringProtocolError('The spec exceeds its limits.');
+    if (spec.targets.length === 0 || spec.targets.length > MAX_EXERCISE_TARGETS) throw new RequestValidationError('The spec exceeds its limits.');
     const { mechanics, quantity } = spec.settings;
     const body: Record<string, unknown> = { kind: 'EXERCISES' };
     if (spec.outputLanguage !== undefined) body['outputLanguage'] = spec.outputLanguage;
@@ -836,17 +842,17 @@ export function serializeExercisesSpec(spec: ExercisesSpec): Record<string, unkn
         case 'AUTO': wireQuantity = { mode: 'AUTO' }; break;
         case 'EXACT':
             if (!Number.isInteger(quantity.perTarget) || quantity.perTarget < 1 || quantity.perTarget > MAX_EXERCISES_PER_TARGET) {
-                throw new AuthoringProtocolError('Invalid quantity.');
+                throw new RequestValidationError('Invalid quantity.');
             }
             wireQuantity = { mode: 'EXACT', perTarget: quantity.perTarget };
             break;
         case 'BUDGET_PERCENT':
-            if (!Number.isInteger(quantity.percent) || quantity.percent < 1 || quantity.percent > 100) throw new AuthoringProtocolError('Invalid quantity.');
+            if (!Number.isInteger(quantity.percent) || quantity.percent < 1 || quantity.percent > 100) throw new RequestValidationError('Invalid quantity.');
             wireQuantity = { mode: 'BUDGET_PERCENT', percent: quantity.percent };
             break;
     }
     if (mechanics !== 'AUTO' && (mechanics.length === 0 || new Set(mechanics).size !== mechanics.length
-        || mechanics.some(mechanic => !(MECHANICS as readonly string[]).includes(mechanic)))) throw new AuthoringProtocolError('Invalid mechanics.');
+        || mechanics.some(mechanic => !(MECHANICS as readonly string[]).includes(mechanic)))) throw new RequestValidationError('Invalid mechanics.');
     body['settings'] = {
         // Canonical order, so the same choice always produces the same request (and the same idempotency key).
         mechanics: mechanics === 'AUTO' ? 'AUTO' : MECHANICS.filter(mechanic => mechanics.includes(mechanic)),
@@ -857,7 +863,13 @@ export function serializeExercisesSpec(spec: ExercisesSpec): Record<string, unkn
 
 /** The body of either spec. */
 export function serializeSpec(spec: GenerationSpec): Record<string, unknown> {
-    return spec.kind === 'MATERIALS' ? serializeMaterialsSpec(spec) : serializeExercisesSpec(spec);
+    try {
+        return spec.kind === 'MATERIALS' ? serializeMaterialsSpec(spec) : serializeExercisesSpec(spec);
+    } catch (error) {
+        // A malformed id inside the spec is the same kind of refusal: nothing was sent.
+        if (error instanceof AuthoringProtocolError && !(error instanceof RequestValidationError)) throw new RequestValidationError(error.message);
+        throw error;
+    }
 }
 
 // --- Archiving the used notes (`archiveUsedNotes`, #290) ---

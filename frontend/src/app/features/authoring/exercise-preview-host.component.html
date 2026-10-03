@@ -11,12 +11,14 @@
     <p class="visually-hidden" role="status">{{ mode() === 'DEMO' ? 'Показан пример упражнения.' : mode() === 'PROPOSAL' ? 'Показано предложенное упражнение.' : 'Показано ваше упражнение.' }}</p>
   }
 
+  @if (compact()) { <p class="compact-note" data-try-note>Проба ничего не сохраняет и не меняет расписание.</p> }
+
   <div class="surface">
     @if (result(); as trial) {
       <section class="result" [attr.aria-labelledby]="idPrefix() + '-result-title'">
         <h3 [id]="idPrefix() + '-result-title'" tabindex="-1">{{ title() }}</h3>
         <app-learner-feedback [content]="trial.content" [feedback]="trial.feedback" [submitted]="trial.response" [idPrefix]="idPrefix() + '-feedback'" />
-        <p class="done">{{ mode() === 'DEMO' ? 'Пример завершён.' : 'Проба завершена: ваше упражнение не изменилось.' }}</p>
+        <p class="done">{{ mode() === 'DEMO' ? 'Пример завершён.' : mode() === 'PROPOSAL' ? 'Проба завершена: ничего не сохранено, расписание не изменилось.' : 'Проба завершена: ваше упражнение не изменилось.' }}</p>
         <button type="button" class="button" data-restart (click)="restart(true)">Начать заново</button>
       </section>
     } @else {

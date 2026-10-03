@@ -8,9 +8,16 @@ import { DEFAULT_BUILDER_VALUE, buildExercisesSpec } from './exercise-builder';
 import { ack, artifactIds, choice, createCommand, exerciseArtifact, exerciseDetail, exerciseSession, materialIds, materialRevisions, nodeIds, QUOTE, selfCheck } from './exercise-test-data';
 import { GenerationApiService } from './generation-api.service';
 import { readProblem } from './generation-problem';
-import { isApprovable, parseArtifactDetail, parseSessionDetail } from './generation.models';
+import { RequestValidationError, isApprovable, parseArtifactDetail, parseSessionDetail, serializeSpec } from './generation.models';
 import { clone, examples, ids, pathOf, privateHeaders, usageContract } from './generation-test-data';
 import { exerciseFailureReason, problemMessage } from './generation-view';
+
+function serializeSpecFailure(): unknown {
+    try {
+        serializeSpec({ ...buildExercisesSpec([{ memberKey: materialIds.first, itemRevisionId: materialRevisions.first }], DEFAULT_BUILDER_VALUE), targets: [] });
+    } catch (error) { return error; }
+    return null;
+}
 
 describe('Exercise generation over the wire (AI-13)', () => {
     let api: GenerationApiService;
@@ -131,6 +138,20 @@ describe('Exercise generation over the wire (AI-13)', () => {
             expect(readProblem(new HttpErrorResponse({ status: 422, error: { code: 'X', limits: { other: 1 } } })).limits).toBeNull();
             expect(readProblem(new HttpErrorResponse({ status: 0 })).limits).toBeNull();
             expect(readProblem(new AuthoringProtocolError('x')).limits).toBeNull();
+        });
+
+        it('reports a request the client refused to build as a validation problem, never as an unknown outcome to retry', () => {
+            const bad = serializeSpecFailure();
+            expect(bad).toBeInstanceOf(RequestValidationError);
+            const problem = readProblem(bad);
+            expect(problem).toMatchObject({ status: 400, uncertain: false });
+            expect(readProblem(new AuthoringProtocolError('unreadable answer')).uncertain).toBe(true);
+            expect(problemMessage(problem, 'EXERCISES')).toContain('Запрос не принят');
+        });
+
+        it('wraps a malformed id inside a spec in the same refusal', () => {
+            const spec = buildExercisesSpec([{ memberKey: 'nope', itemRevisionId: materialRevisions.first }], DEFAULT_BUILDER_VALUE);
+            expect(() => serializeSpec(spec)).toThrow(RequestValidationError);
         });
 
         it('says what a stale or missing material means for exercises, and keeps the materials wording for materials', () => {

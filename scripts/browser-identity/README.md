@@ -198,13 +198,15 @@ fixture is made through the authenticated API: the deck and three materials (one
 | `hub_entry` | three materials ticked in the Deck hub, «Упражнения с ИИ для выбранных» opens the builder; the address carries member keys, never a revision |
 | `builder` | «Для 3 материалов», «Авто» exclusive with the mechanics, the priority group (three materials), «Точно» with a native range moved by ArrowRight/ArrowLeft and its `aria-valuetext` («5 упражнений на материал»), the percent range, three mechanics chosen by name, the preflight against the real `generation-estimates`, 1440/390 screenshots and overflow/44 px checks |
 | `create_and_stream` | «Создать упражнения» opens the Workshop; the batch settles as 8 proposed (at least three mechanics, payload `EXERCISE_COMMAND` with `display`) and 1 `FAILED(INVALID_OUTPUT)` (never shown as a proposal) |
-| `review_layout` | cards grouped by material and a «Не удались» group, eight «Оставить» checked, summary «8 готово · 1 не удался», «Сохранить выбранные (8)», no duplicate id, 1440/390 screenshots |
+| `review_layout` | cards in the server order with a heading where the material changes (nothing moves when details load), a failed card in its place, eight «Оставить» checked, summary «8 готово · 1 не удался», «Сохранить выбранные (8)», no duplicate id, 1440/390 screenshots |
 | `preview_play` | a proposal is played in its preview with a real click path: only `POST /api/exercise-previews`, no Study endpoint, nothing saved |
-| `edit_proposal` | «Изменить» opens the editor with `?session=&artifact=`, the objective title is typed with the keyboard, «Сохранить в колоду» approves with the replacement and returns to the Workshop; the exercise is `isNew` |
-| `save_selected` | one proposal unchecked with a real click, «Сохранить выбранные (6)», the toast «Новые упражнения: 6 — уже в колоде», focus on the next footer control (not the heading), «Отклонить остальные (1)»; seven exercises in the deck, all new, sharing objectives by title |
+| `edit_proposal` | one other proposal is unchecked first and must still be unchecked after the round trip; «Изменить» opens the editor with `?session=&artifact=`, the objective title is typed with the keyboard, «Сохранить в колоду» approves with the replacement and returns to the Workshop; the exercise is `isNew` |
+| `save_selected` | the proposal left out before the editor stays out, «Сохранить выбранные (6)», the toast «Новые упражнения: 6 — уже в колоде», focus on the next footer control (not the heading), «Отклонить остальные (1)»; seven exercises in the deck, all new, sharing objectives by title |
 | `new_in_list` | «Новое» on every new row of the material's exercise list, 1440/390 screenshots |
 | `study_new` | the first Study card carries «Новое», 1440/390 screenshots |
 | `new_cleared_on_open` | opening an exercise clears its mark on the server (`DELETE .../new-mark`) and the list shows one mark fewer |
+
+The scenario records its own duration (`durationMs`, also for the whole Workshop scenario).
 
 Screenshots: `exercises-{builder,review,list}-{1440,390}.png`, `exercises-saved-1440.png`, `exercises-study-new-{1440,390}.png`.
 

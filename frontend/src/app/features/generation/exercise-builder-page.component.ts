@@ -16,15 +16,16 @@ import { ItemApiService } from '../authoring/item-api.service';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import {
     BuilderTarget, BuilderValue, DEFAULT_BUILDER_VALUE, MECHANIC_CHOICES, PRIORITY_OPTIONS, QUANTITY_OPTIONS, QuantityMode,
-    buildExercisesSpec, describeExerciseLimit, describeExerciseUsage, materialsCount, percentText, perTargetText, readLimits, splitNotice, splitTargets,
+    buildExercisesSpec, capSessions, describeExerciseLimit, describeExerciseUsage, materialsCount, percentText, perTargetText, readLimits, splitNotice, splitTargets,
     targetsSummary, toggleMechanic
 } from './exercise-builder';
 import { ResolvedTargets, TargetRequest, parseTargetRequest, resolveTargets } from './exercise-targets';
 import { GenerationApiService } from './generation-api.service';
+import { blockImplicitSubmit } from './implicit-submit';
 import { GenerationProblem, readProblem } from './generation-problem';
 import { UsageExplanation, describeEstimate, formatWorkshopStart, problemMessage } from './generation-view';
 import { ExercisesSpec, GenerationEstimate, SessionDetail, SessionSummary, serializeExercisesSpec } from './generation.models';
-import { ESTIMATE_DEBOUNCE_MS } from './generation-composer.component';
+import { scheduleEstimate } from './estimate-schedule';
 
 type Phase = 'loading' | 'ready' | 'unavailable' | 'empty';
 
@@ -64,8 +65,11 @@ export class ExerciseBuilderPageComponent {
     readonly creating = signal(false);
     readonly usageExplanation = signal<UsageExplanation | null>(null);
     readonly failure = signal<string | null>(null);
-    /** Workshops this request already opened (a split selection), when a later one was refused. */
-    readonly opened = signal<readonly SessionDetail[]>([]);
+    /**
+     * Workshops this request already opened (a split selection). Their materials are taken off the form at once, so pressing the
+     * button again can never open a second session for them; the links stay until the page is left.
+     */
+    readonly startedSessions = signal<readonly SessionDetail[]>([]);
     readonly activeWorkshops = signal<readonly SessionSummary[]>([]);
 
     protected readonly uid = 'mn-exercise-builder';
@@ -75,13 +79,17 @@ export class ExerciseBuilderPageComponent {
     protected readonly perTargetText = perTargetText;
     protected readonly percentText = percentText;
     protected readonly materialsCount = materialsCount;
+    protected readonly blockImplicitSubmit = blockImplicitSubmit;
 
     protected readonly aiAvailable = computed(() => this.capabilities()?.aiGeneration.available === true);
     protected readonly auto = computed(() => this.value().mechanics.length === 0);
     protected readonly summary = computed(() => targetsSummary(this.targets().length));
-    /** The sessions the selection becomes: at most 20 materials each, the ones without exercises first. */
-    protected readonly sessions = computed(() => splitTargets(this.targets(), this.value().priority));
-    protected readonly splitText = computed(() => splitNotice(this.targets().length, this.sessions().length));
+    /** The sessions the selection becomes: at most 20 materials each, the ones without exercises first when asked. */
+    private readonly allSessions = computed(() => splitTargets(this.targets(), this.value().priority));
+    /** The sessions one press opens: never more than the account may have active at once. */
+    protected readonly sessions = computed(() => capSessions(this.allSessions(), this.startedSessions().length));
+    protected readonly deferred = computed(() => this.targets().length - this.sessions().reduce((sum, batch) => sum + batch.length, 0));
+    protected readonly splitText = computed(() => splitNotice(this.targets().length, this.sessions().length, this.value().priority, this.deferred()));
     protected readonly showPriority = computed(() => this.targets().length >= 2);
     /** The request the estimate is for: the first session (the others are priced alike when they start). */
     protected readonly spec = computed<ExercisesSpec | null>(() => {
@@ -152,14 +160,10 @@ export class ExerciseBuilderPageComponent {
             const deck = this.deckId();
             if (phase !== 'ready' || spec === null) return;
             untracked(() => this.estimate.set({ phase: 'loading' }));
-            let call: Subscription | null = null;
-            const timer = setTimeout(() => {
-                call = this.api.estimate(deck, spec).subscribe({
-                    next: estimate => this.estimate.set({ phase: 'ready', estimate }),
-                    error: (error: unknown) => this.estimate.set(this.estimateFailure(error, spec))
-                });
-            }, ESTIMATE_DEBOUNCE_MS);
-            onCleanup(() => { clearTimeout(timer); call?.unsubscribe(); });
+            onCleanup(scheduleEstimate(next => this.api.estimate(deck, next), spec, {
+                next: estimate => this.estimate.set({ phase: 'ready', estimate }),
+                error: (error: unknown) => this.estimate.set(this.estimateFailure(error, spec))
+            }));
         });
         // The shell focuses the heading on navigation; when the content replaces the loading text, focus stays where the user put it.
         effect(() => {
@@ -208,7 +212,10 @@ export class ExerciseBuilderPageComponent {
         void this.submit();
     }
 
-    /** Creates the sessions one after another; the first one is opened. A refusal stops the rest and is explained. */
+    /**
+     * Creates the sessions one after another and opens the first. Each batch keeps its command until the request changes, a batch that
+     * was created leaves the form at once, and a refusal stops the rest and is explained: pressing again continues with what is left.
+     */
     async submit(): Promise<void> {
         if (this.creating() || this.phase() !== 'ready') return;
         const state = this.estimate();
@@ -219,33 +226,43 @@ export class ExerciseBuilderPageComponent {
         }
         this.creating.set(true);
         this.resetOutcome();
-        const created: SessionDetail[] = [];
-        const batches = this.sessions();
+        let prepared: { readonly batch: readonly BuilderTarget[]; readonly spec: ExercisesSpec; readonly key: string }[];
         try {
-            for (const batch of batches) {
+            prepared = this.sessions().map(batch => {
                 const spec = buildExercisesSpec(batch, this.value());
-                const key = JSON.stringify(serializeExercisesSpec(spec));
-                const commandId = this.pending.get(key) ?? newCommandId();
-                this.pending.set(key, commandId);
-                try {
-                    const result = await firstValueFrom(this.api.createSession(this.deckId(), spec, commandId));
-                    this.pending.delete(key);
-                    created.push(result.session);
-                } catch (error) {
-                    const problem = readProblem(error);
-                    if (!problem.uncertain) this.pending.delete(key);
-                    this.opened.set(created);
-                    this.fail(problem, batch.length, created.length, batches.length);
-                    return;
-                }
-            }
-        } finally {
+                return { batch, spec, key: JSON.stringify(serializeExercisesSpec(spec)) };
+            });
+        } catch {
+            // The request does not satisfy the contract: nothing is sent, and this is not an unknown outcome.
             this.creating.set(false);
+            this.failure.set('Запрос не удалось собрать: проверьте выбор материалов и настройки.');
+            return;
         }
-        if (created.length > 1) {
-            this.toast.echo(`Мнема открыла мастерских: ${created.length}. Остальные — в списке мастерских колоды.`);
+        const total = this.startedSessions().length + prepared.length;
+        for (const { batch, spec, key } of prepared) {
+            const commandId = this.pending.get(key) ?? newCommandId();
+            this.pending.set(key, commandId);
+            try {
+                const result = await firstValueFrom(this.api.createSession(this.deckId(), spec, commandId));
+                this.pending.delete(key);
+                this.startedSessions.update(held => [...held, result.session]);
+                const taken = new Set(batch.map(target => target.memberKey));
+                this.targets.update(held => held.filter(target => !taken.has(target.memberKey)));
+            } catch (error) {
+                const problem = readProblem(error);
+                if (!problem.uncertain) this.pending.delete(key);
+                this.creating.set(false);
+                this.fail(problem, batch.length, this.startedSessions().length, total);
+                return;
+            }
         }
-        await this.transition.navigate(['/decks', this.deckId(), 'workshop', created[0]!.sessionId]);
+        const started = this.startedSessions();
+        if (started.length > 1) {
+            this.toast.echo(`Мнема открыла мастерских: ${started.length}. Остальные — в списке мастерских колоды.`);
+        }
+        // The button stays busy until the Workshop is open: a second press can neither start another session nor lose the first.
+        await this.transition.navigate(['/decks', this.deckId(), 'workshop', started[0]!.sessionId]);
+        this.creating.set(false);
     }
 
     private start(deckId: string, request: TargetRequest): void {
@@ -273,7 +290,6 @@ export class ExerciseBuilderPageComponent {
         this.usageExplanation.set(null);
         this.failure.set(null);
         this.activeWorkshops.set([]);
-        this.opened.set([]);
     }
 
     private estimateFailure(error: unknown, spec: ExercisesSpec): EstimateState {
@@ -293,7 +309,7 @@ export class ExerciseBuilderPageComponent {
             this.failure.set(problemMessage(problem, 'EXERCISES'));
         }
         if (done > 0) {
-            const note = `Открыто мастерских: ${done} из ${total}. Остальные материалы выберите снова после разбора этих.`;
+            const note = `Открыто мастерских: ${done} из ${total}. Их материалы убраны из формы; остальные ждут: нажмите «Создать упражнения» ещё раз, когда освободится место.`;
             this.failure.update(message => message === null ? note : `${message} ${note}`);
         }
         if (problem.limit === 'ACTIVE_SESSIONS') {

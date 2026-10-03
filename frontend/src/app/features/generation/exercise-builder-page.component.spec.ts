@@ -48,6 +48,7 @@ describe('ExerciseBuilderPageComponent', () => {
     const radio = (value: string): HTMLInputElement => root().querySelector<HTMLInputElement>(`input[type=radio][value=${value}]`)!;
     const cta = (): HTMLButtonElement => root().querySelector<HTMLButtonElement>('.generate-cta')!;
     const lastSpec = (): any => api.estimate.mock.calls.at(-1)![1];
+    const created = (artifactSession = exerciseSession([], { state: 'RUNNING' })) => of({ session: parseSessionDetail(artifactSession), replayed: false });
     const wireSettings = (): any => (serializeExercisesSpec(lastSpec()) as any).settings;
 
     async function settle(ms = 0): Promise<void> {
@@ -231,6 +232,49 @@ describe('ExerciseBuilderPageComponent', () => {
         });
     });
 
+    describe('implicit submission and the split notice', () => {
+        const enter = (target: Element): KeyboardEvent => {
+            const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+            target.dispatchEvent(event);
+            return event;
+        };
+
+        it('does not let Enter on a checkbox, a radio or a slider start a priced session; a button keeps its own Enter', async () => {
+            await open({ members: `${key(1)},${key(2)}` });
+            expect(enter(box('Авто')).defaultPrevented).toBe(true);
+            expect(enter(radio('BALANCED')).defaultPrevented).toBe(true);
+            radio('EXACT').click();
+            fixture.detectChanges();
+            expect(enter(root().querySelector('input[type=range]')!).defaultPrevented).toBe(true);
+            expect(enter(cta()).defaultPrevented).toBe(false);
+            expect(api.createSession).not.toHaveBeenCalled();
+        });
+
+        it('names the order of a split only for «Сначала без упражнений», and says which materials wait above 60', async () => {
+            await open({ all: '1' });
+            expect(root().textContent).toContain('сначала с материалами без упражнений');
+            radio('BALANCED').click();
+            fixture.detectChanges();
+            expect(root().textContent).toContain('Мнема откроет 3');
+            expect(root().textContent).not.toContain('сначала с материалами без упражнений');
+            listImpl = (_deck, options) => of(itemPage(options?.cursor == null ? 1 : Number(options.cursor.slice(1)), 20, 400));
+            await open({ all: '1' });
+            expect(root().textContent).toContain('не больше 3 мастерских');
+            expect(root().textContent).toContain('в этот раз не войдут');
+            api.createSession.mockReturnValue(created());
+            await settle(ESTIMATE_DEBOUNCE_MS);
+            cta().click();
+            await settle();
+            await settle();
+            expect(api.createSession).toHaveBeenCalledTimes(3);
+        });
+
+        it('has the deck title alone above the heading, not a second «Упражнения с ИИ»', async () => {
+            await open({ members: key(1) });
+            expect(root().querySelector('.eyebrow')?.textContent).toBe('Японский N4');
+        });
+    });
+
     describe('the estimate', () => {
         it('asks once, 400 ms after the last change, and says «≈ 6 % лимита»', async () => {
             await open({ members: key(1) });
@@ -310,7 +354,6 @@ describe('ExerciseBuilderPageComponent', () => {
     });
 
     describe('creating', () => {
-        const created = (artifactSession = exerciseSession([], { state: 'RUNNING' })) => of({ session: parseSessionDetail(artifactSession), replayed: false });
 
         it('creates the session and opens its Workshop', async () => {
             await open({ members: `${key(1)},${key(2)}` });
@@ -362,7 +405,7 @@ describe('ExerciseBuilderPageComponent', () => {
             expect(toast.echo).toHaveBeenCalledWith(expect.stringContaining('мастерских: 3'));
         });
 
-        it('stops at a refusal of a later session, says how many were opened, and links the active Workshops', async () => {
+        it('stops at a refusal of a later session, says how many were opened, takes their materials off the form and links the Workshops', async () => {
             await open({ all: '1' });
             api.createSession.mockReturnValueOnce(created());
             api.createSession.mockReturnValueOnce(throwError(() => problemResponse(422, { code: 'RESOURCE_LIMIT_EXCEEDED', limit: 'ACTIVE_SESSIONS' })));
@@ -375,8 +418,52 @@ describe('ExerciseBuilderPageComponent', () => {
             const alert = root().querySelector('[role=alert]')!;
             expect(alert.textContent).toContain('Уже идут три мастерские');
             expect(alert.textContent).toContain('Открыто мастерских: 1 из 3');
-            expect(alert.querySelectorAll('.workshop-links a').length).toBeGreaterThanOrEqual(2);
+            expect(alert.querySelectorAll('.workshop-links a').length).toBeGreaterThanOrEqual(1);
+            expect(root().querySelector('[aria-label="Уже открытые мастерские"] a')).not.toBeNull();
+            expect(root().querySelector('.targets-title')?.textContent).toBe(`Для${NB}25${NB}материалов`);
             expect(transition.navigate).not.toHaveBeenCalled();
+        });
+
+        it('never opens a second session for materials it already opened: pressing again continues with what is left, with the same commands', async () => {
+            await open({ all: '1' });
+            const answer = (index: number) => created(exerciseSession([], { state: 'RUNNING', sessionId: `5e550000-0000-4000-8000-00000000000${index}` }));
+            api.createSession.mockReturnValueOnce(answer(1));
+            api.createSession.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
+            api.createSession.mockReturnValue(answer(2));
+            await settle(ESTIMATE_DEBOUNCE_MS);
+            cta().click();
+            await settle();
+            await settle();
+            const firstBatch = (api.createSession.mock.calls[0]![1] as any).targets.map((target: any) => target.memberKey) as string[];
+            expect(api.createSession).toHaveBeenCalledTimes(2);
+            cta().click();
+            await settle();
+            await settle();
+            const calls = api.createSession.mock.calls;
+            // The second press repeats the batch whose outcome was unknown (same command) and goes on; the first batch never comes back.
+            expect(calls[2]![2]).toBe(calls[1]![2]);
+            const later = calls.slice(2).flatMap(call => (call[1] as any).targets.map((target: any) => target.memberKey) as string[]);
+            expect(later.some(member => firstBatch.includes(member))).toBe(false);
+            expect(transition.navigate).toHaveBeenCalledWith(['/decks', ids.deckId, 'workshop', '5e550000-0000-4000-8000-000000000001']);
+        });
+
+        it('keeps the button busy until the Workshop is open', async () => {
+            await open({ members: key(1) });
+            let resolve!: (value: boolean) => void;
+            transition.navigate.mockReturnValue(new Promise<boolean>(done => { resolve = done; }));
+            api.createSession.mockReturnValue(created());
+            await settle(ESTIMATE_DEBOUNCE_MS);
+            cta().click();
+            await settle();
+            await settle();
+            expect(api.createSession).toHaveBeenCalledTimes(1);
+            expect(cta().textContent).toBe('Создаём…');
+            cta().click();
+            await settle();
+            expect(api.createSession).toHaveBeenCalledTimes(1);
+            resolve(true);
+            await settle();
+            expect(cta().textContent).toBe('Создать упражнения');
         });
 
         it('sends the very same command again after an answer that never came, and a new one when the request changed', async () => {

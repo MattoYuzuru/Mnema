@@ -64,7 +64,7 @@ export interface ResolvedTargets {
 /**
  * The current revision of every requested material, read now: a revision from a stale page would be refused by the server
  * (`SOURCE_UNAVAILABLE`), and the page must never present an old one. A few materials are read one by one; a larger selection is
- * found in the list, newest information first (`sort=exerciseCount`), which also brings how many exercises each already has.
+ * found in the list, the materials with the fewest exercises first (`sort=exerciseCount`), which also brings how many exercises each already has.
  */
 export function resolveTargets(items: Pick<ItemApiService, 'read' | 'list'>, deckId: string, request: TargetRequest): Observable<ResolvedTargets> {
     if (!request.all && request.members.length <= READ_ONE_BY_ONE) {
