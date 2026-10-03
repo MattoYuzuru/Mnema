@@ -53,7 +53,7 @@
 
         @if (current(); as artifact) {
           <app-proposal-view [artifact]="artifact" [index]="currentIndex()" [total]="artifacts().length" [deckId]="deckId()"
-            [sessionState]="session()!.state" [entry]="entry()" [draft]="draft()" [arrival]="store.arrival()" [busy]="artifactBusy()" [handoffDraftId]="store.handoffs()[artifact.artifactId] ?? null"
+            [sessionState]="session()!.state" [entry]="entry()" [draft]="draft()" [arrival]="store.arrival()" [busy]="artifactBusy()" [capabilities]="capabilities()" [handoffDraftId]="store.handoffs()[artifact.artifactId] ?? null"
             (approve)="approve()" (reject)="reject()" (undo)="undo()" (handoff)="handoff()" (retry)="retry()" (reload)="reloadDetail()" />
         }
 

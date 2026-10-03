@@ -33,6 +33,10 @@ Adds to the root [`AGENTS.md`](../AGENTS.md); does not repeat it. Visual directi
   tokens as the brand contract requires.
 - Wire shapes come from [`contracts/`](../contracts) fixtures that backend and frontend specs both
   execute (for example `study-contract.spec.ts`). Change fixture, contract and both sides together.
+- Node ids are the Workshop's alone (AI-11): the renderer draws `data-node-id` on top-level blocks only when it is given
+  `exposeNodeIds` (and the Workshop's marks and slots through `overlay`); Browse, Study and the editor preview never pass them.
+  Selection edits (`proposal-document`, `ai-prompt-window`) read a selection by node id, send whole blocks to `editArtifact` and
+  follow the turn through the events; they announce only through the Workshop's summary line.
 - Learner-facing models never carry answer keys; references arrive only in feedback. Validate server
   envelopes strictly and treat an unknown network outcome by retrying the exact attempt.
 - Keep keyboard, screen-reader, touch and non-drag alternatives for every interactive exercise

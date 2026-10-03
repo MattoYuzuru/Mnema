@@ -3,10 +3,12 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { catchError, of } from 'rxjs';
 
 import { ToastService } from '../../core/notifications/toast.service';
 import { HoldToDeleteButtonComponent } from '../../shared/hold-to-delete-button.component';
 import { PageTransition } from '../../shared/page-transition.service';
+import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService, LearningCapabilities } from '../authoring/capabilities-api.service';
 import { BatchPagerComponent } from './batch-pager.component';
 import { ExerciseBatchReviewComponent } from './exercise-batch-review.component';
 import { targetsSummary } from './exercise-builder';
@@ -44,6 +46,8 @@ export class WorkshopPageComponent {
     /** The summary as announced: throttled to one change per {@link ANNOUNCE_GAP_MS}. */
     readonly statusText = signal('');
     readonly proposal = viewChild(ProposalViewComponent);
+    /** What the server can do now (media actions are offered or explained by it); closed until it answers. */
+    readonly capabilities = signal<LearningCapabilities>(CAPABILITIES_UNAVAILABLE);
     private readonly archiveResult = viewChild<ElementRef<HTMLElement>>('archiveResult');
     private readonly confirmButton = viewChild<ElementRef<HTMLElement>>('confirmApprove');
     private readonly approveAllTrigger = viewChild<ElementRef<HTMLElement>>('approveAllTrigger');
@@ -52,6 +56,7 @@ export class WorkshopPageComponent {
     private readonly router = inject(Router);
     private readonly transition = inject(PageTransition);
     private readonly toast = inject(ToastService);
+    private readonly capabilitiesApi = inject(CapabilitiesApiService);
     private readonly injector = inject(Injector);
     private readonly destroyRef = inject(DestroyRef);
     private readonly requestedPosition = signal<number | null>(null);
@@ -140,6 +145,8 @@ export class WorkshopPageComponent {
     });
 
     constructor() {
+        this.capabilitiesApi.read().pipe(catchError(() => of(CAPABILITIES_UNAVAILABLE)), takeUntilDestroyed())
+            .subscribe(capabilities => this.capabilities.set(capabilities));
         this.route.paramMap.pipe(takeUntilDestroyed()).subscribe(params => {
             const deckId = params.get('deckId');
             const sessionId = params.get('sessionId');
@@ -179,7 +186,9 @@ export class WorkshopPageComponent {
         effect(() => {
             // Nothing to say before the batch is known: «Пока ничего» would be a false first announcement.
             if (this.session() === null) return;
-            const text = summarize(this.artifacts());
+            // The end of an edit joins the summary for a few seconds: the one live region of the page says it, once.
+            const note = this.store.editNote();
+            const text = note === null ? summarize(this.artifacts()) : `${summarize(this.artifacts())} · ${note}`;
             untracked(() => this.announce(text));
         });
         this.destroyRef.onDestroy(() => { if (this.statusTimer !== null) clearTimeout(this.statusTimer); });

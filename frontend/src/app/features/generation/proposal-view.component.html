@@ -49,7 +49,9 @@
         <p class="muted">Мнема переписывает материал. Текст ниже можно читать.</p>
       }
       @if (document(); as shown) {
-        <div class="final"><app-native-media-surface [document]="shown" /></div>
+        @if (canSelectEdit()) { <p class="muted selection-hint">Выделите фрагмент текста, чтобы попросить Мнему переписать его.</p> }
+        <div class="final"><app-proposal-document [artifact]="artifact()" [document]="shown" [detail]="detail()" [sessionState]="sessionState()"
+          [capabilities]="capabilities()" [busy]="busy()" /></div>
       } @else if (isExercise() && detail()) {
         <p class="notice">Предпросмотр упражнений появится позже. Пока их можно только отклонить.</p>
       } @else if (entry()?.phase === 'error') {

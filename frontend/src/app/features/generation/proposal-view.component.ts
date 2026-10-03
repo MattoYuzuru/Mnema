@@ -5,10 +5,11 @@ import { RouterLink } from '@angular/router';
 
 import { NativeDocument, NativeNode } from '../../content/native-document';
 import { NativeDocumentRendererComponent } from '../../content/rendering/native-document-renderer.component';
-import { NativeMediaSurfaceComponent } from '../../content/rendering/native-media-surface.component';
+import { CAPABILITIES_UNAVAILABLE, LearningCapabilities } from '../authoring/capabilities-api.service';
 import {
     NBSP, artifactStatus, failureNote, failureReason, positionLabel, slotCaption
 } from './generation-view';
+import { ProposalDocumentComponent } from './proposal-document.component';
 import { ArtifactSummary, MediaSlot, SessionState, allows, isApprovable, isRetryable, previewDocument } from './generation.models';
 import { Arrival, DraftBlocks } from './workshop-events';
 import type { DetailEntry } from './workshop-session.store';
@@ -40,7 +41,7 @@ function reducedMotion(): boolean {
  */
 @Component({
     selector: 'app-proposal-view',
-    imports: [RouterLink, NativeDocumentRendererComponent, NativeMediaSurfaceComponent],
+    imports: [RouterLink, NativeDocumentRendererComponent, ProposalDocumentComponent],
     templateUrl: './proposal-view.component.html',
     styleUrls: ['../authoring/authoring-page.css', './proposal-view.component.css'],
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -58,6 +59,8 @@ export class ProposalViewComponent {
     readonly busy = input(false);
     /** The editor draft made by the hand-off of this material, when this page made it. */
     readonly handoffDraftId = input<string | null>(null);
+    /** What the server can do now: the media actions under an image or audio are offered or explained by it. */
+    readonly capabilities = input<LearningCapabilities>(CAPABILITIES_UNAVAILABLE);
 
     readonly approve = output<void>();
     readonly reject = output<void>();
@@ -106,6 +109,9 @@ export class ProposalViewComponent {
     protected readonly canUndo = computed(() => allows(this.sessionState(), this.artifact().state, 'undoRejectArtifact'));
     protected readonly canRetry = computed(() => allows(this.sessionState(), this.artifact().state, 'retryArtifact')
         && isRetryable(this.artifact()));
+    /** A selection of the text would offer «Попросить Мнему…» (the proposal document decides the same way): the hint says so above it. */
+    protected readonly canSelectEdit = computed(() => !this.isExercise() && this.artifact().state === 'PROPOSED' && this.shownIsCurrent()
+        && this.sessionState() !== 'CANCELLED' && allows(this.sessionState(), 'PROPOSED', 'editArtifact'));
     protected readonly failure = computed(() => failureReason(this.artifact().errorCode));
     protected readonly failureNote = computed(() => failureNote(this.artifact().errorCode));
     protected readonly published = computed(() => {

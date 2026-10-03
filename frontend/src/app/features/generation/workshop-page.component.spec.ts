@@ -2,9 +2,10 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
-import { BehaviorSubject, Subject, of, throwError } from 'rxjs';
+import { BehaviorSubject, Observable, Subject, of, throwError } from 'rxjs';
 
 import { MediaPlaybackApi } from '../../content/rendering/media-playback.api';
+import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService, LearningCapabilities } from '../authoring/capabilities-api.service';
 import { ToastService } from '../../core/notifications/toast.service';
 import { HoldToDeleteButtonComponent } from '../../shared/hold-to-delete-button.component';
 import { PageTransition } from '../../shared/page-transition.service';
@@ -34,6 +35,7 @@ describe('WorkshopPageComponent', () => {
     let params: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
     let query: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
     let store: WorkshopSessionStore;
+    let capabilities$: Observable<LearningCapabilities>;
 
     const root = (): HTMLElement => fixture.nativeElement as HTMLElement;
     const proposed = (id: string, ordinal: number, overrides: Record<string, unknown> = {}) =>
@@ -59,6 +61,7 @@ describe('WorkshopPageComponent', () => {
         api = spyObj<GenerationApiService>({ getSession: vi.fn(), listEvents: vi.fn(), getArtifact: vi.fn(), approveArtifact: vi.fn(), approveArtifacts: vi.fn(),
             rejectArtifact: vi.fn(), undoRejectArtifact: vi.fn(), retryArtifact: vi.fn(), handoffArtifact: vi.fn(), cancelSession: vi.fn(), deleteSession: vi.fn(), archiveUsedNotes: vi.fn() });
         decks = spyObj<OwnDecksApiService>({ detail: vi.fn() });
+        capabilities$ = capabilities$ ?? of(CAPABILITIES_UNAVAILABLE);
         toast = { echo: vi.fn() };
         transition = { navigate: vi.fn().mockResolvedValue(true) };
         api.getSession.mockReturnValue(of(parseSessionDetail(session)));
@@ -70,6 +73,7 @@ describe('WorkshopPageComponent', () => {
         TestBed.configureTestingModule({ providers: [provideRouter([]), { provide: GenerationApiService, useValue: api },
             { provide: OwnDecksApiService, useValue: decks }, { provide: ToastService, useValue: toast }, { provide: PageTransition, useValue: transition },
             { provide: MediaPlaybackApi, useValue: { read: () => new Promise(() => {}) } },
+            { provide: CapabilitiesApiService, useValue: { read: () => capabilities$ } },
             { provide: ActivatedRoute, useValue: { paramMap: params, queryParamMap: query, snapshot: { paramMap: params.value, queryParamMap: query.value } } }] });
         router = TestBed.inject(Router);
         vi.spyOn(router, 'navigate').mockResolvedValue(true);
@@ -203,6 +207,41 @@ describe('WorkshopPageComponent', () => {
             expect(root().querySelector('article')?.getAttribute('aria-busy')).toBe('true');
             const live = [...root().querySelectorAll('[aria-live], [role=status], [role=alert]')].filter(element => !element.closest('app-native-media-surface'));
             expect(live.map(element => element.className)).toEqual(['summary']);
+        });
+    });
+
+    describe('what the server can do', () => {
+        it('hands the capabilities to the material, and treats an unreadable answer as nothing available', async () => {
+            capabilities$ = of(CAPABILITIES_UNAVAILABLE);
+            await open(reviewing());
+            expect(root().querySelector('app-proposal-view')).not.toBeNull();
+            expect(fixture.componentInstance.capabilities()).toEqual(CAPABILITIES_UNAVAILABLE);
+            const available = { ...CAPABILITIES_UNAVAILABLE, textToSpeech: { available: true, reason: null } } as LearningCapabilities;
+            capabilities$ = of(available);
+            await open(reviewing());
+            expect(fixture.componentInstance.capabilities()).toEqual(available);
+            capabilities$ = throwError(() => new HttpErrorResponse({ status: 500 }));
+            await open(reviewing());
+            expect(fixture.componentInstance.capabilities()).toEqual(CAPABILITIES_UNAVAILABLE);
+            capabilities$ = of(CAPABILITIES_UNAVAILABLE);
+        });
+    });
+
+    describe('the end of an edit in the summary', () => {
+        it('adds one sentence about it to the summary line, the one live region of the page, and takes it away again', async () => {
+            await open(reviewing());
+            const before = summary();
+            await vi.advanceTimersByTimeAsync(ANNOUNCE_GAP_MS);
+            store.editNote.set('Мнема переписала фрагмент.');
+            await vi.advanceTimersByTimeAsync(ANNOUNCE_GAP_MS);
+            await settle();
+            expect(summary()).toBe(`${before} · Мнема переписала фрагмент.`);
+            const own = [...root().querySelectorAll('[role=status]')].filter(element => !element.closest('app-native-media-surface'));
+            expect(own).toHaveLength(1);
+            store.editNote.set(null);
+            await vi.advanceTimersByTimeAsync(ANNOUNCE_GAP_MS);
+            await settle();
+            expect(summary()).toBe(before);
         });
     });
 

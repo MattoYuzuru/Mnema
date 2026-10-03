@@ -3,9 +3,10 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 
 import { MediaPlaybackApi } from '../../content/rendering/media-playback.api';
+import { CAPABILITIES_UNAVAILABLE } from '../authoring/capabilities-api.service';
 import { ARRIVE_MS, ProposalViewComponent } from './proposal-view.component';
 import { Arrival, DraftBlocks } from './workshop-events';
-import { DetailEntry } from './workshop-session.store';
+import { DetailEntry, WorkshopSessionStore } from './workshop-session.store';
 import { ArtifactSummary, SessionState, parseArtifactDetail, parseArtifactSummary, parseEventsPage } from './generation.models';
 import { artifactDetailWithNote, artifactWith, clone, eventsEnvelope, examples, ids, wireBlocks } from './generation-test-data';
 
@@ -29,7 +30,8 @@ describe('ProposalViewComponent', () => {
 
     function create(artifact: ArtifactSummary, extra: Record<string, unknown> = {}, session: SessionState = 'REVIEW'): void {
         TestBed.resetTestingModule();
-        TestBed.configureTestingModule({ providers: [provideRouter([]), { provide: MediaPlaybackApi, useValue: { read: () => new Promise(() => {}) } }] });
+        TestBed.configureTestingModule({ providers: [provideRouter([]), { provide: MediaPlaybackApi, useValue: { read: () => new Promise(() => {}) } },
+            { provide: WorkshopSessionStore, useValue: { edits: signal({}), busy: signal(new Set<string>()) } }] });
         fixture = TestBed.createComponent(ProposalViewComponent);
         fixture.componentRef.setInput('artifact', artifact);
         fixture.componentRef.setInput('index', 2);
@@ -156,6 +158,30 @@ describe('ProposalViewComponent', () => {
             click('Отклонить');
             expect(emitted).toEqual(['approve', 'handoff', 'reject']);
             expect(root().querySelector('.proposal-actions')?.getAttribute('role')).toBe('group');
+        });
+
+        it('says above the material that a selection can be rewritten, only where it can (a proposal in a running session)', () => {
+            const hint = (): string | undefined => root().querySelector('.selection-hint')?.textContent?.trim();
+            create(summary('PROPOSED'), { entry: entry() });
+            expect(hint()).toBe('Выделите фрагмент текста, чтобы попросить Мнему переписать его.');
+            expect(root().querySelector('.selection-hint')!.nextElementSibling?.classList.contains('final')).toBe(true);
+            create(summary('PROPOSED'), { entry: entry() }, 'CANCELLED');
+            expect(hint()).toBeUndefined();
+            create(summary('REVISING'), { entry: entry('REVISING') });
+            expect(hint()).toBeUndefined();
+            create(summary('PROPOSED', { currentRevisionId: '4e700000-0000-4000-8000-0000000000aa' }), { entry: entry() });
+            expect(hint()).toBeUndefined();
+            create(summary('PROPOSED'), { entry: null });
+            expect(hint()).toBeUndefined();
+        });
+
+        it('hands the server capabilities to the media actions under the audio of the material', () => {
+            create(summary('PROPOSED'), { entry: entry() });
+            const speech = (): HTMLElement => root().querySelector<HTMLElement>('.media-actions')!;
+            expect(speech().querySelector('.media-unavailable')).not.toBeNull();
+            expect([...speech().querySelectorAll('.strip-button')].map(button => button.textContent!.trim())).toEqual(['Озвучить заново', 'Убрать']);
+            create(summary('PROPOSED'), { entry: entry(), capabilities: { ...CAPABILITIES_UNAVAILABLE, textToSpeech: { available: true, reason: null } } });
+            expect(speech().querySelector('.media-unavailable')).toBeNull();
         });
 
         it('waits for the stored revision before it lets the user approve or edit it', () => {
