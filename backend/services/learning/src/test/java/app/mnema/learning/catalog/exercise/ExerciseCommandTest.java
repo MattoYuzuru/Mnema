@@ -409,34 +409,72 @@ class ExerciseCommandTest {
 
     @Test
     void rubricStructureIsStrictlyValidated() {
-        assertThat(ExerciseCommand.readCreate(bytes(mechanic("rejectedAiAssessment"))).exercise().policy().semantic()).isTrue();
+        var parsed = ExerciseCommand.readCreate(bytes(mechanic("rejectedAiAssessment"))).exercise().policy();
+        assertThat(parsed.semantic()).isTrue();
+        Rubric rubric = parsed.rubric();
+        assertThat(rubric.of(Rubric.Tier.CORE)).hasSize(2);
+        assertThat(rubric.of(Rubric.Tier.DETAIL)).hasSize(1);
+        assertThat(rubric.of(Rubric.Tier.TERM)).hasSize(1);
+        assertThat(rubric.misconceptions()).hasSize(1);
+        assertThat(rubric.acceptableTerms()).containsExactly("инертность", "inertia");
         for (Consumer<ObjectNode> change : List.<Consumer<ObjectNode>>of(
-                rubric -> rubric.remove("referenceAnswer"),
-                rubric -> rubric.put("referenceAnswer", " "),
-                rubric -> rubric.put("referenceAnswer", "x".repeat(4_001)),
-                rubric -> rubric.remove("criteria"),
-                rubric -> rubric.withArray("criteria").removeAll(),
-                rubric -> { for (int index = 0; index < 9; index++) criterion(rubric, UUID.randomUUID().toString()); },
-                rubric -> ((ObjectNode) rubric.withArray("criteria").get(1)).put("criterionId",
-                        rubric.path("criteria").get(0).path("criterionId").stringValue(null)),
-                rubric -> ((ObjectNode) rubric.withArray("criteria").get(0)).put("critical", "yes"),
-                rubric -> ((ObjectNode) rubric.withArray("criteria").get(0)).put("description", "d".repeat(501)),
-                rubric -> ((ObjectNode) rubric.withArray("criteria").get(0)).put("weight", 3),
-                rubric -> rubric.withArray("levels").remove(2),
-                rubric -> rubric.withArray("levels").add(rubric.path("levels").get(0)),
-                rubric -> ((ObjectNode) rubric.withArray("levels").get(0)).put("level", "PARTIAL"),
-                rubric -> ((ObjectNode) rubric.withArray("levels").get(2)).put("level", "UNSURE"),
-                rubric -> ((ObjectNode) rubric.withArray("levels").get(1)).put("description", ""),
-                rubric -> rubric.put("score", 100))) {
+                rubric1 -> rubric1.remove("referenceAnswer"),
+                rubric1 -> rubric1.put("referenceAnswer", " "),
+                rubric1 -> rubric1.put("referenceAnswer", "x".repeat(4_001)),
+                rubric1 -> rubric1.remove("criteria"),
+                rubric1 -> rubric1.withArray("criteria").removeAll(),
+                rubric1 -> rubric1.remove("misconceptions"),
+                rubric1 -> rubric1.remove("acceptableTerms"),
+                // the retired v0 shape: critical flags and levels
+                rubric1 -> rubric1.withArray("levels"),
+                rubric1 -> ((ObjectNode) rubric1.withArray("criteria").get(0)).put("critical", true),
+                rubric1 -> ((ObjectNode) rubric1.withArray("criteria").get(0)).remove("tier"),
+                rubric1 -> ((ObjectNode) rubric1.withArray("criteria").get(0)).remove("weight"),
+                rubric1 -> ((ObjectNode) rubric1.withArray("criteria").get(1)).put("criterionId",
+                        rubric1.path("criteria").get(0).path("criterionId").stringValue(null)),
+                rubric1 -> ((ObjectNode) rubric1.withArray("criteria").get(0)).put("tier", "MAJOR"),
+                rubric1 -> ((ObjectNode) rubric1.withArray("criteria").get(0)).put("description", "d".repeat(501)),
+                rubric1 -> ((ObjectNode) rubric1.withArray("criteria").get(0)).put("description", " "),
+                rubric1 -> ((ObjectNode) rubric1.withArray("criteria").get(0)).put("weight", 0),
+                rubric1 -> ((ObjectNode) rubric1.withArray("criteria").get(0)).put("weight", 4),
+                rubric1 -> ((ObjectNode) rubric1.withArray("criteria").get(0)).put("weight", "2"),
+                rubric1 -> rubric1.withArray("misconceptions").add("m".repeat(301)),
+                rubric1 -> { for (int index = 0; index < 10; index++) rubric1.withArray("misconceptions").add("ошибка " + index); },
+                rubric1 -> rubric1.withArray("acceptableTerms").add("t".repeat(81)),
+                rubric1 -> rubric1.withArray("acceptableTerms").add(" "),
+                rubric1 -> { for (int index = 0; index < 29; index++) rubric1.withArray("acceptableTerms").add("термин " + index); },
+                rubric1 -> rubric1.put("score", 100))) {
             assertInvalid("rejectedAiAssessment", body -> change.accept((ObjectNode) evaluator(body).path("rubric")));
         }
-        // ten criteria are valid; the semantic evaluator needs its rubric and version 1
-        ExerciseCommand.readCreate(bytes(patched("rejectedAiAssessment", body -> {
-            ObjectNode rubric = (ObjectNode) evaluator(body).path("rubric");
-            for (int index = 0; index < 8; index++) criterion(rubric, UUID.randomUUID().toString());
-        })));
+        // the tier counts: 2..3 CORE, 1..4 DETAIL, 0..2 TERM
+        assertInvalid("rejectedAiAssessment", body -> tiers(body, "CORE", "DETAIL"));
+        assertInvalid("rejectedAiAssessment", body -> tiers(body, "CORE", "CORE", "CORE", "CORE", "DETAIL"));
+        assertInvalid("rejectedAiAssessment", body -> tiers(body, "CORE", "CORE", "TERM"));
+        assertInvalid("rejectedAiAssessment", body -> tiers(body, "CORE", "CORE", "DETAIL", "DETAIL", "DETAIL", "DETAIL", "DETAIL"));
+        assertInvalid("rejectedAiAssessment", body -> tiers(body, "CORE", "CORE", "DETAIL", "TERM", "TERM", "TERM"));
+        assertInvalid("rejectedAiAssessment", body -> tiers(body, "CORE", "DETAIL", "DETAIL", "DETAIL", "TERM"));
+        for (String[] valid : new String[][] {{"CORE", "CORE", "DETAIL"}, {"CORE", "CORE", "CORE", "DETAIL", "DETAIL", "DETAIL", "DETAIL", "TERM", "TERM"},
+                {"CORE", "CORE", "DETAIL", "TERM"}}) {
+            ExerciseCommand.readCreate(bytes(patched("rejectedAiAssessment", body -> tiers(body, valid))));
+        }
+        // the semantic evaluator needs its rubric and version 1
         assertInvalid("rejectedAiAssessment", body -> evaluator(body).put("version", "2"));
         assertInvalid("rejectedAiAssessment", body -> evaluator(body).remove("rubric"));
+        // the free lists are optional in content but must be present: empty arrays are fine
+        ExerciseCommand.readCreate(bytes(patched("rejectedAiAssessment", body -> {
+            ((ObjectNode) evaluator(body).path("rubric")).withArray("misconceptions").removeAll();
+            ((ObjectNode) evaluator(body).path("rubric")).withArray("acceptableTerms").removeAll();
+        })));
+    }
+
+    /** Rewrites the criteria of the fixture rubric to exactly these tiers (fresh ids, weight 1). */
+    private static void tiers(ObjectNode body, String... tiers) {
+        ArrayNode criteria = ((ObjectNode) evaluator(body).path("rubric")).withArray("criteria");
+        criteria.removeAll();
+        for (String tier : tiers) {
+            criteria.addObject().put("criterionId", UUID.randomUUID().toString()).put("description", "Пункт " + tier)
+                    .put("tier", tier).put("weight", 1);
+        }
     }
 
     @Test
@@ -471,10 +509,6 @@ class ExerciseCommandTest {
 
     private static ObjectNode size(ObjectNode body, int passageIndex) {
         return (ObjectNode) content(body).withArray("passage").get(passageIndex).path("size");
-    }
-
-    private static void criterion(ObjectNode rubric, String id) {
-        rubric.withArray("criteria").addObject().put("criterionId", id).put("description", "More").put("critical", false);
     }
 
     private static ObjectNode option(ObjectNode body, int index) {

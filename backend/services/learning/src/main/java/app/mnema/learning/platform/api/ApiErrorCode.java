@@ -48,6 +48,16 @@ enum ApiErrorCode {
             "Source unavailable",
             "A pinned source is no longer available."
     ),
+    ASSESSMENT_STATE_CONFLICT(
+            HttpStatus.CONFLICT,
+            "Assessment state conflict",
+            "The operation is not allowed in the current assessment state."
+    ),
+    DISPUTE_NOT_ALLOWED(
+            HttpStatus.CONFLICT,
+            "Dispute not allowed",
+            "This grade can no longer be disputed."
+    ),
     MEDIA_UPLOAD_CONFLICT(HttpStatus.CONFLICT, "Media upload conflict", "The upload state or parts do not match the command."),
     MEDIA_STORAGE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "Media storage unavailable", "Media storage is temporarily unavailable."),
     VERSION_CONFLICT(

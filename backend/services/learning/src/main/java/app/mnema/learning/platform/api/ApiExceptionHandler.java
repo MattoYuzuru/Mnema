@@ -15,6 +15,8 @@ import app.mnema.learning.usage.SpecNotSupportedException;
 import app.mnema.learning.usage.UsageContentionException;
 import app.mnema.learning.usage.UsageLimitReachedException;
 import app.mnema.learning.study.session.StudySessionExpiredException;
+import app.mnema.learning.study.attempt.AssessmentStateConflictException;
+import app.mnema.learning.study.attempt.DisputeNotAllowedException;
 import app.mnema.learning.study.attempt.PresentationExpiredException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
@@ -108,6 +110,17 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
             HttpServletRequest request
     ) {
         return response(ApiErrorCode.PRESENTATION_EXPIRED, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(AssessmentStateConflictException.class)
+    ResponseEntity<Object> handleAssessmentStateConflict(AssessmentStateConflictException exception,
+                                                         HttpServletRequest request) {
+        return response(ApiErrorCode.ASSESSMENT_STATE_CONFLICT, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(DisputeNotAllowedException.class)
+    ResponseEntity<Object> handleDisputeNotAllowed(DisputeNotAllowedException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.DISPUTE_NOT_ALLOWED, request.getRequestURI(), new HttpHeaders());
     }
 
     @ExceptionHandler(IdempotencyConflictException.class)
