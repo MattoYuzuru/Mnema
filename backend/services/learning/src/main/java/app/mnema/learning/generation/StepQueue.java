@@ -29,7 +29,7 @@ class StepQueue {
         record Claimed(StepClaim claim) implements Look { }
 
         /** @param turn the step belongs to a turn of an artifact (an edit or a media turn): it fails the turn, not an artifact */
-        record Expired(UUID stepId, UUID sessionId, String kind, boolean turn) implements Look { }
+        record Expired(UUID stepId, UUID sessionId, String kind, boolean turn, boolean slot) implements Look { }
     }
 
     private static final int MAX_LOOKS = 25;
@@ -37,15 +37,17 @@ class StepQueue {
     private final StepRepository steps;
     private final SessionLifecycle lifecycle;
     private final EditLifecycle edits;
+    private final ImageSearchLifecycle imageSlots;
     private final UsageLedger ledger;
     private final GenerationSettings settings;
     private final TransactionTemplate transaction;
 
-    StepQueue(StepRepository steps, SessionLifecycle lifecycle, EditLifecycle edits, UsageLedger ledger, GenerationSettings settings,
-              PlatformTransactionManager transactions) {
+    StepQueue(StepRepository steps, SessionLifecycle lifecycle, EditLifecycle edits, ImageSearchLifecycle imageSlots, UsageLedger ledger,
+              GenerationSettings settings, PlatformTransactionManager transactions) {
         this.steps = steps;
         this.lifecycle = lifecycle;
         this.edits = edits;
+        this.imageSlots = imageSlots;
         this.ledger = ledger;
         this.settings = settings;
         this.transaction = new TransactionTemplate(transactions);
@@ -71,6 +73,7 @@ class StepQueue {
                 case Look.Parked parked -> lifecycle.parked(parked.sessionId(), parked.until());
                 case Look.Expired expired -> {
                     if (expired.turn()) edits.expire(expired.stepId());
+                    else if (expired.slot()) imageSlots.expire(expired.stepId());
                     else lifecycle.expire(expired.stepId());
                 }
             }
@@ -84,15 +87,17 @@ class StepQueue {
         Step step = due.get();
         // an edit and the media turn of an exercise are interactive: a person waits for them
         boolean turn = step.kind().equals(EditExecutor.KIND) || step.input().has("turnId");
+        // the initial image search of a slot is neither: it fails its slot, not an artifact or a turn
+        boolean slot = ImageSearchExecutor.isSlotStep(step.kind(), step.input());
         // The whole step has a lifetime from its first claim: past it, no further run is started.
         if (step.firstClaimedAt() != null
                 && step.firstClaimedAt().plus(settings.step().maxLifetime()).isBefore(java.time.Instant.now())) {
-            return new Look.Expired(step.stepId(), step.sessionId(), step.kind(), turn);
+            return new Look.Expired(step.stepId(), step.sessionId(), step.kind(), turn, slot);
         }
         // A person waits for an edit: one that no worker claimed in time is given up, its turn fails and its hold is released
         if (turn && step.firstClaimedAt() == null && step.createdAt() != null
                 && step.createdAt().plus(settings.edit().queueTimeout()).isBefore(java.time.Instant.now())) {
-            return new Look.Expired(step.stepId(), step.sessionId(), step.kind(), turn);
+            return new Look.Expired(step.stepId(), step.sessionId(), step.kind(), turn, slot);
         }
         int credits = step.input().path("credits").asInt(0);
         // An edit is interactive and costs a few credits, and so is a plan (the owner waits for it in the Workshop): the daily burst never
@@ -106,7 +111,8 @@ class StepQueue {
             }
         }
         Duration deadline = step.kind().equals(TextDraftExecutor.KIND) ? settings.step().textDraftDeadline()
-                : plan ? settings.planner().deadline() : Duration.ofMinutes(2);
+                : plan ? settings.planner().deadline() : step.kind().equals(ImageSearchExecutor.KIND) ? ImageSearchExecutor.DEADLINE
+                : Duration.ofMinutes(2);
         Step running = steps.claim(step.stepId(), UUID.randomUUID(), Math.max(1, settings.worker().lease().toSeconds()),
                 Math.max(1, deadline.toSeconds()), Math.max(1, settings.step().maxLifetime().toSeconds()));
         return new Look.Claimed(new StepClaim(running.stepId(), running.sessionId(), running.artifactId(), running.ownerId(),

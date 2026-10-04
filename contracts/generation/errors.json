@@ -64,7 +64,8 @@
         "rejectArtifact",
         "retryArtifact",
         "revertArtifact",
-        "undoRejectArtifact"
+        "undoRejectArtifact",
+        "selectMediaCandidate"
       ],
       "extensionMembers": {
         "artifactIds": "bulk approval only: the stale artifacts"
@@ -101,7 +102,8 @@
         "handoffArtifact",
         "rejectArtifact",
         "retryArtifact",
-        "revertArtifact"
+        "revertArtifact",
+        "selectMediaCandidate"
       ]
     },
     "RESOURCE_LIMIT_EXCEEDED": {
@@ -117,7 +119,8 @@
         "editArtifact",
         "estimateGeneration",
         "handoffArtifact",
-        "retryArtifact"
+        "retryArtifact",
+        "selectMediaCandidate"
       ],
       "extensionMembers": {
         "limit": "ACTIVE_SESSIONS | ARTIFACTS_PER_SESSION | EXERCISE_TARGETS | EXERCISES_PER_TARGET | EXERCISES_PER_SESSION | SOURCES | EDITING_DRAFTS | TURNS_PER_ARTIFACT | REVISIONS_PER_ARTIFACT | EDIT_TARGET_SIZE",
@@ -262,7 +265,8 @@
       "origin": "new",
       "when": "editArtifact while a turn of this artifact is QUEUED or RUNNING (artifact state REVISING). One edit per artifact at a time.",
       "endpoints": [
-        "editArtifact"
+        "editArtifact",
+        "selectMediaCandidate"
       ],
       "extensionMembers": {
         "turnId": "the running turn"
@@ -323,7 +327,8 @@
         "rejectArtifact",
         "retryArtifact",
         "revertArtifact",
-        "undoRejectArtifact"
+        "undoRejectArtifact",
+        "selectMediaCandidate"
       ],
       "extensionMembers": {
         "reason": "ILLEGAL_STATE | MEDIA_NOT_READY | SOURCE_STALE | NOT_RETRYABLE",

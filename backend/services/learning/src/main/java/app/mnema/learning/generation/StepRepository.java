@@ -249,6 +249,16 @@ class StepRepository {
                 .param("id", sessionId).query(UUID.class).list();
     }
 
+    /**
+     * Whether the session still has an initial image-search step of a slot (not a turn): such a step pays from the session's batch hold, so the
+     * hold must outlive the session's move out of RUNNING until the last of them ends.
+     */
+    boolean hasOpenSlotSteps(UUID sessionId) {
+        return jdbc.sql("SELECT EXISTS (SELECT 1 FROM app_learning.generation_step WHERE session_id=:id AND kind='IMAGE_SEARCH' "
+                        + "AND input->>'turnId' IS NULL AND state IN ('WAITING_DEPENDENCIES','READY','RUNNING','WAITING_EXTERNAL'))")
+                .param("id", sessionId).query(Boolean.class).single();
+    }
+
     /** A READY step, locked, for a decision taken without a claim (its lifetime ran out while it waited). */
     Optional<Step> lockReady(UUID stepId) {
         return jdbc.sql("SELECT " + COLUMNS + " FROM app_learning.generation_step WHERE step_id=:id AND state='READY' FOR UPDATE")

@@ -605,19 +605,19 @@ class GenerationRepository {
     }
 
     /**
-     * Ends every PENDING or GENERATING slot of the session as FAILED with {@code errorCode} and returns them.
+     * Ends every PENDING, GENERATING or VERIFYING slot of the session as FAILED with {@code errorCode} and returns them.
      */
     List<Slot> failOpenSlots(UUID sessionId, String errorCode) {
         return jdbc.sql("UPDATE app_learning.generation_media_slot SET state='FAILED',error_code=:code,updated_at=CURRENT_TIMESTAMP "
-                        + "WHERE session_id=:id AND state IN ('PENDING','GENERATING') RETURNING artifact_id,slot_key,revision_id,node_id,"
+                        + "WHERE session_id=:id AND state IN ('PENDING','GENERATING','VERIFYING') RETURNING artifact_id,slot_key,revision_id,node_id,"
                         + "kind,spec::text AS spec,asset_id,state,error_code")
                 .param("code", errorCode).param("id", sessionId).query(SLOT).list();
     }
 
-    /** Ends every PENDING or GENERATING slot of one artifact as FAILED with {@code errorCode} and returns them. */
+    /** Ends every PENDING, GENERATING or VERIFYING slot of one artifact as FAILED with {@code errorCode} and returns them. */
     List<Slot> failOpenSlotsOf(UUID artifactId, String errorCode) {
         return jdbc.sql("UPDATE app_learning.generation_media_slot SET state='FAILED',error_code=:code,updated_at=CURRENT_TIMESTAMP "
-                        + "WHERE artifact_id=:id AND state IN ('PENDING','GENERATING') RETURNING artifact_id,slot_key,revision_id,node_id,"
+                        + "WHERE artifact_id=:id AND state IN ('PENDING','GENERATING','VERIFYING') RETURNING artifact_id,slot_key,revision_id,node_id,"
                         + "kind,spec::text AS spec,asset_id,state,error_code")
                 .param("code", errorCode).param("id", artifactId).query(SLOT).list();
     }
@@ -684,6 +684,7 @@ class GenerationRepository {
      * assets would collide with the new ones) and the media holds on their assets go.
      */
     void dropMedia(UUID artifactId) {
+        jdbc.sql("DELETE FROM app_learning.generation_media_candidate WHERE artifact_id=:id").param("id", artifactId).update();
         jdbc.sql("DELETE FROM app_learning.generation_media_ref WHERE artifact_id=:id").param("id", artifactId).update();
         jdbc.sql("DELETE FROM app_learning.generation_media_slot WHERE artifact_id=:id").param("id", artifactId).update();
     }
@@ -801,9 +802,16 @@ class GenerationRepository {
     /** {@code edited}: the owner changed the proposal in the editor before saving it (exercises only). */
     void insertProvenance(UUID owner, UUID sessionId, UUID artifactId, UUID revisionId, JsonNode publishedRef,
                           Provenance provenance, boolean edited) {
+        insertProvenance(owner, sessionId, artifactId, revisionId, publishedRef, provenance, edited, Json.array());
+    }
+
+    /** {@code media}: {@code [{assetId, source, sourceId, license, sourcePageUrl}]} of the stock images the published artifact uses. */
+    void insertProvenance(UUID owner, UUID sessionId, UUID artifactId, UUID revisionId, JsonNode publishedRef,
+                          Provenance provenance, boolean edited, JsonNode media) {
         jdbc.sql("INSERT INTO app_learning.generation_provenance(provenance_id,owner_id,session_id,artifact_id,revision_id,"
-                        + "published_ref,model_routes,prompt_versions,edited,created_at) VALUES (:id,:owner,:session,:artifact,:revision,"
-                        + "CAST(:ref AS jsonb),CAST(:routes AS text[]),CAST(:prompts AS text[]),:edited,CURRENT_TIMESTAMP)")
+                        + "published_ref,model_routes,prompt_versions,edited,media,created_at) VALUES (:id,:owner,:session,:artifact,:revision,"
+                        + "CAST(:ref AS jsonb),CAST(:routes AS text[]),CAST(:prompts AS text[]),:edited,CAST(:media AS jsonb),CURRENT_TIMESTAMP)")
+                .param("media", Json.write(media))
                 .param("id", UUID.randomUUID()).param("owner", owner).param("session", sessionId).param("artifact", artifactId)
                 .param("revision", revisionId).param("ref", Json.write(publishedRef))
                 .param("routes", arrayLiteral(provenance.modelRoutes())).param("prompts", arrayLiteral(provenance.promptVersions()))

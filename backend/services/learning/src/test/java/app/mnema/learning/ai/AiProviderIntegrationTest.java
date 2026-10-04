@@ -138,7 +138,8 @@ class AiProviderIntegrationTest extends PostgresIntegrationTest {
     @Test
     void theStubIsAvailableWithoutAUserKeyAndTheOtherCapabilitiesKeepTheirReasons() {
         assertThat(capabilities.aiGeneration()).isEqualTo(new LearningCapabilities.Status(true, null));
-        assertThat(capabilities.imageSearch().reason()).isEqualTo(LearningCapabilities.Reason.PROVIDER_NOT_CONFIGURED);
+        // image search is answered by the Stub too (#296): the flag is on in this context and the Stub is a callable source
+        assertThat(capabilities.imageSearch()).isEqualTo(new LearningCapabilities.Status(true, null));
         assertThat(capabilities.videoGeneration().reason()).isEqualTo(LearningCapabilities.Reason.DISABLED);
         assertThat(userKeys.configured()).as("the Stub needs no user-key secret").isFalse();
     }

@@ -27,8 +27,11 @@ class SessionViews {
     private final SessionReservations reservations;
     private final NoteArchival notes;
     private final PinnedMaterials materials;
+    private final CandidateRepository candidates;
 
-    SessionViews(GenerationRepository repository, SessionReservations reservations, NoteArchival notes, PinnedMaterials materials) {
+    SessionViews(GenerationRepository repository, SessionReservations reservations, NoteArchival notes, PinnedMaterials materials,
+                 CandidateRepository candidates) {
+        this.candidates = candidates;
         this.repository = repository;
         this.reservations = reservations;
         this.notes = notes;
@@ -129,11 +132,28 @@ class SessionViews {
         ArrayNode slots = node.putArray("mediaSlots");
         if (revision != null && revision.payload().path("kind").stringValue("").equals("NATIVE_DOCUMENT")) {
             // the slots of the media nodes this revision holds, whichever revision each slot is attached to now
-            java.util.Set<UUID> present = EditDocument.idSet(revision.payload().path("document"));
+            JsonNode document = revision.payload().path("document");
+            java.util.Set<UUID> present = EditDocument.idSet(document);
+            List<Rows.Candidate> found = candidates.ofArtifact(artifact.artifactId());
             for (Slot slot : repository.slotsOf(artifact.artifactId())) {
                 if (!present.contains(slot.nodeId())) continue;
-                slots.addObject().put("slotKey", slot.slotKey()).put("kind", slot.kind()).put("nodeId", slot.nodeId().toString())
-                        .put("assetId", slot.assetId().toString()).put("state", slot.state()).put("errorCode", slot.errorCode());
+                boolean search = slot.kind().equals("IMAGE") && slot.spec().path("mode").stringValue("").equals("search");
+                // the asset the node of the SHOWN revision uses (a search slot's node follows the chosen candidate through the revisions)
+                UUID using = search ? MediaNodes.assetOf(document, slot.nodeId()) : null;
+                ObjectNode entry = slots.addObject().put("slotKey", slot.slotKey()).put("kind", slot.kind());
+                entry.put("mode", slot.kind().equals("IMAGE") ? slot.spec().path("mode").stringValue(null) : null);
+                entry.put("nodeId", slot.nodeId().toString()).put("assetId", (using == null ? slot.assetId() : using).toString())
+                        .put("state", slot.state()).put("errorCode", slot.errorCode());
+                ArrayNode listed = Json.array();
+                JsonNode attribution = Json.NODES.nullNode();
+                for (Rows.Candidate candidate : found) {
+                    if (!search || !candidate.slotKey().equals(slot.slotKey())) continue;
+                    boolean chosen = candidate.assetId().equals(using);
+                    listed.add(candidate(candidate, chosen));
+                    if (chosen) attribution = attribution(candidate);
+                }
+                entry.set("attribution", attribution);
+                entry.set("candidates", listed);
             }
         }
         if (revision != null && revision.payload().path("kind").stringValue("").equals("EXERCISE_COMMAND")) {
@@ -154,6 +174,23 @@ class SessionViews {
         ArrayNode turns = node.putArray("turns");
         for (Turn turn : repository.turns(artifact.artifactId())) turns.add(turn(turn));
         return node;
+    }
+
+    /** One image candidate of a search slot ({@code imageCandidate}); {@code chosen} is the one the shown revision uses. */
+    static ObjectNode candidate(Rows.Candidate candidate, boolean chosen) {
+        ObjectNode node = Json.object().put("candidateId", candidate.candidateId().toString()).put("assetId", candidate.assetId().toString())
+                .put("state", candidate.state()).put("source", candidate.source()).put("title", candidate.title()).put("author", candidate.author())
+                .put("license", candidate.license()).put("licenseUrl", candidate.licenseUrl()).put("sourcePageUrl", candidate.sourcePageUrl())
+                .put("shareAlike", candidate.shareAlike()).put("width", candidate.width()).put("height", candidate.height());
+        node.put("chosen", chosen);
+        return node;
+    }
+
+    /** The attribution of the chosen candidate: what the published image must credit. */
+    static ObjectNode attribution(Rows.Candidate candidate) {
+        return Json.object().put("source", candidate.source()).put("title", candidate.title()).put("author", candidate.author())
+                .put("license", candidate.license()).put("licenseUrl", candidate.licenseUrl()).put("sourcePageUrl", candidate.sourcePageUrl())
+                .put("shareAlike", candidate.shareAlike());
     }
 
     /** One turn as the contract's {@code turn} shape: the user's instruction and where it stands. */

@@ -644,9 +644,8 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
         tools.jackson.databind.JsonNode document = ((app.mnema.learning.generation.mbm.MbmResult.Success) image).document();
         Proposal withImage = withDocument(owner, proposal, document);
         UUID picture = id(blocks(detail(owner, deck, withImage)).get(2));
-        MockHttpServletResponse search = edit(owner, deck, withImage, editBody(UUID.randomUUID(), withImage.revision(), "IMAGE_SEARCH", null, null, picture));
-        problem(search, 409, "CAPABILITY_UNAVAILABLE");
-        assertThat(json(search).path("capability").stringValue(null)).isEqualTo("imageSearch");
+        // image search is runnable here (#296), but the picture of this revision has no slot that searches: nothing to search for
+        problem(edit(owner, deck, withImage, editBody(UUID.randomUUID(), withImage.revision(), "IMAGE_SEARCH", null, null, picture)), 400, "INVALID_REQUEST");
         MockHttpServletResponse create = edit(owner, deck, withImage, editBody(UUID.randomUUID(), withImage.revision(), "IMAGE_GENERATE", null, null, picture));
         problem(create, 409, "CAPABILITY_UNAVAILABLE");
         assertThat(json(create).path("capability").stringValue(null)).isEqualTo("imageGeneration");

@@ -1,0 +1,277 @@
+{
+ "batchcomplete": "",
+ "query": {
+  "pages": {
+   "11": {
+    "pageid": 11,
+    "ns": 6,
+    "title": "File:Red fox 2.jpg",
+    "index": 1,
+    "imagerepository": "local",
+    "imageinfo": [
+     {
+      "thumburl": "https://upload.wikimedia.org/wikipedia/commons/thumb/11/Red_fox_2.jpg/640px-Red_fox_2.jpg",
+      "thumbwidth": 640,
+      "thumbheight": 427,
+      "url": "https://upload.wikimedia.org/wikipedia/commons/11/Red_fox_2.jpg",
+      "descriptionurl": "https://commons.wikimedia.org/wiki/File:Red_fox_2.jpg",
+      "size": 123456,
+      "width": 3000,
+      "height": 2000,
+      "mime": "image/jpeg",
+      "extmetadata": {
+       "LicenseShortName": {
+        "value": "CC BY-SA 4.0",
+        "source": "commons-desc-page",
+        "hidden": ""
+       },
+       "License": {
+        "value": "x"
+       },
+       "Artist": {
+        "value": "<a href=\"//commons.wikimedia.org/wiki/User:Hempel\">Jörg Hempel</a> &amp; <b>co</b>"
+       },
+       "ImageDescription": {
+        "value": "<p>Fox</p>"
+       },
+       "LicenseUrl": {
+        "value": "https://creativecommons.org/licenses/by-sa/4.0/"
+       }
+      }
+     }
+    ]
+   },
+   "12": {
+    "pageid": 12,
+    "ns": 6,
+    "title": "File:Fox nc.jpg",
+    "index": 2,
+    "imagerepository": "local",
+    "imageinfo": [
+     {
+      "thumburl": "https://upload.wikimedia.org/wikipedia/commons/thumb/12/Fox_nc.jpg/640px-Fox_nc.jpg",
+      "thumbwidth": 640,
+      "thumbheight": 427,
+      "url": "https://upload.wikimedia.org/wikipedia/commons/12/Fox_nc.jpg",
+      "descriptionurl": "https://commons.wikimedia.org/wiki/File:Fox_nc.jpg",
+      "size": 123456,
+      "width": 3000,
+      "height": 2000,
+      "mime": "image/jpeg",
+      "extmetadata": {
+       "LicenseShortName": {
+        "value": "CC BY-NC 4.0",
+        "source": "commons-desc-page",
+        "hidden": ""
+       },
+       "License": {
+        "value": "x"
+       },
+       "Artist": {
+        "value": "N"
+       },
+       "ImageDescription": {
+        "value": "<p>Fox</p>"
+       },
+       "LicenseUrl": {
+        "value": "https://creativecommons.org/licenses/by-nc/4.0/"
+       }
+      }
+     }
+    ]
+   },
+   "13": {
+    "pageid": 13,
+    "ns": 6,
+    "title": "File:Fox old.jpg",
+    "index": 3,
+    "imagerepository": "local",
+    "imageinfo": [
+     {
+      "thumburl": "https://upload.wikimedia.org/wikipedia/commons/thumb/13/Fox_old.jpg/640px-Fox_old.jpg",
+      "thumbwidth": 640,
+      "thumbheight": 427,
+      "url": "https://upload.wikimedia.org/wikipedia/commons/13/Fox_old.jpg",
+      "descriptionurl": "https://commons.wikimedia.org/wiki/File:Fox_old.jpg",
+      "size": 123456,
+      "width": 3000,
+      "height": 2000,
+      "mime": "image/jpeg",
+      "extmetadata": {
+       "LicenseShortName": {
+        "value": "Public domain",
+        "source": "commons-desc-page",
+        "hidden": ""
+       },
+       "License": {
+        "value": "x"
+       },
+       "Artist": {
+        "value": ""
+       },
+       "ImageDescription": {
+        "value": "<p>Fox</p>"
+       }
+      }
+     }
+    ]
+   },
+   "14": {
+    "pageid": 14,
+    "ns": 6,
+    "title": "File:Fox gfdl.jpg",
+    "index": 4,
+    "imagerepository": "local",
+    "imageinfo": [
+     {
+      "thumburl": "https://upload.wikimedia.org/wikipedia/commons/thumb/14/Fox_gfdl.jpg/640px-Fox_gfdl.jpg",
+      "thumbwidth": 640,
+      "thumbheight": 427,
+      "url": "https://upload.wikimedia.org/wikipedia/commons/14/Fox_gfdl.jpg",
+      "descriptionurl": "https://commons.wikimedia.org/wiki/File:Fox_gfdl.jpg",
+      "size": 123456,
+      "width": 3000,
+      "height": 2000,
+      "mime": "image/jpeg",
+      "extmetadata": {
+       "LicenseShortName": {
+        "value": "GFDL 1.2",
+        "source": "commons-desc-page",
+        "hidden": ""
+       },
+       "License": {
+        "value": "x"
+       },
+       "Artist": {
+        "value": "G"
+       },
+       "ImageDescription": {
+        "value": "<p>Fox</p>"
+       }
+      }
+     }
+    ]
+   },
+   "15": {
+    "pageid": 15,
+    "ns": 6,
+    "title": "File:Fox trademark.jpg",
+    "index": 5,
+    "imagerepository": "local",
+    "imageinfo": [
+     {
+      "thumburl": "https://upload.wikimedia.org/wikipedia/commons/thumb/15/Fox_trademark.jpg/640px-Fox_trademark.jpg",
+      "thumbwidth": 640,
+      "thumbheight": 427,
+      "url": "https://upload.wikimedia.org/wikipedia/commons/15/Fox_trademark.jpg",
+      "descriptionurl": "https://commons.wikimedia.org/wiki/File:Fox_trademark.jpg",
+      "size": 123456,
+      "width": 3000,
+      "height": 2000,
+      "mime": "image/jpeg",
+      "extmetadata": {
+       "LicenseShortName": {
+        "value": "CC BY 2.0",
+        "source": "commons-desc-page",
+        "hidden": ""
+       },
+       "License": {
+        "value": "x"
+       },
+       "Artist": {
+        "value": "T"
+       },
+       "ImageDescription": {
+        "value": "<p>Fox</p>"
+       },
+       "LicenseUrl": {
+        "value": "http://creativecommons.org/licenses/by/2.0/"
+       },
+       "Restrictions": {
+        "value": "trademarked"
+       }
+      }
+     }
+    ]
+   },
+   "16": {
+    "pageid": 16,
+    "ns": 6,
+    "title": "File:Fox 3.jpg",
+    "index": 6,
+    "imagerepository": "local",
+    "imageinfo": [
+     {
+      "thumburl": "https://upload.wikimedia.org/wikipedia/commons/thumb/16/Fox_3.jpg/640px-Fox_3.jpg",
+      "thumbwidth": 640,
+      "thumbheight": 427,
+      "url": "https://upload.wikimedia.org/wikipedia/commons/16/Fox_3.jpg",
+      "descriptionurl": "https://commons.wikimedia.org/wiki/File:Fox_3.jpg",
+      "size": 123456,
+      "width": 3000,
+      "height": 2000,
+      "mime": "image/jpeg",
+      "extmetadata": {
+       "LicenseShortName": {
+        "value": "CC0",
+        "source": "commons-desc-page",
+        "hidden": ""
+       },
+       "License": {
+        "value": "x"
+       },
+       "Artist": {
+        "value": ""
+       },
+       "ImageDescription": {
+        "value": "<p>Fox</p>"
+       },
+       "LicenseUrl": {
+        "value": "https://creativecommons.org/publicdomain/zero/1.0/"
+       }
+      }
+     }
+    ]
+   },
+   "17": {
+    "pageid": 17,
+    "ns": 6,
+    "title": "File:Fox drawing.svg",
+    "index": 7,
+    "imagerepository": "local",
+    "imageinfo": [
+     {
+      "thumburl": "https://upload.wikimedia.org/wikipedia/commons/thumb/17/Fox_drawing.svg/640px-Fox_drawing.svg",
+      "thumbwidth": 640,
+      "thumbheight": 427,
+      "url": "https://upload.wikimedia.org/wikipedia/commons/17/Fox_drawing.svg",
+      "descriptionurl": "https://commons.wikimedia.org/wiki/File:Fox_drawing.svg",
+      "size": 123456,
+      "width": 3000,
+      "height": 2000,
+      "mime": "image/svg+xml",
+      "extmetadata": {
+       "LicenseShortName": {
+        "value": "CC BY 4.0",
+        "source": "commons-desc-page",
+        "hidden": ""
+       },
+       "License": {
+        "value": "x"
+       },
+       "Artist": {
+        "value": "S"
+       },
+       "ImageDescription": {
+        "value": "<p>Fox</p>"
+       },
+       "LicenseUrl": {
+        "value": "https://creativecommons.org/licenses/by/4.0/"
+       }
+      }
+     }
+    ]
+   }
+  }
+ }
+}

@@ -151,14 +151,19 @@ public record AiProperties(
 
     /**
      * One provider. {@code enabled=false} is the per-provider kill switch. DeepSeek and OpenRouter use {@code apiKey};
-     * GigaChat exchanges {@code authKey} for a short-lived token at {@code authUrl}. {@code egress=proxy} routes the provider through
+     * GigaChat exchanges {@code authKey} for a short-lived token at {@code authUrl}. Openverse (image search) exchanges
+     * {@code clientId} and {@code clientSecret} for a bearer token. {@code egress=proxy} routes the provider through
      * {@link Egress}; without an active proxy it gets no adapter.
      */
     public record Provider(@DefaultValue("true") boolean enabled, String baseUrl, String apiKey, String authUrl,
                            String authKey, @DefaultValue("GIGACHAT_API_PERS") String scope,
-                           @DefaultValue("direct") EgressMode egress) {
+                           @DefaultValue("direct") EgressMode egress, String clientId, String clientSecret) {
         public Provider(boolean enabled, String baseUrl, String apiKey, String authUrl, String authKey, String scope) {
-            this(enabled, baseUrl, apiKey, authUrl, authKey, scope, EgressMode.DIRECT);
+            this(enabled, baseUrl, apiKey, authUrl, authKey, scope, EgressMode.DIRECT, null, null);
+        }
+
+        public Provider(boolean enabled, String baseUrl, String apiKey, String authUrl, String authKey, String scope, EgressMode egress) {
+            this(enabled, baseUrl, apiKey, authUrl, authKey, scope, egress, null, null);
         }
 
         @ConstructorBinding
@@ -168,6 +173,8 @@ public record AiProperties(
             apiKey = apiKey == null ? "" : apiKey.strip();
             authUrl = authUrl == null ? "" : authUrl.strip();
             authKey = authKey == null ? "" : authKey.strip();
+            clientId = clientId == null ? "" : clientId.strip();
+            clientSecret = clientSecret == null ? "" : clientSecret.strip();
             scope = scope == null || scope.isBlank() ? "GIGACHAT_API_PERS" : scope.strip();
             requireEndpoint(baseUrl);
             requireEndpoint(authUrl);
@@ -177,7 +184,8 @@ public record AiProperties(
         @Override
         public String toString() {
             return "Provider[enabled=" + enabled + ", egress=" + egress.label() + ", baseUrl=" + baseUrl + ", apiKey=" + (apiKey.isEmpty() ? "unset" : "<redacted>")
-                    + ", authKey=" + (authKey.isEmpty() ? "unset" : "<redacted>") + "]";
+                    + ", authKey=" + (authKey.isEmpty() ? "unset" : "<redacted>") + ", clientId=" + (clientId.isEmpty() ? "unset" : "<redacted>")
+                    + ", clientSecret=" + (clientSecret.isEmpty() ? "unset" : "<redacted>") + "]";
         }
 
         private static void requireEndpoint(String value) {

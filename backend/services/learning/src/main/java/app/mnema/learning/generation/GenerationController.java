@@ -30,7 +30,7 @@ import java.util.UUID;
 /**
  * The HTTP surface of generation sessions ({@code contracts/generation/http.json}) that exists so far: create, list (one
  * deck and the account's active sessions), read, cancel, events, artifact, approval (one and bulk), rejection and its undo,
- * hand-off, retry, edits, revert, the plan approval of a plan-first session, delete and the archival of used notes. Every response is
+ * hand-off, retry, edits, the choice of a found image, revert, the plan approval of a plan-first session, delete and the archival of used notes. Every response is
  * {@code Cache-Control: private, no-store}; the owner is the token subject and nothing else; ids and queries are checked
  * before the service is called, and a body is read (bounded) before any transaction starts.
  */
@@ -252,6 +252,25 @@ class GenerationController {
         response.location(URI.create("/api/decks/" + deck + "/generation-sessions/" + session + "/artifacts/" + artifact));
         if (result.replayed()) response.header("Idempotency-Replayed", "true");
         return response.body(result.body());
+    }
+
+    /**
+     * {@code selectMediaCandidate} (#296): another found image for an image slot that searches. 200 with the artifact as {@code getArtifact} reads it
+     * on the revision the command made; a replay answers with the revision its receipt names.
+     */
+    @PostMapping(value = ARTIFACT + "/media-slots/{slotKey}/selection", consumes = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<JsonNode> selectCandidate(@AuthenticationPrincipal Jwt identity, @PathVariable String deckId, @PathVariable String sessionId,
+                                             @PathVariable String artifactId, @PathVariable String slotKey, InputStream body) {
+        UUID owner = owner(identity);
+        UUID deck = entity(deckId, "deckId");
+        UUID session = entity(sessionId, "sessionId");
+        UUID artifact = entity(artifactId, "artifactId");
+        ReviewService.Result result = edits.select(owner, deck, session, artifact, slotKey, read(body));
+        ObjectNode detail = service.artifact(owner, deck, session, artifact, entity(result.body().path("revisionId").stringValue(""), "revisionId"));
+        ResponseEntity.BodyBuilder response = ResponseEntity.ok().headers(privateHeaders());
+        if (result.replayed()) response.header("Idempotency-Replayed", "true");
+        else response.eTag(quoted(detail.path("rowVersion").stringValue("0")));
+        return response.body(detail);
     }
 
     @PostMapping(value = ARTIFACT + "/revert", consumes = MediaType.APPLICATION_JSON_VALUE)

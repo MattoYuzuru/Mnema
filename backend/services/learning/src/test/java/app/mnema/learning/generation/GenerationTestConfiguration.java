@@ -41,7 +41,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  * {@code [[fake:block]]} (the call waits until released or interrupted: a long provider call to cancel),
  * {@code [[fake:hold-edit]]} (the same for an edit call only, with its own latches),
  * {@code [[fake:crash-once]]} (the first call of each step throws, as a worker that dies mid-step) and
- * {@code [[fake:audio]]} (a valid document with one {@code ::audio} directive). For exercise requests (JSON output):
+ * {@code [[fake:audio]]} (a valid document with one {@code ::audio} directive),
+ * {@code [[fake:image]]} (a valid document with one {@code ::image mode=search} directive whose query carries the {@code [[stub:image-none]]}
+ * and {@code [[stub:image-down]]} markers of the prompt, so the Stub image search can be made to find nothing or to be down). For exercise requests (JSON output):
  * {@code [[fake:not-json]]} (every answer is prose), {@code [[fake:fenced]]} (the Stub's answer inside a code fence) and
  * {@code [[fake:length-once]]} (the first answer is cut off by the output limit, the repair is answered by the Stub),
  * {@code [[fake:no-variants]]} (every variant number of the first answer is 1, so exercises of one mechanic repeat their question) and
@@ -53,6 +55,12 @@ class GenerationTestConfiguration {
     static final String INVALID_DOCUMENT = "# Заголовок\n\n::unknown{x=\"1\"} текст\n";
     static final String MULTI_DOCUMENT = "# Заголовок\n\nАбзац один.\n\nАбзац два.\n\n- пункт\n- пункт\n\nКонец.\n";
     static final String AUDIO_DOCUMENT = "# Глагол 行く\n\nПервый абзац.\n\n::audio{slot=\"a1\" lang=\"ja\" title=\"Произношение\"} 行く\n";
+
+    /** A document with one searched image; the markers of the prompt that steer the Stub image search go into the query. */
+    static String imageDocument(String prompt) {
+        String markers = (prompt.contains("[[stub:image-none]]") ? " [[stub:image-none]]" : "") + (prompt.contains("[[stub:image-down]]") ? " [[stub:image-down]]" : "");
+        return "# Лиса\n\nРыжая лиса живёт в лесу.\n\n::image{slot=\"i1\" mode=\"search\" alt=\"Лиса зимой\"} red fox snow" + markers + "\n";
+    }
 
     /** One recorded provider call. */
     record Call(UUID stepId, int attempt, app.mnema.learning.ai.AiRoute route, boolean repair, String prompt,
@@ -131,6 +139,7 @@ class GenerationTestConfiguration {
             if (prompt.contains("[[fake:always-invalid-mbm]]")) return ok(request, INVALID_DOCUMENT);
             if (prompt.contains("[[fake:invalid-once]]") && !repair) return ok(request, INVALID_DOCUMENT);
             if (prompt.contains("[[fake:audio]]")) return ok(request, AUDIO_DOCUMENT);
+            if (prompt.contains("[[fake:image]]")) return ok(request, imageDocument(prompt));
             if (prompt.contains("[[fake:not-json]]")) return ok(request, "это не json");
             if (prompt.contains("[[fake:length-once]]") && !repair) {
                 return AiResult.ok(new TextResponse("{\"exercises\":[{\"mechanic\":\"CHO", TextResponse.FinishReason.LENGTH,
@@ -206,6 +215,104 @@ class GenerationTestConfiguration {
     @Bean
     SpeechSynthesis testSpeechSynthesis() {
         return request -> AiResult.failed(new AiFailure.NotConfigured("test"));
+    }
+
+    /**
+     * The media pipeline's staging without S3 and without a worker: it creates the asset the caller named (origin {@code generated}) and, by
+     * {@link #mode}, makes it READY at once, READY after {@link #delayPolls} state reads, REJECTED, or leaves it VERIFYING. The first
+     * {@link #rejectNext} staged assets are REJECTED whatever the mode. The real staging is tested against MinIO in the media package.
+     */
+    static final class FakeStager implements app.mnema.learning.media.GeneratedMediaStager {
+        enum Mode { READY, REJECT, STAY_VERIFYING }
+
+        private final org.springframework.jdbc.core.simple.JdbcClient jdbc;
+        private final app.mnema.learning.media.MediaCatalog media;
+        volatile Mode mode = Mode.READY;
+        volatile int delayPolls;
+        volatile boolean fail;
+        final AtomicInteger rejectNext = new AtomicInteger();
+        final List<UUID> staged = new CopyOnWriteArrayList<>();
+        final List<Boolean> transactionAtStage = new CopyOnWriteArrayList<>();
+        private final java.util.Map<UUID, AtomicInteger> waiting = new ConcurrentHashMap<>();
+
+        FakeStager(org.springframework.jdbc.core.simple.JdbcClient jdbc, app.mnema.learning.media.MediaCatalog media) {
+            this.jdbc = jdbc;
+            this.media = media;
+        }
+
+        void reset() {
+            mode = Mode.READY;
+            delayPolls = 0;
+            fail = false;
+            rejectNext.set(0);
+            staged.clear();
+            transactionAtStage.clear();
+            waiting.clear();
+        }
+
+        @Override
+        public void stage(UUID owner, UUID assetId, app.mnema.learning.media.MediaCatalog.Kind kind, String mimeType, byte[] bytes) {
+            transactionAtStage.add(TransactionSynchronizationManager.isActualTransactionActive());
+            if (fail) throw new IllegalStateException("storage down");
+            if (!staged.contains(assetId)) {
+                staged.add(assetId);
+                jdbc.sql("INSERT INTO app_learning.media_asset(asset_id,owner_id,upload_intent_id,origin,created_at,updated_at) "
+                                + "VALUES (:asset,:owner,:asset,'generated',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) ON CONFLICT (asset_id) DO NOTHING")
+                        .param("asset", assetId).param("owner", owner).update();
+            }
+            Mode effective = rejectNext.getAndUpdate(count -> Math.max(0, count - 1)) > 0 ? Mode.REJECT : mode;
+            switch (effective) {
+                case REJECT -> jdbc.sql("UPDATE app_learning.media_asset SET state='REJECTED',updated_at=CURRENT_TIMESTAMP WHERE asset_id=:asset")
+                        .param("asset", assetId).update();
+                case STAY_VERIFYING -> verifying(assetId);
+                case READY -> {
+                    if (delayPolls > 0) {
+                        verifying(assetId);
+                        waiting.put(assetId, new AtomicInteger(delayPolls));
+                    } else {
+                        ready(assetId, mimeType);
+                    }
+                }
+            }
+        }
+
+        @Override
+        public State assetState(UUID owner, UUID assetId) {
+            AtomicInteger left = waiting.get(assetId);
+            if (left != null && left.decrementAndGet() < 0) {
+                waiting.remove(assetId);
+                ready(assetId, "image/png");
+            }
+            return jdbc.sql("SELECT state FROM app_learning.media_asset WHERE asset_id=:asset AND owner_id=:owner").param("asset", assetId)
+                    .param("owner", owner).query(String.class).optional().map(state -> switch (state) {
+                        case "READY" -> State.READY;
+                        case "REJECTED" -> State.REJECTED;
+                        case "FAILED_RETRYABLE", "DELETED" -> State.FAILED;
+                        default -> State.VERIFYING;
+                    }).orElse(State.MISSING);
+        }
+
+        private void verifying(UUID asset) {
+            jdbc.sql("UPDATE app_learning.media_asset SET state='VERIFYING',updated_at=CURRENT_TIMESTAMP WHERE asset_id=:asset AND state='PENDING_UPLOAD'")
+                    .param("asset", asset).update();
+        }
+
+        private void ready(UUID asset, String mime) {
+            UUID blob = UUID.randomUUID();
+            byte[] hash = new byte[32];
+            java.nio.ByteBuffer.wrap(hash).putLong(blob.getMostSignificantBits()).putLong(blob.getLeastSignificantBits());
+            jdbc.sql("INSERT INTO app_learning.media_blob(blob_id,sha256,byte_length,mime_type,object_key,verified_at) VALUES (:blob,:hash,32,:mime,:key,CURRENT_TIMESTAMP)")
+                    .param("blob", blob).param("hash", hash).param("mime", mime).param("key", "k/" + blob).update();
+            jdbc.sql("UPDATE app_learning.media_asset SET state='PROCESSING',updated_at=CURRENT_TIMESTAMP WHERE asset_id=:asset AND state<>'READY'")
+                    .param("asset", asset).update();
+            media.ready(asset, 0, blob);
+        }
+    }
+
+    @Bean
+    @Primary
+    FakeStager fakeStager(org.springframework.jdbc.core.simple.JdbcClient jdbc, app.mnema.learning.media.MediaCatalog media) {
+        return new FakeStager(jdbc, media);
     }
 
     /** Counts the connections each thread borrows from the pool, so a test can assert that none is held during a call. */
