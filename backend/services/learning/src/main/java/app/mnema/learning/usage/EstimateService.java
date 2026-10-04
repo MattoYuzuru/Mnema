@@ -98,6 +98,15 @@ class EstimateService {
      */
     @Transactional(readOnly = true)
     Hold hold(UUID owner, UUID deckId, JsonNode spec) {
+        return hold(owner, deckId, spec, 0);
+    }
+
+    /**
+     * As {@link #hold(UUID, UUID, JsonNode)} for the admission of a plan-first session that has {@code plansInFlight} other plans of the owner still
+     * being made: each of them will consume one smart plan when it is ready, so the cap must cover them and this one (cap - consumed - in flight > 0).
+     */
+    @Transactional(readOnly = true)
+    Hold hold(UUID owner, UUID deckId, JsonNode spec, int plansInFlight) {
         Instant now = clock.now();
         UsageState.Resolved resolved = state.resolve(owner, now);
         UsageState.Credits credits = state.credits(resolved);
@@ -118,7 +127,8 @@ class EstimateService {
             if (line.operation().equals(RateCard.EXERCISES)) exercises += line.count();
             if (line.operation().startsWith("MATERIAL_")) material = rateCard.credits(line.operation(), 1);
             if (block == null && operation.cap() != null && operation.cap().isCap()) {
-                block = capBlock(resolved, operation.cap(), line.count(), now).orElse(null);
+                int count = line.operation().equals(RateCard.PLAN) ? line.count() + plansInFlight : line.count();
+                block = capBlock(resolved, operation.cap(), count, now).orElse(null);
             }
         }
         int held = p95;

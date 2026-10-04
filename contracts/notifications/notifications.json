@@ -431,7 +431,7 @@
     "items": "Default: newest first (seq descending), not dismissed, not expired. With `after`: ascending.",
     "unreadCount": "Number of items in the whole center (not just this page) with seq greater than readUpto. The bell shows 99+ above 99.",
     "readUpto": "The stored read watermark.",
-    "activeWork": "Integer: the owner's generation sessions in PLANNING or RUNNING. Greater than 0 switches the client to the fast poll.",
+    "activeWork": "Integer: the owner's generation sessions in PLANNING or RUNNING (a PLAN_READY session waits on the owner and is not counted). Greater than 0 switches the client to the fast poll.",
     "nextCursor": "null on the last page."
   },
   "readCursorResponse": {

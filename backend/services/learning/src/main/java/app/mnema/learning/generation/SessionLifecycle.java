@@ -407,7 +407,10 @@ class SessionLifecycle {
         for (UUID reservation : reservations.ids(session)) {
             try {
                 ledger.renew(session.ownerId(), reservation);
-            } catch (ReservationNotActiveException | IllegalArgumentException ended) {
+            } catch (ReservationNotActiveException settled) {
+                // a hold that ended (the plan's, spent; a lapsed one) is normal and needs no renewal
+                LOG.debug("generation_reservation_ended session_id={}", session.sessionId());
+            } catch (IllegalArgumentException unknown) {
                 LOG.info("generation_reservation_not_renewed session_id={}", session.sessionId());
             }
         }
@@ -636,10 +639,12 @@ class SessionLifecycle {
     /**
      * The one result transaction of a successful plan: the plan's debit ({@code SMART_PLAN_FLASH}, from the plan's own hold, apart from the batch
      * hold that stays reserved), the smart-plan count of the owner's cap, the plan stored, the step SUCCEEDED, the session PLAN_READY and the owner told.
-     * If the hold cannot pay, the plan fails with {@code ESTIMATE_EXCEEDED} and nothing is debited. Returns false, writing nothing, when the lease
-     * no longer holds or the session left PLANNING (a cancellation: the plan was not delivered, so it is not paid).
+     * Returns false, writing nothing, when the lease no longer holds or the session left PLANNING (a cancellation: the plan was not delivered, so it
+     * is not paid).
      *
      * @throws app.mnema.learning.usage.UsageLimitReachedException the cap filled meanwhile: the transaction rolled back, nothing was written
+     * @throws PlanUnpayableException the plan's hold ended or no longer covers its price: the transaction rolled back, nothing was written; the
+     *                                caller fails the plan with {@code ESTIMATE_EXCEEDED}
      */
     @Transactional
     boolean succeedPlan(StepClaim claim, JsonNode plan, long costMicros, int plannedCount) {
@@ -652,15 +657,17 @@ class SessionLifecycle {
             return false;
         }
         UUID reservation = SessionReservations.forStep(tx.session, held.get().input());
+        // The cap first, then the debit (counters before the reservation and the balance, so a count that fits is never left behind by a debit that does
+        // not): a refusal of either rolls this transaction back, nothing of the plan is paid.
+        ledger.consume(tx.session.ownerId(), Bucket.SMART_PLAN, 1, "plan:" + tx.session.ownerId() + ":" + tx.session.sessionId(),
+                claim.stepId().toString());
         try {
             ledger.settle(tx.session.ownerId(), new UsageLedger.Debit(reservation, "debit:" + claim.stepId() + ":" + claim.attempt(),
                     AdmissionPricing.PLAN_OPERATION, held.get().input().path("credits").asInt(0), costMicros, claim.stepId().toString()));
         } catch (EstimateExceededException | ReservationNotActiveException exceeded) {
-            failPlan(tx, held.get(), Failure.fail("ESTIMATE_EXCEEDED"));
-            return true;
+            // thrown, not handled here: the count above must not stay consumed for a plan that is not delivered
+            throw new PlanUnpayableException();
         }
-        ledger.consume(tx.session.ownerId(), Bucket.SMART_PLAN, 1, "plan:" + tx.session.ownerId() + ":" + tx.session.sessionId(),
-                claim.stepId().toString());
         // the plan's hold is spent: it ends settled; the batch hold of the session stays until the plan is launched or cancelled
         ledger.release(tx.session.ownerId(), reservation);
         repository.setPlan(tx.session.sessionId(), plan);
@@ -672,6 +679,15 @@ class SessionLifecycle {
                         "plannedCount", Math.max(1, plannedCount)), NotificationRoute.WORKSHOP);
         flush(tx);
         return true;
+    }
+
+    /** The plan was made but its own hold cannot pay for it any more (ended, or less than its price): thrown out of the result transaction so nothing is kept. */
+    static final class PlanUnpayableException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        PlanUnpayableException() {
+            super("The plan's hold cannot pay for the plan", null, false, false);
+        }
     }
 
     /**

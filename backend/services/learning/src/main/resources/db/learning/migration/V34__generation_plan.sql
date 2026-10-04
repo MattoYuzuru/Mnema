@@ -5,3 +5,9 @@
 -- prompt or a model answer.
 ALTER TABLE app_learning.generation_session
     ADD COLUMN plan JSONB CHECK (plan IS NULL OR (jsonb_typeof(plan) = 'object' AND octet_length(plan::text) <= 65536));
+
+-- The renewal of holds reads the sessions that are doing work: RUNNING, and PLANNING since the planner holds a plan reservation while it thinks.
+-- A PLAN_READY session is deliberately not renewed (the owner may take days; its batch hold lapses by its time to live).
+DROP INDEX IF EXISTS app_learning.generation_session_running_reservation;
+CREATE INDEX generation_session_running_reservation ON app_learning.generation_session(session_id)
+    WHERE state IN ('RUNNING', 'PLANNING') AND reservation_id IS NOT NULL;

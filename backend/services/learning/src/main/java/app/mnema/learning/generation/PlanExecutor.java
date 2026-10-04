@@ -87,14 +87,14 @@ class PlanExecutor implements StepExecutor {
 
         // the smart-plan cap and the plan's own hold are checked before the call: a provider call that could not be paid is never made
         if (!ledger.fairUseFits(claim.ownerId(), Bucket.SMART_PLAN, 1)) {
-            finish(claim, Failure.fail("USAGE_LIMIT"));
+            finish(claim, Failure.fail("USAGE_LIMIT"), 0);
             return;
         }
         int credits = claim.input().path("credits").asInt(0);
         UUID reservationId = SessionReservations.forStep(session, claim.input());
         Optional<Reservation> reservation = reservationId == null ? Optional.empty() : ledger.reservation(claim.ownerId(), reservationId);
         if (reservation.isEmpty() || reservation.get().heldRemaining() < credits) {
-            finish(claim, Failure.fail("ESTIMATE_EXCEEDED"));
+            finish(claim, Failure.fail("ESTIMATE_EXCEEDED"), 0);
             return;
         }
         int hold = claim.input().path("budgetCredits").asInt(0);
@@ -102,18 +102,18 @@ class PlanExecutor implements StepExecutor {
         try {
             request = contexts.build(session, hold);
         } catch (SourceGoneException gone) {
-            finish(claim, Failure.fail("SOURCE_UNAVAILABLE"));
+            finish(claim, Failure.fail("SOURCE_UNAVAILABLE"), 0);
             return;
         } catch (PromptException tooBig) {
             LOG.warn("generation_prompt_rejected step_id={} session_id={}", claim.stepId(), claim.sessionId());
-            finish(claim, Failure.fail("INVALID_OUTPUT"));
+            finish(claim, Failure.fail("INVALID_OUTPUT"), 0);
             return;
         }
         OpaqueUserKey key;
         try {
             key = keys.opaque(claim.ownerId());
         } catch (IllegalStateException notConfigured) {
-            finish(claim, Failure.fail("PROVIDER_UNAVAILABLE"));
+            finish(claim, Failure.fail("PROVIDER_UNAVAILABLE"), 0);
             return;
         }
         run(claim, control, session, request, key, hold, credits);
@@ -127,7 +127,7 @@ class PlanExecutor implements StepExecutor {
         for (int round = 0; round < ROUNDS; round++) {
             Duration remaining = Duration.between(Instant.now(), claim.deadlineAt());
             if (remaining.compareTo(Duration.ofMillis(250)) < 0) {
-                finish(claim, Failure.fail("DEADLINE_EXCEEDED"));
+                finish(claim, Failure.fail("DEADLINE_EXCEEDED"), costMicros);
                 return;
             }
             if (round > 0) meters.counter("mnema_generation_repairs_total", "route", route.name().toLowerCase(Locale.ROOT)).increment();
@@ -144,11 +144,11 @@ class PlanExecutor implements StepExecutor {
             }
             if (control.lost()) return;
             if (control.cancelled()) {
-                finish(claim, Failure.cancelled());
+                finish(claim, Failure.cancelled(), costMicros);
                 return;
             }
             if (result instanceof AiResult.Failed<TextResponse> failed) {
-                finish(claim, ProviderFailures.of(failed.failure(), claim, lifecycle));
+                finish(claim, ProviderFailures.of(failed.failure(), claim, lifecycle), costMicros);
                 return;
             }
             TextResponse response = ((AiResult.Ok<TextResponse>) result).value();
@@ -166,8 +166,7 @@ class PlanExecutor implements StepExecutor {
             // the fast route repairs once; the next rejection goes to the strong route
             route = round == 0 ? route : AiRoute.PLAN_STRONG;
         }
-        meters.counter("mnema_generation_steps_total", "kind", KIND, "outcome", "invalid_output").increment();
-        finish(claim, Failure.fail("INVALID_OUTPUT"));
+        finish(claim, Failure.fail("INVALID_OUTPUT"), costMicros);
     }
 
     private void commit(StepClaim claim, StepControl control, Session session, PlanContexts.Request request, Plans.Draft draft, int hold,
@@ -178,23 +177,35 @@ class PlanExecutor implements StepExecutor {
         if (control.lost()) return;
         boolean stored;
         try {
-            stored = lifecycle.succeedPlan(claim, plan, rubMicros.longValueExact(), draft.size());
+            // the notification counts the artifacts of the plan (an exercise or a material each), not its rows
+            stored = lifecycle.succeedPlan(claim, plan, rubMicros.longValueExact(), draft.artifacts());
         } catch (UsageLimitReachedException capReached) {
             // the cap filled between the early check and the debit (a second plan finished first): nothing was written, the plan is not paid
-            finish(claim, Failure.fail("USAGE_LIMIT"));
+            finish(claim, Failure.fail("USAGE_LIMIT"), providerCostMicros);
+            return;
+        } catch (SessionLifecycle.PlanUnpayableException unpayable) {
+            // the plan's hold ended or fell short meanwhile: nothing was written, the plan is not paid
+            finish(claim, Failure.fail("ESTIMATE_EXCEEDED"), providerCostMicros);
             return;
         }
-        meters.counter("mnema_generation_steps_total", "kind", KIND, "outcome", stored ? "succeeded" : "void").increment();
-        LOG.info("generation_step_done step_id={} session_id={} kind={} attempt={} outcome={} cost_micros={} items={}", claim.stepId(),
-                claim.sessionId(), KIND, claim.attempt(), stored ? "succeeded" : "void", providerCostMicros, draft.size());
+        String outcome = stored ? "succeeded" : "void";
+        meters.counter("mnema_generation_steps_total", "kind", KIND, "outcome", outcome).increment();
+        LOG.info("generation_step_done step_id={} session_id={} kind={} attempt={} outcome={} cost_micros={} items={} artifacts={}", claim.stepId(),
+                claim.sessionId(), KIND, claim.attempt(), outcome, providerCostMicros, draft.size(), draft.artifacts());
     }
 
-    private void finish(StepClaim claim, Failure failure) {
+    /**
+     * One outcome per failure, with what the provider calls of the run cost (the ledger debits nothing for a plan that was not delivered, so this is the
+     * only place the money spent on it shows: the log field and the {@code mnema_generation_plan_failed_cost_micros_total} counter, provider micro-dollars).
+     */
+    private void finish(StepClaim claim, Failure failure, long costMicros) {
         boolean stored = lifecycle.fail(claim, failure);
-        LOG.info("generation_step_done step_id={} session_id={} kind={} attempt={} outcome={} error_code={} stored={}", claim.stepId(),
-                claim.sessionId(), KIND, claim.attempt(), failure.kind().name().toLowerCase(Locale.ROOT),
-                failure.errorCode() == null ? "-" : failure.errorCode(), stored);
-        meters.counter("mnema_generation_steps_total", "kind", KIND, "outcome", failure.kind().name().toLowerCase(Locale.ROOT)).increment();
+        String outcome = failure.kind() == Failure.Kind.FAIL && "INVALID_OUTPUT".equals(failure.errorCode()) ? "invalid_output"
+                : failure.kind().name().toLowerCase(Locale.ROOT);
+        LOG.info("generation_step_done step_id={} session_id={} kind={} attempt={} outcome={} error_code={} cost_micros={} stored={}", claim.stepId(),
+                claim.sessionId(), KIND, claim.attempt(), outcome, failure.errorCode() == null ? "-" : failure.errorCode(), costMicros, stored);
+        meters.counter("mnema_generation_steps_total", "kind", KIND, "outcome", outcome).increment();
+        if (costMicros > 0) meters.counter("mnema_generation_plan_failed_cost_micros_total", "outcome", outcome).increment(costMicros);
     }
 
     private static Duration min(Duration left, Duration right) { return left.compareTo(right) <= 0 ? left : right; }

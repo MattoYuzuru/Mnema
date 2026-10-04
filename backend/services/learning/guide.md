@@ -453,15 +453,17 @@ database), `PlanExecutor` (the `PLAN` step), `SessionLifecycle` (`beginPlan`, `s
   no material text), then the call **without a transaction** on the route `AiRoute.PLAN` (`learning.ai.routes.plan`; `OpenAiCompatibleAdapter` sends `thinking: enabled` for a route with `thinking()`, `disabled`
   for every other; the output bound is `planner.max-output-tokens` because the reasoning counts), `Plans.fromModel`, and one repair, then `PLAN_STRONG`, then `INVALID_OUTPUT`. Provider failures map as in
   `ProviderFailures`; a retried step starts over (nothing of an earlier run was stored).
-- **Result.** `succeedPlan` (one transaction, session lock first): `settle` of `SMART_PLAN_FLASH` against the plan's hold, `consume(SMART_PLAN, 1)` (a cap that filled meanwhile throws
-  `UsageLimitReachedException`, the transaction rolls back and the executor fails the plan unpaid), `release` of the plan's hold, `setPlan`, the step `SUCCEEDED`, the session `PLAN_READY`,
+- **Result.** `succeedPlan` (one transaction, session lock first): `settle` of `SMART_PLAN_FLASH` against the plan's hold, `consume(SMART_PLAN, 1)` first and then `settle` (a cap that filled meanwhile throws
+  `UsageLimitReachedException`, a plan hold that ended throws `PlanUnpayableException`: either rolls the transaction back, count included, and the executor fails the plan unpaid; the provider cost of a failed plan is
+  logged as `cost_micros` and counted in `mnema_generation_plan_failed_cost_micros_total`), `release` of the plan's hold, `setPlan`, the step `SUCCEEDED`, the session `PLAN_READY`,
   `USAGE_UPDATED`, `GENERATION_PLAN_READY`. `failPlan` (also from `fail`, `recover` and `expire`, which route a `PLAN` step there): a retry requeues with backoff, a final failure ends the step `FAILED`,
   **cancels the session** (`cancel(tx, "PLAN_FAILED")`: `stopWork`, both holds released) and publishes `GENERATION_FAILED(PLAN_FAILED)`; a cancellation only ends the step.
   A cancelled session whose call returns later writes nothing (`succeedPlan` sees a session that is not `PLANNING`).
+- **Cap at admission.** The owner's PLANNING sessions count against the smart-plan cap as if consumed (`GenerationRepository.plansInFlight`, `AdmissionPricing.hold(..., plansInFlight)`), under the admission lock.
 - **Plan storage.** `generation_session.plan` (`V34`, jsonb, the wire shape): the model's while `PLAN_READY` (`approved false`), the owner's approved one afterwards. `SessionViews.detail` returns it (`null`
-  otherwise). The batch hold of a `PLAN_READY` session is **not** renewed (`runningWithReservation` is `RUNNING` and `PLANNING`): it lapses after `learning.usage.reservation-ttl` and the approval reserves again.
+  otherwise) with `cost.holdActive` added at read time. The batch hold of a `PLAN_READY` session is **not** renewed (`runningWithReservation` is `RUNNING` and `PLANNING`): it lapses after `learning.usage.reservation-ttl` and the approval reserves again.
 - **Approval.** `SessionService.approvePlan` (`POST .../plan-approval`): ownership, receipt replay, `Plans.fromOwner` (strict, 400), then in the receipt's transaction `expectedSessionVersion` (412), `PLAN_READY`
-  (409), `Plans.requireWithinLimits` (422), `queueExercises` / `queueMaterials` (**the same methods the unplanned admission uses**, fed with the plan's items), the batch hold re-sized (`release` of the old one, `reserve` of
+  (409), the capabilities of the planned work (`GenerationGate.requireFor` per material at the chosen effort, `requireText` for exercises; 409), `Plans.requireWithinLimits` (422), `queueExercises` / `queueMaterials` (**the same methods the unplanned admission uses**, fed with the plan's items), the batch hold re-sized (`release` of the old one, `reserve` of
   exactly the plan's cost; a refusal is `409 USAGE_LIMIT_REACHED` and rolls everything back), the plan stored as approved, `RUNNING`. A step of a planned exercise carries `mechanics` and `ExerciseDraftExecutor`
   narrows the spec to them (`ExercisesSpec.withMechanics`), so the prompt and the lint use the plan's set; a planned material is written by `ContextBuilder` at the effort and on the title of the approved plan item at its
   ordinal (`Plans.plannedMaterial`, also used by the retry of a material).

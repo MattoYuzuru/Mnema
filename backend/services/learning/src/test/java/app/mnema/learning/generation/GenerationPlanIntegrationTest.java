@@ -107,6 +107,11 @@ class GenerationPlanIntegrationTest extends GenerationReviewSupport {
                 .param("owner", owner).query(Integer.class).single();
     }
 
+    private JsonNode notificationParams(UUID owner, String kind) throws Exception {
+        return JSON.readTree(jdbc.sql("SELECT params::text FROM app_learning.notification WHERE owner_id=:owner AND kind=:kind")
+                .param("owner", owner).param("kind", kind).query(String.class).single());
+    }
+
     private List<String> eventTypes(UUID owner, UUID deck, UUID session) throws Exception {
         List<String> types = new ArrayList<>();
         for (JsonNode event : json(events(owner, deck, session, "?after=0&limit=100")).path("events")) {
@@ -168,6 +173,10 @@ class GenerationPlanIntegrationTest extends GenerationReviewSupport {
         assertThat(shown.path("usage").path("reservedCredits").intValue()).isEqualTo(15);
         assertThat(stepKinds(session)).containsExactly("PLAN");
         assertThat(notificationKinds(owner)).containsExactly("GENERATION_PLAN_READY");
+        // the notification counts the artifacts of the plan (9 exercises over 3 rows), not its rows
+        assertThat(notificationParams(owner, "GENERATION_PLAN_READY").path("plannedCount").intValue()).isEqualTo(9);
+        assertThat(notificationParams(owner, "GENERATION_PLAN_READY").path("sessionKind").stringValue(null)).isEqualTo("EXERCISES");
+        assertThat(plan.path("cost").path("holdActive").booleanValue()).isTrue();
         assertThat(eventTypes(owner, deck, session)).containsSubsequence("SESSION_STATE:PLANNING", "USAGE_UPDATED", "SESSION_STATE:PLAN_READY");
         // the planner's call: thinking route, no transaction, the budget and the handles in the prompt, no material text
         List<GenerationTestConfiguration.Call> calls = planCalls("[[t:plan-one]]");
@@ -200,6 +209,9 @@ class GenerationPlanIntegrationTest extends GenerationReviewSupport {
         assertThat(memberOfArtifact).containsExactly(first.member().toString(), first.member().toString(), first.member().toString(),
                 third.member().toString(), third.member().toString());
 
+        // the events of the launch: SESSION_STATE first, as for an unplanned admission, then one ARTIFACT_STATE per artifact, then the usage
+        List<String> launch = eventTypes(owner, deck, session);
+        assertThat(launch).containsSubsequence("SESSION_STATE:PLAN_READY", "SESSION_STATE:RUNNING", "ARTIFACT_STATE");
         // an exact repeat is the stored answer, a changed body with the same command is a conflict
         MockHttpServletResponse replay = approvePlan(owner, deck, session, command, shown.path("rowVersion").stringValue(null), edited);
         assertThat(replay.getStatus()).isEqualTo(200);
@@ -500,11 +512,15 @@ class GenerationPlanIntegrationTest extends GenerationReviewSupport {
         UUID deck = deck(owner);
         UUID lapsing = planned(owner, deck, exercisesSpec("{\"mode\":\"EXACT\",\"perTarget\":2}", null, material(owner, deck, "[[t:lapse]]")));
         JsonNode shown = detail(owner, deck, lapsing);
+        assertThat(shown.path("plan").path("cost").path("holdActive").booleanValue()).isTrue();
         // the hold of a plan nobody launched is not renewed: it lapses by its time to live, the plan's debit stays
         jdbc.sql("UPDATE app_learning.usage_reservation SET created_at=CURRENT_TIMESTAMP - interval '3 hours',expires_at=CURRENT_TIMESTAMP - interval '1 minute' WHERE owner_id=:owner AND state='ACTIVE'")
                 .param("owner", owner).update();
         new TransactionTemplate(transactions).executeWithoutResult(status -> ledger.expireDue(100));
         assertThat(reservationsOf(owner)).doesNotContain("ACTIVE");
+        // the client is told, so it can warn that launching may need a new reservation; the version did not move
+        assertThat(detail(owner, deck, lapsing).path("plan").path("cost").path("holdActive").booleanValue()).isFalse();
+        assertThat(detail(owner, deck, lapsing).path("rowVersion").stringValue(null)).isEqualTo(shown.path("rowVersion").stringValue(null));
         MockHttpServletResponse launched = approvePlan(owner, deck, lapsing, UUID.randomUUID(), shown.path("rowVersion").stringValue(null),
                 planOf(shown.path("plan"), List.of(0), row -> { }));
         assertThat(launched.getStatus()).as(launched.getContentAsString()).isEqualTo(200);
@@ -521,5 +537,149 @@ class GenerationPlanIntegrationTest extends GenerationReviewSupport {
         problem(approvePlan(owner, deck, waiting, UUID.randomUUID(), expired.path("rowVersion").stringValue(null),
                 planOf(expired.path("plan"), List.of(0), row -> { })), 409, "GENERATION_STATE_CONFLICT");
         assertThat(reservationState(waiting)).isNotEqualTo("ACTIVE");
+    }
+
+    // ------------------------------------------------------------------------ races and refusals
+
+    private void releasePlanHold(UUID owner, UUID session) {
+        UUID plan = jdbc.sql("SELECT (input->>'reservationId')::uuid FROM app_learning.generation_step WHERE session_id=:id AND kind='PLAN'")
+                .param("id", session).query(UUID.class).single();
+        new TransactionTemplate(transactions).executeWithoutResult(status -> ledger.release(owner, plan));
+    }
+
+    @Test
+    void aCapThatFillsWhileThePlanIsBeingMadeRollsTheDebitBackAndFailsThePlan() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        UUID session = start(owner, deck, materialsSpec(null, noteSource(note(owner, deck, "Тема [[fake:block]]"), 0)));
+        assertThat(provider.blockedEntered.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+        // the early check passed; the four smart plans of the month are used by others before the plan is ready
+        new TransactionTemplate(transactions).executeWithoutResult(status -> ledger.consume(owner, Bucket.SMART_PLAN, 4, "plan:race:" + owner, null));
+        provider.release.countDown();
+        awaitState(session, "CANCELLED");
+        assertThat(detail(owner, deck, session).path("endReason").stringValue(null)).isEqualTo("PLAN_FAILED");
+        assertThat(jdbc.sql("SELECT error_code FROM app_learning.generation_step WHERE session_id=:id").param("id", session).query(String.class).single())
+                .isEqualTo("USAGE_LIMIT");
+        // the debit was rolled back with the refused count: nothing of the plan is paid, only the four counts of the others stand
+        assertThat(debits(owner)).isZero();
+        assertThat(smartPlans(owner)).isEqualTo(4);
+        assertThat(reservationsOf(owner)).doesNotContain("ACTIVE");
+        // the owner is told the plan failed (the cap's own notices are the others' consumption, not the plan's)
+        assertThat(notificationKinds(owner)).endsWith("GENERATION_FAILED").doesNotContain("GENERATION_PLAN_READY");
+    }
+
+    @Test
+    void aPlanWhoseHoldEndedWhileItWasBeingMadeIsNotPaidAndLeavesNoCountBehind() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        UUID session = start(owner, deck, materialsSpec(null, noteSource(note(owner, deck, "Тема [[fake:block]]"), 0)));
+        assertThat(provider.blockedEntered.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+        releasePlanHold(owner, session);
+        provider.release.countDown();
+        awaitState(session, "CANCELLED");
+        assertThat(jdbc.sql("SELECT error_code FROM app_learning.generation_step WHERE session_id=:id").param("id", session).query(String.class).single())
+                .isEqualTo("ESTIMATE_EXCEEDED");
+        assertThat(detail(owner, deck, session).path("endReason").stringValue(null)).isEqualTo("PLAN_FAILED");
+        // the cap is consumed first and rolled back with the refused debit: one smart plan is not lost for a plan nobody got
+        assertThat(debits(owner)).isZero();
+        assertThat(smartPlans(owner)).isZero();
+        assertThat(reservationsOf(owner)).doesNotContain("ACTIVE");
+    }
+
+    @Test
+    void thePlansBeingMadeCountAgainstTheSmartPlanCapAtAdmission() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        // three of the four smart plans of the month are used; one more is being made
+        new TransactionTemplate(transactions).executeWithoutResult(status -> ledger.consume(owner, Bucket.SMART_PLAN, 3, "plan:used:" + owner, null));
+        UUID thinking = start(owner, deck, materialsSpec(null, noteSource(note(owner, deck, "Первая [[fake:block]]"), 0)));
+        assertThat(provider.blockedEntered.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+        // the fourth would be refused after thinking: it is refused now, with the cap named, and nothing is held for it
+        MockHttpServletResponse refused = create(owner, deck, materialsSpec(null, noteSource(note(owner, deck, "Вторая"), 0)), UUID.randomUUID());
+        problem(refused, 409, "USAGE_LIMIT_REACHED");
+        assertThat(json(refused).path("bucket").stringValue(null)).isEqualTo("SMART_PLAN");
+        assertThat(jdbc.sql("SELECT count(*)::integer FROM app_learning.generation_session WHERE owner_id=:owner").param("owner", owner)
+                .query(Integer.class).single()).isEqualTo(1);
+        provider.release.countDown();
+        awaitState(thinking, "PLAN_READY");
+        assertThat(smartPlans(owner)).isEqualTo(4);
+    }
+
+    @Test
+    void launchingNeedsTheCapabilitiesOfTheEffortsTheOwnerChoseAsARetryDoes() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        ObjectNode spec = materialsSpec(null, noteSource(note(owner, deck, "Тема"), 0));
+        // a short material does no research, so the spec is accepted although web search is not set up; a medium one would need it
+        ((ObjectNode) spec.path("settings")).put("effort", "SHORT").put("factCheck", true);
+        UUID session = planned(owner, deck, spec);
+        JsonNode shown = detail(owner, deck, session);
+        assertThat(shown.path("plan").path("items").get(0).path("effort").stringValue(null)).isEqualTo("SHORT");
+        MockHttpServletResponse refused = approvePlan(owner, deck, session, UUID.randomUUID(), shown.path("rowVersion").stringValue(null),
+                planOf(shown.path("plan"), List.of(0), row -> row.put("effort", "MEDIUM")));
+        problem(refused, 409, "CAPABILITY_UNAVAILABLE");
+        assertThat(json(refused).path("capability").stringValue(null)).isEqualTo("webSearch");
+        assertThat(sessionState(session)).isEqualTo("PLAN_READY");
+        assertThat(artifactStates(session)).isEmpty();
+        // the effort the spec allowed is launched
+        assertThat(approvePlan(owner, deck, session, UUID.randomUUID(), shown.path("rowVersion").stringValue(null),
+                planOf(shown.path("plan"), List.of(0), row -> { })).getStatus()).isEqualTo(200);
+    }
+
+    @Test
+    void aSecondApprovalWithAFreshCommandIsAStaleVersionAndDeletingAPlanReadySessionReleasesItsBatchHold() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        UUID session = planned(owner, deck, exercisesSpec("{\"mode\":\"EXACT\",\"perTarget\":1}", null, material(owner, deck, "[[t:twice]]")));
+        JsonNode shown = detail(owner, deck, session);
+        String version = shown.path("rowVersion").stringValue(null);
+        ObjectNode plan = planOf(shown.path("plan"), List.of(0), row -> { });
+        assertThat(approvePlan(owner, deck, session, UUID.randomUUID(), version, plan).getStatus()).isEqualTo(200);
+        problem(approvePlan(owner, deck, session, UUID.randomUUID(), version, plan), 412, "VERSION_CONFLICT");
+        assertThat(artifactStates(session)).hasSize(1);
+
+        UUID waiting = planned(owner, deck, materialsSpec("Тема на удаление"));
+        assertThat(reservationState(waiting)).isEqualTo("ACTIVE");
+        assertThat(deleteSession(owner, deck, waiting).getStatus()).isEqualTo(204);
+        problem(getSession(owner, deck, waiting), 404, "RESOURCE_NOT_FOUND");
+        // the batch hold of the deleted plan is back on the balance (the other session's own hold and the two plans' debits are all that is left)
+        assertThat(jdbc.sql("SELECT count(*)::integer FROM app_learning.usage_reservation WHERE owner_id=:owner AND state='ACTIVE' AND session_id=:id")
+                .param("owner", owner).param("id", waiting).query(Integer.class).single()).isZero();
+    }
+
+    @Test
+    void anApprovalRacingACancellationLeavesAConsistentSessionWhicheverWins() throws Exception {
+        for (int round = 0; round < 3; round++) {
+            UUID owner = UUID.randomUUID();
+            UUID deck = deck(owner);
+            UUID session = planned(owner, deck, exercisesSpec("{\"mode\":\"EXACT\",\"perTarget\":2}", null, material(owner, deck, "[[t:race" + round + "]]")));
+            JsonNode shown = detail(owner, deck, session);
+            ObjectNode plan = planOf(shown.path("plan"), List.of(0), row -> { });
+            String version = shown.path("rowVersion").stringValue(null);
+            java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+            var pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+            try {
+                var approval = pool.submit(() -> {
+                    start.await();
+                    return approvePlan(owner, deck, session, UUID.randomUUID(), version, plan).getStatus();
+                });
+                var cancellation = pool.submit(() -> {
+                    start.await();
+                    return cancel(owner, deck, session, UUID.randomUUID()).getStatus();
+                });
+                start.countDown();
+                int approved = approval.get(30, java.util.concurrent.TimeUnit.SECONDS);
+                int cancelled = cancellation.get(30, java.util.concurrent.TimeUnit.SECONDS);
+                // the cancellation always lands; an approval is either first (200) or finds a changed session (412) or one that is not PLAN_READY (409)
+                assertThat(cancelled).isEqualTo(200);
+                assertThat(approved).isIn(200, 409, 412);
+            } finally {
+                pool.shutdownNow();
+            }
+            await("the session to settle", Duration.ofSeconds(20), () -> sessionState(session).equals("CANCELLED"));
+            assertThat(artifactStates(session)).allMatch(state -> state.equals("FAILED") || state.equals("PROPOSED"));
+            assertThat(reservationsOf(owner)).doesNotContain("ACTIVE");
+            await("the steps to stop", Duration.ofSeconds(20), () -> steps.activeSteps(session).isEmpty());
+        }
     }
 }

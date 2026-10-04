@@ -203,6 +203,12 @@ class GenerationRepository {
         return query.query(SESSION).list();
     }
 
+    /** The owner's plans that are being made: PLANNING sessions, each about to consume one smart plan of the cap (the admission counts them). */
+    int plansInFlight(UUID owner) {
+        return jdbc.sql("SELECT count(*)::integer FROM app_learning.generation_session WHERE owner_id=:owner AND state='PLANNING'" + LIVE_DECK)
+                .param("owner", owner).query(Integer.class).single();
+    }
+
     /** The owner's sessions that the notification center counts as work in progress. */
     int activeWork(UUID owner) {
         return jdbc.sql("SELECT count(*)::integer FROM app_learning.generation_session WHERE owner_id=:owner "

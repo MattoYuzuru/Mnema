@@ -64,13 +64,14 @@ class SessionService {
     private final AdmissionLimits limits;
     private final ReviseAdmission revisions;
     private final Plans plans;
+    private final GenerationGate gate;
     private final TransactionTemplate reading;
     private final TransactionTemplate quoting;
 
     SessionService(GenerationRepository repository, StepRepository steps, SessionLifecycle lifecycle, SessionViews views,
                    UsageLedger ledger, AdmissionPricing pricing, CommandReceiptService receipts, GenerationSettings settings,
                    ContextRepository context, ObjectProvider<StepDispatcher> dispatcher, AdmissionLimits limits,
-                   ReviseAdmission revisions, Plans plans, PlatformTransactionManager transactions) {
+                   ReviseAdmission revisions, Plans plans, GenerationGate gate, PlatformTransactionManager transactions) {
         this.repository = repository;
         this.steps = steps;
         this.lifecycle = lifecycle;
@@ -84,6 +85,7 @@ class SessionService {
         this.limits = limits;
         this.revisions = revisions;
         this.plans = plans;
+        this.gate = gate;
         this.reading = new TransactionTemplate(transactions);
         reading.setReadOnly(true);
         this.quoting = new TransactionTemplate(transactions);
@@ -299,6 +301,9 @@ class SessionService {
      */
     private JsonNode admitPlan(UUID owner, UUID deckId, JsonNode spec, String kind, UUID sessionId, List<Source> pins,
                                AdmissionPricing.Hold hold) {
+        // the plans being made count against the smart-plan cap, counted under the admission lock (a plan consumes its count only when it is ready)
+        int inFlight = repository.plansInFlight(owner);
+        if (inFlight > 0) pricing.hold(owner, deckId, spec, inFlight).requireFits();
         Reservation batch = ledger.reserve(owner, ReservationScope.SESSION, sessionId, null, Math.max(1, hold.credits()));
         Reservation plan = ledger.reserve(owner, ReservationScope.STEP, sessionId, null, Math.max(1, hold.planCredits()));
         Session session = new Session(sessionId, owner, deckId, kind, "PLANNING", null, spec, batch.reservationId(), 0, 0, null, null, null);
@@ -358,6 +363,12 @@ class SessionService {
         if (tx == null) throw new ResourceNotFoundException();
         if (tx.session.rowVersion() != expected) throw new VersionConflictException();
         if (!tx.state.equals("PLAN_READY")) throw new GenerationStateConflictException(GenerationStateConflictException.Reason.ILLEGAL_STATE);
+        // the capabilities the planned work needs, as a retry checks them: raising an effort can need web research the account's setup cannot run
+        if (basis.kind().equals("EXERCISES")) {
+            gate.requireText();
+        } else {
+            for (Plans.MaterialItem item : draft.materials()) gate.requireFor(plans.settings(basis, item.noteId()).withEffort(item.effort()));
+        }
         plans.requireWithinLimits(draft);
         UUID owner = tx.session.ownerId();
         Session session = tx.session;
@@ -393,10 +404,15 @@ class SessionService {
         repository.setPlan(sessionId, plans.wire(basis, draft, shown.path("targets"), shown.path("sources"), planCredits, cost,
                 pricing.barCredits(owner), true));
 
-        tx.state = "RUNNING";
-        tx.events.addAll(events);
-        tx.events.add(lifecycle.usageEvent(repository.session(sessionId).orElseThrow(), null));
-        lifecycle.flush(tx);
+        // the events in the order of an unplanned admission: SESSION_STATE first (with the counts of the artifacts just created), then ARTIFACT_STATE, then the usage
+        ObjectNode started = Json.object().put("state", "RUNNING").put("rowVersion", Long.toString(session.rowVersion() + 1));
+        started.set("artifactCounts", SessionViews.counts(repository.artifactCounts(sessionId)));
+        List<EventDraft> announced = new ArrayList<>();
+        announced.add(new EventDraft("SESSION_STATE", null, started));
+        announced.addAll(events);
+        announced.add(lifecycle.usageEvent(repository.session(sessionId).orElseThrow(), null));
+        long[] allocated = repository.update(sessionId, "RUNNING", null, true, announced.size(), settings.sessionRetention());
+        repository.insertEvents(sessionId, allocated[0], announced);
         wakeAfterCommit();
         return views.detail(repository.session(sessionId).orElseThrow());
     }

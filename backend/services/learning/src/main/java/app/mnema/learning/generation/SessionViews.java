@@ -78,7 +78,11 @@ class SessionViews {
         NoteArchival.Counts used = notes.counts(session);
         node.putObject("notes").put("used", used.used()).put("archivable", used.archivable());
         // the plan of a plan-first session: the model's while PLAN_READY, the owner's approved one afterwards; null for any other session
-        node.set("plan", repository.plan(session.sessionId()).orElse(Json.NODES.nullNode()));
+        node.set("plan", repository.plan(session.sessionId()).map(plan -> {
+            // read time, not stored: whether the batch hold is still live, so the client can warn that launching a long-open plan may need a new reservation
+            if (plan.path("cost") instanceof ObjectNode cost) cost.put("holdActive", reservations.batchActive(session));
+            return plan;
+        }).orElse(Json.NODES.nullNode()));
         List<Artifact> artifacts = repository.artifacts(session.sessionId());
         Map<UUID, int[]> slots = repository.slotCounts(artifacts.stream().map(Artifact::artifactId).toList());
         ArrayNode list = node.putArray("artifacts");

@@ -199,7 +199,7 @@
         {
           "status": 409,
           "code": "USAGE_LIMIT_REACHED",
-          "when": "The reservation or debit does not fit a credit, cap, fair-use or daily-burst limit. With settings.planFirst the plan's own hold and the smart-plan count cap (bucket SMART_PLAN; offered false on a plan without smart plans) are checked too, together with the batch hold."
+          "when": "The reservation or debit does not fit a credit, cap, fair-use or daily-burst limit. With settings.planFirst the plan's own hold and the smart-plan count cap (bucket SMART_PLAN; offered false on a plan without smart plans) are checked too, together with the batch hold. The owner's plans that are still being made (PLANNING sessions) count against the smart-plan cap as if consumed, so a plan the cap cannot cover is refused before it is made."
         },
         {
           "status": 409,
@@ -443,6 +443,11 @@
         },
         {
           "status": 409,
+          "code": "CAPABILITY_UNAVAILABLE",
+          "when": "A capability the planned work needs is off, checked as a retry checks it: text generation, and for a material the audio, image search or web research of its effective settings at the effort the owner chose (raising a short material to a medium one with factCheck needs web research)."
+        },
+        {
+          "status": 409,
           "code": "USAGE_LIMIT_REACHED",
           "when": "The plan as approved costs more than the batch hold and the balance cannot pay the difference. The hold is re-sized to the plan inside this transaction (the old one is released first, so what it held counts); a refusal changes nothing."
         },
@@ -459,8 +464,8 @@
         }
       ],
       "notes": [
-        "Decision 17. Evaluation: ownership (404), receipt replay, shape and identifiers (400), expectedSessionVersion (412), state (409 ILLEGAL_STATE), limits (422), usage (409, last).",
-        "In one transaction: the artifacts and steps of exactly the planned items are created through the same code as an unplanned admission (EXERCISES: one QUEUED artifact per exercise in plan order and one TEXT_DRAFT step per target, carrying the mechanics the plan chose for that target; MATERIALS: one artifact per item, written at the item's effort on the item's title), the batch hold is released and a new one of exactly the cost of the plan is made, the plan is stored as approved and the session is RUNNING (SESSION_STATE, one ARTIFACT_STATE per artifact, USAGE_UPDATED).",
+        "Decision 17. Evaluation: ownership (404), receipt replay, shape and identifiers (400), expectedSessionVersion (412), state (409 ILLEGAL_STATE), capabilities (409 CAPABILITY_UNAVAILABLE), limits (422), usage (409, last).",
+        "In one transaction: the artifacts and steps of exactly the planned items are created through the same code as an unplanned admission (EXERCISES: one QUEUED artifact per exercise in plan order and one TEXT_DRAFT step per target, carrying the mechanics the plan chose for that target; MATERIALS: one artifact per item, written at the item's effort on the item's title), the batch hold is released and a new one of exactly the cost of the plan is made, the plan is stored as approved and the session is RUNNING (SESSION_STATE, one ARTIFACT_STATE per artifact, USAGE_UPDATED). The events are in the order of an unplanned admission: SESSION_STATE (RUNNING, with the counts of the artifacts just created), one ARTIFACT_STATE per artifact, USAGE_UPDATED.",
         "The plan's own cost was debited when the plan became ready (SMART_PLAN_FLASH, apart from the batch) and stays debited whatever happens next, also when the session is cancelled or deleted in PLAN_READY; the batch hold of a PLAN_READY session is not renewed and lapses after learning.usage.reservation-ttl, so an approval later than that reserves again and may be refused as USAGE_LIMIT_REACHED.",
         "Exact retry returns the stored 200 with Idempotency-Replayed: true and no ETag; reconcile with getSession. A cost above the hold extends it: the owner saw the cost of the plan before launching it."
       ]
@@ -1305,7 +1310,7 @@
       "targets": "EXERCISES: [{memberKey, title, exercises}] every material of the spec with the number of exercises it has (the rows the owner may drop or take back)",
       "sources": "MATERIALS: [{noteId, label}] every note of the spec with the first line of its pinned text (at most 60 characters)",
       "totals": "{items, artifacts}: the rows and the artifacts the plan creates (one per exercise, one per material)",
-      "cost": "{planCredits: what the plan itself cost (debited apart), batchCredits: what the artifacts of the plan cost, holdCredits: what the batch hold covers, barCredits: the credit bar of the period (the percentages are a share of it)}. At PLAN_READY batchCredits <= holdCredits; after the owner's edits the approval re-sizes the hold to batchCredits.",
+      "cost": "{planCredits: what the plan itself cost (debited apart), batchCredits: what the artifacts of the plan cost, holdCredits: what the batch hold covers, barCredits: the credit bar of the period (the percentages are a share of it), holdActive: boolean, computed when the session is read and not stored: whether the batch hold is still live}. At PLAN_READY batchCredits <= holdCredits; after the owner's edits the approval re-sizes the hold to batchCredits. The hold of a PLAN_READY session is not renewed and lapses after learning.usage.reservation-ttl (PT2H) without changing the session's rowVersion: holdActive false tells the client that launching reserves again and may be refused 409 USAGE_LIMIT_REACHED.",
       "rates": "EXERCISES: {exercisesPerFive: 8}, so the client prices an edit as ceil(8 x n / 5); MATERIALS: {note}, the price of an item is creditsByEffort of its own",
       "limits": "EXERCISES: {maxExercisesPerTarget, maxExercisesPerSession}; MATERIALS: {maxArtifactsPerSession}",
       "allowedMechanics": "EXERCISES only: the mechanics the spec allows, in registry order",
@@ -2390,7 +2395,8 @@
           "planCredits": 20,
           "batchCredits": 10,
           "holdCredits": 10,
-          "barCredits": 360
+          "barCredits": 360,
+          "holdActive": true
         },
         "rates": {
           "exercisesPerFive": 8
@@ -2551,7 +2557,8 @@
           "planCredits": 20,
           "batchCredits": 10,
           "holdCredits": 10,
-          "barCredits": 360
+          "barCredits": 360,
+          "holdActive": true
         },
         "rates": {
           "exercisesPerFive": 8

@@ -162,6 +162,7 @@
       "origin": "existing",
       "when": "A capability the operation needs is off: flag disabled, adapter not configured, or temporarily unavailable. createIntent needs aiGeneration (also reason TEMPORARILY_UNAVAILABLE when the provider cannot answer); the voice redo of a REVISE_EXERCISE media action needs the Stub speech executor or, later, a real speech adapter (AI-09, #297): without either it is textToSpeech / PROVIDER_NOT_CONFIGURED.",
       "endpoints": [
+        "approvePlan",
         "createIntent",
         "createSession",
         "editArtifact",
