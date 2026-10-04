@@ -471,6 +471,67 @@ database), `PlanExecutor` (the `PLAN` step), `SessionLifecycle` (`beginPlan`, `s
 - **Config.** `learning.generation.planner.enabled` (`true`), `planner.deadline` (`PT4M`), `planner.max-output-tokens` (`16000`), `learning.ai.routes.plan` and `plan-strong`.
 - **Tests.** `GenerationPlanIntegrationTest` (the whole flow on the Stub and PostgreSQL), `PlansTest`, `StubPlansTest`, route and adapter tests in `ai`.
 
+## Image search (#296)
+
+Licensed stock images for `::image{mode="search"}` slots. Contract: `contracts/generation/http.json` (`mediaSlotItem`, `imageCandidate`,
+`editArtifact` IMAGE_SEARCH, `selectMediaCandidate`) and `states.json` (`mediaSlot`, `turn.imageSearchErrorCodes`); architecture §4, §9, §13.
+
+- **Port (`app.mnema.learning.ai`).** `ImageSearch.search(Request{query, lang, maxResults, excludeKeys, stepId, attempt}) -> AiResult<List<Candidate>>`
+  and `fetch(Candidate) -> AiResult<Image{bytes, mimeType}>`; `configured()` says whether any source can be called (the `imageSearch`
+  capability reads it: flag, and `configured()`, and the budget). `RoutedImageSearch` asks the configured sources **concurrently** on virtual threads
+  (`PixabayImageSource`, `OpenverseImageSource`, `WikimediaImageSource`), interleaves the answers in `learning.ai.image-search.sources` order, drops
+  duplicates by `(source, sourceId)` and by download URL and the keys the caller already has. A failing source is not a failure of the search while another
+  answers; every source failing is `Failed` (the step says `PROVIDER_UNAVAILABLE`), none licensed is `[]` (`NO_RESULT`). Each real source call has a breaker per
+  `(source, IMAGE_SEARCH)`, the `imageSearch` permits, the daily budget, an `ai_provider_call` row (provider = source id, model `search`, cost 0) and
+  `mnema_ai_calls_total`; it refuses to run inside a transaction. Defaults: `learning.ai.providers.{pixabay,openverse,wikimedia}.*`
+  (`MNEMA_AI_PIXABAY_API_KEY`, `MNEMA_AI_OPENVERSE_CLIENT_ID/_SECRET`; Wikimedia needs no key; Openverse defaults to `egress=proxy` because its API answers a
+  Cloudflare challenge from some networks, so without an active proxy it is simply not configured). `StubImageSearch` (only with `learning.ai.provider=stub`):
+  4 to 6 deterministic candidates per query (source `STUB`, CC0, `https://example.org/stub/<n>`), a PNG drawn in-process by `fetch`; markers in the query
+  `[[stub:image-none]]` (nothing licensed) and `[[stub:image-down]]` (every source down).
+- **Licenses** (`ImageLicense`): Pixabay Content License, CC0, public domain / PDM, CC BY (any version), CC BY-SA (any version, `shareAlike`). NC, ND, GFDL-only,
+  fair use, unknown or missing are dropped; a Wikimedia file with any `Restrictions` is dropped; a candidate without an https source page is dropped. Author
+  (<=200) and title (<=300) are plain text (HTML of `Artist`/`ImageDescription` is stripped, entities decoded). Answers are cached 24 h per
+  `(source, normalised query, lang, page)` in `image_search_cache` (Pixabay's terms; swept hourly, a failing cache is a miss); images are downloaded and
+  stored as the owner's asset, never hot-linked. The query language comes from its script (kana ja, Hangul ko, Han zh, Cyrillic ru, else en): **no extra LLM
+  call builds the query in this slice** (the draft model wrote it; a deliberate deviation from the issue's wording).
+- **Safe fetcher** (`SafeImageFetcher`, `ImageAddressPolicy`): https only; the exact host list of the candidate's own source; the host is resolved here and refused
+  when any address is loopback, any-local, private, link-local (169.254.169.254 included), multicast, CGNAT, unique-local or an IPv4-mapped/compatible/NAT64 form of
+  those (a proxied source is resolved by the proxy: only the host list applies); redirects by hand, at most 2, **same host only**, every hop re-validated;
+  `Content-Type` jpeg/png/webp/gif, a declared length above 10 MiB refused before reading, a streamed body cut at 10 MiB, magic bytes must match; 5 s connect, whole
+  fetch inside the budget. Residual risk, accepted: the JDK client resolves the name again at connect, so DNS rebinding between check and connect is not excluded;
+  acceptable only because the hosts are fixed public names of the sources, never a name a result chooses.
+- **Staging (`media`).** `GeneratedMediaStager.stage(owner, assetId, IMAGE, mime, bytes)` creates the asset with the **given** id (origin `generated`, V35; a browser
+  cannot ask for it), writes the staging object and runs the ordinary finalize, seal and verification, ending `READY` or `REJECTED`; no transaction spans S3.
+  `assetState` reads it. `generation_media_hold` (view over `generation_media_ref` and `generation_media_candidate`) is what the media GC and `resolve` treat as a
+  Workshop hold, so every candidate stays reachable until its session is purged.
+- **Slots and candidates (V35).** `generation_media_candidate` (<=12 per slot, unique `(artifact, slot, source, source_id)`, own asset, attribution, `share_alike`);
+  the read model derives a candidate's state from its asset. `ImageSearchExecutor` (kind `IMAGE_SEARCH`, deadline PT3M) runs two inputs. **The initial step of a slot**:
+  search the slot's query, download the best result, stage it under the slot's pre-allocated asset, wait (poll every 500 ms, no transaction) for READY or REJECTED,
+  then in one transaction debit `IMAGE_SEARCH` from the session's batch hold (`debit:{step}:{attempt}`), slot `READY` with that candidate chosen, the node hold; failures
+  are slot `FAILED` with `NO_RESULT | PROVIDER_UNAVAILABLE | VERIFICATION_REJECTED | DEADLINE_EXCEEDED` and nothing debited. The batch hold, which a session normally
+  releases when it leaves RUNNING, stays while such a step is open (`SessionLifecycle.releaseHolds`) and ends with the last one (`releaseIdleBatch`, also after a
+  cancellation, a removal, a replacement or a hand-off). **The turn of an `IMAGE_SEARCH` edit** (`ArtifactEdits`: exactly one image block of a search slot, an optional
+  query <=200, a `TURN` hold of one search; it replaces a first search of that slot still waiting): up to 4 new candidates are stored, then `ImageSearchLifecycle.succeedImages`
+  applies the first READY one in a revision `MEDIA` (the node's `assetId`, the slot READY on it) and debits the turn, or the turn fails (`NO_RESULT`, `PROVIDER_UNAVAILABLE`,
+  `DEADLINE_EXCEEDED`; no room left of the 12 is `NO_RESULT`) with its hold released and revision and slot unchanged. Every write is fenced by the lease token and checks
+  `cancel_requested`; lease recovery and queue expiry of a slot step fail its slot (`StepDispatcher`, `StepQueue`).
+- **Choice, revert, read model.** `POST .../media-slots/{slotKey}/selection` (`ArtifactEdits.select`): receipt replay (the receipt keeps the revision; the controller reads
+  the artifact from it), 412 on a stale revision, 404 opaque for an absent slot or a candidate of another slot or owner, 409 for a state that is not review, an
+  artifact with a turn running (`EDIT_IN_PROGRESS`) or a candidate that is not READY, a no-op when already chosen, else a revision `MEDIA` that changes only the node's
+  asset. A revert follows the asset of the shown revision for every search slot (READY on a candidate, or FAILED `NO_RESULT` again before any image was found).
+  `getArtifact.mediaSlots[]` gains `mode`, `attribution` and `candidates` (`chosen` = the candidate whose asset the shown revision's node uses).
+- **Approve and hand-off.** `ImageAttribution` writes «автор · источник · лицензия» into the image node's `caption` (after an existing caption with « — », bounded to 1024)
+  in the document that is published or handed off, never in the Workshop's revisions; `generation_provenance.media` records `{assetId, source, sourceId, license,
+  sourcePageUrl}` per stock image.
+- **Rollback.** `learning.features.image-search.enabled=false` makes the capability `DISABLED` (new sessions and edits are refused; steps already queued still run to
+  their end); migration V35 is additive.
+- **Tests.** No network in CI: adapters on recorded JSON served by a loopback server (`ImageSourcesTest`), the fetcher's SSRF cases (`SafeImageFetcherTest`,
+  `ImageAddressPolicyTest`), the router (`RoutedImageSearchTest`), the cache on PostgreSQL (`ImageSearchCacheIntegrationTest`), staging on MinIO with a fake worker
+  (`GeneratedMediaStagerIntegrationTest`) and the flows on the Stub with a staging double (`GenerationImageSearchIntegrationTest`). Opt-in
+  `MNEMA_AI_LIVE=true ... --tests '*ImageSearchLive*'` runs Wikimedia Commons for real (search and one safe download) and Pixabay/Openverse only with their
+  credentials in the environment. **Pixabay and Openverse are not verified live** (no keys in the owner environment yet); Openverse's field names follow the published
+  schema (https://docs.openverse.org/api/) and could not be fetched from here (the API host answers 403 to an anonymous client).
+
 ## AI assessment of free explanations (#292)
 
 `evaluatorPolicy ai-semantic` of a `FREE_RESPONSE` ([contract](../../../contracts/study/README.md#ai-assessment-of-free-explanations-ai-semantic-292), architecture §11, research §5):
