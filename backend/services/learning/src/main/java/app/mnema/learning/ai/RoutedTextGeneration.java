@@ -245,7 +245,8 @@ final class RoutedTextGeneration implements TextGeneration {
             }
             journal.finish(callId, new CallJournal.Outcome(outcome, usage, cost, providerRequestId, latency.toMillis()));
             try {
-                telemetry.record(capability, candidate.provider(), candidate.model(), request.stepId(), outcome, latency, usage, cost);
+                telemetry.record(capability, candidate.provider(), candidate.model(), request.stepId(), outcome, latency, usage, cost,
+                        candidate.adapter().egress());
             } catch (RuntimeException exception) {
                 warn("telemetry", exception, candidate, request);
             }

@@ -21,17 +21,28 @@ import java.util.function.Predicate;
  */
 final class ChatHttp implements AutoCloseable {
     private final HttpClient client;
+    private final AiProperties.EgressMode egress;
     private final long idleNanos;
     private final Duration firstByte;
     private final int maxBodyBytes;
 
+    /** The direct transport. */
     ChatHttp(AiProperties.Transport transport) {
-        this.client = HttpClient.newBuilder().connectTimeout(transport.connectTimeout())
-                .followRedirects(HttpClient.Redirect.NEVER).build();
+        this(transport, HttpClient.newBuilder().connectTimeout(transport.connectTimeout())
+                .followRedirects(HttpClient.Redirect.NEVER).build(), AiProperties.EgressMode.DIRECT);
+    }
+
+    /** A transport over {@code client} (built by {@link EgressClients}); the limits and caps are the same for every mode. */
+    ChatHttp(AiProperties.Transport transport, HttpClient client, AiProperties.EgressMode egress) {
+        this.client = client;
+        this.egress = egress;
         this.idleNanos = transport.idleStream().toNanos();
         this.firstByte = transport.firstByte();
         this.maxBodyBytes = transport.maxBodyBytes();
     }
+
+    /** The egress mode of this transport, for the {@code ai_call} log line and metric tag. */
+    AiProperties.EgressMode egress() { return egress; }
 
     /** A transport-level failure; {@code kind} drives the failure mapping, the message never leaves this package. */
     static final class TransportException extends Exception {

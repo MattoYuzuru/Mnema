@@ -58,6 +58,9 @@ x-ai-environment: &ai-environment
   MNEMA_AI_GIGACHAT_AUTH_KEY: ${MNEMA_AI_GIGACHAT_AUTH_KEY:-}
   MNEMA_AI_OPENROUTER_API_KEY: ${MNEMA_AI_OPENROUTER_API_KEY:-}
   MNEMA_AI_USER_KEY_SECRET: ${MNEMA_AI_USER_KEY_SECRET:-}
+  MNEMA_AI_EGRESS_PROXY_URL: ${MNEMA_AI_EGRESS_PROXY_URL:-}
+  MNEMA_AI_EGRESS_PROXY_USER: ${MNEMA_AI_EGRESS_PROXY_USER:-}
+  MNEMA_AI_EGRESS_PROXY_PASSWORD: ${MNEMA_AI_EGRESS_PROXY_PASSWORD:-}
 
 # Official MinIO image, pinned by the digest the repository already uses for staging
 # (k8s/staging/data.yaml). MinIO no longer serves it from Docker Hub or Quay, so it

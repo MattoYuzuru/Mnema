@@ -47,3 +47,9 @@ springBoot {
         }
     }
 }
+
+tasks.withType<Test>().configureEach {
+    // The JDK HttpClient ignores Basic credentials for a CONNECT tunnel unless this is cleared before its classes load; the egress
+    // proxy test (EgressProxyTunnelTest) needs it, and it must be a JVM property (java.net.http module docs, "System properties").
+    systemProperty("jdk.http.auth.tunneling.disabledSchemes", "")
+}
