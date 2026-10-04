@@ -14,11 +14,15 @@ for local product implementation. Keep backend/frontend gates, coverage floors,
 CodeQL, dependency review, disposable DB tests and real local cross-service/E2E
 checks. A merged/tested feature is not a deployed or production-verified feature.
 
-Main CI keeps its quality jobs. Image build/push, attestations, image scanning and
-release-manifest publication jobs are disabled together: no deployable image is
-published without its image-security gate. Application builds and the existing
-release/security/recovery contract tests still run. No image-level vulnerability
-result is claimed for a release image that was not built.
+Main CI keeps its quality jobs. The separately reviewed VPS preparation (#349)
+permits **manual publication only**, from exact `main`, with the boolean
+`publish_production_candidate` explicitly selected (default false). Identity,
+Learning and frontend build/push, attestations and vulnerability gates run together;
+the resulting three-image candidate grants no deployment admission. Ordinary pushes
+and manual CI with the default input do not publish. See the
+[VPS publication contract](vps-image-publication.md). Application builds and existing
+release/security/recovery contracts still run. Image-level security is claimed only
+for the exact built/scanned digests.
 
 Staging, production, rollback drill and hosted database recovery have only empty
 workflow_call definitions with no callers, automatic events or manual Run buttons.
@@ -26,7 +30,8 @@ Every operational job also has a literal false guard: even an accidental caller
 cannot allocate its runner or enter an Environment. Repository tests reject callers,
 standalone triggers and removal of any guard. No variable, input or secret opens
 them. Their existing job bodies are restoration blueprints, not an executable
-local deployment path. Main CI can show two skipped release jobs without runners.
+local deployment path. The Kubernetes renderer remains disabled; the new VPS
+candidate is a separate publication boundary and does not invoke those workflows.
 
 Do not replace the dormant trigger with workflow_dispatch: besides exposing an
 unneeded entry point, it changes the old workflow_run cache trust boundary. CodeQL
