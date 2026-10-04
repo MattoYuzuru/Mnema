@@ -41,7 +41,7 @@ public interface ImageSearch {
 
     /** The sources a candidate can come from; the name is the wire value of {@code candidates[].source}. */
     enum Source {
-        PIXABAY("Pixabay"), OPENVERSE("Openverse"), WIKIMEDIA("Wikimedia Commons"), STUB("Stub");
+        PIXABAY("Pixabay"), OPENVERSE("Openverse"), WIKIMEDIA("Wikimedia Commons"), STUB("Тестовый источник");
 
         private final String label;
 

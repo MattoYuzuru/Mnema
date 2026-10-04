@@ -174,7 +174,7 @@ class GenerationImageSearchIntegrationTest extends GenerationEditsSupport {
         for (JsonNode block : material.path("document").path("root").path("content")) if (block.path("type").stringValue("").equals("image")) image = block;
         assertThat(image).isNotNull();
         assertThat(image.path("attrs").path("assetId").stringValue(null)).isEqualTo(asset.toString());
-        assertThat(image.path("attrs").path("caption").stringValue(null)).isEqualTo("Stub Author · Stub · CC0 1.0");
+        assertThat(image.path("attrs").path("caption").stringValue(null)).isEqualTo("Stub Author · Тестовый источник · CC0 1.0");
         // the Workshop's revision itself carries no caption: the attribution is written at the boundary only
         assertThat(blocks(detail(owner, deck, proposal)).stream().filter(block -> block.path("type").stringValue("").equals("image")).findFirst().orElseThrow()
                 .path("attrs").has("caption")).isFalse();
@@ -207,7 +207,7 @@ class GenerationImageSearchIntegrationTest extends GenerationEditsSupport {
         JsonNode image = null;
         for (JsonNode block : stored.path("root").path("content")) if (block.path("type").stringValue("").equals("image")) image = block;
         assertThat(image).isNotNull();
-        assertThat(image.path("attrs").path("caption").stringValue(null)).isEqualTo("Stub Author · Stub · CC0 1.0");
+        assertThat(image.path("attrs").path("caption").stringValue(null)).isEqualTo("Stub Author · Тестовый источник · CC0 1.0");
     }
 
     @Test
