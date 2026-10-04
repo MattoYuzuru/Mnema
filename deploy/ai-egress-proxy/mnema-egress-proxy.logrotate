@@ -1,0 +1,13 @@
+/var/log/mnema-egress-proxy/access.log /var/log/mnema-egress-proxy/cache.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 proxy proxy
+    sharedscripts
+    postrotate
+        /usr/sbin/squid -k rotate -f /etc/squid/mnema.conf >/dev/null 2>&1 || true
+    endscript
+}
