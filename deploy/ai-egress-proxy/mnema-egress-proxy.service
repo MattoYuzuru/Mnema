@@ -1,0 +1,34 @@
+[Unit]
+Description=Mnema loopback-only CONNECT proxy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStartPre=/usr/sbin/squid -k parse -f /etc/squid/mnema.conf
+ExecStart=/usr/sbin/squid --foreground -f /etc/squid/mnema.conf
+ExecReload=/usr/sbin/squid -k reconfigure -f /etc/squid/mnema.conf
+Restart=on-failure
+RestartSec=5
+RuntimeDirectory=mnema-egress-proxy
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=restart
+LogsDirectory=mnema-egress-proxy
+LogsDirectoryMode=0750
+UMask=0027
+User=proxy
+Group=proxy
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/mnema-egress-proxy /run/mnema-egress-proxy
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=192M
+CPUQuota=25%
+TasksMax=32
+LimitNOFILE=1024
+
+[Install]
+WantedBy=multi-user.target
