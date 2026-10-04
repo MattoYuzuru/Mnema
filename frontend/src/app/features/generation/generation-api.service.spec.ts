@@ -7,6 +7,8 @@ import { AuthoringProtocolError } from '../authoring/authoring.models';
 import { buildMaterialsSpec } from './generation-composer.component';
 import { GenerationApiService } from './generation-api.service';
 import { DEFAULT_SETTINGS } from './generation-settings.component';
+import { draftOf } from './plan-editor';
+import { ExercisesPlan, RequestValidationError, parseSessionDetail } from './generation.models';
 import { clone, eventsContract, examples, httpContract, ids, noteArchiveAnswer, noteIds, pathOf, privateHeaders, usageContract } from './generation-test-data';
 
 describe('GenerationApiService', () => {
@@ -282,6 +284,55 @@ describe('GenerationApiService', () => {
             await attempt(request => request.flush(answer, { status: 201, statusText: 'Created', headers: privateHeaders }));
             await attempt(request => request.flush({ archived: [] }, { headers: privateHeaders }));
             await attempt(request => request.flush(answer, { headers: { ...privateHeaders, 'Idempotency-Replayed': 'false' } }));
+        });
+    });
+
+    describe('approvePlan (#295)', () => {
+        const sessionId = '5e550000-0000-4000-8000-000000000002';
+        const planned = parseSessionDetail(examples['sessionDetailPlanReady']);
+        const plan = planned.plan!;
+        const rows = draftOf((plan as ExercisesPlan).items).map(row => ({ ...row, item: { ...row.item,
+            mechanics: row.item.memberKey === '44444444-4444-4444-8444-444444444445' ? ['CLOZE' as const] : row.item.mechanics,
+            count: row.item.memberKey === '44444444-4444-4444-8444-444444444445' ? 4 : 2 } }));
+        const version = (headers: Record<string, string>) => ({ ...privateHeaders, ...headers });
+
+        it('posts the commandId, the version the owner saw and the exact items, without If-Match, and reads the running session', async () => {
+            const result = firstValueFrom(api.approvePlan(ids.deckId, sessionId, plan, rows, '3', examples['planApprovalRequest'].commandId));
+            const request = expectOperation('approvePlan', { sessionId });
+            expect(request.request.body).toEqual(examples['planApprovalRequest']);
+            expect(request.request.headers.has('If-Match')).toBe(false);
+            request.flush(examples['sessionDetailPlanApproved'], { headers: version({ ETag: '"4"' }) });
+            expect(await result).toMatchObject({ replayed: false, session: { state: 'RUNNING', rowVersion: '4', plan: { approved: true } } });
+        });
+
+        it('reports a stored replay without an ETag, and refuses an ETag on it', async () => {
+            const send = () => firstValueFrom(api.approvePlan(ids.deckId, sessionId, plan, rows, '3', examples['planApprovalRequest'].commandId));
+            const replay = send();
+            expectOperation('approvePlan', { sessionId }).flush(examples['sessionDetailPlanApproved'], { headers: version({ 'Idempotency-Replayed': 'true' }) });
+            expect((await replay).replayed).toBe(true);
+            const withEtag = send();
+            expectOperation('approvePlan', { sessionId }).flush(examples['sessionDetailPlanApproved'], { headers: version({ 'Idempotency-Replayed': 'true', ETag: '"4"' }) });
+            await expect(withEtag).rejects.toBeInstanceOf(AuthoringProtocolError);
+        });
+
+        it('refuses an answer that is not the launched plan, a cacheable one, another status, the wrong ETag or another session', async () => {
+            const attempt = async (flush: (request: ReturnType<typeof expectOperation>) => void) => {
+                const result = firstValueFrom(api.approvePlan(ids.deckId, sessionId, plan, rows, '3', examples['planApprovalRequest'].commandId));
+                flush(expectOperation('approvePlan', { sessionId }));
+                await expect(result).rejects.toBeInstanceOf(AuthoringProtocolError);
+            };
+            await attempt(request => request.flush(examples['sessionDetailPlanReady'], { headers: version({ ETag: '"3"' }) }));
+            await attempt(request => request.flush(examples['sessionDetailPlanApproved'], { headers: { ETag: '"4"' } }));
+            await attempt(request => request.flush(examples['sessionDetailPlanApproved'], { status: 201, statusText: 'Created', headers: version({ ETag: '"4"' }) }));
+            await attempt(request => request.flush(examples['sessionDetailPlanApproved'], { headers: version({ ETag: '"5"' }) }));
+            await attempt(request => request.flush({ ...clone(examples['sessionDetailPlanApproved']), sessionId: ids.sessionId }, { headers: version({ ETag: '"4"' }) }));
+            await attempt(request => request.flush({ ...clone(examples['sessionDetailPlanApproved']), plan: null }, { headers: version({ ETag: '"4"' }) }));
+        });
+
+        it('refuses a plan it cannot build before any request: an empty plan, a version that is not a number', async () => {
+            await expect(firstValueFrom(api.approvePlan(ids.deckId, sessionId, plan, [], '3', command))).rejects.toBeInstanceOf(RequestValidationError);
+            await expect(firstValueFrom(api.approvePlan(ids.deckId, sessionId, plan, rows, 'x', command))).rejects.toBeInstanceOf(AuthoringProtocolError);
+            http.expectNone(() => true);
         });
     });
 });

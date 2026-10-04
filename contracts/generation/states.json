@@ -10,7 +10,7 @@
     ],
     "kindSupport": {
       "MATERIALS": "AI-04",
-      "EXERCISES": "AI-13 (settings.planFirst true is 422 SPEC_NOT_SUPPORTED until the planner, AI-14)",
+      "EXERCISES": "AI-13 (planFirst runs the planner since AI-14, #295: decision 17)",
       "REVISE_ITEM": "AI-16 (#294): one artifact (target ITEM) that starts as a copy of the material's head and is rewritten whole by one FREE turn; approval is a revise of that material",
       "REVISE_EXERCISE": "AI-16 (#294): one artifact (target EXERCISE) that starts as a copy of the exercise's head, rewritten by an EDIT turn and/or its audio redone by a media turn (Stub speech executor until AI-09, #297); approval is a revision of that exercise"
     },
@@ -25,11 +25,11 @@
     "states": {
       "PLANNING": {
         "terminal": false,
-        "description": "Only when the planner is enabled and the spec asks for a plan first: the PLAN step is running; no artifacts are generated yet."
+        "description": "Only when the planner is enabled and the spec asks for a plan first: the PLAN step is running; no artifacts exist yet. Two holds are taken at creation: the batch exactly as without the plan, and the plan's own price."
       },
       "PLAN_READY": {
         "terminal": false,
-        "description": "The plan is shown to the user for editing; nothing is generated and no text credits beyond the plan are spent."
+        "description": "The plan is shown to the user for editing; nothing is generated and no credits beyond the plan are spent (the plan itself was debited when it became ready, apart from the batch). The batch hold is not renewed here and lapses after learning.usage.reservation-ttl."
       },
       "RUNNING": {
         "terminal": false,
@@ -90,8 +90,11 @@
         "trigger": "PLAN step SUCCEEDED",
         "actor": "WORKER",
         "emits": [
-          "SESSION_STATE"
-        ]
+          "SESSION_STATE",
+          "USAGE_UPDATED"
+        ],
+        "guard": "the plan fits the batch hold (trimmed from the end when it does not); debited SMART_PLAN_FLASH and counted against the smart-plan cap in the same transaction",
+        "note": "The owner is told with GENERATION_PLAN_READY (plannedCount). The plan is read from getSession.plan."
       },
       {
         "from": "PLANNING",
@@ -101,19 +104,19 @@
         "emits": [
           "SESSION_STATE"
         ],
-        "note": "Decision beyond the architecture: it names no session failure state; a failed plan cancels the session and releases the reservation."
+        "note": "A failed plan (one repair, then the strong route, then the end; also a deadline or a provider that stays down) cancels the session, releases both holds and debits nothing; the owner is told with GENERATION_FAILED (errorCode PLAN_FAILED)."
       },
       {
         "from": "PLAN_READY",
         "to": "RUNNING",
-        "trigger": "user approves the plan",
+        "trigger": "user approves the plan (operation approvePlan)",
         "actor": "USER",
-        "guard": "reservation covers the (possibly edited) plan",
+        "guard": "expectedSessionVersion is current and the plan is within the limits; the batch hold is re-sized to the cost of the plan as approved (extended when the plan costs more: usage refuses what the balance cannot pay)",
         "emits": [
           "SESSION_STATE",
           "ARTIFACT_STATE"
         ],
-        "note": "The endpoint belongs to AI-14 (#295) and is not part of generation-v1 http.json."
+        "note": "Exactly the planned artifacts and steps are created through the same code as an unplanned admission."
       },
       {
         "from": "PLAN_READY",
@@ -194,6 +197,15 @@
         ]
       },
       {
+        "from": "PLANNING",
+        "to": "EXPIRED",
+        "trigger": "expires_at reached (endReason EXPIRED)",
+        "actor": "RETENTION",
+        "emits": [
+          "SESSION_STATE"
+        ]
+      },
+      {
         "from": "PLAN_READY",
         "to": "EXPIRED",
         "trigger": "expires_at reached (endReason EXPIRED)",
@@ -254,7 +266,7 @@
       },
       "note": "See activeCounting for what counts toward the active-session limit. The 60 for EXERCISES is owner decision 2026-10-02 (see README); the architecture says 20 per session."
     },
-    "versioning": "session rowVersion bumps on every row change (state, pointers, last activity). It is exposed as ETag for reads; no session command uses it as a precondition.",
+    "versioning": "session rowVersion bumps on every row change (state, pointers, last activity). It is exposed as ETag for reads; the one session command that takes it is approvePlan (body member expectedSessionVersion).",
     "allowedOperations": {
       "PLANNING": [
         "getSession",
@@ -269,6 +281,7 @@
         "listEvents",
         "getArtifact",
         "cancelSession",
+        "approvePlan",
         "deleteSession",
         "archiveUsedNotes"
       ],

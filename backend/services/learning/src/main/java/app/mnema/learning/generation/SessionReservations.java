@@ -48,6 +48,12 @@ class SessionReservations {
         return new ArrayList<>(ids);
     }
 
+    /** Whether the session's batch hold is still live (a PLAN_READY plan's hold lapses by its time to live, the approval then reserves again). */
+    boolean batchActive(Session session) {
+        return session.reservationId() != null && ledger.reservation(session.ownerId(), session.reservationId())
+                .filter(found -> found.state() == app.mnema.learning.usage.ReservationState.ACTIVE).isPresent();
+    }
+
     Totals totals(Session session) {
         return totals(List.of(session)).get(session.sessionId());
     }

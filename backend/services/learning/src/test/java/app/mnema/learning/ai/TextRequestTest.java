@@ -81,6 +81,11 @@ class TextRequestTest {
         assertThat(AiRoute.TEXT_FAST.escalation()).isEqualTo(AiRoute.TEXT_STRONG);
         assertThat(AiRoute.TEXT_STRONG.escalation()).isNull();
         assertThat(AiRoute.ASSESS.capability()).isEqualTo(AiCapability.ASSESS);
+        // the planner (AI-14): text routes with thinking, the fast one escalates to the strong one, nothing else thinks
+        assertThat(AiRoute.PLAN.capability()).isEqualTo(AiCapability.TEXT);
+        assertThat(AiRoute.PLAN.escalation()).isEqualTo(AiRoute.PLAN_STRONG);
+        assertThat(AiRoute.PLAN_STRONG.escalation()).isNull();
+        assertThat(java.util.Arrays.stream(AiRoute.values()).filter(AiRoute::thinking)).containsExactly(AiRoute.PLAN, AiRoute.PLAN_STRONG);
         assertThat(AiCapability.IMAGE_SEARCH.label()).isEqualTo("image_search");
     }
 

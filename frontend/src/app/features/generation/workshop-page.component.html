@@ -41,7 +41,14 @@
       @if (deferredUntil(); as day) { <p class="notice">Дневной лимит ИИ исчерпан. Мнема продолжит {{ day }}: готовое можно разбирать уже сейчас.</p> }
       @if (endNote(); as note) { <p class="notice">{{ note }}</p> }
 
-      @if (exercises()) {
+      @if (awaitingPlan()) {
+        <p class="summary exercise-summary" role="status">{{ statusText() }}</p>
+        <app-workshop-plan (finished)="focusTitle()" />
+        <div class="footer-row"><a class="text-link" [routerLink]="['/decks', deckId()]">Выйти в колоду</a></div>
+      } @else if (planEnded()) {
+        <p class="summary exercise-summary" role="status">{{ statusText() }}</p>
+        <div class="footer-row"><a class="text-link" [routerLink]="['/decks', deckId()]">Выйти в колоду</a></div>
+      } @else if (exercises()) {
         <p class="summary exercise-summary" role="status">{{ statusText() }}</p>
         <app-exercise-batch-review [deckId]="deckId()" />
       } @else if (revision()) {

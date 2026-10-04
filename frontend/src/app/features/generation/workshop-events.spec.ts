@@ -1,6 +1,6 @@
 import { ArtifactSummary, GenerationEvent, SessionDetail, parseSessionDetail } from './generation.models';
 import { Arrival, WorkshopModel, applyEvents, isNewer, mergeSession } from './workshop-events';
-import { artifactWith, clone, examples, ids, sessionWith } from './generation-test-data';
+import { artifactWith, clone, examples, ids, planApprovedSession, planReadySession, sessionWith } from './generation-test-data';
 
 const block = (suffix: string, text: string) => ({ id: `00000000-0000-4000-8000-0000000001${suffix}`, type: 'paragraph', version: 1, attrs: {},
     content: [{ id: `00000000-0000-4000-8000-0000000002${suffix}`, type: 'text', version: 1, attrs: { text, marks: [] }, content: [] }] });
@@ -135,5 +135,41 @@ describe('mergeSession', () => {
         expect(merged.artifacts.map((artifact: ArtifactSummary) => artifact.artifactId)).toEqual([ids.first, ids.second]);
         expect(merged.artifacts[0]!.rowVersion).toBe('5');
         expect(merged.rowVersion).toBe('13');
+    });
+
+    it('keeps the artifacts of a newer session that an older read does not have yet (a read that raced the launch of a plan, #295)', () => {
+        const held = parseSessionDetail(planApprovedSession());
+        const fresh = parseSessionDetail(planReadySession());
+        const merged = mergeSession(held, fresh);
+        expect(merged).toMatchObject({ state: 'RUNNING', rowVersion: '4' });
+        expect(merged.artifacts).toHaveLength(6);
+        expect(merged.plan?.approved).toBe(true);
+        // The other way round the newer read simply wins, and nothing of the older one is kept.
+        expect(mergeSession(fresh, held).artifacts).toHaveLength(6);
+        expect(mergeSession(fresh, held).plan?.approved).toBe(true);
+    });
+});
+
+describe('a plan-first session in events (#295)', () => {
+    const stateEvent = (seq: number, state: string, rowVersion: string): GenerationEvent =>
+        event(seq, 'SESSION_STATE', { state, rowVersion, artifactCounts: clone(examples['sessionDetail']).artifactCounts }, null);
+    const planning = () => ({ session: parseSessionDetail(planReadySession(session => { session.state = 'PLANNING'; session.plan = null; session.rowVersion = '1'; })),
+        drafts: {}, usage: null, arrival: null }) satisfies WorkshopModel;
+
+    it('asks for a read when the session leaves PLANNING or PLAN_READY: the plan appears, is launched, or the session ends with a reason the event does not carry', () => {
+        const ready = applyEvents(planning(), [stateEvent(1, 'PLAN_READY', '3')], 0n, counter());
+        expect(ready.model.session).toMatchObject({ state: 'PLAN_READY', rowVersion: '3', plan: null });
+        expect(ready.reconcile).toBe(true);
+        const failed = applyEvents(planning(), [stateEvent(1, 'CANCELLED', '2')], 0n, counter());
+        expect(failed.reconcile).toBe(true);
+        const readyModel = { ...planning(), session: parseSessionDetail(planReadySession()) };
+        expect(applyEvents(readyModel, [stateEvent(1, 'RUNNING', '4')], 0n, counter()).reconcile).toBe(true);
+    });
+
+    it('does not ask for a read for the state changes of any other session, nor for a replay of an old state', () => {
+        const running = model([artifactWith(ids.first, 0, 'PROPOSED')]);
+        expect(applyEvents(running, [stateEvent(1, 'REVIEW', '20')], 0n, counter()).reconcile).toBe(false);
+        expect(applyEvents(planning(), [stateEvent(1, 'PLANNING', '0')], 0n, counter()).reconcile).toBe(false);
+        expect(applyEvents({ ...planning(), session: parseSessionDetail(planReadySession()) }, [stateEvent(1, 'PLANNING', '1')], 0n, counter()).reconcile).toBe(false);
     });
 });

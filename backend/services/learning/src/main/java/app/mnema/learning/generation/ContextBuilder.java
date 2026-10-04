@@ -62,17 +62,19 @@ class ContextBuilder {
     private final ItemPreviews previews;
     private final PromptAssembler assembler;
     private final GenerationSettings settings;
+    private final Plans plans;
     private final NativeDocumentReader reader = new NativeDocumentReader();
     private final MbmRenderer renderer = new MbmRenderer();
 
     ContextBuilder(ContextRepository context, GenerationRepository repository, ItemService items, ItemPreviews previews,
-                   PromptAssembler assembler, GenerationSettings settings) {
+                   PromptAssembler assembler, GenerationSettings settings, Plans plans) {
         this.context = context;
         this.repository = repository;
         this.items = items;
         this.previews = previews;
         this.assembler = assembler;
         this.settings = settings;
+        this.plans = plans;
     }
 
     /** A pinned source of the artifact is gone or changed: the artifact fails with {@code SOURCE_UNAVAILABLE}. */
@@ -86,9 +88,15 @@ class ContextBuilder {
 
     /** @throws SourceGoneException a pinned note or material no longer matches its pin or is gone */
     DraftContext build(Session session, Artifact artifact, MaterialsSpec spec) {
-        MaterialsSpec.Effective effective = spec.forArtifact(artifact.sourceRefs());
+        // a material of an approved plan is written at the effort the plan chose and on the topic it named
+        Optional<Plans.MaterialItem> planned = plans.plannedMaterial(session, artifact);
+        MaterialsSpec.Effective effective = planned.map(item -> spec.forArtifact(artifact.sourceRefs()).withEffort(item.effort()))
+                .orElseGet(() -> spec.forArtifact(artifact.sourceRefs()));
         List<String> sourceTexts = sourceTexts(session, artifact);
         String request = spec.prompt().isBlank() ? "по источникам выше" : spec.prompt();
+        if (planned.isPresent()) {
+            request = "Тема материала: " + planned.get().title() + (spec.prompt().isBlank() ? "" : "\nОбщая просьба: " + spec.prompt());
+        }
         PromptValues values = briefValues(session, spec, sourceTexts, request)
                 .block("allowed_links", PromptBlocks.allowedLinks(links(sourceTexts)))
                 .block("note_blocks", noteBlocks(sourceTexts, settings.context().notesTokens()))

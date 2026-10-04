@@ -112,7 +112,7 @@ fair-use buckets, `GET /api/usage` and the estimate. Migration `V26__usage_ledge
   weekly Free window fires every week, the last Free window (from the fourth unlock) is its own instance and a day and a
   month that start together never share a key, all inside the transaction of the debit or consumption.
 - **Estimate.** `GenerationSpecInterpreter` is the port for what a spec implies; `StandardSpecInterpreter` validates the
-  shape strictly and prices MATERIALS (one artifact per NOTE source or one when merged; `AUTO` effort is priced and run as medium until the planner and auto-effort land (this also lets a Free account start an `AUTO` session in its first week);
+  shape strictly and prices MATERIALS (one artifact per NOTE source or one when merged; `AUTO` effort is priced and run as medium (a plan chooses the effort of each material itself, #295) (this also lets a Free account start an `AUTO` session in its first week);
   one audio clip and one image search per artifact when declared; a low fact check per artifact unless the effort is
   short) and EXERCISES (`EXACT`, `AUTO` = five per target or what the session limit allows, `BUDGET_PERCENT` = what the
   share of the remaining budget buys, at least one per target). `REVISE_*` is `422 SPEC_NOT_SUPPORTED`. Limits above
@@ -142,7 +142,7 @@ fair-use buckets, `GET /api/usage` and the estimate. Migration `V26__usage_ledge
 [architecture §3-§6](../../../docs/architecture/ai-generation-platform.md)): sessions, artifacts, durable steps, events, the
 `TEXT_DRAFT` step and its HTTP surface. Approval, rejection, hand-off, retry, delete, note archival and retention are
 "Review commands (#288)" below, exercise sessions "Exercise generation (#291)", edits and revert "Selection edits (#293)". Not here yet:
-the planner and the media executors; their tables exist (V28), their routes do not.
+the media executors; their tables exist (V28), their routes do not. The planner is "Planner (#295)" below.
 
 - **HTTP** (`GenerationController`, every response `private, no-store`; unknown query parameters and body fields are `400`):
   `POST /api/decks/{deckId}/generation-sessions` (201, `Location`, `ETag`; an exact retry answers 201 with
@@ -152,7 +152,7 @@ the planner and the media executors; their tables exist (V28), their routes do n
   .../artifacts/{artifactId}?revisionId=`. A body is read (at most 64 KiB) before any transaction. Order of evaluation as in
   `http.json`: ownership (404), receipt replay, validation (400, 422 limits), sources (404, then 409 `SOURCE_UNAVAILABLE`),
   capabilities (409), active sessions (422, listing their ids), usage (409, inside the admission transaction, so a refusal
-  leaves nothing). `EXERCISES` is supported (#291, below); only `planFirst: true` is `422 SPEC_NOT_SUPPORTED`, in the estimate too.
+  leaves nothing). `EXERCISES` is supported (#291, below); `planFirst: true` is the planner's (#295, below) and is `422 SPEC_NOT_SUPPORTED`, in the estimate too, only when `learning.generation.planner.enabled` is `false`.
 - **Tables** (`V28__generation.sql`, composite owner-scoped foreign keys as `V10`): `generation_session` (immutable `spec`,
   `row_version`, `last_event_seq`, `expires_at`), `generation_session_source` (pins), `generation_artifact`,
   `generation_artifact_revision` (immutable, at most 30, `payload` + `handles` + `prompt_version` + `model_route` +
@@ -193,7 +193,7 @@ the planner and the media executors; their tables exist (V28), their routes do n
   estimated tokens: sources 12k, exemplar 2.5k and 6k together (longer ones become a skeleton), outline 5k; a deck of at most 200
   materials is outlined whole, a larger one shows every starred material, the 40 latest and the top 40 by `word_similarity` of
   the cached title (needs `pg_trgm`; without it that part is skipped), and says how many it left out. `max_tokens` follows the
-  effort (900 / 2400 / 4500; `AUTO` is `MEDIUM` until the planner), `thinking` is off, `user_id` is the opaque HMAC key.
+  effort (900 / 2400 / 4500; `AUTO` is `MEDIUM`; a planned material is written at the plan's effort), `thinking` is off (on only for the plan routes), `user_id` is the opaque HMAC key.
   Before the call the remaining hold must cover the material's weight, else `ESTIMATE_EXCEEDED` with no provider call. The call
   streams: `DraftStreamer` compiles the text up to the last block boundary and appends `BLOCKS_APPENDED` at most every
   `stream.checkpoint-interval` (750 ms), at most 24 KiB of blocks per event, with the artifact's `generation` counter (a restart for any
@@ -436,6 +436,40 @@ executor now; real synthesis and its acceptance are #297 (AI-09).
   hand-off of a material opens a draft of the existing member (`GeneratedDraftOpener.openRevision`); a bulk approval of a revise session is 400.
 - **Edits on an exercise artifact** (`ArtifactEdits`): only in a `REVISE_EXERCISE` session, `FREE` (no target) or `AUDIO_REGENERATE` (+ `voice`, `TARGET_NO_AUDIO` without audio slots); `revert` too (title from the exercise, slots re-attached).
   `SessionViews` returns the turn's `voice` and the exercise's audio slots (`mediaSlots`, `voice` additive).
+
+## Planner (#295)
+
+«Сначала показать план» (`settings.planFirst`, `MATERIALS` and `EXERCISES`; contract decision 17 in [`contracts/generation`](../../../contracts/generation/README.md)).
+Code: `Plans` (pure: the model's plan and the owner's plan, validation, pricing, the wire shape of `getSession.plan`), `PlanContexts` (the prompt from the
+database), `PlanExecutor` (the `PLAN` step), `SessionLifecycle` (`beginPlan`, `succeedPlan`, `failPlan`: every state change in its short transaction) and
+`SessionService` (`admitPlan`, `approvePlan`).
+
+- **Admission.** `SessionService.admit*` branches to `admitPlan` after the checks of an unplanned session: state `PLANNING`, no artifact, the sources pinned, **two holds**
+  (the session reservation = the batch exactly as without the plan, `AdmissionPricing.Hold.credits`; and a `STEP` reservation of `Hold.planCredits` that the `PLAN` step carries as
+  `reservationId`, so the existing renewal, release and `usage` totals cover it) and one `PLAN` step (`capability TEXT`, input `{operation, credits, budgetCredits, reservationId}`).
+  `EstimateService.hold` keeps the plan out of the batch hold and of the `budgetPercent` cap; `StandardSpecInterpreter` adds the line `SMART_PLAN_FLASH` (cap bucket `smartPlan`).
+- **Step.** `StepRepository.pickDue` claims a `PLAN` step of a `PLANNING` session; `StepQueue` gives it `learning.generation.planner.deadline` and never parks it for the daily burst. A run is
+  `beginPlan` (still `PLANNING`), `fairUseFits(SMART_PLAN)` and the plan hold checked (no provider call otherwise), the prompt (`ai/prompts/v1/plan.md`: titles, counts, mechanics, clipped notes, the budget;
+  no material text), then the call **without a transaction** on the route `AiRoute.PLAN` (`learning.ai.routes.plan`; `OpenAiCompatibleAdapter` sends `thinking: enabled` for a route with `thinking()`, `disabled`
+  for every other; the output bound is `planner.max-output-tokens` because the reasoning counts), `Plans.fromModel`, and one repair, then `PLAN_STRONG`, then `INVALID_OUTPUT`. Provider failures map as in
+  `ProviderFailures`; a retried step starts over (nothing of an earlier run was stored).
+- **Result.** `succeedPlan` (one transaction, session lock first): `settle` of `SMART_PLAN_FLASH` against the plan's hold, `consume(SMART_PLAN, 1)` first and then `settle` (a cap that filled meanwhile throws
+  `UsageLimitReachedException`, a plan hold that ended throws `PlanUnpayableException`: either rolls the transaction back, count included, and the executor fails the plan unpaid; the provider cost of a failed plan is
+  logged as `cost_micros` and counted in `mnema_generation_plan_failed_cost_micros_total`), `release` of the plan's hold, `setPlan`, the step `SUCCEEDED`, the session `PLAN_READY`,
+  `USAGE_UPDATED`, `GENERATION_PLAN_READY`. `failPlan` (also from `fail`, `recover` and `expire`, which route a `PLAN` step there): a retry requeues with backoff, a final failure ends the step `FAILED`,
+  **cancels the session** (`cancel(tx, "PLAN_FAILED")`: `stopWork`, both holds released) and publishes `GENERATION_FAILED(PLAN_FAILED)`; a cancellation only ends the step.
+  A cancelled session whose call returns later writes nothing (`succeedPlan` sees a session that is not `PLANNING`).
+- **Cap at admission.** The owner's PLANNING sessions count against the smart-plan cap as if consumed (`GenerationRepository.plansInFlight`, `AdmissionPricing.hold(..., plansInFlight)`), under the admission lock.
+- **Plan storage.** `generation_session.plan` (`V34`, jsonb, the wire shape): the model's while `PLAN_READY` (`approved false`), the owner's approved one afterwards. `SessionViews.detail` returns it (`null`
+  otherwise) with `cost.holdActive` added at read time. The batch hold of a `PLAN_READY` session is **not** renewed (`runningWithReservation` is `RUNNING` and `PLANNING`): it lapses after `learning.usage.reservation-ttl` and the approval reserves again.
+- **Approval.** `SessionService.approvePlan` (`POST .../plan-approval`): ownership, receipt replay, `Plans.fromOwner` (strict, 400), then in the receipt's transaction `expectedSessionVersion` (412), `PLAN_READY`
+  (409), the capabilities of the planned work (`GenerationGate.requireFor` per material at the chosen effort, `requireText` for exercises; 409), `Plans.requireWithinLimits` (422), `queueExercises` / `queueMaterials` (**the same methods the unplanned admission uses**, fed with the plan's items), the batch hold re-sized (`release` of the old one, `reserve` of
+  exactly the plan's cost; a refusal is `409 USAGE_LIMIT_REACHED` and rolls everything back), the plan stored as approved, `RUNNING`. A step of a planned exercise carries `mechanics` and `ExerciseDraftExecutor`
+  narrows the spec to them (`ExercisesSpec.withMechanics`), so the prompt and the lint use the plan's set; a planned material is written by `ContextBuilder` at the effort and on the title of the approved plan item at its
+  ordinal (`Plans.plannedMaterial`, also used by the retry of a material).
+- **Stub.** `StubPlans` (`ai` package): one item per target or note, `[[stub:plan-invalid]]` / `[[stub:plan-invalid-always]]`.
+- **Config.** `learning.generation.planner.enabled` (`true`), `planner.deadline` (`PT4M`), `planner.max-output-tokens` (`16000`), `learning.ai.routes.plan` and `plan-strong`.
+- **Tests.** `GenerationPlanIntegrationTest` (the whole flow on the Stub and PostgreSQL), `PlansTest`, `StubPlansTest`, route and adapter tests in `ai`.
 
 ## AI assessment of free explanations (#292)
 
@@ -760,7 +794,7 @@ and the UI (AI-04+) build on it; nothing here debits the user's quota, it only r
   `ImageGeneration`, `WebSearch` and `VideoGeneration` are interfaces only.
 - **Adapter.** `OpenAiCompatibleAdapter` on the JDK `HttpClient` and Jackson 3 trees: no redirects, a connect limit, one
   deadline over headers and body, an idle limit for SSE (a virtual-thread watchdog closes the stream), a hard body cap, and
-  error bodies are never read. DeepSeek: `thinking` is disabled explicitly, `user_id`, `prompt_cache_hit/miss_tokens`.
+  error bodies are never read. DeepSeek: `thinking` is disabled explicitly (enabled on the plan routes), `user_id`, `prompt_cache_hit/miss_tokens`.
   GigaChat: OAuth exchange of the authorization key (`GigaChatTokens`, covered by a recorded fixture only, not yet run
   against the live service) and `precached_prompt_tokens`. OpenRouter: config and adapter only, no default route.
 - **Routing and failure policy** (`RoutedTextGeneration`). 429: wait `max(Retry-After, jitter)` and retry up to six

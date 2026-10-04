@@ -31,6 +31,10 @@ stable `code`. Credits are integers; timestamps are UTC RFC 3339.
   `p50` = the same formula with typical weights = weight × 0.6 per operation, rounded up once on the sum, until measured
   weights exist (the 0.6 is an rc-v1 placeholder). Exercises are pro-rated per exercise: `ceil(8 × n / 5)`. The estimate prices only
   the media counts the spec declares, and the MBM compiler rejects excess (at most 8 media directives per artifact).
+- **Plan first (AI-14, #295).** A spec with `settings.planFirst` adds one line `SMART_PLAN_FLASH` (1 unit, 20 credits on rc-v1, count cap `smartPlan`) before the batch lines, so the estimate shows the plan apart from what it
+  would generate. The plan is a separate hold (a `STEP` reservation held by the `PLAN` step) from the batch hold, which is exactly what the spec holds without the plan (`budgetPercent` caps the batch; the plan comes on top), and
+  it is debited apart (`DEBIT` of `SMART_PLAN_FLASH`, one smart plan counted) when the plan is ready, never when the batch runs. When the owner launches the plan the batch hold is re-sized to the plan's cost. The Pro plan
+  (`SMART_PLAN_PRO`) is not selectable in v1: the strong route of the planner is an escalation that costs the user nothing extra.
 - **Revise specs (AI-16, #294).** `REVISE_ITEM` is one `EDIT_SELECTION`; `REVISE_EXERCISE` is one `EDIT_SELECTION` when it has an instruction plus one `TTS_CLIP_30S` when it has a media
   action (the redo of the audio). Each turn reserves its own hold at admission (there is no batch hold); the media turn of the Stub speech executor releases its hold unspent (nothing is
   synthesized), real synthesis (AI-09, #297) debits it. The intent call that builds such a spec (`createIntent`) is free: it reserves and debits nothing and is limited per hour, not per credit.

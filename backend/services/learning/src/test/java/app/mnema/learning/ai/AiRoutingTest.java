@@ -35,6 +35,21 @@ class AiRoutingTest {
     }
 
     @Test
+    void thePlannerRoutesAreTheirOwnListsOfTheTextCapability() {
+        var routes = new AiProperties.Routes(List.of("deepseek:deepseek-flash"), List.of("deepseek:deepseek-v4-pro"), List.of(), Duration.ofSeconds(8),
+                List.of("deepseek:deepseek-flash", "gigachat:GigaChat-2"), List.of("deepseek:deepseek-v4-pro"));
+        assertThat(routes.of(AiRoute.PLAN)).containsExactly("deepseek:deepseek-flash", "gigachat:GigaChat-2");
+        assertThat(routes.of(AiRoute.PLAN_STRONG)).containsExactly("deepseek:deepseek-v4-pro");
+        var routing = new AiRouting(AiTestSupport.properties("", routes, Map.of()),
+                Map.of("deepseek", new ScriptedAdapter("deepseek"), "gigachat", new ScriptedAdapter("gigachat")));
+        assertThat(routing.candidates(AiRoute.PLAN)).extracting(AiRouting.Candidate::key).containsExactly("deepseek:deepseek-flash", "gigachat:GigaChat-2");
+        assertThat(routing.candidates(AiRoute.PLAN_STRONG)).extracting(AiRouting.Candidate::key).containsExactly("deepseek:deepseek-v4-pro");
+        // a route that was not configured has no candidate: the planner fails closed instead of using another route
+        assertThat(new AiRouting(properties("", List.of("deepseek:deepseek-flash"), Map.of()), Map.of("deepseek", new ScriptedAdapter("deepseek")))
+                .candidates(AiRoute.PLAN)).isEmpty();
+    }
+
+    @Test
     void theStubOverridesEveryRoute() {
         var routing = new AiRouting(properties("stub", List.of("deepseek:deepseek-flash"), Map.of()),
                 Map.of("stub", new StubTextAdapter(), "deepseek", new ScriptedAdapter("deepseek")));

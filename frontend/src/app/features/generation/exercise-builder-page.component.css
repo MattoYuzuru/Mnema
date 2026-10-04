@@ -5,3 +5,5 @@
 .target-title { overflow-wrap: anywhere; }
 .muted { color: var(--mn-muted); }
 .estimate.is-problem { color: var(--mn-danger); }
+.more { border-block-start: 1px solid var(--mn-rule); padding-block-start: .25rem; }
+.more > summary { display: flex; align-items: center; min-block-size: var(--mn-touch-min, 2.75rem); color: var(--mn-ink); font: 700 .95rem/1.3 var(--mn-font-body, system-ui, sans-serif); cursor: pointer; }

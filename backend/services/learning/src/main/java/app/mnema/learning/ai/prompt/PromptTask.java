@@ -12,6 +12,8 @@ public enum PromptTask {
     EXERCISE_EDIT("exercise-edit", false),
     /** The intent of «Попросить Мнему…» (#294): one sentence to one operation of a closed vocabulary. */
     INTENT("intent", false),
+    /** The planner of «Сначала показать план» (AI-14, #295): the plan of a batch of exercises or materials, strict JSON, with the budget as input. */
+    PLAN("plan", false),
     ASSESSMENT("assessment", false);
 
     private final String section;

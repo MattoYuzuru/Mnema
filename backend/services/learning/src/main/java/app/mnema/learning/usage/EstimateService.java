@@ -85,23 +85,35 @@ class EstimateService {
     }
 
     /** What an admission holds and the refusal, if any, that usage must raise last (after the other admission checks). */
-    record Hold(int credits, UsageLimitReachedException.Block block, int exercises) { }
+    record Hold(int credits, UsageLimitReachedException.Block block, int exercises, int planCredits) { }
 
     /**
      * What an admission of {@code spec} holds: the p95 of the spec, capped by {@code settings.budgetPercent} of the remaining
      * budget. The spec goes through the same interpretation as the estimate, so a spec that the estimate accepts is the one
      * that is admitted. Usage refusals are returned, not thrown, so the caller can raise them strictly last: a count cap that
      * is full, and a hold (a small {@code budgetPercent}) that cannot pay for even one material at its effort. A credit
-     * shortfall is refused by {@link UsageLedger#reserve}, inside the admission transaction.
+     * shortfall is refused by {@link UsageLedger#reserve}, inside the admission transaction. The plan of a plan-first spec is held
+     * apart ({@code planCredits}): {@code credits} and the budget cap are exactly what the spec costs without the plan, so a plan
+     * that fits the hold always fits the reservation (AI-14); its count cap is still checked here.
      */
     @Transactional(readOnly = true)
     Hold hold(UUID owner, UUID deckId, JsonNode spec) {
+        return hold(owner, deckId, spec, 0);
+    }
+
+    /**
+     * As {@link #hold(UUID, UUID, JsonNode)} for the admission of a plan-first session that has {@code plansInFlight} other plans of the owner still
+     * being made: each of them will consume one smart plan when it is ready, so the cap must cover them and this one (cap - consumed - in flight > 0).
+     */
+    @Transactional(readOnly = true)
+    Hold hold(UUID owner, UUID deckId, JsonNode spec, int plansInFlight) {
         Instant now = clock.now();
         UsageState.Resolved resolved = state.resolve(owner, now);
         UsageState.Credits credits = state.credits(resolved);
         GenerationSpecInterpreter.Interpretation interpretation = interpreter.interpretForAdmission(owner, deckId, spec,
                 credits.remaining());
         int p95 = 0;
+        int plan = 0;
         int material = 0;
         int exercises = 0;
         UsageLimitReachedException.Block block = null;
@@ -109,12 +121,14 @@ class EstimateService {
             if (line.count() < 1) continue;
             RateCard.Operation operation = rateCard.operation(line.operation());
             if (operation.availability() != RateCard.Availability.AVAILABLE) throw unavailable(operation);
-            p95 += rateCard.credits(line.operation(), line.count());
+            if (line.operation().equals(RateCard.PLAN)) plan += rateCard.credits(line.operation(), line.count());
+            else p95 += rateCard.credits(line.operation(), line.count());
             // the resolved quantity of an EXERCISES spec: the generation module spreads it over the targets
             if (line.operation().equals(RateCard.EXERCISES)) exercises += line.count();
             if (line.operation().startsWith("MATERIAL_")) material = rateCard.credits(line.operation(), 1);
             if (block == null && operation.cap() != null && operation.cap().isCap()) {
-                block = capBlock(resolved, operation.cap(), line.count(), now).orElse(null);
+                int count = line.operation().equals(RateCard.PLAN) ? line.count() + plansInFlight : line.count();
+                block = capBlock(resolved, operation.cap(), count, now).orElse(null);
             }
         }
         int held = p95;
@@ -124,7 +138,13 @@ class EstimateService {
         held = Math.max(held, 0);
         // A hold below the price of one material would admit a session whose every artifact fails: refuse it instead.
         if (block == null && material > 0 && held < material) block = state.creditsBlock(credits, material);
-        return new Hold(held, block, exercises);
+        return new Hold(held, block, exercises, plan);
+    }
+
+    /** The bar of the owner's current period: what the percentages of the usage screen are a share of. */
+    @Transactional(readOnly = true)
+    int barCredits(UUID owner) {
+        return state.credits(state.resolve(owner, clock.now())).total();
     }
 
     /** The credits one run of {@code operation} charges (a rate-card weight, an integer). */
@@ -150,6 +170,7 @@ class EstimateService {
         List<EstimateView.LineView> breakdown = new ArrayList<>();
         BigDecimal exact = BigDecimal.ZERO;
         int p95 = 0;
+        int plan = 0;
         List<UsageLimitReachedException.Block> blocks = new ArrayList<>();
         for (GenerationSpecInterpreter.Line line : interpretation.lines()) {
             if (line.count() < 1) continue;
@@ -158,6 +179,7 @@ class EstimateService {
             int lineCredits = rateCard.credits(line.operation(), line.count());
             breakdown.add(new EstimateView.LineView(line.operation(), line.count(), lineCredits));
             p95 += lineCredits;
+            if (line.operation().equals(RateCard.PLAN)) plan += lineCredits;
             exact = exact.add(rateCard.exactCredits(line.operation(), line.count()));
             if (operation.cap() != null && operation.cap().isCap()) {
                 capBlock(resolved, operation.cap(), line.count(), now).ifPresent(blocks::add);
@@ -168,11 +190,12 @@ class EstimateService {
         int remaining = credits.remaining();
 
         EstimateView.BudgetView budget = null;
+        // the plan is debited on its own and is not part of what the budget caps: the batch is capped, the plan comes on top
         int held = p95;
         if (interpretation.budgetPercent() != null) {
             int cap = (int) ((long) interpretation.budgetPercent() * remaining / 100);
             budget = new EstimateView.BudgetView(interpretation.budgetPercent(), cap);
-            held = Math.min(p95, cap);
+            held = Math.min(p95 - plan, cap) + plan;
         }
         Integer shortfall = null;
         if (held > remaining) {

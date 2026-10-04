@@ -92,7 +92,7 @@ class StepRepository {
     }
 
     /**
-     * The next due step of one of {@code kinds}, locked {@code FOR UPDATE SKIP LOCKED}: READY, due, in a RUNNING session,
+     * The next due step of one of {@code kinds}, locked {@code FOR UPDATE SKIP LOCKED}: READY, due, in a RUNNING session (a PLAN step: a PLANNING one),
      * and of an owner below the soft cap of concurrently running steps.
      */
     Optional<Step> pickDue(Collection<String> kinds, int accountCap) {
@@ -109,7 +109,7 @@ class StepRepository {
                         + "AND (CAST(:required AS text) IS NULL OR s.input->>CAST(:required AS text) IS NOT NULL) "
                         + "AND (SELECT count(*) FROM app_learning.generation_step r WHERE r.owner_id=s.owner_id "
                         + "AND r.state='RUNNING')<:cap AND EXISTS (SELECT 1 FROM app_learning.generation_session g "
-                        + "WHERE g.session_id=s.session_id AND g.state IN ('RUNNING','REVIEW')) "
+                        + "WHERE g.session_id=s.session_id AND (g.state IN ('RUNNING','REVIEW') OR (s.kind='PLAN' AND g.state='PLANNING'))) "
                         + "ORDER BY s.priority DESC,s.next_attempt_at,s.created_at,s.step_id LIMIT 1 FOR UPDATE OF s SKIP LOCKED")
                 .param("kinds", kinds).param("cap", accountCap).param("required", requiredInput).query(STEP).optional();
     }

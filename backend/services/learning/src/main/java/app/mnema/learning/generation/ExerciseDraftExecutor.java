@@ -98,10 +98,17 @@ class ExerciseDraftExecutor {
         UUID member = UUID.fromString(claim.input().path("memberKey").stringValue(""));
         UUID revision = UUID.fromString(claim.input().path("itemRevisionId").stringValue(""));
         int count = claim.input().path("count").asInt(artifacts.size());
+        ExercisesSpec spec = ExercisesSpec.read(session.spec());
+        // the mechanics an approved plan chose for this material replace the spec's (they are a subset of it: the approval validated them)
+        if (claim.input().path("mechanics").isArray() && !claim.input().path("mechanics").isEmpty()) {
+            List<String> chosen = new ArrayList<>();
+            claim.input().path("mechanics").forEach(mechanic -> chosen.add(mechanic.stringValue("")));
+            spec = spec.withMechanics(chosen);
+        }
 
         Request request;
         try {
-            request = contexts.build(session, member, revision, count, ExercisesSpec.read(session.spec()));
+            request = contexts.build(session, member, revision, count, spec);
         } catch (SourceGoneException gone) {
             finish(claim, Failure.fail("SOURCE_UNAVAILABLE"));
             return;

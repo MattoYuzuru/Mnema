@@ -90,13 +90,15 @@ class ReviewService {
     private final ObjectProvider<StepDispatcher> dispatcher;
     private final TransactionTemplate transaction;
     private final GenerationSettings settings;
+    private final Plans plans;
 
     ReviewService(GenerationRepository repository, StepRepository steps, SessionLifecycle lifecycle, SessionViews views,
                   CommandReceiptService receipts, GeneratedItemPublisher publisher, GeneratedExercisePublisher exercisePublisher,
                   ExerciseRepin repins, GeneratedDraftOpener drafts,
                   SourceDrift drift, NoteArchival notes, UsageLedger ledger, AdmissionPricing pricing, GenerationGate gate,
-                  ObjectProvider<StepDispatcher> dispatcher, PlatformTransactionManager transactions, GenerationSettings settings) {
+                  ObjectProvider<StepDispatcher> dispatcher, PlatformTransactionManager transactions, GenerationSettings settings, Plans plans) {
         this.settings = settings;
+        this.plans = plans;
         this.repository = repository;
         this.steps = steps;
         this.lifecycle = lifecycle;
@@ -732,7 +734,9 @@ class ReviewService {
         }
         if (exercise) return requeueExercise(tx, artifact, !drifted.isEmpty(), drifted);
         MaterialsSpec spec = MaterialsSpec.read(session.spec());
-        MaterialsSpec.Effective effective = spec.forArtifact(artifact.sourceRefs());
+        // a material of an approved plan is written again at the effort the plan chose
+        MaterialsSpec.Effective effective = plans.plannedMaterial(session, artifact)
+                .map(item -> spec.forArtifact(artifact.sourceRefs()).withEffort(item.effort())).orElseGet(() -> spec.forArtifact(artifact.sourceRefs()));
         gate.requireFor(effective);
         requireRoomWhenReopened(tx, session);
         String operation = AdmissionPricing.materialOperation(effective.workingEffort());

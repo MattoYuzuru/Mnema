@@ -46,15 +46,22 @@ public record AiProperties(
 
     /** Ordered {@code provider:model} lists; the first usable entry wins, the next ones are fallbacks. */
     public record Routes(@DefaultValue List<String> textFast, @DefaultValue List<String> textStrong,
-                         @DefaultValue List<String> assess, @DefaultValue("PT8S") Duration assessAttemptCap) {
+                         @DefaultValue List<String> assess, @DefaultValue("PT8S") Duration assessAttemptCap,
+                         @DefaultValue List<String> plan, @DefaultValue List<String> planStrong) {
         @ConstructorBinding
         public Routes {
             textFast = textFast == null ? List.of() : List.copyOf(textFast);
             textStrong = textStrong == null ? List.of() : List.copyOf(textStrong);
             assess = assess == null ? List.of() : List.copyOf(assess);
+            plan = plan == null ? List.of() : List.copyOf(plan);
+            planStrong = planStrong == null ? List.of() : List.copyOf(planStrong);
             if (assessAttemptCap == null || assessAttemptCap.isNegative() || assessAttemptCap.isZero()) {
                 throw new IllegalArgumentException("Invalid assess attempt cap");
             }
+        }
+
+        public Routes(List<String> textFast, List<String> textStrong, List<String> assess, Duration assessAttemptCap) {
+            this(textFast, textStrong, assess, assessAttemptCap, List.of(), List.of());
         }
 
         public Routes(List<String> textFast, List<String> textStrong, List<String> assess) {
@@ -72,6 +79,8 @@ public record AiProperties(
                 case TEXT_FAST -> textFast;
                 case TEXT_STRONG -> textStrong;
                 case ASSESS -> assess;
+                case PLAN -> plan;
+                case PLAN_STRONG -> planStrong;
             };
         }
     }

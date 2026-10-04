@@ -72,7 +72,7 @@ Semantics (details and dedupe keys per kind in `notifications.json`):
   a time, `nextCursor` continues. `after` together with `cursor` is `400 INVALID_REQUEST`.
 - List envelope: `{items, unreadCount, readUpto, activeWork, nextCursor}`. `unreadCount` counts the whole center (items with `seq`
   greater than `readUpto`); the bell shows `99+` above 99. `activeWork` is the owner's generation sessions in `PLANNING` or
-  `RUNNING`.
+  `RUNNING` (the system is working): a `PLAN_READY` session waits on the owner, who is told with `GENERATION_PLAN_READY`, so it is not counted.
 - The read cursor is a **monotonic maximum**: a value not above the stored one changes nothing; a value greater than the latest
   `seq` is `400 INVALID_REQUEST` (it could mark future notifications read). No `If-Match`, because the operation is commutative
   and idempotent.

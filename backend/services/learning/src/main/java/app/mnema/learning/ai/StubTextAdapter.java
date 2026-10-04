@@ -25,7 +25,8 @@ import java.util.List;
  * {@code disagree}, {@code injection}, {@code invalid}, and {@code slow}, which waits 8 s for the harness) and the lexical heuristic that decides without one. An edit request (the prompt carries {@code <task kind="edit">}) is answered by {@link StubEdits}:
  * the target blocks with their handles, each plain paragraph with one sentence added. An intent request ({@code <task kind="intent">}) is
  * answered by {@link StubIntents} (a keyword mapping of the request) and an exercise revision ({@code <task kind="exercise-edit">}) by
- * {@link StubExerciseEdits} (the exercise with one sentence added). Usage is estimated; cost is zero.
+ * {@link StubExerciseEdits} (the exercise with one sentence added). A plan request ({@code <task kind="plan">}) is answered by {@link StubPlans}
+ * (one item per target or note; {@code [[stub:plan-invalid]]} breaks the first answer, {@code [[stub:plan-invalid-always]]} every one). Usage is estimated; cost is zero.
  */
 final class StubTextAdapter implements TextAdapter {
     static final String PROVIDER = "stub";
@@ -73,6 +74,8 @@ final class StubTextAdapter implements TextAdapter {
             text = StubAssessments.answer(prompt, request.attempt());
         } else if (request.output() == OutputContract.JSON && StubIntents.isIntentRequest(prompt)) {
             text = StubIntents.answer(prompt, repair);
+        } else if (request.output() == OutputContract.JSON && StubPlans.isPlanRequest(prompt)) {
+            text = StubPlans.answer(prompt, repair);
         } else if (request.output() == OutputContract.JSON && StubExerciseEdits.isExerciseEditRequest(prompt)) {
             text = StubExerciseEdits.answer(prompt, repair);
         } else if (request.output() == OutputContract.JSON && StubExercises.isExerciseRequest(prompt)) {

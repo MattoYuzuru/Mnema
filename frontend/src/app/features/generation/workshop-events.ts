@@ -92,6 +92,9 @@ export function applyEvents(model: WorkshopModel, events: readonly GenerationEve
                 break;
             case 'SESSION_STATE':
                 if (isNewer(event.rowVersion, session.rowVersion)) {
+                    // A plan-first session changes more than its state when it leaves PLANNING or PLAN_READY: the plan appears, is launched
+                    // or the session ends with the reason (`PLAN_FAILED`) that the event does not carry. Read the session again.
+                    if (event.state !== session.state && (session.state === 'PLANNING' || session.state === 'PLAN_READY')) reconcile = true;
                     session = { ...session, state: event.state, rowVersion: event.rowVersion, artifactCounts: event.artifactCounts };
                 }
                 break;
@@ -107,7 +110,11 @@ export function mergeSession(held: SessionDetail | null, fresh: SessionDetail): 
         const current = held.artifacts.find(candidate => candidate.artifactId === artifact.artifactId);
         return current !== undefined && isNewer(current.rowVersion, artifact.rowVersion) ? current : artifact;
     });
-    const base = isNewer(held.rowVersion, fresh.rowVersion) ? held : fresh;
+    const heldIsNewer = isNewer(held.rowVersion, fresh.rowVersion);
+    const base = heldIsNewer ? held : fresh;
+    // A read that raced the launch of a plan (#295) can predate the artifacts the launch made: what the newer session holds is never dropped by it.
+    const known = new Set(artifacts.map(artifact => artifact.artifactId));
+    const unseen = heldIsNewer ? held.artifacts.filter(artifact => !known.has(artifact.artifactId)) : [];
     // `notes` change without a version bump (archival does not touch the session): the fresh read is always the newer one.
-    return { ...base, notes: fresh.notes, artifacts: [...artifacts].sort((left, right) => left.ordinal - right.ordinal) };
+    return { ...base, notes: fresh.notes, artifacts: [...artifacts, ...unseen].sort((left, right) => left.ordinal - right.ordinal) };
 }

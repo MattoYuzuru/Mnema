@@ -29,20 +29,22 @@ import java.util.regex.Pattern;
  *   <li>MATERIALS: one artifact per NOTE source (one when notes are merged or there are none), priced by effort
  *       ({@code AUTO} is priced and run as medium until the planner and auto-effort exist); declared media are one audio clip and one image
  *       search per artifact; a fact check is one low-effort check per artifact and is not run for the short effort
- *       (architecture section 14: short does no research); {@code planFirst} is priced by the planner (AI-14).</li>
+ *       (architecture section 14: short does no research); {@code planFirst} adds one separate {@link RateCard#PLAN} line
+ *       (the plan is debited on its own when it is ready, {@code SMART_PLAN_FLASH}) and its count cap (AI-14).</li>
  *   <li>EXERCISES: {@code EXACT} is targets x perTarget; {@code AUTO} is five per target, fewer when targets x five
  *       would exceed the session limit; {@code BUDGET_PERCENT} is what that share of the remaining budget buys, at
  *       least one per target and within the limits. Anything the user states above a limit is refused, never clamped.</li>
  * </ul>
  * Ownership of the pinned sources and the capabilities a spec needs are the generation module's boundary
  * ({@link GenerationBoundary}): the same check answers the estimate and the creation of a session. {@code planFirst} is
- * {@code SPEC_NOT_SUPPORTED} until the planner is enabled (AI-14, {@code learning.generation.planner.enabled}).
+ * {@code SPEC_NOT_SUPPORTED} when the planner is disabled (AI-14, {@code learning.generation.planner.enabled}, on by default).
  */
 @Component
 final class StandardSpecInterpreter implements GenerationSpecInterpreter {
     private static final int MAX_PROMPT = 2_000;
     private static final int MAX_STYLE_EXAMPLES = 2;
     private static final int AUTO_PER_TARGET = 5;
+    private static final String PLAN = RateCard.PLAN;
     private static final Pattern LANGUAGE = Pattern.compile("[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,3}");
     private static final Pattern DECIMAL = Pattern.compile("0|[1-9][0-9]{0,17}");
     private static final Set<String> EFFORTS = Set.of("AUTO", "SHORT", "MEDIUM", "DETAILED");
@@ -65,7 +67,7 @@ final class StandardSpecInterpreter implements GenerationSpecInterpreter {
 
     @Autowired
     StandardSpecInterpreter(GenerationLimits limits, ObjectProvider<GenerationBoundary> boundary,
-                            @Value("${learning.generation.planner.enabled:false}") boolean plannerEnabled) {
+                            @Value("${learning.generation.planner.enabled:true}") boolean plannerEnabled) {
         this.limits = limits;
         this.boundary = boundary;
         this.plannerEnabled = plannerEnabled;
@@ -154,6 +156,7 @@ final class StandardSpecInterpreter implements GenerationSpecInterpreter {
         boolean imageSearch = false;
         boolean factCheck = false;
         Integer budget = null;
+        boolean planFirst = false;
         if (spec.has("settings")) {
             JsonNode settings = object(spec, "settings");
             keys(settings, Set.of(), Set.of("effort", "notesMode", "media", "factCheck", "similarToDeck", "planFirst",
@@ -174,8 +177,9 @@ final class StandardSpecInterpreter implements GenerationSpecInterpreter {
             }
             if (settings.has("factCheck")) factCheck = flag(settings, "factCheck");
             if (settings.has("similarToDeck")) flag(settings, "similarToDeck");
-            if (settings.has("planFirst") && flag(settings, "planFirst") && !plannerEnabled) {
-                throw new SpecNotSupportedException("MATERIALS");
+            if (settings.has("planFirst") && flag(settings, "planFirst")) {
+                if (!plannerEnabled) throw new SpecNotSupportedException("MATERIALS");
+                planFirst = true;
             }
             budget = budget(settings);
         }
@@ -209,6 +213,8 @@ final class StandardSpecInterpreter implements GenerationSpecInterpreter {
             research |= checks;
         }
         List<Line> lines = new ArrayList<>();
+        // the plan is its own line, first: it is debited when the plan is ready, before anything is generated
+        if (planFirst) lines.add(new Line(PLAN, 1));
         // the material line(s) first, then the media and research lines, as for a spec without overrides
         counts.forEach((operation, count) -> lines.add(new Line(operation, count)));
         extras.forEach((operation, count) -> { if (count > 0) lines.add(new Line(operation, count)); });
@@ -270,13 +276,15 @@ final class StandardSpecInterpreter implements GenerationSpecInterpreter {
         int perTarget = 0;
         int percent = 0;
         Integer budget = null;
+        boolean planFirst = false;
         if (spec.has("settings")) {
             JsonNode settings = object(spec, "settings");
             keys(settings, Set.of(), Set.of("mechanics", "priority", "quantity", "planFirst", "budgetPercent"));
             if (settings.has("mechanics")) mechanics(settings.get("mechanics"));
             if (settings.has("priority")) oneOf(settings, "priority", PRIORITIES);
-            if (settings.has("planFirst") && flag(settings, "planFirst") && !plannerEnabled) {
-                throw new SpecNotSupportedException("EXERCISES");
+            if (settings.has("planFirst") && flag(settings, "planFirst")) {
+                if (!plannerEnabled) throw new SpecNotSupportedException("EXERCISES");
+                planFirst = true;
             }
             budget = budget(settings);
             if (settings.has("quantity")) {
@@ -313,7 +321,10 @@ final class StandardSpecInterpreter implements GenerationSpecInterpreter {
         };
         if (total > limits.maxExercisesPerSession) throw limits.exceeded("EXERCISES_PER_SESSION");
         check(owner, deckId, new GenerationBoundary.SpecFacts("EXERCISES", List.of(), targetRefs, false, false, false), admission);
-        return new Interpretation(List.of(new Line(RateCard.EXERCISES, (int) total)), budget, List.of());
+        List<Line> lines = new ArrayList<>();
+        if (planFirst) lines.add(new Line(PLAN, 1));
+        lines.add(new Line(RateCard.EXERCISES, (int) total));
+        return new Interpretation(lines, budget, List.of());
     }
 
     // ------------------------------------------------------------------ REVISE_*

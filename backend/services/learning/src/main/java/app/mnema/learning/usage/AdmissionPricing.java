@@ -24,16 +24,26 @@ public final class AdmissionPricing {
      * the estimate, plus the admission-only check of stale pins.
      */
     public Hold hold(UUID owner, UUID deckId, JsonNode spec) {
-        EstimateService.Hold hold = estimates.hold(owner, deckId, spec);
-        return new Hold(hold.credits(), hold.block(), hold.exercises());
+        return hold(owner, deckId, spec, 0);
+    }
+
+    /**
+     * As {@link #hold(UUID, UUID, JsonNode)} counting the owner's {@code plansInFlight} plans that are still being made against the smart-plan cap
+     * (each consumes one when it is ready): a session that asks for a plan the cap cannot cover is refused at admission, not after it has thought.
+     */
+    public Hold hold(UUID owner, UUID deckId, JsonNode spec, int plansInFlight) {
+        EstimateService.Hold hold = estimates.hold(owner, deckId, spec, plansInFlight);
+        return new Hold(hold.credits(), hold.block(), hold.exercises(), hold.planCredits());
     }
 
     /**
      * @see #hold
+     * @param credits the hold of the batch: what the spec costs without a plan, capped by {@code budgetPercent}
      * @param exercises for an {@code EXERCISES} spec the resolved quantity (the spec's mode, the limits and, for
      *                  {@code BUDGET_PERCENT}, the budget decide it); zero for every other spec
+     * @param planCredits what a plan-first spec adds for its plan ({@code SMART_PLAN_FLASH}), held and debited apart from the batch; zero without one
      */
-    public record Hold(int credits, UsageLimitReachedException.Block block, int exercises) {
+    public record Hold(int credits, UsageLimitReachedException.Block block, int exercises, int planCredits) {
         /** Raises the refusal, if there is one; call it as the very last admission check before the reservation. */
         public void requireFits() {
             if (block != null) throw new UsageLimitReachedException(block);
@@ -47,6 +57,14 @@ public final class AdmissionPricing {
             case "DETAILED" -> "MATERIAL_DETAILED";
             default -> "MATERIAL_MEDIUM";
         };
+    }
+
+    /** The rate-card operation the plan of a plan-first spec is debited under. */
+    public static final String PLAN_OPERATION = RateCard.PLAN;
+
+    /** The bar of the owner's current period (the whole credit amount the usage percentages are a share of). */
+    public int barCredits(UUID owner) {
+        return estimates.barCredits(owner);
     }
 
     /** What one run of {@code operation} charges (the weight of the rate card in force). */

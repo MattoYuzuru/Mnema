@@ -200,7 +200,7 @@ describe('Generation wire contract (contracts/generation)', () => {
 
         it('offers an operation only where states.json allows it, for sessions and for artifacts', () => {
             const used = new Set(['approveArtifact', 'approveArtifacts', 'rejectArtifact', 'undoRejectArtifact', 'handoffArtifact', 'retryArtifact',
-                'editArtifact', 'revertArtifact', 'cancelSession', 'deleteSession']);
+                'editArtifact', 'revertArtifact', 'cancelSession', 'deleteSession', 'approvePlan']);
             const only = (operations: string[]) => operations.filter(operation => used.has(operation)).sort();
             for (const [state, operations] of Object.entries(statesContract['session'].allowedOperations as Record<string, string[]>)) {
                 expect([...OPERATION_TABLES.session[state as keyof typeof OPERATION_TABLES.session]].sort(), state).toEqual(only(operations));
@@ -222,7 +222,7 @@ describe('Generation wire contract (contracts/generation)', () => {
             // `archiveUsedNotes` (#290) joins http.json with the backend; until then it cannot be looked up there.
             const implemented = ['getCapabilities', 'estimateGeneration', 'createSession', 'listSessions', 'listActiveSessions', 'getSession',
                 'cancelSession', 'deleteSession', 'listEvents', 'getArtifact', 'approveArtifact', 'approveArtifacts', 'rejectArtifact',
-                'undoRejectArtifact', 'handoffArtifact', 'retryArtifact', 'archiveUsedNotes', 'editArtifact', 'revertArtifact', 'createIntent'];
+                'undoRejectArtifact', 'handoffArtifact', 'retryArtifact', 'archiveUsedNotes', 'editArtifact', 'revertArtifact', 'createIntent', 'approvePlan'];
             const ids = (httpContract['endpoints'] as { operationId: string }[]).map(endpoint => endpoint.operationId);
             for (const operation of implemented) expect(ids, operation).toContain(operation);
             expect(ids.filter(operation => !implemented.includes(operation)).sort()).toEqual([]);
@@ -349,5 +349,49 @@ describe('Exercise generation wire contract (contracts/generation, AI-13 #291)',
         const limit = (errorsContract['codes'].RESOURCE_LIMIT_EXCEEDED.example as Record<string, unknown>)['limits'];
         expect(limit).toEqual({ maxExerciseTargets: 20, maxExercisesPerTarget: 10, maxExercisesPerSession: 60 });
         expect(readProblem(problemResponseOf({ code: 'RESOURCE_LIMIT_EXCEEDED', limit: 'EXERCISES_PER_SESSION', limits: limit })).limits).toEqual(limit);
+    });
+
+    describe('the plan of a plan-first session (AI-14, #295, decision 17)', () => {
+        it('reads the session before and after the launch with its plan, and every other session with `plan: null`', () => {
+            for (const name of ['sessionDetail', 'sessionDetailCreated', 'sessionDetailCancelled']) expect(parseSessionDetail(examples[name]).plan, name).toBeNull();
+            const ready = parseSessionDetail(examples['sessionDetailPlanReady']);
+            expect(ready).toMatchObject({ state: 'PLAN_READY', artifacts: [], usage: { reservedCredits: 10, spentCredits: 20 } });
+            expect(ready.plan).toMatchObject({ kind: 'EXERCISES', approved: false });
+            const approved = parseSessionDetail(examples['sessionDetailPlanApproved']);
+            expect(approved).toMatchObject({ state: 'RUNNING', rowVersion: '4' });
+            expect(approved.plan).toMatchObject({ approved: true });
+            expect(approved.artifacts).toHaveLength(approved.plan!.totals.artifacts);
+        });
+
+        it('does not read a session without the plan member: the key is part of the contract', () => {
+            const body = clone(examples['sessionDetail']);
+            delete body['plan'];
+            expect(() => parseSessionDetail(body)).toThrow(AuthoringProtocolError);
+        });
+
+        it('asks for the plan the contract way: planFirst goes on the wire of both specs, and is false unless it was asked for', () => {
+            const materials = serializeMaterialsSpec(buildMaterialsSpec('Объясни', { ...DEFAULT_SETTINGS, planFirst: true }, [], { image: false, audio: false }));
+            expect((materials['settings'] as Record<string, unknown>)['planFirst']).toBe(true);
+            expect((serializeMaterialsSpec(buildMaterialsSpec('Объясни', DEFAULT_SETTINGS, [], { image: false, audio: false }))['settings'] as Record<string, unknown>)['planFirst']).toBe(false);
+            const target = { memberKey: ids.first, itemRevisionId: ids.revision, title: 'x', exerciseCount: null };
+            const planned = serializeExercisesSpec(buildExercisesSpec([target], { ...DEFAULT_BUILDER_VALUE, planFirst: true }));
+            expect((planned['settings'] as Record<string, unknown>)['planFirst']).toBe(true);
+            expect((serializeExercisesSpec(buildExercisesSpec([target], DEFAULT_BUILDER_VALUE))['settings'] as Record<string, unknown>)['planFirst']).toBe(false);
+        });
+
+        it('reads the plan line of the estimate apart from the batch, and nothing when there is none', () => {
+            const planned = { ...clone(usageContract['estimateResponse']), breakdown: [{ operation: 'SMART_PLAN_FLASH', count: 1, credits: 20 },
+                ...clone(usageContract['estimateResponse']).breakdown] };
+            expect(parseEstimate(planned).planCredits).toBe(20);
+            expect(parseEstimate(usageContract['estimateResponse']).planCredits).toBeNull();
+        });
+
+        it('names the new refusal buckets and limits the contract lists for the plan', () => {
+            const approve = (httpContract['endpoints'] as { operationId: string; errors: { status: number; code: string; limit?: string }[] }[]).find(endpoint => endpoint.operationId === 'approvePlan')!;
+            // Every refusal the plan editor words (see `describePlanProblem`) is one the contract lists, and nothing else is a surprise to it.
+            expect(approve.errors.map(error => error.code).sort()).toEqual(['CAPABILITY_UNAVAILABLE', 'GENERATION_STATE_CONFLICT', 'IDEMPOTENCY_CONFLICT', 'INVALID_REQUEST',
+                'RESOURCE_LIMIT_EXCEEDED', 'RESOURCE_NOT_FOUND', 'USAGE_LIMIT_REACHED', 'VERSION_CONFLICT']);
+            expect(approve.errors.find(error => error.status === 422)!.limit).toBe('EXERCISES_PER_TARGET | EXERCISES_PER_SESSION | ARTIFACTS_PER_SESSION');
+        });
     });
 });

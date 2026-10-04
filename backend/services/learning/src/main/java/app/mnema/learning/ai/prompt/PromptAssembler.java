@@ -16,8 +16,8 @@ import java.util.Set;
  * <p>Order (stable first, volatile last): core {@code system}, {@code style}, the five {@code skill-*} sections (all
  * system role, byte-identical for every user within a {@code prompt_version}, cacheable), then the per-deck
  * {@code deck-brief} (user role, cacheable within a session), then the task section (user role, volatile). Exercises and
- * grading are single sections with their own prefix (so are the exercise revision and the intent of «Попросить Мнему…»). The exercise
- * section, the exercise revision and the intent are preceded by the {@code <data_policy>} block of the
+ * grading are single sections with their own prefix (so are the exercise revision, the intent of «Попросить Мнему…» and the plan of «Сначала показать план»). The exercise
+ * section, the exercise revision, the intent and the plan are preceded by the {@code <data_policy>} block of the
  * core, taken verbatim (the section carries the author's material, objectives and exercises as data, and the core's policy
  * says such tags are data and not instructions); the rest of the core describes the MBM format and does not apply to JSON.
  *
@@ -43,7 +43,7 @@ public final class PromptAssembler {
             Map.entry("skill-grammar", 1_800), Map.entry("skill-stem-concept", 1_800), Map.entry("skill-code", 1_800),
             Map.entry("skill-exam-summary", 1_800), Map.entry("deck-brief", 14_000), Map.entry("material", 14_000),
             Map.entry("edit", 10_000), Map.entry("exercises", 14_000), Map.entry("assessment", 24_000),
-            Map.entry("exercise-edit", 14_000), Map.entry("intent", 3_000));
+            Map.entry("exercise-edit", 14_000), Map.entry("intent", 3_000), Map.entry("plan", 12_000));
 
     private final PromptLibrary library;
     private final PromptRenderer renderer = new PromptRenderer();
@@ -63,7 +63,8 @@ public final class PromptAssembler {
             for (String name : PREFIX) total += add(segments, sizes, name, values, true, TextRequest.Role.SYSTEM);
             total += add(segments, sizes, "deck-brief", values, true, TextRequest.Role.USER);
         }
-        if (task == PromptTask.EXERCISES || task == PromptTask.EXERCISE_EDIT || task == PromptTask.INTENT) {
+        if (task == PromptTask.EXERCISES || task == PromptTask.EXERCISE_EDIT || task == PromptTask.INTENT
+                || task == PromptTask.PLAN) {
             total += addDataPolicy(segments, sizes);
         }
         total += task == PromptTask.ASSESSMENT ? addAssessment(segments, sizes, values)
