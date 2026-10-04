@@ -407,6 +407,11 @@ class MediaProcessor:
             return "audio/mp4"
         if header.startswith(b"\x1a\x45\xdf\xa3") and b"webm" in header[:256] and "webm" in names and codec == "opus":
             return "audio/webm"
+        # RIFF/WAVE PCM signed 16-bit: what speech synthesis returns (Gemini TTS, #297). The Java caller accepts it only for assets it staged itself;
+        # the playback variant is the same AAC/M4A as for every other audio source.
+        if (header[:4] == b"RIFF" and header[8:12] == b"WAVE" and "wav" in names and codec == "pcm_s16le"
+                and stream.get("channels") in (1, 2)):
+            return "audio/wav"
         raise MediaRejected("unsupported_audio")
 
     @staticmethod

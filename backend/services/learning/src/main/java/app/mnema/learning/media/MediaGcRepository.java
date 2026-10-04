@@ -235,7 +235,9 @@ class MediaGcRepository {
                         + "ON s.session_id=r.session_id WHERE r.asset_id=a.asset_id AND s.expires_at>CURRENT_TIMESTAMP)) "
                         + "UNION ALL SELECT 1 FROM app_learning.media_manifest_blob_ref r "
                         + "JOIN app_learning.media_manifest m ON m.manifest_id=r.manifest_id "
-                        + "WHERE r.blob_id=:blob AND m.expires_at>CURRENT_TIMESTAMP LIMIT 1")
+                        + "WHERE r.blob_id=:blob AND m.expires_at>CURRENT_TIMESTAMP "
+                        // the speech cache (#297) keeps the blobs of a READY entry reachable until its sweep evicts the row
+                        + "UNION ALL SELECT 1 FROM app_learning.speech_cache c WHERE c.state='READY' AND c.blob_ids @> ARRAY[CAST(:blob AS uuid)] LIMIT 1")
                 .param("blob", blob).query(Integer.class).optional().isPresent();
     }
 

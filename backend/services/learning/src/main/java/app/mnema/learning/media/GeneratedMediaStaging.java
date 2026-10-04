@@ -20,8 +20,11 @@ final class GeneratedMediaStaging implements GeneratedMediaStager {
     private final MediaObjectStore objects;
     private final MediaUploadService uploads;
     private final MediaUploadSettings settings;
+    private final GeneratedMediaRepository generated;
 
-    GeneratedMediaStaging(MediaUploadRepository repository, MediaObjectStore objects, MediaUploadService uploads, MediaUploadSettings settings) {
+    GeneratedMediaStaging(MediaUploadRepository repository, MediaObjectStore objects, MediaUploadService uploads, MediaUploadSettings settings,
+                          GeneratedMediaRepository generated) {
+        this.generated = generated;
         this.repository = repository;
         this.objects = objects;
         this.uploads = uploads;
@@ -33,7 +36,7 @@ final class GeneratedMediaStaging implements GeneratedMediaStager {
         UuidPolicy.requireEntityId(owner, "owner");
         UuidPolicy.requireEntityId(assetId, "assetId");
         String column = kind.column();
-        settings.validate(column, mimeType, bytes.length);
+        settings.validateGenerated(column, mimeType, bytes.length);
         var session = repository.reserveGenerated(owner, assetId, column, mimeType, bytes.length, fingerprint(column, mimeType, bytes));
         if (session.state().equals("SEALED")) return;
         if (session.state().equals("OPEN")) objects.put(session.stagingKey(), bytes, mimeType);
@@ -48,6 +51,16 @@ final class GeneratedMediaStaging implements GeneratedMediaStager {
             case "FAILED_RETRYABLE", "DELETED" -> State.FAILED;
             default -> State.VERIFYING;
         }).orElse(State.MISSING);
+    }
+
+    @Override
+    public java.util.Optional<VerifiedMedia> verified(UUID owner, UUID assetId) { return generated.verified(owner, assetId); }
+
+    @Override
+    public boolean adopt(UUID owner, UUID assetId, VerifiedMedia media) {
+        UuidPolicy.requireEntityId(owner, "owner");
+        UuidPolicy.requireEntityId(assetId, "assetId");
+        return generated.adopt(owner, assetId, media);
     }
 
     /** A UUIDv4-shaped command id that is a function of the asset. */

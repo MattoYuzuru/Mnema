@@ -132,7 +132,7 @@ latency for an uninterrupted five-minute camera recording or for 4K HDR.
 | --- | --- | --- |
 | JPEG, PNG, WebP | WebP, longest edge at most 2048 | WebP thumbnail, 320 |
 | GIF (animated, max 600 frames / 60 s) | GIF, longest edge at most 2048 | Static first-frame WebP poster/thumbnail, 320 |
-| MP3, M4A/AAC, WebM/Opus | M4A/AAC, stereo, 48 kHz | — |
+| MP3, M4A/AAC, WebM/Opus, WAV PCM s16le (synthesised speech; the Java caller accepts it only for assets it staged itself, origin `generated`) | M4A/AAC, stereo, 48 kHz | — |
 | MP4 H.264/AAC, MOV HEVC Main/Main10, WebM VP8/VP9+Opus | MP4 H.264/AAC, SDR, 1080p, max 30 fps | WebP poster |
 
 Only file/pipe FFmpeg protocols are enabled. FFmpeg gets argv, never a shell.

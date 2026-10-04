@@ -32,6 +32,11 @@ def fixture(path, kind):
                "-map", "0:a:0", "-map", "1:v:0", "-frames:v", "1",
                "-c:a", "libmp3lame", "-c:v", "mjpeg", "-disposition:v:0", "attached_pic",
                "-id3v2_version", "3", "-f", "mp3", path)
+    elif kind == "wav":
+        ffmpeg("-f", "lavfi", "-i", "sine=frequency=440:duration=0.5:sample_rate=24000", "-ac", "1",
+               "-c:a", "pcm_s16le", "-f", "wav", path)
+    elif kind == "wav_float":
+        ffmpeg("-f", "lavfi", "-i", "sine=frequency=440:duration=0.5", "-c:a", "pcm_f32le", "-f", "wav", path)
     elif kind in ("mp3", "m4a", "audio_webm"):
         codec = {"mp3": "libmp3lame", "m4a": "aac", "audio_webm": "libopus"}[kind]
         fmt = {"mp3": "mp3", "m4a": "ipod", "audio_webm": "webm"}[kind]
@@ -83,6 +88,7 @@ class WorkerTests(unittest.TestCase):
             "webp": ("image", "webp"), "gif": ("image", "gif"),
             "mp3": ("audio", "mp3"), "m4a": ("audio", "m4a"),
             "mp3_cover": ("audio", "mp3"),
+            "wav": ("audio", "wav"),
             "audio_webm": ("audio", "webm"),
             "mp4": ("video", "mp4"), "mov_hevc": ("video", "mov"),
             "mov_timecode": ("video", "mov"),
@@ -120,6 +126,22 @@ class WorkerTests(unittest.TestCase):
                 self.source.unlink()
                 for child in self.output.iterdir():
                     child.unlink()
+
+    def test_wav_pcm_source_is_accepted_and_transcoded_to_the_playback_variant(self):
+        fixture(self.source, "wav")
+        result = MediaProcessor(self.runner).process(self.request("audio", 300_000), self.source, self.output)
+        self.assertEqual(result["source"]["mimeType"], "audio/wav")
+        self.assertEqual([variant["profile"] for variant in result["variants"]], ["audio_aac_m4a_v1"])
+        self.assertEqual(result["variants"][0]["mimeType"], "audio/mp4")
+
+    def test_wav_that_is_not_pcm_s16_and_garbage_with_a_wav_header_stay_rejected(self):
+        fixture(self.source, "wav_float")
+        with self.assertRaisesRegex(MediaRejected, "unsupported_audio"):
+            MediaProcessor(self.runner).process(self.request("audio", 300_000), self.source, self.output)
+        self.source.write_bytes(b"RIFF\x24\x00\x00\x00WAVE" + b"not audio at all" * 8)
+        with self.assertRaises(MediaRejected):
+            MediaProcessor(self.runner).process(self.request("audio", 300_000), self.source, self.output)
+        self.assertEqual(list(self.output.iterdir()), [])
 
     def test_hash_mismatch_rejects_without_output(self):
         fixture(self.source, "png")
