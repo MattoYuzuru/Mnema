@@ -19,6 +19,9 @@ ENV PORT=8081
 COPY --from=build /workspace/services/identity-account/build/libs/*.jar app.jar
 
 FROM backend-runtime AS learning-runtime
+# Basic proxy credentials over HTTP CONNECT (the AI egress proxy, learning.ai.egress.*) are ignored by the JDK client unless this
+# property is cleared; it is read once at JVM start (java.net.http module docs, "System properties"). Only Learning calls providers.
+ENTRYPOINT ["java","-Djdk.http.auth.tunneling.disabledSchemes=","-jar","/app/app.jar"]
 COPY --from=build /workspace/services/learning/build/libs/*.jar app.jar
 
 FROM docker:29.5.2-cli@sha256:9ba8e32bfc35a2c7ae2feb1e3241b2778ae21dee80f4dcd31d04e1cfdea86ea2 AS docker-cli
