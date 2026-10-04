@@ -394,6 +394,31 @@ module.main()
             result = subprocess.run([node, "--check", str(Path(__file__).with_name("exercises.mjs"))], capture_output=True)
             self.assertEqual(0, result.returncode)
 
+    def test_planner_scenario_is_wired_stub_only_and_syntactically_valid(self):
+        runner = Path(__file__).with_name("run.py").read_text()
+        workshop = Path(__file__).with_name("workshop.mjs").read_text()
+        source = Path(__file__).with_name("planner.mjs").read_text()
+        self.assertIn("import { runWorkshopPlanner } from './planner.mjs'", workshop)
+        self.assertIn("runWorkshopPlanner(ctx", workshop)
+        self.assertIn('"planner.mjs"', runner)
+        self.assertIn("export async function runWorkshopPlanner", source)
+        # The whole path is the real UI on the real API: no stubbed network, no injected link, no key of any provider.
+        self.assertNotIn("Fetch.fulfillRequest", source)
+        self.assertNotIn("route.fulfill", source)
+        self.assertNotIn("DEEPSEEK", source)
+        for step in ("fixture", "builder_option", "plan_ready", "edit_plan", "launch", "plan_failed", "materials_plan"):
+            self.assertIn(f"step('{step}'", source)
+        # The plan is the user's to edit and launch, and the Stub's invalid-plan marker is the one the contract names.
+        self.assertIn("[[stub:plan-invalid-always]]", source)
+        self.assertIn("Запустить по плану", source)
+        # Evidence at both widths for the builder, the plan, the edited plan, the launched Workshop, the failed plan and the composer.
+        for name in ("builder", "ready", "edited", "launched", "failed", "composer", "materials-ready"):
+            self.assertIn(f"shots('{name}'", source)
+        node = shutil.which("node")
+        if node is not None:
+            result = subprocess.run([node, "--check", str(Path(__file__).with_name("planner.mjs"))], capture_output=True)
+            self.assertEqual(0, result.returncode)
+
     def test_selection_edit_scenario_is_wired_stub_only_and_syntactically_valid(self):
         runner = Path(__file__).with_name("run.py").read_text()
         workshop = Path(__file__).with_name("workshop.mjs").read_text()
@@ -451,6 +476,15 @@ module.main()
                 contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as exit_code:
             HARNESS.main()
         self.assertEqual(2, exit_code.exception.code)
+
+    def test_only_plan_is_a_development_aid_that_needs_generation_and_excludes_the_other_aids(self):
+        for extra in ([], ["--generation", "--only-ask"], ["--generation", "--only-edits"]):
+            with patch.object(sys, "argv", ["run.py", "--dist", str(self.dist), "--authoring", "--only-plan", *extra]), \
+                    contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as exit_code:
+                HARNESS.main()
+            self.assertEqual(2, exit_code.exception.code)
+        runner = Path(__file__).with_name("run.py").read_text()
+        self.assertIn('"onlyPlan": self.args.only_plan', runner)
 
     def test_only_ask_and_only_edits_exclude_each_other(self):
         with patch.object(sys, "argv", ["run.py", "--dist", str(self.dist), "--authoring", "--generation", "--only-ask", "--only-edits"]), \
