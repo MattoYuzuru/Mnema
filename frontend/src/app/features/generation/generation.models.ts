@@ -42,7 +42,9 @@ const SLOT_ERROR_CODES = ['PROVIDER_UNAVAILABLE', 'NO_RESULT', 'VERIFICATION_REJ
 export type SlotErrorCode = (typeof SLOT_ERROR_CODES)[number];
 /** `states.json` `turn.imageSearchErrorCodes`: how a turn of an image search fails (`NO_RESULT` is not an artifact error code). */
 export const IMAGE_SEARCH_ERROR_CODES = ['NO_RESULT', 'PROVIDER_UNAVAILABLE', 'DEADLINE_EXCEEDED'] as const;
-export type TurnErrorCode = ArtifactErrorCode | (typeof IMAGE_SEARCH_ERROR_CODES)[number];
+/** `states.json` `turn.audioErrorCodes`: how a turn of a speech redo fails (`VERIFICATION_REJECTED` is not an artifact error code). */
+export const AUDIO_ERROR_CODES = ['PROVIDER_UNAVAILABLE', 'VERIFICATION_REJECTED', 'DEADLINE_EXCEEDED'] as const;
+export type TurnErrorCode = ArtifactErrorCode | (typeof IMAGE_SEARCH_ERROR_CODES)[number] | (typeof AUDIO_ERROR_CODES)[number];
 
 const REPIN_STATUSES = ['AUTO_REPINNED', 'NEEDS_USER_DECISION'] as const;
 export type RepinStatus = (typeof REPIN_STATUSES)[number];
@@ -238,8 +240,10 @@ export interface MediaSlot {
     readonly errorCode: SlotErrorCode | null;
     /** `search` or `generate` for an IMAGE slot, `null` for audio and video (and while the server does not send it). */
     readonly mode: ImageMode | null;
-    /** The voice of the last redo of the audio of an exercise (AI-16); `null` before one ran, and always `null` for a material. */
+    /** The voice of an AUDIO slot (the directive's, or the last redo's; AI-09): `female` or `male`, `null` for image and video and on older data. */
     readonly voice: SpeechVoice | null;
+    /** The BCP 47 tag of the spoken text of an AUDIO slot (AI-09); `null` otherwise and on older data. */
+    readonly lang: string | null;
     /** The chosen candidate's attribution (AI-10): `null` for every slot but a found image. */
     readonly attribution: ImageAttribution | null;
     /** The images the searches of this slot found, in the order they were found (at most 12); `[]` for every slot but a search. */
@@ -805,7 +809,7 @@ function parseCandidate(value: unknown): ImageCandidate {
 function slotKeys(value: unknown): readonly string[] {
     const base = ['slotKey', 'kind', 'nodeId', 'assetId', 'state', 'errorCode'];
     if (value === null || typeof value !== 'object' || Array.isArray(value)) return base;
-    return [...base, ...['voice', 'attribution', 'candidates', 'mode'].filter(key => key in value)];
+    return [...base, ...['voice', 'lang', 'attribution', 'candidates', 'mode'].filter(key => key in value)];
 }
 
 function parseMediaSlot(value: unknown): MediaSlot {
@@ -814,6 +818,7 @@ function parseMediaSlot(value: unknown): MediaSlot {
     if (candidates.filter(candidate => candidate.chosen).length > 1) throw new AuthoringProtocolError('More than one image is chosen.');
     return {
         voice: parseVoice(object['voice']),
+        lang: object['lang'] === undefined ? null : nullable(object['lang'], tag => text(tag, 35)),
         mode: object['mode'] === undefined ? null : nullable(object['mode'], mode => oneOf(mode, IMAGE_MODES, 'image mode')),
         slotKey: text(object['slotKey'], 64), kind: oneOf(object['kind'], SLOT_KINDS, 'slot kind'),
         nodeId: requireEntity(object['nodeId']), assetId: requireEntity(object['assetId']),
@@ -976,7 +981,9 @@ function parseBlocks(value: unknown): readonly NativeNode[] | null {
 
 /** An error code this client does not know is a generic failure (`null`), not a protocol error. */
 function lenientTurnErrorCode(code: unknown): TurnErrorCode | null {
-    return lenientErrorCode(code) ?? (typeof code === 'string' && (IMAGE_SEARCH_ERROR_CODES as readonly string[]).includes(code) ? code as TurnErrorCode : null);
+    if (typeof code !== 'string') return null;
+    return lenientErrorCode(code) ?? ((IMAGE_SEARCH_ERROR_CODES as readonly string[]).includes(code) || (AUDIO_ERROR_CODES as readonly string[]).includes(code)
+        ? code as TurnErrorCode : null);
 }
 
 function lenientErrorCode(code: unknown): ArtifactErrorCode | null {
@@ -1335,7 +1342,8 @@ export function serializeEdit(request: EditRequest, commandId: string): Record<s
     const action = oneOf(request.action, EDIT_ACTIONS, 'edit action');
     const preset = request.preset ?? null;
     if (request.exercise === true) return serializeExerciseEdit(request, action, commandId);
-    if (request.voice !== undefined && request.voice !== null) throw new RequestValidationError('A voice belongs to the audio of an exercise.');
+    const voice = request.voice ?? null;
+    if (voice !== null && action !== 'AUDIO_REGENERATE') throw new RequestValidationError('A voice belongs to the redo of audio.');
     const nodeIds = request.nodeIds.map(requireEntity);
     if (nodeIds.length === 0 || nodeIds.length > MAX_EDIT_TARGETS || new Set(nodeIds).size !== nodeIds.length) {
         throw new RequestValidationError('An edit targets 1 to 50 distinct blocks.');
@@ -1344,6 +1352,7 @@ export function serializeEdit(request: EditRequest, commandId: string): Record<s
         throw new RequestValidationError('A preset belongs to a rewrite.');
     }
     if (action === 'IMAGE_SEARCH') return serializeImageSearch(request, nodeIds, commandId);
+    if (action === 'AUDIO_REGENERATE') return serializeAudioRedo(request, nodeIds, commandId);
     const instruction = action === 'REMOVE_MEDIA' ? null : request.instruction?.trim() ?? null;
     if (instruction !== null && (instruction.length === 0 || codePoints(instruction) > MAX_INSTRUCTION_LENGTH)) {
         throw new RequestValidationError('The instruction is empty or too long.');
@@ -1353,6 +1362,16 @@ export function serializeEdit(request: EditRequest, commandId: string): Record<s
         commandId: requireCommand(commandId), expectedRevisionId: requireEntity(request.expectedRevisionId), action,
         target: { nodeIds }, ...(preset === null ? {} : { preset }), ...(instruction === null ? {} : { instruction })
     };
+}
+
+/** The redo of one audio of a material: one node, and a voice only when it is another one (absent keeps the slot's voice). */
+function serializeAudioRedo(request: EditRequest, nodeIds: readonly string[], commandId: string): Record<string, unknown> {
+    if (nodeIds.length !== 1 || (request.preset ?? null) !== null || (request.instruction ?? null) !== null) {
+        throw new RequestValidationError('A redo of audio names exactly one audio.');
+    }
+    const voice = request.voice === undefined || request.voice === null ? null : oneOf(request.voice, SPEECH_VOICES, 'voice');
+    return { commandId: requireCommand(commandId), expectedRevisionId: requireEntity(request.expectedRevisionId), action: 'AUDIO_REGENERATE',
+        target: { nodeIds }, ...(voice === null ? {} : { voice }) };
 }
 
 /** An image search names one image and may carry a query (1 to 200 code points); a blank one is left out, the slot's own query is used. */

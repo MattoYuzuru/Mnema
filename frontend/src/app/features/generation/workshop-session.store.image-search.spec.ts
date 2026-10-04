@@ -71,6 +71,19 @@ describe('WorkshopSessionStore: image search (AI-10)', () => {
             expect((await store.edit(ids.first, { action: 'REMOVE_MEDIA', nodeIds: [image], anchorBefore: null, anchorAfter: null })).ok).toBe(true);
         });
 
+        it('sends AUDIO_REGENERATE of a material with the voice only when there is one, and refuses it in a cancelled session', async () => {
+            setup();
+            await tick();
+            const queued = { ...clone(examples['turnQueued']), action: 'AUDIO_REGENERATE', preset: null, targetNodeIds: [image], voice: 'male' };
+            api.editArtifact.mockReturnValue(of(parseEditAccepted({ turn: queued, artifact: artifactWith(ids.first, 0, 'REVISING', { rowVersion: '5', currentRevisionId: ids.revision }) }, false)));
+            await store.edit(ids.first, { action: 'AUDIO_REGENERATE', nodeIds: [image], anchorBefore: null, anchorAfter: null, voice: 'male' });
+            expect(api.editArtifact.mock.calls[0]![3]).toEqual({ expectedRevisionId: ids.revision, action: 'AUDIO_REGENERATE', nodeIds: [image], preset: null, instruction: null, voice: 'male' });
+            setup('CANCELLED');
+            await tick();
+            expect(await store.edit(ids.first, { action: 'AUDIO_REGENERATE', nodeIds: [image], anchorBefore: null, anchorAfter: null })).toMatchObject({ ok: false });
+            expect(api.editArtifact).not.toHaveBeenCalled();
+        });
+
         it('says a refused search in the words of an image search', async () => {
             setup();
             await tick();

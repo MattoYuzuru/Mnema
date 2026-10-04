@@ -464,11 +464,11 @@ export function editOutcomeNote(status: ArtifactTurn['status'], action: EditActi
     switch (status) {
         case 'APPLIED':
             if (action === 'REMOVE_MEDIA') return 'Медиа убрано.';
-            if (action === 'AUDIO_REGENERATE') return 'Голос записан.';
+            if (action === 'AUDIO_REGENERATE') return 'Озвучено заново.';
             if (action === 'IMAGE_SEARCH') return 'Подобрала другое изображение.';
             return exercise ? 'Мнема переписала упражнение.' : 'Мнема переписала фрагмент.';
         case 'FAILED': return action === 'IMAGE_SEARCH' ? 'Не нашлось подходящих изображений: картинка не изменилась.'
-            : action === 'AUDIO_REGENERATE' ? 'Не удалось сменить голос.'
+            : action === 'AUDIO_REGENERATE' ? 'Не удалось озвучить: запись не изменилась.'
             : exercise ? 'Не удалось переписать упражнение: оно не изменилось.' : 'Не удалось переписать фрагмент: текст не изменился.';
         case 'CANCELLED': return action === 'IMAGE_SEARCH' ? 'Поиск остановлен: картинка не изменилась.' : exercise ? 'Правка остановлена: упражнение не изменилось.' : 'Правка остановлена: текст не изменился.';
         default: return '';
@@ -506,8 +506,10 @@ export function voiceChipText(voice: SpeechVoice): string {
     return `Голос: ${voiceName(voice)}`;
 }
 
-/** What the result of a voice change says when the audio is the one the exercise had: only the Stub speech executor runs until real synthesis (AI-09). */
-export const STUB_VOICE_NOTE = 'Озвучка обновится, когда подключим синтез речи.';
+/** The chip of a finished voice redo in the result of a revision: the exercise has new audio. */
+export function voiceRedoneText(voice: SpeechVoice): string {
+    return `Озвучено заново: ${voiceName(voice)}`;
+}
 
 /** The wait of a `429` in words: «5 секунд», «2 минуты». */
 export function waitText(seconds: number | null): string {
@@ -634,4 +636,33 @@ export function selectionProblemMessage(problem: GenerationProblem): string {
         if (problem.status === 422 && problem.limit === 'REVISIONS_PER_ARTIFACT') return 'Для этого материала исчерпан предел версий. Одобрите его или правьте сами.';
     }
     return problemMessage(problem);
+}
+
+
+// --- Speech (AI-09, #297) ---
+
+/** «женский голос» / «мужской голос»: the voice in a sentence. */
+export function voiceLabel(voice: SpeechVoice): string {
+    return `${voiceName(voice)} голос`;
+}
+
+/** The status while a clip is synthesised; the clip that was there stays playable. */
+export const AUDIO_RUNNING = 'Озвучиваю…';
+/** Under the voice choice: a new take in the same voice costs, another voice is free when the text was voiced before. */
+export const AUDIO_REDO_HINT = 'Тем же голосом — новая запись (до 10 кредитов). Другим голосом — бесплатно, если такой текст уже озвучивали.';
+
+/** The caption under a synthesised clip in the Workshop (never on content the learner or a reader sees). */
+export function synthesizedCaption(voice: SpeechVoice | null): string {
+    return voice === null ? 'Синтезированная речь' : `Синтезированная речь · ${voiceLabel(voice)}`;
+}
+
+/** Why an audio slot is empty, in the placeholder frame. */
+export function audioFailureReason(code: SlotErrorCode | null): string {
+    switch (code) {
+        case 'PROVIDER_UNAVAILABLE': return 'Озвучка сейчас недоступна.';
+        case 'VERIFICATION_REJECTED': return 'Запись не прошла проверку.';
+        case 'DEADLINE_EXCEEDED': return 'Озвучка заняла слишком долго.';
+        case 'USAGE_LIMIT': return 'Не хватает лимита на озвучку.';
+        default: return 'Не удалось озвучить.';
+    }
 }

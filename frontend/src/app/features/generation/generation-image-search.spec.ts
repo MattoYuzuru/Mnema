@@ -101,8 +101,9 @@ describe('image search on the wire (contracts/generation, AI-10 #296)', () => {
             expect(parseTurn({ ...failed, errorCode: 'PROVIDER_UNAVAILABLE' }).errorCode).toBe('PROVIDER_UNAVAILABLE');
             expect(parseTurn({ ...failed, errorCode: 'DEADLINE_EXCEEDED' }).errorCode).toBe('DEADLINE_EXCEEDED');
             expect(parseTurn({ ...failed, errorCode: 'SOMETHING_NEW' }).errorCode).toBeNull();
-            // A slot-only code is not a turn code.
-            expect(parseTurn({ ...failed, errorCode: 'VERIFICATION_REJECTED' }).errorCode).toBeNull();
+            // The redo of audio adds the rejection of the pipeline (states.json turn.audioErrorCodes).
+            expect(parseTurn({ ...failed, errorCode: 'VERIFICATION_REJECTED' }).errorCode).toBe('VERIFICATION_REJECTED');
+            expect(parseTurn({ ...failed, errorCode: 'ESTIMATE_EXCEEDED' }).errorCode).toBe('ESTIMATE_EXCEEDED');
         });
 
         it('knows exactly the image search error codes of states.json', () => {

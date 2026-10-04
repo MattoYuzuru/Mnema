@@ -49,6 +49,10 @@
     }
   } @else {
     @if (mediaKind(id) === 'image' && attributionOf(id); as credit) { <p class="image-credit">{{ credit }}</p> }
+    @if (mediaKind(id) === 'audio') {
+      @if (captionOf(id); as caption) { <p class="audio-caption">{{ caption }}</p> }
+      @if (audioMaking(id)) { <p class="audio-status" role="status">Озвучиваю…</p> }
+    }
     @if (mediaIds().has(id) ? mediaKind(id) : null; as kind) {
       @if (kind === 'image' && failedSlot(id); as failed) {
         <div class="slot-failed" role="group" aria-label="Изображение не подобрано">
@@ -62,6 +66,21 @@
               <span class="media-unavailable">
                 <button type="button" class="strip-button" aria-disabled="true">Повторить</button>
                 <app-toggletip topic="Повторить">{{ searchReason() }}</app-toggletip>
+              </span>
+            }
+            <button type="button" class="strip-button" [attr.aria-disabled]="busy() ? 'true' : null" (click)="removeBlock(id)">Убрать блок</button>
+          </div>
+        </div>
+      } @else if (kind === 'audio' && failedAudio(id); as failedClip) {
+        <div class="slot-failed" role="group" aria-label="Озвучка не получилась">
+          <p class="slot-failed-text">{{ audioFailureOf(failedClip) }}</p>
+          <div class="media-actions">
+            @if (voiceAllowed()) {
+              <button type="button" class="strip-button" [attr.data-focus-key]="'retry:' + id" [attr.aria-disabled]="busy() ? 'true' : null" (click)="retryVoice(id)">Повторить</button>
+            } @else {
+              <span class="media-unavailable">
+                <button type="button" class="strip-button" aria-disabled="true">Повторить</button>
+                <app-toggletip topic="Повторить">{{ voiceReason() }}</app-toggletip>
               </span>
             }
             <button type="button" class="strip-button" [attr.aria-disabled]="busy() ? 'true' : null" (click)="removeBlock(id)">Убрать блок</button>
@@ -90,12 +109,13 @@
               </span>
             }
           } @else {
-            @if (capabilityOf('speech').available) {
-              <button type="button" class="strip-button" [attr.aria-disabled]="busy() ? 'true' : null" (click)="mediaAction(id, 'AUDIO_REGENERATE')">Озвучить заново</button>
+            @if (voiceAllowed()) {
+              <button type="button" class="strip-button" [attr.data-focus-key]="'voice:' + id" [attr.aria-disabled]="busy() ? 'true' : null"
+                [attr.aria-expanded]="panel()?.nodeId === id" (click)="toggleVoice(id)">Озвучить заново</button>
             } @else {
               <span class="media-unavailable">
                 <button type="button" class="strip-button" aria-disabled="true">Озвучить заново</button>
-                <app-toggletip topic="Озвучить заново">{{ reasonOf('speech') }}</app-toggletip>
+                <app-toggletip topic="Озвучить заново">{{ voiceReason() }}</app-toggletip>
               </span>
             }
           }
@@ -105,8 +125,13 @@
     }
     @if (panel(); as open) {
       @if (open.nodeId === id) {
-        <app-image-search-panel [query]="open.query" [placeholder]="searchLabel(id)" [pending]="panelSending() || open.sent || searchingNode() === id"
-          [error]="panelError()" (submitted)="submitSearch(id, $event)" (cancelled)="cancelSearch()" />
+        @if (open.kind === 'voice') {
+          <app-audio-redo-panel [voice]="open.voice ?? 'female'" [pending]="panelSending() || open.sent || searchingNode() === id"
+            [error]="panelError()" (submitted)="submitVoice(id, $event)" (cancelled)="cancelSearch()" />
+        } @else {
+          <app-image-search-panel [query]="open.query" [placeholder]="searchLabel(id)" [pending]="panelSending() || open.sent || searchingNode() === id"
+            [error]="panelError()" (submitted)="submitSearch(id, $event)" (cancelled)="cancelSearch()" />
+        }
       }
     }
     @if (variantsShown(id); as found) {
@@ -117,17 +142,18 @@
       </details>
     }
     @if (busyLast() === id && panel()?.nodeId !== id) {
-      @if (searchTurnRunning()) { <p class="rewriting-caption" role="status">{{ searchRunning }}</p> }
+      @if (runningText(); as running) { <p class="rewriting-caption" role="status">{{ running }}</p> }
       @else { <p class="rewriting-caption">Мнема переписывает…</p> }
     }
     @if (reviewLast() === id) {
       @if (review(); as strip) {
         <div class="rewrite-strip" role="group" [class.is-failed]="strip.kind === 'failed'"
           [attr.aria-label]="strip.turn.action === 'IMAGE_SEARCH' ? (strip.kind === 'applied' ? 'Подобранное изображение' : 'Поиск не удался')
+            : strip.turn.action === 'AUDIO_REGENERATE' ? (strip.kind === 'applied' ? 'Новая озвучка' : 'Озвучка не удалась')
             : strip.kind === 'applied' ? 'Переписанный фрагмент' : 'Правка не удалась'">
           @if (strip.kind === 'applied') {
-            <span class="strip-state">{{ strip.turn.action === 'IMAGE_SEARCH' ? 'Подобрано другое изображение' : 'Переписано' }}</span>
-            @if (strip.turn.action !== 'IMAGE_SEARCH') {
+            <span class="strip-state">{{ strip.turn.action === 'IMAGE_SEARCH' ? 'Подобрано другое изображение' : strip.turn.action === 'AUDIO_REGENERATE' ? 'Озвучено заново' : 'Переписано' }}</span>
+            @if (strip.turn.action !== 'IMAGE_SEARCH' && strip.turn.action !== 'AUDIO_REGENERATE') {
               <button type="button" class="strip-button" [attr.aria-expanded]="showDiff()" [attr.aria-controls]="diffId" (click)="toggleDiff()">{{ showDiff() ? 'Скрыть изменения' : 'Показать изменения' }}</button>
             }
             <button type="button" class="strip-button" (click)="keep(strip)">Оставить</button>

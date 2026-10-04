@@ -96,6 +96,8 @@
 
 /* Image search (AI-10): the attribution under a found image, the frame of a failed search and the variants it found. */
 .image-credit { margin: .25rem 0 0; color: var(--mn-muted); font: .8rem/1.4 var(--mn-font-body, system-ui, sans-serif); overflow-wrap: anywhere; }
+.audio-caption, .audio-status { margin: .25rem 0 0; color: var(--mn-muted); font: .8rem/1.4 var(--mn-font-body, system-ui, sans-serif); }
+.audio-status { color: var(--mn-ink); font-weight: 600; }
 .slot-failed { margin-block: .5rem; border: 1px dashed var(--mn-ink); border-inline-start: 4px solid var(--mn-danger); padding: .25rem .75rem; background: var(--mn-soft); }
 .slot-failed-text { margin: .35rem 0 0; color: var(--mn-body); font: 600 .95rem/1.4 var(--mn-font-body, system-ui, sans-serif); }
 .slot-failed .media-actions { margin-block: .25rem; padding-block: 0; }
