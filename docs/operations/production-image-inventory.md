@@ -1,6 +1,7 @@
 # Production image inventory
 
-Status: **current**. Last registry verification: **2026-10-02**.
+Status: **current**. Build/legacy support registry verification: **2026-10-02**;
+new VPS dependency registry verification: **2026-10-04**.
 
 Every external image used to build Mnema or applied by the hosted production workflow has a readable version tag and an immutable OCI index digest. The tag explains the intended version during review; the digest is the runtime identity. Kubernetes accepts `tag@digest` and resolves by digest, so a later tag move cannot change the deployed bytes.
 
@@ -13,6 +14,9 @@ Every external image used to build Mnema or applied by the hosted production wor
 - the `identity-account` and `learning` release templates consumed by `scripts/render-release-manifest.sh`;
 - the exact literal `kubectl apply` surface in the production workflow;
 - Dependabot Docker coverage for `/backend`, `/frontend`, `/k8s`, and `/k8s/observability`.
+- the new VPS `deploy/production/compose.yaml`: three administrator-admitted
+  application bindings and a fixed PostgreSQL image, identical to the isolated
+  restore image; Dependabot also covers `/deploy/production`.
 
 Since #143, Main CI ships only Identity & Account and Learning in maintenance; production promotion is disabled until #147. The production support image inventory below describes retained deployed infrastructure, not an enabled replacement production rollout.
 
@@ -31,6 +35,16 @@ The pinned digest is a multi-platform OCI index. The final column proves that it
 
 ## Verified production support images
 
+The new empty-DB VPS uses the following official image. Registry Content-Digest
+was checked against the index body SHA256; both amd64 and arm64 platform entries
+were present. Runtime acceptance and vulnerability evidence remain separate gates.
+
+| Component | Path | Readable tag | Pinned index digest | `linux/amd64` child |
+| --- | --- | --- | --- | --- |
+| VPS PostgreSQL | `deploy/production/compose.yaml` | `postgres:18.6` | `sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722` | `sha256:0377e72c5289ed2f98cf61b1a9c2db9eb9d300317fe14244492fbc94343b3d04` |
+
+The following support images belong to the retained, disabled Kubernetes flow.
+
 | Component | Path | Readable tag | Pinned index digest | `linux/amd64` child |
 | --- | --- | --- | --- | --- |
 | PostgreSQL | `k8s/postgres.yaml` | `postgres:16.15-alpine3.24` | `sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685` | `sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571` |
@@ -47,7 +61,9 @@ The pinned digest is a multi-platform OCI index. The final column proves that it
 
 - `k8s/ai/` and local audio/image/AI gateways are not applied by the hosted production workflow.
 - `k8s/staging/` and `k8s/backup/` have independent deployment contracts and remain covered by their own tests and Dependabot directories.
-- Mnema application digests are release outputs, not base-image inventory entries. Staging creates and validates the complete release artifact before production can preview it.
+- Mnema application digests are release outputs, not base-image inventory entries.
+  The new [VPS publication](vps-image-publication.md) verifies current main images;
+  administrator admission and protected manual deployment remain separate.
 
 Adding any new literal production apply path fails CI until its image-bearing sources are added to this policy. A mutable image in an excluded path does not weaken the production contract.
 

@@ -10,6 +10,7 @@ from verify_artifact_security_policy import _job_blocks
 ROOT = Path(__file__).resolve().parents[2]
 FALSE = '    if: ${{ false }}'
 PUBLISH = "    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish_production_candidate == true }}"
+VPS = "    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}"
 DORMANT = {
     'staging-deploy.yaml': {'validate-main-ci': FALSE, 'deploy-staging': FALSE},
     'production-deploy.yaml': {
@@ -30,7 +31,7 @@ ACTIVE = {
 def verify(contents):
     """Use the repository's canonical indentation, also checked by artifact policy."""
     errors = []
-    if set(contents) != set(DORMANT) | set(ACTIVE):
+    if set(contents) != set(DORMANT) | set(ACTIVE) | {'vps-deploy.yaml'}:
         errors.append('workflow inventory changed; review no-infrastructure boundary')
     for filename, content in contents.items():
         jobs = _job_blocks(content)
@@ -38,6 +39,17 @@ def verify(contents):
         if len(re.findall(r'^  [a-zA-Z0-9_-]+:$', job_text, re.M)) != len(jobs):
             errors.append(f'{filename}: duplicate job')
         expected = dict(DORMANT.get(filename, {}))
+        if filename == 'vps-deploy.yaml':
+            expected = {'deploy-vps': VPS}
+            header = content.partition('on:\n')[2].partition('\npermissions:')[0]
+            if re.findall(r'^  ([a-z_]+):', header, re.M) != ['workflow_dispatch']:
+                errors.append('VPS deployment must have only a manual trigger')
+            required = ('    environment:\n      name: prod\n',
+                        '      group: mnema-vps-production\n      cancel-in-progress: false',
+                        '        run: bash scripts/deploy-vps.sh',
+                        '        type: string\n        required: true')
+            if any(value not in content for value in required):
+                errors.append('VPS deployment requires protected prod, serial rollout and fixed entrypoint')
         if filename == 'deploy.yaml':
             expected.update({'build-and-push': PUBLISH, 'render-release': FALSE,
                              'assemble-vps-candidate': PUBLISH})
@@ -95,7 +107,8 @@ class LocalDeliveryContractTest(unittest.TestCase):
 
     def test_each_operational_guard_is_required(self):
         cases = {**DORMANT, 'deploy.yaml': {'build-and-push': PUBLISH, 'render-release': FALSE,
-                                         'assemble-vps-candidate': PUBLISH}}
+                                         'assemble-vps-candidate': PUBLISH},
+                 'vps-deploy.yaml': {'deploy-vps': VPS}}
         for file, jobs in cases.items():
             for job, guard in jobs.items():
                 with self.subTest(file=file, job=job):
@@ -165,6 +178,16 @@ class LocalDeliveryContractTest(unittest.TestCase):
             with self.subTest(after=after):
                 changed = dict(self.contents)
                 changed['deploy.yaml'] = changed['deploy.yaml'].replace(before, after)
+                self.assertTrue(verify(changed))
+
+    def test_vps_cannot_run_automatically_skip_prod_or_replace_entrypoint(self):
+        for before, after in [('  workflow_dispatch:', '  push:'),
+                              ('      name: prod', '      name: unprotected'),
+                              ('      cancel-in-progress: false', '      cancel-in-progress: true'),
+                              ('bash scripts/deploy-vps.sh', 'ssh arbitrary-host')]:
+            with self.subTest(after=after):
+                changed = dict(self.contents)
+                changed['vps-deploy.yaml'] = changed['vps-deploy.yaml'].replace(before, after)
                 self.assertTrue(verify(changed))
 
 

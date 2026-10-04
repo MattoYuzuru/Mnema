@@ -14,7 +14,7 @@ import uuid
 
 DIRECTORY = Path('/var/backups/mnema')
 SOURCE = 'mnema-prod-postgres-1'
-IMAGE = 'postgres:18@sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941'
+IMAGE = 'postgres:18.6@sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722'
 ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'HOME': '/root', 'DOCKER_CONFIG': '/root/.docker'}
 
 

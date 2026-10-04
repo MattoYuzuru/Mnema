@@ -21,7 +21,7 @@ EXPECTED_PRODUCTION_APPLY_TARGETS = (
     "k8s/observability/",
     '"$RELEASE_MANIFEST"',
 )
-REQUIRED_DOCKER_DIRECTORIES = {"/backend", "/frontend", "/k8s", "/k8s/observability"}
+REQUIRED_DOCKER_DIRECTORIES = {"/backend", "/frontend", "/k8s", "/k8s/observability", "/deploy/production"}
 PINNED_IMAGE = re.compile(
     r"^(?P<repository>[^\s@:]+(?:/[^\s@:]+)*):(?P<tag>[^\s@]+)"
     r"@sha256:(?P<digest>[0-9a-f]{64})$"
@@ -161,6 +161,30 @@ def validate_release_templates(repository_root: Path) -> list[Finding]:
     return findings
 
 
+def validate_vps_images(repository_root: Path) -> list[Finding]:
+    path = repository_root / 'deploy/production/compose.yaml'
+    content, findings = _read(path)
+    if content is None:
+        return findings
+    images = _images(content)
+    findings.extend(_validate_image_mapping_shape(path, content, images))
+    placeholders = {f'${{MNEMA_{service}_IMAGE:?verified-candidate-required}}'
+                    for service in ('FRONTEND', 'IDENTITY_ACCOUNT', 'LEARNING')}
+    if len(images) != 4 or any(images.count(value) != 1 for value in placeholders):
+        findings.append(Finding(path, 'VPS requires exactly three admitted application bindings and one database image'))
+    fixed = [value for value in images if value not in placeholders]
+    for image in fixed:
+        findings.extend(_validate_pinned_image(path, image, 'VPS dependency image'))
+        if not image.startswith('postgres:'):
+            findings.append(Finding(path, 'VPS dependency must be PostgreSQL'))
+    backup_path = repository_root / 'deploy/production/local-backup.py'
+    backup, read_findings = _read(backup_path)
+    findings.extend(read_findings)
+    if backup is not None and (len(fixed) != 1 or f"IMAGE = '{fixed[0]}'" not in backup):
+        findings.append(Finding(backup_path, 'restore rehearsal must use the exact VPS database image'))
+    return findings
+
+
 def validate_production_workflow(path: Path) -> list[Finding]:
     content, findings = _read(path)
     if content is None:
@@ -226,7 +250,8 @@ def validate_inventory_document(repository_root: Path, path: Path) -> list[Findi
                 if FROM_INSTRUCTION.match(line) and (match := FROM_LINE.fullmatch(line))
             )
 
-    manifest_paths = [repository_root / "k8s/postgres.yaml", repository_root / "k8s/redis.yaml"]
+    manifest_paths = [repository_root / "k8s/postgres.yaml", repository_root / "k8s/redis.yaml",
+                      repository_root / 'deploy/production/compose.yaml']
     manifest_paths.extend(sorted((repository_root / "k8s/observability").glob("*.y*ml")))
     manifest_paths.extend(
         repository_root / "k8s" / f"{service}-deploy.yaml" for service in RELEASE_SERVICES
@@ -258,6 +283,7 @@ def validate_repository(repository_root: Path) -> list[Finding]:
         *validate_dockerfile(repository_root / "backend/Dockerfile"),
         *validate_dockerfile(repository_root / "frontend/Dockerfile"),
         *validate_static_manifests(repository_root),
+        *validate_vps_images(repository_root),
         *validate_release_templates(repository_root),
         *validate_production_workflow(
             repository_root / ".github/workflows/production-deploy.yaml"

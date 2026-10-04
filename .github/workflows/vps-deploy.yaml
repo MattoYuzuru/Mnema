@@ -1,0 +1,40 @@
+name: VPS production deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Current main SHA already admitted by the production administrator
+        type: string
+        required: true
+
+permissions: {}
+
+jobs:
+  deploy-vps:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: mnema-vps-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    environment:
+      name: prod
+      url: https://mnema.app
+    steps:
+      - name: Checkout protected deployment revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Deploy only the current admitted main release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MNEMA_RELEASE_SHA: ${{ inputs.release_sha }}
+          MNEMA_DEPLOY_HOST: ${{ vars.PROD_DEPLOY_HOST }}
+          MNEMA_DEPLOY_USER: ${{ vars.PROD_DEPLOY_USER }}
+          MNEMA_DEPLOY_SSH_KEY: ${{ secrets.PROD_DEPLOY_SSH_KEY }}
+          MNEMA_DEPLOY_KNOWN_HOSTS: ${{ secrets.PROD_DEPLOY_KNOWN_HOSTS }}
+        run: bash scripts/deploy-vps.sh

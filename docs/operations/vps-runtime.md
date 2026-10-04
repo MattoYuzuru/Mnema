@@ -87,6 +87,11 @@ Do not substitute fixture keys, Stub providers or a production bypass.
    the owner-approved empty-data/offsite boundary. Only then stage admitted.json
    and invoke CI-key `preflight <sha>` / `deploy <sha>`. The publication candidate
    never supplies these flags automatically.
+   Dispatch `vps-deploy.yaml` on main with that exact `release_sha`; retain existing
+   `prod` Environment protection. This workflow invokes only status, preflight
+   and deploy with the fixed-target CI key; the dispatcher also permits reviewed
+   rollback. The workflow rejects historical reruns, non-main refs and stale main
+   after approval, uploads no configuration and retries no failed operation.
 6. On successful local readiness, validate and reload full Caddyfile, preserving
    maintenance rollback. Verify public TLS/frontend/SPA/config/build ID,
    blocked register/login, protected API, internal path rejection, no public

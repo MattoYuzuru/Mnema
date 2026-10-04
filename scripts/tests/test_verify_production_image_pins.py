@@ -21,6 +21,8 @@ class VerifyProductionImagePinsTest(unittest.TestCase):
         for relative in (
             Path("backend/Dockerfile"),
             Path("frontend/Dockerfile"),
+            Path("deploy/production/compose.yaml"),
+            Path("deploy/production/local-backup.py"),
             Path("k8s/postgres.yaml"),
             Path("k8s/redis.yaml"),
             Path("k8s/identity-account-deploy.yaml"),
@@ -118,6 +120,20 @@ class VerifyProductionImagePinsTest(unittest.TestCase):
             "postgres:16.15-alpine3.24",
         )
         self.assertTrue(any("production image" in finding.message for finding in self.findings()))
+
+    def test_vps_mutable_database_and_undeclared_application_binding_are_rejected(self):
+        path = self.repository / 'deploy/production/compose.yaml'
+        content = path.read_text()
+        content = content.replace('postgres:18.6@sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722', 'postgres:18.6')
+        content = content.replace('${MNEMA_FRONTEND_IMAGE:?verified-candidate-required}', 'example/frontend:latest')
+        path.write_text(content)
+        messages = [finding.message for finding in self.findings()]
+        self.assertTrue(any('VPS dependency image' in message for message in messages))
+        self.assertTrue(any('application bindings' in message for message in messages))
+
+    def test_vps_restore_image_cannot_drift_from_live_database(self):
+        self.replace('deploy/production/local-backup.py', "IMAGE = 'postgres:", "IMAGE = 'other:")
+        self.assertTrue(any('restore rehearsal' in finding.message for finding in self.findings()))
 
     def test_new_mutable_observability_image_is_rejected(self):
         path = self.repository / "k8s/observability/99-new-component.yaml"
