@@ -967,7 +967,7 @@
           "action": "REWRITE | IMAGE_SEARCH | IMAGE_GENERATE | AUDIO_REGENERATE | FREE | REMOVE_MEDIA; an exercise of a REVISE_EXERCISE session accepts FREE and AUDIO_REGENERATE only",
           "preset": "optional SIMPLER | SHORTER | EXAMPLE | LONGER; valid only with REWRITE (else INVALID_REQUEST); null is the same as absent",
           "instruction": "text or speech transcript, 1..2000 code points, not blank; required for FREE, optional otherwise (ignored and stored as null for REMOVE_MEDIA); null is the same as absent",
-          "voice": "optional female | male (AI-16): required for and only for AUDIO_REGENERATE on an exercise (the redo of its audio), else INVALID_REQUEST; never on a material; null is the same as absent"
+          "voice": "optional female | male: required for AUDIO_REGENERATE on an exercise (AI-16); optional for AUDIO_REGENERATE on a material audio node (AI-09: absent keeps the slot's voice); any other action with a voice is INVALID_REQUEST; null is the same as absent"
         },
         "example": {
           "commandId": "018f1d98-5c10-7abc-8abc-0123456789b6",
@@ -1036,7 +1036,7 @@
         {
           "status": 409,
           "code": "CAPABILITY_UNAVAILABLE",
-          "when": "A capability the operation needs is off: aiGeneration for REWRITE and FREE; imageSearch for IMAGE_SEARCH (AI-10, #296: runnable when the flag is on and an image source is configured, or with the Stub); imageGeneration and textToSpeech for IMAGE_GENERATE and AUDIO_REGENERATE of a material, which stay refused (reason PROVIDER_NOT_CONFIGURED when the gate itself passes) until their executors exist (AI-09). AUDIO_REGENERATE of an exercise (with a voice) needs aiGeneration for the session and the Stub speech executor (local runs and CI) or, later, a real speech adapter: textToSpeech / PROVIDER_NOT_CONFIGURED without them."
+          "when": "A capability the operation needs is off: aiGeneration for REWRITE and FREE; imageSearch for IMAGE_SEARCH (AI-10); textToSpeech for AUDIO_REGENERATE of a material or an exercise (AI-09, #297: runnable when the flag is on and a speech adapter is configured, or with the Stub); imageGeneration for IMAGE_GENERATE, which stays refused (reason PROVIDER_NOT_CONFIGURED when the gate itself passes) until image generation exists."
         },
         {
           "status": 412,
@@ -1064,17 +1064,19 @@
       "notes": [
         "A block is the unit: a selection inside a paragraph widens to its block. nodeIds must be CONSECUTIVE top-level blocks of the current revision, in any request order, and include every block the selection touches, media blocks inside the run too (a skipped media block is a gap); anything else is INVALID_REQUEST with reason TARGET_NOT_CONTIGUOUS.",
         "Evaluation order: 404, receipt replay, 400 body, 412 expectedRevisionId, 400 target (it can only be judged against the current revision), 409 state (session, artifact, EDIT_IN_PROGRESS, EXERCISE), 409 capability, 422 limits, 409 usage last. Nothing changes state before the usage step passes.",
-        "REWRITE and FREE (as EDIT_SELECTION, 4 credits on rc-v1) create their own turn-scoped reservation (scope TURN) at admission; insufficient means 409 USAGE_LIMIT_REACHED before any state change. The hold is debited when the turn is APPLIED and released unspent when it FAILS or is CANCELLED. «Ещё раз» is a new edit with a new commandId and takes its own hold. IMAGE_GENERATE and AUDIO_REGENERATE of a material (priced as in usage.json) are refused with 409 CAPABILITY_UNAVAILABLE until AI-09 (decision 15). IMAGE_SEARCH (AI-10) takes a TURN reservation of IMAGE_SEARCH (1 credit on rc-v1), debited when the turn is APPLIED and released when it FAILS.",
+        "REWRITE and FREE (as EDIT_SELECTION, 4 credits on rc-v1) create their own turn-scoped reservation (scope TURN) at admission; insufficient means 409 USAGE_LIMIT_REACHED before any state change. The hold is debited when the turn is APPLIED and released unspent when it FAILS or is CANCELLED. «Ещё раз» is a new edit with a new commandId and takes its own hold. IMAGE_GENERATE (priced as in usage.json) is refused with 409 CAPABILITY_UNAVAILABLE (decision 15). AUDIO_REGENERATE (AI-09) takes a TURN reservation of TTS_CLIP_30S, debited only when the synthesis missed the speech cache and released unspent on a cache hit or a failure. IMAGE_SEARCH (AI-10) takes a TURN reservation of IMAGE_SEARCH (1 credit on rc-v1), debited when the turn is APPLIED and released when it FAILS.",
         "A rewrite is 202 with the turn QUEUED and the artifact REVISING; the worker runs one EDIT step (PT2M, at most three model calls: the answer, one repair, one on the strong route). The result is a new revision (cause EDIT), the turn APPLIED with resultRevisionId and the artifact PROPOSED on it; on failure the turn is FAILED with an errorCode, the artifact PROPOSED on the unchanged revision and nothing is debited. The client follows ARTIFACT_STATE and re-reads getArtifact (turns[], revisions[]).",
         "REMOVE_MEDIA (extension to the architecture list) is free and deterministic: no model call, no reservation. It answers 202 like every edit, with the turn already APPLIED (example turnRemoveMedia), cause MEDIA, creates a revision without the media nodes (their slots become REMOVED and the hold on their assets ends) and does not count toward the 50 turns. It is the only action accepted in a CANCELLED session.",
         "A rewrite never shows media to the model and never drops it: each media block of the target run stays in the document (same node, same slot, now attached to the new revision) right after the rewritten block that carries the node ID of the nearest text block before it in the run, in its original order; a media block that opened the run stays first, and one whose anchor did not survive the rewrite (gone or changed type) goes to the end of the range.",
         "Every block outside the target is the same JSON in the new revision (same node IDs); a rewritten block whose type is unchanged keeps its node ID (MBM handle rule), its descendants and new blocks get new IDs.",
         "The blocks to rewrite may weigh at most 2050 estimated tokens (the output bound of 4500 holds them again and a longer rewrite): a bigger target is 422 RESOURCE_LIMIT_EXCEEDED with limit EDIT_TARGET_SIZE and limits.maxEditTargetTokens; the client splits the selection.",
         "The edit is interactive: its step is offered to workers before drafts, is never parked by the daily burst, and fails its turn with DEADLINE_EXCEEDED (hold released) when no worker claimed it within learning.generation.edit.queue-timeout (PT2M).",
-        "EXERCISE artifacts (AI-16, decision 16): the exercise of a REVISE_EXERCISE session accepts FREE (instruction required, no target: the exercise is rewritten whole through the exercise pipeline, one EDIT turn, EDIT_SELECTION) and AUDIO_REGENERATE (voice required: one TTS turn, TTS_CLIP_30S held, executed by the Stub speech executor, released unspent). The turn's targetNodeIds is []. The proposals of an EXERCISES session still refuse every edit with 409 GENERATION_STATE_CONFLICT / ILLEGAL_STATE (decision 15).",
+        "EXERCISE artifacts (AI-16, decision 16): the exercise of a REVISE_EXERCISE session accepts FREE (instruction required, no target: the exercise is rewritten whole through the exercise pipeline, one EDIT turn, EDIT_SELECTION) and AUDIO_REGENERATE (voice required: one TTS turn, TTS_CLIP_30S held; AI-09 synthesises every audio block of the exercise in the new voice as new assets in a new exercise revision, cause MEDIA, debited per cache miss). The turn's targetNodeIds is []. The proposals of an EXERCISES session still refuse every edit with 409 GENERATION_STATE_CONFLICT / ILLEGAL_STATE (decision 15).",
         "Every turn carries `voice` (female | male | null, set for an AUDIO_REGENERATE turn of an exercise).",
         "IMAGE_SEARCH (AI-10, #296): target is exactly one IMAGE node of mode search (any slot state, FAILED included: it is also «Повторить»); instruction, optional, 1..200 code points, replaces the search query (else the slot's query). 202 with the turn QUEUED and the artifact REVISING; the worker runs one IMAGE_SEARCH step (PT3M): it searches the configured sources (Pixabay, Openverse, Wikimedia Commons; the Stub in local runs and CI), keeps only commercially usable licenses, drops results already among the slot's candidates, downloads up to 4 new ones through the safe fetcher and stages each as an untrusted upload (origin generated) through the media pipeline. When at least one becomes READY the turn is APPLIED with a new revision (cause MEDIA) whose image node uses the first READY new candidate (attribution on the slot), the artifact PROPOSED on it and the other new candidates listed in mediaSlots[].candidates (selectMediaCandidate switches among them, revert is «Вернуть»). Nothing usable: the turn FAILED with errorCode NO_RESULT, every source failing: PROVIDER_UNAVAILABLE; the revision and the slot are unchanged and nothing is debited (example turnImageSearchApplied).",
-        "The initial IMAGE_SEARCH child step of a TEXT_DRAFT slot (mode search) runs the same search but stages only the best result, under the slot's pre-allocated assetId (no new revision): the slot goes PENDING → GENERATING → VERIFYING → READY with that one candidate (chosen), or FAILED (NO_RESULT, PROVIDER_UNAVAILABLE, VERIFICATION_REJECTED, DEADLINE_EXCEEDED). It is priced in the session's hold (IMAGE_SEARCH extra of the spec). A FAILED slot offers «Повторить» (IMAGE_SEARCH edit without instruction), «Заменить» (IMAGE_SEARCH edit with the user's query) and «Убрать блок» (REMOVE_MEDIA)."
+        "The initial IMAGE_SEARCH child step of a TEXT_DRAFT slot (mode search) runs the same search but stages only the best result, under the slot's pre-allocated assetId (no new revision): the slot goes PENDING → GENERATING → VERIFYING → READY with that one candidate (chosen), or FAILED (NO_RESULT, PROVIDER_UNAVAILABLE, VERIFICATION_REJECTED, DEADLINE_EXCEEDED). It is priced in the session's hold (IMAGE_SEARCH extra of the spec). A FAILED slot offers «Повторить» (IMAGE_SEARCH edit without instruction), «Заменить» (IMAGE_SEARCH edit with the user's query) and «Убрать блок» (REMOVE_MEDIA).",
+        "AUDIO_REGENERATE on a material (AI-09, #297): target exactly one AUDIO node; optional voice (absent: the slot's voice). 202 with the turn QUEUED and the artifact REVISING; one TTS step (PT2M) synthesises the node's transcript in the slot's lang through the speech cache: the same (normalized text, lang, voice, provider, model, model version, format, take) is a cache hit with no provider call and no debit. A redo in the SAME voice is a new take (the cache key's take grows), so it is a real synthesis and debited; a redo in another voice may hit the cache. The bytes (or the cached verified blob) become a new asset of the owner (origin generated) through the media pipeline; the turn is APPLIED with a new revision (cause MEDIA) whose audio node uses the new asset, the slot's voice and asset follow it. Failure: the turn FAILED (PROVIDER_UNAVAILABLE, VERIFICATION_REJECTED via the slot, DEADLINE_EXCEEDED), the revision and the slot are unchanged, nothing debited.",
+        "The initial TTS child step of a TEXT_DRAFT audio slot (AI-09) synthesises through the same cache under the slot's pre-allocated assetId (no new revision): PENDING → GENERATING → VERIFYING → READY, or FAILED (PROVIDER_UNAVAILABLE, VERIFICATION_REJECTED, DEADLINE_EXCEEDED, USAGE_LIMIT). It is priced in the session hold (TTS_CLIP_30S per clip) and debited only on a cache miss. A FAILED audio slot offers «Повторить» (AUDIO_REGENERATE without voice) and «Убрать блок» (REMOVE_MEDIA)."
       ]
     },
     {
@@ -1366,14 +1368,14 @@
       "resultRevisionId": "null until APPLIED: the revision the turn made",
       "errorCode": "null, or when FAILED: an artifact error code (INVALID_OUTPUT, REFUSAL, SOURCE_UNAVAILABLE, PROVIDER_UNAVAILABLE, ESTIMATE_EXCEEDED, DEADLINE_EXCEEDED); an IMAGE_SEARCH turn fails with NO_RESULT, PROVIDER_UNAVAILABLE or DEADLINE_EXCEEDED (states.json turn.imageSearchErrorCodes)",
       "createdAt": "RFC 3339 UTC",
-      "voice": "null, or female | male for an AUDIO_REGENERATE turn of an exercise (always present)"
+      "voice": "null, or female | male for an AUDIO_REGENERATE turn (the requested voice; for a material without a voice in the request: the slot's voice at admission)"
     },
     "mediaSlotExercise": {
       "description": "mediaSlots of a REVISE_EXERCISE artifact (an exercise has no nodes): one slot per AUDIO block of the exercise.",
       "slotKey": "audio1, audio2, ... in order of the blocks",
       "kind": "AUDIO",
       "nodeId": "an id of the slot itself (there is no node in the exercise)",
-      "assetId": "the asset the audio block uses; with the Stub speech executor it never changes (the redo records the voice only), so a client that sees the same assetId as before says «Озвучка обновится, когда подключим синтез речи»",
+      "assetId": "the asset the audio block uses; a redo (AUDIO_REGENERATE with a voice) synthesises a new asset (AI-09, #297) and the exercise revision of the turn uses it",
       "state": "READY (a redo ends READY; a slot is never PENDING for an exercise)",
       "voice": "female | male | null: the voice of the last redo, null before one ran"
     },
@@ -1396,6 +1398,8 @@
       "slotKey": "the MBM slot key (stable across revisions)",
       "kind": "AUDIO | IMAGE | VIDEO",
       "mode": "IMAGE: search | generate (the directive's mode); null for AUDIO and VIDEO. Only a search slot offers «Найти похожее», candidates and selectMediaCandidate",
+      "voice": "AUDIO: female | male (the slot's voice: the directive's, or the last redo's); null for IMAGE and VIDEO",
+      "lang": "AUDIO: the BCP 47 tag of the spoken text; null otherwise",
       "nodeId": "the media node of the shown revision",
       "assetId": "the asset the node uses now (for an image search slot: the chosen candidate's asset once one is chosen)",
       "state": "PENDING | GENERATING | VERIFYING | READY | FAILED | REMOVED (states.json mediaSlot)",
@@ -1967,6 +1971,8 @@
           "slotKey": "a1",
           "kind": "AUDIO",
           "mode": null,
+          "voice": "female",
+          "lang": "ja",
           "nodeId": "00000000-0000-4000-8000-000000000006",
           "assetId": "00000000-0000-4000-a000-000000000001",
           "state": "READY",
@@ -2792,6 +2798,8 @@
       "slotKey": "i1",
       "kind": "IMAGE",
       "mode": "search",
+      "voice": null,
+      "lang": null,
       "nodeId": "00000000-0000-4000-8000-000000000009",
       "assetId": "00000000-0000-4000-a000-000000000011",
       "state": "READY",
@@ -2866,6 +2874,20 @@
       "errorCode": null,
       "createdAt": "2026-10-04T09:00:42Z",
       "voice": null
+    },
+    "turnAudioRegenerateApplied": {
+      "turnId": "7a7a0000-0000-4000-8000-000000000004",
+      "status": "APPLIED",
+      "action": "AUDIO_REGENERATE",
+      "preset": null,
+      "targetNodeIds": [
+        "00000000-0000-4000-8000-000000000006"
+      ],
+      "instruction": null,
+      "resultRevisionId": "4e700000-0000-4000-8000-000000000004",
+      "errorCode": null,
+      "createdAt": "2026-10-04T10:00:42Z",
+      "voice": "male"
     }
   }
 }

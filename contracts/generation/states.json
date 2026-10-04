@@ -877,6 +877,11 @@
       "NO_RESULT": "No new commercially usable image was found (or none passed verification).",
       "PROVIDER_UNAVAILABLE": "Every configured image source failed.",
       "DEADLINE_EXCEEDED": "The step deadline (PT3M) passed."
+    },
+    "audioErrorCodes": {
+      "PROVIDER_UNAVAILABLE": "Every speech route failed.",
+      "VERIFICATION_REJECTED": "The media pipeline rejected the synthesised bytes.",
+      "DEADLINE_EXCEEDED": "The step deadline (PT2M) passed."
     }
   },
   "mediaSlot": {
