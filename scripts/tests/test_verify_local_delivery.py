@@ -1,4 +1,4 @@
-"""Fail closed if the reviewed no-infrastructure workflow boundary changes."""
+"""Keep dormant operations locked and publication behind the reviewed main-only opt-in."""
 import re
 import sys
 import unittest
@@ -9,6 +9,7 @@ from verify_artifact_security_policy import _job_blocks
 
 ROOT = Path(__file__).resolve().parents[2]
 FALSE = '    if: ${{ false }}'
+PUBLISH = "    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish_production_candidate == true }}"
 DORMANT = {
     'staging-deploy.yaml': {'validate-main-ci': FALSE, 'deploy-staging': FALSE},
     'production-deploy.yaml': {
@@ -38,7 +39,24 @@ def verify(contents):
             errors.append(f'{filename}: duplicate job')
         expected = dict(DORMANT.get(filename, {}))
         if filename == 'deploy.yaml':
-            expected.update({'build-and-push': FALSE, 'render-release': FALSE})
+            expected.update({'build-and-push': PUBLISH, 'render-release': FALSE,
+                             'assemble-vps-candidate': PUBLISH})
+            required_input = ('  workflow_dispatch:\n    inputs:\n      publish_production_candidate:\n'
+                              '        description: Build and verify the three immutable VPS images; no deployment\n'
+                              '        type: boolean\n        required: true\n        default: false')
+            if required_input not in content:
+                errors.append('publication requires an explicit boolean input defaulting to false')
+            build = '\n'.join(jobs.get('build-and-push', []))
+            candidate = '\n'.join(jobs.get('assemble-vps-candidate', []))
+            if '    needs:\n      - backend-quality\n      - frontend-quality' not in build:
+                errors.append('publication must depend on both quality gates')
+            if '    needs: build-and-push' not in candidate:
+                errors.append('candidate must depend on all image/security gates')
+            if ':latest' in build or 'TAG=sha-${GITHUB_SHA::7}' in build:
+                errors.append('publication requires full SHA tags without latest')
+            for block in (build, candidate):
+                if re.search(r'^    (environment|uses):', block, re.M):
+                    errors.append('publication cannot deploy or enter an environment')
         if set(jobs) != set(expected) | ACTIVE.get(filename, set()):
             errors.append(f'{filename}: unexpected or missing jobs')
         if filename in DORMANT:
@@ -56,7 +74,7 @@ def verify(contents):
             guards = [line for line in block if line.startswith('    if:')]
             if name in expected:
                 if guards != [expected[name]]:
-                    errors.append(f'{filename}/{name}: missing literal false job guard')
+                    errors.append(f'{filename}/{name}: missing reviewed job guard')
             elif name in ACTIVE.get(filename, set()):
                 if guards:
                     errors.append(f'{filename}/{name}: quality job must stay enabled')
@@ -72,11 +90,12 @@ class LocalDeliveryContractTest(unittest.TestCase):
         self.contents = {p.name: p.read_text() for p in (ROOT / '.github/workflows').iterdir()
                          if p.suffix in {'.yml', '.yaml'}}
 
-    def test_checked_in_workflows_keep_quality_and_disable_every_operational_job(self):
+    def test_checked_in_workflows_keep_quality_and_dormant_operations_locked(self):
         self.assertEqual([], verify(self.contents))
 
     def test_each_operational_guard_is_required(self):
-        cases = {**DORMANT, 'deploy.yaml': {'build-and-push': FALSE, 'render-release': FALSE}}
+        cases = {**DORMANT, 'deploy.yaml': {'build-and-push': PUBLISH, 'render-release': FALSE,
+                                         'assemble-vps-candidate': PUBLISH}}
         for file, jobs in cases.items():
             for job, guard in jobs.items():
                 with self.subTest(file=file, job=job):
@@ -135,6 +154,18 @@ class LocalDeliveryContractTest(unittest.TestCase):
                     changed[file] = changed[file].replace(
                         '  workflow_call:', f'  workflow_call:\n{config}', 1)
                     self.assertTrue(verify(changed))
+
+    def test_publication_cannot_default_on_skip_quality_or_enter_prod(self):
+        cases = [('        default: false', '        default: true'),
+                 ('      - backend-quality\n      - frontend-quality', '      - backend-quality'),
+                 ('    needs: build-and-push', '    needs: validate-main-ref'),
+                 ('TAG=sha-${GITHUB_SHA}', 'TAG=sha-${GITHUB_SHA::7}'),
+                 ('  assemble-vps-candidate:\n', '  assemble-vps-candidate:\n    environment: prod\n')]
+        for before, after in cases:
+            with self.subTest(after=after):
+                changed = dict(self.contents)
+                changed['deploy.yaml'] = changed['deploy.yaml'].replace(before, after)
+                self.assertTrue(verify(changed))
 
 
 if __name__ == '__main__':
