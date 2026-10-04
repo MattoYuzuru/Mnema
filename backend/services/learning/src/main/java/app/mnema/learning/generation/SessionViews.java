@@ -138,10 +138,13 @@ class SessionViews {
             for (Slot slot : repository.slotsOf(artifact.artifactId())) {
                 if (!present.contains(slot.nodeId())) continue;
                 boolean search = slot.kind().equals("IMAGE") && slot.spec().path("mode").stringValue("").equals("search");
-                // the asset the node of the SHOWN revision uses (a search slot's node follows the chosen candidate through the revisions)
-                UUID using = search ? MediaNodes.assetOf(document, slot.nodeId()) : null;
+                boolean audio = slot.kind().equals("AUDIO");
+                // the asset the node of the SHOWN revision uses (a search slot's and an audio slot's node follow their asset through the revisions)
+                UUID using = search || audio ? MediaNodes.assetOf(document, slot.nodeId()) : null;
                 ObjectNode entry = slots.addObject().put("slotKey", slot.slotKey()).put("kind", slot.kind());
                 entry.put("mode", slot.kind().equals("IMAGE") ? slot.spec().path("mode").stringValue(null) : null);
+                entry.put("voice", audio ? "male".equals(slot.spec().path("voice").stringValue(null)) ? "male" : "female" : null);
+                entry.put("lang", audio ? slot.spec().path("lang").stringValue(null) : null);
                 entry.put("nodeId", slot.nodeId().toString()).put("assetId", (using == null ? slot.assetId() : using).toString())
                         .put("state", slot.state()).put("errorCode", slot.errorCode());
                 ArrayNode listed = Json.array();
@@ -164,6 +167,7 @@ class SessionViews {
                 ObjectNode entry = slots.addObject().put("slotKey", slot.slotKey()).put("kind", slot.kind()).put("nodeId", slot.nodeId().toString())
                         .put("assetId", slot.assetId().toString()).put("state", slot.state()).put("errorCode", slot.errorCode());
                 entry.put("voice", slot.spec().path("voice").stringValue(null));
+                entry.put("lang", slot.spec().path("lang").stringValue(null));
             }
         }
         ArrayNode revisions = node.putArray("revisions");

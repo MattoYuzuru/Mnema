@@ -5,7 +5,6 @@ import app.mnema.learning.platform.api.CapabilityUnavailableException;
 import app.mnema.learning.platform.api.ProblemExtension;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.usage.GenerationBoundary;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,12 +22,10 @@ import java.util.UUID;
 class GenerationGate implements GenerationBoundary {
     private final GenerationRepository repository;
     private final LearningCapabilities capabilities;
-    private final ObjectProvider<StubSpeechExecutor> stubSpeech;
 
-    GenerationGate(GenerationRepository repository, LearningCapabilities capabilities, ObjectProvider<StubSpeechExecutor> stubSpeech) {
+    GenerationGate(GenerationRepository repository, LearningCapabilities capabilities) {
         this.repository = repository;
         this.capabilities = capabilities;
-        this.stubSpeech = stubSpeech;
     }
 
     @Override
@@ -59,9 +56,9 @@ class GenerationGate implements GenerationBoundary {
     }
 
     /**
-     * The capability an edit action needs. A rewrite needs text generation. The media actions need their provider, and their executors
-     * come with AI-09 (an image search, AI-10, runs): until then even a configured provider cannot run them, so they are refused as not configured
-     * (the reason of the capability gate wins when it is the one that is off).
+     * The capability an edit action needs. A rewrite needs text generation, an image search the image search capability (AI-10, #296) and the redo of
+     * audio the speech capability (AI-09, #297): each runs whenever its capability is available. Image generation has no executor yet, so it is refused as
+     * not configured even when its provider is (the reason of the capability gate wins when it is the one that is off).
      */
     void requireEdit(String action) {
         switch (action) {
@@ -72,10 +69,8 @@ class GenerationGate implements GenerationBoundary {
                 capabilities.requireImageGeneration();
                 throw notRunnable("imageGeneration");
             }
-            case "AUDIO_REGENERATE" -> {
-                capabilities.requireTextToSpeech();
-                throw notRunnable("textToSpeech");
-            }
+            // AI-09 (#297): runnable whenever the capability is (the flag and a speech route or the Stub); the executor is SpeechExecutor
+            case "AUDIO_REGENERATE" -> capabilities.requireTextToSpeech();
             default -> { }
         }
     }
@@ -85,17 +80,9 @@ class GenerationGate implements GenerationBoundary {
                 .put("reason", "PROVIDER_NOT_CONFIGURED").build());
     }
 
-    /**
-     * The capability of redoing the audio of an exercise (a REVISE_EXERCISE media action, #294). Synthesis itself is AI-09 (#297): until
-     * then only the Stub provider (local runs and CI) has an executor, a deliberate no-op that keeps the audio and records the voice, so
-     * with the Stub the action is available and everywhere else it is the capability gate of {@code textToSpeech}, which no provider
-     * satisfies yet (fail closed, as for every media action of #293).
-     */
+    /** The capability of redoing the audio of an exercise (a REVISE_EXERCISE media action, #294): speech synthesis, as for a material (#297). */
     void requireVoiceRevision() {
-        // the Stub executor is the one that can run it: the gate asks for the bean, not for the property that registers it
-        if (stubSpeech.getIfAvailable() != null) return;
         capabilities.requireTextToSpeech();
-        throw notRunnable("textToSpeech");
     }
 
     /** Whether {@link #requireVoiceRevision} passes: the intent only offers the voice chip when the action can be run. */

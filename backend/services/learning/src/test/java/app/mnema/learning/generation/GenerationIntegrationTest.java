@@ -77,6 +77,8 @@ abstract class GenerationIntegrationTest extends PostgresIntegrationTest {
     @Autowired protected StudySessionService studySessions;
     @Autowired protected MediaCatalog media;
     @Autowired protected GenerationTestConfiguration.Scripted provider;
+    @Autowired protected GenerationTestConfiguration.ScriptedSpeech speech;
+    @Autowired protected GenerationTestConfiguration.FakeStager mediaStager;
 
     @Autowired protected StepRepository steps;
     @Autowired protected UsageLedger ledger;
@@ -87,6 +89,10 @@ abstract class GenerationIntegrationTest extends PostgresIntegrationTest {
     @BeforeEach
     void resetDoubles() {
         provider.reset();
+        speech.reset();
+        mediaStager.reset();
+        // the speech cache is global (no account): a clip of an earlier test would answer this one without a provider call
+        jdbc.sql("DELETE FROM app_learning.speech_cache").update();
         fixtures = new StudyFixtures(decks, items, exercises, studySessions, media, jdbc);
     }
 

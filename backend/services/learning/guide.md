@@ -404,8 +404,8 @@ by `AttemptService.submit` on every terminal result (the attempt's transaction).
 
 ## «Попросить Мнему…»: intent and revisions (#294)
 
-Contract: `contracts/generation/README.md` decision 16 and `http.json` (`createIntent`, `specReviseItem`, `specReviseExercise`). Owner decision 2026-10-03: the media part of `REVISE_EXERCISE` is a **Stub**
-executor now; real synthesis and its acceptance are #297 (AI-09).
+Contract: `contracts/generation/README.md` decision 16 and `http.json` (`createIntent`, `specReviseItem`, `specReviseExercise`). The media part of `REVISE_EXERCISE` was a no-op Stub executor in this slice
+(owner decision 2026-10-03); #297 (AI-09) replaced it with real speech synthesis (see *Speech synthesis (#297)*).
 
 - **Intent** (`IntentService`, `IntentSpecs`, `IntentUses`; `POST /decks/{deckId}/generation-intents` in `GenerationController`). Order: deck ownership (404), body (400, `Commands`), context
   (404: a material that is not a head member of the deck, an exercise that is not on its roster), `GenerationGate.requireText` (409), `IntentUses.take` (hourly rate limit per account in `generation_intent_use`
@@ -427,10 +427,10 @@ executor now; real synthesis and its acceptance are #297 (AI-09).
   the prompt is `PromptTask.EXERCISE_EDIT`, only the exercise's own mechanic is allowed, the answer's first exercise goes through `ExerciseValidator.validate(..., known ids)` (`ExerciseCompiler.compile` keeps the identifiers of local ids the model
   kept), then the objective is restored to the current one, `enabled` stays, the audio blocks go back, `ExerciseCommand.readCreate` runs again. `EditLifecycle.succeed` stores `Result.ofExercise` (payload `EXERCISE_COMMAND`) and re-attaches the audio slots.
 - **Media turn** (`ArtifactEdits.redoAudio` for an edit, `ReviseAdmission` for a spec): a `TTS` step whose input has `turnId`, `voice`, `credits`, `reservationId`; with an instruction it is inserted `WAITING_DEPENDENCIES` (`depends_on` the EDIT step,
-  `StepRepository.insertWaiting`) and `EditLifecycle.succeed` promotes it (`promoteDependents`) and inserts its turn; a failed or cancelled rewrite cancels it (`cancelDependents`) and releases its hold. `StubSpeechExecutor` (only with `learning.ai.provider=stub`;
-  `StepExecutor.requiredInput() = turnId`, so it never claims the media steps of a material's slots) calls `EditLifecycle.succeedMedia`: revision `MEDIA`, every audio slot `READY` on the asset it had (`generation_media_slot.asset_id` is unique only for slots whose spec mode is not `existing`: V33; **#297 must write the `generation_media_ref` hold for the new asset when it moves a slot from an `existing` asset to a synthesized one**, and give it a spec without `mode: existing`),
-  the voice in the slot's spec, the hold released unspent. `StepQueue`/`StepDispatcher` treat a step with `turnId` like an EDIT step (never parked by the daily burst, queue timeout, recovery through `EditLifecycle`).
-  `GenerationGate.requireVoiceRevision`: the Stub passes, any other provider needs a real `textToSpeech` (none exists yet: fail closed).
+  `StepRepository.insertWaiting`) and `EditLifecycle.succeed` promotes it (`promoteDependents`) and inserts its turn; a failed or cancelled rewrite cancels it (`cancelDependents`) and releases its hold. `SpeechExecutor` (#297) runs it:
+  every audio block with a transcript is synthesised in the requested voice as a new asset, the revision `MEDIA` names the new assets, and the slot's spec loses `mode: existing` (`generation_media_slot.asset_id` is unique only for slots whose
+  spec mode is not `existing`: V33). `StepQueue`/`StepDispatcher` treat a step with `turnId` like an EDIT step (never parked by the daily burst, queue timeout, recovery through `EditLifecycle`).
+  `GenerationGate.requireVoiceRevision` is `textToSpeech` available (flag, and a speech route or the Stub).
 - **Approval** (`ReviewService`): `reviseItem` calls `GeneratedItemPublisher.revise` (the catalog adapter reads the head, plans the structural edits with `NativeRevisionPlanner` and saves the member at its place with `ItemPublicationCommand.revision`);
   the exercise chain calls `GeneratedExercisePublisher.revise` (`ExerciseService.publish` with `pathExerciseId`, the current objective, no «Новое» mark). Drift of the exercise head or of the material head is `SOURCE_STALE`; `retry` is `NOT_RETRYABLE`;
   hand-off of a material opens a draft of the existing member (`GeneratedDraftOpener.openRevision`); a bulk approval of a revise session is 400.
@@ -531,6 +531,54 @@ Licensed stock images for `::image{mode="search"}` slots. Contract: `contracts/g
   `MNEMA_AI_LIVE=true ... --tests '*ImageSearchLive*'` runs Wikimedia Commons for real (search and one safe download) and Pixabay/Openverse only with their
   credentials in the environment. **Pixabay and Openverse are not verified live** (no keys in the owner environment yet); Openverse's field names follow the published
   schema (https://docs.openverse.org/api/) and could not be fetched from here (the API host answers 403 to an anonymous client).
+
+## Speech synthesis (#297)
+
+Text to speech for `::audio` slots and the redo of a clip. Contract: `contracts/generation/http.json` (`mediaSlotItem.voice/lang`, `editArtifact` `AUDIO_REGENERATE`, `turnAudioRegenerateApplied`) and `states.json`
+(`turn.audioErrorCodes`); architecture §4, §9 (SpeechSynthesis), §13. **Live not verified**: neither `MNEMA_AI_GOOGLE_API_KEY` nor the egress proxy exist in the owner environment yet, so the adapters are
+tested on recorded fixtures and the Stub only.
+
+- **Port (`app.mnema.learning.ai`).** `SpeechSynthesis.synthesize(Request{text, lang (BCP 47), voice female|male, take, stepId, attempt}) -> AiResult<Audio{bytes, mimeType, billedCharacters, durationMs, identity, costMicros}>`,
+  `identity(lang, voice)` (what would serve it now: provider, model, model version, format and the provider's voice name, for the cache key) and `configured()` (the `textToSpeech` capability reads it). `RoutedSpeechSynthesis`
+  walks `learning.ai.routes.tts` (`tts-ru`, when not empty, serves Russian instead): the first usable entry is asked, transient/rate-limit/credential/unusable-answer failures fall through, a refusal ends the call. An entry is
+  skipped (never an error) when its provider is switched off (`learning.ai.providers.<id>.enabled=false`, the kill switch), has no key, has no transport (a proxied provider without an active proxy), does not speak the language or
+  has an open breaker. Per `(provider, TTS)` breaker, `permits.tts`, the daily `budget.tts-micros`, an `ai_provider_call` row (the hash of the shape, never the text), `mnema_ai_calls_total`; refuses to run inside a transaction. Text over
+  `learning.ai.tts.max-text` (600, the MBM bound) is refused before any call.
+- **Adapters.** `GeminiSpeechSynthesis`: `POST {base}/v1beta/interactions` (https://ai.google.dev/gemini-api/docs/speech-generation, verified 2026-10-04: the `interactions` endpoint is the documented one; the classic
+  `models/{model}:generateContent` with `responseModalities` is not shown there), key in `x-goog-api-key`, `response_format {audio, audio/wav, 24000}`, one prebuilt voice (`learning.ai.tts.google-female/male`, default Kore and Charon), a
+  fixed learner-oriented style annotation (`learning.ai.tts.style`; the only text besides the clip's own); the audio is the base64 `data` of the `audio` content of a `model_output` step, a RIFF/WAVE PCM s16le mono file checked by `Wav`.
+  The response has no usage block, so cost is estimated: text tokens = characters / 4 at the model's input price, audio tokens = 25 per second at its output price (`learning.ai.models[3]`; $0.50 / $9.00 per million until
+  2026-12-31, **$1.00 / $18.00 from 2027-01-01: change the two values then**, https://ai.google.dev/gemini-api/docs/pricing). `egress=proxy` by default (the API is not reachable from Russia). `YandexSpeechSynthesis`: SpeechKit v1
+  `POST {base}/speech/v1/tts:synthesize`, `Authorization: Api-Key`, form `text, lang=ru-RU, voice (alena|filipp), format=mp3, folderId` (`MNEMA_AI_YANDEX_FOLDER_ID`); Russian only (any other language is not applicable, so routing
+  skips it); priced per character (`learning.ai.tts.yandex-rub-per-million-chars`, 1342 incl. VAT) over `learning.generation.usd-rub-rate`; the page moved to aistudio.yandex.ru and the request shape is the lead's research,
+  not re-read. `StubSpeechSynthesis` (only with `learning.ai.provider=stub`): a sine tone whose pitch depends on the voice and whose length follows the text (at most 6 s); `[[stub:tts-down]]` is `PROVIDER_UNAVAILABLE`,
+  `[[stub:tts-garbage]]` is bytes the pipeline rejects. The default route is `google:gemini-3.8-flash-tts` only; the spike's recommendation for Russian goes in `routes.tts-ru`, not in the default.
+- **Speech cache (`SpeechCache`, V36 `speech_cache`).** Key = SHA-256 of the canonical JSON `{schema, text (NFC, whitespace collapsed; no case change, no ё→е), lang, provider, model, modelVersion, voice, format, take}`; no account
+  in the table, so a hit gives another owner a new asset. `claim` is one short transaction (`INSERT ... ON CONFLICT DO NOTHING` plus a lease token and `lease_until`): one caller wins and synthesises, the others get `Busy` and poll
+  until `READY` or until the lease runs out (then they take it over; the old token cannot publish). The entry is published only after the media pipeline accepted the clip (`READY` with the verified blob ids), a failed or rejected
+  clip deletes its `PENDING` row (so garbage is never served twice; the contract's `FAILED` state is not needed). **Hit without re-running the worker:** `GeneratedMediaStager.adopt` creates a `generated` asset directly `READY` on the cached
+  source and variant blobs (blobs are content-addressed and shared in the current media model, so no object is copied); `MediaGcRepository.blobHeld` treats the blob ids of a `READY` entry as a root, and `SpeechCacheSweep` (hourly) drops entries
+  unused for `learning.ai.tts.cache-ttl` (P180D): only the row, the media GC then reclaims the blobs. Adoption refuses (and the entry is dropped, the clip synthesised again) when a blob is gone or being reclaimed. `learning.ai.tts.version`
+  is part of the key (bump it to invalidate). Pre-warming at publication is a follow-up.
+- **Media pipeline.** The worker accepts a `RIFF/WAVE` PCM s16le source for audio (`audio/wav`, still transcoded to the same AAC/M4A playback variant); `MediaProcessingService` rejects a WAV source unless the asset's origin is
+  `generated`, and `MediaUploadSettings.validateGenerated` allows `audio/wav` only for the server staging, so the browser allowlist is unchanged. **The `mnema-media-worker:local` image must be rebuilt** (`backend/media-worker`).
+- **Executor (`SpeechExecutor`, kind `TTS`, capability `TTS`, deadline PT2M; replaces the Stub executor).** `SpeechClips` is the shared part (cache claim, one provider call, stage, wait; a fallback answer is filed under the provider that made
+  it). Three inputs. **The initial step of a slot** (`SessionLifecycle.insertMediaStep`; recovery and queue expiry go through `ImageSearchLifecycle` like an image slot, `MediaSteps.isSlotStep`): the spec's `text`, `lang`, `voice` (default
+  female), take 0; PENDING, GENERATING, VERIFYING, READY on the pre-allocated asset (node hold, `generation_media_clip` row), debiting `TTS_CLIP_30S` from the session hold **only when this run called a provider**
+  (`debit:{stepId}:{attempt}`); a step resumed after a crash on an already staged asset is debited when the call journal has an `OK` TTS call of the step. Failures: slot `FAILED` with `PROVIDER_UNAVAILABLE | VERIFICATION_REJECTED |
+  DEADLINE_EXCEEDED | ESTIMATE_EXCEEDED`. **`AUDIO_REGENERATE` of a material** (`ArtifactEdits.redoMaterialAudio`: one audio block, optional `voice`, absent keeps the slot's; a `TURN` hold of one clip; it replaces a first clip still being made):
+  the same voice is take + 1 (a real synthesis, debited), another voice is take 0 (a cache hit when that voice was made before); a new asset, a revision `MEDIA` whose node uses it, the slot READY with the new voice, the turn APPLIED
+  (`SpeechLifecycle.succeedClip`). **The voice redo of an exercise** (`REVISE_EXERCISE`; admission and `redoAudio` reserve one clip per audio block that has a transcript and refuse `TARGET_NO_AUDIO` when there is none): every such block is
+  synthesised in the voice (language from the script of the transcript: kana ja, Hangul ko, Han zh, Cyrillic ru, else en) as a new asset in a new exercise revision (`SpeechLifecycle.succeedExercise`), debited per miss. Nothing holds a
+  transaction during synthesis, staging or waiting; every write is fenced by the lease token and `cancel_requested` stops a run (the heartbeat interrupts the provider call).
+- **Holds, revert, read model.** `generation_media_clip` (V36) lists every clip a slot has had (voice, take) and is a third part of the `generation_media_hold` view, so a revert restores an earlier take: `ArtifactEdits.followAudio` /
+  `followExerciseAudio` give the slot the asset and voice of the revision shown. `mediaSlots[]` of a material now carries `voice` (female|male) and `lang` for AUDIO slots and an audio slot follows the asset its node uses; an exercise
+  slot carries `voice` (null before a redo) and `lang`.
+- **Rollback.** `learning.features.text-to-speech.enabled=false` (capability `DISABLED`: new sessions with audio and edits are refused; steps already queued still run to their end) and the per-provider kill switch. V36 is additive.
+- **Tests.** No network in CI: both adapters on recorded fixtures served by a loopback server (`SpeechAdaptersTest`: request shape incl. the auth header name, voice mapping, WAV/MP3 parsing, error mapping, no key or text in logs), the router
+  (`RoutedSpeechSynthesisTest`), the egress rule (`SpeechWiringTest`: Gemini with `egress=proxy` and no proxy is not configured), the shared executor part (`SpeechClipsTest`), the cache, the flows and the concurrency of one key
+  (`GenerationSpeechIntegrationTest`, on the Stub speech with the staging double), adoption and the GC root on MinIO (`GeneratedAudioIntegrationTest`), the worker (`backend/media-worker/tests`). Opt-in
+  `MNEMA_AI_LIVE=true ... --tests '*SpeechLive*'` synthesises one Russian and one Japanese phrase per configured provider and prints latency; skipped without keys.
 
 ## AI assessment of free explanations (#292)
 
@@ -851,8 +899,8 @@ and the UI (AI-04+) build on it; nothing here debits the user's quota, it only r
   step id and attempt) returns `AiResult<TextResponse>`: text, finish reason, usage `{promptTokens, cacheHitTokens,
   cacheMissTokens, completionTokens}`, cost in micro-USD, provider request id and the route used. A failure is a sealed
   `AiFailure` (`RATE_LIMITED`, `TRANSIENT`, `TIMEOUT`, `INVALID_OUTPUT`, `REFUSAL`, `BUDGET_EXHAUSTED`, `NOT_CONFIGURED`,
-  `CIRCUIT_OPEN`) with fixed detail codes, never text. `SpeechSynthesis`, `Transcription`, `ImageSearch`,
-  `ImageGeneration`, `WebSearch` and `VideoGeneration` are interfaces only.
+  `CIRCUIT_OPEN`) with fixed detail codes, never text. `SpeechSynthesis` (#297) and `ImageSearch` (#296) have implementations;
+  `Transcription`, `ImageGeneration`, `WebSearch` and `VideoGeneration` are interfaces only.
 - **Adapter.** `OpenAiCompatibleAdapter` on the JDK `HttpClient` and Jackson 3 trees: no redirects, a connect limit, one
   deadline over headers and body, an idle limit for SSE (a virtual-thread watchdog closes the stream), a hard body cap, and
   error bodies are never read. DeepSeek: `thinking` is disabled explicitly (enabled on the plan routes), `user_id`, `prompt_cache_hit/miss_tokens`.

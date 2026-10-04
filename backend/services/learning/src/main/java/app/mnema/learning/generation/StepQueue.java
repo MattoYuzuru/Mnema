@@ -88,7 +88,7 @@ class StepQueue {
         // an edit and the media turn of an exercise are interactive: a person waits for them
         boolean turn = step.kind().equals(EditExecutor.KIND) || step.input().has("turnId");
         // the initial image search of a slot is neither: it fails its slot, not an artifact or a turn
-        boolean slot = ImageSearchExecutor.isSlotStep(step.kind(), step.input());
+        boolean slot = MediaSteps.isSlotStep(step.kind(), step.input());
         // The whole step has a lifetime from its first claim: past it, no further run is started.
         if (step.firstClaimedAt() != null
                 && step.firstClaimedAt().plus(settings.step().maxLifetime()).isBefore(java.time.Instant.now())) {

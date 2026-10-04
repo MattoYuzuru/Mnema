@@ -31,7 +31,7 @@ class GenerationRetentionIntegrationTest extends GenerationReviewSupport {
         UUID owner = UUID.randomUUID();
         UUID deck = deck(owner);
         UUID first = note(owner, deck, "опубликуем");
-        UUID second = note(owner, deck, "[[fake:audio]] останется предложением");
+        UUID second = note(owner, deck, "[[fake:audio-hold]] останется предложением");
         UUID session = start(owner, deck, audioSpec(null, noteSource(first, 0), noteSource(second, 0)));
         awaitState(session, "REVIEW");
         List<Proposal> all = proposals(owner, deck, session);

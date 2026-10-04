@@ -1,5 +1,6 @@
 package app.mnema.learning.generation;
 
+import app.mnema.learning.ai.SpeechSynthesis;
 import app.mnema.learning.support.StudyFixtures;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -17,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Acceptance of #294 (AI-16) on the Stub, PostgreSQL and the real catalog: a {@code REVISE_ITEM} session rewrites a copy of an existing
  * material and approval is a revise with {@code If-Match}; a {@code REVISE_EXERCISE} session rewrites a copy of an exercise through the
- * exercise pipeline and may redo its audio on the Stub speech executor; the old revisions stay in history, drift makes the proposal
+ * exercise pipeline and may redo its audio through the speech executor (the Stub synthesiser, the speech cache); the old revisions stay in history, drift makes the proposal
  * stale, nothing is reserved when a spec is refused.
  */
 class GenerationReviseIntegrationTest extends GenerationEditsSupport {
@@ -58,7 +59,7 @@ class GenerationReviseIntegrationTest extends GenerationEditsSupport {
     /** A free response with an audio block in its prompt. */
     private Published withAudio(StudyFixtures.Material material, String question, UUID asset) {
         ObjectNode exercise = fixtures.freeResponse(material, StudyFixtures.blocks(StudyFixtures.text(question),
-                StudyFixtures.audio(asset, "Произношение", null)), StudyFixtures.blocks(), "ответ");
+                StudyFixtures.audio(asset, "Произношение", "Планировщик выбирает план")), StudyFixtures.blocks(), "ответ");
         JsonNode ack = fixtures.publish(material, exercise, "Озвучка " + question);
         return new Published(UUID.fromString(ack.path("exerciseId").stringValue(null)), UUID.fromString(ack.path("exerciseRevisionId").stringValue(null)));
     }
@@ -333,9 +334,9 @@ class GenerationReviseIntegrationTest extends GenerationEditsSupport {
 
     // ------------------------------------------------------------------------ media
 
-    /** The audio of an exercise is redone on the Stub: the same asset, the voice recorded, a new revision, nothing debited for it. */
+    /** The audio of an exercise is redone: a new asset made from the transcript, the voice recorded, a new revision, one clip debited. */
     @Test
-    void theVoiceOfAnExerciseIsRedoneOnTheStubSpeechExecutorAndTheAudioItselfDoesNotChange() throws Exception {
+    void theVoiceOfAnExerciseIsRedoneWithANewAssetFromItsTranscript() throws Exception {
         UUID owner = UUID.randomUUID();
         UUID deck = deck(owner);
         StudyFixtures.Material material = fixtures.addMaterial(owner, deck, "Планировщик выбирает план", "Статистика обновляется командой ANALYZE");
@@ -349,32 +350,106 @@ class GenerationReviseIntegrationTest extends GenerationEditsSupport {
         assertThat(detail.path("state").stringValue(null)).isEqualTo("PROPOSED");
         assertThat(detail.path("revisions")).hasSize(2);
         assertThat(detail.path("revisions").get(1).path("cause").stringValue(null)).isEqualTo("MEDIA");
-        // the slot is READY on the asset the block already used, with the requested voice
+        // the slot is READY on a new asset the speech made (the clip of the transcript), with the requested voice and the language of the transcript
         assertThat(detail.path("mediaSlots")).hasSize(1);
         JsonNode slot = detail.path("mediaSlots").get(0);
         assertThat(slot.path("kind").stringValue(null)).isEqualTo("AUDIO");
         assertThat(slot.path("state").stringValue(null)).isEqualTo("READY");
-        assertThat(slot.path("assetId").stringValue(null)).isEqualTo(asset.toString());
+        String made = slot.path("assetId").stringValue(null);
+        assertThat(made).isNotEqualTo(asset.toString());
         assertThat(slot.path("voice").stringValue(null)).isEqualTo("male");
+        assertThat(slot.path("lang").stringValue(null)).isEqualTo("ru");
         assertThat(detail.path("mediaSlotCounts").path("ready").intValue()).isEqualTo(1);
         JsonNode content = detail.path("revision").path("payload").path("command").path("exercise").path("content");
-        assertThat(content.path("prompt").get(1).path("assetId").stringValue(null)).isEqualTo(asset.toString());
+        assertThat(content.path("prompt").get(1).path("assetId").stringValue(null)).isEqualTo(made);
         JsonNode turn = detail.path("turns").get(0);
         assertThat(turn.path("action").stringValue(null)).isEqualTo("AUDIO_REGENERATE");
         assertThat(turn.path("status").stringValue(null)).isEqualTo("APPLIED");
         assertThat(turn.path("voice").stringValue(null)).isEqualTo("male");
-        // the stub makes no audio: nothing is debited and the hold of the turn is released unspent
-        assertThat(debits(owner)).isZero();
-        assertThat(reservationStates(owner)).containsOnly("RELEASED");
+        // one clip was synthesised (a cache miss) and debited; the hold of the turn ended with the turn
+        assertThat(debits(owner)).isEqualTo(10);
+        assertThat(reservationStates(owner)).doesNotContain("ACTIVE");
         assertThat(notificationKinds(owner)).isEmpty();
         assertThat(provider.calls).isEmpty();
 
-        // approval is a revision of the exercise: its audio block still names the asset
+        // approval is a revision of the exercise: its audio block names the new asset, which the exercise now pins
         MockHttpServletResponse approved = approve(owner, deck, proposal, UUID.randomUUID());
         assertThat(approved.getStatus()).as(approved.getContentAsString()).isEqualTo(200);
         JsonNode head = exerciseHead(owner, deck, published.exercise());
         assertThat(head.path("exerciseRevisionId").stringValue(null)).isNotEqualTo(published.revision().toString());
-        assertThat(head.path("content").path("prompt").get(1).path("assetId").stringValue(null)).isEqualTo(asset.toString());
+        assertThat(head.path("content").path("prompt").get(1).path("assetId").stringValue(null)).isEqualTo(made);
+    }
+
+    /** A recording the owner made has no transcript: there is nothing to speak, so its voice cannot be redone (admission and edit both refuse it). */
+    @Test
+    void anExerciseWhoseAudioHasNoTranscriptCannotHaveItsVoiceRedone() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        StudyFixtures.Material material = fixtures.addMaterial(owner, deck, "Планировщик выбирает план", "Статистика обновляется командой ANALYZE");
+        ObjectNode exercise = fixtures.freeResponse(material, StudyFixtures.blocks(StudyFixtures.text("Что слышно?"),
+                StudyFixtures.audio(fixtures.readyAsset(owner, "audio/mpeg"), "Запись", null)), StudyFixtures.blocks(), "ответ");
+        JsonNode ack = fixtures.publish(material, exercise, "Запись без текста");
+        UUID id = UUID.fromString(ack.path("exerciseId").stringValue(null));
+        UUID revision = UUID.fromString(ack.path("exerciseRevisionId").stringValue(null));
+
+        MockHttpServletResponse refused = create(owner, deck, reviseExercise(id, revision, null, "male"), UUID.randomUUID());
+        problem(refused, 400, "INVALID_REQUEST");
+        assertThat(json(refused).path("reason").stringValue(null)).isEqualTo("TARGET_NO_AUDIO");
+        assertThat(reservationStates(owner)).isEmpty();
+
+        Proposal proposal = proposal(owner, deck, reviseExercise(id, revision, "Проще", null));
+        ObjectNode redo = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString()).put("expectedRevisionId", proposal.revision().toString())
+                .put("action", "AUDIO_REGENERATE").put("voice", "male");
+        MockHttpServletResponse edit = edit(owner, deck, proposal, redo);
+        problem(edit, 400, "INVALID_REQUEST");
+        assertThat(json(edit).path("reason").stringValue(null)).isEqualTo("TARGET_NO_AUDIO");
+        assertThat(speech.calls).isEmpty();
+    }
+
+    /** Every audio block that has a transcript is made again, each in its own language, and the hold covers one clip per block. */
+    @Test
+    void everyAudioBlockOfAnExerciseIsMadeAgainInTheNewVoiceAndTheOneWithoutATranscriptIsLeftAlone() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        StudyFixtures.Material material = fixtures.addMaterial(owner, deck, "Планировщик выбирает план", "Статистика обновляется командой ANALYZE");
+        UUID recording = fixtures.readyAsset(owner, "audio/mpeg");
+        ObjectNode exercise = fixtures.freeResponse(material, StudyFixtures.blocks(StudyFixtures.text("Послушайте."),
+                StudyFixtures.audio(fixtures.readyAsset(owner, "audio/mpeg"), "Русский", "Привет, мир"),
+                StudyFixtures.audio(recording, "Запись", null),
+                StudyFixtures.audio(fixtures.readyAsset(owner, "audio/mpeg"), "Японский", "行く")), StudyFixtures.blocks(), "ответ");
+        JsonNode ack = fixtures.publish(material, exercise, "Три записи");
+
+        UUID session = start(owner, deck, reviseExercise(UUID.fromString(ack.path("exerciseId").stringValue(null)),
+                UUID.fromString(ack.path("exerciseRevisionId").stringValue(null)), null, "male"));
+        // two clips are reserved for (the third block has no transcript)
+        awaitState(session, "REVIEW");
+        Proposal proposal = proposals(owner, deck, session).getFirst();
+        JsonNode detail = detail(owner, deck, proposal);
+
+        assertThat(speech.calls).extracting(SpeechSynthesis.Request::lang).containsExactlyInAnyOrder("ru", "ja");
+        assertThat(speech.calls).extracting(SpeechSynthesis.Request::voice).containsOnly("male");
+        assertThat(debits(owner)).isEqualTo(20);
+        JsonNode slots = detail.path("mediaSlots");
+        assertThat(slots).hasSize(3);
+        assertThat(slots.get(0).path("lang").stringValue(null)).isEqualTo("ru");
+        assertThat(slots.get(0).path("voice").stringValue(null)).isEqualTo("male");
+        // the block without a transcript keeps its own asset and has no voice
+        assertThat(slots.get(1).path("assetId").stringValue(null)).isEqualTo(recording.toString());
+        assertThat(slots.get(1).path("voice").isNull()).isTrue();
+        assertThat(slots.get(2).path("lang").stringValue(null)).isEqualTo("ja");
+        JsonNode prompt = detail.path("revision").path("payload").path("command").path("exercise").path("content").path("prompt");
+        assertThat(prompt.get(1).path("assetId").stringValue(null)).isEqualTo(slots.get(0).path("assetId").stringValue(null));
+        assertThat(prompt.get(2).path("assetId").stringValue(null)).isEqualTo(recording.toString());
+        assertThat(prompt.get(3).path("assetId").stringValue(null)).isEqualTo(slots.get(2).path("assetId").stringValue(null));
+        assertThat(reservationStates(owner)).doesNotContain("ACTIVE");
+
+        // «Вернуть» restores the audio the exercise had: the slots follow the revision shown
+        MockHttpServletResponse back = revert(owner, deck, proposal, proposal.version(), UUID.fromString(detail.path("revisions").get(0).path("revisionId").stringValue(null)));
+        assertThat(back.getStatus()).as(back.getContentAsString()).isEqualTo(200);
+        JsonNode restored = detail(owner, deck, proposal).path("mediaSlots");
+        assertThat(restored.get(0).path("assetId").stringValue(null)).isNotEqualTo(slots.get(0).path("assetId").stringValue(null));
+        assertThat(restored.get(0).path("voice").isNull()).isTrue();
+        assertThat(restored.get(1).path("assetId").stringValue(null)).isEqualTo(recording.toString());
     }
 
     @Test
@@ -394,13 +469,14 @@ class GenerationReviseIntegrationTest extends GenerationEditsSupport {
         assertThat(detail.path("turns").get(0).path("action").stringValue(null)).isEqualTo("FREE");
         assertThat(detail.path("turns").get(1).path("action").stringValue(null)).isEqualTo("AUDIO_REGENERATE");
         assertThat(detail.path("turns").get(1).path("voice").stringValue(null)).isEqualTo("female");
-        // the question was rewritten, the audio block and its slot follow the newest revision
+        // the question was rewritten, the audio block now names the clip made on the rewritten revision and the slot follows it
         JsonNode content = detail.path("revision").path("payload").path("command").path("exercise").path("content");
         assertThat(promptText(content)).isEqualTo("Как это произносится? Переформулировано.");
         assertThat(content.path("prompt")).hasSize(2);
-        assertThat(content.path("prompt").get(1).path("assetId").stringValue(null)).isEqualTo(asset.toString());
+        assertThat(content.path("prompt").get(1).path("assetId").stringValue(null)).isNotEqualTo(asset.toString())
+                .isEqualTo(detail.path("mediaSlots").get(0).path("assetId").stringValue(null));
         assertThat(detail.path("mediaSlots").get(0).path("voice").stringValue(null)).isEqualTo("female");
-        assertThat(debits(owner)).isEqualTo(4);
+        assertThat(debits(owner)).isEqualTo(14);
         assertThat(reservationStates(owner)).hasSize(2).doesNotContain("ACTIVE");
 
         // a rewrite the model cannot get right fails; the voice change that waited for it is cancelled and its hold released
@@ -415,7 +491,7 @@ class GenerationReviseIntegrationTest extends GenerationEditsSupport {
         assertThat(after.path("turns").get(0).path("errorCode").stringValue(null)).isEqualTo("INVALID_OUTPUT");
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.generation_step WHERE session_id=:id AND kind='TTS' AND state='CANCELLED'")
                 .param("id", second).query(Integer.class).single()).isEqualTo(1);
-        assertThat(debits(owner)).isEqualTo(4);
+        assertThat(debits(owner)).isEqualTo(14);
         assertThat(reservationStates(owner)).doesNotContain("ACTIVE");
         // three provider calls: the answer, the repair and the strong route (the first session made one)
         assertThat(provider.calls.stream().filter(call -> call.prompt().contains("<task kind=\"exercise-edit\">"))).hasSize(4);

@@ -26,7 +26,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * The state changes of licensed image search (#296), each in one short transaction under the session lock like {@link SessionLifecycle} and
+ * The state changes of licensed image search (#296), and the slot-level transitions every media step of a slot shares (the speech steps of #297 use
+ * {@link #beginSlot}, {@link #slotFailed}, {@link #recover} and {@link #expire} as they are), each in one short transaction under the session lock like {@link SessionLifecycle} and
  * {@link EditLifecycle}; no method is entered with a search, a download or a wait in flight.
  *
  * <p><b>The initial step of a slot</b> (a {@code TEXT_DRAFT} child step, no turn): the slot goes PENDING, GENERATING, VERIFYING, then READY on
@@ -168,14 +169,14 @@ class ImageSearchLifecycle {
     }
 
     /** The step ends cancelled (the session, the slot or the claim is gone): the slot is not touched, and the batch hold ends with the last step. */
-    private void cancelStep(Tx tx, StepClaim claim) {
+    void cancelStep(Tx tx, StepClaim claim) {
         steps.finish(claim.stepId(), "CANCELLED", null, null);
         lifecycle.releaseIdleBatch(tx);
         tx.touch = false;
         lifecycle.flush(tx);
     }
 
-    private void failSlot(Tx tx, Step step, Slot slot, String errorCode) {
+    void failSlot(Tx tx, Step step, Slot slot, String errorCode) {
         candidates.ofSlot(slot.artifactId(), slot.slotKey()).stream().filter(each -> each.assetId().equals(slot.assetId()) && !each.state().equals("READY"))
                 .forEach(each -> candidates.setState(each.candidateId(), "FAILED"));
         candidates.slotState(slot.artifactId(), slot.slotKey(), "FAILED", errorCode);
@@ -232,7 +233,7 @@ class ImageSearchLifecycle {
         failSlot(tx, step, slot, "DEADLINE_EXCEEDED");
     }
 
-    private Slot slot(StepClaim claim) {
+    Slot slot(StepClaim claim) {
         return slot(claim.artifactId(), claim.input().path("slotKey").stringValue(""));
     }
 
@@ -245,7 +246,7 @@ class ImageSearchLifecycle {
         return repository.slotsOf(artifactId).stream().filter(each -> each.slotKey().equals(slotKey)).findFirst().orElse(null);
     }
 
-    private static boolean openSlot(Slot slot) {
+    static boolean openSlot(Slot slot) {
         return slot.state().equals("PENDING") || slot.state().equals("GENERATING") || slot.state().equals("VERIFYING");
     }
 
@@ -253,7 +254,7 @@ class ImageSearchLifecycle {
         return slotEvent(slot, state, errorCode, slot.assetId());
     }
 
-    private static EventDraft slotEvent(Slot slot, String state, String errorCode, UUID assetId) {
+    static EventDraft slotEvent(Slot slot, String state, String errorCode, UUID assetId) {
         EventDraft event = SessionLifecycle.slotEvent(slot.artifactId(), slot.slotKey(), slot.kind(), state, assetId);
         if (errorCode != null) ((ObjectNode) event.payload()).put("errorCode", errorCode);
         return event;

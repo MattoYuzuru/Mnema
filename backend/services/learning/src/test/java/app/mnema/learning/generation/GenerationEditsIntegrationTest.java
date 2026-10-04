@@ -617,18 +617,14 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
     }
 
     @Test
-    void theMediaActionsAreRefusedAsUnavailableUntilTheirExecutorsExistAndOnlyOnTheirOwnKindOfBlock() throws Exception {
+    void theMediaActionsTakeOnlyTheirOwnKindOfBlockAndImageGenerationStaysUnavailable() throws Exception {
         UUID owner = UUID.randomUUID();
         UUID deck = deck(owner);
-        Proposal proposal = proposal(owner, deck, audioSpec("[[fake:audio]] с аудио"));
+        Proposal proposal = proposal(owner, deck, audioSpec("[[fake:audio-hold]] с аудио"));
         List<JsonNode> blocks = blocks(detail(owner, deck, proposal));
         UUID audio = id(blocks.get(2));
         UUID paragraph = id(blocks.get(1));
 
-        MockHttpServletResponse regenerate = edit(owner, deck, proposal, editBody(UUID.randomUUID(), proposal.revision(), "AUDIO_REGENERATE", null, null, audio));
-        problem(regenerate, 409, "CAPABILITY_UNAVAILABLE");
-        assertThat(json(regenerate).path("capability").stringValue(null)).isEqualTo("textToSpeech");
-        assertThat(json(regenerate).path("reason").stringValue(null)).isEqualTo("PROVIDER_NOT_CONFIGURED");
         // a block of the wrong kind is a bad request, and a text rewrite of media alone has nothing to rewrite
         problem(edit(owner, deck, proposal, editBody(UUID.randomUUID(), proposal.revision(), "AUDIO_REGENERATE", null, null, paragraph)), 400, "INVALID_REQUEST");
         problem(edit(owner, deck, proposal, editBody(UUID.randomUUID(), proposal.revision(), "IMAGE_SEARCH", null, null, audio)), 400, "INVALID_REQUEST");
@@ -660,7 +656,8 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
     void removingMediaIsFreeAndAppliedBeforeTheAnswerAndItMakesTheProposalApprovableWithoutIt() throws Exception {
         UUID owner = UUID.randomUUID();
         UUID deck = deck(owner);
-        Proposal proposal = proposal(owner, deck, audioSpec("[[fake:audio]] с аудио"));
+        Proposal proposal = proposal(owner, deck, audioSpec("[[fake:audio-hold]] с аудио"));
+        assertThat(speech.entered.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
         List<JsonNode> before = blocks(detail(owner, deck, proposal));
         UUID audio = id(before.get(2));
         assertThat(before.get(2).path("type").stringValue(null)).isEqualTo("audio");
@@ -700,14 +697,15 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
         assertThat(after.get(1)).isEqualTo(before.get(1));
         assertThat(jdbc.sql("SELECT state FROM app_learning.generation_media_slot WHERE artifact_id=:id").param("id", proposal.artifact())
                 .query(String.class).single()).isEqualTo("REMOVED");
-        assertThat(jdbc.sql("SELECT count(*)::integer FROM app_learning.generation_step WHERE artifact_id=:id AND kind='TTS' AND state='CANCELLED'")
-                .param("id", proposal.artifact()).query(Integer.class).single()).isEqualTo(1);
+        // the running clip is stopped (its heartbeat finds the cancellation and aborts the held provider call)
+        await("the speech step to end cancelled", java.time.Duration.ofSeconds(15), () -> jdbc.sql("SELECT count(*)::integer FROM app_learning.generation_step "
+                + "WHERE artifact_id=:id AND kind='TTS' AND state='CANCELLED'").param("id", proposal.artifact()).query(Integer.class).single() == 1);
         assertThat(jdbc.sql("SELECT counts_toward_limit FROM app_learning.generation_artifact_turn WHERE turn_id=CAST(:id AS uuid)")
                 .param("id", turn.path("turnId").stringValue(null)).query(Boolean.class).single()).isFalse();
         List<String> log = new ArrayList<>();
         json(events(owner, deck, proposal.session(), "?after=0&limit=100")).path("events").forEach(event -> log.add(
                 event.path("type").stringValue(null) + ":" + event.path("payload").path("state").stringValue("-")));
-        assertThat(log).endsWith("ARTIFACT_STATE:PROPOSED", "MEDIA_SLOT_STATE:REMOVED");
+        assertThat(log).containsSubsequence("ARTIFACT_STATE:PROPOSED", "MEDIA_SLOT_STATE:REMOVED");
         // free and deterministic: no provider call, no debit, no reservation
         assertThat(editCalls()).isEmpty();
         assertThat(debits(owner)).isEqualTo(debitsBefore);
@@ -728,7 +726,7 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
     void aRevisionThatHoldsRemovedMediaAgainNeedsItRemovedAgainAndTheSlotsFollowTheRevisionThatIsShown() throws Exception {
         UUID owner = UUID.randomUUID();
         UUID deck = deck(owner);
-        Proposal proposal = proposal(owner, deck, audioSpec("[[fake:audio]] с аудио"));
+        Proposal proposal = proposal(owner, deck, audioSpec("[[fake:audio-hold]] с аудио"));
         UUID asset = readyAsset(owner, proposal.artifact());
         UUID audio = id(blocks(detail(owner, deck, proposal)).get(2));
         assertThat(heldAssets(proposal.artifact())).containsExactly(asset);
@@ -780,7 +778,7 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
     void aRewriteOfARunThatHoldsMediaNeverShowsItToTheModelAndKeepsTheMediaBlockAndItsSlot() throws Exception {
         UUID owner = UUID.randomUUID();
         UUID deck = deck(owner);
-        Proposal proposal = proposal(owner, deck, audioSpec("[[fake:audio]] с аудио"));
+        Proposal proposal = proposal(owner, deck, audioSpec("[[fake:audio-hold]] с аудио"));
         List<JsonNode> before = blocks(detail(owner, deck, proposal));
         UUID paragraph = id(before.get(1));
         UUID audio = id(before.get(2));
@@ -800,7 +798,7 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
                 .contains("<context_after></context_after>");
         JsonNode slot = detail.path("mediaSlots").get(0);
         assertThat(slot.path("nodeId").stringValue(null)).isEqualTo(audio.toString());
-        assertThat(slot.path("state").stringValue(null)).isEqualTo("PENDING");
+        assertThat(slot.path("state").stringValue(null)).isEqualTo("GENERATING");
         assertThat(jdbc.sql("SELECT revision_id FROM app_learning.generation_media_slot WHERE artifact_id=:id").param("id", proposal.artifact())
                 .query(UUID.class).single()).isEqualTo(UUID.fromString(detail.path("currentRevisionId").stringValue(null)));
         assertThat(detail.path("mediaSlotCounts").path("total").intValue()).isEqualTo(1);

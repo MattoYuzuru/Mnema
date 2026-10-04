@@ -41,7 +41,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  * {@code [[fake:block]]} (the call waits until released or interrupted: a long provider call to cancel),
  * {@code [[fake:hold-edit]]} (the same for an edit call only, with its own latches),
  * {@code [[fake:crash-once]]} (the first call of each step throws, as a worker that dies mid-step) and
- * {@code [[fake:audio]]} (a valid document with one {@code ::audio} directive),
+ * {@code [[fake:audio]]} (a valid document with one {@code ::audio} directive; the Stub speech makes its clip),
+ * {@code [[fake:audio-hold]]} (the same, whose clip waits in {@link ScriptedSpeech} until a test releases it: a slot that stays GENERATING),
+ * {@code [[fake:audio-down]]} and {@code [[fake:audio-garbage]]} (the Stub speech is down, or answers bytes the pipeline rejects),
  * {@code [[fake:image]]} (a valid document with one {@code ::image mode=search} directive whose query carries the {@code [[stub:image-none]]}
  * and {@code [[stub:image-down]]} markers of the prompt, so the Stub image search can be made to find nothing or to be down). For exercise requests (JSON output):
  * {@code [[fake:not-json]]} (every answer is prose), {@code [[fake:fenced]]} (the Stub's answer inside a code fence) and
@@ -54,6 +56,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 class GenerationTestConfiguration {
     static final String INVALID_DOCUMENT = "# Заголовок\n\n::unknown{x=\"1\"} текст\n";
     static final String MULTI_DOCUMENT = "# Заголовок\n\nАбзац один.\n\nАбзац два.\n\n- пункт\n- пункт\n\nКонец.\n";
+    /** An audio directive whose text carries a marker of the speech double: {@code [[fake:tts-hold]]} waits for the test, {@code [[stub:tts-down]]} fails. */
+    static String audioDocument(String marker) {
+        return "# Глагол 行く\n\nПервый абзац.\n\n::audio{slot=\"a1\" lang=\"ja\" title=\"Произношение\"} 行く " + marker + "\n";
+    }
+
     static final String AUDIO_DOCUMENT = "# Глагол 行く\n\nПервый абзац.\n\n::audio{slot=\"a1\" lang=\"ja\" title=\"Произношение\"} 行く\n";
 
     /** A document with one searched image; the markers of the prompt that steer the Stub image search go into the query. */
@@ -139,6 +146,9 @@ class GenerationTestConfiguration {
             if (prompt.contains("[[fake:always-invalid-mbm]]")) return ok(request, INVALID_DOCUMENT);
             if (prompt.contains("[[fake:invalid-once]]") && !repair) return ok(request, INVALID_DOCUMENT);
             if (prompt.contains("[[fake:audio]]")) return ok(request, AUDIO_DOCUMENT);
+            if (prompt.contains("[[fake:audio-hold]]")) return ok(request, audioDocument("[[fake:tts-hold]]"));
+            if (prompt.contains("[[fake:audio-down]]")) return ok(request, audioDocument("[[stub:tts-down]]"));
+            if (prompt.contains("[[fake:audio-garbage]]")) return ok(request, audioDocument("[[stub:tts-garbage]]"));
             if (prompt.contains("[[fake:image]]")) return ok(request, imageDocument(prompt));
             if (prompt.contains("[[fake:not-json]]")) return ok(request, "это не json");
             if (prompt.contains("[[fake:length-once]]") && !repair) {
@@ -188,6 +198,54 @@ class GenerationTestConfiguration {
         return new Scripted(real);
     }
 
+    /**
+     * The speech port around the Stub: records every call (and whether the caller held a transaction) and holds a call whose text carries
+     * {@code [[fake:tts-hold]]} until {@link #release} is counted down or the call is interrupted (a cancelled step).
+     */
+    static final class ScriptedSpeech implements SpeechSynthesis {
+        private final SpeechSynthesis real;
+        final List<Request> calls = new CopyOnWriteArrayList<>();
+        final List<Boolean> transactionAtCall = new CopyOnWriteArrayList<>();
+        volatile CountDownLatch entered = new CountDownLatch(1);
+        volatile CountDownLatch release = new CountDownLatch(1);
+
+        ScriptedSpeech(SpeechSynthesis real) { this.real = real; }
+
+        void reset() {
+            calls.clear();
+            transactionAtCall.clear();
+            release.countDown();
+            entered = new CountDownLatch(1);
+            release = new CountDownLatch(1);
+        }
+
+        @Override public java.util.Optional<Identity> identity(String lang, String voice) { return real.identity(lang, voice); }
+
+        @Override public boolean configured() { return real.configured(); }
+
+        @Override
+        public AiResult<Audio> synthesize(Request request) {
+            calls.add(request);
+            transactionAtCall.add(TransactionSynchronizationManager.isActualTransactionActive());
+            if (request.text().contains("[[fake:tts-hold]]")) {
+                entered.countDown();
+                try {
+                    release.await(30, TimeUnit.SECONDS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    return AiResult.failed(new AiFailure.Transient("interrupted"));
+                }
+            }
+            return real.synthesize(request);
+        }
+    }
+
+    @Bean
+    @Primary
+    ScriptedSpeech scriptedSpeech(@Qualifier("speechSynthesis") SpeechSynthesis real) {
+        return new ScriptedSpeech(real);
+    }
+
     /** An executor for a media kind, so a test can see that a step of a REVIEW session is claimed (the real ones come with AI-09). */
     static final class VideoExecutor implements StepExecutor {
         final List<UUID> claimed = new CopyOnWriteArrayList<>();
@@ -211,12 +269,6 @@ class GenerationTestConfiguration {
         return new VideoExecutor(steps);
     }
 
-    /** A text-to-speech adapter that exists only so the capability is available; nothing calls it in this task. */
-    @Bean
-    SpeechSynthesis testSpeechSynthesis() {
-        return request -> AiResult.failed(new AiFailure.NotConfigured("test"));
-    }
-
     /**
      * The media pipeline's staging without S3 and without a worker: it creates the asset the caller named (origin {@code generated}) and, by
      * {@link #mode}, makes it READY at once, READY after {@link #delayPolls} state reads, REJECTED, or leaves it VERIFYING. The first
@@ -232,6 +284,8 @@ class GenerationTestConfiguration {
         volatile boolean fail;
         final AtomicInteger rejectNext = new AtomicInteger();
         final List<UUID> staged = new CopyOnWriteArrayList<>();
+        final List<UUID> adopted = new CopyOnWriteArrayList<>();
+        volatile boolean failAdopt;
         final List<Boolean> transactionAtStage = new CopyOnWriteArrayList<>();
         private final java.util.Map<UUID, AtomicInteger> waiting = new ConcurrentHashMap<>();
 
@@ -246,6 +300,8 @@ class GenerationTestConfiguration {
             fail = false;
             rejectNext.set(0);
             staged.clear();
+            adopted.clear();
+            failAdopt = false;
             transactionAtStage.clear();
             waiting.clear();
         }
@@ -290,6 +346,25 @@ class GenerationTestConfiguration {
                         case "FAILED_RETRYABLE", "DELETED" -> State.FAILED;
                         default -> State.VERIFYING;
                     }).orElse(State.MISSING);
+        }
+
+        @Override
+        public java.util.Optional<VerifiedMedia> verified(UUID owner, UUID assetId) {
+            UUID source = jdbc.sql("SELECT source_blob_id FROM app_learning.media_asset WHERE asset_id=:asset AND owner_id=:owner AND state='READY'")
+                    .param("asset", assetId).param("owner", owner).query(UUID.class).optional().orElse(null);
+            if (source == null) return java.util.Optional.empty();
+            // the fake pipeline makes no variants: the playback variant is the source blob itself
+            return java.util.Optional.of(new VerifiedMedia(source, List.of(new VerifiedMedia.Variant("playback", "audio_aac_m4a_v1", source, null, null, 1_000L))));
+        }
+
+        @Override
+        public boolean adopt(UUID owner, UUID assetId, VerifiedMedia media) {
+            adopted.add(assetId);
+            if (failAdopt) return false;
+            jdbc.sql("INSERT INTO app_learning.media_asset(asset_id,owner_id,upload_intent_id,origin,state,source_blob_id,owner_hold_until,created_at,updated_at) "
+                            + "VALUES (:asset,:owner,:asset,'generated','READY',:blob,CURRENT_TIMESTAMP + interval '1 hour',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) "
+                            + "ON CONFLICT (asset_id) DO NOTHING").param("asset", assetId).param("owner", owner).param("blob", media.sourceBlob()).update();
+            return true;
         }
 
         private void verifying(UUID asset) {

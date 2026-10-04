@@ -41,7 +41,8 @@ public final class LearningCapabilities {
         this.flags = flags;
         this.ai = ai;
         this.speechProvider = speechProviders.getIfAvailable() != null;
-        this.synthesis = synthesisPorts.getIfAvailable() != null;
+        SpeechSynthesis speech = synthesisPorts.getIfAvailable();
+        this.synthesis = speech != null && speech.configured();
         ImageSearch search = imageSearchPorts.getIfAvailable();
         this.imageSearch = search != null && search.configured();
         this.imageGeneration = imageGenerationPorts.getIfAvailable() != null;

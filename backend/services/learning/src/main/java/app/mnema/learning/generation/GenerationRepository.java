@@ -622,6 +622,15 @@ class GenerationRepository {
                 .param("code", errorCode).param("id", artifactId).query(SLOT).list();
     }
 
+    /**
+     * Whether a provider call of {@code capability} answered for the step (any attempt), per the call journal: a speech step that crashed after it
+     * synthesised a clip is resumed on the staged asset and must still be debited as a cache miss.
+     */
+    boolean providerAnswered(UUID stepId, String capability) {
+        return jdbc.sql("SELECT EXISTS (SELECT 1 FROM app_learning.ai_provider_call WHERE step_id=:step AND capability=:capability AND outcome='OK')")
+                .param("step", stepId).param("capability", capability).query(Boolean.class).single();
+    }
+
     /** Every slot of the artifact, whatever revision it was last attached to. */
     List<Slot> slotsOf(UUID artifactId) {
         return jdbc.sql("SELECT artifact_id,slot_key,revision_id,node_id,kind,spec::text AS spec,asset_id,state,error_code "
@@ -685,6 +694,8 @@ class GenerationRepository {
      */
     void dropMedia(UUID artifactId) {
         jdbc.sql("DELETE FROM app_learning.generation_media_candidate WHERE artifact_id=:id").param("id", artifactId).update();
+        jdbc.sql("DELETE FROM app_learning.generation_media_clip WHERE artifact_id=:id").param("id", artifactId).update();
+        jdbc.sql("DELETE FROM app_learning.generation_media_clip WHERE artifact_id=:id").param("id", artifactId).update();
         jdbc.sql("DELETE FROM app_learning.generation_media_ref WHERE artifact_id=:id").param("id", artifactId).update();
         jdbc.sql("DELETE FROM app_learning.generation_media_slot WHERE artifact_id=:id").param("id", artifactId).update();
     }

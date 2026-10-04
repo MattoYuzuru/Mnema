@@ -117,7 +117,7 @@ class StepDispatcher implements DisposableBean {
                 // an edit step fails its turn, not an artifact: it has its own recovery
                 if (steps.step(step).filter(found -> found.kind().equals(EditExecutor.KIND) || found.input().has("turnId")).isPresent()) {
                     edits.recover(step);
-                } else if (steps.step(step).filter(found -> ImageSearchExecutor.isSlotStep(found.kind(), found.input())).isPresent()) {
+                } else if (steps.step(step).filter(found -> MediaSteps.isSlotStep(found.kind(), found.input())).isPresent()) {
                     imageSlots.recover(step);
                 } else {
                     lifecycle.recover(step);
