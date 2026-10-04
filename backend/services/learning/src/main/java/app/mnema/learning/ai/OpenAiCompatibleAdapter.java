@@ -63,6 +63,8 @@ final class OpenAiCompatibleAdapter implements TextAdapter {
 
     @Override public String provider() { return provider; }
 
+    @Override public AiProperties.EgressMode egress() { return http.egress(); }
+
     @Override public boolean configured() { return bearer.configured(); }
 
     @Override

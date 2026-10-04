@@ -814,6 +814,12 @@ and the UI (AI-04+) build on it; nothing here debits the user's quota, it only r
 - **Observability.** One `ai_call ...` log line and `mnema_ai_calls_total`, `mnema_ai_call_seconds`,
   `mnema_ai_cost_micros_total` per provider call (`AiTelemetry`); a test asserts that no key, prompt, user key or
   provider message reaches a log.
+- **Egress.** `EgressClients` is the only place that knows the egress proxy (`learning.ai.egress.*`, plain `http://host:port`
+  forward proxy, TLS end to end through CONNECT, Basic credentials answered for the proxy host only). A provider with
+  `egress=proxy` runs on the proxied `ChatHttp`; without an active proxy it gets no adapter (`NOT_CONFIGURED`, startup line
+  `ai_egress provider=<id> mode=proxy state=not_configured`). The JDK needs `-Djdk.http.auth.tunneling.disabledSchemes=` for
+  Basic over CONNECT (runtime image entrypoint, Gradle test task). `egress=direct|proxy` is in `ai_call` and on
+  `mnema_ai_calls_total`; runbook: `docs/operations/ai-egress-proxy.md`.
 - **Capabilities.** `GET /api/capabilities` returns eight keys (`aiAssessment`, `speechToText`, `aiGeneration`,
   `textToSpeech`, `imageSearch`, `imageGeneration`, `videoGeneration`, `webSearch`). A capability is available only when
   its flag and an adapter exist; `aiGeneration` needs a usable key on the `text-fast` route and the user-key secret, or the

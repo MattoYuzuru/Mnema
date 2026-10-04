@@ -23,11 +23,11 @@ class AiConfiguration {
     private static final Logger LOG = LoggerFactory.getLogger(AiConfiguration.class);
 
     @Bean(destroyMethod = "close")
-    ChatHttp aiChatHttp(AiProperties properties) { return new ChatHttp(properties.transport()); }
+    EgressClients aiEgressClients(AiProperties properties) { return EgressClients.create(properties); }
 
     @Bean
-    AiRouting aiRouting(AiProperties properties, ChatHttp http) {
-        return new AiRouting(properties, adapters(properties, http, Clock.systemUTC()));
+    AiRouting aiRouting(AiProperties properties, EgressClients clients) {
+        return new AiRouting(properties, adapters(properties, clients, Clock.systemUTC()));
     }
 
     @Bean
@@ -73,6 +73,10 @@ class AiConfiguration {
     }
 
     static Map<String, TextAdapter> adapters(AiProperties properties, ChatHttp http, Clock clock) {
+        return adapters(properties, EgressClients.direct(http), clock);
+    }
+
+    static Map<String, TextAdapter> adapters(AiProperties properties, EgressClients clients, Clock clock) {
         Map<String, TextAdapter> adapters = new LinkedHashMap<>();
         if (AiProperties.STUB.equals(properties.provider())) {
             // Only this explicit setting registers the Stub; it must never be active in production.
@@ -88,6 +92,13 @@ class AiConfiguration {
                 "openrouter", OpenAiCompatibleAdapter.Dialect.OPENROUTER).entrySet()) {
             AiProperties.Provider provider = properties.providers().get(entry.getKey());
             if (provider == null || !provider.enabled() || provider.baseUrl().isEmpty()) continue;
+            ChatHttp http = clients.http(provider.egress());
+            if (provider.egress() == AiProperties.EgressMode.PROXY) {
+                // Values are never logged: neither the proxy address nor its credentials.
+                LOG.info("ai_egress provider={} mode=proxy state={}", entry.getKey(), http == null ? "not_configured" : "configured");
+            }
+            // A proxied provider without an active proxy has no adapter, so its capability is NOT_CONFIGURED and the route falls back.
+            if (http == null) continue;
             BearerSource bearer = entry.getValue() == OpenAiCompatibleAdapter.Dialect.GIGACHAT
                     ? new GigaChatTokens(provider.authUrl().isEmpty() ? null : URI.create(provider.authUrl()),
                             provider.authKey(), provider.scope(), http, clock)

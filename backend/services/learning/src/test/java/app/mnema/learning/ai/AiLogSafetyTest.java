@@ -25,6 +25,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class AiLogSafetyTest {
     private static final String KEY = "sk-LIVE-SECRET-VALUE-1234567890";
     private static final String CANARY = "ПРОМПТ-КАНАРЕЙКА-98765";
+    private static final String PROXY_USER = "egress-USER-CANARY-4711";
+    private static final String PROXY_PASSWORD = "egress-PASSWORD-CANARY-4712";
+    private static final String PROXY_URL = "http://proxy-host-canary.invalid:3128";
 
     @Test
     void noOutcomeLeaksAKeyAPromptOrAProviderMessage() {
@@ -39,8 +42,23 @@ class AiLogSafetyTest {
                     Reply.status(500), Reply.json(200, FakeProvider.fixture("chat-malformed.txt")),
                     Reply.fixtureJson("chat-content-filter.json"), Reply.sse("stream-error-chunk.sse"),
                     Reply.fixtureJson("chat-empty-content.json"));
-            var properties = AiTestSupport.properties("", AiTestSupport.routes(List.of("deepseek:deepseek-flash"), List.of(), List.of()),
-                    Map.of("deepseek", AiTestSupport.provider(provider.baseUrl(), KEY)));
+            var base = AiTestSupport.properties("", AiTestSupport.routes(List.of("deepseek:deepseek-flash"), List.of(), List.of()),
+                    Map.of("deepseek", AiTestSupport.provider(provider.baseUrl(), KEY),
+                            "openrouter", new AiProperties.Provider(true, "https://openrouter.example", KEY, "", "", "",
+                                    AiProperties.EgressMode.PROXY)));
+            var properties = new AiProperties(base.provider(), base.routes(), base.providers(), base.models(), base.transport(),
+                    base.retry(), base.breaker(), base.permits(), base.budget(), base.userKey(), base.prompt(),
+                    new AiProperties.Egress(PROXY_URL, PROXY_USER, PROXY_PASSWORD, true));
+            try (var clients = EgressClients.create(properties)) {
+                // startup lines of a proxied provider (with the proxy configured) and of one without an active proxy
+                assertThat(AiConfiguration.adapters(properties, clients, Clock.systemUTC())).containsKey("openrouter");
+                var killed = new AiProperties(base.provider(), base.routes(), base.providers(), base.models(), base.transport(),
+                        base.retry(), base.breaker(), base.permits(), base.budget(), base.userKey(), base.prompt(),
+                        new AiProperties.Egress(PROXY_URL, PROXY_USER, PROXY_PASSWORD, false));
+                try (var off = EgressClients.create(killed)) {
+                    assertThat(AiConfiguration.adapters(killed, off, Clock.systemUTC())).doesNotContainKey("openrouter");
+                }
+            }
             try (var http = new ChatHttp(properties.transport())) {
                 var adapter = new OpenAiCompatibleAdapter("deepseek", OpenAiCompatibleAdapter.Dialect.DEEPSEEK,
                         URI.create(provider.baseUrl()), BearerSource.staticKey(KEY), http,
@@ -75,16 +93,22 @@ class AiLogSafetyTest {
         assertThat(lines).anyMatch(line -> line.contains("outcome=REFUSAL"));
         String all = String.join("\n", lines);
         assertThat(all).doesNotContain(KEY).doesNotContain("SECRET").doesNotContain(CANARY).doesNotContain(AiTestSupport.USER_KEY)
-                .doesNotContain("secret-looking-detail").doesNotContain("Bearer").doesNotContain("Заголовок");
+                .doesNotContain("secret-looking-detail").doesNotContain("Bearer").doesNotContain("Заголовок")
+                .doesNotContain(PROXY_USER).doesNotContain(PROXY_PASSWORD).doesNotContain("proxy-host-canary").doesNotContain("CANARY-47");
         // value objects that travel through logs and exception messages never print secrets or text
         var request = new TextRequest(AiRoute.TEXT_FAST, List.of(TextRequest.Segment.system(CANARY, true)), OutputContract.MBM_TEXT,
                 10, 0.5, Duration.ofSeconds(1), AiTestSupport.KEY, null, null, 1);
         var response = new TextResponse(CANARY, TextResponse.FinishReason.STOP, Usage.ZERO, 0, null, new TextResponse.RouteUsed("p", "m"));
         var provider = new AiProperties.Provider(true, "https://api.example.com", KEY, "https://auth.example.com", KEY, "S");
         assertThat(String.join("\n", request.toString(), request.segments().get(0).toString(), response.toString(), provider.toString(),
-                AiTestSupport.KEY.toString(), new AiProperties.UserKey(KEY + KEY, "k1").toString()))
-                .doesNotContain(CANARY).doesNotContain(KEY).doesNotContain(AiTestSupport.USER_KEY);
+                AiTestSupport.KEY.toString(), new AiProperties.UserKey(KEY + KEY, "k1").toString(),
+                new AiProperties.Egress(PROXY_URL, PROXY_USER, PROXY_PASSWORD, true).toString()))
+                .doesNotContain(CANARY).doesNotContain(KEY).doesNotContain(AiTestSupport.USER_KEY).doesNotContain(PROXY_USER)
+                .doesNotContain(PROXY_PASSWORD).doesNotContain("proxy-host-canary");
         String okLine = lines.stream().filter(line -> line.contains("outcome=OK")).findFirst().orElseThrow();
+        assertThat(lines).contains("ai_egress provider=openrouter mode=proxy state=configured",
+                "ai_egress provider=openrouter mode=proxy state=not_configured");
+        assertThat(okLine).endsWith("egress=direct");
         assertThat(okLine).contains("in_hit=2000 in_miss=500 out=300 cost_micros=522").contains("latency_ms=");
     }
 }
