@@ -12,13 +12,14 @@ import org.springframework.context.annotation.Configuration;
 import java.net.URI;
 import java.time.Clock;
 import java.util.HashMap;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.random.RandomGenerator;
 
 /** Wires the provider layer. Providers without a base URL or switched off do not get an adapter. */
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties(AiProperties.class)
+@EnableConfigurationProperties({AiProperties.class, ImageSearchSettings.class})
 class AiConfiguration {
     private static final Logger LOG = LoggerFactory.getLogger(AiConfiguration.class);
 
@@ -45,6 +46,43 @@ class AiConfiguration {
                                   MeterRegistry meters, AiProperties properties) {
         return new RoutedTextGeneration(routing, breakers, budget, journal, new AiTelemetry(meters), properties,
                 new MonotonicClock(), Sleeper.SYSTEM, RandomGenerator.getDefault());
+    }
+
+    /**
+     * The licensed image search port (#296): the Stub with {@code learning.ai.provider=stub}, else the configured sources (Pixabay with a key,
+     * Openverse with client credentials and the egress proxy, Wikimedia Commons without a key). The bean always exists; whether any source can be
+     * called is {@link ImageSearch#configured()}, which the {@code imageSearch} capability reads.
+     */
+    @Bean
+    ImageSearch imageSearch(AiProperties properties, ImageSearchSettings settings, EgressClients clients, BreakerRegistry breakers, AiBudget budget,
+                            JdbcCallJournal journal, MeterRegistry meters, JdbcImageSearchCache cache) {
+        if (AiProperties.STUB.equals(properties.provider())) {
+            LOG.warn("ai_stub_active learning.ai.provider=stub: image search is answered by the deterministic Stub");
+            return new StubImageSearch();
+        }
+        List<ImageSource> sources = imageSources(properties, settings, clients, Clock.systemUTC());
+        for (ImageSource source : sources) {
+            LOG.info("ai_image_source source={} egress={} state={}", source.provider(), source.egress().label(),
+                    source.configured() ? "configured" : "not_configured");
+        }
+        return new RoutedImageSearch(sources, cache, new SafeImageFetcher(true, ImageAddressPolicy.Resolver.SYSTEM, settings.userAgent()), clients,
+                breakers, budget, journal, new AiTelemetry(meters), properties, settings);
+    }
+
+    /** The sources of {@code learning.ai.image-search.sources}, in that order; a source without a provider entry is absent. */
+    static List<ImageSource> imageSources(AiProperties properties, ImageSearchSettings settings, EgressClients clients, Clock clock) {
+        List<ImageSource> sources = new java.util.ArrayList<>();
+        for (String name : settings.sources()) {
+            AiProperties.Provider provider = properties.providers().get(name);
+            if (provider == null) continue;
+            ChatHttp http = clients.http(provider.egress());
+            sources.add(switch (name) {
+                case "pixabay" -> new PixabayImageSource(provider, http, settings.userAgent(), clock);
+                case "openverse" -> new OpenverseImageSource(provider, http, settings.userAgent(), clock);
+                default -> new WikimediaImageSource(provider, http, settings.userAgent(), clock);
+            });
+        }
+        return sources;
     }
 
     @Bean
