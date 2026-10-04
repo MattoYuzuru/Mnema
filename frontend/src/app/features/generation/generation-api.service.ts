@@ -9,11 +9,13 @@ import { AuthoringProtocolError, requireCommand, requireCursor, requireEntity, r
 import { expectedEtag } from '../own-decks/own-deck.models';
 import {
     ApprovalAck, ArtifactDetail, ArtifactSummary, CreatedSession, EditAccepted, EditEstimateRequest, EditRequest, EventsPage, GenerationEstimate,
-    HandoffResult, GenerationSpec, MAX_APPROVALS_PER_COMMAND, RequestValidationError, NoteArchiveResult, SessionDetail, SessionPage,
+    ExercisePlanItem, HandoffResult, GenerationSpec, MAX_APPROVALS_PER_COMMAND, MaterialPlanItem, RequestValidationError, NoteArchiveResult,
+    SessionDetail, SessionPage, SessionPlan,
     parseApprovalAck, parseArtifactDetail, parseArtifactSummary, parseEditAccepted, parseEstimate, parseEventsPage, parseHandoff,
     parseNoteArchive, parseSessionDetail, parseSessionPage, serializeEdit, serializeEditEstimate, serializeSpec
 } from './generation.models';
 import { IntentContext, IntentResult, parseIntent, serializeIntentRequest } from './generation-intent';
+import { DraftRow, serializePlanApproval } from './plan-editor';
 
 /** The Deck version an approval is pinned to (`If-Match` and `expectedDeckRevisionId`). */
 export interface DeckPin { readonly rowVersion: string; readonly revisionId: string; }
@@ -113,6 +115,21 @@ export class GenerationApiService {
         return defer(() => this.http.post<unknown>(`${this.session(deckId, sessionId)}/cancellation`,
             { commandId: requireCommand(commandId) }, { observe: 'response' }))
             .pipe(map(response => this.sessionDetail(response, sessionId)));
+    }
+
+    /**
+     * Launches the plan the owner edited (`approvePlan`, AI-14 #295; no `If-Match`): the session becomes `RUNNING` with exactly the planned
+     * artifacts. `expectedSessionVersion` is the version of the session the owner edited the plan on (a stale one is `412`). An exact retry
+     * answers `200` with `Idempotency-Replayed: true` and no `ETag`.
+     */
+    approvePlan(deckId: string, sessionId: string, plan: SessionPlan, rows: readonly DraftRow<ExercisePlanItem | MaterialPlanItem>[],
+                expectedSessionVersion: string, commandId: string): Observable<CreatedSession> {
+        return defer(() => this.http.post<unknown>(`${this.session(deckId, sessionId)}/plan-approval`,
+            serializePlanApproval(plan, rows, expectedSessionVersion, commandId), { observe: 'response' })).pipe(map(response => {
+            const session = this.sessionDetail(response, sessionId);
+            if (session.plan?.approved !== true || session.deckId !== deckId.toLowerCase()) throw new AuthoringProtocolError('Plan approval acknowledgement mismatch.');
+            return { session, replayed: replayHeader(response) };
+        }));
     }
 
     /** Hold-to-delete: removes unpublished artifacts; the first call answers 204, later calls 404. */

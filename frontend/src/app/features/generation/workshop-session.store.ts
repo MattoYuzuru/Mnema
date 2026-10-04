@@ -9,9 +9,11 @@ import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { UsageApiService } from '../usage/usage-api.service';
 import { DeckPin, GenerationApiService } from './generation-api.service';
 import { GenerationProblem, readProblem } from './generation-problem';
+import { DraftRow, describePlanProblem } from './plan-editor';
 import { REVERTED_NOTE, describeEditCost, describeEditLimit, describeNoteArchive, editOutcomeNote, editProblemMessage, problemMessage } from './generation-view';
 import {
-    ApprovalAck, ArtifactDetail, ArtifactSummary, ArtifactTurn, EditAction, EditPreset, GenerationEvent, HandoffResult, MAX_APPROVALS_PER_COMMAND,
+    ApprovalAck, ArtifactDetail, ArtifactSummary, ArtifactTurn, EditAction, EditPreset, ExercisePlanItem, GenerationEvent, HandoffResult, MAX_APPROVALS_PER_COMMAND,
+    MaterialPlanItem,
     NoteArchiveResult, SessionDetail, SpeechVoice, UsageUpdate, ActiveStep,
     allows, isApprovable, isRetryable, isTerminalSession, sessionAllows
 } from './generation.models';
@@ -86,6 +88,9 @@ export type EditOutcome =
 
 /** The cost line of a rewrite, and, when the budget does not let it start, the reason in words. */
 export interface EditCost { readonly text: string; readonly canStart: boolean; readonly blocked: string | null; }
+
+/** How the launch of a plan ended: the session is running, or the words for what stopped it (the plan the owner edited is kept). */
+export type PlanOutcome = { readonly ok: true } | { readonly ok: false; readonly message: string };
 
 /** Thrown into a command that the user took back before the server answered. */
 class CommandAborted extends Error {}
@@ -469,6 +474,38 @@ export class WorkshopSessionStore {
             return true;
         } finally {
             this.end('notes');
+        }
+    }
+
+    /**
+     * Launches the plan the owner edited (AI-14, #295): the session becomes `RUNNING` with exactly the planned artifacts, and the loop follows
+     * them from here. `version` is the session version the owner edited the plan on. An unknown outcome is retried with the same command
+     * (the server replays its answer), so pressing again never launches twice; a refusal is explained in words and the edited plan stays.
+     */
+    async approvePlan(rows: readonly DraftRow<ExercisePlanItem | MaterialPlanItem>[], version: string): Promise<PlanOutcome> {
+        const session = this.session();
+        const plan = session?.plan ?? null;
+        if (session === null || plan === null || !sessionAllows(session.state, 'approvePlan') || plan.approved) {
+            return { ok: false, message: 'Этот план уже запущен или остановлен.' };
+        }
+        if (this.isBusy('session')) return { ok: false, message: 'Подождите: предыдущее действие ещё выполняется.' };
+        this.begin('session');
+        try {
+            const key = `${version}:${JSON.stringify(rows.map(row => row.item))}`;
+            const outcome = await this.send('plan-approval', key, id => this.api.approvePlan(this.deckId, this.sessionId, plan, rows, version, id));
+            if (!outcome.ok) {
+                const problem = outcome.problem;
+                if (problem.status === 404) this.gone();
+                else if (!problem.uncertain && problem.status !== 400) void this.refresh();
+                return { ok: false, message: describePlanProblem(problem, plan) };
+            }
+            this.session.set(mergeSession(this.session(), outcome.value.session));
+            this.phase.set('ready');
+            this.toast.echo('План запущен');
+            this.wake();
+            return { ok: true };
+        } finally {
+            this.end('session');
         }
     }
 
