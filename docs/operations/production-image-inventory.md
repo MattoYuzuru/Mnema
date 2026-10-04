@@ -45,6 +45,24 @@ provenance/SBOM and the HIGH/CRITICAL gate bind the actual derived release diges
 Future stable security patches may satisfy these floors when old package builds
 are retired. A missing floor or failed image scan blocks publication.
 
+## Backend dependency security floor
+
+[Publication run 37220726794](https://github.com/MattoYuzuru/Mnema/actions/runs/37220726794)
+passed frontend/PostgreSQL but rejected both backend images: Spring Boot 4.1.1's
+Jackson 3.1.5 had five HIGH findings. Jackson core was affected by
+`CVE-2026-89407` and `CVE-2026-89425`; databind by `CVE-2026-68497`,
+`CVE-2026-91776` and `CVE-2026-91777`.
+
+The root Gradle build overrides `jackson-bom.version` to the published
+[Jackson 3.1.7 BOM](https://repo.maven.apache.org/maven2/tools/jackson/jackson-bom/3.1.7/jackson-bom-3.1.7.pom),
+which covers all five findings on the existing 3.1 patch line. All Jackson 3 modules
+remain aligned through Spring Boot's
+[managed-version customization](https://docs.spring.io/spring-boot/gradle-plugin/managing-dependencies.html#managing-dependencies.dependency-management-plugin.customizing).
+Jackson 2, Spring Boot and the runtime base images retain their existing versions.
+Serialization, HTTP/auth behavior and the full quality gate must pass with this BOM;
+published backend digests still require provenance/SBOM and fresh vulnerability scans.
+Remove the override only after Boot manages a fixed version and scans pass.
+
 ## Verified production support images
 
 The new empty-DB VPS uses the following official image. Registry Content-Digest
