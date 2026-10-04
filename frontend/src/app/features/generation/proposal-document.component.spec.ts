@@ -990,6 +990,29 @@ describe('ProposalDocumentComponent', () => {
                 expect(window.document.activeElement).toBe(radios().find(radio => radio.checked));
             });
 
+            it('announces the end of a search in one polite region of the document, after the panel is gone', async () => {
+                await create({ capabilities: capabilities(on), artifact: summary('REVISING'),
+                    detail: detailOf(sample(), { mediaSlots: [slotOf()], turns: [searchTurn({ status: 'RUNNING', resultRevisionId: null })] }) });
+                const region = root().querySelector<HTMLElement>(':scope > p[role="status"]')!;
+                expect(region.getAttribute('aria-live')).toBe('polite');
+                expect(region.textContent).toBe('');
+                fixture.componentRef.setInput('artifact', summary('PROPOSED', { currentRevisionId: AFTER_REVISION }));
+                fixture.componentRef.setInput('detail', applied().detail);
+                await settle();
+                expect(root().querySelector<HTMLElement>(':scope > p[role="status"]')).toBe(region);
+                expect(region.textContent).toBe('Нашла 3 варианта, выбран первый.');
+                // The next search clears it, and a failure says why and that nothing changed.
+                fixture.componentRef.setInput('artifact', summary('REVISING', { currentRevisionId: AFTER_REVISION }));
+                fixture.componentRef.setInput('detail', detailOf(sample(), { mediaSlots: [slotOf()], turns: [searchTurn({ status: 'RUNNING', resultRevisionId: null })] }, AFTER_REVISION));
+                await settle();
+                expect(region.textContent).toBe('');
+                fixture.componentRef.setInput('artifact', summary('PROPOSED', { currentRevisionId: AFTER_REVISION }));
+                fixture.componentRef.setInput('detail', detailOf(sample(), { mediaSlots: [slotOf()],
+                    turns: [searchTurn({ status: 'FAILED', errorCode: 'NO_RESULT', resultRevisionId: null })] }, AFTER_REVISION));
+                await settle();
+                expect(region.textContent).toBe('Не нашлось подходящих изображений. Изображение не изменилось, лимит не списан.');
+            });
+
             it('says «Ищу похожие изображения…» in a status when the search runs without a panel (another tab, a reload)', async () => {
                 await create({ artifact: summary('REVISING'), capabilities: capabilities(on),
                     detail: detailOf(sample(), { mediaSlots: [slotOf(slot => { slot.attribution = null; })], turns: [searchTurn({ status: 'QUEUED', resultRevisionId: null })] }) });
@@ -1029,7 +1052,7 @@ describe('ProposalDocumentComponent', () => {
                 await settle();
                 const details = root().querySelector<HTMLDetailsElement>('details.variants')!;
                 expect(details.hasAttribute('open')).toBe(true);
-                expect(details.querySelector('summary')!.textContent).toContain('Другие изображения (3)');
+                expect(details.querySelector('summary')!.textContent).toContain('Варианты (3)');
                 expect(details.querySelector('legend')!.textContent).toBe('Варианты');
                 expect(radios().map(radio => radio.checked)).toEqual([true, false, false]);
                 expect(details.contains(radios()[0]!)).toBe(true);
@@ -1045,38 +1068,76 @@ describe('ProposalDocumentComponent', () => {
                 expect(root().querySelector('details.variants')).toBeNull();
             });
 
-            it('chooses another image through the store with the slot key and the candidate, disabling the group while it runs', async () => {
+            const useButton = (): HTMLButtonElement => root().querySelector<HTMLButtonElement>('app-image-variants .commit-button')!;
+
+            it('does not call the API on arrow keys or clicks: the radios only change the local choice', async () => {
+                await create(applied());
+                store.edits.set({ [ids.first]: memo() });
+                await settle();
+                radios()[0]!.focus();
+                radios()[1]!.click();
+                radios()[2]!.click();
+                await settle();
+                expect(store.selectCandidate).not.toHaveBeenCalled();
+                expect(radios().map(radio => radio.checked)).toEqual([false, false, true]);
+                expect(root().querySelector('app-image-variants fieldset')!.getAttribute('aria-disabled')).toBeNull();
+            });
+
+            it('commits with «Использовать это изображение» through the store with the slot key and the candidate, saying «Сохраняю выбор…» and keeping focus on the checked radio', async () => {
                 await create(applied());
                 store.edits.set({ [ids.first]: memo() });
                 await settle();
                 let finish: (value: { ok: true }) => void = () => undefined;
                 store.selectCandidate.mockReturnValue(new Promise(resolve => { finish = resolve; }));
-                radios()[1]!.focus();
                 radios()[1]!.click();
+                await settle();
+                useButton().click();
                 await settle();
                 expect(store.selectCandidate).toHaveBeenCalledWith(ids.first, 'i1', SECOND);
                 expect(root().querySelector('app-image-variants fieldset')!.getAttribute('aria-disabled')).toBe('true');
-                expect(radios()[1]!.checked).toBe(true);
-                radios()[2]!.click();
+                expect(root().querySelector('app-image-variants [role="status"]')!.textContent).toBe('Сохраняю выбор…');
+                useButton().click();
                 expect(store.selectCandidate).toHaveBeenCalledTimes(1);
+                // The answer arrives as a new revision with the second candidate chosen.
+                fixture.componentRef.setInput('detail', applied(slotOf(), SECOND).detail);
                 finish({ ok: true });
                 await settle();
+                await settle();
                 expect(root().querySelector('app-image-variants fieldset')!.getAttribute('aria-disabled')).toBeNull();
+                expect(window.document.activeElement).toBe(radios().find(radio => radio.checked));
+                expect(radios().map(radio => radio.checked)).toEqual([false, true, false]);
             });
 
-            it('shows a refused choice in the group, puts the radio back and keeps focus on the group', async () => {
+            it('shows a refused commit in the group and keeps focus on the checked radio', async () => {
                 await create(applied());
                 store.edits.set({ [ids.first]: memo() });
                 await settle();
                 store.selectCandidate.mockResolvedValue({ ok: false, message: 'Материал обновился, пока вы выбирали.' });
-                radios()[1]!.focus();
                 radios()[1]!.click();
+                await settle();
+                radios()[1]!.focus();
+                useButton().click();
                 await settle();
                 await settle();
                 expect(root().querySelector('app-image-variants .error')!.textContent).toBe('Материал обновился, пока вы выбирали.');
-                expect(radios().map(radio => radio.checked)).toEqual([true, false, false]);
-                expect(window.document.activeElement).toBe(radios()[0]);
+                expect(window.document.activeElement).toBe(radios().find(radio => radio.checked));
                 expect(store.notify).not.toHaveBeenCalled();
+            });
+
+            it('does not fight a variants group the user closed: focus falls back to its summary', async () => {
+                await create(applied());
+                store.edits.set({ [ids.first]: memo() });
+                await settle();
+                store.selectCandidate.mockResolvedValue({ ok: false, message: 'x' });
+                radios()[1]!.click();
+                await settle();
+                const details = root().querySelector<HTMLDetailsElement>('details.variants')!;
+                useButton().click();
+                details.removeAttribute('open');
+                await settle();
+                await settle();
+                expect(window.document.activeElement).not.toBe(window.document.body);
+                expect(details.hasAttribute('open')).toBe(false);
             });
 
             it('draws the picture of a candidate through the asset API, and links only to https pages in a new tab', async () => {
@@ -1162,7 +1223,7 @@ describe('ProposalDocumentComponent', () => {
                 for (const [code, text] of Object.entries(reasons)) {
                     await create(withSlot(failedSlot(code)));
                     expect(frame()!.querySelector('.slot-failed-text')!.textContent, code).toBe(text);
-                    expect(names()).toEqual(['Повторить', 'Заменить', 'Убрать блок']);
+                    expect(names()).toEqual(['Повторить', 'Заменить…', 'Убрать блок']);
                     expect(frame()!.getAttribute('role')).toBe('group');
                     expect(root().querySelector('.media-actions[aria-label^="Действия с изображением"]')).toBeNull();
                 }
@@ -1181,7 +1242,7 @@ describe('ProposalDocumentComponent', () => {
 
             it('«Заменить» opens the panel with an empty field and focus in it; «Отмена» returns focus to «Заменить»', async () => {
                 await create(withSlot(failedSlot('NO_RESULT')));
-                labelled('Заменить')!.click();
+                labelled('Заменить…')!.click();
                 await settle();
                 expect(field()!.value).toBe('');
                 expect(window.document.activeElement).toBe(field());
@@ -1190,11 +1251,11 @@ describe('ProposalDocumentComponent', () => {
                 await settle();
                 expect(store.edit).toHaveBeenCalledWith(ids.first, expect.objectContaining({ action: 'IMAGE_SEARCH', instruction: 'красная лиса' }));
                 await create(withSlot(failedSlot('NO_RESULT')));
-                labelled('Заменить')!.click();
+                labelled('Заменить…')!.click();
                 await settle();
                 panelButton('Отмена').click();
                 await settle();
-                expect(window.document.activeElement).toBe(labelled('Заменить'));
+                expect(window.document.activeElement).toBe(labelled('Заменить…'));
             });
 
             it('«Убрать блок» removes the media and moves focus to the document', async () => {

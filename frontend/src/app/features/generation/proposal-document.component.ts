@@ -120,6 +120,11 @@ export class ProposalDocumentComponent {
     protected readonly selecting = signal<string | null>(null);
     protected readonly selectionError = signal<{ readonly nodeId: string; readonly message: string } | null>(null);
     protected readonly searchRunning = IMAGE_SEARCH_RUNNING;
+    /** What the end of a search says, in one polite region that lives as long as the document (the panel that was open is gone by then). */
+    protected readonly announcement = signal('');
+    /** A search started with «Повторить» (no panel): focus is restored when it ends. */
+    private readonly retrying = signal<string | null>(null);
+    private watchedTurn: string | null = null;
     protected readonly diffId = `${this.uid}-diff`;
     protected readonly phase = signal<'idle' | 'group' | 'window'>('idle');
     protected readonly target = signal<SelectionTarget | null>(null);
@@ -171,6 +176,7 @@ export class ProposalDocumentComponent {
     private readonly slots = computed(() => new Map((this.detail()?.mediaSlots ?? [])
         .filter(slot => slot.kind === 'IMAGE' && slot.mode === 'search' && slot.state !== 'REMOVED').map(slot => [slot.nodeId, slot] as const)));
     /** The node a search turn is queued or running on: the panel under it waits for the end. */
+    protected readonly searchTurnRunning = computed(() => this.pending()?.action === 'IMAGE_SEARCH');
     protected readonly searchingNode = computed(() => {
         const turn = this.pending();
         return turn?.action === 'IMAGE_SEARCH' ? turn.targetNodeIds[0] ?? null : null;
@@ -299,6 +305,23 @@ export class ProposalDocumentComponent {
             untracked(() => {
                 if (panel.sent && !searching) this.closePanel(true);
                 else if (!panel.sent && !open) this.closePanel(false);
+            });
+        });
+        // The end of a search is announced once, and a retry (no panel) gives focus back to what the search made.
+        effect(() => {
+            const turn = this.pending();
+            const detail = this.detail();
+            const retrying = this.retrying();
+            const running = turn?.action === 'IMAGE_SEARCH' ? turn : null;
+            const state = this.artifact().state;
+            untracked(() => {
+                if (running !== null) { this.watchedTurn = running.turnId; this.announcement.set(''); return; }
+                if (retrying !== null && state !== 'REVISING') { this.retrying.set(null); this.focusAfterSearch(retrying, `retry:${retrying}`); }
+                const id = this.watchedTurn;
+                const done = id === null ? undefined : detail?.turns.find(held => held.turnId === id);
+                if (done === undefined || done.status === 'QUEUED' || done.status === 'RUNNING') return;
+                this.watchedTurn = null;
+                this.announcement.set(this.endOfSearch(done));
             });
         });
         // The group is a popover in the top layer: it has to be shown when it exists.
@@ -706,13 +729,37 @@ export class ProposalDocumentComponent {
         this.panelError.set(null);
         this.panelSending.set(false);
         if (!focus) return;
+        this.focusAfterSearch(panel.nodeId, panel.origin, panel.sent);
+    }
+
+    /**
+     * Gives focus back after a search: the checked variant (when a search made some), «Найти похожее», the control it started from, the
+     * document. Each candidate is tried and checked (`activeElement`): a closed `<details>` or a control that went away swallows focus.
+     */
+    private focusAfterSearch(nodeId: string, origin: string, variants = true): void {
         afterNextRender(() => {
             if (this.destroyed) return;
             const root = this.host().nativeElement;
-            const picked = panel.sent ? root.querySelector<HTMLElement>(`[data-variants="${panel.nodeId}"] input:checked`) : null;
-            (picked ?? root.querySelector<HTMLElement>(`[data-focus-key="${panel.origin}"]`) ?? root.querySelector<HTMLElement>(`[data-focus-key="search:${panel.nodeId}"]`)
-                ?? this.host().nativeElement).focus({ preventScroll: false });
+            const wanted = variants ? [`[data-variants="${nodeId}"] input:checked`, `[data-variants="${nodeId}"] summary`] : [];
+            // A panel closed without a search goes back to the control it was opened from; a search that ended goes to «Найти похожее».
+            wanted.push(...(variants ? [`[data-focus-key="search:${nodeId}"]`, `[data-focus-key="${origin}"]`] : [`[data-focus-key="${origin}"]`, `[data-focus-key="search:${nodeId}"]`]));
+            for (const selector of wanted) {
+                const element = root.querySelector<HTMLElement>(selector);
+                element?.focus();
+                if (element !== null && element !== undefined && window.document.activeElement === element) return;
+            }
+            root.focus({ preventScroll: true });
         }, { injector: this.injector });
+    }
+
+    private endOfSearch(turn: ArtifactTurn): string {
+        if (turn.status === 'APPLIED') {
+            const slot = this.slotOf(turn.targetNodeIds[0] ?? '');
+            const count = slot?.candidates.filter(candidate => candidate.state === 'READY').length ?? 0;
+            return count > 1 ? `Нашла ${count} ${variantsWord(count)}, выбран первый.` : 'Нашла изображение.';
+        }
+        const why = turn.status === 'CANCELLED' ? 'Поиск остановлен.' : imageSearchFailure(turn.errorCode);
+        return `${why} Изображение не изменилось, лимит не списан.`;
     }
 
     protected async submitSearch(id: string, query: string): Promise<void> {
@@ -740,6 +787,7 @@ export class ProposalDocumentComponent {
         const outcome = await this.runSearch(id, null);
         if (this.destroyed) return;
         if (!outcome.ok && !outcome.aborted) this.store.notify(outcome.message);
+        else if (outcome.ok) this.retrying.set(id);
     }
 
     /** «Убрать блок» on a failed slot. */
@@ -756,11 +804,7 @@ export class ProposalDocumentComponent {
         this.selecting.set(null);
         if (!outcome.ok) this.selectionError.set({ nodeId: id, message: outcome.message });
         // The document is drawn again from the answer (or from the re-read after a refusal): focus stays on the group.
-        afterNextRender(() => {
-            if (this.destroyed) return;
-            const root = this.host().nativeElement;
-            root.querySelector<HTMLElement>(`[data-variants="${id}"] input:checked`)?.focus();
-        }, { injector: this.injector });
+        this.focusAfterSearch(id, `search:${id}`);
     }
 
     protected selectionMessage(id: string): string | null {
@@ -775,6 +819,12 @@ export class ProposalDocumentComponent {
 }
 
 /** Why an image search turn failed, in words; the picture did not change and nothing was charged. */
+/** «1 вариант», «2 варианта», «5 вариантов». */
+function variantsWord(count: number): string {
+    const last = count % 10;
+    return count % 100 >= 11 && count % 100 <= 14 ? 'вариантов' : last === 1 ? 'вариант' : last >= 2 && last <= 4 ? 'варианта' : 'вариантов';
+}
+
 function imageSearchFailure(code: ArtifactTurn['errorCode']): string {
     return code === 'NO_RESULT' || code === null ? 'Не нашлось подходящих изображений.'
         : slotFailureReason(code === 'PROVIDER_UNAVAILABLE' || code === 'DEADLINE_EXCEEDED' ? code : null);

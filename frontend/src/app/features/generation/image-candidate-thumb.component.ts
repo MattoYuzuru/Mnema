@@ -15,7 +15,7 @@ import { MediaPlaybackApi, MediaPlaybackView } from '../../content/rendering/med
       @if (source(); as url) {
         <img [src]="url" [alt]="alt()" loading="lazy" decoding="async" (error)="failed()" />
       } @else {
-        <span class="thumb-note">{{ note() }}</span>
+        <span class="thumb-note" aria-hidden="true">{{ note() }}</span>
       }
     `,
     styles: [`
