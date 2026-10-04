@@ -14,9 +14,9 @@ Every external image used to build Mnema or applied by the hosted production wor
 - the `identity-account` and `learning` release templates consumed by `scripts/render-release-manifest.sh`;
 - the exact literal `kubectl apply` surface in the production workflow;
 - Dependabot Docker coverage for `/backend`, `/frontend`, `/k8s`, and `/k8s/observability`.
-- the new VPS `deploy/production/compose.yaml`: three administrator-admitted
-  application bindings and a fixed PostgreSQL image, identical to the isolated
-  restore image; Dependabot also covers `/deploy/production`.
+- the new VPS `deploy/production/compose.yaml`: four administrator-admitted
+  image bindings; the PostgreSQL Dockerfile base is pinned, and restore binds to
+  the admitted derived PostgreSQL image; Dependabot also covers `/deploy/production`.
 
 Since #143, Main CI ships only Identity & Account and Learning in maintenance; production promotion is disabled until #147. The production support image inventory below describes retained deployed infrastructure, not an enabled replacement production rollout.
 
@@ -41,7 +41,7 @@ were present. Runtime acceptance and vulnerability evidence remain separate gate
 
 | Component | Path | Readable tag | Pinned index digest | `linux/amd64` child |
 | --- | --- | --- | --- | --- |
-| VPS PostgreSQL | `deploy/production/compose.yaml` | `postgres:18.6` | `sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722` | `sha256:0377e72c5289ed2f98cf61b1a9c2db9eb9d300317fe14244492fbc94343b3d04` |
+| VPS PostgreSQL | `deploy/production/Dockerfile` | `postgres:18.6-alpine3.24` | `sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873` | `sha256:d8703cd7fba306b9fec9268ecedfa8a966846c053036a60e3635791957eb2f66` |
 
 The following support images belong to the retained, disabled Kubernetes flow.
 

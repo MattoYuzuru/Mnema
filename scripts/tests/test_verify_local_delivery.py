@@ -54,7 +54,7 @@ def verify(contents):
             expected.update({'build-and-push': PUBLISH, 'render-release': FALSE,
                              'assemble-vps-candidate': PUBLISH})
             required_input = ('  workflow_dispatch:\n    inputs:\n      publish_production_candidate:\n'
-                              '        description: Build and verify the three immutable VPS images; no deployment\n'
+                              '        description: Build and verify four immutable VPS images; no deployment\n'
                               '        type: boolean\n        required: true\n        default: false')
             if required_input not in content:
                 errors.append('publication requires an explicit boolean input defaulting to false')

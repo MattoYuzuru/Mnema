@@ -15,8 +15,8 @@ off. Both quality jobs run on the same revision before any image build. Assembly
 checks that the revision is still current remote main; a newer main requires a fresh
 run rather than deploying an older candidate.
 
-The publication matrix has exactly three services: `identity-account`, `learning`,
-`frontend`. Tags use the entire `sha-<40 hex commit>`; there is no `latest` publication.
+The publication matrix has exactly four services: `identity-account`, `learning`,
+`frontend`, `postgres`. Tags use the entire `sha-<40 hex commit>`; there is no `latest` publication.
 Release identity is `ghcr.io/mattoyuzuru/mnema/<service>@sha256:<64 hex digest>`.
 Build caches are isolated per service. The backend images use the current Java25
 replacement modules; the frontend image builds the same source's Angular application.
@@ -35,8 +35,8 @@ new blanket exception is introduced.
 
 `vps-candidate` retains the following sanitized files for 30 days:
 
-- `vps-candidate.json`: exact SHA, three digest references, run identity, evidence hash.
-- `vps-security-evidence.json`: complete three-image security evidence.
+- `vps-candidate.json`: exact SHA, four digest references, run identity, evidence hash.
+- `vps-security-evidence.json`: complete four-image security evidence.
 - `vps-candidate.sha256`: file checksums.
 
 The renderer rejects missing/duplicate services, foreign repositories, mutable

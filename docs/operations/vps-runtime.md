@@ -42,6 +42,14 @@ its DB password. Application images run UID10001 without capabilities and with
 read-only roots. Frontend master retains only CHOWN/SETUID/SETGID for nginx workers.
 Memory/CPU/PID limits and10MB×3 local log rotation bound resource use.
 
+PostgreSQL is the fourth verified release image: the pinned official18.6 Alpine
+base retains its entrypoint with only the unique privilege-switch call changed
+from gosu to Alpine's su-exec (same user/command direct-exec operation); the
+vulnerable Go-based gosu binary is removed entirely. It passes
+the same provenance, SBOM and HIGH/CRITICAL gate as the applications. No scan
+exception is introduced. The local restore uses the exact administrator-owned
+`/etc/mnema/production/postgres-image` digest and verifies the running source agrees.
+
 Caddy rejects public actuator/internal/metrics/admin paths before proxying.
 Same-origin `/api` goes to Learning with cookies removed and Set-Cookie stripped;
 `auth.mnema.app` is Identity's separate HTTPS issuer/session origin. Forwarded
@@ -68,6 +76,7 @@ Do not substitute fixture keys, Stub providers or a production bypass.
    Apply each once; existing/partial state stops for private inspection. Docker
    comes from the official stable apt repository; no conflicting runtime is
    removed. RSA/DB credentials are generated on the RU host and never printed.
+   Replace the root dispatcher from this merged revision to admit all four images.
 3. Install reviewed `caddy-admin.conf` as the root-owned systemd drop-in
    `/etc/systemd/system/caddy.service.d/30-mnema-admin.conf`, daemon-reload, and
    create `/run/mnema-caddy` caddy:caddy0700. Validate and switch to
@@ -76,7 +85,8 @@ Do not substitute fixture keys, Stub providers or a production bypass.
    Run `scripts/vps_origin_fixture.py` with installed Caddy: actual private-path,
    cookie, forwarded-address, redirect and forced-error log checks use temporary loopback listeners
    only, without modifying the serving origin. Stage candidate image bindings in root-only inputs, pull exact verified
-   digests, start only PostgreSQL, and verify separate roles/listeners. Preserve
+   digests, record its PostgreSQL digest in root-owned `postgres-image`, start only
+   PostgreSQL, and verify separate roles/listeners. Preserve
    the maintenance Caddy configuration until application readiness passes.
 4. Run root-only `mnema-local-backup rehearse`. It dumps the current DB and
    restores into a uniquely named network-none PostgreSQL container/volume,
@@ -139,4 +149,5 @@ Sources: [Docker Ubuntu installation](https://docs.docker.com/engine/install/ubu
 [restore](https://www.postgresql.org/docs/current/app-pgrestore.html),
 [Caddy reverse proxy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy),
 [RSA generation](https://cryptography.io/en/stable/hazmat/primitives/asymmetric/rsa/),
-[JWK integer encoding](https://www.rfc-editor.org/rfc/rfc7518#section-6.3).
+[JWK integer encoding](https://www.rfc-editor.org/rfc/rfc7518#section-6.3),
+[su-exec operation](https://github.com/ncopa/su-exec).

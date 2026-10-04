@@ -21,7 +21,7 @@ x-backend: &backend
 services:
   postgres:
     <<: *service
-    image: postgres:18.6@sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722
+    image: ${MNEMA_POSTGRES_IMAGE:?verified-candidate-required}
     command: [postgres, -c, listen_addresses=127.0.0.1, -c, port=15432, -c, log_statement=none, -c, log_min_error_statement=panic]
     environment:
       POSTGRES_DB: mnema

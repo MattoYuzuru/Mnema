@@ -14,9 +14,22 @@ from unittest.mock import patch
 from test_vps_runtime import load, ROOT
 
 BACKUP = load('vps_backup', 'deploy/production/local-backup.py')
+FIXTURE_IMAGE = 'mnema-vps-postgres-fixture:verified'
 
 
 class BackupTest(unittest.TestCase):
+    def test_only_exact_admin_bound_postgres_digest_is_accepted(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(BACKUP, 'protected'):
+            path = Path(temporary) / 'postgres-image'
+            with patch.object(BACKUP, 'IMAGE_PIN', path):
+                for value in ('postgres:latest', 'ghcr.io/other/postgres@sha256:' + 'a' * 64,
+                              'ghcr.io/mattoyuzuru/mnema/postgres@sha256:' + 'A' * 64):
+                    path.write_text(value)
+                    with self.assertRaises(ValueError): BACKUP.database_image()
+                value = 'ghcr.io/mattoyuzuru/mnema/postgres@sha256:' + 'a' * 64
+                path.write_text(value + '\n')
+                self.assertEqual(BACKUP.database_image(), value)
+
     def test_dump_restores_rows_and_role_isolation_in_a_network_none_fixture(self):
         name = 'mnema-backup-test-' + uuid.uuid4().hex
         docker = shutil.which('docker')
@@ -29,6 +42,7 @@ class BackupTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary, patch.object(BACKUP, 'SOURCE', name), \
              patch.object(BACKUP, 'DIRECTORY', Path(temporary)), \
              patch.object(BACKUP, 'protected'), patch.object(BACKUP, 'ENV', env), \
+             patch.object(BACKUP, 'database_image', return_value=FIXTURE_IMAGE), \
              patch.object(BACKUP.subprocess, 'run', side_effect=local_run):
             old_umask = os.umask(0o077)
             started = False
@@ -38,7 +52,7 @@ class BackupTest(unittest.TestCase):
                     '-e', 'POSTGRES_DB=mnema', '-e', 'MNEMA_IDENTITY_DB_PASSWORD=fixture-identity',
                     '-e', 'MNEMA_LEARNING_DB_PASSWORD=fixture-learning', '--mount',
                     'type=bind,src=' + str(ROOT / 'deploy/production/init-database.sh') + ',dst=/docker-entrypoint-initdb.d/10-mnema.sh,readonly',
-                    BACKUP.IMAGE, 'postgres', '-c', 'listen_addresses=127.0.0.1', '-c', 'port=15432'], stdout=subprocess.DEVNULL)
+                    FIXTURE_IMAGE, 'postgres', '-c', 'listen_addresses=127.0.0.1', '-c', 'port=15432'], stdout=subprocess.DEVNULL)
                 started = True
                 for _ in range(60):
                     try:

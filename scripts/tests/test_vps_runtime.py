@@ -57,7 +57,7 @@ class RuntimeTest(unittest.TestCase):
         env = {**os.environ, 'MNEMA_POSTGRES_PASSWORD': 'fixture-superuser',
             'MNEMA_IDENTITY_DB_PASSWORD': 'fixture-identity', 'MNEMA_LEARNING_DB_PASSWORD': 'fixture-learning',
             'MNEMA_BUILD_ID': 'a' * 40, 'MNEMA_PRODUCTION_ROOT': '/fixture'}
-        for service in ('FRONTEND', 'IDENTITY_ACCOUNT', 'LEARNING'):
+        for service in ('FRONTEND', 'IDENTITY_ACCOUNT', 'LEARNING', 'POSTGRES'):
             env['MNEMA_' + service + '_IMAGE'] = 'example/fixture@sha256:' + 'b' * 64
         result = subprocess.run(['docker', 'compose', '-f', str(ROOT / 'deploy/production/compose.yaml'),
             'config', '--format', 'json'], env=env, check=True, capture_output=True, timeout=20)

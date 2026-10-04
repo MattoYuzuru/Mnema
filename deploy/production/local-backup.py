@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import stat
 import subprocess
 import sys
@@ -14,7 +15,7 @@ import uuid
 
 DIRECTORY = Path('/var/backups/mnema')
 SOURCE = 'mnema-prod-postgres-1'
-IMAGE = 'postgres:18.6@sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722'
+IMAGE_PIN = Path('/etc/mnema/production/postgres-image')
 ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'HOME': '/root', 'DOCKER_CONFIG': '/root/.docker'}
 
 
@@ -28,6 +29,16 @@ def protected(path):
 def docker(args, **kwargs):
     return subprocess.run(['/usr/bin/docker', *args], env=ENV, check=True,
         stderr=subprocess.PIPE, timeout=kwargs.pop('timeout', 600), **kwargs)
+
+
+def database_image():
+    protected(IMAGE_PIN)
+    if IMAGE_PIN.stat().st_size > 256:
+        raise ValueError('database binding too large')
+    image = IMAGE_PIN.read_text().strip()
+    if not re.fullmatch(r'ghcr\.io/mattoyuzuru/mnema/postgres@sha256:[0-9a-f]{64}', image):
+        raise ValueError('database requires an administrator-owned immutable release binding')
+    return image
 
 
 def sql(container, statement):
@@ -52,7 +63,7 @@ def digest(path):
         return hashlib.file_digest(handle, 'sha256').hexdigest()
 
 
-def restore(path, expected):
+def restore(path, expected, image):
     identifier = 'mnema-restore-' + uuid.uuid4().hex
     volume = identifier + '-data'
     created_volume = False
@@ -64,7 +75,7 @@ def restore(path, expected):
             '--label', 'mnema.restore=ephemeral', '--network', 'none', '--memory', '3g',
             '--cpus', '2', '--pids-limit', '256', '-e', 'POSTGRES_DB=mnema',
             '-e', 'POSTGRES_HOST_AUTH_METHOD=trust', '--mount', 'type=volume,src=' + volume + ',dst=/var/lib/postgresql',
-            IMAGE], stdout=subprocess.DEVNULL)
+            image], stdout=subprocess.DEVNULL)
         created_container = True
         for _ in range(60):
             # The entrypoint's temporary init server has only a Unix socket;
@@ -102,7 +113,8 @@ def backup(rehearse=False):
     if DIRECTORY.stat().st_mode & 0o077:
         raise ValueError('backup directory requires mode 0700')
     actual = docker(['inspect', '--format', '{{.Config.Image}}', SOURCE], stdout=subprocess.PIPE).stdout.decode().strip()
-    if actual != IMAGE:
+    image = database_image()
+    if actual != image:
         raise ValueError('source database image is not the reviewed pin')
     before = fingerprint(SOURCE) if rehearse else None
     identifier = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '-' + uuid.uuid4().hex[:8]
@@ -114,11 +126,11 @@ def backup(rehearse=False):
         os.fsync(handle.fileno())
     target.chmod(0o600)
     evidence = {'schemaVersion': 1, 'backup': target.name, 'sha256': digest(target),
-        'bytes': target.stat().st_size, 'databaseImage': IMAGE, 'location': 'same-RU-VPS', 'offsite': False}
+        'bytes': target.stat().st_size, 'databaseImage': image, 'location': 'same-RU-VPS', 'offsite': False}
     if rehearse:
         if fingerprint(SOURCE) != before:
             raise ValueError('source changed; rehearse in a quiet maintenance window')
-        evidence['restore'] = restore(target, before)
+        evidence['restore'] = restore(target, before, image)
         evidence['restore']['seconds'] = round(time.monotonic() - started, 2)
     with (DIRECTORY / (identifier + '.json')).open('x') as handle:
         json.dump(evidence, handle)

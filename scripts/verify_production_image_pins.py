@@ -169,19 +169,10 @@ def validate_vps_images(repository_root: Path) -> list[Finding]:
     images = _images(content)
     findings.extend(_validate_image_mapping_shape(path, content, images))
     placeholders = {f'${{MNEMA_{service}_IMAGE:?verified-candidate-required}}'
-                    for service in ('FRONTEND', 'IDENTITY_ACCOUNT', 'LEARNING')}
+                    for service in ('FRONTEND', 'IDENTITY_ACCOUNT', 'LEARNING', 'POSTGRES')}
     if len(images) != 4 or any(images.count(value) != 1 for value in placeholders):
-        findings.append(Finding(path, 'VPS requires exactly three admitted application bindings and one database image'))
-    fixed = [value for value in images if value not in placeholders]
-    for image in fixed:
-        findings.extend(_validate_pinned_image(path, image, 'VPS dependency image'))
-        if not image.startswith('postgres:'):
-            findings.append(Finding(path, 'VPS dependency must be PostgreSQL'))
-    backup_path = repository_root / 'deploy/production/local-backup.py'
-    backup, read_findings = _read(backup_path)
-    findings.extend(read_findings)
-    if backup is not None and (len(fixed) != 1 or f"IMAGE = '{fixed[0]}'" not in backup):
-        findings.append(Finding(backup_path, 'restore rehearsal must use the exact VPS database image'))
+        findings.append(Finding(path, 'VPS requires exactly four admitted image bindings including the database'))
+    findings.extend(validate_dockerfile(repository_root / 'deploy/production/Dockerfile'))
     return findings
 
 
@@ -241,7 +232,8 @@ def validate_inventory_document(repository_root: Path, path: Path) -> list[Findi
         return findings
 
     source_images: set[str] = set()
-    for dockerfile in (repository_root / "backend/Dockerfile", repository_root / "frontend/Dockerfile"):
+    for dockerfile in (repository_root / "backend/Dockerfile", repository_root / "frontend/Dockerfile",
+                       repository_root / 'deploy/production/Dockerfile'):
         dockerfile_content, _ = _read(dockerfile)
         if dockerfile_content is not None:
             source_images.update(
