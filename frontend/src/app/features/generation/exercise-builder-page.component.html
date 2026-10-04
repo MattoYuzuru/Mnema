@@ -52,6 +52,11 @@
 
         <app-exercise-settings-fields [value]="value()" [uid]="uid" [showPriority]="showPriority()" (valueChange)="onValue($event)" />
 
+        <details class="more">
+          <summary>Ещё настройки</summary>
+          <app-plan-first-option [checked]="value().planFirst" [cost]="planCost()" (checkedChange)="onPlanFirst($event)" />
+        </details>
+
         @if (splitText(); as text) { <p class="notice" role="status">{{ text }}</p> }
 
         <div class="action-row">
@@ -62,7 +67,7 @@
               <p>Ничего не попадает в колоду и в занятия, пока вы не сохраните: сначала можно попробовать каждое упражнение.</p>
             </app-toggletip></span>
           <button type="submit" class="generate-cta" [attr.aria-disabled]="creating() || overBudget() ? 'true' : null"
-            [attr.aria-describedby]="uid + '-estimate'">{{ creating() ? 'Создаём…' : 'Создать упражнения' }}</button>
+            [attr.aria-describedby]="uid + '-estimate'">{{ creating() ? 'Создаём…' : ctaLabel() }}</button>
         </div>
 
         @if (personalData()) {

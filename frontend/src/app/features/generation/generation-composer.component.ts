@@ -18,7 +18,7 @@ import { blockImplicitSubmit, isSendKey } from './implicit-submit';
 import { scheduleEstimate } from './estimate-schedule';
 import { DEFAULT_SETTINGS, GenerationSettingsComponent, GenerationSettingsValue } from './generation-settings.component';
 import {
-    NOTES_MODE_OPTIONS, UsageExplanation, describeEstimate, describeUsageLimit, formatWorkshopStart, problemMessage
+    NOTES_MODE_OPTIONS, UsageExplanation, describeEstimate, describePlanCost, describeUsageLimit, formatWorkshopStart, problemMessage
 } from './generation-view';
 import {
     GenerationEstimate, MAX_PROMPT_LENGTH, MaterialsSpec, NotesMode, SessionDetail, SessionSummary, SpecSource, serializeMaterialsSpec
@@ -60,7 +60,7 @@ export function buildMaterialsSpec(prompt: string, settings: GenerationSettingsV
             media: { audio: { enabled: settings.audio && available.audio, lang: settings.audioLang,
                 voice: settings.audioVoice === 'any' ? null : settings.audioVoice },
                 imageSearch: settings.imageSearch && available.image },
-            factCheck: false, similarToDeck: settings.similarToDeck, planFirst: false, budgetPercent: null
+            factCheck: false, similarToDeck: settings.similarToDeck, planFirst: settings.planFirst, budgetPercent: null
         }
     };
 }
@@ -156,12 +156,19 @@ export class GenerationComposerComponent {
         const state = this.estimate();
         return state.phase === 'ready' && state.estimate.personalDataWarning;
     });
+    /** The primary button: with «Сначала показать план» it makes the plan, not the materials. */
+    protected readonly ctaLabel = computed(() => this.settings().planFirst ? 'Составить план' : 'Создать');
+    /** «План: ≈ 1 % лимита» under the plan option, once the estimate knows it. */
+    protected readonly planCost = computed(() => {
+        const state = this.estimate();
+        return state.phase === 'ready' ? describePlanCost(state.estimate) : null;
+    });
     protected readonly estimateText = computed(() => {
         const state = this.estimate();
         switch (state.phase) {
             case 'loading': return 'Считаем…';
             case 'ready': return state.estimate.canStart ? describeEstimate(state.estimate)
-                : `${describeEstimate(state.estimate)}. Не хватит лимита: нажмите «Создать», чтобы увидеть варианты.`;
+                : `${describeEstimate(state.estimate)}. Не хватит лимита: нажмите «${this.ctaLabel()}», чтобы увидеть варианты.`;
             case 'error': return 'Оценить не удалось, но запустить можно.';
             case 'idle': return '';
         }

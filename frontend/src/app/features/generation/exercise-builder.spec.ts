@@ -15,6 +15,13 @@ describe('exercise builder rules', () => {
     describe('the request', () => {
         const pins = [{ memberKey: materialIds.first, itemRevisionId: materialRevisions.first }];
 
+        it('asks for a plan only when the choice says so (#295)', () => {
+            const settings = (planFirst: boolean) => (serializeExercisesSpec(buildExercisesSpec([target(1)], { ...DEFAULT_BUILDER_VALUE, planFirst }))['settings'] as Record<string, unknown>);
+            expect(settings(false)['planFirst']).toBe(false);
+            expect(settings(true)['planFirst']).toBe(true);
+            expect(buildExercisesSpec([target(1)], DEFAULT_BUILDER_VALUE).settings).not.toHaveProperty('planFirst');
+        });
+
         it('sends AUTO with the default choices and nothing the page only shows (titles, counts)', () => {
             const spec = buildExercisesSpec([target(1, 4)], DEFAULT_BUILDER_VALUE, 'ru');
             expect(serializeExercisesSpec(spec)).toEqual({
@@ -168,6 +175,10 @@ describe('exercise builder rules', () => {
             expect(describeExerciseUsage(bucket({ renewsAt: null })).options).toHaveLength(1);
             expect(describeExerciseUsage(bucket({ offered: false })).headline).toBe('На вашем тарифе это недоступно.');
             expect(describeExerciseUsage(undefined).options[0]).toContain('меньше упражнений');
+            // The plan is optional: its own refusal says to take the plan off, not to ask for fewer exercises (#295).
+            const plans = describeExerciseUsage(bucket({ bucket: 'SMART_PLAN', unit: 'COUNT' }));
+            expect(plans.headline).toBe('Планы на этот период закончились.');
+            expect(plans.options.join(' ')).toContain('Снимите «Сначала показать план»');
         });
     });
 });

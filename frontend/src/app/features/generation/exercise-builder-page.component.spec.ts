@@ -353,6 +353,53 @@ describe('ExerciseBuilderPageComponent', () => {
         });
     });
 
+    describe('«Сначала показать план» (#295)', () => {
+        const planned = () => parseEstimate({ ...JSON.parse(JSON.stringify(usageContract['estimateResponse'])), credits: { p50: 30, p95: 40 },
+            percentOfPeriodAllowance: { p50: 8, p95: 11 },
+            breakdown: [{ operation: 'SMART_PLAN_FLASH', count: 1, credits: 20 }, { operation: 'EXERCISES_PER_MATERIAL', count: 2, credits: 20 }] });
+        const planBox = (): HTMLInputElement => [...root().querySelectorAll<HTMLInputElement>('details input[type=checkbox]')]
+            .find(input => input.labels?.[0]?.textContent?.trim() === 'Сначала показать план')!;
+
+        it('keeps the option behind «Ещё настройки», off by default, and describes it', async () => {
+            await open({ members: key(1) });
+            const more = root().querySelector('details.more')!;
+            expect(more.querySelector('summary')?.textContent).toBe('Ещё настройки');
+            expect((more as HTMLDetailsElement).open).toBe(false);
+            expect(planBox().checked).toBe(false);
+            expect(root().querySelector(`#${planBox().getAttribute('aria-describedby')!.split(' ')[0]}`)?.textContent).toContain('План стоит отдельно');
+        });
+
+        it('asks the estimate and the server for a plan when it is checked, and the button makes the plan', async () => {
+            await open({ members: key(1) });
+            await settle(ESTIMATE_DEBOUNCE_MS);
+            expect(wireSettings().planFirst).toBe(false);
+            api.estimate.mockReturnValue(of(planned()));
+            planBox().click();
+            await settle();
+            expect(cta().textContent).toBe('Составить план');
+            await settle(ESTIMATE_DEBOUNCE_MS);
+            expect(wireSettings().planFirst).toBe(true);
+            expect(root().querySelector('.cost')?.textContent?.replace(/\u00a0/g, ' ')).toBe('План: ≈ 6 % лимита');
+            api.createSession.mockReturnValue(created(exerciseSession([], { state: 'PLANNING', plan: null })));
+            cta().click();
+            await settle();
+            expect((api.createSession.mock.calls[0]![1] as any).settings.planFirst).toBe(true);
+            expect(transition.navigate).toHaveBeenCalledWith(['/decks', ids.deckId, 'workshop', ids.sessionId]);
+        });
+
+        it('asks for a plan in every session of a split selection: each one makes its own', async () => {
+            await open({ all: '1' });
+            planBox().click();
+            await settle();
+            await settle(ESTIMATE_DEBOUNCE_MS);
+            api.createSession.mockImplementation(() => created(exerciseSession([], { state: 'PLANNING', plan: null })));
+            cta().click();
+            await settle();
+            await settle();
+            for (const call of api.createSession.mock.calls) expect((call[1] as any).settings.planFirst).toBe(true);
+        });
+    });
+
     describe('creating', () => {
 
         it('creates the session and opens its Workshop', async () => {

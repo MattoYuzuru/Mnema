@@ -301,6 +301,65 @@ describe('GenerationComposerComponent', () => {
         });
     });
 
+    describe('«Сначала показать план» (#295)', () => {
+        const plannedEstimate = (): GenerationEstimate => parseEstimate({ ...clone(usageContract['estimateResponse']),
+            credits: { p50: 30, p95: 40 }, percentOfPeriodAllowance: { p50: 8, p95: 11 },
+            breakdown: [{ operation: 'SMART_PLAN_FLASH', count: 1, credits: 20 }, { operation: 'MATERIAL_MEDIUM', count: 2, credits: 20 }] });
+        const planBox = (): HTMLInputElement => [...root().querySelectorAll<HTMLInputElement>('input[type=checkbox]')].find(input => input.labels?.[0]?.textContent?.trim() === 'Сначала показать план')!;
+
+        it('asks for the plan only when the box is checked: the spec says so, the estimate is asked again and the button makes the plan', () => {
+            create();
+            type('Объясни Seq Scan');
+            vi.advanceTimersByTime(ESTIMATE_DEBOUNCE_MS);
+            expect(api.estimate.mock.calls.at(-1)![1]).toMatchObject({ settings: { planFirst: false } });
+            expect(button().textContent?.trim()).toBe('Создать');
+            api.estimate.mockReturnValue(of(plannedEstimate()));
+            planBox().click();
+            render();
+            expect(button().textContent?.trim()).toBe('Составить план');
+            vi.advanceTimersByTime(ESTIMATE_DEBOUNCE_MS);
+            render();
+            expect(api.estimate.mock.calls.at(-1)![1]).toMatchObject({ settings: { planFirst: true } });
+            button().click();
+            expect(api.createSession.mock.calls[0]![1]).toMatchObject({ settings: { planFirst: true } });
+        });
+
+        it('says what the plan costs on its own next to the box, from the plan line of the estimate, and nothing when it is off', () => {
+            create();
+            type('Объясни Seq Scan');
+            api.estimate.mockReturnValue(of(plannedEstimate()));
+            planBox().click();
+            render();
+            vi.advanceTimersByTime(ESTIMATE_DEBOUNCE_MS);
+            render();
+            expect(root().querySelector('.cost')?.textContent?.replace(/\u00a0/g, ' ')).toBe('План: ≈ 6 % лимита');
+            expect(planBox().getAttribute('aria-describedby')).toContain('-cost');
+            expect(estimateText()).toBe(`≈${NBSP}11${NBSP}% лимита`);
+            planBox().click();
+            render();
+            expect(root().querySelector('.cost')).toBeNull();
+        });
+
+        it('explains in words that the plans are over or not offered, and that the work can start without one', () => {
+            create();
+            type('Объясни Seq Scan');
+            planBox().click();
+            render();
+            const bucket = { bucket: 'SMART_PLAN', window: 'MONTH', unit: 'COUNT', limit: 4, used: 4, required: 1, offered: true, renewsAt: '2026-10-31T21:00:00Z', fitsAfterRenewal: true, plan: 'PLUS' };
+            api.createSession.mockReturnValue(throwError(() => problemResponse(409, { code: 'USAGE_LIMIT_REACHED', ...bucket })));
+            button().click();
+            render();
+            const text = root().querySelector('.limit')!.textContent!;
+            expect(text).toContain('Планы на этот период закончились.');
+            expect(text).toContain('Снимите «Сначала показать план»');
+            expect(text).not.toContain('Кратко');
+            api.createSession.mockReturnValue(throwError(() => problemResponse(409, { code: 'USAGE_LIMIT_REACHED', ...bucket, offered: false, limit: null })));
+            button().click();
+            render();
+            expect(root().querySelector('.limit')!.textContent).toContain('Планы недоступны на вашем тарифе.');
+        });
+    });
+
     describe('creating the session', () => {
         it('sends the spec of the screen with a command id, never asks for a plan, and reports the session', () => {
             create();
