@@ -1,6 +1,14 @@
 #!/bin/sh
 # Host bootstrap only; never deploys application images or initializes a DB.
 set -eu
+
+origin_ports_free() {
+  listeners=$(ss -H -ltn) || { echo 'listener inventory failed' >&2; return 1; }
+  if printf '%s\n' "$listeners" | awk '{print $4}' | grep -Eq ':(80|443|2019)$'; then
+    echo 'occupied origin/admin listener requires review' >&2; return 1
+  fi
+}
+
 case "${1:-preview}" in
   preview)
     printf '%s\n' 'Target: mnema, Ubuntu24.04, 135.106.175.30.' \
@@ -19,9 +27,7 @@ ip -4 address show scope global | grep -Fq '135.106.175.30/' || exit 1
 if command -v caddy >/dev/null 2>&1 || [ -e /etc/caddy ] || [ -L /etc/caddy ] || [ -e /var/lib/caddy ]; then
   echo 'existing origin requires a separate reviewed update' >&2; exit 1
 fi
-if ss -H -ltn | awk '{print $4}' | grep -Eq ':(80|443|2019)$'; then
-  echo 'occupied origin/admin listener requires review' >&2; exit 1
-fi
+origin_ports_free || exit 1
 origin_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 [ -f "$origin_dir/Caddyfile.maintenance" ] || exit 1
 for path in /usr/share/keyrings/caddy-stable-archive-keyring.gpg /etc/apt/sources.list.d/caddy-stable.list; do
