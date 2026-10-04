@@ -101,7 +101,9 @@ describe('WorkshopPlanComponent (AI-14, #295)', () => {
             await open();
             expect(text(root().querySelector('.paid'))).toBe('Составление плана: ≈ 5,6 % лимита — уже списано. Отдельно от упражнений.');
             expect(total()).toBe('Всего 6 упражнений · ≈ 2,8 % лимита');
-            expect(root().querySelector('.total')?.getAttribute('role')).toBe('status');
+            // The visible total follows every edit; the live region says it once the owner pauses (see «says the total once»).
+            expect(root().querySelector('.total')?.hasAttribute('role')).toBe(false);
+            expect(text(root().querySelector('[role=status]'))).toBe('Всего 6 упражнений · ≈ 2,8 % лимита');
             expect(button('Запустить по плану')!.getAttribute('aria-describedby')).toBe('plan-total');
         });
 
@@ -151,7 +153,12 @@ describe('WorkshopPlanComponent (AI-14, #295)', () => {
             await settle();
             await vi.advanceTimersByTimeAsync(0);
             expect(document.activeElement).toBe(root().querySelector('.row-remove'));
+            // The last row asks before it goes: keeping is the default, and focus is on it.
             (rows()[0]!.querySelector('.row-remove') as HTMLButtonElement).click();
+            await settle();
+            await vi.advanceTimersByTimeAsync(0);
+            expect(document.activeElement).toBe(root().querySelector('[data-keep]'));
+            button('Да, убрать')!.click();
             await settle();
             await vi.advanceTimersByTimeAsync(0);
             expect(document.activeElement).toBe(root().querySelector('.plan-title'));
@@ -187,6 +194,37 @@ describe('WorkshopPlanComponent (AI-14, #295)', () => {
             await open();
             for (let row = 0; row < 2; row++) input(range(row), '10');
             expect(text(root().querySelector('.notice[role=note]'))).toContain('дороже, чем Мнема отложила под него');
+        });
+    });
+
+    describe('what is said and what stays in reach', () => {
+        it('says the total once the owner pauses, not on every tick of a slider', async () => {
+            await open();
+            const said = (): string => text(root().querySelector('[role=status]'));
+            expect(said()).toBe('Всего 6 упражнений · ≈ 2,8 % лимита');
+            for (const value of ['4', '5', '6', '7']) input(range(0), value);
+            expect(total()).toBe('Всего 10 упражнений · ≈ 4,4 % лимита');
+            expect(said()).toBe('Всего 6 упражнений · ≈ 2,8 % лимита');
+            range(0).dispatchEvent(new Event('change', { bubbles: true }));
+            await vi.advanceTimersByTimeAsync(499);
+            fixture.detectChanges();
+            expect(said()).toBe('Всего 6 упражнений · ≈ 2,8 % лимита');
+            await vi.advanceTimersByTimeAsync(1);
+            fixture.detectChanges();
+            expect(said()).toBe('Всего 10 упражнений · ≈ 4,4 % лимита');
+            // A removal is one event: said after the pause as well.
+            (rows()[1]!.querySelector('.row-remove') as HTMLButtonElement).click();
+            fixture.detectChanges();
+            await vi.advanceTimersByTimeAsync(500);
+            fixture.detectChanges();
+            expect(said()).toBe('Всего 7 упражнений · ≈ 3,3 % лимита');
+        });
+
+        it('publishes the height of the sticky bar as scroll padding while it exists, and removes it afterwards (WCAG 2.4.11)', async () => {
+            await open();
+            expect(document.documentElement.style.getPropertyValue('--mn-bulk-bar-height')).toMatch(/^\d+px$/);
+            fixture.destroy();
+            expect(document.documentElement.style.getPropertyValue('--mn-bulk-bar-height')).toBe('');
         });
     });
 
@@ -248,7 +286,7 @@ describe('WorkshopPlanComponent (AI-14, #295)', () => {
             api.approvePlan.mockReturnValue(throwError(() => problemResponse(409, { code: 'USAGE_LIMIT_REACHED' })));
             button('Запустить по плану')!.click();
             await settle();
-            expect(text(root().querySelector('[role=alert]'))).toContain('Не хватает лимита ИИ на этот план');
+            expect(text(root().querySelector('[role=alert]'))).toContain('Не хватает лимита ИИ на этот план: он дороже отложенного или отложенный лимит уже освободился');
             expect(text(root().querySelector('[role=alert]'))).toContain('Ничего не изменилось и не списано');
         });
 
@@ -268,7 +306,9 @@ describe('WorkshopPlanComponent (AI-14, #295)', () => {
 
         it('does not send an empty plan: it says so and keeps «Вернуть» in reach', async () => {
             await open();
-            for (let step = 0; step < 2; step++) { (rows()[0]!.querySelector('.row-remove') as HTMLButtonElement).click(); fixture.detectChanges(); }
+            (rows()[0]!.querySelector('.row-remove') as HTMLButtonElement).click(); fixture.detectChanges();
+            (rows()[0]!.querySelector('.row-remove') as HTMLButtonElement).click(); fixture.detectChanges();
+            button('Да, убрать')!.click(); fixture.detectChanges();
             button('Запустить по плану')!.click();
             await settle();
             expect(api.approvePlan).not.toHaveBeenCalled();
@@ -314,19 +354,57 @@ describe('WorkshopPlanComponent (AI-14, #295)', () => {
             expect(root().textContent).not.toContain('План обновился на сервере');
         });
 
-        it('makes the draft again when the version moves on, and says that the edits were dropped', async () => {
+        it('keeps the owner\'s rows when the version moves on and everything they kept is still in the plan; the launch is pinned to the new version', async () => {
             await open();
             input(range(0), '7');
             api.getSession.mockReturnValue(of(parseSessionDetail(planReadySession(session => { session.rowVersion = '5'; session.plan.items[0].count = 2; }))));
             await store.refresh();
             await settle();
-            expect(range(0).value).toBe('2');
-            expect(text(root().querySelector('.notice[role=note]'))).toContain('План обновился на сервере');
-            // The launch is pinned to the version the owner now sees.
+            expect(range(0).value).toBe('7');
+            expect(root().textContent).not.toContain('План обновился на сервере');
             api.approvePlan.mockReturnValue(of(launched()));
             button('Запустить по плану')!.click();
             await settle();
             expect(api.approvePlan.mock.calls[0]![4]).toBe('5');
+            expect((api.approvePlan.mock.calls[0]![3][0]!.item as ExercisePlanItem).count).toBe(7);
+        });
+
+        it('makes the draft again when what the owner kept is gone from the new plan, and says that the edits were dropped', async () => {
+            await open();
+            input(range(0), '7');
+            api.getSession.mockReturnValue(of(parseSessionDetail(planReadySession(session => {
+                session.rowVersion = '5'; session.plan.items[0].count = 2; session.plan.allowedMechanics = ['SELF_CHECK', 'CHOICE', 'ORDER'];
+            }))));
+            await store.refresh();
+            await settle();
+            expect(range(0).value).toBe('2');
+            expect(text(root().querySelector('.notice[role=note]'))).toContain('План обновился на сервере');
+            api.approvePlan.mockReturnValue(of(launched()));
+            button('Запустить по плану')!.click();
+            await settle();
+            expect(api.approvePlan.mock.calls[0]![4]).toBe('5');
+        });
+
+        it('keeps the words of a stale-version refusal and the edits through the re-read it asks for (412 with a new rowVersion)', async () => {
+            await open();
+            input(range(0), '7');
+            (rows()[1]!.querySelector('.row-remove') as HTMLButtonElement).click();
+            fixture.detectChanges();
+            api.getSession.mockReturnValue(of(parseSessionDetail(planReadySession(session => { session.rowVersion = '5'; }))));
+            api.approvePlan.mockReturnValue(throwError(() => problemResponse(412, { code: 'VERSION_CONFLICT' })));
+            button('Запустить по плану')!.click();
+            await settle();
+            await settle();
+            expect(store.session()!.rowVersion).toBe('5');
+            expect(text(root().querySelector('[role=alert]'))).toContain('План изменился, пока вы его правили');
+            expect(titles()).toEqual(['Статистика и ANALYZE']);
+            expect(range(0).value).toBe('7');
+            // The next launch carries the version now on screen and the same rows.
+            api.approvePlan.mockReturnValue(of(launched()));
+            button('Запустить по плану')!.click();
+            await settle();
+            expect(api.approvePlan.mock.calls[1]![4]).toBe('5');
+            expect(api.approvePlan.mock.calls[1]![3]).toHaveLength(1);
         });
 
         it('shows nothing of the plan once it is launched', async () => {
@@ -383,6 +461,46 @@ describe('WorkshopPlanComponent (AI-14, #295)', () => {
             expect(document.activeElement).toBe(rows()[1]!.querySelector('.title-input'));
             input(rows()[1]!.querySelector<HTMLInputElement>('.title-input')!, 'Тема');
             expect(rows()[1]!.querySelector('.title-input')?.getAttribute('aria-invalid')).toBeNull();
+            root().remove();
+        });
+
+        it('gives a removed row back as it was, at the end, and lists it apart', async () => {
+            await open(materialsPlanSession());
+            (rows()[0]!.querySelector('.row-remove') as HTMLButtonElement).click();
+            fixture.detectChanges();
+            expect(rows()).toHaveLength(2);
+            const off = root().querySelector('details.off-plan')!;
+            expect(text(off.querySelector('summary'))).toBe('Убранные материалы (1)');
+            expect(text(off.querySelector('li'))).toContain('Seq Scan: когда он быстрее');
+            button('Вернуть', off)!.click();
+            fixture.detectChanges();
+            expect(rows().map(row => row.querySelector<HTMLInputElement>('.title-input')!.value))
+                .toEqual(['Статистика и ANALYZE', 'Общая картина планировщика', 'Seq Scan: когда он быстрее']);
+            expect([...rows()[2]!.querySelectorAll<HTMLInputElement>('input[type=radio]')].find(radio => radio.checked)?.labels?.[0]?.textContent?.trim()).toBe('Кратко');
+            expect(root().querySelector('details.off-plan')).toBeNull();
+        });
+
+        it('asks before the last row goes, in both kinds of plan: keeping is the default, and Escape keeps', async () => {
+            await open(materialsPlanSession(session => { session.plan.items = session.plan.items.slice(0, 1); }));
+            document.body.appendChild(root());
+            (rows()[0]!.querySelector('.row-remove') as HTMLButtonElement).click();
+            await settle();
+            await vi.advanceTimersByTimeAsync(0);
+            expect(rows()).toHaveLength(1);
+            expect(text(root().querySelector('.confirm'))).toContain('Это последняя строка плана');
+            expect(document.activeElement).toBe(root().querySelector('[data-keep]'));
+            root().querySelector('.confirm')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+            await settle();
+            await vi.advanceTimersByTimeAsync(0);
+            expect(root().querySelector('.confirm')).toBeNull();
+            expect(document.activeElement).toBe(root().querySelector('.row-remove'));
+            (rows()[0]!.querySelector('.row-remove') as HTMLButtonElement).click();
+            fixture.detectChanges();
+            button('Да, убрать')!.click();
+            fixture.detectChanges();
+            expect(rows()).toHaveLength(0);
+            expect(text(root().querySelector('.notice'))).toContain('Верните материал из списка ниже');
+            expect(root().querySelector('details.off-plan')).not.toBeNull();
             root().remove();
         });
 

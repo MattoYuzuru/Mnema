@@ -6,6 +6,7 @@ import { Subject, of, throwError } from 'rxjs';
 
 import { AuthService } from '../../auth.service';
 import { spyObj, type SpyObj } from '../../../testing/mocks';
+import { UsageApiService } from '../usage/usage-api.service';
 import { AuthoringApiService } from '../authoring/authoring-api.service';
 import { CaptureNote } from '../authoring/authoring.models';
 import { CAPABILITIES_UNAVAILABLE, LearningCapabilities } from '../authoring/capabilities-api.service';
@@ -62,6 +63,7 @@ describe('GenerationComposerComponent', () => {
         authoring.readCapture.mockImplementation((noteId: string) => of(noteOf(noteId, '3')));
         user = signal(options.name === null ? null : { displayName: options.name ?? 'Юзуру Мацуда', profileUsername: 'yuzuru', email: 'yuzuru@example.test' });
         TestBed.configureTestingModule({ providers: [provideRouter([]), { provide: GenerationApiService, useValue: api }, { provide: AuthoringApiService, useValue: authoring },
+            { provide: UsageApiService, useValue: { load: () => of({ credits: { total: 360 } }) } },
             { provide: AuthService, useValue: { user } }] });
         fixture = TestBed.createComponent(GenerationComposerComponent);
         fixture.componentRef.setInput('deckId', ids.deckId);
@@ -324,15 +326,16 @@ describe('GenerationComposerComponent', () => {
             expect(api.createSession.mock.calls[0]![1]).toMatchObject({ settings: { planFirst: true } });
         });
 
-        it('says what the plan costs on its own next to the box, from the plan line of the estimate, and nothing when it is off', () => {
+        it('says what the plan costs on its own next to the box, from the plan line of the estimate, and nothing when it is off', async () => {
             create();
             type('Объясни Seq Scan');
             api.estimate.mockReturnValue(of(plannedEstimate()));
             planBox().click();
             render();
-            vi.advanceTimersByTime(ESTIMATE_DEBOUNCE_MS);
+            await vi.advanceTimersByTimeAsync(ESTIMATE_DEBOUNCE_MS);
             render();
-            expect(root().querySelector('.cost')?.textContent?.replace(/\u00a0/g, ' ')).toBe('План: ≈ 6 % лимита');
+            // The exact share of the whole allowance (20 of 360), not the rounded percentage of the estimate.
+            expect(root().querySelector('.cost')?.textContent?.replace(/\u00a0/g, ' ')).toBe('План: ≈ 5,6 % лимита');
             expect(planBox().getAttribute('aria-describedby')).toContain('-cost');
             expect(estimateText()).toBe(`≈${NBSP}11${NBSP}% лимита`);
             planBox().click();
@@ -361,7 +364,7 @@ describe('GenerationComposerComponent', () => {
     });
 
     describe('creating the session', () => {
-        it('sends the spec of the screen with a command id, never asks for a plan, and reports the session', () => {
+        it('sends the spec of the screen with a command id (no plan unless the box is checked, see above), and reports the session', () => {
             create();
             const sessions: SessionDetail[] = [];
             fixture.componentInstance.created.subscribe(session => sessions.push(session));

@@ -231,7 +231,6 @@ export async function runWorkshopPlanner(ctx, h) {
     const checked = await facts();
     need(checked.checked === true && checked.cta === 'Составить план', `after checking the plan the box is ${checked.checked} and the button says «${checked.cta}»`);
     await until(async () => /^План: /u.test((await facts()).cost ?? ''), 'the plan\'s cost line did not appear', 15_000);
-    const line = (await facts()).cost;
     const wire = await api('POST', `/api/decks/${deck.deckId}/generation-estimates`, { spec: { kind: 'EXERCISES',
       targets: await page(`const response = await fetch(args[0] + '/api/decks/' + args[1] + '/items?limit=20&include=exerciseCount', { credentials: 'omit', headers: { Authorization: args[2] } });
         const body = await response.json(); return body.items.map(item => ({ memberKey: item.memberKey, itemRevisionId: item.itemRevisionId }));`, config.frontend, deck.deckId, 'Bearer ' + ctx.bearer),
@@ -239,11 +238,12 @@ export async function runWorkshopPlanner(ctx, h) {
     need(wire.status === 200, `POST generation-estimates with planFirst answered ${wire.status}`);
     const planLine = wire.body.breakdown[0];
     need(planLine.operation === 'SMART_PLAN_FLASH' && planLine.credits === 20, `the plan line of the estimate is ${JSON.stringify(planLine)}`);
-    // The line says the plan's share of the estimate, not of the whole request.
-    const planShare = Math.round(wire.body.percentOfPeriodAllowance.p95 * planLine.credits / wire.body.credits.p95);
-    const expected = planShare < 1 ? 'План: менее 1 % лимита' : `План: ≈ ${planShare} % лимита`;
-    need(line === expected, `the cost line «${line}» is not the plan's share of the estimate («${expected}»)`);
     need(wire.body.credits.p95 > planLine.credits, 'the estimate does not add the batch to the plan');
+    // The line is the plan's own credits against the whole allowance of the period (`usage.credits.total`), as the Workshop says it afterwards.
+    const bar = (await usage()).bar;
+    const expected = `План: ${share(planLine.credits, bar)}`;
+    await until(async () => (await facts()).cost === expected, `the cost line «${(await facts()).cost}» is not the plan's credits against the allowance («${expected}»)`, 10_000);
+    const line = (await facts()).cost;
     await shots('builder', 'the exercise builder with the plan option');
     return { cost: line, planCredits: planLine.credits };
   });
@@ -282,7 +282,7 @@ export async function runWorkshopPlanner(ctx, h) {
     const view = await page(`const root = document.querySelector('section.workshop');
       return { heading: root.querySelector('h1')?.textContent.trim(), planTitle: root.querySelector('app-workshop-plan h2')?.textContent.trim(),
         lede: root.querySelector('.lede')?.textContent.replaceAll('\\u00a0', ' ').trim(), status: root.querySelector('.exercise-summary')?.textContent.trim(),
-        regions: root.querySelectorAll('[role=status]').length, stop: Boolean([...root.querySelectorAll('.workshop-heading button')].find(button => button.textContent.trim() === 'Стоп')),
+        regions: [...root.querySelectorAll('[role=status]')].map(node => node.textContent.replace(/\\s+/g, ' ').replaceAll('\\u00a0', ' ').trim()), stop: Boolean([...root.querySelectorAll('.workshop-heading button')].find(button => button.textContent.trim() === 'Стоп')),
         review: Boolean(root.querySelector('app-exercise-batch-review, app-batch-pager')), paid: root.querySelector('.paid')?.textContent.replaceAll('\\u00a0', ' ').trim(),
         list: root.querySelector('ol.rows')?.getAttribute('aria-label'), launch: [...root.querySelectorAll('.plan-actions button')].map(button => button.textContent.trim()),
         ids: (() => { const all = [...document.querySelectorAll('[id]')].map(node => node.id); return all.length - new Set(all).size; })() };`);
@@ -290,7 +290,7 @@ export async function runWorkshopPlanner(ctx, h) {
     need(view.lede === 'Для 3 материалов: сначала план, потом упражнения.', `the lede is «${view.lede}»`);
     await until(async () => (await page(`return document.querySelector('.exercise-summary')?.textContent.trim();`)) === 'План готов: проверьте его и запустите', 'the live region does not say that the plan is ready', 20_000);
     need(!view.stop && !view.review, `the Workshop shows the review or a «Стоп» before the launch (${JSON.stringify(view)})`);
-    need(view.regions === 2, `the page has ${view.regions} role=status regions (the summary and the live total are expected)`);
+    need(view.regions.some(region => region.startsWith('Всего ')) && view.regions.length >= 2, `the status regions say ${JSON.stringify(view.regions)}: the live total is not announced apart from the summary`);
     need(view.paid === 'Составление плана: ' + share(20, plan.cost.barCredits) + ' — уже списано. Отдельно от упражнений.', `the paid line is «${view.paid}»`);
     need(view.launch.join('|') === 'Запустить по плану|Отменить', `the plan actions are ${JSON.stringify(view.launch)}`);
     need(view.ids === 0, `${view.ids} duplicate ids on the plan page`);
@@ -472,6 +472,14 @@ export async function runWorkshopPlanner(ctx, h) {
     need((await page(`return document.querySelector('app-workshop-plan h2')?.textContent.trim();`)) === 'План материалов', 'the plan of materials has the wrong title');
     need(/Всего \d+ материал/u.test(await totals()), `the live total of materials is «${await totals()}»`);
     await shots('materials-ready', 'the plan of materials', 'app-workshop-plan');
+    // The last row asks before it goes: «Убрать» opens the question with «Оставить» focused, «Оставить» closes it and the row stays.
+    if (list.length === 1) {
+      await click('css:li .row-remove', 'app-workshop-plan');
+      need(await has('app-workshop-plan .confirm [data-keep]'), 'the last row did not ask before it was removed');
+      need((await focusOf()).label === 'Оставить', `focus is ${JSON.stringify(await focusOf())}, not «Оставить»`);
+      await click('Оставить', 'app-workshop-plan .confirm');
+      need(!(await has('app-workshop-plan .confirm')) && (await rows()).length === 1, '«Оставить» did not keep the last row');
+    }
     // Retype the topic of the first row with the real keyboard, and make it «Подробно».
     need(await page(`const input = document.querySelector('app-workshop-plan li .title-input'); input.scrollIntoView({ block: 'center' }); input.focus(); input.select(); return document.activeElement === input;`), 'the topic took no focus');
     await tab.call('Input.insertText', { text: 'Как планировщик выбирает Seq Scan' });

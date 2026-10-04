@@ -58,6 +58,7 @@
         </details>
 
         @if (splitText(); as text) { <p class="notice" role="status">{{ text }}</p> }
+        @if (planSplitText(); as text) { <p class="notice" role="status">{{ text }}</p> }
 
         <div class="action-row">
           <p class="estimate" [id]="uid + '-estimate'" [class.is-problem]="estimate().phase === 'limit'">{{ estimateText() }}</p>

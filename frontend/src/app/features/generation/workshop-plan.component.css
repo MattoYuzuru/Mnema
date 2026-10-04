@@ -48,3 +48,6 @@
 @media (forced-colors: active) {
   .button { border-color: ButtonText; }
 }
+.confirm { grid-column: 1 / -1; display: grid; gap: .5rem; }
+.confirm .actions { display: flex; flex-wrap: wrap; gap: .5rem .75rem; margin: 0; }
+.sr-only { position: absolute; inline-size: 1px; block-size: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

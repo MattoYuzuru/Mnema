@@ -29,11 +29,20 @@
               <label [for]="'plan-count-' + row.id">Количество</label>
               <input type="range" [id]="'plan-count-' + row.id" min="1" [max]="exercises.limits.maxExercisesPerTarget" step="1" [value]="row.item.count"
                 [attr.aria-valuetext]="countText(row.item.count)" [attr.aria-label]="'Количество упражнений: ' + (row.item.title || 'материал')"
-                (input)="setCount(row.id, $event)" />
+                (input)="setCount(row.id, $event)" (change)="countSettled()" />
               <output [for]="'plan-count-' + row.id" aria-live="off">{{ countText(row.item.count) }}</output>
             </div>
             <button type="button" class="button row-remove" [attr.aria-label]="'Убрать из плана: ' + (row.item.title || 'материал')"
               (click)="removeExercise(row.id)">Убрать</button>
+            @if (confirmLast() === row.id) {
+              <div class="confirm notice" role="group" [attr.aria-label]="'Убрать последнюю строку: ' + (row.item.title || 'материал')" (keydown.escape)="keepRow()">
+                <p>Это последняя строка плана. Без неё запускать нечего: убранную строку можно будет вернуть, а можно отменить весь план.</p>
+                <div class="actions">
+                  <button type="button" class="button" (click)="removeExercise(row.id)">Да, убрать</button>
+                  <button type="button" class="button primary" data-keep (click)="keepRow()">Оставить</button>
+                </div>
+              </div>
+            }
           </li>
         }
       </ol>
@@ -67,10 +76,30 @@
               [name]="'plan-effort-' + row.id" [value]="row.item.effort" (valueChange)="setEffort(row.id, $event)" />
             <button type="button" class="button row-remove" [attr.aria-label]="'Убрать из плана: ' + (row.item.title || 'материал')"
               (click)="removeMaterial(row.id)">Убрать</button>
+            @if (confirmLast() === row.id) {
+              <div class="confirm notice" role="group" [attr.aria-label]="'Убрать последнюю строку: ' + (row.item.title || 'материал')" (keydown.escape)="keepRow()">
+                <p>Это последняя строка плана. Без неё запускать нечего: убранную строку можно будет вернуть, а можно отменить весь план.</p>
+                <div class="actions">
+                  <button type="button" class="button" (click)="removeMaterial(row.id)">Да, убрать</button>
+                  <button type="button" class="button primary" data-keep (click)="keepRow()">Оставить</button>
+                </div>
+              </div>
+            }
           </li>
         }
       </ol>
-      @if (materialRows().length === 0) { <p class="notice">В плане не осталось строк. Отмените план и начните заново.</p> }
+      @if (materialRows().length === 0) { <p class="notice">В плане не осталось строк. Верните материал из списка ниже или отмените план.</p> }
+      @if (removedMaterials().length > 0) {
+        <details class="off-plan">
+          <summary>Убранные материалы ({{ removedMaterials().length }})</summary>
+          <ul>
+            @for (row of removedMaterials(); track row.id) {
+              <li><span class="off-title">{{ removedTitle(row) }}</span>
+                <button type="button" class="button" [attr.aria-label]="'Вернуть в план: ' + removedTitle(row)" (click)="bringBackMaterial(row.id)">Вернуть</button></li>
+            }
+          </ul>
+        </details>
+      }
     }
 
     @if (overLimit(); as text) { <p class="notice error" role="note">{{ text }}</p> }
@@ -81,8 +110,9 @@
 
     <p class="muted cancel-note" id="plan-cancel-note">«Отменить» ничего не создаст. План уже оплачен: его стоимость останется списанной.</p>
 
-    <div class="plan-footer">
-      <p class="total" role="status" id="plan-total">{{ totalsText() }}</p>
+    <div class="plan-footer" #footer>
+      <p class="total" id="plan-total">{{ totalsText() }}</p>
+      <p class="sr-only" role="status" aria-atomic="true">{{ announced() }}</p>
       <div class="plan-actions">
         <button type="button" class="button primary" aria-describedby="plan-total" [attr.aria-disabled]="busy() ? 'true' : null"
           (click)="launch()">{{ busy() ? 'Запускаем…' : 'Запустить по плану' }}</button>

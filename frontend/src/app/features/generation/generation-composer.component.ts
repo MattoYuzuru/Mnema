@@ -23,6 +23,7 @@ import {
 import {
     GenerationEstimate, MAX_PROMPT_LENGTH, MaterialsSpec, NotesMode, SessionDetail, SessionSummary, SpecSource, serializeMaterialsSpec
 } from './generation.models';
+import { readAllowance } from './plan-allowance';
 import { NoteOverridesComponent } from './note-overrides.component';
 import {
     ComposerSource, NoteOverrideMap, customizedCount, overridesOf, refusalMessage, refusalOf, sourceKey
@@ -125,6 +126,9 @@ export class GenerationComposerComponent {
     private readonly api = inject(GenerationApiService);
     private readonly destroyRef = inject(DestroyRef);
     private pending: PendingCreation | null = null;
+    /** The whole allowance of the period, read once when a plan is first asked for: the exact figure of the plan's share. */
+    private readonly allowance = signal<number | null>(null);
+    private allowanceAsked = false;
 
     /** «Юзуру, что будем учить сегодня?»; without a name, «Что будем учить сегодня?». The name is never the e-mail address. */
     readonly greeting = computed(() => {
@@ -161,7 +165,7 @@ export class GenerationComposerComponent {
     /** «План: ≈ 1 % лимита» under the plan option, once the estimate knows it. */
     protected readonly planCost = computed(() => {
         const state = this.estimate();
-        return state.phase === 'ready' ? describePlanCost(state.estimate) : null;
+        return state.phase === 'ready' ? describePlanCost(state.estimate, this.allowance()) : null;
     });
     protected readonly estimateText = computed(() => {
         const state = this.estimate();
@@ -175,6 +179,11 @@ export class GenerationComposerComponent {
     });
 
     constructor() {
+        effect(() => {
+            if (!this.settings().planFirst || this.allowanceAsked) return;
+            this.allowanceAsked = true;
+            void readAllowance(this.injector).then(total => this.allowance.set(total));
+        });
         // One request per pause: every change cancels the timer and the request in flight.
         effect(onCleanup => {
             const deckId = this.deckId();

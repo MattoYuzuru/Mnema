@@ -367,15 +367,30 @@ export function describeEditCost(estimate: GenerationEstimate, allowance: number
 }
 
 /**
- * «План: ≈ 5 % лимита»: what the plan itself costs, from the plan line of the estimate; the share is the plan's part of the estimate's
- * percentage (the estimate carries no bar of its own). `null` when the estimate has no plan line.
+ * The share of the limit that `times` plans cost, from the plan line of the estimate: «≈ 5 % лимита». With the whole allowance of the period
+ * (`allowance`, `usage.credits.total`) it is exact; without it the plan's part of the estimate's rounded percentage stands in (the estimate
+ * carries no bar of its own). `null` when the estimate has no plan line.
  */
-export function describePlanCost(estimate: GenerationEstimate): string | null {
+export function planShare(estimate: GenerationEstimate, allowance: number | null = null, times = 1): string | null {
     if (estimate.planCredits === null) return null;
+    const exact = describeShare(estimate.planCredits * times, allowance);
+    if (exact !== null) return exact;
     const { p95: percent } = estimate.percentOfPeriodAllowance;
     const total = estimate.credits.p95;
-    const share = total > 0 ? Math.round(percent * estimate.planCredits / total) : 0;
-    return share < 1 ? `План: менее 1${NBSP}% лимита` : `План: ≈${NBSP}${share}${NBSP}% лимита`;
+    const share = total > 0 ? Math.round(percent * estimate.planCredits / total) * times : 0;
+    return share < 1 ? `менее 1${NBSP}% лимита` : `≈${NBSP}${share}${NBSP}% лимита`;
+}
+
+/** «План: ≈ 5 % лимита»: what the plan itself costs, next to the option. `null` when the estimate has no plan line. */
+export function describePlanCost(estimate: GenerationEstimate, allowance: number | null = null): string | null {
+    const share = planShare(estimate, allowance);
+    return share === null ? null : `План: ${share}`;
+}
+
+/** The sentence a split selection needs when every workshop makes its own plan: «План составляется для каждой мастерской — всего 3 раза, ≈ 5 % лимита.» */
+export function describePlansForSplit(estimate: GenerationEstimate, allowance: number | null, workshops: number): string {
+    const share = planShare(estimate, allowance, workshops);
+    return `План составляется для каждой мастерской — всего ${workshops}${NBSP}${workshops >= 2 && workshops <= 4 ? 'раза' : 'раз'}${share === null ? '' : `, ${share}`}.`;
 }
 
 /** Why an edit does not fit the budget, in words: the same facts as the composer's explanation, for one small edit. */

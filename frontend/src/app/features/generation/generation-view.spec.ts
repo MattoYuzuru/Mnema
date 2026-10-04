@@ -3,7 +3,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { isSendKey } from './implicit-submit';
 import { readProblem } from './generation-problem';
 import {
-    EFFORT_OPTIONS, NBSP, NOTES_MODE_OPTIONS, artifactStatus, describeEstimate, describeNoteArchive, describePlanCost, describeSessionProgress, describeUsageLimit, failureNote, failureReason,
+    EFFORT_OPTIONS, NBSP, NOTES_MODE_OPTIONS, artifactStatus, describeEstimate, describeNoteArchive, describePlanCost, describePlansForSplit, describeSessionProgress, describeUsageLimit, failureNote, failureReason,
     formatDay, formatWorkshopStart, positionLabel, problemMessage, promptExcerpt, slotCaption, summarize
 } from './generation-view';
 import {
@@ -119,6 +119,12 @@ describe('Generation texts and helpers', () => {
             expect(describePlanCost(planned(0, 40, 20))).toBe(`План: менее 1${NBSP}% лимита`);
             expect(describePlanCost(planned(6, 0, 20))).toBe(`План: менее 1${NBSP}% лимита`);
             expect(describePlanCost(planned(6, 40, null))).toBeNull();
+            // With the whole allowance of the period the share is exact, whatever the estimate rounded.
+            expect(describePlanCost(planned(11, 40, 20), 360)).toBe(`План: ≈${NBSP}5,6${NBSP}% лимита`);
+            expect(describePlanCost(planned(11, 40, 20), 0)).toBe(`План: ≈${NBSP}6${NBSP}% лимита`);
+            expect(describePlansForSplit(planned(11, 40, 20), 360, 3)).toBe(`План составляется для каждой мастерской — всего 3${NBSP}раза, ≈${NBSP}17${NBSP}% лимита.`);
+            expect(describePlansForSplit(planned(11, 40, 20), null, 3)).toBe(`План составляется для каждой мастерской — всего 3${NBSP}раза, ≈${NBSP}18${NBSP}% лимита.`);
+            expect(describePlansForSplit(planned(6, 40, null), 360, 5)).toBe(`План составляется для каждой мастерской — всего 5${NBSP}раз.`);
         });
 
         it('explains the refusal of a plan apart from the refusal of the work: the plan is optional (#295)', () => {

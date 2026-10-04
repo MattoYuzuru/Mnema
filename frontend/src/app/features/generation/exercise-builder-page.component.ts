@@ -22,7 +22,8 @@ import { ResolvedTargets, TargetRequest, parseTargetRequest, resolveTargets } fr
 import { GenerationApiService } from './generation-api.service';
 import { blockImplicitSubmit } from './implicit-submit';
 import { GenerationProblem, readProblem } from './generation-problem';
-import { UsageExplanation, describeEstimate, describePlanCost, formatWorkshopStart, problemMessage } from './generation-view';
+import { UsageExplanation, describeEstimate, describePlanCost, describePlansForSplit, formatWorkshopStart, problemMessage } from './generation-view';
+import { readAllowance } from './plan-allowance';
 import { ExercisesSpec, GenerationEstimate, SessionDetail, SessionSummary, serializeExercisesSpec } from './generation.models';
 import { scheduleEstimate } from './estimate-schedule';
 
@@ -70,6 +71,9 @@ export class ExerciseBuilderPageComponent {
      */
     readonly startedSessions = signal<readonly SessionDetail[]>([]);
     readonly activeWorkshops = signal<readonly SessionSummary[]>([]);
+    /** The whole allowance of the period, read once when a plan is first asked for: the exact figure of the plan's share. */
+    private readonly allowance = signal<number | null>(null);
+    private allowanceAsked = false;
 
     protected readonly uid = 'mn-exercise-builder';
     protected readonly materialsCount = materialsCount;
@@ -103,7 +107,13 @@ export class ExerciseBuilderPageComponent {
     /** «План: ≈ 1 % лимита» under the plan option, once the estimate knows it. */
     protected readonly planCost = computed(() => {
         const state = this.estimate();
-        return state.phase === 'ready' ? describePlanCost(state.estimate) : null;
+        return state.phase === 'ready' ? describePlanCost(state.estimate, this.allowance()) : null;
+    });
+    /** A split selection makes a plan in every workshop: said before anything starts, with what they cost together. */
+    protected readonly planSplitText = computed(() => {
+        const state = this.estimate();
+        const workshops = this.sessions().length;
+        return this.value().planFirst && workshops > 1 && state.phase === 'ready' ? describePlansForSplit(state.estimate, this.allowance(), workshops) : null;
     });
     protected readonly overBudget = computed(() => {
         const state = this.estimate();
@@ -164,6 +174,11 @@ export class ExerciseBuilderPageComponent {
                 next: estimate => this.estimate.set({ phase: 'ready', estimate }),
                 error: (error: unknown) => this.estimate.set(this.estimateFailure(error, spec))
             }));
+        });
+        effect(() => {
+            if (!this.value().planFirst || this.allowanceAsked) return;
+            this.allowanceAsked = true;
+            void readAllowance(this.injector).then(total => this.allowance.set(total));
         });
         // The shell focuses the heading on navigation; when the content replaces the loading text, focus stays where the user put it.
         effect(() => {

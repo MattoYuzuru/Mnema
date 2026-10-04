@@ -10,6 +10,7 @@ import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService, LearningCapabilities 
 import { ItemDetail, ItemPage, ItemSummary } from '../authoring/authoring.models';
 import { ItemApiService } from '../authoring/item-api.service';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
+import { UsageApiService } from '../usage/usage-api.service';
 import { ESTIMATE_DEBOUNCE_MS } from './generation-composer.component';
 import { ExerciseBuilderPageComponent } from './exercise-builder-page.component';
 import { documentOf, exerciseSession } from './exercise-test-data';
@@ -37,6 +38,8 @@ describe('ExerciseBuilderPageComponent', () => {
     let transition: { navigate: ReturnType<typeof vi.fn> };
     let toast: { echo: ReturnType<typeof vi.fn> };
     let capabilities: LearningCapabilities | 'error';
+    /** The whole allowance the page may read from the usage endpoint; `null` makes it unreadable. */
+    let allowance: number | null = 360;
     let readImpl: ((deck: string, member: string) => unknown) | null = null;
     let listImpl: ((deck: string, options?: { cursor?: string | null }) => unknown) | null = null;
 
@@ -72,6 +75,7 @@ describe('ExerciseBuilderPageComponent', () => {
             of(options?.cursor == null ? itemPage(1, 20, 45) : options.cursor === 'c21' ? itemPage(21, 20, 45) : itemPage(41, 5, 45))));
         TestBed.configureTestingModule({ providers: [provideRouter([]), { provide: GenerationApiService, useValue: api }, { provide: ItemApiService, useValue: items },
             { provide: OwnDecksApiService, useValue: { detail: () => of(deckFixture) } },
+            { provide: UsageApiService, useValue: { load: () => allowance === null ? throwError(() => new HttpErrorResponse({ status: 500 })) : of({ credits: { total: allowance } }) } },
             { provide: CapabilitiesApiService, useValue: { read: () => capabilities === 'error' ? throwError(() => new HttpErrorResponse({ status: 500 })) : of(capabilities) } },
             { provide: PageTransition, useValue: transition }, { provide: ToastService, useValue: toast },
             { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ deckId: ids.deckId }), queryParamMap: convertToParamMap(query) } } }] });
@@ -80,7 +84,7 @@ describe('ExerciseBuilderPageComponent', () => {
         await settle();
     }
 
-    beforeEach(() => { capabilities = available; readImpl = null; listImpl = null; });
+    beforeEach(() => { capabilities = available; readImpl = null; listImpl = null; allowance = 360; });
     afterEach(() => vi.useRealTimers());
 
     describe('opening', () => {
@@ -379,12 +383,48 @@ describe('ExerciseBuilderPageComponent', () => {
             expect(cta().textContent).toBe('Составить план');
             await settle(ESTIMATE_DEBOUNCE_MS);
             expect(wireSettings().planFirst).toBe(true);
-            expect(root().querySelector('.cost')?.textContent?.replace(/\u00a0/g, ' ')).toBe('План: ≈ 6 % лимита');
+            expect(root().querySelector('.cost')?.textContent?.replace(/\u00a0/g, ' ')).toBe('План: ≈ 5,6 % лимита');
             api.createSession.mockReturnValue(created(exerciseSession([], { state: 'PLANNING', plan: null })));
             cta().click();
             await settle();
             expect((api.createSession.mock.calls[0]![1] as any).settings.planFirst).toBe(true);
             expect(transition.navigate).toHaveBeenCalledWith(['/decks', ids.deckId, 'workshop', ids.sessionId]);
+        });
+
+        it('measures the plan against the whole allowance of the period when it can be read, and falls back to the rounded estimate when it cannot', async () => {
+            await open({ members: key(1) });
+            api.estimate.mockReturnValue(of(planned()));
+            planBox().click();
+            await settle();
+            await settle(ESTIMATE_DEBOUNCE_MS);
+            expect(root().querySelector('.cost')?.textContent?.replace(/\u00a0/g, ' ')).toBe('План: ≈ 5,6 % лимита');
+            allowance = null;
+            await open({ members: key(1) });
+            api.estimate.mockReturnValue(of(planned()));
+            planBox().click();
+            await settle();
+            await settle(ESTIMATE_DEBOUNCE_MS);
+            expect(root().querySelector('.cost')?.textContent?.replace(/\u00a0/g, ' ')).toBe('План: ≈ 6 % лимита');
+        });
+
+        it('says before starting that every workshop of a split selection makes its own plan, how many times and what they cost together', async () => {
+            await open({ all: '1' });
+            const splitNote = (): string | undefined => [...root().querySelectorAll('.notice[role=status]')].map(node => node.textContent!.replace(/\u00a0/g, ' ')).find(note => note.startsWith('План составляется'));
+            expect(splitNote()).toBeUndefined();
+            api.estimate.mockReturnValue(of(planned()));
+            planBox().click();
+            await settle();
+            await settle(ESTIMATE_DEBOUNCE_MS);
+            expect(splitNote()).toBe('План составляется для каждой мастерской — всего 3 раза, ≈ 17 % лимита.');
+            planBox().click();
+            await settle();
+            expect(splitNote()).toBeUndefined();
+            await open({ members: key(1) });
+            api.estimate.mockReturnValue(of(planned()));
+            planBox().click();
+            await settle();
+            await settle(ESTIMATE_DEBOUNCE_MS);
+            expect(splitNote()).toBeUndefined();
         });
 
         it('asks for a plan in every session of a split selection: each one makes its own', async () => {

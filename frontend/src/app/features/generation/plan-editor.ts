@@ -4,7 +4,7 @@ import { exercisesCount, materialsCount } from './exercise-builder';
 import { describeShare } from './generation-view';
 import { GenerationProblem } from './generation-problem';
 import {
-    ExercisePlanItem, ExercisesPlan, MaterialPlanItem, PLAN_EFFORTS, PlanEffort, RequestValidationError, SessionPlan
+    ExercisePlanItem, ExercisesPlan, MaterialPlanItem, MaterialsPlan, PLAN_EFFORTS, PlanEffort, RequestValidationError, SessionPlan
 } from './generation.models';
 
 /**
@@ -52,12 +52,37 @@ export function takeBack(plan: ExercisesPlan, rows: ExerciseDraft, memberKey: st
     return [...rows, { id: nextId(rows, ids), item }];
 }
 
+/**
+ * The owner's rows put onto a newer plan of the same session (the version moved while they edited), when nothing they kept has gone: every
+ * row is still one of the plan's materials and uses mechanics it still allows. `null` when they are not compatible, and the draft is made
+ * again from the new plan.
+ */
+export function reapplyExercises(plan: ExercisesPlan, rows: ExerciseDraft): ExerciseDraft | null {
+    const known = new Set(plan.targets.map(target => target.memberKey));
+    const compatible = rows.every(row => known.has(row.item.memberKey) && row.item.mechanics.every(mechanic => plan.allowedMechanics.includes(mechanic)));
+    return compatible ? rows : null;
+}
+
+/** The same for materials: every source is still a note of the plan (or none), and each row takes the prices of the new plan. */
+export function reapplyMaterials(plan: MaterialsPlan, rows: MaterialDraft): MaterialDraft | null {
+    const known = new Set(plan.sources.map(source => source.noteId));
+    if (!rows.every(row => row.item.source === null || known.has(row.item.source))) return null;
+    return rows.map(row => {
+        const priced = plan.items.find(item => item.source === row.item.source) ?? plan.items[0];
+        return priced === undefined ? row : { id: row.id, item: { ...row.item, creditsByEffort: priced.creditsByEffort } };
+    });
+}
+
 /** Exercises the plan creates: the sum of the counts. */
 export function exerciseTotal(rows: ExerciseDraft): number {
     return rows.reduce((sum, row) => sum + row.item.count, 0);
 }
 
-/** What `count` exercises cost: the server's price, `ceil(exercisesPerFive x n / 5)` (the plan carries the rate). */
+/**
+ * What `count` exercises cost: `ceil(exercisesPerFive x n / 5)`. The server prices `n` exercises as `pricing.exerciseCredits(n)`; for the
+ * rate card in force (a linear price per five exercises, rounded up) the two are the same number, which is why the plan carries only the
+ * rate. A rate card that stops being linear would have to put a table in the plan instead.
+ */
 export function exerciseCredits(plan: ExercisesPlan, count: number): number {
     return count <= 0 ? 0 : Math.ceil(plan.rates.exercisesPerFive * count / 5);
 }
@@ -185,7 +210,7 @@ export function describePlanProblem(problem: GenerationProblem, plan: SessionPla
         case 409:
             switch (problem.code) {
                 case 'USAGE_LIMIT_REACHED':
-                    return `Не хватает лимита ИИ на этот план: он дороже, чем было отложено. Ничего не изменилось и не списано. Уберите строки или уменьшите числа — или дождитесь обновления лимита (подробности — в профиле, в блоке «ИИ-бюджет»).`;
+                    return `Не хватает лимита ИИ на этот план: он дороже отложенного или отложенный лимит уже освободился. Ничего не изменилось и не списано. Уберите строки или уменьшите числа — или дождитесь обновления лимита (подробности — в профиле, в блоке «ИИ-бюджет»).`;
                 case 'GENERATION_STATE_CONFLICT':
                     return 'Этот план уже запущен или остановлен. Мы обновили мастерскую.';
                 case 'CAPABILITY_UNAVAILABLE': {

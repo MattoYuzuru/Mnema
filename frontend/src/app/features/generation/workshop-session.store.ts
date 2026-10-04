@@ -26,6 +26,11 @@ export const POLL_BACKGROUND_MIN_MS = 5_000;
 export const POLL_BACKGROUND_MAX_MS = 15_000;
 export const POLL_FAILURE_MAX_MS = 15_000;
 const EVENTS_PAGE = 100;
+/**
+ * A plan that waits for its owner is read again this often, and whenever the tab becomes visible: the hold made for it lapses without
+ * changing the session (so no event says so), and `plan.cost.holdActive` is computed only when the session is read (#295).
+ */
+export const PLAN_REREAD_MS = 30 * 60 * 1_000;
 
 // Polling stops in CANCELLED as in CLOSED and EXPIRED: `events.json` polling.clientCadence says "stop when session.state is CLOSED,
 // CANCELLED or EXPIRED". A cancelled session still lets the user approve, reject or hand off what was proposed; those commands
@@ -160,6 +165,7 @@ export class WorkshopSessionStore {
     /** Bumps on every `open` and on dispose: answers of an earlier open are dropped. */
     private epoch = 0;
     private readonly commandIds = new Map<string, string>();
+    private lastRead = 0;
     private readonly revisions = new Map<string, Promise<ArtifactDetail | null>>();
     private allowance: Promise<number | null> | null = null;
     private noteTimer: ReturnType<typeof setTimeout> | null = null;
@@ -208,6 +214,7 @@ export class WorkshopSessionStore {
         this.api.getSession(this.deckId, this.sessionId).subscribe({
             next: session => {
                 if (epoch !== this.epoch) return;
+                this.lastRead = Date.now();
                 this.session.set(session);
                 this.phase.set('ready');
                 if (!isTerminalSession(session.state)) this.schedule(0);
@@ -233,6 +240,7 @@ export class WorkshopSessionStore {
         this.reading = firstValueFrom(this.api.getSession(this.deckId, this.sessionId)).then(
             fresh => {
                 if (epoch !== this.epoch) return;
+                this.lastRead = Date.now();
                 this.session.set(mergeSession(this.session(), fresh));
                 this.phase.set('ready');
                 // An undo reopened a CLOSED session (#288): the loop stopped at CLOSED and must run again.
@@ -715,7 +723,8 @@ export class WorkshopSessionStore {
                 if (isNewer(page.cursor, this.cursor)) this.cursor = page.cursor;
                 const session = this.session()!;
                 const behind = isNewer(page.session.rowVersion, session.rowVersion) || page.session.state !== session.state;
-                if (applied.reconcile || behind || page.unreadable > 0) void this.refresh();
+                const planStale = session.state === 'PLAN_READY' && Date.now() - this.lastRead >= PLAN_REREAD_MS;
+                if (applied.reconcile || behind || page.unreadable > 0 || planStale) void this.refresh();
                 // A full page means more events are waiting: read them without pausing.
                 if (page.events.length >= EVENTS_PAGE) { this.schedule(0); return; }
                 this.scheduleNext(page.events.length > 0 || applied.reconcile, page.session.state);
@@ -775,6 +784,8 @@ export class WorkshopSessionStore {
         if (!this.started || this.disposed || this.terminal()) return;
         if (this.document.visibilityState === 'visible') {
             this.backgroundDelay = POLL_BACKGROUND_MIN_MS;
+            // Back to a waiting plan: its hold may have lapsed meanwhile, which only a read shows.
+            if (this.session()?.state === 'PLAN_READY') void this.refresh();
             if (this.poll === null) this.schedule(0);
         } else if (this.poll === null && this.timer !== null) {
             this.schedule(this.backgroundDelay);

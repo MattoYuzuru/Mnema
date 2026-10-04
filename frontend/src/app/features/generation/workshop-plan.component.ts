@@ -1,5 +1,5 @@
 import {
-    ChangeDetectionStrategy, Component, ElementRef, Injector, afterNextRender, computed, effect, inject, output, signal, untracked
+    ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, output, signal, untracked, viewChild
 } from '@angular/core';
 
 import { Mechanic } from '../../content/exercise/exercise-content.models';
@@ -9,9 +9,14 @@ import { ExerciseSettingsFieldsComponent } from './exercise-settings-fields.comp
 import { ExercisePlanItem, ExercisesPlan, MaterialPlanItem, MaterialsPlan, PLAN_EFFORTS, PlanEffort } from './generation.models';
 import {
     ExerciseDraft, MaterialDraft, PLAN_EFFORT_LABELS, MAX_PLAN_TITLE, describePlanOverLimit, describePlanPaid, describeTotals, draftOf,
-    HOLD_LAPSED_NOTE, exercisesTotals, isValidPlanTitle, materialsTotals, takeBack, withItem, withoutRow
+    HOLD_LAPSED_NOTE, exercisesTotals, isValidPlanTitle, materialsTotals, reapplyExercises, reapplyMaterials, takeBack, withItem, withoutRow
 } from './plan-editor';
 import { WorkshopSessionStore } from './workshop-session.store';
+
+/** Published by the sticky bar so the page scrolls a focused control clear of it (WCAG 2.4.11), like the review of exercises. */
+const BAR_HEIGHT_PROPERTY = '--mn-bulk-bar-height';
+/** The total is said once the owner pauses, not on every tick of a slider. */
+const ANNOUNCE_PAUSE_MS = 500;
 
 const EFFORT_CHOICES: readonly SegmentedOption<PlanEffort>[] = PLAN_EFFORTS.map(value => ({ value, label: PLAN_EFFORT_LABELS[value] }));
 
@@ -23,6 +28,8 @@ const EFFORT_CHOICES: readonly SegmentedOption<PlanEffort>[] = PLAN_EFFORTS.map(
  * `422` is explained the same way. The edited plan stays on screen when a launch is refused.
  *
  * The draft is made again from the server's plan only when the session version moves (a poll that finds the same version keeps the edits).
+ * When it does move (a launch refused with `412`), the owner's rows are put onto the new plan if everything they kept is still in it; only
+ * otherwise are they dropped, and the page says so. The words of a refusal survive that re-read.
  */
 @Component({
     selector: 'app-workshop-plan',
@@ -41,6 +48,8 @@ export class WorkshopPlanComponent {
     private readonly store = inject(WorkshopSessionStore);
     private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
     private readonly injector = inject(Injector);
+    private readonly destroyRef = inject(DestroyRef);
+    protected readonly footer = viewChild<ElementRef<HTMLElement>>('footer');
 
     protected readonly session = this.store.session;
     protected readonly plan = computed(() => {
@@ -54,6 +63,12 @@ export class WorkshopPlanComponent {
     protected readonly materialRows = signal<MaterialDraft>([]);
     /** What a removed material had when it was removed: «Вернуть» gives it back as it was. */
     protected readonly removed = signal<ReadonlyMap<string, ExercisePlanItem>>(new Map());
+    /** The material rows taken off, newest last: «Вернуть» gives one back as it was. */
+    protected readonly removedMaterials = signal<MaterialDraft>([]);
+    /** The row whose «Убрать» asked «последнюю строку убрать?» and waits for the answer. */
+    protected readonly confirmLast = signal<number | null>(null);
+    /** What the live region says: the total, once the owner pauses. The visible total follows every tick. */
+    protected readonly announced = signal('');
     /** The failure of the last launch, in words; cleared by the next edit. */
     protected readonly failure = signal<string | null>(null);
     /** The server's plan moved on while the owner had edits: the draft was made again, and this says so. */
@@ -68,6 +83,8 @@ export class WorkshopPlanComponent {
     private readonly draftVersion = signal<string | null>(null);
     private dirty = false;
     private nextRowId = 1_000;
+    private announceTimer: ReturnType<typeof setTimeout> | null = null;
+    private readonly values = new WeakMap<ExercisePlanItem, BuilderValue>();
 
     protected readonly busy = computed(() => this.store.busy().has('session'));
     protected readonly paid = computed(() => { const plan = this.plan(); return plan === null ? null : describePlanPaid(plan); });
@@ -111,27 +128,57 @@ export class WorkshopPlanComponent {
             const next = version();
             untracked(() => this.seed(next));
         });
+        // The sticky bar's height becomes scroll padding, so a focused row control is never hidden behind it.
+        effect(onCleanup => {
+            const element = this.footer()?.nativeElement;
+            if (element === undefined) return;
+            const root = element.ownerDocument.documentElement;
+            const apply = (): void => root.style.setProperty(BAR_HEIGHT_PROPERTY, `${element.offsetHeight}px`);
+            apply();
+            const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(apply);
+            observer?.observe(element);
+            onCleanup(() => { observer?.disconnect(); root.style.removeProperty(BAR_HEIGHT_PROPERTY); });
+        });
+        this.destroyRef.onDestroy(() => { if (this.announceTimer !== null) clearTimeout(this.announceTimer); });
     }
 
     private seed(version: string | null): void {
         const plan = this.plan();
         if (version === null || plan === null) { this.draftVersion.set(null); return; }
-        if (this.draftVersion() === version) return;
-        this.refreshed.set(this.draftVersion() !== null && this.dirty);
+        const previous = this.draftVersion();
+        if (previous === version) return;
+        if (previous !== null && this.dirty) {
+            // The plan of the same session moved on while the owner edited: their rows stay when nothing they kept has gone from it.
+            const kept = plan.kind === 'EXERCISES' ? reapplyExercises(plan, this.exerciseRows()) : reapplyMaterials(plan, this.materialRows());
+            if (kept !== null) {
+                if (plan.kind === 'EXERCISES') this.exerciseRows.set(kept as ExerciseDraft); else this.materialRows.set(kept as MaterialDraft);
+                this.draftVersion.set(version);
+                this.refreshed.set(false);
+                return;
+            }
+        }
+        this.refreshed.set(previous !== null && this.dirty);
         this.draftVersion.set(version);
         this.dirty = false;
-        this.failure.set(null);
+        // The words of a refused launch outlive the re-read that the refusal asked for; only the first draft starts clean.
+        if (previous === null) this.failure.set(null);
         this.titleMissing.set(false);
+        this.confirmLast.set(null);
         this.removed.set(new Map());
+        this.removedMaterials.set([]);
         if (plan.kind === 'EXERCISES') { this.exerciseRows.set(draftOf(plan.items)); this.materialRows.set([]); }
         else { this.materialRows.set(draftOf(plan.items)); this.exerciseRows.set([]); }
         this.nextRowId = 1_000;
+        this.announced.set(this.totalsText());
     }
 
     // --- Exercises ---
 
+    /** The value the mechanics chips of a row take; the same object for the same item, so a row that did not change is not handed a new one. */
     protected valueOf(item: ExercisePlanItem): BuilderValue {
-        return { ...DEFAULT_BUILDER_VALUE, mechanics: item.mechanics };
+        let value = this.values.get(item);
+        if (value === undefined) { value = { ...DEFAULT_BUILDER_VALUE, mechanics: item.mechanics }; this.values.set(item, value); }
+        return value;
     }
 
     protected setMechanics(id: number, value: BuilderValue): void {
@@ -144,7 +191,12 @@ export class WorkshopPlanComponent {
         const count = Number((event.target as HTMLInputElement).value);
         if (!Number.isInteger(count) || count < 1) return;
         this.exerciseRows.update(rows => withItem(rows, id, { count }));
-        this.edited();
+        // The visible total follows every tick; what is said waits for the end of the move (`change`).
+        this.edited(false);
+    }
+
+    protected countSettled(): void {
+        this.scheduleAnnounce();
     }
 
     protected countText(count: number): string {
@@ -155,7 +207,7 @@ export class WorkshopPlanComponent {
         const rows = this.exerciseRows();
         const index = rows.findIndex(row => row.id === id);
         const row = rows[index];
-        if (row === undefined) return;
+        if (row === undefined || this.askLast(id, rows.length)) return;
         this.removed.update(held => new Map(held).set(row.item.memberKey, row.item));
         this.exerciseRows.set(withoutRow(rows, id));
         this.edited();
@@ -192,10 +244,41 @@ export class WorkshopPlanComponent {
     protected removeMaterial(id: number): void {
         const rows = this.materialRows();
         const index = rows.findIndex(row => row.id === id);
-        if (index < 0) return;
+        const row = rows[index];
+        if (row === undefined || this.askLast(id, rows.length)) return;
+        this.removedMaterials.update(held => [...held, row]);
         this.materialRows.set(withoutRow(rows, id));
         this.edited();
         this.focusAfterRemoval(index);
+    }
+
+    /** A removed material row comes back at the end of the plan, as it was. */
+    protected bringBackMaterial(id: number): void {
+        const row = this.removedMaterials().find(held => held.id === id);
+        if (row === undefined) return;
+        this.removedMaterials.update(held => held.filter(candidate => candidate.id !== id));
+        const added = { id: this.nextRowId++, item: row.item };
+        this.materialRows.update(rows => [...rows, added]);
+        this.edited();
+        afterNextRender(() => this.host.nativeElement.querySelector<HTMLElement>(`[data-row="${added.id}"] .title-input`)?.focus(), { injector: this.injector });
+    }
+
+    /** The last row is not taken off at once: without it there is nothing to launch, so the row asks first. */
+    protected keepRow(): void {
+        const id = this.confirmLast();
+        this.confirmLast.set(null);
+        afterNextRender(() => this.host.nativeElement.querySelector<HTMLElement>(`[data-row="${id}"] .row-remove`)?.focus(), { injector: this.injector });
+    }
+
+    private askLast(id: number, count: number): boolean {
+        if (count > 1 || this.confirmLast() === id) return false;
+        this.confirmLast.set(id);
+        afterNextRender(() => this.host.nativeElement.querySelector<HTMLElement>(`[data-row="${id}"] [data-keep]`)?.focus(), { injector: this.injector });
+        return true;
+    }
+
+    protected removedTitle(row: { readonly item: MaterialPlanItem }): string {
+        return row.item.title.trim() || 'Без темы';
     }
 
     protected titleValid(item: MaterialPlanItem): boolean {
@@ -234,10 +317,17 @@ export class WorkshopPlanComponent {
         if (await this.store.cancel()) this.finished.emit();
     }
 
-    private edited(): void {
+    private edited(announce = true): void {
         this.dirty = true;
         this.failure.set(null);
         this.refreshed.set(false);
+        this.confirmLast.set(null);
+        if (announce) this.scheduleAnnounce();
+    }
+
+    private scheduleAnnounce(): void {
+        if (this.announceTimer !== null) clearTimeout(this.announceTimer);
+        this.announceTimer = setTimeout(() => { this.announceTimer = null; this.announced.set(this.totalsText()); }, ANNOUNCE_PAUSE_MS);
     }
 
     /** The button that had focus is gone: focus goes to the row now at its place, or to the one before it, or to the heading. */
