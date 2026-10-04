@@ -15,7 +15,7 @@ import tempfile
 ROOT = Path('/etc/mnema/production')
 STATE = Path('/var/lib/mnema-release')
 SHA = r'[0-9a-f]{40}'
-SERVICES = ('frontend', 'identity-account', 'learning')
+SERVICES = ('frontend', 'identity-account', 'learning', 'postgres')
 GATES = ('source_ci_verified', 'image_security_verified', 'backup_restore_verified',
          'data_boundary_approved', 'auth_guard_verified')
 

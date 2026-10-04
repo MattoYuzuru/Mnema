@@ -426,7 +426,7 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
         UUID target = id(blocks(detail(owner, deck, proposal)).get(1));
 
         // a claimed step that used all its attempts and whose lease ran out: the sweeper fails the turn, not the artifact
-        UUID lost = forgedEdit(owner, proposal, target, "RUNNING");
+        UUID lost = forgedEdit(owner, proposal, target);
         jdbc.sql("UPDATE app_learning.generation_step SET state='RUNNING',lease_token=gen_random_uuid(),lease_until=CURRENT_TIMESTAMP - interval '1 minute',"
                 + "attempts=3,first_claimed_at=CURRENT_TIMESTAMP WHERE step_id=:id").param("id", stepOfTurn(lost)).update();
         awaitTurn(lost, "FAILED");
@@ -435,8 +435,9 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
         assertThat(reservationOfTurn(lost)).isEqualTo("RELEASED");
 
         // a READY step whose whole lifetime ran out before it was claimed again
-        UUID late = forgedEdit(owner, proposal, target, "READY");
-        jdbc.sql("UPDATE app_learning.generation_step SET attempts=1,first_claimed_at=CURRENT_TIMESTAMP - interval '2 hours' WHERE step_id=:id")
+        UUID late = forgedEdit(owner, proposal, target);
+        jdbc.sql("UPDATE app_learning.generation_step SET attempts=1,first_claimed_at=CURRENT_TIMESTAMP - interval '2 hours',"
+                        + "next_attempt_at=CURRENT_TIMESTAMP WHERE step_id=:id")
                 .param("id", stepOfTurn(late)).update();
         awaitTurn(late, "FAILED");
         assertThat(turnError(late)).isEqualTo("DEADLINE_EXCEEDED");
@@ -444,10 +445,12 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
         assertThat(reservationOfTurn(late)).isEqualTo("RELEASED");
 
         // a step claimed after its turn ended is void: it ends cancelled and changes nothing
-        UUID voided = forgedEdit(owner, proposal, target, "READY");
+        UUID voided = forgedEdit(owner, proposal, target);
         jdbc.sql("UPDATE app_learning.generation_artifact SET state='PROPOSED',row_version=row_version+1 WHERE artifact_id=:id")
                 .param("id", proposal.artifact()).update();
         jdbc.sql("UPDATE app_learning.generation_artifact_turn SET status='CANCELLED' WHERE turn_id=:id").param("id", voided).update();
+        jdbc.sql("UPDATE app_learning.generation_step SET next_attempt_at=CURRENT_TIMESTAMP WHERE step_id=:id")
+                .param("id", stepOfTurn(voided)).update();
         await("the void step to end", Duration.ofSeconds(10), () -> jdbc.sql("SELECT state FROM app_learning.generation_step WHERE step_id=:id")
                 .param("id", stepOfTurn(voided)).query(String.class).single().equals("CANCELLED"));
         assertThat(editCalls(owner)).isEmpty();
@@ -459,30 +462,29 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
     }
 
     /**
-     * An edit as admission leaves it (a QUEUED turn, a step, its hold, the artifact REVISING) but with the step parked far in the future,
-     * so a test can set the step to the state it wants to see the sweeper or the queue handle.
+     * An edit with its hold and REVISING artifact, parked until the test arms its desired lifecycle state.
+     * Publish the whole fixture in one transaction: the live dispatcher must never see insert's initially due READY step.
      */
-    private UUID forgedEdit(UUID owner, Proposal proposal, UUID target, String stepState) {
-        UUID turn = UUID.randomUUID();
-        UUID step = UUID.randomUUID();
-        UUID reservation = new org.springframework.transaction.support.TransactionTemplate(transactions).execute(status -> ledger.reserve(owner,
-                app.mnema.learning.usage.ReservationScope.TURN, proposal.session(), turn, 4).reservationId());
-        jdbc.sql("INSERT INTO app_learning.generation_artifact_turn(turn_id,artifact_id,session_id,owner_id,status,action,instruction,"
-                        + "target_node_ids,step_id,created_at) VALUES (:turn,:artifact,:session,:owner,'RUNNING','FREE','x',ARRAY[CAST(:target AS uuid)],:step,"
-                        + "CURRENT_TIMESTAMP)").param("turn", turn).param("artifact", proposal.artifact()).param("session", proposal.session())
-                .param("owner", owner).param("target", target.toString()).param("step", step).update();
-        tools.jackson.databind.node.ObjectNode input = JSON.createObjectNode().put("turnId", turn.toString()).put("action", "FREE")
-                .put("revisionId", proposal.revision().toString()).put("operation", "EDIT_SELECTION").put("credits", 4)
-                .put("reservationId", reservation.toString());
-        steps.insert(step, proposal.session(), proposal.artifact(), owner, "EDIT", "TEXT", input, "edit:" + turn);
-        jdbc.sql("UPDATE app_learning.generation_step SET next_attempt_at=CURRENT_TIMESTAMP + interval '1 day' WHERE step_id=:id")
-                .param("id", step).update();
-        jdbc.sql("UPDATE app_learning.generation_artifact SET state='REVISING',row_version=row_version+1 WHERE artifact_id=:id")
-                .param("id", proposal.artifact()).update();
-        if (stepState.equals("READY")) {
-            jdbc.sql("UPDATE app_learning.generation_step SET next_attempt_at=CURRENT_TIMESTAMP WHERE step_id=:id").param("id", step).update();
-        }
-        return turn;
+    private UUID forgedEdit(UUID owner, Proposal proposal, UUID target) {
+        return new org.springframework.transaction.support.TransactionTemplate(transactions).execute(status -> {
+            UUID turn = UUID.randomUUID();
+            UUID step = UUID.randomUUID();
+            UUID reservation = ledger.reserve(owner,
+                    app.mnema.learning.usage.ReservationScope.TURN, proposal.session(), turn, 4).reservationId();
+            jdbc.sql("INSERT INTO app_learning.generation_artifact_turn(turn_id,artifact_id,session_id,owner_id,status,action,instruction,"
+                            + "target_node_ids,step_id,created_at) VALUES (:turn,:artifact,:session,:owner,'RUNNING','FREE','x',ARRAY[CAST(:target AS uuid)],:step,"
+                            + "CURRENT_TIMESTAMP)").param("turn", turn).param("artifact", proposal.artifact()).param("session", proposal.session())
+                    .param("owner", owner).param("target", target.toString()).param("step", step).update();
+            tools.jackson.databind.node.ObjectNode input = JSON.createObjectNode().put("turnId", turn.toString()).put("action", "FREE")
+                    .put("revisionId", proposal.revision().toString()).put("operation", "EDIT_SELECTION").put("credits", 4)
+                    .put("reservationId", reservation.toString());
+            steps.insert(step, proposal.session(), proposal.artifact(), owner, "EDIT", "TEXT", input, "edit:" + turn);
+            jdbc.sql("UPDATE app_learning.generation_step SET next_attempt_at=CURRENT_TIMESTAMP + interval '1 day' WHERE step_id=:id")
+                    .param("id", step).update();
+            jdbc.sql("UPDATE app_learning.generation_artifact SET state='REVISING',row_version=row_version+1 WHERE artifact_id=:id")
+                    .param("id", proposal.artifact()).update();
+            return turn;
+        });
     }
 
     // ----------------------------------------------------------------------- revert
@@ -1043,7 +1045,7 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
         UUID target = id(blocks(detail(owner, deck, proposal)).get(1));
         // forged as not yet due, then aged and made due in ONE statement: a step that is due before it is aged could be
         // claimed in between and would run instead of expiring
-        UUID turn = forgedEdit(owner, proposal, target, "PARKED");
+        UUID turn = forgedEdit(owner, proposal, target);
         jdbc.sql("UPDATE app_learning.generation_artifact_turn SET status='QUEUED' WHERE turn_id=:id").param("id", turn).update();
         jdbc.sql("UPDATE app_learning.generation_step SET created_at=CURRENT_TIMESTAMP - interval '3 minutes',next_attempt_at=CURRENT_TIMESTAMP "
                         + "WHERE step_id=:id").param("id", stepOfTurn(turn)).update();

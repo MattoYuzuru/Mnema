@@ -230,10 +230,11 @@ class ReleaseSecurityEvidenceTest(unittest.TestCase):
                                   sha=COMMIT, run_id=RUN_ID, run_attempt=RUN_ATTEMPT,
                                   trivy_ignore=self.trivy_ignore, output=self.root / 'candidate.json')
 
-    def test_frontend_uses_the_same_high_critical_gate(self):
-        for severity in ('HIGH', 'CRITICAL'):
-            with self.subTest(severity=severity), self.assertRaises(EvidenceFailure):
-                evaluate(self.fixture('frontend', [self.vulnerability(severity)]))
+    def test_frontend_and_postgres_use_the_same_high_critical_gate(self):
+        for service in ('frontend', 'postgres'):
+            for severity in ('HIGH', 'CRITICAL'):
+                with self.subTest(service=service, severity=severity), self.assertRaises(EvidenceFailure):
+                    evaluate(self.fixture(service, [self.vulnerability(severity)]))
 
     def test_vps_candidate_requires_frontend_digest_and_evidence(self):
         self.evaluate_all()
@@ -242,7 +243,7 @@ class ReleaseSecurityEvidenceTest(unittest.TestCase):
         with self.assertRaisesRegex(EvidenceFailure, 'frontend'):
             aggregate(args)
 
-    def test_vps_candidate_has_three_images_without_runtime_admission(self):
+    def test_vps_candidate_has_four_images_without_runtime_admission(self):
         from render_vps_candidate import render
         args = self.candidate_arguments()
         render(args)
@@ -250,6 +251,14 @@ class ReleaseSecurityEvidenceTest(unittest.TestCase):
         self.assertEqual(set(VPS_SERVICES), set(data['images']))
         self.assertEqual(COMMIT, data['sha'])
         self.assertEqual({'schemaVersion', 'sha', 'images', 'source', 'securityEvidenceSha256'}, set(data))
+
+    def test_vps_candidate_cannot_omit_the_database_security_record(self):
+        args = self.candidate_arguments()
+        (self.digests_dir / 'postgres.digest').unlink()
+        aggregate_args = self.aggregate_arguments()
+        aggregate_args.include_frontend = True
+        with self.assertRaises(EvidenceFailure):
+            aggregate(aggregate_args)
 
     def test_vps_candidate_rejects_substituted_or_incomplete_security_evidence(self):
         from copy import deepcopy

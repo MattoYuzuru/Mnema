@@ -15,7 +15,7 @@ from typing import Any
 
 
 SERVICES = ("identity-account", "learning")
-VPS_SERVICES = (*SERVICES, "frontend")
+VPS_SERVICES = (*SERVICES, "frontend", "postgres")
 BLOCKING_SEVERITIES = {"HIGH", "CRITICAL"}
 SEVERITIES = {"UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL"}
 MAX_EXCEPTION_DAYS = 30
@@ -23,7 +23,7 @@ SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 IMAGE_PATTERN = re.compile(
     r"^ghcr\.io/(?P<repository>[a-z0-9_.-]+/[a-z0-9_.-]+)/"
-    r"(?P<service>identity-account|learning|frontend)@(?P<digest>sha256:[0-9a-f]{64})$"
+    r"(?P<service>identity-account|learning|frontend|postgres)@(?P<digest>sha256:[0-9a-f]{64})$"
 )
 OWNER_PATTERN = re.compile(r"^@[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$")
 FINDING_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:+-]{2,127}$")

@@ -42,7 +42,7 @@ bind this pointer to the current verified main candidate.
 Manifest contract (names only; this is not release acceptance evidence):
 
 - `sha`: the exact current-main commit verified by CI/security and local gate;
-- `images`: exactly `frontend`, `identity-account`, `learning`, each with the exact
+- `images`: exactly `frontend`, `identity-account`, `learning`, `postgres`, each with the exact
   `ghcr.io/mattoyuzuru/mnema/<service>@sha256:<64-hex>` security-verified digest;
 - `source_ci_verified`, `image_security_verified`, `backup_restore_verified`,
   `data_boundary_approved`, `auth_guard_verified`: true only after the corresponding
@@ -86,6 +86,12 @@ Positive smoke: dedicated key `status`. Negative smoke: `id`, `sudo id`, `sh`,
 SFTP, PTY, local/remote/Unix forwarding, injected/extra arguments, unknown SHA and
 missing acceptance manifest. A rejected preflight is expected before #349, not
 successful deployment evidence.
+
+The VPS runtime extends the original three-image dispatcher with the reviewed
+PostgreSQL release image. Replace the root dispatcher from the merged runtime PR
+before first rollout; the earlier installed version deliberately rejects four
+images. Root places its candidate PostgreSQL digest in `postgres-image` for the
+local backup helper, which refuses a live source using any other image.
 
 [OpenSSH forced-command/forwarding contract](https://man.openbsd.org/sshd_config.5),
 [GitHub Environment protections](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/managing-environments-for-deployment).
