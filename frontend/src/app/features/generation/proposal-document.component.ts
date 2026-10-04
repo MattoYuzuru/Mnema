@@ -120,6 +120,9 @@ export class ProposalDocumentComponent {
     protected readonly selecting = signal<string | null>(null);
     protected readonly selectionError = signal<{ readonly nodeId: string; readonly message: string } | null>(null);
     protected readonly searchRunning = IMAGE_SEARCH_RUNNING;
+    /** Images whose variants are open: set on the first sight of a finished search, then the owner's own toggle. */
+    protected readonly openVariants = signal<ReadonlySet<string>>(new Set());
+    private openedFor: string | null = null;
     /** What the end of a search says, in one polite region that lives as long as the document (the panel that was open is gone by then). */
     protected readonly announcement = signal('');
     /** A search started with «Повторить» (no panel): focus is restored when it ends. */
@@ -305,6 +308,16 @@ export class ProposalDocumentComponent {
             untracked(() => {
                 if (panel.sent && !searching) this.closePanel(true);
                 else if (!panel.sent && !open) this.closePanel(false);
+            });
+        });
+        // The variants of a search that just ended open once (false to true); later reads of the same turn leave them as the owner has them.
+        effect(() => {
+            const review = this.review();
+            if (review === null || review.kind !== 'applied' || review.turn.action !== 'IMAGE_SEARCH') return;
+            untracked(() => {
+                if (this.openedFor === review.turn.turnId) return;
+                this.openedFor = review.turn.turnId;
+                this.openVariants.update(held => new Set([...held, ...review.range]));
             });
         });
         // The end of a search is announced once, and a retry (no panel) gives focus back to what the search made.
@@ -690,10 +703,20 @@ export class ProposalDocumentComponent {
         return ready.length > 1 ? ready : [];
     }
 
-    /** The variants open by themselves right after a search that found them. */
+    /** Whether the variants of this image are open: by themselves right after a search that found them, then as the owner leaves them. */
     protected variantsOpen(id: string): boolean {
-        const review = this.review();
-        return review !== null && review.kind === 'applied' && review.turn.action === 'IMAGE_SEARCH' && review.range.includes(id);
+        return this.openVariants().has(id);
+    }
+
+    /** The owner opened or closed the group: that is respected from now on (a choice made in it must not collapse it). */
+    protected variantsToggled(id: string, event: Event): void {
+        const open = (event.target as HTMLDetailsElement).open;
+        this.openVariants.update(held => {
+            if (held.has(id) === open) return held;
+            const next = new Set(held);
+            if (open) next.add(id); else next.delete(id);
+            return next;
+        });
     }
 
     /** The slot whose variants are offered: the proposal can change (no search is running) and the slot found more than one image. */

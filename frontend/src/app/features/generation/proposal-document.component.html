@@ -110,7 +110,7 @@
       }
     }
     @if (variantsShown(id); as found) {
-      <details class="variants" [attr.data-variants]="id" [open]="variantsOpen(id)">
+      <details class="variants" [attr.data-variants]="id" [open]="variantsOpen(id)" (toggle)="variantsToggled(id, $event)">
         <summary class="variants-summary">Варианты ({{ variantsOf(found).length }})</summary>
         <app-image-variants [candidates]="found.candidates" [selecting]="selecting()" [busy]="busy()" [error]="selectionMessage(id)"
           (commit)="choose(id, found, $event)" />
