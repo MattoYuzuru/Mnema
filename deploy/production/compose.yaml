@@ -12,7 +12,7 @@ x-backend: &backend
   user: "10001:10001"
   read_only: true
   cap_drop: [ALL]
-  tmpfs: [/tmp:size=128m,mode=1777]
+  tmpfs: ["/tmp:size=128m,mode=1777"]
   mem_limit: 2g
   cpus: 2
   pids_limit: 256

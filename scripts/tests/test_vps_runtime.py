@@ -1,11 +1,9 @@
 """Behavioral checks for bounded health, private bootstrap and rendered topology."""
-import contextlib
 import http.server
 import importlib.util
 import json
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import tempfile
 import threading
@@ -72,6 +70,9 @@ class RuntimeTest(unittest.TestCase):
             self.assertNotIn('/var/run/docker.sock', json.dumps(service))
         identity = services['identity-account']['environment']
         learning = services['learning']['environment']
+        for name in ('identity-account', 'learning'):
+            self.assertEqual(len(services[name]['tmpfs']), 1)
+            self.assertTrue(services[name]['tmpfs'][0].startswith('/tmp:'))
         self.assertEqual(identity['MNEMA_IDENTITY_TURNSTILE_MODE'], 'blocked')
         self.assertEqual(identity['MNEMA_IDENTITY_TURNSTILE_PRIVACY_APPROVED'], 'false')
         self.assertEqual(identity['SERVER_ADDRESS'], '127.0.0.1')

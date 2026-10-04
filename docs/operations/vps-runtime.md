@@ -23,7 +23,9 @@ credentials, encryption, retention and off-host restore evidence.
 
 ## Runtime and network boundary
 
-Host Caddy alone listens publicly on TCP80/443; its admin is127.0.0.1:2019.
+Host Caddy alone listens publicly on TCP80/443; its admin uses a0600 Unix socket under caddy-owned0700 `/run/mnema-caddy`,
+unreachable by the application UID10001. The service RuntimeDirectory persists
+this permission boundary across reboot.
 Reviewed Compose uses Linux host networking with explicit127.0.0.1 listeners:
 frontend18080,Identity18081,Learning18082,PostgreSQL15432. No published Docker
 ports/NAT, Docker socket mounts, or Docker-group access. Host networking reduces
@@ -66,7 +68,14 @@ Do not substitute fixture keys, Stub providers or a production bypass.
    Apply each once; existing/partial state stops for private inspection. Docker
    comes from the official stable apt repository; no conflicting runtime is
    removed. RSA/DB credentials are generated on the RU host and never printed.
-3. Stage candidate image bindings in root-only inputs, pull exact verified
+3. Install reviewed `caddy-admin.conf` as the root-owned systemd drop-in
+   `/etc/systemd/system/caddy.service.d/30-mnema-admin.conf`, daemon-reload, and
+   create `/run/mnema-caddy` caddy:caddy0700. Validate and switch to
+   `Caddyfile.runtime-maintenance` through the current admin address127.0.0.1:2019;
+   later reloads use the Unix socket. Verify an application UID cannot connect.
+   Run `scripts/vps_origin_fixture.py` with installed Caddy: actual private-path,
+   cookie, forwarded-address, redirect and forced-error log checks use temporary loopback listeners
+   only, without modifying the serving origin. Stage candidate image bindings in root-only inputs, pull exact verified
    digests, start only PostgreSQL, and verify separate roles/listeners. Preserve
    the maintenance Caddy configuration until application readiness passes.
 4. Run root-only `mnema-local-backup rehearse`. It dumps the current DB and
@@ -104,10 +113,14 @@ Read alerts with `sudo journalctl -t mnema-health -p err`; inspect timer/service
 states and backup failures with systemd. Checks cover both DB-backed readiness
 endpoints, nginx, public HTTPS, disk and uncertain rollout. Alerts are local;
 an external notification destination remains to be configured by the owner.
-Logs contain component names only, no HTTP bodies, tokens or user content.
+Monitor alerts contain component names only. Frontend access logging is disabled;
+its request error log is discarded, and Caddy's operational error logger removes
+the entire request object (URI/headers/address) while retaining fault diagnostics.
+The routing fixture forces a502 containing a dummy OAuth query marker and verifies
+it never appears in Caddy logs. Do not enable raw request/body logging later.
 
 Before first release there is no prior verified application image. If unhealthy,
-restore the saved maintenance Caddyfile and stop only the new app containers;
+restore the saved runtime-maintenance Caddyfile (with the same Unix admin address) and stop only the new app containers;
 retain PostgreSQL and every volume/dump. Do not claim Docker down reverses
 migrations. Later dispatcher rollback selects only the recorded previous SHA,
 requires current-release schema compatibility and keeps a durable pending marker

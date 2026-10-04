@@ -1,50 +1,62 @@
 {
-  admin 127.0.0.1:2019
-  acme_ca https://acme-v02.api.letsencrypt.org/directory
-  servers {
-    protocols h1 h2
-  }
+	admin unix//run/mnema-caddy/admin.sock|0600
+	acme_ca https://acme-v02.api.letsencrypt.org/directory
+	log {
+		format filter {
+			wrap json
+			fields {
+				request delete
+			}
+		}
+	}
+	servers {
+		protocols h1 h2
+	}
 }
 
 (private_paths) {
-  @private path /api/actuator /api/actuator/* /actuator /actuator/* /internal /internal/* /api/internal /api/internal/* /metrics /metrics/* /admin /admin/*
-  respond @private 404
+	@private path /api/actuator /api/actuator/* /actuator /actuator/* /internal /internal/* /api/internal /api/internal/* /metrics /metrics/* /admin /admin/*
+	respond @private 404
 }
 
 mnema.app {
-  import private_paths
-  @api path /api /api/*
-  handle @api {
-    header Cache-Control no-store
-    reverse_proxy 127.0.0.1:18082 {
-      header_up -Cookie
-      header_up X-Forwarded-For {remote_host}
-      header_down -Set-Cookie
-      flush_interval -1
-      transport http {
-        dial_timeout 2s
-        response_header_timeout 30s
-      }
-    }
-  }
-  handle {
-    reverse_proxy 127.0.0.1:18080
-  }
+	route {
+		import private_paths
+		@api path /api /api/*
+		handle @api {
+			header Cache-Control no-store
+			reverse_proxy 127.0.0.1:18082 {
+				header_up -Cookie
+				header_up X-Forwarded-For {remote_host}
+				header_down -Set-Cookie
+				flush_interval -1
+				transport http {
+					dial_timeout 2s
+					response_header_timeout 30s
+				}
+			}
+		}
+		handle {
+			reverse_proxy 127.0.0.1:18080
+		}
+	}
 }
 
 auth.mnema.app {
-  import private_paths
-  header Cache-Control no-store
-  header Referrer-Policy no-referrer
-  reverse_proxy 127.0.0.1:18081 {
-    header_up X-Forwarded-For {remote_host}
-    transport http {
-      dial_timeout 2s
-      response_header_timeout 10s
-    }
-  }
+	route {
+		import private_paths
+		header Cache-Control no-store
+		header Referrer-Policy no-referrer
+		reverse_proxy 127.0.0.1:18081 {
+			header_up X-Forwarded-For {remote_host}
+			transport http {
+				dial_timeout 2s
+				response_header_timeout 10s
+			}
+		}
+	}
 }
 
 www.mnema.app {
-  redir https://mnema.app{uri} 308
+	redir https://mnema.app{uri} 308
 }

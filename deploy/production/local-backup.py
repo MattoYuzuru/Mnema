@@ -67,7 +67,9 @@ def restore(path, expected):
             IMAGE], stdout=subprocess.DEVNULL)
         created_container = True
         for _ in range(60):
-            ready = subprocess.run(['/usr/bin/docker', 'exec', identifier, 'pg_isready', '-U', 'postgres', '-d', 'mnema'],
+            # The entrypoint's temporary init server has only a Unix socket;
+            # require final TCP readiness to avoid its stop/restart interval.
+            ready = subprocess.run(['/usr/bin/docker', 'exec', identifier, 'pg_isready', '-h', '127.0.0.1', '-p', '5432', '-U', 'postgres', '-d', 'mnema'],
                 env=ENV, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
             if ready.returncode == 0:
                 break
