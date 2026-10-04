@@ -31,7 +31,8 @@ sudoedit /etc/squid/squid.conf                                 # replace <RU_SER
 sudo squid -k parse && sudo systemctl enable --now squid && sudo systemctl reload squid
 ```
 
-Check that `/usr/lib/squid/basic_ncsa_auth` exists on the distribution; the path is in `squid.conf`.
+Check that `/usr/lib/squid/basic_ncsa_auth` exists on the distribution; the path is in `squid.conf`. An unreplaced
+`<RU_SERVER_IP>` placeholder fails `squid -k parse`, so a half-edited config never starts.
 
 ### Firewall (mandatory)
 
@@ -54,6 +55,7 @@ From an allowed address:
 curl -sS -o /dev/null -w '%{http_code}\n' -x http://user:pass@<VPS_IP>:3128 https://generativelanguage.googleapis.com/ -I   # 404 or 200
 curl -sS -o /dev/null -w '%{http_code}\n' -x http://user:pass@<VPS_IP>:3128 https://example.com/ -I                          # curl fails: 403 on CONNECT
 curl -sS -o /dev/null -w '%{http_code}\n' -x http://<VPS_IP>:3128 https://generativelanguage.googleapis.com/ -I              # 407 without credentials
+curl -sS -o /dev/null -w '%{http_code}\n' -x http://user:pass@<VPS_IP>:3128 https://142.250.74.10/ -I -k                    # curl fails: 403, numeric targets are denied
 ```
 
 From a non-allowed address the port must time out or be refused. Do not put the real password on a shared shell history;
@@ -76,8 +78,8 @@ startup WARN `ai_egress state=basic_tunneling_may_be_disabled` means it is missi
 
 ## Kill switch, fallback, rollback
 
-- Fast off, no release: `learning.ai.egress.enabled=false` (`LEARNING_AI_EGRESS_ENABLED=false`) or an empty
-  `MNEMA_AI_EGRESS_PROXY_URL`. Every proxied provider then reports `PROVIDER_NOT_CONFIGURED`; each capability must have
+- Fast off, no release (a restart of the Learning worker, which reads the setting at startup): `learning.ai.egress.enabled=false`
+  (`LEARNING_AI_EGRESS_ENABLED=false`) or an empty `MNEMA_AI_EGRESS_PROXY_URL`. Every proxied provider then reports `PROVIDER_NOT_CONFIGURED`; each capability must have
   its documented fallback (for example the browser or Stub path) and the UI shows the capability as unavailable.
 - Per provider: `learning.ai.providers.<id>.enabled=false` or `egress=direct` for one that became reachable.
 - Rollback of the proxy itself: `sudo cp /etc/squid/squid.conf.dist /etc/squid/squid.conf && sudo systemctl reload squid`, or
