@@ -1,3 +1,4 @@
+<p class="sr-only document-announcement" role="status" aria-live="polite">{{ announcement() }}</p>
 <div #host class="document-host" tabindex="-1">
   <app-native-media-surface [document]="document()" [exposeNodeIds]="true" [overlay]="overlay()" />
 </div>
@@ -56,7 +57,7 @@
             @if (searchAllowed()) {
               <button type="button" class="strip-button" [attr.data-focus-key]="'retry:' + id" [attr.aria-disabled]="busy() ? 'true' : null" (click)="retrySearch(id)">Повторить</button>
               <button type="button" class="strip-button" [attr.data-focus-key]="'search:' + id" [attr.aria-disabled]="busy() ? 'true' : null"
-                [attr.aria-expanded]="panel()?.nodeId === id" (click)="toggleSearch(id)">Заменить</button>
+                [attr.aria-expanded]="panel()?.nodeId === id" (click)="toggleSearch(id)">Заменить…</button>
             } @else {
               <span class="media-unavailable">
                 <button type="button" class="strip-button" aria-disabled="true">Повторить</button>
@@ -110,13 +111,13 @@
     }
     @if (variantsShown(id); as found) {
       <details class="variants" [attr.data-variants]="id" [open]="variantsOpen(id)">
-        <summary class="variants-summary">Другие изображения ({{ variantsOf(found).length }})</summary>
+        <summary class="variants-summary">Варианты ({{ variantsOf(found).length }})</summary>
         <app-image-variants [candidates]="found.candidates" [selecting]="selecting()" [busy]="busy()" [error]="selectionMessage(id)"
-          (chosen)="choose(id, found, $event)" />
+          (commit)="choose(id, found, $event)" />
       </details>
     }
     @if (busyLast() === id && panel()?.nodeId !== id) {
-      @if (searchingNode() === id) { <p class="rewriting-caption" role="status">{{ searchRunning }}</p> }
+      @if (searchTurnRunning()) { <p class="rewriting-caption" role="status">{{ searchRunning }}</p> }
       @else { <p class="rewriting-caption">Мнема переписывает…</p> }
     }
     @if (reviewLast() === id) {

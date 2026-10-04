@@ -19,5 +19,15 @@ legend { padding: 0; margin-block-end: .5rem; color: var(--mn-ink); font: 700 .9
 .card-link { display: inline-flex; align-items: center; min-block-size: var(--mn-touch-min, 2.75rem); color: var(--mn-ink); font-weight: 600; text-decoration: underline; text-underline-offset: .2em; }
 .error { margin: .5rem 0 0; color: var(--mn-danger); font-weight: 600; overflow-wrap: anywhere; }
 .error:empty { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); margin: 0; }
-:where(a, input):focus-visible, .card:has(.card-radio:focus-visible) { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 3px; }
+.commit { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-block-start: .75rem; }
+.commit-button { min-block-size: var(--mn-touch-min, 2.75rem); border: 1px solid var(--mn-ink); border-radius: var(--mn-radius, 2px); padding: .5rem .85rem; background: var(--mn-ink); color: var(--mn-on-ink); font: 600 .95rem/1.2 var(--mn-font-body, system-ui, sans-serif); cursor: pointer; }
+.commit-button[aria-disabled='true'] { background: transparent; color: var(--mn-ink); cursor: not-allowed; opacity: .6; }
+.status { margin: 0; color: var(--mn-ink); font-weight: 600; }
+.status:empty { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); margin: 0; }
+:where(a, input, button):focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 3px; }
+/* Where :has() is supported the whole card carries the ring and the small radio does not add a second one. */
+@supports selector(:has(*)) {
+    .card-radio:focus-visible { outline: none; }
+    .card:has(.card-radio:focus-visible) { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 3px; }
+}
 @media (forced-colors: active) { .card { border-color: CanvasText; } .card.is-chosen { border-color: Highlight; } }

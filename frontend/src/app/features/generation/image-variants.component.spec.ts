@@ -28,7 +28,7 @@ describe('ImageVariantsComponent', () => {
         TestBed.configureTestingModule({ providers: [{ provide: MediaPlaybackApi, useValue: { read } }] });
         fixture = TestBed.createComponent(ImageVariantsComponent);
         chosen = [];
-        fixture.componentInstance.chosen.subscribe(value => chosen.push(value));
+        fixture.componentInstance.commit.subscribe(value => chosen.push(value));
         fixture.componentRef.setInput('candidates', candidatesOf());
         for (const [name, value] of Object.entries(inputs)) fixture.componentRef.setInput(name, value);
         fixture.detectChanges();
@@ -60,7 +60,8 @@ describe('ImageVariantsComponent', () => {
         expect(images.map(image => image.getAttribute('src'))).toEqual(
             ['00000000-0000-4000-a000-000000000011', '00000000-0000-4000-a000-000000000012', '00000000-0000-4000-a000-000000000013']
                 .map(id => `https://media.example/${id}.jpg`));
-        expect(images.map(image => image.getAttribute('alt'))).toEqual(['Красная лиса в снегу', 'Fox 2', 'Fox 3']);
+        // The byline names the card; a picture inside the label would only repeat it.
+        expect(images.map(image => image.getAttribute('alt'))).toEqual(['', '', '']);
         expect(root().innerHTML).not.toMatch(/pixabay\.com\/[^"]*\.(jpg|png)/u);
     });
 
@@ -97,43 +98,84 @@ describe('ImageVariantsComponent', () => {
         expect(radios()).toHaveLength(12);
     });
 
-    it('asks for the choice of another image once, and not for the one that is already chosen', async () => {
+    const button = (): HTMLButtonElement => root().querySelector<HTMLButtonElement>('.commit-button')!;
+
+    it('moves only a local choice with the arrow keys and clicks: no request until «Использовать это изображение»', async () => {
         await create();
-        radios()[0]!.click();
+        expect(button().textContent!.trim()).toBe('Использовать это изображение');
+        expect(button().getAttribute('aria-disabled')).toBe('true');
+        button().click();
         radios()[1]!.click();
-        expect(chosen).toEqual(['ca0d0000-0000-4000-8000-000000000002']);
+        radios()[2]!.click();
+        fixture.detectChanges();
+        expect(chosen).toEqual([]);
+        expect(radios().map(radio => radio.checked)).toEqual([false, false, true]);
+        expect(button().getAttribute('aria-disabled')).toBeNull();
+        button().click();
+        expect(chosen).toEqual(['ca0d0000-0000-4000-8000-000000000003']);
     });
 
-    it('while a choice is sent: the group is aria-disabled (never disabled: focus stays), the picked card shows checked and a change is cancelled', async () => {
-        await create({ selecting: 'ca0d0000-0000-4000-8000-000000000003' });
-        expect(root().querySelector('fieldset')!.getAttribute('aria-disabled')).toBe('true');
-        expect(root().querySelector('input[disabled], fieldset[disabled]')).toBeNull();
-        expect(radios().map(radio => radio.checked)).toEqual([false, false, true]);
-        expect(radios().every(radio => radio.getAttribute('aria-disabled') === 'true')).toBe(true);
-        radios()[1]!.focus();
+    it('keeps the button disabled while the local choice is the chosen one again', async () => {
+        await create();
         radios()[1]!.click();
+        fixture.detectChanges();
+        radios()[0]!.click();
+        fixture.detectChanges();
+        expect(button().getAttribute('aria-disabled')).toBe('true');
+        button().click();
+        expect(chosen).toEqual([]);
+    });
+
+    it('while the choice is saved: says «Сохраняю выбор…» in a status inside the group, aria-disabled (never disabled), and ignores clicks', async () => {
+        await create({ selecting: 'ca0d0000-0000-4000-8000-000000000003' });
+        const set = root().querySelector('fieldset')!;
+        expect(set.getAttribute('aria-disabled')).toBe('true');
+        expect(set.querySelector('[role="status"]')!.textContent).toBe('Сохраняю выбор…');
+        expect(root().querySelector('input[disabled], fieldset[disabled]')).toBeNull();
+        expect(radios().every(radio => radio.getAttribute('aria-disabled') === 'true')).toBe(true);
+        expect(button().getAttribute('aria-disabled')).toBe('true');
+        radios()[1]!.click();
+        button().click();
         expect(chosen).toEqual([]);
         expect(radios()[1]!.checked).toBe(false);
-        expect(window.document.activeElement === radios()[1] || window.document.activeElement === window.document.body).toBe(true);
         fixture.componentRef.setInput('selecting', null);
         fixture.componentRef.setInput('busy', true);
         fixture.detectChanges();
+        expect(set.querySelector('[role="status"]')!.textContent).toBe('');
         radios()[1]!.click();
-        expect(chosen).toEqual([]);
+        expect(radios()[1]!.checked).toBe(false);
     });
 
-    it('puts a refused choice back where the server holds it and says why in a live region tied to the group', async () => {
-        await create({ selecting: 'ca0d0000-0000-4000-8000-000000000002' });
-        expect(radios().map(radio => radio.checked)).toEqual([false, true, false]);
-        fixture.componentRef.setInput('selecting', null);
+    it('keeps the pick after a refusal and says why in a live region tied to the group; a new answer resets it to what the server holds', async () => {
+        await create();
+        radios()[1]!.click();
         fixture.componentRef.setInput('error', 'Материал обновился.');
         fixture.detectChanges();
-        await fixture.whenStable();
-        expect(radios().map(radio => radio.checked)).toEqual([true, false, false]);
+        expect(radios().map(radio => radio.checked)).toEqual([false, true, false]);
         const error = root().querySelector<HTMLElement>('.error')!;
         expect(error.getAttribute('aria-live')).toBe('polite');
         expect(error.textContent).toBe('Материал обновился.');
         expect(root().querySelector('fieldset')!.getAttribute('aria-describedby')).toBe(error.id);
+        fixture.componentRef.setInput('candidates', candidatesOf(list => { list[0].chosen = false; list[2].chosen = true; }));
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.detectChanges();
+        expect(radios().map(radio => radio.checked)).toEqual([false, false, true]);
+    });
+
+    it('gives each radio a quiet name: «Вариант N из M», the byline and the license; the mark «Выбрано» and the loading note are for the eyes only', async () => {
+        await create();
+        const labels = cards().map(card => card.querySelector('label')!);
+        expect(labels.map(label => label.querySelector('.sr-only')!.textContent)).toEqual(['Вариант 1 из 3. ', 'Вариант 2 из 3. ', 'Вариант 3 из 3. ']);
+        expect(cards()[0]!.querySelector('.card-chosen')!.getAttribute('aria-hidden')).toBe('true');
+        expect(root().querySelectorAll('.thumb-note[aria-hidden="true"]').length).toBe(root().querySelectorAll('.thumb-note').length);
+    });
+
+    it('names each link to a page by its card, so a list of links is not three times «Страница изображения»', async () => {
+        await create();
+        expect([...root().querySelectorAll('a')].map(link => link.getAttribute('aria-label'))).toEqual([
+            'Страница изображения: Pixabay · Ann (в новой вкладке)', 'Страница изображения: Wikimedia Commons · Jörg Hempel (в новой вкладке)',
+            'Страница изображения: Wikimedia Commons (в новой вкладке)']);
     });
 
     it('re-reads a picture that failed to draw once, then says so in words', async () => {
