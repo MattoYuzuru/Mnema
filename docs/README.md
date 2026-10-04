@@ -47,8 +47,9 @@ artifact:
    [architecture](./architecture/ai-generation-platform.md),
    [refinement](./engineering/epic-77-refinement.md) и
    [промпты прогонов](./engineering/prompts/epic-77-ai-layer.md), evidence
-   [прогона 1](./engineering/evidence/epic-77/run-1/README.md), [прогона 2](./engineering/evidence/epic-77/run-2/README.md) и
-   [прогона 3](./engineering/evidence/epic-77/run-3/README.md) (Мастерская: composer → одобрение в колоду),
+   [прогона 1](./engineering/evidence/epic-77/run-1/README.md), [прогона 2](./engineering/evidence/epic-77/run-2/README.md),
+   [прогона 3](./engineering/evidence/epic-77/run-3/README.md) (Мастерская: composer → одобрение в колоду) и
+   [прогона 4](./engineering/evidence/epic-77/run-4/README.md) (упражнения с ИИ, проверка объяснений, правки, «Попросить Мнему…», план),
    исполняемые контракты — [generation](../contracts/generation/README.md),
    [usage](../contracts/usage/README.md), [notifications](../contracts/notifications/README.md).
 
