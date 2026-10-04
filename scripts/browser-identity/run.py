@@ -328,7 +328,10 @@ class Fixture(BASE.Fixture):
                 environment.update({"LEARNING_FEATURES_AI_GENERATION_ENABLED": "true", "LEARNING_FEATURES_AI_ASSESSMENT_ENABLED": "true",
                                     "LEARNING_AI_PROVIDER": "stub",
                                     "MNEMA_AI_USER_KEY_SECRET": uuid.uuid4().hex + uuid.uuid4().hex,
-                                    "LEARNING_USAGE_ENTITLEMENTS_DEFAULT_PLAN": "MAX"})
+                                    "LEARNING_USAGE_ENTITLEMENTS_DEFAULT_PLAN": "MAX",
+                                    # #296: image search runs on the Stub image source (no network); with `--media` the found
+                                    # files go through the real media pipeline as untrusted uploads.
+                                    "LEARNING_FEATURES_IMAGE_SEARCH_ENABLED": "true"})
             elif self.stub_instance():
                 # The ordinary instance of a `--generation` or `--assessment` run has the AI features off; as an `api` process it has no step
                 # dispatcher, so it can never claim a step of the second (Stub) instance that shares the database.
@@ -397,7 +400,7 @@ class Fixture(BASE.Fixture):
                   "logoutSelector": self.args.logout_selector, "errorSelector": self.args.error_selector,
                   "authoring": self.args.authoring, "media": self.args.media, "mechanics": self.args.mechanics,
                   "generation": self.args.generation, "assessment": self.args.assessment,
-                  "onlyEdits": self.args.only_edits, "onlyAsk": self.args.only_ask, "onlyPlan": self.args.only_plan, "cdpTimeoutMs": cdp_timeout_ms(),
+                  "onlyEdits": self.args.only_edits, "onlyImages": self.args.only_images, "onlyAsk": self.args.only_ask, "onlyPlan": self.args.only_plan, "cdpTimeoutMs": cdp_timeout_ms(),
                   "diagnosticsDir": str(self.tmp) if self.args.mechanics and self.args.keep_on_failure else None,
                   "mediaOrigin": self.media_origin, "mediaClips": media_clips}
         private_config = self.tmp / "browser.json"
@@ -412,7 +415,7 @@ class Fixture(BASE.Fixture):
                     "scripts": {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
                                 for name in ("run.py", "browser.mjs", "mechanics.mjs", "notifications.mjs", "hub.mjs",
                                              "code-block.mjs", "usage.mjs", "workshop.mjs", "exercises.mjs", "selection-edits.mjs",
-                                             "ask-mnema.mjs", "assessment.mjs", "planner.mjs")}}
+                                             "image-search.mjs", "ask-mnema.mjs", "assessment.mjs", "planner.mjs")}}
         (self.args.output / "fixture.json").write_text(json.dumps(evidence, indent=2))
         runner = self.launch_group([self.args.node, str(Path(__file__).with_name("browser.mjs")), str(private_config)], "browser")
         self.control("browser_running")
@@ -521,6 +524,9 @@ def main():
     parser.add_argument("--only-edits", action="store_true",
                         help="development aid: after the base flow run only the Workshop selection-edit scenario (requires --generation); "
                              "never a substitute for the full run")
+    parser.add_argument("--only-images", action="store_true",
+                        help="development aid: after the base flow run only the Workshop image search scenario (requires --generation "
+                             "and --media); never a substitute for the full run")
     parser.add_argument("--only-ask", action="store_true",
                         help="development aid: after the base flow run only the «Попросить Мнему…» scenario (requires --generation); "
                              "never a substitute for the full run")
@@ -547,8 +553,10 @@ def main():
         parser.error("--only-ask requires --generation")
     if args.only_plan and not args.generation:
         parser.error("--only-plan requires --generation")
-    if sum(1 for aid in (args.only_ask, args.only_edits, args.only_plan) if aid) > 1:
-        parser.error("--only-ask, --only-edits and --only-plan are separate development aids: choose one")
+    if args.only_images and not (args.generation and args.media):
+        parser.error("--only-images requires --generation and --media")
+    if sum(1 for aid in (args.only_ask, args.only_edits, args.only_plan, args.only_images) if aid) > 1:
+        parser.error("--only-ask, --only-edits, --only-plan and --only-images are separate development aids: choose one")
     if args.timeout is None:
         args.timeout = 600 if args.mechanics else 180
         if args.generation or args.assessment:

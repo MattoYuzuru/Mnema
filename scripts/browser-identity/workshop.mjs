@@ -18,6 +18,7 @@ import { runWorkshopExercises } from './exercises.mjs';
 import { runWorkshopPlanner } from './planner.mjs';
 import { runWorkshopAsk } from './ask-mnema.mjs';
 import { runWorkshopEdits } from './selection-edits.mjs';
+import { runWorkshopImages } from './image-search.mjs';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -303,6 +304,13 @@ export async function runWorkshop(ctx) {
     evidence.planner = await runWorkshopPlanner(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
       activeSessions, sessionPath, location });
     record('workshop_planner_only', evidence);
+    return evidence;
+  }
+  if (config.onlyImages) {
+    // Development aid (`run.py --only-images`): the image search scenario alone, after the base flow. Never the gate.
+    evidence.images = await runWorkshopImages(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
+      activeSessions, sessionPath, location });
+    record('workshop_image_search_only', evidence);
     return evidence;
   }
   if (config.onlyEdits) {
@@ -718,6 +726,11 @@ export async function runWorkshop(ctx) {
   // #293 (AI-11): selection edits in the Workshop, in a deck of its own.
   evidence.edits = await runWorkshopEdits(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
     activeSessions, sessionPath, location });
+  // #296 (AI-10): image search in the Workshop (the Stub image source; the found files go through the real media pipeline). Needs `--media`.
+  if (config.media) {
+    evidence.images = await runWorkshopImages(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
+      activeSessions, sessionPath, location });
+  }
   // #294 (AI-16): «Попросить Мнему…» in the material profile and in the exercise editor, REVISE_ITEM and REVISE_EXERCISE results.
   evidence.ask = await runWorkshopAsk(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
     activeSessions, sessionPath, location });
