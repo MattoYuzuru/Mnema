@@ -45,7 +45,7 @@ class GenerationNotesAdmissionIntegrationTest extends GenerationIntegrationTest 
         assertThat(count("generation_step", owner)).isZero();
         assertThat(count("generation_artifact", owner)).isZero();
         assertThat(count("usage_reservation", owner)).isZero();
-        assertThat(provider.calls).isEmpty();
+        assertThat(calls(owner)).isEmpty();
     }
 
     @Test

@@ -549,7 +549,7 @@ class GenerationReviewIntegrationTest extends GenerationReviewSupport {
         // the earlier draft's revision is history, not listed (only the revisions a revert may restore are)
         assertThat(detail.path("revisions")).hasSize(1);
         assertThat(detail.path("repinStatus").isNull()).isTrue();
-        assertThat(provider.calls.getLast().prompt()).contains("вторая версия");
+        assertThat(calls(owner).getLast().prompt()).contains("вторая версия");
         // the slots of the replaced revision are gone; the new revision has its own
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.generation_media_slot WHERE artifact_id=:id AND revision_id=:revision")
                 .param("id", proposal.artifact()).param("revision", rewritten.revision()).query(Integer.class).single()).isEqualTo(1);
