@@ -297,15 +297,10 @@ browser-facing Learning service, never the media processor or the frontend.
 |---|---|
 | `MNEMA_AI_DEEPSEEK_API_KEY` | Direct DeepSeek (primary text route) |
 | `MNEMA_AI_GIGACHAT_AUTH_KEY` | GigaChat authorization key (fallback; exchanged for a short-lived token; needs the Russian CA in the Java truststore) |
-<<<<<<< HEAD
-| `MNEMA_AI_OPENROUTER_API_KEY` | OpenRouter (optional; no default route uses it) |
+| `MNEMA_AI_OPENROUTER_API_KEY` | OpenRouter: the fallback of every DeepSeek route (the same DeepSeek models, owner decision 2026-10-04); optional, without it the routes use DeepSeek alone |
 | `MNEMA_AI_EGRESS_PROXY_URL` / `MNEMA_AI_EGRESS_PROXY_USER` / `MNEMA_AI_EGRESS_PROXY_PASSWORD` | Optional stateless HTTP CONNECT proxy (`http://host:port`, user and password together) for providers unreachable from Russia; never needed locally or in CI. See [AI egress proxy](../operations/ai-egress-proxy.md) |
 | `MNEMA_AI_PIXABAY_API_KEY` | Pixabay key for licensed image search ([API terms](https://pixabay.com/api/docs/): answers cached 24 h, images downloaded to our storage, never hot-linked). Without it Pixabay is not asked |
 | `MNEMA_AI_OPENVERSE_CLIENT_ID` / `MNEMA_AI_OPENVERSE_CLIENT_SECRET` | Openverse client credentials (both or neither). From some networks its API answers a Cloudflare challenge, so Openverse defaults to the egress proxy (`learning.ai.providers.openverse.egress=proxy`): without an active `MNEMA_AI_EGRESS_PROXY_URL` it is simply not configured. Wikimedia Commons needs no key and is always asked |
-=======
-| `MNEMA_AI_OPENROUTER_API_KEY` | OpenRouter: the fallback of every DeepSeek route (the same DeepSeek models, owner decision 2026-10-04); optional, without it the routes use DeepSeek alone |
-| `MNEMA_AI_EGRESS_PROXY_URL` / `MNEMA_AI_EGRESS_PROXY_USER` / `MNEMA_AI_EGRESS_PROXY_PASSWORD` | Optional stateless HTTP CONNECT proxy (`http://host:port`, user and password together) for providers unreachable from Russia; never needed locally or in CI. See [AI egress proxy](../operations/ai-egress-proxy.md) |
->>>>>>> origin/main
 | `MNEMA_AI_USER_KEY_SECRET` | At least 16 random characters: HMAC secret of the opaque per-account user id sent to providers. Required for a real provider; generate once and keep it (`openssl rand -hex 32`) |
 | `LEARNING_FEATURES_AI_GENERATION_ENABLED` | `true` turns `aiGeneration` on (default `false`) |
 | `LEARNING_FEATURES_AI_ASSESSMENT_ENABLED` | `true` turns `aiAssessment` on (default `false`): the AI check of free explanations (`ai-semantic` exercises). It needs a usable `assess` route: a DeepSeek key with the user-key secret, or `LEARNING_AI_PROVIDER=stub`. Without it publishing such an exercise is `409 CAPABILITY_UNAVAILABLE` |
