@@ -9,6 +9,7 @@ import app.mnema.identityaccount.security.BrowserSessions;
 import app.mnema.identityaccount.security.ClientAddresses;
 import app.mnema.identityaccount.security.OwnershipProofs;
 import app.mnema.identityaccount.security.RateLimits;
+import app.mnema.identityaccount.security.TurnstileGuard;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -41,10 +42,12 @@ public class AccountController {
     public record Registration(@NotBlank @Email @Size(max = 320) String email,
                                @NotBlank @Pattern(regexp = "[A-Za-z0-9_.-]{3,50}") String loginName,
                                @NotBlank @Size(max = 128) String password,
-                               @Pattern(regexp = "[A-Za-z0-9_.-]{3,50}") String profileUsername) {
+                               @Pattern(regexp = "[A-Za-z0-9_.-]{3,50}") String profileUsername,
+                               @Size(max = 2048) String turnstileToken) {
     }
 
-    public record Login(@NotBlank @Size(max = 320) String login, @NotBlank @Size(max = 128) String password) {
+    public record Login(@NotBlank @Size(max = 320) String login, @NotBlank @Size(max = 128) String password,
+                        @Size(max = 2048) String turnstileToken) {
     }
 
     public record Edit(@NotNull @Pattern(regexp = "[A-Za-z0-9_.-]{3,50}") String profileUsername,
@@ -73,10 +76,11 @@ public class AccountController {
     private final Moderation moderation;
     private final ClientAddresses clientAddresses;
     private final AccountDeletions deletions;
+    private final TurnstileGuard turnstile;
 
     public AccountController(LocalAccounts local, BrowserSessions sessions, Profiles profiles, OwnershipProofs proofs,
                              TransactionTemplate transactions, RateLimits limits, Moderation moderation,
-                             ClientAddresses clientAddresses, AccountDeletions deletions) {
+                             ClientAddresses clientAddresses, AccountDeletions deletions, TurnstileGuard turnstile) {
         this.local = local;
         this.sessions = sessions;
         this.profiles = profiles;
@@ -86,6 +90,7 @@ public class AccountController {
         this.moderation = moderation;
         this.clientAddresses = clientAddresses;
         this.deletions = deletions;
+        this.turnstile = turnstile;
     }
 
     @GetMapping("/csrf")
@@ -93,15 +98,22 @@ public class AccountController {
         return Map.of("token", token.getToken(), "headerName", token.getHeaderName());
     }
 
+    @GetMapping("/abuse-protection")
+    TurnstileGuard.BrowserConfiguration abuseProtection() {
+        return turnstile.configuration();
+    }
+
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.CREATED)
     Profiles.Profile register(@Valid @RequestBody Registration r, HttpServletRequest request) {
+        turnstile.verify(r.turnstileToken(), TurnstileGuard.Action.REGISTER, clientAddresses.resolve(request));
         return profiles.get(
                 local.register(r.email(), r.loginName(), r.password(), r.profileUsername(), clientAddresses.resolve(request)));
     }
 
     @PostMapping("/login")
     Object login(@Valid @RequestBody Login r, HttpServletRequest request, HttpServletResponse response) {
+        turnstile.verify(r.turnstileToken(), TurnstileGuard.Action.LOGIN, clientAddresses.resolve(request));
         var authentication = local.authenticate(r.login(), r.password(), clientAddresses.resolve(request));
         if (authentication.recoveryOnly()) {
             var view = deletions.recovery(authentication.access(), null);
