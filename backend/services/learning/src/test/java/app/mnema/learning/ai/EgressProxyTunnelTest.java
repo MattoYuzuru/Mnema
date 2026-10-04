@@ -113,7 +113,10 @@ class EgressProxyTunnelTest {
     private AiProperties properties(AiProperties.EgressMode mode, AiProperties.Egress egress) {
         var base = AiTestSupport.properties("", AiTestSupport.routes(List.of("deepseek:deepseek-flash"), List.of(), List.of()),
                 Map.of("deepseek", new AiProperties.Provider(true, baseUrl, KEY, "", "", "", mode)));
-        return new AiProperties(base.provider(), base.routes(), base.providers(), base.models(), base.transport(), base.retry(),
+        // CONNECT plus a TLS handshake on a cold JVM can take longer than the 300 ms first-byte limit of the loopback tests on a busy CI
+        // runner, so the tunnel gets realistic limits; the timeouts themselves are covered by OpenAiCompatibleAdapterTest.
+        var transport = new AiProperties.Transport(Duration.ofSeconds(5), Duration.ofSeconds(5), 1 << 20, Duration.ofSeconds(5));
+        return new AiProperties(base.provider(), base.routes(), base.providers(), base.models(), transport, base.retry(),
                 base.breaker(), base.permits(), base.budget(), base.userKey(), base.prompt(), egress);
     }
 
