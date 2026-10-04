@@ -122,19 +122,6 @@ class GenerationHttpContractTest extends GenerationIntegrationTest {
         ObjectNode ownExercises = JSON.createObjectNode().put("kind", "EXERCISES");
         ownExercises.putArray("targets").addObject().put("memberKey", material.member().toString())
                 .put("itemRevisionId", material.itemRevision().toString());
-        // an exercises spec is supported (AI-13); only a planned one waits for the planner
-        ObjectNode plannedExercises = ownExercises.deepCopy();
-        plannedExercises.putObject("settings").put("planFirst", true);
-        MockHttpServletResponse plannedExercisesResponse = create(owner, deck, plannedExercises, UUID.randomUUID());
-        problem(plannedExercisesResponse, 422, "SPEC_NOT_SUPPORTED");
-        assertThat(problemBody(plannedExercisesResponse).path("kind").stringValue(null)).isEqualTo("EXERCISES");
-
-        ObjectNode planFirst = spec("p");
-        ((ObjectNode) planFirst.path("settings")).put("planFirst", true);
-        MockHttpServletResponse planned = create(owner, deck, planFirst, UUID.randomUUID());
-        problem(planned, 422, "SPEC_NOT_SUPPORTED");
-        assertThat(problemBody(planned).path("kind").stringValue(null)).isEqualTo("MATERIALS");
-
         ObjectNode tooMany = spec("p");
         var sources = tooMany.putArray("sources");
         for (int i = 0; i < 21; i++) sources.add(noteSource(UUID.randomUUID(), 0));
@@ -146,6 +133,13 @@ class GenerationHttpContractTest extends GenerationIntegrationTest {
         // nothing was created by any refusal
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.generation_session WHERE owner_id=:owner").param("owner", owner)
                 .query(Integer.class).single()).isZero();
+
+        // a plan-first spec is accepted since AI-14 (the planner is on): it is PLANNING with no artifact (GenerationPlanIntegrationTest has the rest)
+        ObjectNode planFirst = spec("p");
+        ((ObjectNode) planFirst.path("settings")).put("planFirst", true);
+        MockHttpServletResponse planned = create(owner, deck, planFirst, UUID.randomUUID());
+        assertThat(planned.getStatus()).isEqualTo(201);
+        assertThat(json(planned).path("state").stringValue(null)).isEqualTo("PLANNING");
     }
 
     @Test
@@ -493,7 +487,9 @@ class GenerationHttpContractTest extends GenerationIntegrationTest {
         problem(estimate(owner, path, "{\"spec\":" + spec(null, noteSource(UUID.randomUUID(), 0)) + "}"), 404, "RESOURCE_NOT_FOUND");
         ObjectNode planFirst = spec("p");
         ((ObjectNode) planFirst.path("settings")).put("planFirst", true);
-        problem(estimate(owner, path, "{\"spec\":" + planFirst + "}"), 422, "SPEC_NOT_SUPPORTED");
+        MockHttpServletResponse planned = estimate(owner, path, "{\"spec\":" + planFirst + "}");
+        assertThat(planned.getStatus()).isEqualTo(200);
+        assertThat(json(planned).path("breakdown").get(0).path("operation").stringValue(null)).isEqualTo("SMART_PLAN_FLASH");
         ObjectNode images = spec("p");
         ((ObjectNode) images.path("settings")).putObject("media").put("imageSearch", true);
         problem(estimate(owner, path, "{\"spec\":" + images + "}"), 409, "CAPABILITY_UNAVAILABLE");

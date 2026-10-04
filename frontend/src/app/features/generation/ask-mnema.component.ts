@@ -369,7 +369,9 @@ export class AskMnemaComponent {
                 this.value.set({
                     mechanics: spec.settings.mechanics === 'AUTO' ? [] : spec.settings.mechanics, priority: spec.settings.priority,
                     quantityMode: quantity.mode, perTarget: quantity.mode === 'EXACT' ? quantity.perTarget : DEFAULT_BUILDER_VALUE.perTarget,
-                    percent: quantity.mode === 'BUDGET_PERCENT' ? quantity.percent : DEFAULT_BUILDER_VALUE.percent
+                    percent: quantity.mode === 'BUDGET_PERCENT' ? quantity.percent : DEFAULT_BUILDER_VALUE.percent,
+                    // «Попросить Мнему…» never asks for a plan: the owner reads and launches what the chips show.
+                    planFirst: false
                 });
                 this.adoptedQuantity.set({ mode: this.value().quantityMode, perTarget: this.value().perTarget });
                 break;

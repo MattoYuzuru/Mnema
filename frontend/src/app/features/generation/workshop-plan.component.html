@@ -1,0 +1,130 @@
+@if (plan(); as plan) {
+  <section class="plan" aria-labelledby="plan-title">
+    <header class="plan-head">
+      <h2 id="plan-title" class="plan-title" tabindex="-1">{{ plan.kind === 'EXERCISES' ? 'План упражнений' : 'План материалов' }}</h2>
+      <p class="lede">{{ plan.kind === 'EXERCISES'
+        ? 'Вот что Мнема собирается создать. Уберите лишнее, поменяйте типы и числа — и запустите: создастся ровно то, что останется в плане.'
+        : 'Вот какие материалы Мнема собирается написать. Уберите лишнее, поправьте темы и подробность — и запустите: напишется ровно то, что останется в плане.' }}</p>
+      @if (paid(); as line) { <p class="paid">{{ line }} Отдельно от {{ plan.kind === 'EXERCISES' ? 'упражнений' : 'материалов' }}.</p> }
+    </header>
+
+    @for (note of plan.notes; track note.code) { <p class="notice" role="note">{{ note.text }}</p> }
+    @if (!plan.cost.holdActive) { <p class="notice" role="note">{{ holdLapsed }}</p> }
+    @if (refreshed()) {
+      <p class="notice" role="note">План обновился на сервере, пока вы его правили, поэтому ваши правки сброшены. Проверьте план ещё раз.</p>
+    }
+
+    @if (exercisesPlan(); as exercises) {
+      <ol class="rows" aria-label="План: материалы и упражнения к ним">
+        @for (row of exerciseRows(); track row.id) {
+          <li class="row" [attr.data-row]="row.id">
+            <div class="row-head">
+              <h3 class="row-title" tabindex="-1">{{ row.item.title || 'Материал' }}</h3>
+              @if (row.item.why) { <p class="why">{{ row.item.why }}</p> }
+            </div>
+            <app-exercise-settings-fields class="row-mechanics" [value]="valueOf(row.item)" [uid]="'plan-' + row.id" [showAuto]="false"
+              [showQuantity]="false" [quiet]="true" [allowed]="allowed()" [legend]="'Типы упражнений: ' + (row.item.title || 'материал')"
+              (valueChange)="setMechanics(row.id, $event)" />
+            <div class="count">
+              <label [for]="'plan-count-' + row.id">Количество</label>
+              <input type="range" [id]="'plan-count-' + row.id" min="1" [max]="exercises.limits.maxExercisesPerTarget" step="1" [value]="row.item.count"
+                [attr.aria-valuetext]="countText(row.item.count)" [attr.aria-label]="'Количество упражнений: ' + (row.item.title || 'материал')"
+                (input)="setCount(row.id, $event)" (change)="countSettled()" />
+              <output [for]="'plan-count-' + row.id" aria-live="off">{{ countText(row.item.count) }}</output>
+            </div>
+            <button type="button" class="button row-remove" [attr.aria-label]="'Убрать из плана: ' + (row.item.title || 'материал')"
+              (click)="removeExercise(row.id)">Убрать</button>
+            @if (confirmLast() === row.id) {
+              <div class="confirm notice" role="group" [attr.aria-label]="'Убрать последнюю строку: ' + (row.item.title || 'материал')" (keydown.escape)="keepRow()">
+                <p>Это последняя строка плана. Без неё запускать нечего: убранную строку можно будет вернуть, а можно отменить весь план.</p>
+                <div class="actions">
+                  <button type="button" class="button" (click)="removeExercise(row.id)">Да, убрать</button>
+                  <button type="button" class="button primary" data-keep (click)="keepRow()">Оставить</button>
+                </div>
+              </div>
+            }
+          </li>
+        }
+      </ol>
+      @if (exerciseRows().length === 0) { <p class="notice">В плане не осталось строк. Верните материал из списка ниже или отмените план.</p> }
+      @if (offPlan().length > 0) {
+        <details class="off-plan">
+          <summary>Материалы вне плана ({{ offPlan().length }})</summary>
+          <ul>
+            @for (target of offPlan(); track target.memberKey) {
+              <li><span class="off-title">{{ target.title || 'Материал' }}<span class="muted"> · упражнений в колоде: {{ target.exercises }}</span></span>
+                <button type="button" class="button" [attr.aria-label]="'Вернуть в план: ' + (target.title || 'материал')" (click)="bringBack(target.memberKey)">Вернуть</button></li>
+            }
+          </ul>
+        </details>
+      }
+    }
+
+    @if (materialsPlan(); as materials) {
+      <ol class="rows" aria-label="План: материалы">
+        @for (row of materialRows(); track row.id) {
+          <li class="row" [attr.data-row]="row.id">
+            <div class="row-head">
+              <label class="field-label" [for]="'plan-title-' + row.id">Тема</label>
+              <input type="text" class="title-input" [id]="'plan-title-' + row.id" [value]="row.item.title" [maxLength]="maxTitle" autocomplete="off"
+                [attr.aria-invalid]="titleMissing() && !titleValid(row.item) ? 'true' : null" (input)="setTitle(row.id, $event)" />
+              @if (titleMissing() && !titleValid(row.item)) { <p class="field-error">Напишите тему.</p> }
+              @if (sourceLabel(row.item); as label) { <p class="why">По заметке: {{ label }}</p> }
+              @if (row.item.why) { <p class="why">{{ row.item.why }}</p> }
+            </div>
+            <app-segmented-choice class="row-effort" [legend]="'Подробность: ' + (row.item.title || 'материал')" [options]="effortChoices"
+              [name]="'plan-effort-' + row.id" [value]="row.item.effort" (valueChange)="setEffort(row.id, $event)" />
+            <button type="button" class="button row-remove" [attr.aria-label]="'Убрать из плана: ' + (row.item.title || 'материал')"
+              (click)="removeMaterial(row.id)">Убрать</button>
+            @if (confirmLast() === row.id) {
+              <div class="confirm notice" role="group" [attr.aria-label]="'Убрать последнюю строку: ' + (row.item.title || 'материал')" (keydown.escape)="keepRow()">
+                <p>Это последняя строка плана. Без неё запускать нечего: убранную строку можно будет вернуть, а можно отменить весь план.</p>
+                <div class="actions">
+                  <button type="button" class="button" (click)="removeMaterial(row.id)">Да, убрать</button>
+                  <button type="button" class="button primary" data-keep (click)="keepRow()">Оставить</button>
+                </div>
+              </div>
+            }
+          </li>
+        }
+      </ol>
+      @if (materialRows().length === 0) { <p class="notice">В плане не осталось строк. Верните материал из списка ниже или отмените план.</p> }
+      @if (removedMaterials().length > 0) {
+        <details class="off-plan">
+          <summary>Убранные материалы ({{ removedMaterials().length }})</summary>
+          <ul>
+            @for (row of removedMaterials(); track row.id) {
+              <li><span class="off-title">{{ removedTitle(row) }}</span>
+                <button type="button" class="button" [attr.aria-label]="'Вернуть в план: ' + removedTitle(row)" (click)="bringBackMaterial(row.id)">Вернуть</button></li>
+            }
+          </ul>
+        </details>
+      }
+    }
+
+    @if (overLimit(); as text) { <p class="notice error" role="note">{{ text }}</p> }
+    @if (overHold() && !overLimit()) {
+      <p class="notice" role="note">Этот план дороже, чем Мнема отложила под него. При запуске недостающее будет отложено дополнительно; если лимита не хватит, ничего не начнётся и не спишется.</p>
+    }
+    @if (failure(); as message) { <section class="notice error" role="alert"><p>{{ message }}</p></section> }
+
+    <p class="muted cancel-note" id="plan-cancel-note">«Отменить» ничего не создаст. План уже оплачен: его стоимость останется списанной.</p>
+
+    <div class="plan-footer" #footer>
+      <p class="total" id="plan-total">{{ totalsText() }}</p>
+      <p class="sr-only" role="status" aria-atomic="true">{{ announced() }}</p>
+      <div class="plan-actions">
+        <button type="button" class="button primary" aria-describedby="plan-total" [attr.aria-disabled]="busy() ? 'true' : null"
+          (click)="launch()">{{ busy() ? 'Запускаем…' : 'Запустить по плану' }}</button>
+        <button type="button" class="button" aria-describedby="plan-cancel-note" [attr.aria-disabled]="busy() ? 'true' : null"
+          (click)="cancel()">Отменить</button>
+      </div>
+    </div>
+  </section>
+} @else {
+  <section class="waiting" aria-labelledby="plan-wait-title">
+    <h2 id="plan-wait-title" class="plan-title" tabindex="-1">Мнема составляет план…</h2>
+    <p class="muted">Это занимает до минуты. Пока ничего не создаётся: сначала вы увидите план, поправите его и запустите.</p>
+    <p class="actions"><button type="button" class="button" [attr.aria-disabled]="busy() ? 'true' : null" (click)="cancel()">Отменить</button></p>
+  </section>
+}

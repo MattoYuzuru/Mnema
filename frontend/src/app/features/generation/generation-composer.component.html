@@ -47,7 +47,7 @@
           <p>Ничего не попадает в колоду и в занятия, пока вы не одобрите.</p>
         </app-toggletip></span>
       <button type="submit" class="generate-cta" [attr.aria-disabled]="creating() || overBudget() ? 'true' : null"
-        [attr.aria-describedby]="uid + '-estimate'">{{ creating() ? 'Создаём…' : 'Создать' }}</button>
+        [attr.aria-describedby]="uid + '-estimate'">{{ creating() ? 'Создаём…' : ctaLabel() }}</button>
     </div>
 
     @if (personalData()) {
@@ -77,7 +77,7 @@
     }
 
     <app-generation-settings [value]="settings()" (valueChange)="onSettings($event)" [imageAvailable]="imageAvailable()"
-      [audioAvailable]="audioAvailable()" />
+      [audioAvailable]="audioAvailable()" [planCost]="planCost()" />
   </form>
 
   <p class="write-myself"><a class="text-link" [routerLink]="['/decks', deckId(), 'materials', 'new']" [queryParams]="{ write: 1 }">Или откройте пустой редактор →</a></p>

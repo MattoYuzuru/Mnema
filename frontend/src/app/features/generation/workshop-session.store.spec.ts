@@ -10,11 +10,11 @@ import {
     ApprovalAck, ArtifactSummary, parseApprovalAck, parseNoteArchive, parseArtifactDetail, parseArtifactSummary, parseEventsPage, parseHandoff, parseSessionDetail
 } from './generation.models';
 import {
-    POLL_ACTIVE_MS, POLL_BACKGROUND_MAX_MS, POLL_BACKGROUND_MIN_MS, POLL_IDLE_MS, WorkshopSessionStore
+    PLAN_REREAD_MS, POLL_ACTIVE_MS, POLL_BACKGROUND_MAX_MS, POLL_BACKGROUND_MIN_MS, POLL_IDLE_MS, WorkshopSessionStore
 } from './workshop-session.store';
 import {
-    activeStep, artifactWith, clone, deckFixture, eventsEnvelope, examples, httpContract, ids, noteArchiveAnswer, noteIds, problemResponse, sessionWith,
-    sessionWithNotes, wireBlocks, wireEvent
+    activeStep, planApprovedSession, artifactWith, clone, deckFixture, eventsEnvelope, examples, httpContract, ids, noteArchiveAnswer, noteIds, problemResponse, sessionWith,
+    planReadySession, sessionWithNotes, wireBlocks, wireEvent
 } from './generation-test-data';
 
 const second = 'a7a70000-0000-4000-8000-000000000003';
@@ -62,6 +62,61 @@ describe('WorkshopSessionStore', () => {
     const tick = (ms: number) => vi.advanceTimersByTimeAsync(ms);
 
     afterEach(() => vi.useRealTimers());
+
+    describe('a plan that waits for its owner (#295)', () => {
+        it('reads the session again when the tab becomes visible, because the hold made for the plan lapses without changing the session', async () => {
+            setup(planReadySession());
+            api.listEvents.mockReturnValue(events([], '0', { state: 'PLAN_READY', rowVersion: '3' }));
+            await tick(0);
+            api.getSession.mockClear();
+            document.dispatchEvent(new Event('visibilitychange'));
+            await tick(0);
+            expect(api.getSession).toHaveBeenCalledTimes(1);
+            visibility.mockReturnValue('hidden');
+            document.dispatchEvent(new Event('visibilitychange'));
+            await tick(0);
+            expect(api.getSession).toHaveBeenCalledTimes(1);
+        });
+
+        it('does not read a session that is running again for the visibility alone', async () => {
+            setup();
+            await tick(0);
+            api.getSession.mockClear();
+            document.dispatchEvent(new Event('visibilitychange'));
+            await tick(0);
+            expect(api.getSession).not.toHaveBeenCalled();
+        });
+
+        it('reads it again every 30 minutes while it waits, and shows the hold that lapsed', async () => {
+            setup(planReadySession());
+            api.listEvents.mockReturnValue(events([], '0', { state: 'PLAN_READY', rowVersion: '3' }));
+            await tick(0);
+            expect(store.session()!.plan!.cost.holdActive).toBe(true);
+            api.getSession.mockClear();
+            api.getSession.mockReturnValue(of(parseSessionDetail(planReadySession(session => { session.plan.cost.holdActive = false; }))));
+            await tick(PLAN_REREAD_MS - POLL_IDLE_MS * 2);
+            expect(api.getSession).not.toHaveBeenCalled();
+            await tick(POLL_IDLE_MS * 3);
+            expect(api.getSession).toHaveBeenCalledTimes(1);
+            expect(store.session()!.plan!.cost.holdActive).toBe(false);
+        });
+
+        it('launches the plan with one command, merges the running session and polls for it; a refusal is words and keeps the plan', async () => {
+            setup(planReadySession());
+            await tick(0);
+            const plan = store.session()!.plan!;
+            const rows = (plan as import('./generation.models').ExercisesPlan).items.map((item, id) => ({ id, item }));
+            api.approvePlan = vi.fn().mockReturnValue(of({ session: parseSessionDetail(planApprovedSession()), replayed: false })) as any;
+            expect(await store.approvePlan(rows, '3')).toEqual({ ok: true });
+            expect(store.session()!.state).toBe('RUNNING');
+            expect(store.session()!.artifacts).toHaveLength(6);
+            expect(toast.echo).toHaveBeenCalledWith('План запущен');
+            // A launch of a plan that is no longer waiting is refused before anything is sent.
+            const again = await store.approvePlan(rows, '4');
+            expect(again).toEqual({ ok: false, message: 'Этот план уже запущен или остановлен.' });
+            expect((api.approvePlan as any).mock.calls).toHaveLength(1);
+        });
+    });
 
     describe('opening', () => {
         it('reads the session and the deck title, and polls the events from the very start at once', async () => {

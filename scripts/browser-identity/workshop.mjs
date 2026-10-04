@@ -15,6 +15,7 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { runWorkshopExercises } from './exercises.mjs';
+import { runWorkshopPlanner } from './planner.mjs';
 import { runWorkshopAsk } from './ask-mnema.mjs';
 import { runWorkshopEdits } from './selection-edits.mjs';
 
@@ -295,6 +296,13 @@ export async function runWorkshop(ctx) {
     evidence.ask = await runWorkshopAsk(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
       activeSessions, sessionPath, location });
     record('workshop_ask_mnema_only', evidence);
+    return evidence;
+  }
+  if (config.onlyPlan) {
+    // Development aid (`run.py --only-plan`): the planner scenario alone, after the base flow. Never the gate.
+    evidence.planner = await runWorkshopPlanner(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
+      activeSessions, sessionPath, location });
+    record('workshop_planner_only', evidence);
     return evidence;
   }
   if (config.onlyEdits) {
@@ -703,6 +711,9 @@ export async function runWorkshop(ctx) {
     activeSessions, sessionPath, location });
   // #291 (AI-13): exercise generation, batch review, «Новое». Its own deck, so it never disturbs the scenarios above.
   evidence.exercises = await runWorkshopExercises(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
+    activeSessions, sessionPath, location });
+  // #295 (AI-14): «Сначала показать план» in the builder and the composer, the plan in the Workshop, the launch. Decks of its own.
+  evidence.planner = await runWorkshopPlanner(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
     activeSessions, sessionPath, location });
   // #293 (AI-11): selection edits in the Workshop, in a deck of its own.
   evidence.edits = await runWorkshopEdits(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,

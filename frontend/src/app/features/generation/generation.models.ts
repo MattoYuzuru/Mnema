@@ -114,7 +114,80 @@ export interface SessionDetail extends SessionSummary {
     readonly artifacts: readonly ArtifactSummary[];
     /** Detail only (#288): what the «Архивировать использованные заметки (k)» offer is based on. */
     readonly notes: SessionNotes;
+    /** The plan of a plan-first session (AI-14, #295); `null` for any other session and while it is still being made (`PLANNING`). */
+    readonly plan: SessionPlan | null;
 }
+
+// --- The plan of a plan-first session (`getSession.plan`, contract decision 17, AI-14 #295) ---
+
+export const PLAN_EFFORTS = ['SHORT', 'MEDIUM', 'DETAILED'] as const;
+export type PlanEffort = (typeof PLAN_EFFORTS)[number];
+
+/** What the server did to the model's plan (`TRIMMED_TO_BUDGET`: the last items did not fit the budget); `text` is the server's own sentence. */
+export interface PlanNote { readonly code: string; readonly text: string; }
+
+/**
+ * `cost`: the plan itself (debited apart, already), the artifacts of the plan, what the batch hold covers, and the bar the percentages
+ * are a share of. `holdActive` is computed when the session is read: the hold of a waiting plan lapses after a while without changing
+ * the session, and a launch after that reserves again (and may be refused for the balance).
+ */
+export interface PlanCost {
+    readonly planCredits: number;
+    readonly batchCredits: number;
+    readonly holdCredits: number;
+    readonly barCredits: number;
+    readonly holdActive: boolean;
+}
+
+export interface ExercisePlanItem {
+    readonly memberKey: string;
+    readonly title: string;
+    readonly mechanics: readonly Mechanic[];
+    readonly count: number;
+    /** The model's reason, at most 200 characters; empty for an item the owner added. */
+    readonly why: string;
+}
+
+export interface MaterialPlanItem {
+    /** The note the material is written from; `null` for a prompt-only or merged-notes plan. */
+    readonly source: string | null;
+    readonly title: string;
+    readonly effort: PlanEffort;
+    readonly why: string;
+    readonly creditsByEffort: Readonly<Record<PlanEffort, number>>;
+}
+
+/** Every material of an `EXERCISES` spec with the number of exercises it has now: the rows the owner may drop or take back. */
+export interface PlanTarget { readonly memberKey: string; readonly title: string; readonly exercises: number; }
+
+export interface PlanSource { readonly noteId: string; readonly label: string; }
+
+interface PlanBase {
+    readonly approved: boolean;
+    readonly totals: { readonly items: number; readonly artifacts: number };
+    readonly cost: PlanCost;
+    readonly notes: readonly PlanNote[];
+}
+
+export interface ExercisesPlan extends PlanBase {
+    readonly kind: 'EXERCISES';
+    readonly items: readonly ExercisePlanItem[];
+    readonly targets: readonly PlanTarget[];
+    /** An edit costs `ceil(exercisesPerFive x n / 5)` credits for `n` exercises. */
+    readonly rates: { readonly exercisesPerFive: number };
+    readonly limits: { readonly maxExercisesPerTarget: number; readonly maxExercisesPerSession: number };
+    /** The mechanics the spec allows, in registry order: a row takes a non-empty subset. */
+    readonly allowedMechanics: readonly Mechanic[];
+}
+
+export interface MaterialsPlan extends PlanBase {
+    readonly kind: 'MATERIALS';
+    readonly items: readonly MaterialPlanItem[];
+    readonly sources: readonly PlanSource[];
+    readonly limits: { readonly maxArtifactsPerSession: number };
+}
+
+export type SessionPlan = ExercisesPlan | MaterialsPlan;
 
 export interface SessionPage { readonly items: readonly SessionSummary[]; readonly nextCursor: string | null; }
 
@@ -301,6 +374,8 @@ export interface GenerationEstimate {
     readonly blockingBuckets: readonly BlockingBucket[];
     readonly shortfallCredits: number | null;
     readonly personalDataWarning: boolean;
+    /** The `SMART_PLAN_*` line of the breakdown (a plan-first request): what the plan itself costs, apart from the artifacts; `null` otherwise. */
+    readonly planCredits: number | null;
 }
 
 // --- Spec the composer sends ---
@@ -338,6 +413,7 @@ export interface MaterialsSettings {
         readonly imageSearch: boolean };
     readonly factCheck: boolean;
     readonly similarToDeck: boolean;
+    /** «Сначала показать план» (AI-14, #295): the session starts as `PLANNING` and waits for the owner to launch the plan. */
     readonly planFirst: boolean;
     readonly budgetPercent: number | null;
 }
@@ -357,11 +433,11 @@ export const MAX_APPROVALS_PER_COMMAND = 20;
 // --- Which operations a state allows (`states.json` session/artifact allowedOperations) ---
 
 export type UiOperation = 'approveArtifact' | 'approveArtifacts' | 'rejectArtifact' | 'undoRejectArtifact' | 'handoffArtifact'
-    | 'retryArtifact' | 'editArtifact' | 'revertArtifact' | 'cancelSession' | 'deleteSession';
+    | 'retryArtifact' | 'editArtifact' | 'revertArtifact' | 'cancelSession' | 'deleteSession' | 'approvePlan';
 
 const SESSION_OPERATIONS: Readonly<Record<SessionState, readonly UiOperation[]>> = {
     PLANNING: ['cancelSession', 'deleteSession'],
-    PLAN_READY: ['cancelSession', 'deleteSession'],
+    PLAN_READY: ['cancelSession', 'approvePlan', 'deleteSession'],
     RUNNING: ['approveArtifact', 'approveArtifacts', 'rejectArtifact', 'undoRejectArtifact', 'handoffArtifact', 'editArtifact',
         'revertArtifact', 'retryArtifact', 'cancelSession', 'deleteSession'],
     REVIEW: ['approveArtifact', 'approveArtifacts', 'rejectArtifact', 'undoRejectArtifact', 'handoffArtifact', 'editArtifact',
@@ -513,9 +589,82 @@ function parseSessionNotes(value: unknown): SessionNotes {
 }
 
 export function parseSessionDetail(value: unknown): SessionDetail {
-    const object = requireObject(value, [...SUMMARY_KEYS, 'spec', 'artifacts', 'notes']);
+    const object = requireObject(value, [...SUMMARY_KEYS, 'spec', 'artifacts', 'notes', 'plan']);
     const artifacts = list(object['artifacts'], 200).map(parseArtifactSummary);
-    return { ...parseSummaryFields(object), spec: parseSpecEcho(object['spec']), artifacts, notes: parseSessionNotes(object['notes']) };
+    return { ...parseSummaryFields(object), spec: parseSpecEcho(object['spec']), artifacts, notes: parseSessionNotes(object['notes']),
+        plan: nullable(object['plan'], parsePlan) };
+}
+
+const MAX_PLAN_ROWS = 100;
+
+function parsePlanCost(value: unknown): PlanCost {
+    const object = requireObject(value, ['planCredits', 'batchCredits', 'holdCredits', 'barCredits', 'holdActive']);
+    return { planCredits: requireCount(object['planCredits']), batchCredits: requireCount(object['batchCredits']),
+        holdCredits: requireCount(object['holdCredits']), barCredits: requireCount(object['barCredits']), holdActive: flag(object['holdActive']) };
+}
+
+function parsePlanNotes(value: unknown): readonly PlanNote[] {
+    return list(value, 8).map(entry => {
+        const object = requireObject(entry, ['code', 'text']);
+        return { code: text(object['code'], 64), text: text(object['text'], 500) };
+    });
+}
+
+function parseExercisePlanItem(value: unknown): ExercisePlanItem {
+    const object = requireObject(value, ['memberKey', 'title', 'mechanics', 'count', 'why']);
+    const mechanics = list(object['mechanics'], MECHANICS.length).map(mechanic => oneOf(mechanic, MECHANICS, 'mechanic'));
+    if (mechanics.length === 0 || new Set(mechanics).size !== mechanics.length) throw new AuthoringProtocolError('Invalid plan mechanics.');
+    return { memberKey: requireEntity(object['memberKey']), title: text(object['title'], 960, true), mechanics,
+        count: requireCount(object['count'], 1_000), why: text(object['why'], 1_000, true) };
+}
+
+function parseMaterialPlanItem(value: unknown): MaterialPlanItem {
+    const object = requireObject(value, ['source', 'title', 'effort', 'why', 'creditsByEffort']);
+    const credits = requireObject(object['creditsByEffort'], PLAN_EFFORTS);
+    return { source: nullable(object['source'], requireEntity), title: text(object['title'], 960), effort: oneOf(object['effort'], PLAN_EFFORTS, 'effort'),
+        why: text(object['why'], 1_000, true),
+        creditsByEffort: { SHORT: requireCount(credits['SHORT']), MEDIUM: requireCount(credits['MEDIUM']), DETAILED: requireCount(credits['DETAILED']) } };
+}
+
+/** The plan of `getSession`: exact members, identifiers canonical, every list bounded; a plan that does not read is a protocol error. */
+export function parsePlan(value: unknown): SessionPlan {
+    const kind = value !== null && typeof value === 'object' ? (value as Record<string, unknown>)['kind'] : null;
+    if (kind === 'EXERCISES') {
+        const object = requireObject(value, ['kind', 'approved', 'items', 'targets', 'totals', 'cost', 'rates', 'limits', 'allowedMechanics', 'notes']);
+        const totals = requireObject(object['totals'], ['items', 'artifacts']);
+        const rates = requireObject(object['rates'], ['exercisesPerFive']);
+        const limits = requireObject(object['limits'], ['maxExercisesPerTarget', 'maxExercisesPerSession']);
+        const allowed = list(object['allowedMechanics'], MECHANICS.length).map(mechanic => oneOf(mechanic, MECHANICS, 'mechanic'));
+        if (allowed.length === 0 || new Set(allowed).size !== allowed.length) throw new AuthoringProtocolError('Invalid allowed mechanics.');
+        return {
+            kind: 'EXERCISES', approved: flag(object['approved']), items: list(object['items'], MAX_PLAN_ROWS).map(parseExercisePlanItem),
+            targets: list(object['targets'], MAX_EXERCISE_TARGETS).map(entry => {
+                const target = requireObject(entry, ['memberKey', 'title', 'exercises']);
+                return { memberKey: requireEntity(target['memberKey']), title: text(target['title'], 960, true), exercises: requireCount(target['exercises'], 100_000) };
+            }),
+            totals: { items: requireCount(totals['items'], MAX_PLAN_ROWS), artifacts: requireCount(totals['artifacts'], 100_000) },
+            cost: parsePlanCost(object['cost']), rates: { exercisesPerFive: requireCount(rates['exercisesPerFive'], 100_000) },
+            limits: { maxExercisesPerTarget: requireCount(limits['maxExercisesPerTarget'], 1_000), maxExercisesPerSession: requireCount(limits['maxExercisesPerSession'], 10_000) },
+            allowedMechanics: allowed, notes: parsePlanNotes(object['notes'])
+        };
+    }
+    if (kind === 'MATERIALS') {
+        const object = requireObject(value, ['kind', 'approved', 'items', 'sources', 'totals', 'cost', 'rates', 'limits', 'notes']);
+        const totals = requireObject(object['totals'], ['items', 'artifacts']);
+        requireObject(object['rates'], ['note']);
+        const limits = requireObject(object['limits'], ['maxArtifactsPerSession']);
+        return {
+            kind: 'MATERIALS', approved: flag(object['approved']), items: list(object['items'], MAX_PLAN_ROWS).map(parseMaterialPlanItem),
+            sources: list(object['sources'], MAX_SOURCES).map(entry => {
+                const source = requireObject(entry, ['noteId', 'label']);
+                return { noteId: requireEntity(source['noteId']), label: text(source['label'], 200, true) };
+            }),
+            totals: { items: requireCount(totals['items'], MAX_PLAN_ROWS), artifacts: requireCount(totals['artifacts'], 100_000) },
+            cost: parsePlanCost(object['cost']), limits: { maxArtifactsPerSession: requireCount(limits['maxArtifactsPerSession'], 10_000) },
+            notes: parsePlanNotes(object['notes'])
+        };
+    }
+    throw new AuthoringProtocolError('Invalid plan.');
 }
 
 function parseMediaSlotCounts(value: unknown): MediaSlotCounts {
@@ -831,7 +980,7 @@ export function parseEstimate(value: unknown): GenerationEstimate {
     const object = requireObject(value, ['rateCardVersion', 'credits', 'breakdown', 'balance', 'percentOfPeriodAllowance', 'budget',
         'canStart', 'blockingBuckets', 'shortfallCredits', 'warnings']);
     text(object['rateCardVersion'], 32);
-    list(object['breakdown'], 32);
+    const planCredits = planLine(list(object['breakdown'], 32));
     const balance = requireObject(object['balance'], ['remainingCredits', 'renewsAt']);
     const warnings = list(object['warnings'], 64);
     return {
@@ -840,8 +989,19 @@ export function parseEstimate(value: unknown): GenerationEstimate {
         canStart: flag(object['canStart']), blockingBuckets: list(object['blockingBuckets'], 8).map(parseBucket),
         shortfallCredits: nullable(object['shortfallCredits'], credits => requireCount(credits)),
         personalDataWarning: warnings.some(warning => typeof warning === 'object' && warning !== null
-            && (warning as Record<string, unknown>)['code'] === 'PERSONAL_DATA_SUSPECTED')
+            && (warning as Record<string, unknown>)['code'] === 'PERSONAL_DATA_SUSPECTED'),
+        planCredits
     };
+}
+
+/** The credits of the plan line (`SMART_PLAN_FLASH`, before the batch lines); the breakdown is otherwise informational. */
+function planLine(breakdown: readonly unknown[]): number | null {
+    for (const line of breakdown) {
+        if (line === null || typeof line !== 'object') continue;
+        const { operation, credits } = line as Record<string, unknown>;
+        if (typeof operation === 'string' && operation.startsWith('SMART_PLAN') && Number.isSafeInteger(credits) && (credits as number) >= 0) return credits as number;
+    }
+    return null;
 }
 
 // --- Serialization of the spec ---
@@ -876,7 +1036,7 @@ function serializeSource(source: SpecSource, notesMode: NotesMode): Record<strin
 
 /**
  * The exact request body of a Materials spec (`generationSpec.MATERIALS`): unknown fields are `INVALID_REQUEST` on the
- * server, so nothing else is sent. `planFirst` is always `false` until the planner exists (AI-14).
+ * server, so nothing else is sent.
  */
 export function serializeMaterialsSpec(spec: MaterialsSpec): Record<string, unknown> {
     if (spec.prompt.length > MAX_PROMPT_LENGTH || spec.sources.length > MAX_SOURCES) {
@@ -891,7 +1051,7 @@ export function serializeMaterialsSpec(spec: MaterialsSpec): Record<string, unkn
         effort: oneOf(settings.effort, EFFORTS, 'effort'), notesMode: settings.notesMode,
         media: { audio: { enabled: settings.media.audio.enabled, lang: settings.media.audio.lang, voice: settings.media.audio.voice },
             imageSearch: settings.media.imageSearch },
-        factCheck: settings.factCheck, similarToDeck: settings.similarToDeck, planFirst: false, budgetPercent: settings.budgetPercent
+        factCheck: settings.factCheck, similarToDeck: settings.similarToDeck, planFirst: settings.planFirst === true, budgetPercent: settings.budgetPercent
     };
     return body;
 }
@@ -915,6 +1075,8 @@ export interface ExercisesSettings {
     readonly mechanics: 'AUTO' | readonly Mechanic[];
     readonly priority: ExercisePriority;
     readonly quantity: ExerciseQuantity;
+    /** «Сначала показать план» (AI-14, #295); absent means `false`. */
+    readonly planFirst?: boolean;
 }
 
 export interface ExercisesSpec {
@@ -955,7 +1117,7 @@ export const MAX_EXERCISE_TARGETS = 20;
 export const MAX_EXERCISES_PER_TARGET = 10;
 export const MAX_EXERCISES_PER_SESSION = 60;
 
-/** The exact request body of an Exercises spec; unknown fields are `INVALID_REQUEST`. `planFirst` is always `false` until AI-14. */
+/** The exact request body of an Exercises spec; unknown fields are `INVALID_REQUEST`. */
 export function serializeExercisesSpec(spec: ExercisesSpec): Record<string, unknown> {
     if (spec.targets.length === 0 || spec.targets.length > MAX_EXERCISE_TARGETS) throw new RequestValidationError('The spec exceeds its limits.');
     const { mechanics, quantity } = spec.settings;
@@ -981,7 +1143,7 @@ export function serializeExercisesSpec(spec: ExercisesSpec): Record<string, unkn
     body['settings'] = {
         // Canonical order, so the same choice always produces the same request (and the same idempotency key).
         mechanics: mechanics === 'AUTO' ? 'AUTO' : MECHANICS.filter(mechanic => mechanics.includes(mechanic)),
-        priority: oneOf(spec.settings.priority, EXERCISE_PRIORITIES, 'priority'), quantity: wireQuantity, planFirst: false, budgetPercent: null
+        priority: oneOf(spec.settings.priority, EXERCISE_PRIORITIES, 'priority'), quantity: wireQuantity, planFirst: spec.settings.planFirst === true, budgetPercent: null
     };
     return body;
 }

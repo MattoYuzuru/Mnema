@@ -95,15 +95,18 @@ class StepQueue {
             return new Look.Expired(step.stepId(), step.sessionId(), step.kind(), turn);
         }
         int credits = step.input().path("credits").asInt(0);
-        // An edit is interactive and costs a few credits: the daily burst never parks it for a day (a turn that waits is a turn that hangs)
-        if (credits > 0 && !turn) {
+        // An edit is interactive and costs a few credits, and so is a plan (the owner waits for it in the Workshop): the daily burst never
+        // parks them for a day (a turn that waits is a turn that hangs); their debits are still recorded
+        boolean plan = step.kind().equals(PlanExecutor.KIND);
+        if (credits > 0 && !turn && !plan) {
             var room = ledger.dailyDebitRoom(step.ownerId());
             if (room.isPresent() && room.get().remainingTodayCredits() < credits) {
                 steps.defer(step.stepId(), room.get().resetsAt());
                 return new Look.Parked(step.sessionId(), room.get().resetsAt());
             }
         }
-        Duration deadline = step.kind().equals(TextDraftExecutor.KIND) ? settings.step().textDraftDeadline() : Duration.ofMinutes(2);
+        Duration deadline = step.kind().equals(TextDraftExecutor.KIND) ? settings.step().textDraftDeadline()
+                : plan ? settings.planner().deadline() : Duration.ofMinutes(2);
         Step running = steps.claim(step.stepId(), UUID.randomUUID(), Math.max(1, settings.worker().lease().toSeconds()),
                 Math.max(1, deadline.toSeconds()), Math.max(1, settings.step().maxLifetime().toSeconds()));
         return new Look.Claimed(new StepClaim(running.stepId(), running.sessionId(), running.artifactId(), running.ownerId(),

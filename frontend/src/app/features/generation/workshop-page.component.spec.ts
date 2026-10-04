@@ -19,7 +19,7 @@ import {
 } from './generation.models';
 import {
     activeStep, artifactDetailWithNote, artifactWith, clone, deckFixture, eventsEnvelope, examples, httpContract, ids, noteArchiveAnswer, noteIds, problemResponse,
-    sessionWith, sessionWithNotes, wireBlocks, wireEvent
+    materialsPlanSession, planApprovedSession, planReadySession, sessionWith, sessionWithNotes, wireBlocks, wireEvent
 } from './generation-test-data';
 
 const third = 'a7a70000-0000-4000-8000-000000000003';
@@ -59,7 +59,7 @@ describe('WorkshopPageComponent', () => {
         vi.useFakeTimers();
         vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
         api = spyObj<GenerationApiService>({ getSession: vi.fn(), listEvents: vi.fn(), getArtifact: vi.fn(), approveArtifact: vi.fn(), approveArtifacts: vi.fn(),
-            rejectArtifact: vi.fn(), undoRejectArtifact: vi.fn(), retryArtifact: vi.fn(), handoffArtifact: vi.fn(), cancelSession: vi.fn(), deleteSession: vi.fn(), archiveUsedNotes: vi.fn() });
+            rejectArtifact: vi.fn(), undoRejectArtifact: vi.fn(), retryArtifact: vi.fn(), handoffArtifact: vi.fn(), cancelSession: vi.fn(), deleteSession: vi.fn(), archiveUsedNotes: vi.fn(), approvePlan: vi.fn() });
         decks = spyObj<OwnDecksApiService>({ detail: vi.fn() });
         capabilities$ = capabilities$ ?? of(CAPABILITIES_UNAVAILABLE);
         toast = { echo: vi.fn() };
@@ -303,9 +303,13 @@ describe('WorkshopPageComponent', () => {
             expect(labelled('Стоп')).toBeDefined();
         });
 
-        it('offers «Стоп» while a plan waits for approval too', async () => {
-            await open(sessionWith([artifactWith(ids.first, 0, 'QUEUED', { currentRevisionId: null })], { state: 'PLAN_READY' }));
-            expect(labelled('Стоп')).toBeDefined();
+        it('has no «Стоп» in the header while a plan is made or waits: the plan has its own «Отменить» (#295)', async () => {
+            await open(planReadySession(session => { session.state = 'PLANNING'; session.plan = null; }));
+            expect(labelled('Стоп')).toBeUndefined();
+            expect(labelled('Отменить')).toBeDefined();
+            await open(planReadySession());
+            expect(labelled('Стоп')).toBeUndefined();
+            expect(labelled('Отменить')).toBeDefined();
         });
 
         it('deletes the whole Workshop only after the hold, then goes back to the deck with a short echo', async () => {
@@ -482,6 +486,106 @@ describe('WorkshopPageComponent', () => {
         });
     });
 
+    describe('a plan-first Workshop (AI-14, #295)', () => {
+        const status = (): string => root().querySelector('.exercise-summary')!.textContent!.replace(/\u00a0/g, ' ');
+
+        it('shows the wait while the plan is made: no pager, no review, the plan\'s own status and cancel, and one live region', async () => {
+            await open(planReadySession(session => { session.state = 'PLANNING'; session.plan = null; session.rowVersion = '1'; }));
+            expect(root().querySelector('app-workshop-plan h2')?.textContent).toBe('Мнема составляет план…');
+            expect(status()).toBe('Мнема составляет план…');
+            expect(root().querySelector('app-batch-pager, app-exercise-batch-review, app-proposal-view')).toBeNull();
+            expect(root().querySelectorAll('section.workshop [role=status]')).toHaveLength(1);
+            expect(root().querySelector('.lede')?.textContent?.replace(/\u00a0/g, ' ')).toBe('Для 2 материалов: сначала план, потом упражнения.');
+        });
+
+        it('shows the plan when it is ready, says so once in the live region, and the review does not open before the launch', async () => {
+            await open(planReadySession());
+            expect(root().querySelector('app-workshop-plan h2')?.textContent).toBe('План упражнений');
+            expect(status()).toBe('План готов: проверьте его и запустите');
+            expect(root().querySelector('app-exercise-batch-review')).toBeNull();
+            expect(root().querySelectorAll('app-workshop-plan ol.rows > li')).toHaveLength(2);
+            expect(root().querySelector('.footer-row .text-link')?.textContent).toBe('Выйти в колоду');
+        });
+
+        it('opens the review of exactly the planned artifacts once the plan is launched, and the plan is gone', async () => {
+            await open(planReadySession());
+            api.approvePlan.mockReturnValue(of({ session: parseSessionDetail(planApprovedSession()), replayed: false }));
+            labelled('Запустить по плану')!.click();
+            await settle();
+            expect(root().querySelector('app-workshop-plan')).toBeNull();
+            expect(root().querySelector('app-exercise-batch-review')).not.toBeNull();
+            await vi.advanceTimersByTimeAsync(ANNOUNCE_GAP_MS);
+            fixture.detectChanges();
+            expect(status()).toContain('6 пишутся');
+            expect(root().querySelector('.lede')?.textContent?.replace(/\u00a0/g, ' ')).toBe('Для 2 материалов: проверьте упражнения и оставьте нужные.');
+        });
+
+        it('puts focus on the title of the Workshop when the plan leaves the page, launched or cancelled', async () => {
+            await open(planReadySession());
+            document.body.appendChild(root());
+            api.approvePlan.mockReturnValue(of({ session: parseSessionDetail(planApprovedSession()), replayed: false }));
+            labelled('Запустить по плану')!.click();
+            await settle();
+            await settle();
+            expect(document.activeElement).toBe(root().querySelector('#workshop-title'));
+            root().remove();
+            await open(planReadySession());
+            document.body.appendChild(root());
+            api.cancelSession.mockReturnValue(of(parseSessionDetail(planReadySession(session => { session.state = 'CANCELLED'; session.rowVersion = '4'; session.endReason = 'USER_CANCELLED'; }))));
+            labelled('Отменить')!.click();
+            await settle();
+            await settle();
+            expect(document.activeElement).toBe(root().querySelector('#workshop-title'));
+            root().remove();
+        });
+
+        it('shows only what happened when the plan ended before its launch: no review, no empty list, the reason in the note and the live region (#295)', async () => {
+            await open(planReadySession(session => { session.state = 'CANCELLED'; session.endReason = 'PLAN_FAILED'; session.plan = null; session.rowVersion = '2'; }));
+            expect(root().querySelector('app-exercise-batch-review, app-workshop-plan')).toBeNull();
+            expect(status()).toBe('Не удалось составить план');
+            expect(root().querySelector('.lede')?.textContent?.replace(/\u00a0/g, ' ')).toBe('Для 2 материалов: упражнения не создавались.');
+            expect(root().querySelector('.page > .notice')?.textContent).toContain('Мнеме не удалось составить план');
+            expect(root().querySelector('.footer-row .text-link')?.textContent).toBe('Выйти в колоду');
+            await open(planReadySession(session => { session.state = 'CANCELLED'; session.endReason = 'USER_CANCELLED'; session.plan = null; session.rowVersion = '2'; }));
+            expect(root().querySelector('.page > .notice')?.textContent).toContain('Вы остановили составление плана: ничего не создано, лимит не списан.');
+            expect(status()).toBe('План отменён');
+            await open(planReadySession(session => { session.state = 'EXPIRED'; session.rowVersion = '2'; }));
+            expect(status()).toBe('Срок мастерской вышел');
+            await open(materialsPlanSession(session => { session.state = 'CANCELLED'; session.endReason = 'PLAN_FAILED'; session.plan = null; }));
+            expect(root().querySelector('app-proposal-view, app-batch-pager')).toBeNull();
+            expect(root().querySelector('.page > .notice')?.textContent).toContain('Мнеме не удалось составить план');
+        });
+
+        it('says the same sentence once: a poll that changes nothing does not start the pause before the next sentence', async () => {
+            await open(planReadySession());
+            expect(status()).toBe('План готов: проверьте его и запустите');
+            await vi.advanceTimersByTimeAsync(ANNOUNCE_GAP_MS * 3);
+            api.approvePlan.mockReturnValue(of({ session: parseSessionDetail(planApprovedSession()), replayed: false }));
+            labelled('Запустить по плану')!.click();
+            await settle();
+            expect(status()).toContain('6 пишутся');
+        });
+
+        it('shows the plan of materials with the prompt the owner wrote, and no review of exercises', async () => {
+            await open(materialsPlanSession());
+            expect(root().querySelector('app-workshop-plan h2')?.textContent).toBe('План материалов');
+            expect(root().querySelector('.lede')?.textContent).toBe('Запрос: «Объясни планировщик»');
+            expect(root().querySelector('app-proposal-view')).toBeNull();
+        });
+
+        it('fetches the plan when the poll learns that the plan is ready, and the failed plan ends the session with its reason', async () => {
+            await open(planReadySession(session => { session.state = 'PLANNING'; session.plan = null; session.rowVersion = '1'; }));
+            api.getSession.mockClear();
+            api.getSession.mockReturnValue(of(parseSessionDetail(planReadySession())));
+            api.listEvents.mockReturnValue(of(parseEventsPage(eventsEnvelope([wireEvent(1, 'SESSION_STATE', { state: 'PLAN_READY', rowVersion: '3',
+                artifactCounts: clone(examples['sessionDetail']).artifactCounts }, null)], '1', { state: 'PLAN_READY', rowVersion: '3' }))));
+            await vi.advanceTimersByTimeAsync(5_000);
+            fixture.detectChanges();
+            expect(api.getSession).toHaveBeenCalled();
+            expect(root().querySelector('app-workshop-plan h2')?.textContent).toBe('План упражнений');
+        });
+    });
+
     describe('the state of the session and of the connection', () => {
         const note = (): string => [...root().querySelectorAll('.page > .notice')].map(notice => notice.textContent!.trim()).join('|');
 
@@ -490,8 +594,10 @@ describe('WorkshopPageComponent', () => {
             expect(note()).toContain('Все материалы разобраны.');
             await open(sessionWith([proposed(ids.first, 0)], { state: 'EXPIRED' }));
             expect(note()).toContain('Срок мастерской вышел');
-            await open(sessionWith([artifactWith(ids.first, 0, 'QUEUED', { currentRevisionId: null })], { state: 'PLANNING' }));
-            expect(note()).toContain('Планы пока не поддерживаются');
+            await open(sessionWith([], { state: 'CANCELLED', endReason: 'PLAN_FAILED' }));
+            expect(note()).toContain('Мнеме не удалось составить план. Ничего не создано, лимит не списан.');
+            await open(planReadySession(session => { session.state = 'CANCELLED'; session.endReason = 'USER_CANCELLED'; }));
+            expect(note()).toContain('Вы отменили план: ничего не создано. Стоимость плана уже списана, остальной лимит вернулся.');
         });
 
         it('says when the network is gone and when it is back, and keeps what is already shown readable', async () => {

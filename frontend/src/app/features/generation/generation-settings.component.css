@@ -8,11 +8,11 @@ legend { padding: 0 0 .4rem; color: var(--mn-ink); font: 700 .95rem/1.3 var(--mn
 .chip { border: 1px solid var(--mn-field-border); padding: .35rem .9rem .35rem .75rem; background: var(--mn-sheet); }
 .chip:has(:checked) { border-color: var(--mn-ink); background: var(--mn-soft); }
 .chip:has(:focus-visible), .check:has(:focus-visible) { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 2px; }
-.chip.is-off, .is-stub { color: var(--mn-muted); cursor: not-allowed; }
+.chip.is-off { color: var(--mn-muted); cursor: not-allowed; }
 .hint { margin: 0; color: var(--mn-muted); font-size: .9rem; line-height: 1.5; overflow-wrap: anywhere; }
 .nested { display: grid; gap: .75rem; min-inline-size: 0; margin: .5rem 0 0; border: 0; border-inline-start: 2px solid var(--mn-ink); padding: .25rem 0 .25rem 1rem; }
 @media (forced-colors: active) {
   .chip { border-color: ButtonText; }
   .chip:has(:checked) { border-color: Highlight; }
-  .chip.is-off, .is-stub { color: GrayText; }
+  .chip.is-off { color: GrayText; }
 }

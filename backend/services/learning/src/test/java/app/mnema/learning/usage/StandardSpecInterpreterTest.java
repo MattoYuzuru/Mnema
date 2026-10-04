@@ -97,17 +97,18 @@ class StandardSpecInterpreterTest {
     }
 
     @Test
-    void budgetPercentIsCarriedAndPlanFirstAndSimilarToDeckCostNothingOnceThePlannerExists() {
+    void budgetPercentIsCarriedAndPlanFirstAddsItsOwnLineWhileSimilarToDeckCostsNothing() {
         var withPlanner = new StandardSpecInterpreter(new GenerationLimits(20, 20, 20, 10, 60), null, true);
         var result = withPlanner.interpret(UUID.randomUUID(), UUID.randomUUID(),
                 parse(materials(note(1), "{\"budgetPercent\":40,\"planFirst\":true,\"similarToDeck\":true}")), 100);
         assertThat(result.budgetPercent()).isEqualTo(40);
-        assertThat(lines(result)).containsExactly("MATERIAL_MEDIUMx1");
+        // the plan is priced apart (and first); the budget caps the batch, the plan comes on top
+        assertThat(lines(result)).containsExactly("SMART_PLAN_FLASHx1", "MATERIAL_MEDIUMx1");
         assertThat(interpret(materials(note(1), "{\"budgetPercent\":null}")).budgetPercent()).isNull();
     }
 
     @Test
-    void planFirstIsNotSupportedUntilThePlannerIsEnabled() {
+    void planFirstIsNotSupportedWhileThePlannerIsDisabled() {
         assertThatThrownBy(() -> interpret(materials(note(1), "{\"planFirst\":true}")))
                 .isInstanceOfSatisfying(SpecNotSupportedException.class, failure ->
                         assertThat(failure.extension().members()).containsEntry("kind", "MATERIALS"));
@@ -245,10 +246,15 @@ class StandardSpecInterpreterTest {
     }
 
     @Test
-    void aPlannedExercisesSpecIsNotSupportedUntilThePlannerExists() {
+    void aPlannedExercisesSpecIsNotSupportedWhileThePlannerIsDisabledAndHasItsOwnLineOtherwise() {
         assertThatThrownBy(() -> interpret(exercises(1, "{\"planFirst\":true}")))
                 .isInstanceOfSatisfying(SpecNotSupportedException.class,
                         failure -> assertThat(failure.extension().members()).containsEntry("kind", "EXERCISES"));
+        var withPlanner = new StandardSpecInterpreter(new GenerationLimits(20, 20, 20, 10, 60), null, true);
+        var result = withPlanner.interpret(UUID.randomUUID(), UUID.randomUUID(), parse(exercises(1, "{\"planFirst\":true,\"quantity\":{\"mode\":\"EXACT\",\"perTarget\":4}}")), 100);
+        assertThat(lines(result)).containsExactly("SMART_PLAN_FLASHx1", "EXERCISES_PER_MATERIALx4");
+        assertThat(lines(withPlanner.interpret(UUID.randomUUID(), UUID.randomUUID(), parse(exercises(1, "{\"planFirst\":false}")), 100)))
+                .containsExactly("EXERCISES_PER_MATERIALx5");
     }
 
     private static final String ITEM_TARGET = "\"target\":{\"memberKey\":\"44444444-4444-4444-8444-444444444444\",\"itemRevisionId\":\"55555555-5555-4555-8555-555555555555\"}";

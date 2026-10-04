@@ -30,13 +30,14 @@ describe('GenerationSettingsComponent', () => {
         expect(hint.textContent).toContain('Подробно:');
     });
 
-    it('keeps the attachments, «Похоже на» and the plan stub behind «Ещё настройки»', () => {
+    it('keeps the attachments, «Похоже на» and «Сначала показать план» behind «Ещё настройки»', () => {
         create();
         const details = root().querySelector('details')!;
         expect(details.open).toBe(false);
         expect(details.querySelector('summary')?.textContent).toBe('Ещё настройки');
         expect(details.contains(checkbox('Аудио'))).toBe(true);
         expect(details.contains(checkbox('Похоже на: как в колоде'))).toBe(true);
+        expect(details.contains(checkbox('Сначала показать план'))).toBe(true);
     });
 
     it('turns the attachments on and off and shows the nested audio parameters only while audio is on', () => {
@@ -88,15 +89,31 @@ describe('GenerationSettingsComponent', () => {
         expect(root().textContent).toContain('Мнема добавит их, если выбрано');
     });
 
-    it('toggles «Похоже на: как в колоде» (on by default) and keeps «Сначала показать план» a disabled stub with its reason', () => {
+    it('toggles «Похоже на: как в колоде» (on by default)', () => {
         create();
         expect(checkbox('Похоже на: как в колоде').checked).toBe(true);
         checkbox('Похоже на: как в колоде').click();
         fixture.detectChanges();
         expect(value().similarToDeck).toBe(false);
+    });
+
+    it('offers «Сначала показать план» (off by default), says what it does and puts the plan cost next to it once it is on and known (#295)', () => {
+        create();
         const plan = checkbox('Сначала показать план');
-        expect(plan.disabled).toBe(true);
+        expect(plan.disabled).toBe(false);
         expect(plan.checked).toBe(false);
-        expect(root().querySelector(`#${plan.getAttribute('aria-describedby')}`)?.textContent).toContain('Появится позже');
+        expect(root().querySelector(`#${plan.getAttribute('aria-describedby')}`)?.textContent).toContain('План стоит отдельно');
+        fixture.componentRef.setInput('planCost', 'План: ≈ 1 % лимита');
+        fixture.detectChanges();
+        expect(root().textContent).not.toContain('План: ≈ 1 % лимита');
+        plan.click();
+        fixture.detectChanges();
+        expect(value().planFirst).toBe(true);
+        expect(root().textContent).toContain('План: ≈ 1 % лимита');
+        expect(plan.getAttribute('aria-describedby')).toContain('-cost');
+        plan.click();
+        fixture.detectChanges();
+        expect(value().planFirst).toBe(false);
+        expect(root().textContent).not.toContain('План: ≈ 1 % лимита');
     });
 });

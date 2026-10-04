@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, input, model } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, model, signal } from '@angular/core';
 
 import { Mechanic } from '../../content/exercise/exercise-content.models';
 import { SegmentedChoiceComponent, SegmentedOption } from '../../shared/segmented-choice.component';
@@ -11,6 +11,10 @@ import {
  * mechanics («Авто» or a set), what comes first (only for several materials), and how many. It owns no state: the host passes the
  * value and gets the next one back, so both pages build the very same request from it. The host decides which quantity modes it offers
  * (the intent knows an exact number and «Авто»; the builder also a share of the limit).
+ *
+ * The plan table of a Workshop (#295) uses the very same mechanics chips for each row of its plan (`showAuto` off: a row needs at least one
+ * mechanic, so there is no «Авто» and the last one cannot be unchecked; `showQuantity` off: the count is the row's own control; `allowed`: the
+ * mechanics the spec allows).
  */
 @Component({
     selector: 'app-exercise-settings-fields',
@@ -28,8 +32,23 @@ export class ExerciseSettingsFieldsComponent {
     readonly showPriority = input(false);
     /** The quantity modes on offer; the builder offers all three. */
     readonly quantityModes = input<readonly QuantityMode[]>(['AUTO', 'EXACT', 'BUDGET_PERCENT']);
+    /** «Авто» is offered. Off for a plan row: the choice is a non-empty set. */
+    readonly showAuto = input(true);
+    /** «Сколько упражнений» is offered. */
+    readonly showQuantity = input(true);
+    /** The mechanics on offer, in the registry order; `null` is all of them. */
+    readonly allowed = input<readonly Mechanic[] | null>(null);
+    /** The name of the group of mechanics, for a screen reader that hears several of them on one page. */
+    readonly legend = input('Типы упражнений');
+    /** The legend is only for assistive technology (the plan row already shows whose mechanics these are), and the standing hint is left out. */
+    readonly quiet = input(false);
+    /** Says why the last mechanic stays checked, in the plan row. */
+    protected readonly keptOne = signal(false);
 
-    protected readonly mechanicChoices = MECHANIC_CHOICES;
+    protected readonly mechanicChoices = computed(() => {
+        const allowed = this.allowed();
+        return allowed === null ? MECHANIC_CHOICES : MECHANIC_CHOICES.filter(choice => allowed.includes(choice.value));
+    });
     protected readonly priorityOptions = PRIORITY_OPTIONS;
     protected readonly perTargetText = perTargetText;
     protected readonly percentText = percentText;
@@ -45,7 +64,12 @@ export class ExerciseSettingsFieldsComponent {
     }
 
     protected setMechanic(mechanic: Mechanic, event: Event): void {
-        this.patch({ mechanics: toggleMechanic(this.value().mechanics, mechanic, (event.target as HTMLInputElement).checked) });
+        const input = event.target as HTMLInputElement;
+        const mechanics = toggleMechanic(this.value().mechanics, mechanic, input.checked);
+        // Without «Авто» an empty set means nothing: the last mechanic stays, and the hint says why.
+        if (!this.showAuto() && mechanics.length === 0) { input.checked = true; this.keptOne.set(true); return; }
+        this.keptOne.set(false);
+        this.patch({ mechanics });
     }
 
     protected hasMechanic(mechanic: Mechanic): boolean {

@@ -4,6 +4,7 @@ import { MnemaSelectComponent } from '../../core/controls/mnema-select.component
 import { SegmentedChoiceComponent, SegmentedOption } from '../../shared/segmented-choice.component';
 import { ToggletipComponent } from '../../shared/toggletip.component';
 import { Effort, NotesMode } from './generation.models';
+import { PlanFirstOptionComponent } from './plan-first-option.component';
 import { AUDIO_LANGUAGES, EFFORT_OPTIONS } from './generation-view';
 
 export type VoiceChoice = 'any' | 'female' | 'male';
@@ -20,11 +21,13 @@ export interface GenerationSettingsValue {
     readonly audioLang: string;
     readonly audioVoice: VoiceChoice;
     readonly similarToDeck: boolean;
+    /** «Сначала показать план» (AI-14, #295). */
+    readonly planFirst: boolean;
 }
 
 export const DEFAULT_SETTINGS: GenerationSettingsValue = {
     effort: 'AUTO', notesMode: 'ONE_PER_NOTE', imageSearch: false, audio: false, audioLang: 'ru', audioVoice: 'any',
-    similarToDeck: true
+    similarToDeck: true, planFirst: false
 };
 
 const VOICES: readonly SegmentedOption<VoiceChoice>[] = [
@@ -36,12 +39,11 @@ let nextSettings = 0;
 /**
  * The settings of one generation request, with progressive disclosure: «Подробность» is always visible with its live
  * explanation under the group; attachments (with the nested audio parameters), «Похоже на» and «Сначала показать план» sit
- * behind «Ещё настройки». The plan-first control is a disabled stub until the planner exists (AI-14): the request never
- * asks for a plan.
+ * behind «Ещё настройки». The plan option says what the plan costs on its own (`planCost`, from the estimate).
  */
 @Component({
     selector: 'app-generation-settings',
-    imports: [SegmentedChoiceComponent, ToggletipComponent, MnemaSelectComponent],
+    imports: [SegmentedChoiceComponent, ToggletipComponent, MnemaSelectComponent, PlanFirstOptionComponent],
     template: `
       <app-segmented-choice legend="Подробность" [options]="effortOptions" [name]="uid + '-effort'"
         [value]="value().effort" (valueChange)="patch({ effort: $event ?? 'AUTO' })">
@@ -89,13 +91,7 @@ let nextSettings = 0;
           <p class="hint" [id]="uid + '-similar-hint'">Мнема возьмёт образцы стиля из материалов, отмеченных «Эталон», и из свежих материалов колоды.</p>
         </div>
 
-        <div class="group">
-          <label class="check is-stub">
-            <input type="checkbox" disabled [attr.aria-describedby]="uid + '-plan-hint'" />
-            <span>Сначала показать план</span>
-          </label>
-          <p class="hint" [id]="uid + '-plan-hint'">Появится позже. Пока Мнема сразу пишет материал, а вы решаете, что оставить.</p>
-        </div>
+        <app-plan-first-option [checked]="value().planFirst" [cost]="planCost()" (checkedChange)="patch({ planFirst: $event })" />
       </details>
     `,
     styleUrl: './generation-settings.component.css',
@@ -106,6 +102,8 @@ export class GenerationSettingsComponent {
     /** Image search and speech are separate server capabilities; a switched-off one is shown disabled with the reason. */
     readonly imageAvailable = input(false);
     readonly audioAvailable = input(false);
+    /** «План: ≈ 1 % лимита» for the plan option; `null` while the estimate has no plan line. */
+    readonly planCost = input<string | null>(null);
 
     protected readonly uid = `mn-generation-settings-${nextSettings++}`;
     protected readonly effortOptions = EFFORT_OPTIONS;

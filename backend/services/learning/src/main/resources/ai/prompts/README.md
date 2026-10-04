@@ -26,6 +26,7 @@ seen it in two requests). L0-L2 are byte-identical for every user within a `prom
 | `v1/exercises.md` | exercise skill, schema and task | per call | 1.0-1.3k + schema |
 | `v1/exercise-edit.md` | revise ONE existing exercise (REVISE_EXERCISE, #294): the exercise in the output form, the material, the instruction | per call | 0.7-0.9k + schema |
 | `v1/intent.md` | intent of «Попросить Мнему…» (#294): one sentence to one operation of a closed vocabulary | per call | 0.8-1.0k |
+| `v1/plan.md` | planner of «Сначала показать план» (AI-14, #295): a plan of exercises or materials as strict JSON, within a credit budget, for a thinking model | per call | 0.9-1.1k + titles and clipped notes |
 | `v1/assessment.md` | grader core and answer (own prefix, not part of the generation prefix) | per exercise | 0.6-0.8k + data |
 
 Working input is 12-25k tokens per generation call with a hard ceiling of 32k for Flash non-thinking. The task and the
@@ -46,7 +47,7 @@ purpose: "one sentence"
 A section's body is never edited after `v1` is released: a change is a new directory (`v2`) so cached prefixes,
 artifact provenance and the golden eval stay comparable. Typos in a released version are fixed by a new version, not
 in place. **Adding a section to a released version is allowed** (it changes no released byte and no cached prefix): AI-16
-([#294](https://github.com/MattoYuzuru/Mnema/issues/294)) added `exercise-edit` and `intent` to `v1`; every section that
+([#294](https://github.com/MattoYuzuru/Mnema/issues/294)) added `exercise-edit` and `intent` to `v1`, and AI-14 ([#295](https://github.com/MattoYuzuru/Mnema/issues/295)) added `plan`; every section that
 existed stays byte-stable, and a change to one of them is still a new version.
 
 ## Placeholders
@@ -74,7 +75,7 @@ One syntax only, in the runtime-filled sections (`deck-brief`, `material`, `edit
   `neighbor_lines`, `criteria_lines`, `misconception_lines`, `allowed_links` (one URL per line).
 - `{{schema}}` is rendered from `contracts/generation/exercises/output.schema.json`; AI-13 keeps a classpath copy
   `ai/exercises/output.schema.json` (a test keeps the two identical) and the prompt carries it minified.
-- The exercise section, the exercise revision and the intent are assembled with the `<data_policy>` block of `system.md` in front of them as their own cacheable segment, taken
+- The exercise section, the exercise revision, the intent and the plan are assembled with the `<data_policy>` block of `system.md` in front of them as their own cacheable segment, taken
   verbatim (the section carries the material, the objectives and the existing exercises as data; the rest of the core describes the MBM
   format and does not apply to a JSON answer). `task.mechanics` renders `Механики: A, B, C` (registry names, comma separated) and may add a
   variety request after it; the Stub reads the count and the mechanics from there.
@@ -93,6 +94,7 @@ Placeholder names used by v1 and their owners:
 | `exercises` | `schema`, `material_blocks`, `objective_lines`, `existing_exercise_lines`, `neighbor_lines`, `task.{count,mechanics}`, `lang.output` |
 | `exercise-edit` | `schema`, `material_blocks`, `objective_lines`, `current_exercise_blocks` (rendered by code: the exercise in the output form as JSON inside `<current_exercise>`, redacted, only `& < >` escaped so the model copies valid JSON), `instruction` (user text), `lang.output` |
 | `intent` | `context.{kind,title,operations,mechanics}` (kind `MATERIAL` or `EXERCISE`, the title of what the owner looks at, the operations the context allows, the mechanics of the registry), `request` (user text: the owner's sentence) |
+| `plan` | `deck.{title,description}`, `counts.{items,exercises}`, `lang.output`, `target_lines` (rendered by code: `m1 · title · exercises: 3 (CLOZE 2, CHOICE 1)` per chosen material, EXERCISES only), `note_blocks` (`<note id="n1">` per chosen note, clipped, MATERIALS only), `outline.lines` (the latest titles of the deck, MATERIALS only), `request` (user text, default «не указана»), `limit_lines`, `task.{kind,hint,budget}` (kind `EXERCISES` or `MATERIALS`; the hint carries `Механики: A, B.` and `На материал: N.` for exercises; the budget is the batch hold in credits with the price of one unit) |
 | `assessment` | `exercise.{prompt,reference}`, `criteria_lines`, `misconception_lines`, `material_fragment`, `feedback_language`, `answer_source`, `learner_answer_json` |
 
 ### Skills: names, files and `task.skill`
@@ -131,5 +133,5 @@ Russian typography rules apply only when it is Russian. `<output_language>` is d
 ## Sampling and gates
 
 Starting temperatures (refined in the golden eval): materials 0.7-0.9, edits 0.5-0.7, exercises 0.3-0.5, grader 0.2-0.3;
-thinking is switched off explicitly. Every change of `prompt_version`, model or temperature needs the regression run of the
+thinking is switched off explicitly (except on the planner routes, which switch it on: `plan`, `plan-strong`). Every change of `prompt_version`, model or temperature needs the regression run of the
 golden eval (AI-17, [#300](https://github.com/MattoYuzuru/Mnema/issues/300)).

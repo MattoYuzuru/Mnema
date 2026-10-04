@@ -110,3 +110,41 @@ export function artifactDetailWithNote(status: string | null, noteId = noteIds.f
 export function noteArchiveAnswer(archived: readonly string[], skipped: readonly { noteId: string; reason: string }[] = []): Record<string, unknown> {
     return { archived: archived.map(noteId => ({ noteId })), skipped };
 }
+
+// --- The plan of a plan-first session (AI-14, #295; `http.json` `sessionDetailPlanReady` / `sessionDetailPlanApproved`) ---
+
+export const planTargets = { first: '44444444-4444-4444-8444-444444444444', second: '44444444-4444-4444-8444-444444444445' };
+
+/** The contract's `PLAN_READY` session of exercises (two materials, six exercises), with `change` applied to a copy. */
+export function planReadySession(change: (session: any) => void = () => undefined): Record<string, any> {
+    const session = clone(examples['sessionDetailPlanReady']);
+    change(session);
+    return session;
+}
+
+/** The contract's session right after the launch: `RUNNING`, six `QUEUED` exercises, `plan.approved`. */
+export function planApprovedSession(change: (session: any) => void = () => undefined): Record<string, any> {
+    const session = clone(examples['sessionDetailPlanApproved']);
+    change(session);
+    return session;
+}
+
+/** A `PLAN_READY` Materials session (`schemas.plan` for MATERIALS; the contract has no example of one): two notes, one source-less row. */
+export function materialsPlanSession(change: (session: any) => void = () => undefined): Record<string, any> {
+    const credits = { SHORT: 4, MEDIUM: 10, DETAILED: 22 };
+    const session = {
+        ...clone(examples['sessionDetail']), state: 'PLAN_READY', rowVersion: '3', artifacts: [], approvableCount: 0, usage: { reservedCredits: 30, spentCredits: 20 },
+        spec: { kind: 'MATERIALS', outputLanguage: 'ru', prompt: 'Объясни планировщик', sources: [], settings: { effort: 'AUTO', notesMode: 'ONE_PER_NOTE', planFirst: true } },
+        plan: {
+            kind: 'MATERIALS', approved: false,
+            items: [{ source: noteIds.first, title: 'Seq Scan: когда он быстрее', effort: 'SHORT', why: 'Короткая заметка.', creditsByEffort: credits },
+                { source: noteIds.second, title: 'Статистика и ANALYZE', effort: 'MEDIUM', why: 'Есть что объяснить.', creditsByEffort: credits },
+                { source: null, title: 'Общая картина планировщика', effort: 'DETAILED', why: '', creditsByEffort: credits }],
+            sources: [{ noteId: noteIds.first, label: 'Seq Scan читает всю таблицу' }, { noteId: noteIds.second, label: 'ANALYZE обновляет статистику' }],
+            totals: { items: 3, artifacts: 3 }, cost: { planCredits: 20, batchCredits: 36, holdCredits: 40, barCredits: 360, holdActive: true },
+            rates: { note: 'creditsByEffort of each item' }, limits: { maxArtifactsPerSession: 20 }, notes: []
+        }
+    };
+    change(session);
+    return session;
+}

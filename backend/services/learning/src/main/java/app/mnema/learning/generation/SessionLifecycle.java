@@ -10,6 +10,8 @@ import app.mnema.learning.generation.mbm.MbmSlot;
 import app.mnema.learning.notification.NotificationKind;
 import app.mnema.learning.notification.NotificationPublisher;
 import app.mnema.learning.notification.NotificationRoute;
+import app.mnema.learning.usage.AdmissionPricing;
+import app.mnema.learning.usage.Bucket;
 import app.mnema.learning.usage.EstimateExceededException;
 import app.mnema.learning.usage.ReservationNotActiveException;
 import app.mnema.learning.usage.UsageLedger;
@@ -259,6 +261,10 @@ class SessionLifecycle {
         if (tx == null) return false;
         Optional<Step> held = steps.lockHeld(claim.stepId(), claim.token());
         if (held.isEmpty()) return false;
+        if (held.get().kind().equals(PlanExecutor.KIND)) {
+            failPlan(tx, held.get(), failure);
+            return true;
+        }
         List<Artifact> open = openArtifacts(held.get());
         if (open.isEmpty() || failure.kind() == Failure.Kind.CANCELLED || held.get().cancelRequested()) {
             steps.finish(claim.stepId(), "CANCELLED", null, null);
@@ -320,6 +326,13 @@ class SessionLifecycle {
         if (tx == null) return;
         Step step = steps.lockExpired(stepId).orElse(null);
         if (step == null) return;
+        if (step.kind().equals(PlanExecutor.KIND)) {
+            // a planner whose worker crashed or stalled: another run, or the plan fails after its last attempt (the session is cancelled)
+            boolean late = expired(step) || step.deadlineAt() != null && step.deadlineAt().isBefore(Instant.now());
+            failPlan(tx, step, step.attempts() >= settings.step().maxAttempts() || expired(step)
+                    ? Failure.fail(late ? "DEADLINE_EXCEEDED" : "PROVIDER_UNAVAILABLE") : Failure.retry("LEASE_EXPIRED", backoff(step.attempts())));
+            return;
+        }
         List<Artifact> open = openArtifacts(step);
         if (step.cancelRequested() || open.isEmpty()) {
             steps.finish(stepId, "CANCELLED", null, null);
@@ -351,6 +364,10 @@ class SessionLifecycle {
         if (tx == null) return;
         Step step = steps.lockReady(stepId).orElse(null);
         if (step == null) return;
+        if (step.kind().equals(PlanExecutor.KIND)) {
+            failPlan(tx, step, Failure.fail("DEADLINE_EXCEEDED"));
+            return;
+        }
         List<Artifact> open = openArtifacts(step);
         steps.finish(stepId, "FAILED", "DEADLINE_EXCEEDED", null);
         if (!open.isEmpty()) {
@@ -390,7 +407,10 @@ class SessionLifecycle {
         for (UUID reservation : reservations.ids(session)) {
             try {
                 ledger.renew(session.ownerId(), reservation);
-            } catch (ReservationNotActiveException | IllegalArgumentException ended) {
+            } catch (ReservationNotActiveException settled) {
+                // a hold that ended (the plan's, spent; a lapsed one) is normal and needs no renewal
+                LOG.debug("generation_reservation_ended session_id={}", session.sessionId());
+            } catch (IllegalArgumentException unknown) {
                 LOG.info("generation_reservation_not_renewed session_id={}", session.sessionId());
             }
         }
@@ -403,9 +423,14 @@ class SessionLifecycle {
      * {@code cancel_requested}, unfinished artifacts FAILED(CANCELLED), the reservation released except what was consumed.
      */
     void cancel(Tx tx) {
+        cancel(tx, "USER_CANCELLED");
+    }
+
+    /** As {@link #cancel(Tx)} with the reason the session ends for: {@code USER_CANCELLED}, or {@code PLAN_FAILED} when the planner gave up. */
+    void cancel(Tx tx, String endReason) {
         stopWork(tx);
         tx.state = "CANCELLED";
-        tx.endReason = "USER_CANCELLED";
+        tx.endReason = endReason;
     }
 
     /** Waiting steps stop, running ones are told to, unfinished artifacts fail as cancelled and the holds are released. */
@@ -588,6 +613,107 @@ class SessionLifecycle {
 
     private static boolean open(Artifact artifact) {
         return artifact.state().equals("QUEUED") || artifact.state().equals("GENERATING");
+    }
+
+    // ------------------------------------------------------------------------ planner
+
+    /**
+     * The worker starts its claimed {@code PLAN} step: the session must still be PLANNING and the step not cancelled. Nothing is written (the
+     * plan has no state of its own until it is ready), so the session version stays.
+     *
+     * @return false when the claim is void (lease lost, session cancelled or deleted)
+     */
+    @Transactional
+    boolean beginPlan(StepClaim claim) {
+        Tx tx = lock(claim.sessionId());
+        if (tx == null) return false;
+        Optional<Step> held = steps.lockHeld(claim.stepId(), claim.token());
+        if (held.isEmpty()) return false;
+        if (held.get().cancelRequested() || !tx.state.equals("PLANNING")) {
+            steps.finish(claim.stepId(), "CANCELLED", null, null);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * The one result transaction of a successful plan: the plan's debit ({@code SMART_PLAN_FLASH}, from the plan's own hold, apart from the batch
+     * hold that stays reserved), the smart-plan count of the owner's cap, the plan stored, the step SUCCEEDED, the session PLAN_READY and the owner told.
+     * Returns false, writing nothing, when the lease no longer holds or the session left PLANNING (a cancellation: the plan was not delivered, so it
+     * is not paid).
+     *
+     * @throws app.mnema.learning.usage.UsageLimitReachedException the cap filled meanwhile: the transaction rolled back, nothing was written
+     * @throws PlanUnpayableException the plan's hold ended or no longer covers its price: the transaction rolled back, nothing was written; the
+     *                                caller fails the plan with {@code ESTIMATE_EXCEEDED}
+     */
+    @Transactional
+    boolean succeedPlan(StepClaim claim, JsonNode plan, long costMicros, int plannedCount) {
+        Tx tx = lock(claim.sessionId());
+        if (tx == null) return false;
+        Optional<Step> held = steps.lockHeld(claim.stepId(), claim.token());
+        if (held.isEmpty()) return false;
+        if (held.get().cancelRequested() || !tx.state.equals("PLANNING")) {
+            steps.finish(claim.stepId(), "CANCELLED", null, null);
+            return false;
+        }
+        UUID reservation = SessionReservations.forStep(tx.session, held.get().input());
+        // The cap first, then the debit (counters before the reservation and the balance, so a count that fits is never left behind by a debit that does
+        // not): a refusal of either rolls this transaction back, nothing of the plan is paid.
+        ledger.consume(tx.session.ownerId(), Bucket.SMART_PLAN, 1, "plan:" + tx.session.ownerId() + ":" + tx.session.sessionId(),
+                claim.stepId().toString());
+        try {
+            ledger.settle(tx.session.ownerId(), new UsageLedger.Debit(reservation, "debit:" + claim.stepId() + ":" + claim.attempt(),
+                    AdmissionPricing.PLAN_OPERATION, held.get().input().path("credits").asInt(0), costMicros, claim.stepId().toString()));
+        } catch (EstimateExceededException | ReservationNotActiveException exceeded) {
+            // thrown, not handled here: the count above must not stay consumed for a plan that is not delivered
+            throw new PlanUnpayableException();
+        }
+        // the plan's hold is spent: it ends settled; the batch hold of the session stays until the plan is launched or cancelled
+        ledger.release(tx.session.ownerId(), reservation);
+        repository.setPlan(tx.session.sessionId(), plan);
+        steps.finish(claim.stepId(), "SUCCEEDED", null, null);
+        tx.state = "PLAN_READY";
+        tx.events.add(usageEvent(tx.session, null));
+        notifications.publish(tx.session.ownerId(), NotificationKind.GENERATION_PLAN_READY, "generation:" + tx.session.sessionId() + ":plan-ready",
+                Map.of("deckId", tx.session.deckId(), "sessionId", tx.session.sessionId(), "sessionKind", tx.session.kind(),
+                        "plannedCount", Math.max(1, plannedCount)), NotificationRoute.WORKSHOP);
+        flush(tx);
+        return true;
+    }
+
+    /** The plan was made but its own hold cannot pay for it any more (ended, or less than its price): thrown out of the result transaction so nothing is kept. */
+    static final class PlanUnpayableException extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        PlanUnpayableException() {
+            super("The plan's hold cannot pay for the plan", null, false, false);
+        }
+    }
+
+    /**
+     * A PLAN run that did not produce a plan: retried later, or failed for good. A failed plan cancels the session ({@code endReason PLAN_FAILED}, contract
+     * decision 3): the holds are released, nothing was debited, the owner is told ({@code GENERATION_FAILED}). A cancellation, or a session that already
+     * left PLANNING, only ends the step. The caller holds the session and step locks.
+     */
+    private void failPlan(Tx tx, Step step, Failure failure) {
+        if (failure.kind() == Failure.Kind.CANCELLED || step.cancelRequested() || !tx.state.equals("PLANNING")) {
+            steps.finish(step.stepId(), "CANCELLED", null, null);
+            return;
+        }
+        if (failure.kind() == Failure.Kind.RETRY && step.attempts() < settings.step().maxAttempts() && !expired(step)) {
+            long delay = Math.min(Math.max(0, failure.delay().toSeconds()), settings.step().backoffCap().toSeconds());
+            steps.requeue(step.stepId(), delay, failure.errorCode());
+            LOG.info("generation_step_retry step_id={} session_id={} attempt={} error_code={}", step.stepId(), step.sessionId(), step.attempts(),
+                    failure.errorCode());
+            return;
+        }
+        String code = failure.kind() == Failure.Kind.RETRY && expired(step) ? "DEADLINE_EXCEEDED" : failure.errorCode();
+        steps.finish(step.stepId(), "FAILED", code, null);
+        cancel(tx, "PLAN_FAILED");
+        notifications.publish(tx.session.ownerId(), NotificationKind.GENERATION_FAILED, "generation:" + tx.session.sessionId() + ":failed",
+                Map.of("deckId", tx.session.deckId(), "sessionId", tx.session.sessionId(), "sessionKind", tx.session.kind(),
+                        "errorCode", "PLAN_FAILED"), NotificationRoute.WORKSHOP);
+        flush(tx);
     }
 
     // ------------------------------------------------------------------ exercises

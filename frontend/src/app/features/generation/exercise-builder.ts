@@ -1,7 +1,7 @@
 import { MECHANICS, Mechanic } from '../../content/exercise/exercise-content.models';
 import { catalogEntry } from '../../content/exercise/mechanic-catalog';
 import { SegmentedOption } from '../../shared/segmented-choice.component';
-import { NBSP, UsageExplanation, formatDay } from './generation-view';
+import { NBSP, UsageExplanation, describePlanLimit, formatDay, isPlanBucket } from './generation-view';
 import {
     BlockingBucket, ExercisePriority, ExerciseQuantity, ExerciseTarget, ExercisesSpec, MAX_EXERCISES_PER_SESSION, MAX_EXERCISES_PER_TARGET,
     MAX_EXERCISE_TARGETS
@@ -28,10 +28,12 @@ export interface BuilderValue {
     readonly quantityMode: QuantityMode;
     readonly perTarget: number;
     readonly percent: number;
+    /** «Сначала показать план» (#295): the session starts as a plan the owner edits and launches. Off unless the builder switches it on. */
+    readonly planFirst: boolean;
 }
 
 export const DEFAULT_BUILDER_VALUE: BuilderValue = {
-    mechanics: [], priority: 'UNCOVERED_FIRST', quantityMode: 'AUTO', perTarget: 3, percent: 10
+    mechanics: [], priority: 'UNCOVERED_FIRST', quantityMode: 'AUTO', perTarget: 3, percent: 10, planFirst: false
 };
 
 export const PRIORITY_OPTIONS: readonly SegmentedOption<ExercisePriority>[] = [
@@ -70,7 +72,8 @@ export function buildExercisesSpec(targets: readonly ExerciseTarget[], value: Bu
             : { mode: 'BUDGET_PERCENT', percent: value.percent };
     return {
         kind: 'EXERCISES', ...(outputLanguage === undefined ? {} : { outputLanguage }), targets: pins,
-        settings: { mechanics: value.mechanics.length === 0 ? 'AUTO' : value.mechanics, priority: value.priority, quantity }
+        settings: { mechanics: value.mechanics.length === 0 ? 'AUTO' : value.mechanics, priority: value.priority, quantity,
+            ...(value.planFirst ? { planFirst: true } : {}) }
     };
 }
 
@@ -182,6 +185,7 @@ export function describeExerciseUsage(limit: BlockingBucket | undefined): UsageE
         return { headline: 'Не хватит лимита ИИ на этот запрос.',
             options: ['Выберите меньше упражнений на материал или меньше материалов.'], plansLink: true };
     }
+    if (isPlanBucket(limit)) return describePlanLimit(limit);
     if (!limit.offered) return { headline: 'На вашем тарифе это недоступно.', options: ['Посмотрите тарифы.'], plansLink: true };
     const date = formatDay(limit.renewsAt);
     const options = ['Выберите «Авто», меньше упражнений на материал или «Не больше X% лимита»: запрос обойдётся дешевле.'];

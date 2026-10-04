@@ -65,6 +65,7 @@ export interface UsageExplanation {
  * `USAGE_LIMIT_REACHED` problem, which carry the same members.
  */
 export function describeUsageLimit(limit: BlockingBucket, effort: Effort): UsageExplanation {
+    if (isPlanBucket(limit)) return describePlanLimit(limit);
     if (!limit.offered) {
         return { headline: 'На вашем тарифе это недоступно.',
             options: ['Уберите то, что требует отдельного лимита, или посмотрите тарифы.'], plansLink: true };
@@ -83,6 +84,23 @@ export function describeUsageLimit(limit: BlockingBucket, effort: Effort): Usage
     }
     return { headline: limit.window === 'DAY' ? 'На сегодня лимит ИИ исчерпан.' : 'Не хватит лимита ИИ на этот запрос.',
         options, plansLink: true };
+}
+
+/** The count cap of the plans (`SMART_PLAN`) is the bucket that refuses a plan-first request: the owner can take the plan off. */
+export function isPlanBucket(limit: BlockingBucket): boolean {
+    return limit.bucket === 'SMART_PLAN';
+}
+
+/** What the owner can do when «Сначала показать план» is refused: the plan is optional, the work itself is not blocked. */
+export function describePlanLimit(limit: BlockingBucket): UsageExplanation {
+    const date = formatDay(limit.renewsAt);
+    if (!limit.offered) {
+        return { headline: 'Планы недоступны на вашем тарифе.',
+            options: ['Снимите «Сначала показать план»: без него Мнема начнёт сразу, а вы решите, что оставить.', 'Посмотрите тарифы.'], plansLink: true };
+    }
+    const options = ['Снимите «Сначала показать план»: без него Мнема начнёт сразу, а вы решите, что оставить.'];
+    if (date !== null && limit.fitsAfterRenewal) options.push(`Или подождите до ${date}: лимит планов обновится.`);
+    return { headline: 'Планы на этот период закончились.', options, plansLink: true };
 }
 
 /** Why an artifact failed, in words. Whether the limit was charged is stated by {@link failureNote}. */
@@ -166,6 +184,9 @@ export function summarize(artifacts: readonly ArtifactSummary[]): string {
 
 /** The same sentence for a session summary of the deck list: what the server counted. */
 export function describeSessionProgress(session: SessionSummary): string {
+    // A plan-first session has no artifact until its plan is launched (AI-14, #295).
+    if (session.state === 'PLANNING') return 'Мнема составляет план';
+    if (session.state === 'PLAN_READY') return 'План ждёт вашего решения';
     const counts = session.artifactCounts;
     return summarizeCounts({ ready: session.approvableCount, writing: counts.QUEUED + counts.GENERATING + counts.REVISING,
         failed: counts.FAILED, stale: counts.STALE, done: 0, rejected: 0 });
@@ -331,15 +352,45 @@ export function turnFailureReason(code: ArtifactErrorCode | null): string {
     }
 }
 
+/** «≈ 0,3 % лимита»: `credits` against the whole allowance (a finer figure than the integer percent of the estimate). `null` when there is no allowance to measure against. */
+export function describeShare(credits: number, allowance: number | null): string | null {
+    if (allowance === null || allowance <= 0) return null;
+    const percent = credits / allowance * 100;
+    if (percent < 0.1) return `менее 0,1${NBSP}% лимита`;
+    const text = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: percent < 10 ? 1 : 0 }).format(percent);
+    return `≈${NBSP}${text}${NBSP}% лимита`;
+}
+
 /** «≈ 0,3 % лимита»: the cost of one edit against the whole allowance (a finer figure than the integer percent of the estimate). */
 export function describeEditCost(estimate: GenerationEstimate, allowance: number | null): string {
-    if (allowance !== null && allowance > 0) {
-        const percent = estimate.credits.p95 / allowance * 100;
-        if (percent < 0.1) return `менее 0,1${NBSP}% лимита`;
-        const text = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: percent < 10 ? 1 : 0 }).format(percent);
-        return `≈${NBSP}${text}${NBSP}% лимита`;
-    }
-    return describeEstimate(estimate);
+    return describeShare(estimate.credits.p95, allowance) ?? describeEstimate(estimate);
+}
+
+/**
+ * The share of the limit that `times` plans cost, from the plan line of the estimate: «≈ 5 % лимита». With the whole allowance of the period
+ * (`allowance`, `usage.credits.total`) it is exact; without it the plan's part of the estimate's rounded percentage stands in (the estimate
+ * carries no bar of its own). `null` when the estimate has no plan line.
+ */
+export function planShare(estimate: GenerationEstimate, allowance: number | null = null, times = 1): string | null {
+    if (estimate.planCredits === null) return null;
+    const exact = describeShare(estimate.planCredits * times, allowance);
+    if (exact !== null) return exact;
+    const { p95: percent } = estimate.percentOfPeriodAllowance;
+    const total = estimate.credits.p95;
+    const share = total > 0 ? Math.round(percent * estimate.planCredits / total) * times : 0;
+    return share < 1 ? `менее 1${NBSP}% лимита` : `≈${NBSP}${share}${NBSP}% лимита`;
+}
+
+/** «План: ≈ 5 % лимита»: what the plan itself costs, next to the option. `null` when the estimate has no plan line. */
+export function describePlanCost(estimate: GenerationEstimate, allowance: number | null = null): string | null {
+    const share = planShare(estimate, allowance);
+    return share === null ? null : `План: ${share}`;
+}
+
+/** The sentence a split selection needs when every workshop makes its own plan: «План составляется для каждой мастерской — всего 3 раза, ≈ 5 % лимита.» */
+export function describePlansForSplit(estimate: GenerationEstimate, allowance: number | null, workshops: number): string {
+    const share = planShare(estimate, allowance, workshops);
+    return `План составляется для каждой мастерской — всего ${workshops}${NBSP}${workshops >= 2 && workshops <= 4 ? 'раза' : 'раз'}${share === null ? '' : `, ${share}`}.`;
 }
 
 /** Why an edit does not fit the budget, in words: the same facts as the composer's explanation, for one small edit. */

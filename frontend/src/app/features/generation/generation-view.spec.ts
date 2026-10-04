@@ -3,7 +3,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { isSendKey } from './implicit-submit';
 import { readProblem } from './generation-problem';
 import {
-    EFFORT_OPTIONS, NBSP, NOTES_MODE_OPTIONS, artifactStatus, describeEstimate, describeNoteArchive, describeSessionProgress, describeUsageLimit, failureNote, failureReason,
+    EFFORT_OPTIONS, NBSP, NOTES_MODE_OPTIONS, artifactStatus, describeEstimate, describeNoteArchive, describePlanCost, describePlansForSplit, describeSessionProgress, describeUsageLimit, failureNote, failureReason,
     formatDay, formatWorkshopStart, positionLabel, problemMessage, promptExcerpt, slotCaption, summarize
 } from './generation-view';
 import {
@@ -32,7 +32,7 @@ describe('Generation texts and helpers', () => {
 
     describe('preflight', () => {
         const estimate = (p95: number): GenerationEstimate => ({ credits: { p50: 1, p95: 1 }, percentOfPeriodAllowance: { p50: 0, p95 },
-            balance: { remainingCredits: 5, renewsAt: null }, canStart: true, blockingBuckets: [], shortfallCredits: null, personalDataWarning: false });
+            balance: { remainingCredits: 5, renewsAt: null }, canStart: true, blockingBuckets: [], shortfallCredits: null, personalDataWarning: false, planCredits: null });
 
         it('says «≈ N % лимита» from p95, with a no-break space, and «менее 1 %» for a trace', () => {
             expect(describeEstimate(estimate(6))).toBe(`≈${NBSP}6${NBSP}% лимита`);
@@ -106,6 +106,37 @@ describe('Generation texts and helpers', () => {
         it('describes a session of the deck list from the server counts', () => {
             const session = parseSessionSummary(examples['sessionSummary']);
             expect(describeSessionProgress(session)).toBe(`6${NBSP}готово · 2${NBSP}пишутся · 1${NBSP}не удался`);
+            expect(describeSessionProgress({ ...session, state: 'PLANNING' })).toBe('Мнема составляет план');
+            expect(describeSessionProgress({ ...session, state: 'PLAN_READY' })).toBe('План ждёт вашего решения');
+        });
+
+        it('says what the plan costs apart as «План: ≈ N % лимита», from the plan line and its share of the estimate (#295)', () => {
+            const planned = (percent: number, total: number, plan: number | null): GenerationEstimate => ({ credits: { p50: total, p95: total },
+                percentOfPeriodAllowance: { p50: 0, p95: percent }, balance: { remainingCredits: 5, renewsAt: null }, canStart: true, blockingBuckets: [],
+                shortfallCredits: null, personalDataWarning: false, planCredits: plan });
+            expect(describePlanCost(planned(11, 40, 20))).toBe(`План: ≈${NBSP}6${NBSP}% лимита`);
+            expect(describePlanCost(planned(100, 400, 20))).toBe(`План: ≈${NBSP}5${NBSP}% лимита`);
+            expect(describePlanCost(planned(0, 40, 20))).toBe(`План: менее 1${NBSP}% лимита`);
+            expect(describePlanCost(planned(6, 0, 20))).toBe(`План: менее 1${NBSP}% лимита`);
+            expect(describePlanCost(planned(6, 40, null))).toBeNull();
+            // With the whole allowance of the period the share is exact, whatever the estimate rounded.
+            expect(describePlanCost(planned(11, 40, 20), 360)).toBe(`План: ≈${NBSP}5,6${NBSP}% лимита`);
+            expect(describePlanCost(planned(11, 40, 20), 0)).toBe(`План: ≈${NBSP}6${NBSP}% лимита`);
+            expect(describePlansForSplit(planned(11, 40, 20), 360, 3)).toBe(`План составляется для каждой мастерской — всего 3${NBSP}раза, ≈${NBSP}17${NBSP}% лимита.`);
+            expect(describePlansForSplit(planned(11, 40, 20), null, 3)).toBe(`План составляется для каждой мастерской — всего 3${NBSP}раза, ≈${NBSP}18${NBSP}% лимита.`);
+            expect(describePlansForSplit(planned(6, 40, null), 360, 5)).toBe(`План составляется для каждой мастерской — всего 5${NBSP}раз.`);
+        });
+
+        it('explains the refusal of a plan apart from the refusal of the work: the plan is optional (#295)', () => {
+            const plans = (overrides: Partial<BlockingBucket> = {}): BlockingBucket => bucket({ bucket: 'SMART_PLAN', unit: 'COUNT', limit: 4, used: 4, required: 1, ...overrides });
+            const over = describeUsageLimit(plans(), 'AUTO');
+            expect(over.headline).toBe('Планы на этот период закончились.');
+            expect(over.options[0]).toContain('Снимите «Сначала показать план»');
+            expect(over.options).toContain(`Или подождите до ${formatDay('2026-10-31T21:00:00Z')}: лимит планов обновится.`);
+            expect(over.options.join(' ')).not.toContain('Кратко');
+            expect(describeUsageLimit(plans({ offered: false, limit: null }), 'AUTO').headline).toBe('Планы недоступны на вашем тарифе.');
+            expect(describeUsageLimit(plans({ fitsAfterRenewal: false }), 'AUTO').options).toHaveLength(1);
+            expect(describeUsageLimit(bucket(), 'AUTO').headline).toBe('Не хватит лимита ИИ на этот запрос.');
         });
 
         it('labels positions, shortens the prompt to its first line and formats dates', () => {

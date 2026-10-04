@@ -18,11 +18,12 @@ import { blockImplicitSubmit, isSendKey } from './implicit-submit';
 import { scheduleEstimate } from './estimate-schedule';
 import { DEFAULT_SETTINGS, GenerationSettingsComponent, GenerationSettingsValue } from './generation-settings.component';
 import {
-    NOTES_MODE_OPTIONS, UsageExplanation, describeEstimate, describeUsageLimit, formatWorkshopStart, problemMessage
+    NOTES_MODE_OPTIONS, UsageExplanation, describeEstimate, describePlanCost, describeUsageLimit, formatWorkshopStart, problemMessage
 } from './generation-view';
 import {
     GenerationEstimate, MAX_PROMPT_LENGTH, MaterialsSpec, NotesMode, SessionDetail, SessionSummary, SpecSource, serializeMaterialsSpec
 } from './generation.models';
+import { readAllowance } from './plan-allowance';
 import { NoteOverridesComponent } from './note-overrides.component';
 import {
     ComposerSource, NoteOverrideMap, customizedCount, overridesOf, refusalMessage, refusalOf, sourceKey
@@ -60,7 +61,7 @@ export function buildMaterialsSpec(prompt: string, settings: GenerationSettingsV
             media: { audio: { enabled: settings.audio && available.audio, lang: settings.audioLang,
                 voice: settings.audioVoice === 'any' ? null : settings.audioVoice },
                 imageSearch: settings.imageSearch && available.image },
-            factCheck: false, similarToDeck: settings.similarToDeck, planFirst: false, budgetPercent: null
+            factCheck: false, similarToDeck: settings.similarToDeck, planFirst: settings.planFirst, budgetPercent: null
         }
     };
 }
@@ -125,6 +126,9 @@ export class GenerationComposerComponent {
     private readonly api = inject(GenerationApiService);
     private readonly destroyRef = inject(DestroyRef);
     private pending: PendingCreation | null = null;
+    /** The whole allowance of the period, read once when a plan is first asked for: the exact figure of the plan's share. */
+    private readonly allowance = signal<number | null>(null);
+    private allowanceAsked = false;
 
     /** «Юзуру, что будем учить сегодня?»; without a name, «Что будем учить сегодня?». The name is never the e-mail address. */
     readonly greeting = computed(() => {
@@ -156,18 +160,30 @@ export class GenerationComposerComponent {
         const state = this.estimate();
         return state.phase === 'ready' && state.estimate.personalDataWarning;
     });
+    /** The primary button: with «Сначала показать план» it makes the plan, not the materials. */
+    protected readonly ctaLabel = computed(() => this.settings().planFirst ? 'Составить план' : 'Создать');
+    /** «План: ≈ 1 % лимита» under the plan option, once the estimate knows it. */
+    protected readonly planCost = computed(() => {
+        const state = this.estimate();
+        return state.phase === 'ready' ? describePlanCost(state.estimate, this.allowance()) : null;
+    });
     protected readonly estimateText = computed(() => {
         const state = this.estimate();
         switch (state.phase) {
             case 'loading': return 'Считаем…';
             case 'ready': return state.estimate.canStart ? describeEstimate(state.estimate)
-                : `${describeEstimate(state.estimate)}. Не хватит лимита: нажмите «Создать», чтобы увидеть варианты.`;
+                : `${describeEstimate(state.estimate)}. Не хватит лимита: нажмите «${this.ctaLabel()}», чтобы увидеть варианты.`;
             case 'error': return 'Оценить не удалось, но запустить можно.';
             case 'idle': return '';
         }
     });
 
     constructor() {
+        effect(() => {
+            if (!this.settings().planFirst || this.allowanceAsked) return;
+            this.allowanceAsked = true;
+            void readAllowance(this.injector).then(total => this.allowance.set(total));
+        });
         // One request per pause: every change cancels the timer and the request in flight.
         effect(onCleanup => {
             const deckId = this.deckId();

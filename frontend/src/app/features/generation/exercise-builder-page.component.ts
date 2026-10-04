@@ -17,11 +17,13 @@ import {
     readLimits, splitNotice, splitTargets, targetsSummary
 } from './exercise-builder';
 import { ExerciseSettingsFieldsComponent } from './exercise-settings-fields.component';
+import { PlanFirstOptionComponent } from './plan-first-option.component';
 import { ResolvedTargets, TargetRequest, parseTargetRequest, resolveTargets } from './exercise-targets';
 import { GenerationApiService } from './generation-api.service';
 import { blockImplicitSubmit } from './implicit-submit';
 import { GenerationProblem, readProblem } from './generation-problem';
-import { UsageExplanation, describeEstimate, formatWorkshopStart, problemMessage } from './generation-view';
+import { UsageExplanation, describeEstimate, describePlanCost, describePlansForSplit, formatWorkshopStart, problemMessage } from './generation-view';
+import { readAllowance } from './plan-allowance';
 import { ExercisesSpec, GenerationEstimate, SessionDetail, SessionSummary, serializeExercisesSpec } from './generation.models';
 import { scheduleEstimate } from './estimate-schedule';
 
@@ -44,7 +46,7 @@ type EstimateState =
  */
 @Component({
     selector: 'app-exercise-builder-page',
-    imports: [RouterLink, ExerciseSettingsFieldsComponent, ToggletipComponent],
+    imports: [RouterLink, ExerciseSettingsFieldsComponent, ToggletipComponent, PlanFirstOptionComponent],
     templateUrl: './exercise-builder-page.component.html',
     styleUrls: ['../authoring/authoring-page.css', './generation-composer.component.css', './exercise-builder-page.component.css'],
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -69,6 +71,9 @@ export class ExerciseBuilderPageComponent {
      */
     readonly startedSessions = signal<readonly SessionDetail[]>([]);
     readonly activeWorkshops = signal<readonly SessionSummary[]>([]);
+    /** The whole allowance of the period, read once when a plan is first asked for: the exact figure of the plan's share. */
+    private readonly allowance = signal<number | null>(null);
+    private allowanceAsked = false;
 
     protected readonly uid = 'mn-exercise-builder';
     protected readonly materialsCount = materialsCount;
@@ -97,6 +102,19 @@ export class ExerciseBuilderPageComponent {
         const first = this.targets()[0];
         return first === undefined ? ['/decks', this.deckId()] : ['/decks', this.deckId(), 'materials', first.memberKey, 'exercises', 'new'];
     });
+    /** The primary button: with «Сначала показать план» it makes the plan, not the exercises. */
+    protected readonly ctaLabel = computed(() => this.value().planFirst ? 'Составить план' : 'Создать упражнения');
+    /** «План: ≈ 1 % лимита» under the plan option, once the estimate knows it. */
+    protected readonly planCost = computed(() => {
+        const state = this.estimate();
+        return state.phase === 'ready' ? describePlanCost(state.estimate, this.allowance()) : null;
+    });
+    /** A split selection makes a plan in every workshop: said before anything starts, with what they cost together. */
+    protected readonly planSplitText = computed(() => {
+        const state = this.estimate();
+        const workshops = this.sessions().length;
+        return this.value().planFirst && workshops > 1 && state.phase === 'ready' ? describePlansForSplit(state.estimate, this.allowance(), workshops) : null;
+    });
     protected readonly overBudget = computed(() => {
         const state = this.estimate();
         return state.phase === 'limit' || (state.phase === 'ready' && !state.estimate.canStart);
@@ -109,7 +127,7 @@ export class ExerciseBuilderPageComponent {
             case 'limit': return state.message;
             case 'ready': {
                 const base = describeEstimate(state.estimate) + (sessions > 1 ? ' на первую мастерскую' : '');
-                return state.estimate.canStart ? base : `${base}. Не хватит лимита: нажмите «Создать упражнения», чтобы увидеть варианты.`;
+                return state.estimate.canStart ? base : `${base}. Не хватит лимита: нажмите «${this.ctaLabel()}», чтобы увидеть варианты.`;
             }
             case 'error': return 'Оценить не удалось, но запустить можно.';
             case 'idle': return '';
@@ -157,6 +175,11 @@ export class ExerciseBuilderPageComponent {
                 error: (error: unknown) => this.estimate.set(this.estimateFailure(error, spec))
             }));
         });
+        effect(() => {
+            if (!this.value().planFirst || this.allowanceAsked) return;
+            this.allowanceAsked = true;
+            void readAllowance(this.injector).then(total => this.allowance.set(total));
+        });
         // The shell focuses the heading on navigation; when the content replaces the loading text, focus stays where the user put it.
         effect(() => {
             if (this.phase() === 'loading') return;
@@ -166,6 +189,11 @@ export class ExerciseBuilderPageComponent {
             }, { injector: this.injector });
         });
         this.destroyRef.onDestroy(() => this.load?.unsubscribe());
+    }
+
+    /** «Сначала показать план»: a change of the request like any other. */
+    protected onPlanFirst(planFirst: boolean): void {
+        this.onValue({ ...this.value(), planFirst });
     }
 
     /** The next choices of the mechanics, the order and the quantity; any change of the request clears what was said about the last one. */

@@ -541,9 +541,13 @@ class GenerationExercisesIntegrationTest extends GenerationReviewSupport {
         StudyFixtures.Material current = new StudyFixtures.Material(owner, deck, material.member(),
                 UUID.fromString(items.read(owner, deck, material.member(), null).path("itemRevisionId").stringValue(null)),
                 material.node(), material.distractor(), material.divider(), material.root());
+        // a plan-first exercises spec is the planner's (AI-14, GenerationPlanIntegrationTest)
         ObjectNode planned = exercisesSpec(EXACT_1, current);
         ((ObjectNode) planned.path("settings")).put("planFirst", true);
-        problem(create(owner, deck, planned, UUID.randomUUID()), 422, "SPEC_NOT_SUPPORTED");
+        MockHttpServletResponse accepted = create(owner, deck, planned, UUID.randomUUID());
+        assertThat(accepted.getStatus()).isEqualTo(201);
+        assertThat(json(accepted).path("state").stringValue(null)).isEqualTo("PLANNING");
+        deleteSession(owner, deck, UUID.fromString(json(accepted).path("sessionId").stringValue(null)));
 
         ObjectNode tooMany = exercisesSpec(EXACT_1, current);
         ArrayNode targets = (ArrayNode) tooMany.path("targets");

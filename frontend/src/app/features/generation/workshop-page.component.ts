@@ -1,6 +1,7 @@
 import {
     ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, signal, untracked, viewChild
 } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { catchError, of } from 'rxjs';
@@ -17,6 +18,7 @@ import { ArtifactState, ArtifactSummary, sessionAllows } from './generation.mode
 import { ProposalViewComponent } from './proposal-view.component';
 import { ReviseExerciseResultComponent } from './revise-exercise-result.component';
 import { ReviseItemResultComponent } from './revise-item-result.component';
+import { WorkshopPlanComponent } from './workshop-plan.component';
 import { WorkshopSessionStore } from './workshop-session.store';
 
 /** The summary is a live region, so it changes at most once per this many milliseconds; extra changes are merged. */
@@ -34,7 +36,7 @@ const UNREVIEWED: readonly ArtifactState[] = ['QUEUED', 'GENERATING', 'PROPOSED'
 @Component({
     selector: 'app-workshop-page',
     imports: [RouterLink, BatchPagerComponent, ProposalViewComponent, HoldToDeleteButtonComponent, ExerciseBatchReviewComponent, ReviseItemResultComponent,
-        ReviseExerciseResultComponent],
+        ReviseExerciseResultComponent, WorkshopPlanComponent],
     providers: [WorkshopSessionStore],
     templateUrl: './workshop-page.component.html',
     styleUrls: ['../authoring/authoring-page.css', './workshop-page.component.css'],
@@ -61,6 +63,7 @@ export class WorkshopPageComponent {
     private readonly toast = inject(ToastService);
     private readonly capabilitiesApi = inject(CapabilitiesApiService);
     private readonly injector = inject(Injector);
+    private readonly document = inject(DOCUMENT);
     private readonly destroyRef = inject(DestroyRef);
     private readonly requestedPosition = signal<number | null>(null);
     private initialised = false;
@@ -89,6 +92,17 @@ export class WorkshopPageComponent {
     protected readonly reviseItem = computed(() => this.session()?.kind === 'REVISE_ITEM');
     protected readonly reviseExercise = computed(() => this.session()?.kind === 'REVISE_EXERCISE');
     protected readonly revision = computed(() => this.reviseItem() || this.reviseExercise());
+    /** A plan-first session (AI-14, #295) before the owner launched its plan: no artifact exists yet, the plan is what there is to see. */
+    protected readonly awaitingPlan = computed(() => { const state = this.session()?.state; return state === 'PLANNING' || state === 'PLAN_READY'; });
+    /**
+     * A plan-first session that ended before its plan was launched (the plan failed, or the owner cancelled it, or it expired): it has no artifact
+     * and never will, so there is nothing to review, only the note that says what happened.
+     */
+    protected readonly planEnded = computed(() => {
+        const session = this.session();
+        return session !== null && (session.state === 'CANCELLED' || session.state === 'EXPIRED') && session.artifacts.length === 0
+            && (session.kind === 'EXERCISES' || session.kind === 'MATERIALS');
+    });
     protected readonly heading = computed(() => {
         switch (this.store.phase()) {
             case 'missing': return 'Мастерская недоступна';
@@ -111,14 +125,16 @@ export class WorkshopPageComponent {
     /** «Для 7 материалов»: what the exercises of this Workshop are for, in place of the prompt a Materials Workshop quotes. */
     protected readonly targetsLine = computed(() => {
         const count = this.session()?.spec.targets.length ?? 0;
-        return count > 0 ? `${targetsSummary(count)}: проверьте упражнения и оставьте нужные.` : null;
+        if (count === 0) return null;
+        if (this.awaitingPlan()) return `${targetsSummary(count)}: сначала план, потом упражнения.`;
+        return this.planEnded() ? `${targetsSummary(count)}: упражнения не создавались.` : `${targetsSummary(count)}: проверьте упражнения и оставьте нужные.`;
     });
     /** «Стоп» is there for as long as anything is being written (WCAG 2.2.2). */
     protected readonly canStop = computed(() => {
         const session = this.session();
         if (session === null || !sessionAllows(session.state, 'cancelSession')) return false;
-        // Not in REVIEW unless something is being rewritten: stopping a review session only takes away the retries.
-        return session.state === 'PLANNING' || session.state === 'PLAN_READY' || session.state === 'RUNNING' || this.artifacts().some(artifact => artifact.state === 'REVISING');
+        // Not in REVIEW unless something is being rewritten: stopping a review session only takes away the retries. A plan has its own «Отменить».
+        return session.state === 'RUNNING' || this.artifacts().some(artifact => artifact.state === 'REVISING');
     });
     protected readonly approvableCount = computed(() => this.store.approvable().length);
     protected readonly canApproveAll = computed(() => {
@@ -149,15 +165,24 @@ export class WorkshopPageComponent {
         const session = this.session();
         const noun = session?.kind === 'EXERCISES' ? 'упражнения' : 'материалы';
         switch (session?.state) {
-            case 'CANCELLED': return session.kind === 'REVISE_ITEM' || session.kind === 'REVISE_EXERCISE'
+            case 'CANCELLED':
+                if (session.endReason === 'PLAN_FAILED') {
+                    return 'Мнеме не удалось составить план. Ничего не создано, лимит не списан. Попробуйте ещё раз или снимите «Сначала показать план».';
+                }
+                // Stopped at the plan: nothing was made, and the plan itself, which was delivered, stays paid.
+                if (session.plan !== null && !session.plan.approved) {
+                    return 'Вы отменили план: ничего не создано. Стоимость плана уже списана, остальной лимит вернулся.';
+                }
+                if (session.plan === null && session.artifacts.length === 0 && (session.kind === 'EXERCISES' || session.kind === 'MATERIALS')) {
+                    return 'Вы остановили составление плана: ничего не создано, лимит не списан.';
+                }
+                return session.kind === 'REVISE_ITEM' || session.kind === 'REVISE_EXERCISE'
                 ? 'Вы остановили правку. Готовое можно оставить; новые правки писаться не будут.'
                 : session.kind === 'EXERCISES'
                 ? 'Вы остановили мастерскую. Готовые упражнения можно сохранить; новые писаться не будут.'
                 : 'Вы остановили мастерскую. Готовые материалы можно одобрить; новые писаться не будут.';
             case 'CLOSED': return session.kind === 'REVISE_ITEM' || session.kind === 'REVISE_EXERCISE' ? 'Правка разобрана.' : `Все ${noun} разобраны.`;
             case 'EXPIRED': return 'Срок мастерской вышел. Её можно только удалить: одобренное уже в колоде.';
-            case 'PLANNING':
-            case 'PLAN_READY': return 'Мнема составляет план. Планы пока не поддерживаются: остановите мастерскую и создайте материал заново.';
             default: return null;
         }
     });
@@ -204,7 +229,7 @@ export class WorkshopPageComponent {
         effect(() => {
             // Nothing to say before the batch is known: «Пока ничего» would be a false first announcement.
             if (this.session() === null) return;
-            const text = this.revision() ? this.revisionSummary() : summarize(this.artifacts());
+            const text = this.awaitingPlan() || this.planEnded() ? this.planSummary() : this.revision() ? this.revisionSummary() : summarize(this.artifacts());
             untracked(() => this.announce(text));
         });
         this.destroyRef.onDestroy(() => { if (this.statusTimer !== null) clearTimeout(this.statusTimer); });
@@ -285,11 +310,24 @@ export class WorkshopPageComponent {
         afterNextRender(() => this.proposal()?.focusHeading(), { injector: this.injector });
     }
 
+    /** The plan left the page (launched or cancelled) with the button that had focus: focus goes to the title of the Workshop. */
+    focusTitle(): void {
+        afterNextRender(() => this.document.getElementById('workshop-title')?.focus(), { injector: this.injector });
+    }
+
     async deleteSession(): Promise<void> {
         if (await this.store.deleteSession()) {
             this.toast.echo('Мастерская удалена');
             await this.transition.navigate(['/decks', this.deckId()]);
         }
+    }
+
+    /** The one sentence the live region says while the owner has no artifacts to review: what Мнема is doing, or what the owner can do now. */
+    private planSummary(): string {
+        const session = this.session();
+        if (session?.state === 'CANCELLED') return session.endReason === 'PLAN_FAILED' ? 'Не удалось составить план' : 'План отменён';
+        if (session?.state === 'EXPIRED') return 'Срок мастерской вышел';
+        return session?.state === 'PLAN_READY' && session.plan !== null ? 'План готов: проверьте его и запустите' : 'Мнема составляет план…';
     }
 
     private ensureSelection(artifacts: readonly ArtifactSummary[]): void {
@@ -322,6 +360,8 @@ export class WorkshopPageComponent {
     }
 
     private announce(text: string): void {
+        // The same sentence again is not an announcement: it neither says anything nor starts the pause before the next one.
+        if (text === this.statusText() && this.pendingStatus === null) return;
         const wait = this.lastAnnounced + ANNOUNCE_GAP_MS - Date.now();
         if (wait <= 0) {
             this.statusText.set(text);

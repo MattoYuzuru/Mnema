@@ -188,9 +188,12 @@ class UsageApiTest extends UsageIntegrationTest {
         assertThat(body(priced).path("credits").path("p95").intValue()).isEqualTo(4);
         var planned = estimate(owner, deck, "{\"spec\":{\"kind\":\"EXERCISES\",\"targets\":[{\"memberKey\":\"44444444-4444-4444-8444-444444444444\","
                 + "\"itemRevisionId\":\"55555555-5555-4555-8555-555555555555\"}],\"settings\":{\"planFirst\":true}}}");
-        assertThat(planned.getStatus()).isEqualTo(422);
-        assertThat(body(planned).path("code").stringValue(null)).isEqualTo("SPEC_NOT_SUPPORTED");
-        assertThat(body(planned).path("kind").stringValue(null)).isEqualTo("EXERCISES");
+        // the planner is on (AI-14): the plan is its own line of the estimate, priced before anything is generated, and the batch stays as it was
+        assertThat(planned.getStatus()).isEqualTo(200);
+        assertThat(body(planned).path("breakdown").get(0).path("operation").stringValue(null)).isEqualTo("SMART_PLAN_FLASH");
+        assertThat(body(planned).path("breakdown").get(0).path("credits").intValue()).isEqualTo(20);
+        assertThat(body(planned).path("breakdown").get(1).path("operation").stringValue(null)).isEqualTo("EXERCISES_PER_MATERIAL");
+        assertThat(body(planned).path("credits").path("p95").intValue()).isEqualTo(28);
 
         String targets = String.join(",", java.util.stream.IntStream.rangeClosed(1, 21).mapToObj(i ->
                 "{\"memberKey\":\"44444444-4444-4444-8444-4444444444%02d\",\"itemRevisionId\":\"55555555-5555-4555-8555-555555555555\"}"

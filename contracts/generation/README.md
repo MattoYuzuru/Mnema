@@ -12,7 +12,7 @@ steps, events, the `TEXT_DRAFT` step and the operations `estimateGeneration`, `c
 `undoRejectArtifact`, `handoffArtifact`, `retryArtifact`, `deleteSession`, `archiveUsedNotes` and the retention worker (see
 the decisions below for what they settled); AI-13 ([#291](https://github.com/MattoYuzuru/Mnema/issues/291)) implements `EXERCISES`
 sessions, the exercise side of approval, re-pin and retry, and the «Новое» mark (decision 14); AI-11 ([#293](https://github.com/MattoYuzuru/Mnema/issues/293))
-implements `editArtifact` and `revertArtifact` for materials (decision 15); AI-16 ([#294](https://github.com/MattoYuzuru/Mnema/issues/294)) implements the intent of «Попросить Мнему…» (`createIntent`), `REVISE_ITEM` and `REVISE_EXERCISE` sessions, the exercise edits and a Stub speech executor (decision 16); the planner and the real media executors do not exist yet. Each file says which task implements it. The accepted sources, which this contract must not contradict:
+implements `editArtifact` and `revertArtifact` for materials (decision 15); AI-16 ([#294](https://github.com/MattoYuzuru/Mnema/issues/294)) implements the intent of «Попросить Мнему…» (`createIntent`), `REVISE_ITEM` and `REVISE_EXERCISE` sessions, the exercise edits and a Stub speech executor (decision 16); AI-14 ([#295](https://github.com/MattoYuzuru/Mnema/issues/295)) implements the planner «Сначала показать план»: the `PLAN` step, `PLANNING` and `PLAN_READY` and `approvePlan` (decision 17); the real media executors do not exist yet. Each file says which task implements it. The accepted sources, which this contract must not contradict:
 
 - [AI generation platform](../../docs/architecture/ai-generation-platform.md) — §3 domain model and states,
   §4 steps, §5 events, §6 MBM and exercises, §7 edits, §9 capabilities, §10 usage, §12 notifications;
@@ -30,7 +30,7 @@ output lives in
 | File | Content | Implemented by |
 |---|---|---|
 | [`states.json`](states.json) | State machines of session, artifact, step, turn and media slot; triggers, actors, guards, error codes, allowed operations per state | AI-04 [#287](https://github.com/MattoYuzuru/Mnema/issues/287), AI-05 [#288](https://github.com/MattoYuzuru/Mnema/issues/288) |
-| [`http.json`](http.json) | 20 operations: capabilities, estimate, intent («Попросить Мнему…»), sessions (deck-scoped and account-wide active list), events, artifact, approval (single and bulk), reject/undo, hand-off, edits, revert, retry, note archival; headers, bodies, examples, errors; the evaluation order of checks | AI-04, AI-05, AI-11 [#293](https://github.com/MattoYuzuru/Mnema/issues/293), AI-13 [#291](https://github.com/MattoYuzuru/Mnema/issues/291), AI-16 [#294](https://github.com/MattoYuzuru/Mnema/issues/294) |
+| [`http.json`](http.json) | 21 operations: capabilities, estimate, intent («Попросить Мнему…»), sessions (deck-scoped and account-wide active list), plan approval, events, artifact, approval (single and bulk), reject/undo, hand-off, edits, revert, retry, note archival; headers, bodies, examples, errors; the evaluation order of checks | AI-04, AI-05, AI-11 [#293](https://github.com/MattoYuzuru/Mnema/issues/293), AI-13 [#291](https://github.com/MattoYuzuru/Mnema/issues/291), AI-16 [#294](https://github.com/MattoYuzuru/Mnema/issues/294), AI-14 [#295](https://github.com/MattoYuzuru/Mnema/issues/295) |
 | [`events.json`](events.json) | Polling envelope, per-session `seq` allocation, one example per event type | AI-04, AI-06 [#289](https://github.com/MattoYuzuru/Mnema/issues/289) |
 | [`errors.json`](errors.json) | RFC 9457 codes of generation, usage and notifications; extension members | all |
 | [`mbm-v1/`](mbm-v1/README.md) | Grammar, directives, limits, handles, allowlist, error codes, golden fixtures `mbm → native-v1` | AI-03 [#283](https://github.com/MattoYuzuru/Mnema/issues/283) |
@@ -80,7 +80,7 @@ by the owning task with a note here.
 
 1. **`GENERATION_STATE_CONFLICT` (409)** for a command that the current state forbids (reasons `ILLEGAL_STATE`, `MEDIA_NOT_READY`,
    `SOURCE_STALE`, `NOT_RETRYABLE`); 412 stays for stale versions only. `EDIT_IN_PROGRESS` remains the code for a second edit.
-   `SPEC_NOT_SUPPORTED` (422) answers `settings.planFirst` until the planner (AI-14, #295; it answered a `REVISE_*` spec until AI-16, #294); a new code because `RESOURCE_LIMIT_EXCEEDED` would mislead.
+   `SPEC_NOT_SUPPORTED` (422) answers `settings.planFirst` only while the planner is disabled (`learning.generation.planner.enabled`, on since AI-14, #295; it answered a `REVISE_*` spec until AI-16, #294); a new code because `RESOURCE_LIMIT_EXCEEDED` would mislead.
 2. **Edit actions** gain `REMOVE_MEDIA` (deterministic, free, answers 202 like every edit, creates a revision, does not count toward the
    50 turns) because approval requires slots to be `READY` or "explicitly removed" and no other way to remove exists; edits take an
    optional `preset` valid only with `REWRITE`.
@@ -98,7 +98,7 @@ by the owning task with a note here.
 5. **`POST …/retry`** (`FAILED`/`STALE` → `QUEUED`, not for `REFUSAL`), atomic **bulk approval** (up to 20, items and exercises in ONE
    transaction through in-process service calls with derived child command ids `uuidv5(commandId, artifactId)` and chained deck
    revisions) and an account-wide **`GET /api/generation-sessions?state=active`** (needed by AI-06) are separate operations; the
-   plan-approval operation belongs to AI-14 ([#295](https://github.com/MattoYuzuru/Mnema/issues/295)).
+   plan-approval operation (`approvePlan`) is AI-14's ([#295](https://github.com/MattoYuzuru/Mnema/issues/295), decision 17).
 6. **Events**: per-session `seq` (a decimal string) allocated under the session row lock with `UNIQUE (session_id, seq)`;
    `BLOCKS_APPENDED.generation` is an artifact-scoped counter; draft node IDs are provisional.
 7. **Spec**: prompt ≤2000 characters, ≤20 sources, request bodies ≤64 KiB; the `REVISE_*` spec shapes are final since AI-16 (decision 16); the
@@ -112,9 +112,9 @@ by the owning task with a note here.
     (under-reservation; a retry re-reserves); `MEDIA_SLOT_STATE.errorCode` and a failed turn's `errorCode` are enumerated in `states.json`.
 
 11. **AI-04 settled these** (revisable by the owning task with a note here):
-    - `planFirst: true` is `422 SPEC_NOT_SUPPORTED` (`kind: MATERIALS`) in the estimate and in `createSession` until the planner
-      exists (`learning.generation.planner.enabled`, AI-14), and so for `EXERCISES` (`kind: EXERCISES`; AI-13 made the rest of that kind
-      supported). `AUTO` effort is priced (estimate and hold) and run as `MEDIUM` until the planner and auto-effort land.
+    - `planFirst: true` was `422 SPEC_NOT_SUPPORTED` (`kind: MATERIALS`, and `EXERCISES`) in the estimate and in `createSession` until the planner
+      existed; it is accepted since AI-14 (decision 17) and is the 422 only when `learning.generation.planner.enabled` is `false`. `AUTO` effort is
+      priced (estimate and hold) and run as `MEDIUM` in a session without a plan (a plan chooses the effort of each material itself).
     - The checks of `createSession` run in this order: deck (404), receipt replay, shape and limits (400, 422), sources (404 for an
       unknown, foreign or other-deck note or material, 409 `SOURCE_UNAVAILABLE` for a note whose `row_version` moved or a
       `SOURCE` material that is no longer the head; a `STYLE_EXAMPLE` only has to exist), capabilities (409; `textToSpeech`
@@ -206,7 +206,7 @@ by the owning task with a note here.
 
 14. **AI-13 (#291) settled these** (revisable by the owning task with a note here); the details of the output, lint and compile are in
     [`exercises/README.md`](exercises/README.md):
-    - **Session shape.** `createSession` accepts `kind: EXERCISES` (`planFirst: true` stays `422 SPEC_NOT_SUPPORTED` until AI-14). The targets are
+    - **Session shape.** `createSession` accepts `kind: EXERCISES` (`planFirst` is decision 17). The targets are
       pinned as `generation_session_source` rows (`type ITEM`, role `SOURCE`, in request order); a target that is not the material's head is
       `409 SOURCE_UNAVAILABLE`. The resolved quantity (`AUTO` 5 per target, `EXACT`, `BUDGET_PERCENT`, unchanged numbers) is spread over the targets in
       processing order: `UNCOVERED_FIRST` (default) orders them by their number of enabled exercises ascending (stable by request order), `BALANCED`
@@ -349,6 +349,42 @@ by the owning task with a note here.
       stays in history. The exercise head moved: `SOURCE_STALE`; only its material moved: re-pinned like any proposed exercise. `publishedRef` is `{kind: EXERCISE, exerciseId (the same), exerciseRevisionId, objectiveId, objectiveRevisionId}`. A hand-off of an exercise is still `400`.
     - **Usage.** The intent is free. Every revise turn reserves like an #293 turn (`TURN` scope: `EDIT_SELECTION` 4 credits; the media turn `TTS_CLIP_30S` 10 credits, which the Stub releases unspent), at admission, and the debit of a rewrite is its own. `estimateGeneration`
       prices a revise spec as one edit turn plus one clip when it has a media action. A revise session counts toward the 3 active sessions; a bulk approval of a revise session is `400`.
+
+17. **AI-14 (#295) settled these** (revisable by the owning task with a note here). «Сначала показать план»: the builder's and the composer's option runs a `PLAN` step before
+    anything is generated; the session goes `PLANNING` → `PLAN_READY`, the owner edits the plan and launches it (`approvePlan`) → `RUNNING`.
+    - **Admission** (`createSession` with `settings.planFirst`, `MATERIALS` or `EXERCISES`; the interpretation, the capability and source checks and the order of checks are those of
+      an unplanned session). The session is `PLANNING` with **no artifact**; its sources (the notes, the target materials) are pinned as usual. Two holds are taken in the admission
+      transaction: the **batch hold exactly as the spec would hold without the plan** (the session reservation, `settings.budgetPercent` caps it), which is why a plan that fits it always fits
+      the reservation, and the **plan's own hold** (`SMART_PLAN_FLASH`, 20 credits on rc-v1, a `STEP` reservation carried by the PLAN step), plus the **smart-plan count cap** (a full cap, or a plan without
+      smart plans: `409 USAGE_LIMIT_REACHED`, bucket `SMART_PLAN`; the owner's other plans still being made count as consumed, checked under the admission lock). The estimate shows the plan as its own breakdown line, before the batch lines, so its cost is visible before starting; a
+      `budgetPercent` caps the batch and the plan comes on top. One `PLAN` step (`capability TEXT`) is enqueued; the daily burst never parks it (the owner waits for it).
+    - **The `PLAN` step.** One provider call on the `PLAN` route (`learning.ai.routes.plan`: DeepSeek Flash **with thinking** by default; the thinking switch is a property of the route, off on every other route),
+      strict JSON, temperature 0.3, output bound `learning.generation.planner.max-output-tokens` (16000, the reasoning included), deadline `learning.generation.planner.deadline` (`PT4M`). The input is
+      the new prompt section `plan` (`ai/prompts/v1/plan.md`; a section added to `v1`, released ones stay byte-stable): the deck brief, **the chosen materials with what the deck already holds for each** (the number of
+      exercises and the mechanics behind it) or **the chosen notes** (clipped) with the latest titles of the deck, the author's request, the limits, and **the budget in credits (the batch hold)** with the price
+      of one unit; a few thousand tokens, far under the 32k Flash ceiling, and never a whole material. The answer is `{items: [...]}`: `EXERCISES` `{target: "m3", mechanics: [..], count, why <= 200}` over the
+      spec's targets, `MATERIALS` `{source: "n2" | null, title <= 160, effort, why}` over the spec's notes (the prompt-only and merged cases have no source). The **server validates** every handle against the
+      spec (the model never names an identifier), the mechanics against the allowed set, the counts against the limits, the effort against the three values (a fixed spec effort wins); a violation sends the
+      answer back **once** (the findings as the repair), then **once on the strong route** (`plan-strong`: Pro class with thinking, no extra charge), then the step fails. What is merely too much (a total above the
+      limits, a cost above the batch hold) is **trimmed from the end** (a count first, then whole items) and says so in `plan.notes` (`TRIMMED_TO_BUDGET`): this is model output, not user input. A prompt-only or
+      merged `MATERIALS` session holds one material, so its plan fits one item unless the owner adds more (the approval then extends the hold). The Pro plan (MAX's four a month) is not selectable in v1.
+    - **Ready.** One transaction: the plan is **debited** (`SMART_PLAN_FLASH`, a ledger entry of its own, from the plan's hold, never mixed with the batch), the smart-plan count is consumed first and rolled back with the debit when either is refused (a cap that filled meanwhile, or a plan hold that ended, fails
+      the plan unpaid; the provider cost of such a plan is only in the log and in `mnema_generation_plan_failed_cost_micros_total`, never in the ledger), the plan is stored (`generation_session.plan`, `V34`), the session is `PLAN_READY`, `GENERATION_PLAN_READY` (`plannedCount` = the number of artifacts of the plan: the exercises or the materials, not the rows) is published and `USAGE_UPDATED`/`SESSION_STATE`
+      are emitted. **No new event type**: `SESSION_STATE` carries the state and the client reads the plan from `getSession.plan` (`schemas.plan`: the items with the owner's own identifiers, every target or note with its
+      title, the totals, the cost `{planCredits, batchCredits, holdCredits, barCredits}` and the rates the client needs to price an edit). A plan that **fails** (the repair and the strong route both invalid, a provider that stays
+      down past the step's attempts, the deadline, the plan's hold or the cap not covering it, a source gone) **cancels the session** (`endReason PLAN_FAILED`, contract decision 3), releases both holds, debits nothing and
+      consumes no smart plan; `GENERATION_FAILED` (errorCode `PLAN_FAILED`) is published. Cancelling while `PLANNING` aborts the call and pays nothing; a plan that is ready was delivered and **its debit stays** whatever happens next.
+    - **`approvePlan`** (`POST .../generation-sessions/{sid}/plan-approval`, body `{commandId, expectedSessionVersion, plan: {items}}`, no `If-Match`, `200` with the session detail and the new `ETag`, idempotent by `commandId` with
+      `Idempotency-Replayed`). The owner's plan (items removed or reordered, counts, mechanics, efforts, titles changed, an item added) is **user input: strict, nothing is silently clamped**. Evaluation: ownership (404), receipt replay,
+      shape and identifiers (400: an unknown or repeated target or note, a mechanic outside the allowed set, a count below 1, an empty plan), `expectedSessionVersion` (412), state (409 `ILLEGAL_STATE`: only `PLAN_READY`), limits
+      (`422 RESOURCE_LIMIT_EXCEEDED`: above 10 exercises per material, 60 per session, 20 materials), usage last; the capabilities the planned work needs are checked after the state, as a retry checks them (`409 CAPABILITY_UNAVAILABLE`, for instance a material raised to an effort that needs web research). In one transaction: the artifacts and steps of **exactly the planned items** are created through the same code as an
+      unplanned admission (`EXERCISES`: one `QUEUED` artifact per exercise in plan order and one `TEXT_DRAFT` step per target, whose input carries the mechanics the plan chose for that target, so the step asks for them and the
+      lint refuses any other; `MATERIALS`: one artifact per item, written at the item's effort on the item's title, which a retry keeps), the **batch hold is re-sized to the cost of the plan as approved** (the old one is released first, so
+      what it held counts: a cheaper plan returns the surplus, a dearer one **extends** the hold and what the balance cannot pay is `409 USAGE_LIMIT_REACHED` with nothing changed), the plan is stored as approved (`plan.approved true`) and the
+      session is `RUNNING`. The batch hold of a `PLAN_READY` session is not renewed, so it lapses after `learning.usage.reservation-ttl` (`PT2H`) and a later approval reserves again; `plan.cost.holdActive` (computed at read time) tells the client whether the hold is still live. The launch emits its events in the order of an unplanned admission (`SESSION_STATE` first). A `PLAN_READY` session counts toward the 3 active sessions, expires
+      like the others and is cancelled (releasing everything, the plan's debit stays) or deleted as any session. A retry of a planned exercise asks for the spec's mechanics, not the plan's.
+    - **Stub.** It answers the plan prompt deterministically: one item per target (the allowed mechanics round-robin, two per item when there are two or more, the requested per-target count or 3) or per note (the first words of the note as the
+      title, `MEDIUM`), three source-less items without notes; `[[stub:plan-invalid]]` in the prompt (a title, a note) breaks the first answer (the repair is valid), `[[stub:plan-invalid-always]]` breaks every one.
 
 ## Owner decisions (2026-10-02)
 

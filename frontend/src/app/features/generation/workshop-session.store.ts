@@ -9,9 +9,11 @@ import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { UsageApiService } from '../usage/usage-api.service';
 import { DeckPin, GenerationApiService } from './generation-api.service';
 import { GenerationProblem, readProblem } from './generation-problem';
+import { DraftRow, describePlanProblem } from './plan-editor';
 import { REVERTED_NOTE, describeEditCost, describeEditLimit, describeNoteArchive, editOutcomeNote, editProblemMessage, problemMessage } from './generation-view';
 import {
-    ApprovalAck, ArtifactDetail, ArtifactSummary, ArtifactTurn, EditAction, EditPreset, GenerationEvent, HandoffResult, MAX_APPROVALS_PER_COMMAND,
+    ApprovalAck, ArtifactDetail, ArtifactSummary, ArtifactTurn, EditAction, EditPreset, ExercisePlanItem, GenerationEvent, HandoffResult, MAX_APPROVALS_PER_COMMAND,
+    MaterialPlanItem,
     NoteArchiveResult, SessionDetail, SpeechVoice, UsageUpdate, ActiveStep,
     allows, isApprovable, isRetryable, isTerminalSession, sessionAllows
 } from './generation.models';
@@ -24,6 +26,11 @@ export const POLL_BACKGROUND_MIN_MS = 5_000;
 export const POLL_BACKGROUND_MAX_MS = 15_000;
 export const POLL_FAILURE_MAX_MS = 15_000;
 const EVENTS_PAGE = 100;
+/**
+ * A plan that waits for its owner is read again this often, and whenever the tab becomes visible: the hold made for it lapses without
+ * changing the session (so no event says so), and `plan.cost.holdActive` is computed only when the session is read (#295).
+ */
+export const PLAN_REREAD_MS = 30 * 60 * 1_000;
 
 // Polling stops in CANCELLED as in CLOSED and EXPIRED: `events.json` polling.clientCadence says "stop when session.state is CLOSED,
 // CANCELLED or EXPIRED". A cancelled session still lets the user approve, reject or hand off what was proposed; those commands
@@ -86,6 +93,9 @@ export type EditOutcome =
 
 /** The cost line of a rewrite, and, when the budget does not let it start, the reason in words. */
 export interface EditCost { readonly text: string; readonly canStart: boolean; readonly blocked: string | null; }
+
+/** How the launch of a plan ended: the session is running, or the words for what stopped it (the plan the owner edited is kept). */
+export type PlanOutcome = { readonly ok: true } | { readonly ok: false; readonly message: string };
 
 /** Thrown into a command that the user took back before the server answered. */
 class CommandAborted extends Error {}
@@ -155,6 +165,7 @@ export class WorkshopSessionStore {
     /** Bumps on every `open` and on dispose: answers of an earlier open are dropped. */
     private epoch = 0;
     private readonly commandIds = new Map<string, string>();
+    private lastRead = 0;
     private readonly revisions = new Map<string, Promise<ArtifactDetail | null>>();
     private allowance: Promise<number | null> | null = null;
     private noteTimer: ReturnType<typeof setTimeout> | null = null;
@@ -203,6 +214,7 @@ export class WorkshopSessionStore {
         this.api.getSession(this.deckId, this.sessionId).subscribe({
             next: session => {
                 if (epoch !== this.epoch) return;
+                this.lastRead = Date.now();
                 this.session.set(session);
                 this.phase.set('ready');
                 if (!isTerminalSession(session.state)) this.schedule(0);
@@ -228,6 +240,7 @@ export class WorkshopSessionStore {
         this.reading = firstValueFrom(this.api.getSession(this.deckId, this.sessionId)).then(
             fresh => {
                 if (epoch !== this.epoch) return;
+                this.lastRead = Date.now();
                 this.session.set(mergeSession(this.session(), fresh));
                 this.phase.set('ready');
                 // An undo reopened a CLOSED session (#288): the loop stopped at CLOSED and must run again.
@@ -472,6 +485,38 @@ export class WorkshopSessionStore {
         }
     }
 
+    /**
+     * Launches the plan the owner edited (AI-14, #295): the session becomes `RUNNING` with exactly the planned artifacts, and the loop follows
+     * them from here. `version` is the session version the owner edited the plan on. An unknown outcome is retried with the same command
+     * (the server replays its answer), so pressing again never launches twice; a refusal is explained in words and the edited plan stays.
+     */
+    async approvePlan(rows: readonly DraftRow<ExercisePlanItem | MaterialPlanItem>[], version: string): Promise<PlanOutcome> {
+        const session = this.session();
+        const plan = session?.plan ?? null;
+        if (session === null || plan === null || !sessionAllows(session.state, 'approvePlan') || plan.approved) {
+            return { ok: false, message: 'Этот план уже запущен или остановлен.' };
+        }
+        if (this.isBusy('session')) return { ok: false, message: 'Подождите: предыдущее действие ещё выполняется.' };
+        this.begin('session');
+        try {
+            const key = `${version}:${JSON.stringify(rows.map(row => row.item))}`;
+            const outcome = await this.send('plan-approval', key, id => this.api.approvePlan(this.deckId, this.sessionId, plan, rows, version, id));
+            if (!outcome.ok) {
+                const problem = outcome.problem;
+                if (problem.status === 404) this.gone();
+                else if (!problem.uncertain && problem.status !== 400) void this.refresh();
+                return { ok: false, message: describePlanProblem(problem, plan) };
+            }
+            this.session.set(mergeSession(this.session(), outcome.value.session));
+            this.phase.set('ready');
+            this.toast.echo('План запущен');
+            this.wake();
+            return { ok: true };
+        } finally {
+            this.end('session');
+        }
+    }
+
     /** Stops the session: waiting work is cancelled, finished proposals stay approvable. */
     async cancel(): Promise<boolean> {
         const session = this.session();
@@ -678,7 +723,8 @@ export class WorkshopSessionStore {
                 if (isNewer(page.cursor, this.cursor)) this.cursor = page.cursor;
                 const session = this.session()!;
                 const behind = isNewer(page.session.rowVersion, session.rowVersion) || page.session.state !== session.state;
-                if (applied.reconcile || behind || page.unreadable > 0) void this.refresh();
+                const planStale = session.state === 'PLAN_READY' && Date.now() - this.lastRead >= PLAN_REREAD_MS;
+                if (applied.reconcile || behind || page.unreadable > 0 || planStale) void this.refresh();
                 // A full page means more events are waiting: read them without pausing.
                 if (page.events.length >= EVENTS_PAGE) { this.schedule(0); return; }
                 this.scheduleNext(page.events.length > 0 || applied.reconcile, page.session.state);
@@ -738,6 +784,8 @@ export class WorkshopSessionStore {
         if (!this.started || this.disposed || this.terminal()) return;
         if (this.document.visibilityState === 'visible') {
             this.backgroundDelay = POLL_BACKGROUND_MIN_MS;
+            // Back to a waiting plan: its hold may have lapsed meanwhile, which only a read shows.
+            if (this.session()?.state === 'PLAN_READY') void this.refresh();
             if (this.poll === null) this.schedule(0);
         } else if (this.poll === null && this.timer !== null) {
             this.schedule(this.backgroundDelay);

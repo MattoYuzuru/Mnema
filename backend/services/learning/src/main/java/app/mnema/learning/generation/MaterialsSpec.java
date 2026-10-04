@@ -56,6 +56,11 @@ record MaterialsSpec(String prompt, String outputLanguage, List<Source> sources,
      */
     record Effective(String effort, boolean audio, String audioLanguage, String audioVoice, boolean imageSearch,
                      boolean factCheck) {
+        /** The same settings at another effort: what a planned material uses (the plan decides the effort of each one). */
+        Effective withEffort(String other) {
+            return new Effective(other, audio, audioLanguage, audioVoice, imageSearch, factCheck);
+        }
+
         /** The effort a material is written and charged at: {@code AUTO} is {@code MEDIUM} without a planner. */
         String workingEffort() {
             return effort.equals("AUTO") ? "MEDIUM" : effort;
