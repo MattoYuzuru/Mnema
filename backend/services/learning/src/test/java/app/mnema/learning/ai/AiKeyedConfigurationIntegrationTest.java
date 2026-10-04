@@ -25,9 +25,14 @@ class AiKeyedConfigurationIntegrationTest extends PostgresIntegrationTest {
     @Test
     void aKeyAndTheUserKeySecretMakeAiGenerationAvailableAndTheDefaultsBind() {
         assertThat(capabilities.aiGeneration()).isEqualTo(new LearningCapabilities.Status(true, null));
-        assertThat(properties.routes().textFast()).containsExactly("deepseek:deepseek-flash", "gigachat:GigaChat-2");
-        assertThat(properties.routes().textStrong()).containsExactly("deepseek:deepseek-v4-pro");
-        assertThat(properties.models()).extracting(AiProperties.Model::id).contains("deepseek-flash", "deepseek-v4-pro", "GigaChat-2");
+        // owner decision 2026-10-04: OpenRouter (the same DeepSeek models) is the fallback of the direct route, GigaChat stays last
+        assertThat(properties.routes().textFast()).containsExactly("deepseek:deepseek-flash", "openrouter:deepseek/deepseek-v4.1-flash",
+                "gigachat:GigaChat-2");
+        assertThat(properties.routes().textStrong()).containsExactly("deepseek:deepseek-v4-pro", "openrouter:deepseek/deepseek-v4-pro");
+        assertThat(properties.routes().assess()).containsExactly("deepseek:deepseek-flash", "openrouter:deepseek/deepseek-v4.1-flash",
+                "gigachat:GigaChat-2");
+        assertThat(properties.models()).extracting(AiProperties.Model::id).contains("deepseek-flash", "deepseek-v4-pro", "GigaChat-2",
+                "deepseek/deepseek-v4.1-flash", "deepseek/deepseek-v4-pro");
         assertThat(properties.providers().get("deepseek").baseUrl()).isEqualTo("https://api.deepseek.com");
         assertThat(properties.providers().get("deepseek").enabled()).isTrue();
         assertThat(properties.permits().text()).isEqualTo(16);
