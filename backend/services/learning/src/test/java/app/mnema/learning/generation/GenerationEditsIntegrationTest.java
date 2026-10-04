@@ -85,7 +85,7 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
         assertThat(debits(owner) - debitsBefore).isEqualTo(4);
         assertThat(reservationOfTurn(turnId)).isEqualTo("SETTLED");
         // no provider call ran inside a transaction or with a connection held
-        assertThat(editCalls()).hasSize(1).allSatisfy(call -> {
+        assertThat(editCalls(owner)).hasSize(1).allSatisfy(call -> {
             assertThat(call.transactionAtCall()).isFalse();
             assertThat(call.connectionsAtCall()).isZero();
         });
@@ -123,9 +123,9 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
 
         // context order (architecture section 7): the core and the deck brief first and shared with the material's own call, then the
         // document (outline, context before, target with its handles, context after), the history and the task with the instruction last
-        String draft = provider.calls.stream().filter(call -> !call.prompt().contains("<task kind=\"edit\">")).findFirst().orElseThrow().prompt();
-        String firstPrompt = editCalls().get(0).prompt();
-        String secondPrompt = editCalls().get(1).prompt();
+        String draft = calls(owner).stream().filter(call -> !call.prompt().contains("<task kind=\"edit\">")).findFirst().orElseThrow().prompt();
+        String firstPrompt = editCalls(owner).get(0).prompt();
+        String secondPrompt = editCalls(owner).get(1).prompt();
         String prefix = draft.substring(0, draft.indexOf("<allowed_links>"));
         assertThat(prefix).contains("<deck>").contains("<outline");
         assertThat(firstPrompt).startsWith(prefix);
@@ -140,7 +140,7 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
         assertThat(secondPrompt).contains("<history>\nДобавь пример\n</history>").contains("Пресет: Короче.")
                 .contains("<target>[[b5]] Конец.</target>").contains("<context_before>- пункт\n- пункт</context_before>");
         // only the target is rewritten: the rest of the material is in the outline and the neighbours only
-        assertThat(editCalls()).allSatisfy(call -> assertThat(call.route()).isEqualTo(AiRoute.TEXT_FAST));
+        assertThat(editCalls(owner)).allSatisfy(call -> assertThat(call.route()).isEqualTo(AiRoute.TEXT_FAST));
     }
 
     @Test
@@ -188,7 +188,7 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
         assertThat(revisions(proposal.artifact())).isEqualTo(1);
         assertThat(jdbc.sql("SELECT count(*)::integer FROM app_learning.generation_artifact_turn WHERE artifact_id=:id")
                 .param("id", proposal.artifact()).query(Integer.class).single()).isZero();
-        assertThat(provider.calls.stream().filter(call -> call.prompt().contains("<task kind=\"edit\">"))).isEmpty();
+        assertThat(calls(owner).stream().filter(call -> call.prompt().contains("<task kind=\"edit\">"))).isEmpty();
 
         // the same two consecutive blocks are fine
         UUID turn = accepted(owner, deck, proposal, editBody(UUID.randomUUID(), proposal.revision(), "REWRITE", "EXAMPLE", null, p2, p1));
@@ -289,7 +289,7 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
                 .param("id", proposal.artifact()).query(Integer.class).single()).isZero();
         assertThat(jdbc.sql("SELECT count(*)::integer FROM app_learning.generation_step WHERE artifact_id=:id AND kind='EDIT'")
                 .param("id", proposal.artifact()).query(Integer.class).single()).isZero();
-        assertThat(editCalls()).isEmpty();
+        assertThat(editCalls(owner)).isEmpty();
 
         // free the hold: the same request is accepted
         new org.springframework.transaction.support.TransactionTemplate(transactions).executeWithoutResult(status -> ledger.release(owner, hold));
@@ -312,8 +312,8 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
         awaitArtifact(proposal.artifact(), "PROPOSED");
 
         assertThat(turnError(turn)).isEqualTo("INVALID_OUTPUT");
-        assertThat(editCalls()).extracting(call -> call.route()).containsExactly(AiRoute.TEXT_FAST, AiRoute.TEXT_FAST, AiRoute.TEXT_STRONG);
-        assertThat(editCalls()).extracting(call -> call.repair()).containsExactly(false, true, true);
+        assertThat(editCalls(owner)).extracting(call -> call.route()).containsExactly(AiRoute.TEXT_FAST, AiRoute.TEXT_FAST, AiRoute.TEXT_STRONG);
+        assertThat(editCalls(owner)).extracting(call -> call.repair()).containsExactly(false, true, true);
         // nothing was written or debited; the hold ended unspent; the revision is the one the client holds
         assertThat(debits(owner)).isEqualTo(debitsBefore);
         assertThat(reservationOfTurn(turn)).isEqualTo("RELEASED");
@@ -340,15 +340,15 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
 
         UUID repaired = accepted(owner, deck, proposal, editBody(UUID.randomUUID(), proposal.revision(), "FREE", null, "[[fake:invalid-once]] правь", target));
         awaitTurn(repaired, "APPLIED");
-        assertThat(editCalls()).extracting(call -> call.repair()).containsExactly(false, true);
+        assertThat(editCalls(owner)).extracting(call -> call.repair()).containsExactly(false, true);
         assertThat(debits(owner) - debitsBefore).isEqualTo(4);
 
         // the Stub's own invalid-answer marker: the first answer is a document the compiler rejects, the repair is the edit
         Proposal stub = fresh(owner, deck, proposal);
-        int callsBefore = editCalls().size();
+        int callsBefore = editCalls(owner).size();
         UUID stubRepaired = accepted(owner, deck, stub, editBody(UUID.randomUUID(), stub.revision(), "FREE", null, "[[stub:invalid-mbm]] правь", target));
         awaitTurn(stubRepaired, "APPLIED");
-        assertThat(editCalls().size() - callsBefore).isEqualTo(2);
+        assertThat(editCalls(owner).size() - callsBefore).isEqualTo(2);
         debitsBefore += 4;
 
         Proposal now = fresh(owner, deck, proposal);
@@ -378,7 +378,7 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
         UUID turn = accepted(owner, deck, proposal, editBody(UUID.randomUUID(), proposal.revision(), "FREE", null, "[[fake:crash-once]] правь", target));
         awaitTurn(turn, "APPLIED");
 
-        assertThat(editCalls()).hasSize(2);
+        assertThat(editCalls(owner)).hasSize(2);
         assertThat(debits(owner) - debitsBefore).isEqualTo(4);
         assertThat(reservationOfTurn(turn)).isEqualTo("SETTLED");
         assertThat(revisions(proposal.artifact())).isEqualTo(2);
@@ -450,7 +450,7 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
         jdbc.sql("UPDATE app_learning.generation_artifact_turn SET status='CANCELLED' WHERE turn_id=:id").param("id", voided).update();
         await("the void step to end", Duration.ofSeconds(10), () -> jdbc.sql("SELECT state FROM app_learning.generation_step WHERE step_id=:id")
                 .param("id", stepOfTurn(voided)).query(String.class).single().equals("CANCELLED"));
-        assertThat(editCalls()).isEmpty();
+        assertThat(editCalls(owner)).isEmpty();
         assertThat(revisions(proposal.artifact())).isEqualTo(1);
     }
 
@@ -574,7 +574,7 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
         problem(limit, 422, "RESOURCE_LIMIT_EXCEEDED");
         assertThat(json(limit).path("limit").stringValue(null)).isEqualTo("REVISIONS_PER_ARTIFACT");
         jdbc.sql("UPDATE app_learning.generation_artifact SET revision_count=1 WHERE artifact_id=:id").param("id", proposal.artifact()).update();
-        assertThat(editCalls()).isEmpty();
+        assertThat(editCalls(owner)).isEmpty();
 
         // a rejected proposal and a published one are not edited; neither is the closed session's
         Proposal rejected = fresh(owner, deck, proposal);
@@ -613,7 +613,7 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
         MockHttpServletResponse revert = revert(owner, deck, exercise, exercise.version(), exercise.revision());
         problem(revert, 409, "GENERATION_STATE_CONFLICT");
         assertThat(artifactState(exercise.artifact())).isEqualTo("PROPOSED");
-        assertThat(editCalls()).isEmpty();
+        assertThat(editCalls(owner)).isEmpty();
     }
 
     @Test
@@ -650,7 +650,7 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
         MockHttpServletResponse create = edit(owner, deck, withImage, editBody(UUID.randomUUID(), withImage.revision(), "IMAGE_GENERATE", null, null, picture));
         problem(create, 409, "CAPABILITY_UNAVAILABLE");
         assertThat(json(create).path("capability").stringValue(null)).isEqualTo("imageGeneration");
-        assertThat(editCalls()).isEmpty();
+        assertThat(editCalls(owner)).isEmpty();
         assertThat(jdbc.sql("SELECT count(*)::integer FROM app_learning.usage_reservation WHERE owner_id=:owner AND scope='TURN'")
                 .param("owner", owner).query(Integer.class).single()).isZero();
     }
@@ -710,7 +710,7 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
                 event.path("type").stringValue(null) + ":" + event.path("payload").path("state").stringValue("-")));
         assertThat(log).endsWith("ARTIFACT_STATE:PROPOSED", "MEDIA_SLOT_STATE:REMOVED");
         // free and deterministic: no provider call, no debit, no reservation
-        assertThat(editCalls()).isEmpty();
+        assertThat(editCalls(owner)).isEmpty();
         assertThat(debits(owner)).isEqualTo(debitsBefore);
         assertThat(reservationsOf(owner)).hasSize(reservationsBefore);
         // an exact retry is the stored answer
@@ -795,7 +795,7 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
         assertThat(text(after.get(1))).isEqualTo("Первый абзац. Переписано: Проще.");
         assertThat(after.get(2)).isEqualTo(before.get(2));
         // the model saw only the paragraph, and the media slot follows the new revision
-        String prompt = editCalls().getFirst().prompt();
+        String prompt = editCalls(owner).getFirst().prompt();
         String document = prompt.substring(prompt.indexOf("<document>\n<material"), prompt.indexOf("</document>\n<history>"));
         assertThat(document).contains("<target>[[b2]] Первый абзац.</target>").contains("[[b3]] [аудио]").doesNotContain("::audio")
                 .contains("<context_after></context_after>");
@@ -854,13 +854,13 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
         problem(personal, 400, "INVALID_REQUEST");
         assertThat(json(personal).path("reason").stringValue(null)).isEqualTo("TARGET_PERSONAL_DATA");
         problem(edit(owner, deck, odd, editBody(UUID.randomUUID(), odd.revision(), "REWRITE", "SIMPLER", null, id(plain), id(phone))), 400, "INVALID_REQUEST");
-        assertThat(editCalls()).isEmpty();
+        assertThat(editCalls(owner)).isEmpty();
         assertThat(artifactState(proposal.artifact())).isEqualTo("PROPOSED");
 
         // the plain paragraph between two such headings is fine: the neighbours are shown as their first line
         UUID turn = accepted(owner, deck, odd, editBody(UUID.randomUUID(), odd.revision(), "REWRITE", "SIMPLER", null, id(plain)));
         awaitTurn(turn, "APPLIED");
-        assertThat(editCalls().getFirst().prompt()).contains("<context_before>Глубокий заголовок</context_before>")
+        assertThat(editCalls(owner).getFirst().prompt()).contains("<context_before>Глубокий заголовок</context_before>")
                 .contains("<target>[[b3]] Обычный текст.</target>").contains("<context_after>Позвоните");
     }
 
@@ -878,7 +878,7 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
         UUID turn = accepted(owner, deck, big, editBody(UUID.randomUUID(), big.revision(), "FREE", null, "Проще <b>жирным</b>", id(special)));
         awaitTurn(turn, "APPLIED");
 
-        String prompt = editCalls().getFirst().prompt();
+        String prompt = editCalls(owner).getFirst().prompt();
         String outline = prompt.substring(prompt.indexOf("<material id=\"doc\">"), prompt.indexOf("</material>"));
         assertThat(outline.lines().filter(line -> line.startsWith("[[b"))).hasSize(200).contains("[[b150]] Если a &lt; b &amp; c &gt; d, то &quot;так&quot;");
         assertThat(outline).contains("[[b150]]").doesNotContain("[[b1]]").doesNotContain("[[b300]]");
@@ -971,7 +971,7 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
         UUID again = accepted(owner, deck, rewritten, editBody(UUID.randomUUID(), rewritten.revision(), "REWRITE", "SHORTER", null,
                 id(blocks(detail).get(0))));
         awaitTurn(again, "APPLIED");
-        assertThat(editCalls().getLast().prompt()).contains("<history>\nнет предыдущих правок\n</history>");
+        assertThat(editCalls(owner).getLast().prompt()).contains("<history>\nнет предыдущих правок\n</history>");
     }
 
     @Test
@@ -989,7 +989,7 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
         Proposal two = fresh(owner, deck, proposal);
         UUID third = accepted(owner, deck, two, editBody(UUID.randomUUID(), two.revision(), "FREE", null, "третья правка", target));
         awaitTurn(third, "APPLIED");
-        assertThat(editCalls().getLast().prompt()).contains("<history>\nпервая правка\n</history>").doesNotContain("отказ</history>");
+        assertThat(editCalls(owner).getLast().prompt()).contains("<history>\nпервая правка\n</history>").doesNotContain("отказ</history>");
 
         // back to the original: nothing that was applied after it is history any more
         Proposal now = fresh(owner, deck, proposal);
@@ -997,7 +997,7 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
         Proposal base = fresh(owner, deck, proposal);
         UUID fourth = accepted(owner, deck, base, editBody(UUID.randomUUID(), base.revision(), "FREE", null, "четвёртая правка", target));
         awaitTurn(fourth, "APPLIED");
-        assertThat(editCalls().getLast().prompt()).contains("<history>\nнет предыдущих правок\n</history>");
+        assertThat(editCalls(owner).getLast().prompt()).contains("<history>\nнет предыдущих правок\n</history>");
     }
 
     @Test
@@ -1016,7 +1016,7 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
         problem(refused, 422, "RESOURCE_LIMIT_EXCEEDED");
         assertThat(json(refused).path("limit").stringValue(null)).isEqualTo("EDIT_TARGET_SIZE");
         assertThat(json(refused).path("limits").path("maxEditTargetTokens").intValue()).isEqualTo(2050);
-        assertThat(editCalls()).isEmpty();
+        assertThat(editCalls(owner)).isEmpty();
         assertThat(artifactState(proposal.artifact())).isEqualTo("PROPOSED");
 
         // a removal reaches past the 30 revisions a rewrite stops at, and stops at the bound of the table
@@ -1053,6 +1053,6 @@ class GenerationEditsIntegrationTest extends GenerationEditsSupport {
         assertThat(turnError(turn)).isEqualTo("DEADLINE_EXCEEDED");
         assertThat(reservationOfTurn(turn)).isEqualTo("RELEASED");
         assertThat(artifactState(proposal.artifact())).isEqualTo("PROPOSED");
-        assertThat(editCalls()).isEmpty();
+        assertThat(editCalls(owner)).isEmpty();
     }
 }

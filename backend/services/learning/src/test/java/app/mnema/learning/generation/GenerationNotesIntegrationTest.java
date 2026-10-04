@@ -88,9 +88,9 @@ class GenerationNotesIntegrationTest extends GenerationIntegrationTest {
                         + "ORDER BY a.ordinal").param("id", session).query(String.class).list();
         assertThat(operations).containsExactly("MATERIAL_DETAILED", "MATERIAL_SHORT");
         // the context of each step has the directives of its own note only
-        assertThat(provider.calls).anySatisfy(call -> assertThat(call.prompt()).contains("ПЕРВАЯ-ЗАМЕТКА")
+        assertThat(calls(owner)).anySatisfy(call -> assertThat(call.prompt()).contains("ПЕРВАЯ-ЗАМЕТКА")
                 .contains("объём ≈900 слов").contains("аудио (::audio)"));
-        assertThat(provider.calls).anySatisfy(call -> assertThat(call.prompt()).contains("ВТОРАЯ-ЗАМЕТКА")
+        assertThat(calls(owner)).anySatisfy(call -> assertThat(call.prompt()).contains("ВТОРАЯ-ЗАМЕТКА")
                 .contains("объём ≈150 слов").contains("медиа: нет"));
     }
 
@@ -138,7 +138,7 @@ class GenerationNotesIntegrationTest extends GenerationIntegrationTest {
         awaitState(session, "REVIEW");
 
         assertThat(artifactStates(session)).containsExactly("PROPOSED");
-        assertThat(provider.calls.getFirst().prompt()).contains("ИСХОДНЫЙ-ТЕКСТ").doesNotContain("ПРАВКА");
+        assertThat(calls(owner).getFirst().prompt()).contains("ИСХОДНЫЙ-ТЕКСТ").doesNotContain("ПРАВКА");
         JsonNode ref = artifact(owner, deck, session, artifactId(session, 0)).path("sourceRefs").get(0);
         assertThat(ref.path("noteRowVersion").stringValue(null)).isEqualTo("0");
         assertThat(ref.path("status").stringValue(null)).isEqualTo("CHANGED");
