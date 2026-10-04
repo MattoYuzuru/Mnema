@@ -158,6 +158,26 @@ class RoutedImageSearchTest {
     }
 
     @Test
+    void aLaterTurnForTheSameQueryGetsFreshCandidatesFromTheCachedPage() {
+        Fake pixabay = new Fake(ImageSearch.Source.PIXABAY);
+        List<ImageSearch.Candidate> page = new java.util.ArrayList<>();
+        for (int index = 1; index <= 6; index++) page.add(candidate(ImageSearch.Source.PIXABAY, "p" + index, "https://pixabay.com/" + index + ".jpg"));
+        pixabay.answer = AiResult.ok(page);
+        RoutedImageSearch router = router(pixabay);
+
+        List<ImageSearch.Candidate> first = found(router.search(request("fox", 2, Set.of())));
+        Set<String> known = new java.util.HashSet<>(first.stream().map(ImageSearch.Candidate::key).toList());
+        List<ImageSearch.Candidate> second = found(router.search(request("fox", 2, known)));
+        known.addAll(second.stream().map(ImageSearch.Candidate::key).toList());
+        List<ImageSearch.Candidate> third = found(router.search(request("fox", 2, known)));
+
+        assertThat(first).extracting(ImageSearch.Candidate::key).containsExactly("PIXABAY:p1", "PIXABAY:p2");
+        assertThat(second).extracting(ImageSearch.Candidate::key).containsExactly("PIXABAY:p3", "PIXABAY:p4");
+        assertThat(third).extracting(ImageSearch.Candidate::key).containsExactly("PIXABAY:p5", "PIXABAY:p6");
+        assertThat(pixabay.calls.get()).isEqualTo(1);
+    }
+
+    @Test
     void everyRealCallIsJournaledMeteredAndGuardedByABreakerPerSource() {
         Fake pixabay = new Fake(ImageSearch.Source.PIXABAY);
         Fake wikimedia = new Fake(ImageSearch.Source.WIKIMEDIA);

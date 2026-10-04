@@ -29,12 +29,21 @@ final class GeneratedMediaStaging implements GeneratedMediaStager {
     }
 
     @Override
-    public void stage(UUID owner, UUID assetId, MediaCatalog.Kind kind, String mimeType, byte[] bytes) {
+    public void reserve(UUID owner, UUID assetId, MediaCatalog.Kind kind, String mimeType, byte[] bytes) {
+        reservation(owner, assetId, kind, mimeType, bytes);
+    }
+
+    private MediaUploadRepository.Session reservation(UUID owner, UUID assetId, MediaCatalog.Kind kind, String mimeType, byte[] bytes) {
         UuidPolicy.requireEntityId(owner, "owner");
         UuidPolicy.requireEntityId(assetId, "assetId");
         String column = kind.column();
         settings.validate(column, mimeType, bytes.length);
-        var session = repository.reserveGenerated(owner, assetId, column, mimeType, bytes.length, fingerprint(column, mimeType, bytes));
+        return repository.reserveGenerated(owner, assetId, column, mimeType, bytes.length, fingerprint(column, mimeType, bytes));
+    }
+
+    @Override
+    public void stage(UUID owner, UUID assetId, MediaCatalog.Kind kind, String mimeType, byte[] bytes) {
+        var session = reservation(owner, assetId, kind, mimeType, bytes);
         if (session.state().equals("SEALED")) return;
         if (session.state().equals("OPEN")) objects.put(session.stagingKey(), bytes, mimeType);
         uploads.finalizeUpload(owner, assetId, session.generation(), command(assetId));
@@ -43,6 +52,7 @@ final class GeneratedMediaStaging implements GeneratedMediaStager {
     @Override
     public State assetState(UUID owner, UUID assetId) {
         return repository.assetState(owner, assetId).map(state -> switch (state) {
+            case "PENDING_UPLOAD" -> State.PENDING;
             case "READY" -> State.READY;
             case "REJECTED" -> State.REJECTED;
             case "FAILED_RETRYABLE", "DELETED" -> State.FAILED;

@@ -56,7 +56,7 @@ final class WikimediaImageSource implements ImageSource {
     public AiResult<List<ImageSearch.Candidate>> search(String query, String lang, int maxResults, Duration budget) {
         String search = "filetype:bitmap " + ImageText.bound(query, 200);
         URI uri = URI.create(base + (base.toString().contains("?") ? "&" : "?") + "action=query&format=json&generator=search"
-                + "&gsrnamespace=6&gsrsearch=" + enc(search) + "&gsrlimit=" + Math.max(5, Math.min(30, maxResults * 2))
+                + "&gsrnamespace=6&gsrsearch=" + enc(search) + "&gsrlimit=" + PAGE_SIZE
                 + "&prop=imageinfo&iiprop=" + enc("url|extmetadata|mime|size") + "&iiurlwidth=640&iiextmetadatafilter="
                 + enc("LicenseShortName|License|Artist|LicenseUrl|AttributionRequired|Restrictions|ImageDescription"));
         ChatHttp.Reply reply;
@@ -90,6 +90,7 @@ final class WikimediaImageSource implements ImageSource {
         ordered.sort(Comparator.comparingInt(page -> page.path("index").asInt(Integer.MAX_VALUE)));
         List<ImageSearch.Candidate> out = new ArrayList<>();
         for (JsonNode page : ordered) {
+            if (out.size() >= PAGE_SIZE) break;
             JsonNode info = page.path("imageinfo").path(0);
             JsonNode meta = info.path("extmetadata");
             if (info.isMissingNode() || !MIME.contains(info.path("mime").stringValue(""))) continue;

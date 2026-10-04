@@ -12,6 +12,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -680,5 +681,139 @@ class GenerationImageSearchIntegrationTest extends GenerationEditsSupport {
                 + "WHERE artifact_id=:id AND kind='IMAGE_SEARCH' AND input->>'turnId' IS NULL AND state='CANCELLED'").param("id", proposal.artifact())
                 .query(Integer.class).single() == 1);
         assertThat(reservationState(proposal.session())).isNotEqualTo("ACTIVE");
+    }
+
+    // ------------------------------------------------ a replaced first search and the slot's fate (M1)
+
+    private int slotStepCount(UUID artifact, String state) {
+        return jdbc.sql("SELECT count(*)::integer FROM app_learning.generation_step WHERE artifact_id=:id AND kind='IMAGE_SEARCH' "
+                + "AND input->>'turnId' IS NULL AND state=:state").param("id", artifact).param("state", state).query(Integer.class).single();
+    }
+
+    @Test
+    void aTurnThatFailsWhileTheReplacedFirstSearchIsStillWaitingLeavesNoSlotStuckOpen() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        // the first search is held inside its verification wait while the person asks for another image, and that turn fails at once
+        CountDownLatch held = new CountDownLatch(1);
+        stager.gate = held;
+        Proposal proposal = proposal(owner, deck, imageSpec(IMAGE));
+        awaitSlot(proposal.artifact(), "VERIFYING");
+        stager.gate = null;
+
+        UUID turn = searchTurn(owner, deck, proposal, "другая лиса [[stub:image-none]]");
+        awaitTurn(turn, "FAILED");
+
+        // the first step was asked to stop but is still RUNNING: it does not decide the slot, the failed turn does
+        assertThat(slotStepCount(proposal.artifact(), "RUNNING")).isEqualTo(1);
+        awaitSlot(proposal.artifact(), "FAILED");
+        assertThat(slotError(proposal.artifact())).isEqualTo("NO_RESULT");
+        held.countDown();
+        await("the first step to be cancelled", Duration.ofSeconds(10), () -> slotStepCount(proposal.artifact(), "CANCELLED") == 1);
+
+        // the old executor's cancellation leaves the slot as the turn ended it, and the hold ends with the last step
+        assertThat(slotState(proposal.artifact())).isEqualTo("FAILED");
+        assertThat(slotError(proposal.artifact())).isEqualTo("NO_RESULT");
+        assertThat(slotEvents(owner, deck, proposal).stream().filter(event -> event.startsWith("FAILED")).count()).isEqualTo(1);
+        assertThat(reservationState(proposal.session())).isNotEqualTo("ACTIVE");
+        problem(approve(owner, deck, fresh(owner, deck, proposal), UUID.randomUUID()), 409, "GENERATION_STATE_CONFLICT");
+        // and the way out works
+        UUID again = searchTurn(owner, deck, proposal, "red fox");
+        awaitTurn(again, "APPLIED");
+        assertThat(slotState(proposal.artifact())).isEqualTo("READY");
+    }
+
+    @Test
+    void theReplacedFirstSearchThatEndsFirstLeavesTheSlotToTheTurnThatIsStillWorking() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        CountDownLatch oldHeld = new CountDownLatch(1);
+        CountDownLatch newHeld = new CountDownLatch(1);
+        stager.gate = oldHeld;
+        Proposal proposal = proposal(owner, deck, imageSpec(IMAGE));
+        awaitSlot(proposal.artifact(), "VERIFYING");
+        stager.gate = newHeld;
+        UUID turn = searchTurn(owner, deck, proposal, "red fox");
+        await("the turn to stage its candidates", Duration.ofSeconds(10), () -> stager.staged.size() == 1 + ImageSearchExecutor.NEW_PER_TURN);
+
+        oldHeld.countDown();
+        await("the first step to be cancelled", Duration.ofSeconds(10), () -> slotStepCount(proposal.artifact(), "CANCELLED") == 1);
+        assertThat(slotState(proposal.artifact())).isEqualTo("VERIFYING");
+        newHeld.countDown();
+        awaitTurn(turn, "APPLIED");
+
+        assertThat(slotState(proposal.artifact())).isEqualTo("READY");
+        assertThat(slotEvents(owner, deck, proposal)).noneMatch(event -> event.startsWith("FAILED"));
+    }
+
+    @Test
+    void aCancelledFirstSearchWhoseTurnEndedWithoutTheSlotFailsTheSlotItself() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        CountDownLatch oldHeld = new CountDownLatch(1);
+        CountDownLatch newHeld = new CountDownLatch(1);
+        stager.gate = oldHeld;
+        Proposal proposal = proposal(owner, deck, imageSpec(IMAGE));
+        awaitSlot(proposal.artifact(), "VERIFYING");
+        stager.gate = newHeld;
+        searchTurn(owner, deck, proposal, "red fox");
+        await("the turn to stage its candidates", Duration.ofSeconds(10), () -> stager.staged.size() == 1 + ImageSearchExecutor.NEW_PER_TURN);
+        // the turn's step ended without closing the slot (as a path that only cancels it would)
+        jdbc.sql("UPDATE app_learning.generation_step SET state='CANCELLED',lease_token=NULL,lease_until=NULL WHERE artifact_id=:id AND input->>'turnId' IS NOT NULL")
+                .param("id", proposal.artifact()).update();
+
+        oldHeld.countDown();
+        await("the first step to be cancelled", Duration.ofSeconds(10), () -> slotStepCount(proposal.artifact(), "CANCELLED") == 1);
+
+        assertThat(slotState(proposal.artifact())).isEqualTo("FAILED");
+        assertThat(slotError(proposal.artifact())).isEqualTo("CANCELLED");
+        newHeld.countDown();
+    }
+
+    // ------------------------------------------- a retry resumes what the lost attempt recorded (m2, m5)
+
+    @Test
+    void aFirstSearchWhoseWorkerDiedBeforeTheTransferResumesTheSameCandidateOnItsOwnAsset() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        stager.crashNextStage.set(true);
+
+        Proposal proposal = proposal(owner, deck, imageSpec(IMAGE));
+        awaitSlot(proposal.artifact(), "READY");
+
+        JsonNode slot = slot(owner, deck, proposal);
+        // one candidate: the one the first attempt recorded before it died, now staged under the slot's own asset with its own attribution
+        assertThat(slot.path("candidates")).hasSize(1);
+        JsonNode candidate = slot.path("candidates").get(0);
+        assertThat(candidate.path("assetId").stringValue(null)).isEqualTo(slot.path("assetId").stringValue(null));
+        assertThat(candidate.path("title").stringValue(null)).isEqualTo("Stub image 1");
+        assertThat(candidate.path("chosen").booleanValue()).isTrue();
+        assertThat(stager.staged).containsExactly(UUID.fromString(slot.path("assetId").stringValue(null)));
+        assertThat(jdbc.sql("SELECT max(attempts) FROM app_learning.generation_step WHERE artifact_id=:id AND kind='IMAGE_SEARCH'")
+                .param("id", proposal.artifact()).query(Integer.class).single()).isEqualTo(2);
+    }
+
+    @Test
+    void aTurnRetryAppliesTheReadyCandidatesTheLostAttemptStoredWithoutSearchingAgain() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        Proposal proposal = proposal(owner, deck, imageSpec(IMAGE));
+        awaitSlot(proposal.artifact(), "READY");
+        assertThat(stager.staged).hasSize(1);
+        // the turn stages four candidates, then its worker dies while it waits for their verification
+        stager.crashNextPoll.set(true);
+
+        UUID turn = searchTurn(owner, deck, proposal, "red fox");
+        awaitTurn(turn, "APPLIED");
+
+        assertThat(stager.staged).hasSize(1 + ImageSearchExecutor.NEW_PER_TURN);
+        assertThat(candidateRows(proposal.artifact())).isEqualTo(1 + ImageSearchExecutor.NEW_PER_TURN);
+        JsonNode slot = slot(owner, deck, proposal);
+        assertThat(chosen(slot)).isNotNull();
+        assertThat(chosen(slot).path("title").stringValue(null)).isEqualTo("Stub image 1");
+        assertThat(slot.path("candidates")).hasSize(1 + ImageSearchExecutor.NEW_PER_TURN);
+        assertThat(jdbc.sql("SELECT attempts FROM app_learning.generation_step WHERE artifact_id=:id AND input->>'turnId' IS NOT NULL")
+                .param("id", proposal.artifact()).query(Integer.class).single()).isEqualTo(2);
+        assertThat(revisions(proposal.artifact())).isEqualTo(2);
     }
 }

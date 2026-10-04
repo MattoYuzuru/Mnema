@@ -10,7 +10,8 @@ import java.net.UnknownHostException;
  * {@code ::}), site-local ({@code 10/8}, {@code 172.16/12}, {@code 192.168/16}), link-local ({@code 169.254/16} including the cloud
  * metadata address {@code 169.254.169.254}, {@code fe80::/10}), multicast, carrier-grade NAT ({@code 100.64/10}), unique-local
  * ({@code fc00::/7}), the benchmarking and documentation ranges, and an IPv4-mapped ({@code ::ffff:a.b.c.d}) or IPv4-compatible
- * ({@code ::a.b.c.d}) IPv6 address whose embedded IPv4 address is refused. A name that resolves to several addresses is refused when
+ * ({@code ::a.b.c.d}) IPv6 address whose embedded IPv4 address is refused, and the tunnel and translation prefixes {@code 2002::/16} (6to4),
+ * {@code 2001::/32} (Teredo), {@code 64:ff9b:1::/48} and {@code ::ffff:0:0:0/96} (SIIT). A name that resolves to several addresses is refused when
  * any one of them is.
  */
 final class ImageAddressPolicy {
@@ -53,6 +54,14 @@ final class ImageAddressPolicy {
             boolean nat64 = raw[0] == 0 && raw[1] == 0x64 && (raw[2] & 0xff) == 0xff && (raw[3] & 0xff) == 0x9b;
             for (int index = 4; index < 12 && nat64; index++) if (raw[index] != 0) nat64 = false;
             if (nat64) return publicV4(raw[12] & 0xff, raw[13] & 0xff, raw[14] & 0xff);
+            // 64:ff9b:1::/48 (local-use NAT64), 2002::/16 (6to4) and 2001::/32 (Teredo) embed or tunnel an IPv4 address that cannot be vouched
+            // for, and ::ffff:0:0:0/96 (SIIT) is a translation prefix: none is a public unicast host
+            if (raw[0] == 0 && raw[1] == 0x64 && (raw[2] & 0xff) == 0xff && (raw[3] & 0xff) == 0x9b && raw[4] == 0 && (raw[5] & 0xff) == 0x01) return false;
+            if (raw[0] == 0x20 && raw[1] == 0x02) return false;
+            if (raw[0] == 0x20 && raw[1] == 0x01 && raw[2] == 0 && raw[3] == 0) return false;
+            boolean siit = true;
+            for (int index = 0; index < 8; index++) if (raw[index] != 0) siit = false;
+            if (siit && (raw[8] & 0xff) == 0xff && (raw[9] & 0xff) == 0xff && raw[10] == 0 && raw[11] == 0) return false;
             // 2001:db8::/32 documentation
             return !(raw[0] == 0x20 && raw[1] == 0x01 && raw[2] == 0x0d && (raw[3] & 0xff) == 0xb8);
         }

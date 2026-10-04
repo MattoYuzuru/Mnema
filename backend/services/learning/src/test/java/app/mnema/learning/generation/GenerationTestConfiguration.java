@@ -167,7 +167,21 @@ class GenerationTestConfiguration {
                     if (original != null) original.onRestart();
                 }
             };
-            return real.generate(request.withListener(probe));
+            return real.generate(withoutStubMedia(request, prompt).withListener(probe));
+        }
+
+        /**
+         * The Stub appends the media directives that the task line of a material allows (so a local run creates slots); the flows of these tests
+         * name an audio or image only through {@code [[fake:audio]]} and {@code [[fake:image]]}, so the task line is neutralised for the Stub
+         * unless the prompt carries {@code [[fake:stub-media]]}.
+         */
+        private static TextRequest withoutStubMedia(TextRequest request, String prompt) {
+            if (request.output() != app.mnema.learning.ai.OutputContract.MBM_TEXT || prompt.contains("[[fake:stub-media]]")) return request;
+            List<TextRequest.Segment> segments = request.segments().stream().map(segment -> new TextRequest.Segment(segment.role(),
+                    segment.text().replace("аудио (::audio)", "нет, не добавляй медиа-директивы")
+                            .replace("картинка из поиска (::image mode=search)", "нет, не добавляй медиа-директивы"), segment.cacheable())).toList();
+            return new TextRequest(request.route(), segments, request.output(), request.maxOutputTokens(), request.temperature(), request.deadline(),
+                    request.userKey(), request.listener(), request.stepId(), request.attempt());
         }
 
         private AiResult<TextResponse> ok(TextRequest request, String text) {
@@ -230,6 +244,13 @@ class GenerationTestConfiguration {
         volatile Mode mode = Mode.READY;
         volatile int delayPolls;
         volatile boolean fail;
+        /** Assets staged while this latch is set wait for it in {@link #assetState} (a worker held inside the verification wait). */
+        volatile CountDownLatch gate;
+        /** The next verification poll throws, as a worker that crashes mid-step (its lease then runs out). */
+        final java.util.concurrent.atomic.AtomicBoolean crashNextPoll = new java.util.concurrent.atomic.AtomicBoolean();
+        /** The next {@link #stage} dies after the reservation, as a worker that is killed before the bytes were transferred. */
+        final java.util.concurrent.atomic.AtomicBoolean crashNextStage = new java.util.concurrent.atomic.AtomicBoolean();
+        private final java.util.Map<UUID, CountDownLatch> gated = new ConcurrentHashMap<>();
         final AtomicInteger rejectNext = new AtomicInteger();
         final List<UUID> staged = new CopyOnWriteArrayList<>();
         final List<Boolean> transactionAtStage = new CopyOnWriteArrayList<>();
@@ -244,16 +265,37 @@ class GenerationTestConfiguration {
             mode = Mode.READY;
             delayPolls = 0;
             fail = false;
+            gate = null;
+            gated.values().forEach(CountDownLatch::countDown);
+            gated.clear();
+            crashNextPoll.set(false);
+            crashNextStage.set(false);
             rejectNext.set(0);
             staged.clear();
             transactionAtStage.clear();
             waiting.clear();
         }
 
+        /** A worker killed mid-step: an {@link Error}, which the dispatcher does not catch, so the step stays RUNNING until its lease runs out. */
+        static final class Crash extends Error {
+            private static final long serialVersionUID = 1L;
+
+            Crash(String message) { super(message); }
+        }
+
+        @Override
+        public void reserve(UUID owner, UUID assetId, app.mnema.learning.media.MediaCatalog.Kind kind, String mimeType, byte[] bytes) {
+            jdbc.sql("INSERT INTO app_learning.media_asset(asset_id,owner_id,upload_intent_id,origin,created_at,updated_at) "
+                            + "VALUES (:asset,:owner,:asset,'generated',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) ON CONFLICT (asset_id) DO NOTHING")
+                    .param("asset", assetId).param("owner", owner).update();
+        }
+
         @Override
         public void stage(UUID owner, UUID assetId, app.mnema.learning.media.MediaCatalog.Kind kind, String mimeType, byte[] bytes) {
             transactionAtStage.add(TransactionSynchronizationManager.isActualTransactionActive());
             if (fail) throw new IllegalStateException("storage down");
+            if (crashNextStage.compareAndSet(true, false)) throw new Crash("killed before the transfer");
+            if (gate != null) gated.put(assetId, gate);
             if (!staged.contains(assetId)) {
                 staged.add(assetId);
                 jdbc.sql("INSERT INTO app_learning.media_asset(asset_id,owner_id,upload_intent_id,origin,created_at,updated_at) "
@@ -278,6 +320,15 @@ class GenerationTestConfiguration {
 
         @Override
         public State assetState(UUID owner, UUID assetId) {
+            CountDownLatch held = gated.get(assetId);
+            if (held != null) {
+                try {
+                    held.await(30, TimeUnit.SECONDS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            if (crashNextPoll.compareAndSet(true, false)) throw new IllegalStateException("worker crashed");
             AtomicInteger left = waiting.get(assetId);
             if (left != null && left.decrementAndGet() < 0) {
                 waiting.remove(assetId);
@@ -285,6 +336,7 @@ class GenerationTestConfiguration {
             }
             return jdbc.sql("SELECT state FROM app_learning.media_asset WHERE asset_id=:asset AND owner_id=:owner").param("asset", assetId)
                     .param("owner", owner).query(String.class).optional().map(state -> switch (state) {
+                        case "PENDING_UPLOAD" -> State.PENDING;
                         case "READY" -> State.READY;
                         case "REJECTED" -> State.REJECTED;
                         case "FAILED_RETRYABLE", "DELETED" -> State.FAILED;

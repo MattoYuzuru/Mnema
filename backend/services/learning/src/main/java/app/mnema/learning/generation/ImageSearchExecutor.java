@@ -96,21 +96,26 @@ class ImageSearchExecutor implements StepExecutor {
         Optional<Slot> began = lifecycle.beginSlot(claim);
         if (began.isEmpty() || control.lost()) return;
         Slot slot = began.get();
+        // an earlier attempt that lost its lease recorded its choice before the transfer: this one resumes that very candidate
         Optional<Candidate> resumed = candidates.ofSlot(slot.artifactId(), slot.slotKey()).stream()
                 .filter(each -> each.assetId().equals(slot.assetId())).findFirst();
         Candidate staged;
-        if (resumed.isPresent()) {
-            // an earlier attempt already staged the image: only the verification is left to wait for
+        if (resumed.isPresent() && stager.assetState(claim.ownerId(), slot.assetId()) != GeneratedMediaStager.State.PENDING) {
+            // its bytes are already staged: only the verification is left to wait for
             staged = resumed.get();
         } else {
             String query = slot.spec().path("query").stringValue("");
-            Found found = find(claim, control, query, Set.copyOf(candidates.keysOfSlot(slot.artifactId(), slot.slotKey())), 6);
+            // a resumed choice whose transfer never happened is searched for again by its key (the answer is cached for a day), never replaced
+            Set<String> exclude = resumed.isPresent() ? Set.of() : Set.copyOf(candidates.keysOfSlot(slot.artifactId(), slot.slotKey()));
+            Found found = find(claim, control, query, exclude, resumed.isPresent() ? 30 : 6);
             if (found.stop()) return;
             if (found.failure() != null) {
                 endSlot(claim, found.failure(), false);
                 return;
             }
-            staged = stageFirst(claim, control, slot, found.list());
+            List<ImageSearch.Candidate> list = resumed.isEmpty() ? found.list() : found.list().stream()
+                    .filter(each -> each.source().name().equals(resumed.get().source()) && each.sourceId().equals(resumed.get().sourceId())).toList();
+            staged = stageFirst(claim, control, slot, list, resumed.orElse(null));
             if (staged == null) return;
         }
         if (!lifecycle.slotStaged(claim, staged)) {
@@ -131,22 +136,33 @@ class ImageSearchExecutor implements StepExecutor {
         }
     }
 
-    /** Stages the first downloadable result under the slot's own asset id; null when the step has ended (nothing downloadable, or void). */
-    private Candidate stageFirst(StepClaim claim, StepControl control, Slot slot, List<ImageSearch.Candidate> found) {
+    /**
+     * Stages the first downloadable result under the slot's own asset id; null when the step has ended (nothing downloadable, or void). The
+     * choice is recorded (the asset is reserved, then the candidate row with its source key and attribution is stored) before the bytes are
+     * transferred, so that a retry resumes the same candidate and an asset is never paired with another image's attribution. {@code resumed}
+     * is the already recorded candidate of a retry, whose row is not stored again.
+     */
+    private Candidate stageFirst(StepClaim claim, StepControl control, Slot slot, List<ImageSearch.Candidate> found, Candidate resumed) {
         boolean downloaded = false;
         for (ImageSearch.Candidate each : found.stream().limit(3).toList()) {
             if (control.cancelled() || control.lost() || Instant.now().isAfter(claim.deadlineAt())) break;
             ImageSearch.Image image = download(control, each);
             if (image == null) continue;
             downloaded = true;
+            Candidate row = resumed != null ? resumed : row(each, slot.artifactId(), slot.slotKey(), slot.assetId());
             try {
+                stager.reserve(claim.ownerId(), slot.assetId(), MediaCatalog.Kind.IMAGE, image.mimeType(), image.bytes());
+                if (resumed == null && !lifecycle.slotChosen(claim, row)) {
+                    outcome(false);
+                    return null;
+                }
                 stager.stage(claim.ownerId(), slot.assetId(), MediaCatalog.Kind.IMAGE, image.mimeType(), image.bytes());
             } catch (RuntimeException unavailable) {
                 LOG.warn("generation_media_stage_failed step_id={} error_type={}", claim.stepId(), unavailable.getClass().getSimpleName());
                 endSlot(claim, "PROVIDER_UNAVAILABLE", false);
                 return null;
             }
-            return row(each, slot.artifactId(), slot.slotKey(), slot.assetId());
+            return row;
         }
         if (control.lost()) return null;
         endSlot(claim, control.cancelled() ? null : downloaded ? "VERIFICATION_REJECTED" : "PROVIDER_UNAVAILABLE", control.cancelled());
@@ -172,6 +188,7 @@ class ImageSearchExecutor implements StepExecutor {
             failTurn(claim, Map.of(), "NO_RESULT");
             return;
         }
+        if (claim.attempt() > 1 && applyStored(claim, slot, turn)) return;
         int room = CandidateRepository.MAX_PER_SLOT - candidates.count(slot.artifactId(), slot.slotKey());
         int wanted = Math.min(NEW_PER_TURN, room);
         if (wanted <= 0) {
@@ -202,7 +219,7 @@ class ImageSearchExecutor implements StepExecutor {
         }
         if (control.lost()) return;
         if (control.cancelled()) {
-            stored(edits.fail(claim, SessionLifecycle.Failure.cancelled()), "cancelled");
+            stored(lifecycle.cancelTurn(claim), "cancelled");
             return;
         }
         if (rows.isEmpty()) {
@@ -217,7 +234,7 @@ class ImageSearchExecutor implements StepExecutor {
         Map<UUID, GeneratedMediaStager.State> done = await(rows.stream().map(Candidate::assetId).toList(), claim, control, claim.deadlineAt());
         if (control.lost()) return;
         if (control.cancelled()) {
-            stored(edits.fail(claim, SessionLifecycle.Failure.cancelled()), "cancelled");
+            stored(lifecycle.cancelTurn(claim), "cancelled");
             return;
         }
         Map<UUID, String> states = new LinkedHashMap<>();
@@ -225,15 +242,31 @@ class ImageSearchExecutor implements StepExecutor {
         for (Candidate row : rows) {
             GeneratedMediaStager.State state = done.get(row.assetId());
             states.put(row.candidateId(), state == GeneratedMediaStager.State.READY ? "READY"
-                    : state == GeneratedMediaStager.State.VERIFYING ? "VERIFYING" : "FAILED");
+                    : stillWaiting(state) ? "VERIFYING" : "FAILED");
             if (chosen == null && state == GeneratedMediaStager.State.READY) chosen = row;
         }
         if (chosen == null) {
-            boolean late = done.values().stream().anyMatch(state -> state == GeneratedMediaStager.State.VERIFYING);
+            boolean late = done.values().stream().anyMatch(ImageSearchExecutor::stillWaiting);
             failTurn(claim, states, late ? "DEADLINE_EXCEEDED" : "NO_RESULT");
             return;
         }
         stored(lifecycle.succeedImages(claim, chosen, states), "succeeded");
+    }
+
+    /**
+     * A retry of the turn (the lease of an earlier attempt was lost) first considers what that attempt already stored: the READY candidates of
+     * this slot created since the turn began, which no revision uses yet (a turn that was applied ends, so none of them is chosen). The first
+     * is applied without a new search, download or staging. True when this step has ended with it (or its claim is void).
+     */
+    private boolean applyStored(StepClaim claim, Slot slot, Turn turn) {
+        if (turn.createdAt() == null) return false;
+        Candidate stored = candidates.ofSlot(slot.artifactId(), slot.slotKey()).stream()
+                .filter(each -> each.state().equals("READY") && !each.assetId().equals(slot.assetId())
+                        && each.createdAt() != null && !each.createdAt().isBefore(turn.createdAt()))
+                .findFirst().orElse(null);
+        if (stored == null) return false;
+        stored(lifecycle.succeedImages(claim, stored, Map.of(stored.candidateId(), "READY")), "succeeded");
+        return true;
     }
 
     private void failTurn(StepClaim claim, Map<UUID, String> states, String errorCode) {
@@ -263,7 +296,7 @@ class ImageSearchExecutor implements StepExecutor {
         }
         if (control.lost()) return new Found(List.of(), null, true);
         if (control.cancelled()) {
-            if (claim.input().has("turnId")) stored(edits.fail(claim, SessionLifecycle.Failure.cancelled()), "cancelled");
+            if (claim.input().has("turnId")) stored(lifecycle.cancelTurn(claim), "cancelled");
             else endSlot(claim, null, true);
             return new Found(List.of(), null, true);
         }
@@ -292,7 +325,7 @@ class ImageSearchExecutor implements StepExecutor {
             for (UUID asset : List.copyOf(pending)) {
                 GeneratedMediaStager.State state = stager.assetState(claim.ownerId(), asset);
                 states.put(asset, state);
-                if (state != GeneratedMediaStager.State.VERIFYING) pending.remove(asset);
+                if (!stillWaiting(state)) pending.remove(asset);
             }
             if (pending.isEmpty() || control.lost() || control.cancelled() || Instant.now().plus(poll).isAfter(deadline)) break;
             try {
@@ -303,6 +336,10 @@ class ImageSearchExecutor implements StepExecutor {
             }
         }
         return states;
+    }
+
+    private static boolean stillWaiting(GeneratedMediaStager.State state) {
+        return state == GeneratedMediaStager.State.VERIFYING || state == GeneratedMediaStager.State.PENDING;
     }
 
     private static Candidate row(ImageSearch.Candidate found, UUID artifactId, String slotKey, UUID asset) {

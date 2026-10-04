@@ -61,8 +61,15 @@ class MediaUploadRepository {
         if (!origin.equals("generated")) throw new MediaUploadConflictException();
         Session existing = byAssetGeneration(asset, 0);
         if (existing != null) {
-            if (!Arrays.equals(existing.fingerprint(), fingerprint)) throw new IdempotencyConflictException();
-            return existing;
+            if (Arrays.equals(existing.fingerprint(), fingerprint)) return existing;
+            // A reservation whose transfer has not begun (a single PUT still OPEN) is only a note of what the server meant to stage: a retry of a
+            // step that chose another image after a lost lease replaces it. Once the bytes may have been written, other bytes conflict.
+            boolean replaceable = existing.state().equals("OPEN") && existing.method().equals("SINGLE") && !settings.multipart(length);
+            if (!replaceable) throw new IdempotencyConflictException();
+            jdbc.sql("UPDATE app_learning.media_upload_session SET declared_mime=:mime,declared_length=:length,request_fingerprint=:fingerprint,"
+                            + "updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) WHERE session_id=:session AND state='OPEN'")
+                    .param("mime", mime).param("length", length).param("fingerprint", fingerprint).param("session", existing.sessionId()).update();
+            return byId(existing.sessionId());
         }
         if (current.generation() != 0 || !current.state().equals("PENDING_UPLOAD")) throw new MediaUploadConflictException();
         return insert(owner, asset, 0, kind, mime, length, fingerprint, null);

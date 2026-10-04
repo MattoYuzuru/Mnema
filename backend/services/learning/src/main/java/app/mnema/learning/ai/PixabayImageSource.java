@@ -53,9 +53,8 @@ final class PixabayImageSource implements ImageSource {
     @Override
     public AiResult<List<ImageSearch.Candidate>> search(String query, String lang, int maxResults, Duration budget) {
         String q = ImageText.bound(query, 100);
-        int perPage = Math.max(3, Math.min(30, maxResults * 2));
         URI uri = URI.create(base + (base.toString().contains("?") ? "&" : "?") + "key=" + enc(key) + "&q=" + enc(q) + "&lang=" + enc(lang)
-                + "&image_type=photo&safesearch=true&per_page=" + perPage + "&page=1");
+                + "&image_type=photo&safesearch=true&per_page=" + PAGE_SIZE + "&page=1");
         ChatHttp.Reply reply;
         try {
             reply = http.send(ImageSource.get(uri, userAgent), budget, null);
@@ -76,6 +75,7 @@ final class PixabayImageSource implements ImageSource {
         if (!root.path("hits").isArray()) return AiResult.failed(new AiFailure.InvalidOutput("shape"));
         List<ImageSearch.Candidate> out = new ArrayList<>();
         for (JsonNode hit : root.path("hits")) {
+            if (out.size() >= PAGE_SIZE) break;
             String page = ImageText.https(hit.path("pageURL").stringValue(null));
             String download = ImageText.https(hit.path("webformatURL").stringValue(null));
             if (page == null || download == null || !hit.path("id").isNumber()) continue;
