@@ -133,6 +133,10 @@ final class OpenAiCompatibleAdapter implements TextAdapter {
                 body.put("user", request.userKey().value());
                 body.putObject("usage").put("include", true);
                 body.putObject("provider").put("data_collection", "deny");
+                // reasoning is explicit as on DeepSeek: off (effort none) except on the planner routes
+                // (https://openrouter.ai/docs/use-cases/reasoning-tokens)
+                if (request.route().thinking()) body.putObject("reasoning").put("enabled", true);
+                else body.putObject("reasoning").put("effort", "none");
             }
         }
         return body;
