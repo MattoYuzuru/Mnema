@@ -40,6 +40,9 @@ export type SlotKind = (typeof SLOT_KINDS)[number];
 const SLOT_ERROR_CODES = ['PROVIDER_UNAVAILABLE', 'NO_RESULT', 'VERIFICATION_REJECTED', 'DEADLINE_EXCEEDED', 'USAGE_LIMIT',
     'ESTIMATE_EXCEEDED', 'CANCELLED'] as const;
 export type SlotErrorCode = (typeof SLOT_ERROR_CODES)[number];
+/** `states.json` `turn.imageSearchErrorCodes`: how a turn of an image search fails (`NO_RESULT` is not an artifact error code). */
+export const IMAGE_SEARCH_ERROR_CODES = ['NO_RESULT', 'PROVIDER_UNAVAILABLE', 'DEADLINE_EXCEEDED'] as const;
+export type TurnErrorCode = ArtifactErrorCode | (typeof IMAGE_SEARCH_ERROR_CODES)[number];
 
 const REPIN_STATUSES = ['AUTO_REPINNED', 'NEEDS_USER_DECISION'] as const;
 export type RepinStatus = (typeof REPIN_STATUSES)[number];
@@ -193,6 +196,39 @@ export interface SessionPage { readonly items: readonly SessionSummary[]; readon
 
 export interface CreatedSession { readonly session: SessionDetail; readonly replayed: boolean; }
 
+/** Where an image found by the search came from (`mediaSlotItem.candidates[].source`); `STUB` is the local and CI source. */
+export const IMAGE_SOURCES = ['PIXABAY', 'OPENVERSE', 'WIKIMEDIA', 'STUB'] as const;
+export type ImageSource = (typeof IMAGE_SOURCES)[number];
+export const CANDIDATE_STATES = ['VERIFYING', 'READY', 'FAILED'] as const;
+export type CandidateState = (typeof CANDIDATE_STATES)[number];
+
+/** Who made an image and under what license (AI-10, #296). Both links are `https:` or `null`: anything else is dropped at the parser. */
+export interface ImageAttribution {
+    readonly source: ImageSource;
+    readonly title: string;
+    readonly author: string;
+    readonly license: string;
+    readonly licenseUrl: string | null;
+    readonly sourcePageUrl: string | null;
+    /** `true` for a share-alike license (BY-SA): the owner is told what changing the image asks of them. */
+    readonly shareAlike: boolean;
+}
+
+/** One licensed image a search found and staged as the owner's own asset (`imageCandidate`); never a link to the stock site. */
+export interface ImageCandidate extends ImageAttribution {
+    readonly candidateId: string;
+    readonly assetId: string;
+    readonly state: CandidateState;
+    readonly width: number;
+    readonly height: number;
+    /** The candidate the shown revision uses. */
+    readonly chosen: boolean;
+}
+
+/** The directive's mode of an IMAGE slot (`mediaSlotItem.mode`): only a `search` slot offers a new search, candidates and a choice. */
+export const IMAGE_MODES = ['search', 'generate'] as const;
+export type ImageMode = (typeof IMAGE_MODES)[number];
+
 export interface MediaSlot {
     readonly slotKey: string;
     readonly kind: SlotKind;
@@ -200,13 +236,19 @@ export interface MediaSlot {
     readonly assetId: string;
     readonly state: SlotState;
     readonly errorCode: SlotErrorCode | null;
+    /** `search` or `generate` for an IMAGE slot, `null` for audio and video (and while the server does not send it). */
+    readonly mode: ImageMode | null;
     /** The voice of the last redo of the audio of an exercise (AI-16); `null` before one ran, and always `null` for a material. */
     readonly voice: SpeechVoice | null;
+    /** The chosen candidate's attribution (AI-10): `null` for every slot but a found image. */
+    readonly attribution: ImageAttribution | null;
+    /** The images the searches of this slot found, in the order they were found (at most 12); `[]` for every slot but a search. */
+    readonly candidates: readonly ImageCandidate[];
 }
 
 export interface ArtifactRevisionRef { readonly revisionId: string; readonly cause: string; readonly createdAt: string; }
 
-/** What an edit does (`editArtifact.action`). The three media redos are refused with `CAPABILITY_UNAVAILABLE` until AI-09 and AI-10. */
+/** What an edit does (`editArtifact.action`). `IMAGE_GENERATE` and the audio redo of a material are refused with `CAPABILITY_UNAVAILABLE` until AI-09. */
 export const EDIT_ACTIONS = ['REWRITE', 'IMAGE_SEARCH', 'IMAGE_GENERATE', 'AUDIO_REGENERATE', 'FREE', 'REMOVE_MEDIA'] as const;
 export type EditAction = (typeof EDIT_ACTIONS)[number];
 export const EDIT_PRESETS = ['SIMPLER', 'SHORTER', 'EXAMPLE', 'LONGER'] as const;
@@ -215,6 +257,8 @@ export const TURN_STATES = ['QUEUED', 'RUNNING', 'APPLIED', 'FAILED', 'CANCELLED
 export type TurnState = (typeof TURN_STATES)[number];
 export const MAX_INSTRUCTION_LENGTH = 2000;
 export const MAX_EDIT_TARGETS = 50;
+/** What an image search takes as its query (`editArtifact`, IMAGE_SEARCH): 1 to 200 code points. */
+export const MAX_SEARCH_QUERY_LENGTH = 200;
 
 /** One user instruction on an artifact (`getArtifact.turns[]`, `editArtifact.turn`). */
 export interface ArtifactTurn {
@@ -226,7 +270,7 @@ export interface ArtifactTurn {
     readonly targetNodeIds: readonly string[];
     /** The revision the turn made: set once it is `APPLIED`. */
     readonly resultRevisionId: string | null;
-    readonly errorCode: ArtifactErrorCode | null;
+    readonly errorCode: TurnErrorCode | null;
     readonly createdAt: string;
     /** The voice of an `AUDIO_REGENERATE` turn of an exercise (AI-16); `null` for every other turn. */
     readonly voice: SpeechVoice | null;
@@ -717,14 +761,65 @@ function parseVoice(value: unknown): SpeechVoice | null {
     return value === undefined || value === null ? null : oneOf(value, SPEECH_VOICES, 'voice');
 }
 
+const ATTRIBUTION_KEYS = ['source', 'title', 'author', 'license', 'licenseUrl', 'sourcePageUrl', 'shareAlike'] as const;
+const CANDIDATE_KEYS = ['candidateId', 'assetId', 'state', ...ATTRIBUTION_KEYS, 'width', 'height', 'chosen'] as const;
+export const MAX_CANDIDATES = 12;
+
+/** A link the page may render: absolute `https:` and nothing else (never `javascript:`, `http:` or a relative path). */
+function httpsLink(value: unknown): string | null {
+    if (typeof value !== 'string' || value.length === 0 || value.length > 2048) return null;
+    try {
+        return new URL(value).protocol === 'https:' ? value : null;
+    } catch {
+        return null;
+    }
+}
+
+function dimension(value: unknown): number {
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) throw new AuthoringProtocolError('Invalid image size.');
+    return value;
+}
+
+function parseAttributionFields(object: Record<string, unknown>): ImageAttribution {
+    return {
+        source: oneOf(object['source'], IMAGE_SOURCES, 'image source'),
+        title: text(object['title'], 300, true), author: text(object['author'], 200, true), license: text(object['license'], 200, true),
+        licenseUrl: httpsLink(object['licenseUrl']), sourcePageUrl: httpsLink(object['sourcePageUrl']), shareAlike: flag(object['shareAlike'])
+    };
+}
+
+function parseAttribution(value: unknown): ImageAttribution {
+    return parseAttributionFields(requireObject(value, ATTRIBUTION_KEYS));
+}
+
+function parseCandidate(value: unknown): ImageCandidate {
+    const object = requireObject(value, CANDIDATE_KEYS);
+    return {
+        ...parseAttributionFields(object), candidateId: requireEntity(object['candidateId']), assetId: requireEntity(object['assetId']),
+        state: oneOf(object['state'], CANDIDATE_STATES, 'candidate state'), width: dimension(object['width']), height: dimension(object['height']),
+        chosen: flag(object['chosen'])
+    };
+}
+
+/** The members the contract adds to a slot of some artifacts only: `voice` (AI-16) and `attribution` and `candidates` (AI-10). */
+function slotKeys(value: unknown): readonly string[] {
+    const base = ['slotKey', 'kind', 'nodeId', 'assetId', 'state', 'errorCode'];
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) return base;
+    return [...base, ...['voice', 'attribution', 'candidates', 'mode'].filter(key => key in value)];
+}
+
 function parseMediaSlot(value: unknown): MediaSlot {
-    const object = requireObject(value, keysWith(value, ['slotKey', 'kind', 'nodeId', 'assetId', 'state', 'errorCode'], 'voice'));
+    const object = requireObject(value, slotKeys(value));
+    const candidates = object['candidates'] === undefined ? [] : list(object['candidates'], MAX_CANDIDATES).map(parseCandidate);
+    if (candidates.filter(candidate => candidate.chosen).length > 1) throw new AuthoringProtocolError('More than one image is chosen.');
     return {
         voice: parseVoice(object['voice']),
+        mode: object['mode'] === undefined ? null : nullable(object['mode'], mode => oneOf(mode, IMAGE_MODES, 'image mode')),
         slotKey: text(object['slotKey'], 64), kind: oneOf(object['kind'], SLOT_KINDS, 'slot kind'),
         nodeId: requireEntity(object['nodeId']), assetId: requireEntity(object['assetId']),
         state: oneOf(object['state'], SLOT_STATES, 'slot state'),
-        errorCode: nullable(object['errorCode'], code => oneOf(code, SLOT_ERROR_CODES, 'slot error code'))
+        errorCode: nullable(object['errorCode'], code => oneOf(code, SLOT_ERROR_CODES, 'slot error code')),
+        attribution: object['attribution'] === undefined ? null : nullable(object['attribution'], parseAttribution), candidates
     };
 }
 
@@ -744,7 +839,7 @@ export function parseTurn(value: unknown): ArtifactTurn {
         preset: nullable(object['preset'], preset => oneOf(preset, EDIT_PRESETS, 'edit preset')),
         instruction: nullable(object['instruction'], instruction => text(instruction, MAX_INSTRUCTION_LENGTH * 2)),
         targetNodeIds: list(object['targetNodeIds'], MAX_EDIT_TARGETS).map(requireEntity),
-        resultRevisionId: nullable(object['resultRevisionId'], requireEntity), errorCode: lenientErrorCode(object['errorCode']),
+        resultRevisionId: nullable(object['resultRevisionId'], requireEntity), errorCode: lenientTurnErrorCode(object['errorCode']),
         createdAt: requireInstant(object['createdAt'])
     };
 }
@@ -880,6 +975,10 @@ function parseBlocks(value: unknown): readonly NativeNode[] | null {
 }
 
 /** An error code this client does not know is a generic failure (`null`), not a protocol error. */
+function lenientTurnErrorCode(code: unknown): TurnErrorCode | null {
+    return lenientErrorCode(code) ?? (typeof code === 'string' && (IMAGE_SEARCH_ERROR_CODES as readonly string[]).includes(code) ? code as TurnErrorCode : null);
+}
+
 function lenientErrorCode(code: unknown): ArtifactErrorCode | null {
     return typeof code === 'string' && (ARTIFACT_ERROR_CODES as readonly string[]).includes(code) ? code as ArtifactErrorCode : null;
 }
@@ -1244,6 +1343,7 @@ export function serializeEdit(request: EditRequest, commandId: string): Record<s
     if (preset !== null && (action !== 'REWRITE' || !(EDIT_PRESETS as readonly string[]).includes(preset))) {
         throw new RequestValidationError('A preset belongs to a rewrite.');
     }
+    if (action === 'IMAGE_SEARCH') return serializeImageSearch(request, nodeIds, commandId);
     const instruction = action === 'REMOVE_MEDIA' ? null : request.instruction?.trim() ?? null;
     if (instruction !== null && (instruction.length === 0 || codePoints(instruction) > MAX_INSTRUCTION_LENGTH)) {
         throw new RequestValidationError('The instruction is empty or too long.');
@@ -1253,6 +1353,15 @@ export function serializeEdit(request: EditRequest, commandId: string): Record<s
         commandId: requireCommand(commandId), expectedRevisionId: requireEntity(request.expectedRevisionId), action,
         target: { nodeIds }, ...(preset === null ? {} : { preset }), ...(instruction === null ? {} : { instruction })
     };
+}
+
+/** An image search names one image and may carry a query (1 to 200 code points); a blank one is left out, the slot's own query is used. */
+function serializeImageSearch(request: EditRequest, nodeIds: readonly string[], commandId: string): Record<string, unknown> {
+    if (nodeIds.length !== 1 || (request.preset ?? null) !== null) throw new RequestValidationError('An image search names exactly one image.');
+    const query = request.instruction?.trim() ?? '';
+    if (codePoints(query) > MAX_SEARCH_QUERY_LENGTH) throw new RequestValidationError('The search query is too long.');
+    return { commandId: requireCommand(commandId), expectedRevisionId: requireEntity(request.expectedRevisionId), action: 'IMAGE_SEARCH',
+        target: { nodeIds }, ...(query.length === 0 ? {} : { instruction: query }) };
 }
 
 /**
@@ -1281,4 +1390,20 @@ export function serializeEditEstimate(request: EditEstimateRequest): Record<stri
     }
     return { edit: { sessionId: requireEntity(request.sessionId), artifactId: requireEntity(request.artifactId),
         action: oneOf(request.action, EDIT_ACTIONS, 'edit action'), ...(count === undefined ? {} : { targetNodeCount: count }) } };
+}
+
+// --- Another found image (`selectMediaCandidate`, AI-10 #296) ---
+
+/** The body of `selectMediaCandidate`: the revision the owner sees and the READY candidate of the slot they chose. */
+export interface SelectCandidateRequest { readonly expectedRevisionId: string; readonly candidateId: string; }
+
+export function serializeSelection(request: SelectCandidateRequest, commandId: string): Record<string, unknown> {
+    return { commandId: requireCommand(commandId), expectedRevisionId: requireEntity(request.expectedRevisionId),
+        candidateId: requireEntity(request.candidateId) };
+}
+
+/** A slot key is 1 to 64 characters (the parser's own bound); the path segment is percent-encoded by the caller. */
+export function requireSlotKey(value: string): string {
+    if (value.length === 0 || value.length > 64) throw new AuthoringProtocolError('Invalid media slot key.');
+    return value;
 }

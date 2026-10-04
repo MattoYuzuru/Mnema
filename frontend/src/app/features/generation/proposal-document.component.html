@@ -47,48 +47,96 @@
       </div>
     }
   } @else {
-    @if (mediaKind(id); as kind) {
-      <div class="media-actions" role="group" [attr.aria-label]="mediaLabel(id)">
-        @if (kind === 'image') {
-          @for (action of imageActions; track action.key) {
-            @if (capabilityOf(action.key).available) {
-              <button type="button" class="strip-button" [attr.aria-disabled]="busy() ? 'true' : null" (click)="mediaAction(id, action.edit)">{{ action.label }}</button>
+    @if (mediaKind(id) === 'image' && attributionOf(id); as credit) { <p class="image-credit">{{ credit }}</p> }
+    @if (mediaIds().has(id) ? mediaKind(id) : null; as kind) {
+      @if (kind === 'image' && failedSlot(id); as failed) {
+        <div class="slot-failed" role="group" aria-label="Изображение не подобрано">
+          <p class="slot-failed-text">{{ failureOf(failed) }}</p>
+          <div class="media-actions">
+            @if (searchAllowed()) {
+              <button type="button" class="strip-button" [attr.data-focus-key]="'retry:' + id" [attr.aria-disabled]="busy() ? 'true' : null" (click)="retrySearch(id)">Повторить</button>
+              <button type="button" class="strip-button" [attr.data-focus-key]="'search:' + id" [attr.aria-disabled]="busy() ? 'true' : null"
+                [attr.aria-expanded]="panel()?.nodeId === id" (click)="toggleSearch(id)">Заменить</button>
             } @else {
               <span class="media-unavailable">
-                <button type="button" class="strip-button" aria-disabled="true">{{ action.label }}</button>
-                <app-toggletip [topic]="action.label">{{ reasonOf(action.key) }}</app-toggletip>
+                <button type="button" class="strip-button" aria-disabled="true">Повторить</button>
+                <app-toggletip topic="Повторить">{{ searchReason() }}</app-toggletip>
+              </span>
+            }
+            <button type="button" class="strip-button" [attr.aria-disabled]="busy() ? 'true' : null" (click)="removeBlock(id)">Убрать блок</button>
+          </div>
+        </div>
+      } @else {
+        <div class="media-actions" role="group" [attr.aria-label]="mediaLabel(id)">
+          @if (kind === 'image') {
+            @if (isSearch(id)) {
+            @if (searchAllowed()) {
+              <button type="button" class="strip-button" [attr.data-focus-key]="'search:' + id" [attr.aria-disabled]="busy() ? 'true' : null"
+                [attr.aria-expanded]="panel()?.nodeId === id" (click)="toggleSearch(id)">Найти похожее</button>
+            } @else {
+              <span class="media-unavailable">
+                <button type="button" class="strip-button" aria-disabled="true">Найти похожее</button>
+                <app-toggletip topic="Найти похожее">{{ searchReason() }}</app-toggletip>
+              </span>
+            }
+            }
+            @if (capabilityOf('generate').available) {
+              <button type="button" class="strip-button" [attr.aria-disabled]="busy() ? 'true' : null" (click)="mediaAction(id, 'IMAGE_GENERATE')">Создать</button>
+            } @else {
+              <span class="media-unavailable">
+                <button type="button" class="strip-button" aria-disabled="true">Создать</button>
+                <app-toggletip topic="Создать">{{ reasonOf('generate') }}</app-toggletip>
+              </span>
+            }
+          } @else {
+            @if (capabilityOf('speech').available) {
+              <button type="button" class="strip-button" [attr.aria-disabled]="busy() ? 'true' : null" (click)="mediaAction(id, 'AUDIO_REGENERATE')">Озвучить заново</button>
+            } @else {
+              <span class="media-unavailable">
+                <button type="button" class="strip-button" aria-disabled="true">Озвучить заново</button>
+                <app-toggletip topic="Озвучить заново">{{ reasonOf('speech') }}</app-toggletip>
               </span>
             }
           }
-        } @else {
-          @if (capabilityOf('speech').available) {
-            <button type="button" class="strip-button" [attr.aria-disabled]="busy() ? 'true' : null" (click)="mediaAction(id, 'AUDIO_REGENERATE')">Озвучить заново</button>
-          } @else {
-            <span class="media-unavailable">
-              <button type="button" class="strip-button" aria-disabled="true">Озвучить заново</button>
-              <app-toggletip topic="Озвучить заново">{{ reasonOf('speech') }}</app-toggletip>
-            </span>
-          }
-        }
-        <button type="button" class="strip-button" [attr.aria-disabled]="busy() ? 'true' : null" (click)="mediaAction(id, 'REMOVE_MEDIA')">Убрать</button>
-      </div>
+          <button type="button" class="strip-button" [attr.aria-disabled]="busy() ? 'true' : null" (click)="mediaAction(id, 'REMOVE_MEDIA')">Убрать</button>
+        </div>
+      }
     }
-    @if (busyLast() === id) { <p class="rewriting-caption">Мнема переписывает…</p> }
+    @if (panel(); as open) {
+      @if (open.nodeId === id) {
+        <app-image-search-panel [query]="open.query" [placeholder]="searchLabel(id)" [pending]="panelSending() || open.sent || searchingNode() === id"
+          [error]="panelError()" (submitted)="submitSearch(id, $event)" (cancelled)="cancelSearch()" />
+      }
+    }
+    @if (variantsShown(id); as found) {
+      <details class="variants" [attr.data-variants]="id" [open]="variantsOpen(id)">
+        <summary class="variants-summary">Другие изображения ({{ variantsOf(found).length }})</summary>
+        <app-image-variants [candidates]="found.candidates" [selecting]="selecting()" [busy]="busy()" [error]="selectionMessage(id)"
+          (chosen)="choose(id, found, $event)" />
+      </details>
+    }
+    @if (busyLast() === id && panel()?.nodeId !== id) {
+      @if (searchingNode() === id) { <p class="rewriting-caption" role="status">{{ searchRunning }}</p> }
+      @else { <p class="rewriting-caption">Мнема переписывает…</p> }
+    }
     @if (reviewLast() === id) {
       @if (review(); as strip) {
         <div class="rewrite-strip" role="group" [class.is-failed]="strip.kind === 'failed'"
-          [attr.aria-label]="strip.kind === 'applied' ? 'Переписанный фрагмент' : 'Правка не удалась'">
+          [attr.aria-label]="strip.turn.action === 'IMAGE_SEARCH' ? (strip.kind === 'applied' ? 'Подобранное изображение' : 'Поиск не удался')
+            : strip.kind === 'applied' ? 'Переписанный фрагмент' : 'Правка не удалась'">
           @if (strip.kind === 'applied') {
-            <span class="strip-state">Переписано</span>
-            <button type="button" class="strip-button" [attr.aria-expanded]="showDiff()" [attr.aria-controls]="diffId" (click)="toggleDiff()">{{ showDiff() ? 'Скрыть изменения' : 'Показать изменения' }}</button>
+            <span class="strip-state">{{ strip.turn.action === 'IMAGE_SEARCH' ? 'Подобрано другое изображение' : 'Переписано' }}</span>
+            @if (strip.turn.action !== 'IMAGE_SEARCH') {
+              <button type="button" class="strip-button" [attr.aria-expanded]="showDiff()" [attr.aria-controls]="diffId" (click)="toggleDiff()">{{ showDiff() ? 'Скрыть изменения' : 'Показать изменения' }}</button>
+            }
             <button type="button" class="strip-button" (click)="keep(strip)">Оставить</button>
             @if (strip.canUndo) { <button type="button" class="strip-button" [attr.aria-disabled]="busy() ? 'true' : null" (click)="undo(strip)">Вернуть</button> }
-            <button type="button" class="strip-button" [attr.aria-disabled]="busy() ? 'true' : null" (click)="again(strip)">Ещё раз</button>
+            <button type="button" class="strip-button" [attr.data-focus-key]="'again:' + strip.range[0]" [attr.aria-disabled]="busy() ? 'true' : null" (click)="again(strip)">Ещё раз</button>
             @if (showDiff() && diffState().phase === 'loading') { <span class="strip-note">Считаем изменения…</span> }
             @if (showDiff() && diffState().phase === 'error') { <span class="strip-note is-error">Не удалось загрузить прежнюю версию.</span> }
           } @else {
-            <span class="strip-state is-error">{{ failure() }} Текст не изменился, лимит не списан.</span>
-            <button type="button" class="strip-button" [attr.aria-disabled]="busy() ? 'true' : null" (click)="again(strip)">Ещё раз</button>
+            <span class="strip-state is-error">{{ failure() }} {{ unchanged() }}, лимит не списан.</span>
+            <button type="button" class="strip-button" [attr.data-focus-key]="'again:' + strip.range[0]" [attr.aria-disabled]="busy() ? 'true' : null" (click)="again(strip)">Ещё раз</button>
             <button type="button" class="strip-button" (click)="keep(strip)">Закрыть</button>
           }
         </div>

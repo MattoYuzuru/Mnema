@@ -9,10 +9,10 @@ import { AuthoringProtocolError, requireCommand, requireCursor, requireEntity, r
 import { expectedEtag } from '../own-decks/own-deck.models';
 import {
     ApprovalAck, ArtifactDetail, ArtifactSummary, CreatedSession, EditAccepted, EditEstimateRequest, EditRequest, EventsPage, GenerationEstimate,
-    ExercisePlanItem, HandoffResult, GenerationSpec, MAX_APPROVALS_PER_COMMAND, MaterialPlanItem, RequestValidationError, NoteArchiveResult,
+    ExercisePlanItem, HandoffResult, GenerationSpec, SelectCandidateRequest, MAX_APPROVALS_PER_COMMAND, MaterialPlanItem, RequestValidationError, NoteArchiveResult,
     SessionDetail, SessionPage, SessionPlan,
     parseApprovalAck, parseArtifactDetail, parseArtifactSummary, parseEditAccepted, parseEstimate, parseEventsPage, parseHandoff,
-    parseNoteArchive, parseSessionDetail, parseSessionPage, serializeEdit, serializeEditEstimate, serializeSpec
+    parseNoteArchive, parseSessionDetail, parseSessionPage, requireSlotKey, serializeEdit, serializeEditEstimate, serializeSelection, serializeSpec
 } from './generation.models';
 import { IntentContext, IntentResult, parseIntent, serializeIntentRequest } from './generation-intent';
 import { DraftRow, serializePlanApproval } from './plan-editor';
@@ -254,6 +254,26 @@ export class GenerationApiService {
             if (accepted.artifact.artifactId !== artifactId.toLowerCase()) throw new AuthoringProtocolError('Edit acknowledgement mismatch.');
             if (accepted.turn.action !== request.action) throw new AuthoringProtocolError('Edit acknowledgement mismatch.');
             return accepted;
+        }));
+    }
+
+    /**
+     * Uses another image the search of a slot found (`selectMediaCandidate`, AI-10): free and synchronous, it answers `200` with the artifact
+     * on the new revision (cause `MEDIA`); choosing the one already chosen is a no-op `200`. No `If-Match`: `expectedRevisionId` is the guard.
+     */
+    selectMediaCandidate(deckId: string, sessionId: string, artifactId: string, slotKey: string, request: SelectCandidateRequest,
+                         commandId: string): Observable<ArtifactDetail> {
+        return defer(() => this.http.post<unknown>(`${this.artifact(deckId, sessionId, artifactId)}/media-slots/`
+            + `${encodeURIComponent(requireSlotKey(slotKey))}/selection`, serializeSelection(request, commandId),
+            { observe: 'response' })).pipe(map(response => {
+            requireStatus(response, 200);
+            const detail = parseArtifactDetail(response.body);
+            if (detail.artifactId !== artifactId.toLowerCase() || detail.sessionId !== sessionId.toLowerCase()) {
+                throw new AuthoringProtocolError('Selection acknowledgement mismatch.');
+            }
+            // A no-op or a replay carries no new version: only a header that is there has to be the artifact's.
+            if (!replayHeader(response) && response.headers.has('ETag')) requireEtag(response, detail.rowVersion);
+            return detail;
         }));
     }
 

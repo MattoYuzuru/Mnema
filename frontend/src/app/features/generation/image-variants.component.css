@@ -1,0 +1,23 @@
+:host { display: block; min-inline-size: 0; }
+* { box-sizing: border-box; }
+.sr-only { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.variants { min-inline-size: 0; margin: 0; border: 0; padding: 0; }
+legend { padding: 0; margin-block-end: .5rem; color: var(--mn-ink); font: 700 .9rem/1.3 var(--mn-font-body, system-ui, sans-serif); }
+/* One column at phone width, two from 600 px; nothing here is wider than its column. */
+.grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: .75rem; margin: 0; padding: 0; list-style: none; }
+@media (min-width: 37.5rem) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.card { display: grid; align-content: start; gap: .25rem; min-inline-size: 0; border: 1px solid var(--mn-rule); border-radius: var(--mn-radius, 2px); padding: .5rem; background: var(--mn-sheet); font: .85rem/1.4 var(--mn-font-body, system-ui, sans-serif); color: var(--mn-body); }
+.card.is-chosen { border: 2px solid var(--mn-ink); padding: calc(.5rem - 1px); }
+.card-label { display: grid; gap: .25rem; min-inline-size: 0; min-block-size: var(--mn-touch-min, 2.75rem); cursor: pointer; }
+.card-radio { inline-size: 1.25rem; block-size: 1.25rem; margin: 0; accent-color: var(--mn-ink); justify-self: start; }
+.card-radio[aria-disabled='true'], .variants[aria-disabled='true'] .card-label { cursor: progress; }
+.card-source { color: var(--mn-ink); font-weight: 600; overflow-wrap: anywhere; }
+.card-license { color: var(--mn-muted); overflow-wrap: anywhere; }
+.card-chosen { color: var(--mn-ink); font-weight: 700; }
+.badge { display: inline-block; margin-inline-start: .4rem; border: 1px solid var(--mn-ink); border-radius: var(--mn-radius, 2px); padding: 0 .35rem; color: var(--mn-ink); font: 700 .75rem/1.5 var(--mn-font-mono, ui-monospace, monospace); letter-spacing: .04em; }
+.card-links { display: flex; flex-wrap: wrap; align-items: center; gap: 0 .5rem; min-block-size: var(--mn-touch-min, 2.75rem); }
+.card-link { display: inline-flex; align-items: center; min-block-size: var(--mn-touch-min, 2.75rem); color: var(--mn-ink); font-weight: 600; text-decoration: underline; text-underline-offset: .2em; }
+.error { margin: .5rem 0 0; color: var(--mn-danger); font-weight: 600; overflow-wrap: anywhere; }
+.error:empty { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); margin: 0; }
+:where(a, input):focus-visible, .card:has(.card-radio:focus-visible) { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 3px; }
+@media (forced-colors: active) { .card { border-color: CanvasText; } .card.is-chosen { border-color: Highlight; } }

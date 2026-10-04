@@ -1,0 +1,26 @@
+<fieldset class="variants" [attr.aria-disabled]="pending() ? 'true' : null" [attr.aria-describedby]="error() !== null ? errorId : null">
+  <legend>Варианты</legend>
+  <ul class="grid">
+    @for (candidate of ready(); track candidate.candidateId) {
+      <li class="card" [class.is-chosen]="isChecked(candidate)">
+        <label class="card-label">
+          <input type="radio" class="card-radio" [name]="name" [value]="candidate.candidateId" [checked]="isChecked(candidate)"
+            [attr.aria-disabled]="pending() ? 'true' : null" (click)="onClick($event, candidate)" />
+          <app-image-candidate-thumb [assetId]="candidate.assetId" [alt]="candidate.title" />
+          <span class="card-source">{{ byline(candidate) }}</span>
+          <span class="card-license">{{ candidate.license }}@if (candidate.shareAlike) { <span class="badge">{{ shareAlikeMark }}</span> }</span>
+          @if (isChecked(candidate)) { <span class="card-chosen">Выбрано</span> }
+        </label>
+        <div class="card-links">
+          @if (candidate.sourcePageUrl; as page) {
+            <a class="card-link" [href]="page" target="_blank" rel="noopener noreferrer">Страница изображения<span class="sr-only"> (в новой вкладке)</span></a>
+          }
+          @if (candidate.shareAlike) {
+            <app-toggletip [topic]="shareAlikeMark">{{ shareAlikeHint }}</app-toggletip>
+          }
+        </div>
+      </li>
+    }
+  </ul>
+  <p class="error" [id]="errorId" aria-live="polite">{{ error() }}</p>
+</fieldset>

@@ -31,7 +31,8 @@ function fakeStore() {
     return { edits: signal<Readonly<Record<string, EditMemo>>>({}), closedTurns: signal<ReadonlySet<string>>(new Set()), busy: signal<ReadonlySet<string>>(new Set()),
         edit: vi.fn<(...args: unknown[]) => Promise<EditOutcome>>(), revert: vi.fn<(...args: unknown[]) => Promise<boolean>>(),
         dismissEdit: vi.fn(), loadRevision: vi.fn<(...args: unknown[]) => Promise<NativeDocument | null>>(),
-        editCost: vi.fn<(...args: unknown[]) => Promise<{ text: string; canStart: boolean; blocked: string | null } | null>>(), notify: vi.fn() };
+        editCost: vi.fn<(...args: unknown[]) => Promise<{ text: string; canStart: boolean; blocked: string | null } | null>>(), notify: vi.fn(),
+        selectCandidate: vi.fn<(...args: unknown[]) => Promise<{ ok: true } | { ok: false; message: string }>>() };
 }
 
 describe('ProposalDocumentComponent', () => {
@@ -785,11 +786,19 @@ describe('ProposalDocumentComponent', () => {
     });
 
     describe('the actions under an image or an audio', () => {
-        const group = (kind: 'image' | 'audio'): HTMLElement | null => block(kind === 'image' ? 4 : 5).nextElementSibling as HTMLElement | null;
+        const group = (kind: 'image' | 'audio'): HTMLElement | null => {
+            // An attribution line may sit between the image and its actions.
+            let next = block(kind === 'image' ? 4 : 5).nextElementSibling as HTMLElement | null;
+            while (next !== null && next.classList.contains('image-credit')) next = next.nextElementSibling as HTMLElement | null;
+            return next;
+        };
         const names = (element: HTMLElement | null): string[] => [...(element?.querySelectorAll('button') ?? [])].map(button => button.textContent!.trim());
+        /** The image of the sample is a search slot (only those offer «Найти похожее»); the audio slot is the contract's. */
+        const searchSlot = (mode: 'search' | 'generate' = 'search') => ({ ...clone(examples['mediaSlotImageSearch']), nodeId: newId(4), mode });
+        const slots = (mode: 'search' | 'generate' = 'search') => ({ detail: detailOf(sample(), { mediaSlots: [...clone(examples['artifactDetailItem']).mediaSlots, searchSlot(mode)] }) });
 
         it('offers «Найти похожее», «Создать» and «Убрать» for an image and «Озвучить заново» and «Убрать» for an audio, labelled with what they are about', async () => {
-            await create({ capabilities: capabilities({ imageSearch: { available: true, reason: null }, imageGeneration: { available: true, reason: null },
+            await create({ ...slots(), capabilities: capabilities({ imageSearch: { available: true, reason: null }, imageGeneration: { available: true, reason: null },
                 textToSpeech: { available: true, reason: null } }) });
             expect(names(group('image'))).toEqual(['Найти похожее', 'Создать', 'Убрать']);
             expect(names(group('audio'))).toEqual(['Озвучить заново', 'Убрать']);
@@ -799,7 +808,7 @@ describe('ProposalDocumentComponent', () => {
         });
 
         it('shows the actions of a capability that is off disabled with the reason in a toggletip, and «Убрать» works', async () => {
-            await create({ capabilities: capabilities({ textToSpeech: { available: false, reason: 'TEMPORARILY_UNAVAILABLE' } }) });
+            await create({ ...slots(), capabilities: capabilities({ textToSpeech: { available: false, reason: 'TEMPORARILY_UNAVAILABLE' } }) });
             const image = group('image')!;
             const disabled = [...image.querySelectorAll<HTMLButtonElement>('.media-unavailable > button')];
             expect(disabled.map(button => button.textContent!.trim())).toEqual(['Найти похожее', 'Создать']);
@@ -813,17 +822,26 @@ describe('ProposalDocumentComponent', () => {
             expect(store.edit).toHaveBeenCalledWith(ids.first, { action: 'REMOVE_MEDIA', nodeIds: [newId(4)], anchorBefore: newId(3), anchorAfter: newId(5) });
         });
 
-        it('sends the media redo to the edit API when its capability is on, and reports a refusal on the page', async () => {
-            await create({ capabilities: capabilities({ imageSearch: { available: true, reason: null }, textToSpeech: { available: true, reason: null } }) });
-            store.edit.mockResolvedValue({ ok: false, aborted: false, message: 'Поиск изображений пока недоступен.' });
+        it('sends the audio redo to the edit API when its capability is on, and opens the search panel for an image', async () => {
+            await create({ ...slots(), capabilities: capabilities({ imageSearch: { available: true, reason: null }, textToSpeech: { available: true, reason: null } }) });
+            // «Найти похожее» opens its own panel: the search is sent from there (see «image search» below).
             [...group('image')!.querySelectorAll('button')].find(button => button.textContent!.trim() === 'Найти похожее')!.click();
             await settle();
-            expect(store.edit).toHaveBeenCalledWith(ids.first, expect.objectContaining({ action: 'IMAGE_SEARCH', nodeIds: [newId(4)] }));
-            expect(store.notify).toHaveBeenCalledWith('Поиск изображений пока недоступен.');
+            expect(store.edit).not.toHaveBeenCalled();
+            expect(root().querySelector('app-image-search-panel')).not.toBeNull();
             store.edit.mockResolvedValue({ ok: true, turn: parseTurn() });
             [...group('audio')!.querySelectorAll('button')].find(button => button.textContent!.trim() === 'Озвучить заново')!.click();
             await settle();
             expect(store.edit).toHaveBeenLastCalledWith(ids.first, expect.objectContaining({ action: 'AUDIO_REGENERATE', nodeIds: [newId(5)] }));
+        });
+
+        it('offers no search under an image that is not a search slot (generate, or no slot at all), and keeps its other actions', async () => {
+            const on = capabilities({ imageSearch: { available: true, reason: null }, imageGeneration: { available: true, reason: null } });
+            await create({ ...slots('generate'), capabilities: on });
+            expect(names(group('image'))).toEqual(['Создать', 'Убрать']);
+            await create({ capabilities: on });
+            expect(names(group('image'))).toEqual(['Создать', 'Убрать']);
+            expect(root().querySelector('.image-credit, details.variants, .slot-failed')).toBeNull();
         });
 
         it('shows nothing under media of a material that is not an editable proposal, and does nothing while a command runs', async () => {
@@ -835,6 +853,364 @@ describe('ProposalDocumentComponent', () => {
             expect(names(group('image'))).toContain('Убрать');
             await create({ artifact: parseArtifactSummary({ ...artifactWith(ids.first, 0, 'PROPOSED', { currentRevisionId: BEFORE_REVISION }), targetKind: 'EXERCISE' }) });
             expect(root().querySelector('.media-actions')).toBeNull();
+        });
+    });
+    describe('image search (AI-10, #296)', () => {
+        const IMAGE = newId(4);
+        const FIRST = 'ca0d0000-0000-4000-8000-000000000001';
+        const SECOND = 'ca0d0000-0000-4000-8000-000000000002';
+        const slotOf = (change: (slot: any) => void = () => undefined) => {
+            const slot = clone(examples['mediaSlotImageSearch']);
+            slot.nodeId = IMAGE;
+            change(slot);
+            return slot;
+        };
+        const failedSlot = (errorCode: string) => slotOf(slot => { slot.state = 'FAILED'; slot.errorCode = errorCode; slot.attribution = null; slot.candidates = []; });
+        const searchTurn = (change: Record<string, unknown> = {}) => turnOf({ action: 'IMAGE_SEARCH', preset: null, instruction: 'лиса зимой', targetNodeIds: [IMAGE], ...change });
+        const on = { imageSearch: { available: true, reason: null } } as const;
+        const withSlot = (slot: unknown, extra: Record<string, unknown> = {}) => ({ detail: detailOf(sample(), { mediaSlots: [slot], ...extra }), capabilities: capabilities(on) });
+        const applied = (slot: unknown = slotOf(), chosen = FIRST) => {
+            const held = clone(slot as any);
+            for (const candidate of held.candidates) candidate.chosen = candidate.candidateId === chosen;
+            return { artifact: summary('PROPOSED', { currentRevisionId: AFTER_REVISION }), capabilities: capabilities(on),
+                detail: detailOf(sample(), { mediaSlots: [held], turns: [searchTurn()], revisions: revisions([BEFORE_REVISION, 'INITIAL'], [AFTER_REVISION, 'MEDIA']) }, AFTER_REVISION) };
+        };
+        const memo = (change: Partial<EditMemo> = {}): EditMemo => ({ turnId: turnOf()['turnId'] as string, baseRevisionId: BEFORE_REVISION, dismissed: false, announced: true,
+            ask: { action: 'IMAGE_SEARCH', nodeIds: [IMAGE], anchorBefore: newId(3), anchorAfter: newId(5), instruction: 'лиса зимой' }, ...change });
+        const panel = (): HTMLElement | null => root().querySelector('app-image-search-panel');
+        const field = (): HTMLInputElement | null => root().querySelector<HTMLInputElement>('app-image-search-panel input');
+        const panelButton = (label: string): HTMLButtonElement => [...panel()!.querySelectorAll('button')].find(button => button.textContent!.trim() === label)!;
+        const radios = (): HTMLInputElement[] => [...root().querySelectorAll<HTMLInputElement>('app-image-variants input[type="radio"]')];
+        const strip = (): HTMLElement | null => root().querySelector('.rewrite-strip');
+        const typeInto = async (text: string): Promise<void> => {
+            field()!.value = text;
+            field()!.dispatchEvent(new Event('input'));
+            await settle();
+        };
+
+        describe('the panel under the image', () => {
+            it('opens inline under the image, not as a dialog: the field is focused, its placeholder is the description of the image, nothing is sent yet', async () => {
+                await create(withSlot(slotOf()));
+                const open = labelled('Найти похожее')!;
+                expect(open.getAttribute('aria-expanded')).toBe('false');
+                open.click();
+                await settle();
+                expect(panel()).not.toBeNull();
+                expect(root().querySelector('dialog, [role="dialog"]')).toBeNull();
+                expect(open.getAttribute('aria-expanded')).toBe('true');
+                expect(field()!.placeholder).toBe('схема глаголов');
+                expect(window.document.activeElement).toBe(field());
+                expect(panel()!.textContent).toContain('1 кредит из ИИ-бюджета');
+                expect(store.edit).not.toHaveBeenCalled();
+                // It is in the flow of the document, after the image and its actions.
+                expect(block(4).nextElementSibling!.classList.contains('image-credit') || block(4).nextElementSibling!.classList.contains('media-actions')).toBe(true);
+                expect(panel()!.previousElementSibling!.classList.contains('media-actions')).toBe(true);
+            });
+
+            it('sends the query trimmed on the image, with the blocks around it, and an empty field as no instruction', async () => {
+                await create(withSlot(slotOf()));
+                labelled('Найти похожее')!.click();
+                await settle();
+                await typeInto('  лиса зимой ');
+                panelButton('Искать').click();
+                await settle();
+                expect(store.edit).toHaveBeenCalledWith(ids.first, { action: 'IMAGE_SEARCH', nodeIds: [IMAGE], anchorBefore: newId(3), anchorAfter: newId(5), instruction: 'лиса зимой' });
+                await create(withSlot(slotOf()));
+                labelled('Найти похожее')!.click();
+                await settle();
+                field()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+                await settle();
+                expect(store.edit).toHaveBeenCalledWith(ids.first, { action: 'IMAGE_SEARCH', nodeIds: [IMAGE], anchorBefore: newId(3), anchorAfter: newId(5), instruction: null });
+            });
+
+            it('does not send on the Enter of an IME composition', async () => {
+                await create(withSlot(slotOf()));
+                labelled('Найти похожее')!.click();
+                await settle();
+                await typeInto('きつね');
+                field()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true, cancelable: true }));
+                await settle();
+                expect(store.edit).not.toHaveBeenCalled();
+            });
+
+            it('keeps the panel open and says why when the search is refused', async () => {
+                await create(withSlot(slotOf()));
+                store.edit.mockResolvedValue({ ok: false, aborted: false, message: 'Не хватает лимита ИИ на поиск изображения.' });
+                labelled('Найти похожее')!.click();
+                await settle();
+                panelButton('Искать').click();
+                await settle();
+                expect(panel()!.querySelector('.panel-error')!.textContent).toBe('Не хватает лимита ИИ на поиск изображения.');
+                expect(panelButton('Искать').getAttribute('aria-disabled')).toBeNull();
+                expect(store.notify).not.toHaveBeenCalled();
+            });
+
+            it('«Отмена» and Esc close it and give focus back to «Найти похожее»', async () => {
+                await create(withSlot(slotOf()));
+                labelled('Найти похожее')!.click();
+                await settle();
+                panelButton('Отмена').click();
+                await settle();
+                expect(panel()).toBeNull();
+                expect(window.document.activeElement).toBe(labelled('Найти похожее'));
+                labelled('Найти похожее')!.click();
+                await settle();
+                field()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+                await settle();
+                expect(panel()).toBeNull();
+                expect(window.document.activeElement).toBe(labelled('Найти похожее'));
+            });
+
+            it('while the search runs it says so in a status, keeps the image where it was and disables the controls with aria-disabled', async () => {
+                await create(withSlot(slotOf()));
+                // The server takes the turn: the artifact is REVISING and its detail lists the turn when the answer arrives.
+                store.edit.mockImplementation(async () => {
+                    fixture.componentRef.setInput('artifact', summary('REVISING'));
+                    fixture.componentRef.setInput('detail', detailOf(sample(), { mediaSlots: [slotOf()], turns: [searchTurn({ status: 'RUNNING', resultRevisionId: null })] }));
+                    return { ok: true, turn: parseTurn() };
+                });
+                labelled('Найти похожее')!.click();
+                await settle();
+                panelButton('Искать').click();
+                await settle();
+                expect(panel()).not.toBeNull();
+                expect(panel()!.querySelector('[role="status"]')!.textContent).toBe('Ищу похожие изображения…');
+                expect(field()!.getAttribute('aria-disabled')).toBe('true');
+                expect(panelButton('Искать').getAttribute('aria-disabled')).toBe('true');
+                expect(block(4).getAttribute('aria-busy')).toBe('true');
+                expect(block(4).getAttribute('style')).toBeNull();
+                expect(root().querySelector('.rewriting-caption')).toBeNull();
+                // It ends: the panel goes, and focus lands on the variants it found.
+                fixture.componentRef.setInput('artifact', summary('PROPOSED', { currentRevisionId: AFTER_REVISION }));
+                store.edits.set({ [ids.first]: memo() });
+                fixture.componentRef.setInput('detail', applied().detail);
+                await settle();
+                await settle();
+                expect(panel()).toBeNull();
+                expect(window.document.activeElement).toBe(radios().find(radio => radio.checked));
+            });
+
+            it('says «Ищу похожие изображения…» in a status when the search runs without a panel (another tab, a reload)', async () => {
+                await create({ artifact: summary('REVISING'), capabilities: capabilities(on),
+                    detail: detailOf(sample(), { mediaSlots: [slotOf(slot => { slot.attribution = null; })], turns: [searchTurn({ status: 'QUEUED', resultRevisionId: null })] }) });
+                const caption = root().querySelector('.rewriting-caption')!;
+                expect(caption.getAttribute('role')).toBe('status');
+                expect(caption.textContent).toBe('Ищу похожие изображения…');
+                expect(root().querySelector('.media-actions, details.variants')).toBeNull();
+            });
+
+            it('offers «Найти похожее» disabled with its reason in a toggletip when the capability is off, and in a stopped session', async () => {
+                await create({ detail: detailOf(sample(), { mediaSlots: [slotOf()] }), capabilities: capabilities({ imageSearch: { available: false, reason: 'DISABLED' } }) });
+                const off = root().querySelector<HTMLButtonElement>('.media-unavailable > button')!;
+                expect(off.textContent!.trim()).toBe('Найти похожее');
+                expect(off.getAttribute('aria-disabled')).toBe('true');
+                off.click();
+                await settle();
+                expect(panel()).toBeNull();
+                expect(root().querySelector('.media-unavailable .bubble')!.textContent).toContain('Подбор изображений появится позже');
+                await create({ ...withSlot(slotOf()), sessionState: 'CANCELLED' });
+                expect(root().querySelector('.media-unavailable .bubble')!.textContent).toContain('Работа остановлена');
+                root().querySelector<HTMLButtonElement>('.media-unavailable > button')!.click();
+                await settle();
+                expect(panel()).toBeNull();
+            });
+
+            it('does not open while a command runs', async () => {
+                await create({ ...withSlot(slotOf()), busy: true });
+                expect(root().querySelector('.media-actions')).toBeNull();
+                expect(panel()).toBeNull();
+            });
+        });
+
+        describe('the variants', () => {
+            it('lists the READY candidates as a radio group named «Варианты» under the image, open right after a search, the chosen one checked', async () => {
+                await create(applied());
+                store.edits.set({ [ids.first]: memo() });
+                await settle();
+                const details = root().querySelector<HTMLDetailsElement>('details.variants')!;
+                expect(details.hasAttribute('open')).toBe(true);
+                expect(details.querySelector('summary')!.textContent).toContain('Другие изображения (3)');
+                expect(details.querySelector('legend')!.textContent).toBe('Варианты');
+                expect(radios().map(radio => radio.checked)).toEqual([true, false, false]);
+                expect(details.contains(radios()[0]!)).toBe(true);
+            });
+
+            it('keeps the variants closed on a page that did not make the search, and has none for a single candidate or a proposal that cannot change', async () => {
+                await create({ ...withSlot(slotOf()) });
+                const details = root().querySelector<HTMLDetailsElement>('details.variants')!;
+                expect(details.hasAttribute('open')).toBe(false);
+                await create(withSlot(slotOf(slot => { slot.candidates = [slot.candidates[0]]; })));
+                expect(root().querySelector('details.variants')).toBeNull();
+                await create({ ...withSlot(slotOf()), artifact: summary('FAILED') });
+                expect(root().querySelector('details.variants')).toBeNull();
+            });
+
+            it('chooses another image through the store with the slot key and the candidate, disabling the group while it runs', async () => {
+                await create(applied());
+                store.edits.set({ [ids.first]: memo() });
+                await settle();
+                let finish: (value: { ok: true }) => void = () => undefined;
+                store.selectCandidate.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+                radios()[1]!.focus();
+                radios()[1]!.click();
+                await settle();
+                expect(store.selectCandidate).toHaveBeenCalledWith(ids.first, 'i1', SECOND);
+                expect(root().querySelector('app-image-variants fieldset')!.getAttribute('aria-disabled')).toBe('true');
+                expect(radios()[1]!.checked).toBe(true);
+                radios()[2]!.click();
+                expect(store.selectCandidate).toHaveBeenCalledTimes(1);
+                finish({ ok: true });
+                await settle();
+                expect(root().querySelector('app-image-variants fieldset')!.getAttribute('aria-disabled')).toBeNull();
+            });
+
+            it('shows a refused choice in the group, puts the radio back and keeps focus on the group', async () => {
+                await create(applied());
+                store.edits.set({ [ids.first]: memo() });
+                await settle();
+                store.selectCandidate.mockResolvedValue({ ok: false, message: 'Материал обновился, пока вы выбирали.' });
+                radios()[1]!.focus();
+                radios()[1]!.click();
+                await settle();
+                await settle();
+                expect(root().querySelector('app-image-variants .error')!.textContent).toBe('Материал обновился, пока вы выбирали.');
+                expect(radios().map(radio => radio.checked)).toEqual([true, false, false]);
+                expect(window.document.activeElement).toBe(radios()[0]);
+                expect(store.notify).not.toHaveBeenCalled();
+            });
+
+            it('draws the picture of a candidate through the asset API, and links only to https pages in a new tab', async () => {
+                await create(withSlot(slotOf(slot => { slot.candidates[1].sourcePageUrl = 'http://commons.wikimedia.org/wiki/File:Fox_2.jpg'; })));
+                const links = [...root().querySelectorAll<HTMLAnchorElement>('app-image-variants a')];
+                expect(links.map(link => link.getAttribute('href'))).toEqual(['https://pixabay.com/photos/fox-1/', 'https://commons.wikimedia.org/wiki/File:Fox_3.jpg']);
+                expect(links.every(link => link.target === '_blank' && link.rel === 'noopener noreferrer')).toBe(true);
+                expect(root().querySelectorAll('app-image-candidate-thumb')).toHaveLength(3);
+                expect(root().querySelector('app-image-variants img[src^="https://pixabay"]')).toBeNull();
+            });
+        });
+
+        describe('the attribution and the strip', () => {
+            it('writes «Фото: автор · источник · лицензия» in small text right under a READY found image, and nothing for an image without one', async () => {
+                await create(withSlot(slotOf()));
+                const credit = root().querySelector('.image-credit')!;
+                expect(credit.textContent).toBe('Фото: Ann · Pixabay · Pixabay Content License');
+                expect(block(4).nextElementSibling).toBe(credit);
+                await create(withSlot(slotOf(slot => { slot.attribution.author = ''; slot.attribution.source = 'STUB'; slot.attribution.license = ''; })));
+                expect(root().querySelector('.image-credit')!.textContent).toBe('Тестовый источник');
+                await create({ detail: detailOf(sample(), { mediaSlots: [slotOf(slot => { slot.attribution = null; slot.candidates = []; })] }) });
+                expect(root().querySelector('.image-credit')).toBeNull();
+            });
+
+            it('keeps the attribution where the proposal can no longer change (a command runs, the artifact is revising)', async () => {
+                await create({ ...withSlot(slotOf()), busy: true });
+                expect(root().querySelector('.image-credit')).not.toBeNull();
+                await create({ ...withSlot(slotOf()), artifact: summary('REVISING') });
+                expect(root().querySelector('.image-credit')).not.toBeNull();
+            });
+
+            it('says «Подобрано другое изображение» with «Оставить», «Вернуть» and «Ещё раз» (no text diff for a picture)', async () => {
+                await create(applied());
+                store.edits.set({ [ids.first]: memo() });
+                await settle();
+                expect(strip()!.getAttribute('aria-label')).toBe('Подобранное изображение');
+                expect(strip()!.querySelector('.strip-state')!.textContent).toBe('Подобрано другое изображение');
+                expect([...strip()!.querySelectorAll('button')].map(button => button.textContent!.trim())).toEqual(['Оставить', 'Вернуть', 'Ещё раз']);
+                store.revert.mockResolvedValue(true);
+                labelled('Вернуть')!.click();
+                await settle();
+                expect(store.revert).toHaveBeenCalledWith(ids.first, BEFORE_REVISION);
+            });
+
+            it('«Ещё раз» opens the panel again with the previous query, focus in the field', async () => {
+                await create(applied());
+                store.edits.set({ [ids.first]: memo() });
+                await settle();
+                labelled('Ещё раз')!.click();
+                await settle();
+                expect(store.edit).not.toHaveBeenCalled();
+                expect(field()!.value).toBe('лиса зимой');
+                expect(window.document.activeElement).toBe(field());
+                panelButton('Отмена').click();
+                await settle();
+                expect(window.document.activeElement).toBe(labelled('Ещё раз'));
+            });
+
+            it('tells that a search found nothing and that the picture did not change', async () => {
+                await create({ capabilities: capabilities(on), detail: detailOf(sample(), { mediaSlots: [slotOf()],
+                    turns: [searchTurn({ status: 'FAILED', errorCode: 'NO_RESULT', resultRevisionId: null })] }) });
+                store.edits.set({ [ids.first]: memo() });
+                await settle();
+                expect(strip()!.classList.contains('is-failed')).toBe(true);
+                expect(strip()!.textContent).toContain('Не нашлось подходящих изображений. Изображение не изменилось, лимит не списан.');
+                expect([...strip()!.querySelectorAll('button')].map(button => button.textContent!.trim())).toEqual(['Ещё раз', 'Закрыть']);
+                await create({ capabilities: capabilities(on), detail: detailOf(sample(), { mediaSlots: [slotOf()],
+                    turns: [searchTurn({ status: 'FAILED', errorCode: 'PROVIDER_UNAVAILABLE', resultRevisionId: null })] }) });
+                store.edits.set({ [ids.first]: memo() });
+                await settle();
+                expect(strip()!.textContent).toContain('Источники изображений сейчас недоступны.');
+            });
+        });
+
+        describe('a slot whose search failed', () => {
+            const frame = (): HTMLElement | null => root().querySelector('.slot-failed');
+            const names = (): string[] => [...frame()!.querySelectorAll('button')].filter(button => button.closest('app-toggletip') === null)
+                .map(button => button.textContent!.trim());
+
+            it('says why in the words of the issue and offers «Повторить», «Заменить» and «Убрать блок» instead of the usual actions', async () => {
+                const reasons: Record<string, string> = { NO_RESULT: 'Не нашлось изображений со свободной лицензией.', PROVIDER_UNAVAILABLE: 'Источники изображений сейчас недоступны.',
+                    VERIFICATION_REJECTED: 'Файл не прошёл проверку.', DEADLINE_EXCEEDED: 'Поиск занял слишком долго.' };
+                for (const [code, text] of Object.entries(reasons)) {
+                    await create(withSlot(failedSlot(code)));
+                    expect(frame()!.querySelector('.slot-failed-text')!.textContent, code).toBe(text);
+                    expect(names()).toEqual(['Повторить', 'Заменить', 'Убрать блок']);
+                    expect(frame()!.getAttribute('role')).toBe('group');
+                    expect(root().querySelector('.media-actions[aria-label^="Действия с изображением"]')).toBeNull();
+                }
+            });
+
+            it('«Повторить» sends the search without an instruction', async () => {
+                await create(withSlot(failedSlot('NO_RESULT')));
+                labelled('Повторить')!.click();
+                await settle();
+                expect(store.edit).toHaveBeenCalledWith(ids.first, { action: 'IMAGE_SEARCH', nodeIds: [IMAGE], anchorBefore: newId(3), anchorAfter: newId(5), instruction: null });
+                store.edit.mockResolvedValue({ ok: false, aborted: false, message: 'Материал обновился.' });
+                labelled('Повторить')!.click();
+                await settle();
+                expect(store.notify).toHaveBeenCalledWith('Материал обновился.');
+            });
+
+            it('«Заменить» opens the panel with an empty field and focus in it; «Отмена» returns focus to «Заменить»', async () => {
+                await create(withSlot(failedSlot('NO_RESULT')));
+                labelled('Заменить')!.click();
+                await settle();
+                expect(field()!.value).toBe('');
+                expect(window.document.activeElement).toBe(field());
+                await typeInto('красная лиса');
+                panelButton('Искать').click();
+                await settle();
+                expect(store.edit).toHaveBeenCalledWith(ids.first, expect.objectContaining({ action: 'IMAGE_SEARCH', instruction: 'красная лиса' }));
+                await create(withSlot(failedSlot('NO_RESULT')));
+                labelled('Заменить')!.click();
+                await settle();
+                panelButton('Отмена').click();
+                await settle();
+                expect(window.document.activeElement).toBe(labelled('Заменить'));
+            });
+
+            it('«Убрать блок» removes the media and moves focus to the document', async () => {
+                await create(withSlot(failedSlot('NO_RESULT')));
+                labelled('Убрать блок')!.click();
+                await settle();
+                expect(store.edit).toHaveBeenCalledWith(ids.first, { action: 'REMOVE_MEDIA', nodeIds: [IMAGE], anchorBefore: newId(3), anchorAfter: newId(5) });
+                expect(window.document.activeElement).toBe(host);
+            });
+
+            it('keeps «Повторить» disabled with the reason when image search is off, and «Убрать блок» working', async () => {
+                await create({ detail: detailOf(sample(), { mediaSlots: [failedSlot('PROVIDER_UNAVAILABLE')] }), capabilities: capabilities({ imageSearch: { available: false, reason: 'TEMPORARILY_UNAVAILABLE' } }) });
+                expect(names()).toEqual(['Повторить', 'Убрать блок']);
+                expect(frame()!.querySelector('.media-unavailable button')!.getAttribute('aria-disabled')).toBe('true');
+                expect(frame()!.querySelector('.bubble')!.textContent).toContain('сейчас временно недоступно');
+            });
         });
     });
 });

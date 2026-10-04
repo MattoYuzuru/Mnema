@@ -10,7 +10,7 @@ import { UsageApiService } from '../usage/usage-api.service';
 import { DeckPin, GenerationApiService } from './generation-api.service';
 import { GenerationProblem, readProblem } from './generation-problem';
 import { DraftRow, describePlanProblem } from './plan-editor';
-import { REVERTED_NOTE, describeEditCost, describeEditLimit, describeNoteArchive, editOutcomeNote, editProblemMessage, problemMessage } from './generation-view';
+import { REVERTED_NOTE, describeEditCost, describeEditLimit, describeNoteArchive, editOutcomeNote, editProblemMessage, problemMessage, selectionProblemMessage } from './generation-view';
 import {
     ApprovalAck, ArtifactDetail, ArtifactSummary, ArtifactTurn, EditAction, EditPreset, ExercisePlanItem, GenerationEvent, HandoffResult, MAX_APPROVALS_PER_COMMAND,
     MaterialPlanItem,
@@ -90,6 +90,8 @@ export interface EditMemo {
 export type EditOutcome =
     | { readonly ok: true; readonly turn: ArtifactTurn }
     | { readonly ok: false; readonly message: string; readonly aborted: boolean };
+
+export type SelectionOutcome = { readonly ok: true } | { readonly ok: false; readonly message: string };
 
 /** The cost line of a rewrite, and, when the budget does not let it start, the reason in words. */
 export interface EditCost { readonly text: string; readonly canStart: boolean; readonly blocked: string | null; }
@@ -569,7 +571,9 @@ export class WorkshopSessionStore {
         if (artifact === null || session === null) return refuse('Материал больше недоступен.');
         if (this.isBusy(artifactId)) return refuse('Подождите: предыдущее действие ещё выполняется.');
         // A voice redo of an exercise runs a model-side turn like a rewrite: a cancelled session does not take it.
-        const rewrite = ask.action === 'REWRITE' || ask.action === 'FREE' || (ask.exercise === true && ask.action === 'AUDIO_REGENERATE');
+        // Only REMOVE_MEDIA is deterministic: a search, like a rewrite, needs a worker, so a cancelled session takes none (`editArtifact` notes).
+        const rewrite = ask.action === 'REWRITE' || ask.action === 'FREE' || ask.action === 'IMAGE_SEARCH'
+            || (ask.exercise === true && ask.action === 'AUDIO_REGENERATE');
         if (!allows(session.state, artifact.state, 'editArtifact') || (rewrite && session.state === 'CANCELLED')) {
             return refuse('Сейчас этот материал нельзя править: состояние изменилось.');
         }
@@ -594,7 +598,7 @@ export class WorkshopSessionStore {
                 const problem = outcome.problem;
                 if (problem.status === 404) this.gone();
                 else if (!problem.uncertain && problem.status !== 400) { void this.refresh(); this.markStale(artifactId); }
-                return refuse(editProblemMessage(problem));
+                return refuse(editProblemMessage(problem, ask.action));
             }
             const { turn, artifact: accepted } = outcome.value;
             this.patch(accepted);
@@ -612,6 +616,47 @@ export class WorkshopSessionStore {
             }
             void this.refresh();
             return { ok: true, turn };
+        } finally {
+            this.end(artifactId);
+        }
+    }
+
+    /**
+     * Uses another image a search of the slot found (AI-10, #296): the server makes a revision (cause `MEDIA`) and answers with the artifact
+     * on it, which replaces what the page holds at once. A refusal is returned in words for the variants grid; after a `412` or another
+     * state conflict the artifact is read again, so the grid shows what the server holds.
+     */
+    async selectCandidate(artifactId: string, slotKey: string, candidateId: string): Promise<SelectionOutcome> {
+        const artifact = this.find(artifactId);
+        const session = this.session();
+        const shown = this.details()[artifactId]?.detail;
+        const refuse = (message: string): SelectionOutcome => ({ ok: false, message });
+        if (artifact === null || session === null) return refuse('Материал больше недоступен.');
+        if (this.isBusy(artifactId)) return refuse('Подождите: предыдущее действие ещё выполняется.');
+        const expected = shown?.currentRevisionId ?? null;
+        if (!allows(session.state, artifact.state, 'editArtifact') || expected === null || expected !== artifact.currentRevisionId
+            || this.details()[artifactId]?.stale === true) {
+            return refuse('Материал обновился. Подождите новую версию и выберите изображение ещё раз.');
+        }
+        this.begin(artifactId);
+        try {
+            const outcome = await this.send('select-image', `${artifactId}:${expected}:${slotKey}:${candidateId}`,
+                id => this.api.selectMediaCandidate(this.deckId, this.sessionId, artifactId, slotKey,
+                    { expectedRevisionId: expected, candidateId }, id));
+            if (!outcome.ok) {
+                const problem = outcome.problem;
+                if (problem.status === 404) this.gone();
+                else if (!problem.uncertain && problem.status !== 400) { void this.refresh(); this.markStale(artifactId); }
+                return refuse(selectionProblemMessage(problem));
+            }
+            const detail = outcome.value;
+            const { sessionId: _session, noteSources: _notes, deckId: _deck, revision: _revision, mediaSlots: _slots, revisions: _revisions,
+                turns: _turns, display: _display, ...summary } = detail;
+            this.patch(summary);
+            // The strip of the last search belonged to the revision that was replaced: it goes by itself (its turn made another revision).
+            this.setDetail(artifactId, { phase: 'ready', detail, forRevision: detail.currentRevisionId, stale: false });
+            void this.refresh();
+            return { ok: true };
         } finally {
             this.end(artifactId);
         }
