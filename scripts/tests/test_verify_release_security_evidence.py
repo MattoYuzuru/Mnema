@@ -15,6 +15,7 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 from verify_release_security_evidence import (  # noqa: E402
     EvidenceFailure,
     SERVICES,
+    VPS_SERVICES,
     aggregate,
     evaluate,
     validate_workflow_contract,
@@ -50,7 +51,7 @@ class ReleaseSecurityEvidenceTest(unittest.TestCase):
 
     @staticmethod
     def digest(service: str) -> str:
-        value = SERVICES.index(service) + 1
+        value = VPS_SERVICES.index(service) + 1
         return "sha256:" + f"{value:064x}"
 
     def image(self, service: str) -> str:
@@ -214,6 +215,63 @@ class ReleaseSecurityEvidenceTest(unittest.TestCase):
             output=self.root / "release-security-evidence.json",
             now="2026-08-29",
         )
+
+    def vps_evidence(self):
+        for service in VPS_SERVICES:
+            evaluate(self.fixture(service))
+            (self.digests_dir / f'{service}.digest').write_text(self.digest(service) + '\n')
+        args = self.aggregate_arguments()
+        args.include_frontend = True
+        aggregate(args)
+        return args.output
+
+    def candidate_arguments(self):
+        return argparse.Namespace(evidence=self.vps_evidence(), repository=REPOSITORY,
+                                  sha=COMMIT, run_id=RUN_ID, run_attempt=RUN_ATTEMPT,
+                                  trivy_ignore=self.trivy_ignore, output=self.root / 'candidate.json')
+
+    def test_frontend_uses_the_same_high_critical_gate(self):
+        for severity in ('HIGH', 'CRITICAL'):
+            with self.subTest(severity=severity), self.assertRaises(EvidenceFailure):
+                evaluate(self.fixture('frontend', [self.vulnerability(severity)]))
+
+    def test_vps_candidate_requires_frontend_digest_and_evidence(self):
+        self.evaluate_all()
+        args = self.aggregate_arguments()
+        args.include_frontend = True
+        with self.assertRaisesRegex(EvidenceFailure, 'frontend'):
+            aggregate(args)
+
+    def test_vps_candidate_has_three_images_without_runtime_admission(self):
+        from render_vps_candidate import render
+        args = self.candidate_arguments()
+        render(args)
+        data = json.loads(args.output.read_text())
+        self.assertEqual(set(VPS_SERVICES), set(data['images']))
+        self.assertEqual(COMMIT, data['sha'])
+        self.assertEqual({'schemaVersion', 'sha', 'images', 'source', 'securityEvidenceSha256'}, set(data))
+
+    def test_vps_candidate_rejects_substituted_or_incomplete_security_evidence(self):
+        from copy import deepcopy
+        from render_vps_candidate import render
+        args = self.candidate_arguments()
+        original = json.loads(args.evidence.read_text())
+        mutations = []
+        data = deepcopy(original); data['images'].pop(); mutations.append(data)
+        data = deepcopy(original); data['images'][2] = data['images'][0]; mutations.append(data)
+        data = deepcopy(original); data['source']['commit'] = '2' * 40; mutations.append(data)
+        data = deepcopy(original); data['source']['runId'] += 1; mutations.append(data)
+        data = deepcopy(original); data['images'][2]['image'] = 'ghcr.io/mattoyuzuru/mnema/frontend:latest'; mutations.append(data)
+        data = deepcopy(original); data['images'][2]['source']['runAttempt'] += 1; mutations.append(data)
+        data = deepcopy(original); data['images'][2]['sbom']['githubAttestationVerified'] = False; mutations.append(data)
+        data = deepcopy(original); data['images'][2]['scanner']['counts']['HIGH'] = 1; mutations.append(data)
+        data = deepcopy(original); data['summary']['imageCount'] = 2; mutations.append(data)
+        for index, data in enumerate(mutations):
+            with self.subTest(index=index):
+                self.write_json(args.evidence, data)
+                with self.assertRaises(EvidenceFailure):
+                    render(args)
+                self.assertFalse(args.output.exists())
 
     def manifest(self) -> Path:
         path = self.root / "release.yaml"
