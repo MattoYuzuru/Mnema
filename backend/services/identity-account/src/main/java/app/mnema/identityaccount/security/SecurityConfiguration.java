@@ -133,13 +133,17 @@ public class SecurityConfiguration {
                                         ObjectProvider<ClientRegistrationRepository> registrations,
                                         FederationSuccess success, ProviderUsers users, Clock clock,
                                         AccountErrors errors, @Value("${identity.frontend-origin}") String origin) throws Exception {
-        http.cors(Customizer.withDefaults()).csrf(c -> c.csrfTokenRepository(new HttpSessionCsrfTokenRepository())
+        http.headers(h -> h.contentSecurityPolicy(c -> c.policyDirectives(
+                        "default-src 'none'; script-src 'self' https://challenges.cloudflare.com; " +
+                        "connect-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; " +
+                        "form-action 'self'; base-uri 'none'; frame-ancestors 'none'")))
+                .cors(Customizer.withDefaults()).csrf(c -> c.csrfTokenRepository(new HttpSessionCsrfTokenRepository())
                         .requireCsrfProtectionMatcher(SecurityConfiguration::requiresAccountCsrf)
                         .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler()))
                 .authorizeHttpRequests(
                         a -> a.requestMatchers("/api/actuator/health/**", "/api/actuator/info", "/error", "/login",
-                                        "/login/continue", "/oauth2/authorization/**", "/login/oauth2/code/**").permitAll()
-                                .requestMatchers(HttpMethod.GET, "/api/accounts/csrf", "/api/accounts/providers", "/api/accounts/profiles/**")
+                                        "/login/continue", "/login/script.js", "/login/privacy", "/oauth2/authorization/**", "/login/oauth2/code/**").permitAll()
+                                .requestMatchers(HttpMethod.GET, "/api/accounts/csrf", "/api/accounts/abuse-protection", "/api/accounts/providers", "/api/accounts/profiles/**")
                                 .permitAll()
                                 .requestMatchers(HttpMethod.POST, "/api/accounts/register", "/api/accounts/login",
                                         "/api/accounts/password-reset/request", "/api/accounts/password-reset/confirm",

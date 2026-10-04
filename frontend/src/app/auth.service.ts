@@ -4,6 +4,7 @@ import { Router } from '@angular/router';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { firstValueFrom, timeout } from 'rxjs';
 import { AUTH_BROWSER, BROWSER_IDENTITY_CONFIG, validateIdentityConfig } from './auth-browser';
+import { TurnstileService } from './turnstile.service';
 import { AUTH_SCOPES, AUTH_STORAGE_KEY, PKCE_STORAGE_KEY, AuthFailure, IdentityProfile, StoredAccess,
     FederatedProvider, isFederatedProvider, objectValue, boundedText, parseProfile, parseStoredAccess, parseToken, parseTransaction, safeReturnUrl } from './auth-protocol';
 
@@ -18,6 +19,7 @@ export class AuthService {
     private readonly router = inject(Router);
     private readonly browser = inject(AUTH_BROWSER);
     private readonly config = inject(BROWSER_IDENTITY_CONFIG);
+    private readonly turnstile = inject(TurnstileService);
     private readonly state = signal<AuthStatus>('anonymous');
     private readonly profile = signal<AuthUser | null>(null);
     readonly status = this.state.asReadonly();
@@ -171,7 +173,9 @@ export class AuthService {
         this.state.set('pending');
         try {
             validateIdentityConfig(this.config, this.browser.origin);
-            parseProfile(await this.accountMutation('/login', { login, password }));
+            const turnstileToken = await this.turnstile.token('login');
+            if (epoch !== this.epoch) return;
+            parseProfile(await this.accountMutation('/login', { login, password, turnstileToken }));
             if (epoch === this.epoch) await this.startAuthorization(returnTo);
         } catch (error) {
             if (epoch === this.epoch) this.state.set('error');
@@ -188,7 +192,9 @@ export class AuthService {
         this.state.set('pending');
         try {
             validateIdentityConfig(this.config, this.browser.origin);
-            parseProfile(await this.accountMutation('/register', { email, loginName: username, profileUsername: username, password }));
+            const turnstileToken = await this.turnstile.token('register');
+            if (epoch !== this.epoch) return;
+            parseProfile(await this.accountMutation('/register', { email, loginName: username, profileUsername: username, password, turnstileToken }));
             if (epoch === this.epoch) await this.passwordLogin(username, password, returnTo);
         } catch (error) {
             if (epoch === this.epoch) this.state.set('error');
