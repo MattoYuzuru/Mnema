@@ -19,7 +19,7 @@ import java.util.random.RandomGenerator;
 
 /** Wires the provider layer. Providers without a base URL or switched off do not get an adapter. */
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties({AiProperties.class, ImageSearchSettings.class})
+@EnableConfigurationProperties({AiProperties.class, ImageSearchSettings.class, SpeechSettings.class})
 class AiConfiguration {
     private static final Logger LOG = LoggerFactory.getLogger(AiConfiguration.class);
 
@@ -67,6 +67,40 @@ class AiConfiguration {
         }
         return new RoutedImageSearch(sources, cache, new SafeImageFetcher(true, ImageAddressPolicy.Resolver.SYSTEM, settings.userAgent()), clients,
                 breakers, budget, journal, new AiTelemetry(meters), properties, settings);
+    }
+
+    /**
+     * The speech synthesis port (#297): the Stub with {@code learning.ai.provider=stub}, else the {@code learning.ai.routes.tts} entries over Gemini (a key
+     * and, with {@code egress=proxy}, an active proxy) and SpeechKit (a key and a folder). The bean always exists; whether any entry can be called is
+     * {@link SpeechSynthesis#configured()}, which the {@code textToSpeech} capability reads.
+     */
+    @Bean
+    SpeechSynthesis speechSynthesis(AiProperties properties, SpeechSettings settings, EgressClients clients, BreakerRegistry breakers, AiBudget budget,
+                                    JdbcCallJournal journal, MeterRegistry meters,
+                                    @org.springframework.beans.factory.annotation.Value("${learning.generation.usd-rub-rate:85}") java.math.BigDecimal usdRubRate) {
+        if (AiProperties.STUB.equals(properties.provider())) {
+            LOG.warn("ai_stub_active learning.ai.provider=stub: speech synthesis is answered by the deterministic Stub");
+            return new StubSpeechSynthesis();
+        }
+        Map<String, SpeechAdapter> adapters = speechAdapters(properties, settings, clients, usdRubRate, Clock.systemUTC());
+        adapters.forEach((id, adapter) -> LOG.info("ai_speech_provider provider={} egress={} state={}", id, adapter.egress().label(),
+                adapter.configured() ? "configured" : "not_configured"));
+        return new RoutedSpeechSynthesis(properties, settings, adapters, breakers, budget, journal, new AiTelemetry(meters));
+    }
+
+    /** The speech adapters whose provider entry exists; a proxied provider without an active proxy has no transport and so is not configured. */
+    static Map<String, SpeechAdapter> speechAdapters(AiProperties properties, SpeechSettings settings, EgressClients clients, java.math.BigDecimal usdRubRate,
+                                                     Clock clock) {
+        Map<String, SpeechAdapter> adapters = new LinkedHashMap<>();
+        Map<String, AiProperties.Model> prices = new HashMap<>();
+        for (AiProperties.Model model : properties.models()) {
+            if (model.provider().equals(GeminiSpeechSynthesis.PROVIDER)) prices.put(model.id(), model);
+        }
+        AiProperties.Provider google = properties.providers().get(GeminiSpeechSynthesis.PROVIDER);
+        if (google != null) adapters.put(GeminiSpeechSynthesis.PROVIDER, new GeminiSpeechSynthesis(google, clients.http(google.egress()), settings, prices::get, clock));
+        AiProperties.Provider yandex = properties.providers().get(YandexSpeechSynthesis.PROVIDER);
+        if (yandex != null) adapters.put(YandexSpeechSynthesis.PROVIDER, new YandexSpeechSynthesis(yandex, clients.http(yandex.egress()), settings, usdRubRate, clock));
+        return adapters;
     }
 
     /** The sources of {@code learning.ai.image-search.sources}, in that order; a source without a provider entry is absent. */
