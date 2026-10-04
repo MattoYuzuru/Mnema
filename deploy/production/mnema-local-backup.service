@@ -1,0 +1,14 @@
+[Unit]
+Description=Mnema root-only local database backup (offsite deferred)
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/mnema-local-backup backup
+User=root
+UMask=0077
+TimeoutStartSec=12min
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
