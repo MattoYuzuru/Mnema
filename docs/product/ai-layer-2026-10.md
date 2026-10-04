@@ -5,14 +5,14 @@ artifact:
   title: "Mnema AI layer: product decisions, economics and UX"
   status: accepted
   created_at: "2026-10-02"
-  updated_at: "2026-10-02"
+  updated_at: "2026-10-04"
   owners: ["project-owner"]
   source_tasks: ["owner voice brief 2026-10-01", "owner feedback 2026-10-02", "Epic #77"]
   assumptions:
     - "Prices and provider terms are rechecked before the paid launch; figures below are planning inputs, not a tariff contract."
     - "The first paid launch has Plus and Pro; Max ships behind a feature toggle as a teaser until TTS and images are ready."
   unresolved_questions:
-    - "Whether the owner's Yandex AI exclusion is lifted for SpeechKit TTS only."
+    - "TTS vendor for Russian after the spike of #297: Google Gemini TTS through the egress gateway (primary candidate, 2026-10-04) or Yandex SpeechKit v1 (needs the owner's exception)."
     - "Whether a 14-day trial is offered at all, or promo codes cover trial-like offers."
 ---
 
@@ -98,6 +98,22 @@ Study до явного одобрения; текст дешёв, на конт
 | A/B и промо | Инфраструктура A/B-тестов и полноэкранный промо-попап с частотными ограничениями |
 | Trial | Не решено; промокоды покрывают trial-подобные предложения |
 | Сравнения цен | «≈15 ₽ в день» по умолчанию; «кофе/такси/репетитор» — только через A/B и после юриста |
+
+### Решения владельца 2026-10-04 (прогон 5)
+
+Уточняют и частично заменяют строки таблицы выше («Хостинг», «Маршрут текста», «STT», «TTS», «Изображения»,
+«Веб-поиск»); источник — комментарий «Вводные владельца для прогона 5» в Epic #77.
+
+| Тема | Решение |
+|---|---|
+| Egress-шлюз | Для провайдеров, недоступных из РФ, — stateless HTTP CONNECT-прокси на VPS владельца в Финляндии (INFRA-02, #340). ПД, Learning и ключи остаются в РФ; шлюз видит только имена хостов и ничего не хранит; kill-switch и fallback обязательны |
+| Маршрут текста | GigaChat не настроен; fallback прямого DeepSeek — OpenRouter с теми же моделями DeepSeek; GigaChat остаётся последним в маршруте до появления ключа |
+| TTS | Primary-кандидат — Google Gemini 3.8 Flash TTS через шлюз (7 языков; цена ×2 с 2027-01-01 учитывается в rate card); spike сравнивает с Yandex SpeechKit v1 для русского; кэш озвучки и kill-switch обязательны; через шлюз — только обезличенный текст |
+| STT | Self-host (RU → GigaAM-v3, остальные → Qwen3-ASR) остаётся планом; spike сравнивает его с Gemini-транскрибацией через шлюз по латентности и качеству RU/KO/JA/ZH; голос через шлюз — только обезличенно и после явного согласия пользователя (disclosure) |
+| Изображения | Pexels убран (не выдаёт новые ключи); источники — Pixabay, Openverse, Wikimedia Commons |
+| Веб-поиск | Ключа нет; spike выбирает между Yandex Search API (аккаунт Yandex Cloud) и Brave/Perplexity через шлюз по цене и мировому покрытию; результат — рекомендация владельцу и адаптер за портом |
+| Ключи | Задачи без ключа в окружении завершаются на Stub и recorded fixtures с пометкой «live не проверено» |
+| Trial | По-прежнему не решено; для #301/#302 trial — за выключенным флагом |
 
 ## 4. UX-решения
 
@@ -246,8 +262,14 @@ A/B-вариант только для 449 ₽, структурные тест�
 - Уведомление РКН о трансграничной передаче обезличенного учебного текста в DeepSeek
   (КНР — «адекватная» страна) до включения реальных пользователей; disclosure перед
   первым AI-действием; отдельное согласие на голос.
-- Аккаунты провайдеров: DeepSeek (проверить оплату из РФ малым пополнением), GigaChat
-  через cloud.ru, Pexels/Pixabay/Openverse ключи, поисковый API, TTS-вендор.
+- Аккаунты провайдеров: DeepSeek (проверить оплату из РФ малым пополнением), OpenRouter
+  (fallback текста), GigaChat через cloud.ru (опционально), Pixabay/Openverse ключи (Pexels убран
+  2026-10-04), Google AI (Gemini TTS/транскрибация через шлюз), поисковый API.
+- Egress-шлюз (2026-10-04): Google Gemini API terms ограничивают предоставление API-клиентов
+  пользователям вне доступных регионов — это риск блокировки аккаунта провайдера, а не нарушение
+  152-ФЗ; решение принято владельцем, поэтому kill-switch и fallback (SpeechKit / self-host)
+  обязательны. Через шлюз уходят только обезличенный учебный текст и голос; голос — только после
+  отдельного согласия пользователя, с указанием, что запись обрабатывается за рубежом.
 - Применимость 243-ФЗ (с 01.03.2027) к Mnema как к вызывающему чужую модель — юрист.
 - Промокоды и промо: ст. 16 ЗоЗПП (без pre-ticked), ФЗ «О рекламе» для сравнений.
 

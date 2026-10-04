@@ -796,7 +796,7 @@ and the UI (AI-04+) build on it; nothing here debits the user's quota, it only r
   deadline over headers and body, an idle limit for SSE (a virtual-thread watchdog closes the stream), a hard body cap, and
   error bodies are never read. DeepSeek: `thinking` is disabled explicitly (enabled on the plan routes), `user_id`, `prompt_cache_hit/miss_tokens`.
   GigaChat: OAuth exchange of the authorization key (`GigaChatTokens`, covered by a recorded fixture only, not yet run
-  against the live service) and `precached_prompt_tokens`. OpenRouter: config and adapter only, no default route.
+  against the live service) and `precached_prompt_tokens`. OpenRouter: the second entry of every DeepSeek route (the same DeepSeek models; `reasoning` is `effort: none` except on the planner routes, where it is `enabled`), owner decision 2026-10-04; GigaChat stays last until its key exists.
 - **Routing and failure policy** (`RoutedTextGeneration`). 429: wait `max(Retry-After, jitter)` and retry up to six
   times, never past the deadline (a longer `Retry-After` is handed back as `RATE_LIMITED`); 5xx, network and idle/connect
   timeouts (response headers must arrive within `learning.ai.transport.first-byte`, so a silent provider times out with deadline

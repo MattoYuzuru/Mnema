@@ -297,7 +297,7 @@ browser-facing Learning service, never the media processor or the frontend.
 |---|---|
 | `MNEMA_AI_DEEPSEEK_API_KEY` | Direct DeepSeek (primary text route) |
 | `MNEMA_AI_GIGACHAT_AUTH_KEY` | GigaChat authorization key (fallback; exchanged for a short-lived token; needs the Russian CA in the Java truststore) |
-| `MNEMA_AI_OPENROUTER_API_KEY` | OpenRouter (optional; no default route uses it) |
+| `MNEMA_AI_OPENROUTER_API_KEY` | OpenRouter: the fallback of every DeepSeek route (the same DeepSeek models, owner decision 2026-10-04); optional, without it the routes use DeepSeek alone |
 | `MNEMA_AI_EGRESS_PROXY_URL` / `MNEMA_AI_EGRESS_PROXY_USER` / `MNEMA_AI_EGRESS_PROXY_PASSWORD` | Optional stateless HTTP CONNECT proxy (`http://host:port`, user and password together) for providers unreachable from Russia; never needed locally or in CI. See [AI egress proxy](../operations/ai-egress-proxy.md) |
 | `MNEMA_AI_USER_KEY_SECRET` | At least 16 random characters: HMAC secret of the opaque per-account user id sent to providers. Required for a real provider; generate once and keep it (`openssl rand -hex 32`) |
 | `LEARNING_FEATURES_AI_GENERATION_ENABLED` | `true` turns `aiGeneration` on (default `false`) |
