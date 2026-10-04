@@ -10,6 +10,9 @@ interface TextAdapter {
     /** Provider id used in routes, journal, metrics and breakers. */
     String provider();
 
+    /** How the provider is reached: the {@code egress} log field and metric tag. */
+    default AiProperties.EgressMode egress() { return AiProperties.EgressMode.DIRECT; }
+
     /** Whether the adapter can call its provider right now (enabled and credentials present). */
     boolean configured();
 

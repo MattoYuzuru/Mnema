@@ -19,6 +19,7 @@ import java.util.Map;
  *
  * @param provider {@code stub} forces the deterministic Stub on every text route (local/CI); empty uses the routes
  * @param providers by provider id: {@code deepseek}, {@code gigachat}, {@code openrouter}
+ * @param egress the stateless HTTP CONNECT proxy used by providers marked {@code egress=proxy}
  * @param models the price table; every route entry must name a listed model
  */
 @ConfigurationProperties("learning.ai")
@@ -33,15 +34,24 @@ public record AiProperties(
         @DefaultValue Permits permits,
         @DefaultValue Budget budget,
         @DefaultValue UserKey userKey,
-        @DefaultValue Prompt prompt) {
+        @DefaultValue Prompt prompt,
+        @DefaultValue Egress egress) {
 
     public static final String STUB = "stub";
 
+    /** Without an egress proxy: the shape every caller had before {@code learning.ai.egress.*} existed. */
+    public AiProperties(String provider, Routes routes, Map<String, Provider> providers, List<Model> models, Transport transport,
+                        Retry retry, Breaker breaker, Permits permits, Budget budget, UserKey userKey, Prompt prompt) {
+        this(provider, routes, providers, models, transport, retry, breaker, permits, budget, userKey, prompt, null);
+    }
+
+    @ConstructorBinding
     public AiProperties {
         provider = provider == null ? "" : provider.strip().toLowerCase(Locale.ROOT);
         if (!provider.isEmpty() && !provider.equals(STUB)) throw new IllegalArgumentException("Unknown learning.ai.provider");
         providers = providers == null ? Map.of() : Map.copyOf(providers);
         models = models == null ? List.of() : List.copyOf(models);
+        egress = egress == null ? new Egress("", "", "", true) : egress;
     }
 
     /** Ordered {@code provider:model} lists; the first usable entry wins, the next ones are fallbacks. */
@@ -85,13 +95,75 @@ public record AiProperties(
         }
     }
 
+    /** How a provider is reached: straight from this server, or through the egress proxy (providers unreachable from Russia). */
+    public enum EgressMode {
+        DIRECT, PROXY;
+
+        /** The value of the {@code egress} log field and metric tag. */
+        public String label() { return name().toLowerCase(Locale.ROOT); }
+    }
+
+    /**
+     * {@code learning.ai.egress.*}: one stateless HTTP CONNECT forward proxy (plain {@code http://host:port}; TLS to the provider stays
+     * end to end, the proxy sees only host and port). {@code enabled=false} is the global kill switch of the proxied path; an empty
+     * {@code proxyUrl} means no proxy is configured. Validation messages never include a value.
+     *
+     * @param proxyUrl {@code http://host:port} without credentials, path or query
+     * @param user proxy Basic user; set together with {@code password} or not at all
+     */
+    public record Egress(@DefaultValue("") String proxyUrl, @DefaultValue("") String user, @DefaultValue("") String password,
+                         @DefaultValue("true") boolean enabled) {
+        public Egress {
+            proxyUrl = proxyUrl == null ? "" : proxyUrl.strip();
+            user = user == null ? "" : user.strip();
+            password = password == null ? "" : password;
+            if (!proxyUrl.isEmpty()) {
+                URI uri;
+                try {
+                    uri = URI.create(proxyUrl);
+                } catch (IllegalArgumentException exception) {
+                    throw new IllegalArgumentException("Invalid learning.ai.egress.proxy-url: expected http://host:port");
+                }
+                boolean bare = uri.getPath() == null || uri.getPath().isEmpty() || "/".equals(uri.getPath());
+                if (!"http".equals(uri.getScheme()) || uri.getHost() == null || uri.getPort() < 1 || uri.getUserInfo() != null
+                        || !bare || uri.getQuery() != null || uri.getFragment() != null) {
+                    throw new IllegalArgumentException("Invalid learning.ai.egress.proxy-url: expected http://host:port");
+                }
+            }
+            if (user.isEmpty() != password.isEmpty()) {
+                throw new IllegalArgumentException("learning.ai.egress.user and learning.ai.egress.password are set together or not at all");
+            }
+            if (user.indexOf(':') >= 0) throw new IllegalArgumentException("Invalid learning.ai.egress.user");
+        }
+
+        /** Whether proxied providers may be called: a proxy is configured and the kill switch is on. */
+        public boolean active() { return enabled && !proxyUrl.isEmpty(); }
+
+        public boolean hasCredentials() { return !user.isEmpty(); }
+
+        /** Never prints the URL or a credential. */
+        @Override
+        public String toString() {
+            return "Egress[enabled=" + enabled + ", proxyUrl=" + (proxyUrl.isEmpty() ? "unset" : "<redacted>") + ", user="
+                    + (user.isEmpty() ? "unset" : "<redacted>") + ", password=" + (password.isEmpty() ? "unset" : "<redacted>") + "]";
+        }
+    }
+
     /**
      * One provider. {@code enabled=false} is the per-provider kill switch. DeepSeek and OpenRouter use {@code apiKey};
-     * GigaChat exchanges {@code authKey} for a short-lived token at {@code authUrl}.
+     * GigaChat exchanges {@code authKey} for a short-lived token at {@code authUrl}. {@code egress=proxy} routes the provider through
+     * {@link Egress}; without an active proxy it gets no adapter.
      */
     public record Provider(@DefaultValue("true") boolean enabled, String baseUrl, String apiKey, String authUrl,
-                           String authKey, @DefaultValue("GIGACHAT_API_PERS") String scope) {
+                           String authKey, @DefaultValue("GIGACHAT_API_PERS") String scope,
+                           @DefaultValue("direct") EgressMode egress) {
+        public Provider(boolean enabled, String baseUrl, String apiKey, String authUrl, String authKey, String scope) {
+            this(enabled, baseUrl, apiKey, authUrl, authKey, scope, EgressMode.DIRECT);
+        }
+
+        @ConstructorBinding
         public Provider {
+            egress = egress == null ? EgressMode.DIRECT : egress;
             baseUrl = baseUrl == null ? "" : baseUrl.strip();
             apiKey = apiKey == null ? "" : apiKey.strip();
             authUrl = authUrl == null ? "" : authUrl.strip();
@@ -104,7 +176,7 @@ public record AiProperties(
         /** Never prints a credential. */
         @Override
         public String toString() {
-            return "Provider[enabled=" + enabled + ", baseUrl=" + baseUrl + ", apiKey=" + (apiKey.isEmpty() ? "unset" : "<redacted>")
+            return "Provider[enabled=" + enabled + ", egress=" + egress.label() + ", baseUrl=" + baseUrl + ", apiKey=" + (apiKey.isEmpty() ? "unset" : "<redacted>")
                     + ", authKey=" + (authKey.isEmpty() ? "unset" : "<redacted>") + "]";
         }
 
