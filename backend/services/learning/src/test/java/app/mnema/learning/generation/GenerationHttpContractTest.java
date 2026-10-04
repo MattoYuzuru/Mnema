@@ -167,13 +167,7 @@ class GenerationHttpContractTest extends GenerationIntegrationTest {
         MockHttpServletResponse current = create(owner, deck, spec(null, noteSource(mine, 1)), UUID.randomUUID());
         assertThat(current.getStatus()).isEqualTo(201);
 
-        // a capability the spec needs and that is off: image search has no adapter and its flag is off
-        ObjectNode images = spec("с картинками");
-        ((ObjectNode) images.path("settings")).putObject("media").put("imageSearch", true);
-        MockHttpServletResponse unavailable = create(owner, deck, images, UUID.randomUUID());
-        problem(unavailable, 409, "CAPABILITY_UNAVAILABLE");
-        assertThat(problemBody(unavailable).path("capability").stringValue(null)).isEqualTo("imageSearch");
-        assertThat(problemBody(unavailable).path("reason").stringValue(null)).isEqualTo("DISABLED");
+        // a capability the spec needs and that is off: image generation of a spec is not offered, web search has no adapter and its flag is off
         ObjectNode research = spec("с проверкой");
         ((ObjectNode) research.path("settings")).put("factCheck", true);
         MockHttpServletResponse noSearch = create(owner, deck, research, UUID.randomUUID());
@@ -299,7 +293,7 @@ class GenerationHttpContractTest extends GenerationIntegrationTest {
         UUID note = note(owner, deck, "заметка");
         jdbc.sql("UPDATE app_learning.capture_note SET row_version=row_version+1,updated_at=updated_at WHERE note_id=:id").param("id", note).update();
         ObjectNode both = spec(null, noteSource(note, 0));
-        ((ObjectNode) both.path("settings")).putObject("media").put("imageSearch", true);
+        ((ObjectNode) both.path("settings")).put("factCheck", true);
         problem(create(owner, deck, both, UUID.randomUUID()), 409, "SOURCE_UNAVAILABLE");
         // ... while the estimate does not know about stale pins
         assertThat(estimate(owner, "/decks/" + deck + "/generation-estimates", "{\"spec\":" + both + "}").getStatus()).isEqualTo(409);
@@ -490,9 +484,9 @@ class GenerationHttpContractTest extends GenerationIntegrationTest {
         MockHttpServletResponse planned = estimate(owner, path, "{\"spec\":" + planFirst + "}");
         assertThat(planned.getStatus()).isEqualTo(200);
         assertThat(json(planned).path("breakdown").get(0).path("operation").stringValue(null)).isEqualTo("SMART_PLAN_FLASH");
-        ObjectNode images = spec("p");
-        ((ObjectNode) images.path("settings")).putObject("media").put("imageSearch", true);
-        problem(estimate(owner, path, "{\"spec\":" + images + "}"), 409, "CAPABILITY_UNAVAILABLE");
+        ObjectNode research = spec("p");
+        ((ObjectNode) research.path("settings")).put("factCheck", true);
+        problem(estimate(owner, path, "{\"spec\":" + research + "}"), 409, "CAPABILITY_UNAVAILABLE");
 
         String edit = "{\"edit\":{\"sessionId\":\"" + session + "\",\"artifactId\":\"" + artifact + "\",\"action\":\"REWRITE\"}}";
         assertThat(estimate(owner, path, edit).getStatus()).isEqualTo(200);

@@ -60,16 +60,14 @@ class GenerationGate implements GenerationBoundary {
 
     /**
      * The capability an edit action needs. A rewrite needs text generation. The media actions need their provider, and their executors
-     * come with AI-09 and AI-10: until then even a configured provider cannot run them, so they are refused as not configured
+     * come with AI-09 (an image search, AI-10, runs): until then even a configured provider cannot run them, so they are refused as not configured
      * (the reason of the capability gate wins when it is the one that is off).
      */
     void requireEdit(String action) {
         switch (action) {
             case "REWRITE", "FREE" -> capabilities.requireAiGeneration();
-            case "IMAGE_SEARCH" -> {
-                capabilities.requireImageSearch();
-                throw notRunnable("imageSearch");
-            }
+            // AI-10 (#296): runnable whenever the capability is (the flag and a source or the Stub); the executor is ImageSearchExecutor
+            case "IMAGE_SEARCH" -> capabilities.requireImageSearch();
             case "IMAGE_GENERATE" -> {
                 capabilities.requireImageGeneration();
                 throw notRunnable("imageGeneration");

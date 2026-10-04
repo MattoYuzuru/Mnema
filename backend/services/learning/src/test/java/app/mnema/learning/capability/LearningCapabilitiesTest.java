@@ -22,7 +22,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class LearningCapabilitiesTest {
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private static final SpeechToTextProvider SPEECH = asset -> new SpeechToTextProvider.Transcription("text");
-    private static final ImageSearch IMAGE_SEARCH = request -> null;
+    private static final ImageSearch IMAGE_SEARCH = new ImageSearch() {
+        @Override public app.mnema.learning.ai.AiResult<java.util.List<Candidate>> search(Request request) { return null; }
+
+        @Override public app.mnema.learning.ai.AiResult<Image> fetch(Candidate candidate) { return null; }
+    };
     private static final WebSearch WEB_SEARCH = request -> null;
 
     private static final AiAvailability TEXT_AVAILABLE = availability(AiAvailability.State.AVAILABLE, Set.of());
@@ -71,6 +75,25 @@ class LearningCapabilitiesTest {
         }
         assertThatThrownBy(capabilities::requireAiAssessment).isInstanceOf(CapabilityUnavailableException.class);
         assertThatThrownBy(capabilities::requireSpeechToText).isInstanceOf(CapabilityUnavailableException.class);
+    }
+
+    @Test
+    void anImageSearchPortWithoutAnyCallableSourceIsNotConfiguredEvenWhenTheFlagIsOn() {
+        var none = new ImageSearch() {
+            @Override public app.mnema.learning.ai.AiResult<java.util.List<Candidate>> search(Request request) { return null; }
+
+            @Override public app.mnema.learning.ai.AiResult<Image> fetch(Candidate candidate) { return null; }
+
+            @Override public boolean configured() { return false; }
+        };
+        var factory = new StaticListableBeanFactory();
+        factory.addBean("imageSearch", none);
+        LearningCapabilities capabilities = new LearningCapabilities(allOn(), factory.getBeanProvider(SpeechToTextProvider.class), TEXT_AVAILABLE,
+                factory.getBeanProvider(app.mnema.learning.ai.SpeechSynthesis.class), factory.getBeanProvider(ImageSearch.class),
+                factory.getBeanProvider(app.mnema.learning.ai.ImageGeneration.class),
+                factory.getBeanProvider(app.mnema.learning.ai.VideoGeneration.class), factory.getBeanProvider(WebSearch.class));
+        assertThat(capabilities.imageSearch()).isEqualTo(new LearningCapabilities.Status(false, LearningCapabilities.Reason.PROVIDER_NOT_CONFIGURED));
+        assertThatThrownBy(capabilities::requireImageSearch).isInstanceOf(CapabilityUnavailableException.class);
     }
 
     @Test

@@ -51,6 +51,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
         "learning.ai.provider=stub",
         "learning.features.ai-generation.enabled=true",
         "learning.features.text-to-speech.enabled=true",
+        "learning.features.image-search.enabled=true",
         "learning.usage.entitlements.default-plan=PLUS",
         "learning.generation.worker.lease=PT2S",
         "learning.generation.worker.heartbeat=PT0.2S",
