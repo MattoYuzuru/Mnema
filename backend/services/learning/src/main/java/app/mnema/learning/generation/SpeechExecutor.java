@@ -87,7 +87,7 @@ class SpeechExecutor implements StepExecutor {
         String lang = spec.path("lang").stringValue("en");
         Instant deadline = claim.deadlineAt();
         SpeechClips.Outcome.Staged staged;
-        if (stager.assetState(claim.ownerId(), slot.assetId()) != GeneratedMediaStager.State.MISSING) {
+        if (staged(stager.assetState(claim.ownerId(), slot.assetId()))) {
             // an earlier attempt already staged the clip: only its verification is left (and its debit and cache entry, if it called a provider)
             staged = resumed(claim, slot.assetId(), new SpeechClips.Clip(spec.path("text").stringValue(""), lang, voice, take));
         } else {
@@ -152,7 +152,7 @@ class SpeechExecutor implements StepExecutor {
         UUID asset = SpeechClips.assetOf(claim.stepId(), 0);
         Instant deadline = claim.deadlineAt();
         SpeechClips.Clip clip = new SpeechClips.Clip(slot.spec().path("text").stringValue(""), lang, voice, take);
-        SpeechClips.Outcome made = stager.assetState(claim.ownerId(), asset) != GeneratedMediaStager.State.MISSING
+        SpeechClips.Outcome made = staged(stager.assetState(claim.ownerId(), asset))
                 ? resumed(claim, asset, clip) : clips.stage(claim, control, claim.ownerId(), asset, clip, deadline);
         SpeechClips.Outcome.Staged staged;
         switch (made) {
@@ -215,7 +215,7 @@ class SpeechExecutor implements StepExecutor {
             // the asset is a function of the step and the clip: a retry resumes the ones an earlier attempt staged
             UUID asset = SpeechClips.assetOf(claim.stepId(), index);
             SpeechClips.Clip clip = new SpeechClips.Clip(transcript, lang, voice, take);
-            boolean resume = stager.assetState(claim.ownerId(), asset) != GeneratedMediaStager.State.MISSING;
+            boolean resume = staged(stager.assetState(claim.ownerId(), asset));
             SpeechClips.Outcome outcome = resume ? resumed(claim, asset, clip, spend) : clips.stage(claim, control, claim.ownerId(), asset, clip, deadline);
             SpeechClips.Outcome.Staged staged;
             switch (outcome) {
@@ -315,5 +315,13 @@ class SpeechExecutor implements StepExecutor {
 
     private void outcome(String outcome) {
         meters.counter("mnema_generation_steps_total", "kind", KIND, "outcome", outcome).increment();
+    }
+
+    /**
+     * Whether an earlier attempt already handed bytes to the media pipeline for this asset. A reservation without its transfer ({@code PENDING}, a
+     * crash between the two, #296) counts as not staged: the clip is made again (or taken from the cache) and staged under the same asset.
+     */
+    private static boolean staged(GeneratedMediaStager.State state) {
+        return state != GeneratedMediaStager.State.MISSING && state != GeneratedMediaStager.State.PENDING;
     }
 }

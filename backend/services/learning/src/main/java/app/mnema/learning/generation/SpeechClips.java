@@ -189,6 +189,8 @@ class SpeechClips {
             switch (state) {
                 case READY -> verdict = Verdict.READY;
                 case REJECTED, FAILED, MISSING -> verdict = Verdict.REJECTED;
+                // reserved but never transferred (a crash between the two): not this clip's verdict, the step runs again and stages it
+                case PENDING -> verdict = Verdict.LOST;
                 case VERIFYING -> {
                     if (control.lost() || Thread.currentThread().isInterrupted()) verdict = Verdict.LOST;
                     else if (control.cancelled()) verdict = Verdict.CANCELLED;

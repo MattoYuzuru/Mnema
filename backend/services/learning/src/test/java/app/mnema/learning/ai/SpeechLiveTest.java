@@ -49,17 +49,27 @@ class SpeechLiveTest {
         }
     }
 
+    /**
+     * Through the egress proxy when {@code MNEMA_AI_EGRESS_PROXY_URL} is set; with {@code MNEMA_AI_LIVE_EGRESS=direct} straight from this machine (a
+     * developer network where Google answers, as verified 2026-10-05). Both TTS models of the default route are spoken.
+     */
     @Test
-    void geminiSpeaksARussianAndAJapanesePhraseThroughTheProxy() {
+    void geminiSpeaksARussianAndAJapanesePhrase() {
         String key = env("MNEMA_AI_GOOGLE_API_KEY");
-        Assumptions.assumeTrue(!key.isBlank() && !env("MNEMA_AI_EGRESS_PROXY_URL").isBlank(), "MNEMA_AI_GOOGLE_API_KEY and the egress proxy are not set");
-        var google = new AiProperties.Provider(true, "https://generativelanguage.googleapis.com", key, "", "", "", AiProperties.EgressMode.PROXY);
-        AiProperties base = SpeechTestSupport.properties(List.of("google:gemini-3.8-flash-tts"), List.of(), Map.of("google", google));
-        AiProperties properties = new AiProperties(base.provider(), base.routes(), base.providers(), base.models(), new AiProperties.Transport(Duration.ofSeconds(5),
-                Duration.ofSeconds(60), 8 << 20, Duration.ofSeconds(60)), base.retry(), base.breaker(), base.permits(), base.budget(), base.userKey(), base.prompt(),
-                new AiProperties.Egress(env("MNEMA_AI_EGRESS_PROXY_URL"), env("MNEMA_AI_EGRESS_PROXY_USER"), env("MNEMA_AI_EGRESS_PROXY_PASSWORD"), true));
-        roundTrip(properties, SpeechSettings.defaults(), "gemini", "ru", "Здравствуйте, как у вас дела сегодня?", "wav");
-        roundTrip(properties, SpeechSettings.defaults(), "gemini", "ja", "今日はいい天気ですね。散歩に行きましょう。", "wav");
+        boolean direct = "direct".equals(env("MNEMA_AI_LIVE_EGRESS"));
+        Assumptions.assumeTrue(!key.isBlank() && (direct || !env("MNEMA_AI_EGRESS_PROXY_URL").isBlank()),
+                "MNEMA_AI_GOOGLE_API_KEY and the egress proxy (or MNEMA_AI_LIVE_EGRESS=direct) are not set");
+        var google = new AiProperties.Provider(true, "https://generativelanguage.googleapis.com", key, "", "", "",
+                direct ? AiProperties.EgressMode.DIRECT : AiProperties.EgressMode.PROXY);
+        for (String model : List.of("gemini-3.8-flash-lite-tts", "gemini-3.8-flash-tts")) {
+            AiProperties base = SpeechTestSupport.properties(List.of("google:" + model), List.of(), Map.of("google", google));
+            AiProperties properties = new AiProperties(base.provider(), base.routes(), base.providers(), base.models(), new AiProperties.Transport(Duration.ofSeconds(5),
+                    Duration.ofSeconds(60), 8 << 20, Duration.ofSeconds(60)), base.retry(), base.breaker(), base.permits(), base.budget(), base.userKey(), base.prompt(),
+                    direct ? new AiProperties.Egress("", "", "", true)
+                            : new AiProperties.Egress(env("MNEMA_AI_EGRESS_PROXY_URL"), env("MNEMA_AI_EGRESS_PROXY_USER"), env("MNEMA_AI_EGRESS_PROXY_PASSWORD"), true));
+            roundTrip(properties, SpeechSettings.defaults(), "gemini " + model, "ru", "Здравствуйте, как у вас дела сегодня?", "wav");
+            roundTrip(properties, SpeechSettings.defaults(), "gemini " + model, "ja", "今日はいい天気ですね。散歩に行きましょう。", "wav");
+        }
     }
 
     @Test
