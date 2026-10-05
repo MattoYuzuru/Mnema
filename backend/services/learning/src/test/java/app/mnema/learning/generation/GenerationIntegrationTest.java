@@ -1,5 +1,6 @@
 package app.mnema.learning.generation;
 
+import app.mnema.learning.ai.OpaqueUserKey;
 import app.mnema.learning.catalog.deck.DeckCommand;
 import app.mnema.learning.catalog.deck.DeckService;
 import app.mnema.learning.catalog.exercise.ExerciseService;
@@ -77,6 +78,7 @@ abstract class GenerationIntegrationTest extends PostgresIntegrationTest {
     @Autowired protected StudySessionService studySessions;
     @Autowired protected MediaCatalog media;
     @Autowired protected GenerationTestConfiguration.Scripted provider;
+    @Autowired private ProviderKeys keys;
 
     @Autowired protected StepRepository steps;
     @Autowired protected UsageLedger ledger;
@@ -179,6 +181,23 @@ abstract class GenerationIntegrationTest extends PostgresIntegrationTest {
 
     protected static JsonNode json(MockHttpServletResponse response) throws Exception {
         return JSON.readTree(response.getContentAsString());
+    }
+
+    // ---------------------------------------------------------------- provider
+
+    /**
+     * The provider calls made for {@code owner}. A test asserts on these, never on {@code provider.calls}: steps of other
+     * tests' owners may still be running on the shared dispatcher and call the same provider double.
+     */
+    protected List<GenerationTestConfiguration.Call> calls(UUID owner) {
+        OpaqueUserKey key = keys.opaque(owner);
+        return provider.calls.stream().filter(call -> call.userKey().equals(key)).toList();
+    }
+
+    /** The streamed deltas of {@code owner}'s provider calls (see {@link #calls}). */
+    protected List<GenerationTestConfiguration.DeltaObservation> deltas(UUID owner) {
+        OpaqueUserKey key = keys.opaque(owner);
+        return provider.deltas.stream().filter(delta -> delta.userKey().equals(key)).toList();
     }
 
     // ---------------------------------------------------------------- database

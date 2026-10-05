@@ -5,8 +5,18 @@ import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/route
 import { HttpErrorResponse } from '@angular/common/http';
 import { AuthService, AuthStatus, AuthUser } from './auth.service';
 import { LoginPageComponent, identityErrorMessage } from './login-page.component';
+import { AbuseProtectionFailure } from './turnstile.service';
 
 describe('Identity form behavior', () => {
+    it('explains protection outages and expiry without exposing upstream content', () => {
+        expect(identityErrorMessage(new AbuseProtectionFailure('blocked'))).toBe('Вход и регистрация пока недоступны. Попробуйте позже.');
+        expect(identityErrorMessage(new AbuseProtectionFailure('unavailable'))).toContain('недоступна');
+        expect(identityErrorMessage(new AbuseProtectionFailure('retry'))).toContain('новая проверка');
+        expect(identityErrorMessage(new HttpErrorResponse({ status: 503, error: {
+            code: 'abuse_protection_unavailable', detail: 'private-upstream-content' } }))).toContain('недоступна');
+        expect(identityErrorMessage(new HttpErrorResponse({ status: 403, error: {
+            code: 'abuse_verification_failed', detail: 'private-upstream-content' } }))).toContain('Повторите');
+    });
     const status = signal<AuthStatus>('anonymous');
     const user = signal<AuthUser | null>(null);
     let auth: {

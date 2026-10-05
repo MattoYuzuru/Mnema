@@ -1,6 +1,7 @@
 # Production image inventory
 
-Status: **current**. Last registry verification: **2026-10-02**.
+Status: **current**. Build/legacy support registry verification: **2026-10-02**;
+new VPS dependency registry verification: **2026-10-04**.
 
 Every external image used to build Mnema or applied by the hosted production workflow has a readable version tag and an immutable OCI index digest. The tag explains the intended version during review; the digest is the runtime identity. Kubernetes accepts `tag@digest` and resolves by digest, so a later tag move cannot change the deployed bytes.
 
@@ -13,14 +14,23 @@ Every external image used to build Mnema or applied by the hosted production wor
 - the `identity-account` and `learning` release templates consumed by `scripts/render-release-manifest.sh`;
 - the exact literal `kubectl apply` surface in the production workflow;
 - Dependabot Docker coverage for `/backend`, `/frontend`, `/k8s`, and `/k8s/observability`.
+- the new VPS `deploy/production/compose.yaml`: four administrator-admitted
+  image bindings; the PostgreSQL Dockerfile base is pinned, and restore binds to
+  the admitted derived PostgreSQL image; Dependabot also covers `/deploy/production`.
 
-Since #143, Main CI ships only Identity & Account and Learning in maintenance; production promotion is disabled until #147. The production support image inventory below describes retained deployed infrastructure, not an enabled replacement production rollout.
+Current VPS publication and rollout use exactly `identity-account`, `learning`,
+`frontend` and `postgres`, all admitted by immutable GHCR digest. See
+[VPS runtime](vps-runtime.md) and [publication](vps-image-publication.md). Kubernetes
+manifests below remain source-pin contracts for the dormant legacy path, not the
+current VPS topology.
 
-The application images are the only source placeholders allowed. The renderer replaces each one with the staging-approved GHCR digest and rejects the rendered release if any `image:` is not digest-pinned.
+VPS Compose takes exactly four administrator-admitted digest references. The
+legacy Kubernetes renderer separately replaces its two application placeholders
+and rejects unpinned manifests; this is a source contract, not a staging gate for VPS.
 
 ## Verified build images
 
-The pinned digest is a multi-platform OCI index. The final column proves that it contains the project's `linux/amd64` target; the exact staging rollout then proves that the real cluster can pull and run it.
+The pinned digest is a multi-platform OCI index. The final column proves that it contains the project's `linux/amd64` target; actual rollout acceptance separately proves that the VPS can pull and run its derived release images.
 
 | Source | Path | Readable tag | Pinned index digest | `linux/amd64` child |
 | --- | --- | --- | --- | --- |
@@ -29,7 +39,49 @@ The pinned digest is a multi-platform OCI index. The final column proves that it
 | Frontend build | `frontend/Dockerfile` | `node:24.21.0-alpine` | `sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1` | `sha256:83f1c388c31fb2e51f7cbd4dea949b96260798c98f206e8e4696bc93bd964e3a` |
 | Frontend runtime | `frontend/Dockerfile` | `nginx:1.31.6-alpine` | `sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2` | `sha256:0530961ff0592b58c10f767535cc0abdfccf9e389ff7cc90f87320c1bc7e8506` |
 
-## Verified production support images
+## Frontend runtime security floors
+
+The frontend's pinned nginx base is supplemented with security version floors
+from the stable Alpine 3.24 repository. Publication run `37217508523` found
+`CVE-2026-93990` in `libexpat 2.8.4-r0` and `CVE-2026-103111` in `pcre2 10.48-r0`.
+The image requires `libexpat>=2.8.5-r0` and `pcre2>=10.49-r0`, the first fixed builds
+in [Alpine's security database](https://secdb.alpinelinux.org/v3.24/main.json).
+The existing OpenSSL floors remain. No edge repository or scan exception is added;
+provenance/SBOM and the HIGH/CRITICAL gate bind the actual derived release digest.
+Future stable security patches may satisfy these floors when old package builds
+are retired. A missing floor or failed image scan blocks publication.
+
+## Backend dependency security floor
+
+[Publication run 37220726794](https://github.com/MattoYuzuru/Mnema/actions/runs/37220726794)
+passed frontend/PostgreSQL but rejected both backend images: Spring Boot 4.1.1's
+Jackson 3.1.5 had five HIGH findings. Jackson core was affected by
+`CVE-2026-89407` and `CVE-2026-89425`; databind by `CVE-2026-68497`,
+`CVE-2026-91776` and `CVE-2026-91777`.
+
+The root Gradle build overrides `jackson-bom.version` to the published
+[Jackson 3.1.7 BOM](https://repo.maven.apache.org/maven2/tools/jackson/jackson-bom/3.1.7/jackson-bom-3.1.7.pom),
+which covers all five findings on the existing 3.1 patch line. All Jackson 3 modules
+remain aligned through Spring Boot's
+[managed-version customization](https://docs.spring.io/spring-boot/gradle-plugin/managing-dependencies.html#managing-dependencies.dependency-management-plugin.customizing).
+Jackson 2, Spring Boot and the runtime base images retain their existing versions.
+Serialization, HTTP/auth behavior and the full quality gate must pass with this BOM;
+published backend digests still require provenance/SBOM and fresh vulnerability scans.
+Remove the override only after Boot manages a fixed version and scans pass.
+
+## VPS PostgreSQL base
+
+The new empty-DB VPS uses the following official image. Registry Content-Digest
+was checked against the index body SHA256; both amd64 and arm64 platform entries
+were present. Runtime acceptance and vulnerability evidence remain separate gates.
+
+| Component | Path | Readable tag | Pinned index digest | `linux/amd64` child |
+| --- | --- | --- | --- | --- |
+| VPS PostgreSQL | `deploy/production/Dockerfile` | `postgres:18.6-alpine3.24` | `sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873` | `sha256:d8703cd7fba306b9fec9268ecedfa8a966846c053036a60e3635791957eb2f66` |
+
+## Legacy Kubernetes support pins
+
+The following support images belong to the retained, disabled Kubernetes flow.
 
 | Component | Path | Readable tag | Pinned index digest | `linux/amd64` child |
 | --- | --- | --- | --- | --- |
@@ -47,7 +99,9 @@ The pinned digest is a multi-platform OCI index. The final column proves that it
 
 - `k8s/ai/` and local audio/image/AI gateways are not applied by the hosted production workflow.
 - `k8s/staging/` and `k8s/backup/` have independent deployment contracts and remain covered by their own tests and Dependabot directories.
-- Mnema application digests are release outputs, not base-image inventory entries. Staging creates and validates the complete release artifact before production can preview it.
+- Mnema application digests are release outputs, not base-image inventory entries.
+  The new [VPS publication](vps-image-publication.md) verifies current main images;
+  administrator admission and protected manual deployment remain separate.
 
 Adding any new literal production apply path fails CI until its image-bearing sources are added to this policy. A mutable image in an excluded path does not weaken the production contract.
 
@@ -58,8 +112,9 @@ Dependabot owns routine Docker patch/minor proposals. For each update:
 1. keep the explicit version tag and update its index digest together;
 2. verify that the index contains `linux/amd64` with `docker buildx imagetools inspect <tag>@<digest>`;
 3. run `python3 scripts/verify_production_image_pins.py`, its unit tests, and `./scripts/test-render-release-manifest.sh`;
-4. require the normal PR quality gates and a successful staging rollout/smoke on the exact merged commit before any production approval.
+4. require the normal local/hosted PR quality gates, fresh four-image publication
+   and the administrator/runtime acceptance in [production delivery](production-delivery.md).
 
-If a pinned image regresses, restore its previous reviewed `tag@digest` pair through the same protected PR and staging flow. Do not retag, edit a live workload, or approve production to work around the failure.
+If a pinned image regresses, restore its previous reviewed `tag@digest` pair through the same protected PR and verified VPS release flow. Do not retag, edit a live workload, or approve production to work around the failure.
 
 References used for the contract: [Docker image digests](https://docs.docker.com/dhi/core-concepts/digests/), [Kubernetes image names and digest precedence](https://kubernetes.io/docs/concepts/containers/images/), and [GitHub Dependabot supported ecosystems](https://docs.github.com/en/code-security/reference/supply-chain-security/supported-ecosystems-and-repositories).

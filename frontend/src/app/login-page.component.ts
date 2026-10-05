@@ -4,8 +4,14 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { AuthService } from './auth.service';
 import { AuthFailure, FederatedProvider, safeReturnUrl } from './auth-protocol';
+import { AbuseProtectionFailure } from './turnstile.service';
 
 export function identityErrorMessage(error: unknown): string {
+    if (error instanceof AbuseProtectionFailure && error.code === 'blocked')
+        return 'Вход и регистрация пока недоступны. Попробуйте позже.';
+    if (error instanceof AbuseProtectionFailure) return error.code === 'unavailable'
+        ? 'Защита входа сейчас недоступна. Проверьте блокировку скриптов и соединение, затем повторите.'
+        : 'Проверка входа не завершилась или устарела. Повторите попытку — начнётся новая проверка.';
     if (error instanceof AuthFailure) {
         if (error.code === 'storage') return 'Браузер не разрешает сохранить данные входа. Разрешите хранилище для этого сайта и повторите.';
         if (error.code === 'configuration') return 'Вход пока недоступен: требуется настроенное защищённое соединение с сервисом аккаунтов.';
@@ -13,6 +19,8 @@ export function identityErrorMessage(error: unknown): string {
         return 'Не удалось подтвердить вход. Начните его заново.';
     }
     if (error instanceof HttpErrorResponse) {
+        if (error.error?.code === 'abuse_protection_unavailable') return 'Защита входа сейчас недоступна. Попробуйте позже.';
+        if (error.error?.code === 'abuse_verification_failed') return 'Не удалось подтвердить проверку входа. Повторите попытку.';
         if (error.status === 400 || error.status === 401) return 'Проверьте логин и пароль. Войти не удалось.';
         if (error.status === 409) return 'Не удалось зарегистрироваться с этими данными. Проверьте их или войдите в существующий аккаунт.';
         if (error.status === 429) return 'Слишком много попыток. Немного подождите и повторите.';
@@ -72,6 +80,8 @@ export function identityErrorMessage(error: unknown): string {
           <p class="switch-mode">{{ registering ? 'Уже есть аккаунт?' : 'Впервые здесь?' }}
             <a [routerLink]="registering ? '/login' : '/register'" [queryParams]="{ returnUrl }">{{ registering ? 'Войти' : 'Создать аккаунт' }}</a>
           </p>
+          <p class="field-help">Защита входа может использовать Cloudflare Turnstile.
+            <a routerLink="/privacy">Обработка данных</a>.</p>
         }
         @if (error()) { <p class="identity-error" role="alert" tabindex="-1">{{ error() }}</p> }
         @if (auth.logoutUnconfirmed()) {

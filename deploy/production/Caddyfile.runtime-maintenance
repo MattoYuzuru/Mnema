@@ -1,0 +1,18 @@
+{
+    admin unix//run/mnema-caddy/admin.sock|0600
+    acme_ca https://acme-v02.api.letsencrypt.org/directory
+    servers {
+        protocols h1 h2
+    }
+}
+
+mnema.app, auth.mnema.app, www.mnema.app {
+    header {
+        Cache-Control "no-store"
+        Content-Type "text/plain; charset=utf-8"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        Retry-After "120"
+    }
+    respond "Mnema: приложение готовится к запуску. Попробуйте позже." 503
+}

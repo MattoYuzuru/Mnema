@@ -2,6 +2,7 @@ package app.mnema.learning.generation;
 
 import app.mnema.learning.ai.AiFailure;
 import app.mnema.learning.ai.AiResult;
+import app.mnema.learning.ai.OpaqueUserKey;
 import app.mnema.learning.ai.SpeechSynthesis;
 import app.mnema.learning.ai.StreamListener;
 import app.mnema.learning.ai.TextGeneration;
@@ -62,12 +63,12 @@ class GenerationTestConfiguration {
         return "# Лиса\n\nРыжая лиса живёт в лесу.\n\n::image{slot=\"i1\" mode=\"search\" alt=\"Лиса зимой\"} red fox snow" + markers + "\n";
     }
 
-    /** One recorded provider call. */
-    record Call(UUID stepId, int attempt, app.mnema.learning.ai.AiRoute route, boolean repair, String prompt,
+    /** One recorded provider call; {@code userKey} tells whose it is, as the context and its dispatcher are shared by every test. */
+    record Call(OpaqueUserKey userKey, UUID stepId, int attempt, app.mnema.learning.ai.AiRoute route, boolean repair, String prompt,
                 boolean transactionAtCall, int connectionsAtCall) { }
 
-    /** What the calling thread held at each streamed delta. */
-    record DeltaObservation(boolean transaction, int connections) { }
+    /** What the calling thread held at each streamed delta of the call made with {@code userKey}. */
+    record DeltaObservation(OpaqueUserKey userKey, boolean transaction, int connections) { }
 
     /** Per-thread count of connections borrowed from the pool and not yet closed. */
     static final class Connections {
@@ -111,7 +112,7 @@ class GenerationTestConfiguration {
         public AiResult<TextResponse> generate(TextRequest request) {
             String prompt = String.join("\n", request.segments().stream().map(TextRequest.Segment::text).toList());
             boolean repair = request.segments().stream().anyMatch(segment -> segment.text().startsWith(TextRequest.REPAIR_PREFIX));
-            calls.add(new Call(request.stepId(), request.attempt(), request.route(), repair, prompt,
+            calls.add(new Call(request.userKey(), request.stepId(), request.attempt(), request.route(), repair, prompt,
                     TransactionSynchronizationManager.isActualTransactionActive(), Connections.held()));
             if (prompt.contains("[[fake:crash-once]]" ) && crashed.add(request.stepId())) {
                 throw new IllegalStateException("simulated worker crash");
@@ -159,7 +160,7 @@ class GenerationTestConfiguration {
             StreamListener original = request.listener();
             StreamListener probe = new StreamListener() {
                 @Override public void onDelta(String text) {
-                    deltas.add(new DeltaObservation(TransactionSynchronizationManager.isActualTransactionActive(), Connections.held()));
+                    deltas.add(new DeltaObservation(request.userKey(), TransactionSynchronizationManager.isActualTransactionActive(), Connections.held()));
                     if (original != null) original.onDelta(text);
                 }
 
@@ -187,7 +188,7 @@ class GenerationTestConfiguration {
         private AiResult<TextResponse> ok(TextRequest request, String text) {
             if (request.listener() != null) {
                 for (int start = 0; start < text.length(); start += 16) {
-                    deltas.add(new DeltaObservation(TransactionSynchronizationManager.isActualTransactionActive(), Connections.held()));
+                    deltas.add(new DeltaObservation(request.userKey(), TransactionSynchronizationManager.isActualTransactionActive(), Connections.held()));
                     request.listener().onDelta(text.substring(start, Math.min(text.length(), start + 16)));
                 }
             }

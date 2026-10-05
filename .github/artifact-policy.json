@@ -35,6 +35,10 @@
         },
         "validate-main-ref": {
           "contents": "read"
+        },
+        "assemble-vps-candidate": {
+          "actions": "read",
+          "contents": "read"
         }
       }
     },
@@ -80,6 +84,13 @@
       "jobs": {
         "rollback-drill": {
           "actions": "read",
+          "contents": "read"
+        }
+      }
+    },
+    ".github/workflows/vps-deploy.yaml": {
+      "jobs": {
+        "deploy-vps": {
           "contents": "read"
         }
       }
@@ -271,6 +282,21 @@
       "ifNoFilesFound": "error",
       "classification": "sanitized-recovery-evidence",
       "source": "backup/validate_report.py fixed-schema restore drill report"
+    },
+    {
+      "policyId": "main-vps-candidate",
+      "workflow": ".github/workflows/deploy.yaml",
+      "job": "assemble-vps-candidate",
+      "name": "vps-candidate",
+      "paths": [
+        "${{ runner.temp }}/vps-candidate.json",
+        "${{ runner.temp }}/vps-security-evidence.json",
+        "${{ runner.temp }}/vps-candidate.sha256"
+      ],
+      "retentionDays": 30,
+      "ifNoFilesFound": "error",
+      "classification": "release-manifest",
+      "source": "Four immutable VPS image identifiers and complete verified image security evidence; no deployment admission or secrets"
     }
   ]
 }

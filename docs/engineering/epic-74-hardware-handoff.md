@@ -12,7 +12,7 @@
 2. Этот документ, затем [оригинальное поручение](prompts/epic-74-end-to-end.md).
 3. [Стандарт задач/PR](work-item-standard.md), [refinement #74](epic-74-refinement.md).
 4. [Решения по зависимостям](epic-74-dependency-decisions.md).
-5. [Local-only delivery](../operations/local-development-delivery.md).
+5. [Local-only delivery](https://github.com/MattoYuzuru/Mnema/blob/4f3fb44d00e8e004a35a02d38cc026c8bbba7058/docs/operations/local-development-delivery.md).
 6. Перед следующей реализацией — нужные канонические документы из раздела 5.
 
 Сверить реальный GitHub, а не считать этот текст динамическим статусом:

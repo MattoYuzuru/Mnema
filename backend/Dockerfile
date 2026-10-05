@@ -8,7 +8,9 @@ WORKDIR /workspace
 COPY gradlew settings.gradle.kts build.gradle.kts ./
 COPY gradle ./gradle
 COPY services ./services
+COPY runtime/MnemaReadiness.java ./runtime/MnemaReadiness.java
 RUN chmod +x gradlew
+RUN javac -d /workspace/readiness runtime/MnemaReadiness.java
 
 RUN --mount=type=cache,target=/home/gradle/.gradle \
     ./gradlew \
@@ -19,6 +21,7 @@ RUN --mount=type=cache,target=/home/gradle/.gradle \
 FROM eclipse-temurin:25.0.4.1_1-jre-resolute@sha256:628f28c18211e8633d02cefb9698489abcbd43337c61fba67837e4ffb86d50d6 AS backend-runtime
 RUN rm -f /usr/bin/pebble
 WORKDIR /app
+COPY --from=build /workspace/readiness /app/readiness
 USER 10001:10001
 EXPOSE 8080
 ENTRYPOINT ["java","-jar","/app/app.jar"]

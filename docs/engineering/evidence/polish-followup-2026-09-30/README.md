@@ -11,7 +11,7 @@ artifact:
 Продолжение [правок бумажного интерфейса](../paper-polish-2026-09-30/README.md).
 Проверено на локальном HTTPS стеке с синтетическим демо-аккаунтом, в отдельном
 worktree. Незакоммиченные изменения владельца в исходном checkout сохранены.
-Доставка ограничена [локальной разработкой](../../../operations/local-development-delivery.md).
+Доставка ограничена [локальной разработкой](https://github.com/MattoYuzuru/Mnema/blob/4f3fb44d00e8e004a35a02d38cc026c8bbba7058/docs/operations/local-development-delivery.md).
 
 ## Наблюдаемый результат
 

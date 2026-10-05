@@ -367,7 +367,7 @@ class GenerationReviseIntegrationTest extends GenerationEditsSupport {
         assertThat(debits(owner)).isZero();
         assertThat(reservationStates(owner)).containsOnly("RELEASED");
         assertThat(notificationKinds(owner)).isEmpty();
-        assertThat(provider.calls).isEmpty();
+        assertThat(calls(owner)).isEmpty();
 
         // approval is a revision of the exercise: its audio block still names the asset
         MockHttpServletResponse approved = approve(owner, deck, proposal, UUID.randomUUID());
@@ -418,7 +418,7 @@ class GenerationReviseIntegrationTest extends GenerationEditsSupport {
         assertThat(debits(owner)).isEqualTo(4);
         assertThat(reservationStates(owner)).doesNotContain("ACTIVE");
         // three provider calls: the answer, the repair and the strong route (the first session made one)
-        assertThat(provider.calls.stream().filter(call -> call.prompt().contains("<task kind=\"exercise-edit\">"))).hasSize(4);
+        assertThat(calls(owner).stream().filter(call -> call.prompt().contains("<task kind=\"exercise-edit\">"))).hasSize(4);
     }
 
     @Test
@@ -430,7 +430,7 @@ class GenerationReviseIntegrationTest extends GenerationEditsSupport {
         Published published = withAudio(material, "Как это произносится?", asset);
         Proposal proposal = proposal(owner, deck, reviseExercise(published.exercise(), published.revision(), "[[stub:broken-key]] проще", null));
         // the first answer was not an exercise of the schema, the repair was: one repair is made on the same route
-        assertThat(provider.calls.stream().filter(call -> call.prompt().contains("<task kind=\"exercise-edit\">")).toList()).hasSize(2);
+        assertThat(calls(owner).stream().filter(call -> call.prompt().contains("<task kind=\"exercise-edit\">")).toList()).hasSize(2);
         assertThat(detail(owner, deck, proposal).path("turns").get(0).path("status").stringValue(null)).isEqualTo("APPLIED");
 
         // «Ещё раз» is another edit of the whole exercise; the voice is its own action
