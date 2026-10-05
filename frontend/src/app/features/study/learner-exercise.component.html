@@ -37,14 +37,13 @@
   @if (freeResponse()) {
     <form (submit)="$event.preventDefault(); submit()" novalidate>
       <label [for]="idPrefix() + '-answer'">Ваш ответ</label>
-      <textarea [id]="idPrefix() + '-answer'" data-answer-control rows="4" autocomplete="off" autocapitalize="off"
-                [value]="text()" [readOnly]="busy()" (input)="text.set($any($event.target).value)"></textarea>
-      <div class="voice">
-        <button class="button secondary" type="button" disabled [attr.aria-describedby]="idPrefix() + '-voice-reason'">
-          Ответить голосом
-        </button>
-        <p class="hint" [id]="idPrefix() + '-voice-reason'">{{ voiceReason }}</p>
-      </div>
+      <textarea #answerField [id]="idPrefix() + '-answer'" data-answer-control rows="4" autocomplete="off" autocapitalize="off"
+                [value]="text()" [readOnly]="busy()" (input)="onAnswerInput($event)"></textarea>
+      @if (textOrSpeech() && speechAvailable()) {
+        <div class="voice">
+          <app-mic-button purpose="STUDY_ANSWER" label="Ответить голосом" [deckId]="deckId()" [field]="answerTarget" [disabled]="busy()" (inserted)="fromSpeech.set(true)" />
+        </div>
+      }
       <button class="button primary" type="submit" data-submit [disabled]="busy() || blockedReason() !== null"
               [attr.aria-describedby]="blockedReason() === null ? null : idPrefix() + '-blocked'">{{ busy() ? 'Проверяем…' : 'Проверить ответ' }}</button>
     </form>

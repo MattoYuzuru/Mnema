@@ -5,8 +5,9 @@
   @if (loading()) { <p class="notice" role="status">Загружаем заметки…</p> }
   @if (deck()) {
     <form class="paper-surface" [formGroup]="form" (ngSubmit)="capture()">
-      <div class="field"><label for="capture-text">Заметка</label><textarea id="capture-text" maxlength="32768" formControlName="text" [readonly]="recovery() === 'retry'" placeholder="Что важно не потерять?" aria-describedby="capture-help capture-error"></textarea>
+      <div class="field"><label for="capture-text">Заметка</label><textarea #noteField id="capture-text" maxlength="32768" formControlName="text" [readonly]="recovery() === 'retry'" placeholder="Что важно не потерять?" aria-describedby="capture-help capture-error"></textarea>
         <p class="muted" id="capture-help">Пробелы без текста не сохраняются.</p>
+        @if (speechAvailable()) { <app-mic-button purpose="CAPTURE" [deckId]="deck()?.deckId ?? null" [field]="noteTarget" /> }
         @if (form.controls.text.dirty && form.controls.text.invalid) { <p id="capture-error" class="field-error">Введите текст или сократите заметку.</p> }
       </div>
       <div class="actions"><button class="button primary" type="submit" [disabled]="busy() || form.invalid || recovery() === 'retry'">{{ busy() ? 'Сохраняем…' : 'Сохранить на потом' }}</button></div>

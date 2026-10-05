@@ -1,4 +1,5 @@
-import { HttpErrorResponse } from '@angular/common/http';
+import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
@@ -665,6 +666,20 @@ describe('GenerationComposerComponent', () => {
                 expect(document.activeElement).toBe(field());
                 root().remove();
             });
+        });
+    });
+
+    describe('voice input (AI-15)', () => {
+        const speechOn = (): LearningCapabilities => capabilities({ speechToText: { available: true, reason: null } });
+
+        it('puts the microphone next to the request field only while speechToText is available', () => {
+            TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] });
+            create({ caps: speechOn() });
+            expect(root().querySelector('app-mic-button')).not.toBeNull();
+            expect(root().querySelector('app-mic-button button')?.textContent).toContain('Начать запись');
+            TestBed.resetTestingModule();
+            create({ caps: capabilities({ speechToText: { available: false, reason: 'DISABLED' } }) });
+            expect(root().querySelector('app-mic-button')).toBeNull();
         });
     });
 });

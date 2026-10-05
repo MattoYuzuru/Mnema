@@ -12,6 +12,7 @@ import { SegmentedChoiceComponent } from '../../shared/segmented-choice.componen
 import { AuthoringApiService } from '../authoring/authoring-api.service';
 import { CaptureNote, newCommandId } from '../authoring/authoring.models';
 import { CAPABILITIES_UNAVAILABLE, LearningCapabilities } from '../authoring/capabilities-api.service';
+import { MicButtonComponent } from '../speech/mic-button.component';
 import { GenerationApiService } from './generation-api.service';
 import { GenerationProblem, readProblem } from './generation-problem';
 import { blockImplicitSubmit, isSendKey } from './implicit-submit';
@@ -83,7 +84,7 @@ let nextComposer = 0;
  */
 @Component({
     selector: 'app-generation-composer',
-    imports: [RouterLink, GenerationSettingsComponent, ToggletipComponent, SegmentedChoiceComponent, NoteOverridesComponent],
+    imports: [RouterLink, GenerationSettingsComponent, ToggletipComponent, SegmentedChoiceComponent, NoteOverridesComponent, MicButtonComponent],
     templateUrl: './generation-composer.component.html',
     styleUrls: ['../authoring/authoring-page.css', './generation-composer.component.css'],
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -114,6 +115,9 @@ export class GenerationComposerComponent {
 
     protected readonly uid = `mn-composer-${nextComposer++}`;
     protected readonly maxLength = MAX_PROMPT_LENGTH;
+    protected readonly speechAvailable = computed(() => this.capabilities().speechToText.available);
+    /** The request field, for the microphone to put its transcript into. */
+    protected readonly promptTarget = (): HTMLTextAreaElement | null => this.promptField()?.nativeElement ?? null;
     protected readonly imageAvailable = computed(() => this.capabilities().imageSearch.available);
     protected readonly audioAvailable = computed(() => this.capabilities().textToSpeech.available);
 

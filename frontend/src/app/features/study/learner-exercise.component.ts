@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, input, output, signal, untracked, viewChild } from '@angular/core';
 import { Observable, Subscription } from 'rxjs';
 
 import { ChoiceListComponent } from '../../content/exercise/choice-list.component';
@@ -9,11 +9,10 @@ import { LearnerBlock, LearnerContent, allLearnerBlocks } from '../../content/ex
 import { LearnerBlocksComponent } from '../../content/exercise/learner-blocks.component';
 import { MatchBoardComponent, MatchPair } from '../../content/exercise/match-board.component';
 import { OrderBoardComponent } from '../../content/exercise/order-board.component';
+import { MicButtonComponent } from '../speech/mic-button.component';
 import { SELF_RATINGS, SELF_RATING_LABELS, SelfRating, StudyResponse } from './study.models';
 
 export type PairChecker = (pair: MatchPair) => Observable<boolean>;
-
-const VOICE_REASON = 'Голосовой ответ пока недоступен: распознавание речи не подключено. Напишите ответ текстом.';
 
 /**
  * The learner answer surface for all seven mechanics. It owns the in-progress input only; the host owns
@@ -23,7 +22,7 @@ const VOICE_REASON = 'Голосовой ответ пока недоступе�
 @Component({
     selector: 'app-learner-exercise',
     imports: [LearnerBlocksComponent, ClozePassageComponent, ChoiceListComponent, MatchBoardComponent, OrderBoardComponent,
-        CategorizeBoardComponent, ExclusivePlaybackDirective],
+        CategorizeBoardComponent, ExclusivePlaybackDirective, MicButtonComponent],
     templateUrl: './learner-exercise.component.html',
     styleUrl: './learner-exercise.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -43,6 +42,10 @@ export class LearnerExerciseComponent {
     readonly blockedReason = input<string | null>(null);
     readonly pairChecker = input<PairChecker | null>(null);
     readonly idPrefix = input('exercise');
+    /** `speechToText` is available: a free response that takes speech offers «Ответить голосом». */
+    readonly speechAvailable = input(false);
+    /** The deck of the exercise: its terms help the recognition. */
+    readonly deckId = input<string | null>(null);
     /** A new key (another presentation, another set of items) discards the input and any pending pair check. */
     readonly resetKey = input('');
 
@@ -52,6 +55,10 @@ export class LearnerExerciseComponent {
     readonly dirtyChange = output<boolean>();
 
     readonly text = signal('');
+    /** The text of the answer came (at least in part) from a transcript: it is sent as `SPEECH` even if the learner edited it. Emptying the field starts over. */
+    readonly fromSpeech = signal(false);
+    private readonly answerField = viewChild<ElementRef<HTMLTextAreaElement>>('answerField');
+    readonly answerTarget = (): HTMLTextAreaElement | null => this.answerField()?.nativeElement ?? null;
     readonly clozeValues = signal<Readonly<Record<string, string>>>({});
     readonly selectedOptionIds = signal<readonly string[]>([]);
     readonly matches = signal<Readonly<Record<string, string>>>({});
@@ -64,10 +71,11 @@ export class LearnerExerciseComponent {
     readonly assignments = signal<Readonly<Record<string, string>>>({});
 
     readonly ratings = SELF_RATINGS;
-    readonly voiceReason = VOICE_REASON;
 
     readonly selfCheck = computed(() => { const value = this.exercise(); return value.type === 'SELF_CHECK' ? value.content : null; });
     readonly freeResponse = computed(() => { const value = this.exercise(); return value.type === 'FREE_RESPONSE' ? value.content : null; });
+    /** The exercise takes a spoken answer (`responseInput: TEXT_OR_SPEECH`); `answerSource` goes with such an answer only. */
+    readonly textOrSpeech = computed(() => this.freeResponse()?.responseInput === 'TEXT_OR_SPEECH');
     readonly cloze = computed(() => { const value = this.exercise(); return value.type === 'CLOZE' ? value.content : null; });
     readonly choice = computed(() => { const value = this.exercise(); return value.type === 'CHOICE' ? value.content : null; });
     readonly match = computed(() => { const value = this.exercise(); return value.type === 'MATCH' ? value.content : null; });
@@ -185,13 +193,21 @@ export class LearnerExerciseComponent {
         });
     }
 
+    onAnswerInput(event: Event): void {
+        const value = (event.target as HTMLTextAreaElement).value;
+        this.text.set(value);
+        if (value.trim() === '') this.fromSpeech.set(false);
+    }
+
     /** Builds the exact response for the current mechanic and hands it to the host. */
     submit(): void {
         if (this.busy() || this.blockedReason() !== null) return;
         const value = this.exercise();
         switch (value.type) {
             case 'FREE_RESPONSE':
-                this.answered.emit({ kind: 'TEXT', text: this.text() });
+                this.answered.emit(this.textOrSpeech()
+                    ? { kind: 'TEXT', text: this.text(), answerSource: this.fromSpeech() ? 'SPEECH' : 'TYPED' }
+                    : { kind: 'TEXT', text: this.text() });
                 return;
             case 'CLOZE':
                 this.answered.emit({ kind: 'CLOZE', blanks: value.content.passage.flatMap(segment => segment.kind === 'BLANK'
@@ -229,6 +245,7 @@ export class LearnerExerciseComponent {
         this.pairCheck?.unsubscribe();
         this.pairCheck = null;
         this.text.set('');
+        this.fromSpeech.set(false);
         this.clozeValues.set({});
         this.selectedOptionIds.set([]);
         this.matches.set({});

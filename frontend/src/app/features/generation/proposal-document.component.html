@@ -23,7 +23,7 @@
 }
 
 @if (phase() === 'window') {
-  <app-ai-prompt-window [mode]="mode()" [quote]="target()?.quote ?? ''" [cost]="cost()" [(instruction)]="instruction" [sending]="sending()"
+  <app-ai-prompt-window [mode]="mode()" [speechAvailable]="capabilities().speechToText.available" [quote]="target()?.quote ?? ''" [cost]="cost()" [(instruction)]="instruction" [sending]="sending()"
     [error]="windowError()" [limited]="limit() !== null" [anchor]="anchor()" (ask)="send($event)" (retract)="cancelSend()" (dismissed)="dismiss($event)" />
 }
 

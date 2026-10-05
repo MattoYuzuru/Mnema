@@ -4,6 +4,7 @@ import {
 } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 
+import { MicButtonComponent } from '../speech/mic-button.component';
 import { EDIT_PRESET_OPTIONS } from './generation-view';
 import { EditPreset, MAX_INSTRUCTION_LENGTH } from './generation.models';
 import { blockImplicitSubmit, isSendKey } from './implicit-submit';
@@ -29,16 +30,18 @@ let nextWindow = 0;
  * selection; focus goes to the field. `sheet`: for a coarse pointer, a modal `<dialog>` at the bottom of the screen (`showModal()`),
  * so the system selection menu is not in its way; focus goes to its title so the keyboard does not cover the presets, and the field
  * has `enterkeyhint="send"`. Esc and «×» close both; the sheet also closes on its backdrop. `closedby` is not used: Safari lacks it.
- * The microphone belongs here once `speechToText.available`; it is not offered while there is no recorder behind it.
+ * The microphone (AI-15, #298) sits under the field once `speechToText.available`; its transcript is put into the field and never sent.
  */
 @Component({
     selector: 'app-ai-prompt-window',
-    imports: [NgTemplateOutlet],
+    imports: [NgTemplateOutlet, MicButtonComponent],
     templateUrl: './ai-prompt-window.component.html',
     styleUrl: './ai-prompt-window.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class AiPromptWindowComponent {
+    /** `speechToText` is available: the window offers the microphone next to its field. */
+    readonly speechAvailable = input(false);
     readonly mode = input.required<'popover' | 'sheet'>();
     /** What is selected, on one line. */
     readonly quote = input('');
@@ -62,6 +65,7 @@ export class AiPromptWindowComponent {
     readonly dismissed = output<boolean>();
 
     private readonly field = viewChild<ElementRef<HTMLTextAreaElement>>('field');
+    protected readonly fieldTarget = (): HTMLTextAreaElement | null => this.field()?.nativeElement ?? null;
     private readonly surface = viewChild<ElementRef<HTMLElement>>('surface');
     private readonly title = viewChild<ElementRef<HTMLElement>>('title');
 

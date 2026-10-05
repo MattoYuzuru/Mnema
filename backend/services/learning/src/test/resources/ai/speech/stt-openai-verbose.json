@@ -1,0 +1,1 @@
+{"task":"transcribe","language":"russian","duration":6.24,"text":"Завтра я поеду в Токио, чтобы встретиться с друзьями.","segments":[{"id":0,"start":0.0,"end":3.0,"text":"Завтра я поеду в Токио,","avg_logprob":-0.21,"no_speech_prob":0.01},{"id":1,"start":3.0,"end":6.24,"text":"чтобы встретиться с друзьями.","avg_logprob":-0.32,"no_speech_prob":0.02}]}

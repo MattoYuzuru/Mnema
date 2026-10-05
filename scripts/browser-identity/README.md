@@ -301,6 +301,34 @@ python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend --no
   --authoring --media --generation --only-speech
 ```
 
+### Voice input (`--authoring --generation`)
+
+`voice.mjs` (#298, AI-15) runs last among the Workshop scenarios, in a deck of its own, against the Stub Learning
+(`LEARNING_FEATURES_SPEECH_TO_TEXT_ENABLED=true`, the Stub transcription: a fixed text, no network, no key). The recording is Chrome's
+SYNTHETIC microphone (`--use-fake-ui-for-media-stream --use-fake-device-for-media-stream`, also added for `--generation`): a tone, never a
+real-microphone test. The frontend has no test seam for the transcript, so where another text or a slow provider is needed the driver adds
+`X-Stub-Transcript` (percent-encoded UTF-8, honoured only by the Stub) to the real request the page sends, through the Fetch interception of
+`browser.mjs` (`ctx.setRequestHeaders`).
+
+Steps: the composer (the mic is present only with `speechToText` available; the first press opens the consent dialog that says where the voice
+is processed; Esc closes it with no consent and no recording; `Согласен` by keyboard records `PUT /api/speech-consent`; about 2 s of recording,
+`Распознаю…`, the text at the caret, never sent, focus and caret in the field); the `Попросить Мнему…` window and the `На потом` field (the same;
+the latter by keyboard only: Tab, Enter, Enter, focus on the stop button); Study (a `FREE_RESPONSE` with `TEXT_OR_SPEECH`: `Ответить голосом`,
+the transcript edited and sent as `answerSource: SPEECH`, a typed answer as `TYPED`, a `TEXT` exercise with no mic and no member); the input rows
+(`DONE`, `DELETE` is 204 and then 404 on read; the audio bytes themselves are deleted by the server and not visible through the API);
+1440/390/320 px (overflow, 44 px targets, the consent dialog, recording, transcribing, `Отмена`), reduced motion (nothing animates, the recording
+dot is still); and fair use (21+ quick inputs through the API until `429 RATE_LIMITED`, then the calm message with minutes on the page).
+
+Screenshots: `voice-composer-{idle,recording,transcribing,inserted}-*.png`, `voice-consent-*.png`, `voice-window-*.png`, `voice-capture-inserted-1440.png`,
+`voice-study-*.png`, `voice-rate-limited-*.png`; failures write `failure-voice-<step>.png` and `.txt`.
+
+`--only-voice` (development aid, requires `--generation`) runs this scenario alone after the base flow:
+
+```
+python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend --node /opt/homebrew/opt/node@24/bin/node \
+  --authoring --media --generation --only-voice
+```
+
 ### «Попросить Мнему…» (`--authoring --generation`)
 
 `ask-mnema.mjs` (#294, AI-16) runs last among the Workshop scenarios, against the same second Learning (Stub text provider, never a real

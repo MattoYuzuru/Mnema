@@ -22,6 +22,7 @@ import { runWorkshopAsk } from './ask-mnema.mjs';
 import { runWorkshopEdits } from './selection-edits.mjs';
 import { runWorkshopImages } from './image-search.mjs';
 import { runWorkshopSpeech } from './speech.mjs';
+import { runWorkshopVoice } from './voice.mjs';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -54,7 +55,7 @@ const RECORDER = `
     recorder.maxBlocks = Math.max(recorder.maxBlocks, blocks);
     const dots = [...workshop.querySelectorAll('.dot')].map(dot => dot.dataset.status + (dot.getAttribute('aria-current') === 'step' ? '*' : '')).join(',');
     if (dots && recorder.dotStates.at(-1)?.dots !== dots) recorder.dotStates.push({ at, dots });
-    recorder.maxStatusRegions = Math.max(recorder.maxStatusRegions, workshop.querySelectorAll('[role=status]:not(.document-announcement)').length);
+    recorder.maxStatusRegions = Math.max(recorder.maxStatusRegions, workshop.querySelectorAll('[role=status]:not(.document-announcement):not(app-mic-button *)').length);
   };
   new MutationObserver(records => {
     for (const record of records) {
@@ -153,7 +154,9 @@ export async function runWorkshop(ctx) {
       greeting: root?.querySelector('h1 label')?.textContent.trim() ?? null, labelFor: root?.querySelector('h1 label')?.getAttribute('for') ?? null,
       textareaId: textarea?.id ?? null, value: textarea?.value ?? null, active: document.activeElement === textarea,
       estimate: (root?.querySelector('.estimate')?.textContent ?? '').replaceAll('\\u00a0', ' ').trim(),
-      statusRegions: root?.querySelectorAll('[role=status]:not(.document-announcement)').length ?? -1,
+      // The microphone (#298) has its own polite status, counted apart: the composer keeps exactly one other.
+      statusRegions: [...(root?.querySelectorAll('[role=status]:not(.document-announcement):not(app-mic-button *)') ?? [])].filter(node => !node.closest('app-mic-button')).length || (root ? 0 : -1),
+      micRegions: root?.querySelectorAll('app-mic-button [role=status]').length ?? 0,
       busy: root?.querySelector('section.composer')?.getAttribute('aria-busy') ?? null,
       button: root?.querySelector('.generate-cta')?.textContent.trim() ?? null,
       path: location.pathname };`);
@@ -309,6 +312,13 @@ export async function runWorkshop(ctx) {
     record('workshop_planner_only', evidence);
     return evidence;
   }
+  if (config.onlyVoice) {
+    // Development aid (`run.py --only-voice`): the voice input scenario alone, after the base flow. Never the gate.
+    evidence.voice = await runWorkshopVoice(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
+      activeSessions, sessionPath, location });
+    record('workshop_voice_only', evidence);
+    return evidence;
+  }
   if (config.onlySpeech) {
     // Development aid (`run.py --only-speech`): the speech scenario alone, after the base flow. Never the gate.
     evidence.speech = await runWorkshopSpeech(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
@@ -348,6 +358,7 @@ export async function runWorkshop(ctx) {
     need(/что будем учить сегодня\?$/u.test(opened.greeting ?? ''), `the greeting is «${opened.greeting}»`);
     need(opened.labelFor === opened.textareaId && opened.textareaId, 'the greeting is not the visible label of the request field');
     need(opened.statusRegions === 1, `the composer has ${opened.statusRegions} role=status regions, not one`);
+    need(opened.micRegions <= 1, `the composer microphone has ${opened.micRegions} status regions`);
     need(opened.estimate === '', `the preflight is shown before anything is typed («${opened.estimate}»)`);
     // The greeting heading takes focus on navigation (and the field is reachable right after).
     const heading = await page(`return document.activeElement?.tagName === 'H1' || document.activeElement === document.querySelector('app-generation-composer textarea');`);
@@ -458,7 +469,7 @@ export async function runWorkshop(ctx) {
     need(session.spec.prompt === `${FIRST_PROMPT}\n${SECOND_LINE}`, 'the stored prompt differs from what was typed');
     const ui = await page(`const workshop = document.querySelector('section.workshop');
       const article = workshop.querySelector('app-proposal-view article');
-      const statusRegions = [...workshop.querySelectorAll('[role=status]:not(.document-announcement)')];
+      const statusRegions = [...workshop.querySelectorAll('[role=status]:not(.document-announcement):not(app-mic-button *)')];
       const dots = [...workshop.querySelectorAll('.dot')].map(dot => ({ status: dot.dataset.status, current: dot.getAttribute('aria-current'),
         label: dot.getAttribute('aria-label'), hasSvg: Boolean(dot.querySelector('svg')), tabindex: dot.getAttribute('tabindex') }));
       return { heading: workshop.querySelector('h1')?.textContent.trim(), summary: (workshop.querySelector('.summary')?.textContent ?? '').replaceAll('\\u00a0', ' ').trim(),
@@ -749,6 +760,10 @@ export async function runWorkshop(ctx) {
   // #294 (AI-16): «Попросить Мнему…» in the material profile and in the exercise editor, REVISE_ITEM and REVISE_EXERCISE results.
   evidence.ask = await runWorkshopAsk(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
     activeSessions, sessionPath, location });
+  // #298 (AI-15): dictation and spoken answers (the Stub transcription; Chrome's synthetic microphone). Last: it spends the account's
+  // ten-minute rate window of speech inputs on purpose.
+  evidence.voice = await runWorkshopVoice(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
+    activeSessions, sessionPath, location });
   evidence.durationMs = Date.now() - startedAt;
   record('workshop_composer_stub_real_api', evidence);
   return evidence;
@@ -786,7 +801,7 @@ export async function runWorkshopApproval(ctx, h) {
       text: (article?.querySelector('.final')?.textContent ?? '').replace(/\\s+/g, '').trim(),
       buttons: [...workshop.querySelectorAll('button, a.button')].map(node => node.textContent.replace(/\\s+/g, ' ').trim()),
       actions: [...workshop.querySelectorAll('.proposal-actions button, .proposal-actions a')].map(node => node.textContent.trim()),
-      notes, regions: workshop.querySelectorAll('[role=status]:not(.document-announcement)').length, alerts: workshop.querySelectorAll('[role=alert]').length,
+      notes, regions: workshop.querySelectorAll('[role=status]:not(.document-announcement):not(app-mic-button *)').length, alerts: workshop.querySelectorAll('[role=alert]').length,
       focus: active === document.body ? 'body' : { tag: active.tagName.toLowerCase(), id: active.id, cls: String(active.className).slice(0, 30),
         text: (active.getAttribute('aria-label') ?? active.textContent ?? '').replace(/\\s+/g, ' ').trim().slice(0, 40), inProposal: Boolean(active.closest('app-proposal-view')),
         inWorkshop: Boolean(active.closest('section.workshop')) } };`);
@@ -1158,7 +1173,7 @@ export async function runWorkshopNotes(ctx, h) {
       archiveButton: [...(workshop?.querySelectorAll('.note-archive button') ?? [])].map(node => node.textContent.trim()),
       result: workshop?.querySelector('.note-archive-result')?.textContent.trim() ?? null,
       actions: [...(workshop?.querySelectorAll('.proposal-actions button, .proposal-actions a') ?? [])].map(node => node.textContent.trim()),
-      regions: workshop?.querySelectorAll('[role=status]:not(.document-announcement)').length ?? 0 };`);
+      regions: workshop?.querySelectorAll('[role=status]:not(.document-announcement):not(app-mic-button *)').length ?? 0 };`);
 
   await desktop();
   await awaitCapability();
