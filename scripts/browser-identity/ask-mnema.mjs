@@ -230,7 +230,7 @@ export async function runWorkshopAsk(ctx, h) {
     await navigate(`${deckPathOf()}/materials/${material.memberKey}`, tab);
     await until(() => has('app-ask-mnema .ask-trigger'), 'the material profile has no «Попросить Мнему…»', 25_000);
     const collapsed = await page(`const root = document.querySelector('app-ask-mnema');
-      const sheet = document.querySelector('article.sheet');
+      const sheet = document.querySelector('article.paper-surface');
       return { trigger: root.querySelector('.ask-trigger').textContent.replace(/\\s+/g, ' ').trim(), expanded: root.querySelector('.ask-trigger').getAttribute('aria-expanded'),
         textareas: root.querySelectorAll('textarea').length, before: Boolean(root.compareDocumentPosition(sheet) & Node.DOCUMENT_POSITION_FOLLOWING),
         height: Math.round(root.getBoundingClientRect().height) };`);
