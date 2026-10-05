@@ -25,6 +25,14 @@ final class Rows {
                 String state, String errorCode) { }
 
     /**
+     * One image a search of an IMAGE slot found and staged ({@code generation_media_candidate}, #296): its own media asset and its attribution.
+     * {@code state} is VERIFYING (the media pipeline works on it), READY or FAILED (rejected).
+     */
+    record Candidate(UUID candidateId, UUID artifactId, String slotKey, UUID assetId, String source, String sourceId, String title,
+                     String author, String license, String licenseUrl, String sourcePageUrl, boolean shareAlike, int width, int height,
+                     String state, Instant createdAt) { }
+
+    /**
      * One user instruction on an artifact ({@code generation_artifact_turn}); {@code instruction} is the user's own text and
      * {@code voice} ({@code female} or {@code male}) the voice of an {@code AUDIO_REGENERATE} turn of an exercise, else null.
      */

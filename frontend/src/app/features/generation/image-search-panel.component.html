@@ -1,0 +1,14 @@
+<div class="panel" role="group" aria-label="Поиск изображения" (keydown.escape)="onEscape($any($event))">
+  <label class="panel-label" [for]="fieldId">Что искать</label>
+  <input #field class="panel-field" type="text" enterkeyhint="search" autocomplete="off" spellcheck="false" [id]="fieldId" [attr.maxlength]="maxLength"
+    [value]="text()" [placeholder]="placeholder()" [readOnly]="pending()" [attr.aria-disabled]="pending() ? 'true' : null"
+    [attr.aria-describedby]="describedBy()" (input)="onInput($event)" (keydown)="onKeydown($event)"
+    (compositionstart)="onCompositionStart()" (compositionend)="onCompositionEnd()" />
+  <p class="panel-cost" [id]="costId">{{ cost }}</p>
+  <p class="panel-status" role="status">{{ pending() ? running : '' }}</p>
+  <p class="panel-error" [id]="errorId" aria-live="polite">{{ error() }}</p>
+  <div class="panel-actions">
+    <button type="button" class="panel-button primary" [attr.aria-disabled]="pending() ? 'true' : null" (click)="send()">Искать</button>
+    <button type="button" class="panel-button" [attr.aria-disabled]="pending() ? 'true' : null" (click)="cancel()">Отмена</button>
+  </div>
+</div>

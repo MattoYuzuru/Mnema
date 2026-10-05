@@ -245,6 +245,32 @@ Screenshots: `workshop-edit-window-1440.png`, `workshop-edit-rewriting-1440.png`
 whole run; it never replaces it. With `--keep-on-failure` the private directory also holds `slow-requests.log` (proxied requests that
 took two seconds or more: method, path without query, status, time).
 
+### Image search (`--authoring --media --generation`)
+
+`image-search.mjs` (#296, AI-10) runs among the Workshop scenarios, in a deck of its own, against the Stub Learning (Stub text provider and the
+Stub image source: no network, no key; `LEARNING_FEATURES_IMAGE_SEARCH_ENABLED=true` is set for that instance). It needs `--media`: the found
+files are staged through the real media pipeline as untrusted uploads, so the local MinIO and the media worker must be there.
+
+The composer is driven for real (`Ещё настройки` → chip `Изображения` → Enter), then the paper placeholder becomes the image and the attribution
+line `Фото: … · Тестовый источник · CC0 1.0` is checked against the slot. `Найти похожее` is reached with Tab and opened with Enter, a query is typed,
+`Искать` sent by keyboard; the status `Ищу похожие изображения…` is recorded; the variants radio group is checked (count, one name, the first new
+candidate checked, focus on it, the announcement `Нашла N вариантов, выбран первый.`). The arrow keys move the local choice and the network log must
+show **no** selection request; `Использовать это изображение` commits (one request, a new revision, the new asset, focus stays on the radio). The
+history's `Вернуть к этой версии` goes back to the search revision. A `[[stub:image-none]]` search ends `FAILED NO_RESULT`: the announcement,
+the unchanged picture and revision and nothing charged are checked. Then 1440/390/320 px (overflow, 44 px targets, grid columns 2/1/1, 2x text),
+reduced motion, approval and Browse (the published caption carries the attribution, no Workshop-only lines).
+
+Screenshots: `workshop-image-ready-1440.png`, `workshop-image-panel-{1440,390,320}.png`, `workshop-image-variants-{1440,390,320}.png`,
+`workshop-image-choice-1440.png`, `workshop-image-chosen-1440.png`, `workshop-image-none-1440.png`, `workshop-image-variants-320-2x-text.png`,
+`browse-image-attribution-1440.png`; failures write `failure-images-<step>.png` and `.txt` (with what the server held).
+
+`--only-images` (development aid, requires `--generation --media`) runs this scenario alone after the base flow:
+
+```
+python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend --node /opt/homebrew/opt/node@24/bin/node \
+  --authoring --media --generation --only-images
+```
+
 ### «Попросить Мнему…» (`--authoring --generation`)
 
 `ask-mnema.mjs` (#294, AI-16) runs last among the Workshop scenarios, against the same second Learning (Stub text provider, never a real

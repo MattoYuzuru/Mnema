@@ -42,7 +42,8 @@ public final class LearningCapabilities {
         this.ai = ai;
         this.speechProvider = speechProviders.getIfAvailable() != null;
         this.synthesis = synthesisPorts.getIfAvailable() != null;
-        this.imageSearch = imageSearchPorts.getIfAvailable() != null;
+        ImageSearch search = imageSearchPorts.getIfAvailable();
+        this.imageSearch = search != null && search.configured();
         this.imageGeneration = imageGenerationPorts.getIfAvailable() != null;
         this.videoGeneration = videoGenerationPorts.getIfAvailable() != null;
         this.webSearch = webSearchPorts.getIfAvailable() != null;

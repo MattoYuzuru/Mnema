@@ -5,6 +5,8 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Deterministic text provider for local runs and CI: no network, no key. The answer is a pure function of the request
@@ -27,11 +29,21 @@ import java.util.List;
  * answered by {@link StubIntents} (a keyword mapping of the request) and an exercise revision ({@code <task kind="exercise-edit">}) by
  * {@link StubExerciseEdits} (the exercise with one sentence added). A plan request ({@code <task kind="plan">}) is answered by {@link StubPlans}
  * (one item per target or note; {@code [[stub:plan-invalid]]} breaks the first answer, {@code [[stub:plan-invalid-always]]} every one). Usage is estimated; cost is zero.
+ *
+ * <p>A first material answer (not an edit, not a repair) appends the media the task line allows, so a local run creates slots: for
+ * {@code картинка из поиска (::image mode=search)} a blank line and {@code ::image{slot="i1" mode="search" alt="Иллюстрация к материалу"}} with the
+ * text of {@code <request>} as the query (one line, at most 300 code points, {@code [[stub:...]]} markers kept; {@code illustration} when it is
+ * empty), for {@code аудио (::audio)} {@code ::audio{slot="a1" lang="ru" title="Озвучка"}} with the first heading of the document (at most 600). The five
+ * stub documents themselves stay byte-equal to the contract fixtures; the appendix is added at answer time.
  */
 final class StubTextAdapter implements TextAdapter {
     static final String PROVIDER = "stub";
     private static final List<String> DOCUMENTS = List.of("headings", "blockquote-divider", "lists", "ruby", "table");
     private static final int CHUNK = 48;
+    private static final String IMAGE_TASK = "картинка из поиска (::image mode=search)";
+    private static final String AUDIO_TASK = "аудио (::audio)";
+    private static final Pattern REQUEST = Pattern.compile("(?m)^<request>(.*?)</request>$", Pattern.DOTALL);
+    private static final Pattern HEADING = Pattern.compile("(?m)^#{1,3} +(.+)$");
 
     private final List<String> documents;
     private final String invalidDocument;
@@ -84,6 +96,7 @@ final class StubTextAdapter implements TextAdapter {
             text = "{\"stub\":true,\"digest\":\"" + fingerprint.substring(0, 16) + "\"}";
         } else {
             text = documents.get(Integer.parseInt(fingerprint.substring(0, 6), 16) % documents.size());
+            if (request.output() == OutputContract.MBM_TEXT && !repair) text = withMedia(text, prompt);
         }
         if (request.streaming()) {
             for (int start = 0; start < text.length(); start += CHUNK) {
@@ -96,6 +109,26 @@ final class StubTextAdapter implements TextAdapter {
         return AiResult.ok(new TextResponse(text, TextResponse.FinishReason.STOP,
                 new Usage(all, cached, all - cached, TokenCounter.estimate(text)), 0, "stub-" + fingerprint.substring(0, 12),
                 new TextResponse.RouteUsed(PROVIDER, model)));
+    }
+
+    /** The document plus the media directives the task line of the prompt allows, each after a blank line. */
+    static String withMedia(String document, String prompt) {
+        var out = new StringBuilder(document.endsWith("\n") ? document : document + "\n");
+        if (prompt.contains(IMAGE_TASK)) {
+            Matcher found = REQUEST.matcher(prompt);
+            String query = found.find() ? oneLine(found.group(1), 300) : "";
+            out.append("\n::image{slot=\"i1\" mode=\"search\" alt=\"Иллюстрация к материалу\"} ").append(query.isEmpty() ? "illustration" : query).append('\n');
+        }
+        if (prompt.contains(AUDIO_TASK)) {
+            Matcher heading = HEADING.matcher(document);
+            String title = heading.find() ? oneLine(heading.group(1), 600) : "";
+            out.append("\n::audio{slot=\"a1\" lang=\"ru\" title=\"Озвучка\"} ").append(title.isEmpty() ? "Озвучка" : title).append('\n');
+        }
+        return out.toString();
+    }
+
+    private static String oneLine(String text, int maxCodePoints) {
+        return ImageText.bound(text.replaceAll("\\s+", " ").strip(), maxCodePoints);
     }
 
     private static String joined(TextRequest request) {

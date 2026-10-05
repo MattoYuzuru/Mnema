@@ -41,6 +41,9 @@ final class ChatHttp implements AutoCloseable {
         this.maxBodyBytes = transport.maxBodyBytes();
     }
 
+    /** The underlying client (no redirects), for transports that read binary bodies themselves ({@link SafeImageFetcher}). */
+    HttpClient client() { return client; }
+
     /** The egress mode of this transport, for the {@code ai_call} log line and metric tag. */
     AiProperties.EgressMode egress() { return egress; }
 

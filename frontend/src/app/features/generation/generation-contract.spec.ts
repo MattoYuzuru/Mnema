@@ -222,7 +222,7 @@ describe('Generation wire contract (contracts/generation)', () => {
             // `archiveUsedNotes` (#290) joins http.json with the backend; until then it cannot be looked up there.
             const implemented = ['getCapabilities', 'estimateGeneration', 'createSession', 'listSessions', 'listActiveSessions', 'getSession',
                 'cancelSession', 'deleteSession', 'listEvents', 'getArtifact', 'approveArtifact', 'approveArtifacts', 'rejectArtifact',
-                'undoRejectArtifact', 'handoffArtifact', 'retryArtifact', 'archiveUsedNotes', 'editArtifact', 'revertArtifact', 'createIntent', 'approvePlan'];
+                'undoRejectArtifact', 'handoffArtifact', 'retryArtifact', 'archiveUsedNotes', 'editArtifact', 'revertArtifact', 'selectMediaCandidate', 'createIntent', 'approvePlan'];
             const ids = (httpContract['endpoints'] as { operationId: string }[]).map(endpoint => endpoint.operationId);
             for (const operation of implemented) expect(ids, operation).toContain(operation);
             expect(ids.filter(operation => !implemented.includes(operation)).sort()).toEqual([]);

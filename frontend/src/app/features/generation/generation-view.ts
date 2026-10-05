@@ -2,8 +2,8 @@ import { SegmentedOption } from '../../shared/segmented-choice.component';
 import { Capability } from '../authoring/capabilities-api.service';
 import { GenerationProblem } from './generation-problem';
 import {
-    ArtifactErrorCode, ArtifactSummary, ArtifactTurn, BlockingBucket, EditAction, EditPreset, Effort, GenerationEstimate, NoteArchiveResult, NoteSkipReason,
-    NotesMode, SessionKind, SessionSummary, SlotKind, SlotState, SpeechVoice
+    ArtifactErrorCode, ArtifactSummary, ArtifactTurn, BlockingBucket, EditAction, EditPreset, Effort, GenerationEstimate, ImageAttribution, ImageSource,
+    NoteArchiveResult, NoteSkipReason, NotesMode, SessionKind, SessionSummary, SlotErrorCode, SlotKind, SlotState, SpeechVoice, TurnErrorCode
 } from './generation.models';
 
 /** Texts and small pure helpers of the composer and the Workshop. Voice: calm and bookish, «Мнема» in dialogue, «ИИ» in labels. */
@@ -340,7 +340,7 @@ export function describeTurnStatus(turn: Pick<ArtifactTurn, 'status' | 'action'>
 }
 
 /** Why a rewrite failed, in words; the text on the screen did not change and the limit was not charged. */
-export function turnFailureReason(code: ArtifactErrorCode | null): string {
+export function turnFailureReason(code: TurnErrorCode | null): string {
     switch (code) {
         case 'INVALID_OUTPUT': return 'Мнема не смогла собрать корректный текст.';
         case 'REFUSAL': return 'Мнема отказалась переписывать этот фрагмент.';
@@ -420,7 +420,15 @@ const CAPABILITY_WORDS: Readonly<Record<string, string>> = {
  * What the window of «Попросить Мнему…» says about a refused edit. The explanation of `EDIT_IN_PROGRESS` is the one the issue asks
  * for; the 400 `reason` names why a fragment cannot be rewritten; every other refusal falls back to the common words.
  */
-export function editProblemMessage(problem: GenerationProblem): string {
+export function editProblemMessage(problem: GenerationProblem, action: EditAction | null = null): string {
+    if (!problem.uncertain && action === 'IMAGE_SEARCH') {
+        if (problem.status === 400) return 'Для этого изображения поиск не подходит.';
+        if (problem.status === 412) return 'Материал обновился, пока вы искали. Подождите новую версию и повторите поиск.';
+        if (problem.status === 409 && problem.code === 'EDIT_IN_PROGRESS') return 'Мнема ещё работает над этим материалом — дождитесь окончания.';
+        if (problem.status === 409 && problem.code === 'USAGE_LIMIT_REACHED') {
+            return 'Не хватает лимита ИИ на поиск изображения. Подробности — в профиле, в блоке «ИИ-бюджет».';
+        }
+    }
     if (!problem.uncertain) {
         if (problem.status === 400) {
             return (problem.reason !== null ? EDIT_REFUSALS[problem.reason] : undefined) ?? 'Этот фрагмент нельзя переписать с помощью Мнемы.';
@@ -457,10 +465,12 @@ export function editOutcomeNote(status: ArtifactTurn['status'], action: EditActi
         case 'APPLIED':
             if (action === 'REMOVE_MEDIA') return 'Медиа убрано.';
             if (action === 'AUDIO_REGENERATE') return 'Голос записан.';
+            if (action === 'IMAGE_SEARCH') return 'Подобрала другое изображение.';
             return exercise ? 'Мнема переписала упражнение.' : 'Мнема переписала фрагмент.';
-        case 'FAILED': return action === 'AUDIO_REGENERATE' ? 'Не удалось сменить голос.'
+        case 'FAILED': return action === 'IMAGE_SEARCH' ? 'Не нашлось подходящих изображений: картинка не изменилась.'
+            : action === 'AUDIO_REGENERATE' ? 'Не удалось сменить голос.'
             : exercise ? 'Не удалось переписать упражнение: оно не изменилось.' : 'Не удалось переписать фрагмент: текст не изменился.';
-        case 'CANCELLED': return exercise ? 'Правка остановлена: упражнение не изменилось.' : 'Правка остановлена: текст не изменился.';
+        case 'CANCELLED': return action === 'IMAGE_SEARCH' ? 'Поиск остановлен: картинка не изменилась.' : exercise ? 'Правка остановлена: упражнение не изменилось.' : 'Правка остановлена: текст не изменился.';
         default: return '';
     }
 }
@@ -568,4 +578,60 @@ export function reviseSummary(artifact: ArtifactSummary | null, kind: SessionKin
         case 'FAILED': return 'Правка не удалась';
         case 'HANDED_OFF': return 'Правка передана в редактор';
     }
+}
+
+
+// --- Image search (AI-10, #296) ---
+
+/** The status line while a search turn is queued or running; the image on the page stays as it was. */
+export const IMAGE_SEARCH_RUNNING = 'Ищу похожие изображения…';
+/** The quiet cost line of the search panel: the charge is one credit, nothing more precise is promised here. */
+export const IMAGE_SEARCH_COST = '1 кредит из ИИ-бюджета';
+export const SHARE_ALIKE_HINT = 'Если вы измените изображение, распространяйте его на тех же условиях.';
+
+const IMAGE_SOURCE_LABELS: Readonly<Record<ImageSource, string>> = {
+    PIXABAY: 'Pixabay', OPENVERSE: 'Openverse', WIKIMEDIA: 'Wikimedia Commons', STUB: 'Тестовый источник'
+};
+
+export function imageSourceLabel(source: ImageSource): string {
+    return IMAGE_SOURCE_LABELS[source];
+}
+
+/** «Фото: Ann · Pixabay · Pixabay Content License»: the parts that are empty are left out. */
+export function attributionLine(attribution: ImageAttribution): string {
+    const author = attribution.author.trim();
+    const license = attribution.license.trim();
+    const parts = [author.length > 0 ? `Фото: ${author}` : null, imageSourceLabel(attribution.source), license.length > 0 ? license : null];
+    return parts.filter((part): part is string => part !== null).join(' · ');
+}
+
+/** «Pixabay · Ann»: who is behind a variant on its card. */
+export function candidateByline(attribution: ImageAttribution): string {
+    const author = attribution.author.trim();
+    return author.length > 0 ? `${imageSourceLabel(attribution.source)} · ${author}` : imageSourceLabel(attribution.source);
+}
+
+/** «BY-SA» for a share-alike license: the short mark the card carries next to the license name. */
+export const SHARE_ALIKE_MARK = 'BY-SA';
+
+/** Why a slot of a found image is empty, in the placeholder frame. */
+export function slotFailureReason(code: SlotErrorCode | null): string {
+    switch (code) {
+        case 'NO_RESULT': return 'Не нашлось изображений со свободной лицензией.';
+        case 'PROVIDER_UNAVAILABLE': return 'Источники изображений сейчас недоступны.';
+        case 'VERIFICATION_REJECTED': return 'Файл не прошёл проверку.';
+        case 'DEADLINE_EXCEEDED': return 'Поиск занял слишком долго.';
+        default: return 'Изображение не удалось подобрать.';
+    }
+}
+
+/** What the variants grid says about a refused choice of another image. */
+export function selectionProblemMessage(problem: GenerationProblem): string {
+    if (!problem.uncertain) {
+        if (problem.status === 412) return 'Материал обновился, пока вы выбирали. Мы показали новую версию — выберите изображение ещё раз.';
+        if (problem.status === 409 && problem.code === 'EDIT_IN_PROGRESS') return 'Мнема ещё работает над этим материалом — дождитесь окончания.';
+        if (problem.status === 409 && problem.code === 'GENERATION_STATE_CONFLICT') return 'Сейчас изображение заменить нельзя: состояние материала изменилось.';
+        if (problem.status === 422 && problem.limit === 'REVISIONS_PER_ARTIFACT') return 'Для этого материала исчерпан предел версий. Одобрите его или правьте сами.';
+    }
+    return problemMessage(problem);
 }

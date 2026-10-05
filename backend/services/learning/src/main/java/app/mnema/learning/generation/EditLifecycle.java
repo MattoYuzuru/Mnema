@@ -333,7 +333,7 @@ class EditLifecycle {
     // -------------------------------------------------------------------- helpers
 
     /** The end of a turn without a result: its step FAILED, its hold released unspent, the artifact PROPOSED on its old revision. */
-    private void finishFailed(Tx tx, Step step, Turn turn, Artifact artifact, String errorCode) {
+    void finishFailed(Tx tx, Step step, Turn turn, Artifact artifact, String errorCode) {
         steps.finish(step.stepId(), "FAILED", errorCode, null);
         repository.updateTurn(turn.turnId(), "FAILED", null, errorCode);
         release(tx, reservation(step));
@@ -347,7 +347,7 @@ class EditLifecycle {
     }
 
     /** A turn that was still open when its step stopped (not by a session cancellation, which ends it itself). */
-    private void cancelTurn(Tx tx, Step step, Turn turn, Artifact artifact) {
+    void cancelTurn(Tx tx, Step step, Turn turn, Artifact artifact) {
         repository.updateTurn(turn.turnId(), "CANCELLED", null, null);
         release(tx, reservation(step));
         releaseDependents(tx, step);
@@ -377,7 +377,7 @@ class EditLifecycle {
         tx.events.add(SessionLifecycle.artifactEvent(repository.transition(artifact, "PROPOSED", null, null, null, artifact.revisionCount())));
     }
 
-    private void release(Tx tx, UUID reservation) {
+    void release(Tx tx, UUID reservation) {
         if (reservation == null) return;
         try {
             ledger.release(tx.session.ownerId(), reservation);
@@ -386,12 +386,12 @@ class EditLifecycle {
         }
     }
 
-    private Turn turn(Step step) {
+    Turn turn(Step step) {
         String id = step.input().path("turnId").stringValue(null);
         return id == null ? null : repository.turn(UUID.fromString(id)).orElse(null);
     }
 
-    private static UUID reservation(Step step) {
+    static UUID reservation(Step step) {
         String id = step.input().path("reservationId").stringValue(null);
         return id == null ? null : UUID.fromString(id);
     }

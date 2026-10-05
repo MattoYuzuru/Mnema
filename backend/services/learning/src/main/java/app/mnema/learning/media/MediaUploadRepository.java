@@ -44,6 +44,44 @@ class MediaUploadRepository {
         return insert(owner, asset, 0, kind, mime, length, fingerprint, null);
     }
 
+    /**
+     * The asset a server staged itself ({@code origin='generated'}) under an identity it chose, and its one upload session; a repeat with the same
+     * bytes returns the same session. The transfer then follows the ordinary path (single PUT, finalize, seal, verification), but the owner's upload
+     * quota is not charged: the owner did not start it.
+     */
+    @Transactional
+    Session reserveGenerated(UUID owner, UUID asset, String kind, String mime, long length, byte[] fingerprint) {
+        ownerLock(owner);
+        jdbc.sql("INSERT INTO app_learning.media_asset(asset_id,owner_id,upload_intent_id,origin,created_at,updated_at) "
+                        + "VALUES (:asset,:owner,:asset,'generated',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) ON CONFLICT (asset_id) DO NOTHING")
+                .param("asset", asset).param("owner", owner).update();
+        Asset current = asset(owner, asset, true);
+        String origin = jdbc.sql("SELECT origin FROM app_learning.media_asset WHERE asset_id=:asset").param("asset", asset)
+                .query(String.class).single();
+        if (!origin.equals("generated")) throw new MediaUploadConflictException();
+        Session existing = byAssetGeneration(asset, 0);
+        if (existing != null) {
+            if (Arrays.equals(existing.fingerprint(), fingerprint)) return existing;
+            // A reservation whose transfer has not begun (a single PUT still OPEN) is only a note of what the server meant to stage: a retry of a
+            // step that chose another image after a lost lease replaces it. Once the bytes may have been written, other bytes conflict.
+            boolean replaceable = existing.state().equals("OPEN") && existing.method().equals("SINGLE") && !settings.multipart(length);
+            if (!replaceable) throw new IdempotencyConflictException();
+            jdbc.sql("UPDATE app_learning.media_upload_session SET declared_mime=:mime,declared_length=:length,request_fingerprint=:fingerprint,"
+                            + "updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) WHERE session_id=:session AND state='OPEN'")
+                    .param("mime", mime).param("length", length).param("fingerprint", fingerprint).param("session", existing.sessionId()).update();
+            return byId(existing.sessionId());
+        }
+        if (current.generation() != 0 || !current.state().equals("PENDING_UPLOAD")) throw new MediaUploadConflictException();
+        return insert(owner, asset, 0, kind, mime, length, fingerprint, null);
+    }
+
+    /** The state of an asset of {@code owner}, or empty when there is none (or it is another owner's). */
+    @Transactional(readOnly = true)
+    java.util.Optional<String> assetState(UUID owner, UUID asset) {
+        return jdbc.sql("SELECT state FROM app_learning.media_asset WHERE asset_id=:asset AND owner_id=:owner")
+                .param("asset", asset).param("owner", owner).query(String.class).optional();
+    }
+
     @Transactional
     Session retry(UUID owner, UUID asset, UUID command, String kind, String mime, long length, byte[] fingerprint) {
         ownerLock(owner);

@@ -91,12 +91,15 @@ class ReviewService {
     private final TransactionTemplate transaction;
     private final GenerationSettings settings;
     private final Plans plans;
+    private final CandidateRepository candidates;
 
     ReviewService(GenerationRepository repository, StepRepository steps, SessionLifecycle lifecycle, SessionViews views,
                   CommandReceiptService receipts, GeneratedItemPublisher publisher, GeneratedExercisePublisher exercisePublisher,
                   ExerciseRepin repins, GeneratedDraftOpener drafts,
                   SourceDrift drift, NoteArchival notes, UsageLedger ledger, AdmissionPricing pricing, GenerationGate gate,
-                  ObjectProvider<StepDispatcher> dispatcher, PlatformTransactionManager transactions, GenerationSettings settings, Plans plans) {
+                  ObjectProvider<StepDispatcher> dispatcher, PlatformTransactionManager transactions, GenerationSettings settings, Plans plans,
+                  CandidateRepository candidates) {
+        this.candidates = candidates;
         this.settings = settings;
         this.plans = plans;
         this.repository = repository;
@@ -255,7 +258,7 @@ class ReviewService {
             Artifact artifact = artifacts.get(plan.artifactId());
             Revision revision = repository.revision(artifact.artifactId(), artifact.currentRevisionId()).orElseThrow();
             materials.add(new GeneratedItemPublisher.Material(Commands.derive(publicationCommand, "member:" + artifact.artifactId()),
-                    document(revision.payload().path("document"))));
+                    published(artifact, revision)));
         }
         JsonNode[] acknowledgement = new JsonNode[1];
         boolean[] applied = {false};
@@ -293,7 +296,7 @@ class ReviewService {
         boolean[] applied = {false};
         publisher.revise(session.ownerId(), session.deckId(), deckVersion, publicationCommand, deckRevision,
                 UUID.fromString(pin.path("memberKey").stringValue("")), UUID.fromString(pin.path("itemRevisionId").stringValue("")),
-                document(revision.payload().path("document")), (publication, replayed) -> acknowledgement[0] = receipts.execute(identity, envelope, () -> {
+                published(artifact, revision), (publication, replayed) -> acknowledgement[0] = receipts.execute(identity, envelope, () -> {
                     applied[0] = true;
                     JsonNode change = publication.path("changes").path(0);
                     if (publication.path("changes").size() != 1) throw new IllegalStateException("Publication does not match the approval");
@@ -361,7 +364,7 @@ class ReviewService {
                     Artifact artifact = artifacts.get(plan.artifactId());
                     Revision revision = repository.revision(artifact.artifactId(), artifact.currentRevisionId()).orElseThrow();
                     materials.add(new GeneratedItemPublisher.Material(Commands.derive(itemsCommand, "member:" + artifact.artifactId()),
-                            document(revision.payload().path("document"))));
+                            published(artifact, revision)));
                 }
                 JsonNode[] publication = new JsonNode[1];
                 publisher.create(session.ownerId(), session.deckId(), position.version(), itemsCommand, position.revisionId(), materials,
@@ -537,8 +540,12 @@ class ReviewService {
             Artifact artifact = artifacts.get(plan.artifactId());
             Published result = published.get(plan.artifactId());
             Artifact done = repository.publish(artifact, result.reference(), result.command());
+            JsonNode media = artifact.targetKind().equals("ITEM")
+                    ? ImageAttribution.media(repository.revision(artifact.artifactId(), artifact.currentRevisionId()).orElseThrow().payload().path("document"),
+                            candidates.ofArtifact(artifact.artifactId()))
+                    : Json.array();
             repository.insertProvenance(tx.session.ownerId(), sessionId, artifact.artifactId(), artifact.currentRevisionId(), result.reference(),
-                    repository.provenance(artifact.artifactId()), result.edited());
+                    repository.provenance(artifact.artifactId()), result.edited(), media);
             // the catalog holds the assets through the revision it just stored; the Workshop's hold is no longer needed
             repository.releaseMediaHolds(artifact.artifactId());
             tx.events.add(SessionLifecycle.artifactEvent(done));
@@ -547,6 +554,11 @@ class ReviewService {
         lifecycle.closeIfDone(tx);
         lifecycle.flush(tx);
         return acknowledgement;
+    }
+
+    /** The document of a revision as it is published or handed off: the stock images credit their source in their captions. */
+    private NativeDocument published(Artifact artifact, Revision revision) {
+        return document(ImageAttribution.apply(revision.payload().path("document"), candidates.ofArtifact(artifact.artifactId())));
     }
 
     private static NativeDocument document(JsonNode document) {
@@ -640,6 +652,7 @@ class ReviewService {
             repository.releaseMediaHolds(artifact.artifactId());
             // the artifact no longer changes: its waiting media steps stop and slots still open are settled as cancelled
             steps.cancelMedia(artifact.artifactId());
+            lifecycle.releaseIdleBatch(tx);
             for (Slot slot : repository.failOpenSlotsOf(artifact.artifactId(), "CANCELLED")) {
                 tx.events.add(new Rows.EventDraft("MEDIA_SLOT_STATE", artifact.artifactId(), Json.object()
                         .put("slotKey", slot.slotKey()).put("kind", slot.kind()).put("state", "FAILED")
@@ -667,7 +680,7 @@ class ReviewService {
      */
     private NativeDocument handoffDocument(Artifact artifact) {
         Revision revision = repository.revision(artifact.artifactId(), artifact.currentRevisionId()).orElseThrow();
-        JsonNode document = revision.payload().path("document").deepCopy();
+        JsonNode document = ImageAttribution.apply(revision.payload().path("document"), candidates.ofArtifact(artifact.artifactId())).deepCopy();
         Set<String> missing = repository.slots(artifact.artifactId(), revision.revisionId()).stream()
                 .filter(slot -> !slot.state().equals("READY")).map(slot -> slot.nodeId().toString()).collect(Collectors.toSet());
         if (!missing.isEmpty()) dropNodes(document.path("root"), missing);

@@ -10,9 +10,11 @@ import { ToggletipComponent } from '../../shared/toggletip.component';
 import { CAPABILITIES_UNAVAILABLE, Capability, LearningCapabilities } from '../authoring/capabilities-api.service';
 import { AiPromptAsk, AiPromptWindowComponent } from './ai-prompt-window.component';
 import { EditHistoryComponent } from './edit-history.component';
-import { mediaActionReason, turnFailureReason } from './generation-view';
+import { IMAGE_SEARCH_RUNNING, attributionLine, mediaActionReason, slotFailureReason, turnFailureReason } from './generation-view';
 import { AnchorRect, placeNear, viewport } from './place-near';
-import { ArtifactDetail, ArtifactSummary, ArtifactTurn, EditAction, SessionState, allows } from './generation.models';
+import { ArtifactDetail, ArtifactSummary, ArtifactTurn, EditAction, ImageCandidate, MediaSlot, SessionState, allows } from './generation.models';
+import { ImageSearchPanelComponent } from './image-search-panel.component';
+import { ImageVariantsComponent } from './image-variants.component';
 import { SelectionTarget, clearTarget, endRect, paintTarget, readSelection, runBetween } from './selection-targets';
 import { EditMemo, WorkshopSessionStore } from './workshop-session.store';
 import { DiffParagraph, blocksOf, diffLines, hasChanges, isMediaKind } from './word-diff';
@@ -40,6 +42,17 @@ interface FailedReview extends ReviewBase {
 
 type Review = AppliedReview | FailedReview;
 
+/**
+ * The inline panel of «Найти похожее» (AI-10, #296), open under one image. `origin` names the control focus returns to; `sent` is set
+ * once the server accepted the search: the panel then stays, disabled, until the turn ends.
+ */
+interface SearchPanel {
+    readonly nodeId: string;
+    readonly query: string;
+    readonly origin: string;
+    readonly sent: boolean;
+}
+
 type DiffState =
     | { readonly phase: 'idle' }
     | { readonly phase: 'loading' }
@@ -64,7 +77,7 @@ const GROUP_SIZE = { width: 300, height: 64 } as const;
  */
 @Component({
     selector: 'app-proposal-document',
-    imports: [NativeMediaSurfaceComponent, AiPromptWindowComponent, ToggletipComponent, EditHistoryComponent],
+    imports: [NativeMediaSurfaceComponent, AiPromptWindowComponent, ToggletipComponent, EditHistoryComponent, ImageSearchPanelComponent, ImageVariantsComponent],
     templateUrl: './proposal-document.component.html',
     styleUrls: ['../authoring/authoring-page.css', './proposal-document.component.css'],
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -99,10 +112,22 @@ export class ProposalDocumentComponent {
     private menuKeyHandled = false;
     private destroyed = false;
 
-    protected readonly imageActions = [
-        { key: 'search', edit: 'IMAGE_SEARCH', label: 'Найти похожее' },
-        { key: 'generate', edit: 'IMAGE_GENERATE', label: 'Создать' }
-    ] as const satisfies readonly { key: 'search' | 'generate'; edit: EditAction; label: string }[];
+    /** The image search panel, open under one image (AI-10). */
+    protected readonly panel = signal<SearchPanel | null>(null);
+    protected readonly panelError = signal<string | null>(null);
+    protected readonly panelSending = signal(false);
+    /** The candidate whose choice is being sent, and the refusal of the last choice (by node id). */
+    protected readonly selecting = signal<string | null>(null);
+    protected readonly selectionError = signal<{ readonly nodeId: string; readonly message: string } | null>(null);
+    protected readonly searchRunning = IMAGE_SEARCH_RUNNING;
+    /** Images whose variants are open: set on the first sight of a finished search, then the owner's own toggle. */
+    protected readonly openVariants = signal<ReadonlySet<string>>(new Set());
+    private openedFor: string | null = null;
+    /** What the end of a search says, in one polite region that lives as long as the document (the panel that was open is gone by then). */
+    protected readonly announcement = signal('');
+    /** A search started with «Повторить» (no panel): focus is restored when it ends. */
+    private readonly retrying = signal<string | null>(null);
+    private watchedTurn: string | null = null;
     protected readonly diffId = `${this.uid}-diff`;
     protected readonly phase = signal<'idle' | 'group' | 'window'>('idle');
     protected readonly target = signal<SelectionTarget | null>(null);
@@ -146,6 +171,19 @@ export class ProposalDocumentComponent {
     protected readonly groupPlace = computed(() => placeNear(this.anchor(), GROUP_SIZE, viewport(), 6));
     protected readonly reasonId = `${this.uid}-reason`;
     protected readonly canMedia = computed(() => this.proposed() && !this.busy());
+    /** A search runs a worker, so a stopped session takes none (only REMOVE_MEDIA is free); the buttons stay and say why. */
+    protected readonly searchAllowed = computed(() => this.sessionState() !== 'CANCELLED' && this.capabilityOf('search').available);
+    protected readonly searchReason = computed(() => this.sessionState() === 'CANCELLED'
+        ? 'Работа остановлена: новый поиск изображений не запустится. Можно убрать блок.' : this.reasonOf('search'));
+    /** The image slots of mode `search` of the shown revision by node id (a `generate` slot keeps the actions it had): their candidates, attribution and failure. */
+    private readonly slots = computed(() => new Map((this.detail()?.mediaSlots ?? [])
+        .filter(slot => slot.kind === 'IMAGE' && slot.mode === 'search' && slot.state !== 'REMOVED').map(slot => [slot.nodeId, slot] as const)));
+    /** The node a search turn is queued or running on: the panel under it waits for the end. */
+    protected readonly searchTurnRunning = computed(() => this.pending()?.action === 'IMAGE_SEARCH');
+    protected readonly searchingNode = computed(() => {
+        const turn = this.pending();
+        return turn?.action === 'IMAGE_SEARCH' ? turn.targetNodeIds[0] ?? null : null;
+    });
     /** The artifact can go back to another revision (its state and its session's allow it); a command in flight only makes the actions wait. */
     private readonly revertable = computed(() => this.shownIsCurrent() && !this.isExercise()
         && allows(this.sessionState(), this.artifact().state, 'revertArtifact'));
@@ -210,6 +248,12 @@ export class ProposalDocumentComponent {
         const busy = this.busyLast();
         if (last !== null) ids.add(last);
         if (busy !== null) ids.add(busy);
+        // Under an image: its attribution, the panel of a search, the variants it found and why it failed.
+        for (const [nodeId, slot] of this.slots()) {
+            if (slot.attribution !== null || slot.state === 'FAILED' || this.variantsOf(slot).length > 1) ids.add(nodeId);
+        }
+        const panel = this.panel();
+        if (panel !== null) ids.add(panel.nodeId);
         return ids;
     });
     private readonly beforeIds = computed<ReadonlySet<string>>(() => {
@@ -221,8 +265,13 @@ export class ProposalDocumentComponent {
     protected readonly failure = computed(() => {
         const review = this.review();
         if (review === null || review.kind !== 'failed') return null;
+        if (review.turn.action === 'IMAGE_SEARCH') {
+            return review.turn.status === 'CANCELLED' ? 'Поиск остановлен.' : imageSearchFailure(review.turn.errorCode);
+        }
         return review.turn.status === 'CANCELLED' ? 'Правка остановлена.' : turnFailureReason(review.turn.errorCode);
     });
+    /** What did not change when an edit failed: the strip says it in the words of what was asked. */
+    protected readonly unchanged = computed(() => this.review()?.turn.action === 'IMAGE_SEARCH' ? 'Изображение не изменилось' : 'Текст не изменился');
 
     /** The last turn, when it failed or was stopped and its strip was not closed: its blocks are still where it asked for them. */
     private readFailure(detail: ArtifactDetail, order: readonly string[]): FailedReview | null {
@@ -247,6 +296,45 @@ export class ProposalDocumentComponent {
                 // The disabled group of a running rewrite stays; a window that was open for the old state goes.
                 if (revising && this.phase() === 'group') return;
                 this.reset(false);
+            });
+        });
+        // The panel of a search goes when the search it started ends, or when the proposal can no longer be searched (it keeps focus's place).
+        effect(() => {
+            const panel = this.panel();
+            if (panel === null) return;
+            // The artifact stays REVISING until the search ends, even while a stale read of its detail does not list the turn yet.
+            const searching = this.searchingNode() === panel.nodeId || this.artifact().state === 'REVISING';
+            const open = this.proposed() || searching;
+            untracked(() => {
+                if (panel.sent && !searching) this.closePanel(true);
+                else if (!panel.sent && !open) this.closePanel(false);
+            });
+        });
+        // The variants of a search that just ended open once (false to true); later reads of the same turn leave them as the owner has them.
+        effect(() => {
+            const review = this.review();
+            if (review === null || review.kind !== 'applied' || review.turn.action !== 'IMAGE_SEARCH') return;
+            untracked(() => {
+                if (this.openedFor === review.turn.turnId) return;
+                this.openedFor = review.turn.turnId;
+                this.openVariants.update(held => new Set([...held, ...review.range]));
+            });
+        });
+        // The end of a search is announced once, and a retry (no panel) gives focus back to what the search made.
+        effect(() => {
+            const turn = this.pending();
+            const detail = this.detail();
+            const retrying = this.retrying();
+            const running = turn?.action === 'IMAGE_SEARCH' ? turn : null;
+            const state = this.artifact().state;
+            untracked(() => {
+                if (running !== null) { this.watchedTurn = running.turnId; this.announcement.set(''); return; }
+                if (retrying !== null && state !== 'REVISING') { this.retrying.set(null); this.focusAfterSearch(retrying, `retry:${retrying}`); }
+                const id = this.watchedTurn;
+                const done = id === null ? undefined : detail?.turns.find(held => held.turnId === id);
+                if (done === undefined || done.status === 'QUEUED' || done.status === 'RUNNING') return;
+                this.watchedTurn = null;
+                this.announcement.set(this.endOfSearch(done));
             });
         });
         // The group is a popover in the top layer: it has to be shown when it exists.
@@ -531,6 +619,12 @@ export class ProposalDocumentComponent {
 
     protected async again(review: Review): Promise<void> {
         if (this.busy()) return;
+        // A search is asked again through its panel, with the previous query in the field: the owner may want to change it.
+        if (review.turn.action === 'IMAGE_SEARCH') {
+            const nodeId = review.range[0] ?? review.turn.targetNodeIds[0];
+            if (nodeId !== undefined) this.openSearch(nodeId, `again:${nodeId}`, review.turn.instruction ?? '');
+            return;
+        }
         // The same request on the blocks that are there now (a rewrite is asked again of the rewritten text: it compounds), as a command of
         // its own named by this turn, so an answer that never arrived is repeated, not charged twice.
         const order = this.order();
@@ -576,10 +670,187 @@ export class ProposalDocumentComponent {
         else if (outcome.ok && action === 'REMOVE_MEDIA') this.focusHost();
     }
 
+    // --- Image search (AI-10, #296) ---
+
+    protected slotOf(id: string): MediaSlot | null {
+        return this.slots().get(id) ?? null;
+    }
+
+    /** The slot of an image whose search failed: the frame says why and offers «Повторить», «Заменить» and «Убрать блок». */
+    /** Only an image of a `search` slot offers «Найти похожее», its variants and the failed-search actions. */
+    protected isSearch(id: string): boolean {
+        return this.slots().has(id);
+    }
+
+    protected failedSlot(id: string): MediaSlot | null {
+        const slot = this.slotOf(id);
+        return slot !== null && slot.state === 'FAILED' ? slot : null;
+    }
+
+    protected failureOf(slot: MediaSlot): string {
+        return slotFailureReason(slot.errorCode);
+    }
+
+    /** «Фото: Ann · Pixabay · Pixabay Content License» under a READY image that was found by a search. */
+    protected attributionOf(id: string): string | null {
+        const slot = this.slotOf(id);
+        return slot !== null && slot.state === 'READY' && slot.attribution !== null ? attributionLine(slot.attribution) : null;
+    }
+
+    /** The candidates the owner can choose among: more than one READY. */
+    protected variantsOf(slot: MediaSlot): readonly ImageCandidate[] {
+        const ready = slot.candidates.filter(candidate => candidate.state === 'READY');
+        return ready.length > 1 ? ready : [];
+    }
+
+    /** Whether the variants of this image are open: by themselves right after a search that found them, then as the owner leaves them. */
+    protected variantsOpen(id: string): boolean {
+        return this.openVariants().has(id);
+    }
+
+    /** The owner opened or closed the group: that is respected from now on (a choice made in it must not collapse it). */
+    protected variantsToggled(id: string, event: Event): void {
+        const open = (event.target as HTMLDetailsElement).open;
+        this.openVariants.update(held => {
+            if (held.has(id) === open) return held;
+            const next = new Set(held);
+            if (open) next.add(id); else next.delete(id);
+            return next;
+        });
+    }
+
+    /** The slot whose variants are offered: the proposal can change (no search is running) and the slot found more than one image. */
+    protected variantsShown(id: string): MediaSlot | null {
+        const slot = this.slotOf(id);
+        return slot !== null && this.proposed() && this.variantsOf(slot).length > 0 ? slot : null;
+    }
+
+    protected searchLabel(id: string): string {
+        return this.names().get(id) ?? '';
+    }
+
+    protected openSearch(id: string, origin: string, query = ''): void {
+        if (this.busy() || !this.searchAllowed() || !this.proposed()) return;
+        this.panelError.set(null);
+        this.panel.set({ nodeId: id, query, origin, sent: false });
+    }
+
+    protected toggleSearch(id: string): void {
+        if (this.panel()?.nodeId === id && !this.panel()!.sent) { this.cancelSearch(); return; }
+        this.openSearch(id, `search:${id}`);
+    }
+
+    protected cancelSearch(): void {
+        this.closePanel(true);
+    }
+
+    /** Takes the panel away; focus goes to the control it was opened from, or, after a search, to what the search made. */
+    private closePanel(focus: boolean): void {
+        const panel = this.panel();
+        if (panel === null) return;
+        this.panel.set(null);
+        this.panelError.set(null);
+        this.panelSending.set(false);
+        if (!focus) return;
+        this.focusAfterSearch(panel.nodeId, panel.origin, panel.sent);
+    }
+
+    /**
+     * Gives focus back after a search: the checked variant (when a search made some), «Найти похожее», the control it started from, the
+     * document. Each candidate is tried and checked (`activeElement`): a closed `<details>` or a control that went away swallows focus.
+     */
+    private focusAfterSearch(nodeId: string, origin: string, variants = true): void {
+        afterNextRender(() => {
+            if (this.destroyed) return;
+            const root = this.host().nativeElement;
+            const wanted = variants ? [`[data-variants="${nodeId}"] input:checked`, `[data-variants="${nodeId}"] summary`] : [];
+            // A panel closed without a search goes back to the control it was opened from; a search that ended goes to «Найти похожее».
+            wanted.push(...(variants ? [`[data-focus-key="search:${nodeId}"]`, `[data-focus-key="${origin}"]`] : [`[data-focus-key="${origin}"]`, `[data-focus-key="search:${nodeId}"]`]));
+            for (const selector of wanted) {
+                const element = root.querySelector<HTMLElement>(selector);
+                element?.focus();
+                if (element !== null && element !== undefined && window.document.activeElement === element) return;
+            }
+            root.focus({ preventScroll: true });
+        }, { injector: this.injector });
+    }
+
+    private endOfSearch(turn: ArtifactTurn): string {
+        if (turn.status === 'APPLIED') {
+            const slot = this.slotOf(turn.targetNodeIds[0] ?? '');
+            const count = slot?.candidates.filter(candidate => candidate.state === 'READY').length ?? 0;
+            return count > 1 ? `Нашла ${count} ${variantsWord(count)}, выбран первый.` : 'Нашла изображение.';
+        }
+        const why = turn.status === 'CANCELLED' ? 'Поиск остановлен.' : imageSearchFailure(turn.errorCode);
+        return `${why} Изображение не изменилось, лимит не списан.`;
+    }
+
+    protected async submitSearch(id: string, query: string): Promise<void> {
+        const panel = this.panel();
+        if (panel === null || panel.nodeId !== id || panel.sent || this.panelSending() || this.busy()) return;
+        this.panelSending.set(true);
+        this.panelError.set(null);
+        const outcome = await this.runSearch(id, query.length === 0 ? null : query);
+        if (this.destroyed) return;
+        this.panelSending.set(false);
+        if (outcome.ok) this.panel.update(held => held === null ? null : { ...held, query, sent: true });
+        else if (!outcome.aborted) this.panelError.set(outcome.message);
+    }
+
+    private runSearch(id: string, instruction: string | null): ReturnType<WorkshopSessionStore['edit']> {
+        const order = this.order();
+        const at = order.indexOf(id);
+        return this.store.edit(this.artifact().artifactId, { action: 'IMAGE_SEARCH', nodeIds: [id], anchorBefore: order[at - 1] ?? null,
+            anchorAfter: order[at + 1] ?? null, instruction });
+    }
+
+    /** «Повторить» on a failed slot: the same search once more, with the slot's own query. */
+    protected async retrySearch(id: string): Promise<void> {
+        if (this.busy() || !this.searchAllowed()) return;
+        const outcome = await this.runSearch(id, null);
+        if (this.destroyed) return;
+        if (!outcome.ok && !outcome.aborted) this.store.notify(outcome.message);
+        else if (outcome.ok) this.retrying.set(id);
+    }
+
+    /** «Убрать блок» on a failed slot. */
+    protected removeBlock(id: string): Promise<void> {
+        return this.mediaAction(id, 'REMOVE_MEDIA');
+    }
+
+    protected async choose(id: string, slot: MediaSlot, candidateId: string): Promise<void> {
+        if (this.busy() || this.selecting() !== null) return;
+        this.selecting.set(candidateId);
+        this.selectionError.set(null);
+        const outcome = await this.store.selectCandidate(this.artifact().artifactId, slot.slotKey, candidateId);
+        if (this.destroyed) return;
+        this.selecting.set(null);
+        if (!outcome.ok) this.selectionError.set({ nodeId: id, message: outcome.message });
+        // The document is drawn again from the answer (or from the re-read after a refusal): focus stays on the group.
+        this.focusAfterSearch(id, `search:${id}`);
+    }
+
+    protected selectionMessage(id: string): string | null {
+        const error = this.selectionError();
+        return error !== null && error.nodeId === id ? error.message : null;
+    }
+
     protected revertTo(revisionId: string): void {
         if (this.busy() || !this.canRevert()) return;
         void this.store.revert(this.artifact().artifactId, revisionId);
     }
+}
+
+/** Why an image search turn failed, in words; the picture did not change and nothing was charged. */
+/** «1 вариант», «2 варианта», «5 вариантов». */
+function variantsWord(count: number): string {
+    const last = count % 10;
+    return count % 100 >= 11 && count % 100 <= 14 ? 'вариантов' : last === 1 ? 'вариант' : last >= 2 && last <= 4 ? 'варианта' : 'вариантов';
+}
+
+function imageSearchFailure(code: ArtifactTurn['errorCode']): string {
+    return code === 'NO_RESULT' || code === null ? 'Не нашлось подходящих изображений.'
+        : slotFailureReason(code === 'PROVIDER_UNAVAILABLE' || code === 'DEADLINE_EXCEEDED' ? code : null);
 }
 
 /** A short name of a media block for the label of its actions: the image's description or the audio's title. */

@@ -108,16 +108,22 @@ class GenerationNotesIntegrationTest extends GenerationIntegrationTest {
         assertThat(priced.path("credits").path("p95").intValue()).isGreaterThan(base.path("credits").path("p95").intValue());
         assertThat(priced.path("breakdown").toString()).contains("MATERIAL_DETAILED").contains("MATERIAL_MEDIUM");
 
-        // image search is off in this environment: the session value is refused, unless every note overrides it away
+        // image search is available in this environment (the Stub): the session value is priced, unless the note overrides it away
         ObjectNode images = spec(null, noteSource(first, 0));
         ((ObjectNode) images.path("settings")).putObject("media").put("imageSearch", true);
-        assertThat(estimate(owner, path, "{\"spec\":" + images + "}").getStatus()).isEqualTo(409);
+        MockHttpServletResponse withImages = estimate(owner, path, "{\"spec\":" + images + "}");
+        assertThat(withImages.getStatus()).isEqualTo(200);
+        assertThat(json(withImages).path("breakdown").toString()).contains("IMAGE_SEARCH");
         ObjectNode overriddenAway = spec(null, withOverrides(noteSource(first, 0), "{\"media\":{\"imageSearch\":false}}"));
         ((ObjectNode) overriddenAway.path("settings")).putObject("media").put("imageSearch", true);
-        assertThat(estimate(owner, path, "{\"spec\":" + overriddenAway + "}").getStatus()).isEqualTo(200);
+        MockHttpServletResponse away = estimate(owner, path, "{\"spec\":" + overriddenAway + "}");
+        assertThat(away.getStatus()).isEqualTo(200);
+        assertThat(json(away).path("breakdown").toString()).doesNotContain("IMAGE_SEARCH");
         // ... and an override can ask for what the session did not
         ObjectNode asksImages = spec(null, withOverrides(noteSource(first, 0), "{\"media\":{\"imageSearch\":true}}"));
-        assertThat(estimate(owner, path, "{\"spec\":" + asksImages + "}").getStatus()).isEqualTo(409);
+        MockHttpServletResponse asks = estimate(owner, path, "{\"spec\":" + asksImages + "}");
+        assertThat(asks.getStatus()).isEqualTo(200);
+        assertThat(json(asks).path("breakdown").toString()).contains("IMAGE_SEARCH");
         // create answers like the estimate: strict parsing is a 400
         assertThat(create(owner, deck, spec(null, withOverrides(noteSource(first, 0), "{}")), UUID.randomUUID()).getStatus()).isEqualTo(400);
         ObjectNode merge = spec(null, withOverrides(noteSource(first, 0), "{\"effort\":\"SHORT\"}"));
