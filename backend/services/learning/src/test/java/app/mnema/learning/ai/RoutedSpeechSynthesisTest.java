@@ -43,6 +43,8 @@ class RoutedSpeechSynthesisTest {
 
         @Override public String format() { return provider.equals("yandex") ? "mp3" : "wav"; }
 
+        @Override public String versionTag() { return provider.equals("google") ? ".t1" : ""; }
+
         @Override
         public AiResult<SpeechSynthesis.Audio> synthesize(String model, String modelVersion, SpeechSynthesis.Request request, Duration budget) {
             calls.add(request);
@@ -120,6 +122,10 @@ class RoutedSpeechSynthesisTest {
     void theRussianRouteReplacesTheGeneralOneForRussianOnlyWhenItIsNotEmpty() {
         RoutedSpeechSynthesis plain = router(List.of(GEMINI), List.of());
         assertThat(plain.identity("ru", "female")).hasValueSatisfying(identity -> assertThat(identity.provider()).isEqualTo("google"));
+        // what the adapter says decides the bytes rides on the version, in the key's identity and in the identity of the answer alike
+        assertThat(plain.identity("ru", "female").orElseThrow().modelVersion()).isEqualTo("v1.t1");
+        assertThat(((AiResult.Ok<SpeechSynthesis.Audio>) plain.synthesize(SpeechTestSupport.request("привет", "ru", "female"))).value().identity())
+                .isEqualTo(plain.identity("ru", "female").orElseThrow());
 
         RoutedSpeechSynthesis split = router(List.of(GEMINI), List.of(KIT, GEMINI));
         assertThat(split.identity("ru", "female")).hasValueSatisfying(identity -> {
@@ -132,7 +138,7 @@ class RoutedSpeechSynthesisTest {
         assertThat(split.identity("ja", "male")).hasValueSatisfying(identity -> assertThat(identity.provider()).isEqualTo("google"));
         assertThat(split.synthesize(SpeechTestSupport.request("привет", "ru", "female"))).isInstanceOf(AiResult.Ok.class);
         assertThat(yandex.calls).hasSize(1);
-        assertThat(google.calls).isEmpty();
+        assertThat(google.calls).as("only the call of the general route above").hasSize(1);
     }
 
     @Test

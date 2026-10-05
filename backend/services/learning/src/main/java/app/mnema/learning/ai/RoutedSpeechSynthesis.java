@@ -108,7 +108,7 @@ final class RoutedSpeechSynthesis implements SpeechSynthesis {
     }
 
     private Identity identityOf(Entry entry, SpeechAdapter adapter, String voice) {
-        return new Identity(entry.provider(), entry.model(), settings.version(), adapter.format(), adapter.voiceName(voice));
+        return new Identity(entry.provider(), entry.model(), settings.version() + adapter.versionTag(), adapter.format(), adapter.voiceName(voice));
     }
 
     @Override
@@ -149,7 +149,7 @@ final class RoutedSpeechSynthesis implements SpeechSynthesis {
             long started = System.nanoTime();
             AiResult<Audio> result;
             try {
-                result = adapter.synthesize(entry.model(), settings.version(), request, settings.callTimeout());
+                result = adapter.synthesize(entry.model(), settings.version() + adapter.versionTag(), request, settings.callTimeout());
             } catch (RuntimeException exception) {
                 LOG.warn("speech_internal_failure stage=adapter error_type={} provider={}", exception.getClass().getSimpleName(), entry.provider());
                 result = AiResult.failed(new AiFailure.Transient("adapter_error"));

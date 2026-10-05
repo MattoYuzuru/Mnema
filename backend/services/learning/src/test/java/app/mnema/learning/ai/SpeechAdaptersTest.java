@@ -39,6 +39,19 @@ class SpeechAdaptersTest {
         http.close();
     }
 
+    @Test
+    void theStyleSentToGeminiRidesOnTheKeyVersionAndAnotherStyleChangesIt() {
+        String tag = gemini().versionTag();
+        assertThat(tag).matches("\\.[0-9a-f]{8}");
+        var other = new SpeechSettings(settings.cacheTtl(), 600, "v1", "Whisper", "Kore", "Charon", "alena", "filipp", "", BigDecimal.ONE,
+                Duration.ofSeconds(45), Duration.ofSeconds(75));
+        var provider = new AiProperties.Provider(true, server.origin(), SpeechTestSupport.GOOGLE_KEY, "", "", "", AiProperties.EgressMode.DIRECT);
+        Function<String, AiProperties.Model> prices = Map.of(SpeechTestSupport.GEMINI.id(), SpeechTestSupport.GEMINI)::get;
+        assertThat(new GeminiSpeechSynthesis(provider, http, other, prices, Clock.systemUTC()).versionTag()).isNotEqualTo(tag);
+        assertThat(yandex().versionTag()).isEmpty();
+        assertThat(SpeechSettings.defaults().lease()).as("shorter than the PT2M step deadline").isEqualTo(Duration.ofSeconds(75));
+    }
+
     private GeminiSpeechSynthesis gemini() {
         var provider = new AiProperties.Provider(true, server.origin(), SpeechTestSupport.GOOGLE_KEY, "", "", "", AiProperties.EgressMode.DIRECT);
         Function<String, AiProperties.Model> prices = Map.of(SpeechTestSupport.GEMINI.id(), SpeechTestSupport.GEMINI)::get;

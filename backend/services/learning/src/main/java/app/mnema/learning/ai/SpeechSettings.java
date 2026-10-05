@@ -19,7 +19,7 @@ import java.time.Duration;
  * @param yandexFolderId the Yandex Cloud folder SpeechKit bills to (an identifier, not a secret)
  * @param yandexRubPerMillionChars the SpeechKit price in roubles incl. VAT per one million characters
  * @param callTimeout the longest one provider call may take
- * @param lease how long a cache entry being synthesised is reserved for one step before another may take it over
+ * @param lease how long a cache entry being synthesised is reserved for one step before another may take it over (shorter than the step deadline, so waiters behind a crashed worker can take over and still finish)
  */
 @ConfigurationProperties("learning.ai.tts")
 public record SpeechSettings(@DefaultValue("P180D") Duration cacheTtl, @DefaultValue("600") int maxText, @DefaultValue("v1") String version,
@@ -27,7 +27,7 @@ public record SpeechSettings(@DefaultValue("P180D") Duration cacheTtl, @DefaultV
                              @DefaultValue("Kore") String googleFemale, @DefaultValue("Charon") String googleMale,
                              @DefaultValue("alena") String yandexFemale, @DefaultValue("filipp") String yandexMale,
                              @DefaultValue("") String yandexFolderId, @DefaultValue("1342") BigDecimal yandexRubPerMillionChars,
-                             @DefaultValue("PT45S") Duration callTimeout, @DefaultValue("PT2M") Duration lease) {
+                             @DefaultValue("PT45S") Duration callTimeout, @DefaultValue("PT75S") Duration lease) {
     private static final String NAME = "[A-Za-z0-9_-]{1,40}";
 
     @ConstructorBinding
@@ -57,6 +57,6 @@ public record SpeechSettings(@DefaultValue("P180D") Duration cacheTtl, @DefaultV
     /** Defaults, for code that builds the pieces without Spring binding. */
     public static SpeechSettings defaults() {
         return new SpeechSettings(Duration.ofDays(180), 600, "v1", "Read clearly for a language learner", "Kore", "Charon", "alena", "filipp", "",
-                BigDecimal.valueOf(1342), Duration.ofSeconds(45), Duration.ofMinutes(2));
+                BigDecimal.valueOf(1342), Duration.ofSeconds(45), Duration.ofSeconds(75));
     }
 }

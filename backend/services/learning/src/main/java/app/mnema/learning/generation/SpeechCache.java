@@ -21,8 +21,8 @@ import java.util.Locale;
 import java.util.UUID;
 
 /**
- * The speech cache (architecture §9, #297): {@code speech_cache}, keyed by the SHA-256 of the canonical JSON of {@code {schema, text, lang, provider, model,
- * modelVersion, voice, format, take}} with the text normalised (NFC, whitespace collapsed; no case change and no {@code ё→е}, which would change the
+ * The speech cache (architecture §9, #297): {@code speech_cache}, keyed by the SHA-256 of the canonical JSON of {@code {schema, text, provider, model,
+ * modelVersion (the version and a hash of the sent style), voice, format, take}} with the text normalised (NFC, whitespace collapsed; no case change and no {@code ё→е}, which would change the
  * speech). It has no account: a hit gives another owner a new asset on the already verified blobs, with no provider call and no debit.
  *
  * <p>Two steps never synthesise one key twice: {@link #claim} is one short transaction of {@code INSERT ... ON CONFLICT DO NOTHING}, so exactly one caller
@@ -31,7 +31,7 @@ import java.util.UUID;
  */
 @Component
 class SpeechCache {
-    static final int SCHEMA = 1;
+    static final int SCHEMA = 2;
 
     /** The key of one clip and what it was derived from. */
     record Key(byte[] hash, SpeechSynthesis.Identity identity, String lang, int take) { }
@@ -59,14 +59,18 @@ class SpeechCache {
         this.settings = settings;
     }
 
-    /** NFC, runs of whitespace collapsed to one space, trimmed. */
+    /** NFC, runs of whitespace (and Unicode separators: no-break space, U+3000, U+2028) collapsed to one space, trimmed. */
     static String normalize(String text) {
-        return Normalizer.normalize(text, Normalizer.Form.NFC).replaceAll("\\s+", " ").strip();
+        return Normalizer.normalize(text, Normalizer.Form.NFC).replaceAll("[\\s\\p{Z}]+", " ").strip();
     }
 
+    /**
+     * The language is not part of the hash: no provider of the routes needs it to tell two clips apart (Gemini detects it from the text and is sent none,
+     * SpeechKit speaks Russian only), so the same text in a material and in an exercise is one clip. It is kept in the {@code Key} for the table.
+     */
     static Key key(String text, String lang, SpeechSynthesis.Identity identity, int take) {
         String language = lang.toLowerCase(Locale.ROOT);
-        ObjectNode canonical = Json.object().put("schema", SCHEMA).put("text", normalize(text)).put("lang", language)
+        ObjectNode canonical = Json.object().put("schema", SCHEMA).put("text", normalize(text))
                 .put("provider", identity.provider()).put("model", identity.model()).put("modelVersion", identity.modelVersion())
                 .put("voice", identity.voice()).put("format", identity.format()).put("take", take);
         try {
@@ -86,18 +90,20 @@ class SpeechCache {
                     .param("voice", key.identity().voice()).param("lang", key.lang()).param("take", key.take()).param("token", token)
                     .param("lease", settings.lease().toSeconds()).update();
             if (inserted == 1) return new Claim.Won(token);
-            var row = jdbc.sql("SELECT state,verified::text AS verified,lease_until<CURRENT_TIMESTAMP AS expired FROM app_learning.speech_cache "
-                            + "WHERE cache_key=:key FOR UPDATE").param("key", key.hash())
-                    .query((result, ignored) -> new Found(result.getString("state"), result.getString("verified"), result.getBoolean("expired")))
-                    .optional().orElse(null);
+            var row = jdbc.sql("SELECT state,verified::text AS verified FROM app_learning.speech_cache WHERE cache_key=:key").param("key", key.hash())
+                    .query((result, ignored) -> new Found(result.getString("state"), result.getString("verified"))).optional().orElse(null);
             if (row == null) return new Claim.Busy();
             if (row.state().equals("READY")) {
-                jdbc.sql("UPDATE app_learning.speech_cache SET last_used_at=CURRENT_TIMESTAMP WHERE cache_key=:key").param("key", key.hash()).update();
+                // at most one write a day per entry: the eviction horizon is months, a hot key must not turn every hit into an indexed update
+                jdbc.sql("UPDATE app_learning.speech_cache SET last_used_at=CURRENT_TIMESTAMP WHERE cache_key=:key "
+                        + "AND last_used_at < CURRENT_TIMESTAMP - interval '1 day'").param("key", key.hash()).update();
                 return new Claim.Hit(read(Json.read(row.verified())));
             }
-            if (!row.expired()) return new Claim.Busy();
-            jdbc.sql("UPDATE app_learning.speech_cache SET lease_token=:token,lease_until=CURRENT_TIMESTAMP + (:lease * interval '1 second') "
-                            + "WHERE cache_key=:key").param("token", token).param("lease", settings.lease().toSeconds()).param("key", key.hash()).update();
+            // PENDING: taken over only when its lease ran out (one atomic update, so two waiters never both win)
+            int taken = jdbc.sql("UPDATE app_learning.speech_cache SET lease_token=:token,lease_until=CURRENT_TIMESTAMP + (:lease * interval '1 second') "
+                            + "WHERE cache_key=:key AND state='PENDING' AND lease_until<CURRENT_TIMESTAMP")
+                    .param("token", token).param("lease", settings.lease().toSeconds()).param("key", key.hash()).update();
+            if (taken == 0) return new Claim.Busy();
             return new Claim.Won(token);
         });
     }
@@ -110,7 +116,8 @@ class SpeechCache {
     }
 
     /**
-     * The clip passed the media pipeline: the entry becomes READY on its blobs. False when the entry is no longer the caller's, or a blob is gone (then
+     * The clip passed the media pipeline: the entry becomes READY on its blobs ({@code durationMs} and {@code byteLength} of 0 are read back from them).
+     * False when the entry is no longer the caller's, or a blob is gone (then
      * the entry is dropped), in which case nothing was published.
      */
     boolean publish(Key key, UUID token, VerifiedMedia media, long durationMs, long byteLength) {
@@ -119,11 +126,27 @@ class SpeechCache {
             int present = jdbc.sql("SELECT count(*) FROM (SELECT 1 FROM app_learning.media_blob WHERE blob_id IN (:ids) ORDER BY blob_id FOR SHARE) locked")
                     .param("ids", ids).query(Integer.class).single();
             if (present != ids.size()) return false;
+            // like the adoption of a cached clip: a blob whose object the GC began to reclaim must not be published
+            List<String> keys = jdbc.sql("SELECT object_key FROM app_learning.media_blob WHERE blob_id IN (:ids) ORDER BY blob_id").param("ids", ids)
+                    .query(String.class).list();
+            for (String objectKey : keys) {
+                String gc = jdbc.sql("SELECT state FROM app_learning.media_gc_object WHERE object_key=:key FOR UPDATE").param("key", objectKey)
+                        .query(String.class).optional().orElse(null);
+                if ("DELETING".equals(gc) || "DELETED".equals(gc)) return false;
+                if ("FIRST".equals(gc) || "SECOND".equals(gc)) {
+                    jdbc.sql("UPDATE app_learning.media_gc_object SET state='TRACKED',first_scan_at=NULL,first_scan_epoch=NULL,second_scan_at=NULL,"
+                                    + "next_attempt_at=NULL,updated_at=GREATEST(CURRENT_TIMESTAMP,updated_at) WHERE object_key=:key").param("key", objectKey).update();
+                }
+            }
+            long bytes = byteLength > 0 ? byteLength : jdbc.sql("SELECT byte_length FROM app_learning.media_blob WHERE blob_id=:blob")
+                    .param("blob", media.sourceBlob()).query(Long.class).single();
+            long duration = durationMs > 0 ? durationMs : media.variants().stream().map(VerifiedMedia.Variant::durationMs)
+                    .filter(java.util.Objects::nonNull).mapToLong(Long::longValue).max().orElse(0);
             return jdbc.sql("UPDATE app_learning.speech_cache SET state='READY',lease_token=NULL,lease_until=NULL,verified=CAST(:verified AS jsonb),"
                             + "blob_ids=CAST(:blobs AS uuid[]),duration_ms=:duration,byte_length=:bytes,last_used_at=CURRENT_TIMESTAMP "
                             + "WHERE cache_key=:key AND lease_token=:token AND state='PENDING'")
                     .param("verified", Json.write(write(media))).param("blobs", "{" + String.join(",", ids.stream().map(UUID::toString).toList()) + "}")
-                    .param("duration", durationMs).param("bytes", byteLength).param("key", key.hash()).param("token", token).update() == 1;
+                    .param("duration", duration).param("bytes", bytes).param("key", key.hash()).param("token", token).update() == 1;
         });
         return Boolean.TRUE.equals(published);
     }
@@ -148,7 +171,7 @@ class SpeechCache {
         return deleted == null ? 0 : deleted;
     }
 
-    private record Found(String state, String verified, boolean expired) { }
+    private record Found(String state, String verified) { }
 
     private static ObjectNode write(VerifiedMedia media) {
         ObjectNode node = Json.object().put("sourceBlobId", media.sourceBlob().toString());

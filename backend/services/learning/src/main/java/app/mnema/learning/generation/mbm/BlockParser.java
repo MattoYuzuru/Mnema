@@ -69,6 +69,9 @@ final class BlockParser {
     private int blockStarts;
     private int mediaCount;
     private boolean mediaOverflowReported;
+    private int overflowLine;
+    private int audioCount;
+    private int imageSearchCount;
 
     BlockParser(String[] lines, MbmOptions options, Findings findings, InlineParser inline,
                 Map<Integer, MbmOptions.ResearchSource> research) {
@@ -603,6 +606,7 @@ final class BlockParser {
         int existing = options.mode() == MbmOptions.Mode.EDIT ? options.existingMediaCount() : 0;
         if (!mediaOverflowReported && existing + mediaCount > options.maxMedia()) {
             mediaOverflowReported = true;
+            overflowLine = line;
             findings.error(line, 1, MbmCode.MBM_TOO_MANY_MEDIA, null);
         }
         if (head.syntaxError()) {
@@ -610,6 +614,7 @@ final class BlockParser {
             return i + 1;
         }
         Map<String, String> values = attributes(head, spec, line);
+        reportKindOverflow(kind, values.get("mode"), line);
         String slot = slotKey(present(values, "slot"), line);
         String label;
         String lang = null;
@@ -655,6 +660,18 @@ final class BlockParser {
             blocks.add(new Block.Media(line, kept, kind, slot, label, lang, voice, mode, text));
         }
         return i + 1;
+    }
+
+    /** A second clip of a kind exceeds what the estimate prices (one per declared kind): a repairable finding. */
+    private void reportKindOverflow(MbmSlot.Kind kind, String mode, int line) {
+        boolean over = switch (kind) {
+            case AUDIO -> ++audioCount > options.maxAudio();
+            case IMAGE -> !"generate".equals(mode) && ++imageSearchCount > options.maxImageSearch();
+            default -> false;
+        };
+        if (over && overflowLine != line) {
+            findings.error(line, 1, MbmCode.MBM_TOO_MANY_MEDIA, null);
+        }
     }
 
     /** A slot key must match the pattern and be unique among this document's slots and the artifact's other slots. */

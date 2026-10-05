@@ -28,6 +28,7 @@ class GenerationSpeechIntegrationTest extends GenerationEditsSupport {
 
     @Autowired private AdmissionPricing pricing;
     @Autowired private SpeechCache cache;
+    @Autowired private GenerationRepository generationRepository;
     @Autowired private SpeechSettings settings;
     @Autowired private SpeechSynthesis port;
 
@@ -365,6 +366,26 @@ class GenerationSpeechIntegrationTest extends GenerationEditsSupport {
     }
 
     @Test
+    void aSameVoiceRedoAfterARevertIsAboveEveryTakeTheSlotHasHad() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        Proposal proposal = readyProposal(owner, deck, AUDIO);
+        UUID turn = redo(owner, deck, proposal, null);
+        awaitTurn(turn, "APPLIED");
+        awaitArtifact(proposal.artifact(), "PROPOSED");
+        assertThat(speech.calls.getLast().take()).isEqualTo(1);
+
+        Proposal now = fresh(owner, deck, proposal);
+        assertThat(revert(owner, deck, now, now.version(), proposal.revision()).getStatus()).isEqualTo(200);
+        UUID again = redo(owner, deck, fresh(owner, deck, proposal), null);
+        awaitTurn(again, "APPLIED");
+        awaitArtifact(proposal.artifact(), "PROPOSED");
+
+        assertThat(speech.calls.getLast().take()).as("take 1 was already made; the slot spec said 0 after the revert").isEqualTo(2);
+        assertThat(speech.calls).hasSize(3);
+    }
+
+    @Test
     void revertingARedoGivesTheSlotTheClipAndTheVoiceOfTheRevisionThatIsShown() throws Exception {
         UUID owner = UUID.randomUUID();
         UUID deck = deck(owner);
@@ -474,15 +495,77 @@ class GenerationSpeechIntegrationTest extends GenerationEditsSupport {
         byte[] base = SpeechCache.key("Ёж  идёт\n домой ", "ru", identity, 0).hash();
         assertThat(SpeechCache.key("Ёж идёт домой", "RU", identity, 0).hash()).isEqualTo(base);
         // a precomposed and a decomposed é are the same text
+        assertThat(SpeechCache.key("Ёж\u00a0идёт\u3000домой\u2028", "ru", identity, 0).hash()).as("separators collapse like spaces").isEqualTo(base);
         assertThat(SpeechCache.key("café", "fr", identity, 0).hash()).isEqualTo(SpeechCache.key("café", "fr", identity, 0).hash());
         assertThat(SpeechCache.key("ёж идёт домой", "ru", identity, 0).hash()).as("case is speech").isNotEqualTo(base);
         assertThat(SpeechCache.key("Еж идет домой", "ru", identity, 0).hash()).as("yo is speech").isNotEqualTo(base);
-        assertThat(SpeechCache.key("Ёж идёт домой", "uk", identity, 0).hash()).isNotEqualTo(base);
+        // the language is not in the key: Gemini is sent none and SpeechKit speaks Russian only, so one text is one clip in a material (es) and an exercise (en)
+        assertThat(SpeechCache.key("Hola", "es", identity, 0).hash()).isEqualTo(SpeechCache.key("Hola", "en", identity, 0).hash());
+        assertThat(SpeechCache.key("Hola", "es-419", identity, 0).hash()).isEqualTo(SpeechCache.key("Hola", "es-ES", identity, 0).hash());
+        // a sent style (a hash of it rides on the modelVersion) is part of the key
+        assertThat(SpeechCache.key("Ёж идёт домой", "ru", new SpeechSynthesis.Identity("google", "gemini-3.8-flash-tts", "v1.0a1b2c3d", "wav", "Kore"), 0).hash())
+                .isNotEqualTo(base);
         assertThat(SpeechCache.key("Ёж идёт домой", "ru", identity, 1).hash()).isNotEqualTo(base);
         assertThat(SpeechCache.key("Ёж идёт домой", "ru", new SpeechSynthesis.Identity("google", "gemini-3.8-flash-tts", "v1", "wav", "Charon"), 0).hash()).isNotEqualTo(base);
         assertThat(SpeechCache.key("Ёж идёт домой", "ru", new SpeechSynthesis.Identity("google", "gemini-3.8-flash-tts", "v2", "wav", "Kore"), 0).hash()).isNotEqualTo(base);
         assertThat(SpeechCache.key("Ёж идёт домой", "ru", new SpeechSynthesis.Identity("yandex", "gemini-3.8-flash-tts", "v1", "mp3", "Kore"), 0).hash()).isNotEqualTo(base);
         assertThat(base).hasSize(32);
+    }
+
+    @Test
+    void theJournalTellsAResumedStepHowManyProviderCallsAnsweredAndWhatTheyCost() {
+        UUID step = UUID.randomUUID();
+        assertThat(generationRepository.providerSpend(step, "TTS")).isEqualTo(new GenerationRepository.ProviderSpend(0, 0));
+        for (String outcome : List.of("OK", "TRANSIENT", "OK")) {
+            UUID call = UUID.randomUUID();
+            jdbc.sql("INSERT INTO app_learning.ai_provider_call(call_id,step_id,attempt,capability,provider,model,request_hash) VALUES (:id,:step,1,'TTS','stub','m',:hash)")
+                    .param("id", call).param("step", step).param("hash", "a".repeat(64)).update();
+            jdbc.sql("UPDATE app_learning.ai_provider_call SET outcome=:outcome,cost_micros=40 WHERE call_id=:id").param("outcome", outcome).param("id", call).update();
+        }
+        assertThat(generationRepository.providerSpend(step, "TTS")).isEqualTo(new GenerationRepository.ProviderSpend(2, 80));
+        // the rows are shared with the other tests of the class (one of them rewrites every TTS row): leave none behind
+        jdbc.sql("DELETE FROM app_learning.ai_provider_call WHERE step_id=:step").param("step", step).update();
+    }
+
+    @Test
+    void anEntryIsNotPublishedOnABlobTheGcBeganToReclaim() throws Exception {
+        UUID owner = UUID.randomUUID();
+        readyProposal(owner, deck(owner), AUDIO);
+        UUID blob = jdbc.sql("SELECT unnest(blob_ids) FROM app_learning.speech_cache WHERE state='READY' LIMIT 1").query(UUID.class).single();
+        String objectKey = jdbc.sql("SELECT object_key FROM app_learning.media_blob WHERE blob_id=:blob").param("blob", blob).query(String.class).single();
+        SpeechSynthesis.Identity identity = new SpeechSynthesis.Identity("stub", "stub-tts", "1", "wav", "female");
+        SpeechCache.Key key = SpeechCache.key("gc " + UUID.randomUUID(), "en", identity, 0);
+        UUID token = ((SpeechCache.Claim.Won) cache.claim(key)).token();
+        jdbc.sql("INSERT INTO app_learning.media_gc_object(object_key,origin,created_at,state,first_scan_at,delete_token,lease_until,updated_at) "
+                + "VALUES (:key,'catalog',CURRENT_TIMESTAMP,'DELETING',CURRENT_TIMESTAMP,:token,CURRENT_TIMESTAMP + interval '1 hour',CURRENT_TIMESTAMP) "
+                + "ON CONFLICT (object_key) DO UPDATE SET state='DELETING',first_scan_at=CURRENT_TIMESTAMP,delete_token=:token,"
+                + "lease_until=CURRENT_TIMESTAMP + interval '1 hour'").param("key", objectKey).param("token", UUID.randomUUID()).update();
+        var media = new GeneratedMediaStager.VerifiedMedia(blob, List.of());
+
+        assertThat(cache.publish(key, token, media, 0, 0)).isFalse();
+        jdbc.sql("DELETE FROM app_learning.media_gc_object WHERE object_key=:key").param("key", objectKey).update();
+        assertThat(cache.publish(key, token, media, 0, 0)).as("derives size and duration when they are unknown").isTrue();
+    }
+
+    @Test
+    void aHitTouchesLastUsedAtAtMostOncePerDay() {
+        SpeechSynthesis.Identity identity = new SpeechSynthesis.Identity("stub", "stub-tts", "1", "wav", "female");
+        SpeechCache.Key key = SpeechCache.key("touch " + UUID.randomUUID(), "en", identity, 0);
+        UUID token = ((SpeechCache.Claim.Won) cache.claim(key)).token();
+        GeneratedMediaStager.VerifiedMedia media = new GeneratedMediaStager.VerifiedMedia(
+                jdbc.sql("SELECT blob_id FROM app_learning.media_blob LIMIT 1").query(UUID.class).optional().orElse(null), List.of());
+        org.junit.jupiter.api.Assumptions.assumeTrue(media.sourceBlob() != null);
+        assertThat(cache.publish(key, token, media, 1_000, 10)).isTrue();
+        String used = "SELECT last_used_at FROM app_learning.speech_cache WHERE cache_key=:key";
+        var fresh = jdbc.sql(used).param("key", key.hash()).query(java.time.OffsetDateTime.class).single();
+
+        assertThat(cache.claim(key)).isInstanceOf(SpeechCache.Claim.Hit.class);
+        assertThat(jdbc.sql(used).param("key", key.hash()).query(java.time.OffsetDateTime.class).single()).as("a hit within the day writes nothing").isEqualTo(fresh);
+
+        jdbc.sql("UPDATE app_learning.speech_cache SET last_used_at=CURRENT_TIMESTAMP - interval '2 days' WHERE cache_key=:key").param("key", key.hash()).update();
+        assertThat(cache.claim(key)).isInstanceOf(SpeechCache.Claim.Hit.class);
+        assertThat(jdbc.sql(used).param("key", key.hash()).query(java.time.OffsetDateTime.class).single()).as("a day later it is touched").isAfter(fresh.minusMinutes(1));
+        cache.drop(key);
     }
 
     @Test

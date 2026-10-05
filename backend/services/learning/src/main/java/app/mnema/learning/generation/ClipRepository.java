@@ -39,6 +39,12 @@ class ClipRepository {
                 .param("artifact", artifactId).param("asset", assetId).query(CLIP).optional();
     }
 
+    /** The highest take any clip of the slot has had, -1 when it has had none: a redo must never repeat one (a revert moves the slot back to an older take). */
+    int maxTake(UUID artifactId, String slotKey) {
+        return jdbc.sql("SELECT COALESCE(max(take),-1) FROM app_learning.generation_media_clip WHERE artifact_id=:artifact AND slot_key=:slot")
+                .param("artifact", artifactId).param("slot", slotKey).query(Integer.class).single();
+    }
+
     List<Clip> ofArtifact(UUID artifactId) {
         return jdbc.sql("SELECT asset_id,artifact_id,slot_key,voice,take FROM app_learning.generation_media_clip WHERE artifact_id=:artifact "
                 + "ORDER BY created_at,asset_id").param("artifact", artifactId).query(CLIP).list();

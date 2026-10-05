@@ -1,6 +1,7 @@
 package app.mnema.learning.generation;
 
 import app.mnema.learning.ai.AiCapability;
+import app.mnema.learning.generation.GenerationRepository.ProviderSpend;
 import app.mnema.learning.generation.Rows.Artifact;
 import app.mnema.learning.generation.Rows.Revision;
 import app.mnema.learning.generation.Rows.Slot;
@@ -45,17 +46,19 @@ class SpeechExecutor implements StepExecutor {
     private final ImageSearchLifecycle slots;
     private final EditLifecycle edits;
     private final GenerationRepository repository;
+    private final ClipRepository clipRows;
     private final GeneratedMediaStager stager;
     private final GenerationSettings settings;
     private final MeterRegistry meters;
 
     SpeechExecutor(SpeechClips clips, SpeechLifecycle lifecycle, ImageSearchLifecycle slots, EditLifecycle edits, GenerationRepository repository,
-                   GeneratedMediaStager stager, GenerationSettings settings, MeterRegistry meters) {
+                   ClipRepository clipRows, GeneratedMediaStager stager, GenerationSettings settings, MeterRegistry meters) {
         this.clips = clips;
         this.lifecycle = lifecycle;
         this.slots = slots;
         this.edits = edits;
         this.repository = repository;
+        this.clipRows = clipRows;
         this.stager = stager;
         this.settings = settings;
         this.meters = meters;
@@ -85,8 +88,8 @@ class SpeechExecutor implements StepExecutor {
         Instant deadline = claim.deadlineAt();
         SpeechClips.Outcome.Staged staged;
         if (stager.assetState(claim.ownerId(), slot.assetId()) != GeneratedMediaStager.State.MISSING) {
-            // an earlier attempt already staged the clip: only its verification is left (and its debit, if it called a provider)
-            staged = new SpeechClips.Outcome.Staged(slot.assetId(), repository.providerAnswered(claim.stepId(), "TTS"), 0, null);
+            // an earlier attempt already staged the clip: only its verification is left (and its debit and cache entry, if it called a provider)
+            staged = resumed(claim, slot.assetId(), new SpeechClips.Clip(spec.path("text").stringValue(""), lang, voice, take));
         } else {
             SpeechClips.Outcome made = clips.stage(claim, control, claim.ownerId(), slot.assetId(),
                     new SpeechClips.Clip(spec.path("text").stringValue(""), lang, voice, take), deadline);
@@ -141,13 +144,16 @@ class SpeechExecutor implements StepExecutor {
             return;
         }
         String voice = claim.input().path("voice").stringValue(voiceOf(slot.spec()));
-        // the same voice again is a new take (a real synthesis); another voice starts at take 0 and may be in the cache
-        int take = voice.equals(voiceOf(slot.spec())) ? slot.spec().path("take").asInt(0) + 1 : 0;
+        // the same voice again is a new take (a real synthesis, above every take the slot has had: a revert moves the slot back to an older one);
+        // another voice starts at take 0 and may be in the cache
+        int take = voice.equals(voiceOf(slot.spec())) ? clipRows.maxTake(slot.artifactId(), slot.slotKey()) + 1 : 0;
         String lang = slot.spec().path("lang").stringValue("en");
-        UUID asset = UUID.randomUUID();
+        // the asset is a function of the step: a retry resumes the one an earlier attempt staged
+        UUID asset = SpeechClips.assetOf(claim.stepId(), 0);
         Instant deadline = claim.deadlineAt();
-        SpeechClips.Outcome made = clips.stage(claim, control, claim.ownerId(), asset,
-                new SpeechClips.Clip(slot.spec().path("text").stringValue(""), lang, voice, take), deadline);
+        SpeechClips.Clip clip = new SpeechClips.Clip(slot.spec().path("text").stringValue(""), lang, voice, take);
+        SpeechClips.Outcome made = stager.assetState(claim.ownerId(), asset) != GeneratedMediaStager.State.MISSING
+                ? resumed(claim, asset, clip) : clips.stage(claim, control, claim.ownerId(), asset, clip, deadline);
         SpeechClips.Outcome.Staged staged;
         switch (made) {
             case SpeechClips.Outcome.Interrupted interrupted -> {
@@ -192,8 +198,11 @@ class SpeechExecutor implements StepExecutor {
         audioBlocks(command.path("exercise").path("content"), blocks);
         String voice = claim.input().path("voice").stringValue(DEFAULT_VOICE);
         Instant deadline = claim.deadlineAt();
+        ProviderSpend spend = repository.providerSpend(claim.stepId(), "TTS");
         List<SpeechLifecycle.ExerciseClip> made = new ArrayList<>();
+        List<Integer> resumedAt = new ArrayList<>();
         long costMicros = 0;
+        int synthesizedNow = 0;
         for (int index = 0; index < blocks.size(); index++) {
             ObjectNode block = blocks.get(index);
             String transcript = block.path("transcript").stringValue("");
@@ -202,9 +211,12 @@ class SpeechExecutor implements StepExecutor {
             if (transcript.isBlank() || slot == null) continue;
             // an exercise's audio block has no language of its own: it is read from the script of its transcript
             String lang = ImageSearchExecutor.language(transcript);
-            int take = voice.equals(slot.spec().path("voice").stringValue(null)) ? slot.spec().path("take").asInt(0) + 1 : 0;
-            UUID asset = UUID.randomUUID();
-            SpeechClips.Outcome outcome = clips.stage(claim, control, claim.ownerId(), asset, new SpeechClips.Clip(transcript, lang, voice, take), deadline);
+            int take = voice.equals(slot.spec().path("voice").stringValue(null)) ? clipRows.maxTake(slot.artifactId(), slotKey) + 1 : 0;
+            // the asset is a function of the step and the clip: a retry resumes the ones an earlier attempt staged
+            UUID asset = SpeechClips.assetOf(claim.stepId(), index);
+            SpeechClips.Clip clip = new SpeechClips.Clip(transcript, lang, voice, take);
+            boolean resume = stager.assetState(claim.ownerId(), asset) != GeneratedMediaStager.State.MISSING;
+            SpeechClips.Outcome outcome = resume ? resumed(claim, asset, clip, spend) : clips.stage(claim, control, claim.ownerId(), asset, clip, deadline);
             SpeechClips.Outcome.Staged staged;
             switch (outcome) {
                 case SpeechClips.Outcome.Interrupted interrupted -> {
@@ -238,8 +250,19 @@ class SpeechExecutor implements StepExecutor {
                 }
             }
             block.put("assetId", asset.toString());
+            if (resume) resumedAt.add(made.size());
+            else if (staged.synthesized()) synthesizedNow++;
             made.add(new SpeechLifecycle.ExerciseClip(slotKey, asset, voice, lang, take, staged.synthesized()));
-            costMicros += staged.costMicros();
+            if (!resume) costMicros += staged.costMicros();
+        }
+        if (!resumedAt.isEmpty()) {
+            // clips of an earlier attempt: the journal knows how many calls answered over all attempts and what they cost, not which clip each made
+            int owed = Math.max(0, spend.calls() - synthesizedNow);
+            for (int position = 0; position < resumedAt.size(); position++) {
+                SpeechLifecycle.ExerciseClip each = made.get(resumedAt.get(position));
+                made.set(resumedAt.get(position), new SpeechLifecycle.ExerciseClip(each.slotKey(), each.assetId(), each.voice(), each.lang(), each.take(), position < owed));
+            }
+            costMicros = Math.max(costMicros, spend.costMicros());
         }
         if (made.isEmpty()) {
             failTurn(claim, "PROVIDER_UNAVAILABLE");
@@ -258,6 +281,15 @@ class SpeechExecutor implements StepExecutor {
     }
 
     // ----------------------------------------------------------------- shared
+
+    /** The clip an earlier attempt staged: debited as a miss when the journal says a provider answered for the step, at the cost it recorded. */
+    private SpeechClips.Outcome.Staged resumed(StepClaim claim, UUID asset, SpeechClips.Clip clip) {
+        return resumed(claim, asset, clip, repository.providerSpend(claim.stepId(), "TTS"));
+    }
+
+    private SpeechClips.Outcome.Staged resumed(StepClaim claim, UUID asset, SpeechClips.Clip clip, ProviderSpend spend) {
+        return clips.resume(asset, clip, spend.calls() > 0, spend.costMicros());
+    }
 
     private static String voiceOf(JsonNode spec) {
         String voice = spec.path("voice").stringValue(null);
