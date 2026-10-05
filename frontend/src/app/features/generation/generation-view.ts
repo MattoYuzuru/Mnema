@@ -409,7 +409,7 @@ const EDIT_REFUSALS: Readonly<Record<string, string>> = {
     TARGET_UNSUPPORTED_BLOCK: 'В выделении есть блок, который Мнема пока не умеет переписывать (например, видео, формула или заголовок глубокого уровня). Выделите только текст вокруг него.',
     TARGET_PERSONAL_DATA: 'В выделении есть e-mail или телефон — Мнема не переписывает такие фрагменты.',
     TARGET_MEDIA_ONLY: 'В выделении только медиа. Для изображения или аудио используйте действия под ним.',
-    TARGET_NO_AUDIO: 'В этом упражнении нет аудио, голос менять не у чего.'
+    TARGET_NO_AUDIO: 'Озвучить заново можно только аудио с текстом: добавьте расшифровку к записи в упражнении.'
 };
 
 const CAPABILITY_WORDS: Readonly<Record<string, string>> = {
@@ -539,7 +539,7 @@ const REVISE_REFUSALS: Readonly<Record<string, string>> = {
     TARGET_UNSUPPORTED_BLOCK: 'В этом тексте есть блок, который Мнема пока не умеет переписывать (например, изображение, видео или формула). Поправьте его сами.',
     TARGET_PERSONAL_DATA: 'В тексте есть e-mail, телефон или номер карты — Мнема не переписывает такое. Поправьте его сами.',
     TARGET_MEDIA_ONLY: 'В материале нет текста, который можно переписать: только медиа.',
-    TARGET_NO_AUDIO: 'В этом упражнении нет аудио, голос менять не у чего.'
+    TARGET_NO_AUDIO: 'Озвучить заново можно только аудио с текстом: добавьте расшифровку к записи в упражнении.'
 };
 
 /** Why the session of a revision could not start, in words. Nothing was reserved: a refusal comes before the usage. */

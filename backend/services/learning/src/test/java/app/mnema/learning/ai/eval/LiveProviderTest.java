@@ -57,6 +57,28 @@ class LiveProviderTest {
         }
     }
 
+    @Test
+    void openRouterAnswersTheFallbackRouteWithoutReasoning() {
+        String key = System.getenv("MNEMA_AI_OPENROUTER_API_KEY");
+        Assumptions.assumeTrue(key != null && !key.isBlank(), "MNEMA_AI_OPENROUTER_API_KEY is not set");
+        try (EvalStack stack = EvalStack.openRouter()) {
+            TextResponse plain = ((AiResult.Ok<TextResponse>) ok(stack.text().generate(
+                    request("Назови столицу Франции одним словом.", OutputContract.MBM_TEXT, null)))).value();
+            assertThat(plain.text()).isNotBlank();
+            assertThat(plain.route().provider()).isEqualTo("openrouter");
+            assertThat(plain.costMicros()).isPositive();
+
+            List<String> deltas = new ArrayList<>();
+            TextResponse streamed = ((AiResult.Ok<TextResponse>) ok(stack.text().generate(
+                    request("Назови столицу Италии одним словом.", OutputContract.MBM_TEXT, deltas::add)))).value();
+            assertThat(String.join("", deltas)).isEqualTo(streamed.text());
+
+            TextResponse json = ((AiResult.Ok<TextResponse>) ok(stack.text().generate(
+                    request("Верни json вида {\"ok\": true} и больше ничего.", OutputContract.JSON, null)))).value();
+            assertThat(json.text()).contains("ok");
+        }
+    }
+
     private static AiResult<TextResponse> ok(AiResult<TextResponse> result) {
         assertThat(result).as("the live call must succeed; failure kind: %s", result instanceof AiResult.Failed<TextResponse> failed
                 ? failed.failure().outcome() : "-").isInstanceOf(AiResult.Ok.class);

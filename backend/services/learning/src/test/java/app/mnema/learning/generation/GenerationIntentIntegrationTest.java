@@ -45,15 +45,20 @@ class GenerationIntentIntegrationTest extends GenerationEditsSupport {
         return json(response);
     }
 
-    private List<GenerationTestConfiguration.Call> intentCalls() {
-        return provider.calls.stream().filter(call -> call.prompt().contains("<task kind=\"intent\">")).toList();
+    private List<GenerationTestConfiguration.Call> intentCalls(UUID owner) {
+        return calls(owner).stream().filter(call -> call.prompt().contains("<task kind=\"intent\">")).toList();
     }
 
     private UUID audioExercise(StudyFixtures.Material material, UUID owner) {
+        return audioExercise(material, owner, "Произношение", "Озвучка");
+    }
+
+    /** An exercise whose audio has the given transcript (null: a recording of the owner's own, which cannot be spoken again). */
+    private UUID audioExercise(StudyFixtures.Material material, UUID owner, String transcript, String title) {
         UUID asset = fixtures.readyAsset(owner, "audio/mpeg");
         ObjectNode exercise = fixtures.freeResponse(material, StudyFixtures.blocks(StudyFixtures.text("Как это произносится?"),
-                StudyFixtures.audio(asset, "Произношение", null)), StudyFixtures.blocks(), "ответ");
-        return UUID.fromString(fixtures.publish(material, exercise, "Озвучка").path("exerciseId").stringValue(null));
+                StudyFixtures.audio(asset, "Запись", transcript)), StudyFixtures.blocks(), "ответ");
+        return UUID.fromString(fixtures.publish(material, exercise, title).path("exerciseId").stringValue(null));
     }
 
     private UUID plainExercise(StudyFixtures.Material material) {
@@ -100,7 +105,7 @@ class GenerationIntentIntegrationTest extends GenerationEditsSupport {
         assertThat(reservationsOf(owner)).isEmpty();
         assertThat(debits(owner)).isZero();
         assertThat(json(getSessions(owner, deck)).path("items")).isEmpty();
-        assertThat(intentCalls()).hasSize(1).allSatisfy(call -> {
+        assertThat(intentCalls(owner)).hasSize(1).allSatisfy(call -> {
             assertThat(call.transactionAtCall()).isFalse();
             assertThat(call.connectionsAtCall()).isZero();
             assertThat(call.route()).isEqualTo(app.mnema.learning.ai.AiRoute.TEXT_FAST);
@@ -221,6 +226,13 @@ class GenerationIntentIntegrationTest extends GenerationEditsSupport {
         assertThat(noAudio.path("operation").stringValue(null)).isEqualTo("UNSUPPORTED");
         assertThat(noAudio.path("spec").isNull()).isTrue();
         assertThat(noAudio.path("notes").get(0).path("code").stringValue(null)).isEqualTo("NO_AUDIO");
+        // audio without a transcript is a recording: it cannot be spoken again, so no voice is offered and the note says why
+        UUID recording = audioExercise(material, owner, null, "Запись без текста");
+        JsonNode noTranscript = answered(owner, deck, exercise(recording), "Замени аудио на мужской голос");
+        assertThat(noTranscript.path("operation").stringValue(null)).isEqualTo("UNSUPPORTED");
+        assertThat(noTranscript.path("spec").isNull()).isTrue();
+        assertThat(noTranscript.path("chips")).isEmpty();
+        assertThat(noTranscript.path("notes").get(0).path("code").stringValue(null)).isEqualTo("NO_TRANSCRIPT");
         JsonNode fromMaterial = answered(owner, deck, material(material.member()), "Замени аудио на мужской голос");
         assertThat(fromMaterial.path("operation").stringValue(null)).isEqualTo("UNSUPPORTED");
         assertThat(fromMaterial.path("notes").get(0).path("code").stringValue(null)).isEqualTo("NEEDS_EXERCISE");
@@ -245,14 +257,14 @@ class GenerationIntentIntegrationTest extends GenerationEditsSupport {
         // the first answer is outside the vocabulary: one repair on the same route, and then the answer is used
         JsonNode repaired = answered(owner, deck, material(material.member()), "[[stub:intent-invalid]] Сделай все типы упражнений по 4");
         assertThat(repaired.path("spec").path("settings").path("quantity").path("perTarget").intValue()).isEqualTo(4);
-        assertThat(intentCalls()).hasSize(2);
-        assertThat(intentCalls().get(1).repair()).isTrue();
+        assertThat(intentCalls(owner)).hasSize(2);
+        assertThat(intentCalls(owner).get(1).repair()).isTrue();
 
         provider.reset();
         JsonNode never = answered(owner, deck, material(material.member()), "[[stub:intent-invalid-always]] Сделай все типы упражнений по 4");
         assertThat(never.path("operation").stringValue(null)).isEqualTo("UNSUPPORTED");
         assertThat(never.path("spec").isNull()).isTrue();
-        assertThat(intentCalls()).hasSize(2);
+        assertThat(intentCalls(owner)).hasSize(2);
 
         // a refusal of the provider is unsupported too; a provider that is down is the capability problem
         assertThat(answered(owner, deck, material(material.member()), "[[stub:refusal]] Сделай проще").path("operation").stringValue(null))
@@ -297,7 +309,8 @@ class GenerationIntentIntegrationTest extends GenerationEditsSupport {
             problem(send(owner, post(path).contentType("application/json").content(body)), 400, "INVALID_REQUEST");
         }
         // nothing above reached the model but the one valid call
-        assertThat(intentCalls()).hasSize(1);
+        assertThat(intentCalls(owner)).hasSize(1);
+        assertThat(intentCalls(stranger)).isEmpty();
     }
 
     @Test
@@ -324,7 +337,7 @@ class GenerationIntentIntegrationTest extends GenerationEditsSupport {
         assertThat(wait).isBetween(1_700L, 1_801L);
         assertThat(json(limited).path("retryAfter").longValue()).isEqualTo(wait);
         // a refused call was not taken and the model was not asked; another account is not affected
-        assertThat(intentCalls()).hasSize(1);
+        assertThat(intentCalls(owner)).hasSize(1);
         assertThat(intent(other, otherDeck, material(theirs.member()), "Сделай проще").getStatus()).isEqualTo(200);
         // rows older than a day are deleted with the account's next call; the retention worker purges the ones older than two hours
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.generation_intent_use WHERE owner_id=:owner AND used_at < CURRENT_TIMESTAMP - interval '1 hour'")
@@ -364,6 +377,6 @@ class GenerationIntentIntegrationTest extends GenerationEditsSupport {
         // five places were left in the hour: exactly five calls are answered, the others are told to wait
         assertThat(accepted).isEqualTo(5);
         assertThat(limited).isEqualTo(7);
-        assertThat(intentCalls()).hasSize(5);
+        assertThat(intentCalls(owner)).hasSize(5);
     }
 }

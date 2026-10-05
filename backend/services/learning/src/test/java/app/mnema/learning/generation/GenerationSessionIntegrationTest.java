@@ -90,7 +90,7 @@ class GenerationSessionIntegrationTest extends GenerationIntegrationTest {
                 + "ON s.step_id=c.step_id WHERE s.session_id=:id AND c.outcome='OK'").param("id", session)
                 .query(Integer.class).single()).isEqualTo(1);
         // the provider saw the deck brief and the request, as untrusted data
-        Call call = provider.calls.getFirst();
+        Call call = calls(owner).getFirst();
         assertThat(call.route()).isEqualTo(AiRoute.TEXT_FAST);
         assertThat(call.prompt()).contains("<title>Движение</title>").contains("<request>20 глаголов движения</request>");
     }
@@ -163,16 +163,16 @@ class GenerationSessionIntegrationTest extends GenerationIntegrationTest {
         UUID session = start(owner, deck, spec("[[fake:multiblock]] проверка транзакций"));
         awaitState(session, "REVIEW");
 
-        assertThat(provider.calls).isNotEmpty();
-        assertThat(provider.calls).allSatisfy(call -> {
+        assertThat(calls(owner)).isNotEmpty();
+        assertThat(calls(owner)).allSatisfy(call -> {
             assertThat(call.transactionAtCall()).isFalse();
             assertThat(call.connectionsAtCall()).isZero();
         });
         // the Stub path streams through the same worker: every delta arrives on a thread with no transaction and no connection
         UUID plain = start(owner, deck, spec("20 глаголов движения"));
         awaitState(plain, "REVIEW");
-        assertThat(provider.deltas).isNotEmpty();
-        assertThat(provider.deltas).allSatisfy(delta -> {
+        assertThat(deltas(owner)).isNotEmpty();
+        assertThat(deltas(owner)).allSatisfy(delta -> {
             assertThat(delta.transaction()).isFalse();
             assertThat(delta.connections()).isZero();
         });
@@ -189,15 +189,15 @@ class GenerationSessionIntegrationTest extends GenerationIntegrationTest {
 
         assertThat(artifactStates(session)).containsExactly("PROPOSED", "PROPOSED");
         assertThat(debits(owner)).isEqualTo(20);
-        assertThat(provider.calls).hasSize(2);
-        assertThat(provider.calls).anySatisfy(call -> assertThat(call.prompt()).contains("ТЕКСТ-ПЕРВОЙ-ЗАМЕТКИ").doesNotContain("ТЕКСТ-ВТОРОЙ-ЗАМЕТКИ"));
-        assertThat(provider.calls).anySatisfy(call -> assertThat(call.prompt()).contains("ТЕКСТ-ВТОРОЙ-ЗАМЕТКИ").doesNotContain("ТЕКСТ-ПЕРВОЙ-ЗАМЕТКИ"));
-        assertThat(provider.calls).allSatisfy(call -> assertThat(call.prompt()).contains("<request>по источникам выше</request>"));
+        assertThat(calls(owner)).hasSize(2);
+        assertThat(calls(owner)).anySatisfy(call -> assertThat(call.prompt()).contains("ТЕКСТ-ПЕРВОЙ-ЗАМЕТКИ").doesNotContain("ТЕКСТ-ВТОРОЙ-ЗАМЕТКИ"));
+        assertThat(calls(owner)).anySatisfy(call -> assertThat(call.prompt()).contains("ТЕКСТ-ВТОРОЙ-ЗАМЕТКИ").doesNotContain("ТЕКСТ-ПЕРВОЙ-ЗАМЕТКИ"));
+        assertThat(calls(owner)).allSatisfy(call -> assertThat(call.prompt()).contains("<request>по источникам выше</request>"));
 
         UUID merged = start(owner, deck, mergeSpec(first, second));
         awaitState(merged, "REVIEW");
         assertThat(artifactStates(merged)).containsExactly("PROPOSED");
-        assertThat(provider.calls.getLast().prompt()).contains("ТЕКСТ-ПЕРВОЙ-ЗАМЕТКИ").contains("ТЕКСТ-ВТОРОЙ-ЗАМЕТКИ");
+        assertThat(calls(owner).getLast().prompt()).contains("ТЕКСТ-ПЕРВОЙ-ЗАМЕТКИ").contains("ТЕКСТ-ВТОРОЙ-ЗАМЕТКИ");
     }
 
     private tools.jackson.databind.node.ObjectNode mergeSpec(UUID first, UUID second) {
@@ -214,12 +214,12 @@ class GenerationSessionIntegrationTest extends GenerationIntegrationTest {
         awaitState(session, "REVIEW");
 
         assertThat(artifactStates(session)).containsExactly("PROPOSED");
-        assertThat(provider.calls).hasSize(2);
-        assertThat(provider.calls.get(0).repair()).isFalse();
-        assertThat(provider.calls.get(1).repair()).isTrue();
-        assertThat(provider.calls.get(1).route()).isEqualTo(AiRoute.TEXT_FAST);
+        assertThat(calls(owner)).hasSize(2);
+        assertThat(calls(owner).get(0).repair()).isFalse();
+        assertThat(calls(owner).get(1).repair()).isTrue();
+        assertThat(calls(owner).get(1).route()).isEqualTo(AiRoute.TEXT_FAST);
         // the repair prompt names the rule, never the offending content
-        assertThat(provider.calls.get(1).prompt()).contains("<repair>").contains("MBM_UNKNOWN_DIRECTIVE");
+        assertThat(calls(owner).get(1).prompt()).contains("<repair>").contains("MBM_UNKNOWN_DIRECTIVE");
         assertThat(debits(owner)).isEqualTo(10);
     }
 
@@ -233,17 +233,17 @@ class GenerationSessionIntegrationTest extends GenerationIntegrationTest {
         assertThat(artifactStates(session)).containsExactly("FAILED");
         assertThat(artifactErrors(session)).containsExactly("INVALID_OUTPUT");
         // the repair and the strong route are provider calls like any other: no transaction, no connection, at the call and per delta
-        assertThat(provider.calls).hasSize(3).allSatisfy(call -> {
+        assertThat(calls(owner)).hasSize(3).allSatisfy(call -> {
             assertThat(call.transactionAtCall()).isFalse();
             assertThat(call.connectionsAtCall()).isZero();
         });
-        assertThat(provider.deltas).isNotEmpty().allSatisfy(delta -> {
+        assertThat(deltas(owner)).isNotEmpty().allSatisfy(delta -> {
             assertThat(delta.transaction()).isFalse();
             assertThat(delta.connections()).isZero();
         });
         // one plain call, one repair on the same route, then the strong route with a repair
-        assertThat(provider.calls.stream().map(Call::route).toList()).containsExactly(AiRoute.TEXT_FAST, AiRoute.TEXT_FAST, AiRoute.TEXT_STRONG);
-        assertThat(provider.calls.stream().map(Call::repair).toList()).containsExactly(false, true, true);
+        assertThat(calls(owner).stream().map(Call::route).toList()).containsExactly(AiRoute.TEXT_FAST, AiRoute.TEXT_FAST, AiRoute.TEXT_STRONG);
+        assertThat(calls(owner).stream().map(Call::repair).toList()).containsExactly(false, true, true);
         assertThat(debits(owner)).isZero();
         assertThat(reservationState(session)).isEqualTo("RELEASED");
         assertThat(notificationKinds(owner)).containsExactly("GENERATION_FAILED");
@@ -264,7 +264,7 @@ class GenerationSessionIntegrationTest extends GenerationIntegrationTest {
         awaitState(session, "CLOSED");
 
         assertThat(artifactErrors(session)).containsExactly("REFUSAL");
-        assertThat(provider.calls).hasSize(1);
+        assertThat(calls(owner)).hasSize(1);
         assertThat(debits(owner)).isZero();
         assertThat(reservationState(session)).isEqualTo("RELEASED");
         assertThat(notificationKinds(owner)).containsExactly("GENERATION_FAILED");
@@ -315,7 +315,7 @@ class GenerationSessionIntegrationTest extends GenerationIntegrationTest {
         // two claims: the crashed one and the recovered one; one revision, one debit
         assertThat(jdbc.sql("SELECT attempts FROM app_learning.generation_step WHERE session_id=:id AND kind='TEXT_DRAFT'")
                 .param("id", session).query(Integer.class).single()).isEqualTo(2);
-        assertThat(provider.callsOf("[[fake:crash-once]]")).hasSize(2);
+        assertThat(calls(owner)).hasSize(2);
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.generation_artifact_revision WHERE session_id=:id").param("id", session)
                 .query(Integer.class).single()).isEqualTo(1);
         assertThat(debits(owner)).isEqualTo(10);

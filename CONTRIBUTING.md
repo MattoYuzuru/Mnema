@@ -1,6 +1,6 @@
 # Как работать с Mnema
 
-Спасибо за интерес к проекту. Mnema заменяет v1 новой платформой вокруг versioned `LearningItem`; checkout содержит только replacement runtime (`identity-account`, `learning`, Angular SPA), а v1 доступен лишь по тегу `v1-apache-final`. Сначала проверьте, относится ли изменение к текущему runtime или к proposed-документам (`docs/README.md` показывает статусы). Доставка сейчас только локальная: [local development delivery](docs/operations/local-development-delivery.md).
+Спасибо за интерес к проекту. Mnema заменяет v1 новой платформой вокруг versioned `LearningItem`; checkout содержит только replacement runtime (`identity-account`, `learning`, Angular SPA), а v1 доступен лишь по тегу `v1-apache-final`. Сначала проверьте, относится ли изменение к текущему runtime или к proposed-документам (`docs/README.md` показывает статусы). Разработка и production-поставка: [production delivery](docs/operations/production-delivery.md).
 
 ## Лицензионная граница
 

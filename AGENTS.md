@@ -67,6 +67,8 @@ docs or historical evidence (those are read-only history, not current behaviour)
   every prototype implementation detail.
 - Do not treat the current layout, visual identity or component boundaries as compatibility
   requirements.
+- Shared UI elements come from the living styleguide; a new one is added there first:
+  [`docs/frontend/styleguide.md`](docs/frontend/styleguide.md) (`/styleguide`, development builds only).
 - UX/a11y principles (primary action, back/close, progressive disclosure, keyboard/focus, semantic
   HTML, reduced motion, mobile-first) and the duty to propose a better layout when requested UI is
   awkward, confusing or overcomplicated: [`engineering-standards.md`](docs/engineering/engineering-standards.md#proactive-design-fixes-and-ux-principles-was-42-43).
@@ -114,12 +116,14 @@ python3 scripts/verify_docs.py
 
 ### Task-scoped autonomy and merge boundary
 
-- Current owner-approved delivery mode (2026-09-12): the shared server is unavailable.
-  Follow [local development delivery](docs/operations/local-development-delivery.md).
-  Keep full local/hosted quality gates and protected squash; do not require staging,
-  SSH or deployment to complete local implementation. Do not run or wait for
-  operational workflows, including historical reruns. Reactivation is a separate
-  reviewed infrastructure task; no deployment or data recovery is claimed.
+- Current production is https://mnema.app on the Russian VPS `mnema`
+  (`135.106.175.30`, administrator access `ssh mnema`). Follow
+  [production delivery](docs/operations/production-delivery.md) for development
+  releases: full local/hosted gates, protected squash, four-image publication,
+  administrator admission, protected `vps-deploy.yaml` and live verification.
+  Use the working server/jobs within an owner-authorized production task; keep
+  deployment evidence distinct from implementation completion. Legacy Kubernetes
+  workflows are dormant and are not this delivery path.
 - An explicit request to deliver an issue, epic, or change end to end authorizes the ordinary
   in-scope workflow: create a feature branch, edit, test, commit, push that branch, open or update
   its pull request, monitor CI, fix failures, and push follow-up commits. If the request also says

@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Mnema local database backup
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 UTC
+RandomizedDelaySec=10min
+Persistent=true
+Unit=mnema-local-backup.service
+
+[Install]
+WantedBy=timers.target

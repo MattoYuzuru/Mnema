@@ -4,7 +4,7 @@
       <p class="eyebrow">Предпросмотр</p>
       <h2 [id]="idPrefix() + '-title'">{{ heading() }}</h2>
     </div>
-    <span class="badge" [class.is-demo]="mode() === 'DEMO'">{{ badge() }}</span>
+    <span class="stamp" [class.solid]="mode() === 'DEMO'">{{ badge() }}</span>
   </header>
   <p class="caption" data-preview-caption [attr.aria-hidden]="compact() ? 'true' : null">{{ caption() }}</p>
   @if (!compact()) {

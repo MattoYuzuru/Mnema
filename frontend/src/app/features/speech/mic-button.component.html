@@ -1,18 +1,21 @@
 <div class="mic">
   <div class="mic-row">
+    <!-- One button for every phase: it is the same element, so a keyboard user who pressed it keeps focus while it records and recognises. -->
+    <button #button type="button" class="mic-button" [class.is-recording]="phase() === 'recording'"
+            [attr.aria-disabled]="phase() === 'transcribing' || (phase() !== 'recording' && (disabled() || busy())) ? 'true' : null" (click)="press()">
+      @switch (phase()) {
+        @case ('recording') { <span class="mic-dot" aria-hidden="true"></span>Остановить запись }
+        @case ('transcribing') { Распознаю… }
+        @default {
+          <svg class="mic-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z M6 11v1a6 6 0 0 0 12 0v-1 M12 18v3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>{{ label() }}
+        }
+      }
+    </button>
     @if (phase() === 'recording') {
-      <button #button type="button" class="mic-button is-recording" (click)="press()">
-        <span class="mic-dot" aria-hidden="true"></span>Остановить запись
-      </button>
       <span class="mic-clock" aria-hidden="true">{{ elapsed() }}</span>
       <button type="button" class="mic-quiet" (click)="cancel()">Отмена</button>
     } @else if (phase() === 'transcribing') {
-      <button #button type="button" class="mic-button" aria-disabled="true">Распознаю…</button>
       <button type="button" class="mic-quiet" (click)="cancel()">Отмена</button>
-    } @else {
-      <button #button type="button" class="mic-button" [attr.aria-disabled]="disabled() || busy() ? 'true' : null" (click)="press()">
-        <svg class="mic-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z M6 11v1a6 6 0 0 0 12 0v-1 M12 18v3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>{{ label() }}
-      </button>
     }
   </div>
   @if (usageLine(); as line) { <p class="mic-usage">{{ line }}</p> }

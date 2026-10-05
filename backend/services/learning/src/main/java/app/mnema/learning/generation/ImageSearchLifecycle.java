@@ -94,6 +94,29 @@ class ImageSearchLifecycle {
         return Optional.of(slot);
     }
 
+    /**
+     * The worker chose the image to stage and has reserved its asset: the candidate row (its source key and attribution) is stored <em>before</em> the
+     * transfer, so a retry after a lost lease resumes this very candidate. The slot stays GENERATING. False when the claim is void.
+     */
+    @Transactional
+    boolean slotChosen(StepClaim claim, Candidate row) {
+        Tx tx = lifecycle.lock(claim.sessionId());
+        if (tx == null) return false;
+        Optional<Step> held = steps.lockHeld(claim.stepId(), claim.token());
+        if (held.isEmpty()) return false;
+        Slot slot = slot(claim);
+        if (held.get().cancelRequested() || slot == null || !openSlot(slot)) {
+            cancelStep(tx, claim);
+            return false;
+        }
+        if (candidates.ofSlot(slot.artifactId(), slot.slotKey()).stream().noneMatch(each -> each.assetId().equals(row.assetId()))) {
+            candidates.insert(row, tx.session.sessionId(), tx.session.ownerId());
+        }
+        tx.touch = false;
+        lifecycle.flush(tx);
+        return true;
+    }
+
     /** The one candidate of the slot is stored and handed to the media pipeline: the slot is VERIFYING. False when the claim is void. */
     @Transactional
     boolean slotStaged(StepClaim claim, Candidate row) {
@@ -168,20 +191,36 @@ class ImageSearchLifecycle {
         return true;
     }
 
-    /** The step ends cancelled (the session, the slot or the claim is gone): the slot is not touched, and the batch hold ends with the last step. */
+    /**
+     * The step ends cancelled (the session, the slot or the claim is gone), and the batch hold ends with the last step. The slot is left alone
+     * while another step of it (a turn that replaced this search) will still decide its fate; when none will, a slot that is still open ends
+     * FAILED/CANCELLED here, so that it is never stuck GENERATING or VERIFYING.
+     */
     void cancelStep(Tx tx, StepClaim claim) {
         steps.finish(claim.stepId(), "CANCELLED", null, null);
+        Slot slot = slot(claim);
+        if (slot != null && slot.assetId().toString().equals(claim.input().path("assetId").stringValue(""))) closeOrphanedSlot(tx, slot, "CANCELLED");
         lifecycle.releaseIdleBatch(tx);
         tx.touch = false;
         lifecycle.flush(tx);
     }
 
-    void failSlot(Tx tx, Step step, Slot slot, String errorCode) {
+    /** The slot is still open and no step of it will decide its fate any more: it is FAILED with {@code errorCode}. */
+    private void closeOrphanedSlot(Tx tx, Slot slot, String errorCode) {
+        if (!openSlot(slot) || steps.hasLiveSlotStep(slot.artifactId(), slot.slotKey())) return;
+        closeSlot(tx, slot, errorCode);
+    }
+
+    private void closeSlot(Tx tx, Slot slot, String errorCode) {
         candidates.ofSlot(slot.artifactId(), slot.slotKey()).stream().filter(each -> each.assetId().equals(slot.assetId()) && !each.state().equals("READY"))
                 .forEach(each -> candidates.setState(each.candidateId(), "FAILED"));
         candidates.slotState(slot.artifactId(), slot.slotKey(), "FAILED", errorCode);
-        steps.finish(step.stepId(), "FAILED", errorCode, null);
         tx.events.add(slotEvent(slot, "FAILED", errorCode));
+    }
+
+    void failSlot(Tx tx, Step step, Slot slot, String errorCode) {
+        closeSlot(tx, slot, errorCode);
+        steps.finish(step.stepId(), "FAILED", errorCode, null);
         lifecycle.releaseIdleBatch(tx);
         lifecycle.flush(tx);
         LOG.info("generation_media_failed step_id={} session_id={} slot_key={} error_code={}", step.stepId(), step.sessionId(), slot.slotKey(), errorCode);
@@ -199,6 +238,7 @@ class ImageSearchLifecycle {
         Slot slot = slot(step);
         if (step.cancelRequested() || slot == null || !openSlot(slot)) {
             steps.finish(stepId, "CANCELLED", null, null);
+            if (slot != null && slot.assetId().toString().equals(step.input().path("assetId").stringValue(""))) closeOrphanedSlot(tx, slot, "CANCELLED");
             lifecycle.releaseIdleBatch(tx);
             tx.touch = false;
             lifecycle.flush(tx);
@@ -298,6 +338,8 @@ class ImageSearchLifecycle {
                 || !SessionLifecycle.runnable(tx.session)) {
             steps.finish(claim.stepId(), "CANCELLED", null, null);
             if (turn != null && turn.open() && artifact != null) edits.cancelTurn(tx, held.get(), turn, artifact);
+            Slot gone = slot(claim);
+            if (gone != null) closeOrphanedSlot(tx, gone, "CANCELLED");
             return false;
         }
         states.forEach(candidates::setState);
@@ -345,18 +387,31 @@ class ImageSearchLifecycle {
         states.forEach(candidates::setState);
         boolean stored = edits.fail(claim, SessionLifecycle.Failure.fail(errorCode));
         if (!stored) return false;
-        // A turn that replaced a first search still waiting for its result leaves that slot without an image: it fails like the first search would.
-        Slot slot = slot(claim);
-        if (slot != null && openSlot(slot) && !steps.hasOpenSlotSteps(claim.sessionId())) {
-            Tx tx = lifecycle.lock(claim.sessionId());
-            if (tx != null) {
-                candidates.slotState(slot.artifactId(), slot.slotKey(), "FAILED", errorCode);
-                tx.events.add(slotEvent(slot, "FAILED", errorCode));
-                tx.touch = false;
-                lifecycle.releaseIdleBatch(tx);
-                lifecycle.flush(tx);
-            }
-        }
+        endOpenSlot(claim, errorCode);
         return true;
+    }
+
+    /** The turn was cancelled: as it fails, a slot of a first search that it replaced is not left open. False when the claim is void. */
+    @Transactional
+    boolean cancelTurn(StepClaim claim) {
+        boolean stored = edits.fail(claim, SessionLifecycle.Failure.cancelled());
+        if (stored) endOpenSlot(claim, "CANCELLED");
+        return stored;
+    }
+
+    /**
+     * A turn that replaced a first search leaves that slot without an image when it ends without one: the slot fails like the first search would,
+     * unless that search (not asked to stop) is still running and will decide it. A step that was asked to stop does not count: it ends without
+     * touching the slot (see {@link #cancelStep}), so waiting for it here would leave the slot GENERATING or VERIFYING for good.
+     */
+    private void endOpenSlot(StepClaim claim, String errorCode) {
+        Slot slot = slot(claim);
+        if (slot == null || !openSlot(slot) || steps.hasLiveSlotStep(slot.artifactId(), slot.slotKey())) return;
+        Tx tx = lifecycle.lock(claim.sessionId());
+        if (tx == null) return;
+        closeSlot(tx, slot, errorCode);
+        tx.touch = false;
+        lifecycle.releaseIdleBatch(tx);
+        lifecycle.flush(tx);
     }
 }

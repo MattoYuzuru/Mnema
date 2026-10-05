@@ -19,8 +19,8 @@
     @if (cost(); as line) { <p class="window-cost" [id]="costId">{{ line }}</p> }
     <p class="window-error" [id]="errorId" aria-live="polite">{{ error() }}</p>
     <div class="window-actions">
-      @if (sending()) { <button type="button" class="window-button" (click)="retract.emit()">Отменить</button> }
-      <button type="submit" class="window-button primary" [attr.aria-disabled]="(sending() || (empty() && !limited())) ? 'true' : null">{{ sending() ? 'Отправляю…' : 'Отправить' }}</button>
+      @if (sending()) { <button type="button" class="button" (click)="retract.emit()">Отменить</button> }
+      <button type="submit" class="button primary" [attr.aria-disabled]="(sending() || (empty() && !limited())) ? 'true' : null">{{ sending() ? 'Отправляю…' : 'Отправить' }}</button>
     </div>
     @if (mode() === 'popover') { <p class="window-keys">Enter — отправить, Shift+Enter — новая строка, Esc — закрыть.</p> }
   </form>

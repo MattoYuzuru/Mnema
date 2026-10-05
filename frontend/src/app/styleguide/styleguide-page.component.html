@@ -1,0 +1,34 @@
+<div class="sg-root" [attr.data-calm]="calm() ? '' : null">
+  <header class="sg-header">
+    <p class="eyebrow">Только для разработки</p>
+    <h1>Стайлгайд Mnema</h1>
+    <p class="sg-lede">Живой каталог дизайн-системы «бумага, античность, индиго». Каждый пример — настоящий компонент или класс приложения; здесь нет копий.
+      Правила и карта разделов: <code>docs/frontend/styleguide.md</code>. Нужен новый элемент — сначала добавь его сюда.</p>
+  </header>
+
+  <div class="sg-layout">
+    <nav class="sg-nav" aria-label="Разделы стайлгайда">
+      @for (group of groups; track group.title) {
+        <p class="sg-nav-title">{{ group.title }}</p>
+        <ul>
+          @for (section of group.sections; track section.id) {
+            <li><a [routerLink]="[]" [fragment]="section.id" [attr.aria-current]="active() === section.id ? 'location' : null">{{ section.label }}</a></li>
+          }
+        </ul>
+      }
+      <div class="sg-controls-panel">
+        <p class="sg-nav-title">Просмотр</p>
+        <label class="sg-check"><input type="checkbox" [checked]="calm()" (change)="setCalm($event)" /> Спокойное движение</label>
+        <p class="hint">Система просит уменьшить движение: {{ systemCalm() ? 'да' : 'нет' }}.</p>
+        <p class="hint">Темы и плотности в продукте нет: одна светлая бумага.</p>
+      </div>
+    </nav>
+
+    <div class="sg-main">
+      <app-sg-foundations [calm]="calm()" />
+      <app-sg-controls />
+      <app-sg-surfaces />
+      <app-sg-screen />
+    </div>
+  </div>
+</div>

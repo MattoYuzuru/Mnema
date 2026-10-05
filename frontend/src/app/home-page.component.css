@@ -55,30 +55,6 @@
     margin-block-start: .5rem;
 }
 
-.button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: .5rem;
-    min-block-size: var(--mn-touch-min);
-    border: 1px solid var(--mn-ink);
-    border-radius: var(--mn-radius);
-    padding: .55rem .9rem;
-    color: var(--mn-ink);
-    font: 600 .875rem/1.3 var(--mn-font-body);
-    text-decoration: none;
-    text-align: center;
-}
-
-.button.primary {
-    background: var(--mn-ink);
-    color: var(--mn-on-ink);
-}
-
-.button.secondary {
-    background: transparent;
-}
-
 .text-link {
     min-block-size: var(--mn-touch-min);
     display: inline-flex;

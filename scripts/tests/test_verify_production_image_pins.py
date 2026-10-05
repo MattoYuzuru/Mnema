@@ -21,6 +21,9 @@ class VerifyProductionImagePinsTest(unittest.TestCase):
         for relative in (
             Path("backend/Dockerfile"),
             Path("frontend/Dockerfile"),
+            Path("deploy/production/compose.yaml"),
+            Path("deploy/production/Dockerfile"),
+            Path("deploy/production/local-backup.py"),
             Path("k8s/postgres.yaml"),
             Path("k8s/redis.yaml"),
             Path("k8s/identity-account-deploy.yaml"),
@@ -118,6 +121,21 @@ class VerifyProductionImagePinsTest(unittest.TestCase):
             "postgres:16.15-alpine3.24",
         )
         self.assertTrue(any("production image" in finding.message for finding in self.findings()))
+
+    def test_vps_mutable_database_and_undeclared_application_binding_are_rejected(self):
+        path = self.repository / 'deploy/production/compose.yaml'
+        content = path.read_text()
+        content = content.replace('${MNEMA_POSTGRES_IMAGE:?verified-candidate-required}', 'postgres:latest')
+        content = content.replace('${MNEMA_FRONTEND_IMAGE:?verified-candidate-required}', 'example/frontend:latest')
+        path.write_text(content)
+        messages = [finding.message for finding in self.findings()]
+        self.assertTrue(any('four admitted image bindings' in message for message in messages))
+
+    def test_vps_database_base_cannot_use_a_floating_tag(self):
+        self.replace('deploy/production/Dockerfile',
+                     'postgres:18.6-alpine3.24@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873',
+                     'postgres:18.6-alpine3.24')
+        self.assertTrue(any('Dockerfile FROM' in finding.message for finding in self.findings()))
 
     def test_new_mutable_observability_image_is_rejected(self):
         path = self.repository / "k8s/observability/99-new-component.yaml"

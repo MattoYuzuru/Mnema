@@ -245,6 +245,90 @@ Screenshots: `workshop-edit-window-1440.png`, `workshop-edit-rewriting-1440.png`
 whole run; it never replaces it. With `--keep-on-failure` the private directory also holds `slow-requests.log` (proxied requests that
 took two seconds or more: method, path without query, status, time).
 
+### Image search (`--authoring --media --generation`)
+
+`image-search.mjs` (#296, AI-10) runs among the Workshop scenarios, in a deck of its own, against the Stub Learning (Stub text provider and the
+Stub image source: no network, no key; `LEARNING_FEATURES_IMAGE_SEARCH_ENABLED=true` is set for that instance). It needs `--media`: the found
+files are staged through the real media pipeline as untrusted uploads, so the local MinIO and the media worker must be there.
+
+The composer is driven for real (`Ещё настройки` → chip `Изображения` → Enter), then the paper placeholder becomes the image and the attribution
+line `Фото: … · Тестовый источник · CC0 1.0` is checked against the slot. `Найти похожее` is reached with Tab and opened with Enter, a query is typed,
+`Искать` sent by keyboard; the status `Ищу похожие изображения…` is recorded; the variants radio group is checked (count, one name, the first new
+candidate checked, focus on it, the announcement `Нашла N вариантов, выбран первый.`). The arrow keys move the local choice and the network log must
+show **no** selection request; `Использовать это изображение` commits (one request, a new revision, the new asset, focus stays on the radio). The
+history's `Вернуть к этой версии` goes back to the search revision. A `[[stub:image-none]]` search ends `FAILED NO_RESULT`: the announcement,
+the unchanged picture and revision and nothing charged are checked. Then 1440/390/320 px (overflow, 44 px targets, grid columns 2/1/1, 2x text),
+reduced motion, approval and Browse (the published caption carries the attribution, no Workshop-only lines).
+
+Screenshots: `workshop-image-ready-1440.png`, `workshop-image-panel-{1440,390,320}.png`, `workshop-image-variants-{1440,390,320}.png`,
+`workshop-image-choice-1440.png`, `workshop-image-chosen-1440.png`, `workshop-image-none-1440.png`, `workshop-image-variants-320-2x-text.png`,
+`browse-image-attribution-1440.png`; failures write `failure-images-<step>.png` and `.txt` (with what the server held).
+
+`--only-images` (development aid, requires `--generation --media`) runs this scenario alone after the base flow:
+
+```
+python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend --node /opt/homebrew/opt/node@24/bin/node \
+  --authoring --media --generation --only-images
+```
+
+### Speech synthesis (`--authoring --media --generation`)
+
+`speech.mjs` (#297, AI-09) runs among the Workshop scenarios, in a deck of its own, against the Stub Learning (Stub text provider and the Stub
+speech port: a deterministic WAV tone, no network, no key; `LEARNING_FEATURES_TEXT_TO_SPEECH_ENABLED=true` is set for that instance). It needs
+`--media`: the WAV goes through the real media worker (WAV source -> playback variant).
+
+The composer is driven for real (`Ещё настройки` -> chip `Аудио` -> Enter); the slot goes to READY, the player loads in muted Chrome
+(readyState/duration) and the caption `Синтезированная речь · женский голос` is shown. `Озвучить заново` is reached with Tab and opened with
+Enter: the panel preselects the current voice, the arrow key moves to `Мужской голос`, `Озвучить` is sent by keyboard, the status `Озвучиваю…`
+is recorded, the turn ends APPLIED with a new asset, the strip `Озвучено заново`, the announcement `Готово: новая озвучка, мужской голос.` and
+the caption `… · мужской голос`. `Вернуть` restores the previous asset; a same-voice redo is a new take (the asset changes again). Then
+1440/390/320 px (overflow, 44 px targets, focus back on the trigger after `Отмена`, 2x text), reduced motion, approval and Browse (the audio
+plays and carries no `Синтезированная речь`: no AI marks on published content).
+
+Not covered: the FAILED clip frame (`Повторить / Убрать блок`). The Stub text adapter writes the spoken text itself (the first heading of one
+of five fixed documents), so `[[stub:tts-down]]` cannot be put into it from the composer; it is covered by the backend tests. The scenario
+records a known finding in its evidence (`findings`, `player-2x-text-overflow-320`) instead of failing: the shared audio player
+(`native-media-player`) overflows a 320 px window with 2x root text; the speech UI itself does not.
+
+Screenshots: `workshop-audio-ready-1440.png`, `workshop-audio-panel-{1440,390,320}.png`, `workshop-audio-redone-1440.png`,
+`workshop-audio-undone-1440.png`, `workshop-audio-320-2x-text.png`, `browse-audio-no-mark-1440.png`; failures write
+`failure-speech-<step>.png` and `.txt` (with what the server held).
+
+`--only-speech` (development aid, requires `--generation --media`) runs this scenario alone after the base flow:
+
+```
+python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend --node /opt/homebrew/opt/node@24/bin/node \
+  --authoring --media --generation --only-speech
+```
+
+### Voice input (`--authoring --generation`)
+
+`voice.mjs` (#298, AI-15) runs last among the Workshop scenarios, in a deck of its own, against the Stub Learning
+(`LEARNING_FEATURES_SPEECH_TO_TEXT_ENABLED=true`, the Stub transcription: a fixed text, no network, no key). The recording is Chrome's
+SYNTHETIC microphone (`--use-fake-ui-for-media-stream --use-fake-device-for-media-stream`, also added for `--generation`): a tone, never a
+real-microphone test. The frontend has no test seam for the transcript, so where another text or a slow provider is needed the driver adds
+`X-Stub-Transcript` (percent-encoded UTF-8, honoured only by the Stub) to the real request the page sends, through the Fetch interception of
+`browser.mjs` (`ctx.setRequestHeaders`).
+
+Steps: the composer (the mic is present only with `speechToText` available; the first press opens the consent dialog that says where the voice
+is processed; Esc closes it with no consent and no recording; `Согласен` by keyboard records `PUT /api/speech-consent`; about 2 s of recording,
+`Распознаю…`, the text at the caret, never sent, focus and caret in the field); the `Попросить Мнему…` window and the `На потом` field (the same;
+the latter by keyboard only: Tab, Enter, Enter, focus on the stop button); Study (a `FREE_RESPONSE` with `TEXT_OR_SPEECH`: `Ответить голосом`,
+the transcript edited and sent as `answerSource: SPEECH`, a typed answer as `TYPED`, a `TEXT` exercise with no mic and no member); the input rows
+(`DONE`, `DELETE` is 204 and then 404 on read; the audio bytes themselves are deleted by the server and not visible through the API);
+1440/390/320 px (overflow, 44 px targets, the consent dialog, recording, transcribing, `Отмена`), reduced motion (nothing animates, the recording
+dot is still); and fair use (21+ quick inputs through the API until `429 RATE_LIMITED`, then the calm message with minutes on the page).
+
+Screenshots: `voice-composer-{idle,recording,transcribing,inserted}-*.png`, `voice-consent-*.png`, `voice-window-*.png`, `voice-capture-inserted-1440.png`,
+`voice-study-*.png`, `voice-rate-limited-*.png`; failures write `failure-voice-<step>.png` and `.txt`.
+
+`--only-voice` (development aid, requires `--generation`) runs this scenario alone after the base flow:
+
+```
+python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend --node /opt/homebrew/opt/node@24/bin/node \
+  --authoring --media --generation --only-voice
+```
+
 ### «Попросить Мнему…» (`--authoring --generation`)
 
 `ask-mnema.mjs` (#294, AI-16) runs last among the Workshop scenarios, against the same second Learning (Stub text provider, never a real

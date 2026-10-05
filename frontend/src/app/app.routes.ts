@@ -19,6 +19,21 @@ const lazyCanLeaveExerciseAuthoring: CanDeactivateFn<ExerciseAuthoringPageCompon
 const lazyCanLeaveStudySession: CanDeactivateFn<StudySessionPageComponent> = (...args) =>
     import('./features/study/study-session-page.component').then(module => module.canLeaveStudySession(args[0]));
 
+/**
+ * The living styleguide exists in development builds only. `ng build --configuration production` (optimization.scripts) makes the
+ * application builder define `ngDevMode` as `false` (angular.dev/reference/configs/workspace-config#optimization-configuration,
+ * @angular/build `application-code-bundle`), esbuild folds the condition and drops the dynamic `import()`, so neither the route
+ * nor the lazy chunk reaches the bundle. `isDevMode()` is a runtime call and would keep the code in production, which is why
+ * the build-time constant is used directly. `scripts/verify-no-styleguide.mjs` proves it on the built output; the owner opens
+ * the page with `npm start` (`ng serve`) at /styleguide. See docs/frontend/styleguide.md.
+ */
+const developmentOnlyRoutes: Routes = typeof ngDevMode === 'undefined' || ngDevMode
+    ? [{
+        path: 'styleguide',
+        loadComponent: () => import('./styleguide/styleguide-page.component').then(module => module.StyleguidePageComponent)
+    }]
+    : [];
+
 export const appRoutes: Routes = [
     { path: '', component: HomePageComponent },
     { path: 'login', component: LoginPageComponent },
@@ -110,5 +125,6 @@ export const appRoutes: Routes = [
     },
     { path: 'privacy', component: PrivacyPageComponent },
     { path: 'terms', component: TermsPageComponent },
+    ...developmentOnlyRoutes,
     { path: '**', redirectTo: '' }
 ];

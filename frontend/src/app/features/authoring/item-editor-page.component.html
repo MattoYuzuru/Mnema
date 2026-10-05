@@ -20,14 +20,14 @@
       <button class="button" type="button" [attr.aria-pressed]="mobilePanel() === 'exercises'" (click)="mobilePanel.set('exercises')">Упражнения</button>
     </nav>
     <div class="editor-layout" [class.is-preview-expanded]="previewExpanded()">
-      <section class="sheet editor-mobile-panel material-editor-panel" [class.is-active]="mobilePanel() === 'material'" aria-labelledby="material-editor-heading">
+      <section class="paper-surface editor-mobile-panel material-editor-panel" [class.is-active]="mobilePanel() === 'material'" aria-labelledby="material-editor-heading">
         <h2 id="material-editor-heading">Материал</h2>
         <app-native-editor [document]="currentDocument" [disabled]="phase() === 'publishing' || phase() === 'error' || phase() === 'conflict'" (documentChange)="changeDocument($event)" (filesAdded)="uploadFromEditor($event)">
           <app-native-media-upload [document]="currentDocument" [disabled]="phase() === 'publishing' || phase() === 'conflict'"
             (chooseAsset)="prepareMedia($event.kind, $event.assetId)" />
         </app-native-editor>
       </section>
-      <aside class="sheet preview editor-mobile-panel" [class.is-active]="mobilePanel() === 'preview'" aria-labelledby="preview-heading">
+      <aside class="paper-surface preview editor-mobile-panel" [class.is-active]="mobilePanel() === 'preview'" aria-labelledby="preview-heading">
         <div class="preview-heading"><h2 id="preview-heading">Как будет выглядеть</h2>
           <button class="button preview-toggle" type="button" [attr.aria-expanded]="previewExpanded()" (click)="togglePreview()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4H4v5M15 4h5v5M9 20H4v-5m11 5h5v-5" /></svg>
@@ -36,7 +36,7 @@
         </div>
         <app-native-media-surface [document]="currentDocument" />
       </aside>
-      @if (mobilePanel() === 'exercises') { <section class="sheet editor-exercises-panel" aria-labelledby="exercise-nav-heading"><h2 id="exercise-nav-heading">Упражнения</h2><p>Сначала опубликуйте материал, затем настройте упражнения для этой версии.</p>@if (item(); as currentItem) { <a class="button" [routerLink]="['/decks', deck()?.deckId, 'materials', currentItem.memberKey, 'exercises', 'new']">Настроить упражнения</a> }</section> }
+      @if (mobilePanel() === 'exercises') { <section class="paper-surface editor-exercises-panel" aria-labelledby="exercise-nav-heading"><h2 id="exercise-nav-heading">Упражнения</h2><p>Сначала опубликуйте материал, затем настройте упражнения для этой версии.</p>@if (item(); as currentItem) { <a class="button" [routerLink]="['/decks', deck()?.deckId, 'materials', currentItem.memberKey, 'exercises', 'new']">Настроить упражнения</a> }</section> }
     </div>
     <section class="save-panel" aria-label="Сохранение">
       <p class="muted" aria-live="polite">@switch (phase()) { @case ('saving-draft') { Сохраняем… } @case ('publishing') { Публикуем… } @case ('error') { Сохранение не подтверждено } @case ('conflict') { Нужно выбрать версию } @default { {{ dirty() ? 'Сохраним изменения автоматически' : 'Все изменения сохранены' }} } }</p>

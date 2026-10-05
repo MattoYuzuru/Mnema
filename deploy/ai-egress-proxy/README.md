@@ -1,14 +1,23 @@
-# AI egress proxy (Squid)
+# AI egress proxy (Squid over SSH)
 
-A stateless HTTP CONNECT forward proxy on the owner's VPS in Finland, used by the Mnema Learning `worker` to reach AI
-providers that are unreachable from Russia. Runbook: [`docs/operations/ai-egress-proxy.md`](../../docs/operations/ai-egress-proxy.md).
+The existing stateless CONNECT implementation uses distribution Squid. Its
+production VPS hop **must be encrypted**. The proxy binds only keykomi loopback;
+a dedicated SSH identity may forward only to that listener. IP allowlisting
+alone does not protect Basic credentials. Provider TLS remains end to end.
 
-Threat model:
+Installation, secret handling, verification, protected neighboring workloads and
+rollback: [canonical runbook](../../docs/operations/ai-egress-proxy.md).
 
-1. TLS is end to end (CONNECT): the proxy sees destination host, port, timing and byte counts, never a request, a prompt or a provider key.
-2. The proxy credentials travel as clear Basic between the Mnema server and the VPS, so the firewall rule that admits only the Mnema server IP is mandatory, not optional; WireGuard between the two hosts is the optional upgrade.
-3. Rotate the htpasswd password on any doubt and after every owner-IP testing session; the Mnema side only needs the new `MNEMA_AI_EGRESS_PROXY_PASSWORD`.
-4. Squid allows CONNECT to port 443 of the listed provider hosts only and refuses private, loopback, link-local and metadata destinations, so a leaked credential cannot be used as an open proxy or to probe the VPS network.
-5. Nothing is cached or stored besides a rotated access log of `host:port` lines (7 files); `X-Forwarded-For` and `Via` are removed.
+| File | Owner/installation |
+| --- | --- |
+| `squid.conf` | `/etc/squid/mnema.conf`, root-owned; loopback, auth, destination/SSRF denies, bounded timeouts |
+| `mnema-egress-proxy.logrotate` | Dedicated daily rotation, seven files, signal to the dedicated unit |
+| `mnema-egress-proxy.service` | keykomi dedicated systemd unit, proxy user, CPU/RAM/task limits |
+| `60-mnema-egress.conf` | keykomi SSH Match for only the new tunnel identity; no sessions/arbitrary forwarding |
+| `mnema-egress-tunnel.service` | mnema supervised tunnel, dedicated key, strict pinned host key, loopback listener |
 
-Files: `squid.conf` (install as `/etc/squid/squid.conf`; replace `<RU_SERVER_IP>`). No third-party images; Squid comes from the distribution package.
+Provider keys and databases remain in Russia. The proxy records bounded destination
+metadata and does not decrypt/cache request bodies. The foreign AI provider still
+processes the submitted data; statelessness is not legal compliance. #280 must be
+satisfied for affected real-user capabilities. The host tunnel also requires a
+separately reviewed private integration with the containerized worker (#349).

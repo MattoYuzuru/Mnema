@@ -57,6 +57,7 @@ updates:
     directories:
       - "/backend"
       - "/frontend"
+      - "/deploy/production"
       - "/k8s"
       - "/k8s/ai"
       - "/k8s/backup"

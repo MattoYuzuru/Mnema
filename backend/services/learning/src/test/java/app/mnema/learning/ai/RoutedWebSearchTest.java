@@ -20,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /** The web search over its route: chunks per provider, fallback, the paid unit, partial answers, the breaker, the budget and the journal. */
 class RoutedWebSearchTest {
     private static final AiProperties.Routes ROUTE = new AiProperties.Routes(List.of(), List.of(), List.of(), Duration.ofSeconds(8), List.of(), List.of(),
-            List.of(), List.of(), List.of("yandex", "perplexity"));
+            List.of(), List.of(), List.of(), List.of(), List.of("yandex", "perplexity"));
     private final AiProperties properties = withRoute(ROUTE);
     private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
     private final SpeechTestSupport.RecordingJournal journal = new SpeechTestSupport.RecordingJournal();
@@ -132,7 +132,7 @@ class RoutedWebSearchTest {
     void perplexityBatchesUpToFiveQueriesInOneRequestAndTheQueryIndexIsShiftedToTheRequest() {
         Fake perplexity = new Fake("perplexity", 5);
         AiProperties onlyPerplexity = withRoute(new AiProperties.Routes(List.of(), List.of(), List.of(), Duration.ofSeconds(8), List.of(), List.of(),
-                List.of(), List.of(), List.of("perplexity")));
+                List.of(), List.of(), List.of(), List.of(), List.of("perplexity")));
 
         WebSearch.Answer answer = answer(router(onlyPerplexity, perplexity).search(request("1", "2", "3", "4", "5", "6", "7")));
 
@@ -166,7 +166,7 @@ class RoutedWebSearchTest {
         yandex.script = call -> call == 1 ? AiResult.ok(List.of(new WebSearch.Result("https://example.org/1", "t", "s", null, WebSearch.Provider.YANDEX, 0, 1)))
                 : AiResult.failed(new AiFailure.Timeout());
         AiProperties onlyYandex = withRoute(new AiProperties.Routes(List.of(), List.of(), List.of(), Duration.ofSeconds(8), List.of(), List.of(),
-                List.of(), List.of(), List.of("yandex")));
+                List.of(), List.of(), List.of(), List.of(), List.of("yandex")));
 
         WebSearch.Answer answer = answer(router(onlyYandex, yandex).search(request("a", "b", "c")));
 
@@ -258,7 +258,7 @@ class RoutedWebSearchTest {
         assertThatThrownBy(() -> router(new Fake("yandex", 1)).search(request("a"))).isInstanceOf(IllegalStateException.class);
         TransactionSynchronizationManager.setActualTransactionActive(false);
         AiProperties unknown = withRoute(new AiProperties.Routes(List.of(), List.of(), List.of(), Duration.ofSeconds(8), List.of(), List.of(), List.of(),
-                List.of(), List.of("brave")));
+                List.of(), List.of(), List.of(), List.of("brave")));
         assertThatThrownBy(() -> router(unknown)).isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -279,7 +279,7 @@ class RoutedWebSearchTest {
     private AiProperties wired(List<String> route, Map<String, AiProperties.Provider> providers, AiProperties.Egress egress) {
         AiProperties base = AiTestSupport.properties("", AiTestSupport.routes(List.of(), List.of(), List.of()), providers);
         return new AiProperties(base.provider(), new AiProperties.Routes(List.of(), List.of(), List.of(), Duration.ofSeconds(8), List.of(), List.of(), List.of(),
-                List.of(), route), providers, base.models(), base.transport(), base.retry(), base.breaker(), base.permits(), base.budget(), base.userKey(),
+                List.of(), List.of(), List.of(), route), providers, base.models(), base.transport(), base.retry(), base.breaker(), base.permits(), base.budget(), base.userKey(),
                 base.prompt(), egress);
     }
 
@@ -319,7 +319,7 @@ class RoutedWebSearchTest {
         // the only provider answered a body that was rejected: billed, and the search ends there like for any request nobody could answer
         yandex.script = call -> call == 1 ? AiResult.failed(new AiFailure.InvalidOutput("xml")) : AiResult.ok(List.of());
         AiProperties onlyYandex = withRoute(new AiProperties.Routes(List.of(), List.of(), List.of(), Duration.ofSeconds(8), List.of(), List.of(),
-                List.of(), List.of(), List.of("yandex")));
+                List.of(), List.of(), List.of(), List.of(), List.of("yandex")));
 
         WebSearch.Answer answer = answer(router(onlyYandex, yandex).search(request("a", "b")));
         assertThat(answer.requests()).isEqualTo(1);
@@ -337,7 +337,7 @@ class RoutedWebSearchTest {
     void noRequestStartsAfterTheDeadlineAndWhatWasAnsweredIsReturned() {
         Fake yandex = new Fake("yandex", 1);
         AiProperties onlyYandex = withRoute(new AiProperties.Routes(List.of(), List.of(), List.of(), Duration.ofSeconds(8), List.of(), List.of(),
-                List.of(), List.of(), List.of("yandex")));
+                List.of(), List.of(), List.of(), List.of(), List.of("yandex")));
         RoutedWebSearch router = router(onlyYandex, yandex);
         yandex.script = call -> {
             // the first request takes until the deadline

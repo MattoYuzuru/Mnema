@@ -12,6 +12,8 @@ import java.util.UUID;
 public interface GeneratedMediaStager {
     /** Where an asset stands for the staging caller. */
     enum State {
+        /** The asset is reserved but its bytes are not sealed yet (a crash between the reservation and the transfer): stage them again. */
+        PENDING,
         /** Staged and waiting for, or in, verification and processing. */
         VERIFYING,
         READY,
@@ -24,7 +26,16 @@ public interface GeneratedMediaStager {
     }
 
     /**
-     * Creates the asset {@code assetId} (origin {@code generated}) of {@code owner} and starts its verification. Idempotent for the same bytes.
+     * Reserves the asset {@code assetId} (origin {@code generated}) and its upload session for these bytes without transferring them, so that the
+     * caller can record what the asset is <em>before</em> the transfer; a retry after a crash then resumes that choice. Idempotent for the same
+     * bytes; other bytes replace a reservation whose transfer has not begun.
+     *
+     * @throws app.mnema.learning.platform.api.InvalidRequestException the type or length is not allowed for {@code kind}
+     */
+    void reserve(UUID owner, UUID assetId, MediaCatalog.Kind kind, String mimeType, byte[] bytes);
+
+    /**
+     * Creates the asset {@code assetId} (origin {@code generated}) of {@code owner} and starts its verification. Idempotent for the same bytes (a reservation of other bytes whose transfer has not begun is replaced; a transferred one conflicts).
      *
      * @throws app.mnema.learning.platform.api.InvalidRequestException the type or length is not allowed for {@code kind}
      * @throws MediaStorageUnavailableException the object store cannot be reached

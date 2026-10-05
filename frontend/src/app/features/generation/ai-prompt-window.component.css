@@ -37,7 +37,7 @@
 .window-close { display: inline-grid; place-items: center; min-inline-size: var(--mn-touch-min, 2.75rem); min-block-size: var(--mn-touch-min, 2.75rem); border: 1px solid var(--mn-field-border); border-radius: var(--mn-radius, 2px); background: var(--mn-sheet); color: var(--mn-ink); font-size: 1.4rem; line-height: 1; cursor: pointer; }
 .window-quote { margin: 0; color: var(--mn-muted); font-size: .9rem; overflow-wrap: anywhere; }
 .window-presets { display: flex; flex-wrap: wrap; gap: .4rem; }
-.chip, .window-button {
+.chip {
     min-block-size: var(--mn-touch-min, 2.75rem);
     border: 1px solid var(--mn-ink);
     border-radius: var(--mn-radius, 2px);
@@ -47,10 +47,8 @@
     font: 600 .95rem/1.2 var(--mn-font-body, system-ui, sans-serif);
     cursor: pointer;
 }
-.chip:hover, .window-button:hover { background: var(--mn-soft); }
-.window-button.primary { background: var(--mn-ink); color: var(--mn-on-ink); }
-.window-button.primary:hover { background: var(--mn-ink); text-decoration: underline; text-underline-offset: .2em; }
-.chip[aria-disabled='true'], .window-button[aria-disabled='true'] { cursor: not-allowed; opacity: .6; }
+.chip:hover { background: var(--mn-soft); }
+.chip[aria-disabled='true'] { cursor: not-allowed; opacity: .6; }
 .window-label { color: var(--mn-ink); font-weight: 600; font-size: .9rem; }
 .window-field { inline-size: 100%; min-block-size: var(--mn-touch-min, 2.75rem); border: 1px solid var(--mn-field-border); border-radius: var(--mn-radius, 2px); padding: .6rem .7rem; background: var(--mn-sheet); color: var(--mn-body); font: 1rem/1.45 var(--mn-font-body, system-ui, sans-serif); resize: vertical; }
 .window-field[readonly] { background: var(--mn-soft); }
@@ -62,6 +60,5 @@
 .window-keys { margin: 0; color: var(--mn-muted); font-size: .8rem; }
 :where(button, textarea):focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 3px; }
 @media (forced-colors: active) {
-    .window, .window-field, .chip, .window-button, .window-close { border-color: CanvasText; box-shadow: none; }
-    .window-button.primary { forced-color-adjust: auto; }
+    .window, .window-field, .chip, .window-close { border-color: CanvasText; box-shadow: none; }
 }

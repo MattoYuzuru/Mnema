@@ -108,6 +108,26 @@ describe('MicButtonComponent', () => {
         expect(tracks[0].stop).toHaveBeenCalled();
     });
 
+    it('keeps keyboard focus on the one button through recording and recognising (found by the browser harness: it was lost to the body)', async () => {
+        const main = root().querySelector<HTMLButtonElement>('.mic-row .mic-button')!;
+        main.focus();
+        main.click();
+        await flush();
+        expect(root().querySelector('.mic-row .mic-button')).toBe(main);
+        expect(main.textContent).toContain('Остановить запись');
+        expect(document.activeElement).toBe(main);
+        let finish: (outcome: TranscribeOutcome) => void = () => undefined;
+        speech.transcribe.mockReturnValue(new Promise<TranscribeOutcome>(resolve => { finish = resolve; }));
+        main.click();
+        await flush();
+        expect(main.textContent).toContain('Распознаю…');
+        expect(main.getAttribute('aria-disabled')).toBe('true');
+        expect(document.activeElement).toBe(main);
+        finish({ ok: true, text: 'привет', garbled: false });
+        await flush();
+        expect(root().querySelector('.mic-row .mic-button')).toBe(main);
+    });
+
     it('shows «Распознаю…» while the text is awaited and lets the user cancel it', async () => {
         let abort: AbortSignal | undefined;
         speech.transcribe.mockImplementation((_request: unknown, signal: AbortSignal) => { abort = signal; return new Promise(() => undefined); });

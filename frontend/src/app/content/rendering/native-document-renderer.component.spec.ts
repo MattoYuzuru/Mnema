@@ -256,7 +256,7 @@ describe('NativeDocumentRendererComponent', () => {
         fixture.detectChanges();
 
         expect((fixture.nativeElement as HTMLElement).querySelectorAll('p').length).toBe(count);
-    });
+    }, 20_000); // about 1–2 s alone, but over the default 5 s on a loaded machine (seen 5.08 s while the backend suite ran)
 
     it('renders code as inert text in a focusable, horizontally scrollable region', () => {
         fixture.componentRef.setInput('document', codeDocumentJson as unknown as NativeDocument);

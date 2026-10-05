@@ -34,7 +34,7 @@ class WebSearchLiveTest {
     private static AiProperties properties(List<String> route, Map<String, AiProperties.Provider> providers, AiProperties.Egress egress) {
         AiProperties base = AiTestSupport.properties("", AiTestSupport.routes(List.of(), List.of(), List.of()), providers);
         return new AiProperties(base.provider(), new AiProperties.Routes(List.of(), List.of(), List.of(), Duration.ofSeconds(8), List.of(), List.of(), List.of(),
-                List.of(), route), providers, base.models(), new AiProperties.Transport(Duration.ofSeconds(5), Duration.ofSeconds(30), 8 << 20, Duration.ofSeconds(30)),
+                List.of(), List.of(), List.of(), route), providers, base.models(), new AiProperties.Transport(Duration.ofSeconds(5), Duration.ofSeconds(30), 8 << 20, Duration.ofSeconds(30)),
                 base.retry(), base.breaker(), base.permits(), base.budget(), base.userKey(), base.prompt(), egress);
     }
 

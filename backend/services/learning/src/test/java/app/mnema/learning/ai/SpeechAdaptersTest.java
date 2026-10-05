@@ -119,17 +119,26 @@ class SpeechAdaptersTest {
 
         assertThat(JSON.readTree(server.requests.getFirst().body()).path("generation_config").path("speech_config").get(0).path("voice").stringValue(null))
                 .isEqualTo("Kore");
-        // the text tokens are the characters over four (rounded up) at $0.50 per million; a quarter of a second of audio is 7 tokens (25 a second, rounded
-        // up) at $9.00 per million
+        // without a usage block: the text tokens are the characters over four (rounded up) plus the fixed 200 of every request at $0.50 per million; a
+        // quarter of a second of audio is 8 tokens (32 a second, rounded up) at $9.00 per million
         String text = "Привет, как дела у тебя сегодня";
         assertThat(audio.billedCharacters()).isEqualTo(text.length());
-        assertThat(GeminiSpeechSynthesis.tokensOfText(31)).isEqualTo(8);
-        assertThat(GeminiSpeechSynthesis.outputTokens(250)).isEqualTo(7);
-        assertThat(adapter.costMicros(audio)).isEqualTo(Math.ceilDiv(GeminiSpeechSynthesis.tokensOfText(text.length()) * 500_000L + 7 * 9_000_000L, 1_000_000L));
-        assertThat(adapter.usage(audio).completionTokens()).isEqualTo(7);
+        assertThat(GeminiSpeechSynthesis.tokensOfText(31)).isEqualTo(208);
+        assertThat(GeminiSpeechSynthesis.outputTokens(250)).isEqualTo(8);
+        assertThat(adapter.costMicros(audio)).isEqualTo(Math.ceilDiv(GeminiSpeechSynthesis.tokensOfText(text.length()) * 500_000L + 8 * 9_000_000L, 1_000_000L));
+        assertThat(adapter.usage(audio).completionTokens()).isEqualTo(8);
         // an unpriced model costs nothing here (the route validation refuses it before it can run)
         assertThat(new GeminiSpeechSynthesis(new AiProperties.Provider(true, server.origin(), SpeechTestSupport.GOOGLE_KEY, "", "", ""), http, settings, name -> null,
                 Clock.systemUTC()).costMicros(audio)).isZero();
+    }
+
+    @Test
+    void theUsageOfTheResponsePricesTheCallWhenItIsThere() throws Exception {
+        server.bytes("/v1beta/interactions", "application/json", SpeechTestSupport.resource("gemini-ok-usage.json"));
+        SpeechSynthesis.Audio audio = ok(gemini().synthesize("gemini-3.8-flash-tts", "v1", SpeechTestSupport.request("Привет", "ru", "female"), BUDGET));
+        // 224 input tokens at $0.50 and 192 output tokens at $9.00 per million, as the live response of 2026-10-05 reported them
+        assertThat(audio.costMicros()).isEqualTo(Math.ceilDiv(224 * 500_000L + 192 * 9_000_000L, 1_000_000L));
+        assertThat(gemini().costMicros(audio)).isEqualTo(audio.costMicros());
     }
 
     @Test

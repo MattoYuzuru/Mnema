@@ -1,5 +1,5 @@
 schema_version: 2
-updated_at: "2026-09-19"
+updated_at: "2026-10-05"
 evidence_revision: "933da3e60add2102ed7480342dfd3de95a8a255b"
 scope: repository
 status: current
@@ -75,8 +75,8 @@ capabilities:
     location: .github/workflows/deploy.yaml
     trigger: push_to_main
     effects: [backend-quality, frontend-quality]
-    status: configured-local-delivery
-    notes: [image-and-release-jobs-skipped-by-policy]
+    status: configured
+    notes: [manual-four-image-publication-opt-in, publication-security-gates-required]
 
   - id: local-replacement-runtime
     kind: compose
@@ -85,7 +85,16 @@ capabilities:
     status: configured
     notes: [frontend-not-in-compose, fresh-data-only, loopback-ports]
 
-  - id: hosted-operations
+  - id: vps-production
+    kind: github-actions-workflow
+    location: .github/workflows/vps-deploy.yaml
+    trigger: workflow_dispatch_on_main
+    effects: [admitted-four-image-compose-rollout]
+    status: configured
+    requirements: [current-main-candidate, administrator-admission, prod-environment-approval]
+    canonical_policy: docs/operations/production-delivery.md
+
+  - id: legacy-kubernetes-operations
     kind: dormant-workflows
     locations:
       - .github/workflows/staging-deploy.yaml
@@ -94,7 +103,7 @@ capabilities:
       - .github/workflows/database-recovery.yaml
     effects: []
     status: paused-fail-closed
-    canonical_policy: docs/operations/local-development-delivery.md
+    canonical_policy: docs/operations/production-delivery.md
 
 repository_agent_assets:
   normative_instructions: AGENTS.md
@@ -108,4 +117,4 @@ repository_agent_assets:
 credential_notes:
   - "Credential values are never inventoried or printed."
   - "Repository access does not imply environment access."
-  - "The shared server is unavailable; no deployment or production verification is claimed."
+  - "Production administrator SSH is mnema; CI has a separate fixed-command identity, no configuration upload."

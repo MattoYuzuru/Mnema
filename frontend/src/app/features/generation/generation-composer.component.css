@@ -14,7 +14,6 @@ h1 label { font: inherit; font-weight: inherit; cursor: text; }
     font-size: 1.1rem;
     line-height: 1.55;
 }
-.hint { margin: 0; color: var(--mn-muted); font-size: .9rem; line-height: 1.5; }
 .source-chips { display: flex; flex-wrap: wrap; gap: .5rem; margin: 0; padding: 0; list-style: none; }
 .source-chip { display: inline-flex; align-items: center; gap: .25rem; border: 1px solid var(--mn-ink); padding: 0 0 0 .75rem; background: var(--mn-soft); color: var(--mn-ink); font-weight: 600; overflow-wrap: anywhere; }
 .chip-remove { min-inline-size: var(--mn-touch-min, 2.75rem); min-block-size: var(--mn-touch-min, 2.75rem); border: 0; background: transparent; color: var(--mn-ink); font-size: 1.25rem; cursor: pointer; }

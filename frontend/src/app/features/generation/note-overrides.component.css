@@ -12,7 +12,7 @@
 .caption { color: var(--mn-muted); font-size: .8rem; }
 .media > summary { display: flex; align-items: center; min-block-size: var(--mn-touch-min, 2.75rem); color: var(--mn-body); font-size: .9rem; font-weight: 600; cursor: pointer; }
 .media-controls { display: flex; flex-wrap: wrap; gap: .5rem 1.25rem; padding-block: .25rem .5rem; }
-.hint { flex-basis: 100%; margin: 0; color: var(--mn-muted); font-size: .9rem; line-height: 1.5; }
+.hint { flex-basis: 100%; }
 .reset { min-block-size: var(--mn-touch-min, 2.75rem); border: 0; padding-inline: .5rem; background: transparent; color: var(--mn-ink); font: 600 .9rem/1.2 var(--mn-font-body, system-ui, sans-serif); text-decoration: underline; text-underline-offset: .22em; cursor: pointer; }
 .reset:focus-visible, summary:focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 2px; }
 @media (forced-colors: active) { .row { border-color: CanvasText; } .reset:focus-visible, summary:focus-visible { outline-color: Highlight; } }

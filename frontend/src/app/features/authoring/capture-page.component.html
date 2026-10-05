@@ -4,7 +4,7 @@
   @if (error(); as message) { <section class="notice error" role="alert"><p>{{ message }}</p><button class="button" type="button" (click)="recovery() === 'retry' ? retry() : load()">{{ recovery() === 'retry' ? 'Попробовать ещё раз' : 'Обновить' }}</button></section> }
   @if (loading()) { <p class="notice" role="status">Загружаем заметки…</p> }
   @if (deck()) {
-    <form class="sheet" [formGroup]="form" (ngSubmit)="capture()">
+    <form class="paper-surface" [formGroup]="form" (ngSubmit)="capture()">
       <div class="field"><label for="capture-text">Заметка</label><textarea #noteField id="capture-text" maxlength="32768" formControlName="text" [readonly]="recovery() === 'retry'" placeholder="Что важно не потерять?" aria-describedby="capture-help capture-error"></textarea>
         <p class="muted" id="capture-help">Пробелы без текста не сохраняются.</p>
         @if (speechAvailable()) { <app-mic-button purpose="CAPTURE" [deckId]="deck()?.deckId ?? null" [field]="noteTarget" /> }

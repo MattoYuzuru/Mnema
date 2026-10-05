@@ -13,7 +13,8 @@ import java.util.random.RandomGenerator;
 /**
  * The provider layer assembled by hand for the opt-in eval and live tests (no Spring, no database): the Stub, or the
  * real routes with keys read from the environment ({@code MNEMA_AI_DEEPSEEK_API_KEY}, optional
- * {@code MNEMA_AI_GIGACHAT_AUTH_KEY}). Key values are never printed or stored.
+ * {@code MNEMA_AI_GIGACHAT_AUTH_KEY}), or OpenRouter alone ({@link #openRouter()}, {@code MNEMA_AI_OPENROUTER_API_KEY}). Key values are
+ * never printed or stored.
  */
 public final class EvalStack implements AutoCloseable {
     private final ChatHttp http;
@@ -22,6 +23,19 @@ public final class EvalStack implements AutoCloseable {
     private EvalStack(ChatHttp http, TextGeneration text) {
         this.http = http;
         this.text = text;
+    }
+
+    /** OpenRouter alone on every route, as the fallback of the direct DeepSeek route would be used (owner decision 2026-10-04). */
+    public static EvalStack openRouter() {
+        Map<String, AiProperties.Provider> providers = new LinkedHashMap<>();
+        providers.put("openrouter", new AiProperties.Provider(true, "https://openrouter.ai/api/v1", env("MNEMA_AI_OPENROUTER_API_KEY"), "", "", ""));
+        List<String> flash = List.of("openrouter:deepseek/deepseek-v4.1-flash");
+        AiProperties base = AiTestSupport.properties("", AiTestSupport.routes(flash, List.of("openrouter:deepseek/deepseek-v4-pro"), flash),
+                providers);
+        List<AiProperties.Model> models = List.of(new AiProperties.Model("openrouter", "deepseek/deepseek-v4.1-flash", 6_000, 300_000, 1_200_000),
+                new AiProperties.Model("openrouter", "deepseek/deepseek-v4-pro", 44_000, 1_320_000, 3_960_000));
+        return assemble(new AiProperties(base.provider(), base.routes(), base.providers(), models, base.transport(), base.retry(),
+                base.breaker(), base.permits(), base.budget(), base.userKey(), base.prompt()));
     }
 
     public static EvalStack create(boolean live) {
@@ -35,6 +49,10 @@ public final class EvalStack implements AutoCloseable {
         AiProperties base = AiTestSupport.properties(live ? "" : "stub", AiTestSupport.routes(
                 List.of("deepseek:deepseek-flash", "gigachat:GigaChat-2"), List.of("deepseek:deepseek-v4-pro"),
                 List.of("deepseek:deepseek-flash")), providers);
+        return assemble(base);
+    }
+
+    private static EvalStack assemble(AiProperties base) {
         // Real latencies: the production transport limits, not the short ones of the loopback tests.
         AiProperties properties = new AiProperties(base.provider(), base.routes(), base.providers(), base.models(),
                 new AiProperties.Transport(Duration.ofSeconds(5), Duration.ofSeconds(60), 4 * 1024 * 1024, Duration.ofSeconds(60)),

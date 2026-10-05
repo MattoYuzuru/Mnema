@@ -5,7 +5,7 @@
 // The user's whole path is the real Angular UI on the real HTTP surface: the collapsed composer in the material profile, a real click
 // that opens it, real typing and Enter, the editable chips (a mechanic dropped, the number kept), the estimate line and «Запустить», the
 // Workshop of the exercises; then the revision of the material (result card with the word diff, «Вернуть», «Ещё раз», «Оставить»), and in
-// the exercise editor the voice change («замени аудио на мужской голос»: the chip, the honest note of the Stub, «Оставить»). Only the
+// the exercise editor the voice change («замени аудио на мужской голос»: the chip, a new asset made by the Stub speech, «Оставить»; and an audio without a transcript offers no voice). Only the
 // fixture (the deck, the material, the exercise with an audio prompt) and the checks of what the server holds are made through the
 // authenticated API. The Stub keyword mapping is the one of `StubTextAdapter` («все типы» -> AUTO, «по 3» -> 3, «проще» -> REVISE_ITEM,
 // «голос» -> REVISE_EXERCISE, «лимит» -> a hostile answer the server clamps).
@@ -156,7 +156,7 @@ export async function runWorkshopAsk(ctx, h) {
       voiceHint: text(root.querySelector('.ask-voice .ask-help')?.textContent),
       estimate: text(root.querySelector('.estimate')?.textContent), cta: [...root.querySelectorAll('.generate-cta')].map(node => text(node.textContent)),
       ctaDisabled: root.querySelector('.generate-cta')?.getAttribute('aria-disabled') ?? null,
-      statusRegions: root.querySelectorAll('[role=status]').length, textareas: root.querySelectorAll('textarea').length,
+      statusRegions: root.querySelectorAll('[role=status]').length, statusWhere: [...root.querySelectorAll('[role=status]')].map(node => node.tagName.toLowerCase() + '.' + String(node.className).split(' ')[0] + ' in ' + (node.parentElement?.tagName.toLowerCase() ?? '')), textareas: root.querySelectorAll('textarea').length,
       ids: (() => { const all = [...document.querySelectorAll('[id]')].map(node => node.id); return all.length - new Set(all).size; })() };`);
   /** Clicks «Запустить» and waits for the Workshop of the new session. Returns its id. */
   const startSession = async () => {
@@ -176,7 +176,7 @@ export async function runWorkshopAsk(ctx, h) {
       heading2: text(root?.querySelector('h2')?.textContent), busy: root?.querySelector('article')?.getAttribute('aria-busy') ?? null,
       strips: document.querySelectorAll('.rewrite-strip').length, preview: Boolean(root?.querySelector('app-exercise-preview-host')),
       history: [...(root?.querySelectorAll('.edit-history .history-ask') ?? [])].map(node => text(node.textContent)), summary: text(document.querySelector('section.workshop .summary')?.textContent),
-      regions: document.querySelectorAll('section.workshop [role=status]').length, success: text(root?.querySelector('.notice.success')?.textContent),
+      regions: document.querySelectorAll('section.workshop [role=status]:not(.document-announcement):not(app-mic-button *)').length, success: text(root?.querySelector('.notice.success')?.textContent),
       successLink: root?.querySelector('.notice.success a')?.getAttribute('href') ?? null,
       focusOnHeading: document.activeElement === root?.querySelector('h2'),
       ids: (() => { const all = [...document.querySelectorAll('[id]')].map(node => node.id); return all.length - new Set(all).size; })() };`, scope);
@@ -193,6 +193,7 @@ export async function runWorkshopAsk(ctx, h) {
   // =====================================================================================================================
   let material = null;
   let exercise = null;
+  let recording = null;
   await step('fixture', async () => {
     const created = await api('POST', '/api/decks', { commandId: crypto.randomUUID(), metadata: { title: 'Попросить Мнему: проверка', description: '' } });
     need(created.status === 201, `POST deck answered ${created.status}`);
@@ -208,19 +209,36 @@ export async function runWorkshopAsk(ctx, h) {
     need(memberKey, 'the created material has no member key');
     const item = await readItem(memberKey);
     material = { memberKey, itemRevisionId: item.itemRevisionId, firstNode: item.document.root.content[0].id };
-    const deckNow = await api('GET', `/api/decks/${deck.deckId}`);
-    const prompt = [{ kind: 'TEXT', text: 'Когда планировщик выберет Seq Scan?' }, ...(audioAssetId === null ? [] : [{ kind: 'AUDIO', assetId: audioAssetId, title: 'Озвучка вопроса' }])];
-    const made2 = await api('POST', `/api/decks/${deck.deckId}/exercises`, { commandId: crypto.randomUUID(), expectedDeckRevisionId: deckNow.body.revisionId,
-      objective: { operation: 'create', title: 'Выбор между Seq Scan и Index Scan' },
-      exercise: { type: 'FREE_RESPONSE', schemaVersion: 2, enabled: true, subject: { memberKey, itemRevisionId: material.itemRevisionId },
-        content: { prompt, reference: [{ kind: 'MATERIAL', memberKey, itemRevisionId: material.itemRevisionId, nodeId: material.firstNode }], responseInput: 'TEXT' },
-        answerKey: { kind: 'TEXT', accepted: ['когда таблица маленькая'], normalization: ['UNICODE_NFC', 'TRIM', 'CASE_FOLD'], matchingMode: 'STRICT' },
-        evaluatorPolicy: { id: 'deterministic-text', version: '1' } } }, { 'If-Match': deckNow.etag });
-    need(made2.status === 201, `POST exercise answered ${made2.status} ${JSON.stringify(made2.body?.code ?? made2.body?.detail ?? null)}`);
-    const listed = await api('GET', `/api/decks/${deck.deckId}/exercises?memberKey=${memberKey}&limit=20`);
-    need(listed.status === 200 && listed.body.exercises.length === 1, 'the fixture exercise is not listed');
-    exercise = { exerciseId: listed.body.exercises[0].exerciseId, exerciseRevisionId: listed.body.exercises[0].exerciseRevisionId };
-    return { audio: audioAssetId !== null };
+    // The exercise the voice is redone on: its audio has a transcript, so «Озвучить заново» can speak it. A second exercise holds the same
+    // recording WITHOUT one (the owner's own voice): nothing can be spoken there, so the composer must not offer a voice for it.
+    const makeExercise = async (title, audio) => {
+      const deckNow = await api('GET', `/api/decks/${deck.deckId}`);
+      const prompt = [{ kind: 'TEXT', text: 'Когда планировщик выберет Seq Scan?' }, ...(audio === null ? [] : [audio])];
+      const made2 = await api('POST', `/api/decks/${deck.deckId}/exercises`, { commandId: crypto.randomUUID(), expectedDeckRevisionId: deckNow.body.revisionId,
+        objective: { operation: 'create', title },
+        exercise: { type: 'FREE_RESPONSE', schemaVersion: 2, enabled: true, subject: { memberKey, itemRevisionId: material.itemRevisionId },
+          content: { prompt, reference: [{ kind: 'MATERIAL', memberKey, itemRevisionId: material.itemRevisionId, nodeId: material.firstNode }], responseInput: 'TEXT' },
+          answerKey: { kind: 'TEXT', accepted: ['когда таблица маленькая'], normalization: ['UNICODE_NFC', 'TRIM', 'CASE_FOLD'], matchingMode: 'STRICT' },
+          evaluatorPolicy: { id: 'deterministic-text', version: '1' } } }, { 'If-Match': deckNow.etag });
+      need(made2.status === 201, `POST exercise answered ${made2.status} ${JSON.stringify(made2.body?.code ?? made2.body?.detail ?? null)}`);
+    };
+    const known = new Set();
+    const newExercise = async () => {
+      const listed = await api('GET', `/api/decks/${deck.deckId}/exercises?memberKey=${memberKey}&limit=20`);
+      need(listed.status === 200, `GET exercises answered ${listed.status}`);
+      const fresh = listed.body.exercises.filter(entry => !known.has(entry.exerciseId));
+      need(fresh.length === 1, `${fresh.length} new exercises are listed after creating one`);
+      known.add(fresh[0].exerciseId);
+      return { exerciseId: fresh[0].exerciseId, exerciseRevisionId: fresh[0].exerciseRevisionId };
+    };
+    await makeExercise('Выбор между Seq Scan и Index Scan', audioAssetId === null ? null
+      : { kind: 'AUDIO', assetId: audioAssetId, title: 'Озвучка вопроса', transcript: 'Когда планировщик выберет Seq Scan?' });
+    exercise = await newExercise();
+    if (audioAssetId !== null) {
+      await makeExercise('Запись без текста', { kind: 'AUDIO', assetId: audioAssetId, title: 'Запись вопроса' });
+      recording = await newExercise();
+    }
+    return { audio: audioAssetId !== null, exercises: audioAssetId !== null ? 2 : 1 };
   });
 
   // =====================================================================================================================
@@ -230,7 +248,7 @@ export async function runWorkshopAsk(ctx, h) {
     await navigate(`${deckPathOf()}/materials/${material.memberKey}`, tab);
     await until(() => has('app-ask-mnema .ask-trigger'), 'the material profile has no «Попросить Мнему…»', 25_000);
     const collapsed = await page(`const root = document.querySelector('app-ask-mnema');
-      const sheet = document.querySelector('article.sheet');
+      const sheet = document.querySelector('article.paper-surface');
       return { trigger: root.querySelector('.ask-trigger').textContent.replace(/\\s+/g, ' ').trim(), expanded: root.querySelector('.ask-trigger').getAttribute('aria-expanded'),
         textareas: root.querySelectorAll('textarea').length, before: Boolean(root.compareDocumentPosition(sheet) & Node.DOCUMENT_POSITION_FOLLOWING),
         height: Math.round(root.getBoundingClientRect().height) };`);
@@ -270,7 +288,7 @@ export async function runWorkshopAsk(ctx, h) {
     const afterRead = await credits();
     need(afterRead.reserved === before.reserved && afterRead.used === before.used, `reading the sentence changed the credits: ${JSON.stringify(before)} -> ${JSON.stringify(afterRead)}`);
     need((await sessionsOfDeck()).length === sessionsBefore, 'a session exists before «Запустить»');
-    need(first.statusRegions === 1, `the composer has ${first.statusRegions} status regions, not one`);
+    need(first.statusRegions === 1, `the composer has ${first.statusRegions} status regions, not one (${first.statusWhere.join('; ')})`);
     need(first.ids === 0, `${first.ids} duplicate ids on the page`);
     await shots('chips', 'the chips', 'app-ask-mnema');
     // The owner edits the chips: three mechanics, then one dropped; the number stays 3.
@@ -434,6 +452,21 @@ export async function runWorkshopAsk(ctx, h) {
   // 5. The exercise editor: «замени аудио на мужской голос»
   // =====================================================================================================================
   let exerciseSession = null;
+  let voicedAsset = null;
+  if (audioAssetId !== null) {
+    await step('exercise_editor_voice_needs_transcript', async () => {
+      await navigate(`${deckPathOf()}/exercises/${recording.exerciseId}/edit`, tab);
+      await askMnema('Замени аудио на мужской голос');
+      const facts = await chipsFacts();
+      need(facts.voices.length === 0, `an audio without a transcript is offered voice chips: ${JSON.stringify(facts.voices)}`);
+      need(facts.cta.length === 0, `an audio without a transcript can be started: ${JSON.stringify(facts.cta)}`);
+      need(facts.notes.some(note => note.code === 'NO_TRANSCRIPT' && /добавьте расшифровку/u.test(note.text)), `the notes are ${JSON.stringify(facts.notes)}`);
+      need(!/Синтез речи пока не подключён/u.test(await bodyText()), 'the outdated hint about the synthesis is shown');
+      await shots('chips-voice-no-transcript', 'the refusal to redo the voice of a recording without a transcript', 'app-ask-mnema');
+      return { voices: 0, note: 'NO_TRANSCRIPT' };
+    });
+  }
+
   await step('exercise_editor_voice', async () => {
     await navigate(`${deckPathOf()}/exercises/${exercise.exerciseId}/edit`, tab);
     await until(() => has('app-ask-mnema .ask-trigger'), 'the exercise editor has no «Попросить Мнему…»', 25_000);
@@ -447,7 +480,7 @@ export async function runWorkshopAsk(ctx, h) {
     if (audioAssetId !== null) {
       need(facts.instruction === null, `a voice-only request shows an instruction field (${facts.instruction})`);
       need(JSON.stringify(facts.voices) === JSON.stringify([{ value: 'NONE', checked: false }, { value: 'female', checked: false }, { value: 'male', checked: true }]), `the voice chips are ${JSON.stringify(facts.voices)}`);
-      need(/Синтез речи пока не подключён/u.test(facts.voiceHint), `the voice hint is «${facts.voiceHint}»`);
+      need(facts.voiceHint === '', `the voice chips carry a hint: «${facts.voiceHint}»`);
     } else {
       need(facts.instruction === 'Сделай вопрос короче', `the instruction chip is «${facts.instruction}»`);
     }
@@ -468,14 +501,14 @@ export async function runWorkshopAsk(ctx, h) {
     if (audioAssetId !== null) {
       const voiceTurn = detail.turns.find(turn => turn.action === 'AUDIO_REGENERATE');
       need(voiceTurn?.voice === 'male' && voiceTurn.status === 'APPLIED', `the voice turn is ${JSON.stringify(voiceTurn)}`);
-      need(detail.mediaSlots.length === 1 && detail.mediaSlots[0].voice === 'male' && detail.mediaSlots[0].assetId === audioAssetId, `the slot is ${JSON.stringify(detail.mediaSlots)}`);
-      need(result.chips.includes('Голос: мужской'), `the chips are ${JSON.stringify(result.chips)}`);
-      need(/Озвучка обновится, когда подключим синтез речи/u.test(result.stubNote), `the honest note is «${result.stubNote}»`);
+      need(detail.mediaSlots.length === 1 && detail.mediaSlots[0].voice === 'male' && detail.mediaSlots[0].assetId !== audioAssetId, `the slot is ${JSON.stringify(detail.mediaSlots)}`);
+      need(result.stubNote === '' && result.chips.includes('Озвучено заново: мужской'), `the result still carries a Stub note or lacks the redone chip: «${result.stubNote}» ${JSON.stringify(result.chips)}`);
+      voicedAsset = detail.mediaSlots[0].assetId;
       need(result.history.includes('Озвучка заново: мужской голос'), `the history says ${JSON.stringify(result.history)}`);
     }
     need(result.ids === 0, `${result.ids} duplicate ids on the page`);
     await shots('revise-exercise-result', 'the result of the revision of the exercise', 'app-revise-exercise-result');
-    return { voice: audioAssetId !== null ? 'male' : 'text only', stubNote: audioAssetId !== null };
+    return { voice: audioAssetId !== null ? 'male' : 'text only', synthesised: voicedAsset !== null };
   });
 
   await step('exercise_editor_keep', async () => {
@@ -494,7 +527,12 @@ export async function runWorkshopAsk(ctx, h) {
     const old = await api('GET', `/api/decks/${deck.deckId}/exercises/${exercise.exerciseId}?revisionId=${before.body.exerciseRevisionId}`);
     need(old.status === 200 && old.body.exerciseRevisionId === before.body.exerciseRevisionId, 'the old exercise revision is not kept');
     const listed = await api('GET', `/api/decks/${deck.deckId}/exercises?memberKey=${material.memberKey}&limit=20`);
-    need(listed.body.exercises.length === 1, 'the revision of the exercise added an exercise');
+    need(listed.body.exercises.length === (audioAssetId !== null ? 2 : 1), 'the revision of the exercise added an exercise');
+    if (voicedAsset !== null) {
+      const audioOf = body => JSON.stringify(body.content.prompt.filter(block => block.kind === 'AUDIO').map(block => block.assetId));
+      need(audioOf(after.body) === JSON.stringify([voicedAsset]), `the new revision uses ${audioOf(after.body)}, not the synthesised ${voicedAsset}`);
+      need(audioOf(old.body) === JSON.stringify([audioAssetId]), `the old revision uses ${audioOf(old.body)}, not the recording`);
+    }
     // The editor opens the same exercise with the new revision.
     await navigate(`${deckPathOf()}/exercises/${exercise.exerciseId}/edit`, tab);
     await until(() => has('app-ask-mnema .ask-trigger'), 'the editor of the revised exercise did not open', 25_000);

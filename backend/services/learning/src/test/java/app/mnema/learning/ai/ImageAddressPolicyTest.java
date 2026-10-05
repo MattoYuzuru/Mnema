@@ -39,6 +39,16 @@ class ImageAddressPolicyTest {
     }
 
     @Test
+    void tunnelAndTranslationPrefixesAreRefused() throws Exception {
+        for (String literal : new String[] {"2002:808:808::1", "2002:7f00:1::1", "2001:0:4136:e378:8000:63bf:3fff:fdd2", "2001::1", "64:ff9b:1::808:808",
+                "64:ff9b:1:ffff::1", "::ffff:0:808:808"}) {
+            assertThat(ImageAddressPolicy.isPublic(ip(literal))).as(literal).isFalse();
+        }
+        // neighbouring public space stays reachable
+        assertThat(ImageAddressPolicy.isPublic(ip("2001:4860:4860::8888"))).isTrue();
+    }
+
+    @Test
     void aNameIsRefusedWhenAnyOfItsAddressesIsAndWhenItHasNone() throws Exception {
         assertThat(ImageAddressPolicy.allPublic(new InetAddress[] {ip("93.184.216.34"), ip("2606:2800:220:1::1")})).isTrue();
         assertThat(ImageAddressPolicy.allPublic(new InetAddress[] {ip("93.184.216.34"), ip("127.0.0.1")})).isFalse();

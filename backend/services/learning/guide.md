@@ -484,36 +484,37 @@ Licensed stock images for `::image{mode="search"}` slots. Contract: `contracts/g
   answers; every source failing is `Failed` (the step says `PROVIDER_UNAVAILABLE`), none licensed is `[]` (`NO_RESULT`). Each real source call has a breaker per
   `(source, IMAGE_SEARCH)`, the `imageSearch` permits, the daily budget, an `ai_provider_call` row (provider = source id, model `search`, cost 0) and
   `mnema_ai_calls_total`; it refuses to run inside a transaction. Defaults: `learning.ai.providers.{pixabay,openverse,wikimedia}.*`
-  (`MNEMA_AI_PIXABAY_API_KEY`, `MNEMA_AI_OPENVERSE_CLIENT_ID/_SECRET`; Wikimedia needs no key; Openverse defaults to `egress=proxy` because its API answers a
-  Cloudflare challenge from some networks, so without an active proxy it is simply not configured). `StubImageSearch` (only with `learning.ai.provider=stub`):
+  (`MNEMA_AI_PIXABAY_API_KEY`, `MNEMA_AI_OPENVERSE_CLIENT_ID/_SECRET`; Wikimedia needs no key; all three direct by default — verified live from a Russian network on
+  2026-10-05 with the owner's keys; `egress=proxy` is the fallback if a network meets Openverse's Cloudflare challenge). The download asks for the image types and
+  `*/*;q=0.1` (the Openverse thumbnail endpoint answers 406 to image types alone); the content type and magic bytes are checked anyway. `StubImageSearch` (only with `learning.ai.provider=stub`):
   4 to 6 deterministic candidates per query (source `STUB`, CC0, `https://example.org/stub/<n>`), a PNG drawn in-process by `fetch`; markers in the query
   `[[stub:image-none]]` (nothing licensed) and `[[stub:image-down]]` (every source down).
 - **Licenses** (`ImageLicense`): Pixabay Content License, CC0, public domain / PDM, CC BY (any version), CC BY-SA (any version, `shareAlike`). NC, ND, GFDL-only,
   fair use, unknown or missing are dropped; a Wikimedia file with any `Restrictions` is dropped; a candidate without an https source page is dropped. Author
   (<=200) and title (<=300) are plain text (HTML of `Artist`/`ImageDescription` is stripped, entities decoded). Answers are cached 24 h per
-  `(source, normalised query, lang, page)` in `image_search_cache` (Pixabay's terms; swept hourly, a failing cache is a miss); images are downloaded and
+  `(source, normalised query, lang, page)` in `image_search_cache` (Pixabay's terms; swept hourly, a failing cache is a miss). Every source is asked for a fixed page of 30 whatever the caller needs (`ImageSource.PAGE_SIZE`; within Pixabay `per_page` <=200, Wikimedia `gsrlimit` <=50, Openverse `page_size`) and at most 30 results are kept, so the cached page is always the same size and a later «Найти похожее» turn is served fresh candidates from it (the router slices to the request and drops the keys already known); images are downloaded and
   stored as the owner's asset, never hot-linked. The query language comes from its script (kana ja, Hangul ko, Han zh, Cyrillic ru, else en): **no extra LLM
   call builds the query in this slice** (the draft model wrote it; a deliberate deviation from the issue's wording).
 - **Safe fetcher** (`SafeImageFetcher`, `ImageAddressPolicy`): https only; the exact host list of the candidate's own source; the host is resolved here and refused
   when any address is loopback, any-local, private, link-local (169.254.169.254 included), multicast, CGNAT, unique-local or an IPv4-mapped/compatible/NAT64 form of
-  those (a proxied source is resolved by the proxy: only the host list applies); redirects by hand, at most 2, **same host only**, every hop re-validated;
+  those, or a tunnel/translation prefix: 6to4 `2002::/16`, Teredo `2001::/32`, `64:ff9b:1::/48`, SIIT `::ffff:0:0:0/96` (a proxied source is resolved by the proxy: only the host list applies); source text is also stripped of format, line/paragraph-separator, surrogate and private-use characters (bidi overrides, zero-width) before it is bounded; redirects by hand, at most 2, **same host only**, every hop re-validated;
   `Content-Type` jpeg/png/webp/gif, a declared length above 10 MiB refused before reading, a streamed body cut at 10 MiB, magic bytes must match; 5 s connect, whole
   fetch inside the budget. Residual risk, accepted: the JDK client resolves the name again at connect, so DNS rebinding between check and connect is not excluded;
   acceptable only because the hosts are fixed public names of the sources, never a name a result chooses.
 - **Staging (`media`).** `GeneratedMediaStager.stage(owner, assetId, IMAGE, mime, bytes)` creates the asset with the **given** id (origin `generated`, V35; a browser
   cannot ask for it), writes the staging object and runs the ordinary finalize, seal and verification, ending `READY` or `REJECTED`; no transaction spans S3.
-  `assetState` reads it. `generation_media_hold` (view over `generation_media_ref` and `generation_media_candidate`) is what the media GC and `resolve` treat as a
+  `assetState` reads it (`PENDING` = reserved, bytes not sealed). `reserve` records the asset and its session first, so the executor can store the candidate row before the transfer; other bytes replace a reservation whose single PUT has not begun, and conflict once it may have been written. **Generated staging does not charge the owner's upload quota** (the owner did not start it); it is bounded by the credits instead (one search per slot or turn) and by 12 candidates x 10 MiB per slot. `generation_media_hold` (view over `generation_media_ref` and `generation_media_candidate`) is what the media GC and `resolve` treat as a
   Workshop hold, so every candidate stays reachable until its session is purged.
 - **Slots and candidates (V35).** `generation_media_candidate` (<=12 per slot, unique `(artifact, slot, source, source_id)`, own asset, attribution, `share_alike`);
   the read model derives a candidate's state from its asset. `ImageSearchExecutor` (kind `IMAGE_SEARCH`, deadline PT3M) runs two inputs. **The initial step of a slot**:
-  search the slot's query, download the best result, stage it under the slot's pre-allocated asset, wait (poll every 500 ms, no transaction) for READY or REJECTED,
+  search the slot's query, download the best result, reserve the slot's pre-allocated asset, **store the candidate row (source key, attribution) before the transfer**, stage the bytes under it (a retry after a lost lease resumes that very candidate: its bytes are staged again after a search for its key if the transfer never happened, and an asset is never paired with another image's attribution), wait (poll every 500 ms, no transaction) for READY or REJECTED,
   then in one transaction debit `IMAGE_SEARCH` from the session's batch hold (`debit:{step}:{attempt}`), slot `READY` with that candidate chosen, the node hold; failures
   are slot `FAILED` with `NO_RESULT | PROVIDER_UNAVAILABLE | VERIFICATION_REJECTED | DEADLINE_EXCEEDED` and nothing debited. The batch hold, which a session normally
   releases when it leaves RUNNING, stays while such a step is open (`SessionLifecycle.releaseHolds`) and ends with the last one (`releaseIdleBatch`, also after a
   cancellation, a removal, a replacement or a hand-off). **The turn of an `IMAGE_SEARCH` edit** (`ArtifactEdits`: exactly one image block of a search slot, an optional
   query <=200, a `TURN` hold of one search; it replaces a first search of that slot still waiting): up to 4 new candidates are stored, then `ImageSearchLifecycle.succeedImages`
   applies the first READY one in a revision `MEDIA` (the node's `assetId`, the slot READY on it) and debits the turn, or the turn fails (`NO_RESULT`, `PROVIDER_UNAVAILABLE`,
-  `DEADLINE_EXCEEDED`; no room left of the 12 is `NO_RESULT`) with its hold released and revision and slot unchanged. Every write is fenced by the lease token and checks
+  `DEADLINE_EXCEEDED`; no room left of the 12 is `NO_RESULT`) with its hold released and revision and slot unchanged. A retry of a turn (attempt > 1) first applies a READY candidate of the slot that the lost attempt stored (created since the turn began) before it searches again. A turn that replaced a first search and ends without an image fails that slot with its own code unless the first search, not asked to stop, still runs; a first search that was asked to stop (`cancel_requested`) never decides the slot, but when it ends cancelled and no step of the slot is left it fails the slot `CANCELLED` itself (`ImageSearchLifecycle.cancelStep`, `StepRepository.hasLiveSlotStep`), so a slot is never stuck GENERATING or VERIFYING. Every write is fenced by the lease token and checks
   `cancel_requested`; lease recovery and queue expiry of a slot step fail its slot (`StepDispatcher`, `StepQueue`).
 - **Choice, revert, read model.** `POST .../media-slots/{slotKey}/selection` (`ArtifactEdits.select`): receipt replay (the receipt keeps the revision; the controller reads
   the artifact from it), 412 on a stale revision, 404 opaque for an absent slot or a candidate of another slot or owner, 409 for a state that is not review, an
@@ -529,8 +530,8 @@ Licensed stock images for `::image{mode="search"}` slots. Contract: `contracts/g
   `ImageAddressPolicyTest`), the router (`RoutedImageSearchTest`), the cache on PostgreSQL (`ImageSearchCacheIntegrationTest`), staging on MinIO with a fake worker
   (`GeneratedMediaStagerIntegrationTest`) and the flows on the Stub with a staging double (`GenerationImageSearchIntegrationTest`). Opt-in
   `MNEMA_AI_LIVE=true ... --tests '*ImageSearchLive*'` runs Wikimedia Commons for real (search and one safe download) and Pixabay/Openverse only with their
-  credentials in the environment. **Pixabay and Openverse are not verified live** (no keys in the owner environment yet); Openverse's field names follow the published
-  schema (https://docs.openverse.org/api/) and could not be fetched from here (the API host answers 403 to an anonymous client).
+  credentials in the environment. **Verified live 2026-10-05** with the owner's keys: Pixabay, Openverse (client-credentials token, search, thumbnail
+  without a bearer once `Accept` includes `*/*;q=0.1`) and Wikimedia Commons, all directly from a Russian network.
 
 ## Speech synthesis (#297)
 
@@ -561,8 +562,11 @@ tested on recorded fixtures and the Stub only.
   unused for `learning.ai.tts.cache-ttl` (P180D): only the row, the media GC then reclaims the blobs. Adoption refuses (and the entry is dropped, the clip synthesised again) only when a blob is gone or being reclaimed (an exception of the adoption fails the step, which retries, and drops nothing); `publish` locks `media_gc_object` like the adoption and refuses blobs the GC began to reclaim. `learning.ai.tts.version`
   is part of the key (bump it to invalidate). Pre-warming at publication is a follow-up. **Lease** `learning.ai.tts.lease` defaults to PT75S (below the PT2M step deadline, so waiters behind a crashed worker can take the entry over and still
   finish), renewed every 15 s while the winner waits for the verification; takeover is one conditional `UPDATE`. A hit writes `last_used_at` at most once a day (conditional `UPDATE`; no row lock on the READY path). `SpeechClips` counts
-  every claim in `mnema_tts_cache_total{outcome=hit|miss|busy}` (`busy` is a poll behind another step's synthesis). **Default route:** `google:gemini-3.8-flash-tts`; Flash-Lite TTS (about a third cheaper, and under the 10-credit clip weight after 2027-01-01)
-  is a candidate default pending a listening test (the lead decides the route).
+  every claim in `mnema_tts_cache_total{outcome=hit|miss|busy}` (`busy` is a poll behind another step's synthesis). **Default route:** `google:gemini-3.8-flash-lite-tts,google:gemini-3.8-flash-tts` (owner hint 2026-10-05: Flash-Lite has higher rate limits, is about a
+  third cheaper and stays under the 10-credit clip weight after 2027-01-01; live 2026-10-05: 4.4–4.6 s for a 4–5 s RU/JA phrase vs 4.7–5.7 s on Flash).
+  The cost of a Gemini call comes from the response's `usage` (`total_input_tokens`, `total_output_tokens`: about 200 input tokens even for one word and
+  32 audio tokens a second); without it the adapter estimates. Live: `MNEMA_AI_LIVE=true MNEMA_AI_LIVE_EGRESS=direct … --tests '*SpeechLive*'` from a
+  developer network where Google answers, otherwise through the egress proxy.
 - **Media pipeline.** The worker accepts a `RIFF/WAVE` PCM s16le source for audio (`audio/wav`, still transcoded to the same AAC/M4A playback variant); `MediaProcessingService` rejects a WAV source unless the asset's origin is
   `generated`, and `MediaUploadSettings.validateGenerated` allows `audio/wav` only for the server staging, so the browser allowlist is unchanged. **The `mnema-media-worker:local` image must be rebuilt** (`backend/media-worker`).
 - **Executor (`SpeechExecutor`, kind `TTS`, capability `TTS`, deadline PT2M; replaces the Stub executor).** `SpeechClips` is the shared part (cache claim, one provider call, stage, wait; a fallback answer is filed under the provider that made
@@ -638,6 +642,82 @@ Contract: `contracts/generation/http.json` (`createSession` AI-18 note, `getArti
   (`MbmCompilerTest`), the prices (`StandardSpecInterpreterTest`, `PlansTest`) and the flows on PostgreSQL (`GenerationResearchIntegrationTest`: the waiting draft and the hold, caps per effort, dedupe and numbering, the debit per request, every failure ending without
   sources, cancel, crash, recovery and expiry, retry, a planned session). Opt-in `MNEMA_AI_LIVE=true ... --tests '*WebSearchLive*'` asks one Russian and one English question per configured provider and prints latency; skipped without keys.
   Live checklist for the first key: spike section 6 (the `l10n` spelling, int64 as strings, saved fixtures of a real RU/COM/empty answer, whether an empty answer is billed, latency from a Russian host).
+
+## Speech input (#298)
+
+Dictation into a text field and spoken Study answers. Contract: [`contracts/speech`](../../../contracts/speech/README.md) (`speech-v1`); `contracts/usage` (the `STT` bucket and `USAGE_LIMIT_REACHED`);
+`contracts/study` (`answerSource: SPEECH`, `ASR_GARBLED`); architecture §9, §11, §13. A recording becomes **text the learner sees and edits before sending**: nothing is sent, graded or saved automatically. Code:
+`app.mnema.learning.speech` (HTTP, admission, worker, consent, hints) over the `Transcription` port in `app.mnema.learning.ai`. **Live not verified for the self-hosted route** (no container exists, the owner has not
+approved one); Gemini was run live on 2026-10-05 (below).
+
+- **Port and routes.** `Transcription.transcribe(Request{audio, mimeType, lang, hints (<= 60), userKey, deadline, declaredMs, purpose, script}) -> AiResult<Transcript{text, seconds, lang, garbled}>`; `region(lang)`
+  (`RU` or `ABROAD`: the processing region of the first usable route entry), `configured()`, `healthy()` (false while every usable entry has an open breaker). `RoutedTranscription` walks `learning.ai.routes.stt`
+  (`stt-ru`, when not empty, serves Russian instead) like `RoutedSpeechSynthesis`: first usable entry, transient/rate-limit/credential/unusable-answer falls through, a refusal ends the call; breaker per `(provider, STT)`,
+  `permits.stt`, daily `budget.stt-micros`, an `ai_provider_call` row per call (the hash of the shape: provider, model, type, size, number of hints; never audio, hints or text), `mnema_ai_calls_total`; no transaction
+  around the call; the call budget is `min(learning.ai.stt.call-timeout, what is left of the input's deadline)`. Failures the caller maps: `InvalidOutput("unsupported_audio")` from every entry that tried (the clip, not an
+  outage), `Refusal("too_long")` (the provider measured more than 60 s), everything else is `UNAVAILABLE`.
+- **Adapters.** `GeminiTranscription` (`google`, `egress=proxy` by default): `POST {base}/v1beta/interactions`, key in `x-goog-api-key`, the clip inline as `{type: audio, data: base64, mime_type}`, the answer is the text of
+  the `model_output` steps and a `usage` block (https://ai.google.dev/gemini-api/docs/transcribe and /audio, verified 2026-10-05; **deviation from the handoff:** it names the `generateContent` shape, but these pages and
+  the existing TTS adapter use the Interactions API, and webm **is** now a documented type, so no type is refused client-side; a 400 is `unsupported_audio`). The dedicated `gemini-3.5-transcribe` takes the audio alone with
+  `generation_config.transcription_config {language_codes: [BCP 47 of its list, omitted to detect], custom_vocabulary: hints}`; any other model (Flash, Flash-Lite) gets `learning.ai.stt.gemini-prompt` («transcribe verbatim, do
+  not translate, output only the text, nothing if there is no speech») plus the expected language and the terms as a sentence before the audio. Gemini gives no confidence, so `garbled` is always false. Duration is
+  measured from the audio tokens of the usage (25 a second in every live response, for the Flash models too; the audio guide says 32), > 61 s is `too_long`. Cost from the usage at the `learning.ai.models` entry
+  (input incl. audio; output incl. thinking; the dedicated model reports `total_output_tokens: 0`, so the invocation counts are read when the totals are 0). `SelfHostTranscription` (`selfhost`, base URL
+  `MNEMA_AI_STT_BASE_URL`): OpenAI-compatible `POST {base}/v1/audio/transcriptions`, multipart `file, model, response_format=verbose_json, temperature=0, language (primary subtag of the hint), prompt (terms, <= 600 chars)`,
+  optional `Authorization: Bearer` (https://developers.openai.com/api/reference/resources/audio/subresources/transcriptions/methods/create; the shape of speaches / faster-whisper-server and vLLM for Qwen3-ASR, so a GigaAM
+  wrapper implements it too); `duration` is the metered seconds, `language` (a name or an ISO code) becomes a code, `garbled` = the duration-weighted mean `avg_logprob` of the segments below `learning.ai.stt.min-avg-logprob`
+  (-1.0) or the strongest `no_speech_prob` above `max-no-speech-prob` (0.6) on an answer that has text; 400/415/422 are `unsupported_audio`. `http` is allowed for this provider on a private host only
+  (`AiProperties.Provider`: loopback, a dotless name such as a compose service, 10/8, 172.16/12, 192.168/16; every other provider keeps https or loopback). `StubTranscription` (only `learning.ai.provider=stub`, region `RU`):
+  «Тестовая расшифровка голосового ввода.» (COMPOSER/EDIT/CAPTURE) or «Тестовый устный ответ.» (STUDY_ANSWER); the `X-Stub-Transcript` header (percent-encoded UTF-8, <= 2000 chars, read **only** while the Stub is the port,
+  never in production) scripts the answer: empty means no speech, `[[stub:stt-down]]` unavailable, `[[stub:stt-unsupported]]` an undecodable clip, `[[stub:stt-garbled]]` a low-confidence answer, `[[stub:stt-slow]]` 2 s.
+  The script is stored with the audio row and deleted with it.
+- **Capability.** `speechToText` = `learning.features.speech-to-text.enabled` and a configured route (or the Stub); an open breaker on every entry or the spent `budget.stt-micros` is `TEMPORARILY_UNAVAILABLE`. `SpeechToTextProvider`
+  (the old seam on recording assets) is deleted: the flow transcribes ephemeral speech inputs, not media.
+- **Endpoints (V37).** `POST /api/speech-inputs` (raw body <= 2 MiB, read bounded: a declared length over the cap and a body that outgrows it are both `413 PAYLOAD_TOO_LARGE`; `Content-Type` base type one of `audio/mp4, mpeg, ogg,
+  webm` with at most a `codecs` parameter, else 400; `Idempotency-Key` UUIDv4/v7, `X-Audio-Duration-Ms` 1..60000, `purpose`, optional `lang`/`deckId`, unknown query is 400) answers `202 {speechInputId, state: QUEUED, pollAfterMs,
+  expiresAt}`; `GET /{id}` the row (404 for foreign, expired or unknown), `DELETE /{id}` 204 always. Admission is one transaction under an advisory lock of the account: capability (409), consent for the region of the clip's
+  language (409 `SPEECH_CONSENT_REQUIRED`), own deck (404), the replay of the key (the stored 202 with `Idempotency-Replayed: true`, `409 IDEMPOTENCY_CONFLICT` for another body: the hash covers the audio, purpose, type, duration,
+  language, deck and script), the rate limit (`speech_input_use`, 20 per 10 minutes, `429` with `Retry-After`; a replay takes no place), fair use, insert of `speech_input` + `speech_input_audio` + the use.
+  `GET/PUT/DELETE /api/speech-consent` (`speech_consent`, one row per account: version `speech-2026-10`, region `RU|ABROAD`): `GET` states the widest region any route can use when no language is given, `PUT` is idempotent
+  (a stale version or another region than required is `409 SPEECH_CONSENT_OUTDATED`, the answer is `200` with the `GET` body), `DELETE` is `204`; an `ABROAD` consent covers `RU`, not the reverse; the disclosure stays
+  readable while the provider is only `TEMPORARILY_UNAVAILABLE`.
+- **Fair use.** The ledger counts, it does not hold (`UsageLedger.consume`, idempotent per key). Admission calls the new `UsageLedger.requireFairUse` (a read like `fairUseFits`, but it throws the same
+  `USAGE_LIMIT_REACHED` block `consume` would: the widest violated window) for the declared seconds **plus the seconds of the account's queued and running inputs** (that is the reservation: no second ledger, and a failed
+  input leaves nothing to refund); the worker counts the metered seconds with the transition to DONE in one transaction (`consume(STT, seconds, "stt:<owner>:<id>")`); a failed input is never counted. Two instances admitting
+  at the same instant can overshoot a window by a clip: a completion that no longer fits keeps the text and logs `speech_input_usage_overshoot` (the clip is paid for). Seconds of the bucket are rounded up per clip.
+- **Worker (`SpeechInputWorker`, roles `worker|all`).** The queue is the `speech_input` table: `UPDATE ... WHERE id = (SELECT ... WHERE state='QUEUED' AND deadline_at > now() ORDER BY created_at FOR UPDATE SKIP LOCKED
+  LIMIT 1)` sets `TRANSCRIBING` and a `claim_token`; each input runs on a virtual thread, per-instance concurrency `learning.ai.permits.stt` (4); woken after the commit of an admission, by the end of a run and by the sweeper
+  (`learning.speech.sweep-interval`, 2 s). The generation step queue is session-scoped (reservations, artifacts, heartbeats), so it was not reused. No transaction is open during the provider call; `learning.speech.deadline`
+  (PT30S) from the creation bounds the whole input; the sweeper fails an overdue QUEUED/TRANSCRIBING row `UNAVAILABLE` (a crashed worker included), deletes any audio left behind a terminal row and purges rows past
+  `expires_at` (15 min). Settlement is fenced by the claim token: after a `DELETE` or a deadline failure a late result changes nothing. **The audio is deleted in the same transaction as the transition to DONE or FAILED.**
+  An `api` process admits and polls but never claims (tests: `SpeechRolesIntegrationTest`).
+- **Hints.** With a `deckId` (the owner's, else 404) the titles of the deck's current materials (`item_preview`; a title nobody has shown yet is read once through `ItemPreviews` and cached, at most 20 reads per call)
+  become the terms, <= `learning.speech.max-hints` (60): NFC, whitespace collapsed, <= 64 characters, de-duplicated, and a term that looks like personal data (an `@`, a link, a 5+ digit number, a `+digits` phone) is dropped.
+  The deck's name, the learner's name and the account id are never hints.
+- **Study.** No new grading path: the client sends the edited transcript with `answerSource: SPEECH`. Nothing server-side links a speech input to an attempt, so `ASR_GARBLED` stays the grader's own judgment of the text
+  (the Stub grader: `[[stub:assess-asr]]`); `garbled` of the input is the provider's confidence and is shown to the learner only.
+- **Observability.** `stt_call provider= outcome= seconds= latency_ms= egress=` per provider call, `mnema_stt_latency_seconds{provider,outcome}`, `mnema_stt_inputs_total{outcome=DONE|NO_SPEECH|UNAVAILABLE|UNSUPPORTED_AUDIO|TOO_LONG}`,
+  `speech_input_queued` / `speech_input_done` with ids, purpose, sizes and outcome. Never text, audio, hints or a key (`SpeechInputIntegrationTest` and `TranscriptionAdaptersTest` read the logs).
+- **Rollback.** `learning.features.speech-to-text.enabled=false` (capability `DISABLED`: admission and the consent disclosure refuse; withdrawing and deleting stay open) and `learning.ai.providers.<id>.enabled=false`.
+  V37 is additive (it widens the `ai_provider_call.capability` check and adds four tables).
+- **Spike, 2026-10-05, Gemini live** (`scripts/ai-spikes/stt_gemini_spike.py`, stdlib Python; 16 known-text clips of the TTS spike of RU/ES/JA/KO/EN plus one synthesised ZH clip, 2 repetitions, 34 calls per model,
+  called directly from the workstation, not through the proxy; clips 1.2-6.8 s; error rate = character error rate after NFKC, lower case and dropping punctuation and spaces): `gemini-3.5-transcribe` latency p50 2.9 s / p95 3.4 s,
+  error rate 0.000 in every language; `gemini-3.5-flash-lite` p50 3.0 / p95 3.8 s, 0.001 (one 明朝 for 明日); `gemini-3.1-flash-lite` p50 3.1 / p95 3.6 s, 0.007 (writes Traditional for the Simplified ZH clip: 0.119);
+  `gemini-3.8-flash` p50 3.7 / p95 5.0 s, 0.000, but it thinks (60 thought tokens on a 3 s clip) and costs 5x Flash-Lite. **10-15 s clips** (a phrase repeated, 18 calls): Flash-Lite p50 3.9 s / p95 8.6 s (two outliers of
+  8.6 s in 18; the rest 2.9-6.1 s), error rate 0.004 (the same 明朝 slip); the dedicated model p50 2.9 s (13 calls, 2.7-4.3 s) but it collapsed the repeated Korean phrase (0.667: an artifact of repeating, not of accuracy).
+  `audio/mp4` (AAC), `audio/ogg` and `audio/webm` (Opus) clips made by ffmpeg were accepted by the dedicated model and by Flash-Lite with an error rate of 0 (a `gemini-3.8-flash-lite` model does not exist: 404).
+  Cost per audio minute from the usage: Flash-Lite 3.5 $0.0011, 3.1 Flash-Lite $0.0013, 3.8 Flash $0.0061, the dedicated model $0.0030 for input plus about $0.0026 for its output (the docs' blend is $0.005).
+  **Quota:** the dedicated model answered `429` to bursts of sequential calls (5 throttled calls in the matrix run, waited out) and, after about 190 calls in the day, `429` with `Retry-After: 23593` (6.5 hours): its
+  quota is a small daily one on this key; Flash-Lite never throttled. **Default route: `google:gemini-3.5-flash-lite`, then `google:gemini-3.5-transcribe`** (another quota bucket, so a throttled first entry
+  falls through): the same accuracy for about a fifth of the price at the same latency and without the tight quota; the dedicated model's `custom_vocabulary` is the reason to keep it behind.
+- **Tests.** No network in CI: both adapters on recorded answers served by a loopback server (`TranscriptionAdaptersTest`: request shape incl. the multipart form and the Gemini JSON, auth header, error mapping, garbled thresholds,
+  usage and cost, the private-host URL rule, no key or text in logs), the router (`RoutedTranscriptionTest`), the capability states (`LearningCapabilitiesTest`), and on PostgreSQL with the Stub the flow (`SpeechInputIntegrationTest`:
+  202 -> poll -> DONE, replay and conflict, 413, types, durations, keys, consent required/outdated/withdrawn, rate limit (21st is 429 with `Retry-After`), the day limit (409 `USAGE_LIMIT_REACHED`) and the in-flight
+  reservation, audio gone after the transcription, foreign id 404, expiry purge, overdue and dead inputs, fenced settlement, hints), `SpeechRolesIntegrationTest` (role `api`) and `SpeechCapabilityIntegrationTest` (flag off).
+  Opt-in `MNEMA_AI_LIVE=true ... --tests '*SttLive*'` (`MNEMA_AI_GOOGLE_API_KEY` for Gemini called directly, `MNEMA_AI_STT_BASE_URL` for the container, a clip in `MNEMA_STT_LIVE_WAV`); skipped without them.
+- **Before the self-hosted route.** It needs the owner's approval of a new runtime dependency (a Python container with torch/ONNX, GigaAM-v3 for Russian and Qwen3-ASR 0.6B for the rest, model downloads) and a run inside the
+  2 vCPU / 2.5 GB budget; then `learning.ai.routes.stt-ru=selfhost:gigaam-v3` and `stt=selfhost:qwen3-asr-0.6b,google:gemini-3.5-flash-lite`, `MNEMA_AI_STT_BASE_URL`, and the benchmark of 5-15 s clips (RU/KO/JA/ZH) against the
+  Gemini numbers above.
 
 ## AI assessment of free explanations (#292)
 
@@ -809,8 +889,8 @@ capacity evidence.
 - `GET /api/capabilities` (authenticated, `private, no-store`) reports
   `aiAssessment` and `speechToText` as `{available, reason}`. `speechToText` is
   available only when `learning.features.speech-to-text.enabled` is true **and** a
-  `SpeechToTextProvider` bean exists (none today, so it stays `DISABLED` or
-  `PROVIDER_NOT_CONFIGURED`). `aiAssessment` is available when
+  `Transcription` route is usable (a self-hosted container, Gemini through the egress proxy, or the Stub); see
+  [Speech input (#298)](#speech-input-298). `aiAssessment` is available when
   `learning.features.ai-assessment.enabled` is true **and** the `assess` route has a usable
   adapter (a key or the Stub) and a healthy route (`AiAvailability.assessment()`): see
   [AI assessment (#292)](#ai-assessment-of-free-explanations-292). Candidates whose evaluator
@@ -958,13 +1038,13 @@ and the UI (AI-04+) build on it; nothing here debits the user's quota, it only r
   step id and attempt) returns `AiResult<TextResponse>`: text, finish reason, usage `{promptTokens, cacheHitTokens,
   cacheMissTokens, completionTokens}`, cost in micro-USD, provider request id and the route used. A failure is a sealed
   `AiFailure` (`RATE_LIMITED`, `TRANSIENT`, `TIMEOUT`, `INVALID_OUTPUT`, `REFUSAL`, `BUDGET_EXHAUSTED`, `NOT_CONFIGURED`,
-  `CIRCUIT_OPEN`) with fixed detail codes, never text. `SpeechSynthesis` (#297) and `ImageSearch` (#296) have implementations;
-  `WebSearch` (#299) has implementations; `Transcription`, `ImageGeneration` and `VideoGeneration` are interfaces only.
+  `CIRCUIT_OPEN`) with fixed detail codes, never text. `SpeechSynthesis` (#297), `ImageSearch` (#296), `WebSearch` (#299) and `Transcription` (#298) have implementations;
+  `ImageGeneration` and `VideoGeneration` are interfaces only.
 - **Adapter.** `OpenAiCompatibleAdapter` on the JDK `HttpClient` and Jackson 3 trees: no redirects, a connect limit, one
   deadline over headers and body, an idle limit for SSE (a virtual-thread watchdog closes the stream), a hard body cap, and
   error bodies are never read. DeepSeek: `thinking` is disabled explicitly (enabled on the plan routes), `user_id`, `prompt_cache_hit/miss_tokens`.
   GigaChat: OAuth exchange of the authorization key (`GigaChatTokens`, covered by a recorded fixture only, not yet run
-  against the live service) and `precached_prompt_tokens`. OpenRouter: config and adapter only, no default route.
+  against the live service) and `precached_prompt_tokens`. OpenRouter: the second entry of every DeepSeek route (the same DeepSeek models; `reasoning` is `effort: none` except on the planner routes, where it is `enabled`), owner decision 2026-10-04; GigaChat stays last until its key exists.
 - **Routing and failure policy** (`RoutedTextGeneration`). 429: wait `max(Retry-After, jitter)` and retry up to six
   times, never past the deadline (a longer `Retry-After` is handed back as `RATE_LIMITED`); 5xx, network and idle/connect
   timeouts (response headers must arrive within `learning.ai.transport.first-byte`, so a silent provider times out with deadline
@@ -997,7 +1077,7 @@ and the UI (AI-04+) build on it; nothing here debits the user's quota, it only r
   startup error): the answer is a pure function of the request, MBM output is one of
   five documents copied from the MBM valid fixtures (a test keeps them byte-equal to the contract and compiling), and the
   markers `[[stub:rate-limit]]`, `[[stub:transient]]`, `[[stub:timeout]]`, `[[stub:refusal]]`, `[[stub:invalid]]` and
-  `[[stub:invalid-mbm]]` simulate failures; the two `invalid` markers stop applying once a repair segment is present. A grading request (the `<grader>` rules of the assessment prompt) is answered by `StubAssessments` (markers `[[stub:assess-*]]` in the learner answer, see AI assessment).
+  `[[stub:invalid-mbm]]` simulate failures; the two `invalid` markers stop applying once a repair segment is present. A first material answer (not an edit, not a repair) gets the media the task line allows appended at answer time, so a local run creates slots (the five documents themselves stay byte-equal to the fixtures): for `картинка из поиска (::image mode=search)` a blank line and `::image{slot="i1" mode="search" alt="Иллюстрация к материалу"}` with the text of `<request>` as the query (one line, <=300, `[[stub:...]]` markers kept so the image markers work end to end; `illustration` when empty), for `аудио (::audio)` `::audio{slot="a1" lang="ru" title="Озвучка"}` with the document's first heading (<=600; `Озвучка` without one). A grading request (the `<grader>` rules of the assessment prompt) is answered by `StubAssessments` (markers `[[stub:assess-*]]` in the learner answer, see AI assessment).
 - **Prompt library** (`ai.prompt`). `PromptLibrary` loads `ai/prompts/v*/**` strictly (front matter keys, version equals
   directory, no placeholder in the static layers). `PromptRenderer` fills `{{name}}` in one pass, so a placeholder inside
   data stays inert; text values are redacted (`Redactor`: e-mail, Luhn-valid cards, phone forms) and escaped, block values
@@ -1012,7 +1092,7 @@ and the UI (AI-04+) build on it; nothing here debits the user's quota, it only r
   documented in [selfhost-local](../../../docs/deploy/selfhost-local.md#ai-provider-layer-local).
 - Keys are listed in the [runtime policy index](../../../docs/engineering/runtime-policy-index.md).
 
-Fresh Learning migrations V1–V28 are the database source of truth. V28 adds the generation tables (below) and, where the role
+Fresh Learning migrations V1–V37 are the database source of truth (V37 adds the speech input tables and the `STT` capability of the call journal, #298). V28 adds the generation tables (below) and, where the role
 may, `pg_trgm`. V27 adds `ai_provider_call` (the provider-call journal). V21 (unified exercise
 mechanics) fails closed when pre-#266 exercise data exists: use a fresh local database. V23
 only widens the exercise type and answer-key kind constraints for `ORDER` and `CATEGORIZE`

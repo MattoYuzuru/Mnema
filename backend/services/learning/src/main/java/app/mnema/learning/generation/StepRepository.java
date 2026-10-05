@@ -265,6 +265,16 @@ class StepRepository {
                 .param("id", sessionId).query(Boolean.class).single();
     }
 
+    /**
+     * Whether an image search step of this slot (the initial step or a turn's) is open and not asked to stop: the one that will still decide the
+     * slot's fate. A step that was asked to stop (the slot was handed to a turn) ends without touching the slot, so it does not count.
+     */
+    boolean hasLiveSlotStep(UUID artifactId, String slotKey) {
+        return jdbc.sql("SELECT EXISTS (SELECT 1 FROM app_learning.generation_step WHERE artifact_id=:id AND kind='IMAGE_SEARCH' "
+                        + "AND input->>'slotKey'=:key AND NOT cancel_requested AND state IN ('WAITING_DEPENDENCIES','READY','RUNNING','WAITING_EXTERNAL'))")
+                .param("id", artifactId).param("key", slotKey).query(Boolean.class).single();
+    }
+
     /** A READY step, locked, for a decision taken without a claim (its lifetime ran out while it waited). */
     Optional<Step> lockReady(UUID stepId) {
         return jdbc.sql("SELECT " + COLUMNS + " FROM app_learning.generation_step WHERE step_id=:id AND state='READY' FOR UPDATE")

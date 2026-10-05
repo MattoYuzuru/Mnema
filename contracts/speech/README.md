@@ -17,7 +17,7 @@ user input from then on (a Study answer carries `answerSource: SPEECH`, contract
   `{required: {version, processing}, accepted: {version, processing, acceptedAt} | null}` where `processing` is `RU` (self-host in
   Russia) or `ABROAD` (Gemini through the egress gateway; audio leaves Russia de-identified). `PUT /api/speech-consent
   {version, processing}` records it (idempotent; a stale `version`/`processing` is `409 SPEECH_CONSENT_OUTDATED`). The required
-  version changes when the active route's processing region changes, so a move to a foreign route asks again.
+  version changes when the active route's processing region changes, so a move to a foreign route asks again. The admitted region is stored with each input and re-checked when it is transcribed; the router never uses a route entry outside the consented region (ABROAD covers RU, not the reverse).
   `DELETE /api/speech-consent` withdraws it. `version` is a string (`speech-2026-10`); `PUT` answers `200` with the `GET` body, `DELETE`
   answers `204` (also when nothing was accepted). The UI shows the disclosure on the first microphone press.
 
@@ -32,12 +32,12 @@ user input from then on (a Study answer carries `answerSource: SPEECH`, contract
 States: `QUEUED → TRANSCRIBING → DONE | FAILED`. `text` is set only when `DONE` (may be empty: then `errorCode` is
 `NO_SPEECH` and the state is `FAILED`); `seconds` is the metered duration; `garbled` is true when the provider flags low
 confidence (the AI grader then sends a spoken Study answer to self-check, contracts/study); `errorCode` when `FAILED`:
-`UNAVAILABLE` (every route failed or the deadline passed — never the learner's fault), `NO_SPEECH`, `UNSUPPORTED_AUDIO` (the
-provider could not decode it), `TOO_LONG` (the provider measured more than 60 s). The client polls every `pollAfterMs` (300–500
+`UNAVAILABLE` (every route failed or the deadline passed, the consent was withdrawn, outdated or narrowed after admission, or the metered seconds no longer fit the fair-use window — never the learner's fault), `NO_SPEECH`, `UNSUPPORTED_AUDIO` (the
+provider could not decode it), `TOO_LONG` (the provider measured more than 60 s, or more than the declared duration plus max(2 s, 20 %)). The client polls every `pollAfterMs` (300–500
 ms) while the tab is visible and stops at a terminal state; the server's deadline per input is `PT30S`.
 
 Errors (problem+json, the platform's stable schema): `400 INVALID_REQUEST` (missing/invalid header or query, unsupported
-`Content-Type`, empty body, duration out of range, foreign or unknown `deckId` is `404 RESOURCE_NOT_FOUND`), `413
+`Content-Type`, empty body, duration out of range, a body implausibly large for the declared duration (more than 32 KiB + seconds × 16 KiB/s for ogg/webm, 32 KiB/s for mp4, 40 KiB/s for mpeg), foreign or unknown `deckId` is `404 RESOURCE_NOT_FOUND`), `413
 PAYLOAD_TOO_LARGE` (> 2 MiB), `409 CAPABILITY_UNAVAILABLE` (`capability: speechToText`, reason), `409
 SPEECH_CONSENT_REQUIRED` (no or outdated consent for the active processing region), `409 USAGE_LIMIT_REACHED` (`bucket:
 STT`, `window: DAY | MONTH`, remaining and `renewsAt` as in contracts/usage), `429 RATE_LIMITED` with `Retry-After` (more than

@@ -15,6 +15,7 @@ from typing import Any
 
 
 SERVICES = ("identity-account", "learning")
+VPS_SERVICES = (*SERVICES, "frontend", "postgres")
 BLOCKING_SEVERITIES = {"HIGH", "CRITICAL"}
 SEVERITIES = {"UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL"}
 MAX_EXCEPTION_DAYS = 30
@@ -22,7 +23,7 @@ SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 IMAGE_PATTERN = re.compile(
     r"^ghcr\.io/(?P<repository>[a-z0-9_.-]+/[a-z0-9_.-]+)/"
-    r"(?P<service>identity-account|learning)@(?P<digest>sha256:[0-9a-f]{64})$"
+    r"(?P<service>identity-account|learning|frontend|postgres)@(?P<digest>sha256:[0-9a-f]{64})$"
 )
 OWNER_PATTERN = re.compile(r"^@[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$")
 FINDING_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:+-]{2,127}$")
@@ -316,7 +317,7 @@ def vulnerability_records(report: Any, image: str) -> list[dict[str, str]]:
 
 
 def evaluate(args: argparse.Namespace) -> None:
-    if args.service not in SERVICES:
+    if args.service not in VPS_SERVICES:
         raise EvidenceFailure("unsupported service")
     if not SHA_PATTERN.fullmatch(args.source_commit):
         raise EvidenceFailure("source commit must be a full SHA")
@@ -586,7 +587,8 @@ def aggregate(args: argparse.Namespace) -> None:
     exceptions = load_exceptions(args.exceptions, today)
     images: list[dict[str, Any]] = []
     digests: dict[str, str] = {}
-    for service in SERVICES:
+    services = VPS_SERVICES if getattr(args, "include_frontend", False) else SERVICES
+    for service in services:
         digest_path = args.digests_dir / f"{service}.digest"
         try:
             digest = digest_path.read_text(encoding="utf-8").strip()
@@ -763,6 +765,8 @@ def parser() -> argparse.ArgumentParser:
     aggregate_parser.add_argument("--build-run-attempt", required=True, type=int)
     aggregate_parser.add_argument("--output", required=True, type=Path)
     aggregate_parser.add_argument("--now")
+    aggregate_parser.add_argument("--include-frontend", action="store_true",
+                                  help="require the complete three-image VPS candidate")
     aggregate_parser.set_defaults(handler=aggregate)
 
     verify_parser = commands.add_parser("verify-release", help="verify evidence against a manifest")

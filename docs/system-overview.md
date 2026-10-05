@@ -129,14 +129,14 @@ Acceptance #74: [integrated main evidence](./engineering/evidence/epic-74/verifi
 
 ## Delivery boundary
 
-Общий сервер недоступен. Готовность заканчивается защищённым squash merge и
-проверкой `main`; staging, SSH, deployment, recovery и production verification не
-выполняются и не ожидаются. См.
-[local development delivery](./operations/local-development-delivery.md).
+Production: `mnema.app`, Identity: `auth.mnema.app`, RU VPS `135.106.175.30`
+(`ssh mnema`). Публикация четырёх immutable images и protected VPS rollout доступны
+для разработки. Merge и live verification — разные результаты; точный путь и
+admission описаны в [production delivery](./operations/production-delivery.md).
 
 ## Следующие этапы
 
-1. #147 — отдельный production cutover/purge gate; сейчас не разрешён и не готов.
+1. #147 — отдельная судьба старых данных и purge; новый production использует новую БД и сохраняет старые данные.
 2. #77 — реактивированный AI-слой: [refinement и прогоны](./engineering/epic-77-refinement.md),
    [архитектура](./architecture/ai-generation-platform.md).
 

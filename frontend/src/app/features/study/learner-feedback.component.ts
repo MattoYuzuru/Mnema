@@ -138,7 +138,6 @@ export function feedbackTitle(feedback: AttemptFeedback): string {
       :host { display: block; min-inline-size: 0; }
       .feedback { display: grid; gap: 1rem; min-inline-size: 0; }
       p { margin: 0; }
-      .notice { border-inline-start: 4px solid var(--mn-ink); padding: .8rem 1rem; background: var(--mn-soft); }
       .pair-feedback { display: grid; gap: .9rem; margin: 0; padding: 0; list-style: none; }
       .pair-feedback li { min-inline-size: 0; display: grid; gap: .5rem; border-block-start: 1px solid var(--mn-rule); padding-block-start: .75rem; }
       .sequence { display: grid; gap: .6rem; min-inline-size: 0; }

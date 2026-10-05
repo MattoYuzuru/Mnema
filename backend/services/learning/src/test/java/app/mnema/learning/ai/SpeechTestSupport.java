@@ -11,6 +11,7 @@ import java.util.UUID;
 /** Builders for the speech tests: configuration, recorded fixtures and a recording journal. */
 final class SpeechTestSupport {
     static final AiProperties.Model GEMINI = new AiProperties.Model("google", "gemini-3.8-flash-tts", 500_000, 500_000, 9_000_000);
+    static final AiProperties.Model GEMINI_LITE = new AiProperties.Model("google", "gemini-3.8-flash-lite-tts", 500_000, 500_000, 6_000_000);
     static final String GOOGLE_KEY = "google-SECRET-KEY-98765";
     static final String YANDEX_KEY = "yandex-SECRET-KEY-43210";
     static final BigDecimal RATE = BigDecimal.valueOf(85);
@@ -20,7 +21,7 @@ final class SpeechTestSupport {
     static AiProperties properties(List<String> tts, List<String> ttsRu, Map<String, AiProperties.Provider> providers) {
         AiProperties base = AiTestSupport.properties("", AiTestSupport.routes(List.of(), List.of(), List.of()), providers);
         return new AiProperties(base.provider(), new AiProperties.Routes(List.of(), List.of(), List.of(), Duration.ofSeconds(8), List.of(), List.of(), tts, ttsRu),
-                providers, List.of(AiTestSupport.FLASH, GEMINI), base.transport(), base.retry(), base.breaker(), base.permits(), base.budget(), base.userKey(),
+                providers, List.of(AiTestSupport.FLASH, GEMINI, GEMINI_LITE), base.transport(), base.retry(), base.breaker(), base.permits(), base.budget(), base.userKey(),
                 base.prompt());
     }
 
