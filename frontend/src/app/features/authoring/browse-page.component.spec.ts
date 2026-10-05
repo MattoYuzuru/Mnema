@@ -136,7 +136,7 @@ describe('BrowsePageComponent', () => {
             expect(ask()?.querySelector('.ask-trigger')?.textContent).toContain('Попросить Мнему…');
             expect(ask()?.querySelector('textarea')).toBeNull();
             // between the header and the sheet
-            const sheet = (fixture.nativeElement as HTMLElement).querySelector('article.sheet')!;
+            const sheet = (fixture.nativeElement as HTMLElement).querySelector('article.paper-surface')!;
             expect(ask()!.compareDocumentPosition(sheet) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
             ask()!.querySelector<HTMLButtonElement>('.ask-trigger')!.click();
             fixture.detectChanges();

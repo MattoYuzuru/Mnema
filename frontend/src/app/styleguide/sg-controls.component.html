@@ -1,0 +1,137 @@
+<section class="sg-section" id="signature" aria-labelledby="signature-title">
+  <p class="eyebrow">Фирменные приёмы</p>
+  <h2 id="signature-title">Фирменные приёмы</h2>
+  <p class="sg-lede">Три узнаваемых приёма. Каждый ограничен: если ставишь второй такой же на экран, приём перестаёт быть сигналом.</p>
+  <app-sg-specimen title="Кнопка со змейкой" selector=".generate-cta"
+    when="Главное действие запуска ИИ: «Создать», «Добавить упражнения». Не больше одной на экран, не вместе с .button. Змейка бежит по рамке при наведении и фокусе три круга; при reduced motion остаётся статичный блик."
+    [tokens]="['--mn-ink', '--mn-hint', '--mn-on-ink']" usage='<button type="button" class="generate-cta">Создать материал</button>
+<button type="button" class="generate-cta" aria-disabled="true">Лимит исчерпан</button>'>
+    <div class="actions">
+      <button type="button" class="generate-cta">Создать материал</button>
+      <button type="button" class="generate-cta" aria-disabled="true">Лимит исчерпан</button>
+    </div>
+  </app-sg-specimen>
+  <app-sg-specimen title="Удаление удержанием" selector="<app-hold-to-delete-button>"
+    when="Любое необратимое удаление данных (колода, материал, упражнение, пакет выбранного). Сначала нажатие «взводит» кнопку, затем нужно удерживать 3 с; Esc и клик вне отменяют. consequence называет, что исчезнет."
+    [tokens]="['--mn-danger', '--mn-ink', '--mn-on-ink']"
+    usage='<app-hold-to-delete-button label="Удалить материал" consequence="Материал и его упражнения исчезнут." (confirmed)="delete()" />'>
+    <app-hold-to-delete-button label="Удалить материал" consequence="Материал и его упражнения исчезнут." (confirmed)="deleted.set(true)" />
+    <p class="hint" role="status">{{ deleted() ? 'Удержание завершено: в приложении здесь вызывается удаление.' : 'Нажмите, затем удерживайте кнопку.' }}</p>
+  </app-sg-specimen>
+  <app-sg-specimen title="Волна и чернила" selector=".button, .item-row, .deck-row"
+    when="Заливка волной при наведении и чернильное появление блоков описаны в разделе «Движение»; их не нужно подключать отдельно."
+    [tokens]="['--mn-wave-duration', '--mn-list-wave-duration']">
+    <p class="hint">См. раздел «Движение».</p>
+  </app-sg-specimen>
+</section>
+
+<section class="sg-section" id="buttons" aria-labelledby="buttons-title">
+  <p class="eyebrow">Компоненты</p>
+  <h2 id="buttons-title">Кнопки</h2>
+  <p class="sg-lede">Один класс <code>.button</code> с модификаторами. Страница добавляет только раскладку (<code>.actions .button</code>), а не второй вид кнопки.
+    Подпись — глагол; недоступное действие остаётся в потоке с <code>aria-disabled</code>, если причину нужно объяснить.</p>
+  <app-sg-specimen title="Основная и вторичная" selector=".button.primary, .button"
+    when="Primary — одно главное действие области («Сохранить», «Добавить материал»). Вторичная (контур) — всё остальное в ряду. Ссылка-переход оформляется тем же классом на a."
+    [tokens]="['--mn-ink', '--mn-on-ink', '--mn-touch-min', '--mn-radius']" [usage]="buttonUsage">
+    <div class="actions">
+      <button type="button" class="button primary">Сохранить</button>
+      <button type="button" class="button">Отмена</button>
+      <a class="button primary" href="/styleguide" (click)="$event.preventDefault()">Мои колоды →</a>
+    </div>
+  </app-sg-specimen>
+  <app-sg-specimen title="Тихая и малая" selector=".button.quiet, .button.small"
+    when="Quiet — действие третьего плана рядом с основным («Закрыть», «Пропустить»): только подчёркивание. Small — действие внутри строки формы («Убрать вариант 2»); у каждой такой кнопки свой aria-label."
+    [tokens]="['--mn-ink', '--mn-touch-min']">
+    <div class="actions">
+      <button type="button" class="button quiet">Закрыть</button>
+      <button type="button" class="button small" aria-label="Убрать вариант 2">Убрать</button>
+    </div>
+  </app-sg-specimen>
+  <app-sg-specimen title="Недоступные" selector=":disabled, [aria-disabled='true']"
+    when="disabled — действие невозможно и причина очевидна. aria-disabled — кнопка остаётся в порядке фокуса и по нажатию объясняет причину (например, не хватает лимита)."
+    [tokens]="['--mn-ink']">
+    <div class="actions">
+      <button type="button" class="button primary" disabled>Сохранить</button>
+      <button type="button" class="button" aria-disabled="true">Добавить упражнения</button>
+    </div>
+  </app-sg-specimen>
+  <app-sg-specimen title="Кнопка в шапке" selector=".button.mono"
+    when="Только действия сессии в шапке («Войти», «Выйти»): тот же .button с модификатором .mono (mono, 0,72 rem). На страницах не использовать."
+    [tokens]="['--mn-font-mono', '--mn-ink']" usage='<button type="button" class="button mono">Выйти</button>'>
+    <div class="actions"><button type="button" class="button mono">Выйти</button></div>
+  </app-sg-specimen>
+  <p class="notice warning" role="note">Правило удаления: данные удаляются только через «Удаление удержанием» (раздел «Фирменные приёмы»). Убрать строку из ещё не сохранённой формы — обычная
+    <code>.button.small</code> «Убрать»; красных кнопок удаления в продукте нет.</p>
+</section>
+
+<section class="sg-section" id="fields" aria-labelledby="fields-title">
+  <p class="eyebrow">Компоненты</p>
+  <h2 id="fields-title">Поля ввода</h2>
+  <p class="sg-lede">Нативные <code>input</code>, <code>textarea</code> и <code>app-mnema-select</code>: подпись всегда видна, ввод не мельче 16 px, граница поля 3:1.
+    Ошибка — предложение под полем с <code>aria-invalid</code> и <code>aria-describedby</code>.</p>
+  <app-sg-specimen title="Текстовое поле" selector=".field + label + input + .hint + .field-error"
+    when="Любой короткий текстовый ввод. Подсказка (.hint) отвечает на «что вводить», ошибка (.field-error) — «что исправить». Не заменяйте подпись placeholder."
+    [tokens]="['--mn-field-border', '--mn-sheet', '--mn-danger', '--mn-muted']"
+    usage='<div class="field">
+  <label for="title">Название</label>
+  <input id="title" aria-invalid="true" aria-describedby="title-hint title-error" />
+  <p class="hint" id="title-hint">Коротко, как в оглавлении.</p>
+  <p class="field-error" id="title-error">Введите название.</p>
+</div>'>
+    <div class="field sg-field">
+      <label for="sg-title">Название</label>
+      <input id="sg-title" [value]="title()" (input)="onTitle($event)" [attr.aria-invalid]="titleInvalid() ? 'true' : null"
+        aria-describedby="sg-title-hint sg-title-error" autocomplete="off" />
+      <p class="hint" id="sg-title-hint">Коротко, как в оглавлении.</p>
+      @if (titleInvalid()) { <p class="field-error" id="sg-title-error">Введите название.</p> } @else { <span id="sg-title-error"></span> }
+    </div>
+  </app-sg-specimen>
+  <app-sg-specimen title="Многострочное поле" selector="textarea"
+    when="Заметка, описание, развёрнутый ответ. Растягивается по вертикали, ширина — контейнера."
+    [tokens]="['--mn-field-border', '--mn-sheet']">
+    <div class="field sg-field">
+      <label for="sg-note">Заметка</label>
+      <textarea id="sg-note" rows="3" [value]="note()" (input)="onNote($event)" aria-describedby="sg-note-hint"></textarea>
+      <p class="hint" id="sg-note-hint">Сохранится в «На потом».</p>
+    </div>
+  </app-sg-specimen>
+  <app-sg-specimen title="Выпадающий выбор" selector="<app-mnema-select>"
+    when="Выбор из списка, где вариантов больше пяти или подписи длинные. Для двух–пяти коротких вариантов используйте «Сегменты» (раздел «Выбор»). Системного select в продукте нет."
+    [tokens]="['--mn-field-border', '--mn-soft', '--mn-ink']"
+    usage='<app-mnema-select controlId="lang" label="Язык" [options]="languages" [value]="language()" (valueChange)="language.set($event)" />'>
+    <div class="sg-field"><app-mnema-select controlId="sg-language" label="Язык" [options]="languages" [value]="language()" (valueChange)="language.set($event)" /></div>
+  </app-sg-specimen>
+</section>
+
+<section class="sg-section" id="choice" aria-labelledby="choice-title">
+  <p class="eyebrow">Компоненты</p>
+  <h2 id="choice-title">Выбор</h2>
+  <p class="sg-lede">Радио и флажки — нативные input в общем оформлении; несколько коротких вариантов — сегменты; варианты упражнения — список с радио или флажками.</p>
+  <app-sg-specimen title="Радио и флажок" selector="input[type=radio], input[type=checkbox]"
+    when="Простой выбор в форме. Подпись — настоящий label, область нажатия — вся строка; цвет не единственный признак выбора."
+    [tokens]="['--mn-ink', '--mn-sheet', '--mn-on-ink']"
+    usage='<label><input type="checkbox" checked /> Показывать подсказки</label>'>
+    <div class="sg-stack">
+      <label class="sg-check"><input type="checkbox" checked /> Показывать подсказки</label>
+      <label class="sg-check"><input type="checkbox" /> Озвучивать ответ</label>
+      <label class="sg-check"><input type="radio" name="sg-radio" checked /> Мягкая проверка</label>
+      <label class="sg-check"><input type="radio" name="sg-radio" /> Строгая проверка</label>
+      <label class="sg-check"><input type="checkbox" disabled /> Недоступно</label>
+    </div>
+  </app-sg-specimen>
+  <app-sg-specimen title="Сегменты" selector="<app-segmented-choice>"
+    when="Один выбор из 2–5 коротких вариантов, которые важно видеть сразу. У выбранного варианта может быть живое пояснение; длинное объяснение — в toggletip рядом."
+    [tokens]="['--mn-ink', '--mn-on-ink', '--mn-field-border', '--mn-muted']"
+    usage='<app-segmented-choice legend="Проверка" [options]="options" [(value)]="strictness">
+  <app-toggletip topic="проверки">Строго — ответ должен совпасть с эталоном.</app-toggletip>
+</app-segmented-choice>'>
+    <app-segmented-choice legend="Проверка" [options]="strictnessOptions" [(value)]="strictness">
+      <app-toggletip topic="проверки">Мягко засчитывает опечатки, строго требует точного совпадения с эталоном.</app-toggletip>
+    </app-segmented-choice>
+  </app-sg-specimen>
+  <app-sg-specimen title="Варианты ответа" selector="<app-choice-list>"
+    when="Варианты упражнения «Выбор»: радио для одного ответа, флажки для нескольких. Только текст подписи внутри label; плееры и картинки соседние."
+    [tokens]="['--mn-field-border', '--mn-ink', '--mn-soft']">
+    <app-choice-list [options]="choiceOptions" selectionMode="SINGLE" idPrefix="sg-choice" [selected]="picked()" (selectedChange)="pick($event)" />
+  </app-sg-specimen>
+</section>

@@ -20,13 +20,7 @@ const REASON_TEXT: Readonly<Record<SelfCheckReason, string>> = {
 const SHARED_STYLES = `
   :host { display: block; min-inline-size: 0; }
   p, h3, ul, dl, dd { margin: 0; }
-  .hint { color: var(--mn-muted); font-size: .9rem; line-height: 1.5; }
-  .notice { border-inline-start: 4px solid var(--mn-ink); padding: .8rem 1rem; background: var(--mn-soft); }
-  .notice.error { border-color: var(--mn-danger); }
   .answer-text { white-space: pre-wrap; overflow-wrap: anywhere; }
-  .button { min-block-size: var(--mn-touch-min, 2.75rem); display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--mn-ink); border-radius: var(--mn-radius, 2px); padding: .65rem 1rem; color: var(--mn-ink); background: transparent; font: 650 .95rem/1.2 var(--mn-font-body, system-ui, sans-serif); text-align: center; cursor: pointer; }
-  .button:not(:disabled):hover { text-decoration: underline; text-underline-offset: .2em; }
-  .button:disabled, .button[aria-disabled='true'] { cursor: not-allowed; opacity: .6; }
   :where(a, button, input, textarea, summary):focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 3px; }
   .visually-hidden { position: absolute; inline-size: 1px; block-size: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 `;

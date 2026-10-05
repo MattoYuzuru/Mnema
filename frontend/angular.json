@@ -45,6 +45,15 @@
             }
           }
         },
+        "serve": {
+          "builder": "@angular/build:dev-server",
+          "options": { "host": "localhost" },
+          "configurations": {
+            "development": { "buildTarget": "mnema-frontend:build:development" },
+            "production": { "buildTarget": "mnema-frontend:build:production" }
+          },
+          "defaultConfiguration": "development"
+        },
         "test": {
           "builder": "@angular/build:unit-test",
           "options": {

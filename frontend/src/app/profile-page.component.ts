@@ -69,7 +69,7 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
                 <textarea id="profile-bio" formControlName="bio" maxlength="200" rows="4"></textarea>
                 @if (saveError()) { <p class="error" role="alert">{{ saveError() }}</p> }
                 @if (saveSuccess()) { <p class="success" role="status">Изменения сохранены.</p> }
-                <button type="submit" [disabled]="form.invalid || saving()">{{ saving() ? 'Сохраняем…' : 'Сохранить профиль' }}</button>
+                <button type="submit" class="button primary" [disabled]="form.invalid || saving()">{{ saving() ? 'Сохраняем…' : 'Сохранить профиль' }}</button>
               </form>
             </section>
             <section id="ai-budget" class="sheet" aria-labelledby="ai-budget-heading">
@@ -101,14 +101,14 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
                 <label for="confirm-password">Повторите новый пароль</label>
                 <input id="confirm-password" type="password" formControlName="confirmPassword" autocomplete="new-password" />
                 @if (passwordError()) { <p class="error" role="alert">{{ passwordError() }}</p> }
-                <button type="submit" [disabled]="passwordForm.invalid || passwordBusy()">Сменить пароль</button>
+                <button type="submit" class="button primary" [disabled]="passwordForm.invalid || passwordBusy()">Сменить пароль</button>
               </form>
             </section>
           }
           </div>
         } @else {
           <p class="error" role="alert">{{ loadError() || 'Не удалось открыть профиль.' }}</p>
-          <button type="button" (click)="load()">Повторить</button>
+          <button type="button" class="button primary" (click)="load()">Повторить</button>
         }
       </section>
     `,
@@ -118,7 +118,6 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
       .profile-page { inline-size: min(100%, var(--mn-workspace-width)); margin-inline: auto; padding: clamp(1.5rem, 3vw, 2.5rem) clamp(1.125rem, 5vw, 3rem); }
       .back-link { display: inline-flex; align-items: center; min-block-size: var(--mn-touch-min, 46px); color: var(--mn-ink); text-underline-offset: .22em; }
       header { max-inline-size: 45rem; padding-block: clamp(1.25rem, 3vw, 2rem); }
-      .eyebrow { margin: 0 0 .45rem; color: var(--mn-ink); font: 700 .75rem/1.4 var(--mn-font-mono, ui-monospace, monospace); letter-spacing: .12em; text-transform: uppercase; }
       h1, h2 { color: var(--mn-ink); font-family: var(--mn-font-display, Georgia, serif); font-weight: 500; overflow-wrap: anywhere; }
       h1 { margin: .35rem 0 .75rem; font-size: clamp(2.7rem, 7vw, 5rem); line-height: .98; }
       /* The anchor jump (/profile#ai-budget) must leave the heading and its focus ring clear of the viewport edge. */
@@ -143,9 +142,7 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
       textarea { resize: vertical; }
       input[aria-invalid=true] { border: 2px solid var(--mn-danger); }
       input:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible { outline: 3px solid var(--mn-focus); outline-offset: 3px; }
-      button { min-block-size: var(--mn-touch-min, 46px); border: 1px solid var(--mn-ink); border-radius: var(--mn-radius, 2px); padding: .65rem 1.25rem; background: var(--mn-ink); color: var(--mn-on-ink); font: 650 1rem/1.4 var(--mn-font-body, system-ui, sans-serif); cursor: pointer; }
-      button:disabled { opacity: .65; cursor: not-allowed; }
-      .hint, .email { color: var(--mn-muted); font-size: .9rem; }
+      .email { color: var(--mn-muted); font-size: .9rem; }
       .hint { margin: .25rem 0 1.25rem; }
       .email { margin: -.6rem 0 .75rem; overflow-wrap: anywhere; }
       .error { color: var(--mn-danger); }

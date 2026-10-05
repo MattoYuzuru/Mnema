@@ -30,7 +30,7 @@
       @if (problem(); as message) { <p class="note error" role="alert">{{ message }}</p> }
 
       @if (total() === 0) {
-        <section class="empty">
+        <section class="empty-state">
           <h3>Здесь пока пусто</h3>
           <p>Создайте первый материал или перенесите заметку из «На потом».</p>
           <p><a class="button primary" [routerLink]="['/decks', deckId(), 'materials', 'new']">Добавить материал</a></p>

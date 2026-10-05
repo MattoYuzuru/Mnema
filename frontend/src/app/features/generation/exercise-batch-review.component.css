@@ -19,17 +19,10 @@
 .keep:has(:focus-visible) { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 2px; }
 .muted { margin: 0; color: var(--mn-muted); line-height: 1.5; }
 .saved { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; }
-.notice { margin: 0; border-inline-start: 4px solid var(--mn-ink); padding: .75rem 1rem; background: var(--mn-soft); }
-.notice.error { border-color: var(--mn-danger); }
 .placeholder { display: grid; gap: .6rem; }
 .placeholder span { display: block; block-size: 1rem; border-block-end: 1px solid var(--mn-rule); background: var(--mn-soft); }
 .placeholder span:nth-child(2) { inline-size: 88%; }
 .placeholder span:nth-child(3) { inline-size: 64%; }
-.button { min-block-size: var(--mn-touch-min, 2.75rem); min-inline-size: 0; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--mn-ink); border-radius: var(--mn-radius, 2px); padding: .65rem 1rem; color: var(--mn-ink); background: transparent; font: 600 .95rem/1.25 var(--mn-font-body, system-ui, sans-serif); text-align: center; text-decoration: none; overflow-wrap: anywhere; cursor: pointer; }
-.button.primary { color: var(--mn-on-ink); background: var(--mn-ink); }
-.button:not([aria-disabled='true']):hover { text-decoration: underline; text-underline-offset: .2em; }
-.button[aria-disabled='true'] { cursor: not-allowed; opacity: .6; }
-.button:focus-visible, .text-link:focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 3px; }
 .text-link { color: var(--mn-ink); text-underline-offset: .25em; }
 /* The save bar stays in reach while a long batch scrolls; it respects the home indicator and never covers the last card. */
 .review-footer { position: sticky; inset-block-end: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; margin-block-start: .5rem; border-block-start: 2px solid var(--mn-ink); padding: .75rem 0 calc(.75rem + env(safe-area-inset-bottom, 0px)); background: var(--mn-paper, var(--mn-sheet)); }

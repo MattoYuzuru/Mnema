@@ -40,7 +40,7 @@ export function identityErrorMessage(error: unknown): string {
         <h1 id="identity-heading">{{ registering ? 'Место для любопытства' : 'Вернуться к своим материалам' }}</h1>
         @if (auth.status() === 'authenticated') {
           <p data-testid="identity-profile">Вы вошли как {{ auth.user()?.profileUsername || auth.user()?.email }}.</p>
-          <a class="primary-action" routerLink="/decks">Мои колоды →</a>
+          <a class="button primary" routerLink="/decks">Мои колоды →</a>
           <button class="text-action" type="button" data-testid="logout" [disabled]="busy()" (click)="logout()">Выйти из аккаунта</button>
         } @else {
           <p class="intro">{{ registering ? 'Создайте аккаунт через удобный сервис или с почтой, чтобы сохранять свои материалы.' : 'Выберите удобный способ входа.' }}</p>
@@ -54,7 +54,7 @@ export function identityErrorMessage(error: unknown): string {
             }
           </div>
           @if (providerStatus() === 'error') {
-            <p class="field-help" role="status">Не удалось проверить вход через сервисы.
+            <p class="hint" role="status">Не удалось проверить вход через сервисы.
               <button class="text-action" type="button" [disabled]="busy()" (click)="loadProviders()">Повторить</button>
             </p>
           }
@@ -65,7 +65,7 @@ export function identityErrorMessage(error: unknown): string {
               <input id="email" name="email" type="email" autocomplete="email" maxlength="320" [(ngModel)]="email" required email [disabled]="busy()" />
               <label for="username">Логин</label>
               <input id="username" name="username" autocomplete="username" minlength="3" maxlength="50" pattern="[A-Za-z0-9_.-]{3,50}" [(ngModel)]="username" required aria-describedby="username-help" [disabled]="busy()" />
-              <p class="field-help" id="username-help">От 3 до 50 латинских букв, цифр, точек, дефисов или подчёркиваний. Это также ваше начальное имя в профиле.</p>
+              <p class="hint" id="username-help">От 3 до 50 латинских букв, цифр, точек, дефисов или подчёркиваний. Это также ваше начальное имя в профиле.</p>
             } @else {
               <label for="login-name">Логин или почта</label>
               <input id="login-name" name="login" autocomplete="username" maxlength="320" [(ngModel)]="login" required [disabled]="busy()" />
@@ -73,14 +73,14 @@ export function identityErrorMessage(error: unknown): string {
             <label for="password">Пароль</label>
             <input id="password" name="password" type="password" [attr.autocomplete]="registering ? 'new-password' : 'current-password'" [minlength]="registering ? 12 : 1" maxlength="128" [(ngModel)]="password" required [attr.aria-describedby]="registering ? 'password-help' : null" [disabled]="busy()" />
             @if (registering) {
-              <p class="field-help" id="password-help">Не менее 12 символов. Если пароль окажется слишком длинным, попробуйте сократить его.</p>
+              <p class="hint" id="password-help">Не менее 12 символов. Если пароль окажется слишком длинным, попробуйте сократить его.</p>
             }
-            <button class="primary-action" type="submit" [disabled]="busy()">{{ busy() ? 'Подтверждаем…' : (registering ? 'Создать аккаунт →' : 'Войти →') }}</button>
+            <button class="button primary" type="submit" [disabled]="busy()">{{ busy() ? 'Подтверждаем…' : (registering ? 'Создать аккаунт →' : 'Войти →') }}</button>
           </form>
           <p class="switch-mode">{{ registering ? 'Уже есть аккаунт?' : 'Впервые здесь?' }}
             <a [routerLink]="registering ? '/login' : '/register'" [queryParams]="{ returnUrl }">{{ registering ? 'Войти' : 'Создать аккаунт' }}</a>
           </p>
-          <p class="field-help">Защита входа может использовать Cloudflare Turnstile.
+          <p class="hint">Защита входа может использовать Cloudflare Turnstile.
             <a routerLink="/privacy">Обработка данных</a>.</p>
         }
         @if (error()) { <p class="identity-error" role="alert" tabindex="-1">{{ error() }}</p> }

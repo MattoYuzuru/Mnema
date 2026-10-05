@@ -35,7 +35,7 @@ export abstract class MechanicEditorBase {
         <label class="check-line" [attr.for]="idPrefix() + '-ai'">
           <input type="checkbox" role="switch" [id]="idPrefix() + '-ai'" [disabled]="!aiAvailable() && !aiOn()" [checked]="aiOn()"
                  [attr.aria-describedby]="idPrefix() + '-ai-hint'" (change)="setAi($any($event.target).checked)" />
-          <span>Проверять смысл ответа с ИИ</span> <span class="badge">ИИ</span>
+          <span>Проверять смысл ответа с ИИ</span> <span class="stamp">ИИ</span>
         </label>
         <p class="hint" [id]="idPrefix() + '-ai-hint'">{{ aiHint() }}</p>
       </div>
