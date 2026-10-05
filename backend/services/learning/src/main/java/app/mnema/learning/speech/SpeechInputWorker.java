@@ -6,6 +6,7 @@ import app.mnema.learning.ai.AiResult;
 import app.mnema.learning.ai.OpaqueUserKey;
 import app.mnema.learning.ai.Transcription;
 import app.mnema.learning.ai.UserKeys;
+import app.mnema.learning.platform.wake.WakeTarget;
 import app.mnema.learning.speech.SpeechInputRepository.Claim;
 import app.mnema.learning.usage.Bucket;
 import app.mnema.learning.usage.UsageContentionException;
@@ -58,7 +59,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Component
 @ConditionalOnExpression("'${learning.runtime.roles:all}'.trim().toLowerCase() == 'worker' or "
         + "'${learning.runtime.roles:all}'.trim().toLowerCase() == 'all'")
-class SpeechInputWorker implements DisposableBean {
+class SpeechInputWorker implements DisposableBean, WakeTarget {
     private static final Logger LOG = LoggerFactory.getLogger(SpeechInputWorker.class);
     /** The longest text a row holds (the column's limit); a transcript of a 60-second clip is far shorter, so a longer one is a provider fault. */
     static final int MAX_TEXT = 20_000;
@@ -91,8 +92,12 @@ class SpeechInputWorker implements DisposableBean {
         this.permits = new Semaphore(ai.permits().stt());
     }
 
-    /** Asks for a pass over the queue; coalesced, never blocks the caller. */
-    void wake() {
+    @Override
+    public String channel() { return "mnema_speech_inputs"; }
+
+    /** Asks for a pass over the queue; coalesced, never blocks the caller. With {@code roles=worker} the {@code NOTIFY} of an admission (trigger of {@code V40}) calls it. */
+    @Override
+    public void wake() {
         try {
             threads.execute(this::drain);
         } catch (java.util.concurrent.RejectedExecutionException closing) {

@@ -3,6 +3,7 @@ package app.mnema.learning.generation;
 import app.mnema.learning.ai.AiCapability;
 import app.mnema.learning.ai.AiProperties;
 import app.mnema.learning.generation.Rows.Session;
+import app.mnema.learning.platform.wake.WakeTarget;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
@@ -31,7 +32,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * <p>Wake-ups: the {@code afterCommit} of a transaction that created work ({@link #wake}), the end of every run, and the
  * sweeper ({@code learning.generation.worker.sweep-interval}, 2 s), which also recovers expired leases and renews the
- * reservations of running sessions. The table is the source of truth: a lost wake-up costs at most one sweep.
+ * reservations of running sessions. The table is the source of truth: a lost wake-up costs at most one sweep. With {@code roles=worker} the
+ * wake-up of another process's transaction arrives as a {@code NOTIFY} ({@code mnema_generation_steps}, trigger of {@code V40}) on the
+ * {@code PostgresWakeListener}'s connection.
  *
  * <p>Capacity: one permit per capability and instance ({@code learning.ai.permits.*}, text 16), so the dispatcher never
  * runs more steps of a capability than the provider layer would admit, and a soft cap of running steps per account.
@@ -40,7 +43,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Component
 @ConditionalOnExpression("'${learning.runtime.roles:all}'.trim().toLowerCase() == 'worker' or "
         + "'${learning.runtime.roles:all}'.trim().toLowerCase() == 'all'")
-class StepDispatcher implements DisposableBean {
+class StepDispatcher implements DisposableBean, WakeTarget {
     private static final Logger LOG = LoggerFactory.getLogger(StepDispatcher.class);
     private static final int RECOVERY_BATCH = 50;
 
@@ -91,8 +94,12 @@ class StepDispatcher implements DisposableBean {
         }
     }
 
+    @Override
+    public String channel() { return "mnema_generation_steps"; }
+
     /** Asks for a pass over the queue; coalesced, never blocks the caller. */
-    void wake() {
+    @Override
+    public void wake() {
         try {
             threads.execute(this::drain);
         } catch (java.util.concurrent.RejectedExecutionException closing) {

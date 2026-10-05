@@ -234,10 +234,11 @@ public class AssessmentService {
     // ------------------------------------------------------------------------------------------------- grading
 
     /**
-     * The grading request of an answer that is still ASSESSING and has time left, else empty. A read of its own: the runner
-     * calls the provider afterwards with no transaction open.
+     * The grading request of an answer that is still ASSESSING, nobody has taken and has time left, else empty; it takes the answer
+     * ({@link AssessmentRepository#claim}), so that the accepting process and a worker process never grade it twice. A short transaction of its
+     * own: the runner calls the provider afterwards with no transaction open.
      */
-    @Transactional(readOnly = true, timeout = 10)
+    @Transactional(timeout = 10)
     public Optional<GradeRequest> prepare(UUID attemptId) {
         AssessmentRepository.Row row = assessments.find(attemptId).orElse(null);
         if (row == null || !row.state().equals("ASSESSING") || row.response() == null) return Optional.empty();
@@ -245,11 +246,17 @@ public class AssessmentService {
         if (left.compareTo(Duration.ofMillis(250)) < 0) return Optional.empty();
         AttemptRepository.Presentation presentation = attempts.presentation(row.accountId(), row.deckId(), row.sessionId(),
                 row.presentationId()).orElse(null);
-        if (presentation == null) return Optional.empty();
+        if (presentation == null || !assessments.claim(attemptId)) return Optional.empty();
         AnswerSource source = AnswerSource.valueOf(row.answerSource());
         return Optional.of(new GradeRequest(row.accountId(), attemptId, promptText(presentation), "", rubric(presentation),
                 row.response().path("text").asString(""), source, settings.feedbackLanguage(),
                 SemanticStrictness.valueOf(row.strictness()).runs(), left));
+    }
+
+    /** Answers that wait for a grader (nobody has taken them): what the worker's sweep grades when the process that accepted them had no grader. */
+    @Transactional(readOnly = true, timeout = 10)
+    public List<UUID> awaitingGrader(int limit) {
+        return assessments.unclaimed(limit);
     }
 
     /**

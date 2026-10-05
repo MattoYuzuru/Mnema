@@ -42,6 +42,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Each test owns its learner, so tests never see each other's rows or fair-use counters.
  */
 @SpringBootTest(properties = {
+        // the grader of answers is the worker half (a test context is an api process by default)
+        "learning.runtime.roles=all",
         "learning.ai.provider=stub",
         "learning.features.ai-assessment.enabled=true",
         "learning.usage.entitlements.default-plan=PLUS",

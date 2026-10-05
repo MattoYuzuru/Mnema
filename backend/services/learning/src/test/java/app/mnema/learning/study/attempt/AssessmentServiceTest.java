@@ -256,6 +256,8 @@ class AssessmentServiceTest {
         assertThat(service.prepare(attemptId)).as("less than 250 ms left: the sweeper ends it").isEmpty();
 
         when(assessments.find(attemptId)).thenReturn(Optional.of(row("ASSESSING", response, NOW.plusSeconds(10), "SPEECH", "S3")));
+        assertThat(service.prepare(attemptId)).as("another grader took it").isEmpty();
+        when(assessments.claim(attemptId)).thenReturn(true);
         var request = service.prepare(attemptId).orElseThrow();
         assertThat(request.exercisePrompt()).isEqualTo("Вопрос один");
         assertThat(request.answer()).isEqualTo("ответ");
@@ -279,6 +281,7 @@ class AssessmentServiceTest {
 
     @Test
     void aPathologicallyLongQuestionIsCutSoTheGradingPromptAlwaysFits() {
+        when(assessments.claim(attemptId)).thenReturn(true);
         ObjectNode response = JSON.createObjectNode().put("kind", "TEXT").put("text", "ответ");
         ObjectNode content = JSON.createObjectNode();
         content.putArray("prompt").addObject().put("kind", "TEXT").put("text", "ы".repeat(20_000));

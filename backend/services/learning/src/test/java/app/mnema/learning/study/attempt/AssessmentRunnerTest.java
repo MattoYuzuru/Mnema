@@ -125,4 +125,46 @@ class AssessmentRunnerTest {
         assertThatCode(() -> open.accepted(new AssessmentAccepted(UUID.randomUUID()))).doesNotThrowAnyException();
         assertThatThrownBy(() -> new AssessmentSettings(Duration.ofMillis(500), Duration.ofSeconds(2), 1, "ru", 3)).isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    void theSweepGradesWhatNobodyTookAsManyAsThereAreFreeSlotsAndAWakeAsksForIt() {
+        UUID second = UUID.randomUUID();
+        when(service.awaitingGrader(2)).thenReturn(List.of(attempt, second));
+        when(service.prepare(any())).thenReturn(Optional.empty());
+        AssessmentRunner worker = runner(2, Duration.ofSeconds(2));
+        worker.sweep();
+        verify(service, timeout(5_000)).prepare(attempt);
+        verify(service, timeout(5_000)).prepare(second);
+
+        assertThat(worker.channel()).isEqualTo("mnema_assessments");
+        UUID woken = UUID.randomUUID();
+        when(service.awaitingGrader(2)).thenReturn(List.of(woken));
+        worker.wake();
+        verify(service, timeout(5_000)).prepare(woken);
+
+        // a failing look is logged, never thrown; after the shutdown a wake is dropped
+        when(service.awaitingGrader(2)).thenThrow(new IllegalStateException("db"));
+        assertThatCode(worker::sweep).doesNotThrowAnyException();
+        worker.destroy();
+        assertThatCode(worker::wake).doesNotThrowAnyException();
+    }
+
+    @Test
+    void aFullInstanceDoesNotLookForMoreWork() throws Exception {
+        AssessmentRunner full = runner(1, Duration.ofSeconds(30));
+        CountDownLatch inside = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        when(service.prepare(any())).thenReturn(Optional.of(request()));
+        when(provider.grade(any())).thenAnswer(invocation -> {
+            inside.countDown();
+            release.await(10, TimeUnit.SECONDS);
+            return new GradeOutcome.Unavailable("TIMEOUT");
+        });
+        Thread holder = Thread.ofVirtual().start(() -> full.run(attempt));
+        assertThat(inside.await(5, TimeUnit.SECONDS)).isTrue();
+        full.sweep();
+        verify(service, never()).awaitingGrader(org.mockito.ArgumentMatchers.anyInt());
+        release.countDown();
+        holder.join(5_000);
+    }
 }
