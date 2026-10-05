@@ -81,8 +81,6 @@ describe('appRoutes', () => {
         const route = appRoutes.find(candidate => candidate.path === 'styleguide')!;
         expect(route.component).toBeUndefined();
         expect(route.canActivate).toBeUndefined();
-        // The goal question stays away from the catalogue (read by app-goal-onboarding).
-        expect(route.data).toEqual({ quiet: true });
         expect(await route.loadComponent!()).toBe(StyleguidePageComponent);
     });
 });

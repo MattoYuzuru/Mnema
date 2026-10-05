@@ -63,4 +63,34 @@ describe('LearningGoalStore', () => {
         expect(store.answered()).toBe(false);
         expect(store.state()).toBe('idle');
     });
+
+    it('drops a fetch and an answer that finish after a reset (sign-out) instead of writing the old account back', async () => {
+        const { Subject } = await import('rxjs');
+        const load = new Subject<{ goal: 'EXAMS'; skipped: boolean; answeredAt: string }>();
+        api.load.mockReturnValueOnce(load.asObservable());
+        const loading = store.load();
+        store.reset();
+        load.next({ goal: 'EXAMS', skipped: false, answeredAt: '2026-10-05T09:00:00Z' });
+        load.complete();
+        await loading;
+        expect(store.state()).toBe('idle');
+        expect(store.goal()).toBeNull();
+        expect(store.answered()).toBe(false);
+
+        // The next account loads on its own request, not the stale one.
+        api.load.mockReturnValue(of({ goal: null, skipped: false, answeredAt: null }));
+        await store.load();
+        expect(store.state()).toBe('ready');
+        expect(store.goal()).toBeNull();
+
+        const answer = new Subject<{ goal: 'SELF'; skipped: boolean; answeredAt: string }>();
+        api.answer.mockReturnValueOnce(answer.asObservable());
+        const saving = store.answer('SELF');
+        store.reset();
+        answer.next({ goal: 'SELF', skipped: false, answeredAt: '2026-10-05T09:00:00Z' });
+        answer.complete();
+        expect(await saving).toBe(false);
+        expect(store.goal()).toBeNull();
+        expect(store.answered()).toBe(false);
+    });
 });

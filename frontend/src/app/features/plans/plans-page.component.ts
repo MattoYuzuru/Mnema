@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
@@ -8,11 +8,14 @@ import { SegmentedChoiceComponent, SegmentedOption } from '../../shared/segmente
 import { PlanOptionComponent } from './plan-option.component';
 import { PlansApiService } from './plans-api.service';
 import {
-    COMPARE_ROWS, PLAN_LABEL, autoRenewText, cta, limitContext, plansHeading, recommendation, yearSwitchHint
+    COMPARE_ROWS, DOWNGRADE_NOTICE, PAYMENT_NOTICE, PLAN_LABEL, autoRenewText, cta, limitContext, plansHeading, recommendation, yearSwitchHint
 } from './plans-view';
 import { PlanId, PlanPeriod, PlansCatalog } from './plans.models';
 
 let nextPlansPage = 0;
+const BAR_HEIGHT_PROPERTY = '--mn-bulk-bar-height';
+/** Room kept above the bar for a focus ring (3px outline + offset) so the ring is not cut by it. */
+const FOCUS_RING_ROOM_PX = 8;
 
 /**
  * `/plans`: the paywall. Tiers are native radio cards, the period a native radio switch. Nothing here charges or grants
@@ -47,8 +50,11 @@ export class PlansPageComponent {
     protected readonly period = signal<PlanPeriod>('MONTH');
     private readonly chosen = signal<PlanId | null>(null);
     protected readonly autoRenew = signal(false);
-    protected readonly paymentNotice = signal(false);
+    /** The text of the always-present status region; empty until an action is activated. */
+    protected readonly notice = signal('');
+    /** The renewal date follows the clock whenever the period or the tier changes, not the moment the catalogue loaded. */
     private readonly now = signal(new Date());
+    private readonly bar = viewChild<ElementRef<HTMLElement>>('ctaBar');
 
     protected readonly heading = computed(() => plansHeading(this.goals.goal()));
     protected readonly context = computed(() => limitContext(this.query().get('from'), this.query().get('used')));
@@ -71,10 +77,12 @@ export class PlansPageComponent {
         const catalog = this.catalog();
         return entry === null || catalog === null ? null : cta(entry, this.period(), catalog.current.plan);
     });
-    protected readonly paid = computed(() => (this.selectedEntry()?.priceRub.month ?? 0) > 0);
+    /** Auto-renew is offered for a paid tier the account is not on yet; the current plan has its own switch in the profile. */
+    protected readonly renewable = computed(() => (this.selectedEntry()?.priceRub.month ?? 0) > 0
+        && this.selected() !== this.catalog()?.current.plan);
     protected readonly renewText = computed(() => {
         const entry = this.selectedEntry();
-        return entry === null || !this.paid() ? '' : autoRenewText(entry, this.period(), this.now());
+        return entry === null || !this.renewable() ? '' : autoRenewText(entry, this.period(), this.now());
     });
     protected readonly periodOptions = computed<readonly SegmentedOption<PlanPeriod>[]>(() => [
         { value: 'MONTH', label: 'Месяц', hint: 'Платите помесячно, отказаться можно в любой момент.' },
@@ -84,6 +92,18 @@ export class PlansPageComponent {
     constructor() {
         void this.load();
         void this.goals.load();
+        // The sticky bar's height becomes scroll padding of the viewport (the scroller), so a focused control is never
+        // hidden behind it (WCAG 2.4.11). `.plans-page` is not a scroll container, so the property lives on the root.
+        effect(onCleanup => {
+            const element = this.bar()?.nativeElement;
+            if (element === undefined) return;
+            const root = element.ownerDocument.documentElement;
+            const apply = (): void => root.style.setProperty(BAR_HEIGHT_PROPERTY, `${element.offsetHeight + FOCUS_RING_ROOM_PX}px`);
+            apply();
+            const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(apply);
+            observer?.observe(element);
+            onCleanup(() => { observer?.disconnect(); root.style.removeProperty(BAR_HEIGHT_PROPERTY); });
+        });
     }
 
     protected async load(): Promise<void> {
@@ -98,12 +118,19 @@ export class PlansPageComponent {
     }
 
     protected setPeriod(period: PlanPeriod | null): void {
-        if (period !== null) { this.period.set(period); this.paymentNotice.set(false); }
+        if (period !== null && period !== this.period()) this.changed(() => this.period.set(period));
     }
 
     protected choose(plan: PlanId): void {
-        this.chosen.set(plan);
-        this.paymentNotice.set(false);
+        if (plan !== this.chosen()) this.changed(() => this.chosen.set(plan));
+    }
+
+    /** A different tier or period is a different offer: the reader's consent to renew and any notice do not carry over. */
+    private changed(update: () => void): void {
+        update();
+        this.autoRenew.set(false);
+        this.notice.set('');
+        this.now.set(new Date());
     }
 
     protected isRecommended(plan: PlanId): boolean { return this.recommended()?.plan === plan; }
@@ -112,7 +139,7 @@ export class PlansPageComponent {
         const action = this.action();
         if (action === null || action.disabled) return;
         if (action.action === 'stay') void this.router.navigateByUrl('/decks');
-        else this.paymentNotice.set(true);
+        else this.notice.set(action.action === 'downgrade' ? DOWNGRADE_NOTICE : PAYMENT_NOTICE);
     }
 
     protected onAutoRenew(event: Event): void { this.autoRenew.set((event.target as HTMLInputElement).checked); }

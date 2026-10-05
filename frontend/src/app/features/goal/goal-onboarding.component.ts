@@ -1,34 +1,27 @@
 import { DOCUMENT } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, effect, inject, signal, untracked } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRouteSnapshot, Data, NavigationEnd, Router } from '@angular/router';
+import { NavigationEnd, Router } from '@angular/router';
 import { filter, map } from 'rxjs';
 
 import { AuthService } from '../../auth.service';
 import { GOAL_COPY } from './goal-copy';
 import { LEARNING_GOALS, LearningGoal } from './goal.models';
 import { LearningGoalStore } from './learning-goal.store';
+import { SegmentedChoiceComponent } from '../../shared/segmented-choice.component';
 
 let nextOnboarding = 0;
 
-/** The route data flag a page sets to keep the question away (the design catalogue sets it; its path is not named here on purpose). */
-export const QUIET_ROUTE_DATA = 'quiet';
-
 /**
- * Routes where a question would be in the way: the study session, the sign-in pages and any route that sets
- * {@link QUIET_ROUTE_DATA}. The catalogue is flagged by its route, so a production bundle (which has no catalogue) never
- * mentions it.
+ * The only places the question appears: the deck list, the profile and the plans page. An allowlist, not a blocklist:
+ * every other route (authoring, capture, the workshop, the study session, privacy and terms, the home page, sign-in and
+ * any page added later) stays free of it by default. Query and fragment are ignored; a deeper path is not the list.
  */
-export function onboardingSuppressed(url: string, quiet = false): boolean {
-    const path = url.split(/[?#]/u)[0];
-    return quiet || path.startsWith('/auth/') || path === '/login' || path === '/register'
-        || /^\/decks\/[^/]+\/study\/?$/u.test(path);
-}
+const ONBOARDING_PATHS: ReadonlySet<string> = new Set(['/decks', '/profile', '/plans']);
 
-function deepestData(route: ActivatedRouteSnapshot): Data {
-    let current = route;
-    while (current.firstChild) current = current.firstChild;
-    return current.data;
+export function onboardingSuppressed(url: string): boolean {
+    const path = url.split(/[?#]/u)[0].replace(/\/+$/u, '');
+    return !ONBOARDING_PATHS.has(path);
 }
 
 /**
@@ -41,19 +34,8 @@ function deepestData(route: ActivatedRouteSnapshot): Data {
     template: `
       @if (visible()) {
         <form class="goal-onboarding paper-surface ruled" (submit)="submit($event)">
-          <fieldset [attr.aria-describedby]="hintId">
-            <legend [id]="legendId">Для чего вам Mnema?</legend>
-            <p class="hint" [id]="hintId">Подстроим подсказки и подскажем подходящий тариф. Ответ можно пропустить; ИИ он не передаётся.</p>
-            <div class="choices">
-              @for (option of options; track option.goal) {
-                <label class="choice">
-                  <input type="radio" [name]="legendId" [value]="option.goal" [checked]="option.goal === choice()"
-                         (change)="choice.set(option.goal)" />
-                  <span>{{ option.label }}</span>
-                </label>
-              }
-            </div>
-          </fieldset>
+          <app-segmented-choice legend="Для чего вам Mnema?" [options]="options" [(value)]="choice" [name]="groupName" />
+          <p class="hint">Подстроим подсказки и подскажем подходящий тариф. Ответ можно пропустить; ИИ он не передаётся.</p>
           @if (store.saveFailed()) {
             <p class="notice error" role="alert">Не удалось сохранить ответ. Попробуйте ещё раз или пропустите.</p>
           }
@@ -67,13 +49,11 @@ function deepestData(route: ActivatedRouteSnapshot): Data {
     styles: [`
       :host { display: block; min-inline-size: 0; }
       .goal-onboarding { inline-size: min(100%, 40rem); margin: 1rem auto 0; display: grid; gap: 1rem; }
-      fieldset { margin: 0; border: 0; padding: 0; min-inline-size: 0; display: grid; gap: .75rem; }
-      legend { padding: 0; color: var(--mn-ink); font-family: var(--mn-font-display); font-size: clamp(1.4rem, 3vw, 1.8rem); line-height: 1.15; }
-      .choices { display: grid; gap: .25rem; }
-      .choice { display: flex; align-items: center; gap: .75rem; min-block-size: var(--mn-touch-min); cursor: pointer; }
+      .hint { margin: 0; }
       .actions { display: flex; flex-wrap: wrap; gap: .75rem; }
       .actions .button { flex: 1 1 10rem; }
     `],
+    imports: [SegmentedChoiceComponent],
     changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class GoalOnboardingComponent {
@@ -83,21 +63,20 @@ export class GoalOnboardingComponent {
     private readonly document = inject(DOCUMENT);
 
     private readonly uid = `mn-goal-${nextOnboarding++}`;
-    protected readonly legendId = `${this.uid}-legend`;
-    protected readonly hintId = `${this.uid}-hint`;
-    protected readonly options = LEARNING_GOALS.map(goal => ({ goal, label: GOAL_COPY[goal].label }));
+    protected readonly groupName = `${this.uid}-goal`;
+    protected readonly options = LEARNING_GOALS.map(goal => ({ value: goal, label: GOAL_COPY[goal].label }));
     protected readonly choice = signal<LearningGoal | null>(null);
 
     private readonly status = toSignal(this.auth.status$, { initialValue: this.auth.status() });
-    private readonly place = toSignal(this.router.events.pipe(
+    private readonly url = toSignal(this.router.events.pipe(
         filter(event => event instanceof NavigationEnd),
-        map(event => ({ url: event.urlAfterRedirects, quiet: deepestData(this.router.routerState.snapshot.root)[QUIET_ROUTE_DATA] === true }))
-    ), { initialValue: { url: this.router.url, quiet: deepestData(this.router.routerState.snapshot.root)[QUIET_ROUTE_DATA] === true } });
+        map(event => event.urlAfterRedirects)
+    ), { initialValue: this.router.url });
     /** A skip hides the question at once; the store keeps trying to record it. */
     private readonly dismissed = signal(false);
 
     protected readonly visible = computed(() => this.status() === 'authenticated' && this.store.state() === 'ready'
-        && !this.store.answered() && !this.dismissed() && !onboardingSuppressed(this.place().url, this.place().quiet));
+        && !this.store.answered() && !this.dismissed() && !onboardingSuppressed(this.url()));
 
     constructor() {
         effect(() => {
@@ -122,8 +101,9 @@ export class GoalOnboardingComponent {
         await this.store.answer(null);
     }
 
-    /** The question disappears from under the focus; hand it to the page heading as a route change does. */
+    /** The question disappears from under the focus; hand it to the page heading, or the main region when there is none. */
     private focusPage(): void {
-        queueMicrotask(() => this.document.querySelector<HTMLElement>('#main-content h1')?.focus());
+        queueMicrotask(() => (this.document.querySelector<HTMLElement>('#main-content h1')
+            ?? this.document.querySelector<HTMLElement>('#main-content'))?.focus());
     }
 }

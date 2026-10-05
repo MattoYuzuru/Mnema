@@ -117,6 +117,12 @@
       </table>
     </div>
   </app-sg-specimen>
+  <app-sg-specimen title="Панель главного действия" selector=".cta-bar"
+    when="Длинная страница с одним главным действием (тарифы): панель закреплена у нижнего края, кнопка одна. Страница публикует высоту панели в --mn-bulk-bar-height, и сфокусированный элемент не прячется под ней (WCAG 2.4.11). Здесь панель показана в потоке (.cta-bar--inline), на экране она sticky."
+    [tokens]="['--mn-paper', '--mn-ink', '--mn-bulk-bar-height']"
+    usage='<div class="cta-bar"><button type="button" class="button primary">Перейти на Plus — 449 ₽ в месяц</button></div>'>
+    <div class="cta-bar cta-bar--inline"><button type="button" class="button primary">Перейти на Plus — 449 ₽ в месяц</button></div>
+  </app-sg-specimen>
   <app-sg-specimen title="Лист" selector=".paper-surface, .paper-surface.ruled" [onPaper]="true"
     when="Рабочая область страницы: редактор, просмотр материала, карточка занятия. .ruled добавляет чернильное правило сверху для карточки, у которой есть одно главное действие."
     [tokens]="['--mn-sheet', '--mn-rule', '--mn-ink']"

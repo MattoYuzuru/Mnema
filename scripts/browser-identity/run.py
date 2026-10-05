@@ -402,7 +402,7 @@ class Fixture(BASE.Fixture):
                   "logoutSelector": self.args.logout_selector, "errorSelector": self.args.error_selector,
                   "authoring": self.args.authoring, "media": self.args.media, "mechanics": self.args.mechanics,
                   "generation": self.args.generation, "assessment": self.args.assessment,
-                  "onlyEdits": self.args.only_edits, "onlyImages": self.args.only_images, "onlySpeech": self.args.only_speech, "onlyAsk": self.args.only_ask, "onlyPlan": self.args.only_plan, "cdpTimeoutMs": cdp_timeout_ms(),
+                  "onlyEdits": self.args.only_edits, "onlyImages": self.args.only_images, "onlySpeech": self.args.only_speech, "onlyAsk": self.args.only_ask, "onlyPlan": self.args.only_plan, "onlyPlans": self.args.only_plans, "cdpTimeoutMs": cdp_timeout_ms(),
                   "diagnosticsDir": str(self.tmp) if self.args.mechanics and self.args.keep_on_failure else None,
                   "mediaOrigin": self.media_origin, "mediaClips": media_clips}
         private_config = self.tmp / "browser.json"
@@ -417,7 +417,7 @@ class Fixture(BASE.Fixture):
                     "scripts": {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
                                 for name in ("run.py", "browser.mjs", "mechanics.mjs", "notifications.mjs", "hub.mjs",
                                              "code-block.mjs", "usage.mjs", "workshop.mjs", "exercises.mjs", "selection-edits.mjs",
-                                             "image-search.mjs", "speech.mjs", "ask-mnema.mjs", "assessment.mjs", "planner.mjs")}}
+                                             "image-search.mjs", "speech.mjs", "ask-mnema.mjs", "assessment.mjs", "planner.mjs", "plans.mjs")}}
         (self.args.output / "fixture.json").write_text(json.dumps(evidence, indent=2))
         runner = self.launch_group([self.args.node, str(Path(__file__).with_name("browser.mjs")), str(private_config)], "browser")
         self.control("browser_running")
@@ -538,6 +538,10 @@ def main():
     parser.add_argument("--only-plan", action="store_true",
                         help="development aid: after the base flow run only the planner «Сначала показать план» scenario (requires --generation); "
                              "never a substitute for the full run")
+    parser.add_argument("--only-plans", action="store_true",
+                        help="development aid: after the base flow run only the paywall, goal question and public /ai scenario "
+                             "(requires --authoring); skips the code block, usage, Workshop and assessment scenarios; never a "
+                             "substitute for the full run")
     parser.add_argument("--timeout", type=int, default=None, metavar="SECONDS",
                         help="global deadline, 30-900 seconds (default 180, or 600 with --mechanics)")
     parser.add_argument("--keep-on-failure", action="store_true",
@@ -558,12 +562,14 @@ def main():
         parser.error("--only-ask requires --generation")
     if args.only_plan and not args.generation:
         parser.error("--only-plan requires --generation")
+    if args.only_plans and not args.authoring:
+        parser.error("--only-plans requires --authoring")
     if args.only_images and not (args.generation and args.media):
         parser.error("--only-images requires --generation and --media")
     if args.only_speech and not (args.generation and args.media):
         parser.error("--only-speech requires --generation and --media")
-    if sum(1 for aid in (args.only_ask, args.only_edits, args.only_plan, args.only_images, args.only_speech) if aid) > 1:
-        parser.error("--only-ask, --only-edits, --only-plan, --only-images and --only-speech are separate development aids: choose one")
+    if sum(1 for aid in (args.only_ask, args.only_edits, args.only_plan, args.only_plans, args.only_images, args.only_speech) if aid) > 1:
+        parser.error("--only-ask, --only-edits, --only-plan, --only-plans, --only-images and --only-speech are separate development aids: choose one")
     if args.timeout is None:
         args.timeout = 600 if args.mechanics else 180
         if args.generation or args.assessment:

@@ -125,8 +125,37 @@
 .data-table thead th { color: var(--mn-ink); font: 700 .75rem/1.4 var(--mn-font-mono); letter-spacing: .08em; text-transform: uppercase; }
 .data-table tbody th { color: var(--mn-ink); font-weight: 600; }
 
+/* Checkbox with an explanation: the label carries the whole consent (amount, date), the hint under it adds what the box does
+   not say. Never pre-ticked when it is a consent. The whole row is the hit area. */
+.check-field { display: grid; gap: .25rem; }
+.check-row { display: flex; align-items: flex-start; gap: .75rem; min-block-size: var(--mn-touch-min); padding-block: .5rem; cursor: pointer; line-height: 1.45; }
+.check-row input { flex: none; margin-block-start: .15rem; }
+
+/* A settings row for something that is not available yet: label and control on one line, disabled, with a shared line under the
+   group that says when it appears. Disabled controls stay muted text, never an invented value. */
+.settings-row { display: flex; align-items: center; justify-content: space-between; gap: .75rem; min-block-size: var(--mn-touch-min); color: var(--mn-muted); }
+.settings-row.is-switch { justify-content: flex-start; }
+
+/* The primary action stays in reach: pinned to the bottom of the viewport. The page publishes its height as
+   --mn-bulk-bar-height on the root (scroll padding, see global_styles.css), so a focused control is never hidden under it.
+   .cta-bar--inline draws it in the flow (the styleguide). */
+.cta-bar {
+    position: sticky;
+    inset-block-end: 0;
+    z-index: 1;
+    display: flex;
+    padding: .75rem clamp(1.125rem, 5vw, 3rem);
+    padding-block-end: calc(.75rem + env(safe-area-inset-bottom, 0px));
+    margin-inline: calc(-1 * clamp(1.125rem, 5vw, 3rem));
+    border-block-start: 1px solid var(--mn-ink);
+    background: var(--mn-paper);
+}
+.cta-bar .button { flex: 1 1 auto; max-inline-size: 28rem; margin-inline: auto; }
+.cta-bar--inline { position: static; margin-inline: 0; }
+
 @media (forced-colors: active) {
     .data-table :is(th, td) { border-color: CanvasText; }
+    .cta-bar { border-color: CanvasText; background: Canvas; }
     .button, .notice, .stamp, .paper-surface { border-color: CanvasText; }
     .empty-state { border-color: CanvasText; }
     .button.quiet { border-color: transparent; }

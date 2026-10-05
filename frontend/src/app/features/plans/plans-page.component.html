@@ -5,7 +5,7 @@
     <p class="eyebrow">Тарифы</p>
     <h1 id="plans-title" tabindex="-1">{{ heading() }}</h1>
     @if (context(); as text) { <p class="notice" role="status">{{ text }}</p> }
-    <p class="lede">Начните с Free. Платный тариф нужен, когда не хватает: все колоды и материалы остаются при любом выборе.</p>
+    <p class="lede">Начните с Free. У него свой бюджет ИИ, а голос и проверка ответов ограничены отдельно. Платный тариф нужен, когда не хватает: все колоды и материалы остаются при любом выборе.</p>
   </header>
 
   @switch (state()) {
@@ -58,13 +58,13 @@
           <p class="hint">Голос и проверка ответов не тратят общий бюджет ИИ, но у них свой потолок на месяц и день.</p>
         </details>
 
-        @if (paid()) {
-          <div class="renew">
-            <label class="renew-label" [for]="renewId">
+        @if (renewable()) {
+          <div class="renew check-field">
+            <label class="check-row" [for]="renewId">
               <input type="checkbox" [id]="renewId" [checked]="autoRenew()" (change)="onAutoRenew($event)" />
               <span>{{ renewText() }}</span>
             </label>
-            <p class="hint">Галочка не отмечена, пока вы не отметите её сами. Отключить автопродление можно в профиле.</p>
+            <p class="hint">Галочка не отмечена, пока вы не отметите её сами. Когда подключим оплату, автопродление можно будет отключить в профиле.</p>
           </div>
         }
 
@@ -77,15 +77,13 @@
           <p class="hint" id="plans-promo-hint">Скоро: промокоды появятся вместе с оплатой.</p>
         </div>
 
-        @if (paymentNotice()) {
-          <p class="notice" role="status" [id]="noticeId">Оплату подключаем: тариф можно будет оформить здесь же. Пока доступен промокод.</p>
-        }
+        <p class="notice" role="status" [id]="noticeId">{{ notice() }}</p>
 
         <section class="faq" aria-labelledby="plans-faq">
           <h2 id="plans-faq">Частые вопросы</h2>
           <details>
             <summary>Что будет с моими колодами, если вернуться на Free?</summary>
-            <p>Все колоды остаются. Free ограничивает только то, сколько ИИ вы можете потратить в месяц.</p>
+            <p>Все колоды остаются. Free ограничивает ИИ: месячный бюджет, голос и проверку ответов.</p>
           </details>
           <details>
             <summary>Если передумаю?</summary>
@@ -93,14 +91,14 @@
           </details>
           <details>
             <summary>Как отключить автопродление?</summary>
-            <p>В профиле, в блоке «Тариф»: переключатель «Автопродление». Подписка продолжит работать до конца оплаченного периода.</p>
+            <p>Когда подключим оплату, это будет переключатель «Автопродление» в профиле, в блоке «Тариф». Подписка продолжит работать до конца оплаченного периода.</p>
           </details>
         </section>
 
         @if (action(); as action) {
-          <div class="cta-bar">
+          <div class="cta-bar" #ctaBar>
             <button type="button" class="button primary" [attr.aria-disabled]="action.disabled ? 'true' : null"
-              [attr.aria-describedby]="paymentNotice() ? noticeId : null" (click)="activate()">{{ action.text }}</button>
+              [attr.aria-describedby]="notice() ? noticeId : null" (click)="activate()">{{ action.text }}</button>
           </div>
         }
       }

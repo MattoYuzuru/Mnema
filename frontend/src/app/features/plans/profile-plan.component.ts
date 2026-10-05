@@ -22,12 +22,12 @@ import { PlansCurrent } from './plans.models';
         <p class="plan-line">Тариф {{ label(plan) }}@if (plan.source !== 'CONFIG') { <span class="until">, действует до {{ until(plan) }}</span> }</p>
         <p><a class="button" routerLink="/plans">Изменить тариф</a></p>
         <div class="placeholders">
-          <label class="switch-row">
+          <label class="settings-row is-switch">
             <input type="checkbox" role="switch" disabled [checked]="false" aria-describedby="profile-plan-later" />
             <span>Автопродление</span>
           </label>
-          <div class="method-row">
-            <span class="method-label">Способ оплаты</span>
+          <div class="settings-row">
+            <span>Способ оплаты</span>
             <button type="button" class="button small" disabled aria-describedby="profile-plan-later">Добавить</button>
           </div>
           <p class="hint" id="profile-plan-later">Появится вместе с оплатой.</p>
@@ -42,9 +42,6 @@ import { PlansCurrent } from './plans.models';
       .plan-line { margin: 0 0 1rem; color: var(--mn-ink); font-weight: 600; }
       .until { color: var(--mn-muted); font-weight: 400; }
       .placeholders { display: grid; gap: .5rem; margin-block-start: 1.25rem; border-block-start: 1px solid var(--mn-rule); padding-block-start: 1rem; }
-      .switch-row, .method-row { display: flex; align-items: center; gap: .75rem; min-block-size: var(--mn-touch-min); color: var(--mn-muted); }
-      .method-row { justify-content: space-between; }
-      .method-label { color: var(--mn-muted); }
     `],
     changeDetection: ChangeDetectionStrategy.OnPush
 })

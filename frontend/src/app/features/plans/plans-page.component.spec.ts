@@ -99,7 +99,7 @@ describe('PlansPageComponent', () => {
             harness.detectChanges();
             const box = root.querySelector<HTMLInputElement>('.renew input[type=checkbox]')!;
             expect(box.checked).toBe(false);
-            expect(root.querySelector('.renew-label')?.textContent).toMatch(/^\s*Продлевать автоматически: 449\u00a0₽ каждые 30\u00a0дней, следующее списание \d{1,2} \S+\s*$/u);
+            expect(root.querySelector('.renew .check-row')?.textContent).toMatch(/^\s*Продлевать автоматически: 449\u00a0₽ каждые 30\u00a0дней, следующее списание \d{1,2} \S+\s*$/u);
             box.click();
             harness.detectChanges();
             expect(box.checked).toBe(true);
@@ -109,15 +109,81 @@ describe('PlansPageComponent', () => {
         } finally { vi.useRealTimers(); }
     });
 
-    it('says payments are being connected instead of charging, and never navigates away', async () => {
+    const year = () => [...root.querySelectorAll<HTMLInputElement>('app-segmented-choice input[type=radio]')].find(radio => radio.value === 'YEAR')!;
+    const notice = () => root.querySelector<HTMLElement>('p.notice[role=status][id$="-notice"]')!;
+
+    it('resets a ticked auto-renew when the tier or the period changes, and computes the date at that moment', async () => {
+        const harness = await open();
+        vi.useFakeTimers({ toFake: ['Date'] });
+        try {
+            vi.setSystemTime(new Date('2026-10-05T09:00:00Z'));
+            radios()[1].click();
+            harness.detectChanges();
+            const box = () => root.querySelector<HTMLInputElement>('.renew input[type=checkbox]')!;
+            box().click();
+            harness.detectChanges();
+            expect(box().checked).toBe(true);
+            expect(root.querySelector('.renew .check-row')?.textContent).toContain('следующее списание 4 ноября');
+
+            vi.setSystemTime(new Date('2026-10-20T09:00:00Z'));
+            radios()[2].click();
+            harness.detectChanges();
+            expect(box().checked).toBe(false);
+            expect(root.querySelector('.renew .check-row')?.textContent).toContain('следующее списание 19 ноября');
+
+            box().click();
+            harness.detectChanges();
+            year().click();
+            harness.detectChanges();
+            expect(box().checked).toBe(false);
+            expect(root.querySelector('.renew .check-row')?.textContent).toContain('раз в\u00a0год, следующее списание 20 октября 2027');
+        } finally { vi.useRealTimers(); }
+    });
+
+    it('does not offer auto-renew for the plan the account is already on', async () => {
+        const harness = await open({ current: 'PRO' });
+        expect(root.querySelector('.renew')).toBeNull();
+        radios()[1].click();
+        harness.detectChanges();
+        expect(root.querySelector('.renew')).not.toBeNull();
+        radios()[2].click();
+        harness.detectChanges();
+        expect(root.querySelector('.renew')).toBeNull();
+    });
+
+    it('keeps the status region in the page from the start, says payments are being connected and never navigates away', async () => {
         const harness = await open();
         const router = TestBed.inject(Router);
+        expect(notice().textContent).toBe('');
         radios()[2].click();
         harness.detectChanges();
         cta().click();
         harness.detectChanges();
-        expect(root.querySelector('.notice[role=status]')?.textContent).toBe('Оплату подключаем: тариф можно будет оформить здесь же. Пока доступен промокод.');
+        expect(notice().textContent).toBe('Оплату подключаем: тариф можно будет оформить здесь же. Пока доступен промокод.');
+        expect(cta().getAttribute('aria-describedby')).toBe(notice().id);
         expect(router.url).toBe('/plans');
+        radios()[1].click();
+        harness.detectChanges();
+        expect(notice().textContent).toBe('');
+        expect(cta().getAttribute('aria-describedby')).toBeNull();
+    });
+
+    it('answers a return to Free with its own text: the plan stays until the paid period ends', async () => {
+        const harness = await open({ current: 'PRO' });
+        radios()[0].click();
+        harness.detectChanges();
+        expect(cta().textContent).toBe('Вернуться на Free');
+        cta().click();
+        harness.detectChanges();
+        expect(notice().textContent).toBe('Тариф вернётся на Free после окончания оплаченного периода.');
+        expect(notice().textContent).not.toContain('Оплату');
+    });
+
+    it('publishes the height of the sticky bar as scroll padding while it exists and removes it afterwards (WCAG 2.4.11)', async () => {
+        const harness = await open();
+        expect(document.documentElement.style.getPropertyValue('--mn-bulk-bar-height')).toMatch(/^\d+px$/);
+        harness.fixture.destroy();
+        expect(document.documentElement.style.getPropertyValue('--mn-bulk-bar-height')).toBe('');
     });
 
     it('leaves for the deck list when the reader stays on Free', async () => {
@@ -171,6 +237,9 @@ describe('PlansPageComponent', () => {
         expect(faq).toContain('Все колоды остаются');
         expect(faq).toContain('полностью неиспользованные месяцы годовой подписки');
         expect(faq).toContain('автопродление');
+        expect(faq).toContain('Когда подключим оплату');
+        expect(faq).toContain('голос и проверку ответов');
+        expect(root.querySelector('.lede')?.textContent).toContain('голос и проверка ответов ограничены отдельно');
     });
 
     it('shows where the reader came from as display only', async () => {

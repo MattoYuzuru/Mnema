@@ -183,6 +183,28 @@ Honest limits: Chrome only; no screen reader; the plan is Free by default (the s
 guessing); fair-use counters are asserted consistent with the API, not forced above 80 %; the link is a browser navigation
 to the URL, not a click on a bell or toast entry (that component is covered by the notifications scenario and unit specs).
 
+### Paywall, goal question and public `/ai` (`--authoring`)
+
+`plans.mjs` (#301) runs after the usage scenario on the signed-in account's tab, under `prefers-reduced-motion: reduce`, and records
+`plans_paywall_goal_real_api`; `runAiPublic` runs after logout on the first (now anonymous) tab and records `ai_page_public_without_login`.
+Nothing is stubbed: `GET /api/plans` and `GET/PUT /api/learning-profile` are read with the page's own bearer and the page is compared with
+them. A broken stage writes `failure-plans-<stage>.png`/`.txt`. `--only-plans` (development aid, requires `--authoring`) runs it alone after
+the base flow and skips the code block, usage, Workshop and assessment scenarios; never a substitute for the full run.
+
+| Stage | Assertions |
+|---|---|
+| `onboarding_allowlist` | the fresh account has not answered; «Для чего вам Mnema?» appears on `/decks` as one unselected radio group of five options with «Продолжить» disabled; opening a deck from the list in the same document takes it down; it never shows on the material editor, capture, the deck hub, privacy, terms or home |
+| `onboarding_answer` | keyboard only: Space selects «Экзамены и сессия», Tab reaches «Продолжить», Enter submits; the API stores `EXAMS`; focus lands inside `#main-content`, never on `<body>`; it does not come back |
+| `plans_content` | the heading is the goal's, exactly one tier carries «Рекомендуем для подготовки к экзаменам» (the one the API recommends), the own plan is marked and preselected, teasers are the only disabled tiers, the lede names the Free voice and answer-check caps, no horizontal overflow |
+| `period_math` | ArrowRight/ArrowLeft move the period; per tier the month price and per-day note, then the year price, «≈ per month» and «Экономия» equal the harness's own arithmetic over the API's prices |
+| `auto_renew` | never pre-ticked; the text carries the amount and a renewal date 30 days out (Moscow); a Space-ticked box resets on a change of tier and of period and the text follows; the hint says the profile switch comes with payments |
+| `payment_notice` | the `role=status` region is in the page from the start and empty; Enter on the call to action fills it with the payments notice and describes the button with it; no navigation, the entitlement is unchanged; a different tier clears it |
+| `keyboard_and_sticky_bar` | at 1440, 390 and 320 CSS px (DPR 2) the root scroll padding equals the sticky bar's height plus 8px for the focus ring and a real Tab walk from the top of `/plans` to the call to action never leaves a focused control under the bar (at least 6px clear of it) or above the viewport (`plans-focus-*.png`) |
+| `/ai` public | after logout the footer link opens `/ai` (no sign-in redirect) with six sections and six contents links, and a direct load at 320 CSS px does not overflow |
+
+Honest limits: Chrome only; no screen reader; Free is the fixture's plan (a paid plan view needs the billing context); the sticky-bar check is
+measured geometry, not a visual diff.
+
 Use `--chrome` for another existing Chrome executable. The page contract defaults to
 `[data-testid="identity-profile"]`, `[data-testid="logout"]`, and `[role="alert"]`;
 matching CLI selector options are available. Registration uses `#email`, `#username`,

@@ -25,9 +25,8 @@ h2 { font-size: clamp(1.5rem, 3vw, 2rem); line-height: 1.1; }
 .table-scroll:focus-visible { outline: 3px solid var(--mn-focus); outline-offset: 3px; }
 .muted { color: var(--mn-muted); font-weight: 400; }
 
-.renew { display: grid; gap: .25rem; }
-.renew-label { display: flex; align-items: flex-start; gap: .75rem; min-block-size: var(--mn-touch-min); padding-block: .5rem; cursor: pointer; line-height: 1.45; }
-.renew-label input { margin-block-start: .15rem; }
+/* The status region is always in the DOM (so a screen reader announces the text when it appears) and takes no room while empty. */
+.notice:empty { display: contents; }
 
 .promo { max-inline-size: 28rem; }
 .promo-row { display: flex; gap: .5rem; }
@@ -39,21 +38,6 @@ h2 { font-size: clamp(1.5rem, 3vw, 2rem); line-height: 1.1; }
 .faq details { border-block-start: 1px solid var(--mn-rule); }
 .faq details p { margin: 0 0 1rem; max-inline-size: 60ch; line-height: 1.6; }
 
-/* The primary action stays in reach: pinned to the bottom of the viewport on any width (a page this long needs it on a phone). */
-.cta-bar {
-    position: sticky;
-    inset-block-end: 0;
-    z-index: 1;
-    display: flex;
-    padding: .75rem clamp(1.125rem, 5vw, 3rem);
-    padding-block-end: calc(.75rem + env(safe-area-inset-bottom, 0px));
-    margin-inline: calc(-1 * clamp(1.125rem, 5vw, 3rem));
-    border-block-start: 1px solid var(--mn-ink);
-    background: var(--mn-paper);
-}
-.cta-bar .button { flex: 1 1 auto; max-inline-size: 28rem; margin-inline: auto; }
-
 @media (forced-colors: active) {
-    .cta-bar { border-color: CanvasText; background: Canvas; }
     .table-scroll:focus-visible { outline-color: Highlight; }
 }

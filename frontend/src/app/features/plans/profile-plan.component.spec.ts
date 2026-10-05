@@ -31,9 +31,9 @@ describe('ProfilePlanComponent', () => {
         const toggle = root.querySelector<HTMLInputElement>('input[role=switch]')!;
         expect(toggle.disabled).toBe(true);
         expect(toggle.checked).toBe(false);
-        expect(root.querySelector('.switch-row')?.textContent).toContain('Автопродление');
-        expect(root.querySelector('.method-label')?.textContent).toBe('Способ оплаты');
-        expect(root.querySelector<HTMLButtonElement>('.method-row button')!.disabled).toBe(true);
+        expect(root.querySelector('.settings-row.is-switch')?.textContent).toContain('Автопродление');
+        expect(root.querySelector('.settings-row:not(.is-switch) span')?.textContent).toBe('Способ оплаты');
+        expect(root.querySelector<HTMLButtonElement>('.settings-row button')!.disabled).toBe(true);
         const later = root.querySelector('#profile-plan-later')!;
         expect(later.textContent).toBe('Появится вместе с оплатой.');
         expect(toggle.getAttribute('aria-describedby')).toBe('profile-plan-later');

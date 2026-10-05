@@ -7,6 +7,7 @@ import { runMechanics } from './mechanics.mjs';
 import { runNotifications } from './notifications.mjs';
 import { runCodeBlock } from './code-block.mjs';
 import { runUsage } from './usage.mjs';
+import { runAiPublic, runPlans } from './plans.mjs';
 import { runWorkshop } from './workshop.mjs';
 import { runAssessment } from './assessment.mjs';
 
@@ -166,8 +167,9 @@ try {
       // The Workshop scenarios (`--generation`) poll the real events endpoint and load the app several times; the exercise
       // generation scenario (#291) adds a batch review, an editor round trip and a Study session on top of them (each full page load
       // also asks Identity, so its budget grows with `--generation` too).
-      if (networkRequests > (config.mechanics ? 3000 : config.media ? 1250 : config.authoring ? 1000 : 500) + (config.generation ? 3500 : 0) + (config.assessment ? 1000 : 0)
-          || identityRequests > 150 + (config.generation ? 100 : 0) + (config.assessment ? 50 : 0)) asynchronousFailure = true;
+      // The paywall scenario (#301) loads the app about twenty times (every width and the quiet routes of the goal question).
+      if (networkRequests > (config.mechanics ? 3000 : config.media ? 1250 : config.authoring ? 1000 : 500) + (config.authoring ? 900 : 0) + (config.generation ? 3500 : 0) + (config.assessment ? 1000 : 0)
+          || identityRequests > 150 + (config.authoring ? 80 : 0) + (config.generation ? 100 : 0) + (config.assessment ? 50 : 0)) asynchronousFailure = true;
       if (!allowed.has(url.origin) || asynchronousFailure) {
         externalRequests++;
         run(interception(release(tab.call('Fetch.failRequest', { requestId: event.requestId, errorReason: 'BlockedByClient' }))));
@@ -368,7 +370,8 @@ try {
   await until(() => exists('#profile-bio'), 'native account profile did not load');
   await fill('#display-name', 'Mnema browser fixture');
   await fill('#profile-bio', 'Профиль нового Identity API');
-  require(await click('form button[type=submit]'), 'profile save action absent');
+  // The goal question (#301) is also a form on /profile: name the profile's own.
+  require(await click('form:has(#profile-bio) button[type=submit]'), 'profile save action absent');
   await until(() => exists('.success'), 'bearer profile update did not complete');
   await cdp.call('Page.reload', { ignoreCache: true });
   await until(async () => await cdp.callFunction(`function() {
@@ -1039,24 +1042,31 @@ try {
         saveScreenshot, saveFullScreenshot, clickText, setStep: value => { step = value; }, deckPath, bearer: secondBearer });
       mechanicsFailures = [...mechanicsFailures, ...hub.failures];
     }
-    // Native code block (#303): real editor input, publication, Browse, scrolling, round trip. Runs last in its own material.
-    await runCodeBlock({
-      tab: second, config, record, SafeFailure, until, exists, sanitizedLocation, navigate, saveScreenshot,
-      clickText, setStep: value => { step = value; }, deckPath, bearer: secondBearer });
-    // The profile's «ИИ-бюджет» block (#281) against the real GET /api/usage.
-    step = 'usage_prepare';
-    await runUsage({
+    if (!config.onlyPlans) {
+      // Native code block (#303): real editor input, publication, Browse, scrolling, round trip. Runs last in its own material.
+      await runCodeBlock({
+        tab: second, config, record, SafeFailure, until, exists, sanitizedLocation, navigate, saveScreenshot,
+        clickText, setStep: value => { step = value; }, deckPath, bearer: secondBearer });
+      // The profile's «ИИ-бюджет» block (#281) against the real GET /api/usage.
+      step = 'usage_prepare';
+      await runUsage({
+        tab: second, config, record, SafeFailure, until, exists, navigate, saveScreenshot, setStep: value => { step = value; },
+        bearer: secondBearer });
+    }
+    // The paywall, the goal question and the public /ai (#301) against the real Learning API (`--only-plans` runs this alone).
+    step = 'plans_prepare';
+    await runPlans({
       tab: second, config, record, SafeFailure, until, exists, navigate, saveScreenshot, setStep: value => { step = value; },
-      bearer: secondBearer });
+      bearer: secondBearer, deckPath });
     // The generation composer and the Workshop (#289) against the real Learning API with the Stub text provider.
-    if (config.generation) {
+    if (config.generation && !config.onlyPlans) {
       step = 'workshop_prepare';
       await runWorkshop({
         tab: second, config, record, SafeFailure, until, exists, navigate, saveScreenshot, clickText, setStep: value => { step = value; },
         deckPath, bearer: secondBearer, inflight: inflightNow, audioAssetId: config.media ? uploadedAudioAssetId : null });
     }
     // The semantic assessment of explanations (#292): the rubric editor and the learner's side, with the Stub grader.
-    if (config.assessment) {
+    if (config.assessment && !config.onlyPlans) {
       step = 'assessment_prepare';
       await runAssessment({
         tab: second, config, record, SafeFailure, until, exists, navigate, saveScreenshot, saveFullScreenshot, clickText,
@@ -1100,6 +1110,9 @@ try {
   record('logout_revokes_prior_bearer', { logoutStatus: 204, oldBearerStatus: 401 });
   record('two_account_shared_cookie_logout_isolation', { loggedOutAccountBearerStatus: actorAfterLogout,
     otherAccountBearerStatus: otherAfterLogout });
+  // The public /ai page, on the first tab that is now anonymous (#301).
+  step = 'ai_public';
+  await runAiPublic({ tab: cdp, config, record, SafeFailure, until, exists, navigate, saveScreenshot, setStep: value => { step = value; } });
   step = 'wrong_live_state';
   const beforeWrongState = exchanges.length;
   tamperNextCallback = true;

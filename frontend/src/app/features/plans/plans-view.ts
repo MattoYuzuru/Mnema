@@ -57,20 +57,26 @@ export interface Cta {
     readonly text: string;
     /** The current plan or a teaser: nothing to do. */
     readonly disabled: boolean;
-    /** `stay` keeps the free plan and leaves the page; `buy` opens the notice that payments are being connected. */
-    readonly action: 'stay' | 'buy' | 'none';
+    /**
+     * `stay` keeps the free plan and leaves the page; `buy` opens the notice that payments are being connected;
+     * `downgrade` opens the notice that the plan returns to Free when the paid period ends.
+     */
+    readonly action: 'stay' | 'buy' | 'downgrade' | 'none';
 }
 
 export function cta(entry: PlanEntry, period: PlanPeriod, current: PlanId): Cta {
     if (entry.availability === 'TEASER') return { text: 'Тариф в работе', disabled: true, action: 'none' };
     if (entry.plan === 'FREE') {
         return current === 'FREE' ? { text: 'Остаться на Free', disabled: false, action: 'stay' }
-            : { text: 'Вернуться на Free', disabled: false, action: 'buy' };
+            : { text: 'Вернуться на Free', disabled: false, action: 'downgrade' };
     }
     if (entry.plan === current) return { text: 'Это ваш тариф', disabled: true, action: 'none' };
     const price = period === 'MONTH' ? `${rub(entry.priceRub.month)} в${NBSP}месяц` : `${rub(entry.priceRub.year)} в${NBSP}год`;
     return { text: `Перейти на ${PLAN_LABEL[entry.plan]} — ${price}`, disabled: false, action: 'buy' };
 }
+
+export const PAYMENT_NOTICE = 'Оплату подключаем: тариф можно будет оформить здесь же. Пока доступен промокод.';
+export const DOWNGRADE_NOTICE = 'Тариф вернётся на Free после окончания оплаченного периода.';
 
 /** «5 ноября» (this year's date has no year; a yearly renewal names its year). */
 export function renewalDate(now: Date, period: PlanPeriod): string {

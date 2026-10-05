@@ -39,7 +39,7 @@ describe('plans view', () => {
         expect(cta(plus, 'MONTH', 'FREE').text).toBe(`Перейти на Plus — 449${NBSP}₽ в${NBSP}месяц`);
         expect(cta(plus, 'YEAR', 'FREE').text).toBe(`Перейти на Plus — 5${NBSP}119${NBSP}₽ в${NBSP}год`);
         expect(cta(plus, 'MONTH', 'PLUS')).toEqual({ text: 'Это ваш тариф', disabled: true, action: 'none' });
-        expect(cta(free, 'MONTH', 'PRO').text).toBe('Вернуться на Free');
+        expect(cta(free, 'MONTH', 'PRO')).toEqual({ text: 'Вернуться на Free', disabled: false, action: 'downgrade' });
         expect(cta(max, 'MONTH', 'FREE')).toEqual({ text: 'Тариф в работе', disabled: true, action: 'none' });
     });
 

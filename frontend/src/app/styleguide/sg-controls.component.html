@@ -119,6 +119,30 @@
       <label class="sg-check"><input type="checkbox" disabled /> Недоступно</label>
     </div>
   </app-sg-specimen>
+  <app-sg-specimen title="Флажок с пояснением" selector=".check-field > .check-row + .hint"
+    when="Согласие или включение, у которого есть условия: подпись называет всё, на что человек соглашается (сумма, срок, дата), строка под ней добавляет остальное. Согласие никогда не отмечено заранее; весь ряд — область нажатия. Для текущего состояния, которое нельзя изменить здесь, флажок не показывают."
+    [tokens]="['--mn-ink', '--mn-muted', '--mn-touch-min']"
+    usage='<div class="check-field">
+  <label class="check-row" for="renew"><input type="checkbox" id="renew" /><span>Продлевать автоматически: 449 ₽ каждые 30 дней, следующее списание 4 ноября</span></label>
+  <p class="hint">Галочка не отмечена, пока вы не отметите её сами.</p>
+</div>'>
+    <div class="check-field">
+      <label class="check-row" for="sg-renew"><input type="checkbox" id="sg-renew" /><span>Продлевать автоматически: 449 ₽ каждые 30 дней, следующее списание 4 ноября</span></label>
+      <p class="hint">Галочка не отмечена, пока вы не отметите её сами.</p>
+    </div>
+  </app-sg-specimen>
+  <app-sg-specimen title="Недоступная настройка" selector=".settings-row, .settings-row.is-switch"
+    when="Место для того, что появится позже (автопродление, способ оплаты): подпись и недоступный элемент в одной строке, общая подпись под группой говорит, когда он станет доступен. Без выдуманных значений."
+    [tokens]="['--mn-muted', '--mn-rule', '--mn-touch-min']"
+    usage='<label class="settings-row is-switch"><input type="checkbox" role="switch" disabled aria-describedby="later" /><span>Автопродление</span></label>
+<div class="settings-row"><span>Способ оплаты</span><button type="button" class="button small" disabled aria-describedby="later">Добавить</button></div>
+<p class="hint" id="later">Появится вместе с оплатой.</p>'>
+    <div class="sg-stack">
+      <label class="settings-row is-switch"><input type="checkbox" role="switch" disabled aria-describedby="sg-later" /><span>Автопродление</span></label>
+      <div class="settings-row"><span>Способ оплаты</span><button type="button" class="button small" disabled aria-describedby="sg-later">Добавить</button></div>
+      <p class="hint" id="sg-later">Появится вместе с оплатой.</p>
+    </div>
+  </app-sg-specimen>
   <app-sg-specimen title="Сегменты" selector="<app-segmented-choice>"
     when="Один выбор из 2–5 коротких вариантов, которые важно видеть сразу. У выбранного варианта может быть живое пояснение; длинное объяснение — в toggletip рядом."
     [tokens]="['--mn-ink', '--mn-on-ink', '--mn-field-border', '--mn-muted']"

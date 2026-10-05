@@ -30,8 +30,6 @@ const lazyCanLeaveStudySession: CanDeactivateFn<StudySessionPageComponent> = (..
 const developmentOnlyRoutes: Routes = typeof ngDevMode === 'undefined' || ngDevMode
     ? [{
         path: 'styleguide',
-        // A design catalogue is not a place to be asked about goals (app-goal-onboarding reads this flag).
-        data: { quiet: true },
         loadComponent: () => import('./styleguide/styleguide-page.component').then(module => module.StyleguidePageComponent)
     }]
     : [];

@@ -340,6 +340,30 @@ module.main()
             result = subprocess.run([node, "--check", str(Path(__file__).with_name("usage.mjs"))], capture_output=True)
             self.assertEqual(0, result.returncode)
 
+    def test_plans_scenario_is_wired_reads_the_real_api_and_is_a_development_aid_with_authoring(self):
+        driver = Path(__file__).with_name("browser.mjs").read_text()
+        source = Path(__file__).with_name("plans.mjs").read_text()
+        runner = Path(__file__).with_name("run.py").read_text()
+        self.assertIn("import { runAiPublic, runPlans } from './plans.mjs'", driver)
+        self.assertIn("config.onlyPlans", driver)
+        self.assertIn("record('plans_paywall_goal_real_api'", source)
+        self.assertIn("record('ai_page_public_without_login'", source)
+        # The catalogue and the profile are read from the real API with the page's bearer; nothing is stubbed or injected.
+        self.assertIn("/api/plans", source)
+        self.assertIn("/api/learning-profile", source)
+        self.assertNotIn("Fetch.fulfillRequest", source)
+        self.assertIn('"plans.mjs"', runner)
+        self.assertIn('"onlyPlans": self.args.only_plans', runner)
+        node = shutil.which("node")
+        if node is not None:
+            result = subprocess.run([node, "--check", str(Path(__file__).with_name("plans.mjs"))], capture_output=True)
+            self.assertEqual(0, result.returncode)
+        for extra in ([], ["--generation", "--only-plan"]):
+            with patch.object(sys, "argv", ["run.py", "--dist", str(self.dist), "--only-plans", *extra]), \
+                    contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as exit_code:
+                HARNESS.main()
+            self.assertEqual(2, exit_code.exception.code)
+
     def test_generation_scenario_is_wired_uses_only_the_stub_and_is_syntactically_valid(self):
         for arguments in (["--generation"],):
             with self.subTest(arguments=arguments), patch.object(sys, "argv", ["run.py", "--dist", str(self.dist), *arguments]), \
