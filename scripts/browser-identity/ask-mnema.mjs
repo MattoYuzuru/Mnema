@@ -176,7 +176,7 @@ export async function runWorkshopAsk(ctx, h) {
       heading2: text(root?.querySelector('h2')?.textContent), busy: root?.querySelector('article')?.getAttribute('aria-busy') ?? null,
       strips: document.querySelectorAll('.rewrite-strip').length, preview: Boolean(root?.querySelector('app-exercise-preview-host')),
       history: [...(root?.querySelectorAll('.edit-history .history-ask') ?? [])].map(node => text(node.textContent)), summary: text(document.querySelector('section.workshop .summary')?.textContent),
-      regions: document.querySelectorAll('section.workshop [role=status]').length, success: text(root?.querySelector('.notice.success')?.textContent),
+      regions: document.querySelectorAll('section.workshop [role=status]:not(.document-announcement)').length, success: text(root?.querySelector('.notice.success')?.textContent),
       successLink: root?.querySelector('.notice.success a')?.getAttribute('href') ?? null,
       focusOnHeading: document.activeElement === root?.querySelector('h2'),
       ids: (() => { const all = [...document.querySelectorAll('[id]')].map(node => node.id); return all.length - new Set(all).size; })() };`, scope);

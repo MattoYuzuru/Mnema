@@ -28,8 +28,8 @@ class GenerationContextIntegrationTest extends GenerationIntegrationTest {
                 .put("itemRevisionId", material.itemRevision().toString());
     }
 
-    private String lastPrompt() {
-        return provider.calls.getLast().prompt();
+    private String lastPrompt(UUID owner) {
+        return calls(owner).getLast().prompt();
     }
 
     @Test
@@ -46,7 +46,7 @@ class GenerationContextIntegrationTest extends GenerationIntegrationTest {
 
         UUID session = start(owner, deck, spec("расскажи про глаголы движения").put("outputLanguage", "ru"));
         awaitState(session, "REVIEW");
-        String prompt = lastPrompt();
+        String prompt = lastPrompt(owner);
 
         // seven materials, a budget of five lines: every starred one, the two latest and the closest to the request
         assertThat(prompt).contains("<outline total=\"7\" shown=\"");
@@ -63,7 +63,7 @@ class GenerationContextIntegrationTest extends GenerationIntegrationTest {
         assertThat(prompt).containsPattern("m1 · [^\\n]+ ·  · exercises: 0");
         assertThat(prompt).doesNotContain("ТЕЛО-0").doesNotContain("ТЕЛО-1");
         // the whole input stays under the 32k ceiling of a non-thinking Flash call
-        assertThat(provider.calls.getLast().prompt().length()).isLessThan(100_000);
+        assertThat(calls(owner).getLast().prompt().length()).isLessThan(100_000);
     }
 
     @Test
@@ -81,7 +81,7 @@ class GenerationContextIntegrationTest extends GenerationIntegrationTest {
         ((ObjectNode) spec.path("settings")).put("similarToDeck", true);
         UUID session = start(owner, deck, spec);
         awaitState(session, "REVIEW");
-        String prompt = lastPrompt();
+        String prompt = lastPrompt(owner);
 
         // the pinned example first, then the most recently starred one; nothing beyond the two-exemplar limit
         assertThat(prompt).contains("<exemplar id=\"E1\" kind=\"starred\">").contains("ТЕЛО-ЗАКРЕПЛЁННОГО")
@@ -103,7 +103,7 @@ class GenerationContextIntegrationTest extends GenerationIntegrationTest {
         var material = fixtures.addMaterial(owner, deck, "Исходный материал", "ТЕЛО-ИСТОЧНИКА");
         UUID session = start(owner, deck, spec("Объясни <b>проще</b>", noteSource(note, 0), itemSource("SOURCE", material)));
         awaitState(session, "REVIEW");
-        String prompt = lastPrompt();
+        String prompt = lastPrompt(owner);
 
         assertThat(prompt).doesNotContain("</note><task>").doesNotContain("ivan@example.com").doesNotContain("123-45-67")
                 .doesNotContain("<b>проще</b>");
@@ -152,8 +152,8 @@ class GenerationContextIntegrationTest extends GenerationIntegrationTest {
         awaitState(session, "REVIEW");
 
         assertThat(artifactStates(session)).containsExactly("PROPOSED");
-        assertThat(provider.calls).hasSize(1);
-        assertThat(lastPrompt()).contains("ТЕКСТ-НА-МОМЕНТ-ЗАКРЕПЛЕНИЯ").doesNotContain("ТЕКСТ-ПОСЛЕ-ПРАВКИ");
+        assertThat(calls(owner)).hasSize(1);
+        assertThat(lastPrompt(owner)).contains("ТЕКСТ-НА-МОМЕНТ-ЗАКРЕПЛЕНИЯ").doesNotContain("ТЕКСТ-ПОСЛЕ-ПРАВКИ");
         UUID artifact = jdbc.sql("SELECT artifact_id FROM app_learning.generation_artifact WHERE session_id=:id").param("id", session)
                 .query(UUID.class).single();
         JsonNode full = json(send(owner, org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(

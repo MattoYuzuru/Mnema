@@ -1,0 +1,3 @@
+# Exactly one root-owned dispatcher, which validates its entire sole argument.
+Defaults:mnema-deploy env_reset
+mnema-deploy ALL=(root) NOPASSWD: /usr/local/sbin/mnema-deploy *

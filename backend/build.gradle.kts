@@ -16,6 +16,11 @@ subprojects {
     // (https://tomcat.apache.org/security-11.html). Remove once the Boot BOM catches up.
     extra["tomcat.version"] = "11.0.26"
 
+    // Boot 4.1.1 manages Jackson 3.1.5; 3.1.7 fixes the core/databind DoS findings
+    // recorded in docs/operations/production-image-inventory.md. Align the whole Jackson 3 BOM;
+    // remove this override when Boot manages >=3.1.7 and the release scans pass.
+    extra["jackson-bom.version"] = "3.1.7"
+
     extensions.configure<org.gradle.testing.jacoco.plugins.JacocoPluginExtension> {
         toolVersion = "0.8.15"
     }

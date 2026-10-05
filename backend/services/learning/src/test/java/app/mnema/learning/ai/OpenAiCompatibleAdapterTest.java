@@ -294,6 +294,23 @@ class OpenAiCompatibleAdapterTest {
         assertThat(routerBody.path("user").stringValue()).isEqualTo(AiTestSupport.USER_KEY);
         assertThat(routerBody.path("provider").path("data_collection").stringValue()).isEqualTo("deny");
         assertThat(routerBody.path("usage").path("include").booleanValue()).isTrue();
+        assertThat(routerBody.path("reasoning").path("effort").stringValue()).isEqualTo("none");
+        assertThat(routerBody.has("thinking")).isFalse();
+    }
+
+    @Test
+    void openRouterSwitchesReasoningOnOnlyOnThePlannerRoutes() throws Exception {
+        provider.enqueue(Reply.fixtureJson("openrouter-chat-ok.json"), Reply.fixtureJson("openrouter-chat-ok.json"));
+        OpenAiCompatibleAdapter router = adapter(OpenAiCompatibleAdapter.Dialect.OPENROUTER, "openrouter", "or");
+        router.attempt("deepseek/deepseek-v4.1-flash", AiTestSupport.request().withRoute(AiRoute.PLAN), BUDGET);
+        router.attempt("deepseek/deepseek-v4.1-flash", AiTestSupport.request().withRoute(AiRoute.ASSESS), BUDGET);
+
+        JsonNode plan = JSON.readTree(provider.requests().get(0).body()).path("reasoning");
+        assertThat(plan.path("enabled").booleanValue()).isTrue();
+        assertThat(plan.has("effort")).isFalse();
+        JsonNode assess = JSON.readTree(provider.requests().get(1).body()).path("reasoning");
+        assertThat(assess.path("effort").stringValue()).isEqualTo("none");
+        assertThat(assess.has("enabled")).isFalse();
     }
 
     @Test

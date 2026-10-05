@@ -39,6 +39,12 @@ jobs:
           python3 scripts/learning-security/run.py
           python3 scripts/learning-security/verify_cancellation.py
 
+      - name: Verify VPS runtime and isolated local restore
+        timeout-minutes: 5
+        run: |
+          docker build --tag mnema-vps-postgres-fixture:verified deploy/production
+          python3 -m unittest discover -s scripts/tests -p 'test_vps_*.py' -v
+
       - name: Upload backend coverage report
         uses: ./.github/actions/safe-upload-artifact
         with:

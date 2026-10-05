@@ -3,6 +3,7 @@ package app.mnema.learning.ai;
 import app.mnema.learning.generation.mbm.MbmCompiler;
 import app.mnema.learning.generation.mbm.MbmOptions;
 import app.mnema.learning.generation.mbm.MbmResult;
+import app.mnema.learning.generation.mbm.MbmSlot;
 import app.mnema.learning.generation.mbm.RandomIdAllocator;
 import org.junit.jupiter.api.Test;
 
@@ -100,5 +101,67 @@ class StubTextAdapterTest {
         assertThat(ok(stub.attempt("stub", badDocument.withRepair("MBM_HEADING_LEVEL"), budget)).text()).doesNotStartWith("####");
         assertThat(stub.configured()).isTrue();
         assertThat(stub.provider()).isEqualTo("stub");
+    }
+
+    private static final String IMAGE_LINE = "медиа: картинка из поиска (::image mode=search);";
+    private static final String BOTH_LINE = "медиа: аудио (::audio), картинка из поиска (::image mode=search);";
+
+    private static String materialTask(String mediaLine, String request) {
+        return "<task>\n<request>" + request + "</request>\nТип: free; " + mediaLine + "\n</task>";
+    }
+
+    private MbmResult.Success compile(String text) {
+        var result = new MbmCompiler().compile(text, MbmOptions.create().withMaxMedia(8), new RandomIdAllocator());
+        assertThat(result).as(text).isInstanceOf(MbmResult.Success.class);
+        return (MbmResult.Success) result;
+    }
+
+    @Test
+    void aMaterialThatMayHaveMediaGetsTheDirectivesAppendedAndTheSlotsCompile() {
+        String task = materialTask(BOTH_LINE, "  лиса\nзимой [[stub:image-none]]  ");
+        String text = ok(stub.attempt("stub", request(task, OutputContract.MBM_TEXT, null), Duration.ofSeconds(1))).text();
+
+        assertThat(text).contains("\n\n::image{slot=\"i1\" mode=\"search\" alt=\"Иллюстрация к материалу\"} лиса зимой [[stub:image-none]]\n")
+                .contains("\n\n::audio{slot=\"a1\" lang=\"ru\" title=\"Озвучка\"} ");
+        String heading = text.lines().filter(line -> line.matches("#{1,3} .+")).findFirst().map(line -> line.replaceFirst("^#+ ", "")).orElse("Озвучка");
+        assertThat(text).contains("title=\"Озвучка\"} " + heading + "\n");
+        assertThat(compile(text).slots()).extracting(MbmSlot::slotKey, MbmSlot::kind)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("i1", MbmSlot.Kind.IMAGE), org.assertj.core.groups.Tuple.tuple("a1", MbmSlot.Kind.AUDIO));
+    }
+
+    @Test
+    void theImageQueryIsBoundedAndFallsBackToIllustrationAndNothingIsAddedWithoutTheTaskLine() {
+        String long300 = ok(stub.attempt("stub", request(materialTask(IMAGE_LINE, "я".repeat(500)), OutputContract.MBM_TEXT, null), Duration.ofSeconds(1))).text();
+        assertThat(long300).contains("} " + "я".repeat(300) + "\n").doesNotContain("я".repeat(301));
+        String blank = ok(stub.attempt("stub", request(materialTask(IMAGE_LINE, "  "), OutputContract.MBM_TEXT, null), Duration.ofSeconds(1))).text();
+        assertThat(blank).contains("} illustration\n").doesNotContain("::audio");
+        compile(blank);
+
+        String none = ok(stub.attempt("stub", request(materialTask("медиа: нет, не добавляй медиа-директивы;", "тема"), OutputContract.MBM_TEXT, null),
+                Duration.ofSeconds(1))).text();
+        assertThat(none).doesNotContain("::image").doesNotContain("::audio");
+        assertThat(none).isIn(List.of("headings", "blockquote-divider", "lists", "ruby", "table").stream().map(name -> {
+            try {
+                return Files.readString(contracts().resolve("mbm-v1/valid/" + name + ".mbm"));
+            } catch (IOException unreadable) {
+                throw new IllegalStateException(unreadable);
+            }
+        }).toList());
+    }
+
+    @Test
+    void theAudioTextIsTheFirstHeadingOfTheDocumentBoundedToSixHundred() {
+        String document = StubTextAdapter.withMedia("# Глагол 行く\n\nТекст.\n", materialTask(BOTH_LINE, "тема"));
+        assertThat(document).endsWith("\n\n::audio{slot=\"a1\" lang=\"ru\" title=\"Озвучка\"} Глагол 行く\n");
+        assertThat(compile(document).slots()).hasSize(2);
+        String audioLine = StubTextAdapter.withMedia("# " + "ж".repeat(700) + "\n", materialTask(BOTH_LINE, "тема")).lines()
+                .filter(line -> line.startsWith("::audio")).findFirst().orElseThrow();
+        assertThat(audioLine).endsWith("} " + "ж".repeat(600));
+    }
+
+    @Test
+    void aRepairAnswerCarriesNoMedia() {
+        TextRequest repair = request(materialTask(BOTH_LINE, "тема"), OutputContract.MBM_TEXT, null).withRepair("MBM_X");
+        assertThat(ok(stub.attempt("stub", repair, Duration.ofSeconds(1))).text()).doesNotContain("::image").doesNotContain("::audio");
     }
 }

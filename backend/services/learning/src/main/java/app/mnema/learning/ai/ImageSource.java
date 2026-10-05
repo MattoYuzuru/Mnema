@@ -15,6 +15,13 @@ import java.util.Set;
  * provider problems and never logs a key, a token or a URL.
  */
 interface ImageSource {
+    /**
+     * Results asked from a source per search, whatever the caller needs: the 24-hour cache key is {@code source|query|lang|page}, so a
+     * page must always have the same size or a later "find similar" turn would be served a smaller cached page. The caller slices.
+     * Within every source limit (Pixabay per_page up to 200, Wikimedia gsrlimit up to 50, Openverse page_size up to 500).
+     */
+    int PAGE_SIZE = 30;
+
     ImageSearch.Source source();
 
     /** The provider id of the journal, metrics and breakers (lower case). */

@@ -24,7 +24,7 @@ glossary: [domain truth map](./domain-truth-map.md).
 2. [System overview](../system-overview.md), then the
    [domain truth map](./domain-truth-map.md) for the owning contract.
 3. The current guide for the owning runtime and its nearby tests.
-4. [Local-only delivery](../operations/local-development-delivery.md) before any
+4. [Production delivery](../operations/production-delivery.md) before any
    delivery decision.
 5. For Study, use the [implemented contract below](#epic-75-study-contract) and
    [integrated acceptance](./evidence/epic-75/verification/integrated-main-2026-09-24.md).
@@ -74,7 +74,7 @@ Mnema/
 │   └── tests/                           repository policy tests
 ├── docs/                                canonical navigator and evidence
 ├── design/prototype/                    historical design evidence
-├── k8s/, deploy/                        paused/restoration operational sources
+├── k8s/, deploy/                        VPS runtime and legacy operational sources
 ├── docker-compose.yml                   replacement backend maintenance runtime
 ├── compose.local-full-stack.yml         persistent local HTTPS product runtime
 └── .github/workflows/                   protected quality and dormant operations
@@ -223,11 +223,11 @@ environment prerequisites and cleanup.
 
 ## Delivery mode
 
-The shared server is unavailable. `main` image publication and operational workflows
-are fail-closed/paused. A locally and hosted-verified protected squash is complete
-local delivery; it is not deployed or production-verified. Do not rerun historical
-operational workflows or contact the former host. Reactivation needs its own reviewed
-infrastructure issue.
+Production is available on the Russian VPS `mnema` (`ssh mnema`,
+`135.106.175.30`), serving `mnema.app` and `auth.mnema.app`. Development releases
+use manual four-image publication, administrator admission and the protected
+`vps-deploy.yaml` job. Follow [production delivery](../operations/production-delivery.md).
+Keep local/hosted gates and protected squash; merge alone is not live verification.
 
 ## Change routes
 
@@ -268,8 +268,8 @@ is outside local delivery.
   environment failure, not permission to accept skipped coverage.
 - Local browser evidence does not certify VoiceOver/TalkBack, physical touch, Safari,
   Firefox or production latency/capacity.
-- Hosted operations are paused; passing workflow contract tests does not prove a
-  server, backup, image or deployment exists.
+- Production release acceptance needs actual runtime evidence; workflow contract tests
+  alone do not prove readiness, backup durability or browser acceptance.
 
 ## Epic #75 Study contract
 

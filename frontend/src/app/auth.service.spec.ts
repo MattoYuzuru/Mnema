@@ -4,6 +4,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { AuthService } from './auth.service';
+import { TurnstileService, AbuseProtectionFailure } from './turnstile.service';
 import { AUTH_BROWSER, AuthBrowser, BROWSER_IDENTITY_CONFIG } from './auth-browser';
 import { AUTH_SCOPES, AUTH_STORAGE_KEY, PKCE_STORAGE_KEY } from './auth-protocol';
 import { spyObj, type SpyObj, lastCall } from '../testing/mocks';
@@ -21,12 +22,14 @@ describe('real Identity browser protocol orchestration', () => {
     let storage: Map<string, string>;
     let browser: AuthBrowser;
     let navigate: Mock;
+    let challenge: Mock;
     const settle = async () => { for (let i = 0; i < 8; i++)
         await Promise.resolve(); };
 
     beforeEach(() => {
         storage = new Map();
         navigate = vi.fn().mockName('navigate');
+        challenge = vi.fn().mockImplementation(async (action: string) => `fresh-${action}-token`);
         browser = { origin, pathname: '/decks', search: '', now: () => now,
             random: () => 'r'.repeat(43), challenge: async () => 'c'.repeat(43), navigate,
             clearQuery: vi.fn().mockName('clearQuery'), storage: {
@@ -44,6 +47,7 @@ describe('real Identity browser protocol orchestration', () => {
         router.navigateByUrl.mockResolvedValue(true);
         TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting(),
                 { provide: Router, useValue: router }, { provide: AUTH_BROWSER, useValue: browser },
+                { provide: TurnstileService, useValue: { token: challenge } },
                 { provide: BROWSER_IDENTITY_CONFIG, useValue: { authServerUrl: issuer, clientId: 'mnema-web', identityRedirectUri: redirectUri, learningApiBaseUrl: '/api' } }] });
         auth = TestBed.inject(AuthService);
         http = TestBed.inject(HttpTestingController);
@@ -157,12 +161,13 @@ describe('real Identity browser protocol orchestration', () => {
 
     it('requires CSRF cookie exchange for password login and never treats its response as bearer access', async () => {
         const result = auth.loginWithPassword('fixture', 'synthetic-password', '/decks');
+        await settle();
         const csrf = http.expectOne(`${issuer}/api/accounts/csrf`);
         expect(csrf.request.withCredentials).toBe(true);
         csrf.flush({ headerName: 'X-CSRF-TOKEN', token: 'csrf-token' });
         await settle();
         const login = http.expectOne(`${issuer}/api/accounts/login`);
-        expect(login.request.body).toEqual({ login: 'fixture', password: 'synthetic-password' });
+        expect(login.request.body).toEqual({ login: 'fixture', password: 'synthetic-password', turnstileToken: 'fresh-login-token' });
         expect(login.request.withCredentials).toBe(true);
         expect(login.request.headers.get('X-CSRF-TOKEN')).toBe('csrf-token');
         login.flush(profile);
@@ -175,10 +180,39 @@ describe('real Identity browser protocol orchestration', () => {
     it('does not send a password mutation after its CSRF preparation was superseded', async () => {
         const result = auth.loginWithPassword('fixture', 'synthetic-password', '/decks');
         const rejection = expect(result).rejects.toThrow();
+        await settle();
         const csrf = http.expectOne(`${issuer}/api/accounts/csrf`);
         auth.expireSession();
         csrf.flush({ headerName: 'X-CSRF-TOKEN', token: 'csrf-token' });
         await rejection;
+        http.expectNone(`${issuer}/api/accounts/login`);
+    });
+
+    it('requires distinct register and login tokens and never persists them', async () => {
+        const result = auth.registerWithPassword('fixture@example.test', 'fixture', 'synthetic-password', '/decks');
+        await settle();
+        http.expectOne(`${issuer}/api/accounts/csrf`).flush({ headerName: 'X-CSRF-TOKEN', token: 'csrf-token' });
+        await settle();
+        const registration = http.expectOne(`${issuer}/api/accounts/register`);
+        expect(registration.request.body.turnstileToken).toBe('fresh-register-token');
+        registration.flush(profile); await settle();
+        http.expectOne(`${issuer}/api/accounts/csrf`).flush({ headerName: 'X-CSRF-TOKEN', token: 'csrf-token' });
+        await settle();
+        const login = http.expectOne(`${issuer}/api/accounts/login`);
+        expect(login.request.body.turnstileToken).toBe('fresh-login-token');
+        login.flush(profile); await result;
+        expect(challenge.mock.calls.map(call => call[0])).toEqual(['register', 'login']);
+        expect(Array.from(storage.values()).join('')).not.toContain('fresh-');
+    });
+
+    it('does not send credentials when abuse protection fails or an intent was superseded', async () => {
+        challenge.mockRejectedValueOnce(new AbuseProtectionFailure('unavailable'));
+        await expect(auth.loginWithPassword('fixture', 'synthetic-password', '/decks')).rejects.toThrow();
+        http.expectNone(`${issuer}/api/accounts/csrf`);
+        let resolve!: (value: string) => void;
+        challenge.mockImplementationOnce(() => new Promise<string>(done => { resolve = done; }));
+        const result = auth.loginWithPassword('fixture', 'synthetic-password', '/decks');
+        auth.expireSession(); resolve('superseded-token'); await result;
         http.expectNone(`${issuer}/api/accounts/login`);
     });
 
@@ -212,6 +246,7 @@ describe('real Identity browser protocol orchestration', () => {
 
     it('rejects overlapping cookie logins even after the first password POST was dispatched', async () => {
         const first = auth.loginWithPassword('first', 'synthetic-password', '/decks');
+        await settle();
         http.expectOne(`${issuer}/api/accounts/csrf`).flush({ headerName: 'X-CSRF-TOKEN', token: 'csrf-token' });
         await settle();
         const login = http.expectOne(`${issuer}/api/accounts/login`);

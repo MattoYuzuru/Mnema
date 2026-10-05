@@ -5,17 +5,17 @@ artifact:
   title: "Mnema AI layer: generation, speech input, media and usage"
   status: accepted
   created_at: "2026-10-02"
-  updated_at: "2026-10-02"
+  updated_at: "2026-10-04"
   owners: ["project-owner"]
   source_tasks: ["Epic #77 reactivation", "owner decisions 2026-10-01/02"]
   base_revision: "origin/main 9d462f7b (#274) for code facts"
   assumptions:
-    - "Primary storage, Identity, payments and learning history stay in Russian hosting; a stateless AI gateway abroad is optional and needs a legal decision."
+    - "Primary storage, Identity, payments and learning history stay in Russian hosting. Owner decision 2026-10-04: providers unreachable from Russia are called through a stateless HTTP CONNECT egress proxy on the owner's VPS in Finland (INFRA-02, #340); keys and data stay in Russia."
     - "The backend platform upgrade (Java 25, Gradle 9.8.0, Spring Boot 4.1.1, #278) and the frontend upgrade (Angular 22.2.1, Node 24 LTS, Vitest, zoneless, #306) are delivered. AI code is written to be portable."
     - "The seven exercise mechanics come from the server registry; ORDER/CATEGORIZE (#268) are merged: all seven mechanics exist in the registry and in contracts/study."
   unresolved_questions:
-    - "TTS vendor accessible to a Russian sole proprietor with quality close to Google; Yandex SpeechKit needs an explicit owner exception."
-    - "Whether faster-whisper on the first 4 vCPU / 8 GB VPS meets the dictation latency target; benchmark before choosing self-host vs API."
+    - "TTS for Russian: Google Gemini 3.8 Flash TTS through the egress proxy (primary candidate since 2026-10-04) or Yandex SpeechKit v1 (needs the owner's exception); decided by the #297 spike."
+    - "STT: self-host (GigaAM-v3 / Qwen3-ASR) on the target VPS or Gemini transcription through the egress proxy; decided by the #298 spike."
 ---
 
 # AI-слой Mnema: генерация, голосовой ввод, медиа и usage
@@ -61,6 +61,12 @@ app.mnema.learning.capability        существующий fail-closed gate, 
 - Границы держатся package-private классами, как в `media`; ArchUnit/Modulith не вводятся.
 - Это соответствует правилу [content platform](./content-platform-v2.md): workers
   пишут только integration-owned таблицы или вызывают application command.
+
+Egress (решение владельца 2026-10-04, INFRA-02 #340): провайдер с `egress=proxy` вызывается только через stateless HTTP
+CONNECT-прокси на VPS владельца в Финляндии (`MNEMA_AI_EGRESS_PROXY_URL/_USER/_PASSWORD`). TLS — сквозной до провайдера:
+прокси видит имя хоста и объём, не тела и не ключи; на прокси — basic auth, allowlist целевых хостов, запрет приватных
+адресов и firewall по IP сервера Mnema; без прокси такой провайдер не настроен (`PROVIDER_NOT_CONFIGURED`), а
+`learning.ai.egress.enabled=false` — общий kill-switch. Локально и в CI прокси не нужен (Stub).
 
 Роли процесса: локально и в первой поставке — `all`. При разделении `api` не держит
 ключей провайдеров и не исполняет шаги; `worker` отдаёт наружу только actuator, держит
@@ -351,14 +357,14 @@ library версионируется в AI-02, бюджеты применяют
 
 | Порт | Primary | Fallback | Stub |
 |---|---|---|---|
-| `TextGeneration` | direct DeepSeek V4.1 Flash (non-thinking; thinking выключать явно), эскалация V4 Pro | GigaChat (cloud.ru); OpenRouter как опциональный адаптер при доступности аккаунта | детерминированный Stub для local/CI |
-| `SemanticAssessment` (есть seam) | DeepSeek Flash, rubric в кэшируемом префиксе | GigaChat Lite | `UNAVAILABLE` → self-check |
-| `Transcription` (есть seam `SpeechToTextProvider`) | self-host в отдельном контейнере (2 vCPU / 2,5 GB, очередь, backpressure) с маршрутизацией по языку колоды: RU → GigaAM-v3 (MIT), остальные → Qwen3-ASR-0.6B int8 (Apache-2.0); Whisper turbo/medium на 4 vCPU слишком медленны для интерактива; benchmark на целевом VPS обязателен | Yandex SpeechKit STT (RU/EN, без KO/JA/ZH) при снятом исключении; внешние US/EU STT-API юридически закрыты для оператора из РФ (EU Reg. 833/2014 Art. 5n) — только по заключению юриста | ручной ввод |
-| `SpeechSynthesis` | RU: Yandex SpeechKit TTS v1 (1 342 ₽/1M символов с НДС; terms разрешают кэш и переиспользование) при явном снятии исключения владельцем; FR/ES/JA/ZH/KO: MiniMax или Alibaba Qwen-Audio при легальной оплате, иначе self-host Qwen3-TTS/CosyVoice3 пакетно на почасовом GPU; кэш по SHA-256 канонического ключа (схема, нормализованный текст, язык, провайдер/модель/версия, голос, формат) в S3 по контент-адресу, `ON CONFLICT` + lease, без `account_id`, pre-warm при публикации, credits только при промахе | загруженное автором аудио | загруженное автором аудио |
-| `ImageSearch` | Pexels + Pixabay + Openverse/Wikimedia; файл сохраняется, атрибуция в provenance и `caption` | — | — |
+| `TextGeneration` | direct DeepSeek V4.1 Flash (non-thinking; thinking выключать явно), эскалация V4 Pro | OpenRouter с теми же моделями DeepSeek (решение 2026-10-04; reasoning выключен явно, кроме планировщика); GigaChat (cloud.ru) — последним, когда появится ключ | детерминированный Stub для local/CI |
+| `SemanticAssessment` (есть seam) | DeepSeek Flash, rubric в кэшируемом префиксе | OpenRouter (DeepSeek Flash); GigaChat Lite при наличии ключа | `UNAVAILABLE` → self-check |
+| `Transcription` (есть seam `SpeechToTextProvider`) | выбирается spike #298 (решение 2026-10-04): self-host в отдельном контейнере (2 vCPU / 2,5 GB, очередь, backpressure; RU → GigaAM-v3, остальные → Qwen3-ASR-0.6B int8) против Gemini-транскрибации через egress-прокси (только обезличенно и после явного согласия на голос); порт получает оба адаптера за конфигурацией; Whisper turbo/medium на 4 vCPU слишком медленны для интерактива | Yandex SpeechKit STT (RU/EN) при снятом исключении | ручной ввод |
+| `SpeechSynthesis` | выбирается spike #297 (решение 2026-10-04): primary-кандидат Google Gemini 3.8 Flash TTS через egress-прокси (7 языков; цена ×2 с 2027-01-01), для RU сравнение с Yandex SpeechKit v1 (1 342 ₽/1M символов с НДС, нужно снятие исключения); кэш по SHA-256 канонического ключа (схема, нормализованный текст, язык, провайдер/модель/версия, голос, формат) в S3 по контент-адресу, `ON CONFLICT` + lease, без `account_id`, pre-warm при публикации, credits только при промахе; kill-switch | self-host Qwen3-TTS/CosyVoice3 пакетно; загруженное автором аудио | загруженное автором аудио |
+| `ImageSearch` | Pixabay + Openverse + Wikimedia Commons (Pexels убран 2026-10-04); файл скачивается и сохраняется, атрибуция в provenance и `caption` | — | детерминированный Stub для local/CI |
 | `ImageGeneration` | позже (Pro/Max), после legal-проверки контрагента | — | — |
 | `VideoGeneration` | не в первом релизе; порт зарезервирован | — | — |
-| `WebSearch` | Yandex Search API (0,488 ₽ sync / 0,0305 ₽ deferred за запрос; иностранные языки через тип COM; российский контрагент) | Brave / Perplexity только при легальной оплате; Exa и Tavily исключают Россию; извлечение страниц — self-host jsoup за SSRF-guard | фактчек выключен |
+| `WebSearch` | выбирается spike #299 (решение 2026-10-04): Yandex Search API (0,488 ₽ sync / 0,0305 ₽ deferred за запрос; COM для иностранных языков; российский контрагент) против Brave / Perplexity через egress-прокси; до ключа — Stub и recorded fixtures | Exa и Tavily исключают Россию; извлечение страниц — self-host jsoup за SSRF-guard | фактчек выключен |
 
 Адаптеры — JDK `HttpClient` + Jackson + records (как `IdentityHttp`): ограниченный body,
 deadline, без redirects; SSE провайдера читается построчно на virtual thread.
@@ -371,9 +377,10 @@ Capability flags — по существующему правилу `flag && ada
 глобальный бюджет). Квота — не capability: `GET /api/usage`. Per-provider kill-switch
 и model id — в конфигурации, меняются без релиза.
 
-Секреты — только имена env: `MNEMA_AI_DEEPSEEK_API_KEY`, `MNEMA_AI_GIGACHAT_AUTH_KEY`,
-`MNEMA_AI_OPENROUTER_API_KEY`, `MNEMA_AI_PEXELS_API_KEY`, `MNEMA_AI_PIXABAY_API_KEY`,
-`MNEMA_AI_OPENVERSE_CLIENT_ID`/`_SECRET`, `MNEMA_AI_SEARCH_API_KEY`, `MNEMA_AI_TTS_API_KEY`;
+Секреты — только имена env: `MNEMA_AI_DEEPSEEK_API_KEY`, `MNEMA_AI_OPENROUTER_API_KEY`, `MNEMA_AI_GIGACHAT_AUTH_KEY`,
+`MNEMA_AI_GOOGLE_API_KEY` (Gemini TTS/транскрибация через egress-прокси), `MNEMA_AI_PIXABAY_API_KEY`,
+`MNEMA_AI_OPENVERSE_CLIENT_ID`/`_SECRET`, `MNEMA_AI_SEARCH_API_KEY` и `MNEMA_AI_YANDEX_FOLDER_ID` (поиск),
+`MNEMA_AI_TTS_API_KEY` (Yandex SpeechKit), `MNEMA_AI_EGRESS_PROXY_URL`/`_USER`/`_PASSWORD` (egress-прокси);
 только в окружении `worker`; отдельные ключи на окружение; лимит трат на стороне
 провайдера как последний предохранитель. CI никогда не ходит к реальным провайдерам;
 live-тесты — отдельная opt-in Gradle-задача с ключами из локального окружения.
@@ -475,6 +482,11 @@ ETag/304 раз в 30–60 s, раз в 10 s при `activeWork > 0`. Первы
 - В prompt никогда не попадают email, имя, payment data, account UUID; `user_id` =
   `HMAC(account_id, rotating key)`; preflight предупреждает о похожих на ПД фрагментах
   с вариантом исключить; raw prompts и ответы не хранятся дольше job.
+- Egress-прокси (INFRA-02): stateless, без хранения тел и ключей; TLS сквозной до провайдера; basic auth к прокси идёт
+  открытым текстом, поэтому firewall по IP сервера Mnema обязателен, пароль ротируется; прокси запрещает приватные и
+  metadata-адреса и пускает только allowlist хостов. Через прокси — только обезличенный текст и голос (голос — после
+  отдельного согласия). Terms Google Gemini API ограничивают обслуживание пользователей вне доступных регионов — риск
+  блокировки аккаунта провайдера (решение владельца 2026-10-04); kill-switch и fallback обязательны.
 - Данные пользователей, Identity, медиа и платежи — в РФ. Передача обезличенного
   учебного текста провайдеру — трансграничная передача; уведомление РКН до начала и
   disclosure перед первым AI-действием — human actions эпика. Голос — ПД; STT

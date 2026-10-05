@@ -1,40 +1,27 @@
 # Release image security evidence
 
-Status: **current**, updated 2026-09-05.
+Status: **current**, updated 2026-10-05.
 
-Every Main CI replacement candidate contains exactly two immutable GHCR image digests:
-`identity-account` and `learning`. Both environment manifests describe the same images in
-maintenance; production promotion is disabled until #147. A digest becomes a releasable artifact only after all of the following
-checks pass for that exact reference:
+Current VPS publication contains exactly four immutable GHCR image digests:
+`identity-account`, `learning`, `frontend`, `postgres`. Every image needs maximal
+BuildKit provenance, SPDX SBOM, verified GitHub provenance/SBOM attestations bound
+to repository/workflow/current main SHA, and a Trivy report with no unexcepted
+HIGH/CRITICAL findings. Scanner/database identity and all severities remain visible.
 
-1. Docker BuildKit publishes `mode=max` provenance and an SPDX 2.3 SBOM with the image.
-2. GitHub Artifact Attestations creates independent provenance and SBOM attestations for the
-   digest. The workflow immediately verifies the repository, signer workflow, source commit,
-   source ref and hosted-runner boundary.
-3. Trivy scans the digest, records its exact version and vulnerability database timestamps, and
-   emits the full JSON report and SARIF. Unexcepted `HIGH` or `CRITICAL` findings stop Main CI before the
-   digest artifact exists; `LOW` and `MEDIUM` findings remain visible in evidence without blocking.
-4. `scripts/verify_release_security_evidence.py` binds the two digests, source commit, Main CI run
-   and attempt, attestations, SBOM hashes, scanner identity, counts and any applied exceptions into
-   `release-security-evidence.json`.
+The current aggregator `scripts/render_vps_candidate.py` binds the four services,
+source/run/attempt, digests and verified security evidence into `vps-candidate`.
+The existing evidence verifier supplies the individual image evidence policy.
+See [VPS publication](vps-image-publication.md) for exact files and checks. Candidate
+publication does not grant administrator admission or runtime acceptance.
+Full scan/SBOM/attestation evidence stays in sanitized 30-day Actions artifacts.
 
-The compact evidence and its SHA-256 checksum travel with both release manifests. Staging checks
-the original Main CI run identity and both manifests before reading staging credentials. Staging records successful maintenance smoke without relaying a production promotion artifact.
-The production workflow reports the #147 gate and skips all protected `prod` jobs. Full SBOM, attestation verification and Trivy
-JSON, SARIF and SBOM files stay in the 30-day `release-security-<service>` Actions artifacts; they must not be copied
-to issue comments or logs.
-
-This design follows the official [GitHub Artifact Attestations workflow and verification
-model](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations),
-Docker's [BuildKit SBOM](https://docs.docker.com/build/metadata/attestations/sbom/) and
-[provenance](https://docs.docker.com/build/metadata/attestations/slsa-provenance/) attestations, and
-the official [Trivy Action](https://github.com/aquasecurity/trivy-action). Action references are
-immutable commit pins with adjacent release versions.
+The retained two-service Kubernetes release renderer is a dormant source contract,
+not the current production publication or deployment path. Its manifests do not
+represent the running VPS topology.
 
 ## Independent verification
 
-Authenticate `gh` to GitHub and `docker` to GHCR, then use the exact digest from the release
-manifest. The signer and source restrictions are mandatory:
+Authenticate `gh` to GitHub and `docker` to GHCR, then use the exact digest from `vps-candidate.json`. The signer and source restrictions are mandatory:
 
 ```bash
 image='ghcr.io/mattoyuzuru/mnema/identity-account@sha256:<64 lowercase hex characters>'
@@ -56,19 +43,25 @@ gh attestation verify "oci://${image}" \
   --predicate-type https://spdx.dev/Document/v2.3
 ```
 
-Download the matching `production-release-manifest` artifact and verify its checksums before local
-inspection:
+Download `vps-candidate` from the exact successful current-main publication run.
+Set `commit`, `run_id` and `run_attempt` from verified GitHub run metadata, not from
+untrusted artifact fields. In its download directory, check both files and
+reconstruct the candidate with the reviewed repository verifier:
 
 ```bash
-sha256sum --check production-release.yaml.sha256
-sha256sum --check release-security-evidence.json.sha256
-python3 scripts/verify_release_security_evidence.py verify-release \
-  --evidence release-security-evidence.json \
-  --manifest production-release.yaml \
-  --expected-repository MattoYuzuru/Mnema \
-  --expected-commit "$commit" \
-  --trivy-ignore security/trivy-release-ignore
+sha256sum --check vps-candidate.sha256
+python3 /path/to/verified/Mnema/scripts/render_vps_candidate.py \
+  --evidence vps-security-evidence.json \
+  --repository MattoYuzuru/Mnema --sha "$commit" \
+  --run-id "$run_id" --run-attempt "$run_attempt" \
+  --trivy-ignore /path/to/verified/Mnema/security/trivy-release-ignore \
+  --output candidate-checked.json
+cmp vps-candidate.json candidate-checked.json
 ```
+
+Repeat both attestation checks above for **all four** candidate digest references.
+Checksum/renderer success alone does not authenticate registry attestations or
+prove migrations, backup, auth/data admission or live health.
 
 ## Temporary exception contract
 
@@ -94,38 +87,23 @@ scopes fail closed. Remove the entry as soon as the finding is fixed. Updating t
 normal protected pull request and a new build because an exception is part of release policy, not a
 runtime toggle.
 
-Both Trivy invocations use the explicit comments-only `security/trivy-release-ignore` file. Active
+All release Trivy invocations use the explicit comments-only `security/trivy-release-ignore` file. Active
 ignore entries in that file are rejected by the evidence validator; `.trivyignore` is never part of
 the release policy. This prevents scanner-native ignores from bypassing the owner, scope and expiry
 contract above.
 
-The retained, non-shipping frontend Dockerfile keeps its reviewed nginx base digest and requires Alpine `libcrypto3`
-and `libssl3` **at least** at the first fixed build found by the initial shipping-image baseline (`>=3.5.8-r0`).
-An exact pin broke every uncached rebuild once Alpine replaced 3.5.8-r0 with 3.5.9-r0 (2026-10-01), so the floor
-accepts newer security patches and the release image scan remains the gate for what is installed. Do not replace
-that repair with a scan exception.
-
-The initial backend baseline was repaired by updating the existing Spring Boot 3.5 line to its
-current patch, updating the existing PostgreSQL JDBC driver patch, and removing the unused
-`/usr/bin/pebble` binary inherited from the JRE image. These are direct fixes, not release
-exceptions; the full backend quality gate remains mandatory for future patch updates.
-
-The replacement's first Main CI scan (2026-09-05, run `33973146293`) rejected
-Tomcat 10.1.55 for CVE-2026-65182, CVE-2026-65905 and CVE-2026-68525.
-The shared build pins the existing Tomcat family to 10.1.59 through Spring Boot's
-[managed-version property](https://docs.spring.io/spring-boot/3.5/gradle-plugin/managing-dependencies.html#managing-dependencies.dependency-management-plugin.customizing-managed-versions).
-[Apache's advisory](https://tomcat.apache.org/security-10.html#Fixed_in_Apache_Tomcat_10.1.59)
-identifies 10.1.59 as the released fix: 10.1.58 did not pass its release vote.
-Keep this override until an adopted Boot BOM provides that fix or newer; verify
-both replacement JARs and the exact image scan before removing it.
+Current frontend/backend/PostgreSQL remediation and base-image floors are in
+[production image inventory](production-image-inventory.md), the Dockerfiles and
+Gradle build. All four derived release images ship and require fresh scan evidence;
+no old baseline version or scan exception substitutes for that gate.
 
 ## Failure and retry
 
 - A Trivy binary, registry, vulnerability database or attestation service outage is a scanner or
-  verification failure, not a clean scan. Main CI stops and no staging workflow is dispatched.
+  verification failure, not a clean scan. Publication stops and no complete candidate is admitted.
 - A finding failure names only severity, finding ID and package. Inspect the bounded raw artifact;
   never paste a complete SBOM or report into a public issue.
-- Retry the failed Main CI run to rebuild from the same commit. Within one run, scanner and
+- Dispatch a fresh current-main publication after investigating the failure; do not rerun historical operational revisions. Within one run, scanner and
   verification retries always address the already-pushed digest and never retag a different image.
 - If a workflow change must be rolled back, revert the workflow and policy code through a pull
   request. Do not delete immutable registry or GitHub attestations. The last fully verified release

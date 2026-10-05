@@ -23,6 +23,7 @@ DEPENDENCY_REVIEW_INPUTS = {
 }
 DOCKER_DIRECTORIES = {
     "/backend",
+    "/deploy/production",
     "/frontend",
     "/k8s",
     "/k8s/ai",

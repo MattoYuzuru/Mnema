@@ -69,7 +69,7 @@ final class OpenverseImageSource implements ImageSource {
         if (bearer instanceof AiResult.Failed<String> failed) return AiResult.failed(failed.failure());
         Duration left = budget.minusNanos(System.nanoTime() - started);
         URI uri = base.resolve("images/?q=" + enc(ImageText.bound(query, 200)) + "&license_type=commercial&mature=false&page_size="
-                + Math.max(5, Math.min(30, maxResults * 2)));
+                + PAGE_SIZE);
         ChatHttp.Reply reply;
         try {
             reply = http.send(ImageSource.get(uri, userAgent).header("Authorization", "Bearer " + ((AiResult.Ok<String>) bearer).value()), left, null);
@@ -87,6 +87,7 @@ final class OpenverseImageSource implements ImageSource {
         if (!root.path("results").isArray()) return AiResult.failed(new AiFailure.InvalidOutput("shape"));
         List<ImageSearch.Candidate> out = new ArrayList<>();
         for (JsonNode item : root.path("results")) {
+            if (out.size() >= PAGE_SIZE) break;
             String id = item.path("id").stringValue("");
             var license = ImageLicense.fromCode(item.path("license").stringValue(null), item.path("license_version").stringValue(""),
                     item.path("license_url").stringValue(null));

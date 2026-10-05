@@ -36,7 +36,7 @@ artifact:
 [visual direction](../frontend/design-and-experience-2026-09.md). Legacy `media`
 service, card/template APIs и старые S3 objects не становятся зависимостями нового
 Learning runtime. Production deployment и native offline apps здесь отсутствуют;
-доставка идёт по [local development mode](../operations/local-development-delivery.md).
+доставка идёт по [local development mode](../operations/production-delivery.md).
 
 ## Принятые продуктовые решения
 

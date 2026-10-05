@@ -397,6 +397,8 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
                 .andReturn();
         Cookie cookie = initial.getResponse().getCookie("SESSION");
         mvc.perform(get("/login").secure(true).cookie(cookie)).andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("/login/script.js")));
+        mvc.perform(get("/login/script.js").secure(true).cookie(cookie)).andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("/login/continue")));
         var logged = mvc.perform(
                 post("/api/accounts/login").secure(true).cookie(cookie).with(csrf()).contentType("application/json")

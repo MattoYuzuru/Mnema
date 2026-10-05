@@ -1,0 +1,23 @@
+[Unit]
+Description=Mnema encrypted AI CONNECT transport to keykomi
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mnema-egress
+Group=mnema-egress
+ExecStart=/usr/bin/ssh -NT -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/etc/mnema/egress/known_hosts -o GlobalKnownHostsFile=/dev/null -o ExitOnForwardFailure=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 -i /etc/mnema/egress/id_ed25519 -L 127.0.0.1:13128:127.0.0.1:3128 mnema-egress@2.27.23.184
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=64M
+TasksMax=16
+
+[Install]
+WantedBy=multi-user.target
