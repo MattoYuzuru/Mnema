@@ -24,6 +24,12 @@ interface SpeechAdapter {
     /** {@code wav} or {@code mp3}: the format asked for, part of the cache key. */
     String format();
 
+    /**
+     * What else, besides the model, the version and the voice, decides the bytes the provider returns (a style instruction it is sent), as a short suffix
+     * of the cache key's {@code modelVersion}; empty when nothing does.
+     */
+    default String versionTag() { return ""; }
+
     AiResult<SpeechSynthesis.Audio> synthesize(String model, String modelVersion, SpeechSynthesis.Request request, Duration budget);
 
     /** The cost of one answered call in micro-US-dollars, from the price table or the per-character rate; never from provider text. */

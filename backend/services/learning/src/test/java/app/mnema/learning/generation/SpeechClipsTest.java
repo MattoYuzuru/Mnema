@@ -6,6 +6,7 @@ import app.mnema.learning.ai.SpeechSynthesis;
 import app.mnema.learning.media.GeneratedMediaStager;
 import app.mnema.learning.media.GeneratedMediaStager.VerifiedMedia;
 import app.mnema.learning.media.MediaCatalog;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -78,7 +79,8 @@ class SpeechClipsTest {
     private final SpeechCache cache = mock(SpeechCache.class);
     private final Stager stager = new Stager();
     private final Control control = new Control();
-    private final SpeechClips clips = new SpeechClips(speech, cache, stager, Duration.ofMillis(5));
+    private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
+    private final SpeechClips clips = new SpeechClips(speech, cache, stager, meters, Duration.ofMillis(5));
     private final UUID owner = UUID.randomUUID();
     private final UUID asset = UUID.randomUUID();
 
@@ -110,6 +112,7 @@ class SpeechClipsTest {
         UUID token = UUID.randomUUID();
         when(cache.claim(any())).thenReturn(new SpeechCache.Claim.Hit(MEDIA), new SpeechCache.Claim.Won(token));
         stager.adopt = false;
+        stager.states.add(GeneratedMediaStager.State.MISSING);
         when(speech.synthesize(any())).thenReturn(AiResult.ok(audio(PRIMARY)));
 
         SpeechClips.Outcome outcome = stage(Instant.now().plusSeconds(5));
@@ -123,9 +126,34 @@ class SpeechClipsTest {
         });
         assertThat(stager.staged).containsExactly(asset);
 
+    }
+
+    @Test
+    void aFailedAdoptionOrAnExistingAssetDoesNotDropTheEntry() {
+        when(speech.identity("ru", "female")).thenReturn(Optional.of(PRIMARY));
+        when(cache.claim(any())).thenReturn(new SpeechCache.Claim.Hit(MEDIA));
         stager.adoptThrows = true;
-        when(cache.claim(any())).thenReturn(new SpeechCache.Claim.Hit(MEDIA), new SpeechCache.Claim.Won(token));
-        assertThat(stage(Instant.now().plusSeconds(5))).isInstanceOf(SpeechClips.Outcome.Staged.class);
+        assertThatThrownBy(() -> stage(Instant.now().plusSeconds(5))).isInstanceOf(IllegalStateException.class);
+        stager.adoptThrows = false;
+        stager.adopt = false;
+        stager.states.add(GeneratedMediaStager.State.VERIFYING);
+        assertThat(stage(Instant.now().plusSeconds(5))).isEqualTo(new SpeechClips.Outcome.Failed("PROVIDER_UNAVAILABLE"));
+        verify(cache, never()).drop(any());
+    }
+
+    @Test
+    void aResumedClipTakesOverTheEntryOfTheEarlierAttemptAndTheStepAssetIsAFunctionOfTheStep() {
+        when(speech.identity("ru", "female")).thenReturn(Optional.of(PRIMARY));
+        UUID token = UUID.randomUUID();
+        when(cache.claim(any())).thenReturn(new SpeechCache.Claim.Won(token));
+        SpeechClips.Outcome.Staged staged = clips.resume(asset, CLIP, true, 777);
+        assertThat(staged.synthesized()).isTrue();
+        assertThat(staged.costMicros()).isEqualTo(777);
+        assertThat(staged.pending().token()).isEqualTo(token);
+        assertThat(clips.resume(asset, CLIP, false, 0).pending()).isNull();
+        UUID step = UUID.randomUUID();
+        assertThat(SpeechClips.assetOf(step, 0)).isEqualTo(SpeechClips.assetOf(step, 0)).isNotEqualTo(SpeechClips.assetOf(step, 1));
+        assertThat(SpeechClips.assetOf(step, 0).version()).isEqualTo(4);
     }
 
     @Test
@@ -137,6 +165,18 @@ class SpeechClipsTest {
         when(cache.claim(any())).thenReturn(new SpeechCache.Claim.Busy());
         assertThat(stage(Instant.now().plusMillis(30))).isEqualTo(new SpeechClips.Outcome.Failed("DEADLINE_EXCEEDED"));
         verify(speech, never()).synthesize(any());
+        assertThat(meters.counter("mnema_tts_cache_total", "outcome", "busy").count()).isGreaterThanOrEqualTo(3);
+        assertThat(meters.counter("mnema_tts_cache_total", "outcome", "hit").count()).isEqualTo(1);
+        assertThat(meters.counter("mnema_tts_cache_total", "outcome", "miss").count()).isZero();
+    }
+
+    @Test
+    void aMissIsCountedWhenTheCallerWinsTheEntry() {
+        when(speech.identity("ru", "female")).thenReturn(Optional.of(PRIMARY));
+        when(cache.claim(any())).thenReturn(new SpeechCache.Claim.Won(UUID.randomUUID()));
+        when(speech.synthesize(any())).thenReturn(AiResult.ok(audio(PRIMARY)));
+        stage(Instant.now().plusSeconds(5));
+        assertThat(meters.counter("mnema_tts_cache_total", "outcome", "miss").count()).isEqualTo(1);
     }
 
     @Test
@@ -261,7 +301,7 @@ class SpeechClipsTest {
 
     @Test
     void theLeaseOfTheWinnerIsRenewedWhileItWaitsForTheVerification() {
-        SpeechClips fast = new SpeechClips(speech, cache, stager, Duration.ofMillis(20));
+        SpeechClips fast = new SpeechClips(speech, cache, stager, meters, Duration.ofMillis(20));
         SpeechClips.Outcome.Staged staged = pending();
         stager.states.add(GeneratedMediaStager.State.VERIFYING);
         // the wait outlasts the renewal interval: the entry's lease is extended, and a hit (no pending entry) never renews

@@ -64,6 +64,16 @@ final class GeminiSpeechSynthesis implements SpeechAdapter {
 
     @Override public String format() { return "wav"; }
 
+    /** The style instruction is sent to the model and changes the speech: a short hash of it keeps old-style clips out of the key. */
+    @Override public String versionTag() {
+        try {
+            return "." + java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(settings.style().getBytes(java.nio.charset.StandardCharsets.UTF_8)), 0, 4);
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException(impossible);
+        }
+    }
+
     @Override
     public AiResult<SpeechSynthesis.Audio> synthesize(String model, String modelVersion, SpeechSynthesis.Request request, Duration budget) {
         ObjectNode body = JSON.createObjectNode().put("model", model);

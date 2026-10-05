@@ -104,7 +104,8 @@ class ContextBuilder {
                 .text("request", request).text("task.skill", "free").number("task.words", wordsFor(effective.workingEffort()))
                 .text("task.media", media(effective));
         AssembledPrompt prompt = assembler.assemble(PromptTask.MATERIAL, values);
-        MbmOptions options = MbmOptions.create().withAllowedLinks(links(sourceTexts)).withMaxMedia(effective.maxMedia());
+        MbmOptions options = MbmOptions.create().withAllowedLinks(links(sourceTexts)).withMaxMedia(effective.maxMedia())
+                .withKindCaps(effective.audio() ? 1 : 0, effective.imageSearch() ? 1 : 0);
         return new DraftContext(prompt, options, maxTokens(effective.workingEffort()), TEMPERATURE);
     }
 

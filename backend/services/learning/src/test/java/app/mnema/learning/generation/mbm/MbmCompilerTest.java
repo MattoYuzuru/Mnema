@@ -293,6 +293,19 @@ class MbmCompilerTest {
     }
 
     @Test
+    void aSecondClipOfAKindExceedsWhatTheEstimatePrices() {
+        String audio2 = "::audio{slot=\"a1\" lang=\"ja\" title=\"t\"} x\n\n::audio{slot=\"a2\" lang=\"ja\" title=\"t\"} x\n";
+        String image2 = "::image{slot=\"i1\" alt=\"a\" mode=\"search\"} q\n\n::image{slot=\"i2\" alt=\"a\" mode=\"search\"} q\n";
+        MbmOptions both = MbmOptions.create().withMaxMedia(2).withKindCaps(1, 1);
+        assertThat(errors(audio2, both)).containsExactly("3:1:TOO_MANY_MEDIA");
+        assertThat(errors(image2, both)).containsExactly("3:1:TOO_MANY_MEDIA");
+        assertThat(errors(audio2, MbmOptions.create().withMaxMedia(1).withKindCaps(1, 0))).containsExactly("3:1:TOO_MANY_MEDIA");
+        String one = "::audio{slot=\"a1\" lang=\"ja\" title=\"t\"} x\n\n::image{slot=\"i1\" alt=\"a\" mode=\"search\"} q\n";
+        assertThat(success(one, both).slots()).hasSize(2);
+        assertThat(errors(one, MbmOptions.create().withMaxMedia(2).withKindCaps(0, 1))).containsExactly("1:1:TOO_MANY_MEDIA");
+    }
+
+    @Test
     void mediaBoundCountsExistingMediaAndIsReportedOnceAtTheFirstExcess() {
         String two = "::audio{slot=\"a1\" lang=\"ja\" title=\"t\"} x\n\n::audio{slot=\"a2\" lang=\"ja\" title=\"t\"} x\n";
         assertThat(errors(two, MbmOptions.create().withMaxMedia(1))).containsExactly("3:1:TOO_MANY_MEDIA");

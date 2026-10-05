@@ -622,13 +622,18 @@ class GenerationRepository {
                 .param("code", errorCode).param("id", artifactId).query(SLOT).list();
     }
 
+    /** What the call journal holds for the OK calls of a capability of one step: how many answered and what they cost (micro-US-dollars), over every attempt. */
+    record ProviderSpend(int calls, long costMicros) { }
+
     /**
-     * Whether a provider call of {@code capability} answered for the step (any attempt), per the call journal: a speech step that crashed after it
-     * synthesised a clip is resumed on the staged asset and must still be debited as a cache miss.
+     * The OK provider calls of {@code capability} for the step (any attempt), per the call journal: a speech step that crashed after it synthesised a
+     * clip is resumed on the staged asset and must still be debited as a cache miss, at the cost the journal recorded.
      */
-    boolean providerAnswered(UUID stepId, String capability) {
-        return jdbc.sql("SELECT EXISTS (SELECT 1 FROM app_learning.ai_provider_call WHERE step_id=:step AND capability=:capability AND outcome='OK')")
-                .param("step", stepId).param("capability", capability).query(Boolean.class).single();
+    ProviderSpend providerSpend(UUID stepId, String capability) {
+        return jdbc.sql("SELECT count(*)::integer AS calls, COALESCE(SUM(cost_micros),0) AS cost FROM app_learning.ai_provider_call "
+                        + "WHERE step_id=:step AND capability=:capability AND outcome='OK'")
+                .param("step", stepId).param("capability", capability)
+                .query((row, ignored) -> new ProviderSpend(row.getInt("calls"), row.getLong("cost"))).single();
     }
 
     /** Every slot of the artifact, whatever revision it was last attached to. */

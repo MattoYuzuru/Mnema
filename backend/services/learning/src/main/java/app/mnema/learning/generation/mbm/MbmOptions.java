@@ -18,6 +18,8 @@ import java.util.regex.Pattern;
  * @param capabilities the {@code /api/capabilities} switches of the session
  * @param research numbered RESEARCH results; consulted only by {@code ::sources}
  * @param maxMedia media directives allowed for the artifact, 0..8
+ * @param maxAudio {@code ::audio} directives allowed, 0..8 (the estimate prices one clip per declared kind)
+ * @param maxImageSearch search-mode {@code ::image} directives allowed, 0..8
  * @param existingMediaCount EDIT only (ignored in CREATE): media nodes of the artifact outside the range
  * @param handles EDIT only: top-level blocks of the edited range by handle
  * @param existingSlotKeys EDIT only: slot keys of the artifact outside the range
@@ -25,8 +27,8 @@ import java.util.regex.Pattern;
  *                       {@code Sources})
  */
 public record MbmOptions(Mode mode, List<String> allowedLinks, Capabilities capabilities, List<ResearchSource> research,
-                         int maxMedia, int existingMediaCount, Map<String, Handle> handles,
-                         Set<String> existingSlotKeys, String sourcesHeading) {
+                         int maxMedia, int maxAudio, int maxImageSearch, int existingMediaCount,
+                         Map<String, Handle> handles, Set<String> existingSlotKeys, String sourcesHeading) {
 
     /** The hard ceiling of media directives per artifact. */
     public static final int MEDIA_CEILING = 8;
@@ -64,6 +66,14 @@ public record MbmOptions(Mode mode, List<String> allowedLinks, Capabilities capa
         }
     }
 
+    /** The options without per-kind caps: {@code maxMedia} alone bounds the directives. */
+    public MbmOptions(Mode mode, List<String> allowedLinks, Capabilities capabilities, List<ResearchSource> research,
+                      int maxMedia, int existingMediaCount, Map<String, Handle> handles,
+                      Set<String> existingSlotKeys, String sourcesHeading) {
+        this(mode, allowedLinks, capabilities, research, maxMedia, MEDIA_CEILING, MEDIA_CEILING, existingMediaCount,
+                handles, existingSlotKeys, sourcesHeading);
+    }
+
     public MbmOptions {
         mode = mode == null ? Mode.CREATE : mode;
         allowedLinks = allowedLinks == null ? List.of() : List.copyOf(allowedLinks);
@@ -73,6 +83,11 @@ public record MbmOptions(Mode mode, List<String> allowedLinks, Capabilities capa
             throw new IllegalArgumentException("maxMedia must not be negative");
         }
         maxMedia = Math.min(maxMedia, MEDIA_CEILING);
+        if (maxAudio < 0 || maxImageSearch < 0) {
+            throw new IllegalArgumentException("per-kind media caps must not be negative");
+        }
+        maxAudio = Math.min(maxAudio, MEDIA_CEILING);
+        maxImageSearch = Math.min(maxImageSearch, MEDIA_CEILING);
         if (existingMediaCount < 0) {
             throw new IllegalArgumentException("existingMediaCount must not be negative");
         }
@@ -84,46 +99,52 @@ public record MbmOptions(Mode mode, List<String> allowedLinks, Capabilities capa
 
     /** A new document with no links, no capabilities and the default media bound. */
     public static MbmOptions create() {
-        return new MbmOptions(Mode.CREATE, null, null, null, MEDIA_CEILING, 0, null, null, null);
+        return new MbmOptions(Mode.CREATE, null, null, null, MEDIA_CEILING, MEDIA_CEILING, MEDIA_CEILING, 0, null, null, null);
     }
 
     /** An edit of the range whose top-level blocks are {@code handles}. */
     public static MbmOptions edit(Map<String, Handle> handles) {
-        return new MbmOptions(Mode.EDIT, null, null, null, MEDIA_CEILING, 0, handles, null, null);
+        return new MbmOptions(Mode.EDIT, null, null, null, MEDIA_CEILING, MEDIA_CEILING, MEDIA_CEILING, 0, handles, null, null);
     }
 
     public MbmOptions withAllowedLinks(List<String> value) {
-        return new MbmOptions(mode, value, capabilities, research, maxMedia, existingMediaCount, handles,
+        return new MbmOptions(mode, value, capabilities, research, maxMedia, maxAudio, maxImageSearch, existingMediaCount, handles,
                 existingSlotKeys, sourcesHeading);
     }
 
     public MbmOptions withCapabilities(Capabilities value) {
-        return new MbmOptions(mode, allowedLinks, value, research, maxMedia, existingMediaCount, handles,
+        return new MbmOptions(mode, allowedLinks, value, research, maxMedia, maxAudio, maxImageSearch, existingMediaCount, handles,
                 existingSlotKeys, sourcesHeading);
     }
 
     public MbmOptions withResearch(List<ResearchSource> value) {
-        return new MbmOptions(mode, allowedLinks, capabilities, value, maxMedia, existingMediaCount, handles,
+        return new MbmOptions(mode, allowedLinks, capabilities, value, maxMedia, maxAudio, maxImageSearch, existingMediaCount, handles,
                 existingSlotKeys, sourcesHeading);
     }
 
     public MbmOptions withMaxMedia(int value) {
-        return new MbmOptions(mode, allowedLinks, capabilities, research, value, existingMediaCount, handles,
+        return new MbmOptions(mode, allowedLinks, capabilities, research, value, maxAudio, maxImageSearch, existingMediaCount, handles,
                 existingSlotKeys, sourcesHeading);
     }
 
+    /** Caps the kinds separately: one clip per declared kind is all the estimate prices. */
+    public MbmOptions withKindCaps(int audio, int imageSearch) {
+        return new MbmOptions(mode, allowedLinks, capabilities, research, maxMedia, audio, imageSearch,
+                existingMediaCount, handles, existingSlotKeys, sourcesHeading);
+    }
+
     public MbmOptions withExistingMediaCount(int value) {
-        return new MbmOptions(mode, allowedLinks, capabilities, research, maxMedia, value, handles,
+        return new MbmOptions(mode, allowedLinks, capabilities, research, maxMedia, maxAudio, maxImageSearch, value, handles,
                 existingSlotKeys, sourcesHeading);
     }
 
     public MbmOptions withExistingSlotKeys(Set<String> value) {
-        return new MbmOptions(mode, allowedLinks, capabilities, research, maxMedia, existingMediaCount, handles,
+        return new MbmOptions(mode, allowedLinks, capabilities, research, maxMedia, maxAudio, maxImageSearch, existingMediaCount, handles,
                 value, sourcesHeading);
     }
 
     public MbmOptions withSourcesHeading(String value) {
-        return new MbmOptions(mode, allowedLinks, capabilities, research, maxMedia, existingMediaCount, handles,
+        return new MbmOptions(mode, allowedLinks, capabilities, research, maxMedia, maxAudio, maxImageSearch, existingMediaCount, handles,
                 existingSlotKeys, value);
     }
 

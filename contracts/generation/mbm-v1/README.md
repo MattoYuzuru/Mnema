@@ -259,7 +259,7 @@ repair URLs. The model never decides which URLs are trusted (OWASP LLM01/05). Fi
 | `MBM_SOURCE_NOT_IN_RESEARCH` | ERROR | directive | Every ::sources line is [n] URL where n and the exact URL belong to one result of the session research. |
 | `MBM_UNKNOWN_HANDLE` | ERROR | block | A [[handle]] must be one of the handles given for the edited range; new documents have none. |
 | `MBM_DUPLICATE_HANDLE` | ERROR | block | A handle may be used on one block only. |
-| `MBM_TOO_MANY_MEDIA` | ERROR | directive | At most 8 media directives per artifact (the media counts declared in the spec cap it lower); the estimate prices only the declared counts. |
+| `MBM_TOO_MANY_MEDIA` | ERROR | directive | At most 8 media directives per artifact, and per kind what the spec declares: one ::audio when audio is on, one ::image mode="search" when image search is on, none of a kind that is off; the estimate prices only the declared counts, so an extra directive of a kind is this error (repairable). |
 | `MBM_AUDIO_TEXT_TOO_LONG` | ERROR | directive | The text of ::audio is at most 600 characters; split it into several clips. |
 | `MBM_EDIT_HANDLE_OMITTED` | ERROR | block | Every handle of the edited range must appear in the output; removing a block is not an AI action. Reordering is allowed. |
 | `MBM_LINK_NOT_ALLOWED` | WARNING | inline | The link URL is not in the allowlist: the label stays as text and the URL is dropped. |
