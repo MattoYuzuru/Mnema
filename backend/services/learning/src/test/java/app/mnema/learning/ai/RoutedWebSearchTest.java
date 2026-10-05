@@ -55,6 +55,11 @@ class RoutedWebSearchTest {
 
         @Override public int maxQueries() { return max; }
 
+        /** Failures that were still billed. */
+        volatile java.util.function.Predicate<AiFailure> paid = failure -> false;
+
+        @Override public boolean paid(AiFailure failure) { return paid.test(failure); }
+
         @Override public long requestCostMicros() { return provider.equals("yandex") ? 5_742 : 5_000; }
 
         @Override
@@ -304,6 +309,65 @@ class RoutedWebSearchTest {
         AiProperties none = wired(List.of("yandex"), Map.of(), null);
         try (EgressClients clients = EgressClients.create(none)) {
             assertThat(AiConfiguration.webSearchAdapters(none, ResearchSettings.defaults(), clients, BigDecimal.valueOf(85), Clock.systemUTC())).isEmpty();
+        }
+    }
+
+    @Test
+    void aRejectedBodyOfAnAnsweredRequestIsStillAPaidRequest() {
+        Fake yandex = new Fake("yandex", 1);
+        yandex.paid = failure -> failure instanceof AiFailure.InvalidOutput;
+        // the only provider answered a body that was rejected: billed, and the search ends there like for any request nobody could answer
+        yandex.script = call -> call == 1 ? AiResult.failed(new AiFailure.InvalidOutput("xml")) : AiResult.ok(List.of());
+        AiProperties onlyYandex = withRoute(new AiProperties.Routes(List.of(), List.of(), List.of(), Duration.ofSeconds(8), List.of(), List.of(),
+                List.of(), List.of(), List.of("yandex")));
+
+        WebSearch.Answer answer = answer(router(onlyYandex, yandex).search(request("a", "b")));
+        assertThat(answer.requests()).isEqualTo(1);
+        assertThat(answer.costMicros()).isEqualTo(5_742);
+        assertThat(journal.outcomes).extracting(CallJournal.Outcome::costMicros).containsExactly(5_742L);
+
+        // when nothing but paid rejections happened the owner is still charged: an empty answer, not a failure
+        yandex.script = call -> AiResult.failed(new AiFailure.InvalidOutput("malformed"));
+        WebSearch.Answer rejected = answer(router(onlyYandex, yandex).search(request("a")));
+        assertThat(rejected.results()).isEmpty();
+        assertThat(rejected.requests()).isEqualTo(1);
+    }
+
+    @Test
+    void noRequestStartsAfterTheDeadlineAndWhatWasAnsweredIsReturned() {
+        Fake yandex = new Fake("yandex", 1);
+        AiProperties onlyYandex = withRoute(new AiProperties.Routes(List.of(), List.of(), List.of(), Duration.ofSeconds(8), List.of(), List.of(),
+                List.of(), List.of(), List.of("yandex")));
+        RoutedWebSearch router = router(onlyYandex, yandex);
+        yandex.script = call -> {
+            // the first request takes until the deadline
+            try {
+                Thread.sleep(120);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+            return AiResult.ok(List.of(new WebSearch.Result("https://example.org/1", "t", "s", null, WebSearch.Provider.YANDEX, 0, 1)));
+        };
+        var request = new WebSearch.Request(List.of("a", "b", "c"), "ru", 5, null, null, 1, java.time.Instant.now().plusMillis(60));
+
+        WebSearch.Answer answer = answer(router.search(request));
+
+        assertThat(yandex.calls.get()).isEqualTo(1);
+        assertThat(answer.requests()).isEqualTo(1);
+        // a deadline already past asks nothing at all
+        yandex.calls.set(0);
+        assertThat(failure(router.search(new WebSearch.Request(List.of("a"), "ru", 5, null, null, 1, java.time.Instant.now().minusSeconds(1)))))
+                .isInstanceOf(AiFailure.Timeout.class);
+        assertThat(yandex.calls.get()).isZero();
+    }
+
+    @Test
+    void yandexMustBeReachedDirectly() {
+        Map<String, AiProperties.Provider> proxied = Map.of("yandex-search", provider("k", AiProperties.EgressMode.PROXY));
+        AiProperties properties = wired(List.of("yandex"), proxied, new AiProperties.Egress("http://proxy.invalid:3128", "", "", true));
+        try (EgressClients clients = EgressClients.create(properties)) {
+            assertThatThrownBy(() -> AiConfiguration.webSearchAdapters(properties, ResearchSettings.defaults(), clients, BigDecimal.valueOf(85), Clock.systemUTC()))
+                    .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("yandex-search.egress must be direct");
         }
     }
 }

@@ -112,6 +112,10 @@ class AiConfiguration {
                                                            java.math.BigDecimal usdRubRate, Clock clock) {
         Map<String, WebSearchAdapter> adapters = new LinkedHashMap<>();
         AiProperties.Provider yandex = properties.providers().get("yandex-search");
+        if (yandex != null && yandex.egress() != AiProperties.EgressMode.DIRECT) {
+            // a Russian counterparty is reached from this server, never through the gateway
+            throw new IllegalArgumentException("learning.ai.providers.yandex-search.egress must be direct");
+        }
         if (yandex != null) adapters.put(YandexWebSearch.PROVIDER, new YandexWebSearch(yandex, clients.http(yandex.egress()), settings, usdRubRate, clock));
         AiProperties.Provider perplexity = properties.providers().get("perplexity");
         if (perplexity != null) adapters.put(PerplexityWebSearch.PROVIDER, new PerplexityWebSearch(perplexity, clients.http(perplexity.egress()), settings, clock));

@@ -112,7 +112,7 @@ final class PerplexityWebSearch implements WebSearchAdapter {
     /** Adds the result when it is a usable pointer; the rank counts the usable ones. */
     private static boolean add(List<WebSearch.Result> out, JsonNode item, int query, int rank) {
         if (!item.isObject()) return false;
-        String url = WebSearch.acceptable(item.path("url").stringValue(null));
+        String url = WebSearch.acceptable(item.path("url").stringValue("").strip());
         if (url == null) return false;
         String title = ImageText.plain(item.path("title").stringValue(""), WebSearch.MAX_TITLE);
         out.add(new WebSearch.Result(url, title.isEmpty() ? url : title, ImageText.plain(item.path("snippet").stringValue(""), WebSearch.MAX_SNIPPET),

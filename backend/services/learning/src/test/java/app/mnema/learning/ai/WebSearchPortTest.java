@@ -42,7 +42,7 @@ class WebSearchPortTest {
     @Test
     void onlyAbsoluteHttpsUrlsWithoutUserInfoAreLinkTargets() {
         assertThat(WebSearch.acceptable("https://example.org/a?b=c#frag")).isEqualTo("https://example.org/a?b=c");
-        assertThat(WebSearch.acceptable("HTTPS://Example.org/Path")).isEqualTo("HTTPS://Example.org/Path");
+        assertThat(WebSearch.acceptable("HTTPS://Example.org/Path")).isEqualTo("https://example.org/Path");
         for (String bad : new String[] {null, "", "http://example.org/", "ftp://example.org/", "javascript:alert(1)", "//example.org/", "https:///path",
                 "https://user@example.org/", "https://example.org/a b", "https://example.org/<x>", "https://example.org/\"", "mailto:a@b.c",
                 "https://example.org/" + "a".repeat(WebSearch.MAX_URL)}) {
@@ -124,5 +124,27 @@ class WebSearchPortTest {
         // an empty search is still a request that was made
         assertThat(empty.requests()).isEqualTo(1);
         assertThat(stub.configured()).isTrue();
+    }
+
+    @Test
+    void anInternationalizedOrNonAsciiUrlIsNormalizedToAsciiNotDropped() {
+        assertThat(WebSearch.acceptable("https://ru.wikipedia.org/wiki/Москва")).isEqualTo("https://ru.wikipedia.org/wiki/%D0%9C%D0%BE%D1%81%D0%BA%D0%B2%D0%B0");
+        assertThat(WebSearch.acceptable("https://президент.рф/новости?q=привет&a=1#x")).isEqualTo("https://xn--d1abbgf6aiiy.xn--p1ai/%D0%BD%D0%BE%D0%B2%D0%BE%D1%81%D1%82%D0%B8?q=%D0%BF%D1%80%D0%B8%D0%B2%D0%B5%D1%82&a=1");
+        // existing escapes stay, characters a URI may not carry are encoded
+        assertThat(WebSearch.acceptable("https://example.org/a%20b|c")).isEqualTo("https://example.org/a%20b%7Cc");
+        assertThat(WebSearch.acceptable(" https://example.org/x \n")).isEqualTo("https://example.org/x");
+        // a host that cannot be an ASCII name, and a URL that stays over the bound after encoding, are dropped
+        assertThat(WebSearch.acceptable("https://" + "я".repeat(70) + ".рф/")).isNull();
+        assertThat(WebSearch.acceptable("https://example.org/" + "я".repeat(700))).isNull();
+        assertThat(WebSearch.acceptable("https://example.org/" + "a".repeat(WebSearch.MAX_URL - 20))).isNotNull();
+        assertThat(WebSearch.acceptable("https://example.org/" + "a".repeat(WebSearch.MAX_URL))).isNull();
+    }
+
+    @Test
+    void everyOutgoingQueryIsRedactedAndOneThatIsEmptyAfterwardsIsDropped() {
+        var request = new WebSearch.Request(List.of("write to ivan@example.com about postgres", "card 4111 1111 1111 1111 limits", "plain", "x".repeat(500)), "en", 5, null, null, 1);
+        assertThat(request.queries()).containsExactly("write to [email] about postgres", "card [card] limits", "plain");
+        assertThat(WebSearch.Request.clean("x".repeat(500))).isEmpty();
+        assertThatThrownBy(() -> new WebSearch.Request(List.of("x".repeat(500), " "), "en", 5, null, null, 1)).isInstanceOf(IllegalArgumentException.class);
     }
 }

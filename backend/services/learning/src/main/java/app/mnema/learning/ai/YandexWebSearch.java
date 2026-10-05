@@ -45,6 +45,7 @@ final class YandexWebSearch implements WebSearchAdapter {
     private static final Logger LOG = LoggerFactory.getLogger(YandexWebSearch.class);
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private static final int MAX_FIELD = 4_096;
+    private static final java.util.Set<String> PAID_BODY_FAILURES = java.util.Set.of("shape", "malformed", "body_too_large", "xml");
     private static final DateTimeFormatter MODTIME = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     private final ChatHttp http;
@@ -74,6 +75,12 @@ final class YandexWebSearch implements WebSearchAdapter {
     @Override public AiProperties.EgressMode egress() { return http == null ? AiProperties.EgressMode.DIRECT : http.egress(); }
 
     @Override public int maxQueries() { return 1; }
+
+    /** An HTTP 200 whose body is malformed, too large or rejected by the XML guard was answered, so billed. */
+    @Override
+    public boolean paid(AiFailure failure) {
+        return failure instanceof AiFailure.InvalidOutput invalid && PAID_BODY_FAILURES.contains(invalid.detail());
+    }
 
     @Override
     public long requestCostMicros() {
@@ -193,6 +200,9 @@ final class YandexWebSearch implements WebSearchAdapter {
      * hide a DOCTYPE from the scan.
      */
     static Parsed parse(byte[] xml, int limit) throws XMLStreamException {
+        // only an ASCII-compatible document (UTF-8, no byte order mark) is read: it starts with '<' (an XML declaration or the root); any other
+        // encoding (UTF-16, UTF-32, a BOM) is refused before the parser could honour a declaration that hides a DOCTYPE from the scan below
+        if (xml.length == 0 || xml[0] != '<' || !declaresUtf8OrNothing(xml)) throw new XMLStreamException("encoding");
         String scan = new String(xml, StandardCharsets.ISO_8859_1).toUpperCase(Locale.ROOT);
         if (scan.indexOf('\0') >= 0 || scan.contains("<!DOCTYPE") || scan.contains("<!ENTITY")) throw new XMLStreamException("dtd");
         XMLStreamReader reader = factory().createXMLStreamReader(new ByteArrayInputStream(xml));
@@ -254,6 +264,17 @@ final class YandexWebSearch implements WebSearchAdapter {
         } finally {
             reader.close();
         }
+    }
+
+    /** A document without an XML declaration, or whose declaration names no encoding or UTF-8. */
+    private static boolean declaresUtf8OrNothing(byte[] xml) {
+        String head = new String(xml, 0, Math.min(xml.length, 200), StandardCharsets.ISO_8859_1).toLowerCase(Locale.ROOT);
+        if (!head.startsWith("<?xml")) return true;
+        int end = head.indexOf("?>");
+        String declaration = end < 0 ? head : head.substring(0, end);
+        int encoding = declaration.indexOf("encoding");
+        if (encoding < 0) return true;
+        return declaration.substring(encoding).replaceAll("[\\s'\"=]", "").startsWith("encodingutf-8");
     }
 
     /** The text of the current element and everything inside it ({@code <hlword>} is mixed content), consuming its end tag; bounded. */

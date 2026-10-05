@@ -664,4 +664,42 @@ class MbmCompilerTest {
         ((tools.jackson.databind.node.ObjectNode) success.document()).put("formatVersion", 99);
         assertThat(success.document().path("formatVersion").intValue()).isEqualTo(1);
     }
+
+    @Test
+    void theSourcesSectionIsOneListInTheOrderOfTheNumbersWithoutRepeats() {
+        MbmOptions options = MbmOptions.create().withResearch(List.of(new MbmOptions.ResearchSource(1, "https://a.example/", "A"),
+                new MbmOptions.ResearchSource(2, "https://b.example/", "B"), new MbmOptions.ResearchSource(3, "https://c.example/", "C")));
+        MbmResult.Success success = success("Текст.\n\n::sources\n[3] https://c.example/\n[1] https://a.example/\n[3] https://c.example/\n\nМежду.\n\n"
+                + "::sources\n[2] https://b.example/\n[1] https://a.example/\n", options);
+
+        List<String> labels = new ArrayList<>();
+        links(success.document().path("root"), labels);
+        // one section, at the place of the first, sorted, each source once
+        assertThat(labels).containsExactly("A", "B", "C");
+        assertThat(success.document().toString().split("\"text\":\"Sources\"", -1)).hasSize(2);
+    }
+
+    @Test
+    void aSourceUrlWithAnEscapedAmpersandNamesTheSameResult() {
+        MbmOptions options = MbmOptions.create().withResearch(List.of(new MbmOptions.ResearchSource(1, "https://a.example/s?q=1&r=2", "A")));
+        for (String line : List.of("[1] https://a.example/s?q=1&r=2", "[1] https://a.example/s?q=1&amp;r=2")) {
+            List<String> labels = new ArrayList<>();
+            links(success("::sources\n" + line + "\n", options).document().path("root"), labels);
+            assertThat(labels).containsExactly("A");
+        }
+        assertThat(errors("::sources\n[1] https://a.example/s?q=1&amp;r=3\n", options)).containsExactly("2:1:SOURCE_NOT_IN_RESEARCH");
+    }
+
+    @Test
+    void anAsciiNormalizedInternationalUrlIsAcceptedAsALinkAndInSources() {
+        String moscow = "https://ru.wikipedia.org/wiki/%D0%9C%D0%BE%D1%81%D0%BA%D0%B2%D0%B0";
+        String host = "https://xn--d1abbgf6aiiy.xn--p1ai/";
+        MbmOptions options = MbmOptions.create().withAllowedLinks(List.of(moscow, host))
+                .withResearch(List.of(new MbmOptions.ResearchSource(1, moscow, "Москва"), new MbmOptions.ResearchSource(2, host, "Президент")));
+        MbmResult.Success success = success("О [Москве](" + moscow + ").\n\n::sources\n[1] " + moscow + "\n[2] " + host + "\n", options);
+        assertThat(success.warnings()).isEmpty();
+        List<String> labels = new ArrayList<>();
+        links(success.document().path("root"), labels);
+        assertThat(labels).containsExactly("Москве", "Москва", "Президент");
+    }
 }

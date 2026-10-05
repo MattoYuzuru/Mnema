@@ -18,8 +18,11 @@ import java.util.UUID;
  */
 @Repository
 class ResearchRepository {
-    /** The table bounds the document at 64 KiB: results are dropped from the end until it fits. */
-    static final int MAX_DOCUMENT_BYTES = 65_536;
+    /**
+     * The table bounds {@code results::text} at 64 KiB, and jsonb's text form is not the compact form written here (it adds a space after every colon and
+     * comma), so the document is measured with a margin: results are dropped from the end until the compact form is within 60 KiB.
+     */
+    static final int MAX_DOCUMENT_BYTES = 61_440;
 
     /** One numbered result; {@code n} is its 1-based position, the number the material cites. */
     record Source(int n, String url, String title, String snippet, String date, String provider, int queryIndex) { }

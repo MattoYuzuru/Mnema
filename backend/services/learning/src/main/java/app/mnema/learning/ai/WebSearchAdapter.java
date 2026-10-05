@@ -29,6 +29,12 @@ interface WebSearchAdapter {
      */
     AiResult<List<WebSearch.Result>> search(WebSearch.Request request, Duration budget);
 
+    /**
+     * Whether a failed answer was still a billed provider request (an HTTP 200 whose body was malformed or rejected): it is counted and debited like an
+     * answered one. A transport failure or an error status is not.
+     */
+    default boolean paid(AiFailure failure) { return false; }
+
     /** The mapping of an HTTP status shared by the adapters (error bodies are never read: they could echo the query). */
     static AiFailure statusFailure(int status, String retryAfter, Clock clock) {
         return switch (status) {

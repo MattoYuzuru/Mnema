@@ -13,6 +13,7 @@ import app.mnema.learning.ai.WebSearch;
 import app.mnema.learning.ai.prompt.PromptException;
 import app.mnema.learning.generation.ContextBuilder.SourceGoneException;
 import app.mnema.learning.generation.Rows.Artifact;
+import app.mnema.learning.generation.mbm.NativeProfile;
 import app.mnema.learning.generation.Rows.Session;
 import app.mnema.learning.generation.SessionLifecycle.Failure;
 import app.mnema.learning.usage.AdmissionPricing;
@@ -139,7 +140,7 @@ class ResearchExecutor implements StepExecutor {
         }
 
         WebSearch.Request request = new WebSearch.Request(planned.queries(), language(spec, planned.queries()), settings.resultsPerQuery(), null,
-                claim.stepId(), claim.attempt());
+                claim.stepId(), claim.attempt(), claim.deadlineAt());
         AiResult<WebSearch.Answer> result;
         control.callStarted();
         try {
@@ -147,9 +148,12 @@ class ResearchExecutor implements StepExecutor {
         } finally {
             control.callEnded();
         }
-        if (control.lost()) return;
-        if (control.cancelled()) {
-            cancelled(claim);
+        if (control.lost() || control.cancelled()) {
+            // what was already bought is paid for even though nothing is stored (idempotent per step and attempt)
+            if (result instanceof AiResult.Ok<WebSearch.Answer> paid && paid.value().requests() > 0) {
+                lifecycle.debitPaid(claim, paid.value().requests(), costRub(planned.costMicros() + paid.value().costMicros()));
+            }
+            if (!control.lost()) cancelled(claim);
             return;
         }
         if (result instanceof AiResult.Failed<WebSearch.Answer> failed) {
@@ -209,7 +213,8 @@ class ResearchExecutor implements StepExecutor {
         Set<String> seen = new HashSet<>();
         for (JsonNode node : answer.path("queries")) {
             if (!node.isString()) return Optional.empty();
-            String query = node.stringValue().strip().replaceAll("\\s+", " ");
+            // redacted and bounded exactly as the search port sends it; one that is empty then (a first word longer than the bound, only an address) is dropped
+            String query = WebSearch.Request.clean(node.stringValue());
             if (query.isEmpty() || !seen.add(query.toLowerCase(Locale.ROOT))) continue;
             if (queries.size() < cap) queries.add(query);
         }
@@ -240,8 +245,9 @@ class ResearchExecutor implements StepExecutor {
         List<ResearchRepository.Source> numbered = new ArrayList<>();
         for (WebSearch.Result result : ordered) {
             if (numbered.size() >= settings.maxResults()) break;
+            // the link must also be one the compiler's native-v1 href profile accepts, or the material could not cite it
             String url = WebSearch.acceptable(result.url());
-            if (url == null || !keys.add(WebSearch.key(url))) continue;
+            if (url == null || !NativeProfile.acceptsHref(url) || !keys.add(WebSearch.key(url))) continue;
             numbered.add(new ResearchRepository.Source(numbered.size() + 1, url, result.title(), result.snippet(), result.date(), result.provider().name(),
                     result.queryIndex()));
         }
@@ -260,12 +266,16 @@ class ResearchExecutor implements StepExecutor {
     /** Ends the step with what the run found: the debit, the rows and the draft that waits for it are one transaction. */
     private void done(StepClaim claim, StepControl control, Run run, long plannerCostMicros) {
         if (control.lost()) return;
-        BigDecimal rubMicros = BigDecimal.valueOf(plannerCostMicros + run.searchCostMicros()).multiply(generation.usdRubRate()).setScale(0, RoundingMode.CEILING);
-        boolean stored = lifecycle.succeed(claim, new ResearchLifecycle.Outcome(run.requests(), run.results(), rubMicros.longValueExact()));
+        boolean stored = lifecycle.succeed(claim, new ResearchLifecycle.Outcome(run.requests(), run.results(), costRub(plannerCostMicros + run.searchCostMicros())));
         String outcome = !stored ? "void" : run.reason() == null ? (run.results().isEmpty() ? "empty" : "succeeded") : "skipped";
         meters.counter("mnema_generation_steps_total", "kind", KIND, "outcome", outcome).increment();
         LOG.info("generation_step_done step_id={} session_id={} kind={} attempt={} outcome={} reason={} requests={} results={} stored={}", claim.stepId(),
                 claim.sessionId(), KIND, claim.attempt(), outcome, run.reason() == null ? "-" : run.reason(), run.requests(), run.results().size(), stored);
+    }
+
+    /** Micro-US-dollars to millionths of a rouble, rounded up. */
+    private long costRub(long usdMicros) {
+        return BigDecimal.valueOf(usdMicros).multiply(generation.usdRubRate()).setScale(0, RoundingMode.CEILING).longValueExact();
     }
 
     private void cancelled(StepClaim claim) {

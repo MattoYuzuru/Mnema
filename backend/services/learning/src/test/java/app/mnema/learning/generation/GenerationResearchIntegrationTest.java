@@ -27,6 +27,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 @TestPropertySource(properties = "learning.features.web-search.enabled=true")
 class GenerationResearchIntegrationTest extends GenerationEditsSupport {
     @org.springframework.beans.factory.annotation.Autowired private AdmissionPricing pricing;
+    @org.springframework.beans.factory.annotation.Autowired private ResearchRepository researchRepository;
 
     // ------------------------------------------------------------------ helpers
 
@@ -493,5 +494,74 @@ class GenerationResearchIntegrationTest extends GenerationEditsSupport {
         assertThat(research(owner, deck, session).path("requests").intValue()).isEqualTo(6);
         assertThat(researchDebits(owner)).isEqualTo(30);
         assertThat(searchCalls(session).getFirst().queries()).hasSize(6);
+    }
+
+    @Test
+    void internationalizedResultsAreNormalizedNumberedShownAndCitedAndTheResearchIsHiddenFromOtherOwners() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        search.script = request -> AiResult.ok(new WebSearch.Answer(List.of(
+                result("https://ru.wikipedia.org/wiki/Москва", 0, 1), result("https://президент.рф/новости?q=привет&a=1", 0, 2),
+                result("https://example.org/a b", 0, 3)), 1, 5_742));
+        UUID session = start(owner, deck, factSpec("международные источники", "MEDIUM"));
+        awaitState(session, "REVIEW");
+
+        JsonNode found = research(owner, deck, session);
+        String moscow = "https://ru.wikipedia.org/wiki/%D0%9C%D0%BE%D1%81%D0%BA%D0%B2%D0%B0";
+        assertThat(found.path("results")).extracting(node -> node.path("n").intValue() + " " + node.path("url").stringValue(null).replaceFirst("^(https://[^/]+).*", "$1"))
+                .containsExactly("1 https://ru.wikipedia.org", "2 https://xn--d1abbgf6aiiy.xn--p1ai");
+        assertThat(found.path("results").get(0).path("url").stringValue(null)).isEqualTo(moscow);
+        // the compiler took both as links of the document, in the sources section too
+        Proposal proposal = proposals(owner, deck, session).getFirst();
+        List<String> hrefs = new ArrayList<>();
+        links(detail(owner, deck, proposal).path("revision").path("payload").path("document"), hrefs);
+        assertThat(hrefs).contains(moscow).hasSize(2);
+        assertThat(documentText(owner, deck, session)).contains("Источники");
+
+        // another owner cannot read the artifact, so neither its research
+        MockHttpServletResponse foreign = send(UUID.randomUUID(), org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
+                base(deck, session) + "/artifacts/" + proposal.artifact()));
+        assertThat(foreign.getStatus()).isEqualTo(404);
+        assertThat(foreign.getContentAsString()).doesNotContain("wikipedia");
+    }
+
+    @Test
+    void theStoredDocumentStaysUnderTheTableBoundInItsTextFormAndASearchEndedByACancelDebitsNothingTheReleasedHoldCannotPay() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        UUID done = start(owner, deck, factSpec("большая выдача", "MEDIUM"));
+        awaitState(done, "REVIEW");
+        Proposal proposal = proposals(owner, deck, done).getFirst();
+        List<ResearchRepository.Source> many = new ArrayList<>();
+        for (int n = 1; n <= 100; n++) {
+            many.add(new ResearchRepository.Source(n, "https://example.org/" + "я".repeat(0) + "a".repeat(1_900) + n, "т".repeat(300), "ф".repeat(300), "2026-01-01",
+                    "YANDEX", 0));
+        }
+        // the compact form that fits 60 KiB is far below the 64 KiB of jsonb's text form, which adds a space after every colon and comma
+        ResearchRepository.Research stored = researchRepository.upsert(proposal.artifact(), done, owner, 2, many);
+        assertThat(stored.results()).isNotEmpty().hasSizeLessThan(100);
+        assertThat(jdbc.sql("SELECT octet_length(results::text) FROM app_learning.generation_research WHERE artifact_id=:id").param("id", proposal.artifact())
+                .query(Integer.class).single()).isLessThanOrEqualTo(65_536);
+
+        java.util.concurrent.CountDownLatch entered = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        search.script = request -> {
+            entered.countDown();
+            try {
+                release.await(20, TimeUnit.SECONDS);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+            return AiResult.ok(new WebSearch.Answer(List.of(result("https://example.org/late", 0, 1)), 1, 5_742));
+        };
+        UUID owner2 = UUID.randomUUID();
+        UUID deck2 = deck(owner2);
+        UUID session = start(owner2, deck2, factSpec("поиск и отмена", "MEDIUM"));
+        assertThat(entered.await(20, TimeUnit.SECONDS)).isTrue();
+        assertThat(cancel(owner2, deck2, session, UUID.randomUUID()).getStatus()).isEqualTo(200);
+        release.countDown();
+        await("the research and its draft to be cancelled", Duration.ofSeconds(10), () -> steps(session).equals(List.of("RESEARCH:CANCELLED", "TEXT_DRAFT:CANCELLED")));
+        assertThat(researchDebits(owner2)).isZero();
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.generation_research WHERE session_id=:id").param("id", session).query(Integer.class).single()).isZero();
     }
 }

@@ -112,6 +112,26 @@ class ResearchLifecycle {
     }
 
     /**
+     * Debits the requests already paid of a run that ends without storing anything (the session was cancelled, or the lease was lost) under the same
+     * idempotency key as {@link #succeed}, so a request is charged once whichever way the attempt ends. A hold that cannot pay is logged, as there.
+     */
+    @Transactional
+    void debitPaid(StepClaim claim, int requests, long costMicros) {
+        if (requests <= 0) return;
+        Tx tx = lifecycle.lock(claim.sessionId());
+        if (tx == null) return;
+        try {
+            ledger.settle(tx.session.ownerId(), new UsageLedger.Debit(SessionReservations.forStep(tx.session, claim.input()),
+                    "debit:" + claim.stepId() + ":" + claim.attempt(), ResearchSteps.OPERATION,
+                    requests * pricing.credits(ResearchSteps.OPERATION), costMicros, claim.stepId().toString()));
+            tx.events.add(lifecycle.usageEvent(tx.session, null));
+            lifecycle.flush(tx);
+        } catch (EstimateExceededException | ReservationNotActiveException unpayable) {
+            LOG.warn("generation_research_unpaid step_id={} session_id={} requests={}", claim.stepId(), claim.sessionId(), requests);
+        }
+    }
+
+    /**
      * A claim whose lease ran out (the worker crashed or stalled): the step is claimed again after a backoff, or, after its last attempt or its lifetime, it
      * ends as a research that found nothing, so the draft is not left waiting for a step that cannot run.
      */

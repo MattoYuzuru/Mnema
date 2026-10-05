@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HexFormat;
@@ -25,7 +26,7 @@ import java.util.concurrent.TimeUnit;
  * entry is skipped, never an error, when its provider is switched off, has no key or transport (a proxied provider without an active proxy), or has an
  * open breaker. The paid unit is an answered request: the search reports how many it made and what they cost.
  *
- * <p>A request that no provider could answer ends the search (a provider that is down is not asked once per remaining query); what was answered before
+ * <p>A request that no provider could answer ends the search, and so does the deadline of the request (a provider that is down is not asked once per remaining query); what was answered before
  * is still returned. Only when nothing was answered is the search {@code Failed}. Every real request is guarded by a breaker per
  * {@code (provider, SEARCH)}, bounded by the {@code search} permits and the daily budget of the capability, journaled in {@code ai_provider_call}
  * (the request hash covers the query, never the text) and metered. The method refuses to run inside a database transaction.
@@ -92,17 +93,27 @@ final class RoutedWebSearch implements WebSearch {
                 last = new AiFailure.Transient("interrupted");
                 break;
             }
+            // the deadline of the step is held between requests: what was answered is returned, nothing new is bought
+            if (request.deadline() != null && !Instant.now().isBefore(request.deadline())) {
+                last = new AiFailure.Timeout();
+                break;
+            }
             Chunk chunk = null;
             for (WebSearchAdapter adapter : usable) {
                 int end = Math.min(request.queries().size(), next + adapter.maxQueries());
                 Request part = new Request(request.queries().subList(next, end), request.lang(), request.maxResults(), request.region(),
-                        request.stepId(), request.attempt());
+                        request.stepId(), request.attempt(), request.deadline());
                 AiResult<List<Result>> answer = call(adapter, part);
                 if (answer instanceof AiResult.Ok<List<Result>> ok) {
                     chunk = new Chunk(end, ok.value(), adapter.requestCostMicros());
                     break;
                 }
                 last = ((AiResult.Failed<List<Result>>) answer).failure();
+                if (adapter.paid(last)) {
+                    // a 200 whose body was rejected was still a billed request: it is counted and debited, and the next provider is tried
+                    requests++;
+                    cost += adapter.requestCostMicros();
+                }
                 if (last instanceof AiFailure.Refusal || last instanceof AiFailure.BudgetExhausted) break;
             }
             if (chunk == null) break;
@@ -138,7 +149,10 @@ final class RoutedWebSearch implements WebSearch {
             long started = System.nanoTime();
             AiResult<List<Result>> result;
             try {
-                result = adapter.search(request, settings.callTimeout());
+                Duration callBudget = request.deadline() == null ? settings.callTimeout()
+                        : settings.callTimeout().compareTo(Duration.between(Instant.now(), request.deadline())) <= 0 ? settings.callTimeout()
+                        : Duration.between(Instant.now(), request.deadline());
+                result = adapter.search(request, callBudget.isNegative() || callBudget.isZero() ? Duration.ofMillis(1) : callBudget);
             } catch (RuntimeException exception) {
                 LOG.warn("web_search_internal_failure stage=adapter error_type={} provider={}", exception.getClass().getSimpleName(), adapter.provider());
                 result = AiResult.failed(new AiFailure.Transient("adapter_error"));
@@ -152,7 +166,8 @@ final class RoutedWebSearch implements WebSearch {
                 breaker.onSuccess(ticket);
             }
             settled = true;
-            long cost = result instanceof AiResult.Ok<List<Result>> ? adapter.requestCostMicros() : 0;
+            long cost = result instanceof AiResult.Ok<List<Result>> || (result instanceof AiResult.Failed<List<Result>> paidFailure && adapter.paid(paidFailure.failure()))
+                    ? adapter.requestCostMicros() : 0;
             String outcome = result instanceof AiResult.Failed<List<Result>> failed ? failed.failure().outcome() : "OK";
             journal.finish(callId, new CallJournal.Outcome(outcome, Usage.ZERO, cost, null, latency.toMillis()));
             budget.record(CAPABILITY, cost);

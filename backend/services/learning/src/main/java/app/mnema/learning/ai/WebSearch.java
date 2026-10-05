@@ -1,6 +1,8 @@
 package app.mnema.learning.ai;
 
+import java.net.IDN;
 import java.net.URI;
+import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -17,7 +19,7 @@ public interface WebSearch {
     int MAX_SNIPPET = 300;
     int MAX_TITLE = 300;
     /** A result URL longer than this is not a link we show. */
-    int MAX_URL = 1_024;
+    int MAX_URL = 2_048;
     /** A query is bounded before it is sent: Yandex accepts 400 characters and 40 words. */
     int MAX_QUERY_CHARACTERS = 400;
     int MAX_QUERY_WORDS = 40;
@@ -26,7 +28,7 @@ public interface WebSearch {
     /**
      * Asks every query. Queries are sent in order, one provider request each (Yandex) or in batches of up to five (Perplexity).
      *
-     * @return the results ordered by query, then by rank; {@code Failed} only when no request succeeded
+     * @return the results ordered by query, then by rank; {@code Failed} only when no request was paid
      */
     AiResult<Answer> search(Request request);
 
@@ -39,20 +41,31 @@ public interface WebSearch {
      * @param maxResults results asked per query, 1..20
      * @param region an ISO 3166 country for providers that take one, or null
      * @param stepId the generation step for the call journal, null outside a step
+     * @param deadline no further provider request starts at or after this instant (the search then returns what it has), null for none
      */
-    record Request(List<String> queries, String lang, int maxResults, String region, UUID stepId, int attempt) {
+    record Request(List<String> queries, String lang, int maxResults, String region, UUID stepId, int attempt, Instant deadline) {
+        public Request(List<String> queries, String lang, int maxResults, String region, UUID stepId, int attempt) {
+            this(queries, lang, maxResults, region, stepId, attempt, null);
+        }
+
         public Request {
             if (queries == null || queries.isEmpty() || queries.size() > MAX_QUERIES) throw new IllegalArgumentException("Invalid queries");
-            queries = queries.stream().map(Request::bound).toList();
-            if (queries.stream().anyMatch(String::isEmpty)) throw new IllegalArgumentException("A query is blank");
+            // every outgoing query is redacted (e-mails, cards, phones) and bounded; one that is empty after that is dropped, never sent
+            queries = queries.stream().map(Request::clean).filter(query -> !query.isEmpty()).toList();
+            if (queries.isEmpty()) throw new IllegalArgumentException("Every query is blank");
             lang = lang == null || !lang.matches("[A-Za-z]{2}") ? "en" : lang.toLowerCase(Locale.ROOT);
             if (maxResults < 1 || maxResults > 20) throw new IllegalArgumentException("Invalid maxResults");
             region = region == null || !region.matches("[A-Za-z]{2}") ? null : region.toUpperCase(Locale.ROOT);
             attempt = Math.max(1, attempt);
         }
 
-        /** Whitespace collapsed, at most 40 words and 400 characters. */
-        static String bound(String query) {
+        /** The query as it is sent: personal-data patterns redacted, then {@link #bound}; empty when nothing is left. */
+        public static String clean(String query) {
+            return bound(app.mnema.learning.ai.prompt.Redactor.redact(query == null ? "" : query));
+        }
+
+        /** Whitespace collapsed, at most 40 words and 400 characters (a first word longer than that leaves nothing). */
+        public static String bound(String query) {
             String[] words = (query == null ? "" : query).strip().split("\\s+");
             StringBuilder out = new StringBuilder();
             for (int index = 0; index < words.length && index < MAX_QUERY_WORDS; index++) {
@@ -91,19 +104,64 @@ public interface WebSearch {
     }
 
     /**
-     * The URL when it is an acceptable link target: absolute https, a host, no user info, at most {@link #MAX_URL} characters, no whitespace
-     * or markup characters; the fragment is dropped. Otherwise null.
+     * The URL normalized to an ASCII link target, or null when it is not an acceptable one: absolute https, a host (an internationalized one is
+     * converted with {@link IDN#toASCII}), no user info, non-ASCII characters of the path and query percent-encoded (UTF-8), the fragment dropped,
+     * at most {@link #MAX_URL} printable ASCII characters and no whitespace or markup characters. The native-v1 {@code href} profile is checked by the
+     * caller that numbers the results (it lives in the generation module).
      */
     static String acceptable(String value) {
-        if (value == null || value.length() > MAX_URL || value.chars().anyMatch(c -> c <= ' ' || c == '<' || c == '>' || c == '"' || c == 0x7f)) return null;
+        if (value == null) return null;
+        String text = value.strip();
+        if (text.isEmpty() || text.length() > 4 * MAX_URL || text.chars().anyMatch(c -> c <= ' ' || c == '<' || c == '>' || c == '"' || c == 0x7f)) return null;
+        if (!text.regionMatches(true, 0, "https://", 0, 8)) return null;
+        int fragment = text.indexOf('#');
+        if (fragment >= 0) text = text.substring(0, fragment);
+        String rest = text.substring(8);
+        int end = 0;
+        while (end < rest.length() && "/?".indexOf(rest.charAt(end)) < 0) end++;
+        String authority = rest.substring(0, end);
+        if (authority.isEmpty() || authority.indexOf('@') >= 0) return null;
+        String host = authority;
+        String port = "";
+        if (!authority.startsWith("[")) {
+            int colon = authority.lastIndexOf(':');
+            if (colon >= 0) {
+                host = authority.substring(0, colon);
+                port = authority.substring(colon);
+            }
+            try {
+                host = IDN.toASCII(host).toLowerCase(Locale.ROOT);
+            } catch (IllegalArgumentException invalid) {
+                return null;
+            }
+            if (host.isEmpty()) return null;
+        }
+        String normalized = "https://" + host + port + encode(rest.substring(end));
+        if (normalized.length() > MAX_URL || normalized.chars().anyMatch(c -> c <= ' ' || c >= 0x7f)) return null;
         try {
-            URI uri = URI.create(value.strip());
-            if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null || uri.getHost().isEmpty() || uri.getRawUserInfo() != null) return null;
-            String text = uri.getRawFragment() == null ? uri.toString() : uri.toString().substring(0, uri.toString().indexOf('#'));
-            return text.length() > MAX_URL ? null : text;
+            URI uri = URI.create(normalized);
+            if (!"https".equals(uri.getScheme()) || uri.getHost() == null || uri.getHost().isEmpty() || uri.getRawUserInfo() != null) return null;
+            return normalized;
         } catch (IllegalArgumentException malformed) {
             return null;
         }
+    }
+
+    /** Percent-encodes (UTF-8) what a path or query may not carry raw: non-ASCII characters and {@code \ ^ ` { | }}; existing escapes stay. */
+    private static String encode(String part) {
+        StringBuilder out = new StringBuilder(part.length() + 16);
+        for (int index = 0; index < part.length(); ) {
+            int point = part.codePointAt(index);
+            index += Character.charCount(point);
+            if (point < 0x7f && "\\^`{|}".indexOf(point) < 0) {
+                out.append((char) point);
+                continue;
+            }
+            for (byte octet : new String(Character.toChars(point)).getBytes(java.nio.charset.StandardCharsets.UTF_8)) {
+                out.append('%').append(Character.toUpperCase(Character.forDigit((octet >> 4) & 0xf, 16))).append(Character.toUpperCase(Character.forDigit(octet & 0xf, 16)));
+            }
+        }
+        return out.toString();
     }
 
     /**

@@ -14,8 +14,10 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The two search adapters on recorded answers served by a local server (no network, no key): the request each one sends, the mapping of the answer
@@ -303,5 +305,47 @@ class WebSearchAdaptersTest {
         assertThat(perplexity(KEY).provider()).isEqualTo("perplexity");
         var defaultEndpoint = new PerplexityWebSearch(new AiProperties.Provider(true, "", KEY, "", "", ""), http, settings(), Clock.systemUTC());
         assertThat(defaultEndpoint.configured()).isTrue();
+    }
+
+    @Test
+    void yandexNormalizesAnInternationalizedHostAndANonAsciiPathOfAResult() {
+        String xml = "<?xml version=\"1.0\" encoding=\"utf-8\"?><yandexsearch version=\"1.0\"><response><results><grouping><group>"
+                + "<doc><url>https://ru.wikipedia.org/wiki/Москва</url><title>Москва</title></doc></group><group>"
+                + "<doc><url>  https://пример.рф/страница  </url><title>Пример</title></doc></group></grouping></results></response></yandexsearch>";
+        server.json("/v2/web/search", raw(xml));
+
+        List<WebSearch.Result> results = ok(yandex(KEY).search(request("ru", "москва"), BUDGET));
+
+        assertThat(results).extracting(WebSearch.Result::url).containsExactly("https://ru.wikipedia.org/wiki/%D0%9C%D0%BE%D1%81%D0%BA%D0%B2%D0%B0",
+                "https://xn--e1afmkfd.xn--p1ai/%D1%81%D1%82%D1%80%D0%B0%D0%BD%D0%B8%D1%86%D0%B0");
+    }
+
+    @Test
+    void aBodyOfAnAnsweredRequestThatIsRejectedIsPaidButAnErrorStatusIsNot() {
+        YandexWebSearch adapter = yandex(KEY);
+        assertThat(adapter.paid(new AiFailure.InvalidOutput("xml"))).isTrue();
+        assertThat(adapter.paid(new AiFailure.InvalidOutput("malformed"))).isTrue();
+        assertThat(adapter.paid(new AiFailure.InvalidOutput("shape"))).isTrue();
+        assertThat(adapter.paid(new AiFailure.InvalidOutput("body_too_large"))).isTrue();
+        assertThat(adapter.paid(new AiFailure.InvalidOutput("request"))).isFalse();
+        assertThat(adapter.paid(new AiFailure.Transient("http_503"))).isFalse();
+        assertThat(perplexity(KEY).paid(new AiFailure.InvalidOutput("xml"))).isFalse();
+    }
+
+    @Test
+    void onlyAnAsciiCompatibleXmlDocumentIsRead() {
+        for (String xml : List.of("\uFEFF" + fixture("yandex-ok.xml"), " " + fixture("yandex-ok.xml"),
+                fixture("yandex-ok.xml").replaceFirst("(?i)utf-8", "windows-1251"))) {
+            server.json("/v2/web/search", raw(xml));
+            assertThat(failure(yandex(KEY).search(request("ru", "запрос"), BUDGET))).isEqualTo(new AiFailure.InvalidOutput("xml"));
+        }
+        server.json("/v2/web/search", raw(fixture("yandex-ok.xml")));
+        assertThat(ok(yandex(KEY).search(request("ru", "запрос"), BUDGET))).isNotEmpty();
+    }
+
+    @Test
+    void perplexityStripsWhitespaceAroundAUrl() {
+        server.json("/search", "{\"results\":[{\"url\":\"  https://example.org/a \\n\",\"title\":\"t\",\"snippet\":\"s\"}]}");
+        assertThat(ok(perplexity(KEY).search(request("en", "q"), BUDGET))).extracting(WebSearch.Result::url).containsExactly("https://example.org/a");
     }
 }
