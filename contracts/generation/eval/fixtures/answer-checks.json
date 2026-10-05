@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "kind": "answer-check",
+  "source": "contracts/study/assessment-golden",
+  "answers": 144,
+  "files": [
+    {
+      "file": "01-pg-optimizer.json",
+      "exerciseId": "pg-optimizer",
+      "language": "ru",
+      "answers": 12
+    },
+    {
+      "file": "02-btree-index.json",
+      "exerciseId": "btree-index",
+      "language": "en",
+      "answers": 12
+    },
+    {
+      "file": "03-photosynthesis.json",
+      "exerciseId": "photosynthesis",
+      "language": "ru",
+      "answers": 12
+    },
+    {
+      "file": "04-seasons.json",
+      "exerciseId": "seasons",
+      "language": "ru",
+      "answers": 12
+    },
+    {
+      "file": "05-french-revolution.json",
+      "exerciseId": "french-revolution",
+      "language": "ru",
+      "answers": 12
+    },
+    {
+      "file": "06-ser-estar.json",
+      "exerciseId": "ser-estar",
+      "language": "en",
+      "answers": 12
+    },
+    {
+      "file": "07-recursion.json",
+      "exerciseId": "recursion",
+      "language": "en",
+      "answers": 12
+    },
+    {
+      "file": "08-supply-demand.json",
+      "exerciseId": "supply-demand",
+      "language": "ru",
+      "answers": 12
+    },
+    {
+      "file": "09-python-gil.json",
+      "exerciseId": "python-gil",
+      "language": "en",
+      "answers": 12
+    },
+    {
+      "file": "10-mitosis-meiosis.json",
+      "exerciseId": "mitosis-meiosis",
+      "language": "ru",
+      "answers": 12
+    },
+    {
+      "file": "11-wa-ga.json",
+      "exerciseId": "wa-ga",
+      "language": "en",
+      "answers": 12
+    },
+    {
+      "file": "12-tcp-handshake.json",
+      "exerciseId": "tcp-handshake",
+      "language": "ru",
+      "answers": 12
+    }
+  ]
+}

@@ -349,12 +349,26 @@ python3 scripts/ai-spikes/stt_gemini_spike.py --samples <dir of <model>-<lang>-<
 # Live generation: the real worker path creates a session from «20 глаголов движения» on DeepSeek, expects REVIEW within six
 # minutes, a valid native-v1 revision and the ledger debit with the measured cost (a few cents; needs the key)
 cd backend && MNEMA_AI_LIVE=true ./gradlew :services:learning:cleanTest :services:learning:test --tests '*GenerationLiveProviderTest*'
+
+# Golden eval (issue #300): the ~300 fixtures of contracts/generation/eval through the real pipeline pieces, scored by two
+# judges of other model families via OpenRouter; stub is offline and proves only the plumbing
+cd backend && MNEMA_AI_EVAL=stub ./gradlew :services:learning:goldenEval
+# Live: the production text route plus the judges; costs about $2 to $3 (stops itself at MNEMA_GOLDEN_BUDGET_MICROS, default $2.80);
+# needs MNEMA_AI_DEEPSEEK_API_KEY and MNEMA_AI_OPENROUTER_API_KEY in the environment. Report in build/reports/golden-eval/
+cd backend && MNEMA_AI_EVAL=live ./gradlew :services:learning:goldenEval
 ```
 
 The eval renders the prompt of every MBM valid fixture as a material task, compiles the answer with the MBM compiler,
 repairs once and reports validity pass rate, repair rate, p50/p95 latency and cost; neither test prints a key or a
 prompt. The live variants need the key exported in the shell that runs Gradle (for example `export
 MNEMA_AI_DEEPSEEK_API_KEY=...` from your private environment, not on the command line).
+
+The golden eval is not part of `check` or `quality`: `goldenEval` is its own Gradle task, and the offline contract of the
+corpus (`GoldenCorpusTest`, `GoldenEvalSmokeTest`) is what CI runs. Its report (`report.json`, `report.md`: validity on the
+first try and after repair, repair rate, latency p50/p95, cost per item and per accepted item, judge acceptance and
+agreement, thresholds with pass or fail, the boundaries of the corpus) holds identifiers and numbers only; `owner-review.md`
+is the 40-item sample with generated texts for the owner's acceptance and stays out of the repository. Corpus, rubric,
+thresholds and what it does not cover: [`contracts/generation/eval`](../../contracts/generation/eval/README.md).
 
 ## Historical v1 self-host reference
 

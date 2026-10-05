@@ -1,0 +1,2217 @@
+{
+  "version": 1,
+  "kind": "material-from-prompt",
+  "fixtures": [
+    {
+      "id": "prompt-code-async-await",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "code"
+      ],
+      "input": {
+        "request": "async/await в Python: корутины, asyncio.run, asyncio.gather и чем это отличается от потоков.",
+        "effort": "MEDIUM",
+        "category": "code"
+      },
+      "expect": {
+        "facts": [
+          "async def определяет корутину, await ждёт результат",
+          "asyncio.run запускает событийный цикл",
+          "asyncio.gather запускает корутины конкурентно"
+        ],
+        "mustInclude": [
+          "asyncio.run",
+          "gather",
+          "await"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-code-big-o-basics",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "code"
+      ],
+      "input": {
+        "request": "Подробно: нотация O-большое — O(1), O(log n), O(n), O(n log n), O(n²), примеры алгоритмов и как оценивать сложность циклов.",
+        "effort": "DETAILED",
+        "category": "code"
+      },
+      "expect": {
+        "facts": [
+          "O(1) — доступ по индексу, O(log n) — бинарный поиск, O(n) — линейный поиск",
+          "Два вложенных цикла — обычно O(n²)",
+          "Сортировка слиянием — O(n log n)"
+        ],
+        "mustInclude": [
+          "O(log n)",
+          "O(n²)",
+          "бинарн"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-code-big-o-space",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "code"
+      ],
+      "input": {
+        "request": "Что такое пространственная сложность алгоритма и чем она отличается от временной; пример с рекурсией и стеком вызовов.",
+        "effort": "SHORT",
+        "category": "code"
+      },
+      "expect": {
+        "facts": [
+          "Пространственная сложность — дополнительная память",
+          "Рекурсия использует стек вызовов, глубина n даёт O(n) памяти"
+        ],
+        "mustInclude": [
+          "память",
+          "стек",
+          "O(n)"
+        ],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "prompt-code-docker-basics",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "code"
+      ],
+      "input": {
+        "request": "Docker: образ и контейнер, команды build / run / ps, пример Dockerfile для простого скрипта на Python.",
+        "effort": "MEDIUM",
+        "category": "code"
+      },
+      "expect": {
+        "facts": [
+          "docker build собирает образ, docker run запускает контейнер",
+          "Dockerfile: FROM, COPY, CMD",
+          "docker ps показывает запущенные контейнеры"
+        ],
+        "mustInclude": [
+          "docker run",
+          "FROM",
+          "CMD"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-code-git-branches",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "code"
+      ],
+      "input": {
+        "request": "Git: ветки, команды branch / switch / merge, как создать ветку и слить её в main.",
+        "effort": "SHORT",
+        "category": "code"
+      },
+      "expect": {
+        "facts": [
+          "git switch -c создаёт ветку",
+          "git merge сливает ветку в текущую",
+          "Ветка — лёгкий указатель на коммит"
+        ],
+        "mustInclude": [
+          "git switch",
+          "merge",
+          "main"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-code-java-streams",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "code"
+      ],
+      "input": {
+        "request": "Java Stream API: filter, map, collect, пример со списком строк, ленивость и терминальные операции.",
+        "effort": "MEDIUM",
+        "category": "code"
+      },
+      "expect": {
+        "facts": [
+          "Операции filter и map — промежуточные, collect — терминальная",
+          "Стрим ленив: без терминальной операции ничего не выполняется",
+          "Пример: list.stream().filter(...).map(...).collect(Collectors.toList())"
+        ],
+        "mustInclude": [
+          "filter",
+          "map",
+          "collect"
+        ],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "prompt-code-js-closures",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "code"
+      ],
+      "input": {
+        "request": "Замыкания в JavaScript: что это, пример счётчика, типичная ловушка с var в цикле.",
+        "effort": "MEDIUM",
+        "category": "code"
+      },
+      "expect": {
+        "facts": [
+          "Замыкание — функция, помнящая внешние переменные",
+          "Пример счётчика: внешняя переменная и возвращаемая функция",
+          "Ловушка с var в цикле; решение — let"
+        ],
+        "mustInclude": [
+          "замыкани",
+          "let",
+          "var"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-code-null-safety-kotlin",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "code"
+      ],
+      "input": {
+        "request": "Kotlin: nullable-типы, ?, ?., ?: и !!, чем они отличаются.",
+        "effort": "SHORT",
+        "category": "code"
+      },
+      "expect": {
+        "facts": [
+          "String? допускает null",
+          "?. — безопасный вызов, ?: — элвис-оператор",
+          "!! бросает исключение, если значение null"
+        ],
+        "mustInclude": [
+          "?.",
+          "?:",
+          "!!"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-code-py-list-comp",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "code"
+      ],
+      "input": {
+        "request": "Списковые включения в Python: синтаксис, фильтр if, сравнение с циклом for, пример квадратов чётных чисел.",
+        "effort": "SHORT",
+        "category": "code"
+      },
+      "expect": {
+        "facts": [
+          "[выражение for x in iterable if условие]",
+          "Пример: [x*x for x in range(10) if x % 2 == 0]",
+          "Компактнее цикла for с append"
+        ],
+        "mustInclude": [
+          "for x in",
+          "if",
+          "range"
+        ],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "prompt-code-python-decorators",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "code"
+      ],
+      "input": {
+        "request": "Подробно: декораторы в Python — функции как объекты, синтаксис @, пример с измерением времени и functools.wraps.",
+        "effort": "DETAILED",
+        "category": "code"
+      },
+      "expect": {
+        "facts": [
+          "Функция — объект, можно передать и вернуть",
+          "@decorator равносильно func = decorator(func)",
+          "functools.wraps сохраняет имя и docstring"
+        ],
+        "mustInclude": [
+          "@",
+          "wraps",
+          "функци"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-code-regex-basics",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "code"
+      ],
+      "input": {
+        "request": "Регулярные выражения: ., *, +, ?, [], ^, $, \\d — что значат, пример проверки простого формата.",
+        "effort": "SHORT",
+        "category": "code"
+      },
+      "expect": {
+        "facts": [
+          ". — любой символ, * — ноль или больше, + — один или больше",
+          "^ и $ — начало и конец строки",
+          "\\d — цифра"
+        ],
+        "mustInclude": [
+          "\\d",
+          "^",
+          "$"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-code-rest-status",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "code"
+      ],
+      "input": {
+        "request": "HTTP-коды статуса: 200, 201, 204, 301, 400, 401, 403, 404, 500 — что значат и когда использовать.",
+        "effort": "SHORT",
+        "category": "code"
+      },
+      "expect": {
+        "facts": [
+          "200 OK, 201 Created, 204 No Content",
+          "400 Bad Request, 401 Unauthorized, 403 Forbidden, 404 Not Found",
+          "500 Internal Server Error"
+        ],
+        "mustInclude": [
+          "404",
+          "401",
+          "500"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-code-sql-group-by",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "code"
+      ],
+      "input": {
+        "request": "SQL: GROUP BY, агрегатные функции COUNT/SUM/AVG и разница между WHERE и HAVING, с примером таблицы orders.",
+        "effort": "MEDIUM",
+        "category": "code"
+      },
+      "expect": {
+        "facts": [
+          "GROUP BY группирует строки",
+          "WHERE фильтрует до группировки, HAVING — после",
+          "Агрегаты COUNT, SUM, AVG"
+        ],
+        "mustInclude": [
+          "GROUP BY",
+          "HAVING",
+          "WHERE"
+        ],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "prompt-code-sql-index",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "code"
+      ],
+      "input": {
+        "request": "SQL-индексы: зачем нужны, как создать CREATE INDEX, когда они замедляют запись.",
+        "effort": "SHORT",
+        "category": "code"
+      },
+      "expect": {
+        "facts": [
+          "Индекс ускоряет поиск и сортировку",
+          "CREATE INDEX ON таблица (колонка)",
+          "Индексы замедляют INSERT/UPDATE и занимают место"
+        ],
+        "mustInclude": [
+          "CREATE INDEX",
+          "INSERT",
+          "ускоря"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-exam-bio-cell",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "exam"
+      ],
+      "input": {
+        "request": "Краткий конспект по биологии: строение клетки — ядро, митохондрии, рибосомы, мембрана, клеточная стенка у растений.",
+        "effort": "SHORT",
+        "category": "exam"
+      },
+      "expect": {
+        "facts": [
+          "Ядро хранит ДНК",
+          "Митохондрии — синтез АТФ",
+          "Рибосомы синтезируют белок",
+          "Клеточная стенка есть у растений"
+        ],
+        "mustInclude": [
+          "ядро",
+          "митохондри",
+          "рибосом"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-exam-chem-moles",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "exam"
+      ],
+      "input": {
+        "request": "Конспект по химии: количество вещества, моль, число Авогадро, молярная масса, формулы n = m/M и n = V/Vm.",
+        "effort": "MEDIUM",
+        "category": "exam"
+      },
+      "expect": {
+        "facts": [
+          "1 моль = 6,02·10²³ частиц",
+          "n = m / M",
+          "Молярный объём газа при н. у. 22,4 л/моль"
+        ],
+        "mustInclude": [
+          "Авогадро",
+          "6,02",
+          "22,4"
+        ],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "prompt-exam-cs-networks-osi",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "exam"
+      ],
+      "input": {
+        "request": "Подробный конспект для экзамена по сетям: модель OSI — семь уровней, что делает каждый, примеры протоколов (Ethernet, IP, TCP, HTTP).",
+        "effort": "DETAILED",
+        "category": "exam"
+      },
+      "expect": {
+        "facts": [
+          "Семь уровней OSI: физический, канальный, сетевой, транспортный, сеансовый, представления, прикладной",
+          "IP — сетевой, TCP — транспортный, HTTP — прикладной"
+        ],
+        "mustInclude": [
+          "канальн",
+          "транспортн",
+          "IP"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-exam-ege-peter",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "exam"
+      ],
+      "input": {
+        "request": "Конспект для ЕГЭ по истории: реформы Петра I — армия и флот, управление (Сенат, коллегии), Табель о рангах, итоги.",
+        "effort": "MEDIUM",
+        "category": "exam"
+      },
+      "expect": {
+        "facts": [
+          "Сенат создан в 1711, коллегии позже",
+          "Табель о рангах 1722",
+          "Регулярная армия и флот"
+        ],
+        "mustInclude": [
+          "Сенат",
+          "Табель о рангах",
+          "1722"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-exam-geo-climate",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "exam"
+      ],
+      "input": {
+        "request": "Конспект по географии: климатические пояса Земли и факторы, формирующие климат (широта, высота, близость океана, течения).",
+        "effort": "MEDIUM",
+        "category": "exam"
+      },
+      "expect": {
+        "facts": [
+          "Пояса: экваториальный, тропический, умеренный, полярный",
+          "Факторы: широта, высота над уровнем моря, близость океана, течения"
+        ],
+        "mustInclude": [
+          "экваториальн",
+          "широта",
+          "течени"
+        ],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "prompt-exam-hist-ww2",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "exam"
+      ],
+      "input": {
+        "request": "Конспект по истории: Вторая мировая война — даты начала и конца, ключевые сражения Восточного фронта, итоги.",
+        "effort": "MEDIUM",
+        "category": "exam"
+      },
+      "expect": {
+        "facts": [
+          "Начало 1 сентября 1939",
+          "Сталинградская битва 1942–1943",
+          "Окончание в 1945 году"
+        ],
+        "mustInclude": [
+          "1939",
+          "Сталинград",
+          "1945"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-exam-ielts-writing",
+      "kind": "material-from-prompt",
+      "language": "en",
+      "outputLanguage": "en",
+      "tags": [
+        "exam"
+      ],
+      "input": {
+        "request": "Study notes for IELTS Writing Task 2: essay structure, paragraph plan, linking words, typical mistakes.",
+        "effort": "MEDIUM",
+        "category": "exam"
+      },
+      "expect": {
+        "facts": [
+          "Introduction, two body paragraphs, conclusion",
+          "Minimum 250 words",
+          "Linking words such as however and moreover"
+        ],
+        "mustInclude": [
+          "250 words",
+          "introduction",
+          "however"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-exam-lit-exam-essay",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "exam"
+      ],
+      "input": {
+        "request": "Памятка к сочинению по литературе: структура (тезис, аргументы, вывод), как цитировать, типичные ошибки.",
+        "effort": "SHORT",
+        "category": "exam"
+      },
+      "expect": {
+        "facts": [
+          "Структура: тезис, аргументы с примерами из текста, вывод",
+          "Цитаты должны быть точными и уместными"
+        ],
+        "mustInclude": [
+          "тезис",
+          "аргумент",
+          "вывод"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-exam-math-trig",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "exam"
+      ],
+      "input": {
+        "request": "Подробный конспект по тригонометрии: определения sin, cos, tg в прямоугольном треугольнике, значения для 30°, 45°, 60°, основное тригонометрическое тождество.",
+        "effort": "DETAILED",
+        "category": "exam"
+      },
+      "expect": {
+        "facts": [
+          "sin²α + cos²α = 1",
+          "sin 30° = 1/2, cos 60° = 1/2",
+          "tg α = sin α / cos α"
+        ],
+        "mustInclude": [
+          "sin²",
+          "45°",
+          "tg"
+        ],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "prompt-exam-physics-kinematics",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "exam"
+      ],
+      "input": {
+        "request": "Подробный конспект к экзамену по физике: кинематика — скорость, ускорение, формулы равноускоренного движения, графики, типовые задачи.",
+        "effort": "DETAILED",
+        "category": "exam"
+      },
+      "expect": {
+        "facts": [
+          "v = v₀ + at",
+          "s = v₀t + at²/2",
+          "Равномерное движение: s = vt"
+        ],
+        "mustInclude": [
+          "v = v₀",
+          "at²",
+          "ускорени"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-exam-social-studies-law",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "exam"
+      ],
+      "input": {
+        "request": "Краткий конспект по обществознанию: ветви власти, система сдержек и противовесов, функции государства.",
+        "effort": "SHORT",
+        "category": "exam"
+      },
+      "expect": {
+        "facts": [
+          "Ветви власти: законодательная, исполнительная, судебная",
+          "Сдержки и противовесы не допускают концентрации власти"
+        ],
+        "mustInclude": [
+          "законодательн",
+          "исполнительн",
+          "судебн"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-exam-toefl-listening",
+      "kind": "material-from-prompt",
+      "language": "en",
+      "outputLanguage": "en",
+      "tags": [
+        "exam"
+      ],
+      "input": {
+        "request": "Short cheat sheet for the TOEFL Listening section: question types, note-taking tips, common traps.",
+        "effort": "SHORT",
+        "category": "exam"
+      },
+      "expect": {
+        "facts": [
+          "Question types include main idea, detail and inference",
+          "Take notes on structure and key terms"
+        ],
+        "mustInclude": [
+          "main idea",
+          "detail",
+          "notes"
+        ],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "prompt-grammar-articles-en",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "grammar"
+      ],
+      "input": {
+        "request": "Артикли a/an/the в английском: когда какой использовать, нулевой артикль.",
+        "effort": "SHORT",
+        "category": "grammar"
+      },
+      "expect": {
+        "facts": [
+          "a/an — неопределённый, первый раз упоминается; the — конкретный или известный",
+          "an перед гласным звуком",
+          "Нулевой артикль с неисчисляемыми и во множественном числе в общем смысле"
+        ],
+        "mustInclude": [
+          "an",
+          "the",
+          "нулев"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-grammar-comparatives-en",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "grammar"
+      ],
+      "input": {
+        "request": "Сравнительная и превосходная степени прилагательных в английском: -er/-est, more/most, исключения good/better/best.",
+        "effort": "SHORT",
+        "category": "grammar"
+      },
+      "expect": {
+        "facts": [
+          "Короткие прилагательные: -er / -est",
+          "Длинные: more / most",
+          "Исключения: good — better — best, bad — worse — worst"
+        ],
+        "mustInclude": [
+          "better",
+          "more",
+          "worst"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-grammar-conditionals-en",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "grammar"
+      ],
+      "input": {
+        "request": "Условные предложения 0, 1, 2 и 3 типа в английском с формулами и примерами.",
+        "effort": "MEDIUM",
+        "category": "grammar"
+      },
+      "expect": {
+        "facts": [
+          "Type 1: if + present simple, will + infinitive",
+          "Type 2: if + past simple, would + infinitive",
+          "Type 3: if + past perfect, would have + past participle"
+        ],
+        "mustInclude": [
+          "would have",
+          "if",
+          "past perfect"
+        ],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "prompt-grammar-keigo-ja",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "grammar"
+      ],
+      "input": {
+        "request": "Подробно: система вежливости в японском — 丁寧語, 尊敬語, 謙譲語, с таблицей пар глаголов и примерами.",
+        "effort": "DETAILED",
+        "category": "grammar"
+      },
+      "expect": {
+        "facts": [
+          "Три категории вежливости",
+          "Пары глаголов: 行く — いらっしゃる / 伺う, 食べる — 召し上がる / いただく"
+        ],
+        "mustInclude": [
+          "尊敬語",
+          "謙譲語",
+          "いただく"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-grammar-le-zh",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "grammar"
+      ],
+      "input": {
+        "request": "Китайская частица 了: завершённое действие и изменение ситуации, отрицание с 没.",
+        "effort": "SHORT",
+        "category": "grammar"
+      },
+      "expect": {
+        "facts": [
+          "了 после глагола — завершение",
+          "了 в конце предложения — изменение состояния",
+          "Отрицание 没(有) без 了"
+        ],
+        "mustInclude": [
+          "了",
+          "没",
+          "завершён"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-grammar-measure-zh",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "grammar"
+      ],
+      "input": {
+        "request": "Китайские счётные слова: 个, 本, 张, 只, 条 — когда какое, и правило 两 вместо 二.",
+        "effort": "MEDIUM",
+        "category": "grammar"
+      },
+      "expect": {
+        "facts": [
+          "个 универсальное, 本 для книг, 张 для плоских, 只 для животных, 条 для длинных",
+          "两个人, а не 二个人"
+        ],
+        "mustInclude": [
+          "个",
+          "本",
+          "两"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-grammar-modal-verbs-en",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "grammar"
+      ],
+      "input": {
+        "request": "Подробно: модальные глаголы английского (can, could, may, might, must, should, have to) и их смыслы.",
+        "effort": "DETAILED",
+        "category": "grammar"
+      },
+      "expect": {
+        "facts": [
+          "can — способность, may — разрешение/вероятность",
+          "must — необходимость, have to — внешнее обязательство",
+          "should — совет"
+        ],
+        "mustInclude": [
+          "must",
+          "have to",
+          "should"
+        ],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "prompt-grammar-particles-ko",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "grammar"
+      ],
+      "input": {
+        "request": "Корейские частицы 은/는 и 이/가: различие и выбор формы по последней букве слова.",
+        "effort": "SHORT",
+        "category": "grammar"
+      },
+      "expect": {
+        "facts": [
+          "은/는 — тема, 이/가 — подлежащее",
+          "Выбор по наличию 받침 (конечной согласной)"
+        ],
+        "mustInclude": [
+          "은/는",
+          "이/가",
+          "받침"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-grammar-passe-compose-fr",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "grammar"
+      ],
+      "input": {
+        "request": "Подробно о passé composé во французском: avoir или être, согласование причастия, отрицание и порядок слов, типичные ошибки.",
+        "effort": "DETAILED",
+        "category": "grammar"
+      },
+      "expect": {
+        "facts": [
+          "avoir для большинства, être для глаголов движения и возвратных",
+          "Причастие согласуется с подлежащим при être",
+          "Отрицание ne ... pas вокруг вспомогательного глагола"
+        ],
+        "mustInclude": [
+          "avoir",
+          "être",
+          "ne"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-grammar-past-simple-en",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "grammar"
+      ],
+      "input": {
+        "request": "Past Simple в английском: образование правильных и неправильных глаголов, вопросы и отрицания.",
+        "effort": "SHORT",
+        "category": "grammar"
+      },
+      "expect": {
+        "facts": [
+          "Правильные глаголы получают -ed",
+          "Вопросы и отрицания строятся с did + инфинитив",
+          "Есть примеры неправильных глаголов (go — went)"
+        ],
+        "mustInclude": [
+          "-ed",
+          "did",
+          "went"
+        ],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "prompt-grammar-reflexive-fr",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "grammar"
+      ],
+      "input": {
+        "request": "Возвратные глаголы во французском: se lever, se coucher, s'appeler — спряжение с местоимениями.",
+        "effort": "SHORT",
+        "category": "grammar"
+      },
+      "expect": {
+        "facts": [
+          "Местоимения me, te, se, nous, vous, se",
+          "Примеры: je me lève, elle s'appelle"
+        ],
+        "mustInclude": [
+          "me lève",
+          "s'appelle",
+          "se lever"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-grammar-ser-estar-es",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "grammar"
+      ],
+      "input": {
+        "request": "Разница между ser и estar в испанском с таблицей спряжения в настоящем времени и примерами.",
+        "effort": "MEDIUM",
+        "category": "grammar"
+      },
+      "expect": {
+        "facts": [
+          "ser: постоянные характеристики; estar: состояние и место",
+          "Спряжения: soy, eres, es / estoy, estás, está"
+        ],
+        "mustInclude": [
+          "soy",
+          "estoy",
+          "está"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-grammar-subjunctive-es",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "grammar"
+      ],
+      "input": {
+        "request": "Presente de subjuntivo в испанском: образование и основные триггеры (quiero que, es importante que).",
+        "effort": "MEDIUM",
+        "category": "grammar"
+      },
+      "expect": {
+        "facts": [
+          "Образование от формы yo настоящего времени с заменой окончания",
+          "Триггеры: quiero que, es importante que, ojalá que"
+        ],
+        "mustInclude": [
+          "quiero que",
+          "subjuntivo",
+          "importante"
+        ],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "prompt-grammar-te-form-ja",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "grammar"
+      ],
+      "input": {
+        "request": "Образование て-формы японских глаголов по группам с примерами и частыми исключениями.",
+        "effort": "MEDIUM",
+        "category": "grammar"
+      },
+      "expect": {
+        "facts": [
+          "Группы глаголов: ичидан и годан",
+          "Исключение 行く → 行って",
+          "Примеры 食べて, 書いて, 飲んで"
+        ],
+        "mustInclude": [
+          "食べて",
+          "行って",
+          "飲んで"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-humanities-cold-war",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "humanities"
+      ],
+      "input": {
+        "request": "Подробно: Холодная война — блоки, Карибский кризис 1962, гонка вооружений, разрядка и распад СССР в 1991.",
+        "effort": "DETAILED",
+        "category": "humanities"
+      },
+      "expect": {
+        "facts": [
+          "Карибский кризис 1962",
+          "НАТО и Варшавский договор",
+          "СССР распался в 1991 году"
+        ],
+        "mustInclude": [
+          "1962",
+          "НАТО",
+          "1991"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-humanities-cubism",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "humanities"
+      ],
+      "input": {
+        "request": "Кубизм в живописи: Пикассо и Брак, отказ от единой перспективы, аналитический и синтетический этапы.",
+        "effort": "SHORT",
+        "category": "humanities"
+      },
+      "expect": {
+        "facts": [
+          "Основатели — Пикассо и Брак",
+          "Отказ от единой точки зрения/перспективы",
+          "Два этапа: аналитический и синтетический"
+        ],
+        "mustInclude": [
+          "Пикассо",
+          "Брак",
+          "перспектив"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-humanities-existentialism",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "humanities"
+      ],
+      "input": {
+        "request": "Подробно: экзистенциализм — Кьеркегор, Хайдеггер, Сартр, Камю; свобода, ответственность, абсурд, «существование предшествует сущности».",
+        "effort": "DETAILED",
+        "category": "humanities"
+      },
+      "expect": {
+        "facts": [
+          "Сартр: существование предшествует сущности",
+          "Камю: философия абсурда",
+          "Свобода и ответственность"
+        ],
+        "mustInclude": [
+          "Сартр",
+          "Камю",
+          "абсурд"
+        ],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "prompt-humanities-french-enlightenment",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "humanities"
+      ],
+      "input": {
+        "request": "Просвещение во Франции: Вольтер, Руссо, Монтескьё, Дидро и «Энциклопедия» — главные идеи.",
+        "effort": "SHORT",
+        "category": "humanities"
+      },
+      "expect": {
+        "facts": [
+          "Вольтер выступал за свободу слова и критиковал церковь",
+          "Руссо — идея общественного договора",
+          "Дидро — «Энциклопедия»"
+        ],
+        "mustInclude": [
+          "Вольтер",
+          "Руссо",
+          "Энциклопедия"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-humanities-greek-democracy",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "humanities"
+      ],
+      "input": {
+        "request": "Афинская демократия: реформы Клисфена, Народное собрание, остракизм, кто не имел прав.",
+        "effort": "MEDIUM",
+        "category": "humanities"
+      },
+      "expect": {
+        "facts": [
+          "Клисфен провёл реформы около 508 до н. э.",
+          "Народное собрание принимало решения",
+          "Рабы, женщины и метеки не имели политических прав"
+        ],
+        "mustInclude": [
+          "Клисфен",
+          "остракизм",
+          "метек"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-humanities-kant-imperative",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "humanities"
+      ],
+      "input": {
+        "request": "Категорический императив Канта: формулировка о всеобщем законе, формулировка о человечестве как цели, примеры.",
+        "effort": "SHORT",
+        "category": "humanities"
+      },
+      "expect": {
+        "facts": [
+          "Поступай так, чтобы максима могла стать всеобщим законом",
+          "Относись к человеку всегда и как к цели, и никогда только как к средству"
+        ],
+        "mustInclude": [
+          "Кант",
+          "всеобщ",
+          "цел"
+        ],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "prompt-humanities-linguistic-relativity",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "humanities"
+      ],
+      "input": {
+        "request": "Гипотеза Сепира — Уорфа: сильная и слабая версии, примеры (цвета, время), как к ней относятся современные лингвисты.",
+        "effort": "MEDIUM",
+        "category": "humanities"
+      },
+      "expect": {
+        "facts": [
+          "Язык влияет на мышление — слабая версия",
+          "Строгая детерминистская версия отвергнута",
+          "Примеры с названиями цветов"
+        ],
+        "mustInclude": [
+          "Сепир",
+          "Уорф",
+          "слаб"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-humanities-printing-press",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "humanities"
+      ],
+      "input": {
+        "request": "Изобретение книгопечатания Гутенбергом: когда, как работал подвижный шрифт, последствия для Реформации и грамотности.",
+        "effort": "SHORT",
+        "category": "humanities"
+      },
+      "expect": {
+        "facts": [
+          "Гутенберг около 1450 года в Майнце",
+          "Подвижные металлические литеры",
+          "Способствовало распространению Реформации и грамотности"
+        ],
+        "mustInclude": [
+          "Гутенберг",
+          "1450",
+          "литер"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-humanities-renaissance",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "humanities"
+      ],
+      "input": {
+        "request": "Подробно: эпоха Возрождения в Италии — гуманизм, Флоренция и Медичи, Леонардо да Винчи, Микеланджело, Рафаэль, влияние книгопечатания.",
+        "effort": "DETAILED",
+        "category": "humanities"
+      },
+      "expect": {
+        "facts": [
+          "Гуманизм ставил человека в центр",
+          "Флоренция при Медичи — центр искусства",
+          "Леонардо, Микеланджело и Рафаэль — ключевые мастера"
+        ],
+        "mustInclude": [
+          "гуманизм",
+          "Медичи",
+          "Микеланджело"
+        ],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "prompt-humanities-roman-empire",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "humanities"
+      ],
+      "input": {
+        "request": "Переход Рима от республики к империи: Цезарь, Октавиан Август, 27 год до н. э., почему республика пала.",
+        "effort": "MEDIUM",
+        "category": "humanities"
+      },
+      "expect": {
+        "facts": [
+          "Юлий Цезарь убит в 44 до н. э.",
+          "Октавиан получил титул Августа в 27 до н. э.",
+          "Республика ослабла из-за гражданских войн"
+        ],
+        "mustInclude": [
+          "Цезарь",
+          "Август",
+          "27"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-humanities-romanticism",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "humanities"
+      ],
+      "input": {
+        "request": "Романтизм в литературе начала XIX века: идеи, герой, ключевые авторы (Байрон, Пушкин ранний, Гюго) и отличие от классицизма.",
+        "effort": "MEDIUM",
+        "category": "humanities"
+      },
+      "expect": {
+        "facts": [
+          "Культ чувства и индивидуальности",
+          "Романтический герой — одинокий бунтарь",
+          "Авторы: Байрон, Гюго"
+        ],
+        "mustInclude": [
+          "Байрон",
+          "Гюго",
+          "классицизм"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-humanities-silk-road",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "humanities"
+      ],
+      "input": {
+        "request": "Великий шёлковый путь: маршруты, что везли в обе стороны, роль в распространении религий и идей.",
+        "effort": "MEDIUM",
+        "category": "humanities"
+      },
+      "expect": {
+        "facts": [
+          "Связывал Китай со Средиземноморьем",
+          "Шёлк, пряности, бумага шли на запад",
+          "Распространение буддизма и других идей"
+        ],
+        "mustInclude": [
+          "шёлк",
+          "буддизм",
+          "Китай"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-stem-archimedes",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "stem"
+      ],
+      "input": {
+        "request": "Закон Архимеда: формула силы Архимеда, условие плавания, пример с кубом льда или шаром.",
+        "effort": "SHORT",
+        "category": "stem"
+      },
+      "expect": {
+        "facts": [
+          "F = ρ·g·V, сила равна весу вытесненной жидкости",
+          "Тело плавает, если его плотность меньше плотности жидкости"
+        ],
+        "mustInclude": [
+          "ρ",
+          "вытесненн",
+          "плотност"
+        ],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "prompt-stem-circle-area",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "stem"
+      ],
+      "input": {
+        "request": "Площадь круга и длина окружности: формулы, число π, пример с радиусом 5.",
+        "effort": "SHORT",
+        "category": "stem"
+      },
+      "expect": {
+        "facts": [
+          "S = πr², C = 2πr",
+          "π ≈ 3,14159",
+          "Для r = 5: S ≈ 78,5, C ≈ 31,4"
+        ],
+        "mustInclude": [
+          "πr²",
+          "2πr",
+          "78,5"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-stem-derivative-power",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "stem"
+      ],
+      "input": {
+        "request": "Производная степенной функции: правило (xⁿ)' = n·xⁿ⁻¹, геометрический смысл и три примера.",
+        "effort": "MEDIUM",
+        "category": "stem"
+      },
+      "expect": {
+        "facts": [
+          "(xⁿ)' = n·xⁿ⁻¹",
+          "Производная — скорость изменения / наклон касательной",
+          "Примеры: (x²)' = 2x, (x³)' = 3x²"
+        ],
+        "mustInclude": [
+          "n·x",
+          "касательн",
+          "3x²"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-stem-dna-replication",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "stem"
+      ],
+      "input": {
+        "request": "Репликация ДНК: полуконсервативность, роль геликазы и ДНК-полимеразы, ведущая и отстающая цепь, фрагменты Оказаки.",
+        "effort": "MEDIUM",
+        "category": "stem"
+      },
+      "expect": {
+        "facts": [
+          "Репликация полуконсервативна",
+          "Геликаза расплетает спираль, ДНК-полимераза достраивает цепь",
+          "Отстающая цепь строится фрагментами Оказаки"
+        ],
+        "mustInclude": [
+          "геликаз",
+          "полимераз",
+          "Оказаки"
+        ],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "prompt-stem-entropy",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "stem"
+      ],
+      "input": {
+        "request": "Энтропия: интуиция (мера беспорядка / числа микросостояний), второе начало термодинамики, формула Больцмана S = k·ln W.",
+        "effort": "MEDIUM",
+        "category": "stem"
+      },
+      "expect": {
+        "facts": [
+          "Энтропия изолированной системы не убывает",
+          "S = k·ln W (формула Больцмана)",
+          "Связана с числом микросостояний"
+        ],
+        "mustInclude": [
+          "Больцман",
+          "S = k",
+          "второе начало"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-stem-light-speed",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "stem"
+      ],
+      "input": {
+        "request": "Скорость света в вакууме: значение, обозначение c, связь с E = mc², почему ничто массивное не достигает c.",
+        "effort": "SHORT",
+        "category": "stem"
+      },
+      "expect": {
+        "facts": [
+          "c ≈ 3·10⁸ м/с (299 792 458 м/с)",
+          "E = mc²",
+          "Для массивных тел достижение c потребовало бы бесконечной энергии"
+        ],
+        "mustInclude": [
+          "299 792 458",
+          "E = mc²",
+          "вакуум"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-stem-mitosis-meiosis",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "stem"
+      ],
+      "input": {
+        "request": "Подробно: чем митоз отличается от мейоза — число делений, набор хромосом, генетическое разнообразие, значение.",
+        "effort": "DETAILED",
+        "category": "stem"
+      },
+      "expect": {
+        "facts": [
+          "Митоз: одно деление, две диплоидные клетки, одинаковые",
+          "Мейоз: два деления, четыре гаплоидные клетки, кроссинговер даёт разнообразие"
+        ],
+        "mustInclude": [
+          "гаплоид",
+          "кроссинговер",
+          "диплоид"
+        ],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "prompt-stem-neutralization",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "stem"
+      ],
+      "input": {
+        "request": "Реакция нейтрализации: кислота + основание → соль + вода, пример HCl + NaOH, ионное уравнение H⁺ + OH⁻ → H₂O.",
+        "effort": "MEDIUM",
+        "category": "stem"
+      },
+      "expect": {
+        "facts": [
+          "Кислота + основание → соль + вода",
+          "HCl + NaOH → NaCl + H₂O",
+          "Сокращённое ионное: H⁺ + OH⁻ → H₂O"
+        ],
+        "mustInclude": [
+          "HCl",
+          "NaCl",
+          "H₂O"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-stem-ohm-series",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "stem"
+      ],
+      "input": {
+        "request": "Последовательное и параллельное соединение резисторов: формулы общего сопротивления и пример с 10 и 20 Ом.",
+        "effort": "SHORT",
+        "category": "stem"
+      },
+      "expect": {
+        "facts": [
+          "Последовательно: R = R₁ + R₂",
+          "Параллельно: 1/R = 1/R₁ + 1/R₂",
+          "10 и 20 Ом: последовательно 30 Ом, параллельно ≈ 6,7 Ом"
+        ],
+        "mustInclude": [
+          "R₁ + R₂",
+          "30",
+          "6,7"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-stem-periodic-groups",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "stem"
+      ],
+      "input": {
+        "request": "Периодическая таблица: периоды и группы, щелочные металлы, галогены, благородные газы — свойства и закономерности.",
+        "effort": "MEDIUM",
+        "category": "stem"
+      },
+      "expect": {
+        "facts": [
+          "Щелочные металлы — группа 1 (Li, Na, K)",
+          "Галогены — группа 17 (F, Cl, Br, I)",
+          "Благородные газы — группа 18, инертны"
+        ],
+        "mustInclude": [
+          "галоген",
+          "щелочн",
+          "благородн"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-stem-probability-basics",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "stem"
+      ],
+      "input": {
+        "request": "Подробно: основы теории вероятностей — классическое определение, сложение и умножение вероятностей, независимые события, примеры с монетой и кубиком.",
+        "effort": "DETAILED",
+        "category": "stem"
+      },
+      "expect": {
+        "facts": [
+          "P(A) = благоприятные исходы / все исходы",
+          "Для независимых событий P(A и B) = P(A)·P(B)",
+          "Бросок кубика: P(6) = 1/6"
+        ],
+        "mustInclude": [
+          "1/6",
+          "независим",
+          "P(A)"
+        ],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "prompt-stem-quadratic",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "stem"
+      ],
+      "input": {
+        "request": "Квадратные уравнения: дискриминант, формула корней, три случая числа корней, пример x² − 5x + 6 = 0.",
+        "effort": "MEDIUM",
+        "category": "stem"
+      },
+      "expect": {
+        "facts": [
+          "D = b² − 4ac",
+          "x = (−b ± √D) / 2a",
+          "D>0 — два корня, D=0 — один, D<0 — нет вещественных",
+          "x² − 5x + 6 = 0 имеет корни 2 и 3"
+        ],
+        "mustInclude": [
+          "дискриминант",
+          "D = b²",
+          "2 и 3"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-stem-sets-math",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "stem"
+      ],
+      "input": {
+        "request": "Множества в математике: объединение, пересечение, разность, пример с A = {1,2,3} и B = {3,4}.",
+        "effort": "SHORT",
+        "category": "stem"
+      },
+      "expect": {
+        "facts": [
+          "A ∪ B = {1,2,3,4}",
+          "A ∩ B = {3}",
+          "A \\ B = {1,2}"
+        ],
+        "mustInclude": [
+          "объединени",
+          "пересечени",
+          "{3}"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-stem-thermo-first",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "stem"
+      ],
+      "input": {
+        "request": "Первое начало термодинамики: ΔU = Q − A, смысл каждой величины, один пример с газом в цилиндре.",
+        "effort": "SHORT",
+        "category": "stem"
+      },
+      "expect": {
+        "facts": [
+          "ΔU = Q − A",
+          "Q — подведённое тепло, A — работа системы",
+          "Закон сохранения энергии для тепловых процессов"
+        ],
+        "mustInclude": [
+          "ΔU",
+          "работ",
+          "энерги"
+        ],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "prompt-vocabulary-airport-en",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "vocabulary"
+      ],
+      "input": {
+        "request": "Десять английских слов по теме «аэропорт» с переводом и примером в предложении.",
+        "effort": "SHORT",
+        "category": "vocabulary"
+      },
+      "expect": {
+        "facts": [
+          "Слова: passport, gate, luggage/baggage, boarding pass, departure, arrival, check-in",
+          "У каждого слова есть русский перевод и пример"
+        ],
+        "mustInclude": [
+          "passport",
+          "gate",
+          "boarding pass"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-vocabulary-body-en",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "vocabulary"
+      ],
+      "input": {
+        "request": "Части тела по-английски: 15 слов, переводы, плюс устойчивые выражения (have a heart, cold feet и т. п.).",
+        "effort": "MEDIUM",
+        "category": "vocabulary"
+      },
+      "expect": {
+        "facts": [
+          "Слова head, shoulder, elbow, knee, ankle",
+          "Идиомы с частями тела объяснены"
+        ],
+        "mustInclude": [
+          "shoulder",
+          "knee",
+          "cold feet"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-vocabulary-colors-fr",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "vocabulary"
+      ],
+      "input": {
+        "request": "Французские названия цветов с произношением-подсказкой и замечанием о согласовании прилагательных.",
+        "effort": "SHORT",
+        "category": "vocabulary"
+      },
+      "expect": {
+        "facts": [
+          "Цвета: rouge, bleu, vert, jaune, noir, blanc",
+          "Цветные прилагательные согласуются в роде и числе"
+        ],
+        "mustInclude": [
+          "rouge",
+          "bleu",
+          "vert"
+        ],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "prompt-vocabulary-emotions-ko",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "vocabulary"
+      ],
+      "input": {
+        "request": "Корейская лексика эмоций (기쁘다, 슬프다, 화나다, 무섭다, 피곤하다) с примерами в вежливом стиле.",
+        "effort": "MEDIUM",
+        "category": "vocabulary"
+      },
+      "expect": {
+        "facts": [
+          "Слова 기쁘다 (радоваться), 슬프다 (грустить), 화나다 (злиться), 무섭다 (бояться), 피곤하다 (уставать)"
+        ],
+        "mustInclude": [
+          "기쁘다",
+          "슬프다",
+          "피곤하다"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-vocabulary-family-ja",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "vocabulary"
+      ],
+      "input": {
+        "request": "Лексика по теме «семья» на японском: свои и чужие семьи (お母さん и 母), с чтениями и пояснением разницы.",
+        "effort": "MEDIUM",
+        "category": "vocabulary"
+      },
+      "expect": {
+        "facts": [
+          "Разница между словами для своей семьи (母, 父) и чужой (お母さん, お父さん)",
+          "Чтения кана для слов"
+        ],
+        "mustInclude": [
+          "母",
+          "お母さん",
+          "父"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-vocabulary-food-es",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "vocabulary"
+      ],
+      "input": {
+        "request": "Испанские слова по теме «еда и напитки»: 12 слов с артиклями и переводом.",
+        "effort": "SHORT",
+        "category": "vocabulary"
+      },
+      "expect": {
+        "facts": [
+          "Слова вроде el pan, la leche, el agua, el queso, la manzana",
+          "Род указан артиклем"
+        ],
+        "mustInclude": [
+          "el pan",
+          "la leche",
+          "el agua"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-vocabulary-greetings-ko",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "vocabulary"
+      ],
+      "input": {
+        "request": "Корейские приветствия и вежливые фразы: 안녕하세요, 감사합니다 и другие, с пояснением уровней вежливости.",
+        "effort": "SHORT",
+        "category": "vocabulary"
+      },
+      "expect": {
+        "facts": [
+          "안녕하세요 — вежливое приветствие",
+          "감사합니다 — спасибо в вежливой форме"
+        ],
+        "mustInclude": [
+          "안녕하세요",
+          "감사합니다"
+        ],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "prompt-vocabulary-hsk1-zh",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "vocabulary"
+      ],
+      "input": {
+        "request": "Двадцать слов уровня HSK 1 на китайском: иероглифы, пиньинь, перевод. Сгруппируй по темам.",
+        "effort": "MEDIUM",
+        "category": "vocabulary"
+      },
+      "expect": {
+        "facts": [
+          "Слова уровня HSK 1: 你好, 谢谢, 学生, 老师, 水",
+          "У каждого слова иероглиф, пиньинь и перевод"
+        ],
+        "mustInclude": [
+          "你好",
+          "谢谢",
+          "老师"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-vocabulary-jlpt-n5-verbs",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "vocabulary"
+      ],
+      "input": {
+        "request": "Двадцать базовых японских глаголов JLPT N5 в словарной форме и ます-форме, с переводом и примерами.",
+        "effort": "DETAILED",
+        "category": "vocabulary"
+      },
+      "expect": {
+        "facts": [
+          "Глаголы 食べる, 飲む, 行く, 来る, 見る, 書く",
+          "Даны словарная и ます-формы"
+        ],
+        "mustInclude": [
+          "食べる",
+          "飲む",
+          "行く"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-vocabulary-kitchen-es",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "vocabulary"
+      ],
+      "input": {
+        "request": "Подробно: кухонная лексика на испанском (utensilios, electrodomésticos, acciones como cortar, hervir, freír) с примерами и диалогом.",
+        "effort": "DETAILED",
+        "category": "vocabulary"
+      },
+      "expect": {
+        "facts": [
+          "Слова cortar, hervir, freír",
+          "Есть мини-диалог или примеры"
+        ],
+        "mustInclude": [
+          "cortar",
+          "hervir",
+          "freír"
+        ],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "prompt-vocabulary-math-terms-en",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "vocabulary"
+      ],
+      "input": {
+        "request": "Английские математические термины: sum, difference, product, quotient, fraction, equation — с переводом.",
+        "effort": "SHORT",
+        "category": "vocabulary"
+      },
+      "expect": {
+        "facts": [
+          "sum — сумма, difference — разность, product — произведение, quotient — частное",
+          "fraction — дробь, equation — уравнение"
+        ],
+        "mustInclude": [
+          "sum",
+          "product",
+          "equation"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-vocabulary-office-en",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "vocabulary"
+      ],
+      "input": {
+        "request": "Подробный материал: английская лексика офиса и деловой переписки (deadline, attachment, follow up, schedule и т. д.) с примерами и типичными ошибками русскоговорящих.",
+        "effort": "DETAILED",
+        "category": "vocabulary"
+      },
+      "expect": {
+        "facts": [
+          "Слова deadline, attachment, follow up, schedule, agenda, minutes",
+          "Есть примеры предложений и пояснения ошибок"
+        ],
+        "mustInclude": [
+          "deadline",
+          "attachment",
+          "agenda"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "prompt-vocabulary-travel-fr",
+      "kind": "material-from-prompt",
+      "language": "fr",
+      "outputLanguage": "fr",
+      "tags": [
+        "vocabulary"
+      ],
+      "input": {
+        "request": "Un petit lexique du voyage en français (billet, valise, réservation, auberge) avec une phrase d'exemple pour chaque mot.",
+        "effort": "MEDIUM",
+        "category": "vocabulary"
+      },
+      "expect": {
+        "facts": [
+          "Mots: billet, valise, réservation, auberge",
+          "Chaque mot a une phrase d'exemple"
+        ],
+        "mustInclude": [
+          "billet",
+          "valise",
+          "réservation"
+        ],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "prompt-vocabulary-weather-de",
+      "kind": "material-from-prompt",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "vocabulary"
+      ],
+      "input": {
+        "request": "Немецкие слова по теме «погода»: der Regen, die Sonne, der Schnee, der Wind и ещё несколько, с артиклями.",
+        "effort": "SHORT",
+        "category": "vocabulary"
+      },
+      "expect": {
+        "facts": [
+          "der Regen, die Sonne, der Schnee, der Wind",
+          "Указаны артикли"
+        ],
+        "mustInclude": [
+          "der Regen",
+          "die Sonne",
+          "der Schnee"
+        ],
+        "forbidden": []
+      },
+      "heldOut": false
+    }
+  ]
+}

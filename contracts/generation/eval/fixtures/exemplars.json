@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "kind": "exemplars",
+  "exemplars": {
+    "ru": "# Чай: как заваривать\n\nЧай заваривают водой, нагретой до 80–95 °C, в зависимости от сорта. Слишком горячая вода делает вкус горьким.\n\n- Зелёный чай: около 80 °C.\n- Чёрный чай: около 95 °C.\n\nНастаивайте две–четыре минуты и не перестаивайте.",
+    "en": "# Brewing tea\n\nTea is brewed with water heated to between 80 and 95 °C, depending on the variety. Water that is too hot makes the taste bitter.\n\n- Green tea: about 80 °C.\n- Black tea: about 95 °C.\n\nLet it steep for two to four minutes and do not oversteep.",
+    "fr": "# Préparer le thé\n\nOn prépare le thé avec de l'eau chauffée entre 80 et 95 °C, selon la variété. Une eau trop chaude rend le goût amer.\n\n- Thé vert : environ 80 °C.\n- Thé noir : environ 95 °C.\n\nLaissez infuser deux à quatre minutes sans dépasser.",
+    "es": "# Preparar el té\n\nEl té se prepara con agua calentada entre 80 y 95 °C, según la variedad. El agua demasiado caliente amarga el sabor.\n\n- Té verde: unos 80 °C.\n- Té negro: unos 95 °C.\n\nDeje reposar de dos a cuatro minutos sin pasarse.",
+    "ja": "# お茶の淹れ方\n\nお茶は種類によって、80〜95℃のお湯で淹れます。お湯が熱すぎると、味が苦くなります。\n\n- 緑茶：約80℃。\n- 紅茶：約95℃。\n\n2〜4分待ち、長く置きすぎないようにします。",
+    "zh": "# 泡茶的方法\n\n泡茶的水温要看茶的种类，一般在80到95摄氏度之间。水太烫会让茶变苦。\n\n- 绿茶：大约80摄氏度。\n- 红茶：大约95摄氏度。\n\n泡两到四分钟，不要泡太久。",
+    "ko": "# 차 우리는 법\n\n차는 종류에 따라 80~95도의 물로 우립니다. 물이 너무 뜨거우면 맛이 써집니다.\n\n- 녹차: 약 80도.\n- 홍차: 약 95도.\n\n2~4분 동안 우리고 너무 오래 두지 마세요."
+  }
+}
