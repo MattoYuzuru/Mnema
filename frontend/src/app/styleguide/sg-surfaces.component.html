@@ -101,6 +101,22 @@
   <p class="eyebrow">Компоненты</p>
   <h2 id="cards-title">Карточки и области</h2>
   <p class="sg-lede">Область — лист на бумаге с тонким правилом. Внутри область делится линиями, а не вложенными рамками.</p>
+  <app-sg-specimen title="Таблица сравнения" selector=".data-table"
+    when="Несколько вариантов по одним и тем же признакам (сравнение тарифов). Первая колонка — заголовки строк, верхняя строка — заголовки колонок, подпись caption называет таблицу. На узком экране таблица прокручивается в своей области (tabindex=0, role=region и имя), страница — нет."
+    [tokens]="['--mn-ink', '--mn-rule', '--mn-muted']"
+    usage='<div class="table-scroll" tabindex="0" role="region" aria-label="Сравнение"><table class="data-table"><caption>…</caption>…</table></div>'>
+    <div class="sg-scroll" tabindex="0" role="region" aria-label="Пример таблицы сравнения">
+      <table class="data-table">
+        <caption>Что входит в каждый тариф</caption>
+        <thead><tr><td></td><th scope="col">Free</th><th scope="col">Plus</th><th scope="col">Pro</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Голос в месяц</th><td>60 мин</td><td>300 мин</td><td>600 мин</td></tr>
+          <tr><th scope="row">Проверка ответов в месяц</th><td>50</td><td>500</td><td>1000</td></tr>
+          <tr><th scope="row">Подкасты в месяц</th><td>Нет</td><td>2</td><td>6</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </app-sg-specimen>
   <app-sg-specimen title="Лист" selector=".paper-surface, .paper-surface.ruled" [onPaper]="true"
     when="Рабочая область страницы: редактор, просмотр материала, карточка занятия. .ruled добавляет чернильное правило сверху для карточки, у которой есть одно главное действие."
     [tokens]="['--mn-sheet', '--mn-rule', '--mn-ink']"

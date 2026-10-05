@@ -7,7 +7,7 @@
 
     <div class="field prompt-field">
       <textarea #promptField [id]="uid + '-prompt'" name="prompt" rows="3" enterkeyhint="send" [maxLength]="maxLength"
-        [placeholder]="hasNotes() ? 'Необязательно: например, «добавь примеры из аниме»' : 'Например: 20 глаголов движения с примерами из аниме'" autocomplete="off"
+        [placeholder]="placeholder()" autocomplete="off"
         [value]="prompt()" [attr.aria-invalid]="promptMissing() ? 'true' : null"
         [attr.aria-describedby]="uid + '-prompt-help' + (promptMissing() ? ' ' + uid + '-prompt-error' : '')"
         (input)="onInput($event)" (keydown)="onKeydown($event)"></textarea>
@@ -45,6 +45,7 @@
         <app-toggletip topic="Мнема и ИИ">
           <p>Мнема — помощник Mnema. Она предлагает черновики материалов с помощью ИИ, поэтому проверяйте факты.</p>
           <p>Ничего не попадает в колоду и в занятия, пока вы не одобрите.</p>
+          <p><a routerLink="/ai">Как Mnema использует ИИ</a></p>
         </app-toggletip></span>
       <button type="submit" class="generate-cta" [attr.aria-disabled]="creating() || overBudget() ? 'true' : null"
         [attr.aria-describedby]="uid + '-estimate'">{{ creating() ? 'Создаём…' : ctaLabel() }}</button>

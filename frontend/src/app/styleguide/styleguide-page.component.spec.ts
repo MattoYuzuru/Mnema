@@ -44,7 +44,7 @@ describe('StyleguidePageComponent', () => {
     it('renders the real app components and classes', () => {
         for (const selector of [
             'app-hold-to-delete-button', 'app-segmented-choice', 'app-toggletip', 'app-usage-meter', 'app-mnema-select', 'app-choice-list',
-            'app-batch-pager', 'app-new-badge', 'app-native-document-renderer', 'button.generate-cta', 'button.button.primary',
+            'app-batch-pager', 'app-plan-option', 'table.data-table', 'app-new-badge', 'app-native-document-renderer', 'button.generate-cta', 'button.button.primary',
             '.notice.error', '.empty-state', '.stamp', '.paper-surface.ruled', '.field-error'
         ]) {
             expect(root.querySelector(selector), selector).not.toBeNull();

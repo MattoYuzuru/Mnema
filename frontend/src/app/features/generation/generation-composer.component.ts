@@ -4,6 +4,8 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
+import { copyFor } from '../goal/goal-copy';
+import { LearningGoalStore } from '../goal/learning-goal.store';
 import { Subscription, catchError, forkJoin, map, of } from 'rxjs';
 
 import { AuthService } from '../../auth.service';
@@ -142,6 +144,10 @@ export class GenerationComposerComponent {
     /** The notes that are the material (`SOURCE`), in order. */
     protected readonly noteSources = computed(() => this.sources().filter(source => source.spec.type === 'NOTE' && source.spec.role === 'SOURCE'));
     protected readonly hasNotes = computed(() => this.noteSources().length > 0);
+    private readonly goals = inject(LearningGoalStore);
+    /** The hint of the empty field: with notes the field is optional; otherwise an example that fits the learner's goal. */
+    protected readonly placeholder = computed(() => this.hasNotes()
+        ? 'Необязательно: например, «добавь примеры из аниме»' : copyFor(this.goals.goal()).composerPlaceholder);
     /** Grouping and per-note settings mean something only for two or more notes. */
     protected readonly groupable = computed(() => this.noteSources().length > 1);
     /** Row versions read again at submit; they replace the ones the chips were made with. */

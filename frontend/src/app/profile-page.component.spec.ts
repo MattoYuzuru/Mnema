@@ -1,11 +1,12 @@
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, provideRouter } from '@angular/router';
-import { Subject, of, throwError } from 'rxjs';
+import { NEVER, Subject, of, throwError } from 'rxjs';
 import { AccountProfile, AccountProfileApi } from './account-profile.api';
 import { AuthService } from './auth.service';
 import { ProfilePageComponent } from './profile-page.component';
 import { appConfig } from './app.config';
 import { DURING_STUDY_STORAGE_KEY, NotificationPreferences } from './core/notifications/notification-preferences';
+import { PlansApiService } from './features/plans/plans-api.service';
 import { UsageApiService } from './features/usage/usage-api.service';
 import type { UsageSnapshot } from './features/usage/usage.models';
 import { plusUsage } from './features/usage/usage-test-data';
@@ -38,6 +39,7 @@ describe('ProfilePageComponent', () => {
                 provideRouter([]),
                 { provide: AccountProfileApi, useValue: api },
                 { provide: UsageApiService, useValue: usage },
+                { provide: PlansApiService, useValue: { load: () => NEVER } },
                 { provide: AuthService, useValue: {
                         setPassword: vi.fn().mockName("AuthService.setPassword")
                     } }

@@ -30,6 +30,8 @@ const lazyCanLeaveStudySession: CanDeactivateFn<StudySessionPageComponent> = (..
 const developmentOnlyRoutes: Routes = typeof ngDevMode === 'undefined' || ngDevMode
     ? [{
         path: 'styleguide',
+        // A design catalogue is not a place to be asked about goals (app-goal-onboarding reads this flag).
+        data: { quiet: true },
         loadComponent: () => import('./styleguide/styleguide-page.component').then(module => module.StyleguidePageComponent)
     }]
     : [];
@@ -122,6 +124,16 @@ export const appRoutes: Routes = [
         loadComponent: () => import('./features/own-decks/own-deck-detail-page.component')
             .then(module => module.OwnDeckDetailPageComponent),
         canActivate: [authGuard]
+    },
+    {
+        path: 'plans',
+        loadComponent: () => import('./features/plans/plans-page.component').then(module => module.PlansPageComponent),
+        canActivate: [authGuard]
+    },
+    // Public: the footer and the «Что это?» toggletips of the AI actions link here, signed in or not.
+    {
+        path: 'ai',
+        loadComponent: () => import('./features/ai-info/ai-page.component').then(module => module.AiPageComponent)
     },
     { path: 'privacy', component: PrivacyPageComponent },
     { path: 'terms', component: TermsPageComponent },

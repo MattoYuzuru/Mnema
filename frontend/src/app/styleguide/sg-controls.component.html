@@ -129,6 +129,22 @@
       <app-toggletip topic="проверки">Мягко засчитывает опечатки, строго требует точного совпадения с эталоном.</app-toggletip>
     </app-segmented-choice>
   </app-sg-specimen>
+  <app-sg-specimen title="Карточка тарифа" selector="<app-plan-option>"
+    when="Выбор одного из нескольких тарифов, где у каждого есть цена и три строки сути. Настоящий радио: имя — подпись, цена и строки — описание; рекомендация и «Ваш тариф» — текстовые метки, «В работе» — недоступный вариант с тем, что готовится."
+    [tokens]="['--mn-ink', '--mn-rule', '--mn-sheet', '--mn-positive']"
+    usage='<app-plan-option [entry]="plan" period="MONTH" name="tier" [selected]="true" badge="Рекомендуем для подготовки к экзаменам" (choose)="pick($event)" />'>
+    <div class="sg-stack">
+      <div class="actions">
+        <button type="button" class="button small" (click)="tierPeriod.set(tierPeriod() === 'MONTH' ? 'YEAR' : 'MONTH')">Период: {{ tierPeriod() === 'MONTH' ? 'месяц' : 'год' }}</button>
+      </div>
+      <div class="sg-tier-grid">
+        @for (entry of tiers; track entry.plan) {
+          <app-plan-option [entry]="entry" [period]="tierPeriod()" name="sg-tier" [selected]="tier() === entry.plan"
+            [current]="entry.plan === 'FREE'" [badge]="entry.plan === 'PLUS' ? 'Рекомендуем для учёбы для себя' : null" (choose)="tier.set($event)" />
+        }
+      </div>
+    </div>
+  </app-sg-specimen>
   <app-sg-specimen title="Варианты ответа" selector="<app-choice-list>"
     when="Варианты упражнения «Выбор»: радио для одного ответа, флажки для нескольких. Только текст подписи внутри label; плееры и картинки соседние."
     [tokens]="['--mn-field-border', '--mn-ink', '--mn-soft']">

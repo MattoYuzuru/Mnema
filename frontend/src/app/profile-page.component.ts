@@ -9,6 +9,7 @@ import { AccountProfile, AccountProfileApi } from './account-profile.api';
 import { AuthService } from './auth.service';
 import { appConfig } from './app.config';
 import { DuringStudyMode, NotificationPreferences } from './core/notifications/notification-preferences';
+import { ProfilePlanComponent } from './features/plans/profile-plan.component';
 import { UsageBudgetComponent } from './features/usage/usage-budget.component';
 import { SegmentedChoiceComponent, SegmentedOption } from './shared/segmented-choice.component';
 
@@ -18,7 +19,7 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
 
 @Component({
     selector: 'app-profile-page',
-    imports: [ReactiveFormsModule, RouterLink, SegmentedChoiceComponent, UsageBudgetComponent],
+    imports: [ReactiveFormsModule, RouterLink, SegmentedChoiceComponent, UsageBudgetComponent, ProfilePlanComponent],
     template: `
       <section class="profile-page" aria-labelledby="profile-title">
         <a routerLink="/decks" class="back-link">← Мои колоды</a>
@@ -75,6 +76,11 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
             <section id="ai-budget" class="sheet" aria-labelledby="ai-budget-heading">
               <h2 id="ai-budget-heading" tabindex="-1">ИИ-бюджет</h2>
               <app-usage-budget />
+              <p class="hint"><a routerLink="/ai">Как Mnema использует ИИ</a></p>
+            </section>
+            <section id="plan" class="sheet" aria-labelledby="plan-heading">
+              <h2 id="plan-heading">Тариф</h2>
+              <app-profile-plan />
             </section>
             <section class="sheet" aria-labelledby="notifications-heading">
               <h2 id="notifications-heading">Уведомления</h2>

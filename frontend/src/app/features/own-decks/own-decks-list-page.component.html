@@ -21,7 +21,7 @@
     <section class="empty-state" aria-labelledby="empty-title">
       <p class="folio" aria-hidden="true">I</p>
       <h2 id="empty-title">Первая страница пока чиста</h2>
-      <p>Создайте колоду и задайте ей название. Материалы появятся в следующих шагах.</p>
+      <p>{{ emptyText() }}</p>
       <a class="text-link" routerLink="/decks/new">Создать первую колоду</a>
     </section>
   } @else {

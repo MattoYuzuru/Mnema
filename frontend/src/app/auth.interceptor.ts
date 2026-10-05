@@ -21,8 +21,10 @@ export function isCredentialTarget(requestUrl: string, identityOrigin: string, l
         const learningRoots = [`${prefix}/decks`, `${prefix}/editing-drafts`, `${prefix}/capture-notes`,
             `${prefix}/media-assets`, `${prefix}/notifications`, `${prefix}/generation-sessions`];
         // The account-wide `generation-sessions` list is the only generation route outside `/decks/{id}`.
-        // Single-resource routes without subpaths: capability flags, stateless author preview evaluation and the usage bar.
-        const learningExact = [`${prefix}/capabilities`, `${prefix}/exercise-previews`, `${prefix}/usage`];
+        // Single-resource routes without subpaths: capability flags, stateless author preview evaluation, the usage bar,
+        // the paywall catalogue and the goal answer.
+        const learningExact = [`${prefix}/capabilities`, `${prefix}/exercise-previews`, `${prefix}/usage`, `${prefix}/plans`,
+            `${prefix}/learning-profile`];
         const learningRoute = url.origin === learning.origin && (learningExact.includes(url.pathname)
             || learningRoots.some(root => url.pathname === root || url.pathname.startsWith(`${root}/`)));
         return identityRoute || learningRoute;

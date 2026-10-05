@@ -110,7 +110,23 @@
 
 .stamp.solid { color: var(--mn-on-ink); background: var(--mn-ink); }
 
+/* Data table: rows of facts compared across a few columns (the plan comparison). Row headers in the first column, column headers on top;
+   wrap it in an `overflow-x: auto` region with tabindex=0 and a name so a narrow screen scrolls the table, not the page. */
+.data-table {
+    inline-size: 100%;
+    min-inline-size: 34rem;
+    border-collapse: collapse;
+    font-size: .95rem;
+}
+
+.data-table caption { padding-block-end: .5rem; color: var(--mn-muted); text-align: start; }
+.data-table :is(th, td) { border-block-end: 1px solid var(--mn-rule); padding: .6rem .75rem; text-align: start; vertical-align: top; }
+.data-table thead :is(th, td) { border-block-end: 2px solid var(--mn-ink); }
+.data-table thead th { color: var(--mn-ink); font: 700 .75rem/1.4 var(--mn-font-mono); letter-spacing: .08em; text-transform: uppercase; }
+.data-table tbody th { color: var(--mn-ink); font-weight: 600; }
+
 @media (forced-colors: active) {
+    .data-table :is(th, td) { border-color: CanvasText; }
     .button, .notice, .stamp, .paper-surface { border-color: CanvasText; }
     .empty-state { border-color: CanvasText; }
     .button.quiet { border-color: transparent; }
