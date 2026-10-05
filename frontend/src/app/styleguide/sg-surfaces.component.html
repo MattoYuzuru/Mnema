@@ -1,0 +1,113 @@
+<section class="sg-section" id="menus" aria-labelledby="menus-title">
+  <p class="eyebrow">Компоненты</p>
+  <h2 id="menus-title">Меню и окна</h2>
+  <p class="sg-lede">Всплывающее строится на нативном: <code>popover</code> и <code>&lt;dialog&gt;</code> дают Esc, возврат фокуса и верхний слой без своих скриптов.
+    Ничто не зависит от hover.</p>
+  <app-sg-specimen title="Подсказка «ⓘ»" selector="<app-toggletip>"
+    when="Пояснение, которое нужно не всем. Обязательное (ошибка, ограничение) остаётся в потоке страницы, а не прячется в подсказку."
+    [tokens]="['--mn-ink', '--mn-sheet', '--mn-rule']"
+    usage='<app-toggletip topic="проверки">Строго — ответ должен совпасть с эталоном.</app-toggletip>'>
+    <p class="sg-inline">Тип проверки <app-toggletip topic="проверки">Мягко засчитывает опечатки, строго требует точного совпадения.</app-toggletip></p>
+  </app-sg-specimen>
+  <app-sg-specimen title="Окно «Попросить Мнему»" selector="<app-ai-prompt-window>"
+    when="Небольшое окно с быстрыми правками и полем запроса. На телефоне это модальный <dialog> снизу (показан здесь), на десктопе — немодальный popover у выделения. Esc, «×» и клик вне закрывают; единственный случай тени у «листа»."
+    [tokens]="['--mn-sheet', '--mn-ink', '--mn-rule']">
+    <button type="button" class="button" (click)="openWindow()">Открыть окно</button>
+    @if (windowOpen()) {
+      <app-ai-prompt-window mode="sheet" quote="Падежи в русском языке" cost="≈ 0,3 % лимита" [(instruction)]="instruction"
+        (ask)="closeWindow()" (retract)="closeWindow()" (dismissed)="closeWindow()" />
+    }
+  </app-sg-specimen>
+  <p class="notice" role="note">Выпадающий список — <code>app-mnema-select</code> (раздел «Поля ввода»); центр уведомлений — <code>app-notification-bell</code> в шапке; общего компонента диалога подтверждения нет:
+    необратимые действия подтверждает «Удаление удержанием».</p>
+</section>
+
+<section class="sg-section" id="tabs" aria-labelledby="tabs-title">
+  <p class="eyebrow">Компоненты</p>
+  <h2 id="tabs-title">Вкладки и пейджер</h2>
+  <p class="sg-lede">Вкладок (<code>role="tab"</code>) в продукте нет: переключение видов — сегменты, ряд из нескольких материалов — пейджер.</p>
+  <app-sg-specimen title="Пейджер партии" selector="<app-batch-pager>"
+    when="Переход между материалами одной партии. Форма точки (●◐○✕✓) называет статус без цвета, текущий отмечен aria-current=step; точки — одна остановка Tab, стрелки, Home и End переключают."
+    [tokens]="['--mn-ink', '--mn-soft', '--mn-danger', '--mn-positive', '--mn-caution']"
+    usage='<app-batch-pager [artifacts]="artifacts" [selectedId]="selected()" (picked)="selected.set($event)" />'>
+    <app-batch-pager [artifacts]="artifacts" [selectedId]="selectedArtifact()" (picked)="selectedArtifact.set($event)" />
+  </app-sg-specimen>
+</section>
+
+<section class="sg-section" id="status" aria-labelledby="status-title">
+  <p class="eyebrow">Компоненты</p>
+  <h2 id="status-title">Статусы и ход</h2>
+  <p class="sg-lede">Статус — всегда слова. Форма и цвет помогают, но не заменяют текст.</p>
+  <app-sg-specimen title="Штамп" selector=".stamp, .stamp.solid, <app-new-badge>"
+    when="Короткая метка рядом с названием: «Пример», «Ваше задание», «Новое». Solid — инверсия для самой заметной метки (одна на блок)."
+    [tokens]="['--mn-ink', '--mn-on-ink', '--mn-font-mono']"
+    usage='<span class="stamp">Пример</span> <span class="stamp solid">Новое</span> <app-new-badge />'>
+    <div class="actions"><span class="stamp">Пример</span><span class="stamp solid">Ваше задание</span><span>Материал <app-new-badge /></span></div>
+  </app-sg-specimen>
+  <app-sg-specimen title="Шкала расхода" selector="<app-usage-meter>"
+    when="Расход лимита ИИ: текст под шкалой — источник истины, сама полоса скрыта от скринридера. Использовано, резерв, ещё не открытое и засечки разблокировок."
+    [tokens]="['--mn-ink', '--mn-field-border', '--mn-sheet']"
+    usage='<app-usage-meter label="ИИ в октябре" [total]="100" [used]="14" [reserved]="3" [unlocked]="26" [ticks]="[0.26, 0.52]" nextUnlock="4 октября" resetsOn="1 ноября" />'>
+    <app-usage-meter label="ИИ в октябре" [total]="100" [used]="14" [reserved]="3" [unlocked]="26" [ticks]="[0.26, 0.52, 0.78]"
+      [remaining]="{ count: 12, forms: ['материал', 'материала', 'материалов'] }" nextUnlock="4 октября" resetsOn="1 ноября" />
+  </app-sg-specimen>
+  <app-sg-specimen title="Медиа и плейсхолдер" selector="<app-native-document-renderer>"
+    when="Картинки, звук и видео материала рисует единственный рендерер документа. Пока файл не готов или недоступен, на его месте стоит спокойная строка с причиной и описанием, а не пустое место."
+    [tokens]="['--mn-sheet', '--mn-rule', '--mn-muted']">
+    <app-native-document-renderer [document]="mediaDocument" [assetSources]="assetSources" [assetStatuses]="assetStatuses" />
+  </app-sg-specimen>
+</section>
+
+<section class="sg-section" id="feedback" aria-labelledby="feedback-title">
+  <p class="eyebrow">Компоненты</p>
+  <h2 id="feedback-title">Обратная связь</h2>
+  <p class="sg-lede">Три уровня: строка у поля, блок на странице, всплывающее уведомление. Выбирай самый тихий, который достаточен; сообщения об ошибках всегда говорят,
+    что случилось и что можно сделать.</p>
+  <app-sg-specimen title="Блок на странице" selector=".notice, .notice.success, .notice.warning, .notice.error"
+    when="Сообщение о состоянии страницы или формы: ошибка загрузки, конфликт версий, успех. Тон — левая линия; ошибка и конфликт получают role=alert, остальное role=status. Действие внутри — .button."
+    [tokens]="['--mn-soft', '--mn-ink', '--mn-positive', '--mn-caution', '--mn-danger']"
+    usage='<div class="notice error" role="alert"><p>Не удалось сохранить материал.</p><div class="actions"><button type="button" class="button">Повторить</button></div></div>'>
+    <div class="sg-stack">
+      <div class="notice" role="status"><p>Черновик восстановлен. Последнее сохранение в 14:32.</p></div>
+      <div class="notice success" role="status"><p>Новая версия материала сохранена.</p></div>
+      <div class="notice warning" role="status"><p>Колода уже изменена в другой вкладке. Загрузите свежую версию.</p></div>
+      <div class="notice error" role="alert"><p>Не удалось сохранить материал. Правки остались на странице.</p>
+        <div class="actions"><button type="button" class="button">Повторить</button></div></div>
+    </div>
+  </app-sg-specimen>
+  <app-sg-specimen title="Всплывающие уведомления" selector="ToastService.echo() / notify()"
+    when="echo — подтверждение собственного действия (3 с); notify — событие, пришедшее само (6 с, ошибка остаётся до закрытия). Не больше трёх одновременно, держатся на паузе занятия. Нажмите и посмотрите в верхнем слое."
+    [tokens]="['--mn-sheet', '--mn-ink', '--mn-danger', '--mn-caution']">
+    <div class="actions">
+      <button type="button" class="button" (click)="echo()">Подтверждение</button>
+      <button type="button" class="button" (click)="notify('INFO')">Информация</button>
+      <button type="button" class="button" (click)="notify('WARNING')">Предупреждение</button>
+      <button type="button" class="button" (click)="notify('ERROR')">Ошибка</button>
+    </div>
+  </app-sg-specimen>
+  <app-sg-specimen title="Пустое состояние" selector=".empty-state"
+    when="Здесь ничего нет, и ясно, что делать дальше: заголовок, одно предложение, одно действие. Линии сверху и снизу, без карточки и иллюстрации-заглушки."
+    [tokens]="['--mn-ink']"
+    usage='<section class="empty-state"><h3>Здесь пока пусто</h3><p>Создайте первый материал.</p><p><a class="button primary">Добавить материал</a></p></section>'>
+    <section class="empty-state">
+      <h3>Здесь пока пусто</h3>
+      <p>Создайте первый материал или перенесите заметку из «На потом».</p>
+      <p><button type="button" class="button primary">Добавить материал</button></p>
+    </section>
+  </app-sg-specimen>
+</section>
+
+<section class="sg-section" id="cards" aria-labelledby="cards-title">
+  <p class="eyebrow">Компоненты</p>
+  <h2 id="cards-title">Карточки и области</h2>
+  <p class="sg-lede">Область — лист на бумаге с тонким правилом. Внутри область делится линиями, а не вложенными рамками.</p>
+  <app-sg-specimen title="Лист" selector=".paper-surface, .paper-surface.ruled" [onPaper]="true"
+    when="Рабочая область страницы: редактор, просмотр материала, карточка занятия. .ruled добавляет чернильное правило сверху для карточки, у которой есть одно главное действие."
+    [tokens]="['--mn-sheet', '--mn-rule', '--mn-ink']"
+    usage='<section class="paper-surface ruled"><h2>Вопрос</h2><p>…</p></section>'>
+    <div class="sg-stack">
+      <section class="paper-surface"><h4>Материал</h4><p>Обычный лист: правило со всех сторон.</p></section>
+      <section class="paper-surface ruled"><h4>Вопрос занятия</h4><p>Лист с чернильным правилом сверху.</p><div class="actions"><button type="button" class="button primary">Проверить</button></div></section>
+    </div>
+  </app-sg-specimen>
+</section>

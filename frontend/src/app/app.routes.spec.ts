@@ -11,6 +11,7 @@ import { NewMaterialPageComponent } from './features/generation/new-material-pag
 import { ExerciseBuilderPageComponent } from './features/generation/exercise-builder-page.component';
 import { WorkshopPageComponent } from './features/generation/workshop-page.component';
 import { StudySessionPageComponent } from './features/study/study-session-page.component';
+import { StyleguidePageComponent } from './styleguide/styleguide-page.component';
 
 describe('appRoutes', () => {
     it('keeps the Identity callback and exposes only canonical private deck routes', () => {
@@ -62,5 +63,17 @@ describe('appRoutes', () => {
         expect(await load('decks/:deckId/materials/:memberKey')).toBe(BrowsePageComponent);
         expect(await load('decks/:deckId/capture')).toBe(CapturePageComponent);
         expect(await load('decks/:deckId')).toBe(OwnDeckDetailPageComponent);
+    });
+
+    it('registers the styleguide as an open lazy route in a development build, before the catch-all', async () => {
+        // Tests run on the development build (ngDevMode is on). The production build drops the route and its chunk:
+        // `scripts/verify-no-styleguide.mjs` checks the built output.
+        const paths = appRoutes.map(route => route.path);
+        expect(paths).toContain('styleguide');
+        expect(paths.indexOf('styleguide')).toBeLessThan(paths.indexOf('**'));
+        const route = appRoutes.find(candidate => candidate.path === 'styleguide')!;
+        expect(route.component).toBeUndefined();
+        expect(route.canActivate).toBeUndefined();
+        expect(await route.loadComponent!()).toBe(StyleguidePageComponent);
     });
 });
