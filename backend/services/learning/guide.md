@@ -43,6 +43,7 @@ exercise mechanics into the seven below. Epic #76 added the greenfield media lif
   prompt, `MbmLint` is the hook for the copy lint. Inline scanning has a linear work budget and a nesting bound that report
   `MBM_DOCUMENT_TOO_LARGE`. A fenced block outside `::mermaid` compiles to `code_block` (`BlockParser.codeBlock`). Writes use
   `NativeDocumentReader.read`; the stored-snapshot decoder uses `readRetained`, which keeps a `code_block` that is not valid v1 as an opaque node. The executable contract is `contracts/generation/mbm-v1`.
+  **Normalisations of the compiler** (golden eval #300: they were the leading first-try failures; each is a warning in `validation.warnings`, never silent, and none loses text): a body row of a `::table` with fewer cells than the header is padded with empty cells and one with more has its extra cells joined to the last cell with ` | ` (usually an unescaped pipe in the last column), `MBM_TABLE_ROW_NORMALIZED`; a line of only colons, or colons and `end` (`::`, `:::`, `::end`: the model closing a directive like a container), is dropped, `MBM_STRAY_DIRECTIVE_CLOSER`. A directive with a name stays `MBM_UNKNOWN_DIRECTIVE` (the live cases were not near-misses of a real name, and guessing one would change what the learner sees), and so does an over-long joined cell (`MBM_VALUE_TOO_LONG`).
 
 ## Usage ledger and AI budget (#281)
 
@@ -329,7 +330,7 @@ reuse the session, step, event, usage and notification machinery above; what is 
   `max_tokens` `800 + 800 x count` (at most 16k).
 - **Run** (`ExerciseDraftExecutor`): `beginExercises` (the artifacts become GENERATING), the context, the reservation check
   (`ESTIMATE_EXCEEDED` without a call), then up to three provider calls with no transaction or connection open: the answer is parsed (a code
-  fence is tolerated), the first `needed` exercises go through `ExerciseValidator` one by one (schema, lint, compile, `readCreate`,
+  fence is tolerated), the first `needed` exercises go through `ExerciseValidator` one by one (schema, then a deterministic drop of repeated `FREE_RESPONSE` alternatives (equal under the exercise's own `TextRule`; warning `FREE_RESPONSE_ALTERNATIVE_DROPPED` in `Accepted.warnings`, stored in the revision's `validation.warnings`; the lint code stays as the guard), lint, compile, `readCreate`,
   probes through `ExerciseProbeEvaluator`), the failures get `ExerciseRepairList` (the instruction "exactly K replacements" first, then
   `упражнение N: CODE (path)` lines and the rule of each code, at most 1800 characters) appended as a repair segment, the second repair goes to the strong
   route. `succeedExercises` is one transaction: the debit (`debit:{stepId}:{attempt}`, `EXERCISES_PER_MATERIAL`, the step's share in proportion

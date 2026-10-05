@@ -92,6 +92,9 @@ final class BlockParser {
 
     // ------------------------------------------------------------------ dispatch
 
+    /** A line that is only colons (two or more), or colons and {@code end}: no directive name, so never a directive. */
+    private static final Pattern STRAY_CLOSER = Pattern.compile(":{2,}(?:end)?");
+
     private int block(int i) {
         String line = lines[i];
         String handle = null;
@@ -102,6 +105,11 @@ final class BlockParser {
                 line = matcher.group(2) == null ? "" : matcher.group(2);
                 lines[i] = line;
             }
+        }
+        if (handle == null && STRAY_CLOSER.matcher(line).matches()) {
+            // a model closes a directive like a container; the line carries nothing, so it is dropped with a warning
+            findings.warning(i + 1, 1, MbmCode.MBM_STRAY_DIRECTIVE_CLOSER);
+            return i + 1;
         }
         blockStarts++;
         int lineNumber = i + 1;
@@ -502,9 +510,10 @@ final class BlockParser {
             }
             List<String> cells = TableText.cells(lines[row]);
             if (cells.size() != columns.size()) {
-                findings.error(row + 1, 1, MbmCode.MBM_TABLE_RAGGED, null);
-                valid = false;
-            } else if (cells.stream().anyMatch(cell -> cell.length() > MAX_CELL)) {
+                cells = TableText.normalized(cells, columns.size());
+                findings.warning(row + 1, 1, MbmCode.MBM_TABLE_ROW_NORMALIZED);
+            }
+            if (cells.stream().anyMatch(cell -> cell.length() > MAX_CELL)) {
                 findings.error(row + 1, 1, MbmCode.MBM_VALUE_TOO_LONG, null);
                 valid = false;
             } else {

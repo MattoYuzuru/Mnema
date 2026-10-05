@@ -208,7 +208,8 @@ class ExerciseEditExecutor {
         }
         BigDecimal rubMicros = BigDecimal.valueOf(costMicros).multiply(settings.usdRubRate()).setScale(0, RoundingMode.CEILING);
         ObjectNode validation = Json.object();
-        validation.putArray("warnings");
+        var warnings = validation.putArray("warnings");
+        accepted.warnings().forEach(code -> warnings.addObject().put("code", code));
         return Optional.of(EditLifecycle.Result.ofExercise(command, ExerciseValidator.title(exercise, accepted.objectiveTitle()), validation,
                 request.prompt().promptVersion(), modelRoute, rubMicros.longValueExact()));
     }
