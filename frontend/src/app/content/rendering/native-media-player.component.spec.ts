@@ -105,4 +105,30 @@ describe('NativeMediaPlayerComponent', () => {
         expect(fixture.nativeElement.querySelector('[role="alert"]')).toBeNull();
         fixture.destroy();
     });
+
+    it('wraps its controls and keeps the speed select inside a narrow player at 2x text (WCAG 1.4.10)', () => {
+        // jsdom has no layout: this pins the CSS contract; the 320 px / 2x geometry is checked by the browser harness (speech.mjs).
+        const fixture = TestBed.createComponent(NativeMediaPlayerComponent);
+        fixture.componentRef.setInput('kind', 'audio');
+        fixture.componentRef.setInput('title', 'Фраза');
+        fixture.componentRef.setInput('source', '/audio.mp3');
+        fixture.detectChanges();
+        const root = fixture.nativeElement as HTMLElement;
+        const style = (selector: string) => getComputedStyle(root.querySelector(selector)!);
+
+        expect(style('.mnema-player-controls').flexWrap).toBe('wrap');
+        expect(style('.mnema-player-speed').flexWrap).toBe('wrap');
+        expect(style('.mnema-player-speed').maxInlineSize).toBe('100%');
+        expect(style('.mnema-player-speed app-mnema-select').maxInlineSize).toBe('100%');
+        expect(style('input[type=range]').minInlineSize).toContain('100%');
+        expect(style('.select-trigger').minInlineSize).toBe('0px');
+        expect(style('.select-trigger .selected-text').whiteSpace).toBe('normal');
+        for (const control of root.querySelectorAll<HTMLElement>('.mnema-player-action, .select-trigger')) {
+            expect(getComputedStyle(control).minBlockSize).toContain('--mn-touch-min');
+        }
+        for (const action of root.querySelectorAll<HTMLElement>('.mnema-player-action')) {
+            expect(getComputedStyle(action).minInlineSize).toContain('--mn-touch-min');
+        }
+        fixture.destroy();
+    });
 });
