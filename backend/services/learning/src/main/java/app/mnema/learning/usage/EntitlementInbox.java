@@ -13,9 +13,9 @@ import java.util.regex.Pattern;
 
 /**
  * The contract for the future billing context (#79, AI-19, AI-21): an entitlement snapshot (plan, period, allowances,
- * {@code valid_until}) arrives idempotently by {@code snapshotId}. Nothing consumes the rows yet: usage reads
- * {@link ConfigEntitlementSource}; a billing-backed {@link EntitlementSource} will read this table. There is no HTTP
- * endpoint, and a browser return URL never reaches it.
+ * {@code valid_until}) arrives idempotently by {@code snapshotId}. {@link InboxEntitlementSource} reads the newest
+ * valid snapshot of an owner. There is no HTTP endpoint, and a browser return URL never reaches it: this method is the
+ * only writer.
  */
 @Service
 public class EntitlementInbox {

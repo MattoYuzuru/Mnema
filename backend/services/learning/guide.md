@@ -123,8 +123,20 @@ fair-use buckets, `GET /api/usage` and the estimate. Migration `V26__usage_ledge
 - **Entitlements.** `EntitlementSource` is the port; `ConfigEntitlementSource` serves `learning.usage.entitlements.default-plan`
   with per-account `learning.usage.entitlements.overrides.<accountUuid>`. A plan change mid-period applies at once to the
   limits and adds the missing credits as a `GRANT`; credits are never clawed back within a period. `EntitlementInbox` is the
-  validated, idempotent insert of billing's snapshots (no consumer yet, no endpoint). The rate card and allowances are
+  validated, idempotent insert of billing's and promo snapshots (no endpoint: `accept` is the only writer, a test scans the
+  sources for it). Since #301 `InboxEntitlementSource` is the effective source: the newest valid inbox snapshot of the owner
+  (started, `validUntil` in the future; `BILLING` or `PROMO`), else `ConfigEntitlementSource`. A snapshot longer than two months
+  is `period: YEAR`; allowances stay calendar-month periods, so a year grants the plan's monthly allowance each month until
+  `validUntil`, never twelve at once. `usage_allowance.source` accepts `PROMO` (V39). The rate card and allowances are
   classpath copies of the contract files (`usage/*.json`); a test keeps them identical.
+- **Paywall and goal (#301).** `GET /api/plans` (`PlansController`, no-store) is a pure read: the tiers FREE/PLUS/PRO (MAX only
+  with `learning.plans.max-teaser.enabled=true`, as a `TEASER`), month prices from `allowances-v1.json`, the year price =
+  12 months x (100 - `learning.plans.year-discount-percent.<tier>`) / 100 rounded half up, `perDayRub` = month / 30, three
+  highlights and the comparison table computed from the allowances, `recommendedFor` from `learning.plans.recommendations.<goal>`,
+  and the owner's current entitlement (`autoRenew` is always false until #79). It takes no parameter: no query, header or return URL
+  selects or changes a plan. `GET/PUT /api/learning-profile` (package `profile`, table `learning_profile`) stores the answer to
+  «Для чего вам Mnema?» (`EXAMS`, `INTERVIEW`, `LANGUAGE`, `WORK`, `SELF`, or a skip: `{goal: null, skipped: true}`); nothing in
+  `ai`, `generation`, `study` or `media` may import it (`LearningBoundaryTest`, `PromptAssemblerTest`), so the goal never reaches a provider.
 - **Retention.** Counters of windows older than 90 days are deleted by the expiry worker. Ledger rows are immutable and are
   kept.
   TODO(account-deletion task, owner: the epic that adds Learning's account purge; whether billing (#79) must keep

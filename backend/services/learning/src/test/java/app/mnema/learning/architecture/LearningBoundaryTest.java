@@ -19,6 +19,28 @@ class LearningBoundaryTest {
         )).isFalse();
     }
 
+    /**
+     * The learning goal tunes client copy and the recommended tier only. No AI, generation, study or media code may read the
+     * profile, so the goal can never be assembled into a prompt or sent to a provider.
+     */
+    @Test
+    void theLearningGoalNeverReachesAProviderPath() throws Exception {
+        for (String module : new String[] {"ai", "generation", "study", "media"}) {
+            try (var files = Files.walk(projectDirectory.resolve("src/main/java/app/mnema/learning/" + module))) {
+                for (Path file : files.filter(path -> path.toString().endsWith(".java")).toList()) {
+                    assertThat(Files.readString(file)).as(file.toString())
+                            .doesNotContain("app.mnema.learning.profile").doesNotContain("LearningGoal");
+                }
+            }
+        }
+        try (var prompts = Files.walk(projectDirectory.resolve("src/main/resources/ai/prompts"))) {
+            for (Path file : prompts.filter(Files::isRegularFile).toList()) {
+                assertThat(Files.readString(file).toLowerCase(java.util.Locale.ROOT)).as(file.toString())
+                        .doesNotContain("learning-profile").doesNotContain("learning_goal");
+            }
+        }
+    }
+
     @Test
     void guardRejectsLegacyImportFixture() {
         assertThat(LegacyDependencyGuard.rejectsSource("""

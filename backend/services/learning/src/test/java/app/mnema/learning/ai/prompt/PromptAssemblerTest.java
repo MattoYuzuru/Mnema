@@ -128,4 +128,19 @@ class PromptAssemblerTest {
         // research sizing: 1.6-2.1k core, 1.0-1.3k style, five skills of 0.9-1.2k; the estimate is conservative, so allow 2x
         assertThat(prefix).isBetween(1_000, 12_000);
     }
+
+    /** The learning goal of #301 tunes client copy only: no assembled prompt, and no prompt file, names a goal value. */
+    @Test
+    void noLearningGoalValueAppearsInAnyAssembledPrompt() {
+        java.util.regex.Pattern goal = java.util.regex.Pattern.compile("\\b(EXAMS|INTERVIEW|LANGUAGE|WORK|SELF)\\b");
+        for (AssembledPrompt prompt : List.of(
+                assembler.assemble(PromptTask.MATERIAL, PromptFixtures.material("Японский", List.of("заметка"))),
+                assembler.assemble(PromptTask.EDIT, PromptFixtures.edit()),
+                assembler.assemble(PromptTask.EXERCISES, PromptFixtures.exercises()),
+                assembler.assemble(PromptTask.ASSESSMENT, PromptFixtures.assessment()))) {
+            for (TextRequest.Segment segment : prompt.segments()) {
+                assertThat(goal.matcher(segment.text()).find()).as(segment.text()).isFalse();
+            }
+        }
+    }
 }

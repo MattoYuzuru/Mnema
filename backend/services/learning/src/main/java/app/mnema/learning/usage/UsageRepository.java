@@ -329,4 +329,21 @@ class UsageRepository {
                 .param("start", time(start)).param("end", time(end)).param("allowances", allowancesJson)
                 .param("validUntil", time(validUntil)).query(Boolean.class).single();
     }
+
+    /** One snapshot as the entitlement source reads it. */
+    record SnapshotRow(Plan plan, String source, Instant periodStart, Instant periodEnd, Instant validUntil) { }
+
+    /**
+     * The newest snapshot of {@code owner} that is in force at {@code now}: it has started and has not expired. Newest is
+     * the latest received; an equal instant falls to the later period start, then the id, so the answer is stable.
+     */
+    Optional<SnapshotRow> newestValidSnapshot(UUID owner, Instant now) {
+        return jdbc.sql("SELECT plan,source,period_start,period_end,valid_until FROM app_learning.entitlement_inbox "
+                        + "WHERE owner_id=:owner AND period_start<=:now AND valid_until>:now "
+                        + "ORDER BY received_at DESC, period_start DESC, snapshot_id DESC LIMIT 1")
+                .param("owner", owner).param("now", time(now))
+                .query((row, number) -> new SnapshotRow(Plan.valueOf(row.getString("plan")), row.getString("source"),
+                        instant(row, "period_start"), instant(row, "period_end"), instant(row, "valid_until")))
+                .optional();
+    }
 }
