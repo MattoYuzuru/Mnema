@@ -364,6 +364,33 @@ module.main()
                 HARNESS.main()
             self.assertEqual(2, exit_code.exception.code)
 
+    def test_promo_scenario_is_wired_reads_the_real_api_and_is_a_development_aid_with_authoring(self):
+        driver = Path(__file__).with_name("browser.mjs").read_text()
+        source = Path(__file__).with_name("promo.mjs").read_text()
+        runner = Path(__file__).with_name("run.py").read_text()
+        self.assertIn("import { runPromo } from './promo.mjs'", driver)
+        self.assertIn("config.onlyPromo", driver)
+        self.assertIn("record('promo_codes_experiments_popup_real_api'", source)
+        # The codes, the redemption, the variant and the popup are the real API's, read with the page's own bearer; nothing is stubbed.
+        for route in ("/api/admin/promo-codes", "/api/promo-codes/redemptions", "/api/promo-popup", "/api/experiment-events", "/api/plans"):
+            self.assertIn(route, source)
+        self.assertNotIn("Fetch.fulfillRequest", source)
+        # The two fixture endpoints exist only with the aid, and the second Learning is the only one with the popup campaign on.
+        self.assertIn("/__fixture/promo-account-verified-admin", runner)
+        self.assertIn("/__fixture/promo-popup-reset", runner)
+        self.assertIn('"onlyPromo": self.args.only_promo', runner)
+        self.assertIn('"promo.mjs"', runner)
+        self.assertEqual(1, runner.count('"MNEMA_PROMO_POPUP_ENABLED": "true"'))
+        node = shutil.which("node")
+        if node is not None:
+            result = subprocess.run([node, "--check", str(Path(__file__).with_name("promo.mjs"))], capture_output=True)
+            self.assertEqual(0, result.returncode)
+        for extra in ([], ["--generation", "--only-plan"], ["--only-plans"]):
+            with patch.object(sys, "argv", ["run.py", "--dist", str(self.dist), "--only-promo", *extra]), \
+                    contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as exit_code:
+                HARNESS.main()
+            self.assertEqual(2, exit_code.exception.code)
+
     def test_generation_scenario_is_wired_uses_only_the_stub_and_is_syntactically_valid(self):
         for arguments in (["--generation"],):
             with self.subTest(arguments=arguments), patch.object(sys, "argv", ["run.py", "--dist", str(self.dist), *arguments]), \

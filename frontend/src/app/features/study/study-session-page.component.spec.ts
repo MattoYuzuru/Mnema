@@ -7,6 +7,7 @@ import metadataFixture from '../../../../../contracts/decks/metadata.json';
 import { QuietZone } from '../../core/notifications/quiet-zone';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { OwnDeck } from '../own-decks/own-deck.models';
+import { PromoPopupService } from '../promo/promo-popup.service';
 import { StudyApiService } from './study-api.service';
 import { AttemptCommand, AttemptOutcome, ReadyStudySession, StudyPresentation } from './study.models';
 import { StudyRecoveryService } from './study-recovery.service';
@@ -22,6 +23,7 @@ describe('StudySessionPageComponent', () => {
     let api: SpyObj<StudyApiService>;
     let recovery: SpyObj<StudyRecoveryService>;
     let playback: SpyObj<MediaPlaybackResolver>;
+    let promoPopup: SpyObj<PromoPopupService>;
     let fixture: ComponentFixture<StudySessionPageComponent>;
     let now = 1000;
 
@@ -53,6 +55,7 @@ describe('StudySessionPageComponent', () => {
         });
         recovery.restore.mockReturnValue(null);
         recovery.now.mockImplementation(() => now);
+        promoPopup = spyObj<PromoPopupService>({ request: vi.fn().mockName('PromoPopupService.request').mockResolvedValue(undefined) });
         playback = {
             resolve: vi.fn().mockName("MediaPlaybackResolver.resolve")
         };
@@ -65,7 +68,7 @@ describe('StudySessionPageComponent', () => {
                 { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ deckId: deck.deckId }) } } },
                 { provide: Router, useValue: router }, { provide: OwnDecksApiService, useValue: decks },
                 { provide: StudyApiService, useValue: api }, { provide: StudyRecoveryService, useValue: recovery },
-                { provide: MEDIA_PLAYBACK_RESOLVER, useValue: playback }
+                { provide: MEDIA_PLAYBACK_RESOLVER, useValue: playback }, { provide: PromoPopupService, useValue: promoPopup }
             ] });
     });
 
@@ -536,6 +539,15 @@ describe('StudySessionPageComponent', () => {
         click('button[data-submit]');
         expect(root.textContent).toContain('Запись стала недоступна');
         expect(root.textContent).toContain('Без оценки');
+    });
+
+    it('asks for the promo popup only when the session is finished, never while a task is open', () => {
+        startWith('selfCheck');
+        expect(promoPopup.request).not.toHaveBeenCalled();
+
+        api.start.mockReturnValue(of({ value: { ...sessionOf([fixtures['selfCheck']]), status: 'COMPLETE', presentations: [] }, replayed: false }));
+        createStarted();
+        expect(promoPopup.request).toHaveBeenCalledOnce();
     });
 
     it('connects completion replay, practice, explainable progress and confirmed restart', () => {

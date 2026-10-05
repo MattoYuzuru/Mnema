@@ -205,6 +205,32 @@ the base flow and skips the code block, usage, Workshop and assessment scenarios
 Honest limits: Chrome only; no screen reader; Free is the fixture's plan (a paid plan view needs the billing context); the sticky-bar check is
 measured geometry, not a visual diff.
 
+### Promo codes, A/B assignment and the promo popup (`--authoring --only-promo`)
+
+`promo.mjs` (#302) is a development aid, never part of the full run: the popup campaign must be on in Learning and it would cover the pages of every
+other scenario. `--only-promo` boots a **second Learning** on the same database with the campaign on (ASCII copy), the address limit of redemption
+attempts raised to 100 (every request of this fixture comes from one loopback address; the per-account limit stays 5 an hour) and a random experiment
+secret; after the base flow the scenario switches the proxy to it (`POST /__fixture/learning-promo`) and back. Two fixture endpoints exist only with
+this flag, both on the disposable database: `promo-account-verified-admin` verifies the email of the scenario's second account and makes it an
+administrator (Identity has no endpoint that verifies an email without a mailbox, and the first administrator is bootstrapped, never self-granted),
+and `promo-popup-reset` forgets every account's popup state so one account can be walked through dismiss, close, accept and decline. Records
+`promo_codes_experiments_popup_real_api`; a broken stage writes `failure-promo-<stage>.png`/`.txt`. Nothing is stubbed.
+
+| Stage | Assertions |
+|---|---|
+| `not_verified_not_admin` | before the fixture promotes the account: 403 `ACCESS_DENIED` on creating and listing codes, 401 without a token, 400 without an `Idempotency-Key`, `PROMO_NOT_ELIGIBLE` on a redemption (unverified email) |
+| `admin_creates_codes` | an administrator creates a generated code (ten characters of the unambiguous alphabet, returned once; the list shows only the hint and counts), a discount code and a kill-switched one; a code for Max is refused |
+| `redeem_by_keyboard` | on `/plans`, real keyboard only: a wrong code gives one calm sentence under the field (`aria-invalid`, described by its alert, focus stays, the typed code stays); the right code in lower case gives «Plus до …, без автопродления.», the plan block shows it, Plus is the preselected and marked tier, `GET /api/plans` says `PLUS`/`PROMO`/no renewal for 15 days and `GET /api/usage` follows; the same code again says it was used; a discount code is stored and shown as «Скидка 20 % на Plus применится к оплате до …»; the sixth attempt of the hour is «Слишком много попыток…» in the page and `429` with `Retry-After` in the API |
+| `profile_and_narrow` | the profile's «Тариф» block shows the promo plan without renewal, the discount and the same field; `/plans` and `/profile` do not overflow at 390 CSS px and the button is at least 44px high |
+| `experiment_variant` | the variant in `GET /api/plans` is `control` or `plans_year_first`, the same on every read, and `/plans` opens on «Месяц» or «Год» accordingly; rendering sent an exposure; the event endpoint takes a conversion, ignores an unknown experiment and refuses a body with a variant |
+| `popup_places` | with the account eligible: no popup on the material editor, capture or the deck hub, and the page has not even asked (the session marker is unset); the Study completion screen is a natural breakpoint and shows it; in an active Study session (practice) it is neither shown nor asked for |
+| `popup_dismiss_with_escape` | the popup is a modal `<dialog>` with a title, focus on the title, four buttons (close, call to action, «Не сейчас», «Больше не показывать»), no checkbox, no animation under reduced motion; Tab visits the four buttons and never reaches the page behind; Esc closes it and focus lands on the page, not `<body>`; the server is silenced; not again in the same session, and not in a new session inside the cooldown |
+| `popup_close_and_accept` | «×» closes and silences; at 390 px the popup fills the screen; the call to action opens `/plans` without a code in the address |
+| `popup_decline_is_final` | «Больше не показывать» ends the popup: not in a new session and the server says not eligible |
+
+Honest limits: Chrome only; no screen reader; the metric `mnema_experiment_events_total` is not readable here (the actuator exposes health and info
+only), so a conversion is checked by the endpoint's answer and the unit tests; the cooldown's length is the integration tests' (a clock moves there).
+
 Use `--chrome` for another existing Chrome executable. The page contract defaults to
 `[data-testid="identity-profile"]`, `[data-testid="logout"]`, and `[role="alert"]`;
 matching CLI selector options are available. Registration uses `#email`, `#username`,

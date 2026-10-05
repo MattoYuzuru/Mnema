@@ -8,6 +8,8 @@ import { ToastService } from '../core/notifications/toast.service';
 import { AiPromptWindowComponent } from '../features/generation/ai-prompt-window.component';
 import { BatchPagerComponent } from '../features/generation/batch-pager.component';
 import { ArtifactSummary } from '../features/generation/generation.models';
+import { PromoPopupComponent } from '../features/promo/promo-popup.component';
+import { PromoCampaign } from '../features/promo/promo.models';
 import { NewBadgeComponent } from '../shared/new-badge.component';
 import { ToggletipComponent } from '../shared/toggletip.component';
 import { UsageMeterComponent } from '../shared/usage-meter.component';
@@ -30,7 +32,7 @@ const PLACEHOLDER_ASSET = 'd5000000-0000-4000-8000-0000000000aa';
     selector: 'app-sg-surfaces',
     encapsulation: ViewEncapsulation.None,
     imports: [SgSpecimenComponent, ToggletipComponent, AiPromptWindowComponent, BatchPagerComponent, NewBadgeComponent, UsageMeterComponent,
-        NativeDocumentRendererComponent],
+        NativeDocumentRendererComponent, PromoPopupComponent],
     templateUrl: './sg-surfaces.component.html',
     changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -38,6 +40,11 @@ export class SgSurfacesComponent {
     private readonly toasts = inject(ToastService);
     private nextToast = 0;
 
+    protected readonly popupOpen = signal(false);
+    protected readonly campaign: PromoCampaign = {
+        id: 'sg-demo', title: 'Plus дешевле до конца октября', cta: 'Посмотреть тарифы', code: 'AUTUMN-26',
+        body: 'Скидка на первый платный месяц. Ничего не включается само: тариф и промокод вы выбираете сами.'
+    };
     protected readonly windowOpen = signal(false);
     protected readonly instruction = signal('');
     protected readonly artifacts: readonly ArtifactSummary[] = ARTIFACT_STATES.map((_, index) => artifact(index));
@@ -53,6 +60,9 @@ export class SgSurfacesComponent {
         nativeNode('image', { assetId: PLACEHOLDER_ASSET, alt: 'Иллюстрация к материалу' })
     ]);
     protected readonly assetStatuses = { [PLACEHOLDER_ASSET]: 'Изображение готовится' };
+
+    protected openPopup(): void { this.popupOpen.set(true); }
+    protected closePopup(): void { this.popupOpen.set(false); }
 
     protected openWindow(): void { this.windowOpen.set(true); }
     protected closeWindow(): void { this.windowOpen.set(false); }

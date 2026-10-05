@@ -46,6 +46,17 @@ x-learning-environment: &learning-environment
   LEARNING_MEDIA_UPLOAD_SECRET_KEY: ${MNEMA_LOCAL_S3_SECRET_KEY:?Local launcher did not provide its object-storage secret key}
   # AI budget plan of every local account (FREE, PLUS, PRO, MAX); see docs/deploy/selfhost-local.md.
   LEARNING_USAGE_ENTITLEMENTS_DEFAULT_PLAN: ${MNEMA_LOCAL_AI_PLAN:-FREE}
+  # Promo codes, A/B and the promo popup (#302); names only, all optional. Every browser reaches Learning through this stack's one proxy
+  # address, so raise MNEMA_PROMO_IP_ATTEMPTS_PER_HOUR for repeated local runs. See docs/deploy/selfhost-local.md.
+  MNEMA_PROMO_IP_ATTEMPTS_PER_HOUR: ${MNEMA_PROMO_IP_ATTEMPTS_PER_HOUR:-5}
+  MNEMA_PROMO_HASH_SECRET: ${MNEMA_PROMO_HASH_SECRET:-}
+  MNEMA_EXPERIMENT_SECRET: ${MNEMA_EXPERIMENT_SECRET:-}
+  MNEMA_PROMO_POPUP_ENABLED: ${MNEMA_PROMO_POPUP_ENABLED:-false}
+  MNEMA_PROMO_POPUP_ID: ${MNEMA_PROMO_POPUP_ID:-}
+  MNEMA_PROMO_POPUP_TITLE: ${MNEMA_PROMO_POPUP_TITLE:-}
+  MNEMA_PROMO_POPUP_BODY: ${MNEMA_PROMO_POPUP_BODY:-}
+  MNEMA_PROMO_POPUP_CTA: ${MNEMA_PROMO_POPUP_CTA:-}
+  MNEMA_PROMO_POPUP_CODE: ${MNEMA_PROMO_POPUP_CODE:-}
 
 # AI provider layer (docs/deploy/selfhost-local.md). Names only: the values come from the launcher's process environment or
 # from the owner's private .env that Compose reads, never from this repository. Without them the AI capabilities stay

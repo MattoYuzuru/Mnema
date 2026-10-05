@@ -29,9 +29,8 @@ h2 { font-size: clamp(1.5rem, 3vw, 2rem); line-height: 1.1; }
 .notice:empty { display: contents; }
 
 .promo { max-inline-size: 28rem; }
-.promo-row { display: flex; gap: .5rem; }
-.promo-row input { flex: 1 1 auto; min-inline-size: 0; min-block-size: var(--mn-touch-min); border: 1px solid var(--mn-field-border); border-radius: var(--mn-radius); padding: .5rem .75rem; background: var(--mn-sheet); color: var(--mn-body); }
-.promo-row input:disabled { opacity: .6; cursor: not-allowed; }
+.plan-status { display: grid; gap: .5rem; max-inline-size: 48rem; }
+.plan-status:empty { display: contents; }
 
 .faq { display: grid; gap: .25rem; max-inline-size: 48rem; }
 .faq h2 { margin-block-end: .5rem; }

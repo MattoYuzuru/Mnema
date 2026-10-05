@@ -36,6 +36,14 @@ describe('PlansApiService', () => {
         expect(catalog.plans[3].allowances.voiceMinutesPerMonth).toBeNull();
     });
 
+    it('parses the experiments and the pending discount', async () => {
+        const catalog = await load(plansBody({ experiments: { plans_year_first: 'control' },
+            pendingDiscount: { percent: 20, plan: 'PLUS', validUntil: '2026-10-31T20:59:59Z' } })) as any;
+        expect(catalog.experiments).toEqual({ plans_year_first: 'control' });
+        expect(catalog.pendingDiscount).toEqual({ percent: 20, plan: 'PLUS', validUntil: '2026-10-31T20:59:59Z' });
+        expect(((await load(plansBody({ pendingDiscount: { percent: 5, plan: null, validUntil: '2026-10-31T20:59:59Z' } }))) as any).pendingDiscount.plan).toBeNull();
+    });
+
     it('accepts a catalogue without the Max tier', async () => {
         expect(((await load(plansBody({ teaser: false }))) as any).plans).toHaveLength(3);
     });
@@ -59,7 +67,19 @@ describe('PlansApiService', () => {
             body => { body['plans'][1]['recommendedFor'] = ['FAME']; },
             body => { body['plans'][1]['allowances']['materialsPerMonth'] = { min: 5, max: 2 }; },
             body => { body['plans'][1]['allowances']['smartPlans']['window'] = 'DAY'; },
-            body => { body['plans'][1]['unknown'] = true; }
+            body => { body['plans'][1]['unknown'] = true; },
+            body => { delete body['experiments']; },
+            body => { delete body['pendingDiscount']; },
+            body => { body['experiments'] = []; },
+            body => { body['experiments'] = { 'Bad-Key': 'control' }; },
+            body => { body['experiments'] = { plans_year_first: 'Control!' }; },
+            body => { body['experiments'] = { plans_year_first: 1 }; },
+            body => { body['experiments'] = Object.fromEntries(Array.from({ length: 21 }, (_, index) => [`exp_${index}`, 'control'])); },
+            body => { body['pendingDiscount'] = { percent: 0, plan: null, validUntil: '2026-10-31T20:59:59Z' }; },
+            body => { body['pendingDiscount'] = { percent: 95, plan: null, validUntil: '2026-10-31T20:59:59Z' }; },
+            body => { body['pendingDiscount'] = { percent: 20, plan: 'MAX', validUntil: '2026-10-31T20:59:59Z' }; },
+            body => { body['pendingDiscount'] = { percent: 20, plan: 'PLUS', validUntil: 'soon' }; },
+            body => { body['pendingDiscount'] = { percent: 20, plan: 'PLUS', validUntil: '2026-10-31T20:59:59Z', extra: 1 }; }
         ];
         for (const mutate of mutations) {
             const body = plansBody();

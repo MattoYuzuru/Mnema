@@ -7,9 +7,12 @@ import { HoldToDeleteButtonComponent } from '../shared/hold-to-delete-button.com
 import { SegmentedChoiceComponent, SegmentedOption } from '../shared/segmented-choice.component';
 import { ToggletipComponent } from '../shared/toggletip.component';
 import { PlanOptionComponent } from '../features/plans/plan-option.component';
+import { PromoApiService } from '../features/promo/promo-api.service';
+import { PromoRedeemComponent } from '../features/promo/promo-redeem.component';
 import { parsePlans } from '../features/plans/plans-api.service';
 import { plansBody } from '../features/plans/plans-test-data';
 import { PlanId, PlanPeriod } from '../features/plans/plans.models';
+import { DemoPromoApi } from './sg-promo-demo';
 import { SgSpecimenComponent } from './sg-specimen.component';
 import { BUTTON_USAGE } from './styleguide.data';
 
@@ -22,7 +25,8 @@ const OPTION_IDS = ['d4000000-0000-4000-8000-000000000001', 'd4000000-0000-4000-
     selector: 'app-sg-controls',
     encapsulation: ViewEncapsulation.None,
     imports: [SgSpecimenComponent, HoldToDeleteButtonComponent, SegmentedChoiceComponent, ToggletipComponent, MnemaSelectComponent, ChoiceListComponent,
-        PlanOptionComponent],
+        PlanOptionComponent, PromoRedeemComponent],
+    providers: [{ provide: PromoApiService, useClass: DemoPromoApi }],
     templateUrl: './sg-controls.component.html',
     changeDetection: ChangeDetectionStrategy.OnPush
 })

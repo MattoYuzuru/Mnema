@@ -256,6 +256,17 @@ its owner while it is valid, so on a local stack the configuration above stays t
 catalogue and the current plan and charges nothing; `learning.plans.max-teaser.enabled=true` shows Max as «В работе». Credits and counters
 live in the retained PostgreSQL volume and are cleared by `reset`.
 
+### Promo codes, A/B and the promo popup (#302)
+
+Promo codes need no extra configuration locally. An administrator creates a code with `POST /api/admin/promo-codes` (the caller's token and an
+`admin` account in Identity; there is no UI yet) and redeems it in `/plans` or the profile with a verified email. The attempt limits
+are per account and per address hash (`learning.promo.attempts-per-hour` and `ip-attempts-per-hour`); on the local stack every browser reaches
+Learning through one proxy address, so raise the address limit for repeated runs with `MNEMA_PROMO_IP_ATTEMPTS_PER_HOUR`. Set
+`MNEMA_PROMO_HASH_SECRET` to make the address hashes comparable across restarts (without it a random secret is drawn per process) and
+`MNEMA_EXPERIMENT_SECRET` to switch A/B assignment on (without it everybody is `control`). The promo popup is off unless
+`MNEMA_PROMO_POPUP_ENABLED=true` with `MNEMA_PROMO_POPUP_ID`, `_TITLE` and `_BODY` (and optionally `_CTA`, `_CODE`, `_COOLDOWN`). See the
+runtime policy index for every key.
+
 ### Colima clock
 
 **Symptom.** Sporadic HTTP 500 (for example on `POST /api/media-assets/{id}/upload/finalize`)

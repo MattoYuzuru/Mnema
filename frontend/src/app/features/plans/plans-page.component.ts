@@ -3,16 +3,21 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
+import { ExperimentService } from '../experiment/experiment.service';
 import { LearningGoalStore } from '../goal/learning-goal.store';
+import { PromoRedeemComponent } from '../promo/promo-redeem.component';
 import { SegmentedChoiceComponent, SegmentedOption } from '../../shared/segmented-choice.component';
 import { PlanOptionComponent } from './plan-option.component';
 import { PlansApiService } from './plans-api.service';
 import {
-    COMPARE_ROWS, DOWNGRADE_NOTICE, PAYMENT_NOTICE, PLAN_LABEL, autoRenewText, cta, limitContext, plansHeading, recommendation, yearSwitchHint
+    COMPARE_ROWS, DOWNGRADE_NOTICE, PAYMENT_NOTICE, PLAN_LABEL, autoRenewText, cta, discountText, entitlementText, limitContext, plansHeading,
+    recommendation, yearSwitchHint
 } from './plans-view';
 import { PlanId, PlanPeriod, PlansCatalog } from './plans.models';
 
 let nextPlansPage = 0;
+/** The A/B experiment of the period switch: its variant of the same name opens the page on «Год» instead of «Месяц». */
+export const YEAR_FIRST_EXPERIMENT = 'plans_year_first';
 const BAR_HEIGHT_PROPERTY = '--mn-bulk-bar-height';
 /** Room kept above the bar for a focus ring (3px outline + offset) so the ring is not cut by it. */
 const FOCUS_RING_ROOM_PX = 8;
@@ -25,7 +30,7 @@ const FOCUS_RING_ROOM_PX = 8;
  */
 @Component({
     selector: 'app-plans-page',
-    imports: [RouterLink, SegmentedChoiceComponent, PlanOptionComponent],
+    imports: [RouterLink, SegmentedChoiceComponent, PlanOptionComponent, PromoRedeemComponent],
     templateUrl: './plans-page.component.html',
     styleUrl: './plans-page.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -33,6 +38,7 @@ const FOCUS_RING_ROOM_PX = 8;
 export class PlansPageComponent {
     private readonly api = inject(PlansApiService);
     private readonly goals = inject(LearningGoalStore);
+    private readonly experiments = inject(ExperimentService);
     private readonly router = inject(Router);
     private readonly route = inject(ActivatedRoute);
     private readonly query = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
@@ -40,7 +46,6 @@ export class PlansPageComponent {
     private readonly uid = `mn-plans-${nextPlansPage++}`;
     protected readonly groupName = `${this.uid}-tier`;
     protected readonly renewId = `${this.uid}-renew`;
-    protected readonly promoId = `${this.uid}-promo`;
     protected readonly noticeId = `${this.uid}-notice`;
     protected readonly rows = COMPARE_ROWS;
     protected readonly planLabel = PLAN_LABEL;
@@ -56,6 +61,22 @@ export class PlansPageComponent {
     private readonly now = signal(new Date());
     private readonly bar = viewChild<ElementRef<HTMLElement>>('ctaBar');
 
+    /** A campaign link (`?promo=CODE`) fills the promo field; it is never applied for the reader. */
+    protected readonly prefill = computed(() => {
+        const code = this.query().get('promo') ?? '';
+        return /^[A-Za-z0-9 _-]{1,64}$/u.test(code) ? code : '';
+    });
+    /** «Plus до 20 октября, без автопродления» once a promo or a payment gives a tier; null on the plan the account has by default. */
+    protected readonly entitlement = computed(() => {
+        const current = this.catalog()?.current;
+        return current === undefined ? null : entitlementText(current);
+    });
+    protected readonly discount = computed(() => {
+        const pending = this.catalog()?.pendingDiscount ?? null;
+        return pending === null ? null : discountText(pending);
+    });
+    private periodChosen = false;
+    private firstLoad = true;
     protected readonly heading = computed(() => plansHeading(this.goals.goal()));
     protected readonly context = computed(() => limitContext(this.query().get('from'), this.query().get('used')));
     protected readonly recommended = computed(() => {
@@ -109,15 +130,36 @@ export class PlansPageComponent {
     protected async load(): Promise<void> {
         this.state.set('loading');
         try {
-            this.catalog.set(await firstValueFrom(this.api.load()));
+            const catalog = await firstValueFrom(this.api.load());
+            this.experiments.adopt(catalog.experiments);
+            // The experiment decides only which period the page opens on, once; it never overrides a choice the reader made.
+            if (this.firstLoad && !this.periodChosen && this.experiments.variant(YEAR_FIRST_EXPERIMENT) === YEAR_FIRST_EXPERIMENT) this.period.set('YEAR');
+            this.catalog.set(catalog);
             this.now.set(new Date());
             this.state.set('ready');
+            if (this.firstLoad) this.experiments.expose(YEAR_FIRST_EXPERIMENT);
+            this.firstLoad = false;
         } catch {
             this.state.set('error');
         }
     }
 
+    /** A promo code was redeemed: read the entitlement again, quietly (the page and the success message stay), so the plan block shows it. */
+    protected async redeemed(): Promise<void> {
+        try {
+            const catalog = await firstValueFrom(this.api.load());
+            this.experiments.adopt(catalog.experiments);
+            this.catalog.set(catalog);
+            this.chosen.set(null);
+            this.autoRenew.set(false);
+            this.now.set(new Date());
+        } catch {
+            // The success message already says what happened; the next visit reads the plan again.
+        }
+    }
+
     protected setPeriod(period: PlanPeriod | null): void {
+        this.periodChosen = true;
         if (period !== null && period !== this.period()) this.changed(() => this.period.set(period));
     }
 
@@ -139,7 +181,10 @@ export class PlansPageComponent {
         const action = this.action();
         if (action === null || action.disabled) return;
         if (action.action === 'stay') void this.router.navigateByUrl('/decks');
-        else this.notice.set(action.action === 'downgrade' ? DOWNGRADE_NOTICE : PAYMENT_NOTICE);
+        else {
+            if (action.action === 'buy') this.experiments.convert(YEAR_FIRST_EXPERIMENT);
+            this.notice.set(action.action === 'downgrade' ? DOWNGRADE_NOTICE : PAYMENT_NOTICE);
+        }
     }
 
     protected onAutoRenew(event: Event): void { this.autoRenew.set((event.target as HTMLInputElement).checked); }

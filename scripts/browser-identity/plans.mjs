@@ -17,7 +17,7 @@ import { join } from 'node:path';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const KEYS = { Enter: ['Enter', 'Enter', 13], Tab: ['Tab', 'Tab', 9], ' ': [' ', 'Space', 32], ArrowDown: ['ArrowDown', 'ArrowDown', 40],
-  ArrowRight: ['ArrowRight', 'ArrowRight', 39], ArrowLeft: ['ArrowLeft', 'ArrowLeft', 37] };
+  ArrowRight: ['ArrowRight', 'ArrowRight', 39], ArrowLeft: ['ArrowLeft', 'ArrowLeft', 37], Escape: ['Escape', 'Escape', 27] };
 const GOAL_LABELS = ['Экзамены и сессия', 'Собеседование', 'Язык', 'Работа', 'Для себя'];
 const PAYMENT_NOTICE = 'Оплату подключаем: тариф можно будет оформить здесь же. Пока доступен промокод.';
 const MOSCOW_DAY = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', timeZone: 'Europe/Moscow' });
@@ -26,7 +26,7 @@ const MONEY = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 });
 const flat = text => (text ?? '').replace(/[\s\u00a0\u202f]+/gu, ' ').trim();
 const rub = amount => flat(`${MONEY.format(amount)} ₽`);
 
-function toolkit(ctx) {
+export function toolkit(ctx) {
   const { tab, config, SafeFailure, until, exists, saveScreenshot, bearer } = ctx;
   const need = (value, label) => { if (!value) throw new SafeFailure(label); };
   const page = (body, ...args) => tab.callFunction(`async function(...args) { ${body} }`, args);
