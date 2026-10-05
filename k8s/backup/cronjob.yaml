@@ -69,7 +69,7 @@ spec:
                 - { name: scripts, mountPath: /scripts, readOnly: true }
                 - { name: temp, mountPath: /tmp }
             - name: uploader
-              image: public.ecr.aws/aws-cli/aws-cli:2.36.34@sha256:cf1f5e5741c33f3fee383296ba8045b96b9eb93c3de017be6688fb00356352d7
+              image: public.ecr.aws/aws-cli/aws-cli:2.37.9@sha256:92de75724b6a746951f0e8b915d86bbccd7cb55aff96cd0cb4f7017272160780
               command: ["/bin/sh", "/scripts/upload.sh"]
               env:
                 - name: AWS_ENDPOINT_URL
