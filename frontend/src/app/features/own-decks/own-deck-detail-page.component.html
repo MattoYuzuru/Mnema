@@ -34,7 +34,7 @@
     }
 
     @if (mutation.phase === 'conflict') {
-      <section class="notice conflict" aria-labelledby="conflict-title">
+      <section class="notice warning" aria-labelledby="conflict-title">
         <p class="eyebrow">Конфликт версий</p>
         <h2 id="conflict-title">Колода уже изменена в другой вкладке</h2>
         <p>Ваш ввод остаётся в форме. Выберите, какую версию продолжить.</p>
@@ -103,7 +103,7 @@
           [readOnly]="mutationLocksDraft(mutation)"
           [attr.aria-invalid]="submitted() && validation().descriptionBytes > 4096"
           [attr.aria-describedby]="submitted() && validation().descriptionBytes > 4096 ? 'detail-description-error' : null"></textarea>
-        <p class="field-hint">Поддерживаются **жирный**, *курсив*, ~~зачёркивание~~ и списки.</p>
+        <p class="hint">Поддерживаются **жирный**, *курсив*, ~~зачёркивание~~ и списки.</p>
         @if (draft().description.trim()) {
           <div class="description-preview" aria-label="Предпросмотр описания">
             <p class="eyebrow">Как будет выглядеть</p>

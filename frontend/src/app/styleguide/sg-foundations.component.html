@@ -1,0 +1,165 @@
+<section class="sg-section" id="principles" aria-labelledby="principles-title">
+  <p class="eyebrow">Основы</p>
+  <h2 id="principles-title">Принципы</h2>
+  <p class="sg-lede">Mnema выглядит как современное учебное издание о памяти: бумага, чернила индиго, тонкие правила,
+    почти прямые углы. Узнаваемость держится на типографике, пропорциях и тексте, а не на анимации.
+    Источники: <code>docs/frontend/design-and-experience-2026-09.md</code> и <code>docs/frontend/mnema-brand-and-ui-contract.md</code>.</p>
+  <ul class="sg-rules">
+    <li><strong>Бери из стайлгайда.</strong> У каждой задачи один компонент или класс. Нового элемента нет: сначала добавь его сюда, потом на экран.</li>
+    <li><strong>Тишина по умолчанию.</strong> Цвет только там, где он что-то значит: чернила — действие, красный — ошибка, зелёный — успех, охра — внимание. Статус всегда назван словами.</li>
+    <li><strong>Линия вместо рамки.</strong> 1 px правила, углы 2 px, тень только у наложенного листа. Рамка в рамке заменяется тонким разделителем.</li>
+    <li><strong>Одна тема.</strong> Только светлая бумага: тёмной темы и режимов плотности в продукте нет, переключателей для них тоже.</li>
+    <li><strong>Доступность — часть вида.</strong> Область нажатия не меньше 44 px, фокус виден, <code>forced-colors</code> и reduced motion не ломают смысл.</li>
+    <li><strong>Один главный приём на экран.</strong> <code>.generate-cta</code> — не больше одного, декор снимается по мере роста нагрузки.</li>
+  </ul>
+</section>
+
+<section class="sg-section" id="palette" aria-labelledby="palette-title">
+  <p class="eyebrow">Основы</p>
+  <h2 id="palette-title">Палитра</h2>
+  <p class="sg-lede">Цвета — только токены <code>--mn-*</code> из <code>src/theme/tokens.css</code>. Значения ниже читаются из живого документа,
+    копий hex в стайлгайде нет.</p>
+  @for (group of palette; track group.title) {
+    <h3 class="sg-group">{{ group.title }}</h3>
+    <ul class="sg-swatches">
+      @for (entry of group.tokens; track entry.token) {
+        <li class="sg-swatch">
+          <span class="sg-chip" [style.background]="'var(' + entry.token + ')'" aria-hidden="true"></span>
+          <code>{{ entry.token }}</code>
+          <span class="sg-value">{{ value(entry.token) }}</span>
+          <span class="sg-note">{{ entry.role }}</span>
+        </li>
+      }
+    </ul>
+  }
+</section>
+
+<section class="sg-section" id="semantic" aria-labelledby="semantic-title">
+  <p class="eyebrow">Основы</p>
+  <h2 id="semantic-title">Семантические цвета</h2>
+  <p class="sg-lede">Пары «текст на поверхности», на которых держится продукт. Контраст считается по вычисленным цветам;
+    для текста нужно 4,5:1, для границы поля — 3:1. Цвет никогда не единственный признак: рядом слово, форма или значок.</p>
+  <div class="sg-scroll" tabindex="0" role="region" aria-label="Таблица контраста">
+    <table class="sg-table">
+      <caption class="visually-hidden">Контраст текста и поверхности</caption>
+      <thead><tr><th scope="col">Роль</th><th scope="col">Пара</th><th scope="col">Образец</th><th scope="col">Контраст</th><th scope="col">Где</th></tr></thead>
+      <tbody>
+        @for (row of pairs(); track row.role) {
+          <tr>
+            <th scope="row">{{ row.role }}</th>
+            <td><code>{{ row.foreground }}</code> на <code>{{ row.background }}</code></td>
+            <td><span class="sg-sample" [style.color]="'var(' + row.foreground + ')'" [style.background]="'var(' + row.background + ')'">Аа</span></td>
+            <td>@if (row.ratio !== null) { {{ row.ratio.toFixed(2) }}:1 · {{ row.grade }} } @else { — }</td>
+            <td>{{ row.where }}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+  <h3 class="sg-group">Тоны сообщений</h3>
+  <p class="sg-note">Информация, предупреждение и ошибка различаются формой значка (круг, треугольник, восьмиугольник), не только цветом.</p>
+  <ul class="sg-inline-list">
+    <li><app-notification-glyph severity="INFO" /> Информация, <code>--mn-ink</code></li>
+    <li><app-notification-glyph severity="WARNING" /> Предупреждение, <code>--mn-caution</code></li>
+    <li><app-notification-glyph severity="ERROR" /> Ошибка, <code>--mn-danger</code></li>
+  </ul>
+</section>
+
+<section class="sg-section" id="typography" aria-labelledby="typography-title">
+  <p class="eyebrow">Основы</p>
+  <h2 id="typography-title">Типографика</h2>
+  <p class="sg-lede">Три роли: display-антиква для заголовков, системный sans для чтения и интерфейса, mono для коротких рубрик.
+    Поля не мельче 16 px, основной текст 55–75 знаков в строке.</p>
+  <app-sg-specimen title="Заголовки" selector="h1 … h4" when="Заголовки страниц и разделов; один h1 на страницу. Display-шрифт не для длинных инструкций и не для ввода."
+    [tokens]="['--mn-font-display', '--mn-ink']" usage="<h1>Учиться. Понимать. Помнить.</h1>">
+    <div class="sg-type">
+      <h1 role="presentation">Учиться. Понимать.</h1>
+      <h2 role="presentation">Раздел страницы</h2>
+      <h3 role="presentation">Подраздел карточки</h3>
+      <h4 role="presentation">Малый заголовок</h4>
+    </div>
+  </app-sg-specimen>
+  <app-sg-specimen title="Текст и пояснение" selector="p, .hint" when="Основной текст читается в body; пояснения под полем и блоком — в .hint (muted, 0,9 rem), не через opacity."
+    [tokens]="['--mn-font-body', '--mn-body', '--mn-muted']" usage='<p class="hint">От 3 до 50 латинских букв, цифр, точек и дефисов.</p>'>
+    <p>Повторяйте с интервалами — и помните надолго. Основной текст держит спокойную длину строки и межстрочный интервал 1,6.</p>
+    <p class="hint">Пояснение под полем: тихая строка, которую читают, когда нужно.</p>
+  </app-sg-specimen>
+  <app-sg-specimen title="Рубрика" selector=".eyebrow" when="Короткая строка над заголовком страницы или раздела: номер, раздел, колода. Не для инструкций."
+    [tokens]="['--mn-font-mono', '--mn-ink']" usage='<p class="eyebrow">Колода · Японский N4</p>'>
+    <p class="eyebrow">Колода · Японский N4</p>
+  </app-sg-specimen>
+  <h3 class="sg-group">Шрифтовые токены</h3>
+  <ul class="sg-inline-list">
+    @for (token of fontTokens; track token) { <li><code>{{ token }}</code> <span class="sg-value">{{ value(token) }}</span></li> }
+  </ul>
+</section>
+
+<section class="sg-section" id="spacing" aria-labelledby="spacing-title">
+  <p class="eyebrow">Основы</p>
+  <h2 id="spacing-title">Сетка и отступы</h2>
+  <p class="sg-lede">Шкала 4/8 px. Отступ страницы на телефоне 18–24 px, на desktop около 44 px; ширина задаётся типом страницы.
+    Области нажатия — <code>--mn-touch-min</code>.</p>
+  <ul class="sg-scale">
+    @for (token of spacing; track token) {
+      <li><code>{{ token }}</code><span class="sg-value">{{ value(token) }}</span><span class="sg-bar" [style.inline-size]="'var(' + token + ')'" aria-hidden="true"></span></li>
+    }
+  </ul>
+  <h3 class="sg-group">Размеры и ширины</h3>
+  <ul class="sg-inline-list">
+    @for (token of sizeTokens; track token) { <li><code>{{ token }}</code> <span class="sg-value">{{ value(token) }}</span></li> }
+  </ul>
+</section>
+
+<section class="sg-section" id="radii" aria-labelledby="radii-title">
+  <p class="eyebrow">Основы</p>
+  <h2 id="radii-title">Радиусы и поверхности</h2>
+  <p class="sg-lede">Почти прямые углы (<code>--mn-radius</code>), тонкие правила, лист на бумаге. Тень допустима только у по-настоящему наложенного листа
+    (окно «Попросить Мнему»). Карточка внутри карточки не нужна: разделяйте блоки линией.</p>
+  <div class="sg-surfaces">
+    <div class="sg-surface sg-surface--paper"><strong>Бумага</strong><span>--mn-paper: фон страницы</span></div>
+    <div class="sg-surface sg-surface--sheet"><strong>Лист</strong><span>--mn-sheet + 1 px --mn-rule: карточка, поле, редактор</span></div>
+    <div class="sg-surface sg-surface--ruled"><strong>Правило</strong><span>верхняя линия --mn-ink: раздел без рамки</span></div>
+    <div class="sg-surface sg-surface--soft"><strong>Заливка</strong><span>--mn-soft: выбранное, уведомление</span></div>
+  </div>
+</section>
+
+<section class="sg-section" id="motion" aria-labelledby="motion-title">
+  <p class="eyebrow">Основы</p>
+  <h2 id="motion-title">Движение</h2>
+  <p class="sg-lede">Движение функциональное и короткое: заливка волной от точки входа указателя, подчёркивание, чернильное появление блока.
+    Параллакса, вращения и фоновой анимации нет. При reduced motion всё останавливается; переключатель «Спокойное движение» в боковой панели
+    показывает это состояние (<code>prefers-reduced-motion</code> учитывается и без него).</p>
+  <ul class="sg-inline-list">
+    @for (token of motionTokens; track token) { <li><code>{{ token }}</code> <span class="sg-value">{{ value(token) }}</span></li> }
+  </ul>
+  <app-sg-specimen title="Волна при наведении" selector=".button" when="Любая кнопка и строка списка: заливка идёт от точки, куда вошёл указатель (с клавиатуры — от центра). Ничего делать не нужно: волну рисует global_styles.css."
+    [tokens]="['--mn-wave-duration', '--mn-list-wave-duration', '--mn-soft']">
+    <div class="actions"><button type="button" class="button">Наведите указатель</button><button type="button" class="button primary">Или сюда</button></div>
+  </app-sg-specimen>
+  <app-sg-specimen title="Чернильное появление" selector=".native-document > .is-arriving" when="Блок, который появился на странице во время работы Мастерской. Один раз сверху вниз, 0,6 с, без повторов; длится не дольше 600 мс."
+    usage='<div class="native-document"><p class="is-arriving">Новый блок</p></div>'>
+    <div class="sg-ink-stage">
+      <div class="native-document sg-bare">
+        @for (run of [inkArrival()]; track run) { <p class="is-arriving">Этот абзац появляется «чернилами» сверху вниз.</p> }
+      </div>
+      <button type="button" class="button small" (click)="replayInk()">Повторить</button>
+    </div>
+  </app-sg-specimen>
+  @if (calm()) { <p class="notice" role="status">Спокойное движение включено: анимации и переходы на этой странице отключены.</p> }
+</section>
+
+<section class="sg-section" id="icons" aria-labelledby="icons-title">
+  <p class="eyebrow">Основы</p>
+  <h2 id="icons-title">Иконки</h2>
+  <p class="sg-lede">Иконки — простые встроенные SVG с <code>currentColor</code>, штрих 1,5–1,75, <code>aria-hidden="true"</code>; смысл всегда несёт текст или accessible name.
+    Шрифтов значков, CDN и библиотек нет. Статус отличается формой, а не только цветом.</p>
+  <ul class="sg-icons">
+    <li><img src="/assets/brand/mnema-mark.svg" width="32" height="32" alt="" /><span>Знак Mnema</span><code>mnema-mark.svg</code></li>
+    <li><app-notification-glyph severity="INFO" /><span>Информация</span><code>app-notification-glyph</code></li>
+    <li><app-notification-glyph severity="WARNING" /><span>Предупреждение</span><code>severity="WARNING"</code></li>
+    <li><app-notification-glyph severity="ERROR" /><span>Ошибка</span><code>severity="ERROR"</code></li>
+    <li><span class="sg-glyph" aria-hidden="true">→</span><span>Переход</span><code>«Мои колоды →»</code></li>
+    <li><span class="sg-glyph" aria-hidden="true">×</span><span>Закрыть</span><code>aria-label="Закрыть …"</code></li>
+    <li><span class="sg-glyph" aria-hidden="true">✧</span><span>Декор колоды</span><code>aria-hidden</code></li>
+  </ul>
+</section>

@@ -26,13 +26,6 @@
     clip-path: polygon(50% 0, 59% 40%, 100% 50%, 59% 60%, 50% 100%, 41% 60%, 0 50%, 41% 40%);
 }
 
-.eyebrow {
-    margin: 0 0 .5rem;
-    color: var(--mn-ink);
-    font: 700 .75rem/1.4 var(--mn-font-mono, ui-monospace, monospace);
-    letter-spacing: .12em;
-    text-transform: uppercase;
-}
 
 h1 {
     max-inline-size: 18ch;
@@ -43,7 +36,7 @@ h1 {
     overflow-wrap: anywhere;
 }
 
-p { font: 1rem/1.6 var(--mn-font-body, system-ui, sans-serif); overflow-wrap: anywhere; }
+p:not(.eyebrow) { font: 1rem/1.6 var(--mn-font-body, system-ui, sans-serif); overflow-wrap: anywhere; }
 .intro { max-inline-size: 52ch; margin-block-end: 1rem; color: var(--mn-muted); }
 form { display: grid; gap: .55rem; border-block-start: 1px solid var(--mn-rule); padding-block-start: 1.25rem; }
 label { margin-block-start: .35rem; font: 650 1rem/1.5 var(--mn-font-body, system-ui, sans-serif); }
@@ -61,27 +54,10 @@ input {
 }
 
 input.ng-invalid.ng-touched { border: 2px solid var(--mn-danger); }
-.field-help { margin: 0 0 .3rem; color: var(--mn-muted); font-size: .875rem; }
+.hint { margin-block-end: .3rem; font-size: .9rem; line-height: 1.5; } /* outranks the page's `p` rule */
 
-.primary-action {
-    display: inline-flex;
-    min-block-size: var(--mn-touch-min, 46px);
-    align-items: center;
-    justify-content: center;
-    margin-block-start: .75rem;
-    border: 1px solid var(--mn-ink);
-    border-radius: var(--mn-radius, 2px);
-    padding: .75rem 1.1rem;
-    background: var(--mn-ink);
-    color: var(--mn-on-ink);
-    font: 650 1rem/1.5 var(--mn-font-body, system-ui, sans-serif);
-    text-align: center;
-    text-decoration: none;
-    cursor: pointer;
-}
-
-.primary-action:disabled { cursor: wait; opacity: .68; }
-a { color: var(--mn-ink); text-underline-offset: .22em; }
+a:not(.button) { color: var(--mn-ink); text-underline-offset: .22em; }
+.button.primary { margin-block-start: .75rem; }
 .text-action {
     display: inline-flex;
     min-block-size: var(--mn-touch-min, 46px);
@@ -106,11 +82,11 @@ a { color: var(--mn-ink); text-underline-offset: .22em; }
 
 @media (max-width: 36rem) {
     .identity-sheet { padding-inline: 0; background: transparent; }
-    .primary-action { inline-size: 100%; }
+    .button.primary { inline-size: 100%; }
 }
 
 @media (forced-colors: active) {
-    .identity-sheet, .primary-action, .identity-error { border-color: CanvasText; }
+    .identity-sheet, .identity-error { border-color: CanvasText; }
     :is(a, button, input):focus-visible { outline-color: Highlight; }
 }
 

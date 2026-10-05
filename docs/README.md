@@ -111,6 +111,7 @@ artifact:
 | Статус | Документ | Назначение |
 |---|---|---|
 | current | [Mnema brand and UI contract](./frontend/mnema-brand-and-ui-contract.md) | Правила оформления и проверки изменений в действующем Angular UI. |
+| current | [Frontend styleguide](./frontend/styleguide.md) | Живой каталог `/styleguide` (только dev-сборка): правила «бери из стайлгайда», как открыть, карта разделов. |
 | accepted | [Design and experience](./frontend/design-and-experience-2026-09.md) | Выбранное paper/antiquity/indigo направление и a11y boundaries. |
 | historical | [Frontend brand restoration evidence](./engineering/evidence/frontend-brand-2026-09-28/README.md) | Снимки production Angular и результат реального HTTPS-сценария. |
 | historical | [Interactive prototype](../design/prototype/README.md) | Design evidence, не production architecture. |

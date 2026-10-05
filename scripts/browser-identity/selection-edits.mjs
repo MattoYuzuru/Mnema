@@ -160,7 +160,7 @@ export async function runWorkshopEdits(ctx, h) {
         label: document.getElementById(popover.getAttribute('aria-labelledby'))?.textContent.trim(), presets: [...popover.querySelectorAll('.chip')].map(node => node.textContent.trim()),
         field: popover.querySelector('textarea')?.value ?? null, fieldLabel: popover.querySelector('label')?.textContent.trim(), cost: text(popover.querySelector('.window-cost')?.textContent),
         quote: text(popover.querySelector('.window-quote')?.textContent), error: text(popover.querySelector('.window-error')?.textContent),
-        enterkeyhint: popover.querySelector('textarea')?.getAttribute('enterkeyhint'), send: [...popover.querySelectorAll('.window-button')].map(node => node.textContent.trim()),
+        enterkeyhint: popover.querySelector('textarea')?.getAttribute('enterkeyhint'), send: [...popover.querySelectorAll('.window-actions button')].map(node => node.textContent.trim()),
         microphone: Boolean(popover.querySelector('[aria-label*="микрофон" i], [aria-label*="Голос" i]')),
         focusInside: popover.contains(active), focusOnField: active === popover.querySelector('textarea'),
         rect: (() => { const rect = popover.getBoundingClientRect(); return { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right }; })() } : null,

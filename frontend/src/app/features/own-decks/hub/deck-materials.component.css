@@ -8,17 +8,10 @@ h2:focus-visible { outline: none; }
 h3 { margin: 0 0 .5rem; color: var(--mn-ink); font: 500 1.4rem/1.2 var(--mn-font-display, Georgia, serif); }
 .sr-only { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
-.button { min-block-size: var(--mn-touch-min, 2.75rem); display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--mn-ink); border-radius: var(--mn-radius, 2px); padding: .55rem 1rem; color: var(--mn-ink); background: transparent; font: 600 .95rem/1.2 var(--mn-font-body, system-ui, sans-serif); text-decoration: none; text-align: center; cursor: pointer; }
-.button.primary { color: var(--mn-on-ink); background: var(--mn-ink); }
-.button.quiet { border-color: transparent; text-decoration: underline; text-underline-offset: .22em; }
-.button:focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 3px; }
-
 .note { margin: 0; border-inline-start: 4px solid var(--mn-ink); padding: .9rem 1.1rem; background: var(--mn-soft); }
 .note.error { border-color: var(--mn-danger); background: var(--mn-sheet); }
 .note p { margin: 0 0 .75rem; overflow-wrap: anywhere; }
 p.note { margin: 0; }
 .note-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
-.empty { max-inline-size: 36rem; border-block: 1px solid var(--mn-ink); padding-block: 1.5rem 2rem; }
-.empty p { max-inline-size: 48ch; margin: 0; line-height: 1.6; }
 
-@media (forced-colors: active) { .note, .empty { border-color: CanvasText; } .button:focus-visible { outline-color: Highlight; } }
+@media (forced-colors: active) { .note { border-color: CanvasText; } .button:focus-visible { outline-color: Highlight; } }

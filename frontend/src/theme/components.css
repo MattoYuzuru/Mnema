@@ -1,0 +1,117 @@
+/*
+ * Shared UI classes of the Mnema paper system. One definition each: screens add only layout (`.actions .button { flex }`),
+ * never a second copy of the look. The living catalogue is the dev-only /styleguide (docs/frontend/styleguide.md); a new
+ * shared element is added there first. Global on purpose: Angular view encapsulation does not scope plain global rules,
+ * so a template just writes `class="button primary"`. The hover wave and the focus ring live in global_styles.css.
+ */
+
+/* Button: outline (default, a.k.a. secondary), `.primary` ink fill, `.quiet` underline only, `.small` compact row action, `.mono` the small mono session action of the header. */
+.button {
+    min-block-size: var(--mn-touch-min);
+    min-inline-size: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .4rem;
+    margin: 0;
+    border: 1px solid var(--mn-ink);
+    border-radius: var(--mn-radius);
+    padding: .65rem 1rem;
+    color: var(--mn-ink);
+    background: transparent;
+    font: 600 .95rem/1.25 var(--mn-font-body);
+    text-align: center;
+    text-decoration: none;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+}
+
+.button.primary { color: var(--mn-on-ink); background: var(--mn-ink); }
+.button.quiet { border-color: transparent; text-decoration: underline; text-underline-offset: .22em; }
+.button.mono { padding: .55rem .95rem; font: 600 .72rem/1.25 var(--mn-font-mono); letter-spacing: .04em; white-space: nowrap; }
+.button.small { min-inline-size: var(--mn-touch-min); padding-inline: .6rem; }
+.button:not(:disabled, [aria-disabled='true']):hover { text-decoration: underline; text-underline-offset: .2em; }
+.button:is(:disabled, [aria-disabled='true']) { cursor: not-allowed; opacity: .6; }
+
+/* Notice: a block message on the sheet. The left rule carries the tone; the text always says what happened. */
+.notice {
+    margin: 0;
+    border-inline-start: 4px solid var(--mn-ink);
+    padding: .8rem 1rem;
+    background: var(--mn-soft);
+}
+
+.notice.error { border-color: var(--mn-danger); }
+.notice.success { border-color: var(--mn-positive); }
+.notice.warning { border-color: var(--mn-caution); }
+
+/* Paper surface: a sheet on the page, 1 px rule all round; `.ruled` adds the ink rule on top (a study card, a result). */
+.paper-surface {
+    min-inline-size: 0;
+    border: 1px solid var(--mn-rule);
+    padding: clamp(1rem, 3vw, 2rem);
+    background: var(--mn-sheet);
+}
+
+.paper-surface.ruled { border-block-start: 2px solid var(--mn-ink); }
+
+/* Field: a label, a control, then its hint and error, stacked. */
+.field { display: grid; gap: .5rem; }
+
+/* Hint: the quiet muted line under a control or a block. */
+.hint {
+    margin: 0;
+    color: var(--mn-muted);
+    font-size: .9rem;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+/* Field error: the validation sentence under a field (pair it with aria-invalid and aria-describedby). */
+.field-error {
+    margin: 0;
+    color: var(--mn-danger);
+    font-size: .9rem;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+/* Eyebrow: the mono rubric above a page or section heading. */
+.eyebrow {
+    margin: 0 0 .5rem;
+    color: var(--mn-ink);
+    font: 700 .75rem/1.4 var(--mn-font-mono);
+    letter-spacing: .12em;
+    text-transform: uppercase;
+}
+
+/* Empty state: nothing here yet, and what to do next. Ruled top and bottom, never a card. */
+.empty-state {
+    max-inline-size: 36rem;
+    border-block: 1px solid var(--mn-ink);
+    padding-block: 2rem 2.5rem;
+}
+
+.empty-state p { max-inline-size: 48ch; line-height: 1.6; }
+.empty-state :is(p, h2):last-child { margin-block-end: 0; }
+
+/* Stamp: a short mono label («Новое», «Пример», a step number). Text, never colour alone; `.solid` is the inverted mark. */
+.stamp {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--mn-ink);
+    padding: .15rem .5rem;
+    color: var(--mn-ink);
+    font: 700 .75rem/1.4 var(--mn-font-mono);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.stamp.solid { color: var(--mn-on-ink); background: var(--mn-ink); }
+
+@media (forced-colors: active) {
+    .button, .notice, .stamp, .paper-surface { border-color: CanvasText; }
+    .empty-state { border-color: CanvasText; }
+    .button.quiet { border-color: transparent; }
+}

@@ -95,6 +95,10 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+      - name: Verify the dev-only styleguide is absent from production
+        working-directory: frontend
+        run: node scripts/verify-no-styleguide.mjs
+
       - name: Verify frontend release contract
         run: ./scripts/test-frontend-release-contract.sh
 
