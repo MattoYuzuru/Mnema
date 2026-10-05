@@ -15,6 +15,7 @@ implies) and the personal-data scan hooks as they land (AI-04 and later). The en
 |---|---|
 | [`rate-card-v1.json`](rate-card-v1.json) | `rateCardVersion: "rc-v1"`; credit weights per operation, copied from the product contract; estimation rules; edit action to operation mapping |
 | [`allowances-v1.json`](allowances-v1.json) | Plans FREE, PLUS, PRO, MAX: credit bar and schedule, fair-use buckets, count caps, calendar zone |
+| [`plans.json`](plans.json) | `GET /api/plans` (paywall catalog: prices, year discount, highlights, Max teaser, recommendation by goal) and `GET/PUT /api/learning-profile` (onboarding goal), AI-19 #301 |
 | [`usage.json`](usage.json) | `GET /api/usage`, estimate request and response, reservation, ledger, error shape, with examples |
 
 Conventions are those of the existing contracts: private/no-store, quoted decimal versions, RFC 9457 Problem Details with a
