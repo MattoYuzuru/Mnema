@@ -4,7 +4,7 @@
 
 Исправления безопасности выпускаются для текущего состояния ветки `main`. Сейчас
 нет работающего hosted-развёртывания (доставка только локальная, см.
-[local development delivery](docs/operations/local-development-delivery.md)), а также
+[local development delivery](docs/operations/production-delivery.md)), а также
 отдельного поддерживаемого канала версий `1.x` или гарантированной поддержки старых
 коммитов. Если проблема относится к
 self-hosted установке, укажите точный commit SHA, способ развёртывания и затронутый

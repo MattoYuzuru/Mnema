@@ -5,7 +5,7 @@ import { BROWSER_IDENTITY_CONFIG } from './auth-browser';
 import { objectValue } from './auth-protocol';
 
 export class AbuseProtectionFailure extends Error {
-    constructor(readonly code: 'unavailable' | 'retry') { super('abuse_protection_' + code); }
+    constructor(readonly code: 'blocked' | 'unavailable' | 'retry') { super('abuse_protection_' + code); }
 }
 
 interface TurnstileApi {
@@ -26,6 +26,7 @@ export class TurnstileService {
         const config = objectValue(await firstValueFrom(this.http.get<unknown>(
             `${this.config.authServerUrl}/api/accounts/abuse-protection`).pipe(timeout(8000))));
         if (config['mode'] === 'disabled') return null;
+        if (config['mode'] === 'blocked') throw new AbuseProtectionFailure('blocked');
         if (config['mode'] !== 'required' || typeof config['siteKey'] !== 'string' ||
             !/^[A-Za-z0-9_-]{10,128}$/u.test(config['siteKey'])) throw new AbuseProtectionFailure('unavailable');
         const api = await this.load();

@@ -12,7 +12,7 @@ artifact:
 Результат проверен на локальном HTTPS Identity + Learning + Media стеке с существующим
 синтетическим демо-аккаунтом. Исходный checkout с незакоммиченными изменениями владельца
 не изменялся: реализация находится в отдельном worktree. Развёртывание на общем сервере
-не входит в [текущую границу доставки](../../../operations/local-development-delivery.md).
+не входит в [текущую границу доставки](https://github.com/MattoYuzuru/Mnema/blob/4f3fb44d00e8e004a35a02d38cc026c8bbba7058/docs/operations/local-development-delivery.md).
 
 ## Порядок работы
 

@@ -1,7 +1,9 @@
 # Dedicated production deployment identity
 
-Status: prepared for #347. No runtime, release, credential placement or deployment
-is implied by these files. Owner target is only `mnema` (135.106.175.30).
+Status: applied on `mnema` (135.106.175.30); dedicated-key CI rollout and
+negative identity tests passed. Current production and release sequence:
+[production delivery](../../docs/operations/production-delivery.md),
+[VPS runtime](../../docs/operations/vps-runtime.md).
 
 `mnema-deploy` receives its own CI Ed25519 key. The root-owned SSH Match and forced
 command permit only `status`, `preflight <40-hex SHA>`, `deploy <40-hex SHA>` and
@@ -36,8 +38,8 @@ or permissions; root-owned leaves inside a caller-writable directory are rejecte
 
 The root-owned `admitted.json` pointer names the **one** SHA currently admitted for
 `deploy`. Historical approved manifests remain accessible only to checked rollback;
-CI cannot bypass schema compatibility by invoking `deploy <old-sha>`. #349 must
-bind this pointer to the current verified main candidate.
+CI cannot bypass schema compatibility by invoking `deploy <old-sha>`. The administrator
+binds this pointer to each current verified main candidate.
 
 Manifest contract (names only; this is not release acceptance evidence):
 
@@ -51,10 +53,9 @@ Manifest contract (names only; this is not release acceptance evidence):
   to the previous recorded release. False requires a separately reviewed recovery
   or roll-forward; do not assume a Docker restart reverses schema changes.
 
-#349 owns safe automatic staging/attestation verification of future release
-manifests and the final production Compose topology. Until these root-owned inputs
-and acceptance gates exist, deploy/preflight fail closed. A successful `status`
-proves only CI identity and metadata access, not a working application.
+Release admission is currently administrator-owned; it is not automatically created
+by publication. Missing root-owned inputs or acceptance gates reject deploy/preflight.
+A successful `status` proves only metadata access, not a live health check.
 
 A server-side nonblocking lock rejects concurrent operations. Caller environment,
 Docker arguments, image namespaces and paths are not forwarded. Compose preflight
@@ -84,14 +85,12 @@ SSH works. The root dispatcher/config should be replaced only from a reviewed PR
 
 Positive smoke: dedicated key `status`. Negative smoke: `id`, `sudo id`, `sh`,
 SFTP, PTY, local/remote/Unix forwarding, injected/extra arguments, unknown SHA and
-missing acceptance manifest. A rejected preflight is expected before #349, not
-successful deployment evidence.
+missing acceptance manifest. A rejected preflight is not successful deployment evidence.
 
-The VPS runtime extends the original three-image dispatcher with the reviewed
-PostgreSQL release image. Replace the root dispatcher from the merged runtime PR
-before first rollout; the earlier installed version deliberately rejects four
-images. Root places its candidate PostgreSQL digest in `postgres-image` for the
-local backup helper, which refuses a live source using any other image.
+The applied dispatcher admits four verified images, including PostgreSQL. Root
+places the candidate PostgreSQL digest in `postgres-image` for the local backup
+helper, which refuses a live source using any other image. Application credential
+activation is separate root-owned configuration; see the runtime's auth section.
 
 [OpenSSH forced-command/forwarding contract](https://man.openbsd.org/sshd_config.5),
 [GitHub Environment protections](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/managing-environments-for-deployment).

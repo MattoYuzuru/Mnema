@@ -5,7 +5,7 @@ artifact:
   title: "Mnema CI artifact and workflow-token security boundary"
   status: current
   created_at: "2026-08-29"
-  updated_at: "2026-08-29"
+  updated_at: "2026-10-05"
   owners: ["project-owner"]
 ---
 
@@ -33,6 +33,7 @@ and [workflow syntax for permissions](https://docs.github.com/en/actions/referen
 | `main-release-security` | `deploy` / `build-and-push` | `release-security-${{ matrix.name }}` | runner temp `release-security/${{ matrix.name }}-*` | 30 | security evidence | Trivy, Syft and attestation verification |
 | `main-release-image-digest` | `deploy` / `build-and-push` | `release-image-${{ matrix.name }}` | runner temp `release-digests/${{ matrix.name }}.digest` | 30 | release identifier | Buildx digest output |
 | `main-production-release-manifest` | `deploy` / `render-release` | `production-release-manifest` | production manifest/checksum plus aggregate security evidence/checksum | 30 | release manifest | immutable release renderer and evidence aggregator |
+| `main-vps-candidate` | `deploy` / `assemble-vps-candidate` | `vps-candidate` | candidate/security evidence/checksums | 30 | release manifest | four-image candidate aggregator |
 | `main-staging-release-manifest` | `deploy` / `render-release` | `staging-release-manifest` | staging manifest/checksum plus aggregate security evidence/checksum | 30 | release manifest | immutable release renderer and evidence aggregator |
 | `staging-release-record` | `staging-deploy` / `deploy-staging` | `staging-release-record-${{ github.run_id }}` | `RELEASE_RECORD` | 90 | release state | `release_state.py record` after verification |
 | `staging-failure-diagnostics` | `staging-deploy` / `deploy-staging` | `staging-release-diagnostics-${{ github.run_id }}` | diagnostics directory, smoke/rollback reports and rollback record | 30 | sanitized diagnostics | bounded diagnostics, smoke and release-state scripts |
@@ -41,6 +42,10 @@ and [workflow syntax for permissions](https://docs.github.com/en/actions/referen
 | `production-failure-diagnostics` | `production-deploy` / `deploy-production` | `production-release-diagnostics-${{ github.run_id }}` | diagnostics directory, smoke/rollback reports and rollback record | 30 | sanitized diagnostics | bounded diagnostics, smoke and release-state scripts |
 | `staging-rollback-drill` | `staging-rollback-drill` / `rollback-drill` | `staging-rollback-drill-${{ github.run_id }}` | diagnostics, broken test manifest, smoke reports and rollback record | 30 | sanitized recovery evidence | rollback drill and bounded diagnostics scripts |
 | `database-restore-drill` | `database-recovery` / `database-recovery` | `restore-drill-evidence-${{ github.run_id }}-${{ github.run_attempt }}` | `EVIDENCE_DIR/restore-drill.json` | 30 | sanitized recovery evidence | fixed-schema backup validation report |
+
+Current publication uses the four-image VPS candidate. The Kubernetes release/deploy
+entries remain dormant source policy; `vps-deploy` has only `contents: read` and
+uploads no configuration or application secrets.
 
 The JSON inventory is canonical for exact expression text and all individual paths; this table
 is its human-readable operational view. Coverage retention is explicitly 30 days instead of a
@@ -72,13 +77,13 @@ weaken the scanner to make a new artifact pass.
 
 ## Workflow-token contract
 
-All seven workflows declare top-level `permissions: {}`. Every job then declares an exact map:
+All inventoried workflows declare top-level `permissions: {}`. Every job then declares an exact map:
 
 | Permission | Jobs | Reason |
 |---|---|---|
 | `contents: read` | all jobs | checkout, immutable source/ref verification |
 | `actions: read` | release render and deploy-gate jobs | download artifacts and inspect the exact predecessor run |
-| `packages: write` | `deploy / build-and-push` only | publish the two replacement GHCR release images |
+| `packages: write` | `deploy / build-and-push` only | publish the four verified VPS GHCR images |
 | `id-token: write` | `deploy / build-and-push` only | GitHub OIDC identity for build attestations |
 | `attestations: write` | `deploy / build-and-push` only | publish provenance attestations for exact image digests |
 

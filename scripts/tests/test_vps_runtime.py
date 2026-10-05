@@ -26,6 +26,22 @@ MONITOR = load('vps_monitor', 'deploy/production/health-monitor.py')
 
 
 class RuntimeTest(unittest.TestCase):
+    def render_compose(self, overrides=None):
+        env = {**os.environ, 'MNEMA_POSTGRES_PASSWORD': 'fixture-superuser',
+            'MNEMA_IDENTITY_DB_PASSWORD': 'fixture-identity', 'MNEMA_LEARNING_DB_PASSWORD': 'fixture-learning',
+            'MNEMA_BUILD_ID': 'a' * 40, 'MNEMA_PRODUCTION_ROOT': '/fixture'}
+        for name in ('GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'YANDEX_CLIENT_ID', 'YANDEX_CLIENT_SECRET',
+                     'GH_CLIENT_ID', 'GH_CLIENT_SECRET', 'TURNSTILE_SITE_KEY', 'TURNSTILE_SECRET_KEY',
+                     'MNEMA_IDENTITY_TURNSTILE_MODE', 'MNEMA_IDENTITY_TURNSTILE_PRIVACY_APPROVED',
+                     'MNEMA_FEATURE_FEDERATED_AUTH_ENABLED'):
+            env.pop(name, None)
+        for service in ('FRONTEND', 'IDENTITY_ACCOUNT', 'LEARNING', 'POSTGRES'):
+            env['MNEMA_' + service + '_IMAGE'] = 'example/fixture@sha256:' + 'b' * 64
+        env.update(overrides or {})
+        result = subprocess.run(['docker', 'compose', '-f', str(ROOT / 'deploy/production/compose.yaml'),
+            'config', '--format', 'json'], env=env, check=True, capture_output=True, timeout=20)
+        return json.loads(result.stdout)['services']
+
     def test_preview_does_not_touch_system_or_generate_keys(self):
         with patch.object(BOOT.sys, 'argv', ['bootstrap', 'preview']), \
              patch.object(BOOT, 'signing_key') as key, patch.object(BOOT, 'create') as create, \
@@ -54,14 +70,7 @@ class RuntimeTest(unittest.TestCase):
         self.assertEqual(BOOT.b64uint(128), 'gA')
 
     def test_actual_compose_has_private_roles_and_no_published_ports_or_socket(self):
-        env = {**os.environ, 'MNEMA_POSTGRES_PASSWORD': 'fixture-superuser',
-            'MNEMA_IDENTITY_DB_PASSWORD': 'fixture-identity', 'MNEMA_LEARNING_DB_PASSWORD': 'fixture-learning',
-            'MNEMA_BUILD_ID': 'a' * 40, 'MNEMA_PRODUCTION_ROOT': '/fixture'}
-        for service in ('FRONTEND', 'IDENTITY_ACCOUNT', 'LEARNING', 'POSTGRES'):
-            env['MNEMA_' + service + '_IMAGE'] = 'example/fixture@sha256:' + 'b' * 64
-        result = subprocess.run(['docker', 'compose', '-f', str(ROOT / 'deploy/production/compose.yaml'),
-            'config', '--format', 'json'], env=env, check=True, capture_output=True, timeout=20)
-        services = json.loads(result.stdout)['services']
+        services = self.render_compose()
         self.assertEqual(set(services), {'frontend', 'identity-account', 'learning', 'postgres'})
         for service in services.values():
             self.assertEqual(service['network_mode'], 'host')
@@ -81,6 +90,31 @@ class RuntimeTest(unittest.TestCase):
         self.assertNotIn('fixture-learning', json.dumps(identity))
         self.assertNotIn('fixture-identity', json.dumps(learning))
         self.assertEqual(services['frontend']['environment']['MNEMA_CLIENT_ID'], 'mnema-web')
+        self.assertEqual(services['frontend']['environment']['MNEMA_FEATURE_FEDERATED_AUTH_ENABLED'], 'false')
+        self.assertEqual(identity['SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENT_SECRET'], '')
+
+    def test_configured_auth_credentials_reach_only_identity_and_need_explicit_activation(self):
+        credentials = {name: 'private-fixture-' + name for name in ('GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET',
+            'YANDEX_CLIENT_ID', 'YANDEX_CLIENT_SECRET', 'GH_CLIENT_ID', 'GH_CLIENT_SECRET',
+            'TURNSTILE_SITE_KEY', 'TURNSTILE_SECRET_KEY')}
+        services = self.render_compose(credentials)
+        identity = services['identity-account']['environment']
+        self.assertEqual(identity['SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENT_SECRET'],
+                         credentials['GH_CLIENT_SECRET'])
+        self.assertEqual(identity['SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID'],
+                         credentials['GOOGLE_CLIENT_ID'])
+        self.assertEqual(identity['SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_YANDEX_CLIENT_SECRET'],
+                         credentials['YANDEX_CLIENT_SECRET'])
+        self.assertEqual(identity['TURNSTILE_SECRET_KEY'], credentials['TURNSTILE_SECRET_KEY'])
+        self.assertEqual(identity['MNEMA_IDENTITY_TURNSTILE_MODE'], 'blocked')
+        self.assertEqual(identity['MNEMA_IDENTITY_TURNSTILE_PRIVACY_APPROVED'], 'false')
+        for name in ('postgres', 'learning', 'frontend'):
+            self.assertNotIn('private-fixture-', json.dumps(services[name]))
+        activated = self.render_compose({**credentials, 'MNEMA_IDENTITY_TURNSTILE_MODE': 'required',
+            'MNEMA_IDENTITY_TURNSTILE_PRIVACY_APPROVED': 'true', 'MNEMA_FEATURE_FEDERATED_AUTH_ENABLED': 'true'})
+        self.assertEqual(activated['identity-account']['environment']['MNEMA_IDENTITY_TURNSTILE_MODE'], 'required')
+        self.assertEqual(activated['identity-account']['environment']['MNEMA_IDENTITY_TURNSTILE_PRIVACY_APPROVED'], 'true')
+        self.assertEqual(activated['frontend']['environment']['MNEMA_FEATURE_FEDERATED_AUTH_ENABLED'], 'true')
 
     def test_java_readiness_checks_http_status_and_never_redirects_or_logs_body(self):
         status = {'value': 200}

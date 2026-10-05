@@ -9,6 +9,7 @@ import { AbuseProtectionFailure } from './turnstile.service';
 
 describe('Identity form behavior', () => {
     it('explains protection outages and expiry without exposing upstream content', () => {
+        expect(identityErrorMessage(new AbuseProtectionFailure('blocked'))).toBe('Вход и регистрация пока недоступны. Попробуйте позже.');
         expect(identityErrorMessage(new AbuseProtectionFailure('unavailable'))).toContain('недоступна');
         expect(identityErrorMessage(new AbuseProtectionFailure('retry'))).toContain('новая проверка');
         expect(identityErrorMessage(new HttpErrorResponse({ status: 503, error: {

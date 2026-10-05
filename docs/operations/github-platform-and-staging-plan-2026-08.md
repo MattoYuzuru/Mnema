@@ -12,9 +12,8 @@ artifact:
 
 # GitHub, CI/CD и staging Mnema v2
 
-> Historical plan from the hosted-server phase. Current delivery follows
-> [local-development-delivery.md](local-development-delivery.md); do not execute or
-> wait for the operational paths described below.
+> Historical GitHub/Kubernetes plan. Current production delivery is
+> [production-delivery.md](production-delivery.md); use its reviewed VPS path.
 
 ## Решение
 

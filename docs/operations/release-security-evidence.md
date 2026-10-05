@@ -1,35 +1,23 @@
 # Release image security evidence
 
-Status: **current**, updated 2026-09-05.
+Status: **current**, updated 2026-10-05.
 
-Every Main CI replacement candidate contains exactly two immutable GHCR image digests:
-`identity-account` and `learning`. Both environment manifests describe the same images in
-maintenance; production promotion is disabled until #147. A digest becomes a releasable artifact only after all of the following
-checks pass for that exact reference:
+Current VPS publication contains exactly four immutable GHCR image digests:
+`identity-account`, `learning`, `frontend`, `postgres`. Every image needs maximal
+BuildKit provenance, SPDX SBOM, verified GitHub provenance/SBOM attestations bound
+to repository/workflow/current main SHA, and a Trivy report with no unexcepted
+HIGH/CRITICAL findings. Scanner/database identity and all severities remain visible.
 
-1. Docker BuildKit publishes `mode=max` provenance and an SPDX 2.3 SBOM with the image.
-2. GitHub Artifact Attestations creates independent provenance and SBOM attestations for the
-   digest. The workflow immediately verifies the repository, signer workflow, source commit,
-   source ref and hosted-runner boundary.
-3. Trivy scans the digest, records its exact version and vulnerability database timestamps, and
-   emits the full JSON report and SARIF. Unexcepted `HIGH` or `CRITICAL` findings stop Main CI before the
-   digest artifact exists; `LOW` and `MEDIUM` findings remain visible in evidence without blocking.
-4. `scripts/verify_release_security_evidence.py` binds the two digests, source commit, Main CI run
-   and attempt, attestations, SBOM hashes, scanner identity, counts and any applied exceptions into
-   `release-security-evidence.json`.
+The current aggregator `scripts/render_vps_candidate.py` binds the four services,
+source/run/attempt, digests and verified security evidence into `vps-candidate`.
+The existing evidence verifier supplies the individual image evidence policy.
+See [VPS publication](vps-image-publication.md) for exact files and checks. Candidate
+publication does not grant administrator admission or runtime acceptance.
+Full scan/SBOM/attestation evidence stays in sanitized 30-day Actions artifacts.
 
-The compact evidence and its SHA-256 checksum travel with both release manifests. Staging checks
-the original Main CI run identity and both manifests before reading staging credentials. Staging records successful maintenance smoke without relaying a production promotion artifact.
-The production workflow reports the #147 gate and skips all protected `prod` jobs. Full SBOM, attestation verification and Trivy
-JSON, SARIF and SBOM files stay in the 30-day `release-security-<service>` Actions artifacts; they must not be copied
-to issue comments or logs.
-
-This design follows the official [GitHub Artifact Attestations workflow and verification
-model](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations),
-Docker's [BuildKit SBOM](https://docs.docker.com/build/metadata/attestations/sbom/) and
-[provenance](https://docs.docker.com/build/metadata/attestations/slsa-provenance/) attestations, and
-the official [Trivy Action](https://github.com/aquasecurity/trivy-action). Action references are
-immutable commit pins with adjacent release versions.
+The retained two-service Kubernetes release renderer is a dormant source contract,
+not the current production publication or deployment path. Its manifests do not
+represent the running VPS topology.
 
 ## Independent verification
 

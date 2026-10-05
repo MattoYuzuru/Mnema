@@ -7,6 +7,8 @@ import { AuthFailure, FederatedProvider, safeReturnUrl } from './auth-protocol';
 import { AbuseProtectionFailure } from './turnstile.service';
 
 export function identityErrorMessage(error: unknown): string {
+    if (error instanceof AbuseProtectionFailure && error.code === 'blocked')
+        return 'Вход и регистрация пока недоступны. Попробуйте позже.';
     if (error instanceof AbuseProtectionFailure) return error.code === 'unavailable'
         ? 'Защита входа сейчас недоступна. Проверьте блокировку скриптов и соединение, затем повторите.'
         : 'Проверка входа не завершилась или устарела. Повторите попытку — начнётся новая проверка.';

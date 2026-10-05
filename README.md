@@ -86,15 +86,18 @@ Backend-проверки поднимают PostgreSQL в Testcontainers, пор
 
 ## Поставка
 
-Общего сервера сейчас нет. Работа считается готовой после такого пути:
+Production работает на https://mnema.app; сервис аккаунтов — https://auth.mnema.app.
+Административный доступ: `ssh mnema` (`135.106.175.30`, РФ).
 
 ```text
 feature branch → полный local gate → hosted PR checks → protected squash → main checks
+→ четыре проверенных образа → admission на VPS → VPS production deployment → live smoke
 ```
 
-Staging, production, SSH-доступ, выкатка и восстановление в эту схему не входят и не
-считаются выполненными. Подробности — в политике
-[Delivery without hosted infrastructure](docs/operations/local-development-delivery.md).
+Публикация запускается через `Main CI` с `publish_production_candidate=true`,
+выкатка — через `VPS production deployment` с допущенным текущим `release_sha`.
+Точные шаги, protection и ограничения — в
+[production delivery](docs/operations/production-delivery.md).
 
 ## Лицензия и участие
 
