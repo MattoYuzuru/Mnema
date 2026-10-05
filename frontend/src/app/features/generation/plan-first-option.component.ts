@@ -25,7 +25,6 @@ let nextOption = 0;
       .group { display: grid; gap: .5rem; min-inline-size: 0; }
       .check { display: inline-flex; align-items: center; gap: .6rem; min-block-size: var(--mn-touch-min, 2.75rem); color: var(--mn-body); font: 600 .95rem/1.3 var(--mn-font-body, system-ui, sans-serif); cursor: pointer; }
       .check:has(:focus-visible) { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 2px; }
-      .hint { margin: 0; color: var(--mn-muted); font-size: .9rem; line-height: 1.5; overflow-wrap: anywhere; }
       .cost { color: var(--mn-ink); font-weight: 600; }
     `,
     changeDetection: ChangeDetectionStrategy.OnPush

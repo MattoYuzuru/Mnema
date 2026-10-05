@@ -56,7 +56,7 @@ export class AppShellComponent {
     setWaveOrigin(event: PointerEvent): void {
         if (!(event.target instanceof Element)) return;
         const target = event.target.closest<HTMLElement>(
-            '.button, .quiet-action, .primary-action, .profile-page button, .file-label, .feature-strip a, .item-row, .deck-row'
+            '.button, .feature-strip a, .item-row, .deck-row'
         );
         if (!target || (event.relatedTarget instanceof Node && target.contains(event.relatedTarget))) return;
         const bounds = target.getBoundingClientRect();

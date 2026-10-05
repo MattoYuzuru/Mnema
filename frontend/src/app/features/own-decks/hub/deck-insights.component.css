@@ -10,7 +10,6 @@
 .note.error { border-color: var(--mn-danger); background: var(--mn-sheet); }
 .note p { margin: 0 0 .75rem; }
 .note p:last-child { margin: 0; }
-.note .button { min-block-size: var(--mn-touch-min, 2.75rem); border: 1px solid var(--mn-ink); border-radius: var(--mn-radius, 2px); padding: .5rem 1rem; color: var(--mn-ink); background: transparent; font: 600 .95rem/1.2 var(--mn-font-body, system-ui, sans-serif); cursor: pointer; }
 
 /* Desktop: a wrapping grid. Phone: one horizontal strip that snaps, reachable and scrollable from the keyboard. */
 .widgets { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: 1rem; }

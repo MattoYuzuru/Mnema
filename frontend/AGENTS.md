@@ -31,6 +31,7 @@ Adds to the root [`AGENTS.md`](../AGENTS.md); does not repeat it. Visual directi
 - Features live in `src/app/features/{authoring,generation,own-decks,study,usage}` (`usage` is the profile's «ИИ-бюджет» block over `GET /api/usage`; `generation` is the AI composer and Workshop over `contracts/generation`, see the brand contract); native document/editor/renderer in
   `src/app/content`. Theme values are centralized in `src/theme/tokens.css`; components use its semantic
   tokens as the brand contract requires.
+- Shared UI classes live in `src/theme/components.css` (`.button`, `.notice`, `.hint`, `.field`, `.field-error`, `.stamp`, `.eyebrow`, `.empty-state`, `.paper-surface`); do not redefine them in a component's CSS, add layout deltas only. The living catalogue is `/styleguide` (`src/app/styleguide`, dev builds only, registered behind `ngDevMode` in `app.routes.ts`): a new shared element goes there first. After `npm run build` run `node scripts/verify-no-styleguide.mjs`; see [styleguide](../docs/frontend/styleguide.md).
 - Wire shapes come from [`contracts/`](../contracts) fixtures that backend and frontend specs both
   execute (for example `study-contract.spec.ts`). Change fixture, contract and both sides together.
 - Node ids are the Workshop's alone (AI-11): the renderer draws `data-node-id` on top-level blocks only when it is given

@@ -36,7 +36,7 @@
         [readOnly]="mutationLocksDraft(store.mutationState())"
         [attr.aria-invalid]="submitted() && validation().descriptionBytes > 4096"
         [attr.aria-describedby]="submitted() && validation().descriptionBytes > 4096 ? 'create-description-error' : null"></textarea>
-      <p class="field-hint">Поддерживаются **жирный**, *курсив*, ~~зачёркивание~~ и списки.</p>
+      <p class="hint">Поддерживаются **жирный**, *курсив*, ~~зачёркивание~~ и списки.</p>
       @if (draft().description.trim()) {
         <div class="description-preview" aria-label="Предпросмотр описания">
           <p class="eyebrow">Как будет выглядеть</p>

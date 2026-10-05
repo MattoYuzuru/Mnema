@@ -12,6 +12,5 @@
 .note-body > p:first-child { margin-block-start: .5rem; }
 .selection-bar { position: sticky; inset-block-end: 0; z-index: 3; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1.5rem; margin-block-start: 1rem; border: 1px solid var(--mn-ink); border-radius: var(--mn-radius, 2px); padding: .65rem 1rem calc(.65rem + env(safe-area-inset-bottom, 0px)); background: var(--mn-sheet); box-shadow: 0 -.5rem 1.5rem -1rem rgb(40 19 120 / 35%); }
 .selection-bar-count { margin: 0; color: var(--mn-ink); }
-.button.quiet { border-color: transparent; text-decoration: underline; text-underline-offset: .22em; }
 @media (max-width: 42rem) { .selection-bar .actions { inline-size: 100%; } .selection-bar .actions > * { flex: 1 1 100%; } }
 @media (forced-colors: active) { .selection-bar { border-color: CanvasText; box-shadow: none; } .capture-card.is-selected { outline: 1px solid Highlight; } }

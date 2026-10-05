@@ -67,6 +67,8 @@ docs or historical evidence (those are read-only history, not current behaviour)
   every prototype implementation detail.
 - Do not treat the current layout, visual identity or component boundaries as compatibility
   requirements.
+- Shared UI elements come from the living styleguide; a new one is added there first:
+  [`docs/frontend/styleguide.md`](docs/frontend/styleguide.md) (`/styleguide`, development builds only).
 - UX/a11y principles (primary action, back/close, progressive disclosure, keyboard/focus, semantic
   HTML, reduced motion, mobile-first) and the duty to propose a better layout when requested UI is
   awkward, confusing or overcomplicated: [`engineering-standards.md`](docs/engineering/engineering-standards.md#proactive-design-fixes-and-ux-principles-was-42-43).

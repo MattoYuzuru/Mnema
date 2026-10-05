@@ -310,7 +310,7 @@ describe('ProposalDocumentComponent', () => {
             await settle();
             expect(store.edit).not.toHaveBeenCalled();
             expect(win.querySelector('.window-error')!.textContent).toBe('На сегодня лимит ИИ исчерпан.');
-            expect(win.querySelector('.window-button.primary')!.getAttribute('aria-disabled')).toBeNull();
+            expect(win.querySelector('.button.primary')!.getAttribute('aria-disabled')).toBeNull();
         });
     });
 
@@ -436,7 +436,7 @@ describe('ProposalDocumentComponent', () => {
             }));
             ask('Проще');
             await settle();
-            expect(win()!.querySelector<HTMLButtonElement>('.window-button.primary')!.textContent).toContain('Отправляю…');
+            expect(win()!.querySelector<HTMLButtonElement>('.button.primary')!.textContent).toContain('Отправляю…');
             labelled('Отменить')!.click();
             await settle();
             expect(signal!.aborted).toBe(true);

@@ -34,20 +34,18 @@ import { describeUsage } from './usage-view';
         }
       } @else {
         <p class="hint" role="status">Не удалось узнать расход ИИ. Остальной профиль работает как обычно.</p>
-        <button type="button" class="retry" (click)="load()">Повторить</button>
+        <button type="button" class="button retry" (click)="load()">Повторить</button>
       }
     `,
     styles: [`
       :host { display: block; min-inline-size: 0; }
       .plan { margin: 0 0 1rem; color: var(--mn-muted); font-size: .9rem; }
-      .hint { margin: .75rem 0 0; color: var(--mn-muted); font-size: .9rem; line-height: 1.5; }
+      .hint { margin-block-start: .75rem; }
       .fair-use { margin-block-start: 1.5rem; border-block-start: 1px solid var(--mn-rule); padding-block-start: 1rem; }
       h3 { margin: 0; color: var(--mn-ink); font: 700 .95rem/1.3 var(--mn-font-body, system-ui, sans-serif); }
       ul { margin: .5rem 0 0; padding-inline-start: 1.1rem; }
       li { margin-block: .25rem; line-height: 1.5; overflow-wrap: anywhere; }
-      .retry { min-block-size: var(--mn-touch-min, 46px); margin-block-start: .75rem; border: 1px solid var(--mn-ink); border-radius: var(--mn-radius, 2px); padding: .65rem 1.25rem; background: transparent; color: var(--mn-ink); font: 650 1rem/1.4 var(--mn-font-body, system-ui, sans-serif); cursor: pointer; }
-      .retry:focus-visible { outline: 3px solid var(--mn-focus); outline-offset: 3px; }
-      @media (forced-colors: active) { .retry { border-color: ButtonText; } .retry:focus-visible { outline-color: Highlight; } }
+      .retry { margin-block-start: .75rem; }
     `],
     changeDetection: ChangeDetectionStrategy.OnPush
 })
