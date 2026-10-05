@@ -6,6 +6,7 @@ import app.mnema.learning.generation.GenerationStateConflictException.Reason;
 import app.mnema.learning.generation.Rows.Artifact;
 import app.mnema.learning.generation.Rows.Revision;
 import app.mnema.learning.generation.Rows.Session;
+import app.mnema.learning.generation.Rows.Slot;
 import app.mnema.learning.generation.Rows.Turn;
 import app.mnema.learning.generation.exercise.ExerciseValidator;
 import app.mnema.learning.platform.api.InvalidRequestException;
@@ -57,6 +58,8 @@ class ArtifactEdits {
     static final int MAX_REVISIONS_REMOVAL = 40;
     static final int MAX_TARGETS = 50;
     static final int MAX_INSTRUCTION = 2_000;
+    /** The longest query of an IMAGE_SEARCH edit, in code points. */
+    static final int MAX_QUERY = 200;
     private static final Set<String> ACTIONS = Set.of("REWRITE", "IMAGE_SEARCH", "IMAGE_GENERATE", "AUDIO_REGENERATE", "FREE", "REMOVE_MEDIA");
     private static final Set<String> PRESETS = Set.of("SIMPLER", "SHORTER", "EXAMPLE", "LONGER");
     /** Sessions in which an edit can be made; a CANCELLED one only lets media go ({@code REMOVE_MEDIA}). */
@@ -77,11 +80,12 @@ class ArtifactEdits {
     private final UsageLedger ledger;
     private final AdmissionPricing pricing;
     private final GenerationGate gate;
+    private final CandidateRepository candidates;
     private final ObjectProvider<StepDispatcher> dispatcher;
 
     ArtifactEdits(GenerationRepository repository, StepRepository steps, SessionLifecycle lifecycle, EditLifecycle edits,
                   EditContexts contexts, CommandReceiptService receipts, UsageLedger ledger, AdmissionPricing pricing,
-                  GenerationGate gate, ObjectProvider<StepDispatcher> dispatcher) {
+                  GenerationGate gate, CandidateRepository candidates, ObjectProvider<StepDispatcher> dispatcher) {
         this.repository = repository;
         this.steps = steps;
         this.lifecycle = lifecycle;
@@ -91,6 +95,7 @@ class ArtifactEdits {
         this.ledger = ledger;
         this.pricing = pricing;
         this.gate = gate;
+        this.candidates = candidates;
         this.dispatcher = dispatcher;
     }
 
@@ -129,6 +134,10 @@ class ArtifactEdits {
             throw new InvalidRequestException();
         }
         if (action.equals("FREE") && instruction == null) throw new InvalidRequestException();
+        // the query of an image search is a short phrase, not a rewrite brief
+        if (action.equals("IMAGE_SEARCH") && instruction != null && instruction.codePointCount(0, instruction.length()) > MAX_QUERY) {
+            throw new InvalidRequestException();
+        }
         List<UUID> targets = targets(body.get("target"));
         String voice = optionalText(body, "voice");
         if (voice != null && !(voice.equals("female") || voice.equals("male"))) throw new InvalidRequestException();
@@ -210,6 +219,7 @@ class ArtifactEdits {
         if (!removal && material && contexts.tokens(target) > EditContexts.MAX_TARGET_TOKENS) throw limit("EDIT_TARGET_SIZE");
 
         if (removal) return removeMedia(tx, artifact, revision, target, request);
+        if (request.action().equals("IMAGE_SEARCH")) return imageSearch(tx, artifact, revision, target, request);
         return request.action().equals("AUDIO_REGENERATE") && !material ? redoAudio(tx, artifact, request) : rewrite(tx, artifact, target, request);
     }
 
@@ -234,9 +244,20 @@ class ArtifactEdits {
                 if (!target.onlyMedia() || target.blocks().stream().anyMatch(block -> !block.path("type").stringValue("").equals(type))) {
                     throw new InvalidRequestException();
                 }
+                // a search targets exactly one image block whose slot searches (a generated image has nothing to search again)
+                if (request.action().equals("IMAGE_SEARCH") && (target.blocks().size() != 1 || searchSlot(revision, target.blocks().getFirst()) == null)) {
+                    throw new InvalidRequestException();
+                }
             }
         }
         return target;
+    }
+
+    /** The slot of the image block that searches (mode {@code search}), or null. */
+    private Slot searchSlot(Revision revision, JsonNode block) {
+        UUID node = EditDocument.id(block);
+        return repository.slotsOf(revision.artifactId()).stream().filter(slot -> slot.nodeId().equals(node) && slot.kind().equals("IMAGE")
+                && slot.spec().path("mode").stringValue("").equals("search") && !slot.state().equals("REMOVED")).findFirst().orElse(null);
     }
 
     static ResourceLimitExceededException limit(String name) {
@@ -263,6 +284,38 @@ class ArtifactEdits {
                 .put("revisionId", artifact.currentRevisionId().toString()).put("operation", EditLifecycle.OPERATION)
                 .put("credits", credits).put("reservationId", reservation.reservationId().toString());
         steps.insert(stepId, session.sessionId(), artifact.artifactId(), session.ownerId(), EditExecutor.KIND, "TEXT", input,
+                "edit:" + turnId);
+        Artifact revising = repository.transition(artifact, "REVISING", null, null, null, artifact.revisionCount());
+        tx.events.add(SessionLifecycle.artifactEvent(revising));
+        tx.events.add(lifecycle.usageEvent(session, null));
+        lifecycle.flush(tx);
+        wakeAfterCommit();
+        return answer(repository.turn(turnId).orElseThrow(), revising);
+    }
+
+    // --------------------------------------------------------------- IMAGE_SEARCH
+
+    /**
+     * «Найти похожее», «Повторить» and «Заменить» of an image that searches (#296): a turn with its own hold (one search) and an {@code IMAGE_SEARCH}
+     * step that stages up to four new candidates ({@link ImageSearchExecutor}). The artifact is REVISING until it ends. A first search of the slot
+     * that is still waiting or running is replaced by this one.
+     */
+    private JsonNode imageSearch(SessionLifecycle.Tx tx, Artifact artifact, Revision current, EditTarget target, Request request) {
+        Session session = tx.session;
+        Slot slot = searchSlot(current, target.blocks().getFirst());
+        steps.cancelMediaOfSlots(artifact.artifactId(), List.of(slot.slotKey()));
+        lifecycle.releaseIdleBatch(tx);
+        UUID turnId = UUID.randomUUID();
+        int credits = pricing.credits(ImageSearchLifecycle.OPERATION);
+        // usage is last: a refusal rolls this transaction back, so nothing above has changed
+        Reservation reservation = ledger.reserve(session.ownerId(), ReservationScope.TURN, session.sessionId(), turnId, Math.max(1, credits));
+        UUID stepId = UUID.randomUUID();
+        repository.insertTurn(new Turn(turnId, artifact.artifactId(), session.sessionId(), session.ownerId(), "QUEUED", request.action(), null,
+                request.instruction(), List.of(slot.nodeId()), stepId, null, null, true, null, null));
+        ObjectNode input = Json.object().put("turnId", turnId.toString()).put("action", request.action())
+                .put("revisionId", artifact.currentRevisionId().toString()).put("operation", ImageSearchLifecycle.OPERATION)
+                .put("credits", credits).put("reservationId", reservation.reservationId().toString()).put("slotKey", slot.slotKey());
+        steps.insert(stepId, session.sessionId(), artifact.artifactId(), session.ownerId(), ImageSearchExecutor.KIND, "IMAGE_SEARCH", input,
                 "edit:" + turnId);
         Artifact revising = repository.transition(artifact, "REVISING", null, null, null, artifact.revisionCount());
         tx.events.add(SessionLifecycle.artifactEvent(revising));
@@ -324,6 +377,8 @@ class ArtifactEdits {
         repository.insertRevision(new Revision(revisionId, artifact.artifactId(), revisionNo, "MEDIA", payload, handles,
                 current.promptVersion(), "deterministic", current.validation(), Instant.now()), session.sessionId(), session.ownerId());
         List<Rows.EventDraft> slotEvents = edits.followSlots(artifact, revisionId, EditDocument.idSet(document), false);
+        // the first search of a removed image is stopped: the batch hold it kept alive ends with it
+        lifecycle.releaseIdleBatch(tx);
         Artifact proposed = repository.transition(artifact, "PROPOSED", null, revisionId, title, revisionNo);
 
         UUID turnId = UUID.randomUUID();
@@ -396,7 +451,8 @@ class ArtifactEdits {
             } catch (IllegalArgumentException unreadable) {
                 throw new IllegalStateException("A stored revision is not readable");
             }
-            slotEvents = edits.followSlots(artifact, to, EditDocument.idSet(document), true);
+            slotEvents = new ArrayList<>(edits.followSlots(artifact, to, EditDocument.idSet(document), true));
+            slotEvents.addAll(followImages(tx, artifact, document));
         } else {
             // an exercise: its title is the first text of its prompt (or its objective's), and its slots (the audio) follow the revision
             JsonNode command = target.payload().path("command");
@@ -412,6 +468,105 @@ class ArtifactEdits {
         tx.events.addAll(slotEvents);
         lifecycle.flush(tx);
         return summary(moved);
+    }
+
+    /**
+     * After a revert: the image slots that search follow the asset their node uses in the revision now shown. A node on one of the slot's READY
+     * candidates makes the slot READY on it (the hold on the node follows); a node on an asset that is none of them (the pre-allocated one of a first
+     * search that found nothing) makes the slot FAILED ({@code NO_RESULT}) again, as it was before the searches. Returns the events of the changes.
+     */
+    private List<Rows.EventDraft> followImages(SessionLifecycle.Tx tx, Artifact artifact, JsonNode document) {
+        List<Rows.EventDraft> events = new ArrayList<>();
+        List<Rows.Candidate> all = candidates.ofArtifact(artifact.artifactId());
+        for (Slot slot : repository.slotsOf(artifact.artifactId())) {
+            if (!slot.kind().equals("IMAGE") || !slot.spec().path("mode").stringValue("").equals("search") || slot.state().equals("REMOVED")) continue;
+            UUID using = MediaNodes.assetOf(document, slot.nodeId());
+            if (using == null) continue;
+            Rows.Candidate chosen = all.stream().filter(each -> each.slotKey().equals(slot.slotKey()) && each.assetId().equals(using)).findFirst().orElse(null);
+            if (chosen != null && chosen.state().equals("READY")) {
+                if (slot.state().equals("READY") && slot.assetId().equals(using)) continue;
+                candidates.slotReady(slot.artifactId(), slot.slotKey(), using);
+                candidates.holdNode(slot.artifactId(), slot.nodeId(), tx.session.sessionId(), tx.session.ownerId(), using);
+                events.add(SessionLifecycle.slotEvent(slot.artifactId(), slot.slotKey(), slot.kind(), "READY", using));
+            } else if (chosen == null && !slot.state().equals("FAILED")) {
+                candidates.slotState(slot.artifactId(), slot.slotKey(), "FAILED", "NO_RESULT");
+                candidates.releaseNode(slot.artifactId(), slot.nodeId());
+                Rows.EventDraft event = SessionLifecycle.slotEvent(slot.artifactId(), slot.slotKey(), slot.kind(), "FAILED", using);
+                ((ObjectNode) event.payload()).put("errorCode", "NO_RESULT");
+                events.add(event);
+            }
+        }
+        return events;
+    }
+
+    // ------------------------------------------------------------ selectMediaCandidate
+
+    /**
+     * {@code selectMediaCandidate} (#296): the image node of a search slot points at another READY candidate of the slot, in a new revision (cause
+     * MEDIA, only the node's {@code assetId} changes). Free and synchronous; «Вернуть» is the ordinary revert. The receipt keeps the revision the
+     * command made (or found, for a no-op), from which the controller reads the artifact.
+     */
+    ReviewService.Result select(UUID owner, UUID deckId, UUID sessionId, UUID artifactId, String slotKey, byte[] raw) {
+        session(owner, deckId, sessionId);
+        repository.artifact(sessionId, artifactId).orElseThrow(ResourceNotFoundException::new);
+        if (!slotKey.matches("[a-z][a-z0-9_]{0,31}")) throw new InvalidRequestException();
+        JsonNode body = Commands.read(raw);
+        Commands.fields(body, Set.of("commandId", "expectedRevisionId", "candidateId"), Set.of());
+        UUID commandId = Commands.commandId(body);
+        ObjectNode envelope = envelope(deckId, sessionId, body).put("artifactId", artifactId.toString()).put("slotKey", slotKey);
+        CommandIdentity identity = new CommandIdentity(commandId, owner, SCOPE, "artifact.select-media");
+        Optional<JsonNode> replay = receipts.replay(identity, envelope);
+        if (replay.isPresent()) return new ReviewService.Result(replay.get(), true, null);
+        UUID expectedRevision = Commands.entity(body, "expectedRevisionId");
+        UUID candidateId = Commands.entity(body, "candidateId");
+
+        boolean[] applied = {false};
+        JsonNode result = receipts.execute(identity, envelope, () -> {
+            applied[0] = true;
+            return choose(sessionId, artifactId, slotKey, expectedRevision, candidateId);
+        });
+        return new ReviewService.Result(result, !applied[0], null);
+    }
+
+    private JsonNode choose(UUID sessionId, UUID artifactId, String slotKey, UUID expectedRevision, UUID candidateId) {
+        SessionLifecycle.Tx tx = lifecycle.lock(sessionId);
+        if (tx == null) throw new ResourceNotFoundException();
+        Artifact artifact = repository.artifact(sessionId, artifactId).orElseThrow(ResourceNotFoundException::new);
+        Slot slot = repository.slotsOf(artifactId).stream().filter(each -> each.slotKey().equals(slotKey)).findFirst()
+                .orElseThrow(ResourceNotFoundException::new);
+        Rows.Candidate candidate = candidates.find(artifactId, candidateId).filter(found -> found.slotKey().equals(slotKey))
+                .orElseThrow(ResourceNotFoundException::new);
+        if (!expectedRevision.equals(artifact.currentRevisionId())) throw new VersionConflictException();
+        if (!EDITABLE.contains(tx.state) || !artifact.targetKind().equals("ITEM")) throw new GenerationStateConflictException(Reason.ILLEGAL_STATE);
+        if (artifact.state().equals("REVISING")) {
+            throw repository.openTurn(artifactId).<RuntimeException>map(turn -> new EditInProgressException(turn.turnId()))
+                    .orElseGet(() -> new GenerationStateConflictException(Reason.ILLEGAL_STATE));
+        }
+        Revision current = repository.revision(artifactId, artifact.currentRevisionId()).orElseThrow();
+        JsonNode document = current.payload().path("document");
+        UUID using = MediaNodes.assetOf(document, slot.nodeId());
+        if (!artifact.state().equals("PROPOSED") || !slot.kind().equals("IMAGE") || !slot.spec().path("mode").stringValue("").equals("search")
+                || slot.state().equals("REMOVED") || MediaNodes.block(document, slot.nodeId()) == null || !candidate.state().equals("READY")) {
+            throw new GenerationStateConflictException(Reason.ILLEGAL_STATE);
+        }
+        ObjectNode marker = Json.object().put("artifactId", artifactId.toString());
+        if (candidate.assetId().equals(using)) return marker.put("revisionId", current.revisionId().toString());
+        if (artifact.revisionCount() >= MAX_REVISIONS) throw limit("REVISIONS_PER_ARTIFACT");
+
+        UUID revisionId = UUID.randomUUID();
+        int revisionNo = artifact.revisionCount() + 1;
+        ObjectNode payload = Json.object().put("kind", "NATIVE_DOCUMENT");
+        payload.set("document", MediaNodes.withAsset(document, slot.nodeId(), candidate.assetId()));
+        repository.insertRevision(new Revision(revisionId, artifactId, revisionNo, "MEDIA", payload, current.handles(), current.promptVersion(),
+                "deterministic", current.validation(), Instant.now()), tx.session.sessionId(), tx.session.ownerId());
+        repository.attachAllSlots(artifactId, revisionId);
+        candidates.slotReady(artifactId, slotKey, candidate.assetId());
+        candidates.holdNode(artifactId, slot.nodeId(), tx.session.sessionId(), tx.session.ownerId(), candidate.assetId());
+        Artifact moved = repository.transition(artifact, "PROPOSED", null, revisionId, null, revisionNo);
+        tx.events.add(SessionLifecycle.artifactEvent(moved));
+        tx.events.add(SessionLifecycle.slotEvent(artifactId, slotKey, slot.kind(), "READY", candidate.assetId()));
+        lifecycle.flush(tx);
+        return marker.put("revisionId", revisionId.toString());
     }
 
     // -------------------------------------------------------------------- helpers

@@ -1,0 +1,32 @@
+<fieldset class="variants" [attr.aria-disabled]="pending() ? 'true' : null" [attr.aria-describedby]="error() !== null ? errorId : null">
+  <legend>Варианты</legend>
+  <ul class="grid">
+    @for (candidate of ready(); track candidate.candidateId; let index = $index; let total = $count) {
+      <li class="card" [class.is-chosen]="isChecked(candidate)">
+        <label class="card-label">
+          <span class="sr-only">Вариант {{ index + 1 }} из {{ total }}. </span>
+          <input type="radio" class="card-radio" [name]="name" [value]="candidate.candidateId" [checked]="isChecked(candidate)"
+            [attr.aria-disabled]="pending() ? 'true' : null" (click)="onClick($event, candidate)" />
+          <app-image-candidate-thumb [assetId]="candidate.assetId" alt="" />
+          <span class="card-source">{{ byline(candidate) }}</span>
+          <span class="card-license">{{ candidate.license }}@if (candidate.shareAlike) { <span class="badge">{{ shareAlikeMark }}</span> }</span>
+          @if (candidate.chosen) { <span class="card-chosen" aria-hidden="true">Выбрано</span> }
+        </label>
+        <div class="card-links">
+          @if (candidate.sourcePageUrl; as page) {
+            <a class="card-link" [href]="page" target="_blank" rel="noopener noreferrer"
+              [attr.aria-label]="'Страница изображения: ' + byline(candidate) + ' (в новой вкладке)'">Страница изображения</a>
+          }
+          @if (candidate.shareAlike) {
+            <app-toggletip [topic]="shareAlikeMark">{{ shareAlikeHint }}</app-toggletip>
+          }
+        </div>
+      </li>
+    }
+  </ul>
+  <div class="commit">
+    <button type="button" class="commit-button" [attr.aria-disabled]="pending() || !changed() ? 'true' : null" (click)="use()">Использовать это изображение</button>
+    <p class="status" role="status">{{ selecting() !== null ? 'Сохраняю выбор…' : '' }}</p>
+  </div>
+  <p class="error" [id]="errorId" aria-live="polite">{{ error() }}</p>
+</fieldset>

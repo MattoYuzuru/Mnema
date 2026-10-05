@@ -526,6 +526,27 @@ class SessionLifecycle {
         if (releaseHolds(tx.session, keepOpenEdits)) tx.events.add(usageEvent(tx.session, null));
     }
 
+    /**
+     * The session left RUNNING while image searches of slots were open and its batch hold was kept for them: when no such step is open any more
+     * (the last one ended, or was cancelled by a removal, a replacement or a hand-off) the hold ends and what was debited stays debited. A RUNNING
+     * session releases it with its own settling, a PLANNING one has no use for this. The caller flushes.
+     */
+    void releaseIdleBatch(Tx tx) {
+        if (!(tx.state.equals("REVIEW") || tx.state.equals("CLOSED")) || tx.session.reservationId() == null
+                || steps.hasOpenSlotSteps(tx.session.sessionId())) {
+            return;
+        }
+        boolean active = ledger.reservation(tx.session.ownerId(), tx.session.reservationId())
+                .filter(found -> found.state() == app.mnema.learning.usage.ReservationState.ACTIVE).isPresent();
+        if (!active) return;
+        try {
+            ledger.release(tx.session.ownerId(), tx.session.reservationId());
+        } catch (IllegalArgumentException unknown) {
+            LOG.warn("generation_reservation_missing session_id={}", tx.session.sessionId());
+        }
+        tx.events.add(usageEvent(tx.session, null));
+    }
+
     /** Ends every hold of the session in the caller's transaction, announcing nothing; false when it had none. */
     boolean releaseHolds(Session session) {
         return releaseHolds(session, false);
@@ -533,7 +554,11 @@ class SessionLifecycle {
 
     private boolean releaseHolds(Session session, boolean keepOpenEdits) {
         List<UUID> held = new ArrayList<>(reservations.ids(session));
-        if (keepOpenEdits) held.removeAll(steps.openEditReservations(session.sessionId()));
+        if (keepOpenEdits) {
+            held.removeAll(steps.openEditReservations(session.sessionId()));
+            // an image search of a slot still running pays from the batch hold: it ends with the last of them (ImageSearchLifecycle)
+            if (session.reservationId() != null && steps.hasOpenSlotSteps(session.sessionId())) held.remove(session.reservationId());
+        }
         for (UUID reservation : held) {
             try {
                 ledger.release(session.ownerId(), reservation);
@@ -548,8 +573,9 @@ class SessionLifecycle {
      * {@code GENERATION_READY} when every artifact is approvable now, {@code GENERATION_PARTIAL} when some are and some
      * failed, {@code GENERATION_FAILED} when none is approvable and something failed ({@code contracts/notifications}).
      * A proposal whose media is still being made is not approvable yet: with no failure nothing is published here.
-     * TODO(AI-09, AI-10: media steps): publish {@code GENERATION_READY} when the last slot of a REVIEW session resolves;
-     * until media executors exist the slots stay PENDING and a session with media never announces itself as ready.
+     * TODO(AI-09: media steps): publish {@code GENERATION_READY} when the last slot of a REVIEW session resolves. The image-search slots of AI-10
+     * resolve in the Workshop (READY or FAILED, announced by {@code MEDIA_SLOT_STATE}), but nothing announces the session as ready then: a session
+     * with media still announces nothing until its slots are settled by the single place AI-09 adds for all media kinds.
      */
     private void notifyOutcome(Tx tx, Map<String, Integer> counts) {
         UUID sessionId = tx.session.sessionId();

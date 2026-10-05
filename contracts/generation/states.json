@@ -872,10 +872,15 @@
         ],
         "note": "errorCode DEADLINE_EXCEEDED or PROVIDER_UNAVAILABLE; the hold is released unspent and the artifact is PROPOSED again."
       }
-    ]
+    ],
+    "imageSearchErrorCodes": {
+      "NO_RESULT": "No new commercially usable image was found (or none passed verification).",
+      "PROVIDER_UNAVAILABLE": "Every configured image source failed.",
+      "DEADLINE_EXCEEDED": "The step deadline (PT3M) passed."
+    }
   },
   "mediaSlot": {
-    "description": "generation_media_slot: one media directive of the document. The slot key is stable across revisions of an artifact. errorCode is one of artifact.mediaSlotErrorCodes. The slots of an artifact follow the revision that is shown: each is attached to the current revision when its node is in that document.",
+    "description": "generation_media_slot: one media directive of the document. The slot key is stable across revisions of an artifact. errorCode is one of artifact.mediaSlotErrorCodes. The slots of an artifact follow the revision that is shown: each is attached to the current revision when its node is in that document. An IMAGE slot of mode search keeps its candidates (generation_media_candidate, AI-10): the initial step stages one, each IMAGE_SEARCH turn up to 4 more, at most 12; selectMediaCandidate re-points the slot to another READY candidate in a new revision (cause MEDIA).",
     "states": {
       "PENDING": {
         "terminal": false,

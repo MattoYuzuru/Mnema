@@ -49,6 +49,7 @@ class StepDispatcher implements DisposableBean {
     private final GenerationRepository repository;
     private final SessionLifecycle lifecycle;
     private final EditLifecycle edits;
+    private final ImageSearchLifecycle imageSlots;
     private final GenerationSettings settings;
     private final Map<String, StepExecutor> executors;
     /** The executors in the order they are offered work: the interactive EDIT first, so a person waiting for a rewrite is not behind a batch. */
@@ -62,12 +63,14 @@ class StepDispatcher implements DisposableBean {
     private volatile Instant lastRenewal = Instant.EPOCH;
 
     StepDispatcher(StepQueue queue, StepRepository steps, GenerationRepository repository, SessionLifecycle lifecycle,
-                   EditLifecycle edits, GenerationSettings settings, AiProperties ai, List<StepExecutor> executors, MeterRegistry meters) {
+                   EditLifecycle edits, ImageSearchLifecycle imageSlots, GenerationSettings settings, AiProperties ai, List<StepExecutor> executors,
+                   MeterRegistry meters) {
         this.queue = queue;
         this.steps = steps;
         this.repository = repository;
         this.lifecycle = lifecycle;
         this.edits = edits;
+        this.imageSlots = imageSlots;
         this.settings = settings;
         this.executors = executors.stream().collect(java.util.stream.Collectors.toUnmodifiableMap(StepExecutor::kind, e -> e));
         this.offered = executors.stream().sorted(java.util.Comparator.comparing(executor -> !executor.kind().equals(EditExecutor.KIND))).toList();
@@ -114,6 +117,8 @@ class StepDispatcher implements DisposableBean {
                 // an edit step fails its turn, not an artifact: it has its own recovery
                 if (steps.step(step).filter(found -> found.kind().equals(EditExecutor.KIND) || found.input().has("turnId")).isPresent()) {
                     edits.recover(step);
+                } else if (steps.step(step).filter(found -> ImageSearchExecutor.isSlotStep(found.kind(), found.input())).isPresent()) {
+                    imageSlots.recover(step);
                 } else {
                     lifecycle.recover(step);
                 }

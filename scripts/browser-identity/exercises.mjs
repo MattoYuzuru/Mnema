@@ -299,7 +299,7 @@ export async function runWorkshopExercises(ctx, h) {
         save: root.querySelector('[data-save]')?.textContent.trim(), failedText: root.querySelector('[data-state=FAILED]')?.textContent.replace(/\\s+/g, ' ').trim() ?? null,
         failedRetry: Boolean([...root.querySelectorAll('[data-state=FAILED] button')].find(button => button.textContent.trim() === 'Повторить')),
         ids: (() => { const all = [...document.querySelectorAll('[id]')].map(node => node.id); return all.length - new Set(all).size; })(),
-        regions: document.querySelectorAll('section.workshop [role=status]').length };`);
+        regions: document.querySelectorAll('section.workshop [role=status]:not(.document-announcement)').length };`);
     need(view.cards === 9, `the review shows ${view.cards} cards, not nine`);
     for (const material of deck.materials.slice(0, 2)) need(view.groups.some(group => group.startsWith(material.title.slice(0, 20))), `no group is named after «${material.title}»`);
     need(view.groups.length >= 2, `the review has ${view.groups.length} material headings`);

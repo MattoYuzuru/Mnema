@@ -189,6 +189,15 @@ final class MediaObjectStore implements AutoCloseable {
         }
     }
 
+    /** The server's own single PUT of small bytes (a staged stock image); an existing object at the key is replaced by the same bytes on a retry. */
+    void put(String key, byte[] bytes, String mimeType) {
+        requireConfigured();
+        try {
+            s3.putObject(PutObjectRequest.builder().bucket(settings.bucket).key(key).contentLength((long) bytes.length)
+                    .contentType(mimeType).build(), RequestBody.fromBytes(bytes));
+        } catch (SdkException failure) { throw new MediaStorageUnavailableException(); }
+    }
+
     /** Derived keys are content-addressed; a timed-out PUT is reconciled by HEAD. */
     void putVerified(String key, Path source, long length, String sha256, String mimeType) {
         requireConfigured();

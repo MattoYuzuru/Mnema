@@ -205,7 +205,7 @@ describe('WorkshopPageComponent', () => {
             fixture.detectChanges();
             expect(root().querySelectorAll('.draft .native-document p')).toHaveLength(2);
             expect(root().querySelector('article')?.getAttribute('aria-busy')).toBe('true');
-            const live = [...root().querySelectorAll('[aria-live], [role=status], [role=alert]')].filter(element => !element.closest('app-native-media-surface'));
+            const live = [...root().querySelectorAll('[aria-live], [role=status], [role=alert]')].filter(element => !element.closest('app-native-media-surface') && !element.classList.contains('document-announcement'));
             expect(live.map(element => element.className)).toEqual(['summary']);
         });
     });
@@ -242,7 +242,7 @@ describe('WorkshopPageComponent', () => {
             await settle();
             expect(summary()).toBe(before);
             expect(line.firstChild).toBe(text);
-            const own = [...root().querySelectorAll('[role=status]')].filter(element => !element.closest('app-native-media-surface'));
+            const own = [...root().querySelectorAll('[role=status]')].filter(element => !element.closest('app-native-media-surface') && !element.classList.contains('document-announcement'));
             expect(own).toHaveLength(1);
         });
     });
@@ -253,7 +253,7 @@ describe('WorkshopPageComponent', () => {
             expect(summary()).toBe('1 готово · 1 пишется · 1 не удался');
             expect(root().querySelector('.summary')?.getAttribute('role')).toBe('status');
             // The page itself has one live region; the status lines of the media players inside a document are theirs.
-            const own = [...root().querySelectorAll('[role=status]')].filter(element => !element.closest('app-native-media-surface'));
+            const own = [...root().querySelectorAll('[role=status]')].filter(element => !element.closest('app-native-media-surface') && !element.classList.contains('document-announcement'));
             expect(own).toHaveLength(1);
         });
 

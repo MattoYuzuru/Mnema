@@ -51,7 +51,7 @@ class ImmutableStorageIntegrationTest extends PostgresIntegrationTest {
         jdbc.sql("CREATE TABLE IF NOT EXISTS app_learning.storage_publication_fixture (id UUID PRIMARY KEY, version BIGINT NOT NULL, root_id UUID)").update();
         jdbc.sql("CREATE TABLE IF NOT EXISTS app_learning.storage_projection_fixture (id UUID PRIMARY KEY)").update();
         // Explicit complete graph in this disposable test database; never cascade into unknown tables.
-        jdbc.sql("TRUNCATE app_learning.generation_media_ref, app_learning.generation_media_slot, app_learning.generation_event, "
+        jdbc.sql("TRUNCATE app_learning.generation_media_ref, app_learning.generation_media_candidate, app_learning.generation_media_slot, app_learning.generation_event, "
                 + "app_learning.generation_step, app_learning.generation_artifact_turn, app_learning.generation_artifact_revision, "
                 + "app_learning.generation_artifact, app_learning.generation_session_source, app_learning.generation_note_snapshot, app_learning.generation_session, "
                 + "app_learning.item_preview, app_learning.study_pair_interaction, app_learning.content_media_ref, app_learning.draft_media_ref, "
