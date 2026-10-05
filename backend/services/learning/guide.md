@@ -121,11 +121,20 @@ fair-use buckets, `GET /api/usage` and the estimate. Migration `V26__usage_ledge
   module's boundary (AI-04, which supplies its own interpreter and the personal-data warnings). p95 is the sum of rate-card
   weights, p50 is `ceil(0.6 x sum)` over unrounded weights, exercises are `ceil(8 x n / 5)`.
 - **Entitlements.** `EntitlementSource` is the port; `ConfigEntitlementSource` serves `learning.usage.entitlements.default-plan`
-  with per-account `learning.usage.entitlements.overrides.<accountUuid>`. A plan change mid-period applies at once to the
-  limits and adds the missing credits as a `GRANT`; credits are never clawed back within a period. `EntitlementInbox` is the
+  with per-account `learning.usage.entitlements.overrides.<accountUuid>`. **The month bar follows the entitlement in force:**
+  `unlocked = max(used + reserved, scheduled(plan, now))` (`UsageLedger.syncUnlocked`, the same rule on the read side in
+  `UsageState`). A paid snapshot grants its plan's monthly bar for the calendar month it starts in; a new paid snapshot inside a month
+  that already had a smaller grant tops up to the higher plan with a `GRANT` of the difference (never a second bar on top); when the
+  entitlement drops inside a month (expiry or downgrade) the month is re-based to the new plan with an `ADJUSTMENT` (negative), never
+  below what is already used or held and never above the new plan unless already spent. The balance row lock makes it transactional
+  and a repeat finds the target reached; ledger keys carry the balance row version, so a plan granted, re-based away and granted again
+  in one month still gets its entries. So a 30-day paid snapshot that crosses into the next month shows that month's paid bar until
+  `validUntil` and the Free bar after it. `EntitlementInbox` is the
   validated, idempotent insert of billing's and promo snapshots (no endpoint: `accept` is the only writer, a test scans the
-  sources for it). Since #301 `InboxEntitlementSource` is the effective source: the newest valid inbox snapshot of the owner
-  (started, `validUntil` in the future; `BILLING` or `PROMO`), else `ConfigEntitlementSource`. A snapshot longer than two months
+  sources for it). Since #301 `InboxEntitlementSource` is the effective source: the valid inbox snapshot of the owner with the
+  highest plan (started, `validUntil` in the future; `BILLING` or `PROMO`; MAX > PRO > PLUS > FREE, ties to the latest `received_at`, so a
+  lower promo never masks a valid higher billing snapshot), else `ConfigEntitlementSource`. `accept` also refuses `periodEnd <=
+  periodStart` and a `validUntil` more than a day past `periodEnd`. A snapshot longer than two months
   is `period: YEAR`; allowances stay calendar-month periods, so a year grants the plan's monthly allowance each month until
   `validUntil`, never twelve at once. `usage_allowance.source` accepts `PROMO` (V39). The rate card and allowances are
   classpath copies of the contract files (`usage/*.json`); a test keeps them identical.

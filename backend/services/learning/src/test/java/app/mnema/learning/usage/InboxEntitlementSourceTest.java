@@ -78,6 +78,27 @@ class InboxEntitlementSourceTest extends UsageIntegrationTest {
     }
 
     @Test
+    void aLowerPromoNeverMasksAValidHigherBillingSnapshotAndEqualPlansFallToTheLatestReceived() {
+        UUID owner = UUID.randomUUID();
+        inbox.accept(snapshot("billing", owner, Plan.PRO, "BILLING", "2026-09-30T21:00:00Z", "2026-10-31T21:00:00Z"));
+        clock.set("2026-10-02T09:30:00Z");
+        inbox.accept(snapshot("promo", owner, Plan.PLUS, "PROMO", "2026-09-30T21:00:00Z", "2026-10-31T21:00:00Z"));
+
+        Entitlement picked = source.current(owner, now());
+        assertThat(picked.plan()).isEqualTo(Plan.PRO);
+        assertThat(picked.source()).isEqualTo(Entitlement.Source.BILLING);
+
+        clock.set("2026-10-02T10:00:00Z");
+        inbox.accept(snapshot("promo-pro", owner, Plan.PRO, "PROMO", "2026-09-30T21:00:00Z", "2026-10-31T21:00:00Z"));
+        assertThat(source.current(owner, now()).source()).isEqualTo(Entitlement.Source.PROMO);
+
+        inbox.accept(snapshot("max", owner, Plan.MAX, "PROMO", "2026-09-30T21:00:00Z", "2026-10-02T12:00:00Z"));
+        assertThat(source.current(owner, now()).plan()).isEqualTo(Plan.MAX);
+        clock.set("2026-10-02T13:00:00Z");
+        assertThat(source.current(owner, now()).plan()).isEqualTo(Plan.PRO);
+    }
+
+    @Test
     void anotherOwnersSnapshotNeverApplies() {
         inbox.accept(snapshot("a", UUID.randomUUID(), Plan.PRO, "BILLING", "2026-09-30T21:00:00Z", "2026-10-31T21:00:00Z"));
 

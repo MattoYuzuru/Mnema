@@ -334,13 +334,15 @@ class UsageRepository {
     record SnapshotRow(Plan plan, String source, Instant periodStart, Instant periodEnd, Instant validUntil) { }
 
     /**
-     * The newest snapshot of {@code owner} that is in force at {@code now}: it has started and has not expired. Newest is
-     * the latest received; an equal instant falls to the later period start, then the id, so the answer is stable.
+     * The snapshot of {@code owner} that is in force at {@code now} (started, not expired) with the highest plan, so a
+     * lower promo never masks a valid higher billing snapshot. Equal plans fall to the latest received, then the later
+     * period start, then the id, so the answer is stable.
      */
     Optional<SnapshotRow> newestValidSnapshot(UUID owner, Instant now) {
         return jdbc.sql("SELECT plan,source,period_start,period_end,valid_until FROM app_learning.entitlement_inbox "
                         + "WHERE owner_id=:owner AND period_start<=:now AND valid_until>:now "
-                        + "ORDER BY received_at DESC, period_start DESC, snapshot_id DESC LIMIT 1")
+                        + "ORDER BY CASE plan WHEN 'MAX' THEN 3 WHEN 'PRO' THEN 2 WHEN 'PLUS' THEN 1 ELSE 0 END DESC, "
+                        + "received_at DESC, period_start DESC, snapshot_id DESC LIMIT 1")
                 .param("owner", owner).param("now", time(now))
                 .query((row, number) -> new SnapshotRow(Plan.valueOf(row.getString("plan")), row.getString("source"),
                         instant(row, "period_start"), instant(row, "period_end"), instant(row, "valid_until")))

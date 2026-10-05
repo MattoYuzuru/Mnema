@@ -7,8 +7,8 @@ import java.time.ZoneOffset;
 import java.util.UUID;
 
 /**
- * The effective {@link EntitlementSource}: the newest valid {@code entitlement_inbox} snapshot of the owner (started, not
- * expired; {@code BILLING} or {@code PROMO}), else the configured entitlement. Nothing a request carries reaches this
+ * The effective {@link EntitlementSource}: the valid {@code entitlement_inbox} snapshot of the owner with the highest plan
+ * (started, not expired; {@code BILLING} or {@code PROMO}; ties go to the latest received), else the configured entitlement. Nothing a request carries reaches this
  * class: the rows are written by {@link EntitlementInbox#accept} alone.
  *
  * <p>A snapshot that spans more than two months is a {@code YEAR} entitlement. It changes nothing about granting: the

@@ -65,6 +65,13 @@ class EntitlementInboxTest extends UsageIntegrationTest {
         assertThatThrownBy(() -> inbox.accept(new EntitlementInbox.Snapshot("s1", owner, Plan.PLUS, "BILLING",
                 Instant.parse("2026-10-31T21:00:00Z"), Instant.parse("2026-09-30T21:00:00Z"), empty,
                 Instant.parse("2026-10-31T21:00:00Z")))).isInstanceOf(IllegalArgumentException.class);
+        // valid_until may pass the period by a day at most.
+        assertThatThrownBy(() -> inbox.accept(new EntitlementInbox.Snapshot("s3", owner, Plan.PLUS, "BILLING",
+                Instant.parse("2026-09-30T21:00:00Z"), Instant.parse("2026-10-31T21:00:00Z"), empty,
+                Instant.parse("2026-11-01T21:00:01Z")))).isInstanceOf(IllegalArgumentException.class);
+        assertThat(inbox.accept(new EntitlementInbox.Snapshot("s4", owner, Plan.PLUS, "BILLING",
+                Instant.parse("2026-09-30T21:00:00Z"), Instant.parse("2026-10-31T21:00:00Z"), empty,
+                Instant.parse("2026-11-01T21:00:00Z")))).isTrue();
         String big = "{\"x\":\"" + "y".repeat(9_000) + "\"}";
         assertThatThrownBy(() -> inbox.accept(snapshot("s2", owner, Plan.PLUS, JSON.readTree(big))))
                 .isInstanceOf(IllegalArgumentException.class);
