@@ -18,7 +18,8 @@ user input from then on (a Study answer carries `answerSource: SPEECH`, contract
   Russia) or `ABROAD` (Gemini through the egress gateway; audio leaves Russia de-identified). `PUT /api/speech-consent
   {version, processing}` records it (idempotent; a stale `version`/`processing` is `409 SPEECH_CONSENT_OUTDATED`). The required
   version changes when the active route's processing region changes, so a move to a foreign route asks again.
-  `DELETE /api/speech-consent` withdraws it. The UI shows the disclosure on the first microphone press.
+  `DELETE /api/speech-consent` withdraws it. `version` is a string (`speech-2026-10`); `PUT` answers `200` with the `GET` body, `DELETE`
+  answers `204` (also when nothing was accepted). The UI shows the disclosure on the first microphone press.
 
 ## Endpoints
 
