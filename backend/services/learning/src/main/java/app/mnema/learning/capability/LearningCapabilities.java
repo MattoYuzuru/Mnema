@@ -47,7 +47,8 @@ public final class LearningCapabilities {
         this.imageSearch = search != null && search.configured();
         this.imageGeneration = imageGenerationPorts.getIfAvailable() != null;
         this.videoGeneration = videoGenerationPorts.getIfAvailable() != null;
-        this.webSearch = webSearchPorts.getIfAvailable() != null;
+        WebSearch research = webSearchPorts.getIfAvailable();
+        this.webSearch = research != null && research.configured();
     }
 
     /** Semantic grading: flag, a usable adapter on the {@code assess} route (a key or the Stub) and a healthy route. */

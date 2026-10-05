@@ -28,10 +28,12 @@ class SessionViews {
     private final NoteArchival notes;
     private final PinnedMaterials materials;
     private final CandidateRepository candidates;
+    private final ResearchRepository research;
 
     SessionViews(GenerationRepository repository, SessionReservations reservations, NoteArchival notes, PinnedMaterials materials,
-                 CandidateRepository candidates) {
+                 CandidateRepository candidates, ResearchRepository research) {
         this.candidates = candidates;
+        this.research = research;
         this.repository = repository;
         this.reservations = reservations;
         this.notes = notes;
@@ -119,6 +121,10 @@ class SessionViews {
         node.put("sessionId", session.sessionId().toString());
         node.put("deckId", session.deckId().toString());
         node.set("sourceRefs", withNoteStatus(session, artifact.sourceRefs()));
+        // a material (ITEM) carries the member, null without research; an exercise has none (it is written from a material, not researched)
+        if (artifact.targetKind().equals("ITEM")) {
+            node.set("research", research.find(artifact.artifactId()).<JsonNode>map(SessionViews::researchView).orElse(Json.NODES.nullNode()));
+        }
         if (revision == null) {
             node.putNull("revision");
         } else {
@@ -177,6 +183,19 @@ class SessionViews {
         }
         ArrayNode turns = node.putArray("turns");
         for (Turn turn : repository.turns(artifact.artifactId())) turns.add(turn(turn));
+        return node;
+    }
+
+    /**
+     * {@code research} of the artifact detail ({@code schemas.research}): the paid requests and the numbered results the compiler allowed for {@code [n]} and
+     * {@code ::sources}. Snippets and page text are never returned.
+     */
+    static ObjectNode researchView(ResearchRepository.Research found) {
+        ObjectNode node = Json.object().put("requests", found.requests());
+        ArrayNode results = node.putArray("results");
+        for (ResearchRepository.Source source : found.results()) {
+            results.addObject().put("n", source.n()).put("url", source.url()).put("title", source.title()).put("provider", source.provider());
+        }
         return node;
     }
 

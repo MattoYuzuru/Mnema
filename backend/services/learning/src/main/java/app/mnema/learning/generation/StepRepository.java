@@ -60,12 +60,18 @@ class StepRepository {
      */
     void insertWaiting(UUID stepId, UUID sessionId, UUID artifactId, UUID owner, String kind, String capability, JsonNode input,
                        String idempotencyKey, UUID dependsOn) {
+        insertWaiting(stepId, sessionId, artifactId, owner, kind, capability, input, idempotencyKey, dependsOn, 10);
+    }
+
+    /** As above with the {@code priority} of the step once it is READY: 10 for the interactive turns of a revision, 0 for the draft that waits for research. */
+    void insertWaiting(UUID stepId, UUID sessionId, UUID artifactId, UUID owner, String kind, String capability, JsonNode input,
+                       String idempotencyKey, UUID dependsOn, int priority) {
         jdbc.sql("INSERT INTO app_learning.generation_step(step_id,session_id,artifact_id,owner_id,kind,capability,state,depends_on,"
                         + "priority,input,idempotency_key,next_attempt_at,created_at,updated_at) VALUES (:id,:session,:artifact,:owner,:kind,"
-                        + ":capability,'WAITING_DEPENDENCIES',CAST(:depends AS uuid[]),10,CAST(:input AS jsonb),:key,CURRENT_TIMESTAMP,"
+                        + ":capability,'WAITING_DEPENDENCIES',CAST(:depends AS uuid[]),:priority,CAST(:input AS jsonb),:key,CURRENT_TIMESTAMP,"
                         + "CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)")
                 .param("id", stepId).param("session", sessionId).param("artifact", artifactId).param("owner", owner)
-                .param("kind", kind).param("capability", capability).param("depends", "{" + dependsOn + "}")
+                .param("kind", kind).param("capability", capability).param("depends", "{" + dependsOn + "}").param("priority", priority)
                 .param("input", Json.write(input)).param("key", idempotencyKey).update();
     }
 

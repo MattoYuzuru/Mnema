@@ -97,6 +97,23 @@ class LearningCapabilitiesTest {
     }
 
     @Test
+    void aWebSearchPortWithoutAnyCallableProviderIsNotConfiguredEvenWhenTheFlagIsOn() {
+        var none = new WebSearch() {
+            @Override public app.mnema.learning.ai.AiResult<Answer> search(Request request) { return null; }
+
+            @Override public boolean configured() { return false; }
+        };
+        var factory = new StaticListableBeanFactory();
+        factory.addBean("webSearch", none);
+        LearningCapabilities capabilities = new LearningCapabilities(allOn(), factory.getBeanProvider(SpeechToTextProvider.class), TEXT_AVAILABLE,
+                factory.getBeanProvider(app.mnema.learning.ai.SpeechSynthesis.class), factory.getBeanProvider(ImageSearch.class),
+                factory.getBeanProvider(app.mnema.learning.ai.ImageGeneration.class),
+                factory.getBeanProvider(app.mnema.learning.ai.VideoGeneration.class), factory.getBeanProvider(WebSearch.class));
+        assertThat(capabilities.webSearch()).isEqualTo(new LearningCapabilities.Status(false, LearningCapabilities.Reason.PROVIDER_NOT_CONFIGURED));
+        assertThatThrownBy(capabilities::requireWebSearch).isInstanceOf(CapabilityUnavailableException.class);
+    }
+
+    @Test
     void aSpeechPortWithoutAnyCallableRouteEntryIsNotConfiguredEvenWhenTheFlagIsOn() {
         var none = new app.mnema.learning.ai.SpeechSynthesis() {
             @Override public app.mnema.learning.ai.AiResult<Audio> synthesize(Request request) { return null; }

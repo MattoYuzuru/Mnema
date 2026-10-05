@@ -95,6 +95,9 @@ class GenerationTestConfiguration {
         /** The latches of {@code [[fake:hold-edit]]}: an edit call that waits while a draft call, held by {@code [[fake:block]]}, runs on. */
         volatile CountDownLatch editEntered = new CountDownLatch(1);
         volatile CountDownLatch editRelease = new CountDownLatch(1);
+        /** The latches of {@code [[fake:research-block]]}: the query planner call of a research step that waits while nothing else does. */
+        volatile CountDownLatch researchEntered = new CountDownLatch(1);
+        volatile CountDownLatch researchRelease = new CountDownLatch(1);
         private final Set<UUID> crashed = ConcurrentHashMap.newKeySet();
 
         Scripted(TextGeneration real) { this.real = real; }
@@ -108,6 +111,9 @@ class GenerationTestConfiguration {
             blockedEntered = new CountDownLatch(1);
             editRelease = new CountDownLatch(1);
             editEntered = new CountDownLatch(1);
+            researchRelease.countDown();
+            researchRelease = new CountDownLatch(1);
+            researchEntered = new CountDownLatch(1);
         }
 
         List<Call> callsOf(String marker) {
@@ -130,6 +136,19 @@ class GenerationTestConfiguration {
                 } catch (InterruptedException interrupted) {
                     Thread.currentThread().interrupt();
                     return AiResult.failed(new AiFailure.Transient("interrupted"));
+                }
+            }
+            if (prompt.contains("<task kind=\"research\">")) {
+                // the query planner of a research step only: the draft that follows is not touched by these markers
+                if (prompt.contains("[[fake:research-down]]")) return AiResult.failed(new AiFailure.Transient("fake_research_down"));
+                if (prompt.contains("[[fake:research-block]]")) {
+                    researchEntered.countDown();
+                    try {
+                        researchRelease.await(30, TimeUnit.SECONDS);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        return AiResult.failed(new AiFailure.Transient("interrupted"));
+                    }
                 }
             }
             if (prompt.contains("[[fake:block]]")) {
@@ -196,6 +215,41 @@ class GenerationTestConfiguration {
     @Primary
     Scripted scriptedText(@Qualifier("textGeneration") TextGeneration real) {
         return new Scripted(real);
+    }
+
+    /**
+     * The web search port around the Stub: records every call (and whether the caller held a transaction) and answers from {@link #script} when a test sets one
+     * (duplicates, a provider that is down), else as the Stub does.
+     */
+    static final class ScriptedSearch implements app.mnema.learning.ai.WebSearch {
+        private final app.mnema.learning.ai.WebSearch real;
+        final List<Request> calls = new CopyOnWriteArrayList<>();
+        final List<Boolean> transactionAtCall = new CopyOnWriteArrayList<>();
+        volatile java.util.function.Function<Request, AiResult<Answer>> script;
+
+        ScriptedSearch(app.mnema.learning.ai.WebSearch real) { this.real = real; }
+
+        void reset() {
+            calls.clear();
+            transactionAtCall.clear();
+            script = null;
+        }
+
+        @Override public boolean configured() { return real.configured(); }
+
+        @Override
+        public AiResult<Answer> search(Request request) {
+            calls.add(request);
+            transactionAtCall.add(TransactionSynchronizationManager.isActualTransactionActive());
+            var scripted = script;
+            return scripted != null ? scripted.apply(request) : real.search(request);
+        }
+    }
+
+    @Bean
+    @Primary
+    ScriptedSearch scriptedSearch(@Qualifier("webSearch") app.mnema.learning.ai.WebSearch real) {
+        return new ScriptedSearch(real);
     }
 
     /**

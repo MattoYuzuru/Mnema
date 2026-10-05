@@ -391,6 +391,35 @@ class MbmCompilerTest {
     }
 
     @Test
+    void theResultsOfTheResearchStepAreTheOnlyUrlsThatBecomeSourceLinksAndAnythingElseStaysText() {
+        // AI-18 (#299): the generation module allows exactly the numbered results of the session's research, for inline links and for ::sources
+        List<MbmOptions.ResearchSource> research = List.of(new MbmOptions.ResearchSource(1, "https://a.example/page", "Страница А"),
+                new MbmOptions.ResearchSource(2, "https://b.example/page", "Страница Б"));
+        MbmOptions options = MbmOptions.create().withAllowedLinks(List.of("https://a.example/page", "https://b.example/page")).withResearch(research)
+                .withSourcesHeading("Источники");
+
+        MbmResult.Success success = success("Факт из [первого](https://a.example/page) и [чужого](https://evil.example/x) источников [1] [7].\n\n::sources\n"
+                + "[1] https://a.example/page\n[2] https://b.example/page\n", options);
+
+        List<String> labels = new ArrayList<>();
+        links(success.document().path("root"), labels);
+        // the inline link to a result, and the two entries of the sources list; the link outside the list is text with a warning
+        assertThat(labels).containsExactly("первого", "Страница А", "Страница Б");
+        assertThat(success.warnings()).extracting(MbmFinding::code).containsExactly(MbmCode.MBM_LINK_NOT_ALLOWED);
+        assertThat(success.document().toString()).contains("\"text\":\"Источники\"").doesNotContain("evil.example");
+        // [n] in prose is literal text, whether or not the number exists
+        assertThat(texts(success)).contains("[1] [7].");
+
+        // ::sources never names a URL that is not a result, nor a number with another URL: the whole document is rejected and goes back to the model
+        assertThat(errors("::sources\n[1] https://evil.example/x\n", options)).containsExactly("2:1:SOURCE_NOT_IN_RESEARCH");
+        assertThat(errors("::sources\n[2] https://a.example/page\n[3] https://b.example/page\n", options))
+                .containsExactly("2:1:SOURCE_NOT_IN_RESEARCH", "3:1:SOURCE_NOT_IN_RESEARCH");
+        // a material without research cannot have a sources section at all, and its allowlist is only the user's own links
+        assertThat(errors("::sources\n[1] https://a.example/page\n", MbmOptions.create().withAllowedLinks(List.of("https://a.example/page"))))
+                .containsExactly("2:1:SOURCE_NOT_IN_RESEARCH");
+    }
+
+    @Test
     void directiveNamesAreExactAndAnythingAfterTheColonsIsAnUnknownDirective() {
         assertThat(errors("::")).containsExactly("1:1:UNKNOWN_DIRECTIVE");
         assertThat(errors("::Audio{}")).containsExactly("1:1:UNKNOWN_DIRECTIVE");

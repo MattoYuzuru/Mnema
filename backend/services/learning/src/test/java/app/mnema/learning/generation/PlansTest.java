@@ -44,7 +44,7 @@ class PlansTest {
             case "MATERIAL_DETAILED" -> 22;
             case "TTS_CLIP_30S" -> 10;
             case "IMAGE_SEARCH" -> 1;
-            case "FACTCHECK_LOW" -> 15;
+            case "WEB_SEARCH_QUERY" -> 5;
             default -> throw new IllegalArgumentException();
         });
     }
@@ -183,9 +183,15 @@ class PlansTest {
     @Test
     void aMaterialIsPricedWithTheMediaAndTheResearchOfItsOwnSettings() throws Exception {
         Plans.Basis basis = materials("{\"effort\":\"MEDIUM\",\"factCheck\":true,\"media\":{\"audio\":{\"enabled\":true},\"imageSearch\":true}}", true);
-        assertThat(plans.materialCredits(basis, notes[0], "MEDIUM")).isEqualTo(10 + 10 + 1 + 15);
+        // research is priced per request the effort allows (AI-18): medium 2, detailed 6
+        assertThat(plans.materialCredits(basis, notes[0], "MEDIUM")).isEqualTo(10 + 10 + 1 + 2 * 5);
+        assertThat(plans.materialCredits(basis, notes[0], "DETAILED")).isEqualTo(22 + 10 + 1 + 6 * 5);
         // no research for the short effort (architecture section 14)
         assertThat(plans.materialCredits(basis, notes[0], "SHORT")).isEqualTo(4 + 10 + 1);
+        // the global cap bounds every effort
+        Plans capped = new Plans(pricing, repository, 10, 60, 20, 3);
+        assertThat(capped.materialCredits(basis, notes[0], "DETAILED")).isEqualTo(22 + 10 + 1 + 3 * 5);
+        assertThat(capped.materialCredits(basis, notes[0], "MEDIUM")).isEqualTo(10 + 10 + 1 + 2 * 5);
         assertThat(plans.materialCredits(materials("{}", false), null, "DETAILED")).isEqualTo(22);
     }
 
