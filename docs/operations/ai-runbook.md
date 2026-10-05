@@ -245,7 +245,7 @@ sweeper (`SpeechInputSweeper` runs in every role).
 
 Changing a model, a route order or a prompt version is gated by the golden eval, run by hand with the owner's keys
 and never in CI. Corpus, thresholds, judges, and the owner-review sample are described in
-`contracts/generation/eval/README.md` (it arrives with the golden-eval change of #300 and becomes a link when that is merged); the answer-check cases are
+[`contracts/generation/eval/README.md`](../../contracts/generation/eval/README.md); the answer-check cases are
 [`contracts/study/assessment-golden/`](../../contracts/study/assessment-golden/README.md).
 
 ```sh
