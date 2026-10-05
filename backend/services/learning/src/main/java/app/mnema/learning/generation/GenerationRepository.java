@@ -622,6 +622,20 @@ class GenerationRepository {
                 .param("code", errorCode).param("id", artifactId).query(SLOT).list();
     }
 
+    /** What the call journal holds for the OK calls of a capability of one step: how many answered and what they cost (micro-US-dollars), over every attempt. */
+    record ProviderSpend(int calls, long costMicros) { }
+
+    /**
+     * The OK provider calls of {@code capability} for the step (any attempt), per the call journal: a speech step that crashed after it synthesised a
+     * clip is resumed on the staged asset and must still be debited as a cache miss, at the cost the journal recorded.
+     */
+    ProviderSpend providerSpend(UUID stepId, String capability) {
+        return jdbc.sql("SELECT count(*)::integer AS calls, COALESCE(SUM(cost_micros),0) AS cost FROM app_learning.ai_provider_call "
+                        + "WHERE step_id=:step AND capability=:capability AND outcome='OK'")
+                .param("step", stepId).param("capability", capability)
+                .query((row, ignored) -> new ProviderSpend(row.getInt("calls"), row.getLong("cost"))).single();
+    }
+
     /** Every slot of the artifact, whatever revision it was last attached to. */
     List<Slot> slotsOf(UUID artifactId) {
         return jdbc.sql("SELECT artifact_id,slot_key,revision_id,node_id,kind,spec::text AS spec,asset_id,state,error_code "
@@ -685,6 +699,8 @@ class GenerationRepository {
      */
     void dropMedia(UUID artifactId) {
         jdbc.sql("DELETE FROM app_learning.generation_media_candidate WHERE artifact_id=:id").param("id", artifactId).update();
+        jdbc.sql("DELETE FROM app_learning.generation_media_clip WHERE artifact_id=:id").param("id", artifactId).update();
+        jdbc.sql("DELETE FROM app_learning.generation_media_clip WHERE artifact_id=:id").param("id", artifactId).update();
         jdbc.sql("DELETE FROM app_learning.generation_media_ref WHERE artifact_id=:id").param("id", artifactId).update();
         jdbc.sql("DELETE FROM app_learning.generation_media_slot WHERE artifact_id=:id").param("id", artifactId).update();
     }

@@ -310,11 +310,11 @@ describe('AskMnemaComponent («Попросить Мнему…», AI-16)', () =
             expect(sentSpec()).toEqual({ kind: 'REVISE_ITEM', target: examples['specReviseItem'].target, instruction: 'Сделай короче' });
         });
 
-        it('shows the voice as a chip, says the synthesis is not connected, changes the voice, and may leave it alone beside a request', async () => {
+        it('shows the voice as a chip, changes the voice, and may leave it alone beside a request', async () => {
             create(exercise);
             await ask(voiceAnswer('male'), 'Замени аудио на мужской голос');
             expect(root().querySelector('.ask-instruction')).toBeNull();
-            expect(root().querySelector('.ask-voice')!.textContent).toContain('Синтез речи пока не подключён');
+            expect(root().querySelector('.ask-voice')!.textContent).not.toContain('не подключён');
             const radios = [...root().querySelectorAll<HTMLInputElement>('.ask-voice input')];
             expect(radios.map(input => input.value)).toEqual(['NONE', 'female', 'male']);
             expect(radios.find(input => input.checked)!.value).toBe('male');
@@ -367,6 +367,23 @@ describe('AskMnemaComponent («Попросить Мнему…», AI-16)', () =
             await settle(ESTIMATE_DEBOUNCE_MS);
             expect(api.estimate).not.toHaveBeenCalled();
             expect(api.createSession).not.toHaveBeenCalled();
+        });
+
+        it('shows no voice chips for audio without a transcript and says why in calm words', async () => {
+            create(exercise);
+            await ask(parseIntent({ operation: 'UNSUPPORTED', spec: null, chips: [], notes: [{ code: 'NO_TRANSCRIPT',
+                text: 'Озвучить заново можно только аудио с текстом: добавьте расшифровку к записи в упражнении.' }] }), 'Замени аудио на мужской голос');
+            expect(root().querySelector('.ask-voice')).toBeNull();
+            expect(root().querySelector('.generate-cta')).toBeNull();
+            expect(root().querySelector('[data-note="NO_TRANSCRIPT"]')!.textContent).toContain('добавьте расшифровку');
+        });
+
+        it('shows no voice chips when the answer offers none, and no hint about a missing synthesis anywhere', async () => {
+            create(exercise);
+            await ask(parseIntent({ operation: 'REVISE_EXERCISE', spec: { ...clone(examples['specReviseExercise']), instruction: 'Проще' },
+                chips: [{ kind: 'OPERATION', value: 'REVISE_EXERCISE' }, { kind: 'INSTRUCTION', value: 'Проще', maxLength: 2000 }], notes: [] }), 'Проще');
+            expect(root().querySelector('.ask-voice')).toBeNull();
+            expect(root().textContent).not.toContain('Синтез речи');
         });
 
         it('offers only «Изменить запрос» where there is no builder and no editor to open', async () => {

@@ -138,7 +138,7 @@ class GenerationReviewIntegrationTest extends GenerationReviewSupport {
     void aSlotThatIsNotReadyBlocksTheApprovalAndAReadySlotBindsItsAssetToTheMaterial() throws Exception {
         UUID owner = UUID.randomUUID();
         UUID deck = deck(owner);
-        Proposal proposal = proposal(owner, deck, audioSpec("[[fake:audio]] с аудио"));
+        Proposal proposal = proposal(owner, deck, audioSpec("[[fake:audio-hold]] с аудио"));
         assertThat(json(getSession(owner, deck, proposal.session())).path("approvableCount").intValue()).isZero();
 
         MockHttpServletResponse blocked = approve(owner, deck, proposal, UUID.randomUUID());
@@ -201,7 +201,7 @@ class GenerationReviewIntegrationTest extends GenerationReviewSupport {
         UUID deck = deck(owner);
         UUID first = note(owner, deck, "первая заметка");
         UUID second = note(owner, deck, "вторая заметка");
-        UUID audio = note(owner, deck, "[[fake:audio]] третья заметка с аудио");
+        UUID audio = note(owner, deck, "[[fake:audio-hold]] третья заметка с аудио");
         UUID session = start(owner, deck, audioSpec(null, noteSource(first, 0), noteSource(second, 0), noteSource(audio, 0)));
         awaitState(session, "REVIEW");
         List<Proposal> all = proposals(owner, deck, session);
@@ -279,7 +279,7 @@ class GenerationReviewIntegrationTest extends GenerationReviewSupport {
     void handingOffOpensAnOrdinaryDraftWithTheSameDocumentAndTheArtifactNoLongerAcceptsCommands() throws Exception {
         UUID owner = UUID.randomUUID();
         UUID deck = deck(owner);
-        Proposal proposal = proposal(owner, deck, audioSpec("[[fake:audio]] с аудио"));
+        Proposal proposal = proposal(owner, deck, audioSpec("[[fake:audio-hold]] с аудио"));
         UUID command = UUID.randomUUID();
 
         MockHttpServletResponse response = handoff(owner, deck, proposal, command);
@@ -528,11 +528,11 @@ class GenerationReviewIntegrationTest extends GenerationReviewSupport {
     void retryingAStaleArtifactWritesItAgainAgainstTheNewNoteAndAFailedOneNeedsItsPinsToHold() throws Exception {
         UUID owner = UUID.randomUUID();
         UUID deck = deck(owner);
-        UUID note = note(owner, deck, "[[fake:audio]] первая версия заметки");
+        UUID note = note(owner, deck, "[[fake:audio-hold]] первая версия заметки");
         Proposal proposal = proposal(owner, deck, audioSpec(null, noteSource(note, 0)));
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.generation_media_slot WHERE artifact_id=:id").param("id", proposal.artifact())
                 .query(Integer.class).single()).isEqualTo(1);
-        jdbc.sql("UPDATE app_learning.capture_note SET row_version=row_version+1,note_text='[[fake:audio]] вторая версия',"
+        jdbc.sql("UPDATE app_learning.capture_note SET row_version=row_version+1,note_text='[[fake:audio-hold]] вторая версия',"
                 + "updated_at=CURRENT_TIMESTAMP WHERE note_id=:id").param("id", note).update();
         problem(approve(owner, deck, proposal, UUID.randomUUID()), 409, "GENERATION_STATE_CONFLICT");
         Proposal stale = fresh(owner, deck, proposal);
@@ -580,7 +580,7 @@ class GenerationReviewIntegrationTest extends GenerationReviewSupport {
         UUID owner = UUID.randomUUID();
         UUID deck = deck(owner);
         UUID first = note(owner, deck, "первая");
-        UUID second = note(owner, deck, "[[fake:audio]] вторая с аудио");
+        UUID second = note(owner, deck, "[[fake:audio-hold]] вторая с аудио");
         UUID session = start(owner, deck, audioSpec(null, noteSource(first, 0), noteSource(second, 0)));
         awaitState(session, "REVIEW");
         List<Proposal> all = proposals(owner, deck, session);
@@ -608,9 +608,9 @@ class GenerationReviewIntegrationTest extends GenerationReviewSupport {
                 .query(Integer.class).single()).isEqualTo(1);
         assertThat(jdbc.sql("SELECT state FROM app_learning.media_asset WHERE asset_id=:id").param("id", asset).query(String.class).single())
                 .isEqualTo("READY");
-        // the session's hold ended with the session; what it had debited stays in the ledger
+        // the session's hold ended with the session; what it had debited stays in the ledger (two materials and the clip of the one with audio)
         assertThat(reservationsOf(owner)).doesNotContain("ACTIVE");
-        assertThat(debits(owner)).isEqualTo(20);
+        assertThat(debits(owner)).isEqualTo(30);
     }
 
     @Test
@@ -778,12 +778,14 @@ class GenerationReviewIntegrationTest extends GenerationReviewSupport {
     void handingOffStopsTheArtifactsMediaWorkAndSettlesItsOpenSlots() throws Exception {
         UUID owner = UUID.randomUUID();
         UUID deck = deck(owner);
-        Proposal proposal = proposal(owner, deck, audioSpec("[[fake:audio]] с аудио"));
-        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.generation_step WHERE artifact_id=:id AND state='READY' AND kind='TTS'")
+        Proposal proposal = proposal(owner, deck, audioSpec("[[fake:audio-hold]] с аудио"));
+        assertThat(speech.entered.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.generation_step WHERE artifact_id=:id AND state='RUNNING' AND kind='TTS'")
                 .param("id", proposal.artifact()).query(Integer.class).single()).isEqualTo(1);
         assertThat(handoff(owner, deck, proposal, UUID.randomUUID()).getStatus()).isEqualTo(201);
-        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.generation_step WHERE artifact_id=:id AND state='CANCELLED' AND kind='TTS'")
-                .param("id", proposal.artifact()).query(Integer.class).single()).isEqualTo(1);
+        // the running step learns of it from its heartbeat, which aborts the held provider call
+        await("the speech step to end cancelled", java.time.Duration.ofSeconds(15), () -> jdbc.sql("SELECT count(*) FROM app_learning.generation_step "
+                + "WHERE artifact_id=:id AND state='CANCELLED' AND kind='TTS'").param("id", proposal.artifact()).query(Integer.class).single() == 1);
         assertThat(jdbc.sql("SELECT state||':'||error_code FROM app_learning.generation_media_slot WHERE artifact_id=:id")
                 .param("id", proposal.artifact()).query(String.class).single()).isEqualTo("FAILED:CANCELLED");
         List<String> slotEvents = new ArrayList<>();

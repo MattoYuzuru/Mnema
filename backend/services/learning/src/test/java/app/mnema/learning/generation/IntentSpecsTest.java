@@ -21,8 +21,9 @@ class IntentSpecsTest {
     private static final UUID EXERCISE = UUID.fromString("66666666-6666-4666-8666-666666666666");
     private static final UUID EXERCISE_REVISION = UUID.fromString("77777777-7777-4777-8777-777777777777");
     private static final IntentSpecs.Context MATERIAL = IntentSpecs.Context.material(MEMBER, REVISION);
-    private static final IntentSpecs.Context SPOKEN = IntentSpecs.Context.exercise(EXERCISE, EXERCISE_REVISION, MEMBER, REVISION, true);
-    private static final IntentSpecs.Context SILENT = IntentSpecs.Context.exercise(EXERCISE, EXERCISE_REVISION, MEMBER, REVISION, false);
+    private static final IntentSpecs.Context SPOKEN = IntentSpecs.Context.exercise(EXERCISE, EXERCISE_REVISION, MEMBER, REVISION, true, true);
+    private static final IntentSpecs.Context MUTE = IntentSpecs.Context.exercise(EXERCISE, EXERCISE_REVISION, MEMBER, REVISION, true, false);
+    private static final IntentSpecs.Context SILENT = IntentSpecs.Context.exercise(EXERCISE, EXERCISE_REVISION, MEMBER, REVISION, false, false);
 
     private static IntentSpecs.Answer read(String json) throws Exception {
         return IntentSpecs.read(JSON.readTree(json)).orElseThrow();
@@ -138,6 +139,10 @@ class IntentSpecsTest {
         IntentSpecs.Built noAudio = IntentSpecs.build(SILENT, read(voice), 10, true);
         assertThat(noAudio.operation()).isEqualTo("UNSUPPORTED");
         assertThat(noAudio.notes().get(0).path("code").stringValue(null)).isEqualTo("NO_AUDIO");
+        // a recording without a transcript cannot be spoken again: no voice, a note of its own
+        IntentSpecs.Built mute = IntentSpecs.build(MUTE, read(voice), 10, true);
+        assertThat(mute.operation()).isEqualTo("UNSUPPORTED");
+        assertThat(mute.notes().get(0).path("code").stringValue(null)).isEqualTo("NO_TRANSCRIPT");
         IntentSpecs.Built unavailable = IntentSpecs.build(SPOKEN, read(voice), 10, false);
         assertThat(unavailable.operation()).isEqualTo("UNSUPPORTED");
         assertThat(unavailable.notes().get(0).path("code").stringValue(null)).isEqualTo("MEDIA_UNAVAILABLE");

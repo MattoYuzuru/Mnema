@@ -51,7 +51,6 @@
           @if (voiceChip(); as chip) {
             <ul class="result-chips" aria-label="Что изменено в упражнении"><li class="result-chip" data-voice-chip>{{ chip }}</li></ul>
           }
-          @if (stubNoteShown()) { <p class="result-note" data-stub-note>{{ stubNote }}</p> }
           <div class="result-actions">
             @if (changedFromOriginal()) {
               <button class="button primary" type="button" data-keep [attr.aria-disabled]="(busy() || !canApprove() || !shownIsCurrent()) ? 'true' : null"

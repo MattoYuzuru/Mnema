@@ -50,10 +50,15 @@ class GenerationIntentIntegrationTest extends GenerationEditsSupport {
     }
 
     private UUID audioExercise(StudyFixtures.Material material, UUID owner) {
+        return audioExercise(material, owner, "Произношение", "Озвучка");
+    }
+
+    /** An exercise whose audio has the given transcript (null: a recording of the owner's own, which cannot be spoken again). */
+    private UUID audioExercise(StudyFixtures.Material material, UUID owner, String transcript, String title) {
         UUID asset = fixtures.readyAsset(owner, "audio/mpeg");
         ObjectNode exercise = fixtures.freeResponse(material, StudyFixtures.blocks(StudyFixtures.text("Как это произносится?"),
-                StudyFixtures.audio(asset, "Произношение", null)), StudyFixtures.blocks(), "ответ");
-        return UUID.fromString(fixtures.publish(material, exercise, "Озвучка").path("exerciseId").stringValue(null));
+                StudyFixtures.audio(asset, "Запись", transcript)), StudyFixtures.blocks(), "ответ");
+        return UUID.fromString(fixtures.publish(material, exercise, title).path("exerciseId").stringValue(null));
     }
 
     private UUID plainExercise(StudyFixtures.Material material) {
@@ -221,6 +226,13 @@ class GenerationIntentIntegrationTest extends GenerationEditsSupport {
         assertThat(noAudio.path("operation").stringValue(null)).isEqualTo("UNSUPPORTED");
         assertThat(noAudio.path("spec").isNull()).isTrue();
         assertThat(noAudio.path("notes").get(0).path("code").stringValue(null)).isEqualTo("NO_AUDIO");
+        // audio without a transcript is a recording: it cannot be spoken again, so no voice is offered and the note says why
+        UUID recording = audioExercise(material, owner, null, "Запись без текста");
+        JsonNode noTranscript = answered(owner, deck, exercise(recording), "Замени аудио на мужской голос");
+        assertThat(noTranscript.path("operation").stringValue(null)).isEqualTo("UNSUPPORTED");
+        assertThat(noTranscript.path("spec").isNull()).isTrue();
+        assertThat(noTranscript.path("chips")).isEmpty();
+        assertThat(noTranscript.path("notes").get(0).path("code").stringValue(null)).isEqualTo("NO_TRANSCRIPT");
         JsonNode fromMaterial = answered(owner, deck, material(material.member()), "Замени аудио на мужской голос");
         assertThat(fromMaterial.path("operation").stringValue(null)).isEqualTo("UNSUPPORTED");
         assertThat(fromMaterial.path("notes").get(0).path("code").stringValue(null)).isEqualTo("NEEDS_EXERCISE");

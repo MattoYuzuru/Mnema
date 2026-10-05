@@ -272,8 +272,9 @@ by the owning task with a note here.
     - **Actions.** `REWRITE` (optional `preset` and `instruction`) and `FREE` (`instruction` required) run the EDIT step; `REMOVE_MEDIA` is deterministic and free (media
       nodes only); `IMAGE_SEARCH` (AI-10, #296) targets one image node of mode `search`, takes an optional query (≤200) and runs one `IMAGE_SEARCH` step that stages up to
       4 new licensed candidates and applies the first one in a revision `MEDIA` (`selectMediaCandidate` switches among the slot's candidates, revert is «Вернуть»);
-      `IMAGE_GENERATE` and `AUDIO_REGENERATE` of a material need blocks of their kind and answer `409 CAPABILITY_UNAVAILABLE` (the capability gate's
-      reason, `PROVIDER_NOT_CONFIGURED` when the gate passes) until AI-09 provides the executor. An `EXERCISE` artifact
+      `AUDIO_REGENERATE` (AI-09, #297) targets one audio node, takes an optional `voice` and re-synthesises it through the speech cache (a redo in the
+      same voice is a new take, debited; a cache hit is free) into a new asset in a revision `MEDIA`; `IMAGE_GENERATE` answers `409 CAPABILITY_UNAVAILABLE`
+      (the capability gate's reason, `PROVIDER_NOT_CONFIGURED` when the gate passes) until image generation exists. An `EXERCISE` artifact
       of an `EXERCISES` session refuses every edit and every revert with `409 GENERATION_STATE_CONFLICT` (`ILLEGAL_STATE`); the exercise of a `REVISE_EXERCISE` session is edited and reverted (decision 16). An edit is allowed in a `RUNNING` or `REVIEW` session
       on a `PROPOSED` artifact (a `CANCELLED` session accepts `REMOVE_MEDIA` only); an artifact with a turn in flight is `REVISING`: a second edit is `409 EDIT_IN_PROGRESS`
       with the running turn's `turnId`, and approve, reject, hand-off and revert are `ILLEGAL_STATE`.
@@ -420,7 +421,7 @@ Resolved in favour of the architecture document unless stated. These are recorde
 ## Open questions
 
 - Whether `GET /api/capabilities` should add per-capability usage hints.
-- Media redo of a block in place (`IMAGE_GENERATE`, and `AUDIO_REGENERATE` of a material): whether the asset is kept or replaced when the slot spec is unchanged (AI-09). `IMAGE_SEARCH` always stages new assets (AI-10). A rewrite never touches media (decision 15). The redo of an exercise's audio is the Stub today (decision 16); real synthesis, the replacement of the asset in the block and the audio acceptance are AI-09 (#297).
+- Media redo of a block in place: `IMAGE_SEARCH` (AI-10) and `AUDIO_REGENERATE` (AI-09) always produce a new asset in a new revision; `IMAGE_GENERATE` is not available yet. A rewrite never touches media (decision 15). 
 
 ## Verification
 

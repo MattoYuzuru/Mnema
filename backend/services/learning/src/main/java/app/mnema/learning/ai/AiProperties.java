@@ -18,7 +18,7 @@ import java.util.Map;
  * never include a value.
  *
  * @param provider {@code stub} forces the deterministic Stub on every text route (local/CI); empty uses the routes
- * @param providers by provider id: {@code deepseek}, {@code gigachat}, {@code openrouter}
+ * @param providers by provider id: {@code deepseek}, {@code gigachat}, {@code openrouter}, {@code google} and {@code yandex} (speech)
  * @param egress the stateless HTTP CONNECT proxy used by providers marked {@code egress=proxy}
  * @param models the price table; every route entry must name a listed model
  */
@@ -57,9 +57,12 @@ public record AiProperties(
     /** Ordered {@code provider:model} lists; the first usable entry wins, the next ones are fallbacks. */
     public record Routes(@DefaultValue List<String> textFast, @DefaultValue List<String> textStrong,
                          @DefaultValue List<String> assess, @DefaultValue("PT8S") Duration assessAttemptCap,
-                         @DefaultValue List<String> plan, @DefaultValue List<String> planStrong) {
+                         @DefaultValue List<String> plan, @DefaultValue List<String> planStrong,
+                         @DefaultValue List<String> tts, @DefaultValue List<String> ttsRu) {
         @ConstructorBinding
         public Routes {
+            tts = tts == null ? List.of() : tts.stream().filter(value -> !value.isBlank()).toList();
+            ttsRu = ttsRu == null ? List.of() : ttsRu.stream().filter(value -> !value.isBlank()).toList();
             textFast = textFast == null ? List.of() : List.copyOf(textFast);
             textStrong = textStrong == null ? List.of() : List.copyOf(textStrong);
             assess = assess == null ? List.of() : List.copyOf(assess);
@@ -68,6 +71,11 @@ public record AiProperties(
             if (assessAttemptCap == null || assessAttemptCap.isNegative() || assessAttemptCap.isZero()) {
                 throw new IllegalArgumentException("Invalid assess attempt cap");
             }
+        }
+
+        public Routes(List<String> textFast, List<String> textStrong, List<String> assess, Duration assessAttemptCap,
+                      List<String> plan, List<String> planStrong) {
+            this(textFast, textStrong, assess, assessAttemptCap, plan, planStrong, List.of(), List.of());
         }
 
         public Routes(List<String> textFast, List<String> textStrong, List<String> assess, Duration assessAttemptCap) {

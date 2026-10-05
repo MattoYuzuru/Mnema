@@ -7,9 +7,9 @@ import { ExercisePreviewHostComponent } from '../authoring/exercise-preview-host
 import { PreviewPresentation } from '../authoring/exercise-preview.models';
 import { EditHistoryComponent } from './edit-history.component';
 import { ExerciseProposal, proposalPresentation, readProposal } from './exercise-proposal';
-import { audioAssetIds, exerciseTextLines } from './exercise-text';
+import { exerciseTextLines } from './exercise-text';
 import { mechanicName } from './exercise-builder';
-import { STUB_VOICE_NOTE, artifactStatus, exerciseFailureReason, failureNote, turnFailureReason, voiceChipText } from './generation-view';
+import { artifactStatus, exerciseFailureReason, failureNote, turnFailureReason, voiceRedoneText } from './generation-view';
 import { ArtifactSummary, ArtifactTurn, SessionState, SpeechVoice, allows, isApprovable } from './generation.models';
 import { DiffParagraph, diffLines, hasChanges } from './word-diff';
 import { DetailEntry, WorkshopSessionStore } from './workshop-session.store';
@@ -23,8 +23,8 @@ type DiffState =
 /**
  * The result of a `REVISE_EXERCISE` session (AI-16, #294): the exercise as Мнема changed it, playable in the same compact preview as a
  * proposal of a batch, with the card that decides. The text change is a word diff of what the learner reads and the answers; a voice
- * change is a chip, «Голос: мужской». Until real synthesis (AI-09) a voice change runs on a Stub that only records the voice, so when
- * the audio is the one the exercise already had the card says so instead of implying a new recording. «Оставить» saves the next revision of
+ * change is a chip, «Озвучено заново: мужской» (AI-09: a redo makes new audio and the exercise revision uses it, so the preview plays the new
+ * recording). «Оставить» saves the next revision of
  * the same exercise (the old one stays in the history), «Вернуть» goes back to the version the revision started from, «Ещё раз» asks again.
  */
 @Component({
@@ -83,7 +83,6 @@ export class ReviseExerciseResultComponent {
     /** The voice of the revision on screen: what its audio slots record (a revert to the original goes back to none). */
     protected readonly voice = computed<SpeechVoice | null>(() => this.detail()?.mediaSlots.find(slot => slot.voice !== null)?.voice ?? null);
     /** The audio did not change, only the voice was recorded: the same assets as in the exercise the revision started from. */
-    protected readonly audioUnchanged = signal(false);
     protected readonly failure = computed(() => {
         const turn = this.lastTurn();
         if (turn === null || (turn.status !== 'FAILED' && turn.status !== 'CANCELLED') || this.artifact().state !== 'PROPOSED') return null;
@@ -109,22 +108,20 @@ export class ReviseExerciseResultComponent {
         return !this.shownIsCurrent() || original === null || proposal === null || proposal.revisionId === original ? null : `${original}:${proposal.revisionId}`;
     });
     protected readonly approveWait = computed(() => this.artifact().state === 'PROPOSED' && !this.shownIsCurrent() ? 'Упражнение обновилось. Загружаем новую версию…' : null);
-    /** «Голос: мужской» when the revision on screen records a voice. */
+    /** «Озвучено заново: мужской» when the revision on screen was voiced again: the exercise has new audio, and the preview plays it. */
     protected readonly voiceChip = computed(() => {
         const voice = this.voice();
-        return voice === null || !this.changedFromOriginal() ? null : voiceChipText(voice);
+        return voice === null || !this.changedFromOriginal() ? null : voiceRedoneText(voice);
     });
     /** «Ещё раз» of a request for the text and the voice repeats the text only (the voice is already recorded). */
     protected readonly repeatNote = computed(() => this.textTurn() !== null && this.voiceTurn() !== null && this.canAskAgain()
         ? '«Ещё раз» повторит только правку текста: голос уже записан.' : null);
-    protected readonly stubNote = STUB_VOICE_NOTE;
-    protected readonly stubNoteShown = computed(() => this.voiceChip() !== null && this.audioUnchanged());
 
     constructor() {
         effect(() => {
             const key = this.diffKey();
             untracked(() => {
-                if (key === null) { this.diffToken++; this.diff.set({ phase: 'idle' }); this.audioUnchanged.set(false); return; }
+                if (key === null) { this.diffToken++; this.diff.set({ phase: 'idle' }); return; }
                 void this.compare();
             });
         });
@@ -201,8 +198,5 @@ export class ReviseExerciseResultComponent {
         if (old === null) { this.diff.set({ phase: 'error' }); return; }
         const paragraphs = diffLines(exerciseTextLines(old.exercise, old.quotes), exerciseTextLines(proposal.exercise, proposal.quotes), 'ru');
         this.diff.set({ phase: 'ready', paragraphs, changed: hasChanges(paragraphs) });
-        const was = audioAssetIds(old.exercise);
-        const now = audioAssetIds(proposal.exercise);
-        this.audioUnchanged.set(was.length === now.length && was.every((id, position) => id === now[position]));
     }
 }

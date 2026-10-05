@@ -125,6 +125,14 @@ public final class MediaUploadSettings {
 
     public record ClientPolicy(long maxImageBytes, long maxAudioBytes, long maxVideoBytes) { }
 
+    /**
+     * As {@link #validate} for bytes the server itself obtained: a synthesised clip may also be a PCM WAV (Gemini speech returns nothing else). The
+     * browser allowlist stays as it was; the media worker accepts a WAV source only for an asset of origin {@code generated}.
+     */
+    void validateGenerated(String kind, String mime, long length) {
+        validate(kind, "audio".equals(kind) && "audio/wav".equals(mime) ? "audio/mpeg" : mime, length);
+    }
+
     void validate(String kind, String mime, long length) {
         if (kind == null || mime == null || !TYPES.getOrDefault(kind, Set.of()).contains(mime)
                 || length < 1) throw new InvalidRequestException();

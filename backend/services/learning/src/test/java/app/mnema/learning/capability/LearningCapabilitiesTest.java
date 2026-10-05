@@ -97,6 +97,25 @@ class LearningCapabilitiesTest {
     }
 
     @Test
+    void aSpeechPortWithoutAnyCallableRouteEntryIsNotConfiguredEvenWhenTheFlagIsOn() {
+        var none = new app.mnema.learning.ai.SpeechSynthesis() {
+            @Override public app.mnema.learning.ai.AiResult<Audio> synthesize(Request request) { return null; }
+
+            @Override public java.util.Optional<Identity> identity(String lang, String voice) { return java.util.Optional.empty(); }
+
+            @Override public boolean configured() { return false; }
+        };
+        var factory = new StaticListableBeanFactory();
+        factory.addBean("speechSynthesis", none);
+        LearningCapabilities capabilities = new LearningCapabilities(allOn(), factory.getBeanProvider(SpeechToTextProvider.class), TEXT_AVAILABLE,
+                factory.getBeanProvider(app.mnema.learning.ai.SpeechSynthesis.class), factory.getBeanProvider(ImageSearch.class),
+                factory.getBeanProvider(app.mnema.learning.ai.ImageGeneration.class),
+                factory.getBeanProvider(app.mnema.learning.ai.VideoGeneration.class), factory.getBeanProvider(WebSearch.class));
+        assertThat(capabilities.textToSpeech()).isEqualTo(new LearningCapabilities.Status(false, LearningCapabilities.Reason.PROVIDER_NOT_CONFIGURED));
+        assertThatThrownBy(capabilities::requireTextToSpeech).isInstanceOf(CapabilityUnavailableException.class);
+    }
+
+    @Test
     void aProviderWithoutItsFlagIsStillDisabledAndBothTogetherAreAvailable() {
         LearningCapabilities providerOnly = capabilities(CapabilityFlags.off(), TEXT_AVAILABLE, true, true, true);
         assertThat(providerOnly.aiAssessment().available()).isFalse();

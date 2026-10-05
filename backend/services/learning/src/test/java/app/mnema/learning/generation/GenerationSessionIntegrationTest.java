@@ -387,15 +387,15 @@ class GenerationSessionIntegrationTest extends GenerationIntegrationTest {
     }
 
     @Test
-    void aSessionWithMediaKeepsItsSlotsPendingAndItsMediaStepsUnclaimed() throws Exception {
+    void aSessionWithMediaCreatesItsSlotsAndTheirStepsAndASlotWaitsForItsClipInTheWorkshop() throws Exception {
         UUID owner = UUID.randomUUID();
         UUID deck = deck(owner);
-        tools.jackson.databind.node.ObjectNode spec = spec("[[fake:audio]] с аудио");
+        tools.jackson.databind.node.ObjectNode spec = spec("[[fake:audio-hold]] с аудио");
         ((tools.jackson.databind.node.ObjectNode) spec.path("settings")).putObject("media")
                 .putObject("audio").put("enabled", true).put("lang", "ja");
         UUID session = start(owner, deck, spec);
         awaitState(session, "REVIEW");
-        Thread.sleep(800);
+        assertThat(speech.entered.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
 
         assertThat(artifactStates(session)).containsExactly("PROPOSED");
         JsonNode detail = json(getSession(owner, deck, session));
@@ -408,25 +408,28 @@ class GenerationSessionIntegrationTest extends GenerationIntegrationTest {
         JsonNode slot = full.path("mediaSlots").get(0);
         assertThat(slot.path("slotKey").stringValue(null)).isEqualTo("a1");
         assertThat(slot.path("kind").stringValue(null)).isEqualTo("AUDIO");
-        assertThat(slot.path("state").stringValue(null)).isEqualTo("PENDING");
+        // the speech executor claimed the step: the slot is being made, the clip is held in the provider call
+        assertThat(slot.path("state").stringValue(null)).isEqualTo("GENERATING");
+        assertThat(slot.path("voice").stringValue(null)).isEqualTo("female");
+        assertThat(slot.path("lang").stringValue(null)).isEqualTo("ja");
         // the node of the document already references the pre-allocated asset
         assertThat(full.path("revision").path("payload").toString()).contains(slot.path("assetId").stringValue(null));
-        // the TTS step exists and no executor claims it before AI-09
         assertThat(jdbc.sql("SELECT state FROM app_learning.generation_step WHERE session_id=:id AND kind='TTS'").param("id", session)
-                .query(String.class).list()).containsExactly("READY");
+                .query(String.class).list()).containsExactly("RUNNING");
         assertThat(json(events(owner, deck, session, "")).toString()).contains("\"type\":\"MEDIA_SLOT_STATE\"");
         // not approvable yet: no ready notification is published for a proposal whose media is still pending
         assertThat(notificationKinds(owner)).isEmpty();
         Set<String> kinds = new HashSet<>();
         json(events(owner, deck, session, "")).path("activeSteps").forEach(step -> kinds.add(step.path("kind").stringValue(null)));
         assertThat(kinds).containsExactly("TTS");
+        speech.release.countDown();
     }
 
     @Test
     void failuresAreAnnouncedOnlyWhenNothingProposedIsStillWaitingForMedia() throws Exception {
         UUID owner = UUID.randomUUID();
         UUID deck = deck(owner);
-        UUID withMedia = note(owner, deck, "[[fake:audio]] с аудио");
+        UUID withMedia = note(owner, deck, "[[fake:audio-hold]] с аудио");
         UUID refused = note(owner, deck, "[[stub:refusal]] отказ");
         tools.jackson.databind.node.ObjectNode spec = spec(null, noteSource(withMedia, 0), noteSource(refused, 0));
         ((tools.jackson.databind.node.ObjectNode) spec.path("settings")).putObject("media").putObject("audio").put("enabled", true).put("lang", "ja");
@@ -436,24 +439,27 @@ class GenerationSessionIntegrationTest extends GenerationIntegrationTest {
         assertThat(artifactStates(session)).containsExactly("PROPOSED", "FAILED");
         // one proposal waits for its audio (not approvable), one failed: not a "failed" session, so no GENERATION_FAILED yet
         assertThat(notificationKinds(owner)).isEmpty();
+        speech.release.countDown();
     }
 
     @Test
     void cancellingSettlesTheMediaSlotsOfTheCancelledStepsAndAnnouncesThem() throws Exception {
         UUID owner = UUID.randomUUID();
         UUID deck = deck(owner);
-        tools.jackson.databind.node.ObjectNode spec = spec("[[fake:audio]] с аудио");
+        tools.jackson.databind.node.ObjectNode spec = spec("[[fake:audio-hold]] с аудио");
         ((tools.jackson.databind.node.ObjectNode) spec.path("settings")).putObject("media").putObject("audio").put("enabled", true).put("lang", "ja");
         UUID session = start(owner, deck, spec);
         awaitState(session, "REVIEW");
+        assertThat(speech.entered.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
 
         assertThat(cancel(owner, deck, session, UUID.randomUUID()).getStatus()).isEqualTo(200);
 
         var slot = jdbc.sql("SELECT state,error_code FROM app_learning.generation_media_slot WHERE session_id=:id").param("id", session)
                 .query((row, ignored) -> row.getString("state") + ":" + row.getString("error_code")).single();
         assertThat(slot).isEqualTo("FAILED:CANCELLED");
-        assertThat(jdbc.sql("SELECT state FROM app_learning.generation_step WHERE session_id=:id AND kind='TTS'").param("id", session)
-                .query(String.class).single()).isEqualTo("CANCELLED");
+        // the running step learns of the cancellation from its heartbeat, which aborts the held provider call
+        await("the speech step to end cancelled", java.time.Duration.ofSeconds(15), () -> jdbc.sql("SELECT state FROM app_learning.generation_step "
+                + "WHERE session_id=:id AND kind='TTS'").param("id", session).query(String.class).single().equals("CANCELLED"));
         JsonNode events = json(events(owner, deck, session, "")).path("events");
         boolean announced = false;
         for (JsonNode event : events) {

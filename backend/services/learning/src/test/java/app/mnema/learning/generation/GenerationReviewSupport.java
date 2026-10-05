@@ -142,21 +142,15 @@ abstract class GenerationReviewSupport extends GenerationIntegrationTest {
         assertThat(json(response).path("code").stringValue(null)).isEqualTo(code);
     }
 
-    /** A READY audio asset under the id the compiler pre-allocated for the slot, held by the session like the media step will. */
-    protected UUID readyAsset(UUID owner, UUID artifact) {
-        var slot = jdbc.sql("SELECT slot_key,node_id,asset_id,session_id FROM app_learning.generation_media_slot WHERE artifact_id=:id")
-                .param("id", artifact).query((row, ignored) -> new UUID[] {row.getObject("node_id", UUID.class),
-                        row.getObject("asset_id", UUID.class), row.getObject("session_id", UUID.class)}).single();
-        jdbc.sql("INSERT INTO app_learning.media_asset(asset_id,owner_id,upload_intent_id,origin,created_at,updated_at) "
-                        + "VALUES (:asset,:owner,gen_random_uuid(),'import',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)")
-                .param("asset", slot[1]).param("owner", owner).update();
-        fixtures.ready(slot[1], "audio/mpeg");
-        jdbc.sql("UPDATE app_learning.generation_media_slot SET state='READY' WHERE artifact_id=:id").param("id", artifact).update();
-        jdbc.sql("INSERT INTO app_learning.generation_media_ref(artifact_id,node_id,session_id,owner_id,asset_id) "
-                        + "VALUES (:artifact,:node,:session,:owner,:asset)")
-                .param("artifact", artifact).param("node", slot[0]).param("session", slot[2]).param("owner", owner)
-                .param("asset", slot[1]).update();
-        return slot[1];
+    /**
+     * The audio clip of the artifact's one slot becomes READY: the speech double releases every held call and the executor makes it, under the id the
+     * compiler pre-allocated for the slot and with the Workshop's hold on it.
+     */
+    protected UUID readyAsset(UUID owner, UUID artifact) throws InterruptedException {
+        speech.release.countDown();
+        await("the audio slot of " + artifact + " to be READY", java.time.Duration.ofSeconds(20), () -> jdbc.sql(
+                "SELECT state FROM app_learning.generation_media_slot WHERE artifact_id=:id").param("id", artifact).query(String.class).single().equals("READY"));
+        return jdbc.sql("SELECT asset_id FROM app_learning.generation_media_slot WHERE artifact_id=:id").param("id", artifact).query(UUID.class).single();
     }
 
     protected List<String> reservationsOf(UUID owner) {

@@ -118,7 +118,7 @@ final class MediaWorkerResult {
     private static boolean sourceMimeAllowed(String kind, String mime) {
         return switch (kind) {
             case "image" -> Set.of("image/jpeg", "image/png", "image/webp", "image/gif").contains(mime);
-            case "audio" -> Set.of("audio/mpeg", "audio/mp4", "audio/webm").contains(mime);
+            case "audio" -> Set.of("audio/mpeg", "audio/mp4", "audio/webm", "audio/wav").contains(mime);
             case "video" -> Set.of("video/mp4", "video/quicktime", "video/webm").contains(mime);
             default -> false;
         };

@@ -165,7 +165,12 @@ class ReviseAdmission {
         UUID sessionId = UUID.randomUUID();
         List<String> audioAssets = new ArrayList<>();
         audioBlocks(exercise.path("content"), audioAssets);
-        if (parsed.hasMedia() && audioAssets.isEmpty()) throw InvalidRequestException.because("TARGET_NO_AUDIO");
+        // the voice is redone by speaking each block's transcript: a block without one (a recording of the owner's own) cannot be, and an exercise with
+        // none has nothing to redo
+        List<tools.jackson.databind.node.ObjectNode> audioNodes = new ArrayList<>();
+        SpeechExecutor.audioBlocks(exercise.path("content"), audioNodes);
+        int speakable = (int) audioNodes.stream().filter(block -> !block.path("transcript").stringValue("").isBlank()).count();
+        if (parsed.hasMedia() && speakable == 0) throw InvalidRequestException.because("TARGET_NO_AUDIO");
         if (parsed.hasInstruction()) {
             // the model is shown the exercise in the output form: one it has no such form for is edited by hand
             Session probe = new Session(sessionId, owner, deckId, ReviseSpec.EXERCISE, "RUNNING", null, spec, null, 0, 0, null, null, null);
@@ -192,7 +197,8 @@ class ReviseAdmission {
         Reservation mediaHold = null;
         int mediaCredits = 0;
         if (parsed.hasMedia()) {
-            mediaCredits = pricing.credits(EditLifecycle.MEDIA_OPERATION);
+            // one clip per speakable block, each debited only when it misses the speech cache (SpeechExecutor)
+            mediaCredits = pricing.credits(EditLifecycle.MEDIA_OPERATION) * speakable;
             mediaHold = ledger.reserve(owner, ReservationScope.TURN, sessionId, mediaTurn, Math.max(1, mediaCredits));
         }
         ArrayNode refs = Json.array().add(itemRef(member, pinned));
@@ -231,13 +237,13 @@ class ReviseAdmission {
                     "edit:" + editTurn);
             if (parsed.hasMedia()) {
                 // the audio is redone on the text as it will be: the media turn starts when the rewrite is applied
-                steps.insertWaiting(mediaStep, sessionId, artifactId, owner, "TTS", "TTS", mediaInput(mediaTurn, parsed.voice(), mediaCredits, mediaHold),
+                steps.insertWaiting(mediaStep, sessionId, artifactId, owner, SpeechExecutor.KIND, "TTS", mediaInput(mediaTurn, parsed.voice(), mediaCredits, mediaHold),
                         "media:" + mediaTurn, editStep);
             }
         } else {
             repository.insertTurn(new Turn(mediaTurn, artifactId, sessionId, owner, "QUEUED", "AUDIO_REGENERATE", null, null, List.of(), mediaStep,
                     null, null, true, null, parsed.voice()));
-            steps.insert(mediaStep, sessionId, artifactId, owner, "TTS", "TTS", mediaInput(mediaTurn, parsed.voice(), mediaCredits, mediaHold),
+            steps.insert(mediaStep, sessionId, artifactId, owner, SpeechExecutor.KIND, "TTS", mediaInput(mediaTurn, parsed.voice(), mediaCredits, mediaHold),
                     "media:" + mediaTurn);
         }
         return started(sessionId, events);

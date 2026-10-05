@@ -10,9 +10,10 @@ import { ToggletipComponent } from '../../shared/toggletip.component';
 import { CAPABILITIES_UNAVAILABLE, Capability, LearningCapabilities } from '../authoring/capabilities-api.service';
 import { AiPromptAsk, AiPromptWindowComponent } from './ai-prompt-window.component';
 import { EditHistoryComponent } from './edit-history.component';
-import { IMAGE_SEARCH_RUNNING, attributionLine, mediaActionReason, slotFailureReason, turnFailureReason } from './generation-view';
+import { AUDIO_RUNNING, IMAGE_SEARCH_RUNNING, attributionLine, audioFailureReason, mediaActionReason, slotFailureReason, synthesizedCaption, turnFailureReason, voiceLabel } from './generation-view';
 import { AnchorRect, placeNear, viewport } from './place-near';
-import { ArtifactDetail, ArtifactSummary, ArtifactTurn, EditAction, ImageCandidate, MediaSlot, SessionState, allows } from './generation.models';
+import { ArtifactDetail, ArtifactSummary, ArtifactTurn, EditAction, ImageCandidate, MediaSlot, SessionState, SpeechVoice, allows } from './generation.models';
+import { AudioRedoPanelComponent } from './audio-redo-panel.component';
 import { ImageSearchPanelComponent } from './image-search-panel.component';
 import { ImageVariantsComponent } from './image-variants.component';
 import { SelectionTarget, clearTarget, endRect, paintTarget, readSelection, runBetween } from './selection-targets';
@@ -43,10 +44,13 @@ interface FailedReview extends ReviewBase {
 type Review = AppliedReview | FailedReview;
 
 /**
- * The inline panel of «Найти похожее» (AI-10, #296), open under one image. `origin` names the control focus returns to; `sent` is set
- * once the server accepted the search: the panel then stays, disabled, until the turn ends.
+ * The inline panel under one image («Найти похожее», AI-10, #296) or one audio («Озвучить заново», AI-09, #297). `origin` names the control
+ * focus returns to; `sent` is set once the server accepted the request: the panel then stays, disabled, until the turn ends.
  */
 interface SearchPanel {
+    readonly kind: 'search' | 'voice';
+    /** The voice the clip has (the panel's preselection); `null` for a search. */
+    readonly voice: SpeechVoice | null;
     readonly nodeId: string;
     readonly query: string;
     readonly origin: string;
@@ -77,7 +81,7 @@ const GROUP_SIZE = { width: 300, height: 64 } as const;
  */
 @Component({
     selector: 'app-proposal-document',
-    imports: [NativeMediaSurfaceComponent, AiPromptWindowComponent, ToggletipComponent, EditHistoryComponent, ImageSearchPanelComponent, ImageVariantsComponent],
+    imports: [NativeMediaSurfaceComponent, AiPromptWindowComponent, ToggletipComponent, EditHistoryComponent, ImageSearchPanelComponent, ImageVariantsComponent, AudioRedoPanelComponent],
     templateUrl: './proposal-document.component.html',
     styleUrls: ['../authoring/authoring-page.css', './proposal-document.component.css'],
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -178,12 +182,24 @@ export class ProposalDocumentComponent {
     /** The image slots of mode `search` of the shown revision by node id (a `generate` slot keeps the actions it had): their candidates, attribution and failure. */
     private readonly slots = computed(() => new Map((this.detail()?.mediaSlots ?? [])
         .filter(slot => slot.kind === 'IMAGE' && slot.mode === 'search' && slot.state !== 'REMOVED').map(slot => [slot.nodeId, slot] as const)));
-    /** The node a search turn is queued or running on: the panel under it waits for the end. */
-    protected readonly searchTurnRunning = computed(() => this.pending()?.action === 'IMAGE_SEARCH');
-    protected readonly searchingNode = computed(() => {
+    /** Speech needs a worker as well: a stopped session takes no redo, and the button says why. */
+    protected readonly voiceAllowed = computed(() => this.sessionState() !== 'CANCELLED' && this.capabilityOf('speech').available);
+    protected readonly voiceReason = computed(() => this.sessionState() === 'CANCELLED'
+        ? 'Работа остановлена: новая озвучка не запустится. Можно убрать блок.' : this.reasonOf('speech'));
+    /** The audio slots of the shown revision by node id: the voice, the language and what became of the clip. */
+    private readonly audioSlots = computed(() => new Map((this.detail()?.mediaSlots ?? [])
+        .filter(slot => slot.kind === 'AUDIO' && slot.state !== 'REMOVED').map(slot => [slot.nodeId, slot] as const)));
+    /** The media turn (a search, or a redo of audio) of this material that is queued or running: the panel under its node waits for the end. */
+    private readonly mediaTurn = computed(() => {
         const turn = this.pending();
-        return turn?.action === 'IMAGE_SEARCH' ? turn.targetNodeIds[0] ?? null : null;
+        return !this.isExercise() && (turn?.action === 'IMAGE_SEARCH' || turn?.action === 'AUDIO_REGENERATE') ? turn : null;
     });
+    /** What the run says while it is going: the image stays where it was, the clip stays playable. */
+    protected readonly runningText = computed(() => {
+        const turn = this.mediaTurn();
+        return turn === null ? null : turn.action === 'IMAGE_SEARCH' ? IMAGE_SEARCH_RUNNING : AUDIO_RUNNING;
+    });
+    protected readonly searchingNode = computed(() => this.mediaTurn()?.targetNodeIds[0] ?? null);
     /** The artifact can go back to another revision (its state and its session's allow it); a command in flight only makes the actions wait. */
     private readonly revertable = computed(() => this.shownIsCurrent() && !this.isExercise()
         && allows(this.sessionState(), this.artifact().state, 'revertArtifact'));
@@ -252,6 +268,10 @@ export class ProposalDocumentComponent {
         for (const [nodeId, slot] of this.slots()) {
             if (slot.attribution !== null || slot.state === 'FAILED' || this.variantsOf(slot).length > 1) ids.add(nodeId);
         }
+        // Under an audio: the caption, what is being made, why it failed.
+        for (const [nodeId, slot] of this.audioSlots()) {
+            if (slot.state !== 'REMOVED') ids.add(nodeId);
+        }
         const panel = this.panel();
         if (panel !== null) ids.add(panel.nodeId);
         return ids;
@@ -268,10 +288,14 @@ export class ProposalDocumentComponent {
         if (review.turn.action === 'IMAGE_SEARCH') {
             return review.turn.status === 'CANCELLED' ? 'Поиск остановлен.' : imageSearchFailure(review.turn.errorCode);
         }
+        if (review.turn.action === 'AUDIO_REGENERATE') return review.turn.status === 'CANCELLED' ? 'Озвучка остановлена.' : 'Не удалось озвучить.';
         return review.turn.status === 'CANCELLED' ? 'Правка остановлена.' : turnFailureReason(review.turn.errorCode);
     });
     /** What did not change when an edit failed: the strip says it in the words of what was asked. */
-    protected readonly unchanged = computed(() => this.review()?.turn.action === 'IMAGE_SEARCH' ? 'Изображение не изменилось' : 'Текст не изменился');
+    protected readonly unchanged = computed(() => {
+        const action = this.review()?.turn.action;
+        return action === 'IMAGE_SEARCH' ? 'Изображение не изменилось' : action === 'AUDIO_REGENERATE' ? 'Запись не изменилась' : 'Текст не изменился';
+    });
 
     /** The last turn, when it failed or was stopped and its strip was not closed: its blocks are still where it asked for them. */
     private readFailure(detail: ArtifactDetail, order: readonly string[]): FailedReview | null {
@@ -322,14 +346,13 @@ export class ProposalDocumentComponent {
         });
         // The end of a search is announced once, and a retry (no panel) gives focus back to what the search made.
         effect(() => {
-            const turn = this.pending();
+            const running = this.mediaTurn();
             const detail = this.detail();
             const retrying = this.retrying();
-            const running = turn?.action === 'IMAGE_SEARCH' ? turn : null;
             const state = this.artifact().state;
             untracked(() => {
                 if (running !== null) { this.watchedTurn = running.turnId; this.announcement.set(''); return; }
-                if (retrying !== null && state !== 'REVISING') { this.retrying.set(null); this.focusAfterSearch(retrying, `retry:${retrying}`); }
+                if (retrying !== null && state !== 'REVISING') { this.retrying.set(null); this.focusAfterSearch(retrying, `retry:${retrying}`, this.slots().has(retrying)); }
                 const id = this.watchedTurn;
                 const done = id === null ? undefined : detail?.turns.find(held => held.turnId === id);
                 if (done === undefined || done.status === 'QUEUED' || done.status === 'RUNNING') return;
@@ -625,6 +648,11 @@ export class ProposalDocumentComponent {
             if (nodeId !== undefined) this.openSearch(nodeId, `again:${nodeId}`, review.turn.instruction ?? '');
             return;
         }
+        if (review.turn.action === 'AUDIO_REGENERATE') {
+            const nodeId = review.range[0] ?? review.turn.targetNodeIds[0];
+            if (nodeId !== undefined) this.openVoice(nodeId, `again:${nodeId}`);
+            return;
+        }
         // The same request on the blocks that are there now (a rewrite is asked again of the rewritten text: it compounds), as a command of
         // its own named by this turn, so an answer that never arrived is repeated, not charged twice.
         const order = this.order();
@@ -676,12 +704,12 @@ export class ProposalDocumentComponent {
         return this.slots().get(id) ?? null;
     }
 
-    /** The slot of an image whose search failed: the frame says why and offers «Повторить», «Заменить» and «Убрать блок». */
     /** Only an image of a `search` slot offers «Найти похожее», its variants and the failed-search actions. */
     protected isSearch(id: string): boolean {
         return this.slots().has(id);
     }
 
+    /** The slot of an image whose search failed: the frame says why and offers «Повторить», «Заменить…» and «Убрать блок». */
     protected failedSlot(id: string): MediaSlot | null {
         const slot = this.slotOf(id);
         return slot !== null && slot.state === 'FAILED' ? slot : null;
@@ -732,7 +760,7 @@ export class ProposalDocumentComponent {
     protected openSearch(id: string, origin: string, query = ''): void {
         if (this.busy() || !this.searchAllowed() || !this.proposed()) return;
         this.panelError.set(null);
-        this.panel.set({ nodeId: id, query, origin, sent: false });
+        this.panel.set({ kind: 'search', voice: null, nodeId: id, query, origin, sent: false });
     }
 
     protected toggleSearch(id: string): void {
@@ -752,7 +780,7 @@ export class ProposalDocumentComponent {
         this.panelError.set(null);
         this.panelSending.set(false);
         if (!focus) return;
-        this.focusAfterSearch(panel.nodeId, panel.origin, panel.sent);
+        this.focusAfterSearch(panel.nodeId, panel.origin, panel.sent && panel.kind === 'search');
     }
 
     /**
@@ -765,7 +793,8 @@ export class ProposalDocumentComponent {
             const root = this.host().nativeElement;
             const wanted = variants ? [`[data-variants="${nodeId}"] input:checked`, `[data-variants="${nodeId}"] summary`] : [];
             // A panel closed without a search goes back to the control it was opened from; a search that ended goes to «Найти похожее».
-            wanted.push(...(variants ? [`[data-focus-key="search:${nodeId}"]`, `[data-focus-key="${origin}"]`] : [`[data-focus-key="${origin}"]`, `[data-focus-key="search:${nodeId}"]`]));
+            wanted.push(...(variants ? [`[data-focus-key="search:${nodeId}"]`, `[data-focus-key="${origin}"]`] : [`[data-focus-key="${origin}"]`, `[data-focus-key="search:${nodeId}"]`]),
+                `[data-focus-key="voice:${nodeId}"]`);
             for (const selector of wanted) {
                 const element = root.querySelector<HTMLElement>(selector);
                 element?.focus();
@@ -776,6 +805,13 @@ export class ProposalDocumentComponent {
     }
 
     private endOfSearch(turn: ArtifactTurn): string {
+        if (turn.action === 'AUDIO_REGENERATE') {
+            if (turn.status === 'APPLIED') {
+                const voice = turn.voice ?? this.audioSlots().get(turn.targetNodeIds[0] ?? '')?.voice ?? null;
+                return voice === null ? 'Готово: новая озвучка.' : `Готово: новая озвучка, ${voiceLabel(voice)}.`;
+            }
+            return `${turn.status === 'CANCELLED' ? 'Озвучка остановлена.' : 'Не удалось озвучить.'} Запись не изменилась, лимит не списан.`;
+        }
         if (turn.status === 'APPLIED') {
             const slot = this.slotOf(turn.targetNodeIds[0] ?? '');
             const count = slot?.candidates.filter(candidate => candidate.state === 'READY').length ?? 0;
@@ -802,6 +838,70 @@ export class ProposalDocumentComponent {
         const at = order.indexOf(id);
         return this.store.edit(this.artifact().artifactId, { action: 'IMAGE_SEARCH', nodeIds: [id], anchorBefore: order[at - 1] ?? null,
             anchorAfter: order[at + 1] ?? null, instruction });
+    }
+
+    // --- Speech (AI-09, #297) ---
+
+    /** The slot of an audio whose synthesis failed: the frame says why and offers «Повторить» and «Убрать блок». */
+    protected failedAudio(id: string): MediaSlot | null {
+        const slot = this.audioSlots().get(id) ?? null;
+        return slot !== null && slot.state === 'FAILED' ? slot : null;
+    }
+
+    protected audioFailureOf(slot: MediaSlot): string {
+        return audioFailureReason(slot.errorCode);
+    }
+
+    /** «Синтезированная речь · женский голос» under a READY clip of the proposal: only here, never on content a learner or reader sees. */
+    protected captionOf(id: string): string | null {
+        const slot = this.audioSlots().get(id);
+        return slot !== undefined && slot.state === 'READY' ? synthesizedCaption(slot.voice) : null;
+    }
+
+    /** A clip that is being made (the initial synthesis of a draft): the paper placeholder says so. */
+    protected audioMaking(id: string): boolean {
+        const state = this.audioSlots().get(id)?.state;
+        return state === 'PENDING' || state === 'GENERATING' || state === 'VERIFYING';
+    }
+
+    protected openVoice(id: string, origin: string): void {
+        if (this.busy() || !this.voiceAllowed() || !this.proposed()) return;
+        this.panelError.set(null);
+        this.panel.set({ kind: 'voice', voice: this.audioSlots().get(id)?.voice ?? 'female', nodeId: id, query: '', origin, sent: false });
+    }
+
+    protected toggleVoice(id: string): void {
+        if (this.panel()?.nodeId === id && !this.panel()!.sent) { this.cancelSearch(); return; }
+        this.openVoice(id, `voice:${id}`);
+    }
+
+    /** «Озвучить»: `voice` is `null` when the owner kept the clip's voice (a new take, the request leaves the voice out). */
+    protected async submitVoice(id: string, voice: SpeechVoice | null): Promise<void> {
+        const panel = this.panel();
+        if (panel === null || panel.nodeId !== id || panel.sent || this.panelSending() || this.busy()) return;
+        this.panelSending.set(true);
+        this.panelError.set(null);
+        const outcome = await this.runVoice(id, voice);
+        if (this.destroyed) return;
+        this.panelSending.set(false);
+        if (outcome.ok) this.panel.update(held => held === null ? null : { ...held, sent: true });
+        else if (!outcome.aborted) this.panelError.set(outcome.message);
+    }
+
+    private runVoice(id: string, voice: SpeechVoice | null): ReturnType<WorkshopSessionStore['edit']> {
+        const order = this.order();
+        const at = order.indexOf(id);
+        return this.store.edit(this.artifact().artifactId, { action: 'AUDIO_REGENERATE', nodeIds: [id], anchorBefore: order[at - 1] ?? null,
+            anchorAfter: order[at + 1] ?? null, ...(voice === null ? {} : { voice }) });
+    }
+
+    /** «Повторить» on a failed clip: the same redo once more, in the slot's voice. */
+    protected async retryVoice(id: string): Promise<void> {
+        if (this.busy() || !this.voiceAllowed()) return;
+        const outcome = await this.runVoice(id, null);
+        if (this.destroyed) return;
+        if (!outcome.ok && !outcome.aborted) this.store.notify(outcome.message);
+        else if (outcome.ok) this.retrying.set(id);
     }
 
     /** «Повторить» on a failed slot: the same search once more, with the slot's own query. */

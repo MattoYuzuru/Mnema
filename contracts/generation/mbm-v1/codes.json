@@ -175,7 +175,7 @@
       "code": "MBM_TOO_MANY_MEDIA",
       "severity": "ERROR",
       "scope": "directive",
-      "rule": "At most 8 media directives per artifact (the media counts declared in the spec cap it lower); the estimate prices only the declared counts."
+      "rule": "At most 8 media directives per artifact, and per kind what the spec declares: one ::audio when audio is on, one ::image mode=\"search\" when image search is on, none of a kind that is off; the estimate prices only the declared counts, so an extra directive of a kind is this error (repairable)."
     },
     {
       "code": "MBM_AUDIO_TEXT_TOO_LONG",

@@ -68,7 +68,7 @@ export interface EditAsk {
     readonly instruction?: string | null;
     /** The edit is on the exercise of a `REVISE_EXERCISE` session (AI-16): there are no blocks, `nodeIds` is empty and the anchors are `null`. */
     readonly exercise?: boolean;
-    /** The voice of an `AUDIO_REGENERATE` of an exercise. */
+    /** The voice of an `AUDIO_REGENERATE`: required for an exercise, optional for the audio of a material (absent keeps the slot's voice). */
     readonly voice?: SpeechVoice | null;
     /**
      * «Ещё раз»: the turn this asks again. The request goes out as a command of its own (its own reservation), named by this turn and
@@ -572,8 +572,7 @@ export class WorkshopSessionStore {
         if (this.isBusy(artifactId)) return refuse('Подождите: предыдущее действие ещё выполняется.');
         // A voice redo of an exercise runs a model-side turn like a rewrite: a cancelled session does not take it.
         // Only REMOVE_MEDIA is deterministic: a search, like a rewrite, needs a worker, so a cancelled session takes none (`editArtifact` notes).
-        const rewrite = ask.action === 'REWRITE' || ask.action === 'FREE' || ask.action === 'IMAGE_SEARCH'
-            || (ask.exercise === true && ask.action === 'AUDIO_REGENERATE');
+        const rewrite = ask.action === 'REWRITE' || ask.action === 'FREE' || ask.action === 'IMAGE_SEARCH' || ask.action === 'AUDIO_REGENERATE';
         if (!allows(session.state, artifact.state, 'editArtifact') || (rewrite && session.state === 'CANCELLED')) {
             return refuse('Сейчас этот материал нельзя править: состояние изменилось.');
         }
@@ -587,7 +586,7 @@ export class WorkshopSessionStore {
                 : [expected, ask.action, ask.preset ?? '', ask.instruction ?? '', ask.voice ?? '', ask.nodeIds.join(',')].join('|');
             const outcome = await this.send('edit', `${artifactId}:${key}`, id => this.api.editArtifact(this.deckId, this.sessionId, artifactId,
                 { expectedRevisionId: expected, action: ask.action, nodeIds: ask.nodeIds, preset: ask.preset ?? null,
-                    instruction: ask.instruction ?? null, ...(ask.exercise === true ? { exercise: true, voice: ask.voice ?? null } : {}) }, id), signal);
+                    instruction: ask.instruction ?? null, ...(ask.exercise === true ? { exercise: true, voice: ask.voice ?? null } : ask.voice != null ? { voice: ask.voice } : {}) }, id), signal);
             if (!outcome.ok) {
                 if (outcome.aborted) {
                     // The server may have taken it: read the truth, and the turn it made, if any.

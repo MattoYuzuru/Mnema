@@ -71,17 +71,3 @@ export function exerciseTextLines(exercise: ExerciseSpec, quotes: Readonly<Recor
     }
     return lines;
 }
-
-/** The asset of every audio block of an exercise, in order: the voice redo of a Stub keeps them, a real synthesis replaces them. */
-export function audioAssetIds(exercise: ExerciseSpec): readonly string[] {
-    const found: string[] = [];
-    const visit = (value: unknown): void => {
-        if (Array.isArray(value)) { value.forEach(visit); return; }
-        if (value === null || typeof value !== 'object') return;
-        const object = value as Record<string, unknown>;
-        if (object['kind'] === 'AUDIO' && typeof object['assetId'] === 'string') found.push(object['assetId']);
-        Object.values(object).forEach(visit);
-    };
-    visit(exercise.content);
-    return found;
-}

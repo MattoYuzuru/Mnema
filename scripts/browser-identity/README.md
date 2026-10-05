@@ -271,6 +271,36 @@ python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend --no
   --authoring --media --generation --only-images
 ```
 
+### Speech synthesis (`--authoring --media --generation`)
+
+`speech.mjs` (#297, AI-09) runs among the Workshop scenarios, in a deck of its own, against the Stub Learning (Stub text provider and the Stub
+speech port: a deterministic WAV tone, no network, no key; `LEARNING_FEATURES_TEXT_TO_SPEECH_ENABLED=true` is set for that instance). It needs
+`--media`: the WAV goes through the real media worker (WAV source -> playback variant).
+
+The composer is driven for real (`Ещё настройки` -> chip `Аудио` -> Enter); the slot goes to READY, the player loads in muted Chrome
+(readyState/duration) and the caption `Синтезированная речь · женский голос` is shown. `Озвучить заново` is reached with Tab and opened with
+Enter: the panel preselects the current voice, the arrow key moves to `Мужской голос`, `Озвучить` is sent by keyboard, the status `Озвучиваю…`
+is recorded, the turn ends APPLIED with a new asset, the strip `Озвучено заново`, the announcement `Готово: новая озвучка, мужской голос.` and
+the caption `… · мужской голос`. `Вернуть` restores the previous asset; a same-voice redo is a new take (the asset changes again). Then
+1440/390/320 px (overflow, 44 px targets, focus back on the trigger after `Отмена`, 2x text), reduced motion, approval and Browse (the audio
+plays and carries no `Синтезированная речь`: no AI marks on published content).
+
+Not covered: the FAILED clip frame (`Повторить / Убрать блок`). The Stub text adapter writes the spoken text itself (the first heading of one
+of five fixed documents), so `[[stub:tts-down]]` cannot be put into it from the composer; it is covered by the backend tests. The scenario
+records a known finding in its evidence (`findings`, `player-2x-text-overflow-320`) instead of failing: the shared audio player
+(`native-media-player`) overflows a 320 px window with 2x root text; the speech UI itself does not.
+
+Screenshots: `workshop-audio-ready-1440.png`, `workshop-audio-panel-{1440,390,320}.png`, `workshop-audio-redone-1440.png`,
+`workshop-audio-undone-1440.png`, `workshop-audio-320-2x-text.png`, `browse-audio-no-mark-1440.png`; failures write
+`failure-speech-<step>.png` and `.txt` (with what the server held).
+
+`--only-speech` (development aid, requires `--generation --media`) runs this scenario alone after the base flow:
+
+```
+python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend --node /opt/homebrew/opt/node@24/bin/node \
+  --authoring --media --generation --only-speech
+```
+
 ### «Попросить Мнему…» (`--authoring --generation`)
 
 `ask-mnema.mjs` (#294, AI-16) runs last among the Workshop scenarios, against the same second Learning (Stub text provider, never a real

@@ -1,0 +1,16 @@
+<div #group class="panel" role="group" aria-label="Озвучить заново" (keydown.escape)="onEscape($any($event))">
+  <fieldset class="voices" [attr.aria-describedby]="describedBy()">
+    <legend>Голос</legend>
+    @for (option of options; track option.value) {
+      <label class="voice"><input type="radio" [name]="name" [value]="option.value" [checked]="chosen() === option.value"
+        [attr.aria-disabled]="pending() ? 'true' : null" (click)="pick($event, option.value)" /><span>{{ option.label }}</span></label>
+    }
+  </fieldset>
+  <p class="panel-hint" [id]="hintId">{{ hint }}</p>
+  <p class="panel-status" role="status">{{ pending() ? running : '' }}</p>
+  <p class="panel-error" [id]="errorId" aria-live="polite">{{ error() }}</p>
+  <div class="panel-actions">
+    <button type="button" class="panel-button primary" [attr.aria-disabled]="pending() ? 'true' : null" (click)="send()">Озвучить</button>
+    <button type="button" class="panel-button" [attr.aria-disabled]="pending() ? 'true' : null" (click)="cancel()">Отмена</button>
+  </div>
+</div>

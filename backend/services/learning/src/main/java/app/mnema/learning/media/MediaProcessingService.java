@@ -107,6 +107,10 @@ final class MediaProcessingService {
                     maxDuration);
             var result = MediaWorkerResult.read(job.resolve("output"), claim.assetId(), claim.generation(),
                     claim.kind(), claim.declaredLength(), sha, maxDuration);
+            // a PCM WAV source is accepted for what the server synthesised itself (#297), never for a browser upload
+            if (result.source().mimeType().equals("audio/wav") && !repository.generated(claim.assetId())) {
+                throw new MediaProcessingRejectedException("unsupported_audio");
+            }
             if (lost.get()) return;
             var variants = new ArrayList<MediaProcessingRepository.Variant>();
             for (var variant : result.variants()) {

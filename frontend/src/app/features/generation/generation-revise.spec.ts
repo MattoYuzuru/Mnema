@@ -9,7 +9,7 @@ import { IntentContext, parseIntent, serializeIntentRequest } from './generation
 import { readProblem } from './generation-problem';
 import { clone, examples, httpContract, ids, pathOf, privateHeaders, problemResponse } from './generation-test-data';
 import {
-    STUB_VOICE_NOTE, describeTurnAsk, editOutcomeNote, intentProblemMessage, reviseStartMessage, reviseSummary, voiceChipText, waitText, workshopHeading
+    describeTurnAsk, editOutcomeNote, intentProblemMessage, reviseStartMessage, reviseSummary, voiceChipText, voiceRedoneText, waitText, workshopHeading
 } from './generation-view';
 import {
     ArtifactSummary, parseArtifactDetail, parseSessionDetail, parseTurn, serializeEdit, serializeSpec
@@ -187,8 +187,13 @@ describe('REVISE_* specs, exercise edits and the intent (AI-16, contracts/genera
             expect(() => parseTurn({ ...examples['turnQueued'], voice: 'robot' })).toThrow(AuthoringProtocolError);
             const detail = clone(examples['artifactDetailItem']);
             detail.mediaSlots[0].voice = 'female';
-            expect(parseArtifactDetail(detail).mediaSlots[0]!.voice).toBe('female');
-            expect(parseArtifactDetail(examples['artifactDetailItem']).mediaSlots[0]!.voice).toBeNull();
+            detail.mediaSlots[0].voice = 'male';
+            expect(parseArtifactDetail(detail).mediaSlots[0]!.voice).toBe('male');
+            // The audio of the contract's material has its voice and language (AI-09); an older answer has neither.
+            expect(parseArtifactDetail(examples['artifactDetailItem']).mediaSlots[0]).toMatchObject({ voice: 'female', lang: 'ja' });
+            delete detail.mediaSlots[0].voice;
+            delete detail.mediaSlots[0].lang;
+            expect(parseArtifactDetail(detail).mediaSlots[0]).toMatchObject({ voice: null, lang: null });
         });
 
         it('echoes what a revision was asked in the session: the instruction and the voice', () => {
@@ -261,6 +266,8 @@ describe('REVISE_* specs, exercise edits and the intent (AI-16, contracts/genera
             for (const reason of ['TARGET_UNSUPPORTED_BLOCK', 'TARGET_PERSONAL_DATA', 'TARGET_MEDIA_ONLY', 'TARGET_NO_AUDIO']) {
                 expect(say('REVISE_ITEM', 400, { code: 'INVALID_REQUEST', reason }), reason).toMatch(/[А-Яа-я]/u);
             }
+            expect(say('REVISE_EXERCISE', 400, { code: 'INVALID_REQUEST', reason: 'TARGET_NO_AUDIO' }))
+                .toBe('Озвучить заново можно только аудио с текстом: добавьте расшифровку к записи в упражнении.');
             expect(say('REVISE_ITEM', 422, { code: 'RESOURCE_LIMIT_EXCEEDED', limit: 'EDIT_TARGET_SIZE' })).toContain('слишком длинный');
             expect(say('REVISE_EXERCISE', 409, { code: 'CAPABILITY_UNAVAILABLE', capability: 'textToSpeech' })).toContain('Озвучивание пока недоступно');
             expect(say('REVISE_ITEM', 409, { code: 'SOURCE_UNAVAILABLE' })).toContain('Материал уже изменился');
@@ -277,12 +284,12 @@ describe('REVISE_* specs, exercise edits and the intent (AI-16, contracts/genera
             expect(workshopHeading('MATERIALS')).toBe('Мастерская');
             expect(voiceChipText('male')).toBe('Голос: мужской');
             expect(voiceChipText('female')).toBe('Голос: женский');
-            expect(STUB_VOICE_NOTE).toContain('Озвучка обновится, когда подключим синтез речи');
+            expect(voiceRedoneText('male')).toBe('Озвучено заново: мужской');
             expect(describeTurnAsk({ action: 'AUDIO_REGENERATE', preset: null, instruction: null, voice: 'male' })).toBe('Озвучка заново: мужской голос');
             expect(describeTurnAsk({ action: 'AUDIO_REGENERATE', preset: null, instruction: null })).toBe('Озвучка заново');
-            expect(editOutcomeNote('APPLIED', 'AUDIO_REGENERATE', true)).toBe('Голос записан.');
+            expect(editOutcomeNote('APPLIED', 'AUDIO_REGENERATE', true)).toBe('Озвучено заново.');
             expect(editOutcomeNote('APPLIED', 'FREE', true)).toBe('Мнема переписала упражнение.');
-            expect(editOutcomeNote('FAILED', 'AUDIO_REGENERATE', true)).toBe('Не удалось сменить голос.');
+            expect(editOutcomeNote('FAILED', 'AUDIO_REGENERATE', true)).toBe('Не удалось озвучить: запись не изменилась.');
             expect(editOutcomeNote('FAILED', 'FREE', true)).toContain('упражнение');
             expect(editOutcomeNote('CANCELLED', 'FREE', true)).toContain('упражнение');
             const artifact = (state: string) => ({ state }) as ArtifactSummary;

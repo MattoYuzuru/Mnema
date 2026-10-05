@@ -185,51 +185,6 @@ class EditLifecycle {
     }
 
     /**
-     * The one result transaction of a media turn of an exercise (the Stub speech executor, #294): the turn's hold is released unspent
-     * (nothing was synthesized, so nothing is debited), a new revision (cause MEDIA) carries the same exercise, every audio slot is READY
-     * on the asset it already had with {@code voice} recorded in its spec, the turn is APPLIED and the artifact PROPOSED. Returns false,
-     * writing nothing, when the lease token no longer holds.
-     */
-    @Transactional
-    boolean succeedMedia(StepClaim claim, String voice, String modelRoute) {
-        Tx tx = lifecycle.lock(claim.sessionId());
-        if (tx == null) return false;
-        Optional<Step> held = steps.lockHeld(claim.stepId(), claim.token());
-        if (held.isEmpty()) return false;
-        Turn turn = turn(held.get());
-        Artifact artifact = repository.artifact(claim.sessionId(), claim.artifactId()).orElse(null);
-        if (held.get().cancelRequested() || turn == null || !turn.open() || artifact == null || !artifact.state().equals("REVISING")
-                || !SessionLifecycle.runnable(tx.session)) {
-            steps.finish(claim.stepId(), "CANCELLED", null, null);
-            if (turn != null && turn.open() && artifact != null) cancelTurn(tx, held.get(), turn, artifact);
-            return false;
-        }
-        Revision current = repository.revision(artifact.artifactId(), artifact.currentRevisionId()).orElseThrow();
-        release(tx, reservation(held.get()));
-        UUID revisionId = UUID.randomUUID();
-        int revisionNo = artifact.revisionCount() + 1;
-        repository.insertRevision(new Revision(revisionId, artifact.artifactId(), revisionNo, "MEDIA", current.payload(), current.handles(),
-                current.promptVersion(), modelRoute, current.validation(), Instant.now()), tx.session.sessionId(), tx.session.ownerId());
-        repository.attachAllSlots(artifact.artifactId(), revisionId);
-        List<Rows.EventDraft> slotEvents = new ArrayList<>();
-        for (Slot slot : repository.slotsOf(artifact.artifactId())) {
-            if (!slot.kind().equals("AUDIO") || slot.state().equals("REMOVED")) continue;
-            ObjectNode spec = Json.object().put("mode", "existing").put("voice", voice);
-            repository.readySlot(artifact.artifactId(), slot.slotKey(), spec, slot.assetId());
-            slotEvents.add(SessionLifecycle.slotEvent(artifact.artifactId(), slot.slotKey(), slot.kind(), "READY", slot.assetId()));
-        }
-        repository.updateTurn(turn.turnId(), "APPLIED", revisionId, null);
-        steps.finish(claim.stepId(), "SUCCEEDED", null, revisionId.toString());
-        Artifact proposed = repository.transition(artifact, "PROPOSED", null, revisionId, null, revisionNo);
-        tx.events.add(SessionLifecycle.artifactEvent(proposed));
-        tx.events.addAll(slotEvents);
-        tx.events.add(lifecycle.usageEvent(tx.session, null));
-        lifecycle.settleRevision(tx);
-        lifecycle.flush(tx);
-        return true;
-    }
-
-    /**
      * After the current revision of {@code artifact} changed to {@code newRevision}, whose top-level blocks are {@code present}: the
      * slots whose node is gone become REMOVED (the hold on their assets ends and their media steps stop) and the ones whose node is
      * there follow the new revision. With {@code restore} (a revert) a slot that was REMOVED but whose node is back is FAILED

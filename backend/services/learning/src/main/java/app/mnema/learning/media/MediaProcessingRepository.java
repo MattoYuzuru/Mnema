@@ -147,6 +147,13 @@ class MediaProcessingRepository {
         return true;
     }
 
+    /** Whether the asset is one the server itself staged (origin {@code generated}); only those may carry a WAV source. */
+    @Transactional(readOnly = true)
+    boolean generated(UUID asset) {
+        return jdbc.sql("SELECT origin FROM app_learning.media_asset WHERE asset_id=:asset").param("asset", asset).query(String.class).optional()
+                .filter("generated"::equals).isPresent();
+    }
+
     /** Owner retries the preserved sealed bytes after transient failures; no new upload is needed. */
     @Transactional
     void retryPreserved(UUID owner, UUID asset, long generation) {

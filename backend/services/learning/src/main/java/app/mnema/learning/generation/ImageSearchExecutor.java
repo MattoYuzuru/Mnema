@@ -12,7 +12,6 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
-import tools.jackson.databind.JsonNode;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -78,11 +77,6 @@ class ImageSearchExecutor implements StepExecutor {
     @Override public String kind() { return KIND; }
 
     @Override public AiCapability capability() { return AiCapability.IMAGE_SEARCH; }
-
-    /** The initial step of a slot, as opposed to the step of a turn. */
-    static boolean isSlotStep(String kind, JsonNode input) {
-        return KIND.equals(kind) && !input.has("turnId");
-    }
 
     @Override
     public void execute(StepClaim claim, StepControl control) {

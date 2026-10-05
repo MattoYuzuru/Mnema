@@ -832,7 +832,11 @@ describe('ProposalDocumentComponent', () => {
             store.edit.mockResolvedValue({ ok: true, turn: parseTurn() });
             [...group('audio')!.querySelectorAll('button')].find(button => button.textContent!.trim() === 'Озвучить заново')!.click();
             await settle();
-            expect(store.edit).toHaveBeenLastCalledWith(ids.first, expect.objectContaining({ action: 'AUDIO_REGENERATE', nodeIds: [newId(5)] }));
+            // The audio too has its own panel; «Озвучить» in the voice it has sends no voice.
+            expect(root().querySelector('app-audio-redo-panel')).not.toBeNull();
+            [...root().querySelectorAll<HTMLButtonElement>('app-audio-redo-panel button')].find(button => button.textContent!.trim() === 'Озвучить')!.click();
+            await settle();
+            expect(store.edit).toHaveBeenLastCalledWith(ids.first, { action: 'AUDIO_REGENERATE', nodeIds: [newId(5)], anchorBefore: newId(4), anchorAfter: newId(6) });
         });
 
         it('offers no search under an image that is not a search slot (generate, or no slot at all), and keeps its other actions', async () => {
@@ -1303,6 +1307,297 @@ describe('ProposalDocumentComponent', () => {
                 expect(names()).toEqual(['Повторить', 'Убрать блок']);
                 expect(frame()!.querySelector('.media-unavailable button')!.getAttribute('aria-disabled')).toBe('true');
                 expect(frame()!.querySelector('.bubble')!.textContent).toContain('сейчас временно недоступно');
+            });
+        });
+    });
+    describe('speech (AI-09, #297)', () => {
+        const AUDIO = newId(5);
+        const audioSlot = (change: (slot: any) => void = () => undefined) => {
+            const slot = clone(examples['artifactDetailItem']).mediaSlots[0];
+            slot.nodeId = AUDIO;
+            change(slot);
+            return slot;
+        };
+        const failedClip = (errorCode: string) => audioSlot(slot => { slot.state = 'FAILED'; slot.errorCode = errorCode; });
+        const redoTurn = (change: Record<string, unknown> = {}) => turnOf({ action: 'AUDIO_REGENERATE', preset: null, instruction: null, targetNodeIds: [AUDIO], voice: 'male', ...change });
+        const on = { textToSpeech: { available: true, reason: null } } as const;
+        const withClip = (slot: unknown, extra: Record<string, unknown> = {}) => ({ detail: detailOf(sample(), { mediaSlots: [slot], ...extra }), capabilities: capabilities(on) });
+        const memo = (change: Partial<EditMemo> = {}): EditMemo => ({ turnId: turnOf()['turnId'] as string, baseRevisionId: BEFORE_REVISION, dismissed: false, announced: true,
+            ask: { action: 'AUDIO_REGENERATE', nodeIds: [AUDIO], anchorBefore: newId(4), anchorAfter: newId(6), voice: 'male' }, ...change });
+        const panel = (): HTMLElement | null => root().querySelector('app-audio-redo-panel');
+        const radios = (): HTMLInputElement[] => [...root().querySelectorAll<HTMLInputElement>('app-audio-redo-panel input[type="radio"]')];
+        const panelButton = (label: string): HTMLButtonElement => [...panel()!.querySelectorAll('button')].find(button => button.textContent!.trim() === label)!;
+        const strip = (): HTMLElement | null => root().querySelector('.rewrite-strip');
+        const region = (): HTMLElement => root().querySelector<HTMLElement>(':scope > p.document-announcement')!;
+        const done = (voice = 'male', slot: unknown = audioSlot(held => { held.voice = voice; })) => ({ artifact: summary('PROPOSED', { currentRevisionId: AFTER_REVISION }), capabilities: capabilities(on),
+            detail: detailOf(sample(), { mediaSlots: [slot], turns: [redoTurn({ voice })], revisions: revisions([BEFORE_REVISION, 'INITIAL'], [AFTER_REVISION, 'MEDIA']) }, AFTER_REVISION) });
+
+        describe('the caption', () => {
+            it('says «Синтезированная речь · женский голос» under a READY clip of the proposal, and «мужской голос» for the other voice', async () => {
+                await create(withClip(audioSlot()));
+                const caption = root().querySelector('.audio-caption')!;
+                expect(caption.textContent).toBe('Синтезированная речь · женский голос');
+                expect(block(5).nextElementSibling).toBe(caption);
+                await create(withClip(audioSlot(slot => { slot.voice = 'male'; })));
+                expect(root().querySelector('.audio-caption')!.textContent).toBe('Синтезированная речь · мужской голос');
+                await create(withClip(audioSlot(slot => { slot.voice = null; })));
+                expect(root().querySelector('.audio-caption')!.textContent).toBe('Синтезированная речь');
+            });
+
+            it('is drawn by the proposal only: the shared renderer says nothing about speech, and a clip that is not READY has no caption', async () => {
+                await create(withClip(audioSlot()));
+                expect(block(5).textContent).not.toContain('Синтезированная');
+                expect(blocks().filter(node => node.textContent!.includes('Синтезированная'))).toHaveLength(0);
+                await create(withClip(audioSlot(slot => { slot.state = 'GENERATING'; })));
+                expect(root().querySelector('.audio-caption')).toBeNull();
+                await create({ detail: detailOf(sample(), { mediaSlots: [] }) });
+                expect(root().querySelector('.audio-caption')).toBeNull();
+            });
+
+            it('keeps the caption where the proposal can no longer change', async () => {
+                await create({ ...withClip(audioSlot()), artifact: summary('REVISING') });
+                expect(root().querySelector('.audio-caption')).not.toBeNull();
+                await create({ ...withClip(audioSlot()), busy: true });
+                expect(root().querySelector('.audio-caption')).not.toBeNull();
+            });
+        });
+
+        describe('the panel under the audio', () => {
+            it('opens inline with the voice of the clip checked and focused, and sends nothing yet', async () => {
+                await create(withClip(audioSlot(slot => { slot.voice = 'male'; })));
+                const open = labelled('Озвучить заново')!;
+                expect(open.getAttribute('aria-expanded')).toBe('false');
+                open.click();
+                await settle();
+                expect(open.getAttribute('aria-expanded')).toBe('true');
+                expect(panel()).not.toBeNull();
+                expect(root().querySelector('dialog, [role="dialog"]')).toBeNull();
+                expect(radios().map(radio => radio.checked)).toEqual([false, true]);
+                expect(window.document.activeElement).toBe(radios()[1]);
+                expect(panel()!.querySelector('.panel-hint')!.textContent).toContain('до 10 кредитов');
+                expect(store.edit).not.toHaveBeenCalled();
+            });
+
+            it('sends the redo without a voice when the voice is the clip’s, and with it when it is another one', async () => {
+                await create(withClip(audioSlot()));
+                labelled('Озвучить заново')!.click();
+                await settle();
+                panelButton('Озвучить').click();
+                await settle();
+                expect(store.edit).toHaveBeenCalledWith(ids.first, { action: 'AUDIO_REGENERATE', nodeIds: [AUDIO], anchorBefore: newId(4), anchorAfter: newId(6) });
+                await create(withClip(audioSlot()));
+                labelled('Озвучить заново')!.click();
+                await settle();
+                radios()[1]!.click();
+                await settle();
+                panelButton('Озвучить').click();
+                await settle();
+                expect(store.edit).toHaveBeenCalledWith(ids.first, { action: 'AUDIO_REGENERATE', nodeIds: [AUDIO], anchorBefore: newId(4), anchorAfter: newId(6), voice: 'male' });
+            });
+
+            it('keeps the panel open and says why when the redo is refused', async () => {
+                await create(withClip(audioSlot()));
+                store.edit.mockResolvedValue({ ok: false, aborted: false, message: 'Не хватает лимита ИИ на эту правку.' });
+                labelled('Озвучить заново')!.click();
+                await settle();
+                panelButton('Озвучить').click();
+                await settle();
+                expect(panel()!.querySelector('.panel-error')!.textContent).toBe('Не хватает лимита ИИ на эту правку.');
+                expect(store.notify).not.toHaveBeenCalled();
+            });
+
+            it('closes with «Отмена» and Esc and gives focus back to «Озвучить заново»', async () => {
+                await create(withClip(audioSlot()));
+                labelled('Озвучить заново')!.click();
+                await settle();
+                panelButton('Отмена').click();
+                await settle();
+                expect(panel()).toBeNull();
+                expect(window.document.activeElement).toBe(labelled('Озвучить заново'));
+                labelled('Озвучить заново')!.click();
+                await settle();
+                radios()[0]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+                await settle();
+                expect(panel()).toBeNull();
+                expect(window.document.activeElement).toBe(labelled('Озвучить заново'));
+            });
+
+            it('while the clip is made: «Озвучиваю…» in a status, the controls aria-disabled, the clip still there; at the end the panel goes and focus returns', async () => {
+                await create(withClip(audioSlot()));
+                store.edit.mockImplementation(async () => {
+                    fixture.componentRef.setInput('artifact', summary('REVISING'));
+                    fixture.componentRef.setInput('detail', detailOf(sample(), { mediaSlots: [audioSlot()], turns: [redoTurn({ status: 'RUNNING', resultRevisionId: null })] }));
+                    return { ok: true, turn: parseTurn() };
+                });
+                labelled('Озвучить заново')!.click();
+                await settle();
+                panelButton('Озвучить').click();
+                await settle();
+                expect(panel()!.querySelector('[role="status"]')!.textContent).toBe('Озвучиваю…');
+                expect(panelButton('Озвучить').getAttribute('aria-disabled')).toBe('true');
+                expect(block(5)).not.toBeNull();
+                expect(block(5).getAttribute('style')).toBeNull();
+                expect(root().querySelector('.rewriting-caption')).toBeNull();
+                const finished = done();
+                fixture.componentRef.setInput('artifact', finished.artifact);
+                fixture.componentRef.setInput('detail', finished.detail);
+                store.edits.set({ [ids.first]: memo() });
+                await settle();
+                await settle();
+                expect(panel()).toBeNull();
+                expect(window.document.activeElement).toBe(labelled('Озвучить заново'));
+            });
+
+            it('says «Озвучиваю…» in a status when the redo runs without a panel (another tab, a reload)', async () => {
+                await create({ artifact: summary('REVISING'), capabilities: capabilities(on),
+                    detail: detailOf(sample(), { mediaSlots: [audioSlot()], turns: [redoTurn({ status: 'RUNNING', resultRevisionId: null })] }) });
+                const caption = root().querySelector('.rewriting-caption')!;
+                expect(caption.getAttribute('role')).toBe('status');
+                expect(caption.textContent).toBe('Озвучиваю…');
+                expect(root().querySelector('.media-actions')).toBeNull();
+            });
+
+            it('offers «Озвучить заново» disabled with the reason in a toggletip when speech is off, and in a stopped session', async () => {
+                await create({ detail: detailOf(sample(), { mediaSlots: [audioSlot()] }), capabilities: capabilities({ textToSpeech: { available: false, reason: 'TEMPORARILY_UNAVAILABLE' } }) });
+                const off = root().querySelector<HTMLButtonElement>('[aria-label^="Действия с аудио"] .media-unavailable > button')!;
+                expect(off.textContent!.trim()).toBe('Озвучить заново');
+                expect(off.getAttribute('aria-disabled')).toBe('true');
+                off.click();
+                await settle();
+                expect(panel()).toBeNull();
+                expect(root().querySelector('[aria-label^="Действия с аудио"] .bubble')!.textContent).toBe('Озвучивание сейчас временно недоступно. Попробуйте позже.');
+                await create({ ...withClip(audioSlot()), sessionState: 'CANCELLED' });
+                expect(root().querySelector('[aria-label^="Действия с аудио"] .bubble')!.textContent).toContain('Работа остановлена');
+            });
+        });
+
+        describe('the strip and the announcement', () => {
+            it('says «Озвучено заново» with «Оставить», «Вернуть» and «Ещё раз» (no text diff)', async () => {
+                await create(done());
+                store.edits.set({ [ids.first]: memo() });
+                await settle();
+                expect(strip()!.getAttribute('aria-label')).toBe('Новая озвучка');
+                expect(strip()!.querySelector('.strip-state')!.textContent).toBe('Озвучено заново');
+                expect([...strip()!.querySelectorAll('button')].map(button => button.textContent!.trim())).toEqual(['Оставить', 'Вернуть', 'Ещё раз']);
+                store.revert.mockResolvedValue(true);
+                labelled('Вернуть')!.click();
+                await settle();
+                expect(store.revert).toHaveBeenCalledWith(ids.first, BEFORE_REVISION);
+            });
+
+            it('«Ещё раз» opens the panel with the voice of the clip now and sends nothing yet', async () => {
+                await create(done('male'));
+                store.edits.set({ [ids.first]: memo() });
+                await settle();
+                labelled('Ещё раз')!.click();
+                await settle();
+                expect(store.edit).not.toHaveBeenCalled();
+                expect(radios().map(radio => radio.checked)).toEqual([false, true]);
+                panelButton('Отмена').click();
+                await settle();
+                expect(window.document.activeElement).toBe(labelled('Ещё раз'));
+            });
+
+            it('tells that the redo failed and that nothing changed, in the strip and in the announcement', async () => {
+                await create({ capabilities: capabilities(on), detail: detailOf(sample(), { mediaSlots: [audioSlot()],
+                    turns: [redoTurn({ status: 'FAILED', errorCode: 'PROVIDER_UNAVAILABLE', resultRevisionId: null })] }) });
+                store.edits.set({ [ids.first]: memo() });
+                await settle();
+                expect(strip()!.classList.contains('is-failed')).toBe(true);
+                expect(strip()!.textContent).toContain('Не удалось озвучить. Запись не изменилась, лимит не списан.');
+                expect([...strip()!.querySelectorAll('button')].map(button => button.textContent!.trim())).toEqual(['Ещё раз', 'Закрыть']);
+            });
+
+            it('announces the end of a redo once, in the region of the document: «Готово: новая озвучка, мужской голос.» or the failure', async () => {
+                await create({ capabilities: capabilities(on), artifact: summary('REVISING'),
+                    detail: detailOf(sample(), { mediaSlots: [audioSlot()], turns: [redoTurn({ status: 'RUNNING', resultRevisionId: null })] }) });
+                expect(region().textContent).toBe('');
+                const finished = done('male');
+                fixture.componentRef.setInput('artifact', finished.artifact);
+                fixture.componentRef.setInput('detail', finished.detail);
+                await settle();
+                expect(region().textContent).toBe('Готово: новая озвучка, мужской голос.');
+                fixture.componentRef.setInput('artifact', summary('REVISING', { currentRevisionId: AFTER_REVISION }));
+                fixture.componentRef.setInput('detail', detailOf(sample(), { mediaSlots: [audioSlot()], turns: [redoTurn({ status: 'RUNNING', resultRevisionId: null })] }, AFTER_REVISION));
+                await settle();
+                expect(region().textContent).toBe('');
+                fixture.componentRef.setInput('artifact', summary('PROPOSED', { currentRevisionId: AFTER_REVISION }));
+                fixture.componentRef.setInput('detail', detailOf(sample(), { mediaSlots: [audioSlot()],
+                    turns: [redoTurn({ status: 'FAILED', errorCode: 'DEADLINE_EXCEEDED', resultRevisionId: null })] }, AFTER_REVISION));
+                await settle();
+                expect(region().textContent).toBe('Не удалось озвучить. Запись не изменилась, лимит не списан.');
+            });
+        });
+
+        describe('a clip that is being made or failed', () => {
+            const frame = (): HTMLElement | null => root().querySelector('.slot-failed');
+            const names = (): string[] => [...frame()!.querySelectorAll('button')].filter(button => button.closest('app-toggletip') === null)
+                .map(button => button.textContent!.trim());
+
+            it('says «Озвучиваю…» in the paper placeholder while the first synthesis runs', async () => {
+                for (const state of ['PENDING', 'GENERATING', 'VERIFYING']) {
+                    await create(withClip(audioSlot(slot => { slot.state = state; })));
+                    expect(root().querySelector('.audio-status')!.textContent, state).toBe('Озвучиваю…');
+                    expect(root().querySelector('.audio-status')!.getAttribute('role')).toBe('status');
+                }
+                await create(withClip(audioSlot()));
+                expect(root().querySelector('.audio-status')).toBeNull();
+            });
+
+            it('says why in the words of the issue, and offers «Повторить» and «Убрать блок» instead of the usual actions', async () => {
+                const reasons: Record<string, string> = { PROVIDER_UNAVAILABLE: 'Озвучка сейчас недоступна.', VERIFICATION_REJECTED: 'Запись не прошла проверку.',
+                    DEADLINE_EXCEEDED: 'Озвучка заняла слишком долго.', USAGE_LIMIT: 'Не хватает лимита на озвучку.' };
+                for (const [code, text] of Object.entries(reasons)) {
+                    await create(withClip(failedClip(code)));
+                    expect(frame()!.querySelector('.slot-failed-text')!.textContent, code).toBe(text);
+                    expect(names()).toEqual(['Повторить', 'Убрать блок']);
+                    expect(root().querySelector('.media-actions[aria-label^="Действия с аудио"]')).toBeNull();
+                    expect(root().querySelector('.audio-caption')).toBeNull();
+                }
+            });
+
+            it('«Повторить» sends the redo without a voice, and reports a refusal on the page', async () => {
+                await create(withClip(failedClip('PROVIDER_UNAVAILABLE')));
+                labelled('Повторить')!.click();
+                await settle();
+                expect(store.edit).toHaveBeenCalledWith(ids.first, { action: 'AUDIO_REGENERATE', nodeIds: [AUDIO], anchorBefore: newId(4), anchorAfter: newId(6) });
+                store.edit.mockResolvedValue({ ok: false, aborted: false, message: 'Материал обновился.' });
+                labelled('Повторить')!.click();
+                await settle();
+                expect(store.notify).toHaveBeenCalledWith('Материал обновился.');
+            });
+
+            it('after «Повторить» succeeds focus goes to «Озвучить заново», not to the page', async () => {
+                await create(withClip(failedClip('NO_RESULT')));
+                store.edit.mockImplementation(async () => {
+                    fixture.componentRef.setInput('artifact', summary('REVISING'));
+                    fixture.componentRef.setInput('detail', detailOf(sample(), { mediaSlots: [failedClip('PROVIDER_UNAVAILABLE')], turns: [redoTurn({ status: 'RUNNING', resultRevisionId: null, voice: null })] }));
+                    return { ok: true, turn: parseTurn() };
+                });
+                labelled('Повторить')!.click();
+                await settle();
+                const finished = done();
+                fixture.componentRef.setInput('artifact', finished.artifact);
+                fixture.componentRef.setInput('detail', finished.detail);
+                await settle();
+                await settle();
+                expect(root().querySelector('.slot-failed')).toBeNull();
+                expect(window.document.activeElement).toBe(labelled('Озвучить заново'));
+            });
+
+            it('«Убрать блок» removes the media and moves focus to the document', async () => {
+                await create(withClip(failedClip('PROVIDER_UNAVAILABLE')));
+                labelled('Убрать блок')!.click();
+                await settle();
+                expect(store.edit).toHaveBeenCalledWith(ids.first, { action: 'REMOVE_MEDIA', nodeIds: [AUDIO], anchorBefore: newId(4), anchorAfter: newId(6) });
+                expect(window.document.activeElement).toBe(host);
+            });
+
+            it('keeps «Повторить» disabled with the reason when speech is off, and «Убрать блок» working', async () => {
+                await create({ detail: detailOf(sample(), { mediaSlots: [failedClip('PROVIDER_UNAVAILABLE')] }), capabilities: capabilities({ textToSpeech: { available: false, reason: 'DISABLED' } }) });
+                expect(names()).toEqual(['Повторить', 'Убрать блок']);
+                expect(frame()!.querySelector('.media-unavailable button')!.getAttribute('aria-disabled')).toBe('true');
+                expect(frame()!.querySelector('.bubble')!.textContent).toContain('Озвучивание появится позже');
             });
         });
     });

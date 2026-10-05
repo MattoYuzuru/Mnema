@@ -81,11 +81,12 @@ class ArtifactEdits {
     private final AdmissionPricing pricing;
     private final GenerationGate gate;
     private final CandidateRepository candidates;
+    private final ClipRepository clips;
     private final ObjectProvider<StepDispatcher> dispatcher;
 
     ArtifactEdits(GenerationRepository repository, StepRepository steps, SessionLifecycle lifecycle, EditLifecycle edits,
                   EditContexts contexts, CommandReceiptService receipts, UsageLedger ledger, AdmissionPricing pricing,
-                  GenerationGate gate, CandidateRepository candidates, ObjectProvider<StepDispatcher> dispatcher) {
+                  GenerationGate gate, CandidateRepository candidates, ClipRepository clips, ObjectProvider<StepDispatcher> dispatcher) {
         this.repository = repository;
         this.steps = steps;
         this.lifecycle = lifecycle;
@@ -96,6 +97,7 @@ class ArtifactEdits {
         this.pricing = pricing;
         this.gate = gate;
         this.candidates = candidates;
+        this.clips = clips;
         this.dispatcher = dispatcher;
     }
 
@@ -142,8 +144,8 @@ class ArtifactEdits {
         String voice = optionalText(body, "voice");
         if (voice != null && !(voice.equals("female") || voice.equals("male"))) throw new InvalidRequestException();
         if (known.targetKind().equals("ITEM")) {
-            // a material is edited by blocks, and has no voice to change
-            if (targets == null || voice != null) throw new InvalidRequestException();
+            // a material is edited by blocks; only the redo of an audio block takes a voice (absent: the slot's own)
+            if (targets == null || voice != null && !action.equals("AUDIO_REGENERATE")) throw new InvalidRequestException();
         } else {
             // an exercise has no blocks: the whole exercise is rewritten (FREE) or its audio redone (AUDIO_REGENERATE, which needs a voice)
             if (targets != null || !EXERCISE_ACTIONS.contains(action) || action.equals("AUDIO_REGENERATE") != (voice != null)) {
@@ -209,10 +211,9 @@ class ArtifactEdits {
         if (material) gate.requireEdit(request.action());
         else if (request.action().equals("FREE")) gate.requireText();
         else gate.requireVoiceRevision();
-        if (!material && request.action().equals("AUDIO_REGENERATE") && repository.slotsOf(artifactId).stream()
-                .noneMatch(slot -> slot.kind().equals("AUDIO") && !slot.state().equals("REMOVED"))) {
-            throw InvalidRequestException.because("TARGET_NO_AUDIO");
-        }
+        int clips = !material && request.action().equals("AUDIO_REGENERATE") ? speakableBlocks(artifactId, artifact.currentRevisionId()) : 0;
+        // an exercise whose audio has no transcript (a recording of the owner's own) has nothing to synthesise
+        if (!material && request.action().equals("AUDIO_REGENERATE") && clips == 0) throw InvalidRequestException.because("TARGET_NO_AUDIO");
         if (!removal && repository.countedTurns(artifactId) >= MAX_TURNS) throw limit("TURNS_PER_ARTIFACT");
         // a removal only takes media away (at most eight directives), so it may use the headroom the table leaves above the cap
         if (artifact.revisionCount() >= (removal ? MAX_REVISIONS_REMOVAL : MAX_REVISIONS)) throw limit("REVISIONS_PER_ARTIFACT");
@@ -220,7 +221,10 @@ class ArtifactEdits {
 
         if (removal) return removeMedia(tx, artifact, revision, target, request);
         if (request.action().equals("IMAGE_SEARCH")) return imageSearch(tx, artifact, revision, target, request);
-        return request.action().equals("AUDIO_REGENERATE") && !material ? redoAudio(tx, artifact, request) : rewrite(tx, artifact, target, request);
+        if (request.action().equals("AUDIO_REGENERATE")) {
+            return material ? redoMaterialAudio(tx, artifact, revision, target, request) : redoAudio(tx, artifact, request, clips);
+        }
+        return rewrite(tx, artifact, target, request);
     }
 
     /**
@@ -248,6 +252,10 @@ class ArtifactEdits {
                 if (request.action().equals("IMAGE_SEARCH") && (target.blocks().size() != 1 || searchSlot(revision, target.blocks().getFirst()) == null)) {
                     throw new InvalidRequestException();
                 }
+                // a redo of audio targets exactly one audio block that has a slot (a failed one included: it is also «Повторить»)
+                if (request.action().equals("AUDIO_REGENERATE") && (target.blocks().size() != 1 || audioSlot(revision, target.blocks().getFirst()) == null)) {
+                    throw new InvalidRequestException();
+                }
             }
         }
         return target;
@@ -258,6 +266,13 @@ class ArtifactEdits {
         UUID node = EditDocument.id(block);
         return repository.slotsOf(revision.artifactId()).stream().filter(slot -> slot.nodeId().equals(node) && slot.kind().equals("IMAGE")
                 && slot.spec().path("mode").stringValue("").equals("search") && !slot.state().equals("REMOVED")).findFirst().orElse(null);
+    }
+
+    /** The slot of the audio block, or null. */
+    private Slot audioSlot(Revision revision, JsonNode block) {
+        UUID node = EditDocument.id(block);
+        return repository.slotsOf(revision.artifactId()).stream()
+                .filter(slot -> slot.nodeId().equals(node) && slot.kind().equals("AUDIO") && !slot.state().equals("REMOVED")).findFirst().orElse(null);
     }
 
     static ResourceLimitExceededException limit(String name) {
@@ -327,14 +342,23 @@ class ArtifactEdits {
 
     // ----------------------------------------------------------- AUDIO_REGENERATE
 
+    /** How many audio blocks of the exercise revision have a transcript to speak. */
+    private int speakableBlocks(UUID artifactId, UUID revisionId) {
+        Revision revision = repository.revision(artifactId, revisionId).orElseThrow();
+        List<ObjectNode> blocks = new ArrayList<>();
+        SpeechExecutor.audioBlocks(revision.payload().path("command").path("exercise").path("content"), blocks);
+        return (int) blocks.stream().filter(block -> !block.path("transcript").stringValue("").isBlank()).count();
+    }
+
     /**
-     * The redo of the audio of an exercise ({@code REVISE_EXERCISE}, #294): a turn with its own hold (one text-to-speech clip) and a
-     * {@code TTS} step that the Stub speech executor runs until real synthesis comes with AI-09 (#297). The artifact is REVISING until it ends.
+     * The redo of the audio of an exercise ({@code REVISE_EXERCISE}, #294, #297): a turn whose own hold covers one clip per audio block that has a
+     * transcript (each is debited only when it misses the speech cache) and a {@code TTS} step ({@link SpeechExecutor}) that makes every one in the
+     * requested voice. The artifact is REVISING until it ends.
      */
-    private JsonNode redoAudio(SessionLifecycle.Tx tx, Artifact artifact, Request request) {
+    private JsonNode redoAudio(SessionLifecycle.Tx tx, Artifact artifact, Request request, int clips) {
         Session session = tx.session;
         UUID turnId = UUID.randomUUID();
-        int credits = pricing.credits(EditLifecycle.MEDIA_OPERATION);
+        int credits = pricing.credits(EditLifecycle.MEDIA_OPERATION) * Math.max(1, clips);
         // usage is last: a refusal rolls this transaction back, so nothing above has changed
         Reservation reservation = ledger.reserve(session.ownerId(), ReservationScope.TURN, session.sessionId(), turnId, Math.max(1, credits));
         UUID stepId = UUID.randomUUID();
@@ -343,7 +367,37 @@ class ArtifactEdits {
         ObjectNode input = Json.object().put("turnId", turnId.toString()).put("action", request.action()).put("voice", request.voice())
                 .put("operation", EditLifecycle.MEDIA_OPERATION).put("credits", credits)
                 .put("reservationId", reservation.reservationId().toString());
-        steps.insert(stepId, session.sessionId(), artifact.artifactId(), session.ownerId(), "TTS", "TTS", input, "media:" + turnId);
+        steps.insert(stepId, session.sessionId(), artifact.artifactId(), session.ownerId(), SpeechExecutor.KIND, "TTS", input, "media:" + turnId);
+        Artifact revising = repository.transition(artifact, "REVISING", null, null, null, artifact.revisionCount());
+        tx.events.add(SessionLifecycle.artifactEvent(revising));
+        tx.events.add(lifecycle.usageEvent(session, null));
+        lifecycle.flush(tx);
+        wakeAfterCommit();
+        return answer(repository.turn(turnId).orElseThrow(), revising);
+    }
+
+    /**
+     * «Озвучить заново» of one audio block of a material (#297): a turn with its own hold (one clip, debited only when the synthesis missed the cache)
+     * and a {@code TTS} step that makes the clip in the requested voice (absent: the slot's) as a new asset ({@link SpeechExecutor}). A first clip of
+     * the slot that is still waiting or running is replaced by this one. The artifact is REVISING until it ends.
+     */
+    private JsonNode redoMaterialAudio(SessionLifecycle.Tx tx, Artifact artifact, Revision current, EditTarget target, Request request) {
+        Session session = tx.session;
+        Slot slot = audioSlot(current, target.blocks().getFirst());
+        steps.cancelMediaOfSlots(artifact.artifactId(), List.of(slot.slotKey()));
+        lifecycle.releaseIdleBatch(tx);
+        String voice = request.voice() != null ? request.voice() : "male".equals(slot.spec().path("voice").stringValue(null)) ? "male" : "female";
+        UUID turnId = UUID.randomUUID();
+        int credits = pricing.credits(EditLifecycle.MEDIA_OPERATION);
+        // usage is last: a refusal rolls this transaction back, so nothing above has changed
+        Reservation reservation = ledger.reserve(session.ownerId(), ReservationScope.TURN, session.sessionId(), turnId, Math.max(1, credits));
+        UUID stepId = UUID.randomUUID();
+        repository.insertTurn(new Turn(turnId, artifact.artifactId(), session.sessionId(), session.ownerId(), "QUEUED", request.action(), null, null,
+                List.of(slot.nodeId()), stepId, null, null, true, null, voice));
+        ObjectNode input = Json.object().put("turnId", turnId.toString()).put("action", request.action()).put("voice", voice)
+                .put("revisionId", artifact.currentRevisionId().toString()).put("operation", EditLifecycle.MEDIA_OPERATION).put("credits", credits)
+                .put("reservationId", reservation.reservationId().toString()).put("slotKey", slot.slotKey());
+        steps.insert(stepId, session.sessionId(), artifact.artifactId(), session.ownerId(), SpeechExecutor.KIND, "TTS", input, "edit:" + turnId);
         Artifact revising = repository.transition(artifact, "REVISING", null, null, null, artifact.revisionCount());
         tx.events.add(SessionLifecycle.artifactEvent(revising));
         tx.events.add(lifecycle.usageEvent(session, null));
@@ -453,6 +507,7 @@ class ArtifactEdits {
             }
             slotEvents = new ArrayList<>(edits.followSlots(artifact, to, EditDocument.idSet(document), true));
             slotEvents.addAll(followImages(tx, artifact, document));
+            slotEvents.addAll(followAudio(tx, artifact, document));
         } else {
             // an exercise: its title is the first text of its prompt (or its objective's), and its slots (the audio) follow the revision
             JsonNode command = target.payload().path("command");
@@ -461,7 +516,7 @@ class ArtifactEdits {
                     UUID.fromString(objective.path("objectiveId").stringValue("")),
                     UUID.fromString(objective.path("objectiveRevisionId").stringValue(""))).orElse(""));
             repository.attachAllSlots(artifactId, to);
-            slotEvents = List.of();
+            slotEvents = followExerciseAudio(tx, artifact, command.path("exercise").path("content"));
         }
         Artifact moved = repository.transition(artifact, "PROPOSED", null, to, title, artifact.revisionCount());
         tx.events.add(SessionLifecycle.artifactEvent(moved));
@@ -497,6 +552,57 @@ class ArtifactEdits {
             }
         }
         return events;
+    }
+
+    /**
+     * After a revert: the audio slots of a material follow the asset their node uses in the revision now shown, with the voice and take of the clip it
+     * is (the clip rows keep every take of the slot). A node on a clip makes the slot READY on it and moves the hold on the node.
+     */
+    private List<Rows.EventDraft> followAudio(SessionLifecycle.Tx tx, Artifact artifact, JsonNode document) {
+        List<Rows.EventDraft> events = new ArrayList<>();
+        for (Slot slot : repository.slotsOf(artifact.artifactId())) {
+            if (!slot.kind().equals("AUDIO") || slot.state().equals("REMOVED")) continue;
+            UUID using = MediaNodes.assetOf(document, slot.nodeId());
+            if (using == null || using.equals(slot.assetId())) continue;
+            ClipRepository.Clip clip = clips.find(artifact.artifactId(), using).orElse(null);
+            if (clip == null) continue;
+            follow(tx, slot, clip, events);
+        }
+        return events;
+    }
+
+    /** The audio slots of an exercise follow the audio blocks of the revision now shown, in document order (slot {@code audioN} is the Nth block). */
+    private List<Rows.EventDraft> followExerciseAudio(SessionLifecycle.Tx tx, Artifact artifact, JsonNode content) {
+        List<Rows.EventDraft> events = new ArrayList<>();
+        List<ObjectNode> blocks = new ArrayList<>();
+        SpeechExecutor.audioBlocks(content, blocks);
+        for (int index = 0; index < blocks.size(); index++) {
+            String key = "audio" + (index + 1);
+            Slot slot = repository.slotsOf(artifact.artifactId()).stream().filter(each -> each.slotKey().equals(key)).findFirst().orElse(null);
+            String asset = blocks.get(index).path("assetId").stringValue("");
+            if (slot == null || slot.state().equals("REMOVED") || slot.assetId().toString().equals(asset)) continue;
+            UUID using = UUID.fromString(asset);
+            ClipRepository.Clip clip = clips.find(artifact.artifactId(), using).orElse(null);
+            if (clip != null) {
+                follow(tx, slot, clip, events);
+            } else {
+                // the block is back on the asset it started with (no clip row): the slot is as it was before any redo
+                ObjectNode spec = SpeechLifecycle.specOf(slot.spec(), "female", null, 0);
+                spec.putNull("voice");
+                spec.remove("take");
+                spec.put("mode", "existing");
+                repository.readySlot(slot.artifactId(), slot.slotKey(), spec, using);
+                events.add(SessionLifecycle.slotEvent(slot.artifactId(), slot.slotKey(), slot.kind(), "READY", using));
+            }
+        }
+        return events;
+    }
+
+    private void follow(SessionLifecycle.Tx tx, Slot slot, ClipRepository.Clip clip, List<Rows.EventDraft> events) {
+        repository.readySlot(slot.artifactId(), slot.slotKey(), SpeechLifecycle.specOf(slot.spec(), clip.voice(), slot.spec().path("lang").stringValue(null),
+                clip.take()), clip.assetId());
+        candidates.holdNode(slot.artifactId(), slot.nodeId(), tx.session.sessionId(), tx.session.ownerId(), clip.assetId());
+        events.add(SessionLifecycle.slotEvent(slot.artifactId(), slot.slotKey(), slot.kind(), "READY", clip.assetId()));
     }
 
     // ------------------------------------------------------------ selectMediaCandidate

@@ -21,6 +21,7 @@ import { runWorkshopPlanner } from './planner.mjs';
 import { runWorkshopAsk } from './ask-mnema.mjs';
 import { runWorkshopEdits } from './selection-edits.mjs';
 import { runWorkshopImages } from './image-search.mjs';
+import { runWorkshopSpeech } from './speech.mjs';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -306,6 +307,13 @@ export async function runWorkshop(ctx) {
     evidence.planner = await runWorkshopPlanner(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
       activeSessions, sessionPath, location });
     record('workshop_planner_only', evidence);
+    return evidence;
+  }
+  if (config.onlySpeech) {
+    // Development aid (`run.py --only-speech`): the speech scenario alone, after the base flow. Never the gate.
+    evidence.speech = await runWorkshopSpeech(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
+      activeSessions, sessionPath, location });
+    record('workshop_speech_only', evidence);
     return evidence;
   }
   if (config.onlyImages) {
@@ -731,6 +739,11 @@ export async function runWorkshop(ctx) {
   // #296 (AI-10): image search in the Workshop (the Stub image source; the found files go through the real media pipeline). Needs `--media`.
   if (config.media) {
     evidence.images = await runWorkshopImages(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
+      activeSessions, sessionPath, location });
+  }
+  // #297 (AI-09): speech synthesis in the Workshop (the Stub speech port; the WAV goes through the real media pipeline). Needs `--media`.
+  if (config.media) {
+    evidence.speech = await runWorkshopSpeech(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
       activeSessions, sessionPath, location });
   }
   // #294 (AI-16): «Попросить Мнему…» in the material profile and in the exercise editor, REVISE_ITEM and REVISE_EXERCISE results.

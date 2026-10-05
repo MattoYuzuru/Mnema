@@ -254,7 +254,7 @@ class StepRepository {
      * hold must outlive the session's move out of RUNNING until the last of them ends.
      */
     boolean hasOpenSlotSteps(UUID sessionId) {
-        return jdbc.sql("SELECT EXISTS (SELECT 1 FROM app_learning.generation_step WHERE session_id=:id AND kind='IMAGE_SEARCH' "
+        return jdbc.sql("SELECT EXISTS (SELECT 1 FROM app_learning.generation_step WHERE session_id=:id AND kind IN ('IMAGE_SEARCH','TTS') "
                         + "AND input->>'turnId' IS NULL AND state IN ('WAITING_DEPENDENCIES','READY','RUNNING','WAITING_EXTERNAL'))")
                 .param("id", sessionId).query(Boolean.class).single();
     }

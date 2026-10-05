@@ -8,7 +8,7 @@ import { PageTransition } from '../../shared/page-transition.service';
 import { spyObj, type SpyObj } from '../../../testing/mocks';
 import { ExercisePreviewApiService } from '../authoring/exercise-preview-api.service';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
-import { audioAssetIds, exerciseTextLines } from './exercise-text';
+import { exerciseTextLines } from './exercise-text';
 import { createCommand, documentOf, exerciseDetail, exerciseIds, materialIds, materialRevisions, selfCheck } from './exercise-test-data';
 import { GenerationApiService } from './generation-api.service';
 import { activeStep, artifactWith, clone, deckFixture, eventsEnvelope, examples, ids, problemResponse, sessionWith } from './generation-test-data';
@@ -313,19 +313,20 @@ describe('Workshop of a revision (REVISE_ITEM and REVISE_EXERCISE, AI-16)', () =
     });
 
     describe('the exercise (REVISE_EXERCISE)', () => {
-        it('is the Workshop of a revision of an exercise: the voice chip, the honest note on the Stub, the preview, the actions and the history', async () => {
+        it('is the Workshop of a revision of an exercise: the «Озвучено заново» chip, no note about a Stub, the preview, the actions and the history', async () => {
             await openExercise();
             expect(root().querySelector('h1')!.textContent).toBe('Правка упражнения');
             expect(root().querySelector('.lede')!.textContent).toContain('Голос: мужской');
-            expect(root().querySelector('[data-voice-chip]')!.textContent).toBe('Голос: мужской');
-            expect(root().querySelector('[data-stub-note]')!.textContent).toBe('Озвучка обновится, когда подключим синтез речи.');
+            expect(root().querySelector('[data-voice-chip]')!.textContent).toBe('Озвучено заново: мужской');
+            expect(root().querySelector('[data-stub-note]')).toBeNull();
+            expect(root().textContent).not.toContain('когда подключим');
             expect(root().querySelector('app-exercise-preview-host')).not.toBeNull();
             expect([...root().querySelectorAll('.result-actions button')].map(button => button.textContent!.trim())).toEqual(['Оставить', 'Вернуть', 'Ещё раз', 'Отклонить']);
             expect(root().querySelector('.edit-history')!.textContent).toContain('Озвучка заново: мужской голос');
             expect(summary()).toContain('Правка готова');
         });
 
-        it('does not claim the audio is unchanged when the asset really changed (real synthesis, AI-09)', async () => {
+        it('shows the same chip and no note when the asset changed: the preview plays the new recording (AI-09)', async () => {
             await openExercise(voiceOnly, [voiceTurn()], OTHER_ASSET);
             await settle();
             expect(root().querySelector('[data-voice-chip]')).not.toBeNull();
@@ -466,11 +467,6 @@ describe('Workshop of a revision (REVISE_ITEM and REVISE_EXERCISE, AI-16)', () =
                 { kind: 'ORDER', sequence: ['b', 'a'] }))).toEqual(['Задание: Порядок', 'Шаг 1: второй', 'Шаг 2: первый']);
             expect(lines(spec('CATEGORIZE', { prompt: [], categories: [{ categoryId: 'c', label: 'Группа' }], items: [{ itemId: 'i', blocks: text('Слово') }] },
                 { kind: 'CATEGORIZE', assignments: [{ itemId: 'i', categoryId: 'c' }] }))).toEqual(['Группа: Группа', 'Элемент: Слово → Группа']);
-        });
-
-        it('lists the assets of the audio blocks in order, which is what the Stub keeps and a real synthesis replaces', () => {
-            expect(audioAssetIds(withAudio(ASSET))).toEqual([ASSET]);
-            expect(audioAssetIds(selfCheck())).toEqual([]);
         });
     });
 });

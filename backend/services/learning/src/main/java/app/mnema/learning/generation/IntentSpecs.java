@@ -35,15 +35,18 @@ final class IntentSpecs {
 
     private IntentSpecs() { }
 
-    /** What the owner is looking at: the material (its head) or the exercise (its head, the material it is about and whether it has audio). */
-    record Context(String kind, UUID memberKey, UUID itemRevisionId, UUID exerciseId, UUID exerciseRevisionId, boolean hasAudio) {
+    /**
+     * What the owner is looking at: the material (its head) or the exercise (its head, the material it is about, whether it has audio and whether
+     * at least one audio block has a transcript: only those can be spoken again, so only then is the voice offered).
+     */
+    record Context(String kind, UUID memberKey, UUID itemRevisionId, UUID exerciseId, UUID exerciseRevisionId, boolean hasAudio, boolean speakable) {
         static Context material(UUID memberKey, UUID itemRevisionId) {
-            return new Context("MATERIAL", memberKey, itemRevisionId, null, null, false);
+            return new Context("MATERIAL", memberKey, itemRevisionId, null, null, false, false);
         }
 
         /** @param memberKey the subject material and {@code itemRevisionId} its head, the target of new exercises */
-        static Context exercise(UUID exerciseId, UUID exerciseRevisionId, UUID memberKey, UUID itemRevisionId, boolean hasAudio) {
-            return new Context("EXERCISE", memberKey, itemRevisionId, exerciseId, exerciseRevisionId, hasAudio);
+        static Context exercise(UUID exerciseId, UUID exerciseRevisionId, UUID memberKey, UUID itemRevisionId, boolean hasAudio, boolean speakable) {
+            return new Context("EXERCISE", memberKey, itemRevisionId, exerciseId, exerciseRevisionId, hasAudio, speakable);
         }
 
         boolean isMaterial() {
@@ -188,6 +191,9 @@ final class IntentSpecs {
         if (voice != null && !context.hasAudio()) {
             notes.add(Note.NO_AUDIO);
             voice = null;
+        } else if (voice != null && !context.speakable()) {
+            notes.add(Note.NO_TRANSCRIPT);
+            voice = null;
         } else if (voice != null && !voiceRevision) {
             notes.add(Note.MEDIA_UNAVAILABLE);
             voice = null;
@@ -258,6 +264,7 @@ final class IntentSpecs {
         static final Note NEEDS_MATERIAL = new Note("NEEDS_MATERIAL", "Чтобы править текст материала, откройте материал.", null);
         static final Note NO_INSTRUCTION = new Note("NO_INSTRUCTION", "Не поняла, что именно изменить. Опишите правку подробнее.", null);
         static final Note NO_AUDIO = new Note("NO_AUDIO", "В этом упражнении нет озвучки.", null);
+        static final Note NO_TRANSCRIPT = new Note("NO_TRANSCRIPT", "Озвучить заново можно только аудио с текстом: добавьте расшифровку к записи в упражнении.", null);
         static final Note MEDIA_UNAVAILABLE = new Note("MEDIA_UNAVAILABLE", "Озвучка пока недоступна.", null);
         static final Note INSTRUCTION_TRIMMED = new Note("INSTRUCTION_TRIMMED", "Запрос сокращён до 2000 знаков.", null);
         static final Note PER_TARGET_MAX = new Note("PER_TARGET_CLAMPED", "Не больше %d на материал", 0);
