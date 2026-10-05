@@ -43,7 +43,7 @@ export type SlotErrorCode = (typeof SLOT_ERROR_CODES)[number];
 /** `states.json` `turn.imageSearchErrorCodes`: how a turn of an image search fails (`NO_RESULT` is not an artifact error code). */
 export const IMAGE_SEARCH_ERROR_CODES = ['NO_RESULT', 'PROVIDER_UNAVAILABLE', 'DEADLINE_EXCEEDED'] as const;
 /** `states.json` `turn.audioErrorCodes`: how a turn of a speech redo fails (`VERIFICATION_REJECTED` is not an artifact error code). */
-export const AUDIO_ERROR_CODES = ['PROVIDER_UNAVAILABLE', 'VERIFICATION_REJECTED', 'DEADLINE_EXCEEDED'] as const;
+export const AUDIO_ERROR_CODES = ['PROVIDER_UNAVAILABLE', 'VERIFICATION_REJECTED', 'DEADLINE_EXCEEDED', 'ESTIMATE_EXCEEDED'] as const;
 export type TurnErrorCode = ArtifactErrorCode | (typeof IMAGE_SEARCH_ERROR_CODES)[number] | (typeof AUDIO_ERROR_CODES)[number];
 
 const REPIN_STATUSES = ['AUTO_REPINNED', 'NEEDS_USER_DECISION'] as const;
