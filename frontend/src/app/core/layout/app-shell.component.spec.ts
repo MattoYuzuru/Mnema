@@ -86,7 +86,7 @@ describe('AppShellComponent', () => {
     });
 
     it('starts a button fill at the pointer entry position', () => {
-        const button = (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('.quiet-action')!;
+        const button = (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('.button.mono')!;
         const bounds = button.getBoundingClientRect();
 
         button.dispatchEvent(new PointerEvent('pointerover', {
@@ -136,7 +136,7 @@ describe('AppShellComponent', () => {
     });
 
     it('delegates logout without claiming a completed server session', async () => {
-        (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('.quiet-action')?.click();
+        (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('.button.mono')?.click();
         await fixture.whenStable();
         expect(auth.logout).toHaveBeenCalledTimes(1);
     });

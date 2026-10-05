@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
 final class ImageText {
     private static final Pattern TAGS = Pattern.compile("<[^>]*>");
     private static final Pattern ENTITY = Pattern.compile("&(#x[0-9a-fA-F]{1,6}|#[0-9]{1,7}|[a-zA-Z]{2,8});");
-    private static final Pattern SPACE = Pattern.compile("[\\s\\p{Cntrl}]+");
+    private static final Pattern SPACE = Pattern.compile("[\\s\\p{Cntrl}\\p{Cf}\\p{Zl}\\p{Zp}\\p{Cs}\\p{Co}]+");
 
     private ImageText() { }
 

@@ -143,6 +143,27 @@ class GeneratedMediaStagerIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void aReservationIsOnlyANoteUntilTheTransferAndOtherBytesReplaceItThenConflict() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID asset = UUID.randomUUID();
+        byte[] other = PNG.clone();
+        other[8] = 9;
+
+        stager.reserve(owner, asset, MediaCatalog.Kind.IMAGE, "image/png", PNG);
+        assertThat(stager.assetState(owner, asset)).isEqualTo(GeneratedMediaStager.State.PENDING);
+        // a retry that picked other bytes after a lost lease replaces the note, and the same bytes are a no-op
+        stager.reserve(owner, asset, MediaCatalog.Kind.IMAGE, "image/png", PNG);
+        stager.stage(owner, asset, MediaCatalog.Kind.IMAGE, "image/png", other);
+
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.media_upload_session WHERE asset_id=:asset").param("asset", asset)
+                .query(Integer.class).single()).isEqualTo(1);
+        assertThat(stager.assetState(owner, asset)).isEqualTo(GeneratedMediaStager.State.VERIFYING);
+        assertThat(read(uploads.sealedSource(asset, 0).objectKey())).isEqualTo(other);
+        // once the bytes were transferred, others conflict again
+        assertThatThrownBy(() -> stager.reserve(owner, asset, MediaCatalog.Kind.IMAGE, "image/png", PNG)).isInstanceOf(IdempotencyConflictException.class);
+    }
+
+    @Test
     void anAssetOfAnotherOwnerOrAnUploadedAssetCannotBeTakenOverAndATypeThatIsNotAnAllowedImageIsRefused() {
         UUID owner = UUID.randomUUID();
         UUID asset = UUID.randomUUID();

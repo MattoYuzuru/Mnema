@@ -134,10 +134,12 @@ class IntentService {
                 UUID member = UUID.fromString(exercise.path("subject").path("memberKey").stringValue(""));
                 UUID head = repository.headRevisions(owner, deckId, List.of(member)).get(member);
                 if (head == null) throw new ResourceNotFoundException();
-                List<String> audio = new ArrayList<>();
-                ReviseAdmission.audioBlocks(exercise.path("content"), audio);
+                List<ObjectNode> audio = new ArrayList<>();
+                SpeechExecutor.audioBlocks(exercise.path("content"), audio);
+                // the voice is redone by speaking a block's transcript: a recording without one cannot be (see ReviseAdmission)
+                boolean speakable = audio.stream().anyMatch(block -> !block.path("transcript").stringValue("").isBlank());
                 yield new Resolved(IntentSpecs.Context.exercise(exerciseId, UUID.fromString(exercise.path("exerciseRevisionId").stringValue("")),
-                        member, head, !audio.isEmpty()),
+                        member, head, !audio.isEmpty(), speakable),
                         ExerciseValidator.title(exercise, exercise.path("objective").path("title").stringValue("")));
             }
             default -> throw new InvalidRequestException();

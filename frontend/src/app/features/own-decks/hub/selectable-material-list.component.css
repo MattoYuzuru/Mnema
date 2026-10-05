@@ -45,8 +45,6 @@
 
 .text-action { display: inline-flex; align-items: center; min-block-size: var(--mn-touch-min, 2.75rem); border: 0; padding: 0; color: var(--mn-ink); background: transparent; font: 700 .92rem/1.25 var(--mn-font-body, system-ui, sans-serif); text-decoration: underline; text-underline-offset: .22em; cursor: pointer; }
 .more { display: grid; justify-items: start; gap: .5rem; padding-block: 1rem; border-block-start: 1px solid var(--mn-rule); }
-.button { min-block-size: var(--mn-touch-min, 2.75rem); border: 1px solid var(--mn-ink); border-radius: var(--mn-radius, 2px); padding: .5rem 1.1rem; color: var(--mn-ink); background: transparent; font: 600 .95rem/1.2 var(--mn-font-body, system-ui, sans-serif); cursor: pointer; }
-.button:disabled { cursor: progress; opacity: .65; }
 .problem { margin: 0; color: var(--mn-danger); font-size: .9rem; }
 
 @media (max-width: 42rem) {

@@ -436,7 +436,7 @@ describe('ExerciseAuthoringPageComponent', () => {
             for (const mechanic of ['SELF_CHECK', 'FREE_RESPONSE', 'CLOZE', 'CHOICE', 'MATCH'] as const) {
                 select(mechanic, false);
                 expect(mode(), mechanic).toBe('DEMO');
-                expect(preview()!.querySelector('.badge')?.textContent?.trim()).toBe('Пример');
+                expect(preview()!.querySelector('.stamp')?.textContent?.trim()).toBe('Пример');
                 expect(preview()!.querySelector('[data-preview-caption]')?.textContent)
                     .toContain('Это пример упражнения. Заполните шаги ниже — здесь появится ваше задание');
                 expect(preview()!.querySelector('app-learner-exercise')).not.toBeNull();
@@ -499,7 +499,7 @@ describe('ExerciseAuthoringPageComponent', () => {
             expect(surface).toContain('Столица Японии?');
             expect(surface).toContain('Добавьте вариант');
             expect(surface).not.toContain('Звук 1');
-            expect(preview()!.querySelector('.badge')?.textContent?.trim()).toBe('Ваше задание');
+            expect(preview()!.querySelector('.stamp')?.textContent?.trim()).toBe('Ваше задание');
             expect(preview()!.querySelector('app-learner-media')).toBeNull();
             const submit = preview()!.querySelector<HTMLButtonElement>('button[data-submit]')!;
             expect(submit.disabled).toBe(true);
@@ -574,7 +574,7 @@ describe('ExerciseAuthoringPageComponent', () => {
             const detail = detailOf(mechanics['createSelfCheck'].exercise);
             configure(detail);
             expect(mode()).toBe('AUTHOR_READY');
-            expect(preview()!.querySelector('.badge')?.textContent?.trim()).toBe('Ваше задание');
+            expect(preview()!.querySelector('.stamp')?.textContent?.trim()).toBe('Ваше задание');
             expect(preview()!.textContent).not.toContain('Канберра');
             expect(preview()!.textContent).toContain('Назовите органеллы');
             // Even after clearing everything an existing exercise falls back to a draft, not to the example.
@@ -1040,7 +1040,7 @@ describe('ExerciseAuthoringPageComponent', () => {
         const toggle = root.querySelector<HTMLInputElement>('app-free-response-editor input[role="switch"]')!;
         expect(toggle.disabled).toBe(true);
         expect(toggle.checked).toBe(false);
-        expect(root.querySelector('app-free-response-editor .badge')?.textContent?.trim()).toBe('ИИ');
+        expect(root.querySelector('app-free-response-editor .stamp')?.textContent?.trim()).toBe('ИИ');
         expect(root.textContent).toContain('Проверять смысл ответа с ИИ');
         expect(root.textContent).toContain('Проверка объяснений и формулировок по эталону. Пока недоступна.');
         expect(root.textContent).toContain('поставщик проверки не подключён');
@@ -1436,7 +1436,7 @@ describe('ExerciseAuthoringPageComponent', () => {
             expect(tiles).toContainEqual(['Распределить по группам', 'Создайте категории и примеры для каждой. Ученик определит, к какой группе относится каждый элемент.']);
             select('ORDER', false);
             expect(mode()).toBe('DEMO');
-            expect(preview()!.querySelector('.badge')?.textContent?.trim()).toBe('Пример');
+            expect(preview()!.querySelector('.stamp')?.textContent?.trim()).toBe('Пример');
             expect(preview()!.querySelectorAll('li.order-item').length).toBe(4);
             expect(preview()!.querySelectorAll('audio').length).toBe(2);
             select('CATEGORIZE', false);

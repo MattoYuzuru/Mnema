@@ -388,12 +388,14 @@ class AssessmentFlowIntegrationTest extends AssessmentIntegrationTest {
     @Test
     void aCancelWithoutAnAssessmentIsAPlainNotAssessedAndAMalformedResponseConsumesNothing() {
         Case learner = issued();
+        UUID cancel = UUID.randomUUID();
         AttemptService.SubmitResult cancelled = attempts.submit(learner.actor(), learner.deck(), learner.session(),
-                StudyFixtures.attempt(UUID.randomUUID(), learner.issued(), JSON.createObjectNode().put("kind", "CANCEL")));
+                StudyFixtures.attempt(cancel, learner.issued(), JSON.createObjectNode().put("kind", "CANCEL")));
         assertThat(cancelled.accepted()).isFalse();
         assertThat(cancelled.outcome().path("status").stringValue(null)).isEqualTo("NOT_ASSESSED");
         assertThat(count("study_assessment", learner.actor())).isZero();
-        assertThat(provider.calls).isEmpty();
+        // only this attempt's calls: answers of other tests may still be graded in the background against the shared double
+        assertThat(provider.callsOf(cancel)).isEmpty();
 
         Case wrong = issued();
         assertThatThrownBy(() -> attempts.submit(wrong.actor(), wrong.deck(), wrong.session(), StudyFixtures.attempt(

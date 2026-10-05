@@ -51,6 +51,9 @@ class SpeechClipsTest {
         }
 
         @Override
+        public void reserve(UUID owner, UUID assetId, MediaCatalog.Kind kind, String mimeType, byte[] bytes) { }
+
+        @Override
         public State assetState(UUID owner, UUID assetId) { return states.size() > 1 ? states.poll() : states.peek(); }
 
         @Override public Optional<VerifiedMedia> verified(UUID owner, UUID assetId) { return verified; }

@@ -4,7 +4,7 @@ artifact:
   type: navigator
   title: "Mnema documentation"
   status: current
-  updated_at: "2026-10-02"
+  updated_at: "2026-10-05"
   owners: ["project-owner"]
   evidence_revision: "f6955a5fb9889f546dc47129e5e4bed7b913f95a"
 ---
@@ -34,8 +34,8 @@ artifact:
    каталоги, runtime boundaries, change routes и
    [полный gate](./engineering/repository-guide.md#полный-quality-gate).
 5. **Current:** [System overview](./system-overview.md) и
-   [Local-only delivery](./operations/local-development-delivery.md) — что реально
-   работает и почему merge не требует deployment.
+   [Production delivery](./operations/production-delivery.md) — что реально
+   работает и как опубликовать и выкатить development release.
 6. **Study:** исполняемый контракт и все семь механик —
    [`contracts/study`](../contracts/study/README.md); продуктовое обоснование —
    [exercise catalog](./product/exercise-catalog-v2.md); acceptance —
@@ -75,8 +75,7 @@ artifact:
 | accepted | [Final polish 2026-09-29](./product/final-polish-2026-09-29.md) | Удаление, заметки «На потом», пропуски и режимы проверки текста. |
 | accepted | [AI layer contract](./product/ai-layer-2026-10.md) | Принятые решения AI-слоя: слои, сценарии, UX, usage, тарифы, промокоды, legal gates. |
 | proposed | [Product direction](./product/product-direction-v2.md) | Product hypotheses, roadmap и метрики. |
-| proposed | [Launch economics](./product/russia-launch-economics-2026.md) | Коммерческие гипотезы; AI-часть обновлена 2026-10-02 в AI layer contract. |
-| proposed | [Legal/payment checklist](./product/russia-legal-launch-checklist-2026.md) | Human/legal gates; не юридическая гарантия. |
+| proposed | [Legal/payment checklist](./product/russia-legal-launch-checklist-2026.md) | Текущий статус РКН/эквайринга и оставшиеся human gates; не юридическая гарантия. |
 
 ## Architecture и backend
 
@@ -112,6 +111,7 @@ artifact:
 | Статус | Документ | Назначение |
 |---|---|---|
 | current | [Mnema brand and UI contract](./frontend/mnema-brand-and-ui-contract.md) | Правила оформления и проверки изменений в действующем Angular UI. |
+| current | [Frontend styleguide](./frontend/styleguide.md) | Живой каталог `/styleguide` (только dev-сборка): правила «бери из стайлгайда», как открыть, карта разделов. |
 | accepted | [Design and experience](./frontend/design-and-experience-2026-09.md) | Выбранное paper/antiquity/indigo направление и a11y boundaries. |
 | historical | [Frontend brand restoration evidence](./engineering/evidence/frontend-brand-2026-09-28/README.md) | Снимки production Angular и результат реального HTTPS-сценария. |
 | historical | [Interactive prototype](../design/prototype/README.md) | Design evidence, не production architecture. |
@@ -136,23 +136,23 @@ artifact:
 
 | Статус | Документ | Назначение |
 |---|---|---|
-| current | [Local-only delivery](./operations/local-development-delivery.md) | Действующая completion boundary. |
+| current | [Production delivery](./operations/production-delivery.md), [VPS runtime](./operations/vps-runtime.md), [image publication](./operations/vps-image-publication.md) | Работающий production, publication/admission/deploy и verification. |
 | current | [Persistent local runtime](./deploy/selfhost-local.md) | HTTPS-запуск Identity, Learning, Angular, media и Colima clock; historical v1 часть помечена отдельно. |
 | current | [Security automation triage](./operations/security-triage.md) | Dependabot/dependency review/CodeQL policy. |
-| current | [CI artifact boundary](./operations/ci-artifact-security-boundary.md) | Artifact and token policy; image publication сейчас paused. |
+| current | [CI artifact boundary](./operations/ci-artifact-security-boundary.md) | Artifact and token policy для ручной публикации четырёх образов. |
 | current | [AI egress proxy](./operations/ai-egress-proxy.md) | Stateless Squid CONNECT proxy в Финляндии для AI-провайдеров, недоступных из РФ; kill switch и fallback. |
 | current | [Browser security headers](./operations/browser-security-headers.md) | Проверяемый response-security contract. |
 | current | [No-snapshot purge rehearsal](./operations/no-snapshot-purge-rehearsal.md) | Disposable policy test; не production purge. |
-| current | [Production image inventory](./operations/production-image-inventory.md), [release security evidence](./operations/release-security-evidence.md) | Supply-chain contracts; publication сейчас paused. |
-| superseded | [Staging runbook](./operations/staging-runbook.md), [release verification](./operations/release-verification-runbook.md), [database recovery](./operations/database-recovery-runbook.md) | Restoration blueprints; local-only policy запрещает их запуск/ожидание. |
-| proposed | [Delivery audit](./operations/delivery-audit-2026-08.md) | Исходные delivery recommendations; local-only policy приоритетнее. |
+| current | [Production image inventory](./operations/production-image-inventory.md), [release security evidence](./operations/release-security-evidence.md) | Пины и supply-chain evidence четырёх VPS images. |
+| superseded | [Staging runbook](./operations/staging-runbook.md), [release verification](./operations/release-verification-runbook.md), [database recovery](./operations/database-recovery-runbook.md) | Legacy Kubernetes reference; текущая поставка — через VPS workflow. |
+| proposed | [Delivery audit](./operations/delivery-audit-2026-08.md) | Исходные delivery recommendations; текущая VPS policy приоритетнее. |
 | proposed | [Reset/capacity/offline plan](./operations/v2-reset-capacity-and-offline-plan.md) | Будущие #76/#147 boundaries; не разрешение на destructive work. |
 | historical | [GitHub/staging plan](./operations/github-platform-and-staging-plan-2026-08.md) | План и evidence ранее доступного hosted delivery. |
 
-Deployment отсутствует в текущем completion boundary, потому что общий сервер
-недоступен и operational workflows fail-closed. Реактивация — отдельная reviewed
-infrastructure task; никакие прошлые staging результаты не доказывают текущую
-доступность.
+Production работает на RU VPS; deployment доступен через manual publication и
+protected VPS workflow. [Runtime](./operations/vps-runtime.md) фиксирует текущее
+состояние и проверку; [publication](./operations/vps-image-publication.md) — candidate
+и security evidence; [dispatcher](../deploy/production/README.md) — admission.
 
 ## Historical evidence (только чтение)
 

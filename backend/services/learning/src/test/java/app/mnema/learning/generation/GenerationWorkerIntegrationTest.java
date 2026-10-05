@@ -219,7 +219,7 @@ class GenerationWorkerIntegrationTest extends GenerationIntegrationTest {
         awaitState(session, "REVIEW");
         assertThat(artifactErrors(session)).containsExactly("DEADLINE_EXCEEDED");
         assertThat(steps.step(step).orElseThrow().state()).isEqualTo("FAILED");
-        assertThat(provider.calls).isEmpty();
+        assertThat(calls(owner)).isEmpty();
     }
 
     @Test
@@ -357,7 +357,7 @@ class GenerationWorkerIntegrationTest extends GenerationIntegrationTest {
         assertThat(parked.state()).isEqualTo("READY");
         assertThat(parked.attempts()).isZero();
         assertThat(parked.nextAttemptAt()).isAfter(Instant.now().plus(Duration.ofMinutes(10)));
-        assertThat(provider.calls).isEmpty();
+        assertThat(calls(owner)).isEmpty();
         assertThat(sessionState(session)).isEqualTo("RUNNING");
         assertThat(artifactStates(session)).containsExactly("QUEUED");
         JsonNode usage = null;

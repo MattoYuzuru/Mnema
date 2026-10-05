@@ -54,7 +54,7 @@ describe('ExercisePreviewHostComponent', () => {
 
     it('shows the demo badge, the explanation and a playable surface', () => {
         show(demo('SELF_CHECK'));
-        expect(root().querySelector('.badge')?.textContent?.trim()).toBe('Пример');
+        expect(root().querySelector('.stamp')?.textContent?.trim()).toBe('Пример');
         expect(root().querySelector('[data-preview-caption]')?.textContent)
             .toBe('Это пример упражнения. Заполните шаги ниже — здесь появится ваше задание.');
         expect(root().querySelector('h2')?.textContent).toBe('Попробуйте, как это работает');
@@ -358,7 +358,7 @@ describe('ExercisePreviewHostComponent', () => {
     it('never checks an unfinished draft: submit is disabled with the reason and no request is sent', () => {
         const exercise = catalogEntry('FREE_RESPONSE').demo.exercise;
         show(presentationOf(exercise, 'AUTHOR_DRAFT', 'draft', 'Проверить ответ пока нельзя: Добавьте вопрос.'));
-        expect(root().querySelector('.badge')?.textContent?.trim()).toBe('Ваше задание');
+        expect(root().querySelector('.stamp')?.textContent?.trim()).toBe('Ваше задание');
         expect(root().querySelector<HTMLButtonElement>('button[data-submit]')?.disabled).toBe(true);
         expect(root().querySelector('.blocked')?.textContent).toContain('Добавьте вопрос');
         expect(root().querySelector('[data-preview-caption]')?.textContent).toContain('Проверить ответ можно, когда оно будет заполнено');
@@ -417,7 +417,7 @@ describe('ExercisePreviewHostComponent', () => {
 
         it('says it is proposed by Мнема, not the author\'s own exercise', () => {
             show(proposal());
-            expect(root().querySelector('.badge')?.textContent?.trim()).toBe('Предложено Мнемой');
+            expect(root().querySelector('.stamp')?.textContent?.trim()).toBe('Предложено Мнемой');
             expect(root().querySelector('[data-preview-caption]')?.textContent).toContain('Пройдите упражнение как ученик');
             expect(root().querySelector('[data-preview-caption]')?.textContent).not.toContain('своё');
             expect(root().querySelector('[role="status"].visually-hidden')?.textContent).toBe('Показано предложенное упражнение.');

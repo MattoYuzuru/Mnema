@@ -107,15 +107,18 @@ final class EgressClients implements AutoCloseable {
         }
     }
 
-    /** Answers the proxy challenge of the configured host and port only. */
-    private static final class ProxyOnly extends Authenticator {
+    /**
+     * Answers the proxy challenge of the configured host and port only. The JDK names an IPv6 proxy in its expanded form without brackets
+     * ({@code 0:0:0:0:0:0:0:1}) while the URI gives {@code [::1]}, so both sides are compared in one canonical form.
+     */
+    static final class ProxyOnly extends Authenticator {
         private final String host;
         private final int port;
         private final String user;
         private final String password;
 
         ProxyOnly(String host, int port, String user, String password) {
-            this.host = host;
+            this.host = canonical(host);
             this.port = port;
             this.user = user;
             this.password = password;
@@ -124,10 +127,21 @@ final class EgressClients implements AutoCloseable {
         @Override
         protected PasswordAuthentication getPasswordAuthentication() {
             if (getRequestorType() != RequestorType.PROXY || getRequestingPort() != port || getRequestingHost() == null
-                    || !getRequestingHost().equalsIgnoreCase(host)) {
+                    || !canonical(getRequestingHost()).equals(host)) {
                 return null;
             }
             return new PasswordAuthentication(user, password.toCharArray());
+        }
+
+        /** Lower-case host name, or the canonical text of an IPv6 literal (parsed as a literal: never a DNS lookup). */
+        static String canonical(String host) {
+            String bare = host.startsWith("[") && host.endsWith("]") ? host.substring(1, host.length() - 1) : host;
+            if (bare.indexOf(':') < 0) return bare.toLowerCase(java.util.Locale.ROOT);
+            try {
+                return java.net.InetAddress.ofLiteral(bare).getHostAddress();
+            } catch (IllegalArgumentException notALiteral) {
+                return bare.toLowerCase(java.util.Locale.ROOT);
+            }
         }
     }
 }

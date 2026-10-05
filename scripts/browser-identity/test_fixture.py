@@ -540,6 +540,63 @@ module.main()
         runner = Path(__file__).with_name("run.py").read_text()
         self.assertIn('"onlyEdits": self.args.only_edits', runner)
 
+    def test_only_images_needs_generation_and_media_and_excludes_the_other_aids(self):
+        for extra in ([], ["--generation"], ["--media"], ["--generation", "--media", "--only-edits"]):
+            with patch.object(sys, "argv", ["run.py", "--dist", str(self.dist), "--authoring", "--only-images", *extra]), \
+                    contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as exit_code:
+                HARNESS.main()
+            self.assertEqual(2, exit_code.exception.code)
+        runner = Path(__file__).with_name("run.py").read_text()
+        self.assertIn('"onlyImages": self.args.only_images', runner)
+
+    def test_image_search_scenario_is_wired_stub_only_and_syntactically_valid(self):
+        runner = Path(__file__).with_name("run.py").read_text()
+        workshop = Path(__file__).with_name("workshop.mjs").read_text()
+        source = Path(__file__).with_name("image-search.mjs").read_text()
+        # The Stub Learning turns image search on (the Stub image source: no network); the media env is the `--media` one.
+        self.assertIn('"LEARNING_FEATURES_IMAGE_SEARCH_ENABLED": "true"', runner)
+        self.assertIn('"image-search.mjs"', runner)
+        self.assertIn("import { runWorkshopImages } from './image-search.mjs'", workshop)
+        self.assertIn("config.onlyImages", workshop)
+        self.assertNotIn("Fetch.fulfillRequest", source)
+        self.assertNotIn("pixabay.com/api", source)
+        for step in ("fixture", "composer", "slot_ready", "search", "choose", "revert", "no_result", "responsive", "approve_and_browse"):
+            self.assertIn(f"step('{step}'", source)
+        self.assertIn("[[stub:image-none]]", source)
+        self.assertIn("selectionRequests(before).length === 0", source)
+        node = shutil.which("node")
+        if node is not None:
+            for name in ("image-search.mjs", "workshop.mjs"):
+                result = subprocess.run([node, "--check", str(Path(__file__).with_name(name))], capture_output=True)
+                self.assertEqual(0, result.returncode, name)
+
+    def test_only_speech_needs_generation_and_media_and_excludes_the_other_aids(self):
+        for extra in ([], ["--generation"], ["--media"], ["--generation", "--media", "--only-images"]):
+            with patch.object(sys, "argv", ["run.py", "--dist", str(self.dist), "--authoring", "--only-speech", *extra]), \
+                    contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as exit_code:
+                HARNESS.main()
+            self.assertEqual(2, exit_code.exception.code)
+        runner = Path(__file__).with_name("run.py").read_text()
+        self.assertIn('"onlySpeech": self.args.only_speech', runner)
+
+    def test_speech_scenario_is_wired_stub_only_and_syntactically_valid(self):
+        runner = Path(__file__).with_name("run.py").read_text()
+        workshop = Path(__file__).with_name("workshop.mjs").read_text()
+        source = Path(__file__).with_name("speech.mjs").read_text()
+        self.assertIn('"LEARNING_FEATURES_TEXT_TO_SPEECH_ENABLED": "true"', runner)
+        self.assertIn('"speech.mjs"', runner)
+        self.assertIn("import { runWorkshopSpeech } from './speech.mjs'", workshop)
+        self.assertIn("config.onlySpeech", workshop)
+        self.assertNotIn("Fetch.fulfillRequest", source)
+        for step in ("fixture", "composer", "slot_ready", "redo_male", "undo", "same_voice_take", "responsive", "approve_and_browse"):
+            self.assertIn(f"step('{step}'", source)
+        self.assertIn("Синтезированная речь", source)
+        node = shutil.which("node")
+        if node is not None:
+            for name in ("speech.mjs", "workshop.mjs"):
+                result = subprocess.run([node, "--check", str(Path(__file__).with_name(name))], capture_output=True)
+                self.assertEqual(0, result.returncode, name)
+
 
 if __name__ == "__main__":
     unittest.main()

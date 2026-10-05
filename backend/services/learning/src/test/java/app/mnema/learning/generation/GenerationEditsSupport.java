@@ -115,8 +115,8 @@ abstract class GenerationEditsSupport extends GenerationReviewSupport {
     }
 
     /** Provider calls of EDIT steps only (the draft's own call is not one). */
-    protected List<GenerationTestConfiguration.Call> editCalls() {
-        return provider.calls.stream().filter(call -> call.prompt().contains("<task kind=\"edit\">")).toList();
+    protected List<GenerationTestConfiguration.Call> editCalls(UUID owner) {
+        return calls(owner).stream().filter(call -> call.prompt().contains("<task kind=\"edit\">")).toList();
     }
 
     // ------------------------------------------------------------ built documents

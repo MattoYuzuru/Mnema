@@ -52,11 +52,11 @@ artifact:
 | 2. Фундамент без AI | AI-01 usage ledger; AI-02 provider foundation; AI-03 MBM compiler; CONTENT-01 узел `code_block`; AI-07 центр уведомлений; AI-12 хаб колоды, статистика, multi-select, «Эталон»; AI-UI примитивы | Уведомления, хаб и статистика работают; оператор видит `aiGeneration: available` локально |
 | 3. Первый вертикальный срез | AI-04 сессии/шаги; AI-05 approve/handoff/retention; AI-06 composer + Мастерская; AI-08 из «На потом» | Материал из запроса одобрен в колоду; батч из заметок |
 | 4. Упражнения, проверка, правки | STUDY-01 перемешивание CHOICE; AI-13 генерация упражнений; AI-20 `ai-semantic`; AI-11 inline-правки; AI-16 диалог материала и правка существующего; AI-14 планировщик | Упражнения с ИИ, проверка объяснений, правки по выделению |
-| 5. Медиа, голос, деньги, эксплуатация | AI-10 поиск изображений; AI-09 TTS с кэшем; AI-15 STT; AI-18 веб-исследование; AI-17 эксплуатация и eval; AI-19 paywall/онбординг/Max-тизер; AI-21 промокоды/A/B/промо-попап | Полный AI-релиз на локальном стенде |
+| 5. Медиа, голос, деньги, эксплуатация | INFRA-02 egress-шлюз; AI-10 поиск изображений; AI-09 TTS с кэшем; AI-15 STT; AI-18 веб-исследование; AI-17 эксплуатация и eval; AI-19 paywall/онбординг/Max-тизер; AI-21 промокоды/A/B/промо-попап | Полный AI-релиз на локальном стенде |
 
 Зависимости: `INFRA-01 → AI-00 → {AI-01, AI-02, AI-03, CONTENT-01, AI-07, AI-12,
 AI-UI} → AI-04 → AI-05 → AI-06 → {AI-08, STUDY-01, AI-13, AI-11} → {AI-20, AI-16,
-AI-14} → {AI-10, AI-09, AI-15, AI-18} → {AI-17, AI-19, AI-21}`. AI-20 требует AI-02 и STT-путь из AI-15 только для
+AI-14} → INFRA-02 → {AI-10, AI-09, AI-15, AI-18} → {AI-17, AI-19, AI-21}`. AI-20 требует AI-02 и STT-путь из AI-15 только для
 голосового ответа; текстовый путь — раньше.
 
 ### Статус прогонов
@@ -106,6 +106,15 @@ Follow-up: #335 (база ревизии правки), #336 (ai-semantic без
 Тестовая инфраструктура: `MiddayUsageClock` убрал часовой флак generation-тестов перед полуночью МСК; harness запускается
 под `caffeinate -d -i` (сон дисплея macOS подвешивает headless Chrome).
 
+Прогон 5 — вводные владельца 2026-10-04 (комментарий в #77, заменяют результаты #280 как входные условия): добавлена первая
+задача INFRA-02 (#340) — stateless HTTP CONNECT egress-шлюз на VPS владельца в Финляндии для провайдеров, недоступных из РФ
+(данные, Learning и ключи остаются в РФ, шлюз видит только имена хостов; kill-switch и fallback обязательны); TTS (#297) — primary-
+кандидат Google Gemini 3.8 Flash TTS через шлюз, сравнение с Yandex SpeechKit v1 для RU; STT (#298) — spike self-host (GigaAM-v3 /
+Qwen3-ASR) против Gemini-транскрибации через шлюз, голос через шлюз только обезличенно и с согласием; изображения (#296) — без Pexels
+(Pixabay, Openverse, Wikimedia Commons); веб-поиск (#299) — spike Yandex Search API против Brave/Perplexity через шлюз, без ключа —
+Stub + recorded fixtures; текстовый fallback — OpenRouter (те же модели DeepSeek) вместо ненастроенного GigaChat. Задачи без ключей
+завершаются на Stub и recorded fixtures с пометкой «live не проверено». Порядок: #340 → #296 → #297 → #298 → #299 → #300 → #301 → #302.
+
 ## Delivery slices
 
 | № | Issue | Outcome | Входит | Не входит | Риски |
@@ -130,10 +139,11 @@ Follow-up: #335 (база ревизии правки), #336 (ai-semantic без
 | AI-11 | Inline-правки | `data-node-id`; окно в панели выделения; `EDIT`; контекст под cache; сохранение IDs; diff; undo/redo; mobile bottom sheet | frontend + API | span-level | потеря выделения |
 | AI-16 | Диалог материала и правка существующего | intent → spec-чипы → подтверждение; `REVISE_ITEM`/`REVISE_EXERCISE`; revise через `PUT` + `If-Match` | frontend + API | агентный чат | инъекции в бюджет |
 | AI-14 | Планировщик | «Предложить план» по статистике → `PLAN_READY` → правка → запуск; стоимость видна | API + UI | автозапуск | дорогой вызов |
-| AI-10 | Поиск изображений | `::image mode=search`; Pexels/Pixabay/Openverse/Wikimedia; сохранение файла; атрибуция; host allowlist + SSRF-тесты; 3–4 варианта | adapter + UI | генерация | лицензии |
-| AI-09 | TTS с кэшем | eval вендора (отдельный spike внутри задачи); `::audio`; staging в pipeline #76 (`origin=generated`); `generation_media_ref`; кэш по хэшу; sub-caps; «Озвучить заново» | adapter + UI | подкасты | стоимость |
-| AI-15 | Speech-to-text | benchmark self-host на целевом VPS; `speech-inputs` (≤60 с, эфемерно); `TRANSCRIBE`; `SpeechToTextProvider`; fair-use bucket; VAD; rate limits; согласие; микрофон в composer/окне/«На потом»/Study-ответе | provider + UI | live STT | abuse; латентность |
-| AI-18 | Веб-исследование | eval поискового API; `RESEARCH`; бюджеты по effort; allowlist ссылок; «Источники» | adapter + pipeline | post-hoc фактчек | стоимость |
+| INFRA-02 | Egress-шлюз | per-provider HTTP CONNECT-прокси (`egress=proxy`), basic auth, allowlist хостов на прокси, kill-switch; Squid-конфиг и runbook для VPS | конфиг адаптеров, `deploy/ai-egress-proxy/`, runbook | хранение данных/ключей на шлюзе; развёртывание VPS (владелец) | блокировка аккаунта провайдера — kill-switch и fallback |
+| AI-10 | Поиск изображений | `::image mode=search`; Pixabay/Openverse/Wikimedia (Pexels убран 2026-10-04); сохранение файла; атрибуция; host allowlist + SSRF-тесты; 3–4 варианта | adapter + UI | генерация | лицензии |
+| AI-09 | TTS с кэшем | spike Gemini 3.8 Flash TTS через шлюз против Yandex SpeechKit v1 для RU; `::audio`; staging в pipeline #76 (`origin=generated`); `generation_media_ref`; кэш по хэшу; sub-caps; «Озвучить заново» | adapter + UI | подкасты | стоимость |
+| AI-15 | Speech-to-text | spike self-host (GigaAM-v3 / Qwen3-ASR) против Gemini через шлюз; `speech-inputs` (≤60 с, эфемерно); `TRANSCRIBE`; `SpeechToTextProvider`; fair-use bucket; VAD; rate limits; согласие; микрофон в composer/окне/«На потом»/Study-ответе | provider + UI | live STT | abuse; латентность |
+| AI-18 | Веб-исследование | spike Yandex Search API против Brave/Perplexity через шлюз; `RESEARCH`; бюджеты по effort; allowlist ссылок; «Источники» | adapter + pipeline | post-hoc фактчек | стоимость |
 | AI-17 | Эксплуатация и eval | роли `api`/`worker`; `NOTIFY`; глобальные дневные бюджеты; дашборд метрик; runbook; golden eval отчёт (O-06) как gate | ops | деплой | ложная уверенность |
 | AI-19 | Paywall и онбординг | `/plans`; «Для чего вам Mnema?»; usage в профиле; Max-тизер за toggle; страница `/ai`; `entitlement_inbox` контракт; права из return URL запрещены тестом | frontend + API | T-Bank | — |
 | AI-21 | Промокоды, A/B, промо-попап | модель промокодов, admin-scope endpoint, лимиты/анти-фрод/аудит; A/B-назначение и метрики; попап с частотными ограничениями | API + UI | админ-UI (отдельная задача) | фрод |

@@ -22,13 +22,15 @@ import java.util.Locale;
  * (the worker transcodes it to the playback variant). The language is auto-detected by the model, so none is sent; the style instruction is a fixed
  * learner-oriented sentence ({@link SpeechSettings#style()}) and the only text besides the clip's own, which the caller has already de-identified.
  *
- * <p>Pricing (https://ai.google.dev/gemini-api/docs/pricing): text input and audio output are token-billed; the response carries no usage block, so the
- * cost is estimated as text tokens ≈ characters / 4 and audio tokens = 25 per second of audio. The price entry in {@code learning.ai.models} is the
+ * <p>Pricing (https://ai.google.dev/gemini-api/docs/pricing): input and audio output are token-billed. The response carries {@code usage}
+ * ({@code total_input_tokens}, {@code total_output_tokens}; live check 2026-10-05: about 200 input tokens even for one word and 32 audio tokens per
+ * second), which prices the call; without it the cost is estimated as text tokens ≈ characters / 4 plus 200 and 32 audio tokens per second. The price entry in {@code learning.ai.models} is the
  * rate in force now ({@code $0.50 / $9.00} per million until 2026-12-31, {@code $1.00 / $18.00} from 2027-01-01: update it then).
  */
 final class GeminiSpeechSynthesis implements SpeechAdapter {
     static final String PROVIDER = "google";
-    static final int AUDIO_TOKENS_PER_SECOND = 25;
+    static final int AUDIO_TOKENS_PER_SECOND = 32;
+    static final int FIXED_INPUT_TOKENS = 200;
     private static final Logger LOG = LoggerFactory.getLogger(GeminiSpeechSynthesis.class);
     private static final JsonMapper JSON = JsonMapper.builder().build();
 
@@ -96,6 +98,7 @@ final class GeminiSpeechSynthesis implements SpeechAdapter {
         }
         if (reply.status() / 100 != 2) return AiResult.failed(ImageSource.statusFailure(reply.status(), reply.retryAfter(), clock));
         byte[] audio = audio(reply.body());
+        long reported = reportedCost(reply.body(), model);
         if (audio == null) return AiResult.failed(new AiFailure.InvalidOutput("no_audio"));
         Wav.Info info = Wav.parse(audio);
         if (info == null) {
@@ -103,7 +106,7 @@ final class GeminiSpeechSynthesis implements SpeechAdapter {
             return AiResult.failed(new AiFailure.InvalidOutput("not_wav"));
         }
         return AiResult.ok(new SpeechSynthesis.Audio(audio, "audio/wav", request.text().length(), info.durationMs(),
-                new SpeechSynthesis.Identity(PROVIDER, model, modelVersion, format(), voiceName(request.voice())), 0L));
+                new SpeechSynthesis.Identity(PROVIDER, model, modelVersion, format(), voiceName(request.voice())), reported));
     }
 
     /** The first audio {@code data} of the first {@code model_output} step that has one, decoded; null when there is none or it is not base64. */
@@ -129,8 +132,24 @@ final class GeminiSpeechSynthesis implements SpeechAdapter {
         return null;
     }
 
+    /** The cost from the response's own token counts, or 0 when it has none (then {@link #costMicros} estimates). */
+    private long reportedCost(byte[] body, String model) {
+        AiProperties.Model price = prices.apply(model);
+        if (price == null) return 0;
+        try {
+            JsonNode usage = JSON.readTree(body).path("usage");
+            long input = usage.path("total_input_tokens").asLong(0);
+            long output = usage.path("total_output_tokens").asLong(0);
+            if (input <= 0 && output <= 0) return 0;
+            return ceilDiv(input * price.missMicrosPerMillion() + output * price.outputMicrosPerMillion(), 1_000_000L);
+        } catch (JacksonException malformed) {
+            return 0;
+        }
+    }
+
     @Override
     public long costMicros(SpeechSynthesis.Audio audio) {
+        if (audio.costMicros() > 0) return audio.costMicros();
         AiProperties.Model price = prices.apply(audio.identity().model());
         if (price == null) return 0;
         long inputTokens = tokensOfText(audio.billedCharacters());
@@ -144,7 +163,7 @@ final class GeminiSpeechSynthesis implements SpeechAdapter {
         return new Usage(input, 0, input, (int) Math.min(Integer.MAX_VALUE, outputTokens(audio.durationMs())));
     }
 
-    static long tokensOfText(int characters) { return (characters + 3L) / 4; }
+    static long tokensOfText(int characters) { return (characters + 3L) / 4 + FIXED_INPUT_TOKENS; }
 
     static long outputTokens(long durationMs) { return (durationMs * AUDIO_TOKENS_PER_SECOND + 999) / 1000; }
 

@@ -160,7 +160,7 @@ export async function runWorkshopEdits(ctx, h) {
         label: document.getElementById(popover.getAttribute('aria-labelledby'))?.textContent.trim(), presets: [...popover.querySelectorAll('.chip')].map(node => node.textContent.trim()),
         field: popover.querySelector('textarea')?.value ?? null, fieldLabel: popover.querySelector('label')?.textContent.trim(), cost: text(popover.querySelector('.window-cost')?.textContent),
         quote: text(popover.querySelector('.window-quote')?.textContent), error: text(popover.querySelector('.window-error')?.textContent),
-        enterkeyhint: popover.querySelector('textarea')?.getAttribute('enterkeyhint'), send: [...popover.querySelectorAll('.window-button')].map(node => node.textContent.trim()),
+        enterkeyhint: popover.querySelector('textarea')?.getAttribute('enterkeyhint'), send: [...popover.querySelectorAll('.window-actions button')].map(node => node.textContent.trim()),
         microphone: Boolean(popover.querySelector('[aria-label*="микрофон" i], [aria-label*="Голос" i]')),
         focusInside: popover.contains(active), focusOnField: active === popover.querySelector('textarea'),
         rect: (() => { const rect = popover.getBoundingClientRect(); return { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right }; })() } : null,
@@ -180,7 +180,7 @@ export async function runWorkshopEdits(ctx, h) {
         return { open: details.open, summary: text(details.querySelector('summary')?.textContent), items: [...details.querySelectorAll('li')].map(item => ({
           text: text(item.textContent), revert: Boolean([...item.querySelectorAll('button')].find(node => node.textContent.trim() === 'Вернуть к этой версии')), current: item.classList.contains('is-current') })) }; })(),
       hint: text(document.querySelector('app-proposal-view .selection-hint')?.textContent),
-      summary: text(document.querySelector('section.workshop .summary')?.textContent), regions: document.querySelectorAll('section.workshop [role=status]').length,
+      summary: text(document.querySelector('section.workshop .summary')?.textContent), regions: document.querySelectorAll('section.workshop [role=status]:not(.document-announcement)').length,
       notice: text(document.querySelector('section.workshop .notice')?.textContent),
       selection: document.getSelection()?.toString() ?? '',
       focus: active === document.body ? 'body' : { tag: active.tagName.toLowerCase(), cls: String(active.className).slice(0, 30), inHost: Boolean(active.closest('.document-host')) } };`);
@@ -200,7 +200,7 @@ export async function runWorkshopEdits(ctx, h) {
       if (strip && recorder.strip.at(-1) !== strip) recorder.strip.push(strip);
       const summary = (document.querySelector('section.workshop .summary')?.textContent ?? '').replaceAll('\\u00a0', ' ').trim();
       if (summary && recorder.summaries.at(-1) !== summary) recorder.summaries.push(summary);
-      recorder.regions = Math.max(recorder.regions, document.querySelectorAll('section.workshop [role=status]').length);
+      recorder.regions = Math.max(recorder.regions, document.querySelectorAll('section.workshop [role=status]:not(.document-announcement)').length);
     }, 30);
     return true;`;
   const recorded = () => page('return globalThis.__mnemaEdits ?? null;');

@@ -32,7 +32,6 @@ export interface MechanicChoice { readonly mechanic: Mechanic; readonly delibera
       :host { display: block; min-inline-size: 0; }
       .picker { min-inline-size: 0; display: grid; gap: .9rem; margin: 0; border: 0; padding: 0; }
       legend { padding: 0; color: var(--mn-ink); font: 500 clamp(1.5rem, 4vw, 2rem)/1.15 var(--mn-font-display, Georgia, serif); }
-      .hint { margin: 0; color: var(--mn-muted); line-height: 1.55; }
       .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr)); gap: .85rem; }
       .tile { position: relative; min-inline-size: 0; display: grid; align-content: start; gap: .45rem; border: 1px solid var(--mn-field-border);
         padding: 1rem 1rem 1.1rem 3rem; background: var(--mn-sheet); cursor: pointer; overflow-wrap: anywhere; }

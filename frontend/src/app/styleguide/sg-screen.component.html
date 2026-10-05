@@ -1,0 +1,38 @@
+<section class="sg-section" id="screen" aria-labelledby="screen-title">
+  <p class="eyebrow">Сборка</p>
+  <h2 id="screen-title">Пример экрана</h2>
+  <p class="sg-lede">Страница колоды целиком, без новых классов: рубрика, заголовок, одно главное действие, сообщение, список с правилами, лист, шкала расхода.
+    Так выглядит экран, собранный из каталога.</p>
+  <app-sg-specimen title="Колода" selector=".eyebrow + h1 + .actions + .notice + .paper-surface" [onPaper]="true"
+    when="Образец композиции рабочей страницы: на каждый экран приходится один главный приём и один главный action; всё остальное — вторичные кнопки, линии и тихие подписи.">
+    <div class="sg-screen">
+      <header class="sg-screen-head">
+        <p class="eyebrow">Колода</p>
+        <p class="sg-screen-title">Японский N4</p>
+        <p class="hint">Двенадцать материалов, пять упражнений, повторение завтра.</p>
+        <div class="actions">
+          <button type="button" class="generate-cta">Создать материал</button>
+          <button type="button" class="button">Начать занятие</button>
+          <button type="button" class="button quiet">Изменить колоду</button>
+        </div>
+      </header>
+      <div class="notice warning" role="status"><p>Три материала без упражнений: занятие по ним не начнётся.</p></div>
+      <app-segmented-choice legend="Порядок" [options]="sortOptions" [(value)]="sort" />
+      <ul class="sg-rows">
+        @for (material of materials; track material.title) {
+          <li class="sg-row">
+            <div>
+              <p class="sg-row-title">{{ material.title }}@if (material.fresh) { <span class="stamp solid">Новое</span> }</p>
+              <p class="hint">{{ material.note }}</p>
+            </div>
+            <button type="button" class="button small" [attr.aria-label]="'Открыть: ' + material.title">Открыть</button>
+          </li>
+        }
+      </ul>
+      <section class="paper-surface ruled" aria-labelledby="sg-screen-usage">
+        <h3 id="sg-screen-usage">ИИ-бюджет</h3>
+        <app-usage-meter label="ИИ в октябре" [total]="100" [used]="14" resetsOn="1 ноября" />
+      </section>
+    </div>
+  </app-sg-specimen>
+</section>

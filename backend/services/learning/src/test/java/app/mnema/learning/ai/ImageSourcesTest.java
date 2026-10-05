@@ -58,7 +58,7 @@ class ImageSourcesTest {
         List<ImageSearch.Candidate> found = ok(source.search("лиса зимой", "ru", 4, BUDGET));
 
         String query = decode(server.requests.getFirst().query());
-        assertThat(query).contains("key=" + KEY, "q=лиса зимой", "lang=ru", "image_type=photo", "safesearch=true", "per_page=8", "page=1");
+        assertThat(query).contains("key=" + KEY, "q=лиса зимой", "lang=ru", "image_type=photo", "safesearch=true", "per_page=30", "page=1");
         assertThat(server.requests.getFirst().headers().get("User-agent")).containsExactly(AGENT);
         // id 2 has an http page and id 4 a download that is not https: both are dropped
         assertThat(found).extracting(ImageSearch.Candidate::sourceId).containsExactly("195893", "3");
@@ -169,7 +169,7 @@ class ImageSourcesTest {
         assertThat(tokens.getFirst().method()).isEqualTo("POST");
         assertThat(tokens.getFirst().body()).contains("grant_type=client_credentials", "client_id=" + CLIENT_ID, "client_secret=" + CLIENT_SECRET);
         ImageServer.Recorded search = server.requests.stream().filter(request -> request.path().equals("/v1/images/")).findFirst().orElseThrow();
-        assertThat(decode(search.query())).contains("q=fox", "license_type=commercial", "mature=false", "page_size=10");
+        assertThat(decode(search.query())).contains("q=fox", "license_type=commercial", "mature=false", "page_size=30");
         assertThat(search.headers().get("Authorization")).containsExactly("Bearer tok-1");
         assertThat(search.query()).doesNotContain(CLIENT_SECRET);
         // NC and the result without an https page are dropped; the license code becomes a short name
@@ -243,6 +243,18 @@ class ImageSourcesTest {
         assertThat(ImageText.plain("a  b\n\tc", 50)).isEqualTo("a b c");
         assertThat(ImageText.plain("x".repeat(500), 200)).hasSize(200);
         assertThat(ImageText.plain(null, 10)).isEmpty();
+    }
+
+    @Test
+    void textHygieneReplacesInvisibleAndDirectionalControlsWithASpace() {
+        // bidi override, zero-width space, line separator, a lone surrogate by entity and a private-use character
+        assertThat(ImageText.plain("a\u202Eb\u200Bc\u2028d&#xD800;e\uE000f", 50)).isEqualTo("a b c d e f");
+        assertThat(ImageText.plain("\u202E\u200B", 50)).isEmpty();
+        assertThat(ImageText.plain("x\u2029y", 50)).isEqualTo("x y");
+    }
+
+    @Test
+    void urlsStayStrict() {
         assertThat(ImageText.https("https://example.org/a")).isEqualTo("https://example.org/a");
         assertThat(ImageText.https("http://example.org/a")).isNull();
         assertThat(ImageText.https("https://user:pw@example.org/a")).isNull();

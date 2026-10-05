@@ -1,4 +1,5 @@
 @import "./theme/tokens.css";
+@import "./theme/components.css";
 
 *,
 *::before,
@@ -155,13 +156,13 @@ html body h1[tabindex="-1"]:focus-visible {
 }
 
 /* The origin is supplied on pointer entry by the shell; keyboard focus uses the centre. */
-:is(.button, .quiet-action, .primary-action, .profile-page button, .file-label, .feature-strip a, .item-row, .deck-row) {
+:is(.button, .feature-strip a, .item-row, .deck-row) {
     position: relative;
     isolation: isolate;
     overflow: hidden;
 }
 
-:is(.button, .quiet-action, .primary-action, .profile-page button, .file-label, .feature-strip a, .item-row, .deck-row)::before {
+:is(.button, .feature-strip a, .item-row, .deck-row)::before {
     content: '';
     position: absolute;
     z-index: -1;
@@ -173,13 +174,13 @@ html body h1[tabindex="-1"]:focus-visible {
     transition: clip-path var(--mn-wave-duration) cubic-bezier(.22, .61, .36, 1);
 }
 
-:is(.button, .quiet-action, .primary-action, .profile-page button, .file-label, .feature-strip a, .item-row, .deck-row):is(:hover, :focus-visible):not(:disabled)::before,
+:is(.button, .feature-strip a, .item-row, .deck-row):is(:hover, :focus-visible):not(:disabled)::before,
 /* A list row is an <li>: it never takes focus itself, so its focusable children drive the wave. */
 .item-row:has(:focus-visible)::before {
     clip-path: circle(150% at var(--mn-wave-x, 50%) var(--mn-wave-y, 50%));
 }
 
-:is(.button.primary, .primary-action, .profile-page button) {
+.button.primary {
     --mn-wave-fill: var(--mn-body);
 }
 
@@ -298,7 +299,7 @@ html body h1[tabindex="-1"]:focus-visible {
         outline-color: Highlight !important;
     }
 
-    :is(.button, .quiet-action, .primary-action, .profile-page button, .file-label, .feature-strip a)::before {
+    :is(.button, .feature-strip a)::before {
         display: none;
     }
 }

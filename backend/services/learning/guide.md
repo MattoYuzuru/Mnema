@@ -484,36 +484,37 @@ Licensed stock images for `::image{mode="search"}` slots. Contract: `contracts/g
   answers; every source failing is `Failed` (the step says `PROVIDER_UNAVAILABLE`), none licensed is `[]` (`NO_RESULT`). Each real source call has a breaker per
   `(source, IMAGE_SEARCH)`, the `imageSearch` permits, the daily budget, an `ai_provider_call` row (provider = source id, model `search`, cost 0) and
   `mnema_ai_calls_total`; it refuses to run inside a transaction. Defaults: `learning.ai.providers.{pixabay,openverse,wikimedia}.*`
-  (`MNEMA_AI_PIXABAY_API_KEY`, `MNEMA_AI_OPENVERSE_CLIENT_ID/_SECRET`; Wikimedia needs no key; Openverse defaults to `egress=proxy` because its API answers a
-  Cloudflare challenge from some networks, so without an active proxy it is simply not configured). `StubImageSearch` (only with `learning.ai.provider=stub`):
+  (`MNEMA_AI_PIXABAY_API_KEY`, `MNEMA_AI_OPENVERSE_CLIENT_ID/_SECRET`; Wikimedia needs no key; all three direct by default — verified live from a Russian network on
+  2026-10-05 with the owner's keys; `egress=proxy` is the fallback if a network meets Openverse's Cloudflare challenge). The download asks for the image types and
+  `*/*;q=0.1` (the Openverse thumbnail endpoint answers 406 to image types alone); the content type and magic bytes are checked anyway. `StubImageSearch` (only with `learning.ai.provider=stub`):
   4 to 6 deterministic candidates per query (source `STUB`, CC0, `https://example.org/stub/<n>`), a PNG drawn in-process by `fetch`; markers in the query
   `[[stub:image-none]]` (nothing licensed) and `[[stub:image-down]]` (every source down).
 - **Licenses** (`ImageLicense`): Pixabay Content License, CC0, public domain / PDM, CC BY (any version), CC BY-SA (any version, `shareAlike`). NC, ND, GFDL-only,
   fair use, unknown or missing are dropped; a Wikimedia file with any `Restrictions` is dropped; a candidate without an https source page is dropped. Author
   (<=200) and title (<=300) are plain text (HTML of `Artist`/`ImageDescription` is stripped, entities decoded). Answers are cached 24 h per
-  `(source, normalised query, lang, page)` in `image_search_cache` (Pixabay's terms; swept hourly, a failing cache is a miss); images are downloaded and
+  `(source, normalised query, lang, page)` in `image_search_cache` (Pixabay's terms; swept hourly, a failing cache is a miss). Every source is asked for a fixed page of 30 whatever the caller needs (`ImageSource.PAGE_SIZE`; within Pixabay `per_page` <=200, Wikimedia `gsrlimit` <=50, Openverse `page_size`) and at most 30 results are kept, so the cached page is always the same size and a later «Найти похожее» turn is served fresh candidates from it (the router slices to the request and drops the keys already known); images are downloaded and
   stored as the owner's asset, never hot-linked. The query language comes from its script (kana ja, Hangul ko, Han zh, Cyrillic ru, else en): **no extra LLM
   call builds the query in this slice** (the draft model wrote it; a deliberate deviation from the issue's wording).
 - **Safe fetcher** (`SafeImageFetcher`, `ImageAddressPolicy`): https only; the exact host list of the candidate's own source; the host is resolved here and refused
   when any address is loopback, any-local, private, link-local (169.254.169.254 included), multicast, CGNAT, unique-local or an IPv4-mapped/compatible/NAT64 form of
-  those (a proxied source is resolved by the proxy: only the host list applies); redirects by hand, at most 2, **same host only**, every hop re-validated;
+  those, or a tunnel/translation prefix: 6to4 `2002::/16`, Teredo `2001::/32`, `64:ff9b:1::/48`, SIIT `::ffff:0:0:0/96` (a proxied source is resolved by the proxy: only the host list applies); source text is also stripped of format, line/paragraph-separator, surrogate and private-use characters (bidi overrides, zero-width) before it is bounded; redirects by hand, at most 2, **same host only**, every hop re-validated;
   `Content-Type` jpeg/png/webp/gif, a declared length above 10 MiB refused before reading, a streamed body cut at 10 MiB, magic bytes must match; 5 s connect, whole
   fetch inside the budget. Residual risk, accepted: the JDK client resolves the name again at connect, so DNS rebinding between check and connect is not excluded;
   acceptable only because the hosts are fixed public names of the sources, never a name a result chooses.
 - **Staging (`media`).** `GeneratedMediaStager.stage(owner, assetId, IMAGE, mime, bytes)` creates the asset with the **given** id (origin `generated`, V35; a browser
   cannot ask for it), writes the staging object and runs the ordinary finalize, seal and verification, ending `READY` or `REJECTED`; no transaction spans S3.
-  `assetState` reads it. `generation_media_hold` (view over `generation_media_ref` and `generation_media_candidate`) is what the media GC and `resolve` treat as a
+  `assetState` reads it (`PENDING` = reserved, bytes not sealed). `reserve` records the asset and its session first, so the executor can store the candidate row before the transfer; other bytes replace a reservation whose single PUT has not begun, and conflict once it may have been written. **Generated staging does not charge the owner's upload quota** (the owner did not start it); it is bounded by the credits instead (one search per slot or turn) and by 12 candidates x 10 MiB per slot. `generation_media_hold` (view over `generation_media_ref` and `generation_media_candidate`) is what the media GC and `resolve` treat as a
   Workshop hold, so every candidate stays reachable until its session is purged.
 - **Slots and candidates (V35).** `generation_media_candidate` (<=12 per slot, unique `(artifact, slot, source, source_id)`, own asset, attribution, `share_alike`);
   the read model derives a candidate's state from its asset. `ImageSearchExecutor` (kind `IMAGE_SEARCH`, deadline PT3M) runs two inputs. **The initial step of a slot**:
-  search the slot's query, download the best result, stage it under the slot's pre-allocated asset, wait (poll every 500 ms, no transaction) for READY or REJECTED,
+  search the slot's query, download the best result, reserve the slot's pre-allocated asset, **store the candidate row (source key, attribution) before the transfer**, stage the bytes under it (a retry after a lost lease resumes that very candidate: its bytes are staged again after a search for its key if the transfer never happened, and an asset is never paired with another image's attribution), wait (poll every 500 ms, no transaction) for READY or REJECTED,
   then in one transaction debit `IMAGE_SEARCH` from the session's batch hold (`debit:{step}:{attempt}`), slot `READY` with that candidate chosen, the node hold; failures
   are slot `FAILED` with `NO_RESULT | PROVIDER_UNAVAILABLE | VERIFICATION_REJECTED | DEADLINE_EXCEEDED` and nothing debited. The batch hold, which a session normally
   releases when it leaves RUNNING, stays while such a step is open (`SessionLifecycle.releaseHolds`) and ends with the last one (`releaseIdleBatch`, also after a
   cancellation, a removal, a replacement or a hand-off). **The turn of an `IMAGE_SEARCH` edit** (`ArtifactEdits`: exactly one image block of a search slot, an optional
   query <=200, a `TURN` hold of one search; it replaces a first search of that slot still waiting): up to 4 new candidates are stored, then `ImageSearchLifecycle.succeedImages`
   applies the first READY one in a revision `MEDIA` (the node's `assetId`, the slot READY on it) and debits the turn, or the turn fails (`NO_RESULT`, `PROVIDER_UNAVAILABLE`,
-  `DEADLINE_EXCEEDED`; no room left of the 12 is `NO_RESULT`) with its hold released and revision and slot unchanged. Every write is fenced by the lease token and checks
+  `DEADLINE_EXCEEDED`; no room left of the 12 is `NO_RESULT`) with its hold released and revision and slot unchanged. A retry of a turn (attempt > 1) first applies a READY candidate of the slot that the lost attempt stored (created since the turn began) before it searches again. A turn that replaced a first search and ends without an image fails that slot with its own code unless the first search, not asked to stop, still runs; a first search that was asked to stop (`cancel_requested`) never decides the slot, but when it ends cancelled and no step of the slot is left it fails the slot `CANCELLED` itself (`ImageSearchLifecycle.cancelStep`, `StepRepository.hasLiveSlotStep`), so a slot is never stuck GENERATING or VERIFYING. Every write is fenced by the lease token and checks
   `cancel_requested`; lease recovery and queue expiry of a slot step fail its slot (`StepDispatcher`, `StepQueue`).
 - **Choice, revert, read model.** `POST .../media-slots/{slotKey}/selection` (`ArtifactEdits.select`): receipt replay (the receipt keeps the revision; the controller reads
   the artifact from it), 412 on a stale revision, 404 opaque for an absent slot or a candidate of another slot or owner, 409 for a state that is not review, an
@@ -529,8 +530,8 @@ Licensed stock images for `::image{mode="search"}` slots. Contract: `contracts/g
   `ImageAddressPolicyTest`), the router (`RoutedImageSearchTest`), the cache on PostgreSQL (`ImageSearchCacheIntegrationTest`), staging on MinIO with a fake worker
   (`GeneratedMediaStagerIntegrationTest`) and the flows on the Stub with a staging double (`GenerationImageSearchIntegrationTest`). Opt-in
   `MNEMA_AI_LIVE=true ... --tests '*ImageSearchLive*'` runs Wikimedia Commons for real (search and one safe download) and Pixabay/Openverse only with their
-  credentials in the environment. **Pixabay and Openverse are not verified live** (no keys in the owner environment yet); Openverse's field names follow the published
-  schema (https://docs.openverse.org/api/) and could not be fetched from here (the API host answers 403 to an anonymous client).
+  credentials in the environment. **Verified live 2026-10-05** with the owner's keys: Pixabay, Openverse (client-credentials token, search, thumbnail
+  without a bearer once `Accept` includes `*/*;q=0.1`) and Wikimedia Commons, all directly from a Russian network.
 
 ## Speech synthesis (#297)
 
@@ -561,8 +562,11 @@ tested on recorded fixtures and the Stub only.
   unused for `learning.ai.tts.cache-ttl` (P180D): only the row, the media GC then reclaims the blobs. Adoption refuses (and the entry is dropped, the clip synthesised again) only when a blob is gone or being reclaimed (an exception of the adoption fails the step, which retries, and drops nothing); `publish` locks `media_gc_object` like the adoption and refuses blobs the GC began to reclaim. `learning.ai.tts.version`
   is part of the key (bump it to invalidate). Pre-warming at publication is a follow-up. **Lease** `learning.ai.tts.lease` defaults to PT75S (below the PT2M step deadline, so waiters behind a crashed worker can take the entry over and still
   finish), renewed every 15 s while the winner waits for the verification; takeover is one conditional `UPDATE`. A hit writes `last_used_at` at most once a day (conditional `UPDATE`; no row lock on the READY path). `SpeechClips` counts
-  every claim in `mnema_tts_cache_total{outcome=hit|miss|busy}` (`busy` is a poll behind another step's synthesis). **Default route:** `google:gemini-3.8-flash-tts`; Flash-Lite TTS (about a third cheaper, and under the 10-credit clip weight after 2027-01-01)
-  is a candidate default pending a listening test (the lead decides the route).
+  every claim in `mnema_tts_cache_total{outcome=hit|miss|busy}` (`busy` is a poll behind another step's synthesis). **Default route:** `google:gemini-3.8-flash-lite-tts,google:gemini-3.8-flash-tts` (owner hint 2026-10-05: Flash-Lite has higher rate limits, is about a
+  third cheaper and stays under the 10-credit clip weight after 2027-01-01; live 2026-10-05: 4.4–4.6 s for a 4–5 s RU/JA phrase vs 4.7–5.7 s on Flash).
+  The cost of a Gemini call comes from the response's `usage` (`total_input_tokens`, `total_output_tokens`: about 200 input tokens even for one word and
+  32 audio tokens a second); without it the adapter estimates. Live: `MNEMA_AI_LIVE=true MNEMA_AI_LIVE_EGRESS=direct … --tests '*SpeechLive*'` from a
+  developer network where Google answers, otherwise through the egress proxy.
 - **Media pipeline.** The worker accepts a `RIFF/WAVE` PCM s16le source for audio (`audio/wav`, still transcoded to the same AAC/M4A playback variant); `MediaProcessingService` rejects a WAV source unless the asset's origin is
   `generated`, and `MediaUploadSettings.validateGenerated` allows `audio/wav` only for the server staging, so the browser allowlist is unchanged. **The `mnema-media-worker:local` image must be rebuilt** (`backend/media-worker`).
 - **Executor (`SpeechExecutor`, kind `TTS`, capability `TTS`, deadline PT2M; replaces the Stub executor).** `SpeechClips` is the shared part (cache claim, one provider call, stage, wait; a fallback answer is filed under the provider that made
@@ -984,7 +988,7 @@ and the UI (AI-04+) build on it; nothing here debits the user's quota, it only r
   deadline over headers and body, an idle limit for SSE (a virtual-thread watchdog closes the stream), a hard body cap, and
   error bodies are never read. DeepSeek: `thinking` is disabled explicitly (enabled on the plan routes), `user_id`, `prompt_cache_hit/miss_tokens`.
   GigaChat: OAuth exchange of the authorization key (`GigaChatTokens`, covered by a recorded fixture only, not yet run
-  against the live service) and `precached_prompt_tokens`. OpenRouter: config and adapter only, no default route.
+  against the live service) and `precached_prompt_tokens`. OpenRouter: the second entry of every DeepSeek route (the same DeepSeek models; `reasoning` is `effort: none` except on the planner routes, where it is `enabled`), owner decision 2026-10-04; GigaChat stays last until its key exists.
 - **Routing and failure policy** (`RoutedTextGeneration`). 429: wait `max(Retry-After, jitter)` and retry up to six
   times, never past the deadline (a longer `Retry-After` is handed back as `RATE_LIMITED`); 5xx, network and idle/connect
   timeouts (response headers must arrive within `learning.ai.transport.first-byte`, so a silent provider times out with deadline
@@ -1017,7 +1021,7 @@ and the UI (AI-04+) build on it; nothing here debits the user's quota, it only r
   startup error): the answer is a pure function of the request, MBM output is one of
   five documents copied from the MBM valid fixtures (a test keeps them byte-equal to the contract and compiling), and the
   markers `[[stub:rate-limit]]`, `[[stub:transient]]`, `[[stub:timeout]]`, `[[stub:refusal]]`, `[[stub:invalid]]` and
-  `[[stub:invalid-mbm]]` simulate failures; the two `invalid` markers stop applying once a repair segment is present. A grading request (the `<grader>` rules of the assessment prompt) is answered by `StubAssessments` (markers `[[stub:assess-*]]` in the learner answer, see AI assessment).
+  `[[stub:invalid-mbm]]` simulate failures; the two `invalid` markers stop applying once a repair segment is present. A first material answer (not an edit, not a repair) gets the media the task line allows appended at answer time, so a local run creates slots (the five documents themselves stay byte-equal to the fixtures): for `картинка из поиска (::image mode=search)` a blank line and `::image{slot="i1" mode="search" alt="Иллюстрация к материалу"}` with the text of `<request>` as the query (one line, <=300, `[[stub:...]]` markers kept so the image markers work end to end; `illustration` when empty), for `аудио (::audio)` `::audio{slot="a1" lang="ru" title="Озвучка"}` with the document's first heading (<=600; `Озвучка` without one). A grading request (the `<grader>` rules of the assessment prompt) is answered by `StubAssessments` (markers `[[stub:assess-*]]` in the learner answer, see AI assessment).
 - **Prompt library** (`ai.prompt`). `PromptLibrary` loads `ai/prompts/v*/**` strictly (front matter keys, version equals
   directory, no placeholder in the static layers). `PromptRenderer` fills `{{name}}` in one pass, so a placeholder inside
   data stays inert; text values are redacted (`Redactor`: e-mail, Luhn-valid cards, phone forms) and escaped, block values

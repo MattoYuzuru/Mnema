@@ -481,7 +481,7 @@ try {
     return input instanceof HTMLTextAreaElement && input.readOnly
       && input.value === 'Изменение из второй вкладки';
   }`), 'conflict did not preserve and lock the exact local draft');
-  require(await click('.notice.conflict .button.primary', conflictTab), 'conflict reapply action absent');
+  require(await click('.notice.warning .button.primary', conflictTab), 'conflict reapply action absent');
   await until(() => conflictTab.callFunction(`function() {
     return document.querySelector('h1')?.textContent?.trim() === 'Изменение из второй вкладки';
   }`), 'explicit conflict reapply did not publish a fresh command');

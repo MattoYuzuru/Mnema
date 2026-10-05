@@ -311,7 +311,7 @@ describe('ProposalDocumentComponent', () => {
             await settle();
             expect(store.edit).not.toHaveBeenCalled();
             expect(win.querySelector('.window-error')!.textContent).toBe('На сегодня лимит ИИ исчерпан.');
-            expect(win.querySelector('.window-button.primary')!.getAttribute('aria-disabled')).toBeNull();
+            expect(win.querySelector('.button.primary')!.getAttribute('aria-disabled')).toBeNull();
         });
     });
 
@@ -437,7 +437,7 @@ describe('ProposalDocumentComponent', () => {
             }));
             ask('Проще');
             await settle();
-            expect(win()!.querySelector<HTMLButtonElement>('.window-button.primary')!.textContent).toContain('Отправляю…');
+            expect(win()!.querySelector<HTMLButtonElement>('.button.primary')!.textContent).toContain('Отправляю…');
             labelled('Отменить')!.click();
             await settle();
             expect(signal!.aborted).toBe(true);
@@ -1110,6 +1110,38 @@ describe('ProposalDocumentComponent', () => {
                 expect(root().querySelector('app-image-variants fieldset')!.getAttribute('aria-disabled')).toBeNull();
                 expect(window.document.activeElement).toBe(radios().find(radio => radio.checked));
                 expect(radios().map(radio => radio.checked)).toEqual([false, true, false]);
+            });
+
+            it('keeps the variants open after a choice is saved (the search strip goes with the new revision), focus on the checked radio, and respects a group the owner closed', async () => {
+                const NEXT = '4e700000-0000-4000-8000-000000000009';
+                await create(applied());
+                store.edits.set({ [ids.first]: memo() });
+                await settle();
+                const details = (): HTMLDetailsElement => root().querySelector<HTMLDetailsElement>('details.variants')!;
+                expect(details().open).toBe(true);
+                store.selectCandidate.mockResolvedValue({ ok: true });
+                radios()[1]!.click();
+                await settle();
+                useButton().click();
+                // The answer is a new revision: the turn of the search no longer made the revision on screen, so its strip is gone.
+                const held = clone(slotOf());
+                for (const candidate of held.candidates) candidate.chosen = candidate.candidateId === SECOND;
+                fixture.componentRef.setInput('artifact', summary('PROPOSED', { currentRevisionId: NEXT }));
+                fixture.componentRef.setInput('detail', detailOf(sample(), { mediaSlots: [held], turns: [searchTurn()],
+                    revisions: revisions([BEFORE_REVISION, 'INITIAL'], [AFTER_REVISION, 'MEDIA'], [NEXT, 'MEDIA']) }, NEXT));
+                await settle();
+                await settle();
+                expect(strip()).toBeNull();
+                expect(details().open).toBe(true);
+                expect(window.document.activeElement).toBe(radios().find(radio => radio.checked));
+                expect(radios().map(radio => radio.checked)).toEqual([false, true, false]);
+                // The owner closes it: a later read of the artifact does not open it again.
+                details().open = false;
+                details().dispatchEvent(new Event('toggle'));
+                fixture.componentRef.setInput('detail', detailOf(sample(), { mediaSlots: [clone(held)], turns: [searchTurn()],
+                    revisions: revisions([BEFORE_REVISION, 'INITIAL'], [AFTER_REVISION, 'MEDIA'], [NEXT, 'MEDIA']) }, NEXT));
+                await settle();
+                expect(details().open).toBe(false);
             });
 
             it('shows a refused commit in the group and keeps focus on the checked radio', async () => {

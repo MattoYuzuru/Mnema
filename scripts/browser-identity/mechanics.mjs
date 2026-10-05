@@ -324,8 +324,8 @@ export async function runMechanics(ctx) {
 
     // A tile opens the demo and scrolls to it once.
     await realClick({ css: 'label.tile', includes: 'Выбрать ответ' });
-    await waitFor(() => has({ css: '#exercise-preview-anchor [data-mode="DEMO"] .badge' }), 'the demo did not open after choosing a tile');
-    need((await text({ css: '#exercise-preview-anchor .badge' })) === 'Пример', 'the demo badge is missing');
+    await waitFor(() => has({ css: '#exercise-preview-anchor [data-mode="DEMO"] .stamp' }), 'the demo did not open after choosing a tile');
+    need((await text({ css: '#exercise-preview-anchor .stamp' })) === 'Пример', 'the demo badge is missing');
     need((await text({ css: '[data-preview-caption]' })).includes('Это пример упражнения'), 'the demo explanation is missing');
     await waitFor(() => call(`const r = document.querySelector('#exercise-preview-anchor').getBoundingClientRect();
       return r.top > -2 && r.top < 260;`), 'the page did not scroll to the preview');
@@ -353,7 +353,7 @@ export async function runMechanics(ctx) {
     await typeInto({ css: '#choice-prompt-text-0' }, 'Какой цвет у неба?');
     await waitFor(() => has({ css: '#exercise-preview-anchor [data-mode="AUTHOR_DRAFT"]' }), 'the preview did not switch to the author draft');
     const draft = await call(`const root = document.querySelector('#exercise-preview-anchor');
-      return { badge: root.querySelector('.badge')?.textContent.trim(), text: root.textContent,
+      return { badge: root.querySelector('.stamp')?.textContent.trim(), text: root.textContent,
         submitDisabled: root.querySelector('button[data-submit]')?.disabled === true, media: root.querySelectorAll('audio, img').length,
         reason: root.querySelector('.blocked')?.textContent.trim() ?? null };`);
     need(draft.badge === 'Ваше задание' && draft.text.includes('Какой цвет у неба?') && !draft.text.includes('Звук 1') && draft.media === 0,
@@ -430,7 +430,7 @@ export async function runMechanics(ctx) {
       if (heading) { const clone = heading.cloneNode(true);
         clone.textContent = 'Длинный русский заголовок о памяти и осмысленном обучении'; article.prepend(clone); }
       return true;`), 'long content could not be added to the rendered material');
-    const contained = () => call(`const sheet = document.querySelector('app-native-document-renderer').closest('.sheet')
+    const contained = () => call(`const sheet = document.querySelector('app-native-document-renderer').closest('.paper-surface')
       ?? document.querySelector('app-native-document-renderer').parentElement;
       const limit = sheet.getBoundingClientRect().right + 1;
       const wide = [...sheet.querySelectorAll('*')].filter(e => e.getBoundingClientRect().right > limit)

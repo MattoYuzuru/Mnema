@@ -39,6 +39,12 @@ jobs:
           python3 scripts/learning-security/run.py
           python3 scripts/learning-security/verify_cancellation.py
 
+      - name: Verify VPS runtime and isolated local restore
+        timeout-minutes: 5
+        run: |
+          docker build --tag mnema-vps-postgres-fixture:verified deploy/production
+          python3 -m unittest discover -s scripts/tests -p 'test_vps_*.py' -v
+
       - name: Upload backend coverage report
         uses: ./.github/actions/safe-upload-artifact
         with:
@@ -88,6 +94,10 @@ jobs:
       - name: Run frontend build
         working-directory: frontend
         run: npm run build
+
+      - name: Verify the dev-only styleguide is absent from production
+        working-directory: frontend
+        run: node scripts/verify-no-styleguide.mjs
 
       - name: Verify frontend release contract
         run: ./scripts/test-frontend-release-contract.sh
