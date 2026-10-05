@@ -490,8 +490,8 @@ export async function runWorkshopImages(ctx, h) {
   await step('approve_and_browse', async () => {
     const detail = await getArtifact();
     const slot = slotOf(detail);
-    // The backend writes «Автор · Источник · Лицензия» into the caption with its own label of the Stub source («Stub»; the Workshop line says «Тестовый источник»).
-    const expected = [slot.attribution.author.trim(), 'Stub', slot.attribution.license].filter(Boolean).join(' · ');
+    // The backend writes «Автор · Источник · Лицензия» into the caption with the same source label as the Workshop line («Тестовый источник» for the Stub).
+    const expected = [slot.attribution.author.trim(), 'Тестовый источник', slot.attribution.license].filter(Boolean).join(' · ');
     await page(`document.querySelector('app-proposal-view .proposal-actions')?.scrollIntoView({ block: 'center', behavior: 'instant' }); return true;`);
     await click('app-proposal-view .proposal-actions button', 'Одобрить и далее →');
     await until(async () => (await api('GET', sessionPath(session))).body.artifacts[0].state === 'PUBLISHED', 'the material was not approved', 45_000);
