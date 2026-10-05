@@ -2894,6 +2894,23 @@
       "errorCode": null,
       "createdAt": "2026-10-04T10:00:42Z",
       "voice": "male"
+    },
+    "artifactResearch": {
+      "requests": 2,
+      "results": [
+        {
+          "n": 1,
+          "url": "https://ru.wikipedia.org/wiki/PostgreSQL",
+          "title": "PostgreSQL — Википедия",
+          "provider": "YANDEX"
+        },
+        {
+          "n": 2,
+          "url": "https://www.postgresql.org/docs/current/planner-optimizer.html",
+          "title": "Planner/Optimizer",
+          "provider": "YANDEX"
+        }
+      ]
     }
   }
 }
