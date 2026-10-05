@@ -1,6 +1,6 @@
 -- Promo codes, redemptions, pending discounts, abuse counters and the promo popup state (#302, AI-21).
 --
--- promo_code: a code is stored only as the SHA-256 of its normalized form (upper case, no spaces or dashes); code_hint (first two and last two
+-- promo_code: a code is stored only as HMAC-SHA256(MNEMA_PROMO_HASH_SECRET, normalized form: upper case, no spaces or dashes); code_hint (first two and last two
 -- characters) lets an admin tell codes apart. The plain code exists once, in the response that created it. MAX is not purchasable, so no code can grant it.
 CREATE TABLE app_learning.promo_code (
     code_id UUID PRIMARY KEY,
@@ -52,7 +52,8 @@ CREATE TABLE app_learning.promo_discount (
 );
 
 -- promo_attempt: one row per redemption attempt (right or wrong), the counter of the hourly limits per account and per address hash. Rows older
--- than a day are deleted by the next attempt of the same account.
+-- than two hours are deleted by the next attempt of the same account and by the PromoAttemptSweep. ip_hash is set only once the account passed the
+-- eligibility check (it is the address's place in the hourly limit).
 CREATE TABLE app_learning.promo_attempt (
     attempt_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     owner_id UUID NOT NULL,

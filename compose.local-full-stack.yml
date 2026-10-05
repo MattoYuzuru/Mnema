@@ -48,7 +48,7 @@ x-learning-environment: &learning-environment
   LEARNING_USAGE_ENTITLEMENTS_DEFAULT_PLAN: ${MNEMA_LOCAL_AI_PLAN:-FREE}
   # Promo codes, A/B and the promo popup (#302); names only, all optional. Every browser reaches Learning through this stack's one proxy
   # address, so raise MNEMA_PROMO_IP_ATTEMPTS_PER_HOUR for repeated local runs. See docs/deploy/selfhost-local.md.
-  MNEMA_PROMO_IP_ATTEMPTS_PER_HOUR: ${MNEMA_PROMO_IP_ATTEMPTS_PER_HOUR:-5}
+  MNEMA_PROMO_IP_ATTEMPTS_PER_HOUR: ${MNEMA_PROMO_IP_ATTEMPTS_PER_HOUR:-20}
   MNEMA_PROMO_HASH_SECRET: ${MNEMA_PROMO_HASH_SECRET:-}
   MNEMA_EXPERIMENT_SECRET: ${MNEMA_EXPERIMENT_SECRET:-}
   MNEMA_PROMO_POPUP_ENABLED: ${MNEMA_PROMO_POPUP_ENABLED:-false}

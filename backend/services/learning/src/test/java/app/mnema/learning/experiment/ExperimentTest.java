@@ -127,4 +127,29 @@ class ExperimentTest {
         now.set(Instant.parse("2026-10-02T09:01:01Z"));
         assertThat(events.record(account, "plans_year_first", ExperimentEvents.Event.EXPOSURE)).isTrue();
     }
+
+    @Test
+    void aFullTableIsSweptAtMostOncePerIntervalAndStillCountsEvents() {
+        AtomicReference<Instant> now = new AtomicReference<>(Instant.parse("2026-10-02T09:00:00Z"));
+        Clock clock = new Clock() {
+            @Override public java.time.ZoneId getZone() { return ZoneOffset.UTC; }
+            @Override public Clock withZone(java.time.ZoneId zone) { return this; }
+            @Override public Instant instant() { return now.get(); }
+        };
+        SimpleMeterRegistry meters = new SimpleMeterRegistry();
+        ExperimentEvents events = new ExperimentEvents(assignments("secret-1"), meters, clock, 3);
+        for (int index = 0; index < 3; index++) events.record(UUID.randomUUID(), "plans_year_first", ExperimentEvents.Event.EXPOSURE);
+        assertThat(events.trackedAccounts()).isEqualTo(3);
+
+        // Full and nothing has expired: a newcomer is counted but takes no room, and the table does not grow.
+        now.set(Instant.parse("2026-10-02T09:00:30Z"));
+        assertThat(events.record(UUID.randomUUID(), "plans_year_first", ExperimentEvents.Event.EXPOSURE)).isTrue();
+        assertThat(events.trackedAccounts()).isEqualTo(3);
+
+        // Once the windows have expired the next sweep frees the table for a newcomer.
+        now.set(Instant.parse("2026-10-02T09:01:10Z"));
+        events.record(UUID.randomUUID(), "plans_year_first", ExperimentEvents.Event.EXPOSURE);
+        assertThat(events.trackedAccounts()).isEqualTo(1);
+        assertThat(meters.get("mnema_experiment_events_total").counters().stream().mapToDouble(counter -> counter.count()).sum()).isEqualTo(5.0);
+    }
 }

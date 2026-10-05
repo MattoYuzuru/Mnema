@@ -25,6 +25,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /** Redemption rules: limits, exactness under concurrency, the entitlement a tier code publishes and the discount a percentage code stores. */
 class PromoRedemptionTest extends PromoIntegrationTest {
     @Autowired private EntitlementInbox inbox;
+    @Autowired private PromoSettings settings;
 
     private JsonNode redeem(UUID account, String code, PromoClient client) {
         return promo.redeem(account, jwt(account), UUID.randomUUID(), code, client);
@@ -71,7 +72,7 @@ class PromoRedemptionTest extends PromoIntegrationTest {
         assertThat(results.stream().filter("OK"::equals)).hasSize(10);
         assertThat(results.stream().filter("EXHAUSTED"::equals)).hasSize(10);
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.promo_redemption r JOIN app_learning.promo_code c USING (code_id) WHERE c.code_hash=:hash")
-                .param("hash", PromoCodes.hash(PromoCodes.normalize(code).orElseThrow())).query(Long.class).single()).isEqualTo(10);
+                .param("hash", PromoCodes.hash(settings.hashSecret, PromoCodes.normalize(code).orElseThrow())).query(Long.class).single()).isEqualTo(10);
     }
 
     @Test
@@ -112,7 +113,7 @@ class PromoRedemptionTest extends PromoIntegrationTest {
     @Test
     void theAddressHasItsOwnHourlyLimitAcrossAccounts() {
         PromoClient shared = network();
-        for (int attempt = 0; attempt < 5; attempt++) refusal(account(true, false), "NOSUCHCODE", shared);
+        for (int attempt = 0; attempt < 20; attempt++) refusal(account(true, false), "NOSUCHCODE", shared);
 
         assertThatThrownBy(() -> redeem(account(true, false), "NOSUCHCODE", shared)).isInstanceOf(RateLimitedException.class);
     }
@@ -234,7 +235,7 @@ class PromoRedemptionTest extends PromoIntegrationTest {
 
         redeem(account, ten, network());
         redeem(account, thirty, network());
-        redeem(account, twenty, network());
+        assertThat(refusal(account, twenty)).isEqualTo(PromoRejectedException.Reason.NOT_ELIGIBLE);
 
         assertThat(jdbc.sql("SELECT percent FROM app_learning.promo_discount WHERE owner_id=:o").param("o", account).query(Integer.class)
                 .single()).isEqualTo(30);
@@ -265,12 +266,124 @@ class PromoRedemptionTest extends PromoIntegrationTest {
         redeem(account, plain, new PromoClient(network().ipHash(), new byte[32]));
 
         String normalized = PromoCodes.normalize(plain).orElseThrow();
-        var hint = jdbc.sql("SELECT code_hint FROM app_learning.promo_code WHERE code_hash=:h").param("h", PromoCodes.hash(normalized))
+        var hint = jdbc.sql("SELECT code_hint FROM app_learning.promo_code WHERE code_hash=:h").param("h", PromoCodes.hash(settings.hashSecret, normalized))
                 .query(String.class).single();
-        assertThat(hint).isEqualTo(normalized.substring(0, 2) + "…" + normalized.substring(8));
+        assertThat(hint).isEqualTo(normalized.substring(0, 2) + "…" + normalized.substring(10));
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.promo_code WHERE code_hint=:c").param("c", normalized).query(Long.class).single())
                 .isZero();
         assertThat(jdbc.sql("SELECT octet_length(ip_hash) FROM app_learning.promo_redemption WHERE owner_id=:o").param("o", account)
                 .query(Integer.class).single()).isEqualTo(32);
+    }
+
+    @Test
+    void accountsRefusedForAnUnverifiedEmailDoNotBurnTheSharedAddressAllowance() {
+        PromoClient office = network();
+        for (int index = 0; index < 30; index++) {
+            UUID unverified = account(false, false);
+            assertThat(refusal(unverified, "NOSUCHCODE", office)).isEqualTo(PromoRejectedException.Reason.NOT_ELIGIBLE);
+        }
+
+        assertThat(refusal(account(true, false), "NOSUCHCODE", office)).isEqualTo(PromoRejectedException.Reason.INVALID);
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.promo_attempt WHERE ip_hash=:ip").param("ip", office.ipHash())
+                .query(Long.class).single()).isEqualTo(1);
+    }
+
+    @Test
+    void theAccountBucketStillCountsAnUnverifiedAttemptBeforeIdentityIsAsked() {
+        UUID unverified = account(false, false);
+        for (int attempt = 0; attempt < 5; attempt++) {
+            assertThat(refusal(unverified, "NOSUCHCODE")).isEqualTo(PromoRejectedException.Reason.NOT_ELIGIBLE);
+        }
+
+        assertThatThrownBy(() -> redeem(unverified, "NOSUCHCODE", network())).isInstanceOf(RateLimitedException.class);
+    }
+
+    @Test
+    void theAddressLimitIsTwentyAnHourWhileTheAccountLimitStaysFive() {
+        assertThat(settings.ipAttemptsPerHour).isEqualTo(20);
+        assertThat(settings.attemptsPerHour).isEqualTo(5);
+    }
+
+    @Test
+    void codesAreStoredAsAKeyedHashAndGeneratedCodesAreTwelveCharacters() throws Exception {
+        String plain = code(tier(PromoType.TIER_DAYS, "PLUS", 15, null, 5));
+        String normalized = PromoCodes.normalize(plain).orElseThrow();
+
+        assertThat(normalized).hasSize(12);
+        byte[] stored = jdbc.sql("SELECT code_hash FROM app_learning.promo_code WHERE code_hash=:h")
+                .param("h", PromoCodes.hash(settings.hashSecret, normalized)).query(byte[].class).single();
+        assertThat(stored).isNotEqualTo(java.security.MessageDigest.getInstance("SHA-256")
+                .digest(normalized.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.promo_code WHERE code_hash=:h")
+                .param("h", java.security.MessageDigest.getInstance("SHA-256").digest(normalized.getBytes(java.nio.charset.StandardCharsets.UTF_8)))
+                .query(Long.class).single()).isZero();
+    }
+
+    @Test
+    void aDiscountThatDoesNotBeatThePendingOneIsRefusedAndTheCodeIsNotBurned() {
+        UUID account = account(true, false);
+        var until = Instant.parse("2026-10-31T20:59:59Z");
+        String thirty = code(new PromoAdminService.Create(PromoType.DISCOUNT_PERCENT, null, null, null, 30, null, until, 5, true, null, null));
+        String twenty = code(new PromoAdminService.Create(PromoType.DISCOUNT_PERCENT, null, null, null, 20, null, until, 5, true, null, null));
+        String thirtyToo = code(new PromoAdminService.Create(PromoType.DISCOUNT_PERCENT, null, null, null, 30, null, until, 5, true, null, null));
+        String fifty = code(new PromoAdminService.Create(PromoType.DISCOUNT_PERCENT, null, null, null, 50, null, until, 5, true, null, null));
+        redeem(account, thirty, network());
+
+        assertThat(refusal(account, twenty)).isEqualTo(PromoRejectedException.Reason.NOT_ELIGIBLE);
+        assertThat(refusal(account, thirtyToo)).isEqualTo(PromoRejectedException.Reason.NOT_ELIGIBLE);
+
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.promo_redemption WHERE owner_id=:o").param("o", account).query(Long.class).single())
+                .isEqualTo(1);
+        redeem(account(true, false), twenty, network());
+        redeem(account, fifty, network());
+        assertThat(jdbc.sql("SELECT percent FROM app_learning.promo_discount WHERE owner_id=:o").param("o", account).query(Integer.class).single())
+                .isEqualTo(50);
+    }
+
+    @Test
+    void anExpiredPendingDiscountDoesNotBlockASmallerNewOne() {
+        UUID account = account(true, false);
+        String big = code(new PromoAdminService.Create(PromoType.DISCOUNT_PERCENT, null, null, null, 40, null,
+                Instant.parse("2026-10-05T00:00:00Z"), 5, true, null, null));
+        String small = code(new PromoAdminService.Create(PromoType.DISCOUNT_PERCENT, null, null, null, 10, null,
+                Instant.parse("2026-12-05T00:00:00Z"), 5, true, null, null));
+        redeem(account, big, network());
+
+        clock.set("2026-10-06T00:00:00Z");
+        redeem(account, small, network());
+
+        assertThat(jdbc.sql("SELECT percent FROM app_learning.promo_discount WHERE owner_id=:o").param("o", account).query(Integer.class).single())
+                .isEqualTo(10);
+    }
+
+    @Test
+    void tenParallelAccountsFromOneAddressRedeemExactlyAsManyTimesAsTheVelocityRuleAllows() throws Exception {
+        String code = code(new PromoAdminService.Create(PromoType.TIER_DAYS, "PLUS", 3, null, null, null, null, 50, true, null, null));
+        PromoClient farm = network();
+        int parallel = 10;
+        ExecutorService pool = Executors.newFixedThreadPool(parallel);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<String>> outcomes = new ArrayList<>();
+        for (int index = 0; index < parallel; index++) {
+            UUID account = account(true, false);
+            outcomes.add(pool.submit(() -> {
+                start.await();
+                try {
+                    redeem(account, code, farm);
+                    return "OK";
+                } catch (PromoRejectedException rejected) {
+                    return rejected.reason().name();
+                }
+            }));
+        }
+        start.countDown();
+        List<String> results = new ArrayList<>();
+        for (Future<String> outcome : outcomes) results.add(outcome.get());
+        pool.shutdown();
+
+        assertThat(results.stream().filter("OK"::equals)).hasSize(settings.velocityAccounts);
+        assertThat(results.stream().filter("VELOCITY"::equals)).hasSize(parallel - settings.velocityAccounts);
+        assertThat(jdbc.sql("SELECT count(DISTINCT owner_id) FROM app_learning.promo_redemption WHERE ip_hash=:ip").param("ip", farm.ipHash())
+                .query(Long.class).single()).isEqualTo(settings.velocityAccounts);
     }
 }

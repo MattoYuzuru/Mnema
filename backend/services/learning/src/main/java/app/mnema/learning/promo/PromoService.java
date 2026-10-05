@@ -31,9 +31,10 @@ import static app.mnema.learning.promo.PromoRejectedException.Reason;
 
 /**
  * Redemption of a promo code. The order is deliberate: an idempotent replay costs nothing; every other attempt takes a place of the hourly limits
- * first (so guessing is rate limited as hard as using), then the account must have a verified email (Identity, fail closed), then the address
- * must not be a farm of accounts, and only then is the code read, under a row lock, so {@code max_redemptions} is exact however many
- * redemptions race. A tier code publishes an entitlement snapshot to {@link EntitlementInbox} with the same call a payment will use; a discount code
+ * first (so guessing is rate limited as hard as using), then the account must have a verified email (Identity, fail closed), and only then does the
+ * address take its place of the hourly limit (an account that is refused cannot burn a shared address's allowance). The code is read under a row lock,
+ * so {@code max_redemptions} is exact however many redemptions race; under that lock the address must not be a farm of accounts (the velocity rule,
+ * counted under the address's advisory lock so racing accounts of one address cannot slip past it) and a discount must beat the pending one. A tier code publishes an entitlement snapshot to {@link EntitlementInbox} with the same call a payment will use; a discount code
  * stores a pending discount that billing (#79) reads. Nothing here logs a code, an address or an email: ids and counts only.
  */
 @Service
@@ -73,21 +74,19 @@ public class PromoService {
      * @throws IdentityUnavailableException      Identity could not say whether the email is verified
      */
     public JsonNode redeem(UUID owner, Jwt token, UUID commandId, String rawCode, PromoClient client) {
+        settings.requireAvailable();
         Optional<String> normalized = PromoCodes.normalize(rawCode);
         CommandIdentity identity = new CommandIdentity(commandId, owner, "promo", "redeem");
         ObjectNode payload = JsonNodeFactory.instance.objectNode().put("code", normalized.orElse("invalid"));
         Optional<JsonNode> replay = receipts.replay(identity, payload);
         if (replay.isPresent()) return replay.get();
 
-        attempts.take(owner, client);
+        long attempt = attempts.takeAccount(owner);
         AccountStandings.Standing standing = standings.of(token).orElseThrow(IdentityUnavailableException::new);
         if (!standing.emailVerified()) throw rejected(owner, Reason.NOT_ELIGIBLE);
-        if (client.ipHash() != null && repository.otherRedeemersFromIp(client.ipHash(), owner,
-                clock.now().minus(settings.velocityWindow)) >= settings.velocityAccounts) {
-            throw rejected(owner, Reason.VELOCITY);
-        }
+        attempts.takeAddress(attempt, client);
         if (normalized.isEmpty()) throw rejected(owner, Reason.INVALID);
-        byte[] hash = PromoCodes.hash(normalized.get());
+        byte[] hash = PromoCodes.hash(settings.hashSecret, normalized.get());
         return receipts.execute(identity, payload, () -> redeemLocked(owner, hash, client));
     }
 
@@ -104,8 +103,24 @@ public class PromoService {
             // A tier below the one the account already has would change nothing and burn the code.
             if (current.plan().ordinal() > Plan.valueOf(code.plan()).ordinal()) throw rejected(owner, Reason.NOT_ELIGIBLE);
         }
+        if (!code.type().grantsTier()) {
+            // A discount that would not beat the pending one changes nothing and would burn the code. The lock makes the check and the
+            // upsert one step for the account (order of locks: code row, account, address).
+            repository.lockKey("promo.discount:owner:" + owner);
+            if (repository.pendingDiscount(owner, now).filter(pending -> pending.percent() >= code.percent()).isPresent()) {
+                throw rejected(owner, Reason.NOT_ELIGIBLE);
+            }
+        }
         UUID redemptionId = UUID.randomUUID();
         String snapshotId = code.type().grantsTier() ? "promo:" + redemptionId : null;
+        if (client.ipHash() != null) {
+            // The velocity rule is part of the redemption, not a check before it: under the address's lock and the code's row lock, two accounts
+            // of one address cannot both see "two others so far" and both redeem. (Order of locks: code row, account, address.)
+            repository.lockKey("promo.velocity:ip:" + java.util.HexFormat.of().formatHex(client.ipHash()));
+            if (repository.otherRedeemersFromIp(client.ipHash(), owner, now.minus(settings.velocityWindow)) >= settings.velocityAccounts) {
+                throw rejected(owner, Reason.VELOCITY);
+            }
+        }
         try {
             repository.insertRedemption(redemptionId, code.codeId(), owner, now, client, snapshotId, code.oncePerAccount());
         } catch (DuplicateKeyException failure) {

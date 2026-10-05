@@ -1,15 +1,21 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+
+import { AuthService, AuthStatus } from '../../auth.service';
 
 import { CONTROL, ExperimentService } from './experiment.service';
 
 describe('ExperimentService', () => {
     let service: ExperimentService;
     let http: HttpTestingController;
+    const status = signal<AuthStatus>('authenticated');
 
     beforeEach(() => {
-        TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] });
+        status.set('authenticated');
+        TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting(),
+            { provide: AuthService, useValue: { status } }] });
         service = TestBed.inject(ExperimentService);
         http = TestBed.inject(HttpTestingController);
     });
@@ -47,6 +53,23 @@ describe('ExperimentService', () => {
         service.expose('plans_year_first');
         http.expectOne('/api/experiment-events').flush(null, { status: 500, statusText: 'Server Error' });
         service.expose('plans_year_first');
+        http.expectOne('/api/experiment-events').flush(null, { status: 204, statusText: 'No Content' });
+    });
+
+    it('starts afresh after a logout: the next account in the tab gets its own exposure', () => {
+        TestBed.tick();
+        service.adopt({ plans_year_first: 'control' });
+        service.expose('plans_year_first');
+        http.expectOne('/api/experiment-events').flush(null, { status: 204, statusText: 'No Content' });
+
+        status.set('anonymous');
+        TestBed.tick();
+        expect(service.running('plans_year_first')).toBe(false);
+        status.set('authenticated');
+        TestBed.tick();
+        service.adopt({ plans_year_first: 'control' });
+        service.expose('plans_year_first');
+
         http.expectOne('/api/experiment-events').flush(null, { status: 204, statusText: 'No Content' });
     });
 });

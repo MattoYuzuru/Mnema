@@ -118,10 +118,14 @@ class PromoRepository {
                         row.getTimestamp("valid_until").toInstant())).optional();
     }
 
-    List<CodeWithCount> list(int limit) {
+    /** A page of codes, newest first; {@code after} is the last code of the previous page (null for the first page). */
+    List<CodeWithCount> list(UUID after, int limit) {
         return jdbc.sql("SELECT " + CODE_COLUMNS + ",(SELECT count(*) FROM app_learning.promo_redemption r WHERE r.code_id=c.code_id) "
-                        + "AS redemptions FROM app_learning.promo_code c ORDER BY created_at DESC,code_id LIMIT :limit")
-                .param("limit", limit).query((row, number) -> new CodeWithCount(code(row, number), row.getLong("redemptions"))).list();
+                        + "AS redemptions FROM app_learning.promo_code c WHERE (CAST(:after AS uuid) IS NULL OR (c.created_at,c.code_id) < "
+                        + "(SELECT a.created_at,a.code_id FROM app_learning.promo_code a WHERE a.code_id=CAST(:after AS uuid))) "
+                        + "ORDER BY c.created_at DESC,c.code_id DESC LIMIT :limit")
+                .param("after", after, java.sql.Types.OTHER).param("limit", limit)
+                .query((row, number) -> new CodeWithCount(code(row, number), row.getLong("redemptions"))).list();
     }
 
     Optional<CodeWithCount> find(UUID codeId) {
@@ -169,13 +173,21 @@ class PromoRepository {
                 .param("ip", ipHash).param("since", time(since)).query(Timestamp.class).optional().map(Timestamp::toInstant);
     }
 
-    void insertAttempt(UUID owner, byte[] ipHash, Instant now) {
-        jdbc.sql("INSERT INTO app_learning.promo_attempt(owner_id,ip_hash,attempted_at) VALUES (:owner,:ip,:now)")
-                .param("owner", owner).param("ip", ipHash, java.sql.Types.BINARY).param("now", time(now)).update();
+    /** @return the id of the new attempt; its address is set by {@link #assignAddress} once the account is eligible */
+    long insertAttempt(UUID owner, Instant now) {
+        return jdbc.sql("INSERT INTO app_learning.promo_attempt(owner_id,attempted_at) VALUES (:owner,:now) RETURNING attempt_id")
+                .param("owner", owner).param("now", time(now)).query(Long.class).single();
     }
 
-    void purgeAttemptsOfIp(byte[] ipHash, Instant before) {
-        jdbc.sql("DELETE FROM app_learning.promo_attempt WHERE ip_hash=:ip AND attempted_at<:before")
-                .param("ip", ipHash).param("before", time(before)).update();
+    void assignAddress(long attemptId, byte[] ipHash) {
+        jdbc.sql("UPDATE app_learning.promo_attempt SET ip_hash=:ip WHERE attempt_id=:id")
+                .param("ip", ipHash, java.sql.Types.BINARY).param("id", attemptId).update();
+    }
+
+    /** Deletes up to {@code limit} attempts older than {@code before}; the retention sweep calls it in bounded batches. */
+    int purgeAttemptsBefore(Instant before, int limit) {
+        return jdbc.sql("DELETE FROM app_learning.promo_attempt WHERE attempt_id IN "
+                        + "(SELECT attempt_id FROM app_learning.promo_attempt WHERE attempted_at<:before LIMIT :limit)")
+                .param("before", time(before)).param("limit", limit).update();
     }
 }

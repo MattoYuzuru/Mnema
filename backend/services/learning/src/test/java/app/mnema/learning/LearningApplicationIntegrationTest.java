@@ -30,9 +30,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
 
     private static final Set<String> LEGACY_ROUTE_PREFIXES = Set.of(
-            "/auth", "/users", "/me", "/templates", "/review",
+            "/auth", "/users", "/me", "/admin", "/templates", "/review",
             "/search", "/uploads", "/imports", "/providers", "/jobs", "/internal"
     );
+
+    /** The only routes under a banned prefix: the promo administration surface (#302), administrator-checked in Identity after the token. */
+    private static final Set<String> ALLOWED_LEGACY_PREFIX_ROUTES = Set.of("/admin/promo-codes", "/admin/promo-codes/{codeId}");
 
     @Autowired
     private ApplicationContext applicationContext;
@@ -152,7 +155,7 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                 .allSatisfy(route -> {
                     assertThat(route).doesNotContain("/v2");
                     assertThat(LEGACY_ROUTE_PREFIXES).noneMatch(prefix ->
-                            route.equals(prefix) || route.startsWith(prefix + "/"));
+                            !ALLOWED_LEGACY_PREFIX_ROUTES.contains(route) && (route.equals(prefix) || route.startsWith(prefix + "/")));
                 });
 
         mockMvc.perform(get("/api/v2").contextPath("/api"))

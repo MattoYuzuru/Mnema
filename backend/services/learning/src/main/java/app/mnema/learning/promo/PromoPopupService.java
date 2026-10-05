@@ -68,10 +68,13 @@ public class PromoPopupService {
     /**
      * Records what happened to the popup of the configured campaign.
      *
+     * While the campaign is disabled there is nothing to record: the call is a no-op that never touches the database (a client with a stale
+     * campaign in hand still gets its 204; the method opens no transaction, the one upsert below is atomic).
+     *
      * @throws InvalidRequestException the campaign is not the configured one
      */
-    @Transactional
     public void record(UUID owner, String campaignId, Event event) {
+        if (!settings.enabled) return;
         if (!settings.campaign.id().equals(campaignId)) throw new InvalidRequestException();
         Timestamp now = Timestamp.from(clock.now());
         String column = switch (event) {

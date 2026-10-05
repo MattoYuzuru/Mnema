@@ -13,7 +13,7 @@ import java.security.GeneralSecurityException;
 public record PromoClient(byte[] ipHash, byte[] deviceHash) {
     static final PromoClient UNKNOWN = new PromoClient(null, null);
 
-    /** Derives the {@link PromoClient} of a request: address through the trusted-proxy rule, then HMAC-SHA256 with the promo secret. */
+    /** Derives the {@link PromoClient} of a request: address through the trusted-proxy rule (IPv6 reduced to its /64), then HMAC-SHA256 with the promo secret. */
     @Component
     static final class Resolver {
         private final ClientAddresses addresses;
@@ -25,7 +25,7 @@ public record PromoClient(byte[] ipHash, byte[] deviceHash) {
         }
 
         PromoClient of(HttpServletRequest request) {
-            byte[] ip = addresses.resolve(request).map(value -> hmac("ip:" + value)).orElse(null);
+            byte[] ip = addresses.resolveNetwork(request).map(value -> hmac("ip:" + value)).orElse(null);
             String agent = request.getHeader("User-Agent");
             byte[] device = agent == null || agent.isBlank() ? null
                     : hmac("ua:" + (agent.length() > 256 ? agent.substring(0, 256) : agent));

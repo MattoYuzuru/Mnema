@@ -129,7 +129,7 @@ export async function runPromo(ctx) {
         { body: { type: 'TIER_DAYS', plan: 'PLUS', days: 15, maxRedemptions: 3, channel: 'browser-fixture' } });
       need(plus.status === 201, `creating a Plus code got ${plus.status} ${plus.body?.code}`);
       codes.plus = plus.body.code;
-      need(/^[A-HJ-NP-Z2-9]{5}-[A-HJ-NP-Z2-9]{5}$/u.test(codes.plus), 'the generated code is not ten characters of the unambiguous alphabet');
+      need(/^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/u.test(codes.plus), 'the generated code is not twelve characters of the unambiguous alphabet');
       need(plus.body.hint?.length === 5 && plus.body.enabled === true && plus.body.redemptions === 0 && plus.body.channel === 'browser-fixture', 'the created code view is wrong');
       const max = await call('POST', '/api/admin/promo-codes', { body: { type: 'TIER_DAYS', plan: 'MAX', days: 5, maxRedemptions: 3 } });
       need(max.status === 400 && max.body?.reason === 'plan', 'a code for the Max tier was accepted');

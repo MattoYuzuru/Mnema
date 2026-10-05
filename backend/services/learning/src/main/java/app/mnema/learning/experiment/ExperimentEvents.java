@@ -9,12 +9,15 @@ import java.time.Clock;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Counts exposures and conversions as {@code mnema_experiment_events_total{key,variant,event}}: a Micrometer counter and nothing else, no
  * database row and no account in a label (cardinality is the experiments times their variants times two). The variant is the server's assignment,
  * never a client claim. An account may send {@value #PER_MINUTE} events a minute per instance; the window is a best-effort guard of one instance, not
- * state, because a counter an account can flood is worthless.
+ * state, because a counter an account can flood is worthless. The table is bounded ({@value #MAX_WINDOWS} accounts): when it is full, expired windows are
+ * swept at most once per {@value #SWEEP_MILLIS} ms (so a full table costs a map lookup per event, not a scan), and an account that still finds no room is
+ * counted but not limited until a window frees up.
  */
 @Service
 public class ExperimentEvents {
@@ -22,14 +25,17 @@ public class ExperimentEvents {
 
     static final int PER_MINUTE = 30;
     private static final long WINDOW_MILLIS = 60_000;
-    private static final int MAX_WINDOWS = 20_000;
+    static final int MAX_WINDOWS = 20_000;
+    private static final long SWEEP_MILLIS = 5_000;
 
     private record Window(long startedAt, int count) { }
 
     private final ExperimentAssignments assignments;
     private final MeterRegistry meters;
     private final Clock clock;
+    private final int maxWindows;
     private final Map<UUID, Window> windows = new ConcurrentHashMap<>();
+    private final AtomicLong sweptAt = new AtomicLong();
 
     @Autowired
     ExperimentEvents(ExperimentAssignments assignments, MeterRegistry meters) {
@@ -37,9 +43,18 @@ public class ExperimentEvents {
     }
 
     ExperimentEvents(ExperimentAssignments assignments, MeterRegistry meters, Clock clock) {
+        this(assignments, meters, clock, MAX_WINDOWS);
+    }
+
+    ExperimentEvents(ExperimentAssignments assignments, MeterRegistry meters, Clock clock, int maxWindows) {
         this.assignments = assignments;
         this.meters = meters;
         this.clock = clock;
+        this.maxWindows = maxWindows;
+    }
+
+    int trackedAccounts() {
+        return windows.size();
     }
 
     /**
@@ -48,15 +63,25 @@ public class ExperimentEvents {
      */
     public boolean record(UUID account, String key, Event event) {
         long now = clock.millis();
-        if (windows.size() >= MAX_WINDOWS) windows.entrySet().removeIf(entry -> now - entry.getValue().startedAt() >= WINDOW_MILLIS);
-        Window window = windows.merge(account, new Window(now, 1),
-                (old, fresh) -> now - old.startedAt() >= WINDOW_MILLIS ? fresh : new Window(old.startedAt(), old.count() + 1));
-        if (window.count() > PER_MINUTE) {
-            throw new RateLimitedException((window.startedAt() + WINDOW_MILLIS - now + 999) / 1000);
+        if (windows.size() >= maxWindows) sweep(now);
+        if (windows.size() < maxWindows || windows.containsKey(account)) {
+            Window window = windows.merge(account, new Window(now, 1),
+                    (old, fresh) -> now - old.startedAt() >= WINDOW_MILLIS ? fresh : new Window(old.startedAt(), old.count() + 1));
+            if (window.count() > PER_MINUTE) {
+                throw new RateLimitedException((window.startedAt() + WINDOW_MILLIS - now + 999) / 1000);
+            }
         }
         if (!assignments.known(key)) return false;
         meters.counter("mnema_experiment_events_total", "key", key, "variant", assignments.variant(account, key),
                 "event", event.name()).increment();
         return true;
+    }
+
+    /** Removes expired windows, at most once per {@value #SWEEP_MILLIS} ms across all callers. */
+    private void sweep(long now) {
+        long last = sweptAt.get();
+        if (now - last >= SWEEP_MILLIS && sweptAt.compareAndSet(last, now)) {
+            windows.entrySet().removeIf(entry -> now - entry.getValue().startedAt() >= WINDOW_MILLIS);
+        }
     }
 }

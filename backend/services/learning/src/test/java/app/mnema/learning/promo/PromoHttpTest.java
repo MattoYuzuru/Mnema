@@ -66,7 +66,7 @@ class PromoHttpTest extends PromoIntegrationTest {
         assertThat(created.getHeader("Cache-Control")).isEqualTo("private, no-store");
         JsonNode view = body(created);
         String code = view.path("code").stringValue(null);
-        assertThat(code).matches("[" + PromoCodes.ALPHABET + "]{5}-[" + PromoCodes.ALPHABET + "]{5}");
+        assertThat(code).matches("([" + PromoCodes.ALPHABET + "]{4}-){2}[" + PromoCodes.ALPHABET + "]{4}");
         assertThat(view.path("hint").stringValue(null)).hasSize(5);
         assertThat(view.path("enabled").booleanValue()).isTrue();
         assertThat(view.path("channel").stringValue(null)).isEqualTo("newsletter");
@@ -93,9 +93,35 @@ class PromoHttpTest extends PromoIntegrationTest {
     }
 
     @Test
+    void theAdminListIsPagedByACursorOfTwoHundred() throws Exception {
+        UUID administrator = account(true, true);
+        for (int index = 0; index < PromoAdminService.PAGE_SIZE + 5; index++) admin.create(administrator, tier(PromoType.TIER_DAYS, "PLUS", 1, null, 1));
+
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        String after = null;
+        int pages = 0;
+        do {
+            var response = as(administrator, adminController).perform(get("/admin/promo-codes" + (after == null ? "" : "?after=" + after)))
+                    .andReturn().getResponse();
+            assertThat(response.getStatus()).isEqualTo(200);
+            JsonNode page = body(response);
+            assertThat(page.path("codes").size()).isLessThanOrEqualTo(PromoAdminService.PAGE_SIZE);
+            if (pages == 0) assertThat(page.path("codes").size()).isEqualTo(PromoAdminService.PAGE_SIZE);
+            for (JsonNode entry : page.path("codes")) assertThat(seen.add(entry.path("codeId").stringValue(null))).as("no code twice").isTrue();
+            after = page.path("next").isNull() ? null : page.path("next").stringValue(null);
+            pages++;
+        } while (after != null);
+
+        assertThat(seen).hasSizeGreaterThanOrEqualTo(PromoAdminService.PAGE_SIZE + 5);
+        assertThat(pages).isGreaterThanOrEqualTo(2);
+        assertThat(as(administrator, adminController).perform(get("/admin/promo-codes?after=not-an-id")).andReturn().getResponse().getStatus())
+                .isEqualTo(400);
+    }
+
+    @Test
     void aVanityCodeIsNormalizedAndCannotBeTakenTwiceAndMaxIsNeverGranted() throws Exception {
         UUID administrator = account(true, true);
-        String vanity = "SPRING" + (int) (Math.random() * 1_000_000);
+        String vanity = "SPRING" + (10_000 + (int) (Math.random() * 90_000));
 
         var first = create(administrator, "{\"type\":\"TIER_MONTHS\",\"plan\":\"PRO\",\"months\":2,\"maxRedemptions\":5,\"code\":\"spring-" + vanity.substring(6) + "\"}");
         assertThat(first.getStatus()).isEqualTo(201);
@@ -119,6 +145,7 @@ class PromoHttpTest extends PromoIntegrationTest {
                 "{\"type\":\"TIER_DAYS\",\"plan\":\"PLUS\",\"days\":5,\"maxRedemptions\":1,\"extra\":1}",
                 "{\"type\":\"TIER_DAYS\",\"plan\":\"PLUS\",\"days\":5,\"maxRedemptions\":1,\"channel\":\"<script>\"}",
                 "{\"type\":\"TIER_DAYS\",\"plan\":\"PLUS\",\"days\":5,\"maxRedemptions\":1,\"code\":\"ab\"}",
+                "{\"type\":\"TIER_DAYS\",\"plan\":\"PLUS\",\"days\":5,\"maxRedemptions\":1,\"code\":\"short-7\"}",
                 "{\"type\":\"TIER_DAYS\",\"plan\":\"PLUS\",\"days\":5,\"maxRedemptions\":1,\"validFrom\":\"tomorrow\"}",
                 "{\"type\":\"TIER_DAYS\",\"plan\":\"PLUS\",\"days\":5,\"maxRedemptions\":1,\"validFrom\":\"2026-10-05T00:00:00Z\",\"validUntil\":\"2026-10-04T00:00:00Z\"}",
                 "{\"type\":\"DISCOUNT_PERCENT\",\"percent\":20,\"maxRedemptions\":1}",

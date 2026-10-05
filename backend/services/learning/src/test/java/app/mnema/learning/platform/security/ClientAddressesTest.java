@@ -39,6 +39,17 @@ class ClientAddressesTest {
     }
 
     @Test
+    void theNetworkOfAnIpv4ClientIsItsAddressAndOfAnIpv6ClientItsSlash64() {
+        assertThat(addresses.resolveNetwork(request("198.51.100.7", null))).contains("198.51.100.7");
+        assertThat(addresses.resolveNetwork(request("2001:db8:1:2:aaaa:bbbb:cccc:dddd", null))).contains("2001:db8:1:2::/64");
+        assertThat(addresses.resolveNetwork(request("2001:db8:1:2:1111:2222:3333:4444", null))).contains("2001:db8:1:2::/64");
+        assertThat(addresses.resolveNetwork(request("2001:db8:1:3::1", null))).contains("2001:db8:1:3::/64");
+        assertThat(addresses.resolveNetwork(request("127.0.0.1", "2001:db8:ffff:ffff:ffff:ffff:ffff:ffff"))).contains("2001:db8:ffff:ffff::/64");
+        assertThat(addresses.resolveNetwork(request("::ffff:198.51.100.9", null))).contains("198.51.100.9");
+        assertThat(addresses.resolveNetwork(request("host.example", null))).isEmpty();
+    }
+
+    @Test
     void anUnusablePeerIsEmpty() {
         assertThat(addresses.resolve(request("", null))).isEmpty();
         assertThat(addresses.resolve(request("host.example", null))).isEmpty();

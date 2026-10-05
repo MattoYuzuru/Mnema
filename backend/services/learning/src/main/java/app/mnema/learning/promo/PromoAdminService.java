@@ -21,7 +21,7 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 
 /**
- * Creating, listing and switching off promo codes. The caller must be an administrator in Identity (the caller's own bearer, cached for at most a
+ * Creating, listing (200 per page, {@code ?after=} the last code id of the previous page) and switching off promo codes. The caller must be an administrator in Identity (the caller's own bearer, cached for at most a
  * minute; when Identity cannot say, the request is refused). The plain code of a created code is in the response of the creation and nowhere else.
  */
 @Service
@@ -29,7 +29,7 @@ public class PromoAdminService {
     private static final Logger log = LoggerFactory.getLogger(PromoAdminService.class);
     private static final Pattern CHANNEL = Pattern.compile("[A-Za-z0-9][A-Za-z0-9 _.:/@#+-]{0,39}");
     private static final int GENERATION_ATTEMPTS = 5;
-    private static final int LIST_LIMIT = 200;
+    static final int PAGE_SIZE = 200;
 
     /** A creation request, already shaped; {@code vanity} is a code the admin chose (normalized on use), else one is generated. */
     public record Create(PromoType type, String plan, Integer days, Integer months, Integer percent, Instant validFrom,
@@ -38,11 +38,13 @@ public class PromoAdminService {
     private final PromoRepository repository;
     private final AccountStandings standings;
     private final UsageClock clock;
+    private final PromoSettings settings;
 
-    PromoAdminService(PromoRepository repository, AccountStandings standings, UsageClock clock) {
+    PromoAdminService(PromoRepository repository, AccountStandings standings, UsageClock clock, PromoSettings settings) {
         this.repository = repository;
         this.standings = standings;
         this.clock = clock;
+        this.settings = settings;
     }
 
     /** @throws AccessForbiddenException the caller is not an administrator; {@link IdentityUnavailableException} Identity did not answer */
@@ -53,6 +55,7 @@ public class PromoAdminService {
 
     @Transactional
     public ObjectNode create(UUID admin, Create command) {
+        settings.requireAvailable();
         Instant now = clock.now().truncatedTo(ChronoUnit.SECONDS);
         validate(command);
         Instant from = command.validFrom() == null ? now : command.validFrom();
@@ -65,7 +68,7 @@ public class PromoAdminService {
             row = new PromoRepository.Code(UUID.randomUUID(), PromoCodes.hint(normalized), command.type(), command.plan(),
                     command.days(), command.months(), command.percent(), from, command.validUntil(), command.maxRedemptions(),
                     command.oncePerAccount(), command.channel(), true, now, admin);
-            if (repository.insertCode(row, PromoCodes.hash(normalized))) break;
+            if (repository.insertCode(row, PromoCodes.hash(settings.hashSecret, normalized))) break;
             row = null;
         }
         if (row == null) throw InvalidRequestException.because("code_taken");
@@ -93,10 +96,16 @@ public class PromoAdminService {
     }
 
     @Transactional(readOnly = true)
-    public ObjectNode list() {
+    public ObjectNode list(UUID after) {
+        var page = repository.list(after, PAGE_SIZE + 1);
         ArrayNode codes = JsonNodeFactory.instance.arrayNode();
-        repository.list(LIST_LIMIT).forEach(entry -> codes.add(view(entry.code(), entry.redemptions())));
-        return JsonNodeFactory.instance.objectNode().set("codes", codes);
+        page.stream().limit(PAGE_SIZE).forEach(entry -> codes.add(view(entry.code(), entry.redemptions())));
+        ObjectNode result = JsonNodeFactory.instance.objectNode();
+        result.set("codes", codes);
+        // The cursor of the next page: the id of the last code of this one, null on the last page.
+        if (page.size() > PAGE_SIZE) result.put("next", page.get(PAGE_SIZE - 1).code().codeId().toString());
+        else result.putNull("next");
+        return result;
     }
 
     /** Switches a code on or off: the kill switch. Redemptions that already happened keep their entitlement. */

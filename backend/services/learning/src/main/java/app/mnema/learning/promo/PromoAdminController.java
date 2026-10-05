@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.databind.JsonNode;
 
@@ -37,9 +38,9 @@ public final class PromoAdminController {
     }
 
     @GetMapping
-    ResponseEntity<JsonNode> list(@AuthenticationPrincipal Jwt identity) {
+    ResponseEntity<JsonNode> list(@AuthenticationPrincipal Jwt identity, @RequestParam(name = "after", required = false) String after) {
         admin.requireAdmin(identity);
-        return ResponseEntity.ok().header("Cache-Control", "private, no-store").body(admin.list());
+        return ResponseEntity.ok().header("Cache-Control", "private, no-store").body(admin.list(after == null ? null : uuid(after)));
     }
 
     /** Creates a code and returns its plain text once: {@code {code, codeId, hint, ...}}. */
@@ -71,13 +72,15 @@ public final class PromoAdminController {
         UUID owner = PromoBodies.owner(identity);
         Boolean enabled = PromoBodies.flag(PromoBodies.object(body, Set.of("enabled"), Set.of("enabled")), "enabled");
         if (enabled == null) throw new InvalidRequestException();
-        UUID id;
+        return ResponseEntity.ok().header("Cache-Control", "private, no-store").body(admin.setEnabled(owner, uuid(codeId), enabled));
+    }
+
+    private static UUID uuid(String text) {
         try {
-            id = UUID.fromString(codeId);
+            return UUID.fromString(text);
         } catch (IllegalArgumentException failure) {
             throw new InvalidRequestException();
         }
-        return ResponseEntity.ok().header("Cache-Control", "private, no-store").body(admin.setEnabled(owner, id, enabled));
     }
 
     private static Instant instant(String text) {

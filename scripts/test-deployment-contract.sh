@@ -187,6 +187,13 @@ for value in \
 do
   grep -Fq "$value" "$IDENTITY_TEMPLATE"
 done
+# Promo codes and A/B (#302): production Learning must receive its secrets and the popup copy from the private runtime environment.
+for value in \
+  MNEMA_PROMO_HASH_SECRET MNEMA_EXPERIMENT_SECRET MNEMA_PROMO_POPUP_ENABLED MNEMA_PROMO_POPUP_ID \
+  MNEMA_PROMO_POPUP_TITLE MNEMA_PROMO_POPUP_BODY MNEMA_PROMO_POPUP_CTA MNEMA_PROMO_POPUP_CODE MNEMA_PROMO_POPUP_COOLDOWN
+do
+  grep -Fq "$value: \${$value:-" "$REPO_ROOT/deploy/production/compose.yaml"
+done
 grep -Fq 'key: IDENTITY_SIGNING_JWK_SET' "$IDENTITY_TEMPLATE"
 grep -Fq 'mountPath: /var/run/secrets/mnema-identity' "$IDENTITY_TEMPLATE"
 grep -Fq 'identity.avatar.allow-staging-minio-http=${MNEMA_AVATAR_ALLOW_STAGING_MINIO_HTTP:false}' \
