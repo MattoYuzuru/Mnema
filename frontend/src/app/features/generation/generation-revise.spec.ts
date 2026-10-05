@@ -266,6 +266,8 @@ describe('REVISE_* specs, exercise edits and the intent (AI-16, contracts/genera
             for (const reason of ['TARGET_UNSUPPORTED_BLOCK', 'TARGET_PERSONAL_DATA', 'TARGET_MEDIA_ONLY', 'TARGET_NO_AUDIO']) {
                 expect(say('REVISE_ITEM', 400, { code: 'INVALID_REQUEST', reason }), reason).toMatch(/[А-Яа-я]/u);
             }
+            expect(say('REVISE_EXERCISE', 400, { code: 'INVALID_REQUEST', reason: 'TARGET_NO_AUDIO' }))
+                .toBe('Озвучить заново можно только аудио с текстом: добавьте расшифровку к записи в упражнении.');
             expect(say('REVISE_ITEM', 422, { code: 'RESOURCE_LIMIT_EXCEEDED', limit: 'EDIT_TARGET_SIZE' })).toContain('слишком длинный');
             expect(say('REVISE_EXERCISE', 409, { code: 'CAPABILITY_UNAVAILABLE', capability: 'textToSpeech' })).toContain('Озвучивание пока недоступно');
             expect(say('REVISE_ITEM', 409, { code: 'SOURCE_UNAVAILABLE' })).toContain('Материал уже изменился');

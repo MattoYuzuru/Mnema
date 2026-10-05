@@ -64,7 +64,7 @@
                   </div>
                 }
                 @if (hasVoiceChip()) {
-                  <fieldset class="ask-voice" [attr.aria-describedby]="uid + '-voice-hint'">
+                  <fieldset class="ask-voice">
                     <legend>Голос озвучки</legend>
                     <div class="voice-chips">
                       <label class="voice-chip"><input type="radio" [name]="uid + '-voice'" value="NONE" [checked]="voice() === 'NONE'" (change)="setVoice('NONE')" /><span>Не менять</span></label>
@@ -72,8 +72,6 @@
                         <label class="voice-chip"><input type="radio" [name]="uid + '-voice'" [value]="option" [checked]="voice() === option" (change)="setVoice(option)" /><span>{{ voiceChipText(option) }}</span></label>
                       }
                     </div>
-                    <!-- TODO(#297): say this only while speech synthesis is not connected; derive it from the textToSpeech capability when AI-09 lands. -->
-                    <p class="ask-help" [id]="uid + '-voice-hint'">Синтез речи пока не подключён: Мнема запишет голос в упражнении, а сам звук обновится позже.</p>
                   </fieldset>
                 }
               }
