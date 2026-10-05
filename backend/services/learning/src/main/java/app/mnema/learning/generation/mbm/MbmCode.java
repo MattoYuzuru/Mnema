@@ -33,7 +33,7 @@ public enum MbmCode {
     MBM_SOURCE_NOT_IN_RESEARCH(Severity.ERROR, "Every ::sources line is [n] URL where n and the exact URL belong to one result of the session research."),
     MBM_UNKNOWN_HANDLE(Severity.ERROR, "A [[handle]] must be one of the handles given for the edited range; new documents have none."),
     MBM_DUPLICATE_HANDLE(Severity.ERROR, "A handle may be used on one block only."),
-    MBM_TOO_MANY_MEDIA(Severity.ERROR, "At most 8 media directives per artifact (the media counts declared in the spec cap it lower); the estimate prices only the declared counts."),
+    MBM_TOO_MANY_MEDIA(Severity.ERROR, "At most 8 media directives per artifact, and per kind what the spec declares: one ::audio when audio is on, one ::image mode=\"search\" when image search is on, none of a kind that is off; the estimate prices only the declared counts, so an extra directive of a kind is this error (repairable)."),
     MBM_AUDIO_TEXT_TOO_LONG(Severity.ERROR, "The text of ::audio is at most 600 characters; split it into several clips."),
     MBM_EDIT_HANDLE_OMITTED(Severity.ERROR, "Every handle of the edited range must appear in the output; removing a block is not an AI action. Reordering is allowed."),
     MBM_LINK_NOT_ALLOWED(Severity.WARNING, "The link URL is not in the allowlist: the label stays as text and the URL is dropped."),

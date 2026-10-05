@@ -1,0 +1,1 @@
+{"task":"transcribe","language":"russian","duration":4.0,"text":"Завтра мы поедем в тоукио","segments":[{"id":0,"start":0.0,"end":1.0,"text":"Завтра","avg_logprob":-0.3,"no_speech_prob":0.02},{"id":1,"start":1.0,"end":4.0,"text":"мы поедем в тоукио","avg_logprob":-1.6,"no_speech_prob":0.05}]}
