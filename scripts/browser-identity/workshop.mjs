@@ -23,6 +23,7 @@ import { runWorkshopEdits } from './selection-edits.mjs';
 import { runWorkshopImages } from './image-search.mjs';
 import { runWorkshopSpeech } from './speech.mjs';
 import { runWorkshopVoice } from './voice.mjs';
+import { runWorkshopResearch } from './research.mjs';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -310,6 +311,13 @@ export async function runWorkshop(ctx) {
     evidence.planner = await runWorkshopPlanner(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
       activeSessions, sessionPath, location });
     record('workshop_planner_only', evidence);
+    return evidence;
+  }
+  if (config.onlyResearch) {
+    // Development aid (`run.py --only-research`): the web research scenario alone, after the base flow. Never the gate.
+    evidence.research = await runWorkshopResearch(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
+      activeSessions, sessionPath, location });
+    record('workshop_research_only', evidence);
     return evidence;
   }
   if (config.onlyVoice) {
@@ -759,6 +767,9 @@ export async function runWorkshop(ctx) {
   }
   // #294 (AI-16): «Попросить Мнему…» in the material profile and in the exercise editor, REVISE_ITEM and REVISE_EXERCISE results.
   evidence.ask = await runWorkshopAsk(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
+    activeSessions, sessionPath, location });
+  // #299 (AI-18): web research and «Источники» (the Stub web search: results on example.org, no network, no key).
+  evidence.research = await runWorkshopResearch(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
     activeSessions, sessionPath, location });
   // #298 (AI-15): dictation and spoken answers (the Stub transcription; Chrome's synthetic microphone). Last: it spends the account's
   // ten-minute rate window of speech inputs on purpose.
