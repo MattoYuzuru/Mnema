@@ -11,8 +11,9 @@ artifact:
 
 # Mnema release smoke, diagnostics and rollback
 
-> Hosted operations paused since 2026-09-12. [Local development delivery](local-development-delivery.md)
-> supersedes automatic promotion below; retain these contracts for reviewed reactivation.
+> Legacy Kubernetes reference. Current production uses
+> [VPS delivery](production-delivery.md) and [VPS runtime](vps-runtime.md).
+> These Kubernetes workflows remain dormant and are not the current rollout path.
 
 ## Current replacement delivery — #142
 

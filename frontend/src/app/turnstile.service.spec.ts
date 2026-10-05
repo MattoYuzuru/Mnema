@@ -34,7 +34,7 @@ describe('one-use login protection', () => {
     it('makes no Cloudflare request in local-disabled or legal-blocked mode', async () => {
         const local = service.token('login'); config('disabled'); expect(await local).toBeNull();
         const closed = service.token('register'); config('blocked');
-        await expect(closed).rejects.toBeInstanceOf(AbuseProtectionFailure);
+        await expect(closed).rejects.toMatchObject({ code: 'blocked' });
         expect(document.querySelector('script[src^="https://challenges.cloudflare.com/"]')).toBeNull();
     });
 

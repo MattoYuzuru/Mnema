@@ -5,7 +5,7 @@ source она применима только к личному локально
 лицом; organizational/shared deployment требует отдельной письменной лицензии.
 Self-host compatibility is not a hosted-v2 launch requirement; the future
 managed Russian provider evaluation is documented separately in
-[Russia launch economics](../product/russia-launch-economics-2026.md).
+[AI product contract](../product/ai-layer-2026-10.md).
 
 ## Важно про Ollama
 

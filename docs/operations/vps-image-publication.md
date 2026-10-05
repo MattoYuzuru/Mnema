@@ -1,11 +1,10 @@
 # VPS image publication
 
-The owner-authorized production preparation (#344/#345, slice #349) restores a
-bounded **publication** path for the new Russian VPS, `mnema` (`135.106.175.30`).
+Main CI provides the current bounded **publication** path for the new Russian VPS, `mnema` (`135.106.175.30`).
 It does not reactivate the old Kubernetes deployment, recovery or rollback jobs.
 One VPS will use Compose through the [root-owned dispatcher](../../deploy/production/README.md);
 Compose configuration, actual dependency/backup acceptance and public rollout are
-separate required evidence. The local product completion boundary remains unchanged.
+separate required evidence. See [production delivery](production-delivery.md) for the complete release sequence.
 
 ## Source and images
 
@@ -56,21 +55,10 @@ acceptance from the mere presence of a tag.
 
 ## Verification and rollback
 
-The owner switched `mnema.app`, `auth.mnema.app` and `www.mnema.app` A records to
-the new VPS on 2026-10-04 before application readiness; public DNS readback confirmed
-`135.106.175.30` and no AAAA. `ai`, `stats`, wildcard and DKIM were not changed by
-the agent. `install-origin.sh preview` describes a bounded host bootstrap;
-`--apply` is administrator-only, rejects an existing origin or occupied listeners,
-and installs the official stable Caddy package with its default service masked
-before installation. It preserves the package configuration and uses the reviewed
-maintenance Caddyfile: public ACME HTTPS on those three names, loopback-only admin,
-no-store 503 and Retry-After. No app, DB, DNS or keykomi mutation occurs. Public
-certificate validation and the expected 503 remain actual runtime checks after
-installation. A temporary maintenance response is not application deployment.
-If installation fails, inspect the exact completed steps; do not blindly rerun or
-overwrite a discovered origin. Stop Caddy to roll back while retaining certificate
-storage and the package backup. [Official Caddy installation](https://caddyserver.com/docs/install)
-defines its stable package repository and service behavior.
+The active root/auth/www A records resolve to `135.106.175.30`, DNS-only.
+Production Caddy and four healthy Compose containers are applied. Current state,
+credential/privacy limits and runtime acceptance are in [VPS runtime](vps-runtime.md).
+Publication itself never mutates DNS, runtime configuration or old data.
 
 Repository verifier tests mutate guards/dependencies/inputs and candidate evidence
 to prove closed failures. The existing release evidence policy also gates frontend.

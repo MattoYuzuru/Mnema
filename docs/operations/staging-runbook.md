@@ -11,9 +11,9 @@ artifact:
 
 # Mnema staging bootstrap and secret contract
 
-> Paused since 2026-09-12: the server is unavailable. Follow
-> [local development delivery](local-development-delivery.md); the procedures below
-> are restoration reference, not instructions to contact the former host.
+> Legacy Kubernetes reference. Current production uses
+> [VPS delivery](production-delivery.md) and [VPS runtime](vps-runtime.md).
+> These Kubernetes workflows remain dormant and are not the current rollout path.
 
 Staging is an isolated namespace on the shared main k3s host. Replacement releases ship only the digest-pinned Identity & Account and Learning runtimes in explicit maintenance. Production promotion is disabled until #147; production still has its previously applied topology. Staging owns separate PostgreSQL, Redis, MinIO, credentials and TLS hosts. It has a default recovery objective of RPO 24 hours / RTO 4 hours. Sharing the host remains a failure-domain limitation, not a claim of production-grade availability.
 

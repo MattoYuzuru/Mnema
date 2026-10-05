@@ -12,9 +12,9 @@ artifact:
 
 # Production PostgreSQL backup and isolated recovery drill
 
-> Hosted operations paused since 2026-09-12 after loss of the shared server.
-> Follow [local development delivery](local-development-delivery.md); this runbook
-> does not establish that old data or backups remain available.
+> Legacy Kubernetes reference. Current production uses
+> [VPS delivery](production-delivery.md) and [VPS runtime](vps-runtime.md).
+> These Kubernetes workflows remain dormant and are not the current rollout path.
 
 This runbook defines the repository contract for production PostgreSQL backups, pre-migration evidence and a restore rehearsal. It does not authorize a production database restore. A real incident restore needs its own exact target, write freeze, data-loss boundary and approval.
 

@@ -18,13 +18,19 @@ Every external image used to build Mnema or applied by the hosted production wor
   image bindings; the PostgreSQL Dockerfile base is pinned, and restore binds to
   the admitted derived PostgreSQL image; Dependabot also covers `/deploy/production`.
 
-Since #143, Main CI ships only Identity & Account and Learning in maintenance; production promotion is disabled until #147. The production support image inventory below describes retained deployed infrastructure, not an enabled replacement production rollout.
+Current VPS publication and rollout use exactly `identity-account`, `learning`,
+`frontend` and `postgres`, all admitted by immutable GHCR digest. See
+[VPS runtime](vps-runtime.md) and [publication](vps-image-publication.md). Kubernetes
+manifests below remain source-pin contracts for the dormant legacy path, not the
+current VPS topology.
 
-The application images are the only source placeholders allowed. The renderer replaces each one with the staging-approved GHCR digest and rejects the rendered release if any `image:` is not digest-pinned.
+VPS Compose takes exactly four administrator-admitted digest references. The
+legacy Kubernetes renderer separately replaces its two application placeholders
+and rejects unpinned manifests; this is a source contract, not a staging gate for VPS.
 
 ## Verified build images
 
-The pinned digest is a multi-platform OCI index. The final column proves that it contains the project's `linux/amd64` target; the exact staging rollout then proves that the real cluster can pull and run it.
+The pinned digest is a multi-platform OCI index. The final column proves that it contains the project's `linux/amd64` target; actual rollout acceptance separately proves that the VPS can pull and run its derived release images.
 
 | Source | Path | Readable tag | Pinned index digest | `linux/amd64` child |
 | --- | --- | --- | --- | --- |
@@ -63,7 +69,7 @@ Serialization, HTTP/auth behavior and the full quality gate must pass with this 
 published backend digests still require provenance/SBOM and fresh vulnerability scans.
 Remove the override only after Boot manages a fixed version and scans pass.
 
-## Verified production support images
+## VPS PostgreSQL base
 
 The new empty-DB VPS uses the following official image. Registry Content-Digest
 was checked against the index body SHA256; both amd64 and arm64 platform entries
@@ -72,6 +78,8 @@ were present. Runtime acceptance and vulnerability evidence remain separate gate
 | Component | Path | Readable tag | Pinned index digest | `linux/amd64` child |
 | --- | --- | --- | --- | --- |
 | VPS PostgreSQL | `deploy/production/Dockerfile` | `postgres:18.6-alpine3.24` | `sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873` | `sha256:d8703cd7fba306b9fec9268ecedfa8a966846c053036a60e3635791957eb2f66` |
+
+## Legacy Kubernetes support pins
 
 The following support images belong to the retained, disabled Kubernetes flow.
 
@@ -104,8 +112,9 @@ Dependabot owns routine Docker patch/minor proposals. For each update:
 1. keep the explicit version tag and update its index digest together;
 2. verify that the index contains `linux/amd64` with `docker buildx imagetools inspect <tag>@<digest>`;
 3. run `python3 scripts/verify_production_image_pins.py`, its unit tests, and `./scripts/test-render-release-manifest.sh`;
-4. require the normal PR quality gates and a successful staging rollout/smoke on the exact merged commit before any production approval.
+4. require the normal local/hosted PR quality gates, fresh four-image publication
+   and the administrator/runtime acceptance in [production delivery](production-delivery.md).
 
-If a pinned image regresses, restore its previous reviewed `tag@digest` pair through the same protected PR and staging flow. Do not retag, edit a live workload, or approve production to work around the failure.
+If a pinned image regresses, restore its previous reviewed `tag@digest` pair through the same protected PR and verified VPS release flow. Do not retag, edit a live workload, or approve production to work around the failure.
 
 References used for the contract: [Docker image digests](https://docs.docker.com/dhi/core-concepts/digests/), [Kubernetes image names and digest precedence](https://kubernetes.io/docs/concepts/containers/images/), and [GitHub Dependabot supported ecosystems](https://docs.github.com/en/code-security/reference/supply-chain-security/supported-ecosystems-and-repositories).
