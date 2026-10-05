@@ -11,6 +11,8 @@
 // Part A (this file, `runWorkshop`): composer, streaming, pager, persistence, stop, failures, deck entry, responsive and
 // accessibility evidence. Part B (`runWorkshopApproval`, needs the #288 backend: approve, bulk approve, reject/undo, hand-off,
 // retry, delete) plugs in behind a function boundary and is called from `runWorkshop` with the state part A leaves behind.
+// Live regions: the Workshop narrates the batch through one summary `role=status`; the proposal document's `.document-announcement` region
+// (#296/#297) speaks only once a media search or a voice redo ends, so the one-summary checks below leave it out.
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -51,7 +53,7 @@ const RECORDER = `
     recorder.maxBlocks = Math.max(recorder.maxBlocks, blocks);
     const dots = [...workshop.querySelectorAll('.dot')].map(dot => dot.dataset.status + (dot.getAttribute('aria-current') === 'step' ? '*' : '')).join(',');
     if (dots && recorder.dotStates.at(-1)?.dots !== dots) recorder.dotStates.push({ at, dots });
-    recorder.maxStatusRegions = Math.max(recorder.maxStatusRegions, workshop.querySelectorAll('[role=status]').length);
+    recorder.maxStatusRegions = Math.max(recorder.maxStatusRegions, workshop.querySelectorAll('[role=status]:not(.document-announcement)').length);
   };
   new MutationObserver(records => {
     for (const record of records) {
@@ -150,7 +152,7 @@ export async function runWorkshop(ctx) {
       greeting: root?.querySelector('h1 label')?.textContent.trim() ?? null, labelFor: root?.querySelector('h1 label')?.getAttribute('for') ?? null,
       textareaId: textarea?.id ?? null, value: textarea?.value ?? null, active: document.activeElement === textarea,
       estimate: (root?.querySelector('.estimate')?.textContent ?? '').replaceAll('\\u00a0', ' ').trim(),
-      statusRegions: root?.querySelectorAll('[role=status]').length ?? -1,
+      statusRegions: root?.querySelectorAll('[role=status]:not(.document-announcement)').length ?? -1,
       busy: root?.querySelector('section.composer')?.getAttribute('aria-busy') ?? null,
       button: root?.querySelector('.generate-cta')?.textContent.trim() ?? null,
       path: location.pathname };`);
@@ -448,7 +450,7 @@ export async function runWorkshop(ctx) {
     need(session.spec.prompt === `${FIRST_PROMPT}\n${SECOND_LINE}`, 'the stored prompt differs from what was typed');
     const ui = await page(`const workshop = document.querySelector('section.workshop');
       const article = workshop.querySelector('app-proposal-view article');
-      const statusRegions = [...workshop.querySelectorAll('[role=status]')];
+      const statusRegions = [...workshop.querySelectorAll('[role=status]:not(.document-announcement)')];
       const dots = [...workshop.querySelectorAll('.dot')].map(dot => ({ status: dot.dataset.status, current: dot.getAttribute('aria-current'),
         label: dot.getAttribute('aria-label'), hasSvg: Boolean(dot.querySelector('svg')), tabindex: dot.getAttribute('tabindex') }));
       return { heading: workshop.querySelector('h1')?.textContent.trim(), summary: (workshop.querySelector('.summary')?.textContent ?? '').replaceAll('\\u00a0', ' ').trim(),
@@ -771,7 +773,7 @@ export async function runWorkshopApproval(ctx, h) {
       text: (article?.querySelector('.final')?.textContent ?? '').replace(/\\s+/g, '').trim(),
       buttons: [...workshop.querySelectorAll('button, a.button')].map(node => node.textContent.replace(/\\s+/g, ' ').trim()),
       actions: [...workshop.querySelectorAll('.proposal-actions button, .proposal-actions a')].map(node => node.textContent.trim()),
-      notes, regions: workshop.querySelectorAll('[role=status]').length, alerts: workshop.querySelectorAll('[role=alert]').length,
+      notes, regions: workshop.querySelectorAll('[role=status]:not(.document-announcement)').length, alerts: workshop.querySelectorAll('[role=alert]').length,
       focus: active === document.body ? 'body' : { tag: active.tagName.toLowerCase(), id: active.id, cls: String(active.className).slice(0, 30),
         text: (active.getAttribute('aria-label') ?? active.textContent ?? '').replace(/\\s+/g, ' ').trim().slice(0, 40), inProposal: Boolean(active.closest('app-proposal-view')),
         inWorkshop: Boolean(active.closest('section.workshop')) } };`);
@@ -1143,7 +1145,7 @@ export async function runWorkshopNotes(ctx, h) {
       archiveButton: [...(workshop?.querySelectorAll('.note-archive button') ?? [])].map(node => node.textContent.trim()),
       result: workshop?.querySelector('.note-archive-result')?.textContent.trim() ?? null,
       actions: [...(workshop?.querySelectorAll('.proposal-actions button, .proposal-actions a') ?? [])].map(node => node.textContent.trim()),
-      regions: workshop?.querySelectorAll('[role=status]').length ?? 0 };`);
+      regions: workshop?.querySelectorAll('[role=status]:not(.document-announcement)').length ?? 0 };`);
 
   await desktop();
   await awaitCapability();
