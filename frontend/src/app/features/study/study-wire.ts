@@ -56,7 +56,12 @@ export function hintLetter(value: unknown): string {
 
 /** Structural check of one learner response before it leaves the browser (Study attempts and author previews). */
 export function validateResponse(response: StudyResponse): void {
-    if (response.kind === 'TEXT') { exact(response, ['kind', 'text']); text(response.text, 4096, 0); }
+    if (response.kind === 'TEXT') {
+        // `answerSource` is sent only with a `TEXT_OR_SPEECH` exercise: `SPEECH` marks a text that came from a transcript (contracts/study).
+        exact(response, response.answerSource === undefined ? ['kind', 'text'] : ['kind', 'text', 'answerSource']);
+        text(response.text, 4096, 0);
+        if (response.answerSource !== undefined && !['TYPED', 'SPEECH'].includes(response.answerSource)) throw protocol('Invalid answer source.');
+    }
     else if (response.kind === 'SELF_CHECK') {
         exact(response, ['kind', 'rating']);
         if (!['NOT_RECALLED', 'HINTED', 'PARTIAL', 'FULL'].includes(response.rating)) throw protocol('Invalid rating.');

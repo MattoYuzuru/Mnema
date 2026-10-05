@@ -1,3 +1,5 @@
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { AiPromptAsk, AiPromptWindowComponent } from './ai-prompt-window.component';
@@ -255,6 +257,23 @@ describe('AiPromptWindowComponent', () => {
             root().querySelector('dialog')!.dispatchEvent(cancel);
             expect(cancel.defaultPrevented).toBe(true);
             expect(dismissals).toEqual([]);
+        });
+    });
+
+    describe('voice input (AI-15)', () => {
+        it('has a microphone for the instruction only when speech-to-text is available, and never sends the transcript', async () => {
+            await create();
+            expect(root().querySelector('app-mic-button')).toBeNull();
+            TestBed.resetTestingModule();
+            TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] });
+            fixture = TestBed.createComponent(AiPromptWindowComponent);
+            fixture.componentRef.setInput('mode', 'popover');
+            fixture.componentRef.setInput('speechAvailable', true);
+            asks = [];
+            fixture.componentInstance.ask.subscribe(ask => asks.push(ask));
+            fixture.detectChanges();
+            expect(root().querySelector('app-mic-button')).not.toBeNull();
+            expect(asks).toEqual([]);
         });
     });
 });

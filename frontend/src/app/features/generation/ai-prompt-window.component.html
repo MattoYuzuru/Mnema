@@ -15,6 +15,7 @@
       [readOnly]="sending()" [value]="instruction()" [attr.aria-describedby]="describedBy()"
       placeholder="Например: слишком сложно, объясни проще" (input)="onInput($event)" (keydown)="onKeydown($event)"
       (compositionstart)="onCompositionStart()" (compositionend)="onCompositionEnd()"></textarea>
+    @if (speechAvailable()) { <app-mic-button purpose="EDIT" [field]="fieldTarget" /> }
     @if (cost(); as line) { <p class="window-cost" [id]="costId">{{ line }}</p> }
     <p class="window-error" [id]="errorId" aria-live="polite">{{ error() }}</p>
     <div class="window-actions">

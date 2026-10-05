@@ -584,12 +584,11 @@ describe('ExerciseAuthoringPageComponent', () => {
             expect(mode()).toBe('AUTHOR_DRAFT');
         });
 
-        it('shows the voice input and the semantic AI check as unavailable with a reason and never inside the demo', () => {
+        it('offers no voice input and shows the semantic AI check as unavailable, never inside the demo', () => {
             configure(null, { ...CAPABILITIES_UNAVAILABLE });
             select('FREE_RESPONSE');
-            const voice = preview()!.querySelector<HTMLButtonElement>('.voice button')!;
-            expect(voice.disabled).toBe(true);
-            expect(preview()!.querySelector('.voice .hint')?.textContent).toContain('Голосовой ответ пока недоступен');
+            expect(preview()!.querySelector('.voice')).toBeNull();
+            expect(preview()!.querySelector('app-mic-button')).toBeNull();
             const toggle = page().querySelector<HTMLInputElement>('input[role="switch"]')!;
             expect(toggle.disabled).toBe(true);
             expect(preview()!.textContent).not.toContain('ИИ');
