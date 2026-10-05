@@ -39,6 +39,11 @@ final class SafeImageFetcher {
     private static final Logger LOG = LoggerFactory.getLogger(SafeImageFetcher.class);
     static final int MAX_BYTES = 10 * 1024 * 1024;
     static final int MAX_REDIRECTS = 2;
+    /**
+     * The wanted types first, then any type at a low weight: the Openverse thumbnail endpoint answers 406 to a list of image types alone
+     * (live check 2026-10-05). What arrives is still checked against the content type and magic-byte allowlist below.
+     */
+    static final String ACCEPT = "image/jpeg,image/png,image/webp,image/gif,*/*;q=0.1";
     private static final Duration IDLE = Duration.ofSeconds(10);
 
     private final boolean httpsOnly;
@@ -74,7 +79,7 @@ final class SafeImageFetcher {
             HttpResponse<InputStream> response;
             try {
                 response = client.send(HttpRequest.newBuilder(current).GET().timeout(Duration.ofNanos(left))
-                        .header("User-Agent", userAgent).header("Accept", "image/jpeg,image/png,image/webp,image/gif").build(),
+                        .header("User-Agent", userAgent).header("Accept", ACCEPT).build(),
                         HttpResponse.BodyHandlers.ofInputStream());
             } catch (HttpTimeoutException timeout) {
                 return AiResult.failed(new AiFailure.Timeout());

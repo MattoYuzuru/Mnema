@@ -484,8 +484,9 @@ Licensed stock images for `::image{mode="search"}` slots. Contract: `contracts/g
   answers; every source failing is `Failed` (the step says `PROVIDER_UNAVAILABLE`), none licensed is `[]` (`NO_RESULT`). Each real source call has a breaker per
   `(source, IMAGE_SEARCH)`, the `imageSearch` permits, the daily budget, an `ai_provider_call` row (provider = source id, model `search`, cost 0) and
   `mnema_ai_calls_total`; it refuses to run inside a transaction. Defaults: `learning.ai.providers.{pixabay,openverse,wikimedia}.*`
-  (`MNEMA_AI_PIXABAY_API_KEY`, `MNEMA_AI_OPENVERSE_CLIENT_ID/_SECRET`; Wikimedia needs no key; Openverse defaults to `egress=proxy` because its API answers a
-  Cloudflare challenge from some networks, so without an active proxy it is simply not configured). `StubImageSearch` (only with `learning.ai.provider=stub`):
+  (`MNEMA_AI_PIXABAY_API_KEY`, `MNEMA_AI_OPENVERSE_CLIENT_ID/_SECRET`; Wikimedia needs no key; all three direct by default — verified live from a Russian network on
+  2026-10-05 with the owner's keys; `egress=proxy` is the fallback if a network meets Openverse's Cloudflare challenge). The download asks for the image types and
+  `*/*;q=0.1` (the Openverse thumbnail endpoint answers 406 to image types alone); the content type and magic bytes are checked anyway. `StubImageSearch` (only with `learning.ai.provider=stub`):
   4 to 6 deterministic candidates per query (source `STUB`, CC0, `https://example.org/stub/<n>`), a PNG drawn in-process by `fetch`; markers in the query
   `[[stub:image-none]]` (nothing licensed) and `[[stub:image-down]]` (every source down).
 - **Licenses** (`ImageLicense`): Pixabay Content License, CC0, public domain / PDM, CC BY (any version), CC BY-SA (any version, `shareAlike`). NC, ND, GFDL-only,
@@ -529,8 +530,8 @@ Licensed stock images for `::image{mode="search"}` slots. Contract: `contracts/g
   `ImageAddressPolicyTest`), the router (`RoutedImageSearchTest`), the cache on PostgreSQL (`ImageSearchCacheIntegrationTest`), staging on MinIO with a fake worker
   (`GeneratedMediaStagerIntegrationTest`) and the flows on the Stub with a staging double (`GenerationImageSearchIntegrationTest`). Opt-in
   `MNEMA_AI_LIVE=true ... --tests '*ImageSearchLive*'` runs Wikimedia Commons for real (search and one safe download) and Pixabay/Openverse only with their
-  credentials in the environment. **Pixabay and Openverse are not verified live** (no keys in the owner environment yet; the Openverse thumbnail request is sent without a bearer token and stays «live не проверено»); Openverse's field names follow the published
-  schema (https://docs.openverse.org/api/) and could not be fetched from here (the API host answers 403 to an anonymous client).
+  credentials in the environment. **Verified live 2026-10-05** with the owner's keys: Pixabay, Openverse (client-credentials token, search, thumbnail
+  without a bearer once `Accept` includes `*/*;q=0.1`) and Wikimedia Commons, all directly from a Russian network.
 
 ## AI assessment of free explanations (#292)
 
