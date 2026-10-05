@@ -21,6 +21,7 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -29,7 +30,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
 
     private static final Set<String> LEGACY_ROUTE_PREFIXES = Set.of(
-            "/auth", "/users", "/me", "/admin", "/templates", "/review",
+            "/auth", "/users", "/me", "/templates", "/review",
             "/search", "/uploads", "/imports", "/providers", "/jobs", "/internal"
     );
 
@@ -80,7 +81,7 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                         "22:media gc pin monotonic clock:SUCCESS",
                         "23:order and categorize mechanics:SUCCESS", "24:notifications:SUCCESS",
                         "25:deck hub:SUCCESS", "26:usage ledger:SUCCESS", "27:ai provider call:SUCCESS", "28:generation:SUCCESS", "29:generation note snapshot:SUCCESS", "30:exercise new mark:SUCCESS", "31:generation revision headroom:SUCCESS",
-                        "32:ai semantic assessment:SUCCESS", "33:generation revise intent:SUCCESS", "34:generation plan:SUCCESS", "35:image search:SUCCESS", "36:speech cache:SUCCESS", "39:plans and learning profile:SUCCESS");
+                        "32:ai semantic assessment:SUCCESS", "33:generation revise intent:SUCCESS", "34:generation plan:SUCCESS", "35:image search:SUCCESS", "36:speech cache:SUCCESS", "39:plans and learning profile:SUCCESS", "41:promo codes and popup:SUCCESS");
 
         assertThat(jdbcClient.sql("""
                         SELECT schema_name
@@ -144,7 +145,8 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                         "studyProgressController", "mediaUploadController", "mediaPlaybackController",
                         "mediaProcessingController", "mediaManifestController", "capabilityController",
                         "notificationController", "itemHubController", "deckInsightsController",
-                        "usageController", "plansController", "learningProfileController", "estimateController", "generationController");
+                        "usageController", "plansController", "learningProfileController", "estimateController", "generationController",
+                        "promoController", "promoAdminController", "promoPopupController", "experimentController");
         assertThat(requestMappings.getHandlerMethods().keySet())
                 .flatExtracting(mapping -> mapping.getPatternValues())
                 .allSatisfy(route -> {
@@ -157,6 +159,11 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                 .andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/decks").contextPath("/api"))
                 .andExpect(status().isUnauthorized());
+        // The admin and promo surfaces are private like the rest: no token, no answer (the admin check comes after the token).
+        mockMvc.perform(get("/api/admin/promo-codes").contextPath("/api")).andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/promo-codes/redemptions").contextPath("/api").contentType("application/json").content("{\"code\":\"X\"}"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/promo-popup").contextPath("/api")).andExpect(status().isUnauthorized());
     }
 
     @Test

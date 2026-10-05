@@ -63,6 +63,31 @@ enum ApiErrorCode {
             "Dispute not allowed",
             "This grade can no longer be disputed."
     ),
+    PROMO_INVALID(
+            HttpStatus.UNPROCESSABLE_CONTENT,
+            "Promo code invalid",
+            "The promo code cannot be used."
+    ),
+    PROMO_EXHAUSTED(
+            HttpStatus.CONFLICT,
+            "Promo code exhausted",
+            "The promo code has no redemptions left."
+    ),
+    PROMO_ALREADY_USED(
+            HttpStatus.CONFLICT,
+            "Promo code already used",
+            "This account has already used the promo code."
+    ),
+    PROMO_NOT_ELIGIBLE(
+            HttpStatus.UNPROCESSABLE_CONTENT,
+            "Promo code not eligible",
+            "This account cannot use a promo code now."
+    ),
+    PROMO_VELOCITY(
+            HttpStatus.UNPROCESSABLE_CONTENT,
+            "Promo code unavailable",
+            "Promo codes cannot be redeemed from this network right now."
+    ),
     MEDIA_UPLOAD_CONFLICT(HttpStatus.CONFLICT, "Media upload conflict", "The upload state or parts do not match the command."),
     MEDIA_STORAGE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "Media storage unavailable", "Media storage is temporarily unavailable."),
     VERSION_CONFLICT(

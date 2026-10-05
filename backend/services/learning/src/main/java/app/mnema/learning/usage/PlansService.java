@@ -1,6 +1,8 @@
 package app.mnema.learning.usage;
 
+import app.mnema.learning.experiment.ExperimentAssignments;
 import app.mnema.learning.profile.LearningGoal;
+import app.mnema.learning.promo.PromoDiscounts;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -21,12 +23,17 @@ class PlansService {
     private final AllowanceCatalog catalog;
     private final PlanSettings settings;
     private final UsageClock clock;
+    private final ExperimentAssignments experiments;
+    private final PromoDiscounts discounts;
 
-    PlansService(EntitlementSource entitlements, AllowanceCatalog catalog, PlanSettings settings, UsageClock clock) {
+    PlansService(EntitlementSource entitlements, AllowanceCatalog catalog, PlanSettings settings, UsageClock clock,
+                 ExperimentAssignments experiments, PromoDiscounts discounts) {
         this.entitlements = entitlements;
         this.catalog = catalog;
         this.settings = settings;
         this.clock = clock;
+        this.experiments = experiments;
+        this.discounts = discounts;
     }
 
     PlansView read(UUID owner) {
@@ -38,7 +45,10 @@ class PlansService {
             plans.add(plan(plan));
         }
         return new PlansView(new PlansView.CurrentView(entitlement.plan().name(), entitlement.period().name(),
-                Wire.time(entitlement.validUntil()), false, entitlement.source().name()), plans);
+                Wire.time(entitlement.validUntil()), false, entitlement.source().name()), plans,
+                experiments.variants(owner), discounts.pending(owner)
+                .map(pending -> new PlansView.PendingDiscount(pending.percent(), pending.plan(), Wire.time(pending.validUntil())))
+                .orElse(null));
     }
 
     private PlansView.PlanView plan(Plan plan) {

@@ -26,7 +26,9 @@ class PlansServiceTest {
     }
 
     private PlansView view(boolean teaser) {
-        return new PlansService(free, catalog, settings(teaser), CLOCK).read(UUID.randomUUID());
+        return new PlansService(free, catalog, settings(teaser), CLOCK,
+                org.mockito.Mockito.mock(app.mnema.learning.experiment.ExperimentAssignments.class),
+                org.mockito.Mockito.mock(app.mnema.learning.promo.PromoDiscounts.class)).read(UUID.randomUUID());
     }
 
     @Test

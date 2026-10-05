@@ -1,12 +1,20 @@
 package app.mnema.learning.usage;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * The body of {@code GET /api/plans}: what the paywall shows. Prices and highlights are computed from configuration and
- * {@code contracts/usage/allowances-v1.json}; nothing here grants anything.
+ * {@code contracts/usage/allowances-v1.json}; nothing here grants anything. {@code experiments} maps each enabled A/B experiment to the variant the
+ * server assigned to the owner.
  */
-public record PlansView(CurrentView current, List<PlanView> plans) {
+public record PlansView(CurrentView current, List<PlanView> plans, Map<String, String> experiments, PendingDiscount pendingDiscount) {
+
+    /**
+     * The discount a promo code earned, waiting for a purchase (#79); {@code plan} is {@code PLUS}, {@code PRO} or null for either. The
+     * response member is null when there is none.
+     */
+    public record PendingDiscount(int percent, String plan, String validUntil) { }
 
     /** The entitlement now. {@code autoRenew} is always false until recurring payments exist (#79). */
     public record CurrentView(String plan, String period, String validUntil, boolean autoRenew, String source) { }

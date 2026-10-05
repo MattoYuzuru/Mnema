@@ -11,6 +11,7 @@ import app.mnema.learning.media.MediaStorageUnavailableException;
 import app.mnema.learning.media.MediaUploadConflictException;
 import app.mnema.learning.platform.concurrency.VersionPreconditionRequiredException;
 import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
+import app.mnema.learning.promo.PromoRejectedException;
 import app.mnema.learning.usage.SpecNotSupportedException;
 import app.mnema.learning.usage.UsageContentionException;
 import app.mnema.learning.usage.UsageLimitReachedException;
@@ -66,6 +67,28 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         HttpHeaders headers = new HttpHeaders();
         headers.set(HttpHeaders.RETRY_AFTER, Long.toString(exception.retryAfterSeconds()));
         return response(ApiErrorCode.RATE_LIMITED, HttpStatus.TOO_MANY_REQUESTS, request.getRequestURI(), headers, exception.extension());
+    }
+
+    @ExceptionHandler(PromoRejectedException.class)
+    ResponseEntity<Object> handlePromoRejected(PromoRejectedException exception, HttpServletRequest request) {
+        ApiErrorCode code = switch (exception.reason()) {
+            case INVALID -> ApiErrorCode.PROMO_INVALID;
+            case EXHAUSTED -> ApiErrorCode.PROMO_EXHAUSTED;
+            case ALREADY_USED -> ApiErrorCode.PROMO_ALREADY_USED;
+            case NOT_ELIGIBLE -> ApiErrorCode.PROMO_NOT_ELIGIBLE;
+            case VELOCITY -> ApiErrorCode.PROMO_VELOCITY;
+        };
+        return response(code, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(AccessForbiddenException.class)
+    ResponseEntity<Object> handleAccessForbidden(AccessForbiddenException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.ACCESS_DENIED, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(IdentityUnavailableException.class)
+    ResponseEntity<Object> handleIdentityUnavailable(IdentityUnavailableException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.IDENTITY_UNAVAILABLE, request.getRequestURI(), new HttpHeaders());
     }
 
     @ExceptionHandler(SpecNotSupportedException.class)
