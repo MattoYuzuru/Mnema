@@ -9,14 +9,18 @@
 --   (a crashed worker included). claim_token fences a worker whose row was failed meanwhile: its late write changes nothing.
 --   (owner_id, idempotency_key) is unique and body_hash is the SHA-256 of the audio and every request member: the same key and body replays the 202,
 --   the same key with another body is IDEMPOTENCY_CONFLICT.
+--   consent_region: the region the account's consent had to cover when the input was admitted; the worker re-reads the consent when it claims the row
+--   and fails the input (UNAVAILABLE, audio deleted) when the consent is gone, outdated or no longer covers it.
 -- speech_input_audio: the recording itself (at most 2 MiB), deleted as soon as the transcription ends (success or failure) and with its input.
 --   script is the answer a harness scripted with X-Stub-Transcript; it is only ever stored while the Stub is active.
 -- speech_consent: the one consent of an account to process its voice, with the processing region it was given for (RU or ABROAD).
 -- speech_input_use: one row per admitted input, counted over the last ten minutes under an advisory lock of the account (the rate limit of 20); like
 --   generation_intent_use it holds only the account and the time.
 ALTER TABLE app_learning.ai_provider_call DROP CONSTRAINT ai_provider_call_capability_check;
+-- NOT VALID first, then VALIDATE: the new constraint takes only a short lock, the scan of the (large) journal runs with writers admitted
 ALTER TABLE app_learning.ai_provider_call ADD CONSTRAINT ai_provider_call_capability_check
-    CHECK (capability IN ('TEXT', 'ASSESS', 'TTS', 'STT', 'IMAGE', 'IMAGE_SEARCH', 'VIDEO', 'SEARCH'));
+    CHECK (capability IN ('TEXT', 'ASSESS', 'TTS', 'STT', 'IMAGE', 'IMAGE_SEARCH', 'VIDEO', 'SEARCH')) NOT VALID;
+ALTER TABLE app_learning.ai_provider_call VALIDATE CONSTRAINT ai_provider_call_capability_check;
 
 CREATE TABLE app_learning.speech_input (
     speech_input_id UUID PRIMARY KEY,
@@ -35,6 +39,7 @@ CREATE TABLE app_learning.speech_input (
     error_code TEXT CHECK (error_code IS NULL OR error_code IN ('UNAVAILABLE', 'NO_SPEECH', 'UNSUPPORTED_AUDIO', 'TOO_LONG')),
     idempotency_key UUID NOT NULL,
     body_hash BYTEA NOT NULL CHECK (octet_length(body_hash) = 32),
+    consent_region TEXT NOT NULL CHECK (consent_region IN ('RU', 'ABROAD')),
     claim_token UUID,
     created_at TIMESTAMPTZ NOT NULL CHECK (isfinite(created_at)),
     deadline_at TIMESTAMPTZ NOT NULL CHECK (isfinite(deadline_at)),

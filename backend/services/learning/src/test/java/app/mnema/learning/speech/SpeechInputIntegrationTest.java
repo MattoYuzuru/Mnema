@@ -78,6 +78,10 @@ class SpeechInputIntegrationTest extends PostgresIntegrationTest {
     @Autowired private ExerciseService exercises;
     @Autowired private StudySessionService studySessions;
     @Autowired private MediaCatalog media;
+    @Autowired private SpeechInputService service;
+    @Autowired private SpeechConsents consents;
+    @Autowired private app.mnema.learning.ai.UserKeys userKeys;
+    @Autowired private app.mnema.learning.ai.AiProperties aiProperties;
 
     @AfterEach
     void clearIdentity() { SecurityContextHolder.clearContext(); }
@@ -385,7 +389,7 @@ class SpeechInputIntegrationTest extends PostgresIntegrationTest {
         MockHttpServletResponse declared = send(owner, input("COMPOSER", key, 3_000, new byte[2 * 1024 * 1024 + 1]));
         assertThat(declared.getStatus()).isEqualTo(413);
         assertThat(json(declared).path("code").stringValue(null)).isEqualTo("PAYLOAD_TOO_LARGE");
-        assertThat(send(owner, input("COMPOSER", UUID.randomUUID(), 3_000, new byte[2 * 1024 * 1024])).getStatus()).isEqualTo(202);
+        assertThat(send(owner, input("COMPOSER", UUID.randomUUID(), 60_000, new byte[2 * 1024 * 1024]).contentType("audio/mpeg")).getStatus()).isEqualTo(202);
 
         // the type allowlist, with and without the codecs parameter; a body that is not audio
         for (String type : new String[] {"audio/ogg", "audio/ogg;codecs=opus", "audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/mpeg", "AUDIO/MP4;CODECS=\"mp4a.40.2\""}) {
@@ -524,7 +528,7 @@ class SpeechInputIntegrationTest extends PostgresIntegrationTest {
         new TransactionTemplate(transactions).executeWithoutResult(status -> ledger.consume(second, Bucket.STT, 1_730, "stt:test:" + second, null));
         UUID queued = UUID.randomUUID();
         new TransactionTemplate(transactions).executeWithoutResult(status -> repository.insert(queued, second, UUID.randomUUID(), new byte[32],
-                app.mnema.learning.ai.Transcription.Purpose.COMPOSER, null, null, "audio/ogg", 60_000, AUDIO, null, Duration.ofSeconds(30), Duration.ofMinutes(15)));
+                app.mnema.learning.ai.Transcription.Purpose.COMPOSER, null, null, "audio/ogg", 60_000, AUDIO, null, app.mnema.learning.ai.Transcription.Region.RU, Duration.ofSeconds(30), Duration.ofMinutes(15)));
         // (the worker would take it at once: hold it back by claiming it as another instance did)
         jdbc.sql("UPDATE app_learning.speech_input SET state='TRANSCRIBING', claim_token=:token WHERE speech_input_id=:id").param("token", UUID.randomUUID()).param("id", queued).update();
         assertThat(submit(second, "COMPOSER", 20_000).getStatus()).isEqualTo(409);
@@ -563,9 +567,9 @@ class SpeechInputIntegrationTest extends PostgresIntegrationTest {
         UUID dead = UUID.randomUUID();
         new TransactionTemplate(transactions).executeWithoutResult(status -> {
             repository.insert(overdue, owner, UUID.randomUUID(), new byte[32], app.mnema.learning.ai.Transcription.Purpose.COMPOSER, null, null, "audio/ogg", 1_000,
-                    AUDIO, null, Duration.ofSeconds(-5), Duration.ofMinutes(15));
+                    AUDIO, null, app.mnema.learning.ai.Transcription.Region.RU, Duration.ofSeconds(-5), Duration.ofMinutes(15));
             repository.insert(dead, owner, UUID.randomUUID(), new byte[32], app.mnema.learning.ai.Transcription.Purpose.COMPOSER, null, null, "audio/ogg", 1_000,
-                    AUDIO, null, Duration.ofSeconds(30), Duration.ofMinutes(15));
+                    AUDIO, null, app.mnema.learning.ai.Transcription.Region.RU, Duration.ofSeconds(30), Duration.ofMinutes(15));
         });
         jdbc.sql("UPDATE app_learning.speech_input SET state='TRANSCRIBING', claim_token=:token, deadline_at=CURRENT_TIMESTAMP - interval '1 second' "
                 + "WHERE speech_input_id=:id").param("token", UUID.randomUUID()).param("id", dead).update();
@@ -584,15 +588,220 @@ class SpeechInputIntegrationTest extends PostgresIntegrationTest {
         consent(owner);
         UUID id = UUID.randomUUID();
         new TransactionTemplate(transactions).executeWithoutResult(status -> repository.insert(id, owner, UUID.randomUUID(), new byte[32],
-                app.mnema.learning.ai.Transcription.Purpose.COMPOSER, null, null, "audio/ogg", 1_000, AUDIO, null, Duration.ofSeconds(30), Duration.ofMinutes(15)));
+                app.mnema.learning.ai.Transcription.Purpose.COMPOSER, null, null, "audio/ogg", 1_000, AUDIO, null, app.mnema.learning.ai.Transcription.Region.RU, Duration.ofSeconds(30), Duration.ofMinutes(15)));
         jdbc.sql("UPDATE app_learning.speech_input SET state='TRANSCRIBING', claim_token=:token WHERE speech_input_id=:id").param("token", UUID.randomUUID()).param("id", id).update();
         var stale = new SpeechInputRepository.Claim(id, owner, UUID.randomUUID(), app.mnema.learning.ai.Transcription.Purpose.COMPOSER, null, null, "audio/ogg", 1_000,
-                java.time.Instant.now().plusSeconds(30));
+                java.time.Instant.now().plusSeconds(30), app.mnema.learning.ai.Transcription.Region.RU);
         assertThat(repository.done(stale, "late", 1, "ru", false)).as("another claim token").isFalse();
         assertThat(repository.failed(stale, "UNAVAILABLE")).isFalse();
         assertThat(audioRows(id)).isEqualTo(1);
         assertThat(repository.delete(owner, id)).isTrue();
         assertThat(repository.delete(owner, id)).isFalse();
         assertThat(audioRows(id)).as("the audio goes with the row").isZero();
+    }
+
+    // ------------------------------------------------------------------ review fixes: consent at the claim, fair use, sweeps, limits
+
+    /** What a worker with a scripted provider saw and answered. */
+    private static final class Provider implements app.mnema.learning.ai.Transcription {
+        final java.util.List<Request> requests = new java.util.ArrayList<>();
+        app.mnema.learning.ai.AiResult<Transcript> answer;
+
+        @Override
+        public app.mnema.learning.ai.AiResult<Transcript> transcribe(Request request) {
+            requests.add(request);
+            return answer;
+        }
+
+        @Override public java.util.Optional<Region> region(String lang) { return java.util.Optional.of(Region.RU); }
+    }
+
+    private SpeechInputWorker workerOf(Provider provider) {
+        return new SpeechInputWorker(repository, hints, consents, provider, userKeys, ledger, aiProperties,
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry(), transactions);
+    }
+
+    /** An input that a worker (the test's own) has claimed: inserted and claimed in one transaction, so that the worker of the context never sees it queued. */
+    private SpeechInputRepository.Claim running(UUID owner, int declaredMs, app.mnema.learning.ai.Transcription.Region region) {
+        UUID id = UUID.randomUUID();
+        UUID token = UUID.randomUUID();
+        new TransactionTemplate(transactions).executeWithoutResult(status -> {
+            repository.insert(id, owner, UUID.randomUUID(), new byte[32], app.mnema.learning.ai.Transcription.Purpose.COMPOSER, null, null, "audio/ogg", declaredMs,
+                    AUDIO, null, region, Duration.ofSeconds(30), Duration.ofMinutes(15));
+            jdbc.sql("UPDATE app_learning.speech_input SET state='TRANSCRIBING', claim_token=:token WHERE speech_input_id=:id").param("token", token).param("id", id).update();
+        });
+        return new SpeechInputRepository.Claim(id, owner, token, app.mnema.learning.ai.Transcription.Purpose.COMPOSER, null, null, "audio/ogg", declaredMs,
+                java.time.Instant.now().plusSeconds(30), region);
+    }
+
+    private static app.mnema.learning.ai.AiResult<app.mnema.learning.ai.Transcription.Transcript> heard(String text, int seconds) {
+        return app.mnema.learning.ai.AiResult.ok(new app.mnema.learning.ai.Transcription.Transcript(text, seconds, "ru", false));
+    }
+
+    private JsonNode stored(UUID owner, UUID id) throws Exception { return poll(owner, id); }
+
+    private void consentFor(UUID owner, String version, String region) {
+        jdbc.sql("INSERT INTO app_learning.speech_consent(owner_id,version,processing,accepted_at) VALUES (:owner,:version,:region,CURRENT_TIMESTAMP) "
+                + "ON CONFLICT (owner_id) DO UPDATE SET version=EXCLUDED.version, processing=EXCLUDED.processing")
+                .param("owner", owner).param("version", version).param("region", region).update();
+    }
+
+    @Test
+    void aConsentWithdrawnOrOutdatedAfterAdmissionStopsTheClipBeforeAnyProviderSeesIt() throws Exception {
+        var ru = app.mnema.learning.ai.Transcription.Region.RU;
+        Provider provider = new Provider();
+        provider.answer = heard("hello", 3);
+        SpeechInputWorker mine = workerOf(provider);
+
+        // withdrawn between admission and processing
+        UUID withdrawn = UUID.randomUUID();
+        consentFor(withdrawn, "speech-2026-10", "RU");
+        var claim = running(withdrawn, 3_000, ru);
+        assertThat(send(withdrawn, delete("/speech-consent")).getStatus()).isEqualTo(204);
+        mine.run(claim);
+        assertThat(provider.requests).isEmpty();
+        JsonNode failed = stored(withdrawn, claim.id());
+        assertThat(failed.path("state").stringValue(null)).isEqualTo("FAILED");
+        assertThat(failed.path("errorCode").stringValue(null)).isEqualTo("UNAVAILABLE");
+        assertThat(audioRows(claim.id())).isZero();
+
+        // the version changed meanwhile
+        UUID stale = UUID.randomUUID();
+        consentFor(stale, "speech-2025-01", "RU");
+        var old = running(stale, 3_000, ru);
+        mine.run(old);
+        assertThat(provider.requests).isEmpty();
+        assertThat(stored(stale, old.id()).path("errorCode").stringValue(null)).isEqualTo("UNAVAILABLE");
+
+        // an input admitted for ABROAD whose consent was narrowed to RU: no longer covered
+        UUID narrowed = UUID.randomUUID();
+        consentFor(narrowed, "speech-2026-10", "RU");
+        var wide = running(narrowed, 3_000, app.mnema.learning.ai.Transcription.Region.ABROAD);
+        mine.run(wide);
+        assertThat(provider.requests).isEmpty();
+        assertThat(stored(narrowed, wide.id()).path("state").stringValue(null)).isEqualTo("FAILED");
+    }
+
+    @Test
+    void theRegionOfTheConsentIsWhatTheRouterMayUse() throws Exception {
+        Provider provider = new Provider();
+        provider.answer = heard("hello", 3);
+        SpeechInputWorker mine = workerOf(provider);
+
+        UUID russian = UUID.randomUUID();
+        consentFor(russian, "speech-2026-10", "RU");
+        mine.run(running(russian, 3_000, app.mnema.learning.ai.Transcription.Region.RU));
+        UUID abroad = UUID.randomUUID();
+        consentFor(abroad, "speech-2026-10", "ABROAD");
+        mine.run(running(abroad, 3_000, app.mnema.learning.ai.Transcription.Region.RU));
+
+        assertThat(provider.requests).extracting(app.mnema.learning.ai.Transcription.Request::allowedRegion)
+                .containsExactly(app.mnema.learning.ai.Transcription.Region.RU, app.mnema.learning.ai.Transcription.Region.ABROAD);
+    }
+
+    @Test
+    void aProviderThatMeasuresMoreThanWasDeclaredFailsTheInputAndDeliversNothing() throws Exception {
+        Provider provider = new Provider();
+        SpeechInputWorker mine = workerOf(provider);
+        UUID owner = UUID.randomUUID();
+        consentFor(owner, "speech-2026-10", "RU");
+
+        // 3 s declared, 20 s measured: far above max(2 s, 20 %)
+        provider.answer = heard("a very long text", 20);
+        var understated = running(owner, 3_000, app.mnema.learning.ai.Transcription.Region.RU);
+        mine.run(understated);
+        JsonNode failed = stored(owner, understated.id());
+        assertThat(failed.path("state").stringValue(null)).isEqualTo("FAILED");
+        assertThat(failed.path("errorCode").stringValue(null)).isEqualTo("TOO_LONG");
+        assertThat(failed.path("text").isNull()).isTrue();
+        assertThat(sttSeconds(owner)).isZero();
+
+        // within the tolerance (3 s declared, 5 s measured) the text is delivered and counted at the measured seconds
+        provider.answer = heard("fine", 5);
+        var close = running(owner, 3_000, app.mnema.learning.ai.Transcription.Region.RU);
+        mine.run(close);
+        assertThat(stored(owner, close.id()).path("state").stringValue(null)).isEqualTo("DONE");
+        assertThat(sttSeconds(owner)).isEqualTo(5);
+        assertThat(SpeechInputWorker.understated(60_000, 61)).isFalse();
+        assertThat(SpeechInputWorker.understated(10_000, 12)).isFalse();
+        assertThat(SpeechInputWorker.understated(10_000, 13)).isTrue();
+    }
+
+    @Test
+    void aTranscriptThatDoesNotFitTheWindowWhenCountedIsFailedNotDeliveredFree() throws Exception {
+        Provider provider = new Provider();
+        SpeechInputWorker mine = workerOf(provider);
+        UUID owner = UUID.randomUUID();
+        consentFor(owner, "speech-2026-10", "RU");
+        new TransactionTemplate(transactions).executeWithoutResult(status -> ledger.consume(owner, Bucket.STT, 1_790, "stt:test:" + owner, null));
+
+        provider.answer = heard("free text", 20);
+        var claim = running(owner, 20_000, app.mnema.learning.ai.Transcription.Region.RU);
+        mine.run(claim);
+
+        JsonNode failed = stored(owner, claim.id());
+        assertThat(failed.path("state").stringValue(null)).isEqualTo("FAILED");
+        assertThat(failed.path("errorCode").stringValue(null)).isEqualTo("UNAVAILABLE");
+        assertThat(failed.path("text").isNull()).isTrue();
+        assertThat(sttSeconds(owner)).isEqualTo(1_790);
+        assertThat(audioRows(claim.id())).isZero();
+    }
+
+    @Test
+    void aTranscriptLongerThanTheColumnFailsTheInputInsteadOfLeavingItHanging() throws Exception {
+        Provider provider = new Provider();
+        SpeechInputWorker mine = workerOf(provider);
+        UUID owner = UUID.randomUUID();
+        consentFor(owner, "speech-2026-10", "RU");
+        provider.answer = heard("я".repeat(SpeechInputWorker.MAX_TEXT + 1), 3);
+        var claim = running(owner, 3_000, app.mnema.learning.ai.Transcription.Region.RU);
+
+        mine.run(claim);
+
+        JsonNode failed = stored(owner, claim.id());
+        assertThat(failed.path("state").stringValue(null)).isEqualTo("FAILED");
+        assertThat(failed.path("errorCode").stringValue(null)).isEqualTo("UNAVAILABLE");
+        assertThat(audioRows(claim.id())).isZero();
+        // the limit itself is delivered
+        provider.answer = heard("я".repeat(SpeechInputWorker.MAX_TEXT), 3);
+        var edge = running(owner, 3_000, app.mnema.learning.ai.Transcription.Region.RU);
+        mine.run(edge);
+        assertThat(stored(owner, edge.id()).path("state").stringValue(null)).isEqualTo("DONE");
+    }
+
+    @Test
+    void aClipTooBigForItsDeclaredDurationIsRefusedAtAdmission() throws Exception {
+        UUID owner = UUID.randomUUID();
+        consent(owner);
+
+        // 1 s declared, 500 KB of Opus: the declared seconds are what fair use reserves, so this is a lie
+        MockHttpServletResponse refused = send(owner, input("COMPOSER", UUID.randomUUID(), 1_000, new byte[500_000]));
+        assertThat(refused.getStatus()).isEqualTo(400);
+        assertThat(jdbc.sql("SELECT count(*)::integer FROM app_learning.speech_input WHERE owner_id=:owner").param("owner", owner).query(Integer.class).single()).isZero();
+        // the same bytes are plausible for a long clip, and a short clip of a believable size is fine
+        assertThat(send(owner, input("COMPOSER", UUID.randomUUID(), 60_000, new byte[500_000])).getStatus()).isEqualTo(202);
+        assertThat(send(owner, input("COMPOSER", UUID.randomUUID(), 1_000, new byte[8_000])).getStatus()).isEqualTo(202);
+        assertThat(SpeechInputService.plausibleSize("audio/mpeg", 1_000, 40_000)).isTrue();
+        assertThat(SpeechInputService.plausibleSize("audio/webm", 1_000, 60_000)).isFalse();
+    }
+
+    @Test
+    void theRateLimitIsLookedAtBeforeTheBodyIsReadWithoutALockAndAReplayStillPasses() throws Exception {
+        UUID owner = UUID.randomUUID();
+        consent(owner);
+        UUID key = UUID.randomUUID();
+        assertThat(send(owner, input("COMPOSER", key, 1_000, AUDIO)).getStatus()).isEqualTo(202);
+        for (int index = 0; index < 20; index++) {
+            jdbc.sql("INSERT INTO app_learning.speech_input_use(owner_id,used_at) VALUES (:owner,CURRENT_TIMESTAMP)").param("owner", owner).update();
+        }
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.precheck(owner, UUID.randomUUID()))
+                .isInstanceOf(app.mnema.learning.platform.api.RateLimitedException.class);
+        // a known key is answered from the stored input, whatever the limit says
+        service.precheck(owner, key);
+        assertThat(send(owner, input("COMPOSER", key, 1_000, AUDIO)).getHeader("Idempotency-Replayed")).isEqualTo("true");
+        MockHttpServletResponse limited = send(owner, input("COMPOSER", UUID.randomUUID(), 1_000, AUDIO));
+        assertThat(limited.getStatus()).isEqualTo(429);
+        assertThat(limited.getHeader("Retry-After")).isNotBlank();
     }
 }

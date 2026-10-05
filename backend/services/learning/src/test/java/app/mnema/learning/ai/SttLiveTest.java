@@ -47,7 +47,7 @@ class SttLiveTest {
                     new AiTelemetry(new io.micrometer.core.instrument.simple.SimpleMeterRegistry()), new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
             Assumptions.assumeTrue(router.configured(), route + " is not configured here");
             String mime = env("MNEMA_STT_LIVE_MIME").isBlank() ? "audio/ogg" : env("MNEMA_STT_LIVE_MIME");
-            var request = new Transcription.Request(audio, mime, lang, List.of(), null, Duration.ofSeconds(30), 10_000, Transcription.Purpose.COMPOSER, null);
+            var request = new Transcription.Request(audio, mime, lang, List.of(), null, Duration.ofSeconds(30), 10_000, Transcription.Purpose.COMPOSER, null, Transcription.Region.ABROAD);
             long started = System.nanoTime();
             AiResult<Transcription.Transcript> result = router.transcribe(request);
             long millis = Duration.ofNanos(System.nanoTime() - started).toMillis();

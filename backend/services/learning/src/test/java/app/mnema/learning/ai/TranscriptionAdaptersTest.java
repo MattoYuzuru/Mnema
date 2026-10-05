@@ -168,12 +168,32 @@ class TranscriptionAdaptersTest {
         assertThat(failure(adapter.transcribe("m", request, BUDGET))).isInstanceOf(AiFailure.NotConfigured.class);
         server.on("/v1beta/interactions", exchange -> ImageServer.reply(exchange, 404, "text/plain", new byte[0]));
         assertThat(failure(adapter.transcribe("m", request, BUDGET))).isInstanceOf(AiFailure.Refusal.class);
+        // a 400 is not the learner's clip unless it says so: a bad key is INVALID_ARGUMENT too, and that is an outage the breaker must count
         server.on("/v1beta/interactions", exchange -> ImageServer.reply(exchange, 400, "text/plain", SECRET_HINT.getBytes(StandardCharsets.UTF_8)));
+        assertThat(failure(adapter.transcribe("m", request, BUDGET))).isEqualTo(new AiFailure.Transient("http_400"));
+        server.on("/v1beta/interactions", exchange -> ImageServer.reply(exchange, 400, "application/json",
+                "{\"error\":{\"code\":400,\"message\":\"API key not valid. Please pass a valid API key.\",\"status\":\"INVALID_ARGUMENT\"}}".getBytes(StandardCharsets.UTF_8)));
+        assertThat(failure(adapter.transcribe("m", request, BUDGET))).isEqualTo(new AiFailure.Transient("http_400"));
+        server.on("/v1beta/interactions", exchange -> ImageServer.reply(exchange, 400, "application/json",
+                "{\"error\":{\"code\":400,\"message\":\"Unable to process input audio: unsupported audio format.\",\"status\":\"INVALID_ARGUMENT\"}}"
+                        .getBytes(StandardCharsets.UTF_8)));
         assertThat(failure(adapter.transcribe("m", request, BUDGET))).isEqualTo(new AiFailure.InvalidOutput("unsupported_audio"));
+        for (int status : new int[] {415, 422}) {
+            server.on("/v1beta/interactions", exchange -> ImageServer.reply(exchange, status, "text/plain", new byte[0]));
+            assertThat(failure(adapter.transcribe("m", request, BUDGET))).isEqualTo(new AiFailure.InvalidOutput("unsupported_audio"));
+        }
         server.bytes("/v1beta/interactions", "application/json", "{not json".getBytes(StandardCharsets.UTF_8));
         assertThat(failure(adapter.transcribe("m", request, BUDGET))).isEqualTo(new AiFailure.InvalidOutput("not_json"));
         server.bytes("/v1beta/interactions", "application/json", "{\"status\":\"failed\"}".getBytes(StandardCharsets.UTF_8));
         assertThat(failure(adapter.transcribe("m", request, BUDGET))).isEqualTo(new AiFailure.InvalidOutput("not_completed"));
+        // no status, a blocked answer and an answer without any model output are an outage, never «no speech»
+        for (String body : new String[] {"{\"steps\":[{\"type\":\"model_output\",\"content\":[]}]}", "{\"status\":\"completed\",\"error\":{\"code\":400}}",
+                "{\"status\":\"completed\",\"prompt_feedback\":{\"block_reason\":\"SAFETY\"},\"steps\":[]}"}) {
+            server.bytes("/v1beta/interactions", "application/json", body.getBytes(StandardCharsets.UTF_8));
+            assertThat(failure(adapter.transcribe("m", request, BUDGET))).isEqualTo(new AiFailure.InvalidOutput("not_completed"));
+        }
+        server.bytes("/v1beta/interactions", "application/json", "{\"status\":\"completed\",\"steps\":[{\"type\":\"thought\"}]}".getBytes(StandardCharsets.UTF_8));
+        assertThat(failure(adapter.transcribe("m", request, BUDGET))).isEqualTo(new AiFailure.InvalidOutput("no_output"));
         server.close();
         assertThat(failure(adapter.transcribe("m", request, BUDGET))).isInstanceOf(AiFailure.Transient.class);
     }
@@ -341,7 +361,7 @@ class TranscriptionAdaptersTest {
         assertThat(((AiResult.Ok<Transcription.Transcript>) stub.transcribe(request)).value())
                 .isEqualTo(new Transcription.Transcript(StubTranscription.DICTATION, 4, "ru", false));
         var answer = new Transcription.Request(TranscriptionTestSupport.AUDIO, "audio/ogg", "en", List.of(), null, Duration.ofSeconds(5), 1_000,
-                Transcription.Purpose.STUDY_ANSWER, null);
+                Transcription.Purpose.STUDY_ANSWER, null, null);
         assertThat(((AiResult.Ok<Transcription.Transcript>) stub.transcribe(answer)).value().text()).isEqualTo(StubTranscription.ANSWER);
         assertThat(stub.scriptable()).isTrue();
         assertThat(stub.region("ja")).contains(Transcription.Region.RU);
@@ -362,7 +382,7 @@ class TranscriptionAdaptersTest {
     }
 
     private static Transcription.Request withScript(String script) {
-        return new Transcription.Request(TranscriptionTestSupport.AUDIO, "audio/ogg", null, List.of(), null, Duration.ofSeconds(5), 1_000, Transcription.Purpose.COMPOSER, script);
+        return new Transcription.Request(TranscriptionTestSupport.AUDIO, "audio/ogg", null, List.of(), null, Duration.ofSeconds(5), 1_000, Transcription.Purpose.COMPOSER, script, null);
     }
 
     private static Transcription.Transcript scripted(StubTranscription stub, String script) {
@@ -372,14 +392,14 @@ class TranscriptionAdaptersTest {
     @Test
     void aRequestIsValidatedAndItsTranscriptBounded() {
         for (Runnable bad : new Runnable[] {
-                () -> new Transcription.Request(new byte[0], "audio/ogg", null, List.of(), null, Duration.ofSeconds(1), 1_000, null, null),
-                () -> new Transcription.Request(TranscriptionTestSupport.AUDIO, "audio/wav", null, List.of(), null, Duration.ofSeconds(1), 1_000, null, null),
-                () -> new Transcription.Request(TranscriptionTestSupport.AUDIO, "audio/ogg", null, List.of(), null, Duration.ofSeconds(1), 0, null, null),
-                () -> new Transcription.Request(TranscriptionTestSupport.AUDIO, "audio/ogg", null, List.of(), null, Duration.ofSeconds(1), 60_001, null, null),
-                () -> new Transcription.Request(TranscriptionTestSupport.AUDIO, "audio/ogg", null, List.of(), null, Duration.ZERO, 1_000, null, null)}) {
+                () -> new Transcription.Request(new byte[0], "audio/ogg", null, List.of(), null, Duration.ofSeconds(1), 1_000, null, null, null),
+                () -> new Transcription.Request(TranscriptionTestSupport.AUDIO, "audio/wav", null, List.of(), null, Duration.ofSeconds(1), 1_000, null, null, null),
+                () -> new Transcription.Request(TranscriptionTestSupport.AUDIO, "audio/ogg", null, List.of(), null, Duration.ofSeconds(1), 0, null, null, null),
+                () -> new Transcription.Request(TranscriptionTestSupport.AUDIO, "audio/ogg", null, List.of(), null, Duration.ofSeconds(1), 60_001, null, null, null),
+                () -> new Transcription.Request(TranscriptionTestSupport.AUDIO, "audio/ogg", null, List.of(), null, Duration.ZERO, 1_000, null, null, null)}) {
             org.assertj.core.api.Assertions.assertThatThrownBy(bad::run).isInstanceOf(IllegalArgumentException.class);
         }
-        var request = new Transcription.Request(TranscriptionTestSupport.AUDIO, "audio/ogg", " ", null, null, Duration.ofSeconds(1), 1_000, null, null);
+        var request = new Transcription.Request(TranscriptionTestSupport.AUDIO, "audio/ogg", " ", null, null, Duration.ofSeconds(1), 1_000, null, null, null);
         assertThat(request.lang()).isNull();
         assertThat(request.hints()).isEmpty();
         assertThat(request.purpose()).isEqualTo(Transcription.Purpose.COMPOSER);

@@ -99,6 +99,10 @@ final class RoutedTranscription implements Transcription {
         return out;
     }
 
+    private boolean permitted(Entry entry, Region allowed) {
+        return allowed == Region.ABROAD || adapters.get(entry.provider()).region() == Region.RU;
+    }
+
     @Override
     public boolean configured() { return !usable(null).isEmpty() || !usable("ru").isEmpty(); }
 
@@ -125,7 +129,8 @@ final class RoutedTranscription implements Transcription {
         if (TransactionSynchronizationManager.isActualTransactionActive()) {
             throw new IllegalStateException("A provider call must not run inside a database transaction");
         }
-        List<Entry> usable = usable(request.lang());
+        // the consent decides where the voice may go: an RU consent never reaches an entry that leaves Russia, whatever fails before it
+        List<Entry> usable = usable(request.lang()).stream().filter(entry -> permitted(entry, request.allowedRegion())).toList();
         if (usable.isEmpty()) return AiResult.failed(new AiFailure.NotConfigured("no_route"));
         if (budget.exhausted(CAPABILITY)) return AiResult.failed(new AiFailure.BudgetExhausted());
         long deadline = System.nanoTime() + request.deadline().toNanos();

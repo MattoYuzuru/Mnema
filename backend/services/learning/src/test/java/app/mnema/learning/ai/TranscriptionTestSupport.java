@@ -15,7 +15,7 @@ final class TranscriptionTestSupport {
     private TranscriptionTestSupport() { }
 
     static Transcription.Request request(String mime, String lang, List<String> hints) {
-        return new Transcription.Request(AUDIO, mime, lang, hints, null, Duration.ofSeconds(10), 3_040, Transcription.Purpose.COMPOSER, null);
+        return new Transcription.Request(AUDIO, mime, lang, hints, null, Duration.ofSeconds(10), 3_040, Transcription.Purpose.COMPOSER, null, Transcription.Region.ABROAD);
     }
 
     static Transcription.Request request(String lang) { return request("audio/ogg", lang, List.of()); }

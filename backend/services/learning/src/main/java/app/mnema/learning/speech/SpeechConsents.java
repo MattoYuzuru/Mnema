@@ -83,7 +83,7 @@ class SpeechConsents {
         return view(owner);
     }
 
-    /** Withdraws the consent; nothing to withdraw is not an error. */
+    /** Withdraws the consent; nothing to withdraw is not an error. The inputs of the owner that are still queued fail at their claim (see {@link #allowed}). */
     void withdraw(UUID owner) {
         jdbc.sql("DELETE FROM app_learning.speech_consent WHERE owner_id=:owner").param("owner", owner).update();
     }
@@ -94,10 +94,17 @@ class SpeechConsents {
      * @throws SpeechConsentRequiredException no consent, an old version, or one for a narrower region
      */
     void require(UUID owner, Transcription.Region needed) {
-        Optional<Accepted> accepted = find(owner);
-        boolean covers = accepted.isPresent() && settings.consentVersion().equals(accepted.get().version())
-                && (accepted.get().processing() == Transcription.Region.ABROAD || accepted.get().processing() == needed);
-        if (!covers) throw new SpeechConsentRequiredException(settings.consentVersion(), needed);
+        if (allowed(owner, needed).isEmpty()) throw new SpeechConsentRequiredException(settings.consentVersion(), needed);
+    }
+
+    /**
+     * The widest region the account's consent covers now, provided it is of the current version and covers {@code needed} (what the input's admission
+     * required); empty when the consent was withdrawn, is outdated or no longer covers it. The worker asks this when it claims an input, so a
+     * withdrawal after admission stops the clip before any provider sees it.
+     */
+    Optional<Transcription.Region> allowed(UUID owner, Transcription.Region needed) {
+        return find(owner).filter(accepted -> settings.consentVersion().equals(accepted.version())
+                && (accepted.processing() == Transcription.Region.ABROAD || accepted.processing() == needed)).map(Accepted::processing);
     }
 
     private Optional<Accepted> find(UUID owner) {

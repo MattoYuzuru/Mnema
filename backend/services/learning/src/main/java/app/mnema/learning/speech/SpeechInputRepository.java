@@ -19,7 +19,7 @@ class SpeechInputRepository {
 
     /** What the worker needs of a claimed input; the audio is read separately, only by the worker that holds the claim. */
     record Claim(UUID id, UUID ownerId, UUID token, Transcription.Purpose purpose, String langHint, UUID deckId, String mimeType, int declaredMs,
-                 Instant deadlineAt) { }
+                 Instant deadlineAt, Transcription.Region consentRegion) { }
 
     /** The audio of a claimed input and the script of a harness (only ever present with the Stub). */
     record Audio(byte[] bytes, String script) { }
@@ -50,6 +50,11 @@ class SpeechInputRepository {
     Long waitIfFull(UUID owner, long windowSeconds, int limit) {
         jdbc.sql("DELETE FROM app_learning.speech_input_use WHERE owner_id=:owner AND used_at < CURRENT_TIMESTAMP - interval '1 day'")
                 .param("owner", owner).update();
+        return rateWait(owner, windowSeconds, limit);
+    }
+
+    /** The same answer as {@link #waitIfFull} without deleting anything: a cheap read that needs no lock (the pre-check before the body is read). */
+    Long rateWait(UUID owner, long windowSeconds, int limit) {
         long used = jdbc.sql("SELECT count(*) FROM app_learning.speech_input_use WHERE owner_id=:owner "
                 + "AND used_at > CURRENT_TIMESTAMP - (:seconds * interval '1 second')").param("owner", owner).param("seconds", windowSeconds)
                 .query(Long.class).single();
@@ -67,13 +72,13 @@ class SpeechInputRepository {
 
     /** Inserts the input (QUEUED), its audio and the use of the rate limit; returns the expiry. */
     Instant insert(UUID id, UUID owner, UUID key, byte[] bodyHash, Transcription.Purpose purpose, String lang, UUID deck, String mime, int declaredMs,
-                   byte[] audio, String script, java.time.Duration deadline, java.time.Duration ttl) {
+                   byte[] audio, String script, Transcription.Region consentRegion, java.time.Duration deadline, java.time.Duration ttl) {
         Timestamp expires = jdbc.sql("INSERT INTO app_learning.speech_input(speech_input_id,owner_id,purpose,state,lang_hint,deck_id,mime_type,byte_length,"
-                        + "declared_ms,idempotency_key,body_hash,created_at,deadline_at,expires_at) VALUES (:id,:owner,:purpose,'QUEUED',:lang,:deck,:mime,"
-                        + ":bytes,:declared,:key,:hash,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP + (:deadline * interval '1 millisecond'),"
+                        + "declared_ms,idempotency_key,body_hash,consent_region,created_at,deadline_at,expires_at) VALUES (:id,:owner,:purpose,'QUEUED',:lang,:deck,:mime,"
+                        + ":bytes,:declared,:key,:hash,:region,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP + (:deadline * interval '1 millisecond'),"
                         + "CURRENT_TIMESTAMP + (:ttl * interval '1 millisecond')) RETURNING expires_at")
                 .param("id", id).param("owner", owner).param("purpose", purpose.name()).param("lang", lang).param("deck", deck).param("mime", mime)
-                .param("bytes", audio.length).param("declared", declaredMs).param("key", key).param("hash", bodyHash)
+                .param("bytes", audio.length).param("declared", declaredMs).param("key", key).param("hash", bodyHash).param("region", consentRegion.name())
                 .param("deadline", deadline.toMillis()).param("ttl", ttl.toMillis()).query(Timestamp.class).single();
         jdbc.sql("INSERT INTO app_learning.speech_input_audio(speech_input_id,audio,script) VALUES (:id,:audio,:script)")
                 .param("id", id).param("audio", audio).param("script", script).update();
@@ -106,10 +111,11 @@ class SpeechInputRepository {
         return jdbc.sql("UPDATE app_learning.speech_input SET state='TRANSCRIBING', claim_token=:token WHERE speech_input_id = ("
                         + "SELECT speech_input_id FROM app_learning.speech_input WHERE state='QUEUED' AND deadline_at > CURRENT_TIMESTAMP "
                         + "ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1) "
-                        + "RETURNING speech_input_id,owner_id,purpose,lang_hint,deck_id,mime_type,declared_ms,deadline_at")
+                        + "RETURNING speech_input_id,owner_id,purpose,lang_hint,deck_id,mime_type,declared_ms,deadline_at,consent_region")
                 .param("token", token).query((row, ignored) -> new Claim(row.getObject("speech_input_id", UUID.class), row.getObject("owner_id", UUID.class),
                         token, Transcription.Purpose.valueOf(row.getString("purpose")), row.getString("lang_hint"), row.getObject("deck_id", UUID.class),
-                        row.getString("mime_type"), row.getInt("declared_ms"), row.getTimestamp("deadline_at").toInstant())).optional();
+                        row.getString("mime_type"), row.getInt("declared_ms"), row.getTimestamp("deadline_at").toInstant(),
+                        Transcription.Region.valueOf(row.getString("consent_region")))).optional();
     }
 
     Optional<Audio> audio(UUID id) {

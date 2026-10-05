@@ -70,6 +70,8 @@ class SpeechInputController {
         String mime = mime(request.getContentType());
         // the declared length refuses an oversized recording before a byte is read; the bounded read refuses a chunked or lying one
         if (request.getContentLengthLong() > SpeechInputSettings.MAX_BYTES) throw new PayloadTooLargeException();
+        // a cheap look at the rate limit before the body is read (the authoritative check is in the admission)
+        inputs.precheck(owner, key);
         byte[] audio = read(body);
         if (audio.length == 0) throw new InvalidRequestException();
         String script = transcription.scriptable() ? script(request.getHeader(STUB_HEADER)) : null;

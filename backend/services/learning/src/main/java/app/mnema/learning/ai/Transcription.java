@@ -11,7 +11,7 @@ import java.util.Set;
  *
  * <p>The failures the caller maps: {@link AiFailure.InvalidOutput} with detail {@code unsupported_audio} (no route entry could decode the clip),
  * {@link AiFailure.Refusal} with detail {@code too_long} (the provider measured more than the 60 seconds of a clip), anything else is
- * «unavailable» (every route failed, the breaker is open, the budget is spent, the deadline passed).
+ * «unavailable» (every route failed, the breaker is open, the budget is spent, the deadline passed, no entry lies in the consented region).
  */
 public interface Transcription {
     /** The container types a speech input may have (the recorder's, contracts/speech): the base type, without parameters. */
@@ -54,9 +54,11 @@ public interface Transcription {
      * @param declaredMs the recorder's measurement of the clip, 1..60000
      * @param purpose what the transcript is for
      * @param script the answer a harness scripted ({@code X-Stub-Transcript}); ignored by every real adapter, null in production
+     * @param allowedRegion the widest region the learner's consent covers: {@code RU} lets only route entries that process in Russia see the clip,
+     *                      {@code ABROAD} lets every entry. Null is {@code RU}, the strictest
      */
     record Request(byte[] audio, String mimeType, String lang, List<String> hints, OpaqueUserKey userKey, Duration deadline, int declaredMs,
-                   Purpose purpose, String script) {
+                   Purpose purpose, String script, Region allowedRegion) {
         public Request {
             if (audio == null || audio.length == 0) throw new IllegalArgumentException("audio");
             if (mimeType == null || !MIME_TYPES.contains(mimeType)) throw new IllegalArgumentException("mimeType");
@@ -65,6 +67,7 @@ public interface Transcription {
             lang = lang == null || lang.isBlank() ? null : lang.strip();
             hints = hints == null ? List.of() : List.copyOf(hints);
             purpose = purpose == null ? Purpose.COMPOSER : purpose;
+            allowedRegion = allowedRegion == null ? Region.RU : allowedRegion;
         }
 
         /** Never prints the audio, the hints or the script. */

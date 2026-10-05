@@ -34,13 +34,15 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * contract's {@code CAPABILITY_UNAVAILABLE}.
  */
 @SpringBootTest(properties = {"learning.runtime.roles=api", "learning.ai.provider=stub", "learning.features.speech-to-text.enabled=true",
-        "learning.usage.entitlements.default-plan=PLUS", "spring.datasource.hikari.maximum-pool-size=4"})
+        "learning.usage.entitlements.default-plan=PLUS", "learning.speech.sweep-interval=PT0.2S", "spring.datasource.hikari.maximum-pool-size=4"})
 class SpeechRolesIntegrationTest extends PostgresIntegrationTest {
     private static final JsonMapper JSON = JsonMapper.builder().build();
 
     @Autowired private ApplicationContext context;
     @Autowired private SpeechInputController controller;
     @Autowired private JdbcClient jdbc;
+    @Autowired private SpeechInputRepository repository;
+    @Autowired private org.springframework.transaction.PlatformTransactionManager transactions;
 
     @AfterEach
     void clearIdentity() { SecurityContextHolder.clearContext(); }
@@ -72,5 +74,34 @@ class SpeechRolesIntegrationTest extends PostgresIntegrationTest {
         assertThat(jdbc.sql("SELECT count(*)::integer FROM app_learning.speech_input_audio WHERE speech_input_id=:id").param("id", id).query(Integer.class).single()).isEqualTo(1);
         // the owner can still take it back
         assertThat(send(owner, delete("/speech-inputs/" + id)).getStatus()).isEqualTo(204);
+    }
+
+    @Test
+    void theSweepsOfAnApiProcessFailOverdueInputsDropTheirAudioAndPurgeExpiredRows() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID overdue = UUID.randomUUID();
+        UUID expired = UUID.randomUUID();
+        new org.springframework.transaction.support.TransactionTemplate(transactions).executeWithoutResult(status -> {
+            repository.insert(overdue, owner, UUID.randomUUID(), new byte[32], app.mnema.learning.ai.Transcription.Purpose.COMPOSER, null, null, "audio/ogg", 1_000,
+                    "clip".getBytes(StandardCharsets.UTF_8), null, app.mnema.learning.ai.Transcription.Region.RU, java.time.Duration.ofSeconds(-5), java.time.Duration.ofMinutes(15));
+            repository.insert(expired, owner, UUID.randomUUID(), new byte[32], app.mnema.learning.ai.Transcription.Purpose.COMPOSER, null, null, "audio/ogg", 1_000,
+                    "clip".getBytes(StandardCharsets.UTF_8), null, app.mnema.learning.ai.Transcription.Region.RU, java.time.Duration.ofSeconds(30), java.time.Duration.ofSeconds(-5));
+        });
+        assertThat(context.getBeanNamesForType(SpeechInputWorker.class)).isEmpty();
+
+        long deadline = System.nanoTime() + java.time.Duration.ofSeconds(20).toNanos();
+        String state = "QUEUED";
+        int audio = 1;
+        int rows = 1;
+        while (System.nanoTime() < deadline && (!state.equals("FAILED") || audio != 0 || rows != 0)) {
+            Thread.sleep(50);
+            state = jdbc.sql("SELECT state FROM app_learning.speech_input WHERE speech_input_id=:id").param("id", overdue).query(String.class).single();
+            audio = jdbc.sql("SELECT count(*)::integer FROM app_learning.speech_input_audio WHERE speech_input_id=:id").param("id", overdue).query(Integer.class).single();
+            rows = jdbc.sql("SELECT count(*)::integer FROM app_learning.speech_input WHERE speech_input_id=:id").param("id", expired).query(Integer.class).single();
+        }
+        assertThat(state).isEqualTo("FAILED");
+        assertThat(audio).isZero();
+        assertThat(rows).isZero();
+        assertThat(jdbc.sql("SELECT error_code FROM app_learning.speech_input WHERE speech_input_id=:id").param("id", overdue).query(String.class).single()).isEqualTo("UNAVAILABLE");
     }
 }

@@ -161,6 +161,28 @@ class RoutedTranscriptionTest {
     }
 
     @Test
+    void anRuConsentNeverReachesAnEntryThatLeavesRussiaEvenWhenTheSelfHostedOneFails() {
+        RoutedTranscription router = router(List.of(GIGA, TRANSCRIBE), List.of());
+        selfhost.answer = AiResult.failed(new AiFailure.Transient("http_503"));
+        Transcription.Request ru = new Transcription.Request(TranscriptionTestSupport.AUDIO, "audio/ogg", "en", List.of(), null, Duration.ofSeconds(10), 3_040,
+                Transcription.Purpose.COMPOSER, null, Transcription.Region.RU);
+
+        // the fall-through stops at the border: Gemini is never called for an RU-only consent
+        assertThat(failure(router.transcribe(ru))).isEqualTo(new AiFailure.Transient("http_503"));
+        assertThat(selfhost.calls).hasSize(1);
+        assertThat(google.calls).isEmpty();
+        // an ABROAD consent covers the whole route
+        assertThat(ok(router.transcribe(TranscriptionTestSupport.request("en"))).text()).isEqualTo("текст от google");
+        assertThat(google.calls).hasSize(1);
+        // a route with nothing inside the consented region is unavailable, not a call abroad
+        assertThat(failure(router(List.of(TRANSCRIBE), List.of()).transcribe(ru))).isEqualTo(new AiFailure.NotConfigured("no_route"));
+        assertThat(google.calls).hasSize(1);
+        // no allowed region given is the strictest one
+        assertThat(new Transcription.Request(TranscriptionTestSupport.AUDIO, "audio/ogg", null, null, null, Duration.ofSeconds(1), 1_000, null, null, null)
+                .allowedRegion()).isEqualTo(Transcription.Region.RU);
+    }
+
+    @Test
     void theRegionIsTheFirstUsableEntrysAndMovesWithAnOpenBreaker() {
         RoutedTranscription router = router(List.of(GIGA, TRANSCRIBE), List.of());
         assertThat(router.region("en")).contains(Transcription.Region.RU);

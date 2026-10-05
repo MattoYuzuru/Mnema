@@ -2,6 +2,7 @@ package app.mnema.learning.speech;
 
 import app.mnema.learning.ai.Transcription;
 import app.mnema.learning.capability.LearningCapabilities;
+import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.RateLimitedException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
@@ -32,7 +33,8 @@ import java.util.UUID;
  * <p><b>Fair use.</b> The ledger counts, it does not hold: {@code UsageLedger.consume} adds the metered seconds once an input is transcribed. Admission
  * therefore refuses ({@code 409 USAGE_LIMIT_REACHED}) when the declared seconds plus the seconds the account has admitted and not counted yet (its queued and
  * running inputs) would not fit a window now, which is the reservation the contract describes without a second ledger; a failed input is simply never
- * counted. Two inputs admitted in the same instant by two instances can overshoot a window by a clip, never by more than the rate limit allows.
+ * counted. The declared seconds are the learner's own word: the worker compares them with the provider's measurement and fails an input that was
+ * understated, and an input whose seconds do not fit the window when counted is failed rather than delivered free. Two inputs admitted in the same instant by two instances can overshoot a window by a clip, never by more than the rate limit allows.
  *
  * <p><b>Study.</b> A spoken Study answer is the edited transcript sent with {@code answerSource: SPEECH}: nothing links a speech input to an attempt, so the
  * grader's {@code ASR_GARBLED} flag is the grader's own judgment of the text; {@code garbled} here is the provider's confidence, shown to the learner only.
@@ -71,12 +73,41 @@ class SpeechInputService {
     }
 
     /**
+     * The most bytes a second of a clip may take, per container: far above what a recorder produces (Opus is about 4 KB/s, AAC and MP3 up to 40 KB/s at
+     * their highest rates) and far below what a clip longer than it was declared to be would take. It is the admission-time guard against under-declaring
+     * {@code X-Audio-Duration-Ms} (the declared seconds are what fair use reserves); the provider's own measurement settles the rest in the worker.
+     */
+    private static final java.util.Map<String, Integer> MAX_BYTES_PER_SECOND = java.util.Map.of("audio/ogg", 16_384, "audio/webm", 16_384,
+            "audio/mp4", 32_768, "audio/mpeg", 40_960);
+    /** Container headers and a first packet: allowed on top of the per-second ceiling, so that a very short clip is not refused. */
+    private static final int BYTES_SLACK = 32_768;
+
+    /** Whether {@code bytes} is a believable size for {@code declaredMs} of {@code mime}; false means the duration was understated. */
+    static boolean plausibleSize(String mime, int declaredMs, int bytes) {
+        long seconds = (declaredMs + 999L) / 1000;
+        return bytes <= BYTES_SLACK + seconds * MAX_BYTES_PER_SECOND.getOrDefault(mime, 16_384);
+    }
+
+    /**
+     * A cheap look at the rate limit before the body is read, so a flood of oversized requests does not cost a 2 MiB read each: no lock, no write, and a
+     * replay of a known key passes (it is answered from the stored input). The authoritative check stays in {@link #submit}.
+     *
+     * @throws RateLimitedException the account is over the limit
+     */
+    void precheck(UUID owner, UUID key) {
+        if (repository.byKey(owner, key).isPresent()) return;
+        Long wait = repository.rateWait(owner, settings.rateWindow().toSeconds(), settings.rateLimit());
+        if (wait != null) throw new RateLimitedException(wait);
+    }
+
+    /**
      * Admits {@code submission}: a new QUEUED input, or the stored one when the key and the body repeat.
      *
      * @throws app.mnema.learning.platform.api.CapabilityUnavailableException the capability is off, unconfigured or temporarily down
      * @throws SpeechConsentRequiredException no consent for the region that would process the clip
      * @throws ResourceNotFoundException the deck is not the owner's
      * @throws IdempotencyConflictException the key was used for another body
+     * @throws InvalidRequestException the clip is larger than its declared duration can be
      * @throws RateLimitedException more inputs than {@code learning.speech.rate-limit} in the window
      * @throws app.mnema.learning.usage.UsageLimitReachedException the seconds do not fit the STT bucket
      */
@@ -85,6 +116,7 @@ class SpeechInputService {
         // no usable route cannot reach this line (the capability refused above); the strictest region is the safe default
         Transcription.Region region = transcription.region(submission.lang()).orElse(Transcription.Region.ABROAD);
         consents.require(submission.owner(), region);
+        if (!plausibleSize(submission.mimeType(), submission.declaredMs(), submission.audio().length)) throw new InvalidRequestException();
         if (submission.deck() != null && !repository.ownsDeck(submission.owner(), submission.deck())) throw new ResourceNotFoundException();
         byte[] hash = hash(submission);
         UUID id = UUID.randomUUID();
@@ -100,7 +132,7 @@ class SpeechInputService {
             long seconds = repository.openSeconds(submission.owner()) + (submission.declaredMs() + 999) / 1000;
             ledger.requireFairUse(submission.owner(), Bucket.STT, seconds);
             Instant expires = repository.insert(id, submission.owner(), submission.key(), hash, submission.purpose(), submission.lang(), submission.deck(),
-                    submission.mimeType(), submission.declaredMs(), submission.audio(), submission.script(), settings.deadline(), settings.ttl());
+                    submission.mimeType(), submission.declaredMs(), submission.audio(), submission.script(), region, settings.deadline(), settings.ttl());
             return new Accepted(id, false, expires);
         });
         if (!accepted.replayed()) {

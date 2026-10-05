@@ -108,8 +108,12 @@ final class GeminiTranscription implements TranscriptionAdapter {
                 case IO -> new AiFailure.Transient("io_error");
             });
         }
-        // a 400 is a clip the model cannot decode (or a request it cannot read): the next route entry may take it
-        if (reply.status() == 400) return AiResult.failed(new AiFailure.InvalidOutput("unsupported_audio"));
+        // only a response that says the audio is the problem blames the learner's clip (415, 422, or a 400 that names the audio); a bad key or a request
+        // the provider cannot read is also a 400 (INVALID_ARGUMENT) and is our outage: transient, so that the breaker counts it and the learner is never blamed
+        if (reply.status() == 415 || reply.status() == 422 || reply.status() == 400 && audioRejected(reply.body())) {
+            return AiResult.failed(new AiFailure.InvalidOutput("unsupported_audio"));
+        }
+        if (reply.status() == 400) return AiResult.failed(new AiFailure.Transient("http_400"));
         if (reply.status() / 100 != 2) return AiResult.failed(ImageSource.statusFailure(reply.status(), reply.retryAfter(), clock));
         JsonNode root;
         try {
@@ -117,14 +121,21 @@ final class GeminiTranscription implements TranscriptionAdapter {
         } catch (JacksonException malformed) {
             return AiResult.failed(new AiFailure.InvalidOutput("not_json"));
         }
-        if (!"completed".equals(root.path("status").stringValue("completed"))) return AiResult.failed(new AiFailure.InvalidOutput("not_completed"));
+        // a response without a status, an answer the model blocked, or one with no model output at all is an outage, not a clip without speech
+        if (!"completed".equals(root.path("status").stringValue("")) || root.has("error") || root.path("prompt_feedback").has("block_reason")
+                || root.path("promptFeedback").has("blockReason")) {
+            return AiResult.failed(new AiFailure.InvalidOutput("not_completed"));
+        }
         StringBuilder text = new StringBuilder();
+        boolean answered = false;
         for (JsonNode step : root.path("steps")) {
             if (!"model_output".equals(step.path("type").stringValue(""))) continue;
+            answered = true;
             for (JsonNode content : step.path("content")) {
                 if ("text".equals(content.path("type").stringValue(""))) text.append(content.path("text").stringValue(""));
             }
         }
+        if (!answered) return AiResult.failed(new AiFailure.InvalidOutput("no_output"));
         JsonNode usage = root.path("usage");
         long audioTokens = 0;
         for (JsonNode modality : usage.path("input_tokens_by_modality")) {
@@ -136,6 +147,19 @@ final class GeminiTranscription implements TranscriptionAdapter {
         int in = (int) Math.min(Integer.MAX_VALUE, usage.path("total_input_tokens").longValue(0));
         int out = (int) Math.min(Integer.MAX_VALUE, outputTokens(usage));
         return AiResult.ok(new Answer(new Transcription.Transcript(text.toString(), seconds, request.lang(), false), new Usage(in, 0, in, out)));
+    }
+
+    private static final java.util.regex.Pattern AUDIO_REJECTED = java.util.regex.Pattern.compile(
+            "(unsupported|not supported|invalid|cannot|unable|could not|failed).{0,80}(audio|mime)|(audio|mime).{0,80}(unsupported|not supported|invalid|cannot|decode|corrupt)");
+
+    /** Whether the body of a 400 says that the audio itself is the problem; the message is only matched, never kept or logged. */
+    static boolean audioRejected(byte[] body) {
+        try {
+            String message = JSON.readTree(body).path("error").path("message").stringValue("").toLowerCase(Locale.ROOT);
+            return !message.contains("api key") && !message.contains("api_key") && AUDIO_REJECTED.matcher(message).find();
+        } catch (RuntimeException notJson) {
+            return false;
+        }
     }
 
     /**
