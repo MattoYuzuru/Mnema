@@ -1994,7 +1994,8 @@
           "createdAt": "2026-10-02T09:00:42Z"
         }
       ],
-      "turns": []
+      "turns": [],
+      "research": null
     },
     "artifactDetailExercise": {
       "artifactId": "a7a70000-0000-4000-8000-000000000002",
