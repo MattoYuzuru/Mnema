@@ -46,6 +46,8 @@ export class BatchPagerComponent {
     readonly artifacts = input.required<readonly ArtifactSummary[]>();
     /** The artifact on show; `null` while none is chosen yet. */
     readonly selectedId = input<string | null>(null);
+    /** Materials that are looking for sources now (AI-18, #299): their word says so. */
+    readonly researching = input<ReadonlySet<string>>(new Set());
     /** The artifact id the user chose. */
     readonly picked = output<string>();
 
@@ -56,11 +58,11 @@ export class BatchPagerComponent {
         : `${this.index() + 1} из ${this.artifacts().length}`);
 
     protected status(artifact: ArtifactSummary): { readonly shape: StatusShape; readonly word: string } {
-        return artifactStatus(artifact);
+        return artifactStatus(artifact, this.researching().has(artifact.artifactId));
     }
 
     protected label(artifact: ArtifactSummary, position: number): string {
-        return `${positionLabel(position, this.artifacts().length)}, ${artifactStatus(artifact).word}`;
+        return `${positionLabel(position, this.artifacts().length)}, ${this.status(artifact).word}`;
     }
 
     protected move(step: number): void {

@@ -232,6 +232,8 @@
       <a
         class="native-link"
         [attr.href]="node.href"
+        rel="noopener noreferrer"
+        [attr.target]="node.href.startsWith('https:') ? '_blank' : null"
         [attr.lang]="node.lang ?? null"
         [attr.dir]="node.dir ?? null"
       >
@@ -241,6 +243,7 @@
             [ngTemplateOutletContext]="{ $implicit: child }"
           />
         }
+        @if (node.href.startsWith('https:')) { <span class="native-visually-hidden"> (откроется в новой вкладке)</span> }
       </a>
     }
     @case ('opaque') {

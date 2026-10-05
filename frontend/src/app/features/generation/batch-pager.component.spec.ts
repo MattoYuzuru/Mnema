@@ -116,4 +116,13 @@ describe('BatchPagerComponent', () => {
         expect(picked).toEqual([]);
         expect(ids.deckId).toBeTruthy();
     });
+
+    it('says «ищу источники» for a material whose research is under way (#299)', () => {
+        create();
+        fixture.componentRef.setInput('researching', new Set([idOf(3)]));
+        fixture.detectChanges();
+        expect(dots()[3]!.getAttribute('aria-label')).toBe('Материал 4 из 7, ищу источники');
+        expect(dots()[2]!.getAttribute('aria-label')).toContain('пишется');
+        expect(dots()[3]!.getAttribute('data-status')).toBe('writing');
+    });
 });

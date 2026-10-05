@@ -9,11 +9,12 @@ describe('GenerationSettingsComponent', () => {
         [...root().querySelectorAll<HTMLInputElement>('input[type=checkbox]')].find(input => input.labels?.[0]?.textContent?.trim() === label)!;
     const value = (): GenerationSettingsValue => fixture.componentInstance.value();
 
-    function create(initial: Partial<GenerationSettingsValue> = {}, image = true, audio = true): void {
+    function create(initial: Partial<GenerationSettingsValue> = {}, image = true, audio = true, research = true): void {
         fixture = TestBed.createComponent(GenerationSettingsComponent);
         fixture.componentRef.setInput('value', { ...DEFAULT_SETTINGS, ...initial });
         fixture.componentRef.setInput('imageAvailable', image);
         fixture.componentRef.setInput('audioAvailable', audio);
+        fixture.componentRef.setInput('researchAvailable', research);
         fixture.detectChanges();
     }
 
@@ -115,5 +116,47 @@ describe('GenerationSettingsComponent', () => {
         fixture.detectChanges();
         expect(value().planFirst).toBe(false);
         expect(root().textContent).not.toContain('План: ≈ 1 % лимита');
+    });
+
+    describe('«Проверять факты» (#299)', () => {
+        const hint = (): string => root().querySelector('[id$="-research-hint"]')!.textContent!.replace(/\u00a0/g, ' ');
+
+        it('is a native checkbox behind «Ещё настройки», off by default, with the cost of the chosen effort under it', () => {
+            create();
+            const box = checkbox('Проверять факты');
+            expect(root().querySelector('details')!.contains(box)).toBe(true);
+            expect(box.checked).toBe(false);
+            expect(box.disabled).toBe(false);
+            expect(box.getAttribute('aria-describedby')).toBe(root().querySelector('[id$="-research-hint"]')!.id);
+            expect(hint()).toBe('Поищу в сети (до 3 запросов) и сошлюсь на источники. Стоит до 15 кредитов.');
+            box.click();
+            fixture.detectChanges();
+            expect(value().factCheck).toBe(true);
+            fixture.componentRef.setInput('value', { ...value(), effort: 'MEDIUM' });
+            fixture.detectChanges();
+            expect(hint()).toContain('до 2 запросов');
+            expect(hint()).toContain('до 10 кредитов');
+            fixture.componentRef.setInput('value', { ...value(), effort: 'DETAILED' });
+            fixture.detectChanges();
+            expect(hint()).toContain('до 6 запросов');
+            expect(hint()).toContain('до 30 кредитов');
+        });
+
+        it('is disabled and unchecked on «Кратко» with the reason, and remembers the choice for a longer effort', () => {
+            create({ effort: 'SHORT', factCheck: true });
+            const box = checkbox('Проверять факты');
+            expect(box.disabled).toBe(true);
+            expect(box.checked).toBe(false);
+            expect(hint()).toContain('Недоступно на «Кратко»');
+            fixture.componentRef.setInput('value', { ...value(), effort: 'MEDIUM' });
+            fixture.detectChanges();
+            expect(box.disabled).toBe(false);
+            expect(box.checked).toBe(true);
+        });
+
+        it('is not offered when web search is unavailable', () => {
+            create({}, true, true, false);
+            expect(root().textContent).not.toContain('Проверять факты');
+        });
     });
 });

@@ -86,7 +86,10 @@ describe('NativeDocumentRendererComponent', () => {
         const link = host.querySelector('a') as HTMLAnchorElement | null;
         expect(host.querySelectorAll('a').length).toBe(1);
         expect(link?.getAttribute('href')).toBe('https://example.test/source');
-        expect(link?.textContent?.replace(/\s+/g, ' ').trim()).toBe('مصدر آمن ومتابعة');
+        expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
+        expect(link?.getAttribute('target')).toBe('_blank');
+        expect(link?.querySelector('.native-visually-hidden')?.textContent).toBe(' (откроется в новой вкладке)');
+        expect(link?.textContent?.replace(/\s+/g, ' ').trim()).toBe('مصدر آمن ومتابعة (откроется в новой вкладке)');
 
         expect(host.querySelector('blockquote p')?.textContent).toContain('Цитата');
         expect(host.querySelector('ul > li')?.textContent).toContain('Первый пункт');
