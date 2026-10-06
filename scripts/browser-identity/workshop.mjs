@@ -91,7 +91,7 @@ export async function runWorkshop(ctx) {
   const press = async (name, { modifiers = 0, keyCode } = {}) => {
     const [key, code, base] = KEYS[name];
     const virtualKeyCode = keyCode ?? base;
-    const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, nativeVirtualKeyCode: virtualKeyCode, modifiers };
+    const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, modifiers };
     await tab.call('Page.bringToFront');
     await tab.call('Input.dispatchKeyEvent', name === 'Enter'
       ? { type: 'keyDown', text: '\r', unmodifiedText: '\r', ...event } : { type: 'rawKeyDown', ...event });
@@ -1075,19 +1075,19 @@ export async function runWorkshopApproval(ctx, h) {
     need(focusDelete, '«Удалить мастерскую» cannot take focus');
     // Space arms the button; a second, uninterrupted press of 3 s deletes (as in the hub scenario).
     await page(`const button = document.querySelector('section.workshop app-hold-to-delete-button button'); button.focus(); return true;`);
-    await tab.call('Input.dispatchKeyEvent', { type: 'keyDown', text: ' ', unmodifiedText: ' ', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
-    await tab.call('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
+    await tab.call('Input.dispatchKeyEvent', { type: 'keyDown', text: ' ', unmodifiedText: ' ', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 });
+    await tab.call('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 });
     await settle();
     const armed = await page(`const button = document.querySelector('section.workshop app-hold-to-delete-button button');
       return { armed: button.getAttribute('aria-pressed') === 'true', consequence: document.querySelector('section.workshop .consequence')?.textContent.trim() ?? null };`);
     need(armed.armed && armed.consequence?.startsWith('Неодобренные материалы исчезнут'), `the delete button is not armed with its consequence: ${JSON.stringify(armed)}`);
     const startedAt = Date.now();
-    await tab.call('Input.dispatchKeyEvent', { type: 'keyDown', text: ' ', unmodifiedText: ' ', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
+    await tab.call('Input.dispatchKeyEvent', { type: 'keyDown', text: ' ', unmodifiedText: ' ', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 });
     await sleep(800);
     need((await getSession(sessionId)).state === 'REVIEW', 'the session was deleted before the 3 s hold was over');
     await until(async () => (await api('GET', sessionPath(sessionId))).status === 404, 'the hold did not delete the session', 20_000);
     const heldMs = Date.now() - startedAt;
-    await tab.call('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
+    await tab.call('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 });
     need(heldMs >= 3000, `the session was deleted after only ${heldMs} ms`);
     const again = await api('DELETE', sessionPath(sessionId));
     need(again.status === 404, `deleting a deleted session answered ${again.status}`);

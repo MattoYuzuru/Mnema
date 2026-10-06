@@ -319,7 +319,7 @@ try {
   }
   async function submit(tab = cdp) { await tab.evaluate("document.querySelector('form button[type=submit]').click()"); }
   async function pressKey(key, code, virtualKeyCode, modifiers = 0, tab = cdp) {
-    const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, nativeVirtualKeyCode: virtualKeyCode, modifiers };
+    const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, modifiers };
     await tab.call('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...event });
     await tab.call('Input.dispatchKeyEvent', { type: 'keyUp', ...event });
   }

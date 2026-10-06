@@ -33,7 +33,7 @@ export async function runCodeBlock(ctx) {
   const SHIFT = 8;
   const press = async (name, modifiers = 0) => {
     const [key, code, virtualKeyCode] = KEYS[name];
-    const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, nativeVirtualKeyCode: virtualKeyCode, modifiers };
+    const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, modifiers };
     await tab.call('Page.bringToFront');
     await tab.call('Input.dispatchKeyEvent', name === 'Enter'
       ? { type: 'keyDown', text: '\r', unmodifiedText: '\r', ...event } : { type: 'rawKeyDown', ...event });

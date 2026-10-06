@@ -62,7 +62,7 @@ export async function runWorkshopResearch(ctx, h) {
   // ---- low-level input -------------------------------------------------------------------------------------------------
   const press = async name => {
     const [key, code, virtualKeyCode] = KEYS[name];
-    const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, nativeVirtualKeyCode: virtualKeyCode, modifiers: 0 };
+    const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, modifiers: 0 };
     await tab.call('Page.bringToFront');
     await tab.call('Input.dispatchKeyEvent', name === 'Enter'
       ? { type: 'keyDown', text: '\r', unmodifiedText: '\r', ...event } : { type: 'rawKeyDown', ...event });
@@ -241,8 +241,8 @@ export async function runWorkshopResearch(ctx, h) {
   await step('create_and_research', async () => {
     // Space on the box by keyboard: focus it, press Space (a real key event), the box is checked.
     await page(`const input = [...document.querySelectorAll('app-generation-settings label.check')].find(node => node.textContent.trim() === 'Проверять факты').querySelector('input'); input.scrollIntoView({ block: 'center', behavior: 'instant' }); input.focus(); return document.activeElement === input;`);
-    await tab.call('Input.dispatchKeyEvent', { type: 'keyDown', key: ' ', code: 'Space', text: ' ', unmodifiedText: ' ', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32, modifiers: 0 });
-    await tab.call('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32, modifiers: 0 });
+    await tab.call('Input.dispatchKeyEvent', { type: 'keyDown', key: ' ', code: 'Space', text: ' ', unmodifiedText: ' ', windowsVirtualKeyCode: 32, modifiers: 0 });
+    await tab.call('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, modifiers: 0 });
     await until(async () => (await factBox()).checked === true, 'Space on the focused box did not check it', 5_000);
     const before = await settledUsed('before the researched material');
     // The text «Ищу источники…» is brief with the Stub: a document-wide observer, installed before the turn starts, records every moment it was on the page.
