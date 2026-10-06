@@ -5,9 +5,9 @@ artifact:
   title: "Learning runtime policy index"
   status: current
   created_at: "2026-09-28"
-  updated_at: "2026-10-02"
+  updated_at: "2026-10-05"
   owners: ["learning-api", "web"]
-  source_tasks: ["GitHub Issue #241", "GitHub Epic #76", "GitHub Issue #284", "GitHub Issue #281"]
+  source_tasks: ["GitHub Issue #241", "GitHub Epic #76", "GitHub Issue #284", "GitHub Issue #281", "GitHub Issue #300"]
 ---
 
 # Изменяемые политики Learning
@@ -126,7 +126,9 @@ namespaces.
 | `learning.ai.user-key.secret` / `key-id` | Секрет HMAC opaque user key (`MNEMA_AI_USER_KEY_SECRET`, ≥16 символов; без дефолта) и его идентификатор для ротации | String; пусто / `k1` |
 | `learning.ai.prompt.version` / `max-input-tokens` / `working-input-tokens` | Активная версия prompt library; жёсткий потолок входа (оценка) и рабочий размер, выше которого сборщик только помечает | `v1` / `32000` / `25000` |
 | `learning.ai.call-retention` / `cleanup-initial-delay` / `cleanup-interval` | Хранение строк `ai_provider_call` и частота очистки (до 20 пачек по 500 за запуск) | Duration; `P90D` (1–365 дней) / `PT10M` / `PT6H` |
-| `learning.runtime.roles` | Роль процесса AI-слоя (архитектура A1): `api` обслуживает HTTP и создаёт работу, `worker` исполняет шаги и держит ключи провайдеров, `all` — оба (локально и в первой поставке). Диспетчер шагов (`StepDispatcher`) существует только для `worker`/`all`; неизвестное значение — отказ при старте. Окружение: `MNEMA_RUNTIME_ROLES` | `api` / `worker` / `all`; `all` |
+| `learning.runtime.roles` | Роль процесса AI-слоя (архитектура A1): `api` обслуживает HTTP и создаёт работу, `worker` исполняет шаги и держит ключи провайдеров, `all` — оба (локально и в первой поставке). Диспетчер шагов (`StepDispatcher`), воркер речевых вводов, грейдер ответов (`AssessmentRunner`) и слушатель пробуждения (только `worker`) существуют только для `worker`/`all`; неизвестное значение — отказ при старте. Окружение: `MNEMA_RUNTIME_ROLES` | `api` / `worker` / `all`; `all` |
+| `learning.runtime.provider-credentials` | Где живут ключи провайдеров: `local` (процесс держит свои) или `worker` (api-процесс, ключи на воркере: отсутствующие учётные данные заменяются плейсхолдером, `/api/capabilities` считается из общей несекретной конфигурации; только при `roles=api`, иначе отказ при старте; реальные ключи провайдеров/user-key/proxy на роли api запрещены). Окружение: `MNEMA_PROVIDER_CREDENTIALS`. См. [AI runbook](../operations/ai-runbook.md) | `local` / `worker`; `local` |
+| `management.server.port` / `management.server.address` / `management.endpoints.web.exposure.include` | Метрики на отдельном порту, привязанном к приватному адресу, не на публичном API: публичный/wildcard адрес или hostname вместо приватного IP literal, совпадающий порт и расширение выше `health,info` без собственного порта — отказ при старте (`ManagementExposureGuard`); порт отвечает на GET/HEAD без токена. Окружение: `MANAGEMENT_SERVER_PORT`, `MANAGEMENT_SERVER_ADDRESS`, `MNEMA_MANAGEMENT_EXPOSURE` | Порт; адрес; список; выключено (`health,info`, один порт) |
 | `learning.generation.session-retention` | Generation: `expires_at` сессии = последняя активность + срок; он же граница media-hold артефактов | Duration; `P30D` |
 | `learning.generation.max-active-sessions` | Generation: активные сессии на аккаунт (PLANNING, PLAN_READY, RUNNING, REVIEW с PROPOSED/REVISING/STALE); сверх — `422 RESOURCE_LIMIT_EXCEEDED` (`ACTIVE_SESSIONS`) | Count; `3` (1–100) |
 | `learning.generation.max-sources` / `max-artifacts-per-session` / `max-exercise-targets` / `max-exercises-per-target` / `max-exercises-per-session` | Generation (читает usage): лимиты спецификации; сверх — `422 RESOURCE_LIMIT_EXCEEDED` без молчаливого клампа; MATERIALS — до 20 артефактов | Count `20/20/20/10/60` (1–1000) |
@@ -135,7 +137,7 @@ namespaces.
 | `learning.generation.planner.max-output-tokens` | Generation: потолок ответа планировщика, рассуждение thinking-модели включено | Count; `16000` (1000–65536) |
 | `learning.exercise.new-mark-ttl` | Метка «Новое» у упражнений, сохранённых из Мастерской (#291): видна в списках и Study, снимается терминальной попыткой, открытием в редакторе или по сроку; просроченные строки чистит Study retention worker | Duration; `P7D`; ≥1 s |
 | `learning.generation.edit.queue-timeout` | Правка по выделению (#293): шаг `EDIT`, не взятый worker'ом за срок от создания (или от разблокировки зависимого шага), завершает turn `DEADLINE_EXCEEDED` и снимает резерв | Duration; `PT2M` |
-| `learning.generation.intent.per-hour` / `intent.deadline` | «Попросить Мнему…» (#294): бесплатных разборов запроса на аккаунт в час (сверх — `429 RATE_LIMITED` + `Retry-After`) и дедлайн вызова | Count `30`; Duration `PT20S` |
+| `learning.generation.intent.per-hour` / `intent.deadline` | «Попросить Мнему…» (#294): бесплатных разборов запроса на аккаунт в час (сверх — `429 RATE_LIMITED` + `Retry-After`) и дедлайн всего ephemeral hand-over: API ждёт без транзакции, исполняет worker/all, после ответа/отмены/дедлайна request удаляется | Count `30`; Duration `PT20S` |
 | `learning.ai.assess.deadline` / `sweep-interval` / `concurrency` / `max-in-flight` / `feedback-language` | Проверка объяснений `ai-semantic` (#292): дедлайн оценки (затем `UNAVAILABLE` → self-check), период sweeper'а (< deadline), параллельных оценок на инстанс, одновременных проверок на аккаунт (сверх — self-check `BUSY`), язык заметок о противоречиях (у колод нет языка) | Duration `PT20S` / `PT2S`; Count `16` / `3`; String `ru` |
 | `learning.ai.routes.assess-attempt-cap` | Предел одной попытки маршрута `assess`, чтобы fallback успел в пределах дедлайна; истёкшая попытка передаёт ход следующему кандидату без повтора | Duration; `PT8S` |
 | `learning.generation.usd-rub-rate` | Generation: рублей за доллар; стоимость провайдера (микродоллары) переводится в микрорубли `cost_micros` ledger | Decimal > 0; `85` (приблизительно) |
@@ -190,9 +192,8 @@ Manifest и GC contracts описаны в
 | `learning.generation.step.max-run` | Максимум одного запуска шагов; **contract only — AI-04 (#287)** | Duration; `PT1H`; диапазон — AI-04 |
 | `learning.generation.concurrency.<capability>` | Семафор вызовов на инстанс: text, tts, image, video, search, assess; **contract only — AI-04 (#287)** | Count; `16`, `4`, `2`, `1`, `4`, `16`; диапазон — AI-04 |
 | `learning.generation.progress.checkpoint-interval` | Минимальный интервал `BLOCKS_APPENDED`; **contract only — AI-04 (#287)** | Duration; `PT0.75S`; диапазон — AI-04 |
-| `learning.runtime.roles` | Роль процесса: `api`, `worker` или `all`; **contract only — AI-17 (#300)** | Enum; `all`; значения из архитектуры |
 | `learning.ai.routes.<route>` | Server-owned маршрут capability к провайдеру и модели (например `text-fast`); fallback только на 429/5xx/timeout/invalid-after-repair; **contract only — AI-02 (#282)** | Строка provider/model; default — Stub; без секретов |
-| `learning.ai.providers.<id>.enabled` | Kill-switch провайдера без релиза; **contract only — AI-02 (#282)** | Boolean; диапазон — AI-02 |
+| `learning.ai.providers.<id>.enabled` | Kill-switch провайдера без релиза (любого вида: текст, речь, STT, источники изображений, поиск); провайдер без адаптера пропускается маршрутом. Для id с дефисом (`yandex-search`) — через `SPRING_APPLICATION_JSON` | Boolean; `true` |
 | `learning.ai.timeout.connect` / `idle-stream` | Таймауты HTTP-адаптеров; **contract only — AI-02 (#282)** | Duration; `PT5S` / `PT60S`; диапазон — AI-02 |
 | `learning.ai.circuit.failure-threshold` / `window` / `open-duration` | Circuit breaker на `(provider, capability)`; **contract only — AI-02 (#282)** | Count / Duration; `5` / `PT60S`, открыт `PT30S`; диапазон — AI-02 |
 | `learning.ai.retry.max-rate-limit-retries` / `max-transient-retries` | Повторы шага: 429 с `Retry-After`, затем transient; **contract only — AI-02 (#282)** | Count; `6` / `3`; диапазон — AI-02 |

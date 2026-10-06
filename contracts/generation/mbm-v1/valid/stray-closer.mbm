@@ -1,0 +1,14 @@
+# Title
+
+Text.
+
+::
+
+::table{caption="t"}
+| A |
+|---|
+| 1 |
+:::
+::end
+
+After.

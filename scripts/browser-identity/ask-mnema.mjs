@@ -170,6 +170,7 @@ export async function runWorkshopAsk(ctx, h) {
     return { heading: text(document.querySelector('section.workshop h1')?.textContent), lede: text(document.querySelector('section.workshop .lede')?.textContent),
       title: text(card?.querySelector('.result-title')?.textContent), request: text(card?.querySelector('.result-request')?.textContent),
       buttons: [...(card?.querySelectorAll('.result-actions button') ?? [])].map(node => text(node.textContent)),
+      awaitingRevision: Boolean(card?.querySelector('#approve-wait')),
       chips: [...(card?.querySelectorAll('.result-chip') ?? [])].map(node => text(node.textContent)), stubNote: text(card?.querySelector('[data-stub-note]')?.textContent),
       diff: card?.querySelector('.revise-diff') ? { open: card.querySelector('.revise-diff').open, ins: [...card.querySelectorAll('.revise-diff ins')].map(node => text(node.textContent)),
         del: [...card.querySelectorAll('.revise-diff del')].map(node => text(node.textContent)), hidden: [...card.querySelectorAll('.revise-diff .sr-only')].map(node => text(node.textContent)) } : null,
@@ -412,7 +413,11 @@ export async function runWorkshopAsk(ctx, h) {
     await click('Ещё раз', 'app-revise-item-result .result-actions');
     await until(async () => (await getArtifact(reviseSession, reviseArtifact)).turns.length === 2
       && (await getArtifact(reviseSession, reviseArtifact)).turns[1].status === 'APPLIED', 'the second turn did not apply', 90_000);
-    await until(async () => (await resultFacts('app-revise-item-result')).title === 'Мнема переписала материал', '«Ещё раз» did not bring back the result card', 30_000);
+    // The artifact event can update the title before its displayed detail arrives. Wait for the existing revision-loading guard to clear.
+    await until(async () => {
+      const result = await resultFacts('app-revise-item-result');
+      return result.title === 'Мнема переписала материал' && !result.awaitingRevision;
+    }, '«Ещё раз» did not bring back the current result card', 30_000);
     facts = await resultFacts('app-revise-item-result');
     need(JSON.stringify(facts.buttons) === JSON.stringify(['Оставить', 'Вернуть', 'Ещё раз', 'Отклонить']), `after «Ещё раз» the actions are ${JSON.stringify(facts.buttons)}`);
     const after = await credits();

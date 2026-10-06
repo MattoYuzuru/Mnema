@@ -124,7 +124,7 @@ Findings are stable codes in [`lint.json`](lint.json) (`{code, path?}`, never ec
 | Mechanic | Architecture lint (§6) | Codes |
 |---|---|---|
 | `SELF_CHECK` | reference nonblank and not equal to the prompt | `SELF_CHECK_REFERENCE_BLANK`, `SELF_CHECK_REFERENCE_EQUALS_PROMPT` |
-| `FREE_RESPONSE` | normalized answer not in the prompt; alternatives distinct; SOFT never gives an empty string | `FREE_RESPONSE_ANSWER_IN_PROMPT`, `FREE_RESPONSE_ALTERNATIVES_NOT_DISTINCT`, `FREE_RESPONSE_SOFT_EMPTY` |
+| `FREE_RESPONSE` | normalized answer not in the prompt; alternatives distinct (a repeat is dropped deterministically with the warning `FREE_RESPONSE_ALTERNATIVE_DROPPED`, so the validator never reports the code); SOFT never gives an empty string | `FREE_RESPONSE_ANSWER_IN_PROMPT`, `FREE_RESPONSE_ALTERNATIVES_NOT_DISTINCT`, `FREE_RESPONSE_SOFT_EMPTY` |
 | `CLOZE` | each blank an existing fragment of the pinned text; key covers exactly the blank IDs; ANSWER_LENGTH answers of equal length | `CLOZE_FRAGMENT_NOT_IN_MATERIAL`, `CLOZE_KEY_BLANK_MISMATCH`, `CLOZE_ANSWER_LENGTH_MISMATCH` |
 | `CHOICE` | 2..12 distinguishable options; SINGLE exactly one correct; no "all/none of the above" unless asked | schema bounds, `CHOICE_OPTIONS_NOT_DISTINCT`, `CHOICE_CORRECT_COUNT`, `CHOICE_ALL_OR_NONE_OF_THE_ABOVE` |
 | `MATCH` | 2..6 pairs, bijection, sides distinct, labels do not give a pair away | schema bounds, `MATCH_NOT_BIJECTION`, `MATCH_LABELS_NOT_DISTINCT`, `MATCH_LABEL_LEAKS_PAIR` |

@@ -6,6 +6,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.test.context.DynamicPropertyRegistrar;
 import app.mnema.learning.capability.LearningCapabilities;
 
 import java.time.Duration;
@@ -14,10 +19,23 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /** The shipped {@code application.properties} of web research, bound by Spring with a fake key (never a network call: nothing here searches). */
-@SpringBootTest(properties = {"learning.features.web-search.enabled=true", "learning.ai.provider=",
+@SpringBootTest(properties = {"learning.runtime.roles=all", "learning.features.web-search.enabled=true", "learning.ai.provider=",
         "learning.ai.providers.yandex-search.api-key=test-key-not-real", "learning.ai.research.yandex-folder-id=b1gtestfolder",
         "spring.datasource.hikari.maximum-pool-size=2"})
+@Import(WebSearchWiringTest.DatabaseConfiguration.class)
 class WebSearchWiringTest extends PostgresIntegrationTest {
+    private static final String DATABASE = createDatabase("search_wiring_" + java.util.UUID.randomUUID().toString().replace("-", ""));
+    @TestConfiguration(proxyBeanMethods = false)
+    static class DatabaseConfiguration {
+        @Bean
+        DynamicPropertyRegistrar isolatedDatabase() {
+            return registry -> {
+                registry.add("spring.datasource.url", () -> DATABASE);
+                registry.add("spring.flyway.url", () -> DATABASE);
+            };
+        }
+    }
+    @Autowired private JdbcClient jdbc;
     @Autowired private AiProperties properties;
     @Autowired private ResearchSettings research;
     @Autowired private WebSearch webSearch;
@@ -25,6 +43,7 @@ class WebSearchWiringTest extends PostgresIntegrationTest {
 
     @Test
     void theShippedDefaultsBindYandexAsTheOnlyRouteAndAKeyAndAFolderMakeTheCapabilityAvailable() {
+        assertThat(jdbc.sql("SELECT current_database()").query(String.class).single()).startsWith("search_wiring_");
         assertThat(properties.routes().search()).containsExactly("yandex");
         assertThat(properties.providers().get("yandex-search").baseUrl()).isEqualTo("https://searchapi.api.cloud.yandex.net");
         assertThat(properties.providers().get("yandex-search").egress()).isEqualTo(AiProperties.EgressMode.DIRECT);

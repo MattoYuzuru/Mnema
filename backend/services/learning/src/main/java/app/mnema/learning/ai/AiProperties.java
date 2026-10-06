@@ -61,6 +61,25 @@ public record AiProperties(
         egress = egress == null ? new Egress("", "", "", true) : egress;
     }
 
+    /** The placeholder of a credential this process does not hold; not a secret, and never accepted by a provider. */
+    static final String WORKER_HELD = "held-by-worker";
+
+    /**
+     * The same configuration for a process that holds no provider credentials because its worker does ({@code learning.runtime.provider-credentials=worker}):
+     * every credential that is empty is replaced by {@link #WORKER_HELD}, so that the adapters, and with them the capabilities, are reported from the
+     * routes, the flags and the kill switches. A credential that is set stays as it is. The process never calls a provider with the placeholder (it
+     * has no worker role); a call that did would be refused by the provider as unauthenticated. Providers without a base URL (not in use) stay as they are.
+     */
+    AiProperties withWorkerHeldCredentials() {
+        Map<String, Provider> held = new java.util.LinkedHashMap<>();
+        providers.forEach((id, entry) -> held.put(id, entry.baseUrl().isEmpty() ? entry : new Provider(entry.enabled(), entry.baseUrl(),
+                entry.apiKey().isEmpty() ? WORKER_HELD : entry.apiKey(), entry.authUrl(), entry.authKey().isEmpty() ? WORKER_HELD : entry.authKey(),
+                entry.scope(), entry.egress(), entry.clientId().isEmpty() ? WORKER_HELD : entry.clientId(),
+                entry.clientSecret().isEmpty() ? WORKER_HELD : entry.clientSecret())));
+        UserKey heldKey = userKey.configured() ? userKey : new UserKey(WORKER_HELD + "-user-key-secret", userKey.keyId());
+        return new AiProperties(provider, routes, held, models, transport, retry, breaker, permits, budget, heldKey, prompt, egress);
+    }
+
     /**
      * Ordered {@code provider:model} lists; the first usable entry wins, the next ones are fallbacks. {@code search} lists the web search providers
      * ({@code yandex}, {@code perplexity}) of the research step, in order, without a model.

@@ -76,6 +76,21 @@ class ExerciseValidatorTest {
         return "{\"mechanic\":\"FREE_RESPONSE\"," + HEAD + ",\"prompt\":[" + prompt + "],\"accepted\":[\"" + answer + "\"],\"matchingMode\":\"STRICT\"}";
     }
 
+    @Test
+    void repeatedFreeResponseAlternativesAreDroppedWithAWarning() throws Exception {
+        String exercise = "{\"mechanic\":\"FREE_RESPONSE\"," + HEAD + ",\"prompt\":[" + text("Как называется животное?")
+                + "],\"accepted\":[\"Cat\",\" cat \",\"kitty\",\"CAT\"],\"matchingMode\":\"STRICT\"}";
+        var verdict = validate(exercise);
+        assertThat(verdict).isInstanceOf(ExerciseValidator.Valid.class);
+        var accepted = ((ExerciseValidator.Valid) verdict).exercise();
+        assertThat(accepted.warnings()).containsExactly("FREE_RESPONSE_ALTERNATIVE_DROPPED");
+        assertThat(accepted.command().path("exercise").path("answerKey").path("accepted").toString()).isEqualTo("[\"Cat\",\"kitty\"]");
+        // the lint alone still rejects the repeat: it is the guard behind the deterministic drop
+        assertThat(ExerciseLint.lint(ExerciseFixtures.JSON.readTree(exercise), context()).stream().map(f -> f.code().name()))
+                .contains("FREE_RESPONSE_ALTERNATIVES_NOT_DISTINCT");
+        assertThat(((ExerciseValidator.Valid) validate(freeResponse(text("Как называется животное?"), "cat"))).exercise().warnings()).isEmpty();
+    }
+
     private static String text(String value) {
         return "{\"kind\":\"TEXT\",\"text\":\"" + value + "\"}";
     }
