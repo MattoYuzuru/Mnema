@@ -125,6 +125,21 @@ class StubAssessmentsTest {
     }
 
     @Test
+    void theDeadlineMarkerIsAnswerScopedAndStillBoundedByTheCallBudget() {
+        String prompt = "<grader>\n<criteria>\nc1 · планы\n</criteria>\n"
+                + "<learner_answer>\"планы [[stub:assess-deadline]]\"</learner_answer>";
+        assertThat(StubAssessments.delay(prompt)).isEqualTo(Duration.ofSeconds(25));
+        assertThat(StubAssessments.delay(prompt.replace("планы [[stub:assess-deadline]]", "обычный")
+                + " [[stub:assess-deadline]]")).isZero();
+        TextRequest request = new TextRequest(AiRoute.ASSESS, List.of(TextRequest.Segment.user(prompt, false)),
+                OutputContract.JSON, 100, 0.2, Duration.ofSeconds(20), AiTestSupport.KEY, null, null, 1);
+        AiResult<TextResponse> result = stub.attempt("stub", request, Duration.ofMillis(1));
+        assertThat(result).isInstanceOf(AiResult.Failed.class);
+        assertThat(((AiResult.Failed<TextResponse>) result).failure()).isInstanceOf(AiFailure.Timeout.class);
+        assertThat(StubAssessments.answer(prompt, 1)).contains("\"verdict\":\"MET\"");
+    }
+
+    @Test
     void anInterruptedWaitIsATransientFailure() throws Exception {
         TextRequest request = new TextRequest(AiRoute.ASSESS, List.of(TextRequest.Segment.user("<grader>\n<criteria>\nc1 · планы\n</criteria>\n"
                 + "<learner_answer>\"планы [[stub:assess-slow]]\"</learner_answer>", false)), OutputContract.JSON, 100, 0.2,
@@ -143,7 +158,7 @@ class StubAssessmentsTest {
     void aRequestThatIsNotAGradingRequestIsNotAnswered() {
         assertThat(StubAssessments.isAssessmentRequest("<task kind=\"exercises\">")).isFalse();
         assertThat(StubAssessments.isAssessmentRequest("<grader> без ответа")).isFalse();
-        assertThat(StubAssessments.slow("<grader><learner_answer>\"обычный\"</learner_answer>")).isFalse();
+        assertThat(StubAssessments.delay("<grader><learner_answer>\"обычный\"</learner_answer>")).isZero();
         assertThat(StubAssessments.answer("<grader>", 1)).contains("\"criteria\":[]");
     }
 }

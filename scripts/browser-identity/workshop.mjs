@@ -38,6 +38,20 @@ const NOTES = [
   { label: 'refusal', text: 'Заметка про вежливые формы [[stub:refusal]] с отметкой для провайдера.' }
 ];
 
+/** Canonical S1 input: ten brief notes from a Korean lesson. The provider stays the existing deterministic Stub. */
+export const KOREAN_LESSON_NOTES = Object.freeze([
+  '안녕하세요 — вежливое приветствие. Пример: 선생님, 안녕하세요.',
+  '감사합니다 — вежливо поблагодарить. Пример: 도와주셔서 감사합니다.',
+  '저는 학생이에요 — представиться студентом. 저는 отмечает тему.',
+  '책을 읽어요 — читаю книгу. 을 отмечает дополнение после согласной.',
+  '학교에 가요 — иду в школу. 에 указывает направление.',
+  '학교에서 공부해요 — учусь в школе. 에서 указывает место действия.',
+  '친구하고 이야기해요 — разговариваю с другом. 하고 соединяет участников.',
+  '어제 영화를 봤어요 — вчера посмотрел фильм. 았/었 выражает прошлое.',
+  '내일 한국어를 공부할 거예요 — завтра буду учить корейский. 거예요 выражает намерение.',
+  '이 책은 재미있지만 어려워요 — книга интересная, но трудная. 지만 выражает противопоставление.'
+]);
+
 /** Page-side recorder installed before the session is created, so the whole life of the Workshop is observed. */
 const RECORDER = `
   const recorder = globalThis.__mnemaWorkshop = { startedAt: performance.now(), arrivals: [], busyTrue: 0, busyFalse: 0,
@@ -1118,8 +1132,10 @@ export async function runWorkshopNotes(ctx, h) {
   const { api, page, stage, has, need, settle, metrics, desktop, awaitCapability, getSession, activeSessions, sessionPath, location } = h;
   const out = {};
   const run = Math.random().toString(36).slice(2, 7);
-  const tokens = [1, 2, 3, 4].map(index => `Узел${run}${index}`);
-  const texts = tokens.map((token, index) => `${token}: слово номер ${index + 1}, коротко и с одним примером.`);
+  const noteCount = KOREAN_LESSON_NOTES.length;
+  const changedIndex = noteCount - 1;
+  const tokens = KOREAN_LESSON_NOTES.map((_, index) => `수업${run}${String(index + 1).padStart(2, '0')}`);
+  const texts = tokens.map((token, index) => `${token}: ${KOREAN_LESSON_NOTES[index]}`);
 
   const press = async (text, scope) => need(await page(`const node = [...document.querySelectorAll(args[1] + ' button, ' + args[1] + ' a')]
       .find(item => item.textContent.replace(/\\s+/g, ' ').trim() === args[0]);
@@ -1194,7 +1210,7 @@ export async function runWorkshopNotes(ctx, h) {
     need([204, 404].includes(gone.status), `deleting an earlier session answered ${gone.status}`);
   }
 
-  // ---- 1. capture page: select four notes ---------------------------------------------------------------------------
+  // ---- 1. canonical S1: select the ten Korean lesson notes ---------------------------------------------------------------
   let notes = [];
   await stage('notes_capture_selection', async () => {
     // The capture list is newest first and the composer keeps the list order: from here on index 0 is the first chip.
@@ -1210,7 +1226,8 @@ export async function runWorkshopNotes(ctx, h) {
     await until(async () => (await captureView()).checked === 0, '«Снять выбор» did not clear the selection');
     for (const token of tokens) need(await tick(token), `the checkbox of note ${token} could not be ticked`);
     const picked = await captureView();
-    need(picked.checked === 4 && picked.count === 'Выбрано: 4' && picked.bar === 'Выбрано: 4', `the counters after four picks: ${JSON.stringify(picked)}`);
+    need(picked.checked === noteCount && picked.count === `Выбрано: ${noteCount}` && picked.bar === `Выбрано: ${noteCount}`,
+      `the counters after ten Korean note picks: ${JSON.stringify(picked)}`);
     await desktop(); await settle();
     await saveScreenshot('workshop-notes-capture-selection-1440.png', tab);
     await metrics(390, 844, 1, true); await settle();
@@ -1219,18 +1236,22 @@ export async function runWorkshopNotes(ctx, h) {
     await page(`document.querySelector('.selection-bar')?.scrollIntoView({ block: 'end' }); return true;`);
     await saveScreenshot('workshop-notes-capture-selection-390.png', tab);
     await desktop(); await settle();
-    return { loadedBoxes: loaded.boxes, selectAllPicked: all.checked, selectAllCounter: all.count, pickedCounter: picked.count, bar: picked.bar };
+    return { loadedBoxes: loaded.boxes, selectAllPicked: all.checked, selectAllCounter: all.count, pickedCounter: picked.count, bar: picked.bar,
+      selectedNotes: noteCount, sourceLanguage: 'ko' };
   });
 
   // ---- 2. composer: chips, empty prompt, grouping, one per-note setting --------------------------------------------------
   let sessionId = null;
   await stage('notes_composer_submit', async () => {
-    await toComposer(4, 'composer');
+    await toComposer(noteCount, 'composer');
     const facts = await composerFacts();
-    need(facts.chips.length === 4 && tokens.every((token, index) => facts.chips[index]?.startsWith(token)), `the chips are ${JSON.stringify(facts.chips)}`);
+    need(facts.chips.length === noteCount && tokens.every((token, index) => facts.chips[index]?.startsWith(token)), `the chips are ${JSON.stringify(facts.chips)}`);
     need(facts.prompt === '', `the prompt is not empty: «${facts.prompt}»`);
     need(facts.grouping.length === 2 && facts.grouping.find(option => option.checked)?.label === 'Материал на заметку', `the grouping is ${JSON.stringify(facts.grouping)}`);
-    need(facts.perNote, 'the per-note settings are absent for four notes');
+    need(facts.perNote, 'the per-note settings are absent for ten notes');
+    // Nine short lesson notes and one detailed override cost58 credits instead of increasing the existing account's daily limit.
+    need(await page(`const input = document.querySelector('app-generation-settings input[type=radio][value=SHORT]');
+      if (!input) return false; input.click(); return input.checked;`), 'the base effort «Кратко» is absent');
     // «Настроить для каждой заметки отдельно»: open it and give the second note «Подробно».
     await page(`document.querySelector('details.per-note summary').click(); return true;`);
     await until(() => has('details.per-note[open] .rows .row'), 'the per-note settings did not open');
@@ -1251,12 +1272,13 @@ export async function runWorkshopNotes(ctx, h) {
     await desktop(); await settle();
     sessionId = await submitComposer('notes');
     const session = await getSession(sessionId);
-    need(session.artifacts.length === 4, `${session.artifacts.length} artifacts for four notes`);
+    need(session.artifacts.length === noteCount, `${session.artifacts.length} artifacts for ten notes`);
     const sources = session.spec.sources;
-    need(sources.length === 4 && sources.every((source, index) => source.noteId === notes[index].noteId && source.noteRowVersion === notes[index].rowVersion),
+    need(sources.length === noteCount && sources.every((source, index) => source.noteId === notes[index].noteId && source.noteRowVersion === notes[index].rowVersion),
       `the stored pins differ from the notes: ${JSON.stringify(sources)}`);
     need(JSON.stringify(sources[1].overrides) === JSON.stringify({ effort: 'DETAILED' }), `the echo of the overridden note: ${JSON.stringify(sources[1].overrides)}`);
-    need([0, 2, 3].every(index => !('overrides' in sources[index])), 'a note without a setting echoes overrides');
+    need(sources.every((source, index) => index === 1 || !('overrides' in source)), 'a note without a setting echoes overrides');
+    need(session.spec.settings.effort === 'SHORT', 'the stored base effort is not SHORT');
     need(session.spec.prompt === '' || session.spec.prompt === null || session.spec.prompt === undefined, `the stored prompt is «${session.spec.prompt}»`);
     need(session.spec.settings.notesMode === 'ONE_PER_NOTE', 'the stored grouping is not ONE_PER_NOTE');
     const refs = [];
@@ -1268,20 +1290,21 @@ export async function runWorkshopNotes(ctx, h) {
     }
     need(refs.every((ref, index) => ref.noteId === notes[index].noteId && ref.status === 'CURRENT'), `sourceRefs: ${JSON.stringify(refs)}`);
     return { chips: facts.chips.length, promptEmpty: true, grouping: 'Материал на заметку', overrideSummary: edited.perNoteSummary, estimate: edited.estimate,
-      artifacts: 4, sourceRefs: refs, specEcho: { overrides: sources.map(source => source.overrides ?? null), notesMode: session.spec.settings.notesMode } };
+      artifacts: noteCount, sourceLanguage: 'ko', sourceRefs: refs,
+      specEcho: { effort: session.spec.settings.effort, overrides: sources.map(source => source.overrides ?? null), notesMode: session.spec.settings.notesMode } };
   });
 
   // ---- 3. a note changed behind the Workshop's back; approvals; archive the used notes -----------------------------------
   await stage('notes_workshop_archive', async () => {
-    const before = await noteState(notes[3].noteId);
-    const edit = await api('PUT', `/api/capture-notes/${notes[3].noteId}`, { source: 'workshop-harness-notes', text: `${texts[3]} Дополнено позже.` }, { 'If-Match': before.etag });
+    const before = await noteState(notes[changedIndex].noteId);
+    const edit = await api('PUT', `/api/capture-notes/${notes[changedIndex].noteId}`, { source: 'workshop-harness-notes', text: `${texts[changedIndex]} Дополнено позже.` }, { 'If-Match': before.etag });
     need(edit.status === 200, `PUT capture note answered ${edit.status}`);
-    await navigate(`${deckPath}/workshop/${sessionId}?n=4`, tab);
-    await until(async () => (await dotCount()) === 4, 'the Workshop did not render four materials', 25_000);
+    await navigate(`${deckPath}/workshop/${sessionId}?n=${noteCount}`, tab);
+    await until(async () => (await dotCount()) === noteCount, 'the Workshop did not render ten materials', 25_000);
     await until(async () => (await workshopView()).changedTags === 1, 'the edited note is not marked «заметка изменилась»', 20_000);
     const tagged = await workshopView();
-    need(tagged.position === '4 из 4' && tagged.changedText?.startsWith('заметка изменилась'), `the changed-note tag: ${JSON.stringify(tagged)}`);
-    const detail = await artifactDetail(sessionId, (await getSession(sessionId)).artifacts[3].artifactId);
+    need(tagged.position === `${noteCount} из ${noteCount}` && tagged.changedText?.startsWith('заметка изменилась'), `the changed-note tag: ${JSON.stringify(tagged)}`);
+    const detail = await artifactDetail(sessionId, (await getSession(sessionId)).artifacts[changedIndex].artifactId);
     need(detail.sourceRefs.find(ref => ref.type === 'NOTE')?.status === 'CHANGED', `the API status of the edited note is ${JSON.stringify(detail.sourceRefs)}`);
     const untouched = await artifactDetail(sessionId, (await getSession(sessionId)).artifacts[0].artifactId);
     need(untouched.sourceRefs.find(ref => ref.type === 'NOTE')?.status === 'CURRENT', 'an untouched note is not CURRENT');
@@ -1297,13 +1320,14 @@ export async function runWorkshopNotes(ctx, h) {
         `material ${index + 1} cannot be approved`);
       await until(async () => (await getSession(sessionId)).artifacts.filter(artifact => artifact.state === 'PUBLISHED').length === index + 1, `material ${index + 1} was not published`, 25_000);
       if (index < 2) {
-        await until(async () => { const now = await workshopView(); return now.position === `${index + 2} из 4` && now.actions.some(action => action.startsWith('Одобрить')); },
+        await until(async () => { const now = await workshopView(); return now.position === `${index + 2} из ${noteCount}` && now.actions.some(action => action.startsWith('Одобрить')); },
           `the Workshop did not move on to material ${index + 2}`, 15_000);
       }
     }
     const published = (await getSession(sessionId)).artifacts.map(artifact => artifact.state);
-    need(JSON.stringify(published) === JSON.stringify(['PUBLISHED', 'PUBLISHED', 'PUBLISHED', 'PROPOSED']), `states after three approvals: ${published}`);
-    await navigate(`${deckPath}/workshop/${sessionId}?n=4`, tab);
+    need(published.length === noteCount && published.every((state, index) => state === (index < 3 ? 'PUBLISHED' : 'PROPOSED')),
+      `states after three approvals: ${published}`);
+    await navigate(`${deckPath}/workshop/${sessionId}?n=${noteCount}`, tab);
     await until(async () => (await workshopView()).archiveButton.length === 1 && (await workshopView()).changedTags === 1, 'the archive action or the changed tag is missing', 25_000);
     const view = await workshopView();
     need(view.archiveButton[0] === 'Архивировать использованные заметки (3)', `the archive action reads «${view.archiveButton[0]}»`);
@@ -1316,7 +1340,7 @@ export async function runWorkshopNotes(ctx, h) {
     await until(async () => (await getSession(sessionId)).notes.archivable === 0, 'the archivable counter did not drop to 0', 25_000);
     const states = [];
     for (const note of notes) states.push((await noteState(note.noteId)).archived);
-    need(JSON.stringify(states) === JSON.stringify([true, true, true, false]), `archived flags after the archive action: ${states}`);
+    need(states.length === noteCount && states.every((archived, index) => archived === (index < 3)), `archived flags after the archive action: ${states}`);
     await until(async () => (await workshopView()).archiveButton.length === 0, 'the archive action is still offered after archiving', 15_000);
     const after = await workshopView();
     // A second request (a new command id) is harmless: everything is already archived.

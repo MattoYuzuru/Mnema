@@ -382,6 +382,10 @@ class Fixture(BASE.Fixture):
                 # The ordinary instance of a `--generation` or `--assessment` run has the AI features off; as an `api` process it has no step
                 # dispatcher, so it can never claim a step of the second (Stub) instance that shares the database.
                 environment["MNEMA_RUNTIME_ROLES"] = "api"
+            if generation and self.args.assessment:
+                # Stub-only fault fixture: let one capped call reach the unchanged 20 s delivery deadline. The real route's 8 s
+                # attempt cap/defaults stay unchanged; this override cannot reach the ordinary or promo instance or any live provider.
+                arguments += ["--learning.ai.routes.assess-attempt-cap=PT25S"]
             arguments += [f"--learning.identity.transport-base=http://127.0.0.1:{self.identity_port}",
                           "--learning.identity.allow-loopback-http=true"]
         log = (self.tmp / (module + ("-generation" if generation else "") + ("-promo" if promo else "") + ".log")).open("wb")

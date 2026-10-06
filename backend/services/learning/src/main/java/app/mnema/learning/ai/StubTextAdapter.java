@@ -76,15 +76,16 @@ final class StubTextAdapter implements TextAdapter {
         } else if (request.output() == OutputContract.MBM_TEXT && StubEdits.isEditRequest(prompt)) {
             text = StubEdits.answer(prompt);
         } else if (request.output() == OutputContract.JSON && StubAssessments.isAssessmentRequest(prompt)) {
-            if (StubAssessments.slow(prompt)) {
-                Duration wait = StubAssessments.SLOW.compareTo(budget) < 0 ? StubAssessments.SLOW : budget;
+            Duration requestedDelay = StubAssessments.delay(prompt);
+            if (!requestedDelay.isZero()) {
+                Duration wait = requestedDelay.compareTo(budget) < 0 ? requestedDelay : budget;
                 try {
                     Thread.sleep(wait);
                 } catch (InterruptedException interrupted) {
                     Thread.currentThread().interrupt();
                     return AiResult.failed(new AiFailure.Transient("interrupted"));
                 }
-                if (wait.compareTo(StubAssessments.SLOW) < 0) return AiResult.failed(new AiFailure.Timeout());
+                if (wait.compareTo(requestedDelay) < 0) return AiResult.failed(new AiFailure.Timeout());
             }
             text = StubAssessments.answer(prompt, request.attempt());
         } else if (request.output() == OutputContract.JSON && StubIntents.isIntentRequest(prompt)) {

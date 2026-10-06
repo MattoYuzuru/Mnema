@@ -99,6 +99,25 @@ class ExperimentTest {
     }
 
     @Test
+    void twentyEnabledAssignmentsFitThePlansWireAndATwentyFirstFailsAtStartup() {
+        MockEnvironment environment = new MockEnvironment();
+        for (int index = 0; index < 20; index++) {
+            environment.withProperty("learning.experiments.exp_" + index + ".enabled", "true")
+                    .withProperty("learning.experiments.exp_" + index + ".variants", "control:100");
+        }
+        // Disabled definitions do not appear in the response and do not consume its 20-entry bound.
+        environment.withProperty("learning.experiments.exp_20.enabled", "false")
+                .withProperty("learning.experiments.exp_20.variants", "control:100");
+        ExperimentAssignments assignments = new ExperimentAssignments(new ExperimentSettings(environment), "");
+        assertThat(assignments.variants(UUID.randomUUID())).hasSize(20).containsOnlyKeys(
+                java.util.stream.IntStream.range(0, 20).mapToObj(index -> "exp_" + index).toList());
+
+        environment.withProperty("learning.experiments.exp_20.enabled", "true");
+        assertThatThrownBy(() -> new ExperimentSettings(environment)).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("too many enabled experiments");
+    }
+
+    @Test
     void eventsAreCountedPerKeyVariantAndEventWithoutAnAccountInTheLabels() {
         SimpleMeterRegistry meters = new SimpleMeterRegistry();
         ExperimentAssignments assignments = assignments("secret-1");

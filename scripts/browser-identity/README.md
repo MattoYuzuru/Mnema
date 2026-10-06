@@ -239,6 +239,15 @@ After the successful callback returns to `/decks`, the harness exercises the can
 own-deck list, create, hub (metadata form behind «Изменить»), metadata-save and conflict UI against the real Learning API,
 then opens `/login` when it needs the profile/logout controls.
 
+### Ten Korean lesson notes (S1, `--authoring --generation`)
+
+The Workshop notes composition selects ten distinct short Korean lesson notes in Capture, opens ten pinned source chips,
+chooses one material per note and applies one detailed per-note override. The base effort is explicitly SHORT: nine short
+notes plus one detailed note require58 credits under rate-cardv1, close to the previous four-note fixture's52, without
+changing the account or daily-burst limit. All ten artifacts/source pins are checked. Three are approved individually;
+the changed last note remains proposed; only the three used notes archive. Existing changed-note, repeated-archive,
+merge-two-notes, desktop/mobile and source-order assertions remain. This is deterministic Stub output, not Korean model-quality evidence.
+
 ### Exercise generation and batch review (`--authoring --generation`)
 
 `exercises.mjs` (#291, AI-13) runs at the end of the Workshop scenarios against the second Learning of the run (Stub text provider,
@@ -450,7 +459,8 @@ provider) and flips the proxy to it with `POST /__fixture/learning-generation`; 
 (everything AI off). The Stub grades an answer by the markers inside it (`[[stub:assess-partial]]`, `[[stub:assess-slow]]`, see the Stub's
 Javadoc) and otherwise by a lexical heuristic; a marker is used only where a scenario needs an exact verdict or a delay.
 
-The whole path is the real Angular UI on the real HTTP surface. Only the fixture (the deck, one material and four of the five exercises) is
+The whole path is the real Angular UI on the real HTTP surface. Only the fixture (the deck, one material and four of the five exercises,
+plus the isolated deadline deck/material/exercise) is
 made through the authenticated API; the first exercise is authored in the editor.
 
 | Stage | Assertions |
@@ -471,6 +481,13 @@ What each answer proves (a card's prompt chooses its script, the order is the se
 | «рецепт блинов» to a question about the PostgreSQL optimizer | «Пока не засчитано»: nothing present, every point missing; `assessment-result-offtopic-*` |
 | slow (`[[stub:assess-slow]]`, the Stub waits 8 s) | the waiting card «Мнема проверяет ответ…» takes focus, keeps the answer read-only and shows no reference; no «Оценить себя» before 5 s, it appears at 5 s as a secondary button (`assessment-assessing-{1440,390}.png`); pressing it opens the self-check mode (reason, answer next to the reference, the points, four ratings; `assessment-self-check-*`); the late grade at ≈ 8 s changes nothing; a reload resumes the self-check with the learner's own text; the rating completes the same attempt: «Частично», the reference, no AI result, no dispute |
 | complete, then dispute | «Оспорить оценку» asks in place (a `role="group"`, no modal, focus on the confirmation; `assessment-dispute-confirm-*`), «Да, снять оценку» gives «Оценка снята» and «Оценка снята, прогресс не изменился.»; the answer and the reference stay; `GET …/attempts/{id}` reads `NOT_ASSESSED` with `disputed: true` (`assessment-disputed-*`) |
+| `automatic_deadline` (S7) | an isolated deck with one optimizer exercise submits `[[stub:assess-deadline]]` in the learner answer only. The existing Stub delay is25s, capped to the call budget; the runtime deadline remains20s. Only the disposable Stub process with assessment enabled overrides its route attempt cap to25s, so the production8s provider cap cannot end this fault fixture early. One real202 is observed, the waiting answer is read-only with no reference, the5s self-check button is not pressed, and automatic self-check must carry `DEADLINE`. Fair-use assessment counts and public progress items remain unchanged, no terminal grade appears and no explicit self-check/rating/dispute request is sent. Focus, desktop/mobile captures and reload are checked. The exact database no-debit/no-canonical-write proof remains `AssessmentDeadlineBoundaryIntegrationTest`; this browser check observes the public projections. |
+
+These are assertions in the maintained scenario. A pass requires the final frozen source and jars plus a real run;
+adding the fixture or passing syntax/unit checks does not constitute deadline/browser evidence. The prior5s/8s/reload/dispute
+flow and its wire counts are asserted before the additional isolated timeout command. No request/global-time cap is raised.
+The25s Stub attempt cap is a disclosed fault injection, not proof of default production provider latency. Ordinary/keyless,
+promo and identity processes receive no override; production/runtime defaults remain8s per attempt and20s for delivery.
 
 At every screenshot the page must not overflow horizontally at 1440 and 390 px and no `.button` may be shorter than 44 px. The time-based
 assertions (no offer before 5 s, the offer after 4.7 s) use wall-clock timers: a machine under load can throttle them, so rerun once before

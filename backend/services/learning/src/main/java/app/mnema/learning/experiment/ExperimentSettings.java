@@ -13,11 +13,13 @@ import java.util.regex.Pattern;
 
 /**
  * The experiments of {@code learning.experiments.<key>.variants=control:50,other:50} (weights add up to 100) and {@code .enabled}. A disabled
- * experiment gives nobody a variant. Invalid definitions fail at startup: an experiment whose split is wrong would skew a result silently.
+ * experiment gives nobody a variant. At most 20 enabled experiments fit the plans wire contract. Invalid definitions fail at startup:
+ * an experiment whose split is wrong would skew a result silently.
  */
 @Component
 final class ExperimentSettings {
     private static final String PREFIX = "learning.experiments";
+    private static final int MAX_ENABLED_EXPERIMENTS = 20;
     private static final Pattern KEY = Pattern.compile("[a-z][a-z0-9_]{1,39}");
     private static final Pattern VARIANT = Pattern.compile("[a-z][a-z0-9_]{0,31}");
     static final String CONTROL = "control";
@@ -48,7 +50,12 @@ final class ExperimentSettings {
                 .bind(PREFIX, Bindable.mapOf(String.class, Definition.class)).orElse(Map.of());
         definitions.forEach((key, definition) -> {
             if (!KEY.matcher(key).matches()) throw new IllegalArgumentException("Invalid experiment settings: key");
-            if (definition.isEnabled()) enabled.put(key, new Experiment(key, parse(definition.getVariants())));
+            if (definition.isEnabled()) {
+                if (enabled.size() >= MAX_ENABLED_EXPERIMENTS) {
+                    throw new IllegalArgumentException("Invalid experiment settings: too many enabled experiments (maximum 20)");
+                }
+                enabled.put(key, new Experiment(key, parse(definition.getVariants())));
+            }
         });
     }
 

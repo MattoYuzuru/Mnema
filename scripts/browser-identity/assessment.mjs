@@ -64,6 +64,11 @@ const EXERCISES = {
     answer: 'Рецепт блинов: смешайте муку, молоко и яйца, жарьте на сковороде до золотистого цвета.' }
 };
 
+/** Canonical S7 deadline control: parsed only from the learner answer by the Stub, with the unchanged20s runtime deadline. */
+export const DEADLINE_EXERCISE = Object.freeze({ ...EXERCISES.pancakes,
+  prompt: 'Объясните, как оптимизатор выбирает план запроса.', objective: 'Оптимизатор: срок проверки',
+  answer: 'По статистике таблиц оценивают затраты вариантов выполнения; затем выбирают вариант с минимальной стоимостью. [[stub:assess-deadline]]' });
+
 const paragraph = (value, index) => ({ id: `00000000-0000-4000-8000-${String(index * 2 + 1).padStart(12, '0')}`, type: 'paragraph', version: 1, attrs: {},
   content: [{ id: `00000000-0000-4000-8000-${String(index * 2 + 2).padStart(12, '0')}`, type: 'text', version: 1, attrs: { text: value, marks: [] }, content: [] }] });
 const nativeDocument = lines => ({ formatVersion: 1, root: { id: '00000000-0000-4000-8000-000000000000', type: 'doc', version: 1, attrs: {},
@@ -82,7 +87,8 @@ export async function runAssessment(ctx) {
   const startedAt = Date.now();
   let deck = null;
   let materialPath = null;
-  const attempts = { dispute: null, selfCheck: null, sessionId: null };
+  const attempts = { dispute: null, selfCheck: null, sessionId: null, deadline: null };
+  let captureDeadline = false;
 
   // ---- the real wire of the learner's answers (statuses and counts only, no ids kept except for the two follow-up reads) -----------
   const requests = new Map();
@@ -95,6 +101,13 @@ export async function runAssessment(ctx) {
         : event.request.method === 'POST' && match[3] !== undefined ? match[3] : null;
     if (kind === null) return;
     requests.set(event.requestId, { kind });
+    if (kind === 'submit' && captureDeadline) {
+      // Keep only synthetic command ids, never request headers or the learner text.
+      try {
+        const command = JSON.parse(event.request.postData ?? '{}');
+        if (typeof command.attemptId === 'string') attempts.deadline = { sessionId: match[1], attemptId: command.attemptId };
+      } catch { /* The stage fails if the real command cannot be observed. */ }
+    }
     attempts.sessionId = match[1];
     if (kind === 'poll') out.wire.polls++;
     else if (kind === 'self-check') { out.wire.selfChecks++; attempts.selfCheck = match[2]; }
@@ -348,11 +361,10 @@ export async function runAssessment(ctx) {
   });
 
   /** One more AI-checked exercise through the same authenticated API the editor uses. */
-  const createExercise = async (key, subject) => {
-    const entry = EXERCISES[key];
-    const current = await api('GET', `/api/decks/${deck.deckId}`);
+  const createExercise = async (key, subject, target = deck, entry = EXERCISES[key]) => {
+    const current = await api('GET', `/api/decks/${target.deckId}`);
     need(current.status === 200 && current.etag, `GET deck answered ${current.status}`);
-    const made = await api('POST', `/api/decks/${deck.deckId}/exercises`, { commandId: randomUUID(), expectedDeckRevisionId: current.body.revisionId,
+    const made = await api('POST', `/api/decks/${target.deckId}/exercises`, { commandId: randomUUID(), expectedDeckRevisionId: current.body.revisionId,
       objective: { operation: 'create', title: entry.objective },
       exercise: { type: 'FREE_RESPONSE', schemaVersion: 2, enabled: true, subject: { memberKey: subject.memberKey, itemRevisionId: subject.itemRevisionId },
         content: { prompt: [{ kind: 'TEXT', text: entry.prompt }], reference: [], responseInput: 'TEXT' },
@@ -360,10 +372,10 @@ export async function runAssessment(ctx) {
         evaluatorPolicy: { id: 'ai-semantic', version: '1', rubric: rubricOf(entry) } } }, { 'If-Match': current.etag });
     need(made.status === 201, `POST exercise «${key}» answered ${made.status} ${JSON.stringify(made.body?.code ?? made.body?.detail ?? null)}`);
   };
-  const materialSubject = async () => {
-    const items = await api('GET', `/api/decks/${deck.deckId}/items?limit=20`);
+  const materialSubject = async (target = deck) => {
+    const items = await api('GET', `/api/decks/${target.deckId}/items?limit=20`);
     need(items.status === 200, `GET items answered ${items.status}`);
-    const subject = items.body.items.find(item => item.memberKey === deck.memberKey);
+    const subject = items.body.items.find(item => item.memberKey === target.memberKey);
     need(subject?.itemRevisionId, 'the material has no revision');
     return subject;
   };
@@ -589,6 +601,72 @@ export async function runAssessment(ctx) {
     need(out.wire.selfChecks === 1 && out.wire.selfRatings === 1 && out.wire.disputes === 1, `self-checks ${out.wire.selfChecks}, ratings ${out.wire.selfRatings}, disputes ${out.wire.disputes}`);
     need(out.wire.polls >= 6, `only ${out.wire.polls} polls`);
     return { submits: out.wire.submits.length, polls: out.wire.polls };
+  });
+
+  // The existing wire assertions above still describe the original5s/8s/reload/dispute flow. This isolated card adds one202 only.
+  await step('automatic_deadline', async () => {
+    const madeDeck = await api('POST', '/api/decks', { commandId: randomUUID(), metadata: { title: 'Срок проверки объяснения', description: '' } });
+    need(madeDeck.status === 201, `deadline deck creation answered ${madeDeck.status}`);
+    const id = madeDeck.body.deck?.deckId ?? madeDeck.body.deckId;
+    need(id, 'the deadline deck has no id');
+    const current = await api('GET', `/api/decks/${id}`);
+    need(current.status === 200 && current.etag, 'the deadline deck cannot be read');
+    const made = await api('POST', `/api/decks/${id}/items`, { commandId: randomUUID(), expectedDeckRevisionId: current.body.revisionId,
+      document: nativeDocument(MATERIAL.lines) }, { 'If-Match': current.etag });
+    need(made.status === 201, `deadline material creation answered ${made.status}`);
+    const memberKey = made.body.changes?.[0]?.memberKey ?? made.body.memberKey;
+    need(memberKey, 'the deadline material has no member key');
+    const target = { deckId: id, memberKey };
+    await createExercise('deadline', await materialSubject(target), target, DEADLINE_EXERCISE);
+    await navigate(`/decks/${id}/study`, tab);
+    await waitFor(() => has('.session-setup'), 'deadline Study setup did not open', 25_000);
+    await click('.preset-card button', 'Начать стандартную');
+    await waitFor(() => has('app-learner-exercise textarea[data-answer-control]'), 'the isolated deadline card did not open', 25_000);
+    need((await textOf('.exercise-prompt'))?.includes(DEADLINE_EXERCISE.prompt), 'the wrong card opened for the deadline proof');
+    // Issuing the presentation may introduce the objective. Baseline only after issuance; the answer must not add canonical assessment.
+    const beforeUsage = await api('GET', '/api/usage');
+    const beforeProgress = await api('GET', `/api/decks/${id}/study-progress?limit=100`);
+    need(beforeUsage.status === 200 && beforeProgress.status === 200, 'the deadline baseline could not be read');
+    const counters = { submits: out.wire.submits.length, selfChecks: out.wire.selfChecks, selfRatings: out.wire.selfRatings, disputes: out.wire.disputes };
+    let sent;
+    captureDeadline = true;
+    try {
+      sent = await submitAnswer(DEADLINE_EXERCISE);
+      await waitFor(() => has('#assessing-title'), 'the deadline waiting card did not open', 6000);
+      await waitFor(() => out.wire.submits.length === counters.submits + 1 && attempts.deadline !== null,
+        'the deadline answer has no observed202 response and command', 6000);
+    } finally { captureDeadline = false; }
+    need(out.wire.submits.at(-1) === 202 && attempts.deadline !== null, 'the deadline answer was not accepted as one real asynchronous command');
+    const waiting = await page(`return { answer: document.querySelector('app-assessment-waiting .answer-text')?.textContent,
+      field: Boolean(document.querySelector('textarea')), reference: document.body.innerText.includes(args[0]) };`, DEADLINE_EXERCISE.reference);
+    need(waiting.answer === DEADLINE_EXERCISE.answer && !waiting.field && !waiting.reference, 'the deadline waiting card is editable or exposes its reference');
+    await shots('deadline-waiting', 'the deadline waiting view', { full: true });
+    await waitFor(() => buttonExists('Оценить себя'), 'the deadline card did not offer self-check after5s', 9000);
+    // Deliberately do not press it. A recorded default20s expiry, rather than a client-forced choice, must end the wait.
+    await waitFor(() => has('#self-check-title'), 'the default20s deadline did not automatically offer self-check', 25_000);
+    const automaticAfterMs = Date.now() - sent;
+    need(automaticAfterMs >= 19_500, `automatic self-check arrived early (${automaticAfterMs}ms instead of the default20s)`);
+    const path = `/api/decks/${id}/study-sessions/${attempts.deadline.sessionId}/attempts/${attempts.deadline.attemptId}`;
+    const attempt = await api('GET', path);
+    need(attempt.status === 200 && attempt.body.status === 'SELF_CHECK' && attempt.body.reason === 'DEADLINE'
+      && !('evidence' in attempt.body) && !('transition' in attempt.body), 'the timeout produced a terminal grade instead of DEADLINE self-check');
+    const afterUsage = await api('GET', '/api/usage');
+    const afterProgress = await api('GET', `/api/decks/${id}/study-progress?limit=100`);
+    need(afterUsage.status === 200 && afterProgress.status === 200, 'the deadline state could not be read');
+    need(afterUsage.body.fairUse.assessment.used === beforeUsage.body.fairUse.assessment.used
+      && afterUsage.body.fairUse.assessment.usedToday === beforeUsage.body.fairUse.assessment.usedToday, 'the undelivered deadline grade debited fair use');
+    need(JSON.stringify(afterProgress.body.items) === JSON.stringify(beforeProgress.body.items), 'the deadline changed public canonical progress');
+    need(await page(`return document.activeElement?.id === 'self-check-title' && !document.querySelector('app-assessment-result');`),
+      'the automatic deadline self-check lost focus or rendered a grade');
+    await shots('deadline-self-check', 'the automatic deadline self-check', { full: true });
+    await tab.call('Page.reload', { ignoreCache: true });
+    await waitFor(() => has('#self-check-title'), 'deadline self-check was not restored after reload', 20_000);
+    const restored = await api('GET', path);
+    need(restored.body.status === 'SELF_CHECK' && restored.body.reason === 'DEADLINE', 'reloading replaced the deadline self-check');
+    need(out.wire.submits.length === counters.submits + 1 && out.wire.selfChecks === counters.selfChecks
+      && out.wire.selfRatings === counters.selfRatings && out.wire.disputes === counters.disputes, 'the automatic deadline sent an extra answer or explicit choice');
+    return { configuredDeadlineMs: 20_000, stubAttemptCapMs: 25_000, faultFixture: true, automaticAfterMs, reason: 'DEADLINE', one202: true, explicitChoiceRequests: 0,
+      assessmentUsageUnchanged: true, publicProgressUnchanged: true, noTerminalGrade: true, reloadRetained: true };
   });
 
   record('assessment_semantic_stub_real_api', { ...out, durationMs: Date.now() - startedAt });

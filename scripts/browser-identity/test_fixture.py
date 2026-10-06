@@ -16,7 +16,7 @@ import threading
 import time
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 SPEC = importlib.util.spec_from_file_location("browser_fixture", Path(__file__).with_name("run.py"))
 HARNESS = importlib.util.module_from_spec(SPEC)
@@ -586,6 +586,67 @@ module.main()
         if node is not None:
             result = subprocess.run([node, "--check", str(Path(__file__).with_name("assessment.mjs"))], capture_output=True)
             self.assertEqual(0, result.returncode)
+
+    def test_canonical_s1_and_s7_inputs_use_existing_stub_boundaries(self):
+        node = shutil.which("node")
+        self.assertIsNotNone(node, "the harness requires Node24")
+        directory = Path(__file__).parent.resolve()
+        program = (f"const notes = await import({json.dumps((directory / 'workshop.mjs').as_uri())});"
+                   f"const assessment = await import({json.dumps((directory / 'assessment.mjs').as_uri())});"
+                   "process.stdout.write(JSON.stringify({notes:notes.KOREAN_LESSON_NOTES, deadline:assessment.DEADLINE_EXERCISE}));")
+        result = subprocess.run([node, "--input-type=module", "-e", program], capture_output=True, text=True, timeout=10)
+        self.assertEqual(0, result.returncode, result.stderr)
+        fixture = json.loads(result.stdout)
+        self.assertEqual(10, len(fixture["notes"]))
+        self.assertEqual(10, len(set(fixture["notes"])))
+        for note in fixture["notes"]:
+            self.assertTrue(any("\uac00" <= character <= "\ud7a3" for character in note), note)
+            self.assertNotIn("[[stub:", note)
+        self.assertIn("[[stub:assess-deadline]]", fixture["deadline"]["answer"])
+        self.assertNotIn("[[stub:", fixture["deadline"]["prompt"])
+        self.assertNotIn(fixture["deadline"]["reference"], fixture["deadline"]["answer"])
+        # Fixture timeouts are not shortened to make the deadline path cheaper, and all original acceptance stages remain.
+        source = (directory / "assessment.mjs").read_text()
+        self.assertIn("step('automatic_deadline'", source)
+        self.assertIn("step('resume_after_reload'", source)
+        self.assertIn("configuredDeadlineMs: 20_000", source)
+        self.assertNotIn("Fetch.fulfillRequest", source)
+
+    def test_deadline_attempt_cap_is_confined_to_the_disposable_assessment_stub(self):
+        argument = "--learning.ai.routes.assess-attempt-cap=PT25S"
+        cases = [("learning", True, False, True), ("learning", True, False, False),
+                 ("learning", False, False, True), ("learning", False, True, True), ("identity-account", True, False, True)]
+        for module, generation, promo, assessment in cases:
+            with self.subTest(module=module, generation=generation, promo=promo, assessment=assessment):
+                fixture = self.fixture()
+                fixture.args.media = False
+                fixture.args.assessment = assessment
+                fixture.jdbc = "jdbc:postgresql://127.0.0.1/fixture"
+                fixture.db_password = "fixture-password"
+                fixture.identity_port = 18081
+                fixture.identity_origin = "https://127.0.0.1:12444"
+                fixture.frontend_origin = "https://127.0.0.1:12443"
+                jar = self.directory / f"backend/services/{module}/build/libs/{module}-0.0.1-SNAPSHOT.jar"
+                jar.parent.mkdir(parents=True, exist_ok=True)
+                jar.write_bytes(b"fixture jar")
+                process = Mock()
+                process.poll.return_value = None
+                try:
+                    with patch.object(HARNESS, "ROOT", self.directory), \
+                            patch.object(HARNESS.subprocess, "Popen", return_value=process) as launch, \
+                            patch.object(HARNESS.BASE, "Client") as client:
+                        client.return_value.request.return_value = (200, {}, b"")
+                        fixture.boot(module, 18082, "fixture", generation=generation, promo=promo)
+                        arguments = launch.call_args.args[0]
+                        expected = module == "learning" and generation and assessment
+                        self.assertEqual(expected, argument in arguments)
+                        if expected:
+                            environment = launch.call_args.kwargs["env"]
+                            self.assertEqual("stub", environment["LEARNING_AI_PROVIDER"])
+                            self.assertEqual("local-browser-fixture", environment["APP_ENV"])
+                finally:
+                    # Popen was mocked: no process/group exists for cleanup to terminate.
+                    fixture.processes.clear()
 
     def test_only_edits_is_a_development_aid_that_needs_generation(self):
         with patch.object(sys, "argv", ["run.py", "--dist", str(self.dist), "--authoring", "--only-edits"]), \
