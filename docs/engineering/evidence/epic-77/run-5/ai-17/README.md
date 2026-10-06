@@ -82,8 +82,7 @@ the 144 proposed assessment labels. Real-user admission additionally depends on 
   on Colima. Its four state transitions now use the same monotonic timestamp rule as production;
   the affected tests passed. The exact final project gate and independent review are recorded
   by the integrator after merging the current main into this branch.
-- This slice has no frontend source changes; the integrator runs the full frontend gate and
-  integrated browser scenarios on the delivered tree.
+- This slice has no frontend source changes. Preliminary `npm ci`, lint, 1,905 frontend tests and build passed on Node 24; the integrator repeats the exact-head project gate and integrated browser scenarios on the delivered tree. Existing Mermaid CommonJS build warnings remain.
 
 ## Rollback and sources
 
