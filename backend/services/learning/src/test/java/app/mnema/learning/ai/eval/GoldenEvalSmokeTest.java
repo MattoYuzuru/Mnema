@@ -72,6 +72,48 @@ class GoldenEvalSmokeTest {
         assertThat(selected).hasSize(18).allMatch(Fixture::heldOut).allMatch(fixture -> fixture.kind() == Kind.EDIT);
     }
 
+    @Test
+    void editJudgingReceivesTheUnchangedContextWhereWholeDocumentFactsRemain() {
+        Fixture fixture = GoldenCorpus.load().stream().filter(row -> row.id().equals("edit-d11-1")).findFirst().orElseThrow();
+        try (EvalStack stack = EvalStack.create(false)) {
+            Result result = new app.mnema.learning.generation.GoldenPipeline(stack.text(), Duration.ofSeconds(30)).run(fixture);
+            assertThat(result.valid()).isTrue();
+            assertThat(result.unchangedContext()).contains("Precipitation").doesNotContain("Water evaporates from oceans");
+            java.util.List<String> prompts = new java.util.ArrayList<>();
+            TextGeneration text = request -> {
+                prompts.add(request.segments().stream().map(TextRequest.Segment::text).collect(java.util.stream.Collectors.joining("\n")));
+                return AiResult.ok(new TextResponse("{\"follows\":{\"A\":5,\"B\":5},\"factsKept\":{\"A\":true,\"B\":true},\"criticalError\":{\"A\":false,\"B\":false},\"winner\":\"tie\"}",
+                        TextResponse.FinishReason.STOP, Usage.ZERO, 0, null, new TextResponse.RouteUsed("stub", "judge")));
+            };
+            new GoldenJudge.LlmJudge("judge", text, Duration.ofSeconds(5)).judge(fixture, result);
+            assertThat(prompts).hasSize(2).allSatisfy(prompt -> assertThat(prompt).contains("<unchanged_context>", "Precipitation", "do not require each edited block to repeat them"));
+        }
+    }
+
+    @Test
+    void theAssessmentGateUsesLabelAgreementAndFailsClosedWithoutALiveReport() {
+        var thresholds = GoldenCorpus.JSON.createArrayNode();
+        GoldenEval.assessmentThresholds(thresholds, GoldenCorpus.JSON.createObjectNode());
+        assertThat(thresholds).hasSize(8).allMatch(node -> !node.path("pass").booleanValue());
+        assertThat(thresholds).allMatch(node -> node.path("actual").stringValue().equals("not run live"));
+
+        var report = GoldenCorpus.JSON.createObjectNode().put("mode", "live");
+        var levels = report.putObject("strictness");
+        for (String level : List.of("S1", "S2", "S3")) levels.putObject(level).put("quadraticWeightedKappa", 0.7);
+        var falseAccept = report.putObject("falseAccept");
+        for (String kind : List.of("off-topic", "bag-of-terms", "misconception", "injection", "verbose-wrong")) falseAccept.put(kind, 0.0);
+        thresholds.removeAll();
+        GoldenEval.assessmentThresholds(thresholds, report);
+        assertThat(thresholds).allMatch(node -> node.path("pass").booleanValue());
+        assertThat(thresholds).noneMatch(node -> node.path("name").stringValue().contains("inter-judge"));
+        levels.withObject("S2").put("quadraticWeightedKappa", 0.59);
+        falseAccept.put("injection", 0.03);
+        thresholds.removeAll();
+        GoldenEval.assessmentThresholds(thresholds, report);
+        assertThat(thresholds.get(1).path("pass").booleanValue()).isFalse();
+        assertThat(thresholds.get(6).path("pass").booleanValue()).isFalse();
+    }
+
     // ----------------------------------------------------------------------------------------------- the judge
 
     private static final Fixture MATERIAL = GoldenCorpus.load().stream().filter(fixture -> fixture.kind() == Kind.MATERIAL_FROM_NOTES).findFirst().orElseThrow();

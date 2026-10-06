@@ -139,3 +139,33 @@ What the corpus does **not** cover, so that a green report is not read as more t
 * Judges are two cheap models. They share blind spots with the generator on rare facts, are weaker in JA, ZH and KO, and cannot see what the owner would call
   "not in my voice". The owner sample (`owner-review.md`, 40 items) is the check against that.
 * A live run is one sample of a stochastic system: differences of a few points between runs are noise.
+
+
+## Criteria drift and corrections
+
+- 2026-10-06: corrected the four `exercise-m14-*` inputs. Their claim that all verbs except
+  있다/없다 use 에서 contradicted both their destination example and the
+  [National Institute of Korean Language dictionary, 가다](https://krdict.korean.go.kr/eng/dicSearch/SearchView?ParaWordNo=27500).
+  Destination marking with 에 is distinct from an action's location with 에서. IDs and held-out
+  membership remain unchanged; prior reports are retained and are not directly comparable for those four cases.
+- 2026-10-06: `golden-rubric-v2` includes unchanged edit context in both pairwise orders. Previously
+  `edit-d11-1` was flagged for missing precipitation even though the unchanged following paragraph
+  retained it. This fixes the measurement scope without changing expectations or thresholds.
+- 2026-10-06: answer-assessment QWK >=0.6 is checked against `SemanticEvalRunner`'s labelled answers,
+  with false-accept <=2%. Acceptance judges' Cohen kappa remains a diagnostic, with no substituted
+  assessment threshold. Missing live assessment evidence stays red; labels remain `proposed`.
+
+`MNEMA_GOLDEN_PROMPT_VERSION=v2` evaluates a candidate without activating it. Production remains
+on frozen v1. Full reports must cover all four kinds, with the held-out split and all failures
+visible; a targeted rerun is diagnostic evidence only. Every critical judge flag is included in
+`owner-review.md` in addition to its balanced 40-item sample. Owner review/calibration is still pending.
+
+- 2026-10-06: `golden-rubric-v3` also identifies the complete pre-edit source in both orders.
+  A judge had called the Bastille's seven prisoners invented, although the original edited block explicitly said seven.
+  This changes only the judge's visibility of the input, not production prompts or acceptance thresholds.
+- 2026-10-06: strengthened the dev fixture `prompt-vocabulary-hsk1-zh` request to explicitly name
+  你好, 谢谢, 学生, 老师 and 水. The former request allowed any twenty HSK 1 words while the hidden
+  expectation required these five; a valid alternative vocabulary list was incorrectly penalised. Expectations,
+  IDs and held-out membership stay unchanged. Old/new reports remain separate.
+- Full judge coverage is reported as a precondition. A circuit-open or unavailable acceptance judge cannot
+  produce a complete quality gate; outages remain visible rather than being dropped from the denominator.

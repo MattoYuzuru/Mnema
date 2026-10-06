@@ -25,12 +25,15 @@ import app.mnema.learning.platform.api.ResourceNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ObjectNode;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -43,13 +46,13 @@ import java.util.UUID;
  * change as chips and confirm; <em>nothing is reserved or debited here</em>, the credits are taken by the session that the owner starts
  * afterwards (architecture section 13).
  *
- * <p>One cheap call on the fast text route, strict JSON, temperature 0.2, the dedicated {@code intent} section of the prompt library:
+ * <p>One cheap worker-only call on the fast text route, strict JSON, temperature 0.2, the dedicated {@code intent} section of the prompt library:
  * the model chooses one operation of a closed vocabulary and the server builds the spec ({@link IntentSpecs}), so the sentence can never
  * name a target, a budget or a number above the limits. An answer outside the vocabulary is sent back once; a second one, a refusal or
  * a provider that cannot say gives {@code UNSUPPORTED} with a note in words ({@code spec: null}). A provider that is down is
  * {@code 409 CAPABILITY_UNAVAILABLE}. Order of checks: ownership of the deck (404), the body (400), the context (404), the capability
  * (409), the hourly rate limit ({@code 429 RATE_LIMITED}, {@link IntentUses}), the call. No database transaction is open during the call;
- * it is journaled by the provider layer ({@code ai_provider_call}, with its cost) and never metered in credits.
+ * the unchanged HTTP response waits without a connection for an ephemeral worker request (NOTIFY plus sweep); the request is deleted on completion, interruption or deadline. The call is journaled by the provider layer ({@code ai_provider_call}, with its cost) and never metered in credits.
  */
 @Service
 class IntentService {
@@ -68,11 +71,14 @@ class IntentService {
     private final GenerationGate gate;
     private final IntentUses uses;
     private final GenerationSettings settings;
+    private final IntentQueue queue;
+    private final ObjectProvider<IntentRunner> runner;
     private final int maxPerTarget;
     private final NativeDocumentReader reader = new NativeDocumentReader();
 
     IntentService(GenerationRepository repository, ItemService items, ExerciseService exercises, PromptAssembler assembler,
                   TextGeneration text, ProviderKeys keys, GenerationGate gate, IntentUses uses, GenerationSettings settings,
+                  IntentQueue queue, ObjectProvider<IntentRunner> runner,
                   @Value("${learning.generation.max-exercises-per-target:10}") int maxPerTarget) {
         this.repository = repository;
         this.items = items;
@@ -83,6 +89,8 @@ class IntentService {
         this.gate = gate;
         this.uses = uses;
         this.settings = settings;
+        this.queue = queue;
+        this.runner = runner;
         this.maxPerTarget = maxPerTarget;
     }
 
@@ -90,6 +98,9 @@ class IntentService {
     private record Resolved(IntentSpecs.Context context, String title) { }
 
     JsonNode answer(UUID owner, UUID deckId, byte[] raw) {
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            throw new IllegalStateException("An intent HTTP wait must not run inside a database transaction");
+        }
         if (!repository.deckOwned(owner, deckId)) throw new ResourceNotFoundException();
         JsonNode body = Commands.read(raw);
         Commands.fields(body, Set.of("context", "text"), Set.of());
@@ -98,7 +109,35 @@ class IntentService {
         gate.requireText();
         uses.take(owner);
 
-        IntentSpecs.Built built = ask(owner, resolved, request);
+        UUID id = queue.submit(owner, deckId, resolved.context(), resolved.title(), request);
+        runner.ifAvailable(IntentRunner::wake);
+        long started = System.nanoTime();
+        try {
+            while (Duration.ofNanos(System.nanoTime() - started).compareTo(settings.intent().deadline()) < 0) {
+                Optional<IntentQueue.Answer> stored = queue.read(id, owner);
+                if (stored.isPresent()) {
+                    IntentQueue.Answer answer = stored.orElseThrow();
+                    if (answer.error() != null) throw unavailable(answer.error());
+                    return answer.result();
+                }
+                Thread.sleep(100);
+            }
+            throw unavailable("TEMPORARILY_UNAVAILABLE");
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw unavailable("TEMPORARILY_UNAVAILABLE");
+        } finally {
+            queue.discard(id, owner);
+        }
+    }
+
+    /** Only {@link IntentRunner} calls this: re-check ownership and worker capability before contacting a provider. */
+    JsonNode execute(IntentQueue.Job job) {
+        if (!repository.deckOwned(job.owner(), job.deck())) throw new ResourceNotFoundException();
+        gate.requireText();
+        Duration left = Duration.between(Instant.now(), job.deadline());
+        if (left.compareTo(Duration.ofMillis(250)) < 0) throw unavailable("TEMPORARILY_UNAVAILABLE");
+        IntentSpecs.Built built = ask(job.owner(), new Resolved(job.context(), job.title()), job.request(), left);
         ObjectNode answer = Json.object().put("operation", built.operation());
         if (built.spec() == null) answer.putNull("spec");
         else answer.set("spec", built.spec());
@@ -156,7 +195,7 @@ class IntentService {
 
     // ---------------------------------------------------------------------- the call
 
-    private IntentSpecs.Built ask(UUID owner, Resolved resolved, String request) {
+    private IntentSpecs.Built ask(UUID owner, Resolved resolved, String request, Duration deadline) {
         AssembledPrompt prompt;
         OpaqueUserKey key;
         try {
@@ -175,7 +214,7 @@ class IntentService {
         long started = System.nanoTime();
         String violations = null;
         for (int round = 0; round < ROUNDS; round++) {
-            Duration left = settings.intent().deadline().minus(Duration.ofNanos(System.nanoTime() - started));
+            Duration left = deadline.minus(Duration.ofNanos(System.nanoTime() - started));
             if (left.compareTo(Duration.ofMillis(250)) < 0) throw unavailable("TEMPORARILY_UNAVAILABLE");
             TextRequest call = new TextRequest(AiRoute.TEXT_FAST, prompt.segments(), OutputContract.JSON, MAX_OUTPUT_TOKENS, TEMPERATURE, left, key,
                     null, null, 1);

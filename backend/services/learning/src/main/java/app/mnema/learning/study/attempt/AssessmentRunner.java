@@ -30,7 +30,7 @@ import java.util.concurrent.TimeUnit;
  *
  * <p>Roles ({@code learning.runtime.roles}): the runner is the grader, so it exists only for {@code worker} and {@code all}; an {@code api} process
  * accepts the answer and holds no provider key. Grading is interactive (20 s), so the hand-over to a worker is as quick as the wake-up of the other
- * kinds of work: the insert of an ASSESSING row notifies {@code mnema_assessments} (trigger of {@code V40}) and the worker's {@link #wake} sweeps
+ * kinds of work: the insert of an ASSESSING row notifies {@code mnema_assessments} (trigger of {@code V39}) and the worker's {@link #wake} sweeps
  * the answers nobody has taken; {@link #sweep} does the same every {@code learning.ai.assess.sweep-interval}. The grading call is preceded by a claim
  * ({@link AssessmentService#prepare}), so the accepting process and a worker never grade one answer twice.
  */

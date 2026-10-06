@@ -25,6 +25,7 @@ class ManagementExposureGuardTest {
         assertThatThrownBy(() -> new ManagementExposureGuard(env("health,info,metrics", null))).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> new ManagementExposureGuard(env("health,info,metrics", " "))).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> new ManagementExposureGuard(env("health,info,metrics", "8080"))).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> new ManagementExposureGuard(env("health,info,metrics", "08080"))).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> new ManagementExposureGuard(env("*", null))).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> new ManagementExposureGuard(env("prometheus", null)).toString()).hasMessageNotContaining("8080");
     }
@@ -37,5 +38,13 @@ class ManagementExposureGuardTest {
         assertThatThrownBy(() -> new ManagementExposureGuard(noAddress)).isInstanceOf(IllegalStateException.class);
         noAddress.withProperty("management.server.address", "127.0.0.1");
         assertThatCode(() -> new ManagementExposureGuard(noAddress)).doesNotThrowAnyException();
+        for (String address : new String[] {"::1", "10.0.0.2", "192.168.1.3", "fd00::2"}) {
+            noAddress.withProperty("management.server.address", address);
+            assertThatCode(() -> new ManagementExposureGuard(noAddress)).doesNotThrowAnyException();
+        }
+        for (String address : new String[] {"0.0.0.0", "::", "8.8.8.8", "localhost", "224.0.0.1"}) {
+            noAddress.withProperty("management.server.address", address);
+            assertThatThrownBy(() -> new ManagementExposureGuard(noAddress)).isInstanceOf(IllegalStateException.class);
+        }
     }
 }

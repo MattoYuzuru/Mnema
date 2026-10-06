@@ -15,7 +15,7 @@ One Learning image runs in one of three roles (`MNEMA_RUNTIME_ROLES` = `learning
 | Role | Runs | Needs provider keys |
 |---|---|---|
 | `all` (default, local and first release) | HTTP, step dispatcher, speech worker, answer grader, every sweeper | yes |
-| `api` | HTTP, creates work (sessions, speech inputs, answers), retention sweepers that touch no provider | no, except the intent call (below) |
+| `api` | HTTP, creates work (sessions, speech inputs, answers), retention sweepers that touch no provider | no |
 | `worker` | step dispatcher, speech worker, answer grader, the wake listener | yes |
 
 What calls a provider, and where it runs:
@@ -25,10 +25,10 @@ What calls a provider, and where it runs:
 | Generation steps (draft, exercises, edit, plan, speech clips, image search, research) | `StepDispatcher` | `worker`, `all` |
 | Speech inputs (dictation, spoken answers) | `SpeechInputWorker` | `worker`, `all` |
 | Grading of an `ai-semantic` answer | `AssessmentRunner` | `worker`, `all` |
-| «Попросить Мнему…» intent (one cheap text call inside the HTTP request, free of credits) | `IntentService` | wherever HTTP runs |
+| «Попросить Мнему…» intent (free of credits) | `IntentRunner` | `worker`, `all` |
 
-Everything else that is scheduled (retention, expiry, deadline sweepers, speech and answer
-expiry, usage holds) touches only the database and runs in every role.
+Non-provider sweepers follow their module rules: generation retention runs on the worker;
+speech/answer expiry and usage holds touch only the database. No API request executes a provider call.
 
 **Grading is a hand-over, not a request.** An answer is accepted by whichever process
 received it and is stored `ASSESSING` with a 20 s deadline. The first grader to claim the row
@@ -43,17 +43,38 @@ non-secret configuration (routes, models, flags, kill switches, budgets, the egr
 address, the Yandex folder id). The provider keys, the user-key secret and the egress proxy
 credentials exist only on the worker. On the `api` process set
 `MNEMA_PROVIDER_CREDENTIALS=worker` (`learning.runtime.provider-credentials`): the credentials it
-lacks are replaced by a placeholder, so `GET /api/capabilities` is computed from the
+lacks are replaced by a non-secret placeholder for configuration inspection, so `GET /api/capabilities` is computed from the
 configuration and reports what the worker can do, without a key on the api host. It is refused
 with any other role than `api`. Without it an api process without keys would report
-`PROVIDER_NOT_CONFIGURED` for everything. The api process then cannot make the intent call (the
-placeholder is refused by the provider, so the chips sentence fails; it is free of credits, nothing is lost); either keep a text key on the api host or run `all` until that
-call moves to a worker (open question for the owner).
+`PROVIDER_NOT_CONFIGURED` for everything. This mode is a declaration that the worker has been configured with those credentials, not a worker-health probe.
+The worker always verifies its own actual configuration before a call. An API process refuses to start if it holds provider,
+user-key or proxy credentials, including when its credential mode is `local`.
 
-**Wake-up when split.** Work is created in a transaction; PostgreSQL triggers (migration V40)
-`NOTIFY` on `mnema_generation_steps`, `mnema_speech_inputs` and `mnema_assessments` when it
+**Intent parsing** also goes through the worker. The API pins and validates the context, applies the existing hourly limit,
+then stores an ephemeral `generation_intent_request` (V40). Its unchanged POST waits for the worker result with no open
+transaction or borrowed connection. A worker claims it once, checks ownership and its own capability again, and uses only
+the remaining part of the 20 s deadline. Completion clears request text/context; the API removes the row after returning,
+on interruption or timeout. The sweeper deletes expired rows (at most one sweep after the deadline). A removed row fences
+late results; a worker crash yields `409 CAPABILITY_UNAVAILABLE`, with no product publication or credit debit.
+
+**Optional split definitions** are checked in but do not activate production features:
+
+- Local: `MNEMA_LOCAL_AI_SPLIT=true scripts/mnema-local-full-stack.sh start` adds
+  `compose.local-ai-worker.yml`; set the same flag on smoke/status/stop commands. The API gets no provider credentials,
+  and `learning-ai-worker` reuses the Learning build and non-secret configuration. Its application and management listeners
+  are container-loopback only, without published ports or Docker socket.
+- Production: `deploy/production/compose.ai-worker.yaml` is an opt-in definition for a separate reviewed topology change,
+  outside the default protected rollout. It reuses the verified Learning image, binds the worker at loopback 18084 and
+  management at 18085, and keeps the base AI gates disabled. Give both roles identical admitted routes, feature flags,
+  provider switches and budgets; keys go only to the worker. Keep the sum of both database pools within PostgreSQL capacity.
+  Its health check reads the management readiness path. Do not include the overlay until the deployment dispatcher,
+  monitoring and operator admission have been reviewed for the extra process.
+
+
+**Wake-up when split.** Work is created in a transaction; PostgreSQL triggers (migration V39)
+`NOTIFY` on `mnema_generation_steps`, `mnema_speech_inputs` , `mnema_assessments` and `mnema_generation_intents` when it
 commits (a rolled-back transaction notifies nobody). A `worker` process holds one dedicated JDBC
-connection that `LISTEN`s on the three channels (log lines `wake_listener_connected` and
+connection that `LISTEN`s on the four channels (log lines `wake_listener_connected` and
 `wake_listener_disconnected`; it reconnects with a backoff of 0.5 s to 30 s and looks at every
 queue after each reconnect). A notification is a hint; each worker's sweeper reads the tables and
 is the source of truth: if the listener is down the system is slower by at most one sweep
@@ -111,7 +132,7 @@ to self-check with `DEADLINE`, `CAPABILITY_UNAVAILABLE`, `PROVIDER_UNCERTAIN`, `
 
 Actuator `health` and `metrics` are served on a **separate management port**, never on the public API
 (the public port answers 401 or 404 for `/actuator/metrics`). The service refuses to start when
-`metrics` is exposed without its own port, or with a port and no address. Enable it with the
+`metrics` is exposed without its own port, or with a port whose address is not a loopback/private IP literal. Wildcard/public addresses are rejected. Enable it with the
 environment of the Learning container:
 
 ```text
@@ -255,5 +276,9 @@ cd backend && MNEMA_AI_EVAL=live ./gradlew :services:learning:goldenEval
 The run writes a JSON and a Markdown report to `backend/services/learning/build/reports/golden-eval/` and an
 `owner-review.md` sample with checkboxes. Gate (the numbers of the issue #300): at least 90 % valid on the first try
 and 98 % after repair, a repair rate of at most 10 %, no copy of a source longer than 8 words, and a judge acceptance
-that does not fall against the previous report; any miss blocks the change. Keep the report with the change's evidence
+that does not fall against the previous report; any miss blocks the change. Acceptance judges' Cohen kappa is diagnostic only. The required answer-check gate is QWK >=0.6 against labelled answers at S1/S2/S3 and false-accept <=2%; missing live assessment evidence fails that machine gate. Proposed labels and the 40-item acceptance sample still need owner review, and judges must be calibrated with owner decisions.
+
+The candidate `v2` prompt preserves `v1` and clarifies source-language quoting for CLOZE. It is not activated: `learning.ai.prompt.version` remains `v1` until both machine and human gates pass.
+
+Keep the report with the change's evidence
 and add the date to the drift log in the eval README. A route or a model that fails stays out of `application.properties`.

@@ -95,7 +95,7 @@ class SpeechInputWorker implements DisposableBean, WakeTarget {
     @Override
     public String channel() { return "mnema_speech_inputs"; }
 
-    /** Asks for a pass over the queue; coalesced, never blocks the caller. With {@code roles=worker} the {@code NOTIFY} of an admission (trigger of {@code V40}) calls it. */
+    /** Asks for a pass over the queue; coalesced, never blocks the caller. With {@code roles=worker} the {@code NOTIFY} of an admission (trigger of {@code V39}) calls it. */
     @Override
     public void wake() {
         try {

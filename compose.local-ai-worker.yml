@@ -1,0 +1,32 @@
+# Optional local split topology. The launcher includes this only with MNEMA_LOCAL_AI_SPLIT=true.
+# The worker extends the base service before the API overrides, retaining the same non-secret configuration.
+services:
+  learning:
+    environment:
+      MNEMA_RUNTIME_ROLES: api
+      MNEMA_PROVIDER_CREDENTIALS: worker
+      MNEMA_AI_DEEPSEEK_API_KEY: ""
+      MNEMA_AI_GIGACHAT_AUTH_KEY: ""
+      MNEMA_AI_OPENROUTER_API_KEY: ""
+      MNEMA_AI_PIXABAY_API_KEY: ""
+      MNEMA_AI_OPENVERSE_CLIENT_SECRET: ""
+      MNEMA_AI_GOOGLE_API_KEY: ""
+      MNEMA_AI_TTS_API_KEY: ""
+      MNEMA_AI_STT_API_KEY: ""
+      MNEMA_AI_YANDEX_SEARCH_API_KEY: ""
+      MNEMA_AI_PERPLEXITY_API_KEY: ""
+      MNEMA_AI_USER_KEY_SECRET: ""
+      MNEMA_AI_EGRESS_PROXY_USER: ""
+      MNEMA_AI_EGRESS_PROXY_PASSWORD: ""
+  learning-ai-worker:
+    extends:
+      file: compose.local-full-stack.yml
+      service: learning
+    environment:
+      MNEMA_RUNTIME_ROLES: worker
+      MNEMA_PROVIDER_CREDENTIALS: local
+      SERVER_ADDRESS: 127.0.0.1
+      MANAGEMENT_SERVER_PORT: "8083"
+      MANAGEMENT_SERVER_ADDRESS: 127.0.0.1
+      MNEMA_MANAGEMENT_EXPOSURE: health,info,metrics
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "4"

@@ -33,7 +33,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * <p>Wake-ups: the {@code afterCommit} of a transaction that created work ({@link #wake}), the end of every run, and the
  * sweeper ({@code learning.generation.worker.sweep-interval}, 2 s), which also recovers expired leases and renews the
  * reservations of running sessions. The table is the source of truth: a lost wake-up costs at most one sweep. With {@code roles=worker} the
- * wake-up of another process's transaction arrives as a {@code NOTIFY} ({@code mnema_generation_steps}, trigger of {@code V40}) on the
+ * wake-up of another process's transaction arrives as a {@code NOTIFY} ({@code mnema_generation_steps}, trigger of {@code V39}) on the
  * {@code PostgresWakeListener}'s connection.
  *
  * <p>Capacity: one permit per capability and instance ({@code learning.ai.permits.*}, text 16), so the dispatcher never

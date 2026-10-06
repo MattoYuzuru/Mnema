@@ -169,7 +169,7 @@ class MediaUploadIntegrationTest extends PostgresIntegrationTest {
                         + "VALUES (:blob,:hash,:length,'image/webp',:key,CURRENT_TIMESTAMP)")
                 .param("blob", blob).param("hash", HexFormat.of().parseHex(sha(bytes)))
                 .param("length", bytes.length).param("key", key).update();
-        jdbc.sql("UPDATE app_learning.media_asset SET state='VERIFYING',updated_at=CURRENT_TIMESTAMP "
+        jdbc.sql("UPDATE app_learning.media_asset SET state='VERIFYING',updated_at=GREATEST(updated_at,CURRENT_TIMESTAMP) "
                         + "WHERE asset_id=:asset").param("asset", oldAsset).update();
         assertThat(catalog.ready(oldAsset, 0, blob)).isTrue();
         jdbc.sql("UPDATE app_learning.media_asset SET owner_hold_until=CURRENT_TIMESTAMP-interval '1 day' "
@@ -251,7 +251,7 @@ class MediaUploadIntegrationTest extends PostgresIntegrationTest {
         assertThat(objects.head(orphan)).isNull();
         assertThat(read(sealed)).containsExactly(source);
 
-        jdbc.sql("UPDATE app_learning.media_asset SET state='REJECTED',updated_at=CURRENT_TIMESTAMP "
+        jdbc.sql("UPDATE app_learning.media_asset SET state='REJECTED',updated_at=GREATEST(updated_at,CURRENT_TIMESTAMP) "
                         + "WHERE asset_id=:asset").param("asset", started.assetId()).update();
         mediaGcRepository.scanKey(sealed, 0);
         assertThat(gcState(sealed)).isEqualTo("FIRST");
@@ -422,11 +422,11 @@ class MediaUploadIntegrationTest extends PostgresIntegrationTest {
                 .isInstanceOf(IdempotencyConflictException.class);
         assertThat(assetState(start.assetId())).isEqualTo("VERIFYING");
         assertThat(uploads.status(owner, start.assetId()).assetState()).isEqualTo("VERIFYING");
-        jdbc.sql("UPDATE app_learning.media_asset SET state='PROCESSING',updated_at=CURRENT_TIMESTAMP "
+        jdbc.sql("UPDATE app_learning.media_asset SET state='PROCESSING',updated_at=GREATEST(updated_at,CURRENT_TIMESTAMP) "
                         + "WHERE asset_id=:asset")
                 .param("asset", start.assetId()).update();
         assertThat(uploads.status(owner, start.assetId()).assetState()).isEqualTo("PROCESSING");
-        jdbc.sql("UPDATE app_learning.media_asset SET state='REJECTED',updated_at=CURRENT_TIMESTAMP "
+        jdbc.sql("UPDATE app_learning.media_asset SET state='REJECTED',updated_at=GREATEST(updated_at,CURRENT_TIMESTAMP) "
                         + "WHERE asset_id=:asset")
                 .param("asset", start.assetId()).update();
         assertThat(uploads.status(owner, start.assetId()).assetState()).isEqualTo("REJECTED");

@@ -70,7 +70,7 @@ import java.util.UUID;
 public final class GoldenPipeline {
     private static final int ROUNDS = 3;
     private static final double TEMPERATURE_MATERIAL = 0.8;
-        private static final double TEMPERATURE_EXERCISES = 0.4;
+    private static final double TEMPERATURE_EXERCISES = 0.4;
     private static final MbmRenderer.Options PLAIN = new MbmRenderer.Options(false, 1, Set.of());
     private static final Map<String, String> PRESETS = Map.of("SIMPLER", "Проще", "SHORTER", "Короче", "EXAMPLE", "Пример", "LONGER", "Подробнее");
     private static final JsonMapper JSON = GoldenCorpus.JSON;
@@ -95,7 +95,18 @@ public final class GoldenPipeline {
      */
     public record Result(Fixture fixture, boolean validFirstTry, boolean valid, int calls, boolean escalated, String failure,
                          List<Long> latenciesMillis, long costMicros, long hitTokens, long missTokens, long completionTokens,
-                         String output, String before, int produced, int requested, Map<String, Double> checks) {
+                         String output, String before, int produced, int requested, Map<String, Double> checks, String unchangedContext) {
+        public Result(Fixture fixture, boolean validFirstTry, boolean valid, int calls, boolean escalated, String failure,
+                      List<Long> latenciesMillis, long costMicros, long hitTokens, long missTokens, long completionTokens,
+                      String output, String before, int produced, int requested, Map<String, Double> checks) {
+            this(fixture, validFirstTry, valid, calls, escalated, failure, latenciesMillis, costMicros, hitTokens, missTokens, completionTokens,
+                    output, before, produced, requested, checks, "");
+        }
+
+        Result withUnchangedContext(String context) {
+            return new Result(fixture, validFirstTry, valid, calls, escalated, failure, latenciesMillis, costMicros, hitTokens, missTokens, completionTokens,
+                    output, before, produced, requested, checks, context);
+        }
         public Result {
             latenciesMillis = List.copyOf(latenciesMillis);
             checks = Map.copyOf(checks);
@@ -116,9 +127,13 @@ public final class GoldenPipeline {
     private final String compactSchema;
 
     public GoldenPipeline(TextGeneration text, Duration deadline) {
+        this(text, deadline, "v1");
+    }
+
+    public GoldenPipeline(TextGeneration text, Duration deadline, String promptVersion) {
         this.text = text;
         this.deadline = deadline;
-        this.assembler = new PromptAssembler(PromptLibrary.fromClasspath("v1"), new AiProperties.Prompt("v1", 32_000, 25_000));
+        this.assembler = new PromptAssembler(PromptLibrary.fromClasspath(promptVersion), new AiProperties.Prompt(promptVersion, 32_000, 25_000));
         this.exemplars = GoldenCorpus.exemplars();
         try {
             this.compactSchema = JSON.writeValueAsString(JSON.readTree(ExerciseOutputSchema.load().text()));
@@ -353,7 +368,10 @@ public final class GoldenPipeline {
                 checks.put("lengthOk", ratio * 100 >= bounds.path("minPercent").intValue() && ratio * 100 <= bounds.path("maxPercent").intValue() ? 1.0 : 0.0);
             }
         }
-        return result(fixture, tally, first, valid, escalated, failure, valid ? after : "", before, valid ? 1 : 0, 1, checks);
+        List<JsonNode> outsideTarget = new ArrayList<>(top.subList(0, target.from()));
+        outsideTarget.addAll(top.subList(target.to() + 1, top.size()));
+        return result(fixture, tally, first, valid, escalated, failure, valid ? after : "", before, valid ? 1 : 0, 1, checks)
+                .withUnchangedContext(plain(outsideTarget));
     }
 
     private static EditTarget resolveTarget(Fixture fixture, JsonNode document, List<JsonNode> top, NativeNodeIndex index) {

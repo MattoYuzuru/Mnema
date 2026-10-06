@@ -8,9 +8,11 @@ import java.time.Duration;
 public final class MnemaReadiness {
     public static void main(String[] args) {
         try {
-            if (args.length != 1 || !args[0].matches("1808[12]")) System.exit(1);
+            if ((args.length != 1 && args.length != 2) || !args[0].matches("1808[125]")) System.exit(1);
+            String path = args.length == 1 ? "/api/actuator/health/readiness" : args[1];
+            if (!path.equals("/api/actuator/health/readiness") && !path.equals("/actuator/health/readiness")) System.exit(1);
             var request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + args[0]
-                    + "/api/actuator/health/readiness")).timeout(Duration.ofSeconds(3)).GET().build();
+                    + path)).timeout(Duration.ofSeconds(3)).GET().build();
             try (var client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(1))
                     .followRedirects(HttpClient.Redirect.NEVER).build()) {
                 System.exit(client.send(request, HttpResponse.BodyHandlers.discarding())

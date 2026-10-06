@@ -37,6 +37,12 @@ class AiConfiguration {
         if (mode.equals("worker") && !roles.strip().equalsIgnoreCase("api")) {
             throw new IllegalStateException("learning.runtime.provider-credentials=worker is for learning.runtime.roles=api only: a process that executes work needs its own keys");
         }
+        if (roles.strip().equalsIgnoreCase("api") && (properties.userKey().configured()
+                || !properties.egress().password().isEmpty()
+                || properties.providers().values().stream().anyMatch(provider -> !provider.apiKey().isEmpty()
+                || !provider.authKey().isEmpty() || !provider.clientSecret().isEmpty()))) {
+            throw new IllegalStateException("learning.runtime.roles=api must not hold provider, user-key or egress credentials; put them on the worker");
+        }
         if (mode.equals("worker")) LOG.info("ai_credentials mode=worker: capabilities are reported from the configuration; this process holds no provider key");
         return new EffectiveAi(mode.equals("worker") ? properties.withWorkerHeldCredentials() : properties);
     }

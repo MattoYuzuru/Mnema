@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The step trigger of {@code V40}: a session that creates its steps notifies {@code mnema_generation_steps} when its transaction commits, so a
+ * The step trigger of {@code V39}: a session that creates its steps notifies {@code mnema_generation_steps} when its transaction commits, so a
  * {@code worker} process in another JVM can take them without waiting for its sweep. The dispatcher of this context is the in-process half; the listener
  * here stands in for the other process.
  */

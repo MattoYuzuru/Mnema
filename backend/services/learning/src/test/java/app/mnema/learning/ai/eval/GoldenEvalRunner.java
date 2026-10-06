@@ -65,7 +65,7 @@ class GoldenEvalRunner {
         if (idFilter != null && !idFilter.isBlank()) for (String id : idFilter.split(",")) ids.add(id.strip());
         GoldenEval.Options options = new GoldenEval.Options(live ? GoldenEval.Mode.LIVE : GoldenEval.Mode.STUB, kinds, tags, ids,
                 "true".equals(System.getenv("MNEMA_GOLDEN_HELD_OUT")), integer("MNEMA_GOLDEN_LIMIT", 0), integer("MNEMA_GOLDEN_PARALLELISM", live ? 6 : 4),
-                live ? integer("MNEMA_GOLDEN_BUDGET_MICROS", 2_800_000) : 0, Path.of("build/reports/golden-eval"));
+                live ? integer("MNEMA_GOLDEN_BUDGET_MICROS", 2_800_000) : 0, Path.of("build/reports/golden-eval"), System.getenv().getOrDefault("MNEMA_GOLDEN_PROMPT_VERSION", "v1"));
 
         GoldenEval.Outcome outcome;
         List<EvalStack> stacks = new ArrayList<>();

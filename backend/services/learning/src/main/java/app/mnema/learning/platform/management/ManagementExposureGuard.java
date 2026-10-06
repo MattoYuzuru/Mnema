@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 import java.util.Arrays;
 import java.util.Locale;
 import java.util.Set;
+import java.net.InetAddress;
 
 /**
  * Keeps the operations endpoints off the public API. Two rules, both enforced at start (the messages name the settings, never a value):
@@ -27,13 +28,32 @@ final class ManagementExposureGuard {
                 .anyMatch(value -> !PUBLIC_SAFE.contains(value));
         String management = environment.getProperty("management.server.port", "").strip();
         String server = environment.getProperty("server.port", "").strip();
-        boolean separate = !management.isEmpty() && !management.equals(server);
+        boolean separate = !management.isEmpty() && port(management) != port(server.isEmpty() ? "8080" : server);
         if (wide && !separate) {
             throw new IllegalStateException("management.endpoints.web.exposure.include exposes more than health and info: set management.server.port "
                     + "(MANAGEMENT_SERVER_PORT) to a private port of its own or narrow the exposure");
         }
-        if (separate && environment.getProperty("management.server.address", "").isBlank()) {
-            throw new IllegalStateException("management.server.port needs management.server.address (MANAGEMENT_SERVER_ADDRESS), the private address it listens on");
+        if (separate && !privateAddress(environment.getProperty("management.server.address", ""))) {
+            throw new IllegalStateException("management.server.port needs management.server.address (MANAGEMENT_SERVER_ADDRESS), a loopback or private IP literal");
+        }
+    }
+
+    private static int port(String value) {
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException invalid) {
+            throw new IllegalStateException("server and management ports must be integers");
+        }
+    }
+
+    private static boolean privateAddress(String value) {
+        try {
+            InetAddress address = InetAddress.ofLiteral(value.strip());
+            byte[] bytes = address.getAddress();
+            return address.isLoopbackAddress() || address.isSiteLocalAddress()
+                    || bytes.length == 16 && (bytes[0] & 0xfe) == 0xfc;
+        } catch (IllegalArgumentException invalid) {
+            return false;
         }
     }
 }

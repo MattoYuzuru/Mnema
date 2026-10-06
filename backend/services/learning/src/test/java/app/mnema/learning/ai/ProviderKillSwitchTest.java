@@ -121,7 +121,13 @@ class ProviderKillSwitchTest {
         AiConfiguration configuration = new AiConfiguration();
         AiProperties properties = bind(null);
         assertThat(configuration.effectiveAi(properties, "local", "all").properties()).isSameAs(properties);
-        assertThat(configuration.effectiveAi(properties, " Worker ", "api").properties()).isNotSameAs(properties);
+        Map<String, Object> keylessValues = new HashMap<>(BASE);
+        keylessValues.keySet().removeIf(name -> name.endsWith(".api-key"));
+        AiProperties keyless = new Binder(new MapConfigurationPropertySource(keylessValues)).bind("learning.ai", AiProperties.class).get();
+        assertThat(configuration.effectiveAi(keyless, " Worker ", "api").properties()).isNotSameAs(keyless);
+        assertThatThrownBy(() -> configuration.effectiveAi(properties, "worker", "api")).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("must not hold");
+        assertThatThrownBy(() -> configuration.effectiveAi(properties, "local", "api")).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> configuration.effectiveAi(properties, "worker", "all")).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> configuration.effectiveAi(properties, "worker", "worker")).isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> configuration.effectiveAi(properties, "remote", "api")).isInstanceOf(IllegalStateException.class);

@@ -14,10 +14,17 @@ import static org.assertj.core.api.Assertions.assertThat;
  * The shipped {@code application.properties} bound by Spring: default routes, price table and providers, with a fake key
  * in the properties (never a network call: nothing here generates).
  */
-@SpringBootTest(properties = {"learning.features.ai-generation.enabled=true", "learning.ai.provider=",
+@SpringBootTest(properties = {"learning.runtime.roles=all", "learning.features.ai-generation.enabled=true", "learning.ai.provider=",
         "learning.ai.providers.deepseek.api-key=test-key-not-real", "learning.ai.providers.gigachat.auth-key=",
         "learning.ai.providers.openrouter.api-key=", "learning.ai.user-key.secret=0123456789abcdef0123456789abcdef", "spring.datasource.hikari.maximum-pool-size=2"})
 class AiKeyedConfigurationIntegrationTest extends PostgresIntegrationTest {
+    // Keys belong to a worker-capable role; isolate its database so it can never pick up work from another test and call a fake-key provider.
+    private static final String DATABASE = createDatabase("ai_keyed_" + UUID.randomUUID().toString().replace("-", ""));
+    @org.springframework.test.context.DynamicPropertySource
+    static void isolatedDatabase(org.springframework.test.context.DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", () -> DATABASE);
+        registry.add("spring.flyway.url", () -> DATABASE);
+    }
     @Autowired private AiProperties properties;
     @Autowired private LearningCapabilities capabilities;
     @Autowired private UserKeys userKeys;

@@ -14,10 +14,16 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /** The shipped {@code application.properties} of web research, bound by Spring with a fake key (never a network call: nothing here searches). */
-@SpringBootTest(properties = {"learning.features.web-search.enabled=true", "learning.ai.provider=",
+@SpringBootTest(properties = {"learning.runtime.roles=all", "learning.features.web-search.enabled=true", "learning.ai.provider=",
         "learning.ai.providers.yandex-search.api-key=test-key-not-real", "learning.ai.research.yandex-folder-id=b1gtestfolder",
         "spring.datasource.hikari.maximum-pool-size=2"})
 class WebSearchWiringTest extends PostgresIntegrationTest {
+    private static final String DATABASE = createDatabase("search_wiring_" + java.util.UUID.randomUUID().toString().replace("-", ""));
+    @org.springframework.test.context.DynamicPropertySource
+    static void isolatedDatabase(org.springframework.test.context.DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", () -> DATABASE);
+        registry.add("spring.flyway.url", () -> DATABASE);
+    }
     @Autowired private AiProperties properties;
     @Autowired private ResearchSettings research;
     @Autowired private WebSearch webSearch;
