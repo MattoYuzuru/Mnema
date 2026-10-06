@@ -16,6 +16,7 @@ import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
  * without a bearer token (the metrics script and the probes have none) and refuses everything else. Nothing here applies to the public port: the matcher is
  * the local port of the connection, and the guard ({@link ManagementExposureGuard}) has already refused a configuration that shares the port.
  * CSRF remains enabled with a cookie repository (HttpOnly by default), never a server session; safe probes defer token generation.
+ * The default logout handler is disabled: its filter runs before authorization and must not bypass this read-only listener's method guard.
  */
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnExpression("!'${management.server.port:}'.trim().isEmpty()")
@@ -28,6 +29,7 @@ class ManagementPortSecurity {
                         .requestMatchers(HttpMethod.HEAD, "/**").permitAll().anyRequest().denyAll())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .csrf(csrf -> csrf.csrfTokenRepository(new CookieCsrfTokenRepository()))
+                .logout(logout -> logout.disable())
                 .requestCache(cache -> cache.disable()).build();
     }
 }

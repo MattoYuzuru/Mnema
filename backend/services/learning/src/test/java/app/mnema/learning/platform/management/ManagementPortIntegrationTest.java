@@ -9,6 +9,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.logout.LogoutFilter;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -81,6 +82,7 @@ class ManagementPortIntegrationTest extends PostgresIntegrationTest {
     @Test
     void csrfProtectionIsInstalledOnThePrivateManagementChain() {
         assertThat(security.getFilters()).filteredOn(CsrfFilter.class::isInstance).hasSize(1);
+        assertThat(security.getFilters()).filteredOn(LogoutFilter.class::isInstance).isEmpty();
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/actuator/metrics");
         request.setLocalPort(MANAGEMENT_PORT);
         assertThat(security.matches(request)).isTrue();
@@ -97,6 +99,17 @@ class ManagementPortIntegrationTest extends PostgresIntegrationTest {
                 assertThat(response.statusCode()).as(method + " " + path).isEqualTo(200);
                 assertThat(response.headers().allValues("Set-Cookie")).as("safe reads remain stateless and defer token generation").isEmpty();
             }
+        }
+    }
+
+    @Test
+    void logoutHasNoSafeMethodPageRedirectOrCookieSideEffectOnTheManagementPort() throws Exception {
+        for (String method : new String[] {"GET", "HEAD"}) {
+            HttpResponse<String> response = CLIENT.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + MANAGEMENT_PORT + "/logout"))
+                    .timeout(Duration.ofSeconds(5)).method(method, HttpRequest.BodyPublishers.noBody()).build(), HttpResponse.BodyHandlers.ofString());
+            assertThat(response.statusCode()).as(method + " /logout is not a management endpoint").isEqualTo(404);
+            assertThat(response.headers().allValues("Location")).isEmpty();
+            assertThat(response.headers().allValues("Set-Cookie")).isEmpty();
         }
     }
 
@@ -122,13 +135,15 @@ class ManagementPortIntegrationTest extends PostgresIntegrationTest {
         assertThat(valid.getSession(false)).isNull();
 
         for (String method : new String[] {"POST", "PUT", "PATCH", "DELETE"}) {
-            for (boolean withToken : new boolean[] {false, true}) {
-                var request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + MANAGEMENT_PORT + "/actuator/metrics"))
-                        .timeout(Duration.ofSeconds(5)).method(method, HttpRequest.BodyPublishers.noBody());
-                if (withToken) request.header("Cookie", "XSRF-TOKEN=" + cookie.getValue()).header("X-XSRF-TOKEN", masked.get());
-                HttpResponse<String> response = CLIENT.send(request.build(), HttpResponse.BodyHandlers.ofString());
-                assertThat(response.statusCode()).as(method + " token=" + withToken).isEqualTo(403);
-                assertThat(response.headers().allValues("Set-Cookie").stream().noneMatch(value -> value.contains("JSESSIONID"))).isTrue();
+            for (String path : new String[] {"/actuator/metrics", "/logout"}) {
+                for (boolean withToken : new boolean[] {false, true}) {
+                    var request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + MANAGEMENT_PORT + path))
+                            .timeout(Duration.ofSeconds(5)).method(method, HttpRequest.BodyPublishers.noBody());
+                    if (withToken) request.header("Cookie", "XSRF-TOKEN=" + cookie.getValue()).header("X-XSRF-TOKEN", masked.get());
+                    HttpResponse<String> response = CLIENT.send(request.build(), HttpResponse.BodyHandlers.ofString());
+                    assertThat(response.statusCode()).as(method + " " + path + " token=" + withToken).isEqualTo(403);
+                    assertThat(response.headers().allValues("Set-Cookie").stream().noneMatch(value -> value.contains("JSESSIONID"))).isTrue();
+                }
             }
         }
     }

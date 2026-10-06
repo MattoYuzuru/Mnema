@@ -146,7 +146,9 @@ On the production host Learning is on host networking; the opt-in worker serves 
 answers `GET` and `HEAD` without a token and nothing else. CSRF protection remains enabled through the default HttpOnly cookie
 repository, without a server session. Safe health/metrics reads
 defer token generation and create no cookie; unsafe methods remain forbidden even with a valid CSRF token
-([Spring Security CSRF](https://docs.spring.io/spring-security/reference/servlet/exploits/csrf.html)). With a separate management port,
+([Spring Security CSRF](https://docs.spring.io/spring-security/reference/servlet/exploits/csrf.html)). The default logout handler is disabled,
+since its filter would run before authorization and intercept `POST /logout`
+([Spring logout architecture](https://docs.spring.io/spring-security/reference/servlet/authentication/logout.html)). With a separate management port,
 the health probes move there too, as `/actuator/health/readiness` (without the `/api` prefix). The overlay health check already uses
 `MnemaReadiness 18085 /actuator/health/readiness`; its bounded helper allows 18081, 18082 and 18085 only.
 The default `deploy/production/health-monitor.py` still probes the API on 18082. An opt-in rollout must add a worker
