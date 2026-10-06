@@ -86,8 +86,8 @@ const RECORDER = `
   return true;`;
 
 const KEYS = {
-  Enter: ['Enter', 'Enter', 13], Tab: ['Tab', 'Tab', 9], ArrowRight: ['ArrowRight', 'ArrowRight', 39], ArrowLeft: ['ArrowLeft', 'ArrowLeft', 37],
-  Home: ['Home', 'Home', 36], End: ['End', 'End', 35], Escape: ['Escape', 'Escape', 27]
+    Enter: ['Enter', 'Enter', 13], Tab: ['Tab', 'Tab', 9], ArrowRight: ['ArrowRight', 'ArrowRight', 39], ArrowLeft: ['ArrowLeft', 'ArrowLeft', 37],
+    Home: ['Home', 'Home', 36], End: ['End', 'End', 35], Escape: ['Escape', 'Escape', 27], ' ': [' ', 'Space', 32]
 };
 const SHIFT = 8;
 
@@ -108,7 +108,8 @@ export async function runWorkshop(ctx) {
     const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, modifiers };
     await tab.call('Page.bringToFront');
     await tab.call('Input.dispatchKeyEvent', name === 'Enter'
-      ? { type: 'keyDown', text: '\r', unmodifiedText: '\r', ...event } : { type: 'rawKeyDown', ...event });
+      ? { type: 'keyDown', text: '\r', unmodifiedText: '\r', ...event } : name === ' '
+        ? { type: 'keyDown', text: ' ', unmodifiedText: ' ', ...event } : { type: 'rawKeyDown', ...event });
     await tab.call('Input.dispatchKeyEvent', { type: 'keyUp', ...event });
   };
   const insertText = async text => { await tab.call('Page.bringToFront'); await tab.call('Input.insertText', { text }); };
@@ -758,7 +759,7 @@ export async function runWorkshop(ctx) {
   // Part B is a separate function boundary: it needs the #288 backend.
   evidence.approval = await runWorkshopApproval(ctx, { ...shared, api, page, press, insertText, stage, has, need, settle, metrics, desktop, awaitCapability,
     getSession, activeSessions, sessionPath, location, evidence, KEY: KEYS });
-  evidence.notes = await runWorkshopNotes(ctx, { ...shared, api, page, stage, has, need, settle, metrics, desktop, awaitCapability, getSession,
+  evidence.notes = await runWorkshopNotes(ctx, { ...shared, api, page, stage, has, need, settle, metrics, desktop, awaitCapability, getSession, keyboard: press,
     activeSessions, sessionPath, location });
   // #291 (AI-13): exercise generation, batch review, «Новое». Its own deck, so it never disturbs the scenarios above.
   evidence.exercises = await runWorkshopExercises(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
@@ -1129,7 +1130,7 @@ export async function runWorkshopApproval(ctx, h) {
  */
 export async function runWorkshopNotes(ctx, h) {
   const { tab, SafeFailure, until, navigate, saveScreenshot, deckPath, deckId } = { ...ctx, ...h };
-  const { api, page, stage, has, need, settle, metrics, desktop, awaitCapability, getSession, activeSessions, sessionPath, location } = h;
+  const { api, page, stage, has, need, settle, metrics, desktop, awaitCapability, getSession, activeSessions, sessionPath, location, keyboard } = h;
   const out = {};
   const run = Math.random().toString(36).slice(2, 7);
   const noteCount = KOREAN_LESSON_NOTES.length;
@@ -1165,6 +1166,57 @@ export async function runWorkshopNotes(ctx, h) {
   const openCapture = async () => {
     await navigate(`${deckPath}/capture`, tab);
     await until(async () => (await captureView()).boxes > 0, 'the capture page shows no selectable notes', 25_000);
+  };
+  const settledScroll = () => page(`return new Promise(resolve => { let previous = scrollY, stable = 0, frames = 0;
+    const tick = () => { frames++; const current = scrollY; stable = Math.abs(current - previous) < .1 ? stable + 1 : 0; previous = current;
+      if (stable >= 12 || frames >= 180) resolve(stable >= 12); else requestAnimationFrame(tick); }; requestAnimationFrame(tick); });`);
+  const keyboardSelection = async () => {
+    const checked = [];
+    const geometry = () => page(`const active = document.activeElement; const bar = document.querySelector('.selection-bar');
+      const label = active?.closest('.select-all, .note-check'); const r = (label ?? active)?.getBoundingClientRect(); const b = bar?.getBoundingClientRect();
+      const inBar = Boolean(bar?.contains(active));
+      return { selectAll: active?.matches('.select-all input') ?? false, noteBox: active?.matches('.note-check input') ?? false, inBar,
+        name: active?.textContent.trim() ?? '', top: r?.top, bottom: r?.bottom, railTop: b?.top ?? innerHeight, innerHeight,
+        visible: Boolean(r && r.top >= 6 && r.bottom <= (inBar ? innerHeight : b?.top ?? innerHeight) - 6),
+        overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth };`);
+    const key = async name => { await keyboard(name); need(await settledScroll(), 'the native selection scroll did not settle'); };
+    try {
+      for (const [width, height, doubled] of [[390, 844, false], [320, 900, true]]) {
+        await metrics(width, height, 1, true);
+        await openCapture();
+        if (doubled) await page(`document.documentElement.style.fontSize = '200%'; return true;`);
+        await page('scrollTo(0, 0); document.activeElement?.blur(); return true;');
+        for (let count = 0; count < 35 && !(await geometry()).selectAll; count++) await key('Tab');
+        need((await geometry()).selectAll, `native Tab did not reach select-all at${width}`);
+        await key(' ');
+        await until(() => has('.selection-bar'), 'Space did not show the selection rail');
+        const appeared = await geometry();
+        need(appeared.selectAll && appeared.visible && !appeared.overflow,
+          `native Space hid the select-all label at${width}: ${JSON.stringify(appeared)}`);
+        await saveScreenshot(`workshop-notes-native-focus-${width}${doubled ? '-2x-text' : ''}.png`, tab);
+        const reached = [];
+        let noteBoxes = 0;
+        for (let count = 0; count < 100; count++) {
+          await key('Tab');
+          const stop = await geometry();
+          if (stop.noteBox) noteBoxes++;
+          need(stop.visible, `native Tab hid a selection control at${width}: ${JSON.stringify(stop)}`);
+          if (stop.inBar) reached.push(stop.name);
+          if (stop.inBar && stop.name === 'Снять выбор') break;
+        }
+        need(noteBoxes > 0 && reached.includes('Создать материалы с ИИ') && reached.includes('Снять выбор'),
+          `selection actions were not keyboard accessible at${width}: ${JSON.stringify(reached)}`);
+        await key(' ');
+        await until(async () => !await has('.selection-bar') && (await geometry()).selectAll, 'clearing selection did not return focus to select-all');
+        need((await geometry()).visible, `returned select-all focus is clipped at${width}`);
+        checked.push({ width, doubledText: doubled, selectAllAfterSpace: appeared, noteBoxes, actions: reached, clearReturnedVisibleFocus: true });
+        await page(`document.documentElement.style.removeProperty('font-size'); return true;`);
+      }
+    } finally {
+      await page(`document.documentElement.style.removeProperty('font-size'); return true;`);
+      await desktop();
+    }
+    return checked;
   };
   const toComposer = async (count, label) => {
     await until(() => has('.selection-bar button.primary'), `${label}: the selection bar did not appear`);
@@ -1215,6 +1267,7 @@ export async function runWorkshopNotes(ctx, h) {
   await stage('notes_capture_selection', async () => {
     // The capture list is newest first and the composer keeps the list order: from here on index 0 is the first chip.
     notes = (await createNotes(texts)).reverse(); tokens.reverse(); texts.reverse();
+    out.nativeSelectionFocus = await keyboardSelection();
     await openCapture();
     const loaded = await captureView();
     // «Выбрать все загруженные»: the counter follows, and «Снять выбор» clears it.
@@ -1233,7 +1286,8 @@ export async function runWorkshopNotes(ctx, h) {
     await metrics(390, 844, 1, true); await settle();
     const narrow = await captureView();
     need(!narrow.overflow, 'the capture selection overflows at 390 px');
-    await page(`document.querySelector('.selection-bar')?.scrollIntoView({ block: 'end' }); return true;`);
+    // Capture the settled selection viewport; forcing the sticky rail to its natural end would obscure the focused header.
+    need(await settledScroll(), 'the narrow selection viewport did not settle');
     await saveScreenshot('workshop-notes-capture-selection-390.png', tab);
     await desktop(); await settle();
     return { loadedBoxes: loaded.boxes, selectAllPicked: all.checked, selectAllCounter: all.count, pickedCounter: picked.count, bar: picked.bar,

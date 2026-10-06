@@ -37,7 +37,7 @@
       } @empty { <li class="notice">Заметок для этой колоды пока нет.</li> }
     </ul>
     @if (generationAvailable() && selectedCount() > 0) {
-      <section class="selection-bar" aria-label="Действия с выбранными заметками">
+      <section #selectionBar class="selection-bar" aria-label="Действия с выбранными заметками">
         <p class="selection-bar-count"><strong>Выбрано: {{ selectedCount() }}</strong></p>
         <div class="actions">
           <button class="button primary" type="button" (click)="createMaterials()">Создать материалы с ИИ</button>

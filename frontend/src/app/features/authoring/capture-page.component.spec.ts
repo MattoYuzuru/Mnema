@@ -41,8 +41,9 @@ describe('CapturePageComponent', () => {
         archived: false, createdAt: '2026-09-19T10:00:00Z', updatedAt: '2026-09-19T10:00:00Z', conversion: null
     };
     const originalObserver = window.IntersectionObserver;
+    const originalResizeObserver = window.ResizeObserver;
 
-    afterEach(() => { window.IntersectionObserver = originalObserver; });
+    afterEach(() => { window.IntersectionObserver = originalObserver; window.ResizeObserver = originalResizeObserver; });
 
     beforeEach(async () => {
         api = spyObj<AuthoringApiService>({
@@ -315,6 +316,57 @@ describe('CapturePageComponent', () => {
             fixture.detectChanges();
             await fixture.whenStable();
             expect(document.activeElement).toBe(headerBox());
+            root().remove();
+        });
+
+        it('updates the viewport reservation when the rail wraps and ignores resize delivery after clearing it', async () => {
+            const observers: ResizeObserver[] = [];
+            let resized!: ResizeObserverCallback;
+            const disconnect = vi.fn();
+            window.ResizeObserver = class implements ResizeObserver {
+                constructor(callback: ResizeObserverCallback) { resized = callback; observers.push(this); }
+                observe = vi.fn();
+                unobserve = vi.fn();
+                disconnect = disconnect;
+            };
+            await load(2);
+            document.documentElement.style.setProperty('--mn-bulk-bar-height', '24px');
+            pick(boxes()[0]!);
+            await fixture.whenStable();
+            let height = 160;
+            Object.defineProperty(bar()!, 'offsetHeight', { get: () => height });
+            resized([], observers[0]!);
+            expect(document.documentElement.style.getPropertyValue('--mn-bulk-bar-height')).toBe('168px');
+            height = 320;
+            resized([], observers[0]!);
+            expect(document.documentElement.style.getPropertyValue('--mn-bulk-bar-height')).toBe('328px');
+            fixture.componentInstance.clearSelection();
+            fixture.detectChanges();
+            await fixture.whenStable();
+            expect(disconnect).toHaveBeenCalledOnce();
+            expect(document.documentElement.style.getPropertyValue('--mn-bulk-bar-height')).toBe('24px');
+            resized([], observers[0]!);
+            expect(document.documentElement.style.getPropertyValue('--mn-bulk-bar-height')).toBe('24px');
+            document.documentElement.style.removeProperty('--mn-bulk-bar-height');
+        });
+
+        it('reveals the full focused label after inserting the rail without moving focus to its buttons', async () => {
+            await load(2);
+            document.body.append(root());
+            const label = headerBox().closest('label')!;
+            const revealed = vi.spyOn(label, 'scrollIntoView');
+            headerBox().focus();
+            await fixture.whenStable();
+            revealed.mockClear();
+            headerBox().click();
+            fixture.detectChanges();
+            await fixture.whenStable();
+            expect(revealed).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+            expect(document.activeElement).toBe(headerBox());
+            expect(document.documentElement.style.getPropertyValue('--mn-bulk-bar-height')).toMatch(/^\d+px$/);
+            revealed.mockRestore();
+            fixture.destroy();
+            expect(document.documentElement.style.getPropertyValue('--mn-bulk-bar-height')).toBe('');
             root().remove();
         });
 

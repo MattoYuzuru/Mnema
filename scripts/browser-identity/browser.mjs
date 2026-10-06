@@ -433,7 +433,7 @@ try {
   const savedTitle = 'Русский материал — версия 2';
   await navigate('/decks');
   await until(() => exists('#own-decks-title'), 'own deck library did not load');
-  require(await cdp.callFunction(`function() {
+  await until(() => cdp.callFunction(`function() {
     return document.body.innerText.includes('Первая страница пока чиста');
   }`), 'fresh account did not show the own-deck empty state');
   await navigate('/decks/new');
