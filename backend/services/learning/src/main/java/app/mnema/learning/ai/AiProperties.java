@@ -38,6 +38,8 @@ public record AiProperties(
         @DefaultValue Egress egress) {
 
     public static final String STUB = "stub";
+    /** The provider id of the self-hosted OpenAI-compatible transcription container (#298). */
+    public static final String SELFHOST = "selfhost";
 
     /** Without an egress proxy: the shape every caller had before {@code learning.ai.egress.*} existed. */
     public AiProperties(String provider, Routes routes, Map<String, Provider> providers, List<Model> models, Transport transport,
@@ -50,6 +52,10 @@ public record AiProperties(
         provider = provider == null ? "" : provider.strip().toLowerCase(Locale.ROOT);
         if (!provider.isEmpty() && !provider.equals(STUB)) throw new IllegalArgumentException("Unknown learning.ai.provider");
         providers = providers == null ? Map.of() : Map.copyOf(providers);
+        // http to a private host is the self-hosted transcription container's alone (#298); every other provider keeps https or loopback
+        providers.forEach((id, entry) -> {
+            if (!SELFHOST.equals(id)) entry.requireStrictEndpoint();
+        });
         models = models == null ? List.of() : List.copyOf(models);
         egress = egress == null ? new Egress("", "", "", true) : egress;
     }
@@ -58,11 +64,14 @@ public record AiProperties(
     public record Routes(@DefaultValue List<String> textFast, @DefaultValue List<String> textStrong,
                          @DefaultValue List<String> assess, @DefaultValue("PT8S") Duration assessAttemptCap,
                          @DefaultValue List<String> plan, @DefaultValue List<String> planStrong,
-                         @DefaultValue List<String> tts, @DefaultValue List<String> ttsRu) {
+                         @DefaultValue List<String> tts, @DefaultValue List<String> ttsRu,
+                         @DefaultValue List<String> stt, @DefaultValue List<String> sttRu) {
         @ConstructorBinding
         public Routes {
             tts = tts == null ? List.of() : tts.stream().filter(value -> !value.isBlank()).toList();
             ttsRu = ttsRu == null ? List.of() : ttsRu.stream().filter(value -> !value.isBlank()).toList();
+            stt = stt == null ? List.of() : stt.stream().filter(value -> !value.isBlank()).toList();
+            sttRu = sttRu == null ? List.of() : sttRu.stream().filter(value -> !value.isBlank()).toList();
             textFast = textFast == null ? List.of() : List.copyOf(textFast);
             textStrong = textStrong == null ? List.of() : List.copyOf(textStrong);
             assess = assess == null ? List.of() : List.copyOf(assess);
@@ -71,6 +80,11 @@ public record AiProperties(
             if (assessAttemptCap == null || assessAttemptCap.isNegative() || assessAttemptCap.isZero()) {
                 throw new IllegalArgumentException("Invalid assess attempt cap");
             }
+        }
+
+        public Routes(List<String> textFast, List<String> textStrong, List<String> assess, Duration assessAttemptCap,
+                      List<String> plan, List<String> planStrong, List<String> tts, List<String> ttsRu) {
+            this(textFast, textStrong, assess, assessAttemptCap, plan, planStrong, tts, ttsRu, List.of(), List.of());
         }
 
         public Routes(List<String> textFast, List<String> textStrong, List<String> assess, Duration assessAttemptCap,
@@ -204,11 +218,44 @@ public record AiProperties(
             } catch (IllegalArgumentException exception) {
                 throw new IllegalArgumentException("Invalid provider URL");
             }
-            boolean loopback = "http".equals(uri.getScheme()) && ("127.0.0.1".equals(uri.getHost())
-                    || "localhost".equals(uri.getHost()) || "[::1]".equals(uri.getHost()));
-            if (!"https".equals(uri.getScheme()) && !loopback || uri.getHost() == null || uri.getUserInfo() != null) {
-                throw new IllegalArgumentException("Provider URLs must be https (http only on loopback) without credentials");
+            boolean http = "http".equals(uri.getScheme());
+            if (!"https".equals(uri.getScheme()) && !(http && privateHost(uri.getHost())) || uri.getHost() == null || uri.getUserInfo() != null) {
+                throw new IllegalArgumentException("Provider URLs must be https (http only on loopback or, for the self-hosted provider, a private host) "
+                        + "without credentials");
             }
+        }
+
+        /** The base URL of a provider other than {@code selfhost} follows the strict rule: https, or http on loopback only. */
+        void requireStrictEndpoint() {
+            for (String value : new String[] {baseUrl, authUrl}) {
+                if (value.isEmpty()) continue;
+                URI uri = URI.create(value);
+                if ("http".equals(uri.getScheme()) && !loopbackHost(uri.getHost())) {
+                    throw new IllegalArgumentException("Provider URLs must be https (http only on loopback) without credentials");
+                }
+            }
+        }
+
+        private static boolean loopbackHost(String host) {
+            return "127.0.0.1".equals(host) || "localhost".equals(host) || "[::1]".equals(host);
+        }
+
+        /**
+         * A host that http may be used for, as the self-hosted transcription container of the compose network: loopback, a single-label name (a
+         * compose service such as {@code stt}), or a private IPv4 literal (10/8, 172.16/12, 192.168/16). Never a public name or address.
+         */
+        private static boolean privateHost(String host) {
+            if (host == null) return false;
+            if (loopbackHost(host)) return true;
+            if (host.matches("[A-Za-z][A-Za-z0-9-]{0,62}")) return true;
+            java.util.regex.Matcher octets = java.util.regex.Pattern.compile("(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})").matcher(host);
+            if (!octets.matches()) return false;
+            int first = Integer.parseInt(octets.group(1));
+            int second = Integer.parseInt(octets.group(2));
+            for (int index = 1; index <= 4; index++) {
+                if (Integer.parseInt(octets.group(index)) > 255) return false;
+            }
+            return first == 10 || first == 172 && second >= 16 && second <= 31 || first == 192 && second == 168;
         }
     }
 
@@ -267,12 +314,18 @@ public record AiProperties(
      */
     public record Permits(@DefaultValue("16") int text, @DefaultValue("4") int tts, @DefaultValue("2") int image,
                           @DefaultValue("1") int video, @DefaultValue("4") int search, @DefaultValue("32") int assess,
-                          @DefaultValue("4") int imageSearch, @DefaultValue("2s") Duration queueWait) {
+                          @DefaultValue("4") int imageSearch, @DefaultValue("4") int stt, @DefaultValue("2s") Duration queueWait) {
+        @ConstructorBinding
         public Permits {
-            if (text < 1 || tts < 1 || image < 1 || video < 1 || search < 1 || assess < 1 || imageSearch < 1
+            if (text < 1 || tts < 1 || image < 1 || video < 1 || search < 1 || assess < 1 || imageSearch < 1 || stt < 1
                     || queueWait.isNegative()) {
                 throw new IllegalArgumentException("Invalid permits");
             }
+        }
+
+        /** Without the speech-to-text permits (#298): four, the default. */
+        public Permits(int text, int tts, int image, int video, int search, int assess, int imageSearch, Duration queueWait) {
+            this(text, tts, image, video, search, assess, imageSearch, 4, queueWait);
         }
 
         public int of(AiCapability capability) {
@@ -284,6 +337,7 @@ public record AiProperties(
                 case SEARCH -> search;
                 case ASSESS -> assess;
                 case IMAGE_SEARCH -> imageSearch;
+                case STT -> stt;
             };
         }
     }
@@ -297,7 +351,14 @@ public record AiProperties(
                          @DefaultValue("5000000") long assessMicros, @DefaultValue("5000000") long ttsMicros,
                          @DefaultValue("5000000") long imageMicros, @DefaultValue("5000000") long videoMicros,
                          @DefaultValue("5000000") long searchMicros, @DefaultValue("5000000") long imageSearchMicros,
-                         @DefaultValue("10s") Duration cacheTtl) {
+                         @DefaultValue("5000000") long sttMicros, @DefaultValue("10s") Duration cacheTtl) {
+        /** Without the speech-to-text budget (#298): five dollars a day, the default. */
+        public Budget(String zone, long textMicros, long assessMicros, long ttsMicros, long imageMicros, long videoMicros, long searchMicros,
+                      long imageSearchMicros, Duration cacheTtl) {
+            this(zone, textMicros, assessMicros, ttsMicros, imageMicros, videoMicros, searchMicros, imageSearchMicros, 5_000_000L, cacheTtl);
+        }
+
+        @ConstructorBinding
         public Budget {
             try {
                 ZoneId.of(zone);
@@ -305,7 +366,7 @@ public record AiProperties(
                 throw new IllegalArgumentException("Invalid budget zone");
             }
             if (textMicros < 0 || assessMicros < 0 || ttsMicros < 0 || imageMicros < 0 || videoMicros < 0
-                    || searchMicros < 0 || imageSearchMicros < 0 || cacheTtl.isNegative()) {
+                    || searchMicros < 0 || imageSearchMicros < 0 || sttMicros < 0 || cacheTtl.isNegative()) {
                 throw new IllegalArgumentException("Invalid budget");
             }
         }
@@ -321,6 +382,7 @@ public record AiProperties(
                 case VIDEO -> videoMicros;
                 case SEARCH -> searchMicros;
                 case IMAGE_SEARCH -> imageSearchMicros;
+                case STT -> sttMicros;
             };
         }
     }

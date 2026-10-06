@@ -63,7 +63,9 @@ final class ChatHttp implements AutoCloseable {
         Kind kind() { return kind; }
     }
 
-    /** Status line and the two headers the adapters use; {@code body} is empty for streamed and for non-2xx replies. */
+    /** Status line and the two headers the adapters use; {@code body} is empty for streamed replies and holds at most {@value #ERROR_BODY_BYTES} bytes of a non-2xx one (a provider's error code). */
+    static final int ERROR_BODY_BYTES = 4_096;
+
     record Reply(int status, String retryAfter, String requestId, byte[] body) { }
 
     /**
@@ -91,8 +93,7 @@ final class ChatHttp implements AutoCloseable {
         String requestId = response.headers().firstValue("x-request-id").orElse(null);
         InputStream raw = response.body();
         if (response.statusCode() / 100 != 2) {
-            closeQuietly(raw);
-            return new Reply(response.statusCode(), retryAfter, requestId, new byte[0]);
+            return new Reply(response.statusCode(), retryAfter, requestId, errorBody(raw, deadline));
         }
         var bounded = new Bounded(raw, maxBodyBytes);
         try (var watchdog = new Watchdog(bounded, idleNanos, deadline)) {
@@ -116,6 +117,20 @@ final class ChatHttp implements AutoCloseable {
             } finally {
                 closeQuietly(bounded);
             }
+        }
+    }
+
+    /** The first bytes of an error reply, best effort within what is left of the budget; empty when it cannot be read. Callers match it, never log it. */
+    private byte[] errorBody(InputStream raw, long deadline) {
+        var bounded = new Bounded(raw, ERROR_BODY_BYTES + 1);
+        try (var watchdog = new Watchdog(bounded, idleNanos, deadline)) {
+            byte[] head = bounded.readNBytes(ERROR_BODY_BYTES);
+            watchdog.touch();
+            return head;
+        } catch (IOException | RuntimeException unreadable) {
+            return new byte[0];
+        } finally {
+            closeQuietly(raw);
         }
     }
 

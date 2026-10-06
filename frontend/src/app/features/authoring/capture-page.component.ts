@@ -8,6 +8,7 @@ import { catchError, forkJoin, of } from 'rxjs';
 import { NativeDocument } from '../../content/native-document';
 import { OwnDeck } from '../own-decks/own-deck.models';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
+import { MicButtonComponent } from '../speech/mic-button.component';
 import { MAX_NOTES, NOTES_QUERY_PARAM, noteExcerpt, serializeNoteIds } from '../generation/note-sources';
 import { AuthoringApiService } from './authoring-api.service';
 import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService } from './capabilities-api.service';
@@ -15,7 +16,7 @@ import { CaptureNote, newCommandId } from './authoring.models';
 
 @Component({
     selector: 'app-capture-page',
-    imports: [ReactiveFormsModule, RouterLink],
+    imports: [ReactiveFormsModule, RouterLink, MicButtonComponent],
     templateUrl: './capture-page.component.html',
     styleUrls: ['./authoring-page.css', './capture-page.component.css'],
     changeDetection: ChangeDetectionStrategy.OnPush,
@@ -45,6 +46,10 @@ export class CapturePageComponent {
     readonly recovery = signal<'reload' | 'retry' | null>(null);
     /** The server offers AI generation (`aiGeneration`); false while unknown and when the read fails (fail closed). */
     readonly generationAvailable = signal(false);
+    /** The server offers speech-to-text (`speechToText`): the microphone sits next to the note field. */
+    readonly speechAvailable = signal(false);
+    private readonly noteField = viewChild<ElementRef<HTMLTextAreaElement>>('noteField');
+    protected readonly noteTarget = (): HTMLTextAreaElement | null => this.noteField()?.nativeElement ?? null;
     /** Ids of the picked notes (AI-08, #290). Only notes still in the list count, see {@link selectedNotes}. */
     readonly selected = signal<ReadonlySet<string>>(new Set());
     /** Why a pick was refused or cut short: said in words, never silently. */
@@ -78,7 +83,7 @@ export class CapturePageComponent {
 
     constructor() {
         this.capabilities.read().pipe(catchError(() => of(CAPABILITIES_UNAVAILABLE)), takeUntilDestroyed(this.destroyRef))
-            .subscribe(result => this.generationAvailable.set(result.aiGeneration.available));
+            .subscribe(result => { this.generationAvailable.set(result.aiGeneration.available); this.speechAvailable.set(result.speechToText.available); });
         this.load();
         effect(onCleanup => {
             const sentinel = this.loadSentinel()?.nativeElement;

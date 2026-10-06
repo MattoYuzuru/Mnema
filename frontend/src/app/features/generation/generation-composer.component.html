@@ -12,6 +12,7 @@
         [attr.aria-describedby]="uid + '-prompt-help' + (promptMissing() ? ' ' + uid + '-prompt-error' : '')"
         (input)="onInput($event)" (keydown)="onKeydown($event)"></textarea>
       <p class="hint" [id]="uid + '-prompt-help'">Enter — отправить, Shift+Enter — новая строка.</p>
+      @if (speechAvailable()) { <app-mic-button purpose="COMPOSER" [deckId]="deckId()" [field]="promptTarget" /> }
       @if (promptMissing()) {
         <p class="field-error" [id]="uid + '-prompt-error'" role="alert">Напишите, что вы хотите выучить, или прикрепите заметки.</p>
       }

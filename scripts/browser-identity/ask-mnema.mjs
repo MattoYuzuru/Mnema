@@ -156,7 +156,7 @@ export async function runWorkshopAsk(ctx, h) {
       voiceHint: text(root.querySelector('.ask-voice .ask-help')?.textContent),
       estimate: text(root.querySelector('.estimate')?.textContent), cta: [...root.querySelectorAll('.generate-cta')].map(node => text(node.textContent)),
       ctaDisabled: root.querySelector('.generate-cta')?.getAttribute('aria-disabled') ?? null,
-      statusRegions: root.querySelectorAll('[role=status]').length, textareas: root.querySelectorAll('textarea').length,
+      statusRegions: root.querySelectorAll('[role=status]').length, statusWhere: [...root.querySelectorAll('[role=status]')].map(node => node.tagName.toLowerCase() + '.' + String(node.className).split(' ')[0] + ' in ' + (node.parentElement?.tagName.toLowerCase() ?? '')), textareas: root.querySelectorAll('textarea').length,
       ids: (() => { const all = [...document.querySelectorAll('[id]')].map(node => node.id); return all.length - new Set(all).size; })() };`);
   /** Clicks «Запустить» and waits for the Workshop of the new session. Returns its id. */
   const startSession = async () => {
@@ -176,7 +176,7 @@ export async function runWorkshopAsk(ctx, h) {
       heading2: text(root?.querySelector('h2')?.textContent), busy: root?.querySelector('article')?.getAttribute('aria-busy') ?? null,
       strips: document.querySelectorAll('.rewrite-strip').length, preview: Boolean(root?.querySelector('app-exercise-preview-host')),
       history: [...(root?.querySelectorAll('.edit-history .history-ask') ?? [])].map(node => text(node.textContent)), summary: text(document.querySelector('section.workshop .summary')?.textContent),
-      regions: document.querySelectorAll('section.workshop [role=status]:not(.document-announcement)').length, success: text(root?.querySelector('.notice.success')?.textContent),
+      regions: document.querySelectorAll('section.workshop [role=status]:not(.document-announcement):not(app-mic-button *)').length, success: text(root?.querySelector('.notice.success')?.textContent),
       successLink: root?.querySelector('.notice.success a')?.getAttribute('href') ?? null,
       focusOnHeading: document.activeElement === root?.querySelector('h2'),
       ids: (() => { const all = [...document.querySelectorAll('[id]')].map(node => node.id); return all.length - new Set(all).size; })() };`, scope);
@@ -288,7 +288,7 @@ export async function runWorkshopAsk(ctx, h) {
     const afterRead = await credits();
     need(afterRead.reserved === before.reserved && afterRead.used === before.used, `reading the sentence changed the credits: ${JSON.stringify(before)} -> ${JSON.stringify(afterRead)}`);
     need((await sessionsOfDeck()).length === sessionsBefore, 'a session exists before «Запустить»');
-    need(first.statusRegions === 1, `the composer has ${first.statusRegions} status regions, not one`);
+    need(first.statusRegions === 1, `the composer has ${first.statusRegions} status regions, not one (${first.statusWhere.join('; ')})`);
     need(first.ids === 0, `${first.ids} duplicate ids on the page`);
     await shots('chips', 'the chips', 'app-ask-mnema');
     // The owner edits the chips: three mechanics, then one dropped; the number stays 3.

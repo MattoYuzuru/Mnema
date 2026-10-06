@@ -64,7 +64,7 @@
         <app-learner-exercise [exercise]="presentation" [transcriptRevealed]="presentation.transcriptRevealed"
           [resetKey]="presentation.presentationId" [hints]="hints()" [hintPending]="hintPending()"
           [transcriptLoading]="transcriptLoading()" [busy]="phase() === 'submitting'" [pairChecker]="pairChecker()"
-          [idPrefix]="'study-' + presentation.ordinal" (answered)="answer($event)" (hintRequested)="requestHint($event)"
+          [idPrefix]="'study-' + presentation.ordinal" [speechAvailable]="speechAvailable()" [deckId]="deckId" (answered)="answer($event)" (hintRequested)="requestHint($event)"
           (transcriptRequested)="revealTranscript()" (dirtyChange)="setAnswerDirty($event)" />
       </article>
     }
