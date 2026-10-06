@@ -67,7 +67,8 @@
       "code": "FREE_RESPONSE_ALTERNATIVES_NOT_DISTINCT",
       "mechanic": "FREE_RESPONSE",
       "phase": "LINT",
-      "rule": "Accepted alternatives are distinct after the exercise's own matching rule (normalization, or soft normalization in SOFT mode)."
+      "rule": "Accepted alternatives are distinct after the exercise's own matching rule (normalization, or soft normalization in SOFT mode). The validator drops later repeats with the warning FREE_RESPONSE_ALTERNATIVE_DROPPED before it lints, so only the lint run alone reports this code.",
+      "fixtureExempt": true
     },
     {
       "code": "FREE_RESPONSE_SOFT_EMPTY",

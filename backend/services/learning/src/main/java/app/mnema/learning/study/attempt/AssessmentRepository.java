@@ -113,6 +113,26 @@ class AssessmentRepository {
                 .param("attempt", attempt).param("from", from).update() == 1;
     }
 
+    /**
+     * The grader takes an answer: true for exactly one caller while the answer is ASSESSING and nobody has taken it. The process that accepted the answer
+     * and a worker process (the api process has no provider key in a split topology) race here; the loser grades nothing.
+     */
+    boolean claim(UUID attempt) {
+        return jdbc.sql("""
+                UPDATE app_learning.study_assessment SET claimed_at=statement_timestamp()
+                 WHERE attempt_id=:attempt AND state='ASSESSING' AND claimed_at IS NULL
+                """).param("attempt", attempt).update() == 1;
+    }
+
+    /** Answers nobody has taken that still have time for a grading call (the 250 ms of {@code prepare}), oldest first: the worker's sweep. */
+    java.util.List<UUID> unclaimed(int limit) {
+        return jdbc.sql("""
+                SELECT attempt_id FROM app_learning.study_assessment
+                 WHERE state='ASSESSING' AND claimed_at IS NULL AND deadline_at>statement_timestamp()+interval '250 milliseconds'
+                 ORDER BY created_at LIMIT :limit
+                """).param("limit", limit).query(UUID.class).list();
+    }
+
     /** The attempt became terminal: the state is DONE and the answer text is no longer kept here. */
     boolean finish(UUID attempt, Instant now) {
         return jdbc.sql("""

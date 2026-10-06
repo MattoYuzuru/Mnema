@@ -38,6 +38,39 @@ public final class EvalStack implements AutoCloseable {
                 base.breaker(), base.permits(), base.budget(), base.userKey(), base.prompt()));
     }
 
+    /**
+     * The text route of {@code application.properties} as production runs it: DeepSeek direct (flash, then pro on the strong route) with
+     * OpenRouter's DeepSeek as the fallback. Keys come from {@code MNEMA_AI_DEEPSEEK_API_KEY} and {@code MNEMA_AI_OPENROUTER_API_KEY}.
+     */
+    public static EvalStack production() {
+        Map<String, AiProperties.Provider> providers = new LinkedHashMap<>();
+        providers.put("deepseek", new AiProperties.Provider(true, "https://api.deepseek.com", env("MNEMA_AI_DEEPSEEK_API_KEY"), "", "", ""));
+        providers.put("openrouter", new AiProperties.Provider(true, "https://openrouter.ai/api/v1", env("MNEMA_AI_OPENROUTER_API_KEY"), "", "", ""));
+        List<String> fast = List.of("deepseek:deepseek-flash", "openrouter:deepseek/deepseek-v4.1-flash");
+        List<String> strong = List.of("deepseek:deepseek-v4-pro", "openrouter:deepseek/deepseek-v4-pro");
+        AiProperties base = AiTestSupport.properties("", AiTestSupport.routes(fast, strong, fast), providers);
+        List<AiProperties.Model> models = List.of(AiTestSupport.FLASH, AiTestSupport.PRO,
+                new AiProperties.Model("openrouter", "deepseek/deepseek-v4.1-flash", 6_000, 300_000, 1_200_000),
+                new AiProperties.Model("openrouter", "deepseek/deepseek-v4-pro", 44_000, 1_320_000, 3_960_000));
+        return assemble(new AiProperties(base.provider(), base.routes(), base.providers(), models, base.transport(), base.retry(),
+                base.breaker(), base.permits(), base.budget(), base.userKey(), base.prompt()));
+    }
+
+    /**
+     * One judge model of the golden eval, alone, through OpenRouter on every route; the prices (micro-USD per million tokens) come from
+     * {@code https://openrouter.ai/api/v1/models} and are used for the cost of the judge calls only.
+     */
+    public static EvalStack judge(String model, long inputMicrosPerMillion, long outputMicrosPerMillion) {
+        Map<String, AiProperties.Provider> providers = new LinkedHashMap<>();
+        providers.put("openrouter", new AiProperties.Provider(true, "https://openrouter.ai/api/v1", env("MNEMA_AI_OPENROUTER_API_KEY"), "", "", ""));
+        List<String> route = List.of("openrouter:" + model);
+        AiProperties base = AiTestSupport.properties("", AiTestSupport.routes(route, route, route), providers);
+        List<AiProperties.Model> models = List.of(new AiProperties.Model("openrouter", model, inputMicrosPerMillion, inputMicrosPerMillion,
+                outputMicrosPerMillion));
+        return assemble(new AiProperties(base.provider(), base.routes(), base.providers(), models, base.transport(), base.retry(),
+                base.breaker(), base.permits(), base.budget(), base.userKey(), base.prompt()));
+    }
+
     public static EvalStack create(boolean live) {
         Map<String, AiProperties.Provider> providers = new LinkedHashMap<>();
         if (live) {

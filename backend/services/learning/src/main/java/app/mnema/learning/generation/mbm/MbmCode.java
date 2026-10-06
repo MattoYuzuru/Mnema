@@ -29,7 +29,6 @@ public enum MbmCode {
     MBM_TABLE_HEADER_BLANK(Severity.ERROR, "Every column heading must be nonblank."),
     MBM_TABLE_TOO_WIDE(Severity.ERROR, "A table has at most 12 columns."),
     MBM_TABLE_TOO_TALL(Severity.ERROR, "A table has at most 100 body rows."),
-    MBM_TABLE_RAGGED(Severity.ERROR, "Every body row has exactly as many cells as the header."),
     MBM_SOURCE_NOT_IN_RESEARCH(Severity.ERROR, "Every ::sources line is [n] URL where n and the exact URL belong to one result of the session research."),
     MBM_UNKNOWN_HANDLE(Severity.ERROR, "A [[handle]] must be one of the handles given for the edited range; new documents have none."),
     MBM_DUPLICATE_HANDLE(Severity.ERROR, "A handle may be used on one block only."),
@@ -39,6 +38,8 @@ public enum MbmCode {
     MBM_LINK_NOT_ALLOWED(Severity.WARNING, "The link URL is not in the allowlist: the label stays as text and the URL is dropped."),
     MBM_HANDLE_TYPE_CHANGED(Severity.WARNING, "The block with this handle changed type: a new node ID was allocated."),
     MBM_LITERAL_DELIMITER(Severity.WARNING, "A run of three or more asterisks, or an asterisk run that could open emphasis but has no closer, stays literal text."),
+    MBM_TABLE_ROW_NORMALIZED(Severity.WARNING, "A body row with fewer cells than the header was padded with empty cells; a row with more had its extra cells joined to the last cell with \" | \"."),
+    MBM_STRAY_DIRECTIVE_CLOSER(Severity.WARNING, "A line of only colons (two or more), or colons followed by end, is not a directive; it was dropped."),
     MBM_LINK_REJECTED_BY_PROFILE(Severity.WARNING, "An allowlist or research URL violates the native-v1 href profile and was dropped before compilation (reported at line 0).");
 
     /** ERROR findings stop compilation (no document); WARNING findings accompany a compiled document. */

@@ -51,7 +51,7 @@ class GenerationController {
 
     /**
      * {@code createIntent}: one sentence of «Попросить Мнему…» to a spec, chips and notes. Free (nothing is reserved or debited) and
-     * stateless: no body is stored and nothing is replayed.
+     * stateless: an ephemeral request is handed to the worker and removed at completion or the deadline; nothing is replayed.
      */
     @PostMapping(value = "/decks/{deckId}/generation-intents", consumes = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<JsonNode> intent(@AuthenticationPrincipal Jwt identity, @PathVariable String deckId, InputStream body) {

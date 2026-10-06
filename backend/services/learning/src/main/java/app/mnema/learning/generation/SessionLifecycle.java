@@ -745,7 +745,7 @@ class SessionLifecycle {
     // ------------------------------------------------------------------ exercises
 
     /** One validated exercise of an {@code EXERCISES} step: the artifact it fills and the command it proposes. */
-    record Proposal(UUID artifactId, ObjectNode command, String title) { }
+    record Proposal(UUID artifactId, ObjectNode command, String title, List<String> warnings) { }
 
     /**
      * What an {@code EXERCISES} run produced: the exercises that passed validation (at most one per open artifact of the step, in the
@@ -828,7 +828,8 @@ class SessionLifecycle {
             ObjectNode payload = Json.object().put("kind", "EXERCISE_COMMAND");
             payload.set("command", proposal.command());
             ObjectNode validation = Json.object();
-            validation.putArray("warnings");
+            var warnings = validation.putArray("warnings");
+            proposal.warnings().forEach(code -> warnings.addObject().put("code", code));
             ObjectNode handles = Json.object();
             draft.handles().forEach(handles::put);
             repository.insertRevision(new Revision(revisionId, artifact.artifactId(), revisionNo, "INITIAL", payload, handles,

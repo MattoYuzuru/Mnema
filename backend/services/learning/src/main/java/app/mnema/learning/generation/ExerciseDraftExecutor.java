@@ -272,7 +272,7 @@ class ExerciseDraftExecutor {
         List<Proposal> proposals = new ArrayList<>();
         for (int index = 0; index < Math.min(accepted.size(), artifacts.size()); index++) {
             ExerciseValidator.Accepted exercise = accepted.get(index);
-            proposals.add(new Proposal(artifacts.get(index), exercise.artifactCommand(), exercise.title()));
+            proposals.add(new Proposal(artifacts.get(index), exercise.artifactCommand(), exercise.title(), exercise.warnings()));
         }
         BigDecimal rubMicros = BigDecimal.valueOf(providerCostMicros).multiply(settings.usdRubRate()).setScale(0, RoundingMode.CEILING);
         ExerciseDraft draft = new ExerciseDraft(request.prompt().promptVersion(), modelRoute, proposals, rubMicros.longValueExact(),

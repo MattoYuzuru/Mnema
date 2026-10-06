@@ -290,6 +290,12 @@ compose() {
   require_command docker
   docker compose version >/dev/null 2>&1 || fail "Docker Compose plugin is required"
   local build_id
+  local compose_files=(--file "$COMPOSE_FILE")
+  case "${MNEMA_LOCAL_AI_SPLIT:-false}" in
+    true) compose_files+=(--file "$ROOT_DIR/compose.local-ai-worker.yml") ;;
+    false) ;;
+    *) fail "MNEMA_LOCAL_AI_SPLIT must be true or false" ;;
+  esac
   # Compose parses dotenv as data; never source the owner's file as shell code. The AI provider names (MNEMA_AI_*,
   # LEARNING_FEATURES_AI_GENERATION_ENABLED, LEARNING_FEATURES_AI_ASSESSMENT_ENABLED, LEARNING_FEATURES_IMAGE_SEARCH_ENABLED, LEARNING_AI_PROVIDER) are not listed here: Compose substitutes them from this
   # process environment or from that file straight into the Learning service (see compose.local-full-stack.yml).
@@ -317,7 +323,7 @@ compose() {
   MNEMA_LOCAL_STORAGE_TLS_KEY_FILE="$STORAGE_KEY_FILE" \
   MNEMA_LOCAL_CA_CERT_FILE="$CA_CERT_FILE" \
   MNEMA_LOCAL_TRUSTSTORE_FILE="$TRUSTSTORE_FILE" \
-    docker compose --env-file "$oauth_env_file" --project-name "$PROJECT_NAME" --file "$COMPOSE_FILE" "$@"
+    docker compose --env-file "$oauth_env_file" --project-name "$PROJECT_NAME" "${compose_files[@]}" "$@"
 }
 
 require_private_state() {

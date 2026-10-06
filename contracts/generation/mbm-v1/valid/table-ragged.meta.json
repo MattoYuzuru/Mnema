@@ -1,0 +1,17 @@
+{
+  "description": "Rows of a different width than the header are normalised, each with a warning: fewer cells are padded with empty cells, extra cells are joined to the last cell with \" | \".",
+  "expected": {
+    "warnings": [
+      {
+        "line": 4,
+        "column": 1,
+        "code": "MBM_TABLE_ROW_NORMALIZED"
+      },
+      {
+        "line": 5,
+        "column": 1,
+        "code": "MBM_TABLE_ROW_NORMALIZED"
+      }
+    ]
+  }
+}

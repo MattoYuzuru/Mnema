@@ -339,12 +339,34 @@ class MbmCompilerTest {
     }
 
     @Test
+    void raggedTableRowsAreNormalisedWithAWarning() {
+        var result = (MbmResult.Success) compile("::table{caption=\"c\"}\n| a | b |\n|---|---|\n| 1 |\n| 2 | 3 | 4 | 5 |\n| 6 | 7 |\n| |\n");
+        assertThat(result.warnings()).extracting(w -> w.line() + ":" + w.code()).containsExactly(
+                "4:MBM_TABLE_ROW_NORMALIZED", "5:MBM_TABLE_ROW_NORMALIZED", "7:MBM_TABLE_ROW_NORMALIZED");
+        assertThat(result.document().toString()).contains("4 | 5").doesNotContain("MBM_TABLE_RAGGED");
+        // joined text that outgrows a cell is still an error
+        assertThat(errors("::table{caption=\"c\"}\n| a |\n|---|\n| " + "z".repeat(2500) + " | " + "y".repeat(2500) + " |\n"))
+                .containsExactly("4:1:VALUE_TOO_LONG");
+    }
+
+    @Test
+    void strayDirectiveClosersAreDroppedWithAWarningButNamesStayUnknown() {
+        var result = (MbmResult.Success) compile("a\n\n::\n:::\n::end\n\nb\n");
+        assertThat(result.warnings()).extracting(w -> w.line() + ":" + w.code())
+                .containsExactly("3:MBM_STRAY_DIRECTIVE_CLOSER", "4:MBM_STRAY_DIRECTIVE_CLOSER", "5:MBM_STRAY_DIRECTIVE_CLOSER");
+        assertThat(errors("::note\ntext")).containsExactly("1:1:UNKNOWN_DIRECTIVE");
+        assertThat(errors("::End\ntext")).containsExactly("1:1:UNKNOWN_DIRECTIVE");
+        // inside a fence the line is code
+        assertThat(((MbmResult.Success) compile("```\n::\n```\n")).warnings()).isEmpty();
+    }
+
+    @Test
     void tablesReportTheirOwnProblems() {
         assertThat(errors("::table{caption=\"c\"}\n| a |\n")).containsExactly("2:1:TABLE_MALFORMED");
         assertThat(errors("::table{caption=\"c\"}\n| a | b |\n|---|\n")).containsExactly("2:1:TABLE_MALFORMED");
         assertThat(errors("::table{caption=\"c\"}\n| a |\n| x |\n| 1 |")).containsExactly("2:1:TABLE_MALFORMED");
         assertThat(errors("::table{caption=\"c\"}\n| a | b |\n|---|---|\n| 1 |\n| 1 | 2 | 3 |\n" + "| " + "z".repeat(4097) + " | 1 |\n"))
-                .containsExactly("4:1:TABLE_RAGGED", "5:1:TABLE_RAGGED", "6:1:VALUE_TOO_LONG");
+                .containsExactly("6:1:VALUE_TOO_LONG");
         assertThat(errors("::table{caption=\"c\"}\n| " + "h".repeat(1025) + " |\n|---|\n")).containsExactly("2:1:VALUE_TOO_LONG");
         assertThat(errors("::table{caption=\"c\" caption=\"d\" x=\"1\"}\n| a |\n|---|")).containsExactly("1:1:DUPLICATE_ATTRIBUTE:caption",
                 "1:1:UNKNOWN_ATTRIBUTE:x");
@@ -421,7 +443,7 @@ class MbmCompilerTest {
 
     @Test
     void directiveNamesAreExactAndAnythingAfterTheColonsIsAnUnknownDirective() {
-        assertThat(errors("::")).containsExactly("1:1:UNKNOWN_DIRECTIVE");
+        assertThat(errors("::")).containsExactly("1:null:EMPTY_DOCUMENT"); // a lone closer is dropped with a warning
         assertThat(errors("::Audio{}")).containsExactly("1:1:UNKNOWN_DIRECTIVE");
         assertThat(errors("::tablex")).containsExactly("1:1:UNKNOWN_DIRECTIVE");
         assertThat(errors(":::table")).containsExactly("1:1:UNKNOWN_DIRECTIVE");

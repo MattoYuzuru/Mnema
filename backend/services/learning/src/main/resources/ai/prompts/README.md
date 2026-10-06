@@ -1,4 +1,4 @@
-# Prompt library (prompt_version v1)
+# Prompt library (active v1, candidate v2)
 
 Versioned prompt sections for the AI layer. These are resource files read by `app.mnema.learning.ai.prompt`
 (AI-02, [#282](https://github.com/MattoYuzuru/Mnema/issues/282)): `PromptLibrary` loads and validates them, `PromptRenderer`
@@ -9,6 +9,15 @@ the text is distilled from the
 adapted to the accepted contracts: [MBM v1](../../../../../../../../contracts/generation/mbm-v1/README.md) and the
 [exercise output](../../../../../../../../contracts/generation/exercises/README.md). The assistant is «Мнема»; sections are
 Russian because the product language is Russian.
+
+## Candidate v2 (not active)
+
+The full v2 snapshot keeps the bodies of v1 unchanged except the exercise CLOZE rule: passage
+and accepted answers remain verbatim in the source language; only the instructions follow the
+output language. `MNEMA_GOLDEN_PROMPT_VERSION=v2` evaluates it without changing
+`learning.ai.prompt.version=v1`. Candidate reports and the owner acceptance sample are part of
+[#300](https://github.com/MattoYuzuru/Mnema/issues/300); activation requires the machine gate,
+owner acceptance and calibrated judges. Existing v1 provenance remains valid.
 
 ## Layout and layers
 

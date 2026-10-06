@@ -329,7 +329,10 @@ browser-facing Learning service, never the media processor or the frontend.
 | `LEARNING_FEATURES_IMAGE_SEARCH_ENABLED` | `true` turns `imageSearch` on (default `false`): the stock images of materials (`::image mode=search`), «Найти похожее», «Заменить» and the choice among found images. It needs a callable source (Wikimedia Commons always is, Pixabay with its key, Openverse with credentials) or `LEARNING_AI_PROVIDER=stub` (a deterministic search and a drawn PNG, no network); only commercially usable licenses are kept (CC0, public domain, CC BY, CC BY-SA, Pixabay Content License) and the author, source and license go into the image caption on approval. Verified live on 2026-10-05 with the owner's keys: Pixabay, Openverse and Wikimedia Commons (search and safe download) |
 | `LEARNING_FEATURES_WEB_SEARCH_ENABLED` | `true` включает `webSearch` (по умолчанию `false`): «Проверять факты» в composer, шаг `RESEARCH` и раздел «Источники» материала. Нужна вызываемая запись `learning.ai.routes.search` (ключ и folder Yandex; Perplexity — ключ и proxy) или `LEARNING_AI_PROVIDER=stub` (детерминированная выдача `example.org`, без сети). Каждый запрос поиска платный; потолки 2/6/3 запроса на материал (Средний/Подробный/Авто) и `learning.ai.research.max-requests`. Без него сессия с «Проверять факты» на effort выше Кратко — `409 CAPABILITY_UNAVAILABLE` |
 | `LEARNING_AI_PROVIDER` | `stub` selects the deterministic Stub for every text route (no key needed); empty uses the real routes |
-| `MNEMA_RUNTIME_ROLES` | Optional (`api`, `worker` or `all`; default `all`). Generation steps are executed by the worker half only; the local stack runs both in one process, so nothing needs to be set. A process with `api` creates and reads sessions but never claims a step |
+| `MNEMA_LOCAL_AI_SPLIT` | `true` adds the optional local worker overlay; default `false` keeps `all`. Set it on every launcher command for that stack. Provider credentials are cleared from the API and only the worker receives them. See the AI runbook |
+| `MNEMA_RUNTIME_ROLES` | Optional (`api`, `worker` or `all`; default `all`). Generation steps, speech inputs and the grading of answers are executed by the worker half only; the local stack runs both in one process, so nothing needs to be set. A process with `api` creates and reads sessions but never claims a step |
+| `MNEMA_PROVIDER_CREDENTIALS` | Optional (`local` default, or `worker`): for an `api` process whose worker holds the keys, so that `GET /api/capabilities` is reported from the shared configuration without a key on that host. Refused with any other role. See the [AI runbook](../operations/ai-runbook.md) |
+| `MANAGEMENT_SERVER_PORT` / `MANAGEMENT_SERVER_ADDRESS` / `MNEMA_MANAGEMENT_EXPOSURE` | Optional, off by default: actuator `metrics` on a separate private port (for example `18083`, `127.0.0.1`, `health,info,metrics`); never on the public API. The three go together or the service refuses to start. `python3 scripts/ai-ops/metrics_snapshot.py --url http://127.0.0.1:18083/actuator` prints a table; metrics and thresholds are in the runbook |
 
 **Enable it locally.** Put the names above in the private `.env`, then restart with the launcher. With a DeepSeek key,
 the user-key secret and the flag, `GET /api/capabilities` reports `aiGeneration: {available: true}`; without a key it
@@ -337,7 +340,7 @@ reports `PROVIDER_NOT_CONFIGURED`, with the flag off `DISABLED`, and `TEMPORARIL
 route entry is open or the global daily budget is spent. To try the plumbing without a provider set
 `LEARNING_AI_PROVIDER=stub` and the flag. Each provider call is journaled without text in `app_learning.ai_provider_call`
 (90 days) and logged as `ai_call provider=... model=... capability=... outcome=... latency_ms=... in_hit=... in_miss=...
-out=... cost_micros=...`; metrics are `mnema_ai_calls_total`, `mnema_ai_call_seconds` and `mnema_ai_cost_micros_total`.
+out=... cost_micros=...`; metrics are `mnema_ai_calls_total`, `mnema_ai_call_seconds` and `mnema_ai_cost_micros_total` (the whole list, the private management port that serves them and the thresholds are in the [AI runbook](../operations/ai-runbook.md)).
 Every property is listed in the [runtime policy index](../engineering/runtime-policy-index.md).
 
 **Opt-in checks.** Gradle does not treat the environment as a test input, so `cleanTest` forces the rerun. Both skip
@@ -362,12 +365,26 @@ python3 scripts/ai-spikes/stt_gemini_spike.py --samples <dir of <model>-<lang>-<
 # Live generation: the real worker path creates a session from «20 глаголов движения» on DeepSeek, expects REVIEW within six
 # minutes, a valid native-v1 revision and the ledger debit with the measured cost (a few cents; needs the key)
 cd backend && MNEMA_AI_LIVE=true ./gradlew :services:learning:cleanTest :services:learning:test --tests '*GenerationLiveProviderTest*'
+
+# Golden eval (issue #300): the ~300 fixtures of contracts/generation/eval through the real pipeline pieces, scored by two
+# judges of other model families via OpenRouter; stub is offline and proves only the plumbing
+cd backend && MNEMA_AI_EVAL=stub ./gradlew :services:learning:goldenEval
+# Live: the production text route plus the judges; costs about $2 to $3 (stops itself at MNEMA_GOLDEN_BUDGET_MICROS, default $2.80);
+# needs MNEMA_AI_DEEPSEEK_API_KEY and MNEMA_AI_OPENROUTER_API_KEY in the environment. Report in build/reports/golden-eval/
+cd backend && MNEMA_AI_EVAL=live ./gradlew :services:learning:goldenEval
 ```
 
 The eval renders the prompt of every MBM valid fixture as a material task, compiles the answer with the MBM compiler,
 repairs once and reports validity pass rate, repair rate, p50/p95 latency and cost; neither test prints a key or a
 prompt. The live variants need the key exported in the shell that runs Gradle (for example `export
 MNEMA_AI_DEEPSEEK_API_KEY=...` from your private environment, not on the command line).
+
+The golden eval is not part of `check` or `quality`: `goldenEval` is its own Gradle task, and the offline contract of the
+corpus (`GoldenCorpusTest`, `GoldenEvalSmokeTest`) is what CI runs. Its report (`report.json`, `report.md`: validity on the
+first try and after repair, repair rate, latency p50/p95, cost per item and per accepted item, judge acceptance and
+agreement, thresholds with pass or fail, the boundaries of the corpus) holds identifiers and numbers only; `owner-review.md`
+is the 40-item sample with generated texts for the owner's acceptance and stays out of the repository. Corpus, rubric,
+thresholds and what it does not cover: [`contracts/generation/eval`](../../contracts/generation/eval/README.md).
 
 ## Historical v1 self-host reference
 
