@@ -2,7 +2,7 @@ import { SegmentedOption } from '../../shared/segmented-choice.component';
 import { Capability } from '../authoring/capabilities-api.service';
 import { GenerationProblem } from './generation-problem';
 import {
-    ArtifactErrorCode, ArtifactSummary, ArtifactTurn, BlockingBucket, EditAction, EditPreset, Effort, GenerationEstimate, ImageAttribution, ImageSource,
+    ArtifactErrorCode, ArtifactResearch, ArtifactSummary, ArtifactTurn, BlockingBucket, EditAction, EditPreset, Effort, GenerationEstimate, ImageAttribution, ImageSource,
     NoteArchiveResult, NoteSkipReason, NotesMode, SessionKind, SessionSummary, SlotErrorCode, SlotKind, SlotState, SpeechVoice, TurnErrorCode
 } from './generation.models';
 
@@ -140,7 +140,8 @@ export type StatusShape = 'ready' | 'writing' | 'queued' | 'failed' | 'done' | '
 export interface ArtifactStatus { readonly shape: StatusShape; readonly word: string; }
 
 /** The shape (●◐○✕✓…) says the status without colour; the word is what a screen reader hears. */
-export function artifactStatus(artifact: ArtifactSummary): ArtifactStatus {
+export function artifactStatus(artifact: ArtifactSummary, researching = false): ArtifactStatus {
+    if (researching && (artifact.state === 'QUEUED' || artifact.state === 'GENERATING')) return { shape: 'writing', word: 'ищу источники' };
     switch (artifact.state) {
         case 'QUEUED': return { shape: 'queued', word: 'ждёт очереди' };
         case 'GENERATING': return { shape: 'writing', word: 'пишется' };
@@ -665,4 +666,23 @@ export function audioFailureReason(code: SlotErrorCode | null): string {
         case 'USAGE_LIMIT': return 'Не хватает лимита на озвучку.';
         default: return 'Не удалось озвучить.';
     }
+}
+
+/** Search requests a material may make per effort (architecture §14, `learning.ai.research`); «Кратко» is never researched. */
+const RESEARCH_REQUEST_CAP: Readonly<Partial<Record<Effort, number>>> = { MEDIUM: 2, DETAILED: 6, AUTO: 3 };
+/** `WEB_SEARCH_QUERY` on rate card v1 (contracts/usage/rate-card-v1.json). The estimate has no per-line breakdown to read it from. */
+export const WEB_SEARCH_QUERY_CREDITS = 5;
+
+/** What «Проверять факты» does at this effort, in words; explains why it is off on «Кратко». */
+export function describeResearchHint(effort: Effort): string {
+    const cap = RESEARCH_REQUEST_CAP[effort];
+    if (cap === undefined) return 'Недоступно на «Кратко»: выберите «Средне» или «Подробно».';
+    const credits = cap * WEB_SEARCH_QUERY_CREDITS;
+    return `Поищу в сети (до ${cap}${NBSP}${plural(cap, 'запроса', 'запросов', 'запросов')}) и сошлюсь на источники. Стоит до ${credits}${NBSP}кредитов.`;
+}
+
+/** «Проверено по 3 источникам»; `null` when the material has no sources (the line is then not shown at all). */
+export function describeResearch(research: ArtifactResearch | null): string | null {
+    const count = research?.results.length ?? 0;
+    return count === 0 ? null : `Проверено по${NBSP}${count}${NBSP}${count % 10 === 1 && count % 100 !== 11 ? 'источнику' : 'источникам'}`;
 }

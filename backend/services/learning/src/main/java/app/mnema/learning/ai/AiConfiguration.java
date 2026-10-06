@@ -19,7 +19,7 @@ import java.util.random.RandomGenerator;
 
 /** Wires the provider layer. Providers without a base URL or switched off do not get an adapter. */
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties({AiProperties.class, ImageSearchSettings.class, SpeechSettings.class})
+@EnableConfigurationProperties({AiProperties.class, ImageSearchSettings.class, SpeechSettings.class, SttSettings.class, ResearchSettings.class})
 class AiConfiguration {
     private static final Logger LOG = LoggerFactory.getLogger(AiConfiguration.class);
 
@@ -86,6 +86,73 @@ class AiConfiguration {
         adapters.forEach((id, adapter) -> LOG.info("ai_speech_provider provider={} egress={} state={}", id, adapter.egress().label(),
                 adapter.configured() ? "configured" : "not_configured"));
         return new RoutedSpeechSynthesis(properties, settings, adapters, breakers, budget, journal, new AiTelemetry(meters));
+    }
+
+    /**
+     * The web search port of the research step (#299): the Stub with {@code learning.ai.provider=stub}, else the {@code learning.ai.routes.search} entries over
+     * Yandex Search (a key and a folder, direct) and Perplexity (a key and, with {@code egress=proxy}, an active proxy). The bean always exists; whether any
+     * entry can be called is {@link WebSearch#configured()}, which the {@code webSearch} capability reads.
+     */
+    @Bean
+    WebSearch webSearch(AiProperties properties, ResearchSettings settings, EgressClients clients, BreakerRegistry breakers, AiBudget budget,
+                        JdbcCallJournal journal, MeterRegistry meters,
+                        @org.springframework.beans.factory.annotation.Value("${learning.generation.usd-rub-rate:85}") java.math.BigDecimal usdRubRate) {
+        if (AiProperties.STUB.equals(properties.provider())) {
+            LOG.warn("ai_stub_active learning.ai.provider=stub: web search is answered by the deterministic Stub");
+            return new StubWebSearch();
+        }
+        Map<String, WebSearchAdapter> adapters = webSearchAdapters(properties, settings, clients, usdRubRate, Clock.systemUTC());
+        adapters.forEach((id, adapter) -> LOG.info("ai_search_provider provider={} egress={} state={}", id, adapter.egress().label(),
+                adapter.configured() ? "configured" : "not_configured"));
+        return new RoutedWebSearch(properties, settings, adapters, breakers, budget, journal, new AiTelemetry(meters));
+    }
+
+    /** The web search adapters whose provider entry ({@code yandex-search}, {@code perplexity}) exists; a proxied provider without an active proxy has no transport. */
+    static Map<String, WebSearchAdapter> webSearchAdapters(AiProperties properties, ResearchSettings settings, EgressClients clients,
+                                                           java.math.BigDecimal usdRubRate, Clock clock) {
+        Map<String, WebSearchAdapter> adapters = new LinkedHashMap<>();
+        AiProperties.Provider yandex = properties.providers().get("yandex-search");
+        if (yandex != null && yandex.egress() != AiProperties.EgressMode.DIRECT) {
+            // a Russian counterparty is reached from this server, never through the gateway
+            throw new IllegalArgumentException("learning.ai.providers.yandex-search.egress must be direct");
+        }
+        if (yandex != null) adapters.put(YandexWebSearch.PROVIDER, new YandexWebSearch(yandex, clients.http(yandex.egress()), settings, usdRubRate, clock));
+        AiProperties.Provider perplexity = properties.providers().get("perplexity");
+        if (perplexity != null) adapters.put(PerplexityWebSearch.PROVIDER, new PerplexityWebSearch(perplexity, clients.http(perplexity.egress()), settings, clock));
+        return adapters;
+    }
+
+    /**
+     * The speech-to-text port (#298): the Stub with {@code learning.ai.provider=stub}, else the {@code learning.ai.routes.stt} / {@code stt-ru} entries over
+     * the self-hosted OpenAI-compatible container ({@code selfhost}: a base URL) and Gemini ({@code google}: a key and, with {@code egress=proxy}, an
+     * active proxy). The bean always exists; whether any entry can be called is {@link Transcription#configured()}, which the {@code speechToText}
+     * capability reads.
+     */
+    @Bean
+    Transcription transcription(AiProperties properties, SttSettings settings, EgressClients clients, BreakerRegistry breakers, AiBudget budget,
+                                JdbcCallJournal journal, MeterRegistry meters) {
+        if (AiProperties.STUB.equals(properties.provider())) {
+            LOG.warn("ai_stub_active learning.ai.provider=stub: speech to text is answered by the deterministic Stub");
+            return new StubTranscription();
+        }
+        Map<String, TranscriptionAdapter> adapters = transcriptionAdapters(properties, settings, clients, Clock.systemUTC());
+        adapters.forEach((id, adapter) -> LOG.info("ai_stt_provider provider={} egress={} state={}", id, adapter.egress().label(),
+                adapter.configured() ? "configured" : "not_configured"));
+        return new RoutedTranscription(properties, settings, adapters, breakers, budget, journal, new AiTelemetry(meters), meters);
+    }
+
+    /** The transcription adapters whose provider entry exists; a proxied provider without an active proxy has no transport and so is not configured. */
+    static Map<String, TranscriptionAdapter> transcriptionAdapters(AiProperties properties, SttSettings settings, EgressClients clients, Clock clock) {
+        Map<String, TranscriptionAdapter> adapters = new LinkedHashMap<>();
+        Map<String, AiProperties.Model> prices = new HashMap<>();
+        for (AiProperties.Model model : properties.models()) {
+            if (model.provider().equals(GeminiTranscription.PROVIDER)) prices.put(model.id(), model);
+        }
+        AiProperties.Provider google = properties.providers().get(GeminiTranscription.PROVIDER);
+        if (google != null) adapters.put(GeminiTranscription.PROVIDER, new GeminiTranscription(google, clients.http(google.egress()), settings, prices::get, clock));
+        AiProperties.Provider selfhost = properties.providers().get(SelfHostTranscription.PROVIDER);
+        if (selfhost != null) adapters.put(SelfHostTranscription.PROVIDER, new SelfHostTranscription(selfhost, clients.http(selfhost.egress()), settings, clock));
+        return adapters;
     }
 
     /** The speech adapters whose provider entry exists; a proxied provider without an active proxy has no transport and so is not configured. */

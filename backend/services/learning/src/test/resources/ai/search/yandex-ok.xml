@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<yandexsearch version="1.0">
+  <request><query>планировщик postgresql</query><page>0</page></request>
+  <response date="20261005T120000">
+    <reqid>1759665600000000-123456789-XML</reqid>
+    <found priority="all">123456</found>
+    <found-human>Нашлось 123 тыс. ответов</found-human>
+    <results>
+      <grouping attr="d" mode="deep" groups-on-page="10" docs-in-group="1" curcateg="-1">
+        <found-docs priority="all">123456</found-docs>
+        <page first="1" last="10">0</page>
+        <group>
+          <categ attr="d" name="postgrespro.ru"/>
+          <doccount>34</doccount>
+          <relevance priority="all"/>
+          <doc id="ZA1">
+            <relevance priority="phrase"/>
+            <url>https://postgrespro.ru/docs/postgresql/current/planner-optimizer#frag</url>
+            <domain>postgrespro.ru</domain>
+            <title>Как работает <hlword>планировщик</hlword> запросов в <hlword>PostgreSQL</hlword></title>
+            <headline>Описание работы планировщика.</headline>
+            <modtime>20250814T040000</modtime>
+            <size>26938</size>
+            <charset>utf-8</charset>
+            <passages>
+              <passage>Планировщик выбирает самый дешёвый <hlword>план</hlword> выполнения.</passage>
+              <passage>Стоимость плана складывается из стоимостей узлов &amp; их числа.</passage>
+            </passages>
+            <properties><_PassagesType>0</_PassagesType><lang>ru</lang></properties>
+            <mime-type>text/html</mime-type>
+            <saved-copy-url>https://hghltd.yandex.net/yandbtm?text=secret-copy</saved-copy-url>
+          </doc>
+        </group>
+        <group>
+          <categ attr="d" name="ru.wikipedia.org"/>
+          <doccount>2</doccount>
+          <doc id="ZA2">
+            <url>https://ru.wikipedia.org/wiki/PostgreSQL</url>
+            <domain>ru.wikipedia.org</domain>
+            <title>PostgreSQL — Википедия</title>
+            <headline>PostgreSQL — свободная объектно-реляционная система управления базами данных.</headline>
+            <modtime>not-a-date</modtime>
+            <passages></passages>
+            <properties><lang>ru</lang></properties>
+          </doc>
+        </group>
+        <group>
+          <doc id="ZA3">
+            <url>http://insecure.example.org/page</url>
+            <title>Без https</title>
+            <passages><passage>отбрасывается</passage></passages>
+          </doc>
+        </group>
+        <group>
+          <doc id="ZA4">
+            <url>https://user:pass@example.org/private</url>
+            <title>С логином</title>
+            <passages><passage>отбрасывается</passage></passages>
+          </doc>
+        </group>
+      </grouping>
+    </results>
+  </response>
+</yandexsearch>

@@ -7,7 +7,7 @@ import { NativeDocument, NativeNode } from '../../content/native-document';
 import { NativeDocumentRendererComponent } from '../../content/rendering/native-document-renderer.component';
 import { CAPABILITIES_UNAVAILABLE, LearningCapabilities } from '../authoring/capabilities-api.service';
 import {
-    NBSP, artifactStatus, failureNote, failureReason, positionLabel, slotCaption
+    NBSP, artifactStatus, describeResearch, failureNote, failureReason, positionLabel, slotCaption
 } from './generation-view';
 import { ProposalDocumentComponent } from './proposal-document.component';
 import { ArtifactSummary, MediaSlot, SessionState, allows, isApprovable, isRetryable, previewDocument } from './generation.models';
@@ -57,6 +57,8 @@ export class ProposalViewComponent {
     readonly arrival = input<Arrival | null>(null);
     /** A command on this artifact is in flight. */
     readonly busy = input(false);
+    /** The material waits for its web research (AI-18, #299). */
+    readonly researching = input(false);
     /** The editor draft made by the hand-off of this material, when this page made it. */
     readonly handoffDraftId = input<string | null>(null);
     /** What the server can do now: the media actions under an image or audio are offered or explained by it. */
@@ -76,7 +78,7 @@ export class ProposalViewComponent {
     private seenToken: number | null = null;
 
     protected readonly headingId = 'proposal-heading';
-    protected readonly status = computed(() => artifactStatus(this.artifact()));
+    protected readonly status = computed(() => artifactStatus(this.artifact(), this.researching()));
     protected readonly position = computed(() => positionLabel(this.index(), this.total()));
     protected readonly detail = computed(() => this.entry()?.detail ?? null);
     protected readonly document = computed<NativeDocument | null>(() => {
@@ -86,6 +88,8 @@ export class ProposalViewComponent {
     /** A pinned note changed after the request (`sourceRefs[].status`): informational, the material stays as it was written. */
     protected readonly noteChanged = computed(() => this.artifact().state !== 'STALE'
         && (this.detail()?.noteSources ?? []).some(source => source.status === 'CHANGED'));
+    /** «Проверено по N источникам»: only what the server says it found; nothing when there was none. */
+    protected readonly checkedLine = computed(() => describeResearch(this.detail()?.research ?? null));
     protected readonly isExercise = computed(() => this.artifact().targetKind === 'EXERCISE');
     /** The draft without its media blocks: their place is held by the paper frames below, and nothing there pretends to play. */
     protected readonly preview = computed(() => {

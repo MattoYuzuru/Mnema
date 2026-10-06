@@ -1,7 +1,6 @@
 package app.mnema.learning.study.session;
 
 import app.mnema.learning.capability.LearningCapabilities;
-import app.mnema.learning.capability.SpeechToTextProvider;
 import app.mnema.learning.catalog.deck.DeckService;
 import app.mnema.learning.catalog.exercise.ExerciseCommand;
 import app.mnema.learning.catalog.exercise.ExerciseService;
@@ -16,9 +15,6 @@ import tools.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
 import java.time.Instant;
@@ -31,19 +27,13 @@ import static app.mnema.learning.support.StudyFixtures.text;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * With the flags on, the Stub as the provider and a test speech provider the capabilities are available, so such exercises can be
+ * With the flags on, the Stub as the provider and the Stub transcription the capabilities are available, so such exercises can be
  * published and issued. The learner never sees the rubric, and a deployment that loses the capability stops issuing them. What
  * happens to an answer is {@code AssessmentFlowIntegrationTest}.
  */
 @SpringBootTest(properties = {"learning.features.ai-assessment.enabled=true",
         "learning.features.speech-to-text.enabled=true", "learning.ai.provider=stub"})
-@Import(CapabilityProviderIntegrationTest.Providers.class)
 class CapabilityProviderIntegrationTest extends PostgresIntegrationTest {
-    @TestConfiguration
-    static class Providers {
-        @Bean SpeechToTextProvider speech() { return asset -> new SpeechToTextProvider.Transcription("stub"); }
-    }
-
     @Autowired private LearningCapabilities capabilities;
     @Autowired private ExerciseService exercises;
     @Autowired private StudySessionService sessions;

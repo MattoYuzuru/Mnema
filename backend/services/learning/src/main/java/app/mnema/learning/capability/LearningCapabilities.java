@@ -5,6 +5,7 @@ import app.mnema.learning.ai.AiCapability;
 import app.mnema.learning.ai.ImageGeneration;
 import app.mnema.learning.ai.ImageSearch;
 import app.mnema.learning.ai.SpeechSynthesis;
+import app.mnema.learning.ai.Transcription;
 import app.mnema.learning.ai.VideoGeneration;
 import app.mnema.learning.ai.WebSearch;
 import app.mnema.learning.platform.api.CapabilityUnavailableException;
@@ -22,7 +23,7 @@ import org.springframework.stereotype.Component;
 public final class LearningCapabilities {
     private final CapabilityFlags flags;
     private final AiAvailability ai;
-    private final boolean speechProvider;
+    private final Transcription transcription;
     private final boolean synthesis;
     private final boolean imageSearch;
     private final boolean imageGeneration;
@@ -31,7 +32,7 @@ public final class LearningCapabilities {
 
     public LearningCapabilities(
             CapabilityFlags flags,
-            ObjectProvider<SpeechToTextProvider> speechProviders,
+            ObjectProvider<Transcription> transcriptions,
             AiAvailability ai,
             ObjectProvider<SpeechSynthesis> synthesisPorts,
             ObjectProvider<ImageSearch> imageSearchPorts,
@@ -40,14 +41,16 @@ public final class LearningCapabilities {
             ObjectProvider<WebSearch> webSearchPorts) {
         this.flags = flags;
         this.ai = ai;
-        this.speechProvider = speechProviders.getIfAvailable() != null;
+        Transcription stt = transcriptions.getIfAvailable();
+        this.transcription = stt != null && stt.configured() ? stt : null;
         SpeechSynthesis speech = synthesisPorts.getIfAvailable();
         this.synthesis = speech != null && speech.configured();
         ImageSearch search = imageSearchPorts.getIfAvailable();
         this.imageSearch = search != null && search.configured();
         this.imageGeneration = imageGenerationPorts.getIfAvailable() != null;
         this.videoGeneration = videoGenerationPorts.getIfAvailable() != null;
-        this.webSearch = webSearchPorts.getIfAvailable() != null;
+        WebSearch research = webSearchPorts.getIfAvailable();
+        this.webSearch = research != null && research.configured();
     }
 
     /** Semantic grading: flag, a usable adapter on the {@code assess} route (a key or the Stub) and a healthy route. */
@@ -55,7 +58,15 @@ public final class LearningCapabilities {
         return flags.aiAssessment().enabled() ? map(ai.assessment()) : new Status(false, Reason.DISABLED);
     }
 
-    public Status speechToText() { return status(flags.speechToText().enabled(), speechProvider); }
+    /**
+     * Speech to text (#298): the flag, a usable route (a self-hosted container, Gemini through the egress proxy, or the Stub) and a healthy one: an open
+     * breaker on every route entry or the spent daily budget of the capability is {@code TEMPORARILY_UNAVAILABLE}.
+     */
+    public Status speechToText() {
+        if (!flags.speechToText().enabled()) return new Status(false, Reason.DISABLED);
+        Status status = map(ai.port(AiCapability.STT, transcription != null));
+        return status.available() && !transcription.healthy() ? new Status(false, Reason.TEMPORARILY_UNAVAILABLE) : status;
+    }
 
     /** Text generation: flag, a usable adapter (key or Stub) and a healthy route. */
     public Status aiGeneration() {
@@ -109,11 +120,6 @@ public final class LearningCapabilities {
             case NOT_CONFIGURED -> new Status(false, Reason.PROVIDER_NOT_CONFIGURED);
             case TEMPORARILY_UNAVAILABLE -> new Status(false, Reason.TEMPORARILY_UNAVAILABLE);
         };
-    }
-
-    private static Status status(boolean enabled, boolean provider) {
-        if (!enabled) return new Status(false, Reason.DISABLED);
-        return provider ? new Status(true, null) : new Status(false, Reason.PROVIDER_NOT_CONFIGURED);
     }
 
     /** {@code TEMPORARILY_UNAVAILABLE}: an open circuit with no healthy fallback, or the global daily budget is spent. */

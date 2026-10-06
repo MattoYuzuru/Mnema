@@ -344,6 +344,14 @@ export interface ArtifactDetail extends ArtifactSummary {
     readonly turns: readonly ArtifactTurn[];
     /** Only an `EXERCISE` artifact has it; `null` for an item (or while the server does not send it). */
     readonly display: ExerciseDisplay | null;
+    /** AI-18 (#299): what the material was checked against; `null` when it had no research (or the server does not send it). */
+    readonly research: ArtifactResearch | null;
+}
+
+/** The URLs the compiler allowed for `[n]` links and `::sources`, in `[n]` order, and how many paid searches made them. */
+export interface ArtifactResearch {
+    readonly requests: number;
+    readonly results: readonly { readonly n: number; readonly url: string; readonly title: string; readonly provider: string }[];
 }
 
 /** Acknowledgement of one approval (single or bulk): the new Deck pin and the published artifacts. */
@@ -908,7 +916,8 @@ const ARTIFACT_DETAIL_KEYS = [...ARTIFACT_SUMMARY_KEYS, 'sessionId', 'deckId', '
 export function parseArtifactDetail(value: unknown, shownRevisionId: string | null = null): ArtifactDetail {
     // `display` belongs to an exercise artifact with a revision, and only to it: absent for an item and while there is no revision.
     const hasDisplay = value !== null && typeof value === 'object' && !Array.isArray(value) && 'display' in value;
-    const object = requireObject(value, hasDisplay ? [...ARTIFACT_DETAIL_KEYS, 'display'] : ARTIFACT_DETAIL_KEYS);
+    const hasResearch = value !== null && typeof value === 'object' && !Array.isArray(value) && 'research' in value;
+    const object = requireObject(value, [...ARTIFACT_DETAIL_KEYS, ...(hasDisplay ? ['display'] : []), ...(hasResearch ? ['research'] : [])]);
     const noteSources = list(object['sourceRefs'], 20).flatMap(parseNoteSourceRef);
     const revision = nullable(object['revision'], parseRevision);
     if (revision !== null && revision.revisionId !== (shownRevisionId ?? object['currentRevisionId'])) {
@@ -920,8 +929,28 @@ export function parseArtifactDetail(value: unknown, shownRevisionId: string | nu
         sessionId: requireEntity(object['sessionId']), deckId: requireEntity(object['deckId']), noteSources, revision,
         mediaSlots: list(object['mediaSlots'], 64).map(parseMediaSlot),
         revisions: list(object['revisions'], 40).map(parseRevisionRef), turns: list(object['turns'], 100).map(parseTurn),
-        display: hasDisplay ? parseDisplay(object['display']) : null
+        display: hasDisplay ? parseDisplay(object['display']) : null,
+        research: hasResearch ? nullable(object['research'], parseResearch) : null
     };
+}
+
+const MAX_RESEARCH_RESULTS = 30;
+
+/** Strict: counts are whole numbers, `n` runs 1.. in order, every URL is `https` without credentials. */
+function parseResearch(value: unknown): ArtifactResearch {
+    const object = requireObject(value, ['requests', 'results']);
+    const results = list(object['results'], MAX_RESEARCH_RESULTS).map((entry, position) => {
+        const result = requireObject(entry, ['n', 'url', 'title', 'provider']);
+        if (result['n'] !== position + 1) throw new AuthoringProtocolError('Research results are not numbered in order.');
+        const url = text(result['url'], 2048);
+        let parsed: URL;
+        try { parsed = new URL(url); } catch { throw new AuthoringProtocolError('Research result is not a URL.'); }
+        if (parsed.protocol !== 'https:' || parsed.username !== '' || parsed.password !== '') {
+            throw new AuthoringProtocolError('Research result is not a plain https URL.');
+        }
+        return { n: position + 1, url, title: text(result['title'], 300, true), provider: text(result['provider'], 20) };
+    });
+    return { requests: requireCount(object['requests'], 15), results };
 }
 
 export function parseSessionPage(value: unknown): SessionPage {

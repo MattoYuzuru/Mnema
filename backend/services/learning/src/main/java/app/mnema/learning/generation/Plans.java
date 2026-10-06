@@ -6,6 +6,7 @@ import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.ProblemExtension;
 import app.mnema.learning.platform.api.ResourceLimitExceededException;
 import app.mnema.learning.usage.AdmissionPricing;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
@@ -49,10 +50,18 @@ class Plans {
     private final int maxPerTarget;
     private final int maxPerSession;
     private final int maxArtifacts;
+    private final int researchMax;
 
+    Plans(AdmissionPricing pricing, GenerationRepository repository, int maxPerTarget, int maxPerSession, int maxArtifacts) {
+        this(pricing, repository, maxPerTarget, maxPerSession, maxArtifacts, 15);
+    }
+
+    @Autowired
     Plans(AdmissionPricing pricing, GenerationRepository repository, @Value("${learning.generation.max-exercises-per-target:10}") int maxPerTarget,
           @Value("${learning.generation.max-exercises-per-session:60}") int maxPerSession,
-          @Value("${learning.generation.max-artifacts-per-session:20}") int maxArtifacts) {
+          @Value("${learning.generation.max-artifacts-per-session:20}") int maxArtifacts,
+          @Value("${learning.ai.research.max-requests:15}") int researchMax) {
+        this.researchMax = researchMax;
         this.pricing = pricing;
         this.repository = repository;
         this.maxPerTarget = maxPerTarget;
@@ -150,7 +159,8 @@ class Plans {
         int credits = pricing.credits(AdmissionPricing.materialOperation(settings.workingEffort()));
         if (settings.audio()) credits += pricing.credits("TTS_CLIP_30S");
         if (settings.imageSearch()) credits += pricing.credits("IMAGE_SEARCH");
-        if (settings.research()) credits += pricing.credits("FACTCHECK_LOW");
+        // a fact check holds WEB_SEARCH_QUERY x the request cap of the effort, exactly as the unplanned estimate does (AI-18)
+        credits += settings.researchCap(researchMax) * pricing.credits(ResearchSteps.OPERATION);
         return credits;
     }
 

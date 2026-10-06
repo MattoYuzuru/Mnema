@@ -76,7 +76,9 @@ export async function runWorkshopEdits(ctx, h) {
   const press = async (name, { modifiers = 0, keyCode } = {}) => {
     const [key, code, base] = KEYS[name];
     const virtualKeyCode = keyCode ?? base;
-    const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, nativeVirtualKeyCode: virtualKeyCode, modifiers };
+    // No `nativeVirtualKeyCode`: on macOS it is a hardware key code (27 is the «-» key, not Esc), and Chrome 154 headless answers an
+    // Esc that the page did not preventDefault with an endless flood of «-» keydowns that wedges the renderer.
+    const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, modifiers };
     await tab.call('Page.bringToFront');
     await tab.call('Input.dispatchKeyEvent', name === 'Enter'
       ? { type: 'keyDown', text: '\r', unmodifiedText: '\r', ...event } : { type: 'rawKeyDown', ...event });
@@ -149,7 +151,7 @@ export async function runWorkshopEdits(ctx, h) {
       rewriting: node.classList.contains('is-rewriting'), target: node.classList.contains('is-target') }));
     const strip = document.querySelector('app-proposal-document .rewrite-strip');
     const popover = document.querySelector('app-ai-prompt-window [popover]');
-    const dialog = document.querySelector('app-ai-prompt-window dialog');
+    const dialog = document.querySelector('app-ai-prompt-window dialog:not(.mic-dialog)'); // the microphone's own consent dialog (#298) is not the sheet
     const group = document.querySelector('app-proposal-document .selection-actions');
     const active = document.activeElement;
     return { blocks, nodeIds: document.querySelectorAll('[data-node-id]').length,
@@ -180,7 +182,7 @@ export async function runWorkshopEdits(ctx, h) {
         return { open: details.open, summary: text(details.querySelector('summary')?.textContent), items: [...details.querySelectorAll('li')].map(item => ({
           text: text(item.textContent), revert: Boolean([...item.querySelectorAll('button')].find(node => node.textContent.trim() === 'Вернуть к этой версии')), current: item.classList.contains('is-current') })) }; })(),
       hint: text(document.querySelector('app-proposal-view .selection-hint')?.textContent),
-      summary: text(document.querySelector('section.workshop .summary')?.textContent), regions: document.querySelectorAll('section.workshop [role=status]:not(.document-announcement)').length,
+      summary: text(document.querySelector('section.workshop .summary')?.textContent), regions: document.querySelectorAll('section.workshop [role=status]:not(.document-announcement):not(app-mic-button *)').length,
       notice: text(document.querySelector('section.workshop .notice')?.textContent),
       selection: document.getSelection()?.toString() ?? '',
       focus: active === document.body ? 'body' : { tag: active.tagName.toLowerCase(), cls: String(active.className).slice(0, 30), inHost: Boolean(active.closest('.document-host')) } };`);
@@ -200,7 +202,7 @@ export async function runWorkshopEdits(ctx, h) {
       if (strip && recorder.strip.at(-1) !== strip) recorder.strip.push(strip);
       const summary = (document.querySelector('section.workshop .summary')?.textContent ?? '').replaceAll('\\u00a0', ' ').trim();
       if (summary && recorder.summaries.at(-1) !== summary) recorder.summaries.push(summary);
-      recorder.regions = Math.max(recorder.regions, document.querySelectorAll('section.workshop [role=status]:not(.document-announcement)').length);
+      recorder.regions = Math.max(recorder.regions, document.querySelectorAll('section.workshop [role=status]:not(.document-announcement):not(app-mic-button *)').length);
     }, 30);
     return true;`;
   const recorded = () => page('return globalThis.__mnemaEdits ?? null;');

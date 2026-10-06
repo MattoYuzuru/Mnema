@@ -725,8 +725,10 @@ def mechanic_response(web, access, deck_id, session_id, mechanic, shown, ids):
         return {"kind": "CLOZE", "blanks": [{"blankId": blank, "text": " Memory "} for blank in ids["blanks"]]}
     if mechanic == "CHOICE":
         options = content.get("options")
-        require(isinstance(options, list) and [option["optionId"] for option in options] == ids["options"]
-                and options[0]["blocks"] == [text_block("memory")], "choice options were not resolved")
+        expected = dict(zip(ids["options"], ([text_block(word)] for word in ("memory", "forgetting", "recall"))))
+        require(isinstance(options, list) and len(options) == len(expected)
+                and {option["optionId"]: option["blocks"] for option in options} == expected,
+                "choice options were not resolved")
         require(content.get("selectionMode") == "MULTIPLE", "choice selection mode missing")
         return {"kind": "CHOICE", "optionIds": [ids["options"][2], ids["options"][0]]}
     if mechanic == "MATCH":

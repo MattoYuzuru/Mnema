@@ -1,4 +1,5 @@
-import { HttpErrorResponse } from '@angular/common/http';
+import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { of, throwError } from 'rxjs';
@@ -327,6 +328,29 @@ describe('CapturePageComponent', () => {
             root().querySelector('h1')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
             fixture.detectChanges();
             expect(counter()).toBe('Выбрано: 1');
+        });
+    });
+
+    describe('voice input (AI-15)', () => {
+        async function open(speechAvailable: boolean): Promise<HTMLElement> {
+            TestBed.resetTestingModule();
+            capabilities.read.mockReturnValue(of({ ...aiOn, speechToText: speechAvailable ? { available: true, reason: null } : { available: false, reason: 'DISABLED' } } as LearningCapabilities));
+            await TestBed.configureTestingModule({ imports: [CapturePageComponent], providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting(),
+                { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ deckId: deck.deckId }) } } },
+                { provide: OwnDecksApiService, useValue: { detail: () => of(deck) } }, { provide: AuthoringApiService, useValue: api },
+                { provide: CapabilitiesApiService, useValue: capabilities }] }).compileComponents();
+            fixture = TestBed.createComponent(CapturePageComponent);
+            fixture.detectChanges();
+            await fixture.whenStable();
+            fixture.detectChanges();
+            return fixture.nativeElement as HTMLElement;
+        }
+
+        it('offers the microphone for the note only with speechToText, and a transcript is only text in the field', async () => {
+            expect((await open(false)).querySelector('app-mic-button')).toBeNull();
+            const root = await open(true);
+            expect(root.querySelector('app-mic-button')).not.toBeNull();
+            expect(api.createCapture).not.toHaveBeenCalled();
         });
     });
 });

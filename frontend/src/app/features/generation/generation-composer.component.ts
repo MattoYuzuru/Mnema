@@ -12,6 +12,7 @@ import { SegmentedChoiceComponent } from '../../shared/segmented-choice.componen
 import { AuthoringApiService } from '../authoring/authoring-api.service';
 import { CaptureNote, newCommandId } from '../authoring/authoring.models';
 import { CAPABILITIES_UNAVAILABLE, LearningCapabilities } from '../authoring/capabilities-api.service';
+import { MicButtonComponent } from '../speech/mic-button.component';
 import { GenerationApiService } from './generation-api.service';
 import { GenerationProblem, readProblem } from './generation-problem';
 import { blockImplicitSubmit, isSendKey } from './implicit-submit';
@@ -45,7 +46,7 @@ interface PendingCreation { readonly key: string; readonly commandId: string; }
  * `SOURCE` notes and each becomes its own material).
  */
 export function buildMaterialsSpec(prompt: string, settings: GenerationSettingsValue, sources: readonly SpecSource[],
-                                   available: { readonly image: boolean; readonly audio: boolean },
+                                   available: { readonly image: boolean; readonly audio: boolean; readonly research?: boolean },
                                    overrides: NoteOverrideMap = {}): MaterialsSpec {
     const notes = sources.filter(source => source.type === 'NOTE' && source.role === 'SOURCE');
     const perNote = settings.notesMode === 'ONE_PER_NOTE' && notes.length > 1;
@@ -61,7 +62,7 @@ export function buildMaterialsSpec(prompt: string, settings: GenerationSettingsV
             media: { audio: { enabled: settings.audio && available.audio, lang: settings.audioLang,
                 voice: settings.audioVoice === 'any' ? null : settings.audioVoice },
                 imageSearch: settings.imageSearch && available.image },
-            factCheck: false, similarToDeck: settings.similarToDeck, planFirst: settings.planFirst, budgetPercent: null
+            factCheck: settings.factCheck && available.research === true && settings.effort !== 'SHORT', similarToDeck: settings.similarToDeck, planFirst: settings.planFirst, budgetPercent: null
         }
     };
 }
@@ -83,7 +84,7 @@ let nextComposer = 0;
  */
 @Component({
     selector: 'app-generation-composer',
-    imports: [RouterLink, GenerationSettingsComponent, ToggletipComponent, SegmentedChoiceComponent, NoteOverridesComponent],
+    imports: [RouterLink, GenerationSettingsComponent, ToggletipComponent, SegmentedChoiceComponent, NoteOverridesComponent, MicButtonComponent],
     templateUrl: './generation-composer.component.html',
     styleUrls: ['../authoring/authoring-page.css', './generation-composer.component.css'],
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -114,8 +115,12 @@ export class GenerationComposerComponent {
 
     protected readonly uid = `mn-composer-${nextComposer++}`;
     protected readonly maxLength = MAX_PROMPT_LENGTH;
+    protected readonly speechAvailable = computed(() => this.capabilities().speechToText.available);
+    /** The request field, for the microphone to put its transcript into. */
+    protected readonly promptTarget = (): HTMLTextAreaElement | null => this.promptField()?.nativeElement ?? null;
     protected readonly imageAvailable = computed(() => this.capabilities().imageSearch.available);
     protected readonly audioAvailable = computed(() => this.capabilities().textToSpeech.available);
+    protected readonly researchAvailable = computed(() => this.capabilities().webSearch.available);
 
     protected readonly groupingOptions = NOTES_MODE_OPTIONS;
     protected readonly blockImplicitSubmit = blockImplicitSubmit;
@@ -149,7 +154,7 @@ export class GenerationComposerComponent {
     readonly spec = computed(() => buildMaterialsSpec(this.prompt(), this.settings(), this.sources().map(source => {
         const pin = source.spec.type === 'NOTE' ? this.freshPins().get(source.spec.noteId) : undefined;
         return pin === undefined || source.spec.type !== 'NOTE' ? source.spec : { ...source.spec, noteRowVersion: pin };
-    }), { image: this.imageAvailable(), audio: this.audioAvailable() }, this.overrides()));
+    }), { image: this.imageAvailable(), audio: this.audioAvailable(), research: this.researchAvailable() }, this.overrides()));
     protected readonly startedAt = (workshop: SessionSummary): string => formatWorkshopStart(workshop.createdAt);
     protected readonly overBudget = computed(() => {
         const state = this.estimate();

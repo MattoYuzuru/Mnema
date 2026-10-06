@@ -1,3 +1,5 @@
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { Subject, of, throwError } from 'rxjs';
 
@@ -150,6 +152,68 @@ describe('LearnerExerciseComponent', () => {
         area.dispatchEvent(new Event('input'));
         component.submit();
         expect(answers).toEqual([{ kind: 'TEXT', text: 'x' }]);
+    });
+
+    describe('voice answer (answerSource)', () => {
+        const speechExercise = (responseInput: 'TEXT' | 'TEXT_OR_SPEECH'): LearnerContent => {
+            const base = learner('freeResponse');
+            return { ...base, content: { ...base.content, responseInput } } as LearnerContent;
+        };
+        beforeEach(() => TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] }));
+        const open = (responseInput: 'TEXT' | 'TEXT_OR_SPEECH', speechAvailable: boolean) => {
+            const made = create('freeResponse', { speechAvailable });
+            made.fixture.componentRef.setInput('exercise', speechExercise(responseInput));
+            made.fixture.detectChanges();
+            return made;
+        };
+        const type = (root: HTMLElement, value: string) => {
+            const area = root.querySelector<HTMLTextAreaElement>('textarea')!;
+            area.value = value;
+            area.dispatchEvent(new Event('input'));
+        };
+
+        it('offers «Ответить голосом» only for TEXT_OR_SPEECH while speech-to-text is available', () => {
+            expect(open('TEXT_OR_SPEECH', true).root.querySelector('app-mic-button')).not.toBeNull();
+            expect(open('TEXT_OR_SPEECH', true).root.textContent).toContain('Ответить голосом');
+            expect(open('TEXT_OR_SPEECH', false).root.querySelector('app-mic-button')).toBeNull();
+            expect(open('TEXT', true).root.querySelector('app-mic-button')).toBeNull();
+        });
+
+        it('sends TYPED for a typed answer of a TEXT_OR_SPEECH exercise', () => {
+            const { component, root, answers } = open('TEXT_OR_SPEECH', true);
+            type(root, 'ответ');
+            component.submit();
+            expect(answers).toEqual([{ kind: 'TEXT', text: 'ответ', answerSource: 'TYPED' }]);
+        });
+
+        it('sends SPEECH once a transcript was inserted, even after the learner edited it, and starts over when emptied', () => {
+            const { component, root, answers } = open('TEXT_OR_SPEECH', true);
+            type(root, 'распознанный текст');
+            component.fromSpeech.set(true);
+            type(root, 'распознанный текст, поправленный');
+            component.submit();
+            expect(answers).toEqual([{ kind: 'TEXT', text: 'распознанный текст, поправленный', answerSource: 'SPEECH' }]);
+            type(root, '');
+            expect(component.fromSpeech()).toBe(false);
+            type(root, 'набрано руками');
+            component.submit();
+            expect(answers[1]).toEqual({ kind: 'TEXT', text: 'набрано руками', answerSource: 'TYPED' });
+        });
+
+        it('never sends answerSource for a TEXT exercise', () => {
+            const { component, root, answers } = open('TEXT', true);
+            type(root, 'x');
+            component.submit();
+            expect(answers).toEqual([{ kind: 'TEXT', text: 'x' }]);
+        });
+
+        it('forgets the transcript origin with the rest of the input when the presentation changes', () => {
+            const { fixture, component } = open('TEXT_OR_SPEECH', true);
+            component.fromSpeech.set(true);
+            fixture.componentRef.setInput('resetKey', 'another');
+            fixture.detectChanges();
+            expect(component.fromSpeech()).toBe(false);
+        });
     });
 
     describe('ORDER', () => {

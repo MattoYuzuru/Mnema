@@ -1,4 +1,5 @@
-import { HttpErrorResponse } from '@angular/common/http';
+import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
@@ -379,6 +380,25 @@ describe('GenerationComposerComponent', () => {
             expect(sessions).toEqual([created]);
         });
 
+        it('sends factCheck only with web search available and an effort above «Кратко»', () => {
+            const on = { ...DEFAULT_SETTINGS, factCheck: true };
+            expect(buildMaterialsSpec('x', on, [], { image: false, audio: false, research: true }).settings.factCheck).toBe(true);
+            expect(buildMaterialsSpec('x', on, [], { image: false, audio: false }).settings.factCheck).toBe(false);
+            expect(buildMaterialsSpec('x', { ...on, effort: 'SHORT' }, [], { image: false, audio: false, research: true }).settings.factCheck).toBe(false);
+            create({ caps: capabilities({ webSearch: { available: true, reason: null } }) });
+            const box = [...root().querySelectorAll<HTMLInputElement>('input[type=checkbox]')].find(input => input.labels?.[0]?.textContent?.trim() === 'Проверять факты')!;
+            box.click();
+            render();
+            type('Объясни Seq Scan');
+            button().click();
+            expect(api.createSession.mock.calls[0]![1]).toMatchObject({ settings: { factCheck: true } });
+        });
+
+        it('hides «Проверять факты» without the web search capability', () => {
+            create();
+            expect(root().textContent).not.toContain('Проверять факты');
+        });
+
         it('requests media only where the capability exists: the chip can be on, the request still says no', () => {
             const spec = buildMaterialsSpec('x', { ...DEFAULT_SETTINGS, imageSearch: true, audio: true, audioVoice: 'male' }, [], { image: false, audio: false });
             expect(spec.settings.media).toEqual({ audio: { enabled: false, lang: 'ru', voice: 'male' }, imageSearch: false });
@@ -665,6 +685,20 @@ describe('GenerationComposerComponent', () => {
                 expect(document.activeElement).toBe(field());
                 root().remove();
             });
+        });
+    });
+
+    describe('voice input (AI-15)', () => {
+        const speechOn = (): LearningCapabilities => capabilities({ speechToText: { available: true, reason: null } });
+
+        it('puts the microphone next to the request field only while speechToText is available', () => {
+            TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] });
+            create({ caps: speechOn() });
+            expect(root().querySelector('app-mic-button')).not.toBeNull();
+            expect(root().querySelector('app-mic-button button')?.textContent).toContain('Начать запись');
+            TestBed.resetTestingModule();
+            create({ caps: capabilities({ speechToText: { available: false, reason: 'DISABLED' } }) });
+            expect(root().querySelector('app-mic-button')).toBeNull();
         });
     });
 });

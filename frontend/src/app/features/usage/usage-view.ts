@@ -89,3 +89,10 @@ function counter(id: UsageCounter['id'], name: string, bucket: UsageFairUseBucke
     const today = bucket.limitToday === null ? '' : `, сегодня ${bucket.usedToday}${NBSP}из${NBSP}${bucket.limitToday}`;
     return { id, text: `${name}: ${bucket.used}${NBSP}из${NBSP}${bucket.limit}${NBSP}${plural(bucket.limit, forms)} за месяц${today}` };
 }
+
+/** «Голос: 52 из 60 мин в этом месяце»: the quiet counter next to the microphone, only when the server says `warn` and the plan has a limit. */
+export function speechCounterText(usage: UsageSnapshot): string | null {
+    const bucket = usage.fairUse.stt;
+    if (!bucket.warn || bucket.limit === null) return null;
+    return `Голос: ${bucket.used}${NBSP}из${NBSP}${bucket.limit}${NBSP}мин в этом месяце`;
+}

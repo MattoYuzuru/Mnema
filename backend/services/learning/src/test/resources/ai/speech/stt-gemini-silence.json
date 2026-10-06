@@ -1,0 +1,1 @@
+{"id":"v1_recorded-silence","status":"completed","usage":{"total_tokens":40,"total_input_tokens":40,"input_tokens_by_modality":[{"modality":"audio","tokens":38}],"total_output_tokens":0,"total_thought_tokens":0},"steps":[{"content":[],"type":"model_output"}],"object":"interaction"}

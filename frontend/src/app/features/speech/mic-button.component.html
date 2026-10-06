@@ -1,0 +1,40 @@
+<div class="mic">
+  <div class="mic-row">
+    <!-- One button for every phase: it is the same element, so a keyboard user who pressed it keeps focus while it records and recognises. -->
+    <button #button type="button" class="mic-button" [class.is-recording]="phase() === 'recording'"
+            [attr.aria-disabled]="phase() === 'transcribing' || (phase() !== 'recording' && (disabled() || busy())) ? 'true' : null" (click)="press()">
+      @switch (phase()) {
+        @case ('recording') { <span class="mic-dot" aria-hidden="true"></span>Остановить запись }
+        @case ('transcribing') { Распознаю… }
+        @default {
+          <svg class="mic-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z M6 11v1a6 6 0 0 0 12 0v-1 M12 18v3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>{{ label() }}
+        }
+      }
+    </button>
+    @if (phase() === 'recording') {
+      <span class="mic-clock" aria-hidden="true">{{ elapsed() }}</span>
+      <button type="button" class="mic-quiet" (click)="cancel()">Отмена</button>
+    } @else if (phase() === 'transcribing') {
+      <button type="button" class="mic-quiet" (click)="cancel()">Отмена</button>
+    }
+  </div>
+  @if (usageLine(); as line) { <p class="mic-usage">{{ line }}</p> }
+  <p class="mic-status" role="status">{{ status() }}</p>
+</div>
+
+<dialog #dialog class="mic-dialog" [attr.aria-labelledby]="consentId + '-title'" (cancel)="onDialogCancel($event)">
+  <h2 [id]="consentId + '-title'">Голосовой ввод</h2>
+  <ul class="mic-terms">
+    <li>Записывается то, что вы скажете, не дольше минуты.</li>
+    <li>Запись удаляется сразу после распознавания. Остаётся только текст: он попадает в поле, и вы решаете, отправлять ли его.</li>
+    @if (region() === 'ABROAD') {
+      <li>Речь распознаётся через зарубежный сервис распознавания. Запись обезличена: сервис не знает, чья она.</li>
+    } @else {
+      <li>Речь распознаётся на наших серверах в России.</li>
+    }
+  </ul>
+  <div class="mic-dialog-actions">
+    <button type="button" class="mic-button primary" (click)="agree()">Согласен</button>
+    <button type="button" class="mic-button" (click)="decline()">Не сейчас</button>
+  </div>
+</dialog>

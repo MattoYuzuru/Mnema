@@ -75,7 +75,7 @@ One syntax only, in the runtime-filled sections (`deck-brief`, `material`, `edit
   `neighbor_lines`, `criteria_lines`, `misconception_lines`, `allowed_links` (one URL per line).
 - `{{schema}}` is rendered from `contracts/generation/exercises/output.schema.json`; AI-13 keeps a classpath copy
   `ai/exercises/output.schema.json` (a test keeps the two identical) and the prompt carries it minified.
-- The exercise section, the exercise revision, the intent and the plan are assembled with the `<data_policy>` block of `system.md` in front of them as their own cacheable segment, taken
+- The exercise section, the exercise revision, the intent, the plan and the research planner are assembled with the `<data_policy>` block of `system.md` in front of them as their own cacheable segment, taken
   verbatim (the section carries the material, the objectives and the existing exercises as data; the rest of the core describes the MBM
   format and does not apply to a JSON answer). `task.mechanics` renders `Механики: A, B, C` (registry names, comma separated) and may add a
   variety request after it; the Stub reads the count and the mechanics from there.
@@ -95,6 +95,7 @@ Placeholder names used by v1 and their owners:
 | `exercise-edit` | `schema`, `material_blocks`, `objective_lines`, `current_exercise_blocks` (rendered by code: the exercise in the output form as JSON inside `<current_exercise>`, redacted, only `& < >` escaped so the model copies valid JSON), `instruction` (user text), `lang.output` |
 | `intent` | `context.{kind,title,operations,mechanics}` (kind `MATERIAL` or `EXERCISE`, the title of what the owner looks at, the operations the context allows, the mechanics of the registry), `request` (user text: the owner's sentence) |
 | `plan` | `deck.{title,description}`, `counts.{items,exercises}`, `lang.output`, `target_lines` (rendered by code: `m1 · title · exercises: 3 (CLOZE 2, CHOICE 1)` per chosen material, EXERCISES only), `note_blocks` (`<note id="n1">` per chosen note, clipped, MATERIALS only), `outline.lines` (the latest titles of the deck, MATERIALS only), `request` (user text, default «не указана»), `limit_lines`, `task.{kind,hint,budget}` (kind `EXERCISES` or `MATERIALS`; the hint carries `Механики: A, B.` and `На материал: N.` for exercises; the budget is the batch hold in credits with the price of one unit) |
+| `research` | `deck.title`, `lang.output`, `note_blocks` (`<note id="N1">` per source, clipped to 1500 tokens in all), `request` (user text, or the topic the plan chose), `task.cap` (the number of queries the model may propose; the server clamps to it anyway); strict JSON `{"queries": [...]}`, added by AI-18 (#299) |
 | `assessment` | `exercise.{prompt,reference}`, `criteria_lines`, `misconception_lines`, `material_fragment`, `feedback_language`, `answer_source`, `learner_answer_json` |
 
 ### Skills: names, files and `task.skill`

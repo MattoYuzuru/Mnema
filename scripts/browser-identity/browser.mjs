@@ -122,6 +122,8 @@ try {
   const mediaRequestIds = new Set();
   let browseMediaState = null;
   let tamperNextCallback = false;
+  /** Set by a scenario: `(request) => [{ name, value }] | null` for the request about to continue. */
+  let requestHeaderHook = null;
   const bearerTokens = [], idTokens = [], exchanges = [];
   const challenges = new Set();
   const loadedDocuments = new Set();
@@ -165,8 +167,8 @@ try {
       // Authoring exercises several full navigations and their local assets; keep a finite request budget.
       // The Workshop scenarios (`--generation`) poll the real events endpoint and load the app several times; the exercise
       // generation scenario (#291) adds a batch review, an editor round trip and a Study session on top of them (each full page load
-      // also asks Identity, so its budget grows with `--generation` too).
-      if (networkRequests > (config.mechanics ? 3000 : config.media ? 1250 : config.authoring ? 1000 : 500) + (config.generation ? 3500 : 0) + (config.assessment ? 1000 : 0)
+      // also asks Identity, so its budget grows with `--generation` too; the web research scenario of #299 added 500 requests).
+      if (networkRequests > (config.mechanics ? 3000 : config.media ? 1250 : config.authoring ? 1000 : 500) + (config.generation ? 4000 : 0) + (config.assessment ? 1000 : 0)
           || identityRequests > 150 + (config.generation ? 100 : 0) + (config.assessment ? 50 : 0)) asynchronousFailure = true;
       if (!allowed.has(url.origin) || asynchronousFailure) {
         externalRequests++;
@@ -178,7 +180,12 @@ try {
         // A real navigation redirect changes location.search; an invisible request URL rewrite would not.
         run(interception(release(tab.call('Fetch.fulfillRequest', { requestId: event.requestId, responseCode: 302,
           responseHeaders: [{ name: 'Location', value: url.href }, { name: 'Cache-Control', value: 'no-store' }], body: '' }))));
-      } else run(interception(release(tab.call('Fetch.continueRequest', { requestId: event.requestId }))));
+      } else {
+        // A scenario may add request headers (the Stub transcription of #298 reads `X-Stub-Transcript`, which only the Stub honours).
+        const added = requestHeaderHook?.(event.request) ?? null;
+        const headers = added === null ? {} : { headers: [...Object.entries(event.request.headers).map(([name, value]) => ({ name, value })), ...added] };
+        run(interception(release(tab.call('Fetch.continueRequest', { requestId: event.requestId, ...headers }))));
+      }
     });
     tab.on('Network.requestWillBeSent', event => {
       const url = new URL(event.request.url);
@@ -312,7 +319,7 @@ try {
   }
   async function submit(tab = cdp) { await tab.evaluate("document.querySelector('form button[type=submit]').click()"); }
   async function pressKey(key, code, virtualKeyCode, modifiers = 0, tab = cdp) {
-    const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, nativeVirtualKeyCode: virtualKeyCode, modifiers };
+    const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, modifiers };
     await tab.call('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...event });
     await tab.call('Input.dispatchKeyEvent', { type: 'keyUp', ...event });
   }
@@ -1053,7 +1060,8 @@ try {
       step = 'workshop_prepare';
       await runWorkshop({
         tab: second, config, record, SafeFailure, until, exists, navigate, saveScreenshot, clickText, setStep: value => { step = value; },
-        deckPath, bearer: secondBearer, inflight: inflightNow, audioAssetId: config.media ? uploadedAudioAssetId : null });
+        deckPath, bearer: secondBearer, inflight: inflightNow, audioAssetId: config.media ? uploadedAudioAssetId : null,
+        setRequestHeaders: hook => { requestHeaderHook = hook; } });
     }
     // The semantic assessment of explanations (#292): the rubric editor and the learner's side, with the Stub grader.
     if (config.assessment) {
