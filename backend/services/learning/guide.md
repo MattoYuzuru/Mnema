@@ -134,8 +134,8 @@ fair-use buckets, `GET /api/usage` and the estimate. Migration `V26__usage_ledge
   sources for it). Since #301 `InboxEntitlementSource` is the effective source: the valid inbox snapshot of the owner with the
   highest plan (started, `validUntil` in the future; `BILLING` or `PROMO`; MAX > PRO > PLUS > FREE, ties to the latest `received_at`, so a
   lower promo never masks a valid higher billing snapshot), else `ConfigEntitlementSource`. `accept` also refuses `periodEnd <=
-  periodStart` and a `validUntil` more than a day past `periodEnd`. A snapshot longer than two months
-  is `period: YEAR`; allowances stay calendar-month periods, so a year grants the plan's monthly allowance each month until
+  periodStart` and a `validUntil` more than a day past `periodEnd`. A BILLING snapshot longer than two months
+  is `period: YEAR`; PROMO always reports `MONTH` (quota cadence, not an invented annual purchase), whatever the gift duration. Allowances stay calendar-month periods, so a year grants the plan's monthly allowance each month until
   `validUntil`, never twelve at once. `usage_allowance.source` accepts `PROMO` (V39). The rate card and allowances are
   classpath copies of the contract files (`usage/*.json`); a test keeps them identical.
 - **Paywall and goal (#301).** `GET /api/plans` (`PlansController`, no-store) is a pure read: the tiers FREE/PLUS/PRO (MAX only

@@ -16,6 +16,7 @@
       },
       "notes": [
         "No query parameter or header changes anything; POST/PUT are 405.",
+        "Current PROMO access reports period MONTH, the quota cadence, regardless of the gift duration; it is not an annual billing purchase. All plans grant monthly allowances, including annual BILLING.",
         "Recommendations by goal (config): EXAMS → PRO, INTERVIEW → PLUS, LANGUAGE → PLUS, WORK → PRO, SELF → PLUS; no goal → none (neutral)."
       ]
     },

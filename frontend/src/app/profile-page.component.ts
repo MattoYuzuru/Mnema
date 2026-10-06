@@ -10,6 +10,7 @@ import { AuthService } from './auth.service';
 import { appConfig } from './app.config';
 import { DuringStudyMode, NotificationPreferences } from './core/notifications/notification-preferences';
 import { ProfilePlanComponent } from './features/plans/profile-plan.component';
+import { SpeechConsentSettingsComponent } from './features/speech/speech-consent-settings.component';
 import { UsageBudgetComponent } from './features/usage/usage-budget.component';
 import { SegmentedChoiceComponent, SegmentedOption } from './shared/segmented-choice.component';
 
@@ -19,7 +20,7 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
 
 @Component({
     selector: 'app-profile-page',
-    imports: [ReactiveFormsModule, RouterLink, SegmentedChoiceComponent, UsageBudgetComponent, ProfilePlanComponent],
+    imports: [ReactiveFormsModule, RouterLink, SegmentedChoiceComponent, UsageBudgetComponent, ProfilePlanComponent, SpeechConsentSettingsComponent],
     template: `
       <section class="profile-page" aria-labelledby="profile-title">
         <a routerLink="/decks" class="back-link">← Мои колоды</a>
@@ -81,6 +82,10 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
             <section id="plan" class="sheet" aria-labelledby="plan-heading">
               <h2 id="plan-heading">Тариф</h2>
               <app-profile-plan />
+            </section>
+            <section id="speech-consent" class="sheet" aria-labelledby="speech-consent-heading">
+              <h2 id="speech-consent-heading" tabindex="-1">Распознавание речи</h2>
+              <app-speech-consent-settings />
             </section>
             <section class="sheet" aria-labelledby="notifications-heading">
               <h2 id="notifications-heading">Уведомления</h2>

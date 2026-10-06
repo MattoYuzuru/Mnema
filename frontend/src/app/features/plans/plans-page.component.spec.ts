@@ -193,8 +193,14 @@ describe('PlansPageComponent', () => {
         expect(TestBed.inject(Router).url).toBe('/decks');
     });
 
-    it('preselects the account\'s own paid plan and disables its button', async () => {
-        await open({ current: 'PRO' });
+    it('defaults to Free for a paid account while marking the current plan independently', async () => {
+        const harness = await open({ current: 'PRO' });
+        expect(radios().map(radio => radio.checked)).toEqual([true, false, false, false]);
+        expect(root.querySelectorAll('app-plan-option')[2].textContent).toContain('Ваш тариф');
+        expect(cta().textContent).toBe('Вернуться на Free');
+        radios()[2].click();
+        harness.fixture.detectChanges();
+        await harness.fixture.whenStable();
         expect(radios().map(radio => radio.checked)).toEqual([false, false, true, false]);
         expect(cta().textContent).toBe('Это ваш тариф');
         expect(cta().getAttribute('aria-disabled')).toBe('true');

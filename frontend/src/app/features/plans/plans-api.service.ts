@@ -31,9 +31,10 @@ export class PlansApiService {
 export function parsePlans(value: unknown): PlansCatalog {
     const body = exact(value, ['current', 'plans']);
     const plans = body['plans'];
-    if (!Array.isArray(plans) || plans.length < 1 || plans.length > PLAN_IDS.length) throw protocol('Invalid plans.');
+    if (!Array.isArray(plans) || plans.length < 3 || plans.length > PLAN_IDS.length) throw protocol('Invalid plans.');
     const entries = plans.map(parseEntry);
-    if (new Set(entries.map(entry => entry.plan)).size !== entries.length) throw protocol('Duplicate plan.');
+    if (entries.some((entry, position) => entry.plan !== PLAN_IDS[position]
+        || entry.availability !== (entry.plan === 'MAX' ? 'TEASER' : 'AVAILABLE'))) throw protocol('Invalid plan order or availability.');
     return { current: parseCurrent(body['current']), plans: entries };
 }
 

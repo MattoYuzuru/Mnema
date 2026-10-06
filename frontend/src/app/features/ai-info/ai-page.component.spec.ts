@@ -25,10 +25,22 @@ describe('AiPageComponent', () => {
         expect(text).toContain('DeepSeek');
         expect(text).toContain('OpenRouter');
         expect(text).toContain('Google');
-        expect(text).toContain('Финляндии');
-        expect(text).toContain('только после вашего отдельного согласия');
+        expect(text).toContain('отдельное согласие на регион обработки');
+        expect(text).toContain('фильтр не гарантирует обезличивание');
         expect(text).toContain('в России');
         expect(text).toContain('Мы не ставим на материалы и упражнения метку');
+    });
+
+    it('describes supported sources and separates recorded speech consent from text synthesis', async () => {
+        const root = await render();
+        const text = root.textContent!;
+        expect(root.querySelector('#what')?.textContent).toContain('режим «Проверять факты»');
+        expect(text).not.toContain('Если вы добавили ссылки или файлы');
+        expect(text).toContain('согласие на распознавание записи не управляет озвучкой');
+        const withdrawal = root.querySelector<HTMLAnchorElement>('#off a');
+        expect(withdrawal?.getAttribute('href')).toBe('/profile#speech-consent');
+        expect(root.querySelector('#contact')?.textContent).not.toContain('просьбы по вашим данным');
+        expect(root.querySelector('#contact a[target="_blank"]')?.getAttribute('rel')).toBe('noopener noreferrer');
     });
 
     it('names every section from its own table of contents', async () => {

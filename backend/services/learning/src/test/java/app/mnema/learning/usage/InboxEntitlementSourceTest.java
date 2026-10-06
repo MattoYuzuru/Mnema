@@ -126,6 +126,24 @@ class InboxEntitlementSourceTest extends UsageIntegrationTest {
     }
 
     @Test
+    void multiMonthPromosKeepMonthlyQuotaCadenceWithoutClaimingAnAnnualPurchase() {
+        for (int months : new int[] {3, 6, 12}) {
+            UUID owner = UUID.randomUUID();
+            Instant start = Instant.parse("2026-09-30T21:00:00Z");
+            Instant end = start.atZone(java.time.ZoneOffset.UTC).plusMonths(months).toInstant();
+            inbox.accept(new EntitlementInbox.Snapshot("promo-" + owner, owner, Plan.PLUS, "PROMO", start, end,
+                    JSON.readTree("{}"), end));
+
+            Entitlement entitlement = source.current(owner, now());
+
+            assertThat(entitlement.source()).isEqualTo(Entitlement.Source.PROMO);
+            assertThat(entitlement.period()).isEqualTo(Entitlement.Period.MONTH);
+            assertThat(entitlement.validUntil()).isEqualTo(end);
+            assertThat(catalog.allowance(entitlement.plan()).credits()).isEqualTo(360);
+        }
+    }
+
+    @Test
     void aSnapshotChangesTheBudgetOfTheOwnerThroughTheLedger() {
         UUID owner = UUID.randomUUID();
         var free = usage.read(owner);

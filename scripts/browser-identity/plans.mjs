@@ -37,7 +37,7 @@ function toolkit(ctx) {
   const frames = () => page('return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))));');
   const press = async (name, { modifiers = 0 } = {}) => {
     const [key, code, virtualKeyCode] = KEYS[name];
-    const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, nativeVirtualKeyCode: virtualKeyCode, modifiers };
+    const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, modifiers };
     await tab.call('Page.bringToFront');
     const down = name === 'Enter' ? { type: 'keyDown', text: '\r', unmodifiedText: '\r', ...event }
       : name === ' ' ? { type: 'keyDown', text: ' ', unmodifiedText: ' ', ...event } : { type: 'rawKeyDown', ...event };
@@ -340,6 +340,43 @@ export async function runPlans(ctx) {
     }
     await metrics(1440, 900, 1, false);
     return measured;
+  });
+
+  await stage('profile_voice_withdrawal', async () => {
+    const switchFixture = async variant => page('return (await fetch(args[0], { method: "POST" })).status;', `/__fixture/learning-${variant}`);
+    let acceptedCleared = null;
+    try {
+      if (config.generation) {
+        need(await switchFixture('generation') === 204, 'could not select the local Stub fixture');
+        const terms = await api('GET', '/api/speech-consent');
+        need(terms.status === 200, 'could not read the fixture voice consent terms');
+        need((await api('PUT', '/api/speech-consent', terms.body.required)).status === 200, 'could not seed a consent in the disposable fixture');
+      }
+      await metrics(1440, 900, 1, false);
+      await navigate('/profile#speech-consent', tab);
+      await until(() => exists('#speech-consent app-speech-consent-settings button', tab), 'profile has no voice withdrawal control');
+      await page('document.querySelector("#speech-consent button").focus(); return true;');
+      await press('Enter');
+      await until(() => page('return document.querySelector("#speech-consent [role=status]")?.textContent.includes("Согласие на распознавание отозвано");'),
+        'keyboard withdrawal did not announce success');
+      need(await page('return document.activeElement === document.querySelector("#speech-consent button");'), 'withdrawal lost keyboard focus');
+      if (config.generation) {
+        const after = await api('GET', '/api/speech-consent');
+        need(after.status === 200 && after.body.accepted === null, 'withdrawal did not clear the real consent row');
+        acceptedCleared = true;
+        need(await switchFixture('default') === 204, 'could not restore the ordinary fixture');
+        await navigate('/profile#speech-consent', tab);
+        await until(() => exists('#speech-consent app-speech-consent-settings button', tab), 'withdrawal vanished when speech was disabled');
+        await page('document.querySelector("#speech-consent button").focus(); return true;');
+        await press('Enter');
+        await until(() => page('return document.querySelector("#speech-consent [role=status]")?.textContent.includes("Согласие на распознавание отозвано");'),
+          'withdrawal failed when speech was disabled');
+      }
+      await shot('plans-profile-speech-consent-1440.png');
+      return { acceptedCleared, availableWithSpeechDisabled: true, keyboardFocusPreserved: true };
+    } finally {
+      if (config.generation) need(await switchFixture('default') === 204, 'the ordinary fixture was not restored');
+    }
   });
 
   await reducedMotion(false);
