@@ -183,9 +183,12 @@ fair-use buckets, `GET /api/usage` and the estimate. Migration `V26__usage_ledge
   kept.
   TODO(account-deletion task, owner: the epic that adds Learning's account purge; whether billing (#79) must keep
   ledger rows for a financial retention period is decided there): Learning has no account purge path today (only study retention exists), so nothing deletes usage rows when an
-  account is deleted. The rows hold no personal data (an account id and opaque references), so the purge should delete by
+  account is deleted. The rows hold owner-linked identifiers and opaque references; the purge should delete by
   `owner_id` in this order: `usage_ledger_entry`, `usage_reservation`, `usage_balance`, `usage_allowance`,
   `usage_counter`, `entitlement_inbox`; `DELETE` stays allowed on the ledger for that reason (only `UPDATE` is blocked).
+  The same purge and backup-retention inventory must cover `learning_profile.owner_id`, its goal and answer timestamp;
+  no account-deletion cleanup or anonymity guarantee is implemented by the profile feature. This remains a launch dependency
+  in the [legal checklist](../../../docs/product/russia-legal-launch-checklist-2026.md).
 - **Tests.** `app.mnema.learning.usage`: PostgreSQL integration tests with a movable clock (`UsageTestConfiguration`) cover
   parallel reservations, idempotent settlement, expiry and rollover, the Free schedule across months, the burst, the buckets
   and the notifications; `UsageContractTest` reproduces the examples of `contracts/usage/usage.json` from database state.
