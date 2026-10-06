@@ -318,6 +318,14 @@ describe('WorkshopSessionStore', () => {
             expect(store.activeSteps()).toHaveLength(1);
         });
 
+        it('names the materials whose RESEARCH step is active (#299), and only them', async () => {
+            setup();
+            const research = { ...activeStep, stepId: ids.first, artifactId: ids.second, kind: 'RESEARCH', state: 'RUNNING' };
+            api.listEvents.mockReturnValueOnce(events([], '1', { state: 'RUNNING', rowVersion: '12' }, [research, { ...activeStep, artifactId: ids.first, kind: 'TEXT_DRAFT' }]));
+            await tick(0);
+            expect([...store.researching()]).toEqual([ids.second]);
+        });
+
         it('reads the session again when an artifact moves on, and marks a loaded detail stale', async () => {
             setup(review());
             api.getArtifact.mockReturnValue(of(parseArtifactDetail({ ...clone(examples['artifactDetailItem']), artifactId: ids.second, ordinal: 1 })));

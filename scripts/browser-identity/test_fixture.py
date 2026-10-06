@@ -602,5 +602,33 @@ module.main()
                 self.assertEqual(0, result.returncode, name)
 
 
+    def test_only_research_needs_generation_and_excludes_the_other_aids(self):
+        for extra in ([], ["--generation", "--only-voice"]):
+            with patch.object(sys, "argv", ["run.py", "--dist", str(self.dist), "--authoring", "--only-research", *extra]), \
+                    contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as exit_code:
+                HARNESS.main()
+            self.assertEqual(2, exit_code.exception.code)
+        runner = Path(__file__).with_name("run.py").read_text()
+        self.assertIn('"onlyResearch": self.args.only_research', runner)
+
+    def test_research_scenario_is_wired_stub_only_and_syntactically_valid(self):
+        runner = Path(__file__).with_name("run.py").read_text()
+        workshop = Path(__file__).with_name("workshop.mjs").read_text()
+        source = Path(__file__).with_name("research.mjs").read_text()
+        self.assertIn('"LEARNING_FEATURES_WEB_SEARCH_ENABLED": "true"', runner)
+        self.assertIn('"research.mjs"', runner)
+        self.assertIn("import { runWorkshopResearch } from './research.mjs'", workshop)
+        self.assertIn("config.onlyResearch", workshop)
+        self.assertNotIn("Fetch.fulfillRequest", source)
+        for step in ("fixture", "control_text_cost", "composer_box", "create_and_research", "proposal_sources", "keyboard", "search_down", "responsive", "approve_and_browse"):
+            self.assertIn(f"step('{step}'", source)
+        self.assertIn("Проверено по", source)
+        node = shutil.which("node")
+        if node is not None:
+            for name in ("research.mjs", "workshop.mjs"):
+                result = subprocess.run([node, "--check", str(Path(__file__).with_name(name))], capture_output=True)
+                self.assertEqual(0, result.returncode, name)
+
+
 if __name__ == "__main__":
     unittest.main()

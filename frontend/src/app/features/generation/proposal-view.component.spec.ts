@@ -358,4 +358,37 @@ describe('ProposalViewComponent', () => {
             expect(buttons()).toEqual(['Одобрить и далее →', 'Править самому', 'Отклонить']);
         });
     });
+
+    describe('web research (#299)', () => {
+        const research = (count: number): Record<string, unknown> => ({ requests: 2, results: Array.from({ length: count }, (_, index) => ({
+            n: index + 1, url: `https://example.org/${index + 1}`, title: `Источник ${index + 1}`, provider: 'YANDEX' })) });
+        const checked = (): string | null => root().querySelector('.research-line')?.textContent?.replace(/\u00a0/g, ' ') ?? null;
+
+        it('says «Ищу источники…» while the material waits for its research, in the heading word and the body, queued or not', () => {
+            create(summary('QUEUED', { title: '', currentRevisionId: null }), { researching: true });
+            expect(root().querySelector('h2')?.textContent).toBe('Материал 3 из 10, ищу источники');
+            expect(root().textContent).toContain('Ищу источники…');
+            expect(root().textContent).not.toContain('поставила материал в очередь');
+            create(summary('GENERATING', { currentRevisionId: null }), { researching: true });
+            expect(root().textContent).toContain('Ищу источники…');
+            create(summary('GENERATING', { currentRevisionId: null }));
+            expect(root().textContent).toContain('Мнема пишет материал');
+            expect(root().textContent).not.toContain('Ищу источники');
+        });
+
+        it('shows a quiet «Проверено по N источникам» from the research of the artifact, and nothing for none', () => {
+            create(summary('PROPOSED'), { entry: entry('PROPOSED', { research: research(3) }) });
+            expect(checked()).toBe('Проверено по 3 источникам');
+            create(summary('PROPOSED'), { entry: entry('PROPOSED', { research: research(1) }) });
+            expect(checked()).toBe('Проверено по 1 источнику');
+            create(summary('PROPOSED'), { entry: entry('PROPOSED', { research: research(21) }) });
+            expect(checked()).toBe('Проверено по 21 источнику');
+            create(summary('PROPOSED'), { entry: entry('PROPOSED', { research: research(0) }) });
+            expect(checked()).toBeNull();
+            create(summary('PROPOSED'), { entry: entry('PROPOSED', { research: null }) });
+            expect(checked()).toBeNull();
+            create(summary('PROPOSED'));
+            expect(checked()).toBeNull();
+        });
+    });
 });

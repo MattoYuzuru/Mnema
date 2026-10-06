@@ -1,5 +1,6 @@
 package app.mnema.learning.usage;
 
+import app.mnema.learning.ai.ResearchSettings;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.id.UuidPolicy;
 import org.springframework.beans.factory.ObjectProvider;
@@ -28,8 +29,8 @@ import java.util.regex.Pattern;
  * <ul>
  *   <li>MATERIALS: one artifact per NOTE source (one when notes are merged or there are none), priced by effort
  *       ({@code AUTO} is priced and run as medium until the planner and auto-effort exist); declared media are one audio clip and one image
- *       search per artifact; a fact check is one low-effort check per artifact and is not run for the short effort
- *       (architecture section 14: short does no research); {@code planFirst} adds one separate {@link RateCard#PLAN} line
+ *       search per artifact; a fact check is not run for the short effort (architecture section 14: short does no research), priced as {@code WEB_SEARCH_QUERY} x the request cap of the effort
+ *       (medium 2, detailed 6, auto 3, at most {@code learning.ai.research.max-requests}); {@code planFirst} adds one separate {@link RateCard#PLAN} line
  *       (the plan is debited on its own when it is ready, {@code SMART_PLAN_FLASH}) and its count cap (AI-14).</li>
  *   <li>EXERCISES: {@code EXACT} is targets x perTarget; {@code AUTO} is five per target, fewer when targets x five
  *       would exceed the session limit; {@code BUDGET_PERCENT} is what that share of the remaining budget buys, at
@@ -45,6 +46,8 @@ final class StandardSpecInterpreter implements GenerationSpecInterpreter {
     private static final int MAX_STYLE_EXAMPLES = 2;
     private static final int AUTO_PER_TARGET = 5;
     private static final String PLAN = RateCard.PLAN;
+    /** The rate-card operation of one paid search request of the research step (AI-18, #299). */
+    private static final String RESEARCH = "WEB_SEARCH_QUERY";
     private static final Pattern LANGUAGE = Pattern.compile("[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,3}");
     private static final Pattern DECIMAL = Pattern.compile("0|[1-9][0-9]{0,17}");
     private static final Set<String> EFFORTS = Set.of("AUTO", "SHORT", "MEDIUM", "DETAILED");
@@ -59,18 +62,26 @@ final class StandardSpecInterpreter implements GenerationSpecInterpreter {
     private final GenerationLimits limits;
     private final ObjectProvider<GenerationBoundary> boundary;
     private final boolean plannerEnabled;
+    private final int researchMax;
 
     /** No boundary and no planner: validation and pricing only (unit tests). */
     StandardSpecInterpreter(GenerationLimits limits) {
         this(limits, null, false);
     }
 
+    /** The default cap of research requests ({@code learning.ai.research.max-requests}). */
+    StandardSpecInterpreter(GenerationLimits limits, ObjectProvider<GenerationBoundary> boundary, boolean plannerEnabled) {
+        this(limits, boundary, plannerEnabled, 15);
+    }
+
     @Autowired
     StandardSpecInterpreter(GenerationLimits limits, ObjectProvider<GenerationBoundary> boundary,
-                            @Value("${learning.generation.planner.enabled:true}") boolean plannerEnabled) {
+                            @Value("${learning.generation.planner.enabled:true}") boolean plannerEnabled,
+                            @Value("${learning.ai.research.max-requests:15}") int researchMax) {
         this.limits = limits;
         this.boundary = boundary;
         this.plannerEnabled = plannerEnabled;
+        this.researchMax = researchMax;
     }
 
     @Override
@@ -191,7 +202,7 @@ final class StandardSpecInterpreter implements GenerationSpecInterpreter {
         if (anyOverride && !(notesMode.equals("ONE_PER_NOTE") && notes > 0)) throw invalid();
         Map<String, Integer> counts = new LinkedHashMap<>();
         Map<String, Integer> extras = new LinkedHashMap<>();
-        for (String extra : List.of("TTS_CLIP_30S", "IMAGE_SEARCH", "FACTCHECK_LOW")) extras.put(extra, 0);
+        for (String extra : List.of("TTS_CLIP_30S", "IMAGE_SEARCH", RESEARCH)) extras.put(extra, 0);
         boolean anyAudio = false;
         boolean anyImage = false;
         boolean research = false;
@@ -206,8 +217,10 @@ final class StandardSpecInterpreter implements GenerationSpecInterpreter {
             }, 1, Integer::sum);
             if (effective.audio) extras.merge("TTS_CLIP_30S", 1, Integer::sum);
             if (effective.image) extras.merge("IMAGE_SEARCH", 1, Integer::sum);
-            boolean checks = factCheck && !effective.effort.equals("SHORT");
-            if (checks) extras.merge("FACTCHECK_LOW", 1, Integer::sum);
+            // a fact check holds one search request's price per request its effort allows (AI-18): 2 for medium, 6 for detailed, 3 for auto
+            int requests = factCheck ? ResearchSettings.cap(effective.effort, researchMax) : 0;
+            boolean checks = requests > 0;
+            if (checks) extras.merge(RESEARCH, requests, Integer::sum);
             anyAudio |= effective.audio;
             anyImage |= effective.image;
             research |= checks;
@@ -249,7 +262,8 @@ final class StandardSpecInterpreter implements GenerationSpecInterpreter {
             }
             if (media.has("imageSearch")) image = flag(media, "imageSearch");
         }
-        return new Effective(effort.equals("AUTO") ? "MEDIUM" : effort, audio, image);
+        // AUTO stays AUTO: the material is priced as a medium one and its research is capped as an auto one, as the generation module runs it
+        return new Effective(effort, audio, image);
     }
 
     // ---------------------------------------------------------------- EXERCISES

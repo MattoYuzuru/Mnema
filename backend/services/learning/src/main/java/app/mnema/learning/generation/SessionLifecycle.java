@@ -637,7 +637,7 @@ class SessionLifecycle {
         return session.state().equals("RUNNING") || session.state().equals("REVIEW");
     }
 
-    private static boolean open(Artifact artifact) {
+    static boolean open(Artifact artifact) {
         return artifact.state().equals("QUEUED") || artifact.state().equals("GENERATING");
     }
 

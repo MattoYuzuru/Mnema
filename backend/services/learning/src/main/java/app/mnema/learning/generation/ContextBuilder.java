@@ -63,11 +63,12 @@ class ContextBuilder {
     private final PromptAssembler assembler;
     private final GenerationSettings settings;
     private final Plans plans;
+    private final ResearchRepository research;
     private final NativeDocumentReader reader = new NativeDocumentReader();
     private final MbmRenderer renderer = new MbmRenderer();
 
     ContextBuilder(ContextRepository context, GenerationRepository repository, ItemService items, ItemPreviews previews,
-                   PromptAssembler assembler, GenerationSettings settings, Plans plans) {
+                   PromptAssembler assembler, GenerationSettings settings, Plans plans, ResearchRepository research) {
         this.context = context;
         this.repository = repository;
         this.items = items;
@@ -75,6 +76,7 @@ class ContextBuilder {
         this.assembler = assembler;
         this.settings = settings;
         this.plans = plans;
+        this.research = research;
     }
 
     /** A pinned source of the artifact is gone or changed: the artifact fails with {@code SOURCE_UNAVAILABLE}. */
@@ -93,21 +95,67 @@ class ContextBuilder {
         MaterialsSpec.Effective effective = planned.map(item -> spec.forArtifact(artifact.sourceRefs()).withEffort(item.effort()))
                 .orElseGet(() -> spec.forArtifact(artifact.sourceRefs()));
         List<String> sourceTexts = sourceTexts(session, artifact);
+        String request = request(spec, planned);
+        // what the RESEARCH step of this artifact found (nothing without a fact check, or when it found nothing): untrusted <search_result> blocks, and the
+        // links the material may use are the user's own plus these; the compiler resolves [n] and ::sources against exactly these results
+        List<ResearchRepository.Source> found = research.find(artifact.artifactId()).map(ResearchRepository.Research::results).orElse(List.of());
+        List<String> allowed = new ArrayList<>(links(sourceTexts));
+        List<MbmOptions.ResearchSource> numbered = new ArrayList<>();
+        List<PromptBlock> resultBlocks = new ArrayList<>();
+        for (ResearchRepository.Source source : found) {
+            if (!allowed.contains(source.url())) allowed.add(source.url());
+            numbered.add(new MbmOptions.ResearchSource(source.n(), source.url(), source.title()));
+            resultBlocks.add(PromptBlocks.searchResult(source.n(), source.url(), source.title(), source.snippet()));
+        }
+        PromptValues values = briefValues(session, spec, sourceTexts, request)
+                .block("allowed_links", PromptBlocks.allowedLinks(allowed))
+                .block("note_blocks", noteBlocks(sourceTexts, settings.context().notesTokens()))
+                .block("search_result_blocks", resultBlocks.isEmpty() ? PromptBlocks.empty() : PromptBlocks.join(resultBlocks))
+                .text("request", request).text("task.skill", "free").number("task.words", wordsFor(effective.workingEffort()))
+                .text("task.media", media(effective));
+        AssembledPrompt prompt = assembler.assemble(PromptTask.MATERIAL, values);
+        MbmOptions options = MbmOptions.create().withAllowedLinks(allowed).withResearch(numbered)
+                .withSourcesHeading(sourcesHeading(spec.outputLanguage())).withMaxMedia(effective.maxMedia())
+                .withKindCaps(effective.audio() ? 1 : 0, effective.imageSearch() ? 1 : 0);
+        return new DraftContext(prompt, options, maxTokens(effective.workingEffort()), TEMPERATURE);
+    }
+
+    /** The heading of the sources section the compiler writes for {@code ::sources}: in the language of the material when it is Russian, else English. */
+    static String sourcesHeading(String outputLanguage) {
+        return outputLanguage != null && outputLanguage.toLowerCase(java.util.Locale.ROOT).startsWith("ru") ? "Источники" : "Sources";
+    }
+
+    private static String request(MaterialsSpec spec, Optional<Plans.MaterialItem> planned) {
         String request = spec.prompt().isBlank() ? "по источникам выше" : spec.prompt();
         if (planned.isPresent()) {
             request = "Тема материала: " + planned.get().title() + (spec.prompt().isBlank() ? "" : "\nОбщая просьба: " + spec.prompt());
         }
-        PromptValues values = briefValues(session, spec, sourceTexts, request)
-                .block("allowed_links", PromptBlocks.allowedLinks(links(sourceTexts)))
-                .block("note_blocks", noteBlocks(sourceTexts, settings.context().notesTokens()))
-                .block("search_result_blocks", PromptBlocks.empty())
-                .text("request", request).text("task.skill", "free").number("task.words", wordsFor(effective.workingEffort()))
-                .text("task.media", media(effective));
-        AssembledPrompt prompt = assembler.assemble(PromptTask.MATERIAL, values);
-        MbmOptions options = MbmOptions.create().withAllowedLinks(links(sourceTexts)).withMaxMedia(effective.maxMedia())
-                .withKindCaps(effective.audio() ? 1 : 0, effective.imageSearch() ? 1 : 0);
-        return new DraftContext(prompt, options, maxTokens(effective.workingEffort()), TEMPERATURE);
+        return request;
     }
+
+    /** All the notes of the query planner together: it needs the gist of the topic, not the sources. */
+    private static final int RESEARCH_NOTES_TOKENS = 1_500;
+    private static final double RESEARCH_TEMPERATURE = 0.2;
+
+    /**
+     * The prompt of the query planner of the RESEARCH step ({@code prompts/v1/research.md}) for this artifact: the deck title, the language, the clipped
+     * notes, the request (or the topic the plan chose for this material) and the cap of requests. Returns the prompt only: the planner call is cheap,
+     * strict JSON at low temperature.
+     *
+     * @throws SourceGoneException a pinned source is gone (the draft that follows fails with it)
+     * @throws app.mnema.learning.ai.prompt.PromptException the prompt exceeds its budget
+     */
+    ResearchPrompt buildResearch(Session session, Artifact artifact, MaterialsSpec spec, int cap) {
+        Optional<Plans.MaterialItem> planned = plans.plannedMaterial(session, artifact);
+        Brief brief = context.brief(session.ownerId(), session.deckId()).orElseThrow(SourceGoneException::new);
+        PromptValues values = PromptValues.create().text("deck.title", orDash(brief.title())).text("lang.output", spec.outputLanguage())
+                .block("note_blocks", noteBlocks(sourceTexts(session, artifact), RESEARCH_NOTES_TOKENS)).text("request", request(spec, planned))
+                .number("task.cap", cap);
+        return new ResearchPrompt(assembler.assemble(PromptTask.RESEARCH, values), RESEARCH_TEMPERATURE);
+    }
+
+    /** The planner's prompt and the temperature it is called at. */
+    record ResearchPrompt(AssembledPrompt prompt, double temperature) { }
 
     /**
      * The values of the deck brief (title, profile, terms, exemplars with their style card, the most recent material, the outline)

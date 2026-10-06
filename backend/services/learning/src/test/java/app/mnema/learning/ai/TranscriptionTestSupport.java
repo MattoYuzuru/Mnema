@@ -24,7 +24,7 @@ final class TranscriptionTestSupport {
     static AiProperties properties(List<String> stt, List<String> sttRu, Map<String, AiProperties.Provider> providers) {
         AiProperties base = AiTestSupport.properties("", AiTestSupport.routes(List.of(), List.of(), List.of()), providers);
         return new AiProperties(base.provider(), new AiProperties.Routes(List.of(), List.of(), List.of(), Duration.ofSeconds(8), List.of(), List.of(), List.of(),
-                List.of(), stt, sttRu), providers, List.of(AiTestSupport.FLASH, TRANSCRIBE, FLASH_LITE), base.transport(), base.retry(), base.breaker(),
+                List.of(), stt, sttRu, List.of()), providers, List.of(AiTestSupport.FLASH, TRANSCRIBE, FLASH_LITE), base.transport(), base.retry(), base.breaker(),
                 base.permits(), base.budget(), base.userKey(), base.prompt());
     }
 

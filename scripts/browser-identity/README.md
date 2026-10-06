@@ -329,6 +329,25 @@ python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend --no
   --authoring --media --generation --only-voice
 ```
 
+### Web research and «Источники» (`--authoring --generation`)
+
+`research.mjs` (#299, AI-18) runs among the Workshop scenarios, in a deck of its own, against the Stub Learning (Stub text provider and the Stub
+web search: results on `https://example.org/stub/research/<n>`, no network, no key; `LEARNING_FEATURES_WEB_SEARCH_ENABLED=true` is set for that
+instance; no source page is ever opened). Steps: a «Подробно» control material without fact checking (what the text alone costs); the composer
+(«Проверять факты» disabled with its reason on «Кратко», enabled on «Средне»/«Подробно» with the request cap and the credits in the hint); a
+«Подробно» material with fact checking (Space on the box, Enter), `research.requests` at most 6, the `/api/usage` debit equal to the text plus
+5 credits per request; the proposal's «Источники» heading with numbered links (`target=_blank`, `rel="noopener noreferrer"`, announced) and
+«Проверено по N источникам», Tab reaching the links in order; a `[[stub:search-down]]` material with no sources and no research line; 1440/390/320
+(and 2x text) states and reduced motion; approval and Browse (the section and its links, no Workshop-only line).
+«Ищу источники…» is recorded as evidence, not demanded: the Stub answers faster than the lazy Workshop chunk opens.
+Screenshots: `research-*.png`, `browse-research-sources-1440.png`; failures write `failure-research-<step>.png` and `.txt`.
+`--only-research` (development aid, requires `--generation`) runs this scenario alone after the base flow:
+
+```
+python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend --node /opt/homebrew/opt/node@24/bin/node \
+  --authoring --media --generation --only-research
+```
+
 ### «Попросить Мнему…» (`--authoring --generation`)
 
 `ask-mnema.mjs` (#294, AI-16) runs last among the Workshop scenarios, against the same second Learning (Stub text provider, never a real

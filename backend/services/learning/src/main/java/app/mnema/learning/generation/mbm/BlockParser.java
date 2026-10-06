@@ -583,7 +583,8 @@ final class BlockParser {
             MbmOptions.ResearchSource found = null;
             if (matcher.matches()) {
                 found = research.get(Integer.parseInt(matcher.group(1)));
-                if (found != null && !found.url().equals(matcher.group(2))) {
+                // the model sees the URL as the prompt escaped it (<search_result url="...&amp;...">) and may copy it so: both forms name the result
+                if (found != null && !found.url().equals(matcher.group(2)) && !found.url().equals(unescape(matcher.group(2)))) {
                     found = null;
                 }
             }
@@ -594,9 +595,36 @@ final class BlockParser {
             }
         }
         if (findings.errorCount() == errorsBefore) {
-            blocks.add(new Block.Sources(line, kept, entries));
+            mergeSources(line, kept, entries);
         }
         return end;
+    }
+
+    /**
+     * One sources section per document, in the order of the numbers and without repeats: a later {@code ::sources} is merged into the first (the
+     * first keeps its place and handle), and the entries of the section are sorted by {@code n} with each number once.
+     */
+    private void mergeSources(int line, UUID kept, List<Block.Sources.Entry> entries) {
+        var byNumber = new java.util.TreeMap<Integer, Block.Sources.Entry>();
+        int existing = -1;
+        for (int index = 0; index < blocks.size(); index++) {
+            if (blocks.get(index) instanceof Block.Sources earlier) {
+                existing = index;
+                earlier.entries().forEach(entry -> byNumber.putIfAbsent(entry.n(), entry));
+                break;
+            }
+        }
+        entries.forEach(entry -> byNumber.putIfAbsent(entry.n(), entry));
+        if (existing < 0) {
+            blocks.add(new Block.Sources(line, kept, new ArrayList<>(byNumber.values())));
+        } else {
+            Block.Sources first = (Block.Sources) blocks.get(existing);
+            blocks.set(existing, new Block.Sources(first.line(), first.keptId(), new ArrayList<>(byNumber.values())));
+        }
+    }
+
+    private static String unescape(String url) {
+        return url.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&amp;", "&");
     }
 
     private int media(int i, DirectiveHead head, Spec spec, MbmSlot.Kind kind, UUID kept) {
