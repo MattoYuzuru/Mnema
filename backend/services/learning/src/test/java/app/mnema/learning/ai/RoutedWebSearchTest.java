@@ -239,6 +239,42 @@ class RoutedWebSearchTest {
     }
 
     @Test
+    void aPaidRejectedAnswerConsumesTheRequestCapBeforeTryingAFallback() {
+        Fake yandex = new Fake("yandex", 1);
+        Fake perplexity = new Fake("perplexity", 5);
+        yandex.paid = problem -> problem instanceof AiFailure.InvalidOutput;
+        yandex.script = call -> call == 1 ? AiResult.ok(List.of(new WebSearch.Result("https://example.org/1", "t", "s", null,
+                WebSearch.Provider.YANDEX, 0, 1))) : AiResult.failed(new AiFailure.InvalidOutput("xml"));
+
+        WebSearch.Answer answer = answer(router(yandex, perplexity).search(request("a", "b")));
+
+        assertThat(yandex.calls.get()).isEqualTo(2);
+        assertThat(perplexity.calls.get()).isZero();
+        assertThat(answer.requests()).isEqualTo(2);
+        assertThat(answer.costMicros()).isEqualTo(2 * 5_742);
+        assertThat(answer.results()).hasSize(1);
+        assertThat(journal.outcomes).hasSize(2);
+    }
+
+    @Test
+    void spendingTheDailyBudgetStopsTheNextQueryAndTheFallbackOfAPaidRejection() {
+        for (boolean rejected : List.of(false, true)) {
+            Fake yandex = new Fake("yandex", 1);
+            Fake perplexity = new Fake("perplexity", 5);
+            yandex.paid = problem -> problem instanceof AiFailure.InvalidOutput;
+            if (rejected) yandex.script = call -> AiResult.failed(new AiFailure.InvalidOutput("xml"));
+            spent = properties.budget().searchMicros() - yandex.requestCostMicros();
+
+            WebSearch.Answer answer = answer(router(yandex, perplexity).search(request("a", "b", "c")));
+
+            assertThat(yandex.calls.get()).as("rejected=%s", rejected).isEqualTo(1);
+            assertThat(perplexity.calls.get()).isZero();
+            assertThat(answer.requests()).isEqualTo(1);
+            assertThat(answer.costMicros()).isEqualTo(5_742);
+        }
+    }
+
+    @Test
     void aJournalThatCannotRecordTheIntentMeansNoCall() {
         Fake yandex = new Fake("yandex", 1);
         CallJournal broken = new CallJournal() {
@@ -250,6 +286,26 @@ class RoutedWebSearchTest {
                 new AiBudget(properties.budget(), (capability, since) -> 0, Clock.systemUTC()), broken, new AiTelemetry(meters));
         assertThat(failure(router.search(request("a")))).isEqualTo(new AiFailure.Transient("journal_unavailable"));
         assertThat(yandex.calls.get()).isZero();
+    }
+
+    @Test
+    void aJournalOutcomeFailureKeepsThePaidAnswerAndStillEnforcesTheBudget() {
+        Fake yandex = new Fake("yandex", 1);
+        CallJournal broken = new CallJournal() {
+            @Override public java.util.UUID begin(Intent intent) { return java.util.UUID.randomUUID(); }
+
+            @Override public void finish(java.util.UUID callId, Outcome outcome) { throw new IllegalStateException("database down"); }
+        };
+        spent = properties.budget().searchMicros() - yandex.requestCostMicros();
+        var router = new RoutedWebSearch(properties, ResearchSettings.defaults(), Map.of("yandex", yandex), new BreakerRegistry(Clock.systemUTC(), properties.breaker()),
+                new AiBudget(properties.budget(), (capability, since) -> spent, Clock.systemUTC()), broken, new AiTelemetry(meters));
+
+        WebSearch.Answer answer = answer(router.search(request("a", "b")));
+
+        assertThat(yandex.calls.get()).isEqualTo(1);
+        assertThat(answer.requests()).isEqualTo(1);
+        assertThat(answer.costMicros()).isEqualTo(5_742);
+        assertThat(answer.results()).hasSize(2);
     }
 
     @Test

@@ -109,10 +109,8 @@ class StepQueue {
         // An edit is interactive and costs a few credits, and so is a plan (the owner waits for it in the Workshop): the daily burst never
         // parks them for a day (a turn that waits is a turn that hangs); their debits are still recorded
         boolean plan = step.kind().equals(PlanExecutor.KIND);
-        // The research of a material is not parked either: its few credits (at most 30) must not hold back the draft behind it for a day when the room left
-        // fits the draft but not the research as well; the debit is recorded as every other (the draft, if the room is gone, is parked on its own).
-        boolean research = step.kind().equals(ResearchExecutor.KIND);
-        if (credits > 0 && !turn && !plan && !research) {
+        // Research is paid work too: defer it durably before making provider calls when today's debit room cannot cover it.
+        if (credits > 0 && !turn && !plan) {
             var room = ledger.dailyDebitRoom(step.ownerId());
             if (room.isPresent() && room.get().remainingTodayCredits() < credits) {
                 steps.defer(step.stepId(), room.get().resetsAt());
