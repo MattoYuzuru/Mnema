@@ -132,7 +132,7 @@ export async function runMechanics(ctx) {
   const renderSettled = () => tab.callFunction(`function() { return new Promise(resolve =>
     requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)))); }`, []);
   const press = async (key, code, virtualKeyCode, keyText) => {
-    const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, nativeVirtualKeyCode: virtualKeyCode };
+    const event = { key, code, windowsVirtualKeyCode: virtualKeyCode };
     await tab.call('Input.dispatchKeyEvent', keyText === undefined
       ? { type: 'rawKeyDown', ...event } : { type: 'keyDown', text: keyText, unmodifiedText: keyText, ...event });
     await tab.call('Input.dispatchKeyEvent', { type: 'keyUp', ...event });
@@ -436,19 +436,42 @@ export async function runMechanics(ctx) {
       const wide = [...sheet.querySelectorAll('*')].filter(e => e.getBoundingClientRect().right > limit)
         .map(e => e.tagName.toLowerCase() + (e.className && typeof e.className === 'string' ? '.' + e.className.trim().split(' ')[0] : '')).slice(0, 4).join(' ');
       const blocks = [...document.querySelectorAll('app-native-document-renderer article p, app-native-document-renderer article h1, app-native-document-renderer article h2, app-native-document-renderer article h3')];
-      return { wide, text: blocks.length >= 2 && blocks.every(e => e.scrollWidth <= e.clientWidth + 1 && e.getBoundingClientRect().right <= limit),
+      const players = [...sheet.querySelectorAll('app-native-media-player')];
+      const playerGeometry = players.map(player => {
+        const boundary = player.getBoundingClientRect();
+        const outside = [...player.querySelectorAll('.mnema-player-controls *')].filter(control => {
+          const rect = control.getBoundingClientRect();
+          return rect.width > 0 && (rect.left < boundary.left - 1 || rect.right > boundary.right + 1);
+        }).slice(0, 6).map(control => {
+          const rect = control.getBoundingClientRect();
+          return { tag: control.tagName.toLowerCase(), class: typeof control.className === 'string' ? control.className.split(' ')[0] : '',
+            left: Math.round(rect.left - boundary.left), right: Math.round(rect.right - boundary.left), width: Math.round(rect.width) };
+        });
+        const small = [...player.querySelectorAll('button, input')].filter(control => {
+          const rect = control.getBoundingClientRect();
+          return rect.width > 0 && (rect.width < 44 || rect.height < 44);
+        }).slice(0, 6).map(control => {
+          const rect = control.getBoundingClientRect();
+          return { tag: control.tagName.toLowerCase(), width: Math.round(rect.width), height: Math.round(rect.height) };
+        });
+        return { kind: player.querySelector('video') ? 'video' : 'audio', width: Math.round(boundary.width), outside, small };
+      });
+      return { wide, playerGeometry, playerOverflow: playerGeometry.some(player => player.outside.length > 0),
+        smallControls: playerGeometry.some(player => player.small.length > 0), audio: Boolean(sheet.querySelector('app-native-media-player audio')),
+        video: Boolean(sheet.querySelector('app-native-media-player video')),
+        text: blocks.length >= 2 && blocks.every(e => e.scrollWidth <= e.clientWidth + 1 && e.getBoundingClientRect().right <= limit),
         sheet: sheet.scrollWidth <= sheet.clientWidth, page: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
         font: parseFloat(getComputedStyle(document.querySelector('app-native-document-renderer article')).fontSize) };`);
-    // The sheet also holds media players whose controls are outside this scenario's contract (long text containment);
-    // sheet-level overflow is recorded as an observation in the evidence, not as a failure of the text check.
-    const observed = [];
+    // Reflow includes the published audio/video players and their controls, not only the text (#307).
     const widths = {};
     for (const width of [320, 390, 1440]) {
       await metrics({ width, height: 844, deviceScaleFactor: 1, mobile: false });
       await renderSettled();
       const result = await contained();
       need(result.text, `long text overflows the material at ${width} px`);
-      if (!result.sheet) observed.push(`${width}px: ${result.wide}`);
+      need(result.audio && result.video, 'the reflow fixture must include both audio and video');
+      need(result.sheet && result.page && !result.playerOverflow, 'material or player overflows at ' + width + ' px: ' + JSON.stringify(result));
+      need(!result.smallControls, 'player controls below 44 px at ' + width + ' px: ' + JSON.stringify(result.playerGeometry));
       widths[width] = result.page;
     }
     await metrics({ width: 320, height: 844, deviceScaleFactor: 1, mobile: false });
@@ -457,11 +480,13 @@ export async function runMechanics(ctx) {
     await call(`document.documentElement.style.fontSize = '32px'; return true;`);
     await renderSettled();
     const doubled = await contained();
+    await call(`document.querySelector('app-native-media-player .mnema-player-controls')?.scrollIntoView({ block: 'center', behavior: 'instant' }); return true;`);
     await ctx.saveScreenshot('mechanics-renderer-reflow-320-2x-text.png', tab);
     await call(`document.documentElement.style.fontSize = ''; return true;`);
     need(doubled.font >= base * 1.9, `2x root text did not scale the material (${base}px -> ${doubled.font}px)`);
     need(doubled.text, 'long text overflows the material at 320 px with 2x root text');
-    if (!doubled.sheet) observed.push('320px at 2x root text: ' + doubled.wide);
+    need(doubled.sheet && doubled.page && !doubled.playerOverflow, 'material or player overflows at 320 px with 2x root text: ' + JSON.stringify(doubled));
+    need(!doubled.smallControls, 'player controls below 44 px at 320 px with 2x root text: ' + JSON.stringify(doubled.playerGeometry));
     // 200% browser zoom on a 320 px window is a 160 CSS-pixel layout viewport.
     await metrics({ width: 160, height: 844, deviceScaleFactor: 2, mobile: false });
     await renderSettled();
@@ -469,9 +494,10 @@ export async function runMechanics(ctx) {
     await ctx.saveScreenshot('mechanics-renderer-reflow-200-zoom.png', tab);
     await desktop();
     need(zoomed.text, 'long text overflows the material at 200% zoom on a 320 px window');
-    if (!zoomed.sheet) observed.push('200% zoom on 320px: ' + zoomed.wide);
+    need(zoomed.sheet && zoomed.page && !zoomed.playerOverflow, 'material or player overflows at 200% zoom: ' + JSON.stringify(zoomed));
+    need(!zoomed.smallControls, 'player controls below 44 px at 200% zoom: ' + JSON.stringify(zoomed.playerGeometry));
     return { widths: [320, 390, 1440], rootTextScale: 2, zoomPercent: 200, longUnbrokenString: 512, longTextContained: true,
-      sheetOverflowObservations: observed };
+      audioVideoContained: true, playerControlsContained: true, touchTargets44: true, doubled: doubled.playerGeometry, zoomed: zoomed.playerGeometry };
   });
 
   // The decorative constellation: scattered, clear of the content and of each other on a wide page; omitted on a narrow one.

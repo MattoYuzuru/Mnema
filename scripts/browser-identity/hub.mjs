@@ -30,7 +30,7 @@ export async function runHub(ctx) {
   const page = (body, ...args) => tab.callFunction(`async function(...args) { ${body} }`, args);
   const renderSettled = () => page(`return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))));`);
   const press = async (key, code, virtualKeyCode, keyText) => {
-    const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, nativeVirtualKeyCode: virtualKeyCode };
+    const event = { key, code, windowsVirtualKeyCode: virtualKeyCode };
     await tab.call('Input.dispatchKeyEvent', keyText === undefined
       ? { type: 'rawKeyDown', ...event } : { type: 'keyDown', text: keyText, unmodifiedText: keyText, ...event });
     await tab.call('Input.dispatchKeyEvent', { type: 'keyUp', ...event });
@@ -377,7 +377,7 @@ export async function runHub(ctx) {
       'the consequence text is not visible while armed: ' + JSON.stringify(armed.consequence));
     await saveScreenshot('hub-hold-to-delete-1440.png', tab);
     const holdStarted = Date.now();
-    await tab.call('Input.dispatchKeyEvent', { type: 'keyDown', text: ' ', unmodifiedText: ' ', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
+    await tab.call('Input.dispatchKeyEvent', { type: 'keyDown', text: ' ', unmodifiedText: ' ', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 });
     await sleep(600);
     const holding = await page(`const b = document.querySelector('app-hold-to-delete-button button');
       return { holding: b.classList.contains('holding'), label: b.textContent.replace(/\\s+/g, ' ').trim(), disabled: b.disabled,
@@ -388,7 +388,7 @@ export async function runHub(ctx) {
     // The key stays down until the hold completes (headless Chrome may throttle page timers, so a fixed sleep is not a hold).
     await waitFor(async () => (await rows()).length === 3, 'the hold did not delete the material while the key stayed down', 15_000);
     const heldMs = Date.now() - holdStarted;
-    await tab.call('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
+    await tab.call('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 });
     need(heldMs >= 3000, 'the material was deleted after only ' + heldMs + ' ms: the hold must last 3 s');
     need((await rows()).every(row => row.title !== DISPOSABLE), 'the deleted material is still listed');
     await waitFor(async () => (await status())?.includes('Удалено 1 материал.'), 'the outcome of the deletion was not stated');

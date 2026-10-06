@@ -82,7 +82,7 @@ export async function runWorkshopVoice(ctx, h) {
   // ---- low-level input -------------------------------------------------------------------------------------------------------------
   const press = async name => {
     const [key, code, virtualKeyCode] = KEYS[name];
-    const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, nativeVirtualKeyCode: virtualKeyCode, modifiers: 0 };
+    const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, modifiers: 0 };
     await tab.call('Page.bringToFront');
     await tab.call('Input.dispatchKeyEvent', name === 'Enter'
       ? { type: 'keyDown', text: '\r', unmodifiedText: '\r', ...event } : { type: 'rawKeyDown', ...event });

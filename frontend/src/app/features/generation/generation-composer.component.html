@@ -79,7 +79,7 @@
     }
 
     <app-generation-settings [value]="settings()" (valueChange)="onSettings($event)" [imageAvailable]="imageAvailable()"
-      [audioAvailable]="audioAvailable()" [planCost]="planCost()" />
+      [audioAvailable]="audioAvailable()" [researchAvailable]="researchAvailable()" [planCost]="planCost()" />
   </form>
 
   <p class="write-myself"><a class="text-link" [routerLink]="['/decks', deckId(), 'materials', 'new']" [queryParams]="{ write: 1 }">Или откройте пустой редактор →</a></p>

@@ -1,5 +1,6 @@
 package app.mnema.learning.generation;
 
+import app.mnema.learning.ai.ResearchSettings;
 import app.mnema.learning.generation.Rows.Step;
 import app.mnema.learning.usage.UsageLedger;
 import org.springframework.stereotype.Service;
@@ -38,16 +39,20 @@ class StepQueue {
     private final SessionLifecycle lifecycle;
     private final EditLifecycle edits;
     private final ImageSearchLifecycle imageSlots;
+    private final ResearchLifecycle research;
+    private final ResearchSettings researchSettings;
     private final UsageLedger ledger;
     private final GenerationSettings settings;
     private final TransactionTemplate transaction;
 
-    StepQueue(StepRepository steps, SessionLifecycle lifecycle, EditLifecycle edits, ImageSearchLifecycle imageSlots, UsageLedger ledger,
-              GenerationSettings settings, PlatformTransactionManager transactions) {
+    StepQueue(StepRepository steps, SessionLifecycle lifecycle, EditLifecycle edits, ImageSearchLifecycle imageSlots, ResearchLifecycle research,
+              ResearchSettings researchSettings, UsageLedger ledger, GenerationSettings settings, PlatformTransactionManager transactions) {
         this.steps = steps;
         this.lifecycle = lifecycle;
         this.edits = edits;
         this.imageSlots = imageSlots;
+        this.research = research;
+        this.researchSettings = researchSettings;
         this.ledger = ledger;
         this.settings = settings;
         this.transaction = new TransactionTemplate(transactions);
@@ -74,6 +79,7 @@ class StepQueue {
                 case Look.Expired expired -> {
                     if (expired.turn()) edits.expire(expired.stepId());
                     else if (expired.slot()) imageSlots.expire(expired.stepId());
+                    else if (expired.kind().equals(ResearchExecutor.KIND)) research.expire(expired.stepId());
                     else lifecycle.expire(expired.stepId());
                 }
             }
@@ -103,6 +109,7 @@ class StepQueue {
         // An edit is interactive and costs a few credits, and so is a plan (the owner waits for it in the Workshop): the daily burst never
         // parks them for a day (a turn that waits is a turn that hangs); their debits are still recorded
         boolean plan = step.kind().equals(PlanExecutor.KIND);
+        // Research is paid work too: defer it durably before making provider calls when today's debit room cannot cover it.
         if (credits > 0 && !turn && !plan) {
             var room = ledger.dailyDebitRoom(step.ownerId());
             if (room.isPresent() && room.get().remainingTodayCredits() < credits) {
@@ -112,7 +119,7 @@ class StepQueue {
         }
         Duration deadline = step.kind().equals(TextDraftExecutor.KIND) ? settings.step().textDraftDeadline()
                 : plan ? settings.planner().deadline() : step.kind().equals(ImageSearchExecutor.KIND) ? ImageSearchExecutor.DEADLINE
-                : Duration.ofMinutes(2);
+                : step.kind().equals(ResearchExecutor.KIND) ? researchSettings.deadline() : Duration.ofMinutes(2);
         Step running = steps.claim(step.stepId(), UUID.randomUUID(), Math.max(1, settings.worker().lease().toSeconds()),
                 Math.max(1, deadline.toSeconds()), Math.max(1, settings.step().maxLifetime().toSeconds()));
         return new Look.Claimed(new StepClaim(running.stepId(), running.sessionId(), running.artifactId(), running.ownerId(),

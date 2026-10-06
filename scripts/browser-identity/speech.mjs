@@ -57,7 +57,7 @@ export async function runWorkshopSpeech(ctx, h) {
   // ---- low-level input -------------------------------------------------------------------------------------------------
   const press = async (name, { modifiers = 0 } = {}) => {
     const [key, code, virtualKeyCode] = KEYS[name];
-    const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, nativeVirtualKeyCode: virtualKeyCode, modifiers };
+    const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, modifiers };
     await tab.call('Page.bringToFront');
     await tab.call('Input.dispatchKeyEvent', name === 'Enter'
       ? { type: 'keyDown', text: '\r', unmodifiedText: '\r', ...event } : { type: 'rawKeyDown', ...event });
@@ -358,19 +358,30 @@ export async function runWorkshopSpeech(ctx, h) {
       result[tag] = { overflow: false };
     }
     {
+      // WCAG 1.4.10 / 1.4.4: 320 px with 2x root text. The shared player (content/rendering/native-media-player) wraps its controls instead of
+      // overflowing, and its buttons, timeline and speed select keep 44 px targets.
       await metrics(320, 800, 1, false);
       await page(`document.documentElement.style.fontSize = '32px'; return true;`);
       await settle();
       const doubled = await geometry();
-      // The shared player (content/rendering/native-media-player, not speech UI) is known to overflow here: it is a finding for the product,
-      // recorded in the evidence; any other overflow still fails the step.
-      const playerOnly = doubled.wide.length > 0 && doubled.wide.every(name => name.startsWith('player:'));
-      if (doubled.scrollWidth > doubled.clientWidth && playerOnly) {
-        out.findings = [...(out.findings ?? []), { id: 'player-2x-text-overflow-320', scrollWidth: doubled.scrollWidth, clientWidth: doubled.clientWidth, wide: doubled.wide }];
-      } else need(doubled.scrollWidth <= doubled.clientWidth, `the page overflows at 320 px with 2x root text (${doubled.wide.join(' ')})`);
+      const player = await page(`const box = document.querySelector('app-proposal-document .mnema-player');
+        if (!box) return null;
+        const edge = box.getBoundingClientRect().right + 1;
+        const outside = [...box.querySelectorAll('*')].filter(node => { const rect = node.getBoundingClientRect(); return rect.width > 0 && rect.right > edge; })
+          .map(node => node.tagName.toLowerCase() + '.' + String(node.className).split(' ')[0]).slice(0, 8);
+        const small = [...box.querySelectorAll('button, input')].map(node => { const rect = node.getBoundingClientRect();
+          return { name: node.getAttribute('aria-label') || node.tagName.toLowerCase(), w: Math.round(rect.width), h: Math.round(rect.height) }; })
+          .filter(entry => entry.w > 0 && (entry.h < 43.5 || entry.w < 43.5));
+        return { width: Math.round(box.getBoundingClientRect().width), outside, small };`);
+      await page(`document.querySelector('app-proposal-document .mnema-player')?.scrollIntoView({ block: 'center', behavior: 'instant' }); return true;`);
+      await sleep(200);
       await shot('workshop-audio-320-2x-text.png');
+      need(player !== null, 'the player is not on the page at 320 px with 2x root text');
+      need(doubled.scrollWidth <= doubled.clientWidth, `the page overflows at 320 px with 2x root text (${doubled.scrollWidth} > ${doubled.clientWidth}: ${doubled.wide.join(' ')})`);
+      need(player.outside.length === 0, `player controls stick out of the ${player.width} px player at 320 px with 2x root text: ${player.outside.join(' ')}`);
+      need(player.small.length === 0, `player controls below 44 px at 320 px with 2x root text: ${JSON.stringify(player.small)}`);
       await page(`document.documentElement.style.fontSize = ''; return true;`);
-      result['320-2x'] = { overflow: out.findings?.length > 0 };
+      result['320-2x'] = { overflow: false, playerWidth: player.width };
     }
     await desktop();
     await tab.call('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });

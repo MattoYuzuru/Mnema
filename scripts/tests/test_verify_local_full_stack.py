@@ -2,6 +2,7 @@
 
 import hashlib
 import importlib.util
+import itertools
 import json
 import os
 from pathlib import Path
@@ -338,6 +339,24 @@ class LocalFullStackTest(unittest.TestCase):
         self.assertEqual(1, len(categories - set(assigned)))
         self.assertTrue(any(assigned.count(category) >= 2 for category in set(assigned)),
                         "several items must share a group")
+
+    def test_choice_response_accepts_every_issued_shuffle_without_losing_ids_or_resolved_content(self):
+        module = load_smoke_module()
+        ids = module.mechanic_ids("CHOICE")
+        options = [{"optionId": identifier, "blocks": [module.text_block(word)]}
+                   for identifier, word in zip(ids["options"], ("memory", "forgetting", "recall"))]
+        for shuffled in itertools.permutations(options):
+            with self.subTest(order=[option["optionId"] for option in shuffled]):
+                shown = {"content": {"selectionMode": "MULTIPLE", "options": list(shuffled)}}
+                response = module.mechanic_response(None, "token", "deck", "session", "CHOICE", shown, ids)
+                self.assertEqual({"kind": "CHOICE", "optionIds": [ids["options"][2], ids["options"][0]]}, response)
+
+        invalid = [options[:-1], [options[0], options[0], options[2]],
+                   [{**option, "blocks": [module.text_block("wrong")]} for option in options]]
+        for malformed in invalid:
+            with self.subTest(malformed=malformed), self.assertRaisesRegex(AssertionError, "choice options were not resolved"):
+                module.mechanic_response(None, "token", "deck", "session", "CHOICE",
+                                        {"content": {"selectionMode": "MULTIPLE", "options": malformed}}, ids)
 
     def test_new_mechanic_responses_are_strict_idempotent_and_keep_the_issued_board(self):
         module = load_smoke_module()

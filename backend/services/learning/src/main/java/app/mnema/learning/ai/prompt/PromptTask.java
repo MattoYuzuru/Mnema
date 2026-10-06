@@ -14,6 +14,8 @@ public enum PromptTask {
     INTENT("intent", false),
     /** The planner of «Сначала показать план» (AI-14, #295): the plan of a batch of exercises or materials, strict JSON, with the budget as input. */
     PLAN("plan", false),
+    /** The query planner of the research step (AI-18, #299): the search queries of one material as strict JSON, within the request cap. */
+    RESEARCH("research", false),
     ASSESSMENT("assessment", false);
 
     private final String section;

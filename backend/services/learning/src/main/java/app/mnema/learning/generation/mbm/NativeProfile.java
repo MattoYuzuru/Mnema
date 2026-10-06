@@ -10,7 +10,7 @@ import tools.jackson.databind.node.ObjectNode;
  * implementation, {@code NativeDocumentReader}: a candidate value is placed in a one-node probe document and the
  * reader decides. That keeps the compiler free of a second validator that could drift from the reader.
  */
-final class NativeProfile {
+public final class NativeProfile {
 
     private static final NativeDocumentReader READER = new NativeDocumentReader();
     private static final JsonMapper JSON = JsonMapper.builder().build();
@@ -22,7 +22,7 @@ final class NativeProfile {
     }
 
     /** Whether {@code href} is an accepted link target. */
-    static boolean acceptsHref(String href) {
+    public static boolean acceptsHref(String href) {
         ObjectNode link = node(LEAF_ID, "link", 1);
         link.putObject("attrs").put("href", href);
         ObjectNode text = node("00000000-0000-4000-8000-000000000004", "text", 1);

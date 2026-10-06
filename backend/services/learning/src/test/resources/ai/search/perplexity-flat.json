@@ -1,0 +1,10 @@
+{
+  "results": [
+    {"title": "PostgreSQL: Planner/Optimizer", "url": "https://www.postgresql.org/docs/current/planner-optimizer.html", "snippet": "The task of the planner is to create an optimal execution plan.", "date": "2025-01-23", "last_updated": "2025-09-25"},
+    {"title": "Query planning <b>basics</b>", "url": "https://example.org/planning?utm_source=feed", "snippet": "A short <i>explanation</i> of plans.", "date": null, "last_updated": null},
+    {"title": "Not secure", "url": "http://example.org/insecure", "snippet": "dropped", "date": "2025-01-01"},
+    {"title": "Odd date", "url": "https://example.org/odd", "snippet": "kept", "date": "yesterday"}
+  ],
+  "id": "e38104d5-6bd7-4d82-bc4e-0a21179d1f77",
+  "server_time": null
+}

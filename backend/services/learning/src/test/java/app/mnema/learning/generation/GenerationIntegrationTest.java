@@ -79,6 +79,7 @@ abstract class GenerationIntegrationTest extends PostgresIntegrationTest {
     @Autowired protected MediaCatalog media;
     @Autowired protected GenerationTestConfiguration.Scripted provider;
     @Autowired protected GenerationTestConfiguration.ScriptedSpeech speech;
+    @Autowired protected GenerationTestConfiguration.ScriptedSearch search;
     @Autowired protected GenerationTestConfiguration.FakeStager mediaStager;
     @Autowired private ProviderKeys keys;
 
@@ -92,6 +93,7 @@ abstract class GenerationIntegrationTest extends PostgresIntegrationTest {
     void resetDoubles() {
         provider.reset();
         speech.reset();
+        search.reset();
         mediaStager.reset();
         // the speech cache is global (no account): a clip of an earlier test would answer this one without a provider call
         jdbc.sql("DELETE FROM app_learning.speech_cache").update();

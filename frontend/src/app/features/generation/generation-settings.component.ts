@@ -5,7 +5,7 @@ import { SegmentedChoiceComponent, SegmentedOption } from '../../shared/segmente
 import { ToggletipComponent } from '../../shared/toggletip.component';
 import { Effort, NotesMode } from './generation.models';
 import { PlanFirstOptionComponent } from './plan-first-option.component';
-import { AUDIO_LANGUAGES, EFFORT_OPTIONS } from './generation-view';
+import { AUDIO_LANGUAGES, EFFORT_OPTIONS, describeResearchHint } from './generation-view';
 
 export type VoiceChoice = 'any' | 'female' | 'male';
 
@@ -23,11 +23,13 @@ export interface GenerationSettingsValue {
     readonly similarToDeck: boolean;
     /** «Сначала показать план» (AI-14, #295). */
     readonly planFirst: boolean;
+    /** «Проверять факты» (AI-18, #299): the material cites web sources. Meaningful only above «Кратко». */
+    readonly factCheck: boolean;
 }
 
 export const DEFAULT_SETTINGS: GenerationSettingsValue = {
     effort: 'AUTO', notesMode: 'ONE_PER_NOTE', imageSearch: false, audio: false, audioLang: 'ru', audioVoice: 'any',
-    similarToDeck: true, planFirst: false
+    similarToDeck: true, planFirst: false, factCheck: false
 };
 
 const VOICES: readonly SegmentedOption<VoiceChoice>[] = [
@@ -39,7 +41,7 @@ let nextSettings = 0;
 /**
  * The settings of one generation request, with progressive disclosure: «Подробность» is always visible with its live
  * explanation under the group; attachments (with the nested audio parameters), «Похоже на» and «Сначала показать план» sit
- * behind «Ещё настройки». The plan option says what the plan costs on its own (`planCost`, from the estimate).
+ * behind «Ещё настройки», with «Проверять факты» (web research, only when the capability exists and the effort is above «Кратко»). The plan option says what the plan costs on its own (`planCost`, from the estimate).
  */
 @Component({
     selector: 'app-generation-settings',
@@ -91,6 +93,17 @@ let nextSettings = 0;
           <p class="hint" [id]="uid + '-similar-hint'">Мнема возьмёт образцы стиля из материалов, отмеченных «Эталон», и из свежих материалов колоды.</p>
         </div>
 
+        @if (researchAvailable()) {
+          <div class="group">
+            <label class="check">
+              <input type="checkbox" [checked]="value().factCheck && researchAllowed()" [disabled]="!researchAllowed()"
+                [attr.aria-describedby]="uid + '-research-hint'" (change)="patch({ factCheck: $any($event.target).checked })" />
+              <span>Проверять факты</span>
+            </label>
+            <p class="hint" [id]="uid + '-research-hint'">{{ researchHint() }}</p>
+          </div>
+        }
+
         <app-plan-first-option [checked]="value().planFirst" [cost]="planCost()" (checkedChange)="patch({ planFirst: $event })" />
       </details>
     `,
@@ -102,6 +115,8 @@ export class GenerationSettingsComponent {
     /** Image search and speech are separate server capabilities; a switched-off one is shown disabled with the reason. */
     readonly imageAvailable = input(false);
     readonly audioAvailable = input(false);
+    /** Web search is a server capability too: without it the option is not offered at all. */
+    readonly researchAvailable = input(false);
     /** «План: ≈ 1 % лимита» for the plan option; `null` while the estimate has no plan line. */
     readonly planCost = input<string | null>(null);
 
@@ -115,6 +130,10 @@ export class GenerationSettingsComponent {
         if (!this.audioAvailable()) return 'Озвучка сейчас недоступна.';
         return 'Мнема добавит их, если выбрано: это расходует лимит отдельно от текста.';
     });
+
+    /** Short materials are not researched: the box stays visible but disabled, with the reason. */
+    protected readonly researchAllowed = computed(() => this.value().effort !== 'SHORT');
+    protected readonly researchHint = computed(() => describeResearchHint(this.value().effort));
 
     protected patch(change: Partial<GenerationSettingsValue>): void {
         this.value.set({ ...this.value(), ...change });

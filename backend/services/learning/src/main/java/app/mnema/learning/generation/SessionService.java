@@ -65,13 +65,14 @@ class SessionService {
     private final ReviseAdmission revisions;
     private final Plans plans;
     private final GenerationGate gate;
+    private final ResearchSteps research;
     private final TransactionTemplate reading;
     private final TransactionTemplate quoting;
 
     SessionService(GenerationRepository repository, StepRepository steps, SessionLifecycle lifecycle, SessionViews views,
                    UsageLedger ledger, AdmissionPricing pricing, CommandReceiptService receipts, GenerationSettings settings,
                    ContextRepository context, ObjectProvider<StepDispatcher> dispatcher, AdmissionLimits limits,
-                   ReviseAdmission revisions, Plans plans, GenerationGate gate, PlatformTransactionManager transactions) {
+                   ReviseAdmission revisions, Plans plans, GenerationGate gate, ResearchSteps research, PlatformTransactionManager transactions) {
         this.repository = repository;
         this.steps = steps;
         this.lifecycle = lifecycle;
@@ -86,6 +87,7 @@ class SessionService {
         this.revisions = revisions;
         this.plans = plans;
         this.gate = gate;
+        this.research = research;
         this.reading = new TransactionTemplate(transactions);
         reading.setReadOnly(true);
         this.quoting = new TransactionTemplate(transactions);
@@ -257,7 +259,8 @@ class SessionService {
             }
             parsed.items().forEach(item -> refs.add(itemRef(item)));
             // each material is charged and written at its own effective settings (the note's overrides over the session's)
-            work.add(new MaterialWork(refs, parsed.forArtifact(refs).workingEffort()));
+            MaterialsSpec.Effective effective = parsed.forArtifact(refs);
+            work.add(new MaterialWork(refs, effective.workingEffort(), research.cap(effective)));
         }
         queueMaterials(owner, sessionId, work, events);
         long[] allocated = repository.update(sessionId, "RUNNING", null, true, events.size(), settings.sessionRetention());
@@ -276,8 +279,8 @@ class SessionService {
         }
     }
 
-    /** One material to write: the pins it is written from and the effort it is written and charged at. */
-    private record MaterialWork(ArrayNode refs, String effort) { }
+    /** One material to write: the pins it is written from, the effort it is written and charged at, and the search requests its research may make (0: none). */
+    private record MaterialWork(ArrayNode refs, String effort, int researchCap) { }
 
     /** The artifacts and steps of a {@code MATERIALS} session, from the unplanned admission and from an approved plan alike: one QUEUED artifact and one step each. */
     private void queueMaterials(UUID owner, UUID sessionId, List<MaterialWork> work, List<EventDraft> events) {
@@ -287,7 +290,7 @@ class SessionService {
             repository.insertArtifact(artifactId, sessionId, owner, ordinal++, item.refs());
             String operation = AdmissionPricing.materialOperation(item.effort());
             ObjectNode input = Json.object().put("effort", item.effort()).put("operation", operation).put("credits", pricing.credits(operation));
-            steps.insert(UUID.randomUUID(), sessionId, artifactId, owner, "TEXT_DRAFT", "TEXT", input, "draft:" + artifactId + ":1");
+            research.queue(sessionId, artifactId, owner, input, item.researchCap(), 1);
             events.add(new EventDraft("ARTIFACT_STATE", artifactId, queuedPayload()));
         }
     }
@@ -389,7 +392,7 @@ class SessionService {
                 if (item.noteId() != null) refs.add(noteRef(basis.note(item.noteId()).orElseThrow()));
                 else basis.notes().forEach(note -> refs.add(noteRef(note)));
                 basis.materials().items().forEach(source -> refs.add(itemRef(source)));
-                work.add(new MaterialWork(refs, item.effort()));
+                work.add(new MaterialWork(refs, item.effort(), research.cap(plans.settings(basis, item.noteId()).withEffort(item.effort()))));
             }
             queueMaterials(owner, sessionId, work, events);
         }

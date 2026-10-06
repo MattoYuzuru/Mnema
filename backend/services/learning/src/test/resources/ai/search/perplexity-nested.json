@@ -1,0 +1,12 @@
+{
+  "results": [
+    [
+      {"title": "First query, first", "url": "https://example.org/q1/a", "snippet": "a", "date": "2025-02-02"},
+      {"title": "First query, second", "url": "https://example.org/q1/b", "snippet": "b", "date": null}
+    ],
+    [
+      {"title": "Second query, first", "url": "https://example.org/q2/a", "snippet": "c", "date": null}
+    ]
+  ],
+  "id": "a1"
+}
