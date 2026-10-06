@@ -11,11 +11,13 @@ describe('ExperimentService', () => {
     let service: ExperimentService;
     let http: HttpTestingController;
     const status = signal<AuthStatus>('authenticated');
+    const user = signal<{ accountId: string } | null>({ accountId: 'first-account' });
 
     beforeEach(() => {
         status.set('authenticated');
+        user.set({ accountId: 'first-account' });
         TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting(),
-            { provide: AuthService, useValue: { status } }] });
+            { provide: AuthService, useValue: { status, user } }] });
         service = TestBed.inject(ExperimentService);
         http = TestBed.inject(HttpTestingController);
     });
@@ -28,6 +30,8 @@ describe('ExperimentService', () => {
         expect(service.variant('other')).toBe(CONTROL);
         expect(service.running('plans_year_first')).toBe(true);
         expect(service.running('other')).toBe(false);
+        expect(service.running('constructor')).toBe(false);
+        expect(service.variant('constructor')).toBe(CONTROL);
     });
 
     it('sends an exposure and a conversion once each, with the key and no variant', () => {
@@ -71,5 +75,33 @@ describe('ExperimentService', () => {
         service.expose('plans_year_first');
 
         http.expectOne('/api/experiment-events').flush(null, { status: 204, statusText: 'No Content' });
+    });
+
+    it('forgets the previous account even when the authenticated status did not change', () => {
+        TestBed.tick();
+        service.adopt({ plans_year_first: 'plans_year_first' });
+        service.expose('plans_year_first');
+        http.expectOne('/api/experiment-events').flush(null, { status: 204, statusText: 'No Content' });
+        user.set({ accountId: 'second-account' });
+        TestBed.tick();
+        expect(service.running('plans_year_first')).toBe(false);
+        service.adopt({ plans_year_first: 'control' });
+        service.expose('plans_year_first');
+        http.expectOne('/api/experiment-events').flush(null, { status: 204, statusText: 'No Content' });
+    });
+
+    it('does not let the old account failure clear the new account event guard', () => {
+        TestBed.tick();
+        service.adopt({ plans_year_first: 'control' });
+        service.expose('plans_year_first');
+        const oldRequest = http.expectOne('/api/experiment-events');
+        user.set({ accountId: 'second-account' });
+        TestBed.tick();
+        service.adopt({ plans_year_first: 'control' });
+        service.expose('plans_year_first');
+        http.expectOne('/api/experiment-events').flush(null, { status: 204, statusText: 'No Content' });
+        oldRequest.flush(null, { status: 500, statusText: 'Server Error' });
+        service.expose('plans_year_first');
+        http.expectNone('/api/experiment-events');
     });
 });

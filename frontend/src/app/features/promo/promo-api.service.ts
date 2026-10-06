@@ -3,6 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { Observable, map } from 'rxjs';
 
 import { appConfig } from '../../app.config';
+import { PlansProtocolError } from '../plans/plans.models';
 import { bool, exact, instant, integer, nullable, oneOf, privateOk, protocol, text } from '../plans/wire';
 import { PopupEvent, PromoCampaign, PromoProblem, PromoProblemCode, PromoRedemption } from './promo.models';
 
@@ -34,8 +35,12 @@ export class PromoApiService {
         }));
     }
 
-    popupEvent(campaignId: string, event: PopupEvent): Observable<void> {
-        return this.http.post<void>(`${this.baseUrl}/promo-popup/events`, { campaignId, event }).pipe(map(() => undefined));
+    /** True only for a recorded event; a disabled-campaign 204 or a missing header is not preference confirmation. */
+    popupEvent(campaignId: string, event: PopupEvent): Observable<boolean> {
+        return this.http.post<unknown>(`${this.baseUrl}/promo-popup/events`, { campaignId, event }, { observe: 'response' }).pipe(map(response => {
+            if (response.status !== 204 || response.body !== null) throw protocol('Unexpected popup event response.');
+            return response.headers.get('Promo-Event-Recorded') === 'true';
+        }));
     }
 }
 
@@ -45,8 +50,10 @@ export function parseRedemption(value: unknown): PromoRedemption {
         : ['type', 'plan', 'validUntil', 'message']);
     const percent = type === 'DISCOUNT_PERCENT' ? integer(body['percent'], 90) : null;
     if (percent === 0) throw protocol('Invalid discount.');
+    const plan = type === 'DISCOUNT_PERCENT' ? nullable(body['plan'], value => oneOf(value, ['PLUS', 'PRO'] as const))
+        : oneOf(body['plan'], ['PLUS', 'PRO'] as const);
     return {
-        type, plan: nullable(body['plan'], plan => oneOf(plan, ['PLUS', 'PRO'] as const)), validUntil: instant(body['validUntil']),
+        type, plan, validUntil: instant(body['validUntil']),
         percent, message: text(body['message'], 300)
     };
 }
@@ -66,11 +73,13 @@ export function parsePopup(value: unknown): PromoCampaign | null {
 
 /** Reads the problem of a failed redemption: its stable `code`, the `Retry-After` of a 429, and whether the same key may be tried again. */
 export function promoProblem(error: unknown): PromoProblem {
+    // A successful response that violates the wire contract may already have redeemed the code.
+    if (error instanceof PlansProtocolError) return { code: 'UNKNOWN', retryAfterSeconds: null, retryable: true };
     if (!(error instanceof HttpErrorResponse)) return { code: 'UNKNOWN', retryAfterSeconds: null, retryable: false };
     const raw: unknown = (error.error as { code?: unknown } | null)?.code;
     const code = (PROBLEM_CODES as readonly unknown[]).includes(raw) ? raw as PromoProblemCode : 'UNKNOWN';
     const header = Number(error.headers?.get('Retry-After'));
     const retryAfterSeconds = code === 'RATE_LIMITED' && Number.isSafeInteger(header) && header > 0 ? header : null;
-    // Status 0 is a lost answer, 5xx a server that could not decide: the command may or may not have happened.
-    return { code, retryAfterSeconds, retryable: error.status === 0 || error.status >= 500 };
+    // Status0/5xx and a malformed 2xx JSON response leave the command outcome unknown.
+    return { code, retryAfterSeconds, retryable: error.status === 0 || error.status >= 500 || (error.status >= 200 && error.status < 300) };
 }

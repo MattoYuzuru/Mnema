@@ -7,6 +7,8 @@ import app.mnema.learning.usage.Entitlement;
 import app.mnema.learning.usage.EntitlementInbox;
 import app.mnema.learning.usage.Plan;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import tools.jackson.databind.JsonNode;
 
@@ -317,6 +319,48 @@ class PromoRedemptionTest extends PromoIntegrationTest {
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.promo_code WHERE code_hash=:h")
                 .param("h", java.security.MessageDigest.getInstance("SHA-256").digest(normalized.getBytes(java.nio.charset.StandardCharsets.UTF_8)))
                 .query(Long.class).single()).isZero();
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "2026-01-30T22:15:00Z,1,2026-02-27T22:15:00Z",
+            "2028-01-30T22:15:00Z,1,2028-02-28T22:15:00Z",
+            "2026-03-30T22:15:00Z,1,2026-04-29T22:15:00Z",
+            "2028-02-28T22:15:00Z,12,2029-02-27T22:15:00Z",
+            "2026-12-30T22:15:00Z,2,2027-02-27T22:15:00Z"})
+    void calendarMonthsKeepTheMoscowTimeAndClampToTheActualMonthEnd(String start, int months, String expiry) {
+        clock.set(start);
+        UUID account = account(true, false);
+        String code = code(tier(PromoType.TIER_MONTHS, "PLUS", null, months, 1));
+        Instant expectedEnd = Instant.parse(expiry);
+
+        JsonNode result = redeem(account, code, network());
+
+        assertThat(result.path("validUntil").stringValue()).isEqualTo(expiry);
+        assertThat(entitlements.current(account, expectedEnd.minusSeconds(1)).plan()).isEqualTo(Plan.PLUS);
+        assertThat(entitlements.current(account, expectedEnd).plan()).isEqualTo(Plan.FREE);
+        Instant nextMonth = expectedEnd.atZone(java.time.ZoneId.of("Europe/Moscow")).toLocalDate()
+                .withDayOfMonth(1).plusMonths(1).atStartOfDay(java.time.ZoneId.of("Europe/Moscow")).toInstant();
+        assertThat(entitlements.current(account, nextMonth).plan()).as("an expired gift cannot unlock a new paid monthly allowance")
+                .isEqualTo(Plan.FREE);
+    }
+
+    @Test
+    void aCommandReceiptCannotBeUsedToVerifyAnUnkeyedVanityCodeGuess() {
+        String plain = code(new PromoAdminService.Create(PromoType.TIER_DAYS, "PLUS", 15, null, null, null, null, 1,
+                true, null, "SPRING26"));
+        UUID account = account(true, false);
+        UUID command = UUID.randomUUID();
+        JsonNode first = promo.redeem(account, jwt(account), command, plain, network());
+
+        byte[] receipt = jdbc.sql("SELECT payload_hash FROM app_learning.command_receipt WHERE command_id=:command")
+                .param("command", command).query(byte[].class).single();
+        byte[] guessedPayload = new app.mnema.learning.platform.json.CanonicalJsonHasher()
+                .hash(JSON.createObjectNode().put("code", "SPRING26")).sha256();
+        assertThat(receipt).as("the idempotency receipt must not bypass the code table's keyed hash").isNotEqualTo(guessedPayload);
+        assertThat(promo.redeem(account, jwt(account), command, " spring-26 ", network())).isEqualTo(first);
+        assertThat(jdbc.sql("SELECT result::text FROM app_learning.command_receipt WHERE command_id=:command")
+                .param("command", command).query(String.class).single()).doesNotContain("SPRING26");
     }
 
     @Test

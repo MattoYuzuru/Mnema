@@ -563,6 +563,11 @@ describe('StudySessionPageComponent', () => {
     it('asks for the promo popup only when the session is finished, never while a task is open', () => {
         startWith('selfCheck');
         expect(promoPopup.request).not.toHaveBeenCalled();
+        expect(TestBed.inject(QuietZone).active()).toBe(true);
+        promoPopup.request.mockImplementation(() => {
+            expect(TestBed.inject(QuietZone).active()).toBe(false);
+            return Promise.resolve();
+        });
 
         api.start.mockReturnValue(of({ value: { ...sessionOf([fixtures['selfCheck']]), status: 'COMPLETE', presentations: [] }, replayed: false }));
         createStarted();

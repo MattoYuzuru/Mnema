@@ -105,7 +105,7 @@ services:
       LEARNING_FEATURES_AI_GENERATION_ENABLED: "false"
       LEARNING_FEATURES_TEXT_TO_SPEECH_ENABLED: "false"
       LEARNING_FEATURES_IMAGE_GENERATION_ENABLED: "false"
-      # Promo codes and A/B (#302). The hash secret (>= 32 characters) is mandatory in production: Learning refuses to start without it.
+      # Promo codes and A/B (#302). Without a nonblank hash secret (>= 32 characters), promo creation/redemption are disabled; Learning keeps running.
       # Without the experiment secret every account stays on control. The popup is off unless enabled with its copy.
       MNEMA_PROMO_HASH_SECRET: ${MNEMA_PROMO_HASH_SECRET:-}
       MNEMA_EXPERIMENT_SECRET: ${MNEMA_EXPERIMENT_SECRET:-}

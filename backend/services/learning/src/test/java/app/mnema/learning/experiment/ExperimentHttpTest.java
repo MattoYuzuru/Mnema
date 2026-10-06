@@ -16,6 +16,10 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.UUID;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -83,6 +87,25 @@ class ExperimentHttpTest extends PostgresIntegrationTest {
                     .content("{\"key\":\"plans_year_first\",\"event\":\"EXPOSURE\"}")).andReturn().getResponse().getStatus() == 429) limited++;
         }
         assertThat(limited).isPositive();
+    }
+
+    @Test
+    void aFullTrackingTableRefusesANewKnownAccountWithBoundedRetryAndStillIgnoresUnknownKeys() throws Exception {
+        var limited = new ExperimentEvents(assignments, new SimpleMeterRegistry(),
+                Clock.fixed(Instant.parse("2026-10-06T00:00:00Z"), ZoneOffset.UTC), 1);
+        var boundedController = new ExperimentController(limited);
+        String exposure = "{\"key\":\"plans_year_first\",\"event\":\"EXPOSURE\"}";
+        assertThat(as(UUID.randomUUID(), boundedController).perform(post("/experiment-events")
+                .contentType(MediaType.APPLICATION_JSON).content(exposure)).andReturn().getResponse().getStatus()).isEqualTo(204);
+        var refused = as(UUID.randomUUID(), boundedController).perform(post("/experiment-events")
+                .contentType(MediaType.APPLICATION_JSON).content(exposure)).andReturn().getResponse();
+        assertThat(refused.getStatus()).isEqualTo(429);
+        assertThat(Long.parseLong(refused.getHeader("Retry-After"))).isBetween(1L, 60L);
+        assertThat(new tools.jackson.databind.json.JsonMapper().readTree(refused.getContentAsString()).path("code").stringValue(null))
+                .isEqualTo("RATE_LIMITED");
+        assertThat(as(UUID.randomUUID(), boundedController).perform(post("/experiment-events").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"key\":\"unknown\",\"event\":\"EXPOSURE\"}")).andReturn().getResponse().getStatus()).isEqualTo(204);
+        assertThat(limited.trackedAccounts()).isOne();
     }
 
     private double counter(String variant) {

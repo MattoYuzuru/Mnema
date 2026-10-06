@@ -1,11 +1,12 @@
 import { HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { NEVER, of, throwError } from 'rxjs';
+import { NEVER, Subject, of, throwError } from 'rxjs';
 
 import { spyObj, type SpyObj } from '../../../testing/mocks';
 import { PromoApiService } from './promo-api.service';
 import { PromoRedeemComponent } from './promo-redeem.component';
 import { PromoRedemption } from './promo.models';
+import { PlansProtocolError } from '../plans/plans.models';
 
 const SUCCESS: PromoRedemption = { type: 'TIER_DAYS', plan: 'PLUS', validUntil: '2026-10-20T09:00:00Z', percent: null,
     message: 'Plus до 20 октября, без автопродления.' };
@@ -92,7 +93,8 @@ describe('PromoRedeemComponent', () => {
     it('retries a lost answer with the same key and a different code with a new one', async () => {
         api.redeem.mockReturnValueOnce(problem(0, null)).mockReturnValueOnce(of(SUCCESS));
         await type('PLUS15');
-        expect(root.querySelector('.field-error')?.textContent).toContain('Не удалось применить промокод');
+        expect(root.querySelector('.field-error')?.textContent).toContain('Не удалось получить результат');
+        expect(root.querySelector('.field-error')?.textContent).not.toContain('Тариф не изменился');
         await type('PLUS15', true);
         expect(api.redeem.mock.calls[1][1]).toBe(api.redeem.mock.calls[0][1]);
 
@@ -100,6 +102,39 @@ describe('PromoRedeemComponent', () => {
         await type('ONE');
         await type('TWO');
         expect(api.redeem.mock.calls[3][1]).not.toBe(api.redeem.mock.calls[2][1]);
+    });
+
+    it('retries an unreadable successful reply and equivalent code spelling with the original key', async () => {
+        api.redeem.mockReturnValueOnce(throwError(() => new PlansProtocolError('unexpected wire shape'))).mockReturnValueOnce(of(SUCCESS));
+        await type('plus-15');
+        expect(root.querySelector('.field-error')?.textContent).toContain('Не удалось получить результат');
+        await type('PLUS 15');
+        expect(api.redeem.mock.calls[1][1]).toBe(api.redeem.mock.calls[0][1]);
+    });
+
+    it('keeps an unknown command key when a different code is tried in between', async () => {
+        api.redeem.mockReturnValue(problem(0, null));
+        await type('FIRSTCODE');
+        await type('SECONDCODE');
+        await type('FIRSTCODE');
+        expect(api.redeem.mock.calls[2][1]).toBe(api.redeem.mock.calls[0][1]);
+        expect(api.redeem.mock.calls[1][1]).not.toBe(api.redeem.mock.calls[0][1]);
+    });
+
+    it('does not emit or move focus after the field has been destroyed', async () => {
+        const response = new Subject<PromoRedemption>();
+        api.redeem.mockReturnValue(response);
+        const redeemed = vi.fn();
+        fixture.componentRef.instance.redeemed.subscribe(redeemed);
+        await type('FIRSTCODE');
+        const focus = vi.spyOn(input(), 'focus');
+        fixture.destroy();
+        response.next(SUCCESS);
+        response.complete();
+        await Promise.resolve();
+        expect(redeemed).not.toHaveBeenCalled();
+        expect(focus).not.toHaveBeenCalled();
+        expect(response.observed).toBe(false);
     });
 
     it('waits while a request is pending and does not send twice', async () => {

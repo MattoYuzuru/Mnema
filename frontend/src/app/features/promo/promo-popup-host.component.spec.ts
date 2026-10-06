@@ -1,13 +1,14 @@
 import { Router, provideRouter } from '@angular/router';
 import { TestBed } from '@angular/core/testing';
 import { RouterTestingHarness } from '@angular/router/testing';
-import { Component } from '@angular/core';
+import { Component, signal } from '@angular/core';
 import { of } from 'rxjs';
 
 import { spyObj, type SpyObj } from '../../../testing/mocks';
 import { PromoApiService } from './promo-api.service';
 import { PromoPopupHostComponent } from './promo-popup-host.component';
 import { PromoPopupService } from './promo-popup.service';
+import { AuthService } from '../../auth.service';
 
 @Component({ template: '<app-promo-popup-host />', imports: [PromoPopupHostComponent] })
 class HostPageComponent { }
@@ -20,15 +21,17 @@ describe('PromoPopupHostComponent', () => {
 
     beforeEach(() => {
         sessionStorage.clear();
+        localStorage.clear();
         api = spyObj<PromoApiService>({ popup: vi.fn(), popupEvent: vi.fn() });
         api.popup.mockReturnValue(of({ id: 'autumn', title: 'Осенняя скидка', body: 'Plus дешевле.', cta: 'Посмотреть тарифы', code: null }));
-        api.popupEvent.mockReturnValue(of(undefined));
+        api.popupEvent.mockReturnValue(of(true));
         TestBed.configureTestingModule({
             providers: [provideRouter([{ path: '', component: HostPageComponent }, { path: 'plans', component: BlankComponent }]),
-                { provide: PromoApiService, useValue: api }]
+                { provide: PromoApiService, useValue: api },
+                { provide: AuthService, useValue: { status: signal('authenticated'), user: signal({ accountId: 'first-account' }) } }]
         });
     });
-    afterEach(() => sessionStorage.clear());
+    afterEach(() => { sessionStorage.clear(); localStorage.clear(); });
 
     it('renders nothing until a breakpoint asks, then the dialog, and routes the primary action to the plans', async () => {
         const harness = await RouterTestingHarness.create('/');
@@ -47,7 +50,7 @@ describe('PromoPopupHostComponent', () => {
         expect(api.popupEvent).toHaveBeenLastCalledWith('autumn', 'DISMISSED');
     });
 
-    it('wires «Не сейчас» and «Больше не показывать» to the service', async () => {
+    it('wires «Не сейчас» to the service', async () => {
         const harness = await RouterTestingHarness.create('/');
         const root = harness.routeNativeElement as HTMLElement;
         const service = TestBed.inject(PromoPopupService);
@@ -56,7 +59,12 @@ describe('PromoPopupHostComponent', () => {
         root.querySelectorAll<HTMLButtonElement>('button')[2].click();
         expect(api.popupEvent).toHaveBeenLastCalledWith('autumn', 'DISMISSED');
 
-        sessionStorage.clear();
+    });
+
+    it('wires «Больше не показывать» to the service', async () => {
+        const harness = await RouterTestingHarness.create('/');
+        const root = harness.routeNativeElement as HTMLElement;
+        const service = TestBed.inject(PromoPopupService);
         await service.request();
         harness.detectChanges();
         root.querySelectorAll<HTMLButtonElement>('button')[3].click();

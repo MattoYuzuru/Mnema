@@ -36,7 +36,7 @@ describe('PromoApiService', () => {
     it('parses a discount and refuses malformed answers', () => {
         expect(parseRedemption(discount)).toMatchObject({ type: 'DISCOUNT_PERCENT', plan: null, percent: 20 });
         for (const bad of [null, [], {}, { ...tier, percent: 20 }, { ...tier, plan: 'MAX' }, { ...tier, validUntil: 'soon' }, { ...tier, message: '' },
-            { ...tier, type: 'GIFT' }, { ...discount, percent: 0 }, { ...discount, percent: undefined }, { ...tier, extra: 1 }]) {
+            { ...tier, type: 'GIFT' }, { ...tier, plan: null }, { ...discount, percent: 0 }, { ...discount, percent: undefined }, { ...tier, extra: 1 }]) {
             expect(() => parseRedemption(bad), JSON.stringify(bad)).toThrow(PlansProtocolError);
         }
     });
@@ -65,8 +65,23 @@ describe('PromoApiService', () => {
         const sent = firstValueFrom(api.popupEvent('autumn', 'DISMISSED'));
         const request = http.expectOne('/api/promo-popup/events');
         expect(request.request.body).toEqual({ campaignId: 'autumn', event: 'DISMISSED' });
-        request.flush(null, { status: 204, statusText: 'No Content' });
-        expect(await sent).toBeUndefined();
+        request.flush(null, { status: 204, statusText: 'No Content', headers: new HttpHeaders({ 'Promo-Event-Recorded': 'true' }) });
+        expect(await sent).toBe(true);
+    });
+
+    it('keeps false, absent or unexpected recording headers unconfirmed', async () => {
+        for (const recorded of ['false', undefined, 'yes']) {
+            const result = firstValueFrom(api.popupEvent('autumn', 'DECLINED'));
+            http.expectOne('/api/promo-popup/events').flush(null, { status: 204, statusText: 'No Content',
+                headers: new HttpHeaders(recorded === undefined ? {} : { 'Promo-Event-Recorded': recorded }) });
+            expect(await result).toBe(false);
+        }
+    });
+
+    it('does not confirm a popup preference on an unexpected successful status', async () => {
+        const result = firstValueFrom(api.popupEvent('autumn', 'DECLINED')).then(() => null, (error: unknown) => error);
+        http.expectOne('/api/promo-popup/events').flush(null, { status: 200, statusText: 'OK' });
+        expect(await result).toBeInstanceOf(PlansProtocolError);
     });
 });
 
@@ -86,6 +101,8 @@ describe('promoProblem', () => {
         expect(promoProblem(failure(0, undefined)).retryable).toBe(true);
         expect(promoProblem(failure(503, 'IDENTITY_UNAVAILABLE'))).toEqual({ code: 'IDENTITY_UNAVAILABLE', retryAfterSeconds: null, retryable: true });
         expect(promoProblem(failure(500, 'INTERNAL_ERROR')).code).toBe('UNKNOWN');
+        expect(promoProblem(new PlansProtocolError('Malformed successful reply')).retryable).toBe(true);
+        expect(promoProblem(failure(200, undefined)).retryable).toBe(true);
     });
 
     it('treats anything else as unknown and not retryable', () => {

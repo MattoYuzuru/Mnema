@@ -18,43 +18,44 @@ export const CONTROL = 'control';
 @Injectable({ providedIn: 'root' })
 export class ExperimentService {
     private readonly http = inject(HttpClient);
+    private readonly auth = inject(AuthService);
     private readonly url = `${appConfig.learningApiBaseUrl.replace(/\/$/u, '')}/experiment-events`;
     private readonly assigned = signal<Readonly<Record<string, string>>>({});
     private readonly sent = new Set<string>();
+    private owner = this.account();
+    private epoch = 0;
 
     constructor() {
-        const auth = inject(AuthService);
-        let signedIn = false;
         effect(() => {
-            const status = auth.status();
-            untracked(() => {
-                if (status === 'authenticated') signedIn = true;
-                else if (status === 'anonymous' && signedIn) {
-                    signedIn = false;
-                    this.reset();
-                }
-            });
+            this.auth.status();
+            this.auth.user();
+            untracked(() => this.synchronize());
         });
     }
 
     /** Forgets the assignment and what was sent: the account that is gone must not silence the events of the next one. */
     private reset(): void {
+        this.epoch++;
         this.assigned.set({});
         this.sent.clear();
     }
 
     adopt(variants: Readonly<Record<string, string>>): void {
+        this.synchronize();
         this.assigned.set(variants);
     }
 
     /** The variant of {@code key}, or `control` when the experiment is not running for this account. */
     variant(key: string): string {
-        return this.assigned()[key] ?? CONTROL;
+        this.synchronize();
+        const variants = this.assigned();
+        return Object.hasOwn(variants, key) ? variants[key] : CONTROL;
     }
 
     /** The experiment is running: only then do events mean anything. */
     running(key: string): boolean {
-        return key in this.assigned();
+        this.synchronize();
+        return Object.hasOwn(this.assigned(), key);
     }
 
     expose(key: string): void { this.send(key, 'EXPOSURE'); }
@@ -65,6 +66,14 @@ export class ExperimentService {
         const id = `${key}:${event}`;
         if (!this.running(key) || this.sent.has(id)) return;
         this.sent.add(id);
-        this.http.post(this.url, { key, event }).subscribe({ error: () => this.sent.delete(id) });
+        const epoch = this.epoch;
+        this.http.post(this.url, { key, event }).subscribe({ error: () => { if (epoch === this.epoch) this.sent.delete(id); } });
+    }
+
+    private account(): string | null { return this.auth.status() === 'authenticated' ? this.auth.user()?.accountId ?? null : null; }
+
+    private synchronize(): void {
+        const owner = this.account();
+        if (owner !== this.owner) { this.owner = owner; this.reset(); }
     }
 }

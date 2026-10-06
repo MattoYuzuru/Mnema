@@ -19,9 +19,10 @@ class PromoPopupDisabledTest extends PromoIntegrationTest {
 
         for (String campaign : new String[] {"autumn-2026", "any-other"}) {
             for (String event : new String[] {"SHOWN", "DISMISSED", "DECLINED"}) {
-                int status = as(account, popup).perform(post("/promo-popup/events").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"campaignId\":\"" + campaign + "\",\"event\":\"" + event + "\"}")).andReturn().getResponse().getStatus();
-                assertThat(status).as(campaign + event).isEqualTo(204);
+                var response = as(account, popup).perform(post("/promo-popup/events").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"campaignId\":\"" + campaign + "\",\"event\":\"" + event + "\"}")).andReturn().getResponse();
+                assertThat(response.getStatus()).as(campaign + event).isEqualTo(204);
+                assertThat(response.getHeader("Promo-Event-Recorded")).as(campaign + event).isEqualTo("false");
             }
         }
 

@@ -143,7 +143,12 @@ export class StudySessionPageComponent {
     constructor() {
         // A task is open (answering, revealing, sending): new toasts wait. Feedback, the end of the session and
         // leaving the page are the natural pauses where they may show.
-        effect(() => this.quietZone.set(TASK_OPEN.includes(this.phase())));
+        effect(() => {
+            const phase = this.phase();
+            this.quietZone.set(TASK_OPEN.includes(phase));
+            // Ask only after the completion phase has released the quiet zone, including an immediately answered request.
+            if (phase === 'complete') untracked(() => void this.promoPopup.request());
+        });
         // The grader may hand the learner to self-check while the waiting card is on screen.
         effect(() => {
             const stage = this.flow.stage();
@@ -460,8 +465,6 @@ export class StudySessionPageComponent {
         }
         if (session.status === 'COMPLETE') {
             this.phase.set('complete'); this.recovery.clear(); this.loadSupportingState();
-            // The finished session is a natural pause; the popup is never asked for while a task is open.
-            void this.promoPopup.request();
             return;
         }
         if (session.presentations.length === 0) {

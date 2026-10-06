@@ -16,7 +16,7 @@ import java.util.List;
  * (Europe/Moscow by owner decision 2026-10-02): this is the only class that turns an instant into a calendar window.
  */
 @Component
-final class UsageCalendar {
+public final class UsageCalendar {
     /** The allowance period: one calendar month, named {@code yyyy-MM}. */
     record Period(String id, Instant start, Instant end) { }
 
@@ -24,6 +24,16 @@ final class UsageCalendar {
 
     UsageCalendar(UsagePolicy policy) {
         this.zone = policy.zone;
+    }
+
+    /** Calendar months preserve the local time and clamp a missing day to the target month's last day. */
+    public Instant plusMonths(Instant start, long months) {
+        return start.atZone(zone).plusMonths(months).toInstant();
+    }
+
+    /** The date a learner sees under the same policy that determines their allowance windows. */
+    public LocalDate date(Instant at) {
+        return at.atZone(zone).toLocalDate();
     }
 
     Period period(Instant now) {

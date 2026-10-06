@@ -49,6 +49,18 @@ class UsageCalendarTest {
     }
 
     @Test
+    void addingMonthsUsesTheConfiguredZoneRatherThanUtcOrAHardCodedMoscowOffset() {
+        Instant start = Instant.parse("2026-01-30T22:15:00Z");
+        assertThat(calendar.plusMonths(start, 1)).isEqualTo(Instant.parse("2026-02-27T22:15:00Z"));
+        assertThat(calendar.date(start)).isEqualTo(java.time.LocalDate.of(2026, 1, 31));
+        UsageCalendar utc = new UsageCalendar(policy("UTC"));
+        assertThat(utc.plusMonths(start, 1)).isEqualTo(Instant.parse("2026-02-28T22:15:00Z"));
+        assertThat(utc.date(start)).isEqualTo(java.time.LocalDate.of(2026, 1, 30));
+        UsageCalendar berlin = new UsageCalendar(policy("Europe/Berlin"));
+        assertThat(berlin.plusMonths(Instant.parse("2026-03-01T09:00:00Z"), 1)).isEqualTo(Instant.parse("2026-04-01T08:00:00Z"));
+    }
+
+    @Test
     void freePortionsOpenOnTheFirstThenOnEachFollowingMonday() {
         // October 2026 starts on a Thursday and has four Mondays (5, 12, 19, 26): the last one unlocks nothing.
         assertThat(unlocks("2026-10-15T00:00:00Z", 4)).containsExactly("2026-09-30T21:00:00Z", "2026-10-04T21:00:00Z",

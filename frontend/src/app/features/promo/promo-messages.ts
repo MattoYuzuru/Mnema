@@ -23,6 +23,7 @@ function plural(count: number, forms: readonly [string, string, string]): string
  * switched-off, expired and not yet started code in the same words, as the server does, so the message is no hint for guessing.
  */
 export function promoMessage(problem: PromoProblem): string {
+    if (problem.retryable) return 'Не удалось получить результат применения промокода. Повторите попытку — повторной активации не будет.';
     switch (problem.code) {
         case 'PROMO_INVALID':
             return 'Этот промокод не подходит. Проверьте, что он введён без опечаток, и попробуйте ещё раз.';

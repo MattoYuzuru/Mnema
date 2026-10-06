@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, ElementRef, computed, input, linkedSignal, output, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, input, linkedSignal, output, signal, viewChild } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { firstValueFrom } from 'rxjs';
 import { inject } from '@angular/core';
 
@@ -27,7 +28,7 @@ let nextRedeem = 0;
                  (input)="onInput($event)" />
           <button type="submit" class="button" [attr.aria-disabled]="pending() ? 'true' : null">{{ pending() ? 'Применяем…' : 'Применить' }}</button>
         </div>
-        <p class="hint" [id]="hintId">Промокод ничего не списывает. Тариф по нему начинается сразу и не продлевается сам.</p>
+        <p class="hint" [id]="hintId">Промокод ничего не списывает. Доступ по нему не продлевается сам; скидка применяется только к будущей оплате.</p>
         <div [id]="errorId" role="alert">@if (error(); as message) { <p class="field-error">{{ message }}</p> }</div>
         <div role="status">@if (result(); as done) { <p class="notice success">{{ done.message }}</p> }</div>
       </form>
@@ -36,6 +37,7 @@ let nextRedeem = 0;
 })
 export class PromoRedeemComponent {
     private readonly api = inject(PromoApiService);
+    private readonly destroyRef = inject(DestroyRef);
     /** A code to put into the field (a campaign link): typed, not applied. */
     readonly prefill = input('');
     /** A redemption succeeded: the host reloads the plan. */
@@ -51,8 +53,8 @@ export class PromoRedeemComponent {
     protected readonly result = signal<PromoRedemption | null>(null);
     protected readonly describedBy = computed(() => `${this.hintId} ${this.errorId}`);
     private readonly field = viewChild<ElementRef<HTMLInputElement>>('field');
-    /** The key of a command whose answer is unknown, kept for the same code only. */
-    private retry: { readonly code: string; readonly key: string } | null = null;
+    /** Unknown commands keep their key even if the reader temporarily edits a different code. No code is persisted. */
+    private readonly retries = new Map<string, string>();
 
     protected onInput(event: Event): void {
         this.code.set((event.target as HTMLInputElement).value);
@@ -68,25 +70,30 @@ export class PromoRedeemComponent {
             this.field()?.nativeElement.focus();
             return;
         }
-        const key = this.retry?.code === code ? this.retry.key : crypto.randomUUID();
+        // Server receipts fingerprint the normalized code: case, whitespace, dashes and underscores do not create a new command.
+        const normalized = code.toUpperCase().replace(/[\s_-]/gu, '');
+        const key = this.retries.get(normalized) ?? crypto.randomUUID();
         this.pending.set(true);
         this.error.set(null);
         this.result.set(null);
         try {
-            const redemption = await firstValueFrom(this.api.redeem(code, key));
-            this.retry = null;
+            const redemption = await firstValueFrom(this.api.redeem(code, key).pipe(takeUntilDestroyed(this.destroyRef)));
+            if (this.destroyRef.destroyed) return;
+            this.retries.delete(normalized);
             this.code.set('');
             const field = this.field()?.nativeElement;
             if (field !== undefined) field.value = '';
             this.result.set(redemption);
             this.redeemed.emit(redemption);
         } catch (failure) {
+            if (this.destroyRef.destroyed) return;
             const problem = promoProblem(failure);
-            this.retry = problem.retryable ? { code, key } : null;
+            if (problem.retryable) this.retries.set(normalized, key);
+            else this.retries.delete(normalized);
             this.error.set(promoMessage(problem));
             this.field()?.nativeElement.focus();
         } finally {
-            this.pending.set(false);
+            if (!this.destroyRef.destroyed) this.pending.set(false);
         }
     }
 }

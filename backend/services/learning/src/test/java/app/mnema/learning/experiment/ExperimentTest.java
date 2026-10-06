@@ -11,6 +11,11 @@ import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.ArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -75,6 +80,11 @@ class ExperimentTest {
 
         assertThat(assignments.variants(UUID.randomUUID())).isEmpty();
         assertThat(assignments.known("plans_year_first")).isFalse();
+        SimpleMeterRegistry meters = new SimpleMeterRegistry();
+        ExperimentEvents events = new ExperimentEvents(assignments, meters);
+        assertThat(events.record(UUID.randomUUID(), "plans_year_first", ExperimentEvents.Event.EXPOSURE)).isFalse();
+        assertThat(events.trackedAccounts()).isZero();
+        assertThat(meters.getMeters()).isEmpty();
     }
 
     @Test
@@ -129,7 +139,7 @@ class ExperimentTest {
     }
 
     @Test
-    void aFullTableIsSweptAtMostOncePerIntervalAndStillCountsEvents() {
+    void aFullTableRefusesUntrackableEventsUntilTheNextSweepCanFreeRoom() {
         AtomicReference<Instant> now = new AtomicReference<>(Instant.parse("2026-10-02T09:00:00Z"));
         Clock clock = new Clock() {
             @Override public java.time.ZoneId getZone() { return ZoneOffset.UTC; }
@@ -141,15 +151,45 @@ class ExperimentTest {
         for (int index = 0; index < 3; index++) events.record(UUID.randomUUID(), "plans_year_first", ExperimentEvents.Event.EXPOSURE);
         assertThat(events.trackedAccounts()).isEqualTo(3);
 
-        // Full and nothing has expired: a newcomer is counted but takes no room, and the table does not grow.
+        // Full and nothing has expired: a newcomer cannot bypass the per-account rate guard.
         now.set(Instant.parse("2026-10-02T09:00:30Z"));
-        assertThat(events.record(UUID.randomUUID(), "plans_year_first", ExperimentEvents.Event.EXPOSURE)).isTrue();
+        assertThatThrownBy(() -> events.record(UUID.randomUUID(), "plans_year_first", ExperimentEvents.Event.EXPOSURE))
+                .isInstanceOfSatisfying(RateLimitedException.class, limited -> assertThat(limited.retryAfterSeconds()).isBetween(1L, 60L));
+        assertThat(events.record(UUID.randomUUID(), "unknown", ExperimentEvents.Event.EXPOSURE)).isFalse();
         assertThat(events.trackedAccounts()).isEqualTo(3);
 
         // Once the windows have expired the next sweep frees the table for a newcomer.
         now.set(Instant.parse("2026-10-02T09:01:10Z"));
         events.record(UUID.randomUUID(), "plans_year_first", ExperimentEvents.Event.EXPOSURE);
         assertThat(events.trackedAccounts()).isEqualTo(1);
-        assertThat(meters.get("mnema_experiment_events_total").counters().stream().mapToDouble(counter -> counter.count()).sum()).isEqualTo(5.0);
+        assertThat(meters.get("mnema_experiment_events_total").counters().stream().mapToDouble(counter -> counter.count()).sum()).isEqualTo(4.0);
+    }
+
+    @Test
+    void concurrentNewAccountsCannotExceedTheWindowBoundOrBypassTheGuard() throws Exception {
+        int callers = 32;
+        int limit = 3;
+        SimpleMeterRegistry meters = new SimpleMeterRegistry();
+        ExperimentEvents events = new ExperimentEvents(assignments("secret-1"), meters,
+                Clock.fixed(Instant.parse("2026-10-02T09:00:00Z"), ZoneOffset.UTC), limit);
+        CountDownLatch ready = new CountDownLatch(callers);
+        CountDownLatch start = new CountDownLatch(1);
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var answers = new ArrayList<Future<Boolean>>();
+            for (int index = 0; index < callers; index++) answers.add(executor.submit(() -> {
+                ready.countDown();
+                if (!start.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("start not released");
+                try { return events.record(UUID.randomUUID(), "plans_year_first", ExperimentEvents.Event.EXPOSURE); }
+                catch (RateLimitedException expected) { return false; }
+            }));
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            int counted = 0;
+            for (Future<Boolean> answer : answers) if (answer.get(10, TimeUnit.SECONDS)) counted++;
+            assertThat(counted).isEqualTo(limit);
+            assertThat(events.trackedAccounts()).isEqualTo(limit);
+            assertThat(meters.get("mnema_experiment_events_total").counters().stream().mapToDouble(counter -> counter.count()).sum())
+                    .isEqualTo(limit);
+        } finally { start.countDown(); }
     }
 }

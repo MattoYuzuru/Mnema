@@ -28,8 +28,10 @@ class PromoPopupTest extends PromoIntegrationTest {
     }
 
     private int event(UUID account, String campaign, String event) throws Exception {
-        return as(account, popup).perform(post("/promo-popup/events").contentType(MediaType.APPLICATION_JSON)
-                .content("{\"campaignId\":\"" + campaign + "\",\"event\":\"" + event + "\"}")).andReturn().getResponse().getStatus();
+        var response = as(account, popup).perform(post("/promo-popup/events").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"campaignId\":\"" + campaign + "\",\"event\":\"" + event + "\"}")).andReturn().getResponse();
+        if (response.getStatus() == 204) assertThat(response.getHeader("Promo-Event-Recorded")).isEqualTo("true");
+        return response.getStatus();
     }
 
     @Test

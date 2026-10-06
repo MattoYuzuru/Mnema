@@ -1,7 +1,8 @@
-import { ChangeDetectionStrategy, Component, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
+import { AuthService } from '../../auth.service';
 
 import { ExperimentService } from '../experiment/experiment.service';
 import { LearningGoalStore } from '../goal/learning-goal.store';
@@ -24,8 +25,8 @@ const FOCUS_RING_ROOM_PX = 8;
 
 /**
  * `/plans`: the paywall. Tiers are native radio cards, the period a native radio switch. Nothing here charges or grants
- * anything: payments are not connected, so a paid choice opens a calm notice and the promo code slot stays disabled until it
- * is. The page reads the entitlement and the catalogue; a query parameter (`?from=limit&used=92`) only adds a sentence of
+ * anything: payments are not connected, so a paid choice opens a calm notice. Promo redemption is its own explicit action.
+ * The page reads the entitlement and the catalogue; a query parameter (`?from=limit&used=92`) only adds a sentence of
  * context and never changes a right.
  */
 @Component({
@@ -37,6 +38,9 @@ const FOCUS_RING_ROOM_PX = 8;
 })
 export class PlansPageComponent {
     private readonly api = inject(PlansApiService);
+    private readonly auth = inject(AuthService);
+    private readonly destroyRef = inject(DestroyRef);
+    private loadEpoch = 0;
     private readonly goals = inject(LearningGoalStore);
     private readonly experiments = inject(ExperimentService);
     private readonly router = inject(Router);
@@ -128,9 +132,12 @@ export class PlansPageComponent {
     }
 
     protected async load(): Promise<void> {
+        const epoch = ++this.loadEpoch;
+        const owner = this.auth.user()?.accountId ?? null;
         this.state.set('loading');
         try {
-            const catalog = await firstValueFrom(this.api.load());
+            const catalog = await firstValueFrom(this.api.load().pipe(takeUntilDestroyed(this.destroyRef)));
+            if (!this.currentLoad(epoch, owner)) return;
             this.experiments.adopt(catalog.experiments);
             // The experiment decides only which period the page opens on, once; it never overrides a choice the reader made.
             if (this.firstLoad && !this.periodChosen && this.experiments.variant(YEAR_FIRST_EXPERIMENT) === YEAR_FIRST_EXPERIMENT) this.period.set('YEAR');
@@ -140,14 +147,17 @@ export class PlansPageComponent {
             if (this.firstLoad) this.experiments.expose(YEAR_FIRST_EXPERIMENT);
             this.firstLoad = false;
         } catch {
-            this.state.set('error');
+            if (this.currentLoad(epoch, owner)) this.state.set('error');
         }
     }
 
     /** A promo code was redeemed: read the entitlement again, quietly (the page and the success message stay), so the plan block shows it. */
     protected async redeemed(): Promise<void> {
+        const epoch = ++this.loadEpoch;
+        const owner = this.auth.user()?.accountId ?? null;
         try {
-            const catalog = await firstValueFrom(this.api.load());
+            const catalog = await firstValueFrom(this.api.load().pipe(takeUntilDestroyed(this.destroyRef)));
+            if (!this.currentLoad(epoch, owner)) return;
             this.experiments.adopt(catalog.experiments);
             this.catalog.set(catalog);
             this.chosen.set(null);
@@ -156,6 +166,11 @@ export class PlansPageComponent {
         } catch {
             // The success message already says what happened; the next visit reads the plan again.
         }
+    }
+
+    /** A departed page/account cannot adopt its late catalogue or erase a newer redemption refresh. */
+    private currentLoad(epoch: number, owner: string | null): boolean {
+        return !this.destroyRef.destroyed && epoch === this.loadEpoch && owner === (this.auth.user()?.accountId ?? null);
     }
 
     protected setPeriod(period: PlanPeriod | null): void {

@@ -3,7 +3,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { Router, provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { TestBed } from '@angular/core/testing';
-import { NEVER, of, throwError } from 'rxjs';
+import { NEVER, Subject, of, throwError } from 'rxjs';
 
 import { spyObj, type SpyObj } from '../../../testing/mocks';
 import { LearningGoalStore } from '../goal/learning-goal.store';
@@ -11,6 +11,8 @@ import { LearningGoal } from '../goal/goal.models';
 import { PromoApiService } from '../promo/promo-api.service';
 import { PromoRedemption } from '../promo/promo.models';
 import { PlansApiService, parsePlans } from './plans-api.service';
+import { PlansCatalog } from './plans.models';
+import { ExperimentService } from '../experiment/experiment.service';
 import { PlansPageComponent } from './plans-page.component';
 import { plansBody } from './plans-test-data';
 
@@ -52,6 +54,20 @@ describe('PlansPageComponent', () => {
 
     const radios = () => [...root.querySelectorAll<HTMLInputElement>('app-plan-option input[type=radio]')];
     const cta = () => root.querySelector<HTMLButtonElement>('.cta-bar .button')!;
+
+    it('cancels a departed page catalogue before it can adopt old experiment assignments', async () => {
+        const response = new Subject<PlansCatalog>();
+        api.load.mockReturnValue(response);
+        const fixture = TestBed.createComponent(PlansPageComponent);
+        fixture.detectChanges();
+        fixture.destroy();
+        response.next(parsePlans(plansBody({ experiments: { plans_year_first: 'plans_year_first' } })));
+        response.complete();
+        await Promise.resolve();
+        expect(response.observed).toBe(false);
+        expect(TestBed.inject(ExperimentService).variant('plans_year_first')).toBe('control');
+        http.expectNone('/api/experiment-events');
+    });
 
     it('preselects Free for a Free account and shows a neutral heading without a goal', async () => {
         await open();
@@ -299,8 +315,8 @@ describe('PlansPageComponent', () => {
             expect(promo.redeem).toHaveBeenCalledWith('plus15', expect.stringMatching(/^[0-9a-f-]{36}$/u));
             expect(root.querySelector('.plan-status .notice.success')?.textContent).toContain('Plus до 1 ноября, без автопродления');
             expect(root.querySelector('.promo .notice.success')?.textContent).toContain('Plus до 20 октября, без автопродления.');
-            expect(radios().map(radio => radio.checked)).toEqual([false, true, false, false]);
-            expect(root.querySelector('app-plan-option .stamp.solid')?.textContent).toContain('Ваш тариф');
+            expect(radios().map(radio => radio.checked)).toEqual([true, false, false, false]);
+            expect(root.querySelectorAll('app-plan-option')[1].querySelector('.stamp.solid')?.textContent).toContain('Ваш тариф');
         });
 
         it('shows a pending discount and a paid tier without renewal', async () => {

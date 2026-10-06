@@ -27,6 +27,7 @@ import { toolkit } from './plans.mjs';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const MOSCOW_DAY = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', timeZone: 'Europe/Moscow' });
 const SESSION_KEY = 'mnema.promo-popup.session';
+const PREFERENCE_KEY = 'mnema.promo-popup.preference.';
 const CAMPAIGN_ID = 'browser-fixture-autumn';
 /** Every kind of space folded to one, so a check does not depend on which no-break space the page picked. */
 const flat = text => (text ?? '').replace(/[\s  ]+/gu, ' ').trim();
@@ -56,7 +57,8 @@ export async function runPromo(ctx) {
     const response = await fetch(base + path, { method, credentials: 'omit', headers, body: body === undefined ? undefined : JSON.stringify(body) });
     const text = await response.text();
     let json = null; try { json = text ? JSON.parse(text) : null; } catch { json = null; }
-    return { status: response.status, retryAfter: response.headers.get('Retry-After'), cache: response.headers.get('Cache-Control'), body: json, text };`,
+    return { status: response.status, retryAfter: response.headers.get('Retry-After'), recorded: response.headers.get('Promo-Event-Recorded'),
+      cache: response.headers.get('Cache-Control'), body: json, text };`,
   config.frontend, method, path, body, key, token ? ctx.bearer : null);
   const uuid = () => page('return crypto.randomUUID();');
   const fixture = async path => {
@@ -98,13 +100,24 @@ export async function runPromo(ctx) {
   /** The popup's event travels after the page has reacted: wait for the server to say it is silenced. */
   const silenced = label => until(async () => { const state = await popupApi(); return state.body?.eligible === false && state.body.campaign === null; },
     `${label}: the server still offers the popup`);
-  const forgetSession = () => page(`sessionStorage.removeItem(args[0]); return true;`, SESSION_KEY);
+  // A new document resets the in-memory once guard too; clearing storage alone must not let a live tab repeat a popup.
+  const forgetSession = async () => {
+    await page(`sessionStorage.removeItem(args[0]); return true;`, SESSION_KEY);
+    await navigate('/ai', tab);
+  };
 
   await reducedMotion(true);
   await metrics(1440, 900, 1, false);
   await fixture('/__fixture/learning-promo');
 
   try {
+    await stage('popup_disabled_receipt', async () => {
+      await fixture('/__fixture/learning-default');
+      const response = await call('POST', '/api/promo-popup/events', { body: { campaignId: CAMPAIGN_ID, event: 'DISMISSED' } });
+      need(response.status === 204 && response.recorded === 'false', `a disabled campaign reported ${response.status}/${response.recorded}`);
+      await fixture('/__fixture/learning-promo');
+      return { status: response.status, recorded: false };
+    });
     // ---- not verified, not an administrator -------------------------------------------------------------------------------------
     await stage('not_verified_not_admin', async () => {
       const create = await call('POST', '/api/admin/promo-codes', { body: { type: 'TIER_DAYS', plan: 'PLUS', days: 15, maxRedemptions: 3 } });
@@ -178,10 +191,10 @@ export async function runPromo(ctx) {
       need([14.95, 15, 15.05].some(offset => state.success === `Plus до ${day(offset)}, без автопродления.`), `the success message reads «${state.success}»`);
       need(state.value === '' && state.invalid === null && state.error === '', 'the field kept the redeemed code or an old error');
       await until(() => page(`return document.querySelector('.plan-status .notice.success')?.textContent.includes('Ваш тариф: Plus до') ?? false;`), 'the plan block did not change to Plus');
-      const block = await page(`return { text: document.querySelector('.plan-status .notice.success').textContent, plusChecked: [...document.querySelectorAll('app-plan-option')].find(card => card.querySelector('.plan-name').textContent.trim() === 'Plus').querySelector('input').checked,
+      const block = await page(`return { text: document.querySelector('.plan-status .notice.success').textContent, freeChecked: [...document.querySelectorAll('app-plan-option')].find(card => card.querySelector('.plan-name').textContent.trim() === 'Free').querySelector('input').checked,
         stamps: [...document.querySelectorAll('app-plan-option')].filter(card => card.querySelector('.stamp.solid')?.textContent.includes('Ваш тариф')).map(card => card.querySelector('.plan-name').textContent.trim()),
         scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth };`);
-      need(/без автопродления/u.test(block.text) && block.plusChecked && block.stamps.join() === 'Plus', `the plan block is wrong: ${JSON.stringify(block)}`);
+      need(/без автопродления/u.test(block.text) && block.freeChecked && block.stamps.join() === 'Plus', `the plan block is wrong: ${JSON.stringify(block)}`);
       need(block.scrollWidth <= block.clientWidth, '/plans overflows horizontally after a redemption');
       const after = await plans();
       const days = (Date.parse(after.body.current.validUntil) - Date.now()) / 86_400_000;
@@ -202,7 +215,9 @@ export async function runPromo(ctx) {
       const discount = await call('POST', '/api/promo-codes/redemptions', { body: { code: codes.discount }, key: await uuid() });
       need(discount.status === 200 && discount.body.type === 'DISCOUNT_PERCENT' && discount.body.percent === 20
         && /^Скидка 20 % применится к оплате до \d+ \S+\.$/u.test(discount.body.message), `the discount answer is ${JSON.stringify(discount.body)}`);
-      need((await plans()).body.pendingDiscount?.percent === 20, 'the API does not list the pending discount');
+      const discounted = await plans();
+      need(discounted.body.pendingDiscount?.percent === 20, 'the API does not list the pending discount');
+      need(JSON.stringify(discounted.body.current) === JSON.stringify(after.body.current), 'a pending discount changed the granted entitlement');
       await navigate('/plans', tab);
       await until(() => exists('.plan-status .notice', tab), 'the plans page does not show the discount');
       const lines = await page(`return [...document.querySelectorAll('.plan-status .notice')].map(node => node.textContent.trim());`);
@@ -286,15 +301,20 @@ export async function runPromo(ctx) {
         await until(async () => (await dialog()) === null, '«Не сейчас» did not close the popup');
       } else await noPopup('Study setup');
       evidence.studyEnd = finished ? 'completion screen: popup shown' : 'setup: no popup';
-      // An active session: forget the server's and the session's memory, then start practice. A task open means no popup is shown or asked for.
+      // Start practice, then open a fresh document while the active session is recoverable. Even without a once marker, a task must stay quiet.
       await fixture('/__fixture/promo-popup-reset');
-      await forgetSession();
       const started = finished && await page(`const button = [...document.querySelectorAll('button')].find(node => node.textContent.trim() === 'Начать практику'); if (!button) return false; button.click(); return true;`);
       let active = false;
       if (started) {
         await until(async () => (await exists('#study-0-answer', tab)) || (await exists('.completion', tab)) || (await exists('.notice.error', tab)), 'practice did not start');
         active = await exists('#study-0-answer', tab);
-        if (active) { await noPopup('active Study'); await markerAbsent('active Study'); }
+        if (active) {
+          await forgetSession();
+          await navigate(`${deckPath}/study`, tab);
+          await until(() => exists('#study-0-answer', tab), 'the active Study session did not recover in a fresh document');
+          await noPopup('active Study');
+          await markerAbsent('active Study');
+        }
       }
       evidence.activeStudy = active ? 'task open: no popup, not asked' : 'no task to open';
       need(!finished || active, 'the fixture could not open a Study task: the claim «never in an active session» was not exercised');
@@ -332,7 +352,9 @@ export async function runPromo(ctx) {
       await until(async () => (await dialog()) === null, 'Esc did not close the popup');
       need(await page(`return document.activeElement !== document.body;`), 'focus was lost to <body> when the popup closed');
       await silenced('Esc');
-      need(await page(`return sessionStorage.getItem(args[0]) === '1';`, SESSION_KEY), 'the session marker was not set');
+      await until(() => page(`return !Object.keys(localStorage).some(key => key.startsWith(args[0]));`, PREFERENCE_KEY),
+        'the real recorded preference header did not confirm the dismissal receipt');
+      need(await page(`return sessionStorage.getItem(args[0]) !== null;`, SESSION_KEY), 'the session marker was not set');
       // Once per browser session, and the cooldown holds when the session is new.
       await navigate('/decks', tab);
       await until(() => exists('main#main-content', tab), 'the deck list did not render');
@@ -362,6 +384,16 @@ export async function runPromo(ctx) {
       const narrow = await dialog();
       need(narrow.width >= narrow.innerWidth * 0.95 && narrow.height >= narrow.innerHeight * 0.95, `at 390 px the popup is ${narrow.width}x${narrow.height}, not almost the whole screen`);
       await shot('promo-popup-390.png');
+      await metrics(320, 800, 1, true);
+      await page(`document.documentElement.style.fontSize = '200%'; return true;`);
+      await frames();
+      const reflow = await page(`const surface = document.querySelector('app-promo-popup dialog'); const rect = surface.getBoundingClientRect();
+        return { scrollWidth: surface.scrollWidth, clientWidth: surface.clientWidth, width: rect.width, viewport: innerWidth,
+          rootSize: parseFloat(getComputedStyle(document.documentElement).fontSize) };`);
+      need(reflow.rootSize >= 32 && reflow.width <= reflow.viewport && reflow.scrollWidth <= reflow.clientWidth,
+        `the popup overflows at320 CSS px with doubled text: ${JSON.stringify(reflow)}`);
+      await shot('promo-popup-320-double-text.png');
+      await page(`document.documentElement.style.removeProperty('font-size'); return true;`);
       await metrics(1440, 900, 1, false);
       need(await page(`[...document.querySelectorAll('app-promo-popup dialog button')].find(node => node.textContent.trim() === 'See the plans').click(); return true;`), 'the primary action is missing');
       await until(async () => (await page('return location.pathname;')) === '/plans' && (await dialog()) === null, 'the primary action did not open /plans with the popup gone');
@@ -385,6 +417,7 @@ export async function runPromo(ctx) {
       return { decline: 'final' };
     });
   } finally {
+    await page(`document.documentElement.style.removeProperty('font-size'); return true;`).catch(() => {});
     await fixture('/__fixture/learning-default').catch(() => {});
     await reducedMotion(false).catch(() => {});
     await metrics(1280, 900, 1, false).catch(() => {});

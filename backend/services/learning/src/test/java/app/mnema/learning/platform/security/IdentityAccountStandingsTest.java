@@ -105,6 +105,20 @@ class IdentityAccountStandingsTest {
     }
 
     @Test
+    void anAdministratorLosesTheCachedGrantExactlyAtTheSixtySecondBoundary() {
+        body = profile(account.toString(), "true", "true");
+        assertThat(standings.of(token())).contains(new AccountStandings.Standing(true, true));
+        body = profile(account.toString(), "true", "false");
+
+        now.set(Instant.parse("2026-10-02T09:00:59Z"));
+        assertThat(standings.of(token())).contains(new AccountStandings.Standing(true, true));
+        assertThat(calls.get()).isOne();
+        now.set(Instant.parse("2026-10-02T09:01:00Z"));
+        assertThat(standings.of(token())).contains(new AccountStandings.Standing(true, false));
+        assertThat(calls.get()).isEqualTo(2);
+    }
+
+    @Test
     void everyFailureIsEmptyNeverAssumed() {
         status = 401;
         assertThat(standings.of(token())).isEmpty();

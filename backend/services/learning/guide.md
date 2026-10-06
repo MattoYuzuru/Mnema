@@ -146,19 +146,23 @@ fair-use buckets, `GET /api/usage` and the estimate. Migration `V26__usage_ledge
   selects or changes a plan. `GET/PUT /api/learning-profile` (package `profile`, table `learning_profile`) stores the answer to
   «Для чего вам Mnema?» (`EXAMS`, `INTERVIEW`, `LANGUAGE`, `WORK`, `SELF`, or a skip: `{goal: null, skipped: true}`); nothing in
   `ai`, `generation`, `study` or `media` may import it (`LearningBoundaryTest`, `PromptAssemblerTest`), so the goal never reaches a provider.
-- **Promo codes, A/B and the promo popup (#302, migration `V41__promo_codes_and_popup.sql`).** Package `promo`: `promo_code` keeps
+- **Promo codes, A/B and the promo popup (#302, migration `V42__promo_codes_and_popup.sql`).** Package `promo`: `promo_code` keeps
   only `HMAC-SHA256(MNEMA_PROMO_HASH_SECRET, normalized code)` (upper case, no spaces, dashes or underscores; 8 to 24 characters, generated codes
-  have 12 of a 31-character alphabet, about 60 bits) and a hint of its first and last two characters; with `APP_ENV=prod` an unset or shorter than 32
+  have 12 of a 31-character alphabet, about 60 bits) and a hint of its first and last two characters; with `APP_ENV=prod` an unset, blank or shorter than 32
   characters secret switches promo codes off (redemption and creation answer 409 `CAPABILITY_UNAVAILABLE`, `capability: promoCodes`; an ERROR at startup — the rest of Learning runs) (outside production a random one is drawn with a WARN, and issued codes do not survive a restart);
   the plain code is returned once by the admin creation (`POST /api/admin/promo-codes`, `PATCH /{codeId}` for the kill switch, `GET` to list, 200 per page with `?after=<last codeId>` and `next` in the response;
   the token and an `admin` account in Identity, read with the caller's own bearer through `AccountStandings` and cached 60 s only when the email
   is verified, fail closed). `POST /api/promo-codes/redemptions {code}` with an `Idempotency-Key` (UUIDv4/v7, replayed through
-  `CommandReceiptService`): replay first, then the account's hourly place (`promo_attempt`, advisory-locked; 5 per hour), then the
+  `CommandReceiptService`): its receipt fingerprint is derived from the keyed code hash, never the unkeyed digest of the code, so a database copy cannot verify
+  a vanity-code guess through the receipt table. Replay first, then the account's hourly place (`promo_attempt`, advisory-locked; 5 per hour), then the
   verified email, then the address's hourly place (20 per hour; an unverified account never takes it), then the code row under `FOR UPDATE` so
   `max_redemptions` is exact, and under that lock the address velocity rule (counted under the address's advisory lock, so racing accounts of one
-  address cannot slip past it). The address is its IPv4 or the /64 of its IPv6, hashed. `PromoAttemptSweep` (roles `worker` and `all`) deletes attempts older than 2 h in bounded batches. A tier code publishes a
-  `PROMO` snapshot `promo:{redemptionId}` to `EntitlementInbox` (same call a payment will use; a tier below the one the account has, or a discount that does not beat the pending one, is
-  `PROMO_NOT_ELIGIBLE` before the code is burned); a discount code stores `promo_discount` (larger percent wins) that `GET /api/plans` returns as `pendingDiscount` and billing (#79) will read.
+  address cannot slip past it). The validity/activation instant is read after the code, discount-account and address locks are held, so waiting
+  for a lock cannot grant an expired code. The address is its IPv4 or the /64 of its IPv6, hashed. `PromoAttemptSweep` (roles `worker` and `all`) deletes attempts older than 2 h in bounded batches. A tier code publishes a
+  `PROMO` snapshot `promo:{redemptionId}` to `EntitlementInbox` (same call a payment will use). `TIER_MONTHS` expiry uses `UsageCalendar` and
+  `learning.usage.calendar-zone` (Europe/Moscow), preserves the local activation time and clamps to the last day of a shorter month: January 31 at 01:15
+  expires February 28 at 01:15 (February 29 in a leap year), never March 1. The displayed expiry date uses the same calendar. A tier below the one the account has, or a discount that does not beat the pending one, is
+  `PROMO_NOT_ELIGIBLE` before the code is burned; a discount code stores `promo_discount` (larger percent wins) that `GET /api/plans` returns as `pendingDiscount` and billing (#79) will read.
   Problem codes: `PROMO_INVALID` (unknown, disabled, expired or not started: one answer), `PROMO_EXHAUSTED`, `PROMO_ALREADY_USED`,
   `PROMO_NOT_ELIGIBLE`, `PROMO_VELOCITY`, `RATE_LIMITED`, `IDENTITY_UNAVAILABLE`. The audit is `promo_redemption` plus log lines with ids only; the
   address and User-Agent exist only as HMAC hashes. Package `experiment`: `learning.experiments.<key>.variants` with weights; the variant is

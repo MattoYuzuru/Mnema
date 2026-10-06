@@ -71,10 +71,11 @@ public class PromoPopupService {
      * While the campaign is disabled there is nothing to record: the call is a no-op that never touches the database (a client with a stale
      * campaign in hand still gets its 204; the method opens no transaction, the one upsert below is atomic).
      *
+     * @return true after the preference was written, false for a disabled-campaign no-op
      * @throws InvalidRequestException the campaign is not the configured one
      */
-    public void record(UUID owner, String campaignId, Event event) {
-        if (!settings.enabled) return;
+    public boolean record(UUID owner, String campaignId, Event event) {
+        if (!settings.enabled) return false;
         if (!settings.campaign.id().equals(campaignId)) throw new InvalidRequestException();
         Timestamp now = Timestamp.from(clock.now());
         String column = switch (event) {
@@ -83,8 +84,8 @@ public class PromoPopupService {
             case DECLINED -> "declined_at";
         };
         // DECLINED is final (never shown again); DISMISSED only starts the cooldown; SHOWN is recorded for diagnostics.
-        jdbc.sql("INSERT INTO app_learning.promo_popup_state(owner_id,campaign_id," + column + ") VALUES (:owner,:campaign,:now) "
+        return jdbc.sql("INSERT INTO app_learning.promo_popup_state(owner_id,campaign_id," + column + ") VALUES (:owner,:campaign,:now) "
                         + "ON CONFLICT (owner_id) DO UPDATE SET campaign_id=EXCLUDED.campaign_id," + column + "=EXCLUDED." + column)
-                .param("owner", owner).param("campaign", campaignId).param("now", now).update();
+                .param("owner", owner).param("campaign", campaignId).param("now", now).update() == 1;
     }
 }

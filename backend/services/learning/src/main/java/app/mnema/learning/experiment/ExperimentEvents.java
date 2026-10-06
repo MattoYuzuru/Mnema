@@ -17,7 +17,8 @@ import java.util.concurrent.atomic.AtomicLong;
  * never a client claim. An account may send {@value #PER_MINUTE} events a minute per instance; the window is a best-effort guard of one instance, not
  * state, because a counter an account can flood is worthless. The table is bounded ({@value #MAX_WINDOWS} accounts): when it is full, expired windows are
  * swept at most once per {@value #SWEEP_MILLIS} ms (so a full table costs a map lookup per event, not a scan), and an account that still finds no room is
- * counted but not limited until a window frees up.
+ * refused with a bounded retry until a window frees up. Admission and updates share a short in-memory lock so concurrent new accounts cannot
+ * exceed the table bound. Unknown or disabled experiments are ignored before they can consume capacity or create a metric.
  */
 @Service
 public class ExperimentEvents {
@@ -59,19 +60,22 @@ public class ExperimentEvents {
 
     /**
      * @return whether the event was counted; false for an experiment that is not enabled
-     * @throws RateLimitedException the account sent too many events this minute
+     * @throws RateLimitedException the account sent too many events this minute or a new account cannot be tracked within the bounded table
      */
     public boolean record(UUID account, String key, Event event) {
+        if (!assignments.known(key)) return false;
         long now = clock.millis();
-        if (windows.size() >= maxWindows) sweep(now);
-        if (windows.size() < maxWindows || windows.containsKey(account)) {
-            Window window = windows.merge(account, new Window(now, 1),
-                    (old, fresh) -> now - old.startedAt() >= WINDOW_MILLIS ? fresh : new Window(old.startedAt(), old.count() + 1));
+        synchronized (windows) {
+            if (windows.size() >= maxWindows) sweep(now);
+            Window old = windows.get(account);
+            if (old == null && windows.size() >= maxWindows) throw new RateLimitedException((SWEEP_MILLIS + 999) / 1000);
+            Window window = old == null || now - old.startedAt() >= WINDOW_MILLIS ? new Window(now, 1)
+                    : new Window(old.startedAt(), old.count() + 1);
             if (window.count() > PER_MINUTE) {
                 throw new RateLimitedException((window.startedAt() + WINDOW_MILLIS - now + 999) / 1000);
             }
+            windows.put(account, window);
         }
-        if (!assignments.known(key)) return false;
         meters.counter("mnema_experiment_events_total", "key", key, "variant", assignments.variant(account, key),
                 "event", event.name()).increment();
         return true;

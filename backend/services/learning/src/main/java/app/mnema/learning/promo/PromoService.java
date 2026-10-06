@@ -9,6 +9,7 @@ import app.mnema.learning.usage.EntitlementInbox;
 import app.mnema.learning.usage.EntitlementSource;
 import app.mnema.learning.usage.Plan;
 import app.mnema.learning.usage.UsageClock;
+import app.mnema.learning.usage.UsageCalendar;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
@@ -19,8 +20,6 @@ import tools.jackson.databind.node.JsonNodeFactory;
 import tools.jackson.databind.node.ObjectNode;
 
 import java.time.Instant;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.Locale;
@@ -40,9 +39,7 @@ import static app.mnema.learning.promo.PromoRejectedException.Reason;
 @Service
 public class PromoService {
     private static final Logger log = LoggerFactory.getLogger(PromoService.class);
-    private static final ZoneId MESSAGE_ZONE = ZoneId.of("Europe/Moscow");
-    private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("d MMMM", Locale.forLanguageTag("ru"))
-            .withZone(MESSAGE_ZONE);
+    private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("d MMMM", Locale.forLanguageTag("ru"));
 
     private final PromoRepository repository;
     private final PromoAttempts attempts;
@@ -52,9 +49,11 @@ public class PromoService {
     private final EntitlementInbox inbox;
     private final CommandReceiptService receipts;
     private final UsageClock clock;
+    private final UsageCalendar calendar;
 
     PromoService(PromoRepository repository, PromoAttempts attempts, PromoSettings settings, AccountStandings standings,
-                 EntitlementSource entitlements, EntitlementInbox inbox, CommandReceiptService receipts, UsageClock clock) {
+                 EntitlementSource entitlements, EntitlementInbox inbox, CommandReceiptService receipts, UsageClock clock,
+                 UsageCalendar calendar) {
         this.repository = repository;
         this.attempts = attempts;
         this.settings = settings;
@@ -63,6 +62,7 @@ public class PromoService {
         this.inbox = inbox;
         this.receipts = receipts;
         this.clock = clock;
+        this.calendar = calendar;
     }
 
     /**
@@ -77,7 +77,9 @@ public class PromoService {
         settings.requireAvailable();
         Optional<String> normalized = PromoCodes.normalize(rawCode);
         CommandIdentity identity = new CommandIdentity(commandId, owner, "promo", "redeem");
-        ObjectNode payload = JsonNodeFactory.instance.objectNode().put("code", normalized.orElse("invalid"));
+        byte[] hash = PromoCodes.hash(settings.hashSecret, normalized.orElse("invalid"));
+        // A receipt's generic SHA-256 must not expose an offline verifier for a guessable vanity code. Use the keyed fingerprint.
+        ObjectNode payload = JsonNodeFactory.instance.objectNode().put("codeHash", java.util.HexFormat.of().formatHex(hash));
         Optional<JsonNode> replay = receipts.replay(identity, payload);
         if (replay.isPresent()) return replay.get();
 
@@ -86,13 +88,16 @@ public class PromoService {
         if (!standing.emailVerified()) throw rejected(owner, Reason.NOT_ELIGIBLE);
         attempts.takeAddress(attempt, client);
         if (normalized.isEmpty()) throw rejected(owner, Reason.INVALID);
-        byte[] hash = PromoCodes.hash(settings.hashSecret, normalized.get());
         return receipts.execute(identity, payload, () -> redeemLocked(owner, hash, client));
     }
 
     private JsonNode redeemLocked(UUID owner, byte[] hash, PromoClient client) {
-        Instant now = clock.now();
         PromoRepository.Code code = repository.lockByHash(hash).orElseThrow(() -> rejected(owner, Reason.INVALID));
+        // Acquire every potentially contended redemption lock before reading time: an expiring code cannot borrow time spent waiting.
+        // Lock order is code row, account discount (if any), address velocity (if available).
+        if (!code.type().grantsTier()) repository.lockKey("promo.discount:owner:" + owner);
+        if (client.ipHash() != null) repository.lockKey("promo.velocity:ip:" + java.util.HexFormat.of().formatHex(client.ipHash()));
+        Instant now = clock.now();
         if (!code.enabled() || now.isBefore(code.validFrom()) || (code.validUntil() != null && !now.isBefore(code.validUntil()))) {
             throw rejected(owner, Reason.INVALID);
         }
@@ -104,9 +109,7 @@ public class PromoService {
             if (current.plan().ordinal() > Plan.valueOf(code.plan()).ordinal()) throw rejected(owner, Reason.NOT_ELIGIBLE);
         }
         if (!code.type().grantsTier()) {
-            // A discount that would not beat the pending one changes nothing and would burn the code. The lock makes the check and the
-            // upsert one step for the account (order of locks: code row, account, address).
-            repository.lockKey("promo.discount:owner:" + owner);
+            // The account lock makes the pending-discount check and the upsert atomic; a weaker code is not burned.
             if (repository.pendingDiscount(owner, now).filter(pending -> pending.percent() >= code.percent()).isPresent()) {
                 throw rejected(owner, Reason.NOT_ELIGIBLE);
             }
@@ -116,7 +119,6 @@ public class PromoService {
         if (client.ipHash() != null) {
             // The velocity rule is part of the redemption, not a check before it: under the address's lock and the code's row lock, two accounts
             // of one address cannot both see "two others so far" and both redeem. (Order of locks: code row, account, address.)
-            repository.lockKey("promo.velocity:ip:" + java.util.HexFormat.of().formatHex(client.ipHash()));
             if (repository.otherRedeemersFromIp(client.ipHash(), owner, now.minus(settings.velocityWindow)) >= settings.velocityAccounts) {
                 throw rejected(owner, Reason.VELOCITY);
             }
@@ -130,16 +132,16 @@ public class PromoService {
         if (code.type().grantsTier()) {
             Plan plan = Plan.valueOf(code.plan());
             Instant end = code.type() == PromoType.TIER_DAYS ? now.plus(code.days(), ChronoUnit.DAYS)
-                    : now.atZone(ZoneOffset.UTC).plusMonths(code.months()).toInstant();
+                    : calendar.plusMonths(now, code.months());
             // The allowance document is the plan's catalog: usage grants it per calendar month from the plan name.
             inbox.accept(new EntitlementInbox.Snapshot(snapshotId, owner, plan, "PROMO", now, end,
                     JsonNodeFactory.instance.objectNode().put("allowances", "catalog").put("plan", plan.name()), end));
             result.put("plan", plan.name()).put("validUntil", wire(end))
-                    .put("message", label(plan) + " до " + DAY.format(end) + ", без автопродления.");
+                    .put("message", label(plan) + " до " + DAY.format(calendar.date(end)) + ", без автопродления.");
         } else {
             repository.upsertDiscount(owner, code.percent(), code.plan(), code.validUntil(), code.codeId(), now);
             result.put("plan", code.plan()).put("validUntil", wire(code.validUntil())).put("percent", code.percent())
-                    .put("message", "Скидка " + code.percent() + " % применится к оплате до " + DAY.format(code.validUntil()) + ".");
+                    .put("message", "Скидка " + code.percent() + " % применится к оплате до " + DAY.format(calendar.date(code.validUntil())) + ".");
         }
         log.info("promo redeemed redemption_id={} code_id={} owner_id={} type={}", redemptionId, code.codeId(), owner, code.type());
         return result;

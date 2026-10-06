@@ -37,7 +37,7 @@ class PromoSettingsTest {
     @Test
     void productionWithoutAUsableSecretSwitchesPromoCodesOffAndLocalWorkKeepsTheRandomOne() {
         String strong = "s".repeat(PromoSettings.MIN_PRODUCTION_SECRET);
-        for (String weak : new String[] {"", "  ", "s".repeat(31)}) {
+        for (String weak : new String[] {"", "  ", "s".repeat(31), " ".repeat(32), "\t".repeat(40)}) {
             PromoSettings off = new PromoSettings(5, 20, 3, Duration.ofHours(24), weak, "PROD ");
             assertThat(off.available).isFalse();
             assertThatThrownBy(off::requireAvailable).isInstanceOf(app.mnema.learning.platform.api.CapabilityUnavailableException.class);

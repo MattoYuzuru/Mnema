@@ -3,6 +3,10 @@ package app.mnema.learning.promo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.test.context.DynamicPropertyRegistrar;
 
 import java.sql.Timestamp;
 import java.time.Duration;
@@ -11,7 +15,21 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /** The retention sweep of redemption attempts: only rows older than two hours go, in bounded batches per tick. */
+@Import(PromoAttemptSweepTest.DatabaseConfiguration.class)
 class PromoAttemptSweepTest extends PromoIntegrationTest {
+    private static final String DATABASE = createDatabase("promo_retention_" + UUID.randomUUID().toString().replace("-", ""));
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class DatabaseConfiguration {
+        @Bean
+        DynamicPropertyRegistrar isolatedDatabase() {
+            // The sweep is global: rows from other clock-driven tests must not consume this test's batch budget.
+            return registry -> {
+                registry.add("spring.datasource.url", () -> DATABASE);
+                registry.add("spring.flyway.url", () -> DATABASE);
+            };
+        }
+    }
     @Autowired private PromoRepository repository;
 
     /** The test context runs the api role only, where the scheduled bean is absent: the sweep is built by hand over the real repository and clock. */
@@ -19,6 +37,7 @@ class PromoAttemptSweepTest extends PromoIntegrationTest {
 
     @BeforeEach
     void sweeper() {
+        assertThat(jdbc.sql("SELECT current_database()").query(String.class).single()).startsWith("promo_retention_");
         sweep = new PromoAttemptSweep(repository, clock);
     }
 

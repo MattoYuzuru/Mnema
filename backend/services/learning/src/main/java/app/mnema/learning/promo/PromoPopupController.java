@@ -29,7 +29,7 @@ public final class PromoPopupController {
         return ResponseEntity.ok().header("Cache-Control", "private, no-store").body(popup.read(PromoBodies.owner(identity)));
     }
 
-    /** {@code {campaignId, event: SHOWN|DISMISSED|DECLINED}} → 204. */
+    /** {@code {campaignId, event: SHOWN|DISMISSED|DECLINED}} → 204; {@code Promo-Event-Recorded} distinguishes a write from a disabled no-op. */
     @PostMapping(value = "/events", consumes = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<Void> record(@AuthenticationPrincipal Jwt identity, InputStream body) {
         JsonNode command = PromoBodies.object(body, Set.of("campaignId", "event"), Set.of("campaignId", "event"));
@@ -40,7 +40,8 @@ public final class PromoPopupController {
         } catch (IllegalArgumentException | NullPointerException failure) {
             throw new InvalidRequestException();
         }
-        popup.record(PromoBodies.owner(identity), campaign, event);
-        return ResponseEntity.noContent().header("Cache-Control", "private, no-store").build();
+        boolean recorded = popup.record(PromoBodies.owner(identity), campaign, event);
+        return ResponseEntity.noContent().header("Cache-Control", "private, no-store")
+                .header("Promo-Event-Recorded", Boolean.toString(recorded)).build();
     }
 }

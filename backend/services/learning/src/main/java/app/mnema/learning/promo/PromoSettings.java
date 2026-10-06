@@ -46,12 +46,12 @@ final class PromoSettings {
         this.velocityAccounts = velocityAccounts;
         this.velocityWindow = velocityWindow;
         boolean production = "prod".equalsIgnoreCase(environment.strip());
-        this.available = !production || hashSecret.length() >= MIN_PRODUCTION_SECRET;
+        this.available = !production || (!hashSecret.isBlank() && hashSecret.length() >= MIN_PRODUCTION_SECRET);
         if (!available) {
             log.error("promo codes are off: MNEMA_PROMO_HASH_SECRET must be set to at least {} characters when APP_ENV=prod", MIN_PRODUCTION_SECRET);
         }
         if (hashSecret.isBlank()) {
-            log.warn("promo hash secret is not configured: a random per-process secret is used, issued codes do not survive a restart");
+            if (!production) log.warn("promo hash secret is not configured: a random per-process secret is used, issued codes do not survive a restart");
             this.hashSecret = new byte[32];
             new SecureRandom().nextBytes(this.hashSecret);
         } else {

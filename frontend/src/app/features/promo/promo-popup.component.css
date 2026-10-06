@@ -14,7 +14,7 @@
     color: var(--mn-body);
     font: 1rem/1.6 var(--mn-font-body, system-ui, sans-serif);
 }
-.promo-popup::backdrop { background: rgb(40 19 120 / 24%); }
+.promo-popup::backdrop { background: color-mix(in srgb, var(--mn-ink) 24%, transparent); }
 
 /* A phone: the sheet takes the whole screen, with the safe areas respected. */
 @media (max-width: 40rem) {
@@ -33,7 +33,7 @@
 
 h2 { color: var(--mn-ink); font: 500 clamp(1.8rem, 6vw, 2.6rem)/1.1 var(--mn-font-display, Georgia, serif); overflow-wrap: anywhere; }
 h2:focus-visible { outline: none; }
-.promo-popup-text { max-inline-size: 52ch; }
+.promo-popup-text { max-inline-size: 52ch; overflow-wrap: anywhere; }
 .promo-popup-code { font-family: var(--mn-font-mono, monospace); letter-spacing: .06em; user-select: all; }
 
 .promo-popup-close {

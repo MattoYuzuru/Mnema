@@ -4,6 +4,12 @@ import { PromoProblem, PromoProblemCode } from './promo.models';
 const problem = (code: PromoProblemCode, retryAfterSeconds: number | null = null): PromoProblem => ({ code, retryAfterSeconds, retryable: false });
 
 describe('promo messages', () => {
+    it('does not assert an unchanged tariff when the command outcome is unknown', () => {
+        const message = promoMessage({ code: 'UNKNOWN', retryAfterSeconds: null, retryable: true });
+        expect(message).toContain('Не удалось получить результат');
+        expect(message).toContain('Повторите');
+        expect(message).not.toContain('Тариф не изменился');
+    });
     it('says every refusal calmly, in words, and never blames', () => {
         const codes: PromoProblemCode[] = ['PROMO_INVALID', 'PROMO_EXHAUSTED', 'PROMO_ALREADY_USED', 'PROMO_NOT_ELIGIBLE', 'PROMO_VELOCITY',
             'RATE_LIMITED', 'IDENTITY_UNAVAILABLE', 'UNKNOWN'];
