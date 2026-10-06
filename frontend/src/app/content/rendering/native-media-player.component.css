@@ -13,7 +13,7 @@
 .mnema-player-note.error { color: var(--mn-danger); }
 :where(button,input):focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 2px; }
 @media (max-width: 25rem) {
-  .mnema-player-controls { gap: .4rem; padding: .5rem; }
+  .mnema-player-controls { gap: .4rem; padding: min(.5rem, 3vw); }
   .mnema-player-controls input[type='range'] { order: 3; flex-basis: 100%; }
   .mnema-player-time { font-size: .75rem; }
   .mnema-player-speed { margin-inline-start: auto; }
