@@ -5,6 +5,9 @@ import { Subject, of, throwError } from 'rxjs';
 
 import metadataFixture from '../../../../../contracts/decks/metadata.json';
 import { QuietZone } from '../../core/notifications/quiet-zone';
+import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService, LearningCapabilities } from '../authoring/capabilities-api.service';
+import { SpeechInputService } from '../speech/speech-input.service';
+import { UsageApiService } from '../usage/usage-api.service';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { OwnDeck } from '../own-decks/own-deck.models';
 import { PromoPopupService } from '../promo/promo-popup.service';
@@ -26,9 +29,11 @@ describe('StudySessionPageComponent', () => {
     let promoPopup: SpyObj<PromoPopupService>;
     let fixture: ComponentFixture<StudySessionPageComponent>;
     let now = 1000;
+    let capabilities: LearningCapabilities;
 
     beforeEach(() => {
         now = 1000;
+        capabilities = CAPABILITIES_UNAVAILABLE;
         const decks = {
             detail: vi.fn().mockName("OwnDecksApiService.detail")
         };
@@ -68,7 +73,11 @@ describe('StudySessionPageComponent', () => {
                 { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ deckId: deck.deckId }) } } },
                 { provide: Router, useValue: router }, { provide: OwnDecksApiService, useValue: decks },
                 { provide: StudyApiService, useValue: api }, { provide: StudyRecoveryService, useValue: recovery },
-                { provide: MEDIA_PLAYBACK_RESOLVER, useValue: playback }, { provide: PromoPopupService, useValue: promoPopup }
+                { provide: MEDIA_PLAYBACK_RESOLVER, useValue: playback },
+                { provide: CapabilitiesApiService, useValue: { read: () => of(capabilities) } },
+                { provide: UsageApiService, useValue: { load: () => throwError(() => new Error('no usage')) } },
+                { provide: SpeechInputService, useValue: { checkConsent: vi.fn().mockResolvedValue({ ok: true }) } },
+                { provide: PromoPopupService, useValue: promoPopup }
             ] });
     });
 
@@ -89,6 +98,19 @@ describe('StudySessionPageComponent', () => {
         expect(command.response).toEqual({ kind: 'SELF_CHECK', rating: 'PARTIAL' });
         expect(Object.keys(command)).not.toContain('hintsUsed');
         expect(root.querySelector('#feedback-title')).not.toBeNull();
+    });
+
+    it('offers «Ответить голосом» for a TEXT_OR_SPEECH answer and submits a typed answer as TYPED', () => {
+        capabilities = { ...CAPABILITIES_UNAVAILABLE, speechToText: { available: true, reason: null } };
+        const speechPresentation = clone(fixtures['freeResponse']);
+        speechPresentation.content.responseInput = 'TEXT_OR_SPEECH';
+        startWithPresentations([speechPresentation]);
+        expect(page().querySelector('app-mic-button')).not.toBeNull();
+        expect(page().textContent).toContain('Ответить голосом');
+        api.submit.mockReturnValue(of({ value: outcome('freeResponse'), replayed: false }));
+        type('textarea', 'набрано руками');
+        click('button[data-submit]');
+        expect(lastCall(api.submit)[2].response).toEqual({ kind: 'TEXT', text: 'набрано руками', answerSource: 'TYPED' });
     });
 
     it('marks a quiet zone while a task is open and releases it at the feedback pause and on leaving', () => {
@@ -114,7 +136,7 @@ describe('StudySessionPageComponent', () => {
         expect(quiet.active()).toBe(false);
     });
 
-    it('submits the exact free-response text and never starts the voice path from the disabled microphone', () => {
+    it('submits the exact free-response text and never starts the voice path without a microphone button', () => {
         const getUserMedia = vi.spyOn(navigator.mediaDevices, 'getUserMedia').mockRejectedValue(new Error('must not be called'));
         const recorder = vi.fn().mockName('MediaRecorder');
         const speech = vi.fn().mockName('SpeechRecognition');
@@ -129,12 +151,9 @@ describe('StudySessionPageComponent', () => {
         try {
             startWith('freeResponse');
             const root = page();
-            const mic = [...root.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent?.includes('Ответить голосом'))!;
-            expect(mic.disabled).toBe(true);
-            const reason = root.querySelector<HTMLElement>(`#${mic.getAttribute('aria-describedby')}`)!;
-            expect(reason.textContent).toContain('Голосовой ответ пока недоступен');
-            mic.click();
-            mic.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+            // A TEXT exercise (and an unavailable capability) offers no microphone at all: nothing to press, nothing to explain.
+            expect([...root.querySelectorAll('button')].some(button => button.textContent?.includes('голос'))).toBe(false);
+            expect(root.querySelector('app-mic-button')).toBeNull();
             fixture.detectChanges();
             expect(getUserMedia).not.toHaveBeenCalled();
             expect(recorder).not.toHaveBeenCalled();

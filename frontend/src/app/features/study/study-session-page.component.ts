@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, a
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
-import { map, timer } from 'rxjs';
+import { catchError, map, of, timer } from 'rxjs';
 
 import { LearnerContent, Mechanic } from '../../content/exercise/exercise-content.models';
 import { QuietZone } from '../../core/notifications/quiet-zone';
@@ -11,6 +11,7 @@ import { NewBadgeComponent } from '../../shared/new-badge.component';
 import { AssessmentSelfCheckComponent, AssessmentWaitingComponent } from './assessment-views.component';
 import { LearnerExerciseComponent, PairChecker } from './learner-exercise.component';
 import { LearnerFeedbackComponent, feedbackTitle } from './learner-feedback.component';
+import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService } from '../authoring/capabilities-api.service';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { PromoPopupService } from '../promo/promo-popup.service';
 import { OwnDeck } from '../own-decks/own-deck.models';
@@ -130,6 +131,8 @@ export class StudySessionPageComponent {
     private readonly injector = inject(Injector);
     private readonly element: ElementRef<HTMLElement> = inject(ElementRef);
     readonly deckId: string;
+    /** The server offers speech-to-text: a free response that takes speech shows «Ответить голосом». Fails closed. */
+    readonly speechAvailable = signal(false);
     private presentedAt = 0;
     private disputeCommandId = '';
     /** The last dispute request may have reached the server (no answer, a 5xx): a retry must reuse its command id. */
@@ -165,6 +168,8 @@ export class StudySessionPageComponent {
         const deckId = this.route.snapshot.paramMap.get('deckId');
         if (deckId === null) throw new Error('Study route requires deckId.');
         this.deckId = deckId.toLowerCase();
+        inject(CapabilitiesApiService).read().pipe(catchError(() => of(CAPABILITIES_UNAVAILABLE)), takeUntilDestroyed())
+            .subscribe(result => this.speechAvailable.set(result.speechToText.available));
         this.decks.detail(this.deckId).pipe(takeUntilDestroyed()).subscribe({
             next: deck => this.deck.set(deck),
             error: () => this.fail('Не удалось подтвердить выбранную колоду.')

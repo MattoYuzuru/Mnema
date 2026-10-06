@@ -12,6 +12,9 @@ import app.mnema.learning.media.MediaUploadConflictException;
 import app.mnema.learning.platform.concurrency.VersionPreconditionRequiredException;
 import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
 import app.mnema.learning.promo.PromoRejectedException;
+import app.mnema.learning.speech.PayloadTooLargeException;
+import app.mnema.learning.speech.SpeechConsentOutdatedException;
+import app.mnema.learning.speech.SpeechConsentRequiredException;
 import app.mnema.learning.usage.SpecNotSupportedException;
 import app.mnema.learning.usage.UsageContentionException;
 import app.mnema.learning.usage.UsageLimitReachedException;
@@ -89,6 +92,21 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(IdentityUnavailableException.class)
     ResponseEntity<Object> handleIdentityUnavailable(IdentityUnavailableException exception, HttpServletRequest request) {
         return response(ApiErrorCode.IDENTITY_UNAVAILABLE, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(SpeechConsentRequiredException.class)
+    ResponseEntity<Object> handleSpeechConsentRequired(SpeechConsentRequiredException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.SPEECH_CONSENT_REQUIRED, request, exception);
+    }
+
+    @ExceptionHandler(SpeechConsentOutdatedException.class)
+    ResponseEntity<Object> handleSpeechConsentOutdated(SpeechConsentOutdatedException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.SPEECH_CONSENT_OUTDATED, request, exception);
+    }
+
+    @ExceptionHandler(PayloadTooLargeException.class)
+    ResponseEntity<Object> handlePayloadTooLarge(PayloadTooLargeException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.PAYLOAD_TOO_LARGE, request.getRequestURI(), new HttpHeaders());
     }
 
     @ExceptionHandler(SpecNotSupportedException.class)

@@ -268,6 +268,10 @@ module.main()
         self.assertFalse(fake & set(default))
         self.assertTrue(fake <= set(mechanics))
         self.assertEqual("about:blank", mechanics[-1])
+        # The voice input scenario (#298, `--generation`) uses the same synthetic devices without the mechanics baseline.
+        voice = HARNESS.chrome_arguments("chrome", profile, spki, False, True)
+        self.assertTrue(fake <= set(voice))
+        self.assertIn("--mute-audio", voice)
 
     def test_mechanics_driver_is_syntactically_valid_and_never_claims_a_real_microphone(self):
         source = Path(__file__).with_name("mechanics.mjs").read_text()

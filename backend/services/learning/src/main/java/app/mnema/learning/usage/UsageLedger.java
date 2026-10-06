@@ -410,6 +410,36 @@ public class UsageLedger {
         return true;
     }
 
+    /**
+     * {@link #fairUseFits} that explains a refusal: throws {@link UsageLimitReachedException} (the widest violated window, as {@link #consume} reports it)
+     * when {@code amount} does not fit. A plain read like {@code fairUseFits}: nothing is locked or written, so a caller that admits a call and counts it
+     * later (speech to text counts the metered seconds when the clip is transcribed) adds what it has admitted and not counted yet to {@code amount}.
+     *
+     * @throws UsageLimitReachedException the amount does not fit a window of the owner's allowance now
+     */
+    @Transactional(readOnly = true)
+    public void requireFairUse(UUID owner, Bucket bucket, long amount) {
+        UuidPolicy.requireEntityId(owner, "owner");
+        Objects.requireNonNull(bucket, "bucket");
+        if (!bucket.consumable() || amount < 1 || amount > MAX_UNITS) throw new IllegalArgumentException("Invalid consumption");
+        Instant now = clock.now();
+        UsageState.Resolved resolved = state.resolve(owner, now);
+        Allowance.WindowLimit violated = null;
+        long violatedUsed = 0;
+        for (Allowance.WindowLimit limit : resolved.allowance().limits(bucket)) {
+            long used = state.counter(owner, bucket, limit.window(), now);
+            if (limit.limit() == null || used + amount <= limit.limit()) continue;
+            // the widest window decides: waiting for a day never helps when the month is spent
+            if (violated == null || limit.window().compareTo(violated.window()) > 0) {
+                violated = limit;
+                violatedUsed = used;
+            }
+        }
+        if (violated != null) {
+            throw new UsageLimitReachedException(state.windowBlock(resolved.allowance().plan(), bucket, violated, violatedUsed, amount, now));
+        }
+    }
+
     /** One of the owner's reservations (a session shows its credits from it); another owner's is empty. */
     @Transactional(readOnly = true)
     public Optional<Reservation> reservation(UUID owner, UUID reservationId) {

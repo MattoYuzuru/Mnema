@@ -84,7 +84,7 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                         "22:media gc pin monotonic clock:SUCCESS",
                         "23:order and categorize mechanics:SUCCESS", "24:notifications:SUCCESS",
                         "25:deck hub:SUCCESS", "26:usage ledger:SUCCESS", "27:ai provider call:SUCCESS", "28:generation:SUCCESS", "29:generation note snapshot:SUCCESS", "30:exercise new mark:SUCCESS", "31:generation revision headroom:SUCCESS",
-                        "32:ai semantic assessment:SUCCESS", "33:generation revise intent:SUCCESS", "34:generation plan:SUCCESS", "35:image search:SUCCESS", "36:speech cache:SUCCESS", "39:plans and learning profile:SUCCESS", "41:promo codes and popup:SUCCESS");
+                        "32:ai semantic assessment:SUCCESS", "33:generation revise intent:SUCCESS", "34:generation plan:SUCCESS", "35:image search:SUCCESS", "36:speech cache:SUCCESS", "37:speech input:SUCCESS", "41:plans and learning profile:SUCCESS", "42:promo codes and popup:SUCCESS");
 
         assertThat(jdbcClient.sql("""
                         SELECT schema_name
@@ -148,8 +148,7 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                         "studyProgressController", "mediaUploadController", "mediaPlaybackController",
                         "mediaProcessingController", "mediaManifestController", "capabilityController",
                         "notificationController", "itemHubController", "deckInsightsController",
-                        "usageController", "plansController", "learningProfileController", "estimateController", "generationController",
-                        "promoController", "promoAdminController", "promoPopupController", "experimentController");
+                        "usageController", "estimateController", "generationController", "speechInputController", "plansController", "learningProfileController", "promoController", "promoAdminController", "promoPopupController", "experimentController");
         assertThat(requestMappings.getHandlerMethods().keySet())
                 .flatExtracting(mapping -> mapping.getPatternValues())
                 .allSatisfy(route -> {

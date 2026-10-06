@@ -54,7 +54,7 @@ class CapabilityProblemTest {
     private static MockMvc mvc(CapabilityFlags flags, AiAvailability ai) {
         var factory = new StaticListableBeanFactory();
         var capabilities = new LearningCapabilities(flags,
-                factory.getBeanProvider(SpeechToTextProvider.class), ai,
+                factory.getBeanProvider(app.mnema.learning.ai.Transcription.class), ai,
                 factory.getBeanProvider(app.mnema.learning.ai.SpeechSynthesis.class),
                 factory.getBeanProvider(app.mnema.learning.ai.ImageSearch.class),
                 factory.getBeanProvider(app.mnema.learning.ai.ImageGeneration.class),

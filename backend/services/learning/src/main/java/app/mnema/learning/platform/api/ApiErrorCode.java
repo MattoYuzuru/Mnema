@@ -33,6 +33,21 @@ enum ApiErrorCode {
             "Rate limited",
             "Too many requests; retry after the time in Retry-After."
     ),
+    SPEECH_CONSENT_REQUIRED(
+            HttpStatus.CONFLICT,
+            "Speech consent required",
+            "Voice input needs the account's consent for the processing region."
+    ),
+    SPEECH_CONSENT_OUTDATED(
+            HttpStatus.CONFLICT,
+            "Speech consent outdated",
+            "The consent names another version or processing region than the current one."
+    ),
+    PAYLOAD_TOO_LARGE(
+            HttpStatus.CONTENT_TOO_LARGE,
+            "Payload too large",
+            "The request body exceeds the allowed size."
+    ),
     SPEC_NOT_SUPPORTED(
             HttpStatus.UNPROCESSABLE_CONTENT,
             "Spec not supported",

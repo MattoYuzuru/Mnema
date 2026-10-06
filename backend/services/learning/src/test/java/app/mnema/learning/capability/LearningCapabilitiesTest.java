@@ -3,6 +3,7 @@ package app.mnema.learning.capability;
 import app.mnema.learning.ai.AiAvailability;
 import app.mnema.learning.ai.AiCapability;
 import app.mnema.learning.ai.ImageSearch;
+import app.mnema.learning.ai.Transcription;
 import app.mnema.learning.ai.WebSearch;
 import app.mnema.learning.platform.api.CapabilityUnavailableException;
 import tools.jackson.databind.JsonNode;
@@ -21,7 +22,20 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class LearningCapabilitiesTest {
     private static final JsonMapper JSON = JsonMapper.builder().build();
-    private static final SpeechToTextProvider SPEECH = asset -> new SpeechToTextProvider.Transcription("text");
+    private static final Transcription SPEECH = speech(true, true);
+    /** A transcription port that is, or is not, configured and healthy. */
+    private static Transcription speech(boolean configured, boolean healthy) {
+        return new Transcription() {
+            @Override public app.mnema.learning.ai.AiResult<Transcript> transcribe(Request request) { return null; }
+
+            @Override public boolean configured() { return configured; }
+
+            @Override public boolean healthy() { return healthy; }
+
+            @Override public java.util.Optional<Region> region(String lang) { return java.util.Optional.of(Region.RU); }
+        };
+    }
+
     private static final ImageSearch IMAGE_SEARCH = new ImageSearch() {
         @Override public app.mnema.learning.ai.AiResult<java.util.List<Candidate>> search(Request request) { return null; }
 
@@ -88,7 +102,7 @@ class LearningCapabilitiesTest {
         };
         var factory = new StaticListableBeanFactory();
         factory.addBean("imageSearch", none);
-        LearningCapabilities capabilities = new LearningCapabilities(allOn(), factory.getBeanProvider(SpeechToTextProvider.class), TEXT_AVAILABLE,
+        LearningCapabilities capabilities = new LearningCapabilities(allOn(), factory.getBeanProvider(Transcription.class), TEXT_AVAILABLE,
                 factory.getBeanProvider(app.mnema.learning.ai.SpeechSynthesis.class), factory.getBeanProvider(ImageSearch.class),
                 factory.getBeanProvider(app.mnema.learning.ai.ImageGeneration.class),
                 factory.getBeanProvider(app.mnema.learning.ai.VideoGeneration.class), factory.getBeanProvider(WebSearch.class));
@@ -107,7 +121,7 @@ class LearningCapabilitiesTest {
         };
         var factory = new StaticListableBeanFactory();
         factory.addBean("speechSynthesis", none);
-        LearningCapabilities capabilities = new LearningCapabilities(allOn(), factory.getBeanProvider(SpeechToTextProvider.class), TEXT_AVAILABLE,
+        LearningCapabilities capabilities = new LearningCapabilities(allOn(), factory.getBeanProvider(Transcription.class), TEXT_AVAILABLE,
                 factory.getBeanProvider(app.mnema.learning.ai.SpeechSynthesis.class), factory.getBeanProvider(ImageSearch.class),
                 factory.getBeanProvider(app.mnema.learning.ai.ImageGeneration.class),
                 factory.getBeanProvider(app.mnema.learning.ai.VideoGeneration.class), factory.getBeanProvider(WebSearch.class));
@@ -183,6 +197,36 @@ class LearningCapabilitiesTest {
         assertThat(payload).isEqualTo(http().path("examples").path("capabilities"));
     }
 
+    @Test
+    void speechToTextIsNotConfiguredWithoutARouteTemporarilyUnavailableWithAnOpenBreakerOrASpentBudgetAndAvailableOtherwise() {
+        for (var unusable : new Transcription[] {speech(false, true), null}) {
+            var factory = new StaticListableBeanFactory();
+            if (unusable != null) factory.addBean("speech", unusable);
+            assertThat(withSpeech(factory, TEXT_AVAILABLE).speechToText())
+                    .isEqualTo(new LearningCapabilities.Status(false, LearningCapabilities.Reason.PROVIDER_NOT_CONFIGURED));
+        }
+        // an open circuit on every route entry
+        var open = new StaticListableBeanFactory();
+        open.addBean("speech", speech(true, false));
+        LearningCapabilities down = withSpeech(open, TEXT_AVAILABLE);
+        assertThat(down.speechToText()).isEqualTo(new LearningCapabilities.Status(false, LearningCapabilities.Reason.TEMPORARILY_UNAVAILABLE));
+        assertThatThrownBy(down::requireSpeechToText).isInstanceOf(CapabilityUnavailableException.class);
+        // the daily budget of the capability
+        var healthy = new StaticListableBeanFactory();
+        healthy.addBean("speech", speech(true, true));
+        assertThat(withSpeech(healthy, availability(AiAvailability.State.AVAILABLE, Set.of(AiCapability.STT))).speechToText())
+                .isEqualTo(new LearningCapabilities.Status(false, LearningCapabilities.Reason.TEMPORARILY_UNAVAILABLE));
+        assertThat(withSpeech(healthy, availability(AiAvailability.State.AVAILABLE, Set.of(AiCapability.TTS))).speechToText())
+                .isEqualTo(new LearningCapabilities.Status(true, null));
+    }
+
+    private static LearningCapabilities withSpeech(StaticListableBeanFactory factory, AiAvailability ai) {
+        return new LearningCapabilities(allOn(), factory.getBeanProvider(Transcription.class), ai,
+                factory.getBeanProvider(app.mnema.learning.ai.SpeechSynthesis.class), factory.getBeanProvider(ImageSearch.class),
+                factory.getBeanProvider(app.mnema.learning.ai.ImageGeneration.class),
+                factory.getBeanProvider(app.mnema.learning.ai.VideoGeneration.class), factory.getBeanProvider(WebSearch.class));
+    }
+
     private static JsonNode http() throws IOException {
         Path root = Path.of("").toAbsolutePath();
         while (root != null && !Files.exists(root.resolve("contracts/generation/http.json"))) root = root.getParent();
@@ -198,7 +242,7 @@ class LearningCapabilitiesTest {
         if (imageSearchPort) factory.addBean("imageSearch", IMAGE_SEARCH);
         if (webSearchPort) factory.addBean("webSearch", WEB_SEARCH);
         return new LearningCapabilities(flags,
-                factory.getBeanProvider(SpeechToTextProvider.class), ai,
+                factory.getBeanProvider(Transcription.class), ai,
                 factory.getBeanProvider(app.mnema.learning.ai.SpeechSynthesis.class), factory.getBeanProvider(ImageSearch.class),
                 factory.getBeanProvider(app.mnema.learning.ai.ImageGeneration.class),
                 factory.getBeanProvider(app.mnema.learning.ai.VideoGeneration.class), factory.getBeanProvider(WebSearch.class));

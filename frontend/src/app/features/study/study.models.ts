@@ -81,8 +81,11 @@ export interface ReadyStudySession {
 
 export type StudySession = PreparingStudySession | ReadyStudySession;
 
+/** Where the text of a free response came from: typed, or a transcript the learner may have edited (`TEXT_OR_SPEECH` exercises only). */
+export type AnswerSource = 'TYPED' | 'SPEECH';
+
 export type StudyResponse =
-    | { readonly kind: 'TEXT'; readonly text: string }
+    | { readonly kind: 'TEXT'; readonly text: string; readonly answerSource?: AnswerSource }
     | { readonly kind: 'SELF_CHECK'; readonly rating: SelfRating }
     | { readonly kind: 'CLOZE'; readonly blanks: readonly { readonly blankId: string; readonly text: string }[] }
     | { readonly kind: 'CHOICE'; readonly optionIds: readonly string[] }
