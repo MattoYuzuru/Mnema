@@ -148,12 +148,6 @@
       "rule": "A table has at most 100 body rows."
     },
     {
-      "code": "MBM_TABLE_RAGGED",
-      "severity": "ERROR",
-      "scope": "directive",
-      "rule": "Every body row has exactly as many cells as the header."
-    },
-    {
       "code": "MBM_SOURCE_NOT_IN_RESEARCH",
       "severity": "ERROR",
       "scope": "directive",
@@ -206,6 +200,18 @@
       "severity": "WARNING",
       "scope": "inline",
       "rule": "A run of three or more asterisks, or an asterisk run that could open emphasis but has no closer, stays literal text."
+    },
+    {
+      "code": "MBM_TABLE_ROW_NORMALIZED",
+      "severity": "WARNING",
+      "scope": "directive",
+      "rule": "A body row with fewer cells than the header was padded with empty cells; a row with more had its extra cells joined to the last cell with \" | \"."
+    },
+    {
+      "code": "MBM_STRAY_DIRECTIVE_CLOSER",
+      "severity": "WARNING",
+      "scope": "block",
+      "rule": "A line of only colons (two or more), or colons followed by end, is not a directive; it was dropped."
     },
     {
       "code": "MBM_LINK_REJECTED_BY_PROFILE",

@@ -8,7 +8,13 @@ import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
-/** SQL of {@code learning_profile}: one row per owner, written by the owner's own answer only. */
+/**
+ * SQL of {@code learning_profile}: one row per owner, written by the owner's own answer only.
+ *
+ * <p>TODO(account-deletion task; owner: Learning's account-purge epic): include this owner-linked goal and answer timestamp
+ * in the purge and backup-retention inventory. Learning has no account purge path yet; see "Retention" in the Learning guide
+ * and the launch checklist before public activation. The goal is never sent to an AI provider.
+ */
 @Repository
 class LearningProfileRepository {
     /** {@code goal} is null for a skip. */

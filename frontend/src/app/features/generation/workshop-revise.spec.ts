@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
-import { BehaviorSubject, of, throwError } from 'rxjs';
+import { BehaviorSubject, Subject, of, throwError } from 'rxjs';
 
 import { MediaPlaybackApi } from '../../content/rendering/media-playback.api';
 import { ToastService } from '../../core/notifications/toast.service';
@@ -221,6 +221,35 @@ describe('Workshop of a revision (REVISE_ITEM and REVISE_EXERCISE, AI-16)', () =
             expect(request.nodeIds).toHaveLength(2);
             expect(store.artifacts()[0]!.state).toBe('REVISING');
             expect(summary()).toContain('Мнема правит материал');
+        });
+
+        it('guards approval and repeat while an applied revision event is ahead of the displayed detail', async () => {
+            await open(itemSession(itemArtifact('PROPOSED', { currentRevisionId: ORIGINAL })),
+                itemDetail(ORIGINAL, OLD_TEXT, []), { [ORIGINAL]: itemDetail(ORIGINAL, OLD_TEXT, []) });
+            const pending = new Subject<ReturnType<typeof parseArtifactDetail>>();
+            api.getArtifact.mockImplementation((_deck, _session, _artifact, revisionId) => revisionId == null
+                ? pending : of(parseArtifactDetail(originals[revisionId]!, revisionId)));
+            session = itemSession(itemArtifact('PROPOSED', { rowVersion: '6' }), { rowVersion: '13' });
+
+            await store.refresh();
+            await settle();
+
+            const actions = () => [...root().querySelectorAll('.result-actions button')].map(button => button.textContent!.trim());
+            expect(root().querySelector('.result-title')!.textContent).toBe('Мнема переписала материал');
+            expect(actions()).toEqual(['Оставить', 'Вернуть', 'Отклонить']);
+            expect(root().querySelector('#approve-wait')!.textContent).toContain('Загружаем новую версию');
+            expect(labelled('Оставить')!.getAttribute('aria-disabled')).toBe('true');
+            labelled('Оставить')!.click();
+            expect(api.approveArtifact).not.toHaveBeenCalled();
+
+            pending.next(parseArtifactDetail(itemDetail(REWRITTEN, NEW_TEXT, [turn()], { rowVersion: '6' }), null));
+            pending.complete();
+            await settle();
+
+            expect(actions()).toEqual(['Оставить', 'Вернуть', 'Ещё раз', 'Отклонить']);
+            expect(root().querySelector('#approve-wait')).toBeNull();
+            expect(labelled('Оставить')!.getAttribute('aria-disabled')).toBeNull();
+            expect(root().querySelector('app-proposal-document')!.textContent).toContain('целиком');
         });
 
         it('says what Мнема is doing while the first turn runs: the original can be read, and nothing can be decided yet', async () => {

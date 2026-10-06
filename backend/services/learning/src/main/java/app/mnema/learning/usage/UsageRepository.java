@@ -19,8 +19,8 @@ import java.util.UUID;
  * can move it. No method opens a transaction: the callers do, and the ones that write need the caller's.
  *
  * <p>TODO(account-deletion task; owner: the epic that adds Learning's account purge): Learning has no account purge
- * path yet, so no usage row is removed when an account is deleted. The rows hold no personal data (an account id and
- * opaque references); the purge must delete by {@code owner_id} in this order: usage_ledger_entry, usage_reservation,
+ * path yet, so no usage row is removed when an account is deleted. The rows hold owner-linked identifiers and
+ * opaque references; the purge must delete by {@code owner_id} in this order: usage_ledger_entry, usage_reservation,
  * usage_balance, usage_allowance, usage_counter, entitlement_inbox. See "Retention" in the Learning guide.
  */
 @Repository

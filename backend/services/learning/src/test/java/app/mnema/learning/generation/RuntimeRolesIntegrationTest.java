@@ -23,5 +23,9 @@ class RuntimeRolesIntegrationTest extends PostgresIntegrationTest {
         assertThat(context.getBeanNamesForType(GenerationController.class)).hasSize(1);
         assertThat(context.getBeanNamesForType(TextDraftExecutor.class)).hasSize(1);
         assertThat(context.getBean(RuntimeRoles.class).runsWorker()).isFalse();
+        // nothing that calls a provider runs here: not the grader of answers, and no listener (an api process creates work, it never waits for it)
+        assertThat(context.containsBean("assessmentRunner")).isFalse();
+        assertThat(context.getBeanNamesForType(app.mnema.learning.platform.wake.PostgresWakeListener.class)).isEmpty();
+        assertThat(context.getBeanNamesForType(app.mnema.learning.platform.wake.WakeTarget.class)).isEmpty();
     }
 }

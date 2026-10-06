@@ -5,6 +5,11 @@ import app.mnema.learning.support.PostgresIntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.test.context.DynamicPropertyRegistrar;
 
 import java.util.UUID;
 
@@ -14,16 +19,31 @@ import static org.assertj.core.api.Assertions.assertThat;
  * The shipped {@code application.properties} bound by Spring: default routes, price table and providers, with a fake key
  * in the properties (never a network call: nothing here generates).
  */
-@SpringBootTest(properties = {"learning.features.ai-generation.enabled=true", "learning.ai.provider=",
+@SpringBootTest(properties = {"learning.runtime.roles=all", "learning.features.ai-generation.enabled=true", "learning.ai.provider=",
         "learning.ai.providers.deepseek.api-key=test-key-not-real", "learning.ai.providers.gigachat.auth-key=",
         "learning.ai.providers.openrouter.api-key=", "learning.ai.user-key.secret=0123456789abcdef0123456789abcdef", "spring.datasource.hikari.maximum-pool-size=2"})
+@Import(AiKeyedConfigurationIntegrationTest.DatabaseConfiguration.class)
 class AiKeyedConfigurationIntegrationTest extends PostgresIntegrationTest {
+    // Keys belong to a worker-capable role; isolate its database so it can never pick up work from another test and call a fake-key provider.
+    private static final String DATABASE = createDatabase("ai_keyed_" + UUID.randomUUID().toString().replace("-", ""));
+    @TestConfiguration(proxyBeanMethods = false)
+    static class DatabaseConfiguration {
+        @Bean
+        DynamicPropertyRegistrar isolatedDatabase() {
+            return registry -> {
+                registry.add("spring.datasource.url", () -> DATABASE);
+                registry.add("spring.flyway.url", () -> DATABASE);
+            };
+        }
+    }
+    @Autowired private JdbcClient jdbc;
     @Autowired private AiProperties properties;
     @Autowired private LearningCapabilities capabilities;
     @Autowired private UserKeys userKeys;
 
     @Test
     void aKeyAndTheUserKeySecretMakeAiGenerationAvailableAndTheDefaultsBind() {
+        assertThat(jdbc.sql("SELECT current_database()").query(String.class).single()).startsWith("ai_keyed_");
         assertThat(capabilities.aiGeneration()).isEqualTo(new LearningCapabilities.Status(true, null));
         // owner decision 2026-10-04: OpenRouter (the same DeepSeek models) is the fallback of the direct route, GigaChat stays last
         assertThat(properties.routes().textFast()).containsExactly("deepseek:deepseek-flash", "openrouter:deepseek/deepseek-v4.1-flash",

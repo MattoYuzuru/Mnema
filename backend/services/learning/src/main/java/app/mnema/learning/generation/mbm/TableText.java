@@ -37,4 +37,20 @@ final class TableText {
     static boolean isSeparator(List<String> cells) {
         return cells.stream().allMatch(cell -> SEPARATOR_CELL.matcher(cell).matches());
     }
+
+    /**
+     * A row whose cell count differs from the header, made rectangular without losing text: missing cells are empty;
+     * cells beyond the header are joined to the last cell with {@code " | "} (the usual cause is an unescaped pipe in
+     * the last column's text).
+     */
+    static List<String> normalized(List<String> cells, int columns) {
+        var result = new ArrayList<>(cells.subList(0, Math.min(cells.size(), columns)));
+        if (cells.size() > columns) {
+            result.set(columns - 1, String.join(" | ", cells.subList(columns - 1, cells.size())));
+        }
+        while (result.size() < columns) {
+            result.add("");
+        }
+        return result;
+    }
 }

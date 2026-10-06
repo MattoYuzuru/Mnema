@@ -1,0 +1,2126 @@
+{
+  "version": 1,
+  "kind": "exercise",
+  "fixtures": [
+    {
+      "id": "exercise-m01-order",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "order"
+      ],
+      "input": {
+        "material": "# Фотосинтез\n\nФотосинтез — процесс, в котором растения превращают энергию света в энергию химических связей. Он идёт в хлоропластах, где пигмент **хлорофилл** поглощает свет.\n\n1. Хлорофилл поглощает свет, и энергия запускает световую стадию.\n2. В световой стадии вода расщепляется, выделяется кислород и образуются АТФ и НАДФ·H.\n3. В темновой стадии (цикл Кальвина) из CO2 с помощью АТФ и НАДФ·H строится глюкоза.\n\nКислород, который мы вдыхаем, образуется при расщеплении воды, а не из CO2.\n",
+        "mechanics": [
+          "ORDER"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Хлорофилл поглощает свет",
+          "В световой стадии вода расщепляется и выделяется кислород",
+          "В темновой стадии из CO2 строится глюкоза (цикл Кальвина)",
+          "Кислород образуется из воды, а не из CO2"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m01-cloze",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "cloze"
+      ],
+      "input": {
+        "material": "# Фотосинтез\n\nФотосинтез — процесс, в котором растения превращают энергию света в энергию химических связей. Он идёт в хлоропластах, где пигмент **хлорофилл** поглощает свет.\n\n1. Хлорофилл поглощает свет, и энергия запускает световую стадию.\n2. В световой стадии вода расщепляется, выделяется кислород и образуются АТФ и НАДФ·H.\n3. В темновой стадии (цикл Кальвина) из CO2 с помощью АТФ и НАДФ·H строится глюкоза.\n\nКислород, который мы вдыхаем, образуется при расщеплении воды, а не из CO2.\n",
+        "mechanics": [
+          "CLOZE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Хлорофилл поглощает свет",
+          "В световой стадии вода расщепляется и выделяется кислород",
+          "В темновой стадии из CO2 строится глюкоза (цикл Кальвина)",
+          "Кислород образуется из воды, а не из CO2"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m01-choice",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "choice"
+      ],
+      "input": {
+        "material": "# Фотосинтез\n\nФотосинтез — процесс, в котором растения превращают энергию света в энергию химических связей. Он идёт в хлоропластах, где пигмент **хлорофилл** поглощает свет.\n\n1. Хлорофилл поглощает свет, и энергия запускает световую стадию.\n2. В световой стадии вода расщепляется, выделяется кислород и образуются АТФ и НАДФ·H.\n3. В темновой стадии (цикл Кальвина) из CO2 с помощью АТФ и НАДФ·H строится глюкоза.\n\nКислород, который мы вдыхаем, образуется при расщеплении воды, а не из CO2.\n",
+        "mechanics": [
+          "CHOICE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Хлорофилл поглощает свет",
+          "В световой стадии вода расщепляется и выделяется кислород",
+          "В темновой стадии из CO2 строится глюкоза (цикл Кальвина)",
+          "Кислород образуется из воды, а не из CO2"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "exercise-m01-self-check",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "self_check"
+      ],
+      "input": {
+        "material": "# Фотосинтез\n\nФотосинтез — процесс, в котором растения превращают энергию света в энергию химических связей. Он идёт в хлоропластах, где пигмент **хлорофилл** поглощает свет.\n\n1. Хлорофилл поглощает свет, и энергия запускает световую стадию.\n2. В световой стадии вода расщепляется, выделяется кислород и образуются АТФ и НАДФ·H.\n3. В темновой стадии (цикл Кальвина) из CO2 с помощью АТФ и НАДФ·H строится глюкоза.\n\nКислород, который мы вдыхаем, образуется при расщеплении воды, а не из CO2.\n",
+        "mechanics": [
+          "SELF_CHECK"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Хлорофилл поглощает свет",
+          "В световой стадии вода расщепляется и выделяется кислород",
+          "В темновой стадии из CO2 строится глюкоза (цикл Кальвина)",
+          "Кислород образуется из воды, а не из CO2"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m02-order",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "order"
+      ],
+      "input": {
+        "material": "# Французская революция: хронология\n\nРеволюция началась в 1789 году. 5 мая собрались Генеральные штаты, 17 июня третье сословие объявило себя Национальным собранием, 14 июля была взята Бастилия, а 26 августа принята Декларация прав человека и гражданина.\n\nВ 1792 году Франция стала республикой. 21 января 1793 года казнён Людовик XVI. Якобинский террор шёл в 1793–1794 годах, а в 1799 году Наполеон Бонапарт совершил переворот 18 брюмера.\n",
+        "mechanics": [
+          "ORDER"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Генеральные штаты собрались 5 мая 1789",
+          "Бастилия взята 14 июля 1789",
+          "Декларация прав человека принята 26 августа 1789",
+          "Республика провозглашена в 1792",
+          "Людовик XVI казнён 21 января 1793",
+          "Переворот 18 брюмера в 1799"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m02-match",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "match"
+      ],
+      "input": {
+        "material": "# Французская революция: хронология\n\nРеволюция началась в 1789 году. 5 мая собрались Генеральные штаты, 17 июня третье сословие объявило себя Национальным собранием, 14 июля была взята Бастилия, а 26 августа принята Декларация прав человека и гражданина.\n\nВ 1792 году Франция стала республикой. 21 января 1793 года казнён Людовик XVI. Якобинский террор шёл в 1793–1794 годах, а в 1799 году Наполеон Бонапарт совершил переворот 18 брюмера.\n",
+        "mechanics": [
+          "MATCH"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Генеральные штаты собрались 5 мая 1789",
+          "Бастилия взята 14 июля 1789",
+          "Декларация прав человека принята 26 августа 1789",
+          "Республика провозглашена в 1792",
+          "Людовик XVI казнён 21 января 1793",
+          "Переворот 18 брюмера в 1799"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "exercise-m02-free-response",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "free_response"
+      ],
+      "input": {
+        "material": "# Французская революция: хронология\n\nРеволюция началась в 1789 году. 5 мая собрались Генеральные штаты, 17 июня третье сословие объявило себя Национальным собранием, 14 июля была взята Бастилия, а 26 августа принята Декларация прав человека и гражданина.\n\nВ 1792 году Франция стала республикой. 21 января 1793 года казнён Людовик XVI. Якобинский террор шёл в 1793–1794 годах, а в 1799 году Наполеон Бонапарт совершил переворот 18 брюмера.\n",
+        "mechanics": [
+          "FREE_RESPONSE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Генеральные штаты собрались 5 мая 1789",
+          "Бастилия взята 14 июля 1789",
+          "Декларация прав человека принята 26 августа 1789",
+          "Республика провозглашена в 1792",
+          "Людовик XVI казнён 21 января 1793",
+          "Переворот 18 брюмера в 1799"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m02-choice",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "choice"
+      ],
+      "input": {
+        "material": "# Французская революция: хронология\n\nРеволюция началась в 1789 году. 5 мая собрались Генеральные штаты, 17 июня третье сословие объявило себя Национальным собранием, 14 июля была взята Бастилия, а 26 августа принята Декларация прав человека и гражданина.\n\nВ 1792 году Франция стала республикой. 21 января 1793 года казнён Людовик XVI. Якобинский террор шёл в 1793–1794 годах, а в 1799 году Наполеон Бонапарт совершил переворот 18 брюмера.\n",
+        "mechanics": [
+          "CHOICE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Генеральные штаты собрались 5 мая 1789",
+          "Бастилия взята 14 июля 1789",
+          "Декларация прав человека принята 26 августа 1789",
+          "Республика провозглашена в 1792",
+          "Людовик XVI казнён 21 января 1793",
+          "Переворот 18 брюмера в 1799"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m03-categorize",
+      "kind": "exercise",
+      "language": "en",
+      "outputLanguage": "en",
+      "tags": [
+        "categorize"
+      ],
+      "input": {
+        "material": "# Mutable and immutable types in Python\n\nAn object is **mutable** if it can be changed after it is created, and **immutable** if it cannot.\n\nThe types list, dict and set are mutable: you can add, remove or replace elements in place. The types int, float, str, tuple and frozenset are immutable: an operation such as s + \"a\" creates a new object and leaves the old one unchanged.\n\nMutable default arguments are a classic trap: def f(x, items=[]) shares one list between all calls.\n",
+        "mechanics": [
+          "CATEGORIZE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "list, dict and set are mutable",
+          "int, float, str, tuple and frozenset are immutable",
+          "A mutable default argument is shared between calls"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "exercise-m03-choice",
+      "kind": "exercise",
+      "language": "en",
+      "outputLanguage": "en",
+      "tags": [
+        "choice"
+      ],
+      "input": {
+        "material": "# Mutable and immutable types in Python\n\nAn object is **mutable** if it can be changed after it is created, and **immutable** if it cannot.\n\nThe types list, dict and set are mutable: you can add, remove or replace elements in place. The types int, float, str, tuple and frozenset are immutable: an operation such as s + \"a\" creates a new object and leaves the old one unchanged.\n\nMutable default arguments are a classic trap: def f(x, items=[]) shares one list between all calls.\n",
+        "mechanics": [
+          "CHOICE"
+        ],
+        "count": 2
+      },
+      "expect": {
+        "facts": [
+          "list, dict and set are mutable",
+          "int, float, str, tuple and frozenset are immutable",
+          "A mutable default argument is shared between calls"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m03-cloze",
+      "kind": "exercise",
+      "language": "en",
+      "outputLanguage": "en",
+      "tags": [
+        "cloze"
+      ],
+      "input": {
+        "material": "# Mutable and immutable types in Python\n\nAn object is **mutable** if it can be changed after it is created, and **immutable** if it cannot.\n\nThe types list, dict and set are mutable: you can add, remove or replace elements in place. The types int, float, str, tuple and frozenset are immutable: an operation such as s + \"a\" creates a new object and leaves the old one unchanged.\n\nMutable default arguments are a classic trap: def f(x, items=[]) shares one list between all calls.\n",
+        "mechanics": [
+          "CLOZE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "list, dict and set are mutable",
+          "int, float, str, tuple and frozenset are immutable",
+          "A mutable default argument is shared between calls"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m03-free-response",
+      "kind": "exercise",
+      "language": "en",
+      "outputLanguage": "en",
+      "tags": [
+        "free_response"
+      ],
+      "input": {
+        "material": "# Mutable and immutable types in Python\n\nAn object is **mutable** if it can be changed after it is created, and **immutable** if it cannot.\n\nThe types list, dict and set are mutable: you can add, remove or replace elements in place. The types int, float, str, tuple and frozenset are immutable: an operation such as s + \"a\" creates a new object and leaves the old one unchanged.\n\nMutable default arguments are a classic trap: def f(x, items=[]) shares one list between all calls.\n",
+        "mechanics": [
+          "FREE_RESPONSE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "list, dict and set are mutable",
+          "int, float, str, tuple and frozenset are immutable",
+          "A mutable default argument is shared between calls"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m04-order",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "order"
+      ],
+      "input": {
+        "material": "# Рукопожатие TCP\n\nПрежде чем передавать данные, TCP устанавливает соединение тремя сообщениями.\n\n1. Клиент отправляет серверу сегмент SYN со своим начальным номером последовательности.\n2. Сервер отвечает сегментом SYN-ACK: он подтверждает номер клиента и передаёт свой.\n3. Клиент отправляет ACK, подтверждая номер сервера. Соединение установлено.\n\nТакая процедура называется трёхсторонним рукопожатием (three-way handshake). Она нужна, чтобы обе стороны согласовали начальные номера последовательности.\n",
+        "mechanics": [
+          "ORDER"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Первым клиент отправляет SYN",
+          "Сервер отвечает SYN-ACK",
+          "Клиент завершает ACK",
+          "Рукопожатие согласует начальные номера последовательности"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "exercise-m04-cloze",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "cloze"
+      ],
+      "input": {
+        "material": "# Рукопожатие TCP\n\nПрежде чем передавать данные, TCP устанавливает соединение тремя сообщениями.\n\n1. Клиент отправляет серверу сегмент SYN со своим начальным номером последовательности.\n2. Сервер отвечает сегментом SYN-ACK: он подтверждает номер клиента и передаёт свой.\n3. Клиент отправляет ACK, подтверждая номер сервера. Соединение установлено.\n\nТакая процедура называется трёхсторонним рукопожатием (three-way handshake). Она нужна, чтобы обе стороны согласовали начальные номера последовательности.\n",
+        "mechanics": [
+          "CLOZE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Первым клиент отправляет SYN",
+          "Сервер отвечает SYN-ACK",
+          "Клиент завершает ACK",
+          "Рукопожатие согласует начальные номера последовательности"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m04-self-check",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "self_check"
+      ],
+      "input": {
+        "material": "# Рукопожатие TCP\n\nПрежде чем передавать данные, TCP устанавливает соединение тремя сообщениями.\n\n1. Клиент отправляет серверу сегмент SYN со своим начальным номером последовательности.\n2. Сервер отвечает сегментом SYN-ACK: он подтверждает номер клиента и передаёт свой.\n3. Клиент отправляет ACK, подтверждая номер сервера. Соединение установлено.\n\nТакая процедура называется трёхсторонним рукопожатием (three-way handshake). Она нужна, чтобы обе стороны согласовали начальные номера последовательности.\n",
+        "mechanics": [
+          "SELF_CHECK"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Первым клиент отправляет SYN",
+          "Сервер отвечает SYN-ACK",
+          "Клиент завершает ACK",
+          "Рукопожатие согласует начальные номера последовательности"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m04-choice",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "choice"
+      ],
+      "input": {
+        "material": "# Рукопожатие TCP\n\nПрежде чем передавать данные, TCP устанавливает соединение тремя сообщениями.\n\n1. Клиент отправляет серверу сегмент SYN со своим начальным номером последовательности.\n2. Сервер отвечает сегментом SYN-ACK: он подтверждает номер клиента и передаёт свой.\n3. Клиент отправляет ACK, подтверждая номер сервера. Соединение установлено.\n\nТакая процедура называется трёхсторонним рукопожатием (three-way handshake). Она нужна, чтобы обе стороны согласовали начальные номера последовательности.\n",
+        "mechanics": [
+          "CHOICE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Первым клиент отправляет SYN",
+          "Сервер отвечает SYN-ACK",
+          "Клиент завершает ACK",
+          "Рукопожатие согласует начальные номера последовательности"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "exercise-m05-cloze",
+      "kind": "exercise",
+      "language": "ja",
+      "outputLanguage": "ru",
+      "tags": [
+        "cloze"
+      ],
+      "input": {
+        "material": "# Японские частицы は и が\n\nЧастица **は** (читается «ва») отмечает тему предложения — то, о чём мы говорим: 私は学生です. Частица **が** отмечает подлежащее и подчёркивает новую информацию: 誰が来ましたか — 田中さんが来ました.\n\nНа вопрос с вопросительным словом (誰, 何, どこ) отвечают с が. Для сравнения и противопоставления используют は: コーヒーは好きですが、紅茶は好きじゃありません.\n",
+        "mechanics": [
+          "CLOZE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "は отмечает тему",
+          "が отмечает подлежащее и новую информацию",
+          "На вопрос с вопросительным словом отвечают с が",
+          "は используется для противопоставления"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m05-choice",
+      "kind": "exercise",
+      "language": "ja",
+      "outputLanguage": "ru",
+      "tags": [
+        "choice"
+      ],
+      "input": {
+        "material": "# Японские частицы は и が\n\nЧастица **は** (читается «ва») отмечает тему предложения — то, о чём мы говорим: 私は学生です. Частица **が** отмечает подлежащее и подчёркивает новую информацию: 誰が来ましたか — 田中さんが来ました.\n\nНа вопрос с вопросительным словом (誰, 何, どこ) отвечают с が. Для сравнения и противопоставления используют は: コーヒーは好きですが、紅茶は好きじゃありません.\n",
+        "mechanics": [
+          "CHOICE"
+        ],
+        "count": 2
+      },
+      "expect": {
+        "facts": [
+          "は отмечает тему",
+          "が отмечает подлежащее и новую информацию",
+          "На вопрос с вопросительным словом отвечают с が",
+          "は используется для противопоставления"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m05-free-response",
+      "kind": "exercise",
+      "language": "ja",
+      "outputLanguage": "ru",
+      "tags": [
+        "free_response"
+      ],
+      "input": {
+        "material": "# Японские частицы は и が\n\nЧастица **は** (читается «ва») отмечает тему предложения — то, о чём мы говорим: 私は学生です. Частица **が** отмечает подлежащее и подчёркивает новую информацию: 誰が来ましたか — 田中さんが来ました.\n\nНа вопрос с вопросительным словом (誰, 何, どこ) отвечают с が. Для сравнения и противопоставления используют は: コーヒーは好きですが、紅茶は好きじゃありません.\n",
+        "mechanics": [
+          "FREE_RESPONSE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "は отмечает тему",
+          "が отмечает подлежащее и новую информацию",
+          "На вопрос с вопросительным словом отвечают с が",
+          "は используется для противопоставления"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "exercise-m05-match",
+      "kind": "exercise",
+      "language": "ja",
+      "outputLanguage": "ru",
+      "tags": [
+        "match"
+      ],
+      "input": {
+        "material": "# Японские частицы は и が\n\nЧастица **は** (читается «ва») отмечает тему предложения — то, о чём мы говорим: 私は学生です. Частица **が** отмечает подлежащее и подчёркивает новую информацию: 誰が来ましたか — 田中さんが来ました.\n\nНа вопрос с вопросительным словом (誰, 何, どこ) отвечают с が. Для сравнения и противопоставления используют は: コーヒーは好きですが、紅茶は好きじゃありません.\n",
+        "mechanics": [
+          "MATCH"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "は отмечает тему",
+          "が отмечает подлежащее и новую информацию",
+          "На вопрос с вопросительным словом отвечают с が",
+          "は используется для противопоставления"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m06-match",
+      "kind": "exercise",
+      "language": "es",
+      "outputLanguage": "ru",
+      "tags": [
+        "match"
+      ],
+      "input": {
+        "material": "# Comida en español\n\n- el pan — хлеб\n- la leche — молоко\n- el queso — сыр\n- el pollo — курица\n- la manzana — яблоко\n- el pescado — рыба\n\nLas comidas del día: el desayuno (завтрак), el almuerzo (обед), la cena (ужин). Las frutas son la manzana y la naranja; la leche y el queso son lácteos; el pollo y el pescado son carnes y pescados.\n",
+        "mechanics": [
+          "MATCH"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "el pan — хлеб, la leche — молоко, el queso — сыр, el pollo — курица, la manzana — яблоко, el pescado — рыба",
+          "desayuno, almuerzo, cena — приёмы пищи",
+          "Фрукты: manzana, naranja; молочные: leche, queso"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m06-cloze",
+      "kind": "exercise",
+      "language": "es",
+      "outputLanguage": "ru",
+      "tags": [
+        "cloze"
+      ],
+      "input": {
+        "material": "# Comida en español\n\n- el pan — хлеб\n- la leche — молоко\n- el queso — сыр\n- el pollo — курица\n- la manzana — яблоко\n- el pescado — рыба\n\nLas comidas del día: el desayuno (завтрак), el almuerzo (обед), la cena (ужин). Las frutas son la manzana y la naranja; la leche y el queso son lácteos; el pollo y el pescado son carnes y pescados.\n",
+        "mechanics": [
+          "CLOZE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "el pan — хлеб, la leche — молоко, el queso — сыр, el pollo — курица, la manzana — яблоко, el pescado — рыба",
+          "desayuno, almuerzo, cena — приёмы пищи",
+          "Фрукты: manzana, naranja; молочные: leche, queso"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m06-free-response",
+      "kind": "exercise",
+      "language": "es",
+      "outputLanguage": "ru",
+      "tags": [
+        "free_response"
+      ],
+      "input": {
+        "material": "# Comida en español\n\n- el pan — хлеб\n- la leche — молоко\n- el queso — сыр\n- el pollo — курица\n- la manzana — яблоко\n- el pescado — рыба\n\nLas comidas del día: el desayuno (завтрак), el almuerzo (обед), la cena (ужин). Las frutas son la manzana y la naranja; la leche y el queso son lácteos; el pollo y el pescado son carnes y pescados.\n",
+        "mechanics": [
+          "FREE_RESPONSE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "el pan — хлеб, la leche — молоко, el queso — сыр, el pollo — курица, la manzana — яблоко, el pescado — рыба",
+          "desayuno, almuerzo, cena — приёмы пищи",
+          "Фрукты: manzana, naranja; молочные: leche, queso"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "exercise-m06-categorize",
+      "kind": "exercise",
+      "language": "es",
+      "outputLanguage": "ru",
+      "tags": [
+        "categorize"
+      ],
+      "input": {
+        "material": "# Comida en español\n\n- el pan — хлеб\n- la leche — молоко\n- el queso — сыр\n- el pollo — курица\n- la manzana — яблоко\n- el pescado — рыба\n\nLas comidas del día: el desayuno (завтрак), el almuerzo (обед), la cena (ужин). Las frutas son la manzana y la naranja; la leche y el queso son lácteos; el pollo y el pescado son carnes y pescados.\n",
+        "mechanics": [
+          "CATEGORIZE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "el pan — хлеб, la leche — молоко, el queso — сыр, el pollo — курица, la manzana — яблоко, el pescado — рыба",
+          "desayuno, almuerzo, cena — приёмы пищи",
+          "Фрукты: manzana, naranja; молочные: leche, queso"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m07-categorize",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "categorize"
+      ],
+      "input": {
+        "material": "# Царства живых организмов\n\nЖивые организмы делят на царства. **Бактерии** — прокариоты без ядра. **Грибы** — эукариоты, которые питаются, всасывая готовые органические вещества, и не фотосинтезируют; к ним относятся дрожжи и плесень. **Растения** создают органику фотосинтезом и имеют клеточную стенку из целлюлозы. **Животные** питаются готовой органикой и не имеют клеточной стенки.\n\nПримеры: кишечная палочка — бактерия, гриб-шампиньон — гриб, берёза — растение, волк — животное.\n",
+        "mechanics": [
+          "CATEGORIZE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Бактерии — прокариоты без ядра",
+          "Грибы всасывают готовую органику и не фотосинтезируют",
+          "Растения фотосинтезируют и имеют клеточную стенку из целлюлозы",
+          "Животные питаются готовой органикой и не имеют клеточной стенки",
+          "Примеры: кишечная палочка, шампиньон, берёза, волк"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m07-match",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "match"
+      ],
+      "input": {
+        "material": "# Царства живых организмов\n\nЖивые организмы делят на царства. **Бактерии** — прокариоты без ядра. **Грибы** — эукариоты, которые питаются, всасывая готовые органические вещества, и не фотосинтезируют; к ним относятся дрожжи и плесень. **Растения** создают органику фотосинтезом и имеют клеточную стенку из целлюлозы. **Животные** питаются готовой органикой и не имеют клеточной стенки.\n\nПримеры: кишечная палочка — бактерия, гриб-шампиньон — гриб, берёза — растение, волк — животное.\n",
+        "mechanics": [
+          "MATCH"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Бактерии — прокариоты без ядра",
+          "Грибы всасывают готовую органику и не фотосинтезируют",
+          "Растения фотосинтезируют и имеют клеточную стенку из целлюлозы",
+          "Животные питаются готовой органикой и не имеют клеточной стенки",
+          "Примеры: кишечная палочка, шампиньон, берёза, волк"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "exercise-m07-self-check",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "self_check"
+      ],
+      "input": {
+        "material": "# Царства живых организмов\n\nЖивые организмы делят на царства. **Бактерии** — прокариоты без ядра. **Грибы** — эукариоты, которые питаются, всасывая готовые органические вещества, и не фотосинтезируют; к ним относятся дрожжи и плесень. **Растения** создают органику фотосинтезом и имеют клеточную стенку из целлюлозы. **Животные** питаются готовой органикой и не имеют клеточной стенки.\n\nПримеры: кишечная палочка — бактерия, гриб-шампиньон — гриб, берёза — растение, волк — животное.\n",
+        "mechanics": [
+          "SELF_CHECK"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Бактерии — прокариоты без ядра",
+          "Грибы всасывают готовую органику и не фотосинтезируют",
+          "Растения фотосинтезируют и имеют клеточную стенку из целлюлозы",
+          "Животные питаются готовой органикой и не имеют клеточной стенки",
+          "Примеры: кишечная палочка, шампиньон, берёза, волк"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m07-choice",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "choice"
+      ],
+      "input": {
+        "material": "# Царства живых организмов\n\nЖивые организмы делят на царства. **Бактерии** — прокариоты без ядра. **Грибы** — эукариоты, которые питаются, всасывая готовые органические вещества, и не фотосинтезируют; к ним относятся дрожжи и плесень. **Растения** создают органику фотосинтезом и имеют клеточную стенку из целлюлозы. **Животные** питаются готовой органикой и не имеют клеточной стенки.\n\nПримеры: кишечная палочка — бактерия, гриб-шампиньон — гриб, берёза — растение, волк — животное.\n",
+        "mechanics": [
+          "CHOICE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Бактерии — прокариоты без ядра",
+          "Грибы всасывают готовую органику и не фотосинтезируют",
+          "Растения фотосинтезируют и имеют клеточную стенку из целлюлозы",
+          "Животные питаются готовой органикой и не имеют клеточной стенки",
+          "Примеры: кишечная палочка, шампиньон, берёза, волк"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m08-match",
+      "kind": "exercise",
+      "language": "en",
+      "outputLanguage": "en",
+      "tags": [
+        "match"
+      ],
+      "input": {
+        "material": "# Newton's three laws\n\nThe **first law** (inertia): a body stays at rest or moves with constant velocity unless a net force acts on it.\n\nThe **second law**: the acceleration of a body is proportional to the net force and inversely proportional to its mass, F = ma.\n\nThe **third law**: when body A exerts a force on body B, body B exerts an equal and opposite force on body A.\n\nThe unit of force is the newton: 1 N = 1 kg·m/s².\n",
+        "mechanics": [
+          "MATCH"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "First law: inertia, constant velocity without a net force",
+          "Second law: F = ma",
+          "Third law: equal and opposite forces",
+          "1 N = 1 kg·m/s²"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "exercise-m08-cloze",
+      "kind": "exercise",
+      "language": "en",
+      "outputLanguage": "en",
+      "tags": [
+        "cloze"
+      ],
+      "input": {
+        "material": "# Newton's three laws\n\nThe **first law** (inertia): a body stays at rest or moves with constant velocity unless a net force acts on it.\n\nThe **second law**: the acceleration of a body is proportional to the net force and inversely proportional to its mass, F = ma.\n\nThe **third law**: when body A exerts a force on body B, body B exerts an equal and opposite force on body A.\n\nThe unit of force is the newton: 1 N = 1 kg·m/s².\n",
+        "mechanics": [
+          "CLOZE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "First law: inertia, constant velocity without a net force",
+          "Second law: F = ma",
+          "Third law: equal and opposite forces",
+          "1 N = 1 kg·m/s²"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m08-free-response",
+      "kind": "exercise",
+      "language": "en",
+      "outputLanguage": "en",
+      "tags": [
+        "free_response"
+      ],
+      "input": {
+        "material": "# Newton's three laws\n\nThe **first law** (inertia): a body stays at rest or moves with constant velocity unless a net force acts on it.\n\nThe **second law**: the acceleration of a body is proportional to the net force and inversely proportional to its mass, F = ma.\n\nThe **third law**: when body A exerts a force on body B, body B exerts an equal and opposite force on body A.\n\nThe unit of force is the newton: 1 N = 1 kg·m/s².\n",
+        "mechanics": [
+          "FREE_RESPONSE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "First law: inertia, constant velocity without a net force",
+          "Second law: F = ma",
+          "Third law: equal and opposite forces",
+          "1 N = 1 kg·m/s²"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m08-self-check",
+      "kind": "exercise",
+      "language": "en",
+      "outputLanguage": "en",
+      "tags": [
+        "self_check"
+      ],
+      "input": {
+        "material": "# Newton's three laws\n\nThe **first law** (inertia): a body stays at rest or moves with constant velocity unless a net force acts on it.\n\nThe **second law**: the acceleration of a body is proportional to the net force and inversely proportional to its mass, F = ma.\n\nThe **third law**: when body A exerts a force on body B, body B exerts an equal and opposite force on body A.\n\nThe unit of force is the newton: 1 N = 1 kg·m/s².\n",
+        "mechanics": [
+          "SELF_CHECK"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "First law: inertia, constant velocity without a net force",
+          "Second law: F = ma",
+          "Third law: equal and opposite forces",
+          "1 N = 1 kg·m/s²"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m09-categorize",
+      "kind": "exercise",
+      "language": "en",
+      "outputLanguage": "en",
+      "tags": [
+        "categorize"
+      ],
+      "input": {
+        "material": "# HTTP status codes\n\nStatus codes are grouped by their first digit.\n\n- 2xx means success: 200 OK, 201 Created, 204 No Content.\n- 3xx means redirection: 301 Moved Permanently, 304 Not Modified.\n- 4xx means a client error: 400 Bad Request, 401 Unauthorized, 403 Forbidden, 404 Not Found.\n- 5xx means a server error: 500 Internal Server Error, 503 Service Unavailable.\n\n401 means the client is not authenticated; 403 means it is authenticated but not allowed.\n",
+        "mechanics": [
+          "CATEGORIZE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "2xx success, 3xx redirection, 4xx client error, 5xx server error",
+          "401 not authenticated, 403 authenticated but not allowed",
+          "404 Not Found, 500 Internal Server Error, 201 Created"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "exercise-m09-match",
+      "kind": "exercise",
+      "language": "en",
+      "outputLanguage": "en",
+      "tags": [
+        "match"
+      ],
+      "input": {
+        "material": "# HTTP status codes\n\nStatus codes are grouped by their first digit.\n\n- 2xx means success: 200 OK, 201 Created, 204 No Content.\n- 3xx means redirection: 301 Moved Permanently, 304 Not Modified.\n- 4xx means a client error: 400 Bad Request, 401 Unauthorized, 403 Forbidden, 404 Not Found.\n- 5xx means a server error: 500 Internal Server Error, 503 Service Unavailable.\n\n401 means the client is not authenticated; 403 means it is authenticated but not allowed.\n",
+        "mechanics": [
+          "MATCH"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "2xx success, 3xx redirection, 4xx client error, 5xx server error",
+          "401 not authenticated, 403 authenticated but not allowed",
+          "404 Not Found, 500 Internal Server Error, 201 Created"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m09-free-response",
+      "kind": "exercise",
+      "language": "en",
+      "outputLanguage": "en",
+      "tags": [
+        "free_response"
+      ],
+      "input": {
+        "material": "# HTTP status codes\n\nStatus codes are grouped by their first digit.\n\n- 2xx means success: 200 OK, 201 Created, 204 No Content.\n- 3xx means redirection: 301 Moved Permanently, 304 Not Modified.\n- 4xx means a client error: 400 Bad Request, 401 Unauthorized, 403 Forbidden, 404 Not Found.\n- 5xx means a server error: 500 Internal Server Error, 503 Service Unavailable.\n\n401 means the client is not authenticated; 403 means it is authenticated but not allowed.\n",
+        "mechanics": [
+          "FREE_RESPONSE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "2xx success, 3xx redirection, 4xx client error, 5xx server error",
+          "401 not authenticated, 403 authenticated but not allowed",
+          "404 Not Found, 500 Internal Server Error, 201 Created"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m09-choice",
+      "kind": "exercise",
+      "language": "en",
+      "outputLanguage": "en",
+      "tags": [
+        "choice"
+      ],
+      "input": {
+        "material": "# HTTP status codes\n\nStatus codes are grouped by their first digit.\n\n- 2xx means success: 200 OK, 201 Created, 204 No Content.\n- 3xx means redirection: 301 Moved Permanently, 304 Not Modified.\n- 4xx means a client error: 400 Bad Request, 401 Unauthorized, 403 Forbidden, 404 Not Found.\n- 5xx means a server error: 500 Internal Server Error, 503 Service Unavailable.\n\n401 means the client is not authenticated; 403 means it is authenticated but not allowed.\n",
+        "mechanics": [
+          "CHOICE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "2xx success, 3xx redirection, 4xx client error, 5xx server error",
+          "401 not authenticated, 403 authenticated but not allowed",
+          "404 Not Found, 500 Internal Server Error, 201 Created"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "exercise-m10-cloze",
+      "kind": "exercise",
+      "language": "fr",
+      "outputLanguage": "fr",
+      "tags": [
+        "cloze"
+      ],
+      "input": {
+        "material": "# Le passé composé\n\nLe passé composé se forme avec l'auxiliaire avoir ou être au présent et le participe passé : j'ai mangé, elle est partie.\n\nLa plupart des verbes utilisent avoir. Les verbes de mouvement comme aller, venir, partir et arriver, ainsi que tous les verbes pronominaux, utilisent être. Avec être, le participe passé s'accorde avec le sujet : elle est allée, ils sont partis.\n\nÀ la forme négative, ne et pas entourent l'auxiliaire : je n'ai pas mangé.\n",
+        "mechanics": [
+          "CLOZE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Avoir ou être au présent + participe passé",
+          "Aller, venir, partir, arriver et les verbes pronominaux prennent être",
+          "Avec être, le participe s'accorde avec le sujet",
+          "Négation: ne ... pas autour de l'auxiliaire"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m10-choice",
+      "kind": "exercise",
+      "language": "fr",
+      "outputLanguage": "fr",
+      "tags": [
+        "choice"
+      ],
+      "input": {
+        "material": "# Le passé composé\n\nLe passé composé se forme avec l'auxiliaire avoir ou être au présent et le participe passé : j'ai mangé, elle est partie.\n\nLa plupart des verbes utilisent avoir. Les verbes de mouvement comme aller, venir, partir et arriver, ainsi que tous les verbes pronominaux, utilisent être. Avec être, le participe passé s'accorde avec le sujet : elle est allée, ils sont partis.\n\nÀ la forme négative, ne et pas entourent l'auxiliaire : je n'ai pas mangé.\n",
+        "mechanics": [
+          "CHOICE"
+        ],
+        "count": 2
+      },
+      "expect": {
+        "facts": [
+          "Avoir ou être au présent + participe passé",
+          "Aller, venir, partir, arriver et les verbes pronominaux prennent être",
+          "Avec être, le participe s'accorde avec le sujet",
+          "Négation: ne ... pas autour de l'auxiliaire"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m10-free-response",
+      "kind": "exercise",
+      "language": "fr",
+      "outputLanguage": "fr",
+      "tags": [
+        "free_response"
+      ],
+      "input": {
+        "material": "# Le passé composé\n\nLe passé composé se forme avec l'auxiliaire avoir ou être au présent et le participe passé : j'ai mangé, elle est partie.\n\nLa plupart des verbes utilisent avoir. Les verbes de mouvement comme aller, venir, partir et arriver, ainsi que tous les verbes pronominaux, utilisent être. Avec être, le participe passé s'accorde avec le sujet : elle est allée, ils sont partis.\n\nÀ la forme négative, ne et pas entourent l'auxiliaire : je n'ai pas mangé.\n",
+        "mechanics": [
+          "FREE_RESPONSE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Avoir ou être au présent + participe passé",
+          "Aller, venir, partir, arriver et les verbes pronominaux prennent être",
+          "Avec être, le participe s'accorde avec le sujet",
+          "Négation: ne ... pas autour de l'auxiliaire"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "exercise-m10-self-check",
+      "kind": "exercise",
+      "language": "fr",
+      "outputLanguage": "fr",
+      "tags": [
+        "self_check"
+      ],
+      "input": {
+        "material": "# Le passé composé\n\nLe passé composé se forme avec l'auxiliaire avoir ou être au présent et le participe passé : j'ai mangé, elle est partie.\n\nLa plupart des verbes utilisent avoir. Les verbes de mouvement comme aller, venir, partir et arriver, ainsi que tous les verbes pronominaux, utilisent être. Avec être, le participe passé s'accorde avec le sujet : elle est allée, ils sont partis.\n\nÀ la forme négative, ne et pas entourent l'auxiliaire : je n'ai pas mangé.\n",
+        "mechanics": [
+          "SELF_CHECK"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Avoir ou être au présent + participe passé",
+          "Aller, venir, partir, arriver et les verbes pronominaux prennent être",
+          "Avec être, le participe s'accorde avec le sujet",
+          "Négation: ne ... pas autour de l'auxiliaire"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m11-match",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "match"
+      ],
+      "input": {
+        "material": "# Сложность алгоритмов сортировки\n\n- Пузырьковая сортировка: в худшем случае O(n²), память O(1).\n- Сортировка вставками: в худшем случае O(n²), память O(1), быстра на почти отсортированных данных.\n- Сортировка слиянием: всегда O(n log n), нужна дополнительная память O(n).\n- Быстрая сортировка: в среднем O(n log n), в худшем O(n²), память O(log n).\n\nДля больших наборов данных алгоритмы O(n log n) гораздо быстрее, чем O(n²).\n",
+        "mechanics": [
+          "MATCH"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Пузырьковая и вставками: O(n²) в худшем случае",
+          "Слиянием: O(n log n), память O(n)",
+          "Быстрая: O(n log n) в среднем, O(n²) в худшем",
+          "Вставками быстра на почти отсортированных данных"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m11-order",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "order"
+      ],
+      "input": {
+        "material": "# Сложность алгоритмов сортировки\n\n- Пузырьковая сортировка: в худшем случае O(n²), память O(1).\n- Сортировка вставками: в худшем случае O(n²), память O(1), быстра на почти отсортированных данных.\n- Сортировка слиянием: всегда O(n log n), нужна дополнительная память O(n).\n- Быстрая сортировка: в среднем O(n log n), в худшем O(n²), память O(log n).\n\nДля больших наборов данных алгоритмы O(n log n) гораздо быстрее, чем O(n²).\n",
+        "mechanics": [
+          "ORDER"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Пузырьковая и вставками: O(n²) в худшем случае",
+          "Слиянием: O(n log n), память O(n)",
+          "Быстрая: O(n log n) в среднем, O(n²) в худшем",
+          "Вставками быстра на почти отсортированных данных"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m11-self-check",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "self_check"
+      ],
+      "input": {
+        "material": "# Сложность алгоритмов сортировки\n\n- Пузырьковая сортировка: в худшем случае O(n²), память O(1).\n- Сортировка вставками: в худшем случае O(n²), память O(1), быстра на почти отсортированных данных.\n- Сортировка слиянием: всегда O(n log n), нужна дополнительная память O(n).\n- Быстрая сортировка: в среднем O(n log n), в худшем O(n²), память O(log n).\n\nДля больших наборов данных алгоритмы O(n log n) гораздо быстрее, чем O(n²).\n",
+        "mechanics": [
+          "SELF_CHECK"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Пузырьковая и вставками: O(n²) в худшем случае",
+          "Слиянием: O(n log n), память O(n)",
+          "Быстрая: O(n log n) в среднем, O(n²) в худшем",
+          "Вставками быстра на почти отсортированных данных"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "exercise-m11-categorize",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "categorize"
+      ],
+      "input": {
+        "material": "# Сложность алгоритмов сортировки\n\n- Пузырьковая сортировка: в худшем случае O(n²), память O(1).\n- Сортировка вставками: в худшем случае O(n²), память O(1), быстра на почти отсортированных данных.\n- Сортировка слиянием: всегда O(n log n), нужна дополнительная память O(n).\n- Быстрая сортировка: в среднем O(n log n), в худшем O(n²), память O(log n).\n\nДля больших наборов данных алгоритмы O(n log n) гораздо быстрее, чем O(n²).\n",
+        "mechanics": [
+          "CATEGORIZE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Пузырьковая и вставками: O(n²) в худшем случае",
+          "Слиянием: O(n log n), память O(n)",
+          "Быстрая: O(n log n) в среднем, O(n²) в худшем",
+          "Вставками быстра на почти отсортированных данных"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m12-order",
+      "kind": "exercise",
+      "language": "en",
+      "outputLanguage": "en",
+      "tags": [
+        "order"
+      ],
+      "input": {
+        "material": "# The water cycle\n\n1. Evaporation: the sun heats water in oceans and lakes, and it rises as vapour.\n2. Condensation: the vapour cools and forms tiny droplets, which make clouds.\n3. Precipitation: droplets grow heavy and fall as rain, snow or hail.\n4. Collection: water runs into rivers, lakes and oceans or soaks into the ground, and the cycle starts again.\n\nPlants also release water vapour through their leaves; this is called transpiration.\n",
+        "mechanics": [
+          "ORDER"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "The order: evaporation, condensation, precipitation, collection",
+          "Transpiration is water vapour released by plants",
+          "Evaporation is driven by the sun's heat"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m12-cloze",
+      "kind": "exercise",
+      "language": "en",
+      "outputLanguage": "en",
+      "tags": [
+        "cloze"
+      ],
+      "input": {
+        "material": "# The water cycle\n\n1. Evaporation: the sun heats water in oceans and lakes, and it rises as vapour.\n2. Condensation: the vapour cools and forms tiny droplets, which make clouds.\n3. Precipitation: droplets grow heavy and fall as rain, snow or hail.\n4. Collection: water runs into rivers, lakes and oceans or soaks into the ground, and the cycle starts again.\n\nPlants also release water vapour through their leaves; this is called transpiration.\n",
+        "mechanics": [
+          "CLOZE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "The order: evaporation, condensation, precipitation, collection",
+          "Transpiration is water vapour released by plants",
+          "Evaporation is driven by the sun's heat"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "exercise-m12-self-check",
+      "kind": "exercise",
+      "language": "en",
+      "outputLanguage": "en",
+      "tags": [
+        "self_check"
+      ],
+      "input": {
+        "material": "# The water cycle\n\n1. Evaporation: the sun heats water in oceans and lakes, and it rises as vapour.\n2. Condensation: the vapour cools and forms tiny droplets, which make clouds.\n3. Precipitation: droplets grow heavy and fall as rain, snow or hail.\n4. Collection: water runs into rivers, lakes and oceans or soaks into the ground, and the cycle starts again.\n\nPlants also release water vapour through their leaves; this is called transpiration.\n",
+        "mechanics": [
+          "SELF_CHECK"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "The order: evaporation, condensation, precipitation, collection",
+          "Transpiration is water vapour released by plants",
+          "Evaporation is driven by the sun's heat"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m12-match",
+      "kind": "exercise",
+      "language": "en",
+      "outputLanguage": "en",
+      "tags": [
+        "match"
+      ],
+      "input": {
+        "material": "# The water cycle\n\n1. Evaporation: the sun heats water in oceans and lakes, and it rises as vapour.\n2. Condensation: the vapour cools and forms tiny droplets, which make clouds.\n3. Precipitation: droplets grow heavy and fall as rain, snow or hail.\n4. Collection: water runs into rivers, lakes and oceans or soaks into the ground, and the cycle starts again.\n\nPlants also release water vapour through their leaves; this is called transpiration.\n",
+        "mechanics": [
+          "MATCH"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "The order: evaporation, condensation, precipitation, collection",
+          "Transpiration is water vapour released by plants",
+          "Evaporation is driven by the sun's heat"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m13-match",
+      "kind": "exercise",
+      "language": "zh",
+      "outputLanguage": "ru",
+      "tags": [
+        "match"
+      ],
+      "input": {
+        "material": "# 汉语量词\n\n量词放在数词和名词之间。\n\n- 个：最常用，如一个人、两个苹果。\n- 本：用于书，如一本书。\n- 张：用于纸、桌子、票，如一张纸。\n- 只：用于猫、鸟等动物，如一只猫。\n- 条：用于河、鱼、路，如一条河。\n\n“二”在量词前说“两”：两个人。\n",
+        "mechanics": [
+          "MATCH"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "个 — общее; 本 — книги; 张 — плоские предметы; 只 — животные; 条 — длинные предметы",
+          "Перед счётным словом говорят 两, а не 二"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "exercise-m13-cloze",
+      "kind": "exercise",
+      "language": "zh",
+      "outputLanguage": "ru",
+      "tags": [
+        "cloze"
+      ],
+      "input": {
+        "material": "# 汉语量词\n\n量词放在数词和名词之间。\n\n- 个：最常用，如一个人、两个苹果。\n- 本：用于书，如一本书。\n- 张：用于纸、桌子、票，如一张纸。\n- 只：用于猫、鸟等动物，如一只猫。\n- 条：用于河、鱼、路，如一条河。\n\n“二”在量词前说“两”：两个人。\n",
+        "mechanics": [
+          "CLOZE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "个 — общее; 本 — книги; 张 — плоские предметы; 只 — животные; 条 — длинные предметы",
+          "Перед счётным словом говорят 两, а не 二"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m13-choice",
+      "kind": "exercise",
+      "language": "zh",
+      "outputLanguage": "ru",
+      "tags": [
+        "choice"
+      ],
+      "input": {
+        "material": "# 汉语量词\n\n量词放在数词和名词之间。\n\n- 个：最常用，如一个人、两个苹果。\n- 本：用于书，如一本书。\n- 张：用于纸、桌子、票，如一张纸。\n- 只：用于猫、鸟等动物，如一只猫。\n- 条：用于河、鱼、路，如一条河。\n\n“二”在量词前说“两”：两个人。\n",
+        "mechanics": [
+          "CHOICE"
+        ],
+        "count": 2
+      },
+      "expect": {
+        "facts": [
+          "个 — общее; 本 — книги; 张 — плоские предметы; 只 — животные; 条 — длинные предметы",
+          "Перед счётным словом говорят 两, а не 二"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m13-categorize",
+      "kind": "exercise",
+      "language": "zh",
+      "outputLanguage": "ru",
+      "tags": [
+        "categorize"
+      ],
+      "input": {
+        "material": "# 汉语量词\n\n量词放在数词和名词之间。\n\n- 个：最常用，如一个人、两个苹果。\n- 本：用于书，如一本书。\n- 张：用于纸、桌子、票，如一张纸。\n- 只：用于猫、鸟等动物，如一只猫。\n- 条：用于河、鱼、路，如一条河。\n\n“二”在量词前说“两”：两个人。\n",
+        "mechanics": [
+          "CATEGORIZE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "个 — общее; 本 — книги; 张 — плоские предметы; 只 — животные; 条 — длинные предметы",
+          "Перед счётным словом говорят 两, а не 二"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m14-cloze",
+      "kind": "exercise",
+      "language": "ko",
+      "outputLanguage": "ru",
+      "tags": [
+        "cloze"
+      ],
+      "input": {
+        "material": "# 한국어 조사 에 와 에서\n\n**에**는 존재하는 장소, 도착점, 시간을 나타냅니다: 집에 있어요. 학교에 가요. 세 시에 만나요.\n\n**에서**는 행동이 일어나는 장소와 출발점을 나타냅니다: 도서관에서 공부해요. 서울에서 왔어요.\n\n'있다'와 '없다'로 존재하는 장소를 나타낼 때는 보통 에를 씁니다. 공부하다 같은 동작의 장소는 에서로 나타내고, 가다·오다의 도착점은 에로 나타냅니다.\n",
+        "mechanics": [
+          "CLOZE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "에 — место существования, пункт назначения, время",
+          "에서 — место действия и точка отправления",
+          "있다/없다 обычно с 에"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "exercise-m14-choice",
+      "kind": "exercise",
+      "language": "ko",
+      "outputLanguage": "ru",
+      "tags": [
+        "choice"
+      ],
+      "input": {
+        "material": "# 한국어 조사 에 와 에서\n\n**에**는 존재하는 장소, 도착점, 시간을 나타냅니다: 집에 있어요. 학교에 가요. 세 시에 만나요.\n\n**에서**는 행동이 일어나는 장소와 출발점을 나타냅니다: 도서관에서 공부해요. 서울에서 왔어요.\n\n'있다'와 '없다'로 존재하는 장소를 나타낼 때는 보통 에를 씁니다. 공부하다 같은 동작의 장소는 에서로 나타내고, 가다·오다의 도착점은 에로 나타냅니다.\n",
+        "mechanics": [
+          "CHOICE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "에 — место существования, пункт назначения, время",
+          "에서 — место действия и точка отправления",
+          "있다/없다 обычно с 에"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m14-match",
+      "kind": "exercise",
+      "language": "ko",
+      "outputLanguage": "ru",
+      "tags": [
+        "match"
+      ],
+      "input": {
+        "material": "# 한국어 조사 에 와 에서\n\n**에**는 존재하는 장소, 도착점, 시간을 나타냅니다: 집에 있어요. 학교에 가요. 세 시에 만나요.\n\n**에서**는 행동이 일어나는 장소와 출발점을 나타냅니다: 도서관에서 공부해요. 서울에서 왔어요.\n\n'있다'와 '없다'로 존재하는 장소를 나타낼 때는 보통 에를 씁니다. 공부하다 같은 동작의 장소는 에서로 나타내고, 가다·오다의 도착점은 에로 나타냅니다.\n",
+        "mechanics": [
+          "MATCH"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "에 — место существования, пункт назначения, время",
+          "에서 — место действия и точка отправления",
+          "있다/없다 обычно с 에"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m14-free-response",
+      "kind": "exercise",
+      "language": "ko",
+      "outputLanguage": "ru",
+      "tags": [
+        "free_response"
+      ],
+      "input": {
+        "material": "# 한국어 조사 에 와 에서\n\n**에**는 존재하는 장소, 도착점, 시간을 나타냅니다: 집에 있어요. 학교에 가요. 세 시에 만나요.\n\n**에서**는 행동이 일어나는 장소와 출발점을 나타냅니다: 도서관에서 공부해요. 서울에서 왔어요.\n\n'있다'와 '없다'로 존재하는 장소를 나타낼 때는 보통 에를 씁니다. 공부하다 같은 동작의 장소는 에서로 나타내고, 가다·오다의 도착점은 에로 나타냅니다.\n",
+        "mechanics": [
+          "FREE_RESPONSE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "에 — место существования, пункт назначения, время",
+          "에서 — место действия и точка отправления",
+          "있다/없다 обычно с 에"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "exercise-m15-choice",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "choice"
+      ],
+      "input": {
+        "material": "# Эластичность спроса\n\nЭластичность спроса по цене показывает, насколько сильно изменяется количество покупаемого товара при изменении цены на один процент. Если эластичность по модулю больше единицы, спрос называют эластичным: небольшой рост цены сильно снижает покупки. Если меньше единицы — неэластичным.\n\nТовары первой необходимости (соль, хлеб, лекарства) обычно имеют неэластичный спрос. У предметов роскоши и товаров с близкими заменителями спрос эластичнее.\n",
+        "mechanics": [
+          "CHOICE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Эластичность — процентное изменение количества при росте цены на 1%",
+          "|E| > 1 — эластичный спрос, < 1 — неэластичный",
+          "Товары первой необходимости обычно неэластичны, роскошь и товары с заменителями — эластичнее"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m15-self-check",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "self_check"
+      ],
+      "input": {
+        "material": "# Эластичность спроса\n\nЭластичность спроса по цене показывает, насколько сильно изменяется количество покупаемого товара при изменении цены на один процент. Если эластичность по модулю больше единицы, спрос называют эластичным: небольшой рост цены сильно снижает покупки. Если меньше единицы — неэластичным.\n\nТовары первой необходимости (соль, хлеб, лекарства) обычно имеют неэластичный спрос. У предметов роскоши и товаров с близкими заменителями спрос эластичнее.\n",
+        "mechanics": [
+          "SELF_CHECK"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Эластичность — процентное изменение количества при росте цены на 1%",
+          "|E| > 1 — эластичный спрос, < 1 — неэластичный",
+          "Товары первой необходимости обычно неэластичны, роскошь и товары с заменителями — эластичнее"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m15-free-response",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "free_response"
+      ],
+      "input": {
+        "material": "# Эластичность спроса\n\nЭластичность спроса по цене показывает, насколько сильно изменяется количество покупаемого товара при изменении цены на один процент. Если эластичность по модулю больше единицы, спрос называют эластичным: небольшой рост цены сильно снижает покупки. Если меньше единицы — неэластичным.\n\nТовары первой необходимости (соль, хлеб, лекарства) обычно имеют неэластичный спрос. У предметов роскоши и товаров с близкими заменителями спрос эластичнее.\n",
+        "mechanics": [
+          "FREE_RESPONSE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Эластичность — процентное изменение количества при росте цены на 1%",
+          "|E| > 1 — эластичный спрос, < 1 — неэластичный",
+          "Товары первой необходимости обычно неэластичны, роскошь и товары с заменителями — эластичнее"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "exercise-m15-cloze",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "cloze"
+      ],
+      "input": {
+        "material": "# Эластичность спроса\n\nЭластичность спроса по цене показывает, насколько сильно изменяется количество покупаемого товара при изменении цены на один процент. Если эластичность по модулю больше единицы, спрос называют эластичным: небольшой рост цены сильно снижает покупки. Если меньше единицы — неэластичным.\n\nТовары первой необходимости (соль, хлеб, лекарства) обычно имеют неэластичный спрос. У предметов роскоши и товаров с близкими заменителями спрос эластичнее.\n",
+        "mechanics": [
+          "CLOZE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Эластичность — процентное изменение количества при росте цены на 1%",
+          "|E| > 1 — эластичный спрос, < 1 — неэластичный",
+          "Товары первой необходимости обычно неэластичны, роскошь и товары с заменителями — эластичнее"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m16-order",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "order"
+      ],
+      "input": {
+        "material": "# Рабочий процесс с ветками в Git\n\n1. Обновить основную ветку: git switch main и git pull.\n2. Создать ветку под задачу: git switch -c feature/название.\n3. Вносить изменения и фиксировать их коммитами: git add и git commit.\n4. Отправить ветку на сервер: git push -u origin feature/название.\n5. Открыть запрос на слияние (pull request) и дождаться ревью.\n\nЛокальные команды (add, commit, switch) работают без сети, а pull и push обращаются к удалённому репозиторию.\n",
+        "mechanics": [
+          "ORDER"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Порядок шагов: обновить main, создать ветку, коммиты, push, pull request",
+          "git add, commit, switch — локальные; pull и push — обращаются к удалённому репозиторию"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m16-categorize",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "categorize"
+      ],
+      "input": {
+        "material": "# Рабочий процесс с ветками в Git\n\n1. Обновить основную ветку: git switch main и git pull.\n2. Создать ветку под задачу: git switch -c feature/название.\n3. Вносить изменения и фиксировать их коммитами: git add и git commit.\n4. Отправить ветку на сервер: git push -u origin feature/название.\n5. Открыть запрос на слияние (pull request) и дождаться ревью.\n\nЛокальные команды (add, commit, switch) работают без сети, а pull и push обращаются к удалённому репозиторию.\n",
+        "mechanics": [
+          "CATEGORIZE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Порядок шагов: обновить main, создать ветку, коммиты, push, pull request",
+          "git add, commit, switch — локальные; pull и push — обращаются к удалённому репозиторию"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m16-choice",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "choice"
+      ],
+      "input": {
+        "material": "# Рабочий процесс с ветками в Git\n\n1. Обновить основную ветку: git switch main и git pull.\n2. Создать ветку под задачу: git switch -c feature/название.\n3. Вносить изменения и фиксировать их коммитами: git add и git commit.\n4. Отправить ветку на сервер: git push -u origin feature/название.\n5. Открыть запрос на слияние (pull request) и дождаться ревью.\n\nЛокальные команды (add, commit, switch) работают без сети, а pull и push обращаются к удалённому репозиторию.\n",
+        "mechanics": [
+          "CHOICE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Порядок шагов: обновить main, создать ветку, коммиты, push, pull request",
+          "git add, commit, switch — локальные; pull и push — обращаются к удалённому репозиторию"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "exercise-m16-free-response",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "free_response"
+      ],
+      "input": {
+        "material": "# Рабочий процесс с ветками в Git\n\n1. Обновить основную ветку: git switch main и git pull.\n2. Создать ветку под задачу: git switch -c feature/название.\n3. Вносить изменения и фиксировать их коммитами: git add и git commit.\n4. Отправить ветку на сервер: git push -u origin feature/название.\n5. Открыть запрос на слияние (pull request) и дождаться ревью.\n\nЛокальные команды (add, commit, switch) работают без сети, а pull и push обращаются к удалённому репозиторию.\n",
+        "mechanics": [
+          "FREE_RESPONSE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Порядок шагов: обновить main, создать ветку, коммиты, push, pull request",
+          "git add, commit, switch — локальные; pull и push — обращаются к удалённому репозиторию"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m17-categorize",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "categorize"
+      ],
+      "input": {
+        "material": "# Группы периодической таблицы\n\n**Щелочные металлы** (группа 1: литий, натрий, калий) очень активны, бурно реагируют с водой и хранятся под слоем масла.\n\n**Галогены** (группа 17: фтор, хлор, бром, иод) — активные неметаллы, образуют соли с металлами.\n\n**Благородные газы** (группа 18: гелий, неон, аргон) практически не вступают в реакции, потому что их внешняя электронная оболочка заполнена.\n",
+        "mechanics": [
+          "CATEGORIZE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Щелочные металлы — группа 1: Li, Na, K",
+          "Галогены — группа 17: F, Cl, Br, I",
+          "Благородные газы — группа 18: He, Ne, Ar; инертны из-за заполненной оболочки"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m17-match",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "match"
+      ],
+      "input": {
+        "material": "# Группы периодической таблицы\n\n**Щелочные металлы** (группа 1: литий, натрий, калий) очень активны, бурно реагируют с водой и хранятся под слоем масла.\n\n**Галогены** (группа 17: фтор, хлор, бром, иод) — активные неметаллы, образуют соли с металлами.\n\n**Благородные газы** (группа 18: гелий, неон, аргон) практически не вступают в реакции, потому что их внешняя электронная оболочка заполнена.\n",
+        "mechanics": [
+          "MATCH"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Щелочные металлы — группа 1: Li, Na, K",
+          "Галогены — группа 17: F, Cl, Br, I",
+          "Благородные газы — группа 18: He, Ne, Ar; инертны из-за заполненной оболочки"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "exercise-m17-free-response",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "free_response"
+      ],
+      "input": {
+        "material": "# Группы периодической таблицы\n\n**Щелочные металлы** (группа 1: литий, натрий, калий) очень активны, бурно реагируют с водой и хранятся под слоем масла.\n\n**Галогены** (группа 17: фтор, хлор, бром, иод) — активные неметаллы, образуют соли с металлами.\n\n**Благородные газы** (группа 18: гелий, неон, аргон) практически не вступают в реакции, потому что их внешняя электронная оболочка заполнена.\n",
+        "mechanics": [
+          "FREE_RESPONSE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Щелочные металлы — группа 1: Li, Na, K",
+          "Галогены — группа 17: F, Cl, Br, I",
+          "Благородные газы — группа 18: He, Ne, Ar; инертны из-за заполненной оболочки"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m17-self-check",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "self_check"
+      ],
+      "input": {
+        "material": "# Группы периодической таблицы\n\n**Щелочные металлы** (группа 1: литий, натрий, калий) очень активны, бурно реагируют с водой и хранятся под слоем масла.\n\n**Галогены** (группа 17: фтор, хлор, бром, иод) — активные неметаллы, образуют соли с металлами.\n\n**Благородные газы** (группа 18: гелий, неон, аргон) практически не вступают в реакции, потому что их внешняя электронная оболочка заполнена.\n",
+        "mechanics": [
+          "SELF_CHECK"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Щелочные металлы — группа 1: Li, Na, K",
+          "Галогены — группа 17: F, Cl, Br, I",
+          "Благородные газы — группа 18: He, Ne, Ar; инертны из-за заполненной оболочки"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m18-categorize",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "categorize"
+      ],
+      "input": {
+        "material": "# Итальянское Возрождение\n\nВ XIV веке Возрождение началось во Флоренции, а к концу XV века достигло расцвета. **Леонардо да Винчи** (1452–1519) был живописцем и изобретателем, автор «Моны Лизы». **Микеланджело** (1475–1564) — скульптор («Давид»), художник и архитектор, расписал Сикстинскую капеллу. **Рафаэль** (1483–1520) известен «Сикстинской мадонной» и фресками в Ватикане. **Филиппо Брунеллески** построил купол собора Санта-Мария-дель-Фьоре во Флоренции.\n\nПокровителями искусства во Флоренции были Медичи.\n",
+        "mechanics": [
+          "CATEGORIZE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Леонардо да Винчи (1452–1519) — «Мона Лиза»",
+          "Микеланджело (1475–1564) — «Давид», роспись Сикстинской капеллы",
+          "Рафаэль (1483–1520) — «Сикстинская мадонна»",
+          "Брунеллески — купол Санта-Мария-дель-Фьоре",
+          "Медичи — покровители искусства во Флоренции"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "exercise-m18-order",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "order"
+      ],
+      "input": {
+        "material": "# Итальянское Возрождение\n\nВ XIV веке Возрождение началось во Флоренции, а к концу XV века достигло расцвета. **Леонардо да Винчи** (1452–1519) был живописцем и изобретателем, автор «Моны Лизы». **Микеланджело** (1475–1564) — скульптор («Давид»), художник и архитектор, расписал Сикстинскую капеллу. **Рафаэль** (1483–1520) известен «Сикстинской мадонной» и фресками в Ватикане. **Филиппо Брунеллески** построил купол собора Санта-Мария-дель-Фьоре во Флоренции.\n\nПокровителями искусства во Флоренции были Медичи.\n",
+        "mechanics": [
+          "ORDER"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Леонардо да Винчи (1452–1519) — «Мона Лиза»",
+          "Микеланджело (1475–1564) — «Давид», роспись Сикстинской капеллы",
+          "Рафаэль (1483–1520) — «Сикстинская мадонна»",
+          "Брунеллески — купол Санта-Мария-дель-Фьоре",
+          "Медичи — покровители искусства во Флоренции"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m18-self-check",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "self_check"
+      ],
+      "input": {
+        "material": "# Итальянское Возрождение\n\nВ XIV веке Возрождение началось во Флоренции, а к концу XV века достигло расцвета. **Леонардо да Винчи** (1452–1519) был живописцем и изобретателем, автор «Моны Лизы». **Микеланджело** (1475–1564) — скульптор («Давид»), художник и архитектор, расписал Сикстинскую капеллу. **Рафаэль** (1483–1520) известен «Сикстинской мадонной» и фресками в Ватикане. **Филиппо Брунеллески** построил купол собора Санта-Мария-дель-Фьоре во Флоренции.\n\nПокровителями искусства во Флоренции были Медичи.\n",
+        "mechanics": [
+          "SELF_CHECK"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Леонардо да Винчи (1452–1519) — «Мона Лиза»",
+          "Микеланджело (1475–1564) — «Давид», роспись Сикстинской капеллы",
+          "Рафаэль (1483–1520) — «Сикстинская мадонна»",
+          "Брунеллески — купол Санта-Мария-дель-Фьоре",
+          "Медичи — покровители искусства во Флоренции"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m18-free-response",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "free_response"
+      ],
+      "input": {
+        "material": "# Итальянское Возрождение\n\nВ XIV веке Возрождение началось во Флоренции, а к концу XV века достигло расцвета. **Леонардо да Винчи** (1452–1519) был живописцем и изобретателем, автор «Моны Лизы». **Микеланджело** (1475–1564) — скульптор («Давид»), художник и архитектор, расписал Сикстинскую капеллу. **Рафаэль** (1483–1520) известен «Сикстинской мадонной» и фресками в Ватикане. **Филиппо Брунеллески** построил купол собора Санта-Мария-дель-Фьоре во Флоренции.\n\nПокровителями искусства во Флоренции были Медичи.\n",
+        "mechanics": [
+          "FREE_RESPONSE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Леонардо да Винчи (1452–1519) — «Мона Лиза»",
+          "Микеланджело (1475–1564) — «Давид», роспись Сикстинской капеллы",
+          "Рафаэль (1483–1520) — «Сикстинская мадонна»",
+          "Брунеллески — купол Санта-Мария-дель-Фьоре",
+          "Медичи — покровители искусства во Флоренции"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m19-match",
+      "kind": "exercise",
+      "language": "en",
+      "outputLanguage": "en",
+      "tags": [
+        "match"
+      ],
+      "input": {
+        "material": "# Cell organelles\n\nThe **nucleus** stores DNA and controls the cell. **Mitochondria** produce ATP. **Ribosomes** build proteins. The **endoplasmic reticulum** transports proteins and lipids. The **Golgi apparatus** packs and ships them out of the cell. **Lysosomes** digest waste.\n\nPlant cells also have a cell wall made of cellulose and chloroplasts for photosynthesis. Animal cells have neither.\n",
+        "mechanics": [
+          "MATCH"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Nucleus — DNA, mitochondria — ATP, ribosomes — proteins, Golgi — packing and shipping, lysosomes — digestion",
+          "Plant cells have a cellulose cell wall and chloroplasts; animal cells do not"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "exercise-m19-categorize",
+      "kind": "exercise",
+      "language": "en",
+      "outputLanguage": "en",
+      "tags": [
+        "categorize"
+      ],
+      "input": {
+        "material": "# Cell organelles\n\nThe **nucleus** stores DNA and controls the cell. **Mitochondria** produce ATP. **Ribosomes** build proteins. The **endoplasmic reticulum** transports proteins and lipids. The **Golgi apparatus** packs and ships them out of the cell. **Lysosomes** digest waste.\n\nPlant cells also have a cell wall made of cellulose and chloroplasts for photosynthesis. Animal cells have neither.\n",
+        "mechanics": [
+          "CATEGORIZE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Nucleus — DNA, mitochondria — ATP, ribosomes — proteins, Golgi — packing and shipping, lysosomes — digestion",
+          "Plant cells have a cellulose cell wall and chloroplasts; animal cells do not"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m19-choice",
+      "kind": "exercise",
+      "language": "en",
+      "outputLanguage": "en",
+      "tags": [
+        "choice"
+      ],
+      "input": {
+        "material": "# Cell organelles\n\nThe **nucleus** stores DNA and controls the cell. **Mitochondria** produce ATP. **Ribosomes** build proteins. The **endoplasmic reticulum** transports proteins and lipids. The **Golgi apparatus** packs and ships them out of the cell. **Lysosomes** digest waste.\n\nPlant cells also have a cell wall made of cellulose and chloroplasts for photosynthesis. Animal cells have neither.\n",
+        "mechanics": [
+          "CHOICE"
+        ],
+        "count": 2
+      },
+      "expect": {
+        "facts": [
+          "Nucleus — DNA, mitochondria — ATP, ribosomes — proteins, Golgi — packing and shipping, lysosomes — digestion",
+          "Plant cells have a cellulose cell wall and chloroplasts; animal cells do not"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m19-free-response",
+      "kind": "exercise",
+      "language": "en",
+      "outputLanguage": "en",
+      "tags": [
+        "free_response"
+      ],
+      "input": {
+        "material": "# Cell organelles\n\nThe **nucleus** stores DNA and controls the cell. **Mitochondria** produce ATP. **Ribosomes** build proteins. The **endoplasmic reticulum** transports proteins and lipids. The **Golgi apparatus** packs and ships them out of the cell. **Lysosomes** digest waste.\n\nPlant cells also have a cell wall made of cellulose and chloroplasts for photosynthesis. Animal cells have neither.\n",
+        "mechanics": [
+          "FREE_RESPONSE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Nucleus — DNA, mitochondria — ATP, ribosomes — proteins, Golgi — packing and shipping, lysosomes — digestion",
+          "Plant cells have a cellulose cell wall and chloroplasts; animal cells do not"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "exercise-m20-order",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "order"
+      ],
+      "input": {
+        "material": "# Порядок выполнения SQL-запроса\n\nПишем мы SELECT первым, но СУБД выполняет запрос логически в другом порядке:\n\n1. FROM и JOIN — выбираются и соединяются таблицы.\n2. WHERE — отфильтровываются строки.\n3. GROUP BY — оставшиеся строки группируются.\n4. HAVING — фильтруются группы.\n5. SELECT — вычисляются выражения и столбцы результата.\n6. ORDER BY — результат сортируется.\n7. LIMIT — результат обрезается.\n\nПоэтому псевдоним столбца, заданный в SELECT, нельзя использовать в WHERE.\n",
+        "mechanics": [
+          "ORDER"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Логический порядок: FROM, WHERE, GROUP BY, HAVING, SELECT, ORDER BY, LIMIT",
+          "WHERE фильтрует строки, HAVING — группы",
+          "Псевдоним из SELECT нельзя использовать в WHERE"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m20-cloze",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "cloze"
+      ],
+      "input": {
+        "material": "# Порядок выполнения SQL-запроса\n\nПишем мы SELECT первым, но СУБД выполняет запрос логически в другом порядке:\n\n1. FROM и JOIN — выбираются и соединяются таблицы.\n2. WHERE — отфильтровываются строки.\n3. GROUP BY — оставшиеся строки группируются.\n4. HAVING — фильтруются группы.\n5. SELECT — вычисляются выражения и столбцы результата.\n6. ORDER BY — результат сортируется.\n7. LIMIT — результат обрезается.\n\nПоэтому псевдоним столбца, заданный в SELECT, нельзя использовать в WHERE.\n",
+        "mechanics": [
+          "CLOZE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Логический порядок: FROM, WHERE, GROUP BY, HAVING, SELECT, ORDER BY, LIMIT",
+          "WHERE фильтрует строки, HAVING — группы",
+          "Псевдоним из SELECT нельзя использовать в WHERE"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    },
+    {
+      "id": "exercise-m20-choice",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "choice"
+      ],
+      "input": {
+        "material": "# Порядок выполнения SQL-запроса\n\nПишем мы SELECT первым, но СУБД выполняет запрос логически в другом порядке:\n\n1. FROM и JOIN — выбираются и соединяются таблицы.\n2. WHERE — отфильтровываются строки.\n3. GROUP BY — оставшиеся строки группируются.\n4. HAVING — фильтруются группы.\n5. SELECT — вычисляются выражения и столбцы результата.\n6. ORDER BY — результат сортируется.\n7. LIMIT — результат обрезается.\n\nПоэтому псевдоним столбца, заданный в SELECT, нельзя использовать в WHERE.\n",
+        "mechanics": [
+          "CHOICE"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Логический порядок: FROM, WHERE, GROUP BY, HAVING, SELECT, ORDER BY, LIMIT",
+          "WHERE фильтрует строки, HAVING — группы",
+          "Псевдоним из SELECT нельзя использовать в WHERE"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": true
+    },
+    {
+      "id": "exercise-m20-self-check",
+      "kind": "exercise",
+      "language": "ru",
+      "outputLanguage": "ru",
+      "tags": [
+        "self_check"
+      ],
+      "input": {
+        "material": "# Порядок выполнения SQL-запроса\n\nПишем мы SELECT первым, но СУБД выполняет запрос логически в другом порядке:\n\n1. FROM и JOIN — выбираются и соединяются таблицы.\n2. WHERE — отфильтровываются строки.\n3. GROUP BY — оставшиеся строки группируются.\n4. HAVING — фильтруются группы.\n5. SELECT — вычисляются выражения и столбцы результата.\n6. ORDER BY — результат сортируется.\n7. LIMIT — результат обрезается.\n\nПоэтому псевдоним столбца, заданный в SELECT, нельзя использовать в WHERE.\n",
+        "mechanics": [
+          "SELF_CHECK"
+        ],
+        "count": 1
+      },
+      "expect": {
+        "facts": [
+          "Логический порядок: FROM, WHERE, GROUP BY, HAVING, SELECT, ORDER BY, LIMIT",
+          "WHERE фильтрует строки, HAVING — группы",
+          "Псевдоним из SELECT нельзя использовать в WHERE"
+        ],
+        "mustInclude": [],
+        "forbidden": []
+      },
+      "heldOut": false
+    }
+  ]
+}

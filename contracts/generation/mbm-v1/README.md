@@ -87,6 +87,7 @@ item-line     = line-that-is-not-a-block-start EOL ;                   (* contin
 paragraph     = line { line } ;                                        (* lines up to a blank line or a block start; each line is trimmed *)
 
 code-fence    = backtick-run [ language ] EOL { line } backtick-run EOL ;   (* 3+ backticks; the closing run is at least as long; language is not "mermaid" *)
+stray-closer  = "::" { ":" } [ "end" ] EOL ;                           (* dropped with the warning MBM_STRAY_DIRECTIVE_CLOSER *)
 directive     = "::" name [ attributes ] [ " " text ] EOL [ directive-body ] ;
 name          = "table" | "mermaid" | "audio" | "image" | "video" | "sources" ;
 attributes    = "{" { space } [ attribute { space attribute } ] { space } "}" ;
@@ -167,7 +168,7 @@ All attribute values are double-quoted. Required attributes must be nonblank.
 
 | Directive | Required attributes | Optional | Body | native-v1 node | Slot |
 |---|---|---|---|---|---|
-| `::table{caption}` | `caption` | — | pipe table: ≤12 columns, ≤100 body rows, rectangular, nonblank headings; each cell is **trimmed** and is literal text (no inline markup; `\|` and `\\` escapes only); empty cells allowed | `table` {`caption`, `columns`, `rows`} | — |
+| `::table{caption}` | `caption` | — | pipe table: ≤12 columns, ≤100 body rows, nonblank headings; a body row of a different width is normalised with the warning `MBM_TABLE_ROW_NORMALIZED` (fewer cells: padded with empty cells; more: the extra cells are joined to the last cell with ` \| `); each cell is **trimmed** and is literal text (no inline markup; `\|` and `\\` escapes only); empty cells allowed | `table` {`caption`, `columns`, `rows`} | — |
 | `::mermaid{title description}` | `title`, `description` | — | a fenced block whose opening fence has the info string `mermaid`, starting on the next line | `mermaid` {`source`, `title`, `description`} | — |
 | `::audio{slot lang title}` | `slot`, `lang`, `title` | `voice` = `female`\|`male` | text after the brace, the spoken text, **at most 600 characters** (`MBM_AUDIO_TEXT_TOO_LONG`) | `audio` {`assetId`, `title`, `transcript`=body, `lang`} | `AUDIO`, spec `{lang, voice?, text}` |
 | `::image{slot mode alt}` | `slot`, `mode` = `search`\|`generate`, `alt` | — | text after the brace: search query (`search`) or generation prompt (`generate`), at most 300 characters | `image` {`assetId`, `alt`} | `IMAGE`, spec `{mode, query}` or `{mode, prompt}` |
@@ -255,7 +256,6 @@ repair URLs. The model never decides which URLs are trusted (OWASP LLM01/05). Fi
 | `MBM_TABLE_HEADER_BLANK` | ERROR | directive | Every column heading must be nonblank. |
 | `MBM_TABLE_TOO_WIDE` | ERROR | directive | A table has at most 12 columns. |
 | `MBM_TABLE_TOO_TALL` | ERROR | directive | A table has at most 100 body rows. |
-| `MBM_TABLE_RAGGED` | ERROR | directive | Every body row has exactly as many cells as the header. |
 | `MBM_SOURCE_NOT_IN_RESEARCH` | ERROR | directive | Every ::sources line is [n] URL where n and the exact URL belong to one result of the session research. |
 | `MBM_UNKNOWN_HANDLE` | ERROR | block | A [[handle]] must be one of the handles given for the edited range; new documents have none. |
 | `MBM_DUPLICATE_HANDLE` | ERROR | block | A handle may be used on one block only. |
@@ -265,6 +265,8 @@ repair URLs. The model never decides which URLs are trusted (OWASP LLM01/05). Fi
 | `MBM_LINK_NOT_ALLOWED` | WARNING | inline | The link URL is not in the allowlist: the label stays as text and the URL is dropped. |
 | `MBM_HANDLE_TYPE_CHANGED` | WARNING | block | The block with this handle changed type: a new node ID was allocated. |
 | `MBM_LITERAL_DELIMITER` | WARNING | inline | A run of three or more asterisks, or an asterisk run that could open emphasis but has no closer, stays literal text. |
+| `MBM_TABLE_ROW_NORMALIZED` | WARNING | directive | A body row with fewer cells than the header was padded with empty cells; a row with more had its extra cells joined to the last cell with " \| ". |
+| `MBM_STRAY_DIRECTIVE_CLOSER` | WARNING | block | A line of only colons (two or more), or colons followed by end, is not a directive; it was dropped. |
 | `MBM_LINK_REJECTED_BY_PROFILE` | WARNING | document | An allowlist or research URL violates the native-v1 href profile and was dropped before compilation (reported at line 0). |
 
 ## Fixtures

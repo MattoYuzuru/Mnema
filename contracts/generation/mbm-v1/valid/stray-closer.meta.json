@@ -1,0 +1,10 @@
+{
+  "description": "A line of only colons, or colons and end, is not a directive: the model closed a directive like a container. It is dropped with a warning instead of MBM_UNKNOWN_DIRECTIVE.",
+  "expected": {
+    "warnings": [
+      { "line": 5, "column": 1, "code": "MBM_STRAY_DIRECTIVE_CLOSER" },
+      { "line": 11, "column": 1, "code": "MBM_STRAY_DIRECTIVE_CLOSER" },
+      { "line": 12, "column": 1, "code": "MBM_STRAY_DIRECTIVE_CLOSER" }
+    ]
+  }
+}

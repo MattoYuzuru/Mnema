@@ -71,7 +71,8 @@ tasks.register("quality") {
         subprojects.flatMap { project ->
             project.tasks.matching { it.name in setOf("compileJava", "compileTestJava") }.toList()
         },
-        subprojects.flatMap { it.tasks.withType<Test>() },
+        // goldenEval is the opt-in AI eval (services/learning): it needs provider keys for a live run and is not a quality gate.
+        subprojects.flatMap { it.tasks.withType<Test>() }.filter { it.name != "goldenEval" },
         subprojects.flatMap { project ->
             project.tasks.withType<org.gradle.testing.jacoco.tasks.JacocoReport>().toList()
         },
@@ -97,7 +98,7 @@ gradle.projectsEvaluated {
     tasks.named<org.gradle.testing.jacoco.tasks.JacocoReport>("jacocoRootReport") {
         val coverageProjects = subprojects.filter { it.extensions.findByType<org.gradle.api.tasks.SourceSetContainer>() != null }
 
-        dependsOn(coverageProjects.flatMap { it.tasks.withType<Test>() })
+        dependsOn(coverageProjects.flatMap { it.tasks.withType<Test>() }.filter { it.name != "goldenEval" })
 
         executionData.from(
             coverageProjects.map { project ->

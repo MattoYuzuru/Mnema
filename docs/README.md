@@ -140,6 +140,7 @@ artifact:
 | current | [Persistent local runtime](./deploy/selfhost-local.md) | HTTPS-запуск Identity, Learning, Angular, media и Colima clock; historical v1 часть помечена отдельно. |
 | current | [Security automation triage](./operations/security-triage.md) | Dependabot/dependency review/CodeQL policy. |
 | current | [CI artifact boundary](./operations/ci-artifact-security-boundary.md) | Artifact and token policy для ручной публикации четырёх образов. |
+| current | [AI operations runbook](./operations/ai-runbook.md) | Роли api/worker, ключи только на worker, kill switches и бюджеты, метрики на отдельном порту, инциденты провайдеров, хранение данных, eval-gate. |
 | current | [AI egress proxy](./operations/ai-egress-proxy.md) | Stateless Squid CONNECT proxy в Финляндии для AI-провайдеров, недоступных из РФ; kill switch и fallback. |
 | current | [Browser security headers](./operations/browser-security-headers.md) | Проверяемый response-security contract. |
 | current | [No-snapshot purge rehearsal](./operations/no-snapshot-purge-rehearsal.md) | Disposable policy test; не production purge. |

@@ -5,6 +5,7 @@ import app.mnema.learning.ai.prompt.PromptLibrary;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -23,12 +24,38 @@ import java.util.random.RandomGenerator;
 class AiConfiguration {
     private static final Logger LOG = LoggerFactory.getLogger(AiConfiguration.class);
 
+    /**
+     * The configuration the adapters are built from. With {@code learning.runtime.provider-credentials=worker} (an {@code api} process whose worker holds the
+     * keys, docs/operations/ai-runbook.md) the credentials this process lacks are placeholders, so {@code /api/capabilities} is computed from the same
+     * routes, flags, kill switches and egress configuration as on the worker without a key on this host. {@code local} (the default) is the configuration as it is.
+     */
+    @Bean
+    EffectiveAi effectiveAi(AiProperties properties, @Value("${learning.runtime.provider-credentials:local}") String credentials,
+                            @Value("${learning.runtime.roles:all}") String roles) {
+        String mode = credentials == null ? "" : credentials.strip().toLowerCase(java.util.Locale.ROOT);
+        if (!mode.equals("local") && !mode.equals("worker")) throw new IllegalStateException("learning.runtime.provider-credentials must be local or worker");
+        if (mode.equals("worker") && !roles.strip().equalsIgnoreCase("api")) {
+            throw new IllegalStateException("learning.runtime.provider-credentials=worker is for learning.runtime.roles=api only: a process that executes work needs its own keys");
+        }
+        if (roles.strip().equalsIgnoreCase("api") && (properties.userKey().configured()
+                || !properties.egress().password().isEmpty()
+                || properties.providers().values().stream().anyMatch(provider -> !provider.apiKey().isEmpty()
+                || !provider.authKey().isEmpty() || !provider.clientSecret().isEmpty()))) {
+            throw new IllegalStateException("learning.runtime.roles=api must not hold provider, user-key or egress credentials; put them on the worker");
+        }
+        if (mode.equals("worker")) LOG.info("ai_credentials mode=worker: capabilities are reported from the configuration; this process holds no provider key");
+        return new EffectiveAi(mode.equals("worker") ? properties.withWorkerHeldCredentials() : properties);
+    }
+
+    /** The properties the adapters are built from; see {@link #effectiveAi}. */
+    record EffectiveAi(AiProperties properties) { }
+
     @Bean(destroyMethod = "close")
     EgressClients aiEgressClients(AiProperties properties) { return EgressClients.create(properties); }
 
     @Bean
-    AiRouting aiRouting(AiProperties properties, EgressClients clients) {
-        return new AiRouting(properties, adapters(properties, clients, Clock.systemUTC()));
+    AiRouting aiRouting(AiProperties properties, EffectiveAi effective, EgressClients clients) {
+        return new AiRouting(properties, adapters(effective.properties(), clients, Clock.systemUTC()));
     }
 
     @Bean
@@ -54,13 +81,13 @@ class AiConfiguration {
      * called is {@link ImageSearch#configured()}, which the {@code imageSearch} capability reads.
      */
     @Bean
-    ImageSearch imageSearch(AiProperties properties, ImageSearchSettings settings, EgressClients clients, BreakerRegistry breakers, AiBudget budget,
+    ImageSearch imageSearch(AiProperties properties, EffectiveAi effective, ImageSearchSettings settings, EgressClients clients, BreakerRegistry breakers, AiBudget budget,
                             JdbcCallJournal journal, MeterRegistry meters, JdbcImageSearchCache cache) {
         if (AiProperties.STUB.equals(properties.provider())) {
             LOG.warn("ai_stub_active learning.ai.provider=stub: image search is answered by the deterministic Stub");
             return new StubImageSearch();
         }
-        List<ImageSource> sources = imageSources(properties, settings, clients, Clock.systemUTC());
+        List<ImageSource> sources = imageSources(effective.properties(), settings, clients, Clock.systemUTC());
         for (ImageSource source : sources) {
             LOG.info("ai_image_source source={} egress={} state={}", source.provider(), source.egress().label(),
                     source.configured() ? "configured" : "not_configured");
@@ -75,14 +102,14 @@ class AiConfiguration {
      * {@link SpeechSynthesis#configured()}, which the {@code textToSpeech} capability reads.
      */
     @Bean
-    SpeechSynthesis speechSynthesis(AiProperties properties, SpeechSettings settings, EgressClients clients, BreakerRegistry breakers, AiBudget budget,
+    SpeechSynthesis speechSynthesis(AiProperties properties, EffectiveAi effective, SpeechSettings settings, EgressClients clients, BreakerRegistry breakers, AiBudget budget,
                                     JdbcCallJournal journal, MeterRegistry meters,
                                     @org.springframework.beans.factory.annotation.Value("${learning.generation.usd-rub-rate:85}") java.math.BigDecimal usdRubRate) {
         if (AiProperties.STUB.equals(properties.provider())) {
             LOG.warn("ai_stub_active learning.ai.provider=stub: speech synthesis is answered by the deterministic Stub");
             return new StubSpeechSynthesis();
         }
-        Map<String, SpeechAdapter> adapters = speechAdapters(properties, settings, clients, usdRubRate, Clock.systemUTC());
+        Map<String, SpeechAdapter> adapters = speechAdapters(effective.properties(), settings, clients, usdRubRate, Clock.systemUTC());
         adapters.forEach((id, adapter) -> LOG.info("ai_speech_provider provider={} egress={} state={}", id, adapter.egress().label(),
                 adapter.configured() ? "configured" : "not_configured"));
         return new RoutedSpeechSynthesis(properties, settings, adapters, breakers, budget, journal, new AiTelemetry(meters));
@@ -94,14 +121,14 @@ class AiConfiguration {
      * entry can be called is {@link WebSearch#configured()}, which the {@code webSearch} capability reads.
      */
     @Bean
-    WebSearch webSearch(AiProperties properties, ResearchSettings settings, EgressClients clients, BreakerRegistry breakers, AiBudget budget,
+    WebSearch webSearch(AiProperties properties, EffectiveAi effective, ResearchSettings settings, EgressClients clients, BreakerRegistry breakers, AiBudget budget,
                         JdbcCallJournal journal, MeterRegistry meters,
                         @org.springframework.beans.factory.annotation.Value("${learning.generation.usd-rub-rate:85}") java.math.BigDecimal usdRubRate) {
         if (AiProperties.STUB.equals(properties.provider())) {
             LOG.warn("ai_stub_active learning.ai.provider=stub: web search is answered by the deterministic Stub");
             return new StubWebSearch();
         }
-        Map<String, WebSearchAdapter> adapters = webSearchAdapters(properties, settings, clients, usdRubRate, Clock.systemUTC());
+        Map<String, WebSearchAdapter> adapters = webSearchAdapters(effective.properties(), settings, clients, usdRubRate, Clock.systemUTC());
         adapters.forEach((id, adapter) -> LOG.info("ai_search_provider provider={} egress={} state={}", id, adapter.egress().label(),
                 adapter.configured() ? "configured" : "not_configured"));
         return new RoutedWebSearch(properties, settings, adapters, breakers, budget, journal, new AiTelemetry(meters));
@@ -129,13 +156,13 @@ class AiConfiguration {
      * capability reads.
      */
     @Bean
-    Transcription transcription(AiProperties properties, SttSettings settings, EgressClients clients, BreakerRegistry breakers, AiBudget budget,
+    Transcription transcription(AiProperties properties, EffectiveAi effective, SttSettings settings, EgressClients clients, BreakerRegistry breakers, AiBudget budget,
                                 JdbcCallJournal journal, MeterRegistry meters) {
         if (AiProperties.STUB.equals(properties.provider())) {
             LOG.warn("ai_stub_active learning.ai.provider=stub: speech to text is answered by the deterministic Stub");
             return new StubTranscription();
         }
-        Map<String, TranscriptionAdapter> adapters = transcriptionAdapters(properties, settings, clients, Clock.systemUTC());
+        Map<String, TranscriptionAdapter> adapters = transcriptionAdapters(effective.properties(), settings, clients, Clock.systemUTC());
         adapters.forEach((id, adapter) -> LOG.info("ai_stt_provider provider={} egress={} state={}", id, adapter.egress().label(),
                 adapter.configured() ? "configured" : "not_configured"));
         return new RoutedTranscription(properties, settings, adapters, breakers, budget, journal, new AiTelemetry(meters), meters);
@@ -193,7 +220,7 @@ class AiConfiguration {
     }
 
     @Bean
-    UserKeys userKeys(AiProperties properties) { return new UserKeys(properties.userKey()); }
+    UserKeys userKeys(EffectiveAi effective) { return new UserKeys(effective.properties().userKey()); }
 
     @Bean
     PromptLibrary promptLibrary(AiProperties properties) {

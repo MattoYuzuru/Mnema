@@ -53,3 +53,18 @@ tasks.withType<Test>().configureEach {
     // proxy test (EgressProxyTunnelTest) needs it, and it must be a JVM property (java.net.http module docs, "System properties").
     systemProperty("jdk.http.auth.tunneling.disabledSchemes", "")
 }
+
+// The golden eval of the AI layer (issue #300): opt-in and never part of `check` or `quality` (the root build leaves it out of both).
+// GoldenEvalRunner is skipped unless MNEMA_AI_EVAL=live|stub is set; a live run needs MNEMA_AI_DEEPSEEK_API_KEY and
+// MNEMA_AI_OPENROUTER_API_KEY in the environment (docs/deploy/selfhost-local.md, "AI provider layer"). It reruns every time: the
+// environment is not a Gradle input, so an up-to-date result would hide a changed prompt, route or key.
+tasks.register<Test>("goldenEval") {
+    group = "verification"
+    description = "Runs the golden eval (GoldenEvalRunner) when MNEMA_AI_EVAL=live|stub is set; not part of check or quality."
+    val tests = sourceSets.test.get()
+    testClassesDirs = tests.output.classesDirs
+    classpath = tests.runtimeClasspath
+    filter { includeTestsMatching("*GoldenEvalRunner") }
+    outputs.upToDateWhen { false }
+    extensions.configure<org.gradle.testing.jacoco.plugins.JacocoTaskExtension> { isEnabled = false }
+}
