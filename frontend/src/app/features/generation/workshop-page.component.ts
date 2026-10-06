@@ -148,6 +148,10 @@ export class WorkshopPageComponent {
         return result === null ? null : describeNoteArchive(result);
     });
     protected readonly sessionBusy = computed(() => this.store.busy().has('session'));
+    protected readonly researchingCurrent = computed(() => {
+        const current = this.current();
+        return current !== null && this.store.researching().has(current.artifactId);
+    });
     protected readonly artifactBusy = computed(() => {
         const current = this.current();
         return current !== null && this.store.busy().has(current.artifactId);

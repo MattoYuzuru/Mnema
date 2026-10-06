@@ -128,7 +128,8 @@ Weights in credits, from the product contract table. `fair-use` rows are not deb
 | `IMAGE_SEARCH` | 1 | - | AVAILABLE | Licensed image search |
 | `IMAGE_GENERATE_ECONOMY` | 15 | - | LATER | Economy generated image |
 | `IMAGE_GENERATE_QUALITY` | 60 | qualityImages | LATER | Quality generated image |
-| `FACTCHECK_LOW` | 15 | - | AVAILABLE | Fact check, low effort (15 queries) |
+| `WEB_SEARCH_QUERY` | 5 | - | AVAILABLE | One paid web search request of the research step (AI-18, #299): a material with «Проверять факты» holds `WEB_SEARCH_QUERY` × its effort's request cap (Средний 2, Подробный 6, Авто ≤3; max 15 configurable) and is debited per request actually made |
+| `FACTCHECK_LOW` | 15 | - | AVAILABLE | Fact check, low effort (legacy flat weight; materials now hold `WEB_SEARCH_QUERY` per allowed request) |
 | `FACTCHECK_HIGH` | 120 | highFactcheck | AVAILABLE | Fact check, high effort (15 queries) |
 | `VIDEO_5S` | 250-500 | video | DEFERRED | Video clip of 5 seconds |
 

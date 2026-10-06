@@ -236,7 +236,8 @@
         "A pinned NOTE or ITEM that is unknown or foreign is 404; SOURCE_UNAVAILABLE is only for an owned source whose version no longer matches the pin.",
         "EXERCISES (AI-13, decision 14 of the README): the targets are pinned as SOURCE items; the resolved quantity is spread over the targets in processing order (UNCOVERED_FIRST: fewest enabled exercises first; BALANCED: request order); one QUEUED artifact exists per exercise (targetKind EXERCISE, ordinal in processing order, then index) and one TEXT_DRAFT step per target fills them. A target that is not the material's head is 409 SOURCE_UNAVAILABLE.",
         "REVISE_ITEM (AI-16, decision 16): one artifact (target ITEM, sourceRefs the target) whose INITIAL revision is the head document copied without a model call, and one turn FREE over every top-level block with the spec's instruction (one EDIT step). The target must be the material's head (409 SOURCE_UNAVAILABLE otherwise). The session has no batch reservation: its holds are the turns' own (EDIT_SELECTION, 4 credits on rc-v1), taken here. The artifact is REVISING at creation and PROPOSED when the turn ends; the session is RUNNING meanwhile and REVIEW afterwards. No GENERATION_* notification is published for a revise session.",
-        "REVISE_EXERCISE (AI-16, decision 16): one artifact (target EXERCISE, sourceRefs [the material pin, the exercise pin]) whose INITIAL revision is the exercise's command copied without a model call ({objective: reuse the current one, exercise}), with a READY slot for each of its AUDIO blocks on the asset it already uses. instruction (when not blank) is one EDIT turn FREE that rewrites the exercise through the exercise pipeline; media {action: AUDIO_REGENERATE, voice} is one turn that redoes the audio on the Stub speech executor (until real synthesis, AI-09 #297: the audio does not change, the slot records the voice and keeps its asset) and starts after the rewrite is APPLIED. Each turn takes its own hold at creation (EDIT_SELECTION 4 credits; TTS_CLIP_30S 10 credits, released unspent by the Stub)."
+        "REVISE_EXERCISE (AI-16, decision 16): one artifact (target EXERCISE, sourceRefs [the material pin, the exercise pin]) whose INITIAL revision is the exercise's command copied without a model call ({objective: reuse the current one, exercise}), with a READY slot for each of its AUDIO blocks on the asset it already uses. instruction (when not blank) is one EDIT turn FREE that rewrites the exercise through the exercise pipeline; media {action: AUDIO_REGENERATE, voice} is one turn that redoes the audio on the Stub speech executor (until real synthesis, AI-09 #297: the audio does not change, the slot records the voice and keeps its asset) and starts after the rewrite is APPLIED. Each turn takes its own hold at creation (EDIT_SELECTION 4 credits; TTS_CLIP_30S 10 credits, released unspent by the Stub).",
+        "AI-18 (#299): with settings.factCheck on an effort above short, each material gets a RESEARCH step before its TEXT_DRAFT (TEXT_DRAFT waits for it): a cheap model call proposes at most the effort's request cap (Средний 2, Подробный 6, Авто 3; learning.ai.research.max-requests caps all at 15) queries, the server runs them through WebSearch, dedupes by normalized URL and numbers the results; TEXT_DRAFT gets them as untrusted <search_result> blocks and an allowlist, writes [n] and ::sources, and the compiler keeps only allowlisted URLs as links (any other link stays text). A research failure does not fail the material: TEXT_DRAFT runs with any sources already found or without sources; research.requests is 0 only when no billed request occurred. The hold is WEB_SEARCH_QUERY × cap; the debit is per request actually made, including a paid answer rejected by the parser, and fallback never exceeds the cap. Research respects the daily debit burst and parks before provider calls until the next Moscow day when it cannot fit. Needs the webSearch capability at admission (409 CAPABILITY_UNAVAILABLE otherwise)."
       ]
     },
     {
@@ -609,7 +610,8 @@
         "turns lists the turns of the current generation of the draft, oldest first, in the turn shape (REMOVE_MEDIA turns included; a retry starts a new draft, so earlier instructions are not listed); revisions lists the revisions of that generation {revisionId, cause INITIAL | EDIT | MEDIA | REPIN, createdAt}, oldest first, which are the ones a revert may restore; ?revisionId= returns any revision's payload, older generations included (an unknown one is 404) while currentRevisionId stays the pointer, so a client builds the diff of an edit from the previous and the result revision. mediaSlots are the slots of the media nodes the shown revision holds, whichever revision each slot is attached to now.",
         "An EXERCISE detail adds the read-only display {mechanic, objectiveTitle, quotes}: the mechanic, the title of the objective the exercise evidences (the offered or the new one) and the plain text of every MATERIAL node the exercise quotes, by node id, as it reads in the pinned revision (so a client renders MATERIAL blocks without further requests). It is absent for ITEM artifacts and when revision is null. The artifact title is the first TEXT block of the prompt, else the objective title.",
         "Model route, prompt version and provenance are never returned.",
-        "Read-only: never changes state."
+        "Read-only: never changes state.",
+        "AI-18 (#299): an ITEM artifact made with «Проверять факты» (spec settings.factCheck on an effort above short) carries `research`: {requests: number of paid search requests made, results: [{n, url, title, provider (YANDEX | PERPLEXITY | STUB)}] in [n] order} — the URLs the compiler allowed for `[n]` links and `::sources`; null when the material had no research. Snippets and page text are never returned or stored beyond the session."
       ]
     },
     {
@@ -1421,6 +1423,10 @@
       "width": "integer",
       "height": "integer",
       "chosen": "boolean"
+    },
+    "research": {
+      "requests": "integer ≥0: paid requests made by the RESEARCH step (the debit is WEB_SEARCH_QUERY × requests)",
+      "results": "0..30 {n (1-based, server order: query order then rank), url (https), title (≤300), provider}"
     }
   },
   "examples": {
@@ -1988,7 +1994,8 @@
           "createdAt": "2026-10-02T09:00:42Z"
         }
       ],
-      "turns": []
+      "turns": [],
+      "research": null
     },
     "artifactDetailExercise": {
       "artifactId": "a7a70000-0000-4000-8000-000000000002",
@@ -2888,6 +2895,23 @@
       "errorCode": null,
       "createdAt": "2026-10-04T10:00:42Z",
       "voice": "male"
+    },
+    "artifactResearch": {
+      "requests": 2,
+      "results": [
+        {
+          "n": 1,
+          "url": "https://ru.wikipedia.org/wiki/PostgreSQL",
+          "title": "PostgreSQL — Википедия",
+          "provider": "YANDEX"
+        },
+        {
+          "n": 2,
+          "url": "https://www.postgresql.org/docs/current/planner-optimizer.html",
+          "title": "Planner/Optimizer",
+          "provider": "YANDEX"
+        }
+      ]
     }
   }
 }

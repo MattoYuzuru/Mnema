@@ -336,7 +336,9 @@ class Fixture(BASE.Fixture):
                                     "LEARNING_FEATURES_TEXT_TO_SPEECH_ENABLED": "true",
                                     # #298: dictation and spoken answers run on the Stub transcription (a fixed text, no network); the harness may
                                     # script it with the `X-Stub-Transcript` header that only the Stub reads.
-                                    "LEARNING_FEATURES_SPEECH_TO_TEXT_ENABLED": "true"})
+                                    "LEARNING_FEATURES_SPEECH_TO_TEXT_ENABLED": "true",
+                                    # #299: web research and «Источники» run on the Stub web search (results on example.org, no network).
+                                    "LEARNING_FEATURES_WEB_SEARCH_ENABLED": "true"})
             elif self.stub_instance():
                 # The ordinary instance of a `--generation` or `--assessment` run has the AI features off; as an `api` process it has no step
                 # dispatcher, so it can never claim a step of the second (Stub) instance that shares the database.
@@ -405,7 +407,7 @@ class Fixture(BASE.Fixture):
                   "logoutSelector": self.args.logout_selector, "errorSelector": self.args.error_selector,
                   "authoring": self.args.authoring, "media": self.args.media, "mechanics": self.args.mechanics,
                   "generation": self.args.generation, "assessment": self.args.assessment,
-                  "onlyEdits": self.args.only_edits, "onlyImages": self.args.only_images, "onlySpeech": self.args.only_speech, "onlyVoice": self.args.only_voice, "onlyAsk": self.args.only_ask, "onlyPlan": self.args.only_plan, "onlyPlans": self.args.only_plans, "cdpTimeoutMs": cdp_timeout_ms(),
+                  "onlyEdits": self.args.only_edits, "onlyImages": self.args.only_images, "onlySpeech": self.args.only_speech, "onlyVoice": self.args.only_voice, "onlyResearch": self.args.only_research, "onlyAsk": self.args.only_ask, "onlyPlan": self.args.only_plan, "onlyPlans": self.args.only_plans, "cdpTimeoutMs": cdp_timeout_ms(),
                   "diagnosticsDir": str(self.tmp) if self.args.mechanics and self.args.keep_on_failure else None,
                   "mediaOrigin": self.media_origin, "mediaClips": media_clips}
         private_config = self.tmp / "browser.json"
@@ -420,7 +422,7 @@ class Fixture(BASE.Fixture):
                     "scripts": {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
                                 for name in ("run.py", "browser.mjs", "mechanics.mjs", "notifications.mjs", "hub.mjs",
                                              "code-block.mjs", "usage.mjs", "workshop.mjs", "exercises.mjs", "selection-edits.mjs",
-                                             "image-search.mjs", "speech.mjs", "voice.mjs", "ask-mnema.mjs", "assessment.mjs", "planner.mjs", "plans.mjs")}}
+                                             "image-search.mjs", "speech.mjs", "voice.mjs", "research.mjs", "ask-mnema.mjs", "assessment.mjs", "planner.mjs", "plans.mjs")}}
         (self.args.output / "fixture.json").write_text(json.dumps(evidence, indent=2))
         runner = self.launch_group([self.args.node, str(Path(__file__).with_name("browser.mjs")), str(private_config)], "browser")
         self.control("browser_running")
@@ -538,6 +540,9 @@ def main():
     parser.add_argument("--only-voice", action="store_true",
                         help="development aid: after the base flow run only the voice input scenario, dictation and spoken answers (requires "
                              "--generation); never a substitute for the full run")
+    parser.add_argument("--only-research", action="store_true",
+                        help="development aid: after the base flow run only the web research and «Источники» scenario (requires --generation); "
+                             "never a substitute for the full run")
     parser.add_argument("--only-ask", action="store_true",
                         help="development aid: after the base flow run only the «Попросить Мнему…» scenario (requires --generation); "
                              "never a substitute for the full run")
@@ -574,10 +579,12 @@ def main():
         parser.error("--only-images requires --generation and --media")
     if args.only_voice and not args.generation:
         parser.error("--only-voice requires --generation")
+    if args.only_research and not args.generation:
+        parser.error("--only-research requires --generation")
     if args.only_speech and not (args.generation and args.media):
         parser.error("--only-speech requires --generation and --media")
-    if sum(1 for aid in (args.only_ask, args.only_edits, args.only_plan, args.only_plans, args.only_images, args.only_speech, args.only_voice) if aid) > 1:
-        parser.error("--only-ask, --only-edits, --only-plan, --only-plans, --only-images, --only-speech and --only-voice are separate development aids: choose one")
+    if sum(1 for aid in (args.only_ask, args.only_edits, args.only_plan, args.only_plans, args.only_images, args.only_speech, args.only_voice, args.only_research) if aid) > 1:
+        parser.error("--only-ask, --only-edits, --only-plan, --only-plans, --only-images, --only-speech, --only-voice and --only-research are separate development aids: choose one")
     if args.timeout is None:
         args.timeout = 600 if args.mechanics else 180
         if args.generation or args.assessment:

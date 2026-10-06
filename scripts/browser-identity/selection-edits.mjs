@@ -76,7 +76,9 @@ export async function runWorkshopEdits(ctx, h) {
   const press = async (name, { modifiers = 0, keyCode } = {}) => {
     const [key, code, base] = KEYS[name];
     const virtualKeyCode = keyCode ?? base;
-    const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, nativeVirtualKeyCode: virtualKeyCode, modifiers };
+    // No `nativeVirtualKeyCode`: on macOS it is a hardware key code (27 is the «-» key, not Esc), and Chrome 154 headless answers an
+    // Esc that the page did not preventDefault with an endless flood of «-» keydowns that wedges the renderer.
+    const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, modifiers };
     await tab.call('Page.bringToFront');
     await tab.call('Input.dispatchKeyEvent', name === 'Enter'
       ? { type: 'keyDown', text: '\r', unmodifiedText: '\r', ...event } : { type: 'rawKeyDown', ...event });

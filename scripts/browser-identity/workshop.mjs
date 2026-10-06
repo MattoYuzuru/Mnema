@@ -23,6 +23,7 @@ import { runWorkshopEdits } from './selection-edits.mjs';
 import { runWorkshopImages } from './image-search.mjs';
 import { runWorkshopSpeech } from './speech.mjs';
 import { runWorkshopVoice } from './voice.mjs';
+import { runWorkshopResearch } from './research.mjs';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -90,7 +91,7 @@ export async function runWorkshop(ctx) {
   const press = async (name, { modifiers = 0, keyCode } = {}) => {
     const [key, code, base] = KEYS[name];
     const virtualKeyCode = keyCode ?? base;
-    const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, nativeVirtualKeyCode: virtualKeyCode, modifiers };
+    const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, modifiers };
     await tab.call('Page.bringToFront');
     await tab.call('Input.dispatchKeyEvent', name === 'Enter'
       ? { type: 'keyDown', text: '\r', unmodifiedText: '\r', ...event } : { type: 'rawKeyDown', ...event });
@@ -310,6 +311,13 @@ export async function runWorkshop(ctx) {
     evidence.planner = await runWorkshopPlanner(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
       activeSessions, sessionPath, location });
     record('workshop_planner_only', evidence);
+    return evidence;
+  }
+  if (config.onlyResearch) {
+    // Development aid (`run.py --only-research`): the web research scenario alone, after the base flow. Never the gate.
+    evidence.research = await runWorkshopResearch(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
+      activeSessions, sessionPath, location });
+    record('workshop_research_only', evidence);
     return evidence;
   }
   if (config.onlyVoice) {
@@ -760,6 +768,9 @@ export async function runWorkshop(ctx) {
   // #294 (AI-16): «Попросить Мнему…» in the material profile and in the exercise editor, REVISE_ITEM and REVISE_EXERCISE results.
   evidence.ask = await runWorkshopAsk(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
     activeSessions, sessionPath, location });
+  // #299 (AI-18): web research and «Источники» (the Stub web search: results on example.org, no network, no key).
+  evidence.research = await runWorkshopResearch(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
+    activeSessions, sessionPath, location });
   // #298 (AI-15): dictation and spoken answers (the Stub transcription; Chrome's synthetic microphone). Last: it spends the account's
   // ten-minute rate window of speech inputs on purpose.
   evidence.voice = await runWorkshopVoice(ctx, { ...shared, api, page, press, stage, has, need, settle, metrics, desktop, awaitCapability,
@@ -1064,19 +1075,19 @@ export async function runWorkshopApproval(ctx, h) {
     need(focusDelete, '«Удалить мастерскую» cannot take focus');
     // Space arms the button; a second, uninterrupted press of 3 s deletes (as in the hub scenario).
     await page(`const button = document.querySelector('section.workshop app-hold-to-delete-button button'); button.focus(); return true;`);
-    await tab.call('Input.dispatchKeyEvent', { type: 'keyDown', text: ' ', unmodifiedText: ' ', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
-    await tab.call('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
+    await tab.call('Input.dispatchKeyEvent', { type: 'keyDown', text: ' ', unmodifiedText: ' ', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 });
+    await tab.call('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 });
     await settle();
     const armed = await page(`const button = document.querySelector('section.workshop app-hold-to-delete-button button');
       return { armed: button.getAttribute('aria-pressed') === 'true', consequence: document.querySelector('section.workshop .consequence')?.textContent.trim() ?? null };`);
     need(armed.armed && armed.consequence?.startsWith('Неодобренные материалы исчезнут'), `the delete button is not armed with its consequence: ${JSON.stringify(armed)}`);
     const startedAt = Date.now();
-    await tab.call('Input.dispatchKeyEvent', { type: 'keyDown', text: ' ', unmodifiedText: ' ', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
+    await tab.call('Input.dispatchKeyEvent', { type: 'keyDown', text: ' ', unmodifiedText: ' ', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 });
     await sleep(800);
     need((await getSession(sessionId)).state === 'REVIEW', 'the session was deleted before the 3 s hold was over');
     await until(async () => (await api('GET', sessionPath(sessionId))).status === 404, 'the hold did not delete the session', 20_000);
     const heldMs = Date.now() - startedAt;
-    await tab.call('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 });
+    await tab.call('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 });
     need(heldMs >= 3000, `the session was deleted after only ${heldMs} ms`);
     const again = await api('DELETE', sessionPath(sessionId));
     need(again.status === 404, `deleting a deleted session answered ${again.status}`);

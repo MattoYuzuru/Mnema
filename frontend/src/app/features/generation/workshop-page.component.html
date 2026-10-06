@@ -68,13 +68,13 @@
         <section class="notice"><p>В этой мастерской пока нет материалов.</p><p><a class="button" [routerLink]="['/decks', deckId()]">К колоде</a></p></section>
       } @else {
         <div class="pager-row">
-          <app-batch-pager [artifacts]="artifacts()" [selectedId]="selectedId()" (picked)="select($event)" />
+          <app-batch-pager [artifacts]="artifacts()" [selectedId]="selectedId()" [researching]="store.researching()" (picked)="select($event)" />
           <p class="summary" role="status" aria-atomic="false">{{ statusText() }}@if (store.editNote(); as note) {<span class="summary-note"> · {{ note }}</span>}</p>
         </div>
 
         @if (current(); as artifact) {
           <app-proposal-view [artifact]="artifact" [index]="currentIndex()" [total]="artifacts().length" [deckId]="deckId()"
-            [sessionState]="session()!.state" [entry]="entry()" [draft]="draft()" [arrival]="store.arrival()" [busy]="artifactBusy()" [capabilities]="capabilities()" [handoffDraftId]="store.handoffs()[artifact.artifactId] ?? null"
+            [sessionState]="session()!.state" [entry]="entry()" [draft]="draft()" [arrival]="store.arrival()" [busy]="artifactBusy()" [capabilities]="capabilities()" [researching]="researchingCurrent()" [handoffDraftId]="store.handoffs()[artifact.artifactId] ?? null"
             (approve)="approve()" (reject)="reject()" (undo)="undo()" (handoff)="handoff()" (retry)="retry()" (reload)="reloadDetail()" />
         }
 

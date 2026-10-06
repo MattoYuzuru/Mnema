@@ -329,3 +329,5 @@
     .native-document > .is-rewriting { outline-color: CanvasText; }
     .native-document > .is-target { background: Highlight; color: HighlightText; box-shadow: none; outline: 2px solid Highlight; }
 }
+
+.native-visually-hidden { position: absolute; inline-size: 1px; block-size: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

@@ -27,7 +27,7 @@ export async function runNotifications(ctx) {
       new Promise(resolve => setTimeout(() => resolve(false), 3000))]);`);
   };
   const press = async (key, code, virtualKeyCode, keyText) => {
-    const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, nativeVirtualKeyCode: virtualKeyCode };
+    const event = { key, code, windowsVirtualKeyCode: virtualKeyCode };
     await tab.call('Input.dispatchKeyEvent', keyText === undefined
       ? { type: 'rawKeyDown', ...event } : { type: 'keyDown', text: keyText, unmodifiedText: keyText, ...event });
     await tab.call('Input.dispatchKeyEvent', { type: 'keyUp', ...event });

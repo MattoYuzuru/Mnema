@@ -18,7 +18,8 @@ import java.util.Map;
  * never include a value.
  *
  * @param provider {@code stub} forces the deterministic Stub on every text route (local/CI); empty uses the routes
- * @param providers by provider id: {@code deepseek}, {@code gigachat}, {@code openrouter}, {@code google} and {@code yandex} (speech)
+ * @param providers by provider id: {@code deepseek}, {@code gigachat}, {@code openrouter}, {@code google} and {@code yandex} (speech), the image
+ *                  sources, and for web search {@code yandex-search} and {@code perplexity} (AI-18, the route entries are {@code yandex} and {@code perplexity})
  * @param egress the stateless HTTP CONNECT proxy used by providers marked {@code egress=proxy}
  * @param models the price table; every route entry must name a listed model
  */
@@ -60,14 +61,18 @@ public record AiProperties(
         egress = egress == null ? new Egress("", "", "", true) : egress;
     }
 
-    /** Ordered {@code provider:model} lists; the first usable entry wins, the next ones are fallbacks. */
+    /**
+     * Ordered {@code provider:model} lists; the first usable entry wins, the next ones are fallbacks. {@code search} lists the web search providers
+     * ({@code yandex}, {@code perplexity}) of the research step, in order, without a model.
+     */
     public record Routes(@DefaultValue List<String> textFast, @DefaultValue List<String> textStrong,
                          @DefaultValue List<String> assess, @DefaultValue("PT8S") Duration assessAttemptCap,
                          @DefaultValue List<String> plan, @DefaultValue List<String> planStrong,
                          @DefaultValue List<String> tts, @DefaultValue List<String> ttsRu,
-                         @DefaultValue List<String> stt, @DefaultValue List<String> sttRu) {
+                         @DefaultValue List<String> stt, @DefaultValue List<String> sttRu, @DefaultValue List<String> search) {
         @ConstructorBinding
         public Routes {
+            search = search == null ? List.of() : search.stream().filter(value -> !value.isBlank()).map(String::strip).toList();
             tts = tts == null ? List.of() : tts.stream().filter(value -> !value.isBlank()).toList();
             ttsRu = ttsRu == null ? List.of() : ttsRu.stream().filter(value -> !value.isBlank()).toList();
             stt = stt == null ? List.of() : stt.stream().filter(value -> !value.isBlank()).toList();
@@ -84,7 +89,7 @@ public record AiProperties(
 
         public Routes(List<String> textFast, List<String> textStrong, List<String> assess, Duration assessAttemptCap,
                       List<String> plan, List<String> planStrong, List<String> tts, List<String> ttsRu) {
-            this(textFast, textStrong, assess, assessAttemptCap, plan, planStrong, tts, ttsRu, List.of(), List.of());
+            this(textFast, textStrong, assess, assessAttemptCap, plan, planStrong, tts, ttsRu, List.of(), List.of(), List.of());
         }
 
         public Routes(List<String> textFast, List<String> textStrong, List<String> assess, Duration assessAttemptCap,

@@ -1,5 +1,6 @@
 package app.mnema.learning.generation;
 
+import app.mnema.learning.ai.ResearchSettings;
 import app.mnema.learning.generation.Rows.Source;
 import tools.jackson.databind.JsonNode;
 
@@ -74,6 +75,14 @@ record MaterialsSpec(String prompt, String outputLanguage, List<Source> sources,
         /** Whether the material needs web research: a fact check on an effort above short. */
         boolean research() {
             return factCheck && !workingEffort().equals("SHORT");
+        }
+
+        /**
+         * How many search requests the research of this material may make: 0 without research, else the effort's cap ({@code MEDIUM} 2, {@code DETAILED}
+         * 6, {@code AUTO} 3) bounded by {@code max}. The effort here is the declared one: an {@code AUTO} material that no plan fixed is capped as {@code AUTO}.
+         */
+        int researchCap(int max) {
+            return research() ? ResearchSettings.cap(effort, max) : 0;
         }
     }
 

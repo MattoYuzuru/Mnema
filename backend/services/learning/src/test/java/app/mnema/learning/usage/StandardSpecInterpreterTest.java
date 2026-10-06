@@ -89,7 +89,7 @@ class StandardSpecInterpreterTest {
         String settings = "{\"effort\":\"MEDIUM\",\"factCheck\":true,\"media\":{\"audio\":{\"enabled\":true,\"lang\":\"ja\","
                 + "\"voice\":null},\"imageSearch\":true}}";
         assertThat(lines(interpret(materials(two, settings)))).containsExactly("MATERIAL_MEDIUMx2", "TTS_CLIP_30Sx2",
-                "IMAGE_SEARCHx2", "FACTCHECK_LOWx2");
+                "IMAGE_SEARCHx2", "WEB_SEARCH_QUERYx4");
         assertThat(lines(interpret(materials(two, settings.replace("MEDIUM", "SHORT"))))).containsExactly("MATERIAL_SHORTx2",
                 "TTS_CLIP_30Sx2", "IMAGE_SEARCHx2");
         assertThat(lines(interpret(materials(note(1), "{\"media\":{\"audio\":{\"enabled\":false},\"imageSearch\":false}}"))))
@@ -359,6 +359,22 @@ class StandardSpecInterpreterTest {
     void theBreakdownKeepsTheMaterialLinesFirstThenMediaAndResearch() {
         String sources = noteWith(1, "{\"effort\":\"DETAILED\",\"media\":{\"audio\":{\"enabled\":true}}}") + "," + note(2);
         assertThat(lines(interpret(materials(sources, "{\"effort\":\"SHORT\",\"media\":{\"imageSearch\":true},\"factCheck\":true}"))))
-                .containsExactly("MATERIAL_DETAILEDx1", "MATERIAL_SHORTx1", "TTS_CLIP_30Sx1", "IMAGE_SEARCHx2", "FACTCHECK_LOW" + "x1");
+                .containsExactly("MATERIAL_DETAILEDx1", "MATERIAL_SHORTx1", "TTS_CLIP_30Sx1", "IMAGE_SEARCHx2", "WEB_SEARCH_QUERYx6");
+    }
+
+    @Test
+    void aFactCheckHoldsOneSearchRequestPerRequestTheEffortAllowsAndTheGlobalCapBoundsIt() {
+        String detailed = "{\"effort\":\"DETAILED\",\"factCheck\":true}";
+        assertThat(lines(interpret(materials(note(1), detailed)))).containsExactly("MATERIAL_DETAILEDx1", "WEB_SEARCH_QUERYx6");
+        assertThat(lines(interpret(materials(note(1), "{\"effort\":\"AUTO\",\"factCheck\":true}")))).containsExactly("MATERIAL_MEDIUMx1", "WEB_SEARCH_QUERYx3");
+        assertThat(lines(interpret(materials(note(1), "{\"effort\":\"SHORT\",\"factCheck\":true}")))).containsExactly("MATERIAL_SHORTx1");
+        // an AUTO override keeps the auto cap, as the generation module runs it
+        String autoOverride = noteWith(1, "{\"effort\":\"AUTO\"}");
+        assertThat(lines(interpret(materials(autoOverride, "{\"effort\":\"SHORT\",\"factCheck\":true}")))).containsExactly("MATERIAL_MEDIUMx1", "WEB_SEARCH_QUERYx3");
+        // learning.ai.research.max-requests bounds every effort, and a zero cap is no research at all
+        var capped = new StandardSpecInterpreter(new GenerationLimits(20, 20, 20, 10, 60), null, false, 4);
+        assertThat(lines(capped.interpret(UUID.randomUUID(), UUID.randomUUID(), parse(materials(note(1), detailed)), 1000))).containsExactly("MATERIAL_DETAILEDx1", "WEB_SEARCH_QUERYx4");
+        var none = new StandardSpecInterpreter(new GenerationLimits(20, 20, 20, 10, 60), null, false, 0);
+        assertThat(lines(none.interpret(UUID.randomUUID(), UUID.randomUUID(), parse(materials(note(1), detailed)), 1000))).containsExactly("MATERIAL_DETAILEDx1");
     }
 }

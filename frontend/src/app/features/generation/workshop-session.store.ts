@@ -128,6 +128,9 @@ export class WorkshopSessionStore {
     readonly arrival = signal<Arrival | null>(null);
     readonly usage = signal<UsageUpdate | null>(null);
     readonly activeSteps = signal<readonly ActiveStep[]>([]);
+    /** Materials whose web research (AI-18, #299) is under way: their text waits for it, so they read «Ищу источники…». */
+    readonly researching = computed<ReadonlySet<string>>(() => new Set(this.activeSteps()
+        .filter(step => step.kind === 'RESEARCH' && step.artifactId !== null).map(step => step.artifactId!)));
     readonly connection = signal<Connection>('online');
     readonly notice = signal<StoreNotice | null>(null);
     readonly deckTitle = signal<string | null>(null);

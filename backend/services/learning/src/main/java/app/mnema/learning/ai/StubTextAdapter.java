@@ -28,7 +28,10 @@ import java.util.regex.Pattern;
  * the target blocks with their handles, each plain paragraph with one sentence added. An intent request ({@code <task kind="intent">}) is
  * answered by {@link StubIntents} (a keyword mapping of the request) and an exercise revision ({@code <task kind="exercise-edit">}) by
  * {@link StubExerciseEdits} (the exercise with one sentence added). A plan request ({@code <task kind="plan">}) is answered by {@link StubPlans}
- * (one item per target or note; {@code [[stub:plan-invalid]]} breaks the first answer, {@code [[stub:plan-invalid-always]]} every one). Usage is estimated; cost is zero.
+ * (one item per target or note; {@code [[stub:plan-invalid]]} breaks the first answer, {@code [[stub:plan-invalid-always]]} every one). A research request
+ * ({@code <task kind="research">}) is answered by {@link StubResearch} (the queries within the cap; the markers of {@link StubWebSearch} travel into them, and
+ * {@code [[stub:research-invalid]]}, {@code [[stub:research-invalid-always]]} and {@code [[stub:research-over]]} break the planner). A material whose prompt carries
+ * {@code <search_result>} blocks is closed with a citing sentence and a {@code ::sources} block of exactly those results. Usage is estimated; cost is zero.
  *
  * <p>A first material answer (not an edit, not a repair) appends the media the task line allows, so a local run creates slots: for
  * {@code картинка из поиска (::image mode=search)} a blank line and {@code ::image{slot="i1" mode="search" alt="Иллюстрация к материалу"}} with the
@@ -86,6 +89,8 @@ final class StubTextAdapter implements TextAdapter {
             text = StubAssessments.answer(prompt, request.attempt());
         } else if (request.output() == OutputContract.JSON && StubIntents.isIntentRequest(prompt)) {
             text = StubIntents.answer(prompt, repair);
+        } else if (request.output() == OutputContract.JSON && StubResearch.isResearchRequest(prompt)) {
+            text = StubResearch.answer(prompt, repair);
         } else if (request.output() == OutputContract.JSON && StubPlans.isPlanRequest(prompt)) {
             text = StubPlans.answer(prompt, repair);
         } else if (request.output() == OutputContract.JSON && StubExerciseEdits.isExerciseEditRequest(prompt)) {
@@ -97,6 +102,7 @@ final class StubTextAdapter implements TextAdapter {
         } else {
             text = documents.get(Integer.parseInt(fingerprint.substring(0, 6), 16) % documents.size());
             if (request.output() == OutputContract.MBM_TEXT && !repair) text = withMedia(text, prompt);
+            text = withSources(text, prompt);
         }
         if (request.streaming()) {
             for (int start = 0; start < text.length(); start += CHUNK) {
@@ -109,6 +115,25 @@ final class StubTextAdapter implements TextAdapter {
         return AiResult.ok(new TextResponse(text, TextResponse.FinishReason.STOP,
                 new Usage(all, cached, all - cached, TokenCounter.estimate(text)), 0, "stub-" + fingerprint.substring(0, 12),
                 new TextResponse.RouteUsed(PROVIDER, model)));
+    }
+
+    private static final java.util.regex.Pattern SEARCH_RESULT = java.util.regex.Pattern.compile("<search_result n=\"(\\d{1,3})\" url=\"([^\"]*)\"");
+
+    /**
+     * A prompt that carries search results (the research step found some) gets a sentence citing the first one and a {@code ::sources} block listing
+     * every result, as a model that was told to cite its sources would write: the numbers and the URLs are the ones of the prompt.
+     */
+    private static String withSources(String document, String prompt) {
+        java.util.regex.Matcher found = SEARCH_RESULT.matcher(prompt);
+        StringBuilder sources = new StringBuilder();
+        String first = null;
+        while (found.find()) {
+            if (first == null) first = found.group(1);
+            sources.append('[').append(found.group(1)).append("] ")
+                    .append(found.group(2).replace("&quot;", "\"").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")).append('\n');
+        }
+        if (first == null) return document;
+        return document.stripTrailing() + "\n\nСведения проверены по источникам [" + first + "].\n\n::sources\n" + sources;
     }
 
     /** The document plus the media directives the task line of the prompt allows, each after a blank line. */

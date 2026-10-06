@@ -92,14 +92,18 @@ class ReviewService {
     private final GenerationSettings settings;
     private final Plans plans;
     private final CandidateRepository candidates;
+    private final ResearchSteps research;
+    private final ResearchRepository researchRows;
 
     ReviewService(GenerationRepository repository, StepRepository steps, SessionLifecycle lifecycle, SessionViews views,
                   CommandReceiptService receipts, GeneratedItemPublisher publisher, GeneratedExercisePublisher exercisePublisher,
                   ExerciseRepin repins, GeneratedDraftOpener drafts,
                   SourceDrift drift, NoteArchival notes, UsageLedger ledger, AdmissionPricing pricing, GenerationGate gate,
                   ObjectProvider<StepDispatcher> dispatcher, PlatformTransactionManager transactions, GenerationSettings settings, Plans plans,
-                  CandidateRepository candidates) {
+                  CandidateRepository candidates, ResearchSteps research, ResearchRepository researchRows) {
         this.candidates = candidates;
+        this.research = research;
+        this.researchRows = researchRows;
         this.settings = settings;
         this.plans = plans;
         this.repository = repository;
@@ -754,10 +758,15 @@ class ReviewService {
         requireRoomWhenReopened(tx, session);
         String operation = AdmissionPricing.materialOperation(effective.workingEffort());
         int credits = pricing.credits(operation);
+        // a fact-checked material holds its research with it, as at admission: WEB_SEARCH_QUERY x the cap of its effort
+        int cap = research.cap(effective);
         // usage is last: a refusal rolls this transaction back, so nothing above has changed
-        Reservation reservation = ledger.reserve(session.ownerId(), ReservationScope.STEP, session.sessionId(), null, Math.max(1, credits));
+        Reservation reservation = ledger.reserve(session.ownerId(), ReservationScope.STEP, session.sessionId(), null,
+                Math.max(1, credits + cap * pricing.credits(ResearchSteps.OPERATION)));
 
         repository.dropMedia(artifactId);
+        // the material is written again, so it is researched again: the results of the earlier attempt are not the ones it will cite
+        researchRows.delete(artifactId);
         repository.cancelTurns(artifactId);
         steps.cancelMedia(artifactId);
         JsonNode pins = stale ? drift.repinned(artifact, drifted) : artifact.sourceRefs();
@@ -772,8 +781,7 @@ class ReviewService {
         Artifact queued = repository.requeue(artifact, pins);
         ObjectNode input = Json.object().put("effort", effective.workingEffort()).put("operation", operation).put("credits", credits)
                 .put("reservationId", reservation.reservationId().toString());
-        steps.insert(UUID.randomUUID(), sessionId, artifactId, session.ownerId(), TextDraftExecutor.KIND, "TEXT", input,
-                "draft:" + artifactId + ":" + (steps.draftCount(artifactId) + 1));
+        research.queue(sessionId, artifactId, session.ownerId(), input, cap, steps.draftCount(artifactId) + 1);
         tx.events.add(SessionLifecycle.artifactEvent(queued));
         tx.events.add(lifecycle.usageEvent(session, null));
         if (tx.state.equals("REVIEW")) tx.state = "RUNNING";

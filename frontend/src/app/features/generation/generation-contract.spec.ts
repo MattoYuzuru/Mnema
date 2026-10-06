@@ -250,6 +250,23 @@ describe('Generation wire contract (contracts/generation)', () => {
             expect(() => parseSessionDetail(withoutNotes)).toThrow(AuthoringProtocolError);
         });
 
+        it('reads the research of an artifact strictly (#299): absent or null is none, https only, numbered in order', () => {
+            const item = (research?: unknown): Record<string, unknown> => ({ ...clone(examples['artifactDetailItem']), ...(research === undefined ? {} : { research }) });
+            const result = (n: number, url = `https://example.org/${n}`): Record<string, unknown> => ({ n, url, title: `Источник ${n}`, provider: 'YANDEX' });
+            expect(parseArtifactDetail(item()).research).toBeNull();
+            expect(parseArtifactDetail(item(null)).research).toBeNull();
+            expect(parseArtifactDetail(item({ requests: 2, results: [result(1), result(2)] })).research).toEqual({ requests: 2,
+                results: [{ n: 1, url: 'https://example.org/1', title: 'Источник 1', provider: 'YANDEX' }, { n: 2, url: 'https://example.org/2', title: 'Источник 2', provider: 'YANDEX' }] });
+            expect(parseArtifactDetail(item({ requests: 0, results: [] })).research).toEqual({ requests: 0, results: [] });
+            for (const bad of [
+                { requests: 1, results: [result(1, 'http://example.org/1')] }, { requests: 1, results: [result(1, 'https://user:pw@example.org/')] },
+                { requests: 1, results: [result(1, 'javascript:alert(1)')] }, { requests: 1, results: [result(2)] }, { requests: -1, results: [] },
+                { requests: 1, results: [{ ...result(1), extra: true }] }, { requests: 1 }, { requests: 1, results: Array.from({ length: 31 }, (_, i) => result(i + 1)) }
+            ]) {
+                expect(() => parseArtifactDetail(item(bad)), JSON.stringify(bad)).toThrow(AuthoringProtocolError);
+            }
+        });
+
         it('reads the status of the pinned note of an artifact, and tolerates its absence and a status it does not know', () => {
             expect(parseArtifactDetail(examples['artifactDetailItem']).noteSources).toEqual([{ noteId: '20700000-0000-4000-8000-000000000001', noteRowVersion: '3', status: 'CURRENT' }]);
             expect(parseArtifactDetail(examples['artifactDetailExercise']).noteSources).toEqual([]);

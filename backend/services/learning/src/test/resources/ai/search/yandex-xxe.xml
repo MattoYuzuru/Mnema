@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE yandexsearch [ <!ENTITY xxe SYSTEM "file:///etc/passwd"> ]>
+<yandexsearch version="1.0">
+  <response date="20261005T120000">
+    <results><grouping><group><doc id="X"><url>https://example.org/&xxe;</url><title>&xxe;</title></doc></group></grouping></results>
+  </response>
+</yandexsearch>

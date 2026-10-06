@@ -8,14 +8,14 @@
 
   @switch (artifact().state) {
     @case ('QUEUED') {
-      <p class="muted">Мнема поставила материал в очередь и скоро начнёт.</p>
+      @if (researching()) { <p class="muted">Ищу источники…</p> } @else { <p class="muted">Мнема поставила материал в очередь и скоро начнёт.</p> }
       <div class="skeleton" aria-hidden="true"><span></span><span></span><span></span></div>
     }
     @case ('GENERATING') {
       @if (preview(); as previewDocument) {
         <div class="draft"><app-native-document-renderer [document]="previewDocument" /></div>
       } @else {
-        <p class="muted">Мнема пишет материал…</p>
+        <p class="muted">{{ researching() ? 'Ищу источники…' : 'Мнема пишет материал…' }}</p>
         <div class="skeleton" aria-hidden="true"><span></span><span></span><span></span></div>
       }
     }
@@ -67,6 +67,8 @@
       }
     }
   }
+
+  @if (checkedLine(); as line) { <p class="muted research-line">{{ line }}</p> }
 
   @if (slotFrames().length > 0) {
     <ul class="slots" aria-label="Медиа материала">

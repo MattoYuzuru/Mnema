@@ -608,6 +608,63 @@ tested on recorded fixtures and the Stub only.
   (`GenerationSpeechIntegrationTest`, on the Stub speech with the staging double), adoption and the GC root on MinIO (`GeneratedAudioIntegrationTest`), the worker (`backend/media-worker/tests`). Opt-in
   `MNEMA_AI_LIVE=true ... --tests '*SpeechLive*'` synthesises one Russian and one Japanese phrase per configured provider and prints latency; skipped without keys.
 
+## Web research (#299)
+
+«Проверять факты» (`settings.factCheck`) on an effort above short: a `RESEARCH` step finds sources before the draft, the draft cites them, and the document ends with an «Источники» section that holds only what was found.
+Contract: `contracts/generation/http.json` (`createSession` AI-18 note, `getArtifact.research`, `schemas.research`), `contracts/usage/rate-card-v1.json` (`WEB_SEARCH_QUERY`), `contracts/generation/mbm-v1/README.md` (`::sources`,
+`options.research`, the link allowlist); architecture §9, §13, §14. **Live not verified**: no search key exists, so the adapters are tested on recorded fixtures and the Stub only (the spike of 2026-10-05 chose the providers).
+
+- **Port (`app.mnema.learning.ai`).** `WebSearch.search(Request{queries (1..15, each collapsed and cut to 40 words / 400 characters), lang (ISO 639-1), maxResults, region, stepId, attempt}) -> AiResult<Answer{results[{url, title, snippet <= 300,
+  date, provider YANDEX|PERPLEXITY|STUB, queryIndex, rank}], requests, costMicros}>` and `configured()` (the `webSearch` capability reads it: flag and a callable route entry, or the Stub). **Deviation from the first sketch** (`AiResult<List<Result>>`): one
+  call can bill several provider requests and fall back between providers, and the step must debit what was actually bought, so the answer carries `requests` and `costMicros`. `WebSearch.acceptable(url)` (absolute https, a host, no user info,
+  <= 2048 characters, no whitespace or markup; the fragment is dropped) and `WebSearch.key(url)` (lower-case host without `www.`, default port and trailing slash dropped, `utm_*`/`fbclid`/`gclid`/`yclid` removed: the identity for de-duplication) are the
+  only URL rules. `RoutedWebSearch` walks `learning.ai.routes.search` (`yandex`, optionally `perplexity`; an unknown entry is a startup error): the queries are cut into provider requests (one for Yandex, up to five for Perplexity), answered
+  in order, each by the first usable entry (switched off, no key/folder, no transport, open breaker: skipped); a transport, rate-limit, credential or unusable-answer failure falls to the next entry, a refusal ends the search. A request nobody could
+  answer ends the search and what was answered before is returned: `Failed` only when no request succeeded. Per `(provider, SEARCH)` breaker, `permits.search`, the daily `budget.search-micros`, an `ai_provider_call` row per provider request
+  (provider `yandex`/`perplexity`, model `search`, the hash of the shape), `mnema_ai_calls_total`; refuses to run inside a transaction.
+  The query count also bounds billed requests, including an HTTP 200 whose body was rejected, so fallback cannot spend the draft's reservation. Daily provider budget and deadline are checked before each provider call, including after waiting for a permit.
+- **Adapters.** `YandexWebSearch`: Search API v2 sync, `POST {base}/v2/web/search`, `Authorization: Api-Key`, JSON body with `folderId` (`MNEMA_AI_YANDEX_FOLDER_ID`), `FORMAT_XML`, one document per domain (`GROUP_MODE_DEEP`, `docsInGroup 1`);
+  a Russian query uses `SEARCH_TYPE_RU` in region 225 with `LOCALIZATION_RU`, any other language `SEARCH_TYPE_COM` with `LOCALIZATION_EN` and no region (TR/KK/BE/UZ indexes are not used: unverified). **Direct egress only, never the proxy.** The answer is
+  `{"rawData": base64(XML)}`: bounded to 1 MiB, parsed by StAX with DTDs, external entities and entity expansion off, and a document that has a DOCTYPE, an entity declaration or a NUL byte is refused before parsing (`InvalidOutput("xml")`).
+  Both failure layers are mapped: the HTTP status (400 `InvalidOutput`, 401/403 `NotConfigured`, 429 `RateLimited`, 5xx `Transient`, 504 `Timeout`; error bodies are never read) and `<error code>` inside a 200 (15 is an empty success, 55 and 32
+  `RateLimited`, 31/33/42/44/48 `NotConfigured`, 1/2/18/19/37/10002 `InvalidOutput`, 100 and the rest `Transient`). Title and snippet are plain text (the hit-word markup is dropped), the snippet is the passages joined by « … » else the headline, cut
+  to 300; the date is the day of `modtime`; `saved-copy-url` and anything else is dropped. `PerplexityWebSearch`: `POST {base}/search`, `Bearer`, up to five queries per request (one billing unit), `max_tokens_per_page 400` (no page content), the
+  language filter and an optional country; **`egress=proxy`** (it is off by default and needs the proxy); both shapes of `results` are read (flat, or a list per query), a flat answer belongs to the first query of the request. `StubWebSearch` (only
+  with `learning.ai.provider=stub`): three results per query on `https://example.org/stub/research/<n>` with Russian titles, cost 0; `[[stub:search-down]]` and `[[stub:search-empty]]` in a query. Prices: `learning.ai.research.yandex-rub-per-request`
+  (0.488, over `learning.generation.usd-rub-rate`) and `perplexity-usd-per-request` (0.005), for the debit's cost and the daily budget.
+- **Caps and the price.** A fact-checked material makes at most 2 (MEDIUM), 6 (DETAILED) or 3 (AUTO) requests, never more than `learning.ai.research.max-requests` (15); SHORT does none. `ResearchSettings.cap(effort, max)` is the one table: the
+  usage interpreter, `Plans` and `ResearchSteps` all use it, so the estimate, the plan's `creditsByEffort`, the admission hold and the step agree. The hold is `WEB_SEARCH_QUERY` x cap per material (it replaces the `FACTCHECK_LOW` extra, which stays
+  on the rate card as a legacy weight); a retry's own hold is the material plus its research. An `AUTO` material that no plan fixed runs and is priced as MEDIUM but is capped as AUTO; a per-note `AUTO` override keeps the auto cap.
+- **Steps (`ResearchSteps`, V38).** A fact-checked material gets a `RESEARCH` step (capability `SEARCH`, input `{effort, cap, credits, draftCredits, [reservationId]}`) and its `TEXT_DRAFT` is inserted `WAITING_DEPENDENCIES` behind it (priority 0);
+  `SessionService.queueMaterials`, plan approval and `ReviewService.requeue` all go through it. **While it researches the artifact stays `QUEUED`**; the Workshop reads the active step (`activeSteps[]` carries the `artifactId` of the `RESEARCH` step); the waiting
+  draft is not an active step (only READY, RUNNING and WAITING_EXTERNAL are). A retry deletes the earlier research and researches again.
+- **Executor (`ResearchExecutor`, kind `RESEARCH`, deadline `learning.ai.research.deadline` PT90S).** `ResearchLifecycle.begin`, the prompt of the planner (`prompts/v1/research.md`, section `research`: deck title, language, the notes clipped to 1500 tokens, the request or the
+  planned topic, the cap; with the `<data_policy>` block like the intent and the plan), **one cheap call on `text-fast`** (strict JSON `{"queries": [...]}`, 400 tokens, temperature 0.2, one repair), the queries clamped to the cap and de-duplicated,
+  one `WebSearch` call (language: the material's, or English when a Russian material got English queries), results de-duplicated by `WebSearch.key` and numbered `[n]` in query order then rank (ordered by relevance by the provider; the first occurrence stays),
+  at most `max-results` (30), and one transaction (`ResearchLifecycle.succeed`): the debit `WEB_SEARCH_QUERY` x requests answered (`debit:{step}:{attempt}`, cost in millionths of a rouble: planner and searches), the row, the step SUCCEEDED and the draft READY. The research
+  never takes what its own draft needs: the requests are limited to `(held - draftCredits) / 5`. Research participates in the daily debit burst: `StepQueue` parks it before any planner/search call when today's room cannot cover its cap, retaining the waiting draft until the next Moscow day. **A failed fact check never fails the material:** the planner down or answering garbage after the repair, no query, no provider, a spent budget, a hold that cannot pay,
+  a source that is gone, a lease that ran out after the last attempt or a step that waited past its lifetime all end the step SUCCEEDED with no results and a logged `reason` (`generation_step_done ... reason=`); requests already answered are still debited. Only a cancelled session
+  ends it CANCELLED (the waiting draft is cancelled with the session). A crash with attempts left is claimed again (`ResearchLifecycle.recover`). Nothing holds a transaction during a model call or a search.
+- **Data (V38 `generation_research`).** One row per artifact: `requests` and `results` (<= 64 KiB, <= 100 entries): `{n, url, title, snippet <= 300, date, provider, queryIndex}` only. Page text, saved copies and everything else a provider returns are never stored
+  (the terms of the providers allow a pointer and a short quotation). The row goes with the artifact. A research that found nothing (or was skipped) has a row with `requests` 0 or `results` `[]`; no row means no research.
+- **Draft and compiler.** `ContextBuilder.build` puts the stored results into `search_result_blocks` (untrusted `<search_result n url title>snippet</search_result>`, escaped and redacted by `PromptBlocks`), adds their URLs to `allowed_links` and to the
+  compiler's `allowedLinks`, and passes them as `options.research` with the sources heading «Источники» (Russian materials, else «Sources»): `::sources` lines must be `[n] URL` of a result (otherwise `MBM_SOURCE_NOT_IN_RESEARCH`, the draft is repaired),
+  `[n]` in prose is plain text, and a link whose URL is not allowed stays text (`MBM_LINK_NOT_ALLOWED`, a warning). The Stub text adapter, when the prompt carries results, closes the material with a citing sentence and a `::sources` block of exactly them.
+- **Fixes of the review round.** Every result URL is normalized before numbering (`WebSearch.acceptable`: IDN host to ASCII, non-ASCII path and query percent-encoded, fragment dropped, <= 2048 printable ASCII) and must pass `NativeProfile.acceptsHref`, so the compiler accepts every number it was given;
+  the stored document is cut to 60 KiB (compact form) so `results::text` never breaks the 64 KiB CHECK; every outgoing query is redacted (`Redactor`) and one that is empty afterwards is dropped; the search stops between requests at the step deadline (`Request.deadline`);
+  an HTTP 200 whose body is malformed or rejected is a paid request (`WebSearchAdapter.paid`, both Yandex and Perplexity), and a run ended by cancel or lease loss debits what it already bought (`ResearchLifecycle.debitPaid`, same idempotency key); `learning.ai.providers.yandex-search.egress` must be
+  `direct` (startup error otherwise); the Yandex XML must be ASCII-compatible UTF-8. `::sources` is one list sorted by `n` without repeats (a second directive is merged into the first) and accepts `&amp;` for `&`; the «Проверено по N источникам» count stays the number of stored results.
+- **Read model.** `getArtifact.research` is `{requests, results: [{n, url, title, provider}]}` (no snippet), null without research.
+- **Config.** `learning.features.web-search.enabled` (`LEARNING_FEATURES_WEB_SEARCH_ENABLED`), `learning.ai.routes.search=yandex` (Perplexity only when the owner lists it), `learning.ai.providers.yandex-search.api-key` (`MNEMA_AI_YANDEX_SEARCH_API_KEY`),
+  `learning.ai.research.yandex-folder-id` (`MNEMA_AI_YANDEX_FOLDER_ID`), `learning.ai.providers.perplexity.api-key` (`MNEMA_AI_PERPLEXITY_API_KEY`, `egress=proxy`), `learning.ai.research.*` (see the runtime policy index). One key variable per provider; the former
+  `MNEMA_AI_SEARCH_API_KEY` is retired.
+- **Rollback.** `learning.features.web-search.enabled=false` (`webSearch` `DISABLED`: a new session or retry that needs research is `409 CAPABILITY_UNAVAILABLE`; steps already queued still run) and the per-provider kill switch `learning.ai.providers.<id>.enabled=false`. V38 is additive.
+- **Tests.** No network in CI: both adapters on recorded fixtures served by a loopback server (`WebSearchAdaptersTest`: the request shape, the hit-word markup, an XXE and a billion-laughs payload refused, both Yandex failure layers, the statuses, the Perplexity
+  shapes), the router (`RoutedWebSearchTest`: chunks, fallback, the paid unit, partial answers, breaker, budget, journal, the wiring rules), the port rules and the Stub (`WebSearchPortTest`), the planner prompt and the Stub's answers (`StubResearchTest`), the compiler
+  (`MbmCompilerTest`), the prices (`StandardSpecInterpreterTest`, `PlansTest`) and the flows on PostgreSQL (`GenerationResearchIntegrationTest`: the waiting draft and the hold, caps per effort, dedupe and numbering, the debit per request, every failure ending without
+  sources, cancel, crash, recovery and expiry, retry, a planned session). Opt-in `MNEMA_AI_LIVE=true ... --tests '*WebSearchLive*'` asks one Russian and one English question per configured provider and prints latency; skipped without keys.
+  Live checklist for the first key: spike section 6 (the `l10n` spelling, int64 as strings, saved fixtures of a real RU/COM/empty answer, whether an empty answer is billed, latency from a Russian host).
+
 ## Speech input (#298)
 
 Dictation into a text field and spoken Study answers. Contract: [`contracts/speech`](../../../contracts/speech/README.md) (`speech-v1`); `contracts/usage` (the `STT` bucket and `USAGE_LIMIT_REACHED`);
@@ -1003,8 +1060,8 @@ and the UI (AI-04+) build on it; nothing here debits the user's quota, it only r
   step id and attempt) returns `AiResult<TextResponse>`: text, finish reason, usage `{promptTokens, cacheHitTokens,
   cacheMissTokens, completionTokens}`, cost in micro-USD, provider request id and the route used. A failure is a sealed
   `AiFailure` (`RATE_LIMITED`, `TRANSIENT`, `TIMEOUT`, `INVALID_OUTPUT`, `REFUSAL`, `BUDGET_EXHAUSTED`, `NOT_CONFIGURED`,
-  `CIRCUIT_OPEN`) with fixed detail codes, never text. `SpeechSynthesis` (#297), `ImageSearch` (#296) and `Transcription` (#298) have implementations;
-  `ImageGeneration`, `WebSearch` and `VideoGeneration` are interfaces only.
+  `CIRCUIT_OPEN`) with fixed detail codes, never text. `SpeechSynthesis` (#297), `ImageSearch` (#296), `WebSearch` (#299) and `Transcription` (#298) have implementations;
+  `ImageGeneration` and `VideoGeneration` are interfaces only.
 - **Adapter.** `OpenAiCompatibleAdapter` on the JDK `HttpClient` and Jackson 3 trees: no redirects, a connect limit, one
   deadline over headers and body, an idle limit for SSE (a virtual-thread watchdog closes the stream), a hard body cap, and
   error bodies are never read. DeepSeek: `thinking` is disabled explicitly (enabled on the plan routes), `user_id`, `prompt_cache_hit/miss_tokens`.
@@ -1057,7 +1114,7 @@ and the UI (AI-04+) build on it; nothing here debits the user's quota, it only r
   documented in [selfhost-local](../../../docs/deploy/selfhost-local.md#ai-provider-layer-local).
 - Keys are listed in the [runtime policy index](../../../docs/engineering/runtime-policy-index.md).
 
-Fresh Learning migrations V1–V37 are the database source of truth (V37 adds the speech input tables and the `STT` capability of the call journal, #298). V28 adds the generation tables (below) and, where the role
+Fresh Learning migrations V1–V38 are the database source of truth (V38 adds the research pointers, #299; V37 adds the speech input tables and the `STT` capability of the call journal, #298). V28 adds the generation tables (below) and, where the role
 may, `pg_trgm`. V27 adds `ai_provider_call` (the provider-call journal). V21 (unified exercise
 mechanics) fails closed when pre-#266 exercise data exists: use a fresh local database. V23
 only widens the exercise type and answer-key kind constraints for `ORDER` and `CATEGORIZE`

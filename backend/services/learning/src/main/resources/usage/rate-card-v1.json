@@ -212,8 +212,21 @@
       }
     },
     {
+      "id": "WEB_SEARCH_QUERY",
+      "name": "Web search request (AI-18, #299): one paid request of the research step",
+      "unit": "request",
+      "pricing": "CREDITS",
+      "credits": 5,
+      "cap": null,
+      "availability": "AVAILABLE",
+      "worstCaseCostRub": {
+        "min": 0.37,
+        "max": 0.49
+      }
+    },
+    {
       "id": "FACTCHECK_LOW",
-      "name": "Fact check, low effort (15 queries)",
+      "name": "Fact check, low effort (legacy flat weight; materials now hold WEB_SEARCH_QUERY per allowed request)",
       "unit": "fact check",
       "pricing": "CREDITS",
       "credits": 15,
