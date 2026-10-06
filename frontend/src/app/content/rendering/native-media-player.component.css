@@ -5,15 +5,15 @@
 .mnema-player-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; padding: .8rem; }
 .mnema-player-action { display: inline-grid; place-items: center; min-inline-size: var(--mn-touch-min, 2.75rem); min-block-size: var(--mn-touch-min, 2.75rem); border: 1px solid currentColor; border-radius: var(--mn-radius, 2px); background: transparent; color: inherit; font: 600 1.1rem var(--mn-font-body, system-ui, sans-serif); cursor: pointer; }
 .mnema-player-action:hover { background: var(--mn-soft); }
-.mnema-player-controls input[type='range'] { flex: 1 1 9rem; min-inline-size: 5rem; min-block-size: 2.75rem; padding: 0; border: 0; background: transparent; accent-color: var(--mn-ink); cursor: pointer; }
+.mnema-player-controls input[type='range'] { flex: 1 1 9rem; min-inline-size: min(5rem, 100%); min-block-size: 2.75rem; padding: 0; border: 0; background: transparent; accent-color: var(--mn-ink); cursor: pointer; }
 .mnema-player-time { font: 600 .83rem var(--mn-font-mono, ui-monospace, monospace); font-variant-numeric: tabular-nums; }
-.mnema-player-speed { display: inline-flex; align-items: center; gap: .4rem; font: 600 .8rem var(--mn-font-body, system-ui, sans-serif); }
-.mnema-player-speed app-mnema-select { color: inherit; }
+.mnema-player-speed { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .4rem; min-inline-size: 0; max-inline-size: 100%; font: 600 .8rem var(--mn-font-body, system-ui, sans-serif); }
+.mnema-player-speed app-mnema-select { max-inline-size: 100%; color: inherit; }
 .mnema-player-note { margin: 0; border-block-start: 1px solid var(--mn-rule); padding: .65rem .8rem; font: .85rem var(--mn-font-body, system-ui, sans-serif); }
 .mnema-player-note.error { color: var(--mn-danger); }
 :where(button,input):focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 2px; }
 @media (max-width: 25rem) {
-  .mnema-player-controls { gap: .4rem; padding: .6rem; }
+  .mnema-player-controls { gap: .4rem; padding: min(.5rem, 3vw); }
   .mnema-player-controls input[type='range'] { order: 3; flex-basis: 100%; }
   .mnema-player-time { font-size: .75rem; }
   .mnema-player-speed { margin-inline-start: auto; }

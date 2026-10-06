@@ -11,7 +11,10 @@
 .option { padding: .6rem .7rem; border-radius: var(--mn-radius); overflow-wrap: anywhere; cursor: pointer; }
 .option:is(:hover, .is-active) { background: var(--mn-soft); color: var(--mn-ink); }
 .option[aria-disabled='true'] { color: var(--mn-muted); opacity: .55; cursor: not-allowed; }
-:host(.is-compact) { inline-size: auto; }
-:host(.is-compact) .select-trigger { min-inline-size: 5.5rem; padding-inline: .6rem; font-size: .8rem; font-weight: 600; }
-:host(.is-compact) .options { min-inline-size: 6rem; }
+/* Compact: at least 5.5rem wide, but never wider than its container (WCAG 1.4.10): the zero-height floor yields, the value wraps. */
+:host(.is-compact) { inline-size: auto; max-inline-size: 100%; }
+:host(.is-compact)::after { content: ''; display: block; inline-size: 5.5rem; max-inline-size: 100%; }
+:host(.is-compact) .select-trigger { gap: .4rem; padding-inline: .5rem; font-size: .8rem; font-weight: 600; }
+:host(.is-compact) .selected-text { white-space: normal; overflow-wrap: anywhere; }
+:host(.is-compact) .options { min-inline-size: min(6rem, 100%); }
 @media (forced-colors: active) { .select-trigger, .options { border-color: CanvasText; } .option:is(:hover, .is-active) { outline: 1px solid Highlight; } }
