@@ -100,6 +100,17 @@ final class RoutedWebSearch implements WebSearch {
             }
             Chunk chunk = null;
             for (WebSearchAdapter adapter : usable) {
+                // The confirmed query count is also the maximum number of billed requests. A paid but rejected body consumes that room,
+                // so a fallback must not buy another request after it is gone; the draft keeps its separately reserved credits.
+                if (requests >= request.queries().size()) break;
+                if (budget.exhausted(CAPABILITY)) {
+                    last = new AiFailure.BudgetExhausted();
+                    break;
+                }
+                if (request.deadline() != null && !Instant.now().isBefore(request.deadline())) {
+                    last = new AiFailure.Timeout();
+                    break;
+                }
                 int end = Math.min(request.queries().size(), next + adapter.maxQueries());
                 Request part = new Request(request.queries().subList(next, end), request.lang(), request.maxResults(), request.region(),
                         request.stepId(), request.attempt(), request.deadline());
@@ -139,6 +150,8 @@ final class RoutedWebSearch implements WebSearch {
         try {
             permit = permits.tryAcquire(properties.permits().queueWait().toMillis(), TimeUnit.MILLISECONDS);
             if (!permit) return AiResult.failed(new AiFailure.RateLimited(Duration.ofSeconds(1)));
+            if (budget.exhausted(CAPABILITY)) return AiResult.failed(new AiFailure.BudgetExhausted());
+            if (request.deadline() != null && !Instant.now().isBefore(request.deadline())) return AiResult.failed(new AiFailure.Timeout());
             UUID callId;
             try {
                 callId = journal.begin(new CallJournal.Intent(request.stepId(), request.attempt(), CAPABILITY, adapter.provider(), MODEL, hash(adapter, request)));
@@ -169,7 +182,12 @@ final class RoutedWebSearch implements WebSearch {
             long cost = result instanceof AiResult.Ok<List<Result>> || (result instanceof AiResult.Failed<List<Result>> paidFailure && adapter.paid(paidFailure.failure()))
                     ? adapter.requestCostMicros() : 0;
             String outcome = result instanceof AiResult.Failed<List<Result>> failed ? failed.failure().outcome() : "OK";
-            journal.finish(callId, new CallJournal.Outcome(outcome, Usage.ZERO, cost, null, latency.toMillis()));
+            try {
+                journal.finish(callId, new CallJournal.Outcome(outcome, Usage.ZERO, cost, null, latency.toMillis()));
+            } catch (RuntimeException exception) {
+                // The provider already answered: retain its paid result for the ledger even when the journal outcome write is unavailable.
+                LOG.warn("web_search_internal_failure stage=journal_finish error_type={} provider={}", exception.getClass().getSimpleName(), adapter.provider());
+            }
             budget.record(CAPABILITY, cost);
             try {
                 telemetry.record(CAPABILITY, adapter.provider(), MODEL, request.stepId(), outcome, latency, Usage.ZERO, cost, adapter.egress());

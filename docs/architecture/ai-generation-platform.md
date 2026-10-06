@@ -364,7 +364,7 @@ library версионируется в AI-02, бюджеты применяют
 | `ImageSearch` | Pixabay + Openverse + Wikimedia Commons (Pexels убран 2026-10-04); файл скачивается и сохраняется, атрибуция в provenance и `caption` | — | детерминированный Stub для local/CI |
 | `ImageGeneration` | позже (Pro/Max), после legal-проверки контрагента | — | — |
 | `VideoGeneration` | не в первом релизе; порт зарезервирован | — | — |
-| `WebSearch` | выбирается spike #299 (решение 2026-10-04): Yandex Search API (0,488 ₽ sync / 0,0305 ₽ deferred за запрос; COM для иностранных языков; российский контрагент) против Brave / Perplexity через egress-прокси; до ключа — Stub и recorded fixtures | Exa и Tavily исключают Россию; извлечение страниц — self-host jsoup за SSRF-guard | фактчек выключен |
+| `WebSearch` | #299: Yandex Search API v2 sync напрямую с российского хоста (0,488 ₽ за запрос; RU для русского, COM для остальных языков); до ключа — Stub и recorded fixtures, live не проверено | Perplexity Search API через egress-прокси, выключен по умолчанию и включается владельцем в маршруте; до пяти поисковых запросов в одном платном вызове. Страницы целиком не скачиваются | фактчек выключен |
 
 Адаптеры — JDK `HttpClient` + Jackson + records (как `IdentityHttp`): ограниченный body,
 deadline, без redirects; SSE провайдера читается построчно на virtual thread.
@@ -379,7 +379,7 @@ Capability flags — по существующему правилу `flag && ada
 
 Секреты — только имена env: `MNEMA_AI_DEEPSEEK_API_KEY`, `MNEMA_AI_OPENROUTER_API_KEY`, `MNEMA_AI_GIGACHAT_AUTH_KEY`,
 `MNEMA_AI_GOOGLE_API_KEY` (Gemini TTS/транскрибация через egress-прокси), `MNEMA_AI_PIXABAY_API_KEY`,
-`MNEMA_AI_OPENVERSE_CLIENT_ID`/`_SECRET`, `MNEMA_AI_SEARCH_API_KEY` и `MNEMA_AI_YANDEX_FOLDER_ID` (поиск),
+`MNEMA_AI_OPENVERSE_CLIENT_ID`/`_SECRET`, `MNEMA_AI_YANDEX_SEARCH_API_KEY`, `MNEMA_AI_PERPLEXITY_API_KEY` и `MNEMA_AI_YANDEX_FOLDER_ID` (поиск; отдельный ключ на провайдера),
 `MNEMA_AI_TTS_API_KEY` (Yandex SpeechKit), `MNEMA_AI_EGRESS_PROXY_URL`/`_USER`/`_PASSWORD` (egress-прокси);
 только в окружении `worker`; отдельные ключи на окружение; лимит трат на стороне
 провайдера как последний предохранитель. CI никогда не ходит к реальным провайдерам;
@@ -500,6 +500,13 @@ ETag/304 раз в 30–60 s, раз в 10 s при `activeWork > 0`. Первы
 запросов strict JSON) → сервер выполняет через `WebSearch`, дедуплицирует, нумерует →
 `TEXT_DRAFT` ставит `[n]`; `::sources` компилируется в heading + список ссылок, URL
 которых обязаны быть в результатах. Страницы целиком не скачиваются.
+
+Потолок включает оплаченный ответ, отвергнутый парсером: fallback не покупает запрос
+сверх подтверждённого лимита. Суточный бюджет провайдера и deadline проверяются перед
+каждым вызовом, включая fallback. `RESEARCH` расходует обычный daily burst по фактическим
+списаниям; при нехватке шага до вызовов он откладывается до следующего московского дня,
+а `TEXT_DRAFT` остаётся в `WAITING_DEPENDENCIES`. HTTP-контракт хранит и возвращает
+не больше 30 источников; настройка `max-results` допускает 1–30.
 
 ## 15. Platform
 

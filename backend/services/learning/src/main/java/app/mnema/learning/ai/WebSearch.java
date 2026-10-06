@@ -26,7 +26,8 @@ public interface WebSearch {
     int MAX_QUERIES = 15;
 
     /**
-     * Asks every query. Queries are sent in order, one provider request each (Yandex) or in batches of up to five (Perplexity).
+     * Asks queries in order, one provider request each (Yandex) or in batches of up to five (Perplexity). The query count is also the maximum
+     * number of billed requests, including paid answers rejected by the parser; an exhausted cap or budget returns the partial answer.
      *
      * @return the results ordered by query, then by rank; {@code Failed} only when no request was paid
      */

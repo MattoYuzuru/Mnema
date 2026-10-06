@@ -51,7 +51,8 @@ import java.util.regex.Pattern;
  *
  * <p><b>A fact check never blocks the material.</b> Every failure on the way (the planner is down or answers garbage, no query, no provider, the
  * budget, the hold that cannot pay for a request, a source that is gone) ends the step as SUCCEEDED with no results and a logged reason; the draft then
- * runs without sources. Requests already answered are debited even when the run ends early. The only runs that do not succeed are cancelled ones.
+ * runs without sources. Requests already answered are settled while their hold remains active. Cancellation releases the hold, so late answers
+ * retain their provider cost in the call journal without a user debit. The only runs that do not succeed are cancelled ones.
  */
 @Component
 class ResearchExecutor implements StepExecutor {

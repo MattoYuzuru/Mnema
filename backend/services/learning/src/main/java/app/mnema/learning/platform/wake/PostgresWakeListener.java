@@ -20,7 +20,7 @@ import java.util.stream.Collectors;
 /**
  * The wake-up of a split topology (architecture section 4): a {@code worker} process (never {@code all}, which wakes itself in process) holds one dedicated
  * JDBC connection that {@code LISTEN}s on the channel of every {@link WakeTarget}, on its own virtual thread, and wakes the target whose channel
- * was notified. The api process needs nothing: the triggers of {@code V40} notify when a transaction commits work.
+ * was notified. The api process needs nothing: the triggers of {@code V39} notify when a transaction commits work.
  *
  * <p>The connection is never one of the pool's (a listening connection must stay open and must not be handed to a request). It reconnects with a
  * backoff of 0.5 s doubling to 30 s, and wakes every target after each (re)connect because notifications sent while it was away are gone. It also

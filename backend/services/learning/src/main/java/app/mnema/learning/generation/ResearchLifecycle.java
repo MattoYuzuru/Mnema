@@ -112,8 +112,9 @@ class ResearchLifecycle {
     }
 
     /**
-     * Debits the requests already paid of a run that ends without storing anything (the session was cancelled, or the lease was lost) under the same
-     * idempotency key as {@link #succeed}, so a request is charged once whichever way the attempt ends. A hold that cannot pay is logged, as there.
+     * Attempts to settle already-paid requests under the same idempotency key as {@link #succeed}, so an attempt is charged at most once.
+     * A cancelled session has released its hold: its late answer has no user debit, while the provider cost remains in the call journal.
+     * A lost lease can still settle an active hold; another lease attempt may buy queries again. A hold that cannot pay is logged, as there.
      */
     @Transactional
     void debitPaid(StepClaim claim, int requests, long costMicros) {

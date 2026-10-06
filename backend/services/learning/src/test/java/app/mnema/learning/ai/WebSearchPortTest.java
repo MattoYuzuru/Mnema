@@ -82,6 +82,9 @@ class WebSearchPortTest {
                 defaults.perplexityUsdPerRequest())).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new ResearchSettings(15, 0, 5, defaults.callTimeout(), defaults.deadline(), "", "225", defaults.yandexRubPerRequest(),
                 defaults.perplexityUsdPerRequest())).isInstanceOf(IllegalArgumentException.class);
+        // The HTTP envelope and native client accept at most 30 sources, even if the storage envelope has more room.
+        assertThatThrownBy(() -> new ResearchSettings(15, 31, 5, defaults.callTimeout(), defaults.deadline(), "", "225", defaults.yandexRubPerRequest(),
+                defaults.perplexityUsdPerRequest())).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new ResearchSettings(15, 30, 5, Duration.ZERO, defaults.deadline(), "", "225", defaults.yandexRubPerRequest(),
                 defaults.perplexityUsdPerRequest())).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new ResearchSettings(15, 30, 5, defaults.callTimeout(), Duration.ofSeconds(1), "", "225", defaults.yandexRubPerRequest(),

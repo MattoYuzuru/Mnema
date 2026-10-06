@@ -35,7 +35,7 @@ public record ResearchSettings(@DefaultValue("15") int maxRequests, @DefaultValu
 
     @ConstructorBinding
     public ResearchSettings {
-        if (maxRequests < 0 || maxRequests > 50 || maxResults < 1 || maxResults > 100 || resultsPerQuery < 1 || resultsPerQuery > 20) {
+        if (maxRequests < 0 || maxRequests > 50 || maxResults < 1 || maxResults > 30 || resultsPerQuery < 1 || resultsPerQuery > 20) {
             throw new IllegalArgumentException("Invalid learning.ai.research limits");
         }
         if (callTimeout == null || callTimeout.isNegative() || callTimeout.isZero() || callTimeout.compareTo(Duration.ofSeconds(60)) > 0

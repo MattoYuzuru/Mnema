@@ -167,8 +167,8 @@ try {
       // Authoring exercises several full navigations and their local assets; keep a finite request budget.
       // The Workshop scenarios (`--generation`) poll the real events endpoint and load the app several times; the exercise
       // generation scenario (#291) adds a batch review, an editor round trip and a Study session on top of them (each full page load
-      // also asks Identity, so its budget grows with `--generation` too).
-      if (networkRequests > (config.mechanics ? 3000 : config.media ? 1250 : config.authoring ? 1000 : 500) + (config.generation ? 3500 : 0) + (config.assessment ? 1000 : 0)
+      // also asks Identity, so its budget grows with `--generation` too; the web research scenario of #299 added 500 requests).
+      if (networkRequests > (config.mechanics ? 3000 : config.media ? 1250 : config.authoring ? 1000 : 500) + (config.generation ? 4000 : 0) + (config.assessment ? 1000 : 0)
           || identityRequests > 150 + (config.generation ? 100 : 0) + (config.assessment ? 50 : 0)) asynchronousFailure = true;
       if (!allowed.has(url.origin) || asynchronousFailure) {
         externalRequests++;
@@ -319,7 +319,7 @@ try {
   }
   async function submit(tab = cdp) { await tab.evaluate("document.querySelector('form button[type=submit]').click()"); }
   async function pressKey(key, code, virtualKeyCode, modifiers = 0, tab = cdp) {
-    const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, nativeVirtualKeyCode: virtualKeyCode, modifiers };
+    const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, modifiers };
     await tab.call('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...event });
     await tab.call('Input.dispatchKeyEvent', { type: 'keyUp', ...event });
   }

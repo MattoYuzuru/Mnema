@@ -330,6 +330,10 @@ class WebSearchAdaptersTest {
         assertThat(adapter.paid(new AiFailure.InvalidOutput("request"))).isFalse();
         assertThat(adapter.paid(new AiFailure.Transient("http_503"))).isFalse();
         assertThat(perplexity(KEY).paid(new AiFailure.InvalidOutput("xml"))).isFalse();
+        assertThat(perplexity(KEY).paid(new AiFailure.InvalidOutput("malformed"))).isTrue();
+        assertThat(perplexity(KEY).paid(new AiFailure.InvalidOutput("shape"))).isTrue();
+        assertThat(perplexity(KEY).paid(new AiFailure.InvalidOutput("request"))).isFalse();
+        assertThat(perplexity(KEY).paid(new AiFailure.Transient("http_503"))).isFalse();
     }
 
     @Test

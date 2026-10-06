@@ -61,6 +61,13 @@ final class PerplexityWebSearch implements WebSearchAdapter {
 
     @Override public int maxQueries() { return MAX_QUERIES; }
 
+    /** An answered request remains billed when its JSON body cannot be used. */
+    @Override
+    public boolean paid(AiFailure failure) {
+        return failure instanceof AiFailure.InvalidOutput invalid && (invalid.detail().equals("malformed") || invalid.detail().equals("shape")
+                || invalid.detail().equals("body_too_large"));
+    }
+
     @Override
     public long requestCostMicros() { return settings.perplexityUsdPerRequest().multiply(BigDecimal.valueOf(1_000_000)).setScale(0, java.math.RoundingMode.CEILING).longValue(); }
 
