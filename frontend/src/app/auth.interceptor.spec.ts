@@ -36,6 +36,7 @@ describe('canonical bearer interceptor', () => {
             '/api/decks/123/generation-sessions/456/events?after=0',
             '/api/capabilities', '/api/exercise-previews', '/api/usage', '/api/plans', '/api/learning-profile', '/api/speech-consent',
             '/api/speech-inputs?purpose=COMPOSER', '/api/speech-inputs/0a000000-0000-4000-8000-000000000029',
+            '/api/promo-codes/redemptions', '/api/promo-popup', '/api/promo-popup/events', '/api/experiment-events',
             `${identity}/api/accounts/me`, `${identity}/userinfo`]) {
             http.get(url).subscribe();
             const request = mock.expectOne(url);
@@ -49,6 +50,7 @@ describe('canonical bearer interceptor', () => {
             '/api/capture-notes-other', '/api/notifications-other', '/api/notifications%2fread-cursor', '/api/generation-sessions-other', '/api/generation-sessions%2fx', '/api/media-assets-other', '/api/other/../decks',
             '/api/capabilities/x', '/api/capabilities-other', '/api/exercise-previews/x', '/api/exercise-previews-other',
             '/api/usage/x', '/api/usage-other', '/api/usage%2fx', '/api/plans/x', '/api/plans-other', '/api/learning-profile/x', '/api/speech-consent/x', '/api/speech-consent-other', '/api/speech-inputs-other', '/api/speech-inputs%2fx',
+            '/api/promo-codes', '/api/promo-codes/redemptions/x', '/api/promo-popup/other', '/api/experiment-events/x', '/api/admin/promo-codes',
             'https://storage.example.test/bucket/source?X-Amz-Signature=abc',
             'https://identity.example.test.evil.test/api/accounts/me', `${identity}/api/accounts/me/other`,
             `${identity}/api/accounts/login`, `${identity}/oauth2/token`, '/api/%64ecks', '/api/decks%2f123',

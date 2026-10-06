@@ -33,6 +33,8 @@ class InboxEntitlementSourceTest extends UsageIntegrationTest {
     @Autowired private EntitlementInbox inbox;
     @Autowired private PlanSettings settings;
     @Autowired private AllowanceCatalog catalog;
+    @Autowired private app.mnema.learning.experiment.ExperimentAssignments experiments;
+    @Autowired private app.mnema.learning.promo.PromoDiscounts discounts;
 
     @AfterEach
     void clearIdentity() {
@@ -167,7 +169,7 @@ class InboxEntitlementSourceTest extends UsageIntegrationTest {
         Jwt jwt = Jwt.withTokenValue("test").header("alg", "RS256").subject(owner.toString()).build();
         SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
         MockMvc mvc = MockMvcBuilders.standaloneSetup(new PlansController(
-                        new PlansService(source, catalog, settings, clock))).setControllerAdvice(new ApiExceptionHandler())
+                        new PlansService(source, catalog, settings, clock, experiments, discounts))).setControllerAdvice(new ApiExceptionHandler())
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver()).build();
 
         var response = mvc.perform(get("/plans?plan=PRO&period=YEAR&returnUrl=https://pay.example/success&status=paid")

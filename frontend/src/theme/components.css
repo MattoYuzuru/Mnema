@@ -58,6 +58,11 @@
 /* Field: a label, a control, then its hint and error, stacked. */
 .field { display: grid; gap: .5rem; }
 
+/* Field row: a text field and its button on one line (a promo code and «Применить»); wraps instead of squeezing the field on a narrow screen. */
+.field-row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: stretch; }
+.field-row > input { flex: 1 1 12rem; min-inline-size: 0; }
+.field-row > .button { flex: none; }
+
 /* Hint: the quiet muted line under a control or a block. */
 .hint {
     margin: 0;

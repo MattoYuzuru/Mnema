@@ -1,6 +1,6 @@
 import { parsePlans } from './plans-api.service';
 import {
-    COMPARE_ROWS, autoRenewText, cta, limitContext, plansHeading, priceText, recommendation, renewalDate, rub, yearSwitchHint, yearTerms
+    COMPARE_ROWS, autoRenewText, cta, discountText, entitlementText, limitContext, plansHeading, priceText, recommendation, renewalDate, rub, yearSwitchHint, yearTerms
 } from './plans-view';
 import { plansBody } from './plans-test-data';
 
@@ -81,5 +81,17 @@ describe('plans view', () => {
         expect(cells(max)).toContain(`до 120${NBSP}мин`);
         expect(cells(plus)).toContain(`≈${NBSP}12–17`);
         expect(cells(free)).toContain(`≈${NBSP}2`);
+    });
+
+    it('states a tier from a promo or a payment with its end and no renewal, and nothing for the default plan', () => {
+        const current = catalog.current;
+        expect(entitlementText(current)).toBeNull();
+        expect(entitlementText({ ...current, plan: 'PLUS', source: 'PROMO', validUntil: '2026-10-19T21:00:00Z' })).toBe('Plus до 20 октября, без автопродления');
+        expect(entitlementText({ ...current, plan: 'PRO', source: 'BILLING', autoRenew: true, validUntil: '2026-10-19T21:00:00Z' })).toBe('Pro до 20 октября');
+    });
+
+    it('words a pending discount with its plan and its end', () => {
+        expect(discountText({ percent: 20, plan: 'PLUS', validUntil: '2026-10-31T20:59:59Z' })).toBe(`Скидка 20${NBSP}% на Plus применится к оплате до 31 октября`);
+        expect(discountText({ percent: 10, plan: null, validUntil: '2026-10-31T20:59:59Z' })).toBe(`Скидка 10${NBSP}% применится к оплате до 31 октября`);
     });
 });

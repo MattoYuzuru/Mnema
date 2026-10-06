@@ -8,6 +8,7 @@ import { runNotifications } from './notifications.mjs';
 import { runCodeBlock } from './code-block.mjs';
 import { runUsage } from './usage.mjs';
 import { runAiPublic, runPlans } from './plans.mjs';
+import { runPromo } from './promo.mjs';
 import { runWorkshop } from './workshop.mjs';
 import { runAssessment } from './assessment.mjs';
 
@@ -432,7 +433,7 @@ try {
   const savedTitle = 'Русский материал — версия 2';
   await navigate('/decks');
   await until(() => exists('#own-decks-title'), 'own deck library did not load');
-  require(await cdp.callFunction(`function() {
+  await until(() => cdp.callFunction(`function() {
     return document.body.innerText.includes('Первая страница пока чиста');
   }`), 'fresh account did not show the own-deck empty state');
   await navigate('/decks/new');
@@ -1049,7 +1050,7 @@ try {
         saveScreenshot, saveFullScreenshot, clickText, setStep: value => { step = value; }, deckPath, bearer: secondBearer });
       mechanicsFailures = [...mechanicsFailures, ...hub.failures];
     }
-    if (!config.onlyPlans) {
+    if (!config.onlyPlans && !config.onlyPromo) {
       // Native code block (#303): real editor input, publication, Browse, scrolling, round trip. Runs last in its own material.
       await runCodeBlock({
         tab: second, config, record, SafeFailure, until, exists, sanitizedLocation, navigate, saveScreenshot,
@@ -1061,12 +1062,20 @@ try {
         bearer: secondBearer });
     }
     // The paywall, the goal question and the public /ai (#301) against the real Learning API (`--only-plans` runs this alone).
-    step = 'plans_prepare';
-    await runPlans({
-      tab: second, config, record, SafeFailure, until, exists, navigate, saveScreenshot, setStep: value => { step = value; },
-      bearer: secondBearer, deckPath });
+    if (!config.onlyPromo) {
+      step = 'plans_prepare';
+      await runPlans({
+        tab: second, config, record, SafeFailure, until, exists, navigate, saveScreenshot, setStep: value => { step = value; },
+        bearer: secondBearer, deckPath });
+    } else {
+      // Promo codes, the A/B assignment and the promo popup (#302) against the real Learning API (`--only-promo` runs this alone).
+      step = 'promo_prepare';
+      await runPromo({
+        tab: second, config, record, SafeFailure, until, exists, navigate, saveScreenshot, setStep: value => { step = value; },
+        bearer: secondBearer, deckPath });
+    }
     // The generation composer and the Workshop (#289) against the real Learning API with the Stub text provider.
-    if (config.generation && !config.onlyPlans) {
+    if (config.generation && !config.onlyPlans && !config.onlyPromo) {
       step = 'workshop_prepare';
       await runWorkshop({
         tab: second, config, record, SafeFailure, until, exists, navigate, saveScreenshot, clickText, setStep: value => { step = value; },
@@ -1074,7 +1083,7 @@ try {
         setRequestHeaders: hook => { requestHeaderHook = hook; } });
     }
     // The semantic assessment of explanations (#292): the rubric editor and the learner's side, with the Stub grader.
-    if (config.assessment && !config.onlyPlans) {
+    if (config.assessment && !config.onlyPlans && !config.onlyPromo) {
       step = 'assessment_prepare';
       await runAssessment({
         tab: second, config, record, SafeFailure, until, exists, navigate, saveScreenshot, saveFullScreenshot, clickText,

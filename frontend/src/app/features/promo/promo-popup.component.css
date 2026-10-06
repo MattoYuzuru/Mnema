@@ -1,0 +1,69 @@
+:host { display: contents; }
+* { box-sizing: border-box; }
+
+.promo-popup {
+    inline-size: min(100% - 1rem, 38rem);
+    max-block-size: calc(100dvh - 1rem);
+    margin: auto;
+    border: 1px solid var(--mn-ink);
+    border-block-start-width: 2px;
+    border-radius: var(--mn-radius, 2px);
+    padding: 0;
+    overflow: auto;
+    background: var(--mn-sheet);
+    color: var(--mn-body);
+    font: 1rem/1.6 var(--mn-font-body, system-ui, sans-serif);
+}
+.promo-popup::backdrop { background: color-mix(in srgb, var(--mn-ink) 24%, transparent); }
+
+/* A phone: the sheet takes the whole screen, with the safe areas respected. */
+@media (max-width: 40rem) {
+    .promo-popup { inline-size: 100%; max-inline-size: 100%; block-size: 100dvh; max-block-size: 100dvh; border-width: 0; }
+}
+
+.promo-popup-body {
+    position: relative;
+    display: grid;
+    gap: .75rem;
+    padding: clamp(1.25rem, 5vw, 2.5rem);
+    padding-block-start: clamp(3.5rem, 8vw, 4rem);
+    padding-block-end: max(clamp(1.25rem, 5vw, 2.5rem), env(safe-area-inset-bottom, 0px));
+}
+.promo-popup-body > * { margin: 0; }
+
+h2 { color: var(--mn-ink); font: 500 clamp(1.8rem, 6vw, 2.6rem)/1.1 var(--mn-font-display, Georgia, serif); overflow-wrap: anywhere; }
+h2:focus-visible { outline: none; }
+.promo-popup-text { max-inline-size: 52ch; overflow-wrap: anywhere; }
+.promo-popup-code { font-family: var(--mn-font-mono, monospace); letter-spacing: .06em; user-select: all; }
+
+.promo-popup-close {
+    position: absolute;
+    inset-block-start: .75rem;
+    inset-inline-end: .75rem;
+    display: inline-grid;
+    place-items: center;
+    min-inline-size: var(--mn-touch-min, 2.75rem);
+    min-block-size: var(--mn-touch-min, 2.75rem);
+    border: 1px solid var(--mn-field-border);
+    border-radius: var(--mn-radius, 2px);
+    background: var(--mn-sheet);
+    color: var(--mn-ink);
+    font-size: 1.4rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.promo-popup-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-block-start: .5rem; }
+.promo-popup-actions .button { flex: 1 1 12rem; }
+
+:where(button):focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 3px; }
+
+/* A short fade for those who have not asked for less motion; nothing moves otherwise. */
+@media (prefers-reduced-motion: no-preference) {
+    .promo-popup[open] { animation: promo-popup-in .18s ease-out; }
+    @keyframes promo-popup-in { from { opacity: 0; } to { opacity: 1; } }
+}
+
+@media (forced-colors: active) {
+    .promo-popup, .promo-popup-close { border-color: CanvasText; }
+}

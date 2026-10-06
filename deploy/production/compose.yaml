@@ -105,6 +105,17 @@ services:
       LEARNING_FEATURES_AI_GENERATION_ENABLED: "false"
       LEARNING_FEATURES_TEXT_TO_SPEECH_ENABLED: "false"
       LEARNING_FEATURES_IMAGE_GENERATION_ENABLED: "false"
+      # Promo codes and A/B (#302). Without a nonblank hash secret (>= 32 characters), promo creation/redemption are disabled; Learning keeps running.
+      # Without the experiment secret every account stays on control. The popup is off unless enabled with its copy.
+      MNEMA_PROMO_HASH_SECRET: ${MNEMA_PROMO_HASH_SECRET:-}
+      MNEMA_EXPERIMENT_SECRET: ${MNEMA_EXPERIMENT_SECRET:-}
+      MNEMA_PROMO_POPUP_ENABLED: ${MNEMA_PROMO_POPUP_ENABLED:-false}
+      MNEMA_PROMO_POPUP_ID: ${MNEMA_PROMO_POPUP_ID:-}
+      MNEMA_PROMO_POPUP_TITLE: ${MNEMA_PROMO_POPUP_TITLE:-}
+      MNEMA_PROMO_POPUP_BODY: ${MNEMA_PROMO_POPUP_BODY:-}
+      MNEMA_PROMO_POPUP_CTA: ${MNEMA_PROMO_POPUP_CTA:-}
+      MNEMA_PROMO_POPUP_CODE: ${MNEMA_PROMO_POPUP_CODE:-}
+      MNEMA_PROMO_POPUP_COOLDOWN: ${MNEMA_PROMO_POPUP_COOLDOWN:-P14D}
     healthcheck:
       test: [CMD, java, -cp, /app/readiness, MnemaReadiness, "18082"]
       interval: 10s

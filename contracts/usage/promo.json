@@ -1,0 +1,113 @@
+{
+  "contract": "promo-v1",
+  "description": "AI-21 (#302): promo access and pending discounts, owner-scoped popup preferences and experiment metrics. Payments and an admin UI remain separate work (#79).",
+  "conventions": {
+    "auth": "Bearer token; account always comes from its subject",
+    "headers": { "Cache-Control": "private, no-store" },
+    "request": "JSON object with exactly the documented fields; at most 2048 bytes, depth 3 and 64 nodes",
+    "errors": "RFC 9457 Problem Details with a stable code; no plaintext promo code or sensitive diagnostics",
+    "timestamps": "RFC 3339 UTC; month gifts and displayed dates use learning.usage.calendar-zone (Europe/Moscow)"
+  },
+  "endpoints": [
+    {
+      "operationId": "redeemPromoCode",
+      "method": "POST",
+      "path": "/api/promo-codes/redemptions",
+      "auth": "learning.write and verified email confirmed by Identity",
+      "headers": { "Idempotency-Key": "required UUIDv4 or UUIDv7" },
+      "request": { "code": "string, raw at most 64 characters; normalized ASCII uppercase, whitespace/dashes/underscores removed; normalized length 8..24, A-Z0-9" },
+      "response": {
+        "tier": "{type TIER_DAYS|TIER_MONTHS, plan PLUS|PRO, validUntil, message}",
+        "discount": "{type DISCOUNT_PERCENT, plan PLUS|PRO|null, percent integer 1..90, validUntil, message}"
+      },
+      "errors": {
+        "400": "INVALID_REQUEST (including a missing/malformed command key)",
+        "403": "ACCESS_DENIED",
+        "409": "PROMO_EXHAUSTED, PROMO_ALREADY_USED, IDEMPOTENCY_CONFLICT, CAPABILITY_UNAVAILABLE (promoCodes)",
+        "422": "PROMO_INVALID, PROMO_NOT_ELIGIBLE, PROMO_VELOCITY",
+        "429": "RATE_LIMITED with Retry-After seconds",
+        "503": "IDENTITY_UNAVAILABLE"
+      },
+      "notes": [
+        "Retry an unknown outcome with the same key and equivalent normalized code; a different normalized code under the key conflicts.",
+        "Tier access writes an entitlement snapshot without auto-renewal; gifts do not stack their durations. A lower tier than current access is refused without burning the code.",
+        "A discount is pending billing data, grants no rights and is not applied to the displayed catalog price. A weaker/equal pending discount is refused without burning the code.",
+        "Configured defaults: 5 attempts/account/hour, 20/address/hour; trusted-proxy address resolution and IPv6 /64 grouping. Address and device evidence are keyed hashes.",
+        "Code-row locking enforces the global activation cap; once-per-account is enforced in storage. Expiry is checked after contended redemption locks.",
+        "Production redemption/creation is unavailable without a nonblank promo hashing secret of at least 32 characters. Plain codes and unkeyed guess-verification fingerprints are never stored or logged."
+      ]
+    },
+    {
+      "operationId": "listPromoCodes",
+      "method": "GET",
+      "path": "/api/admin/promo-codes?after={UUID}",
+      "auth": "learning.read and administrator confirmed by Identity; cached at most 60 seconds, fail closed",
+      "response": "{codes: [adminCodeView] (at most 200), next: UUID|null}; next is the last returned id, passed as after"
+    },
+    {
+      "operationId": "createPromoCode",
+      "method": "POST",
+      "path": "/api/admin/promo-codes",
+      "auth": "learning.write and administrator confirmed by Identity",
+      "request": "{type TIER_DAYS|TIER_MONTHS|DISCOUNT_PERCENT, maxRedemptions integer 1..1000000, plan PLUS|PRO|null, days integer 1..366|null, months integer 1..24|null, percent integer 1..90|null, validFrom RFC 3339|null, validUntil RFC 3339|null, oncePerAccount boolean|null, channel string|null, code string|null}; type and maxRedemptions required, others optional",
+      "response": "201 adminCodeView plus code (plaintext shown once)",
+      "notes": [
+        "TIER_DAYS requires plan and days only; TIER_MONTHS requires plan and months only; DISCOUNT_PERCENT requires percent and validUntil, optionally plan. MAX is unavailable.",
+        "validFrom defaults to now, validUntil must be later than validFrom; oncePerAccount defaults true; channel matches [A-Za-z0-9][A-Za-z0-9 _.:/@#+-]{0,39}.",
+        "Omit code to generate 12 unambiguous random characters (approximately 60 bits); an optional vanity code uses redemption normalization. The response is the only plaintext retrieval."
+      ]
+    },
+    {
+      "operationId": "switchPromoCode",
+      "method": "PATCH",
+      "path": "/api/admin/promo-codes/{codeId}",
+      "auth": "learning.write and administrator confirmed by Identity",
+      "request": { "enabled": "boolean, required" },
+      "response": "200 adminCodeView; 404 when unknown",
+      "notes": ["Disabling a code stops future redemptions and preserves access already granted."]
+    },
+    {
+      "operationId": "getPromoPopup",
+      "method": "GET",
+      "path": "/api/promo-popup",
+      "auth": "learning.read",
+      "response": "{eligible boolean, campaign null|{id (at most 60), title (120), body (500), cta (40), code null|string (64)}}",
+      "notes": [
+        "No popup while the campaign is disabled, after any BILLING snapshot or permanent decline, or during the configured 7..30-day dismissal cooldown.",
+        "The client presents at natural breakpoints and at most once per session, including when sessionStorage is unavailable. Account changes fence outstanding responses."
+      ]
+    },
+    {
+      "operationId": "recordPromoPopupEvent",
+      "method": "POST",
+      "path": "/api/promo-popup/events",
+      "auth": "learning.write",
+      "request": { "campaignId": "configured campaign id", "event": "SHOWN|DISMISSED|DECLINED" },
+      "response": "204 with empty body and Promo-Event-Recorded: true|false",
+      "notes": [
+        "true acknowledges the atomic preference/event write; false means a disabled-campaign no-op. A mismatched active campaign is INVALID_REQUEST.",
+        "A failed or unrecorded dismissal/decline remains locally pending and suppressed, with bounded retry of the same account-scoped event; a successful HTTP status alone does not prove storage.",
+        "DECLINED is permanent; DISMISSED begins server cooldown. Repeating an event is safe for eligibility, but repeating a dismissal refreshes its timestamp.",
+        "A local explicit decline remains suppressed on that device; it is not proof of a recorded preference on other devices. The local receipt contains only campaign id, event and confirmation state."
+      ]
+    },
+    {
+      "operationId": "recordExperimentEvent",
+      "method": "POST",
+      "path": "/api/experiment-events",
+      "auth": "learning.write",
+      "request": { "key": "string at most 40 characters", "event": "EXPOSURE|CONVERSION" },
+      "response": "204 with empty body; malformed body 400; throttled event 429 with Retry-After",
+      "notes": [
+        "The variant is the server HMAC assignment returned in /plans, never a client claim; without an assignment secret, control is used. Unknown/disabled experiments produce no counter.",
+        "Known events are limited to 30/account/minute per process; the tracking table holds at most 20000 accounts. When full, an untracked account receives 429 with a 5-second retry rather than bypassing the limit. Unknown/disabled experiments consume no tracking capacity.",
+        "mnema_experiment_events_total labels contain only bounded experiment key, configured variant and event, never an account/address/code.",
+        "CONVERSION measures CTA intent while payments (#79) are unavailable; it does not represent a purchase."
+      ]
+    }
+  ],
+  "shapes": {
+    "adminCodeView": "{codeId UUID, hint, type, plan PLUS|PRO|null, days integer|null, months integer|null, percent integer|null, validFrom, validUntil|null, maxRedemptions, oncePerAccount, channel|null, enabled, redemptions integer, createdAt}"
+  },
+  "authority": ["../../docs/product/ai-layer-2026-10.md", "../../docs/architecture/ai-generation-platform.md"]
+}

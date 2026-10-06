@@ -86,6 +86,15 @@
       @if (titleInvalid()) { <p class="field-error" id="sg-title-error">Введите название.</p> } @else { <span id="sg-title-error"></span> }
     </div>
   </app-sg-specimen>
+  <app-sg-specimen title="Поле с кнопкой" selector="<app-promo-redeem>, .field-row"
+    when="Короткий код и действие над ним на одной строке: промокод и «Применить». Enter тоже применяет; отказ — спокойная строка под полем, успех — .notice.success. На узком экране кнопка переносится под поле. Попробуйте PLUS15, USED, WAIT или что угодно другое."
+    [tokens]="['--mn-field-border', '--mn-sheet', '--mn-danger', '--mn-positive']"
+    usage='<div class="field-row">
+  <input id="code" autocomplete="off" autocapitalize="characters" />
+  <button type="submit" class="button">Применить</button>
+</div>'>
+    <app-promo-redeem />
+  </app-sg-specimen>
   <app-sg-specimen title="Многострочное поле" selector="textarea"
     when="Заметка, описание, развёрнутый ответ. Растягивается по вертикали, ширина — контейнера."
     [tokens]="['--mn-field-border', '--mn-sheet']">

@@ -10,6 +10,7 @@ import { SpeechInputService } from '../speech/speech-input.service';
 import { UsageApiService } from '../usage/usage-api.service';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { OwnDeck } from '../own-decks/own-deck.models';
+import { PromoPopupService } from '../promo/promo-popup.service';
 import { StudyApiService } from './study-api.service';
 import { AttemptCommand, AttemptOutcome, ReadyStudySession, StudyPresentation } from './study.models';
 import { StudyRecoveryService } from './study-recovery.service';
@@ -25,6 +26,7 @@ describe('StudySessionPageComponent', () => {
     let api: SpyObj<StudyApiService>;
     let recovery: SpyObj<StudyRecoveryService>;
     let playback: SpyObj<MediaPlaybackResolver>;
+    let promoPopup: SpyObj<PromoPopupService>;
     let fixture: ComponentFixture<StudySessionPageComponent>;
     let now = 1000;
     let capabilities: LearningCapabilities;
@@ -58,6 +60,7 @@ describe('StudySessionPageComponent', () => {
         });
         recovery.restore.mockReturnValue(null);
         recovery.now.mockImplementation(() => now);
+        promoPopup = spyObj<PromoPopupService>({ request: vi.fn().mockName('PromoPopupService.request').mockResolvedValue(undefined) });
         playback = {
             resolve: vi.fn().mockName("MediaPlaybackResolver.resolve")
         };
@@ -73,7 +76,8 @@ describe('StudySessionPageComponent', () => {
                 { provide: MEDIA_PLAYBACK_RESOLVER, useValue: playback },
                 { provide: CapabilitiesApiService, useValue: { read: () => of(capabilities) } },
                 { provide: UsageApiService, useValue: { load: () => throwError(() => new Error('no usage')) } },
-                { provide: SpeechInputService, useValue: { checkConsent: vi.fn().mockResolvedValue({ ok: true }) } }
+                { provide: SpeechInputService, useValue: { checkConsent: vi.fn().mockResolvedValue({ ok: true }) } },
+                { provide: PromoPopupService, useValue: promoPopup }
             ] });
     });
 
@@ -554,6 +558,20 @@ describe('StudySessionPageComponent', () => {
         click('button[data-submit]');
         expect(root.textContent).toContain('Запись стала недоступна');
         expect(root.textContent).toContain('Без оценки');
+    });
+
+    it('asks for the promo popup only when the session is finished, never while a task is open', () => {
+        startWith('selfCheck');
+        expect(promoPopup.request).not.toHaveBeenCalled();
+        expect(TestBed.inject(QuietZone).active()).toBe(true);
+        promoPopup.request.mockImplementation(() => {
+            expect(TestBed.inject(QuietZone).active()).toBe(false);
+            return Promise.resolve();
+        });
+
+        api.start.mockReturnValue(of({ value: { ...sessionOf([fixtures['selfCheck']]), status: 'COMPLETE', presentations: [] }, replayed: false }));
+        createStarted();
+        expect(promoPopup.request).toHaveBeenCalledOnce();
     });
 
     it('connects completion replay, practice, explainable progress and confirmed restart', () => {

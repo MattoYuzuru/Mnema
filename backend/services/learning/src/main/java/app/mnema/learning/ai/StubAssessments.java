@@ -30,6 +30,8 @@ import java.util.regex.Pattern;
  *   <li>{@code [[stub:assess-slow]]}: a provider that takes {@link #SLOW} (8 s) and then answers as {@code complete}: the waiting
  *       state, the «Оценить себя» offer at 5 s and the discarded late grade can be seen without a test double (the Stub waits at most
  *       for the budget of the call and then times out);</li>
+ *   <li>{@code [[stub:assess-deadline]]}: a provider that needs 25 s, beyond the default 20 s delivery deadline; the call still
+ *       waits at most for its supplied budget, so the automatic transition to self-check can be observed without slot saturation;</li>
  *   <li>{@code [[stub:assess-injection]]}: the default heuristic plus the {@code INJECTION} flag;</li>
  *   <li>{@code [[stub:assess-invalid]]}: an answer that never fits the schema, so the repair fails and grading is unavailable.</li>
  * </ul>
@@ -41,6 +43,7 @@ import java.util.regex.Pattern;
 final class StubAssessments {
     /** How long {@code [[stub:assess-slow]]} makes the Stub wait before it answers. */
     static final java.time.Duration SLOW = java.time.Duration.ofSeconds(8);
+    static final java.time.Duration BEYOND_DEADLINE = java.time.Duration.ofSeconds(25);
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private static final Pattern CRITERIA = Pattern.compile("<criteria>\\n(.*?)\\n</criteria>", Pattern.DOTALL);
     private static final Pattern POINT = Pattern.compile("^(c[0-9]+) · (.*)$");
@@ -58,9 +61,11 @@ final class StubAssessments {
 
     private StubAssessments() { }
 
-    /** True when the learner answer asks for the slow provider. */
-    static boolean slow(String prompt) {
-        return answer(prompt).contains(MARKER + "slow]]");
+    /** The requested Stub delay; the adapter caps it to the call budget. Markers are read only from the learner answer. */
+    static java.time.Duration delay(String prompt) {
+        String value = answer(prompt);
+        if (value.contains(MARKER + "deadline]]")) return BEYOND_DEADLINE;
+        return value.contains(MARKER + "slow]]") ? SLOW : java.time.Duration.ZERO;
     }
 
     static boolean isAssessmentRequest(String prompt) {
@@ -81,7 +86,7 @@ final class StubAssessments {
             case "invalid" -> {
                 return "{\"criteria\":[]}";
             }
-            case "complete", "asr", "slow" -> {
+            case "complete", "asr", "slow", "deadline" -> {
                 for (Point point : points) verdict(criteria, point, "MET", quote(answer), "Пункт есть в ответе.");
                 if (mode.equals("asr")) flags.add("ASR_GARBLED");
             }
@@ -124,7 +129,7 @@ final class StubAssessments {
     // ------------------------------------------------------------------------------------------------- prompt
 
     private static String mode(String answer) {
-        for (String mode : List.of("complete", "slow", "shallow", "partial", "contradicted", "offtopic", "unclear", "asr", "disagree",
+        for (String mode : List.of("complete", "slow", "deadline", "shallow", "partial", "contradicted", "offtopic", "unclear", "asr", "disagree",
                 "invalid")) {
             if (answer.contains(MARKER + mode + "]]")) return mode;
         }

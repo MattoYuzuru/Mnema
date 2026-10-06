@@ -1,7 +1,7 @@
-import { CALENDAR_ZONE } from '../usage/usage-view';
+import { CALENDAR_ZONE, calendarDay } from '../usage/usage-view';
 import { GOAL_COPY, copyFor } from '../goal/goal-copy';
 import { LearningGoal } from '../goal/goal.models';
-import { PlanAllowances, PlanEntry, PlanId, PlanPeriod, PlansCatalog } from './plans.models';
+import { PendingDiscount, PlanAllowances, PlanEntry, PlanId, PlanPeriod, PlansCatalog, PlansCurrent } from './plans.models';
 
 const NBSP = '\u00a0';
 const RUBLES = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 });
@@ -92,6 +92,18 @@ export function autoRenewText(entry: PlanEntry, period: PlanPeriod, now: Date): 
     return period === 'MONTH'
         ? `Продлевать автоматически: ${rub(entry.priceRub.month)} каждые 30${NBSP}дней, следующее списание ${date}`
         : `Продлевать автоматически: ${rub(entry.priceRub.year)} раз в${NBSP}год, следующее списание ${date}`;
+}
+
+/** «Plus до 20 октября, без автопродления» for a tier a promo or a payment gave; null on the plan the account has by default. */
+export function entitlementText(current: PlansCurrent): string | null {
+    if (current.source === 'CONFIG') return null;
+    return `${PLAN_LABEL[current.plan]} до ${calendarDay(current.validUntil)}${current.autoRenew ? '' : ', без автопродления'}`;
+}
+
+/** «Скидка 20 % на Plus применится к оплате до 31 октября»: what a promo earned and until when. */
+export function discountText(discount: PendingDiscount): string {
+    const target = discount.plan === null ? '' : ` на ${PLAN_LABEL[discount.plan]}`;
+    return `Скидка ${discount.percent}${NBSP}%${target} применится к оплате до ${calendarDay(discount.validUntil)}`;
 }
 
 export function plansHeading(goal: LearningGoal | null): string {

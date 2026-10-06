@@ -8,7 +8,7 @@ import java.time.Instant;
  * The instant of every usage decision. Production uses the system clock; a test supplies a {@code @Primary} bean to
  * move time, because periods, weekly unlocks, daily bursts and expiries are all functions of it.
  */
-interface UsageClock {
+public interface UsageClock {
     Instant now();
 
     @Component

@@ -4,8 +4,8 @@ import { Observable, map } from 'rxjs';
 
 import { appConfig } from '../../app.config';
 import { LEARNING_GOALS } from '../goal/goal.models';
-import { PLAN_IDS, PlanAllowances, PlanEntry, PlansCatalog, PlansCurrent } from './plans.models';
-import { bool, exact, instant, integer, oneOf, privateOk, protocol } from './wire';
+import { PLAN_IDS, PendingDiscount, PlanAllowances, PlanEntry, PlansCatalog, PlansCurrent } from './plans.models';
+import { bool, exact, instant, integer, nullable, oneOf, privateOk, protocol } from './wire';
 
 const ENTRY_KEYS = ['plan', 'availability', 'priceRub', 'perDayRub', 'yearDiscountPercent', 'highlights', 'allowances', 'recommendedFor'];
 const ALLOWANCE_KEYS = ['materialsPerMonth', 'voiceMinutesPerMonth', 'voiceMinutesPerDay', 'answerChecksPerMonth', 'answerChecksPerDay',
@@ -29,13 +29,36 @@ export class PlansApiService {
 }
 
 export function parsePlans(value: unknown): PlansCatalog {
-    const body = exact(value, ['current', 'plans']);
+    const body = exact(value, ['current', 'plans', 'experiments', 'pendingDiscount']);
     const plans = body['plans'];
     if (!Array.isArray(plans) || plans.length < 3 || plans.length > PLAN_IDS.length) throw protocol('Invalid plans.');
     const entries = plans.map(parseEntry);
     if (entries.some((entry, position) => entry.plan !== PLAN_IDS[position]
         || entry.availability !== (entry.plan === 'MAX' ? 'TEASER' : 'AVAILABLE'))) throw protocol('Invalid plan order or availability.');
-    return { current: parseCurrent(body['current']), plans: entries };
+    return {
+        current: parseCurrent(body['current']), plans: entries, experiments: parseExperiments(body['experiments']),
+        pendingDiscount: nullable(body['pendingDiscount'], parseDiscount)
+    };
+}
+
+/** `{key: variant}`: at most a handful of short identifiers. */
+function parseExperiments(value: unknown): Readonly<Record<string, string>> {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) throw protocol('Invalid experiments.');
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (entries.length > 20) throw protocol('Invalid experiments.');
+    const result: Record<string, string> = {};
+    for (const [key, variant] of entries) {
+        if (!/^[a-z][a-z0-9_]{1,39}$/u.test(key) || typeof variant !== 'string' || !/^[a-z][a-z0-9_]{0,31}$/u.test(variant)) throw protocol('Invalid experiment.');
+        result[key] = variant;
+    }
+    return result;
+}
+
+function parseDiscount(value: unknown): PendingDiscount {
+    const discount = exact(value, ['percent', 'plan', 'validUntil']);
+    const percent = integer(discount['percent'], 90);
+    if (percent < 1) throw protocol('Invalid discount.');
+    return { percent, plan: nullable(discount['plan'], plan => oneOf(plan, ['PLUS', 'PRO'] as const)), validUntil: instant(discount['validUntil']) };
 }
 
 function parseCurrent(value: unknown): PlansCurrent {

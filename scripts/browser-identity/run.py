@@ -120,6 +120,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(400)
             if not self.server.identity and urlsplit(self.path).path.startswith("/__fixture/learning-"):
                 return self.switch_learning(urlsplit(self.path).path)
+            if not self.server.identity and urlsplit(self.path).path.startswith("/__fixture/promo-"):
+                return self.promo_fixture(urlsplit(self.path).path)
             if self.server.identity or urlsplit(self.path).path.startswith("/api/"):
                 return self.forward()
             if self.command not in ("GET", "HEAD"):
@@ -144,12 +146,32 @@ class Handler(BaseHTTPRequestHandler):
     def switch_learning(self, path):
         """`--generation` only: choose which of the two loopback Learning instances the /api proxy forwards to."""
         fixture = self.server.fixture
-        if self.command != "POST" or not fixture.generation_port:
+        if self.command != "POST" or not (fixture.generation_port or fixture.promo_port):
             return self.reply(404)
-        if path == "/__fixture/learning-generation":
+        if path == "/__fixture/learning-generation" and fixture.generation_port:
             fixture.active_learning_port = fixture.generation_port
+        elif path == "/__fixture/learning-promo" and fixture.promo_port:
+            fixture.active_learning_port = fixture.promo_port
         elif path == "/__fixture/learning-default":
             fixture.active_learning_port = None
+        else:
+            return self.reply(404)
+        self.reply(204)
+
+    def promo_fixture(self, path):
+        """`--only-promo` only: the two things a browser scenario cannot do through the product, both on the disposable database.
+
+        `promo-account-verified-admin` verifies the email of the scenario's second account and makes it an administrator (Identity has no
+        endpoint that verifies an email without a mailbox, and the first administrator of an installation is bootstrapped, never self-granted);
+        `promo-popup-reset` forgets every account's popup state, so one account can be walked through dismiss and decline in a single run."""
+        fixture = self.server.fixture
+        if self.command != "POST" or not fixture.promo_port:
+            return self.reply(404)
+        if path == "/__fixture/promo-account-verified-admin":
+            fixture.sql("UPDATE app_identity.account SET email_verified=true, is_admin=true WHERE account_id="
+                        "(SELECT account_id FROM app_identity.local_credential WHERE normalized_login_name='browser_fixture_second')")
+        elif path == "/__fixture/promo-popup-reset":
+            fixture.sql("DELETE FROM app_learning.promo_popup_state")
         else:
             return self.reply(404)
         self.reply(204)
@@ -217,6 +239,7 @@ class Fixture(BASE.Fixture):
         self.browser_cleanup_result = None
         self.identity_port = self.learning_port = 0
         self.generation_port = 0
+        self.promo_port = 0
         self.active_learning_port = None
         self.media_container = None
         self.media_origin = None
@@ -237,6 +260,13 @@ class Fixture(BASE.Fixture):
             # with POST /__fixture/learning-generation.
             self.generation_port = BASE.free_port()
             self.boot("learning", self.generation_port, "learning_fixture", generation=True)
+
+        if getattr(self.args, "only_promo", False):
+            # A second Learning with the promo popup campaign on: the popup would cover the base flow's own pages, so the base flow runs on the
+            # first (shipped) instance and the promo scenario switches the proxy with POST /__fixture/learning-promo. The address limit of
+            # redemption attempts is raised because every request of this fixture comes from one loopback address.
+            self.promo_port = BASE.free_port()
+            self.boot("learning", self.promo_port, "learning_fixture", promo=True)
 
     def stub_instance(self):
         """`--generation` and `--assessment` share one second Learning: Stub provider, both AI features on."""
@@ -290,7 +320,7 @@ class Fixture(BASE.Fixture):
         BASE.ISSUER = self.identity_origin
         BASE.REDIRECT = self.frontend_origin + "/auth/callback"
 
-    def boot(self, module, port, username, generation=False):
+    def boot(self, module, port, username, generation=False, promo=False):
         jar = ROOT / f"backend/services/{module}/build/libs/{module}-0.0.1-SNAPSHOT.jar"
         BASE.require(jar.is_file(), "missing built " + module + " jar")
         environment = child_environment()
@@ -339,13 +369,26 @@ class Fixture(BASE.Fixture):
                                     "LEARNING_FEATURES_SPEECH_TO_TEXT_ENABLED": "true",
                                     # #299: web research and «Источники» run on the Stub web search (results on example.org, no network).
                                     "LEARNING_FEATURES_WEB_SEARCH_ENABLED": "true"})
+            elif promo:
+                # ASCII copy only: a process environment is decoded with the platform charset, and the fixture must not depend on it.
+                environment.update({"MNEMA_RUNTIME_ROLES": "api", "MNEMA_PROMO_POPUP_ENABLED": "true",
+                                    "MNEMA_PROMO_POPUP_ID": "browser-fixture-autumn",
+                                    "MNEMA_PROMO_POPUP_TITLE": "Autumn offer",
+                                    "MNEMA_PROMO_POPUP_BODY": "Plus costs less until the end of October. Nothing is switched on for you.",
+                                    "MNEMA_PROMO_POPUP_CTA": "See the plans",
+                                    "MNEMA_PROMO_IP_ATTEMPTS_PER_HOUR": "100",
+                                    "MNEMA_PROMO_HASH_SECRET": uuid.uuid4().hex, "MNEMA_EXPERIMENT_SECRET": uuid.uuid4().hex})
             elif self.stub_instance():
                 # The ordinary instance of a `--generation` or `--assessment` run has the AI features off; as an `api` process it has no step
                 # dispatcher, so it can never claim a step of the second (Stub) instance that shares the database.
                 environment["MNEMA_RUNTIME_ROLES"] = "api"
+            if generation and self.args.assessment:
+                # Stub-only fault fixture: let one capped call reach the unchanged 20 s delivery deadline. The real route's 8 s
+                # attempt cap/defaults stay unchanged; this override cannot reach the ordinary or promo instance or any live provider.
+                arguments += ["--learning.ai.routes.assess-attempt-cap=PT25S"]
             arguments += [f"--learning.identity.transport-base=http://127.0.0.1:{self.identity_port}",
                           "--learning.identity.allow-loopback-http=true"]
-        log = (self.tmp / (module + ("-generation" if generation else "") + ".log")).open("wb")
+        log = (self.tmp / (module + ("-generation" if generation else "") + ("-promo" if promo else "") + ".log")).open("wb")
         self.logs.append(log)
         process = subprocess.Popen(arguments, env=environment, stdout=log, stderr=subprocess.STDOUT)
         self.processes.append(process)
@@ -407,7 +450,7 @@ class Fixture(BASE.Fixture):
                   "logoutSelector": self.args.logout_selector, "errorSelector": self.args.error_selector,
                   "authoring": self.args.authoring, "media": self.args.media, "mechanics": self.args.mechanics,
                   "generation": self.args.generation, "assessment": self.args.assessment,
-                  "onlyEdits": self.args.only_edits, "onlyImages": self.args.only_images, "onlySpeech": self.args.only_speech, "onlyVoice": self.args.only_voice, "onlyResearch": self.args.only_research, "onlyAsk": self.args.only_ask, "onlyPlan": self.args.only_plan, "onlyPlans": self.args.only_plans, "cdpTimeoutMs": cdp_timeout_ms(),
+                  "onlyEdits": self.args.only_edits, "onlyImages": self.args.only_images, "onlySpeech": self.args.only_speech, "onlyVoice": self.args.only_voice, "onlyResearch": self.args.only_research, "onlyAsk": self.args.only_ask, "onlyPlan": self.args.only_plan, "onlyPlans": self.args.only_plans, "onlyPromo": self.args.only_promo, "cdpTimeoutMs": cdp_timeout_ms(),
                   "diagnosticsDir": str(self.tmp) if self.args.mechanics and self.args.keep_on_failure else None,
                   "mediaOrigin": self.media_origin, "mediaClips": media_clips}
         private_config = self.tmp / "browser.json"
@@ -422,7 +465,7 @@ class Fixture(BASE.Fixture):
                     "scripts": {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
                                 for name in ("run.py", "browser.mjs", "mechanics.mjs", "notifications.mjs", "hub.mjs",
                                              "code-block.mjs", "usage.mjs", "workshop.mjs", "exercises.mjs", "selection-edits.mjs",
-                                             "image-search.mjs", "speech.mjs", "voice.mjs", "research.mjs", "ask-mnema.mjs", "assessment.mjs", "planner.mjs", "plans.mjs")}}
+                                             "image-search.mjs", "speech.mjs", "voice.mjs", "research.mjs", "ask-mnema.mjs", "assessment.mjs", "planner.mjs", "plans.mjs", "promo.mjs")}}
         (self.args.output / "fixture.json").write_text(json.dumps(evidence, indent=2))
         runner = self.launch_group([self.args.node, str(Path(__file__).with_name("browser.mjs")), str(private_config)], "browser")
         self.control("browser_running")
@@ -553,6 +596,10 @@ def main():
                         help="development aid: after the base flow run only the paywall, goal question and public /ai scenario "
                              "(requires --authoring); skips the code block, usage, Workshop and assessment scenarios; never a "
                              "substitute for the full run")
+    parser.add_argument("--only-promo", action="store_true",
+                        help="development aid: after the base flow run only the promo codes, A/B assignment and promo popup scenario "
+                             "(requires --authoring); boots a second Learning with the popup campaign on, verifies and promotes the scenario's "
+                             "second account on the disposable database, skips every other scenario; never a substitute for the full run")
     parser.add_argument("--timeout", type=int, default=None, metavar="SECONDS",
                         help="global deadline, 30-900 seconds (default 180, or 600 with --mechanics)")
     parser.add_argument("--keep-on-failure", action="store_true",
@@ -575,6 +622,8 @@ def main():
         parser.error("--only-plan requires --generation")
     if args.only_plans and not args.authoring:
         parser.error("--only-plans requires --authoring")
+    if args.only_promo and not args.authoring:
+        parser.error("--only-promo requires --authoring")
     if args.only_images and not (args.generation and args.media):
         parser.error("--only-images requires --generation and --media")
     if args.only_voice and not args.generation:
@@ -583,12 +632,14 @@ def main():
         parser.error("--only-research requires --generation")
     if args.only_speech and not (args.generation and args.media):
         parser.error("--only-speech requires --generation and --media")
-    if sum(1 for aid in (args.only_ask, args.only_edits, args.only_plan, args.only_plans, args.only_images, args.only_speech, args.only_voice, args.only_research) if aid) > 1:
-        parser.error("--only-ask, --only-edits, --only-plan, --only-plans, --only-images, --only-speech, --only-voice and --only-research are separate development aids: choose one")
+    if sum(1 for aid in (args.only_ask, args.only_edits, args.only_plan, args.only_plans, args.only_promo, args.only_images, args.only_speech, args.only_voice, args.only_research) if aid) > 1:
+        parser.error("--only-ask, --only-edits, --only-plan, --only-plans, --only-promo, --only-images, --only-speech, --only-voice and --only-research are separate development aids: choose one")
     if args.timeout is None:
         args.timeout = 600 if args.mechanics else 180
         if args.generation or args.assessment:
             args.timeout = max(args.timeout, 840)
+        if args.only_promo:
+            args.timeout = max(args.timeout, 420)
     if not 30 <= args.timeout <= 900:
         parser.error("--timeout must be between 30 and 900 seconds")
     args.dist = args.dist.resolve()

@@ -4,7 +4,10 @@ import { HttpHeaders } from '@angular/common/http';
  * A `GET /api/plans` body as the Learning service answers it for a Free account with the Max teaser on. Mirrors
  * `PlansView` of the backend (prices: 449 / 990 / 1900 a month, year discounts 5 / 10 / 10 percent).
  */
-export function plansBody(options: { readonly teaser?: boolean; readonly current?: string; readonly source?: string } = {}): Record<string, any> {
+export function plansBody(options: {
+    readonly teaser?: boolean; readonly current?: string; readonly source?: string; readonly experiments?: Record<string, string>;
+    readonly pendingDiscount?: Record<string, unknown> | null;
+} = {}): Record<string, any> {
     const teaser = options.teaser ?? true;
     const table = (materials: [number, number], voiceMonth: number | null, voiceDay: number, checksMonth: number, checksDay: number,
         podcasts: number, images: number, factChecks: number, smart: [number, string]): Record<string, any> => ({
@@ -31,7 +34,7 @@ export function plansBody(options: { readonly teaser?: boolean; readonly current
     return {
         current: { plan: options.current ?? 'FREE', period: 'MONTH', validUntil: '2026-10-31T21:00:00Z', autoRenew: false,
             source: options.source ?? 'CONFIG' },
-        plans
+        plans, experiments: options.experiments ?? {}, pendingDiscount: options.pendingDiscount ?? null
     };
 }
 

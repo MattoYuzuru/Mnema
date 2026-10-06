@@ -2,10 +2,11 @@ import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@ang
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
+import { PromoRedeemComponent } from '../promo/promo-redeem.component';
 import { calendarDay } from '../usage/usage-view';
 import { PlansApiService } from './plans-api.service';
-import { PLAN_LABEL } from './plans-view';
-import { PlansCurrent } from './plans.models';
+import { PLAN_LABEL, discountText } from './plans-view';
+import { PendingDiscount, PlansCurrent } from './plans.models';
 
 /**
  * The profile's «Тариф» block: the current plan, the way to change it, and two rows that exist only as places for what
@@ -14,13 +15,15 @@ import { PlansCurrent } from './plans.models';
  */
 @Component({
     selector: 'app-profile-plan',
-    imports: [RouterLink],
+    imports: [RouterLink, PromoRedeemComponent],
     template: `
       @if (loading()) {
         <p class="hint" role="status">Узнаём ваш тариф…</p>
       } @else if (current(); as plan) {
-        <p class="plan-line">Тариф {{ label(plan) }}@if (plan.source !== 'CONFIG') { <span class="until">, действует до {{ until(plan) }}</span> }</p>
+        <p class="plan-line">Тариф {{ label(plan) }}@if (plan.source !== 'CONFIG') { <span class="until">, действует до {{ until(plan) }}{{ plan.autoRenew ? '' : ', без автопродления' }}</span> }</p>
+        @if (discount(); as pending) { <p class="notice">{{ discountLine(pending) }}.</p> }
         <p><a class="button" routerLink="/plans">Изменить тариф</a></p>
+        <div class="promo"><app-promo-redeem (redeemed)="load(true)" /></div>
         <div class="placeholders">
           <label class="settings-row is-switch">
             <input type="checkbox" role="switch" disabled [checked]="false" aria-describedby="profile-plan-later" />
@@ -41,6 +44,7 @@ import { PlansCurrent } from './plans.models';
       :host { display: block; min-inline-size: 0; }
       .plan-line { margin: 0 0 1rem; color: var(--mn-ink); font-weight: 600; }
       .until { color: var(--mn-muted); font-weight: 400; }
+      .promo { max-inline-size: 28rem; margin-block-start: 1.25rem; }
       .placeholders { display: grid; gap: .5rem; margin-block-start: 1.25rem; border-block-start: 1px solid var(--mn-rule); padding-block-start: 1rem; }
     `],
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -48,19 +52,24 @@ import { PlansCurrent } from './plans.models';
 export class ProfilePlanComponent implements OnInit {
     private readonly api = inject(PlansApiService);
     protected readonly current = signal<PlansCurrent | null>(null);
+    protected readonly discount = signal<PendingDiscount | null>(null);
     protected readonly loading = signal(true);
 
     ngOnInit(): void { void this.load(); }
 
     protected label(current: PlansCurrent): string { return PLAN_LABEL[current.plan]; }
     protected until(current: PlansCurrent): string { return calendarDay(current.validUntil); }
+    protected discountLine(pending: PendingDiscount): string { return discountText(pending); }
 
-    async load(): Promise<void> {
-        this.loading.set(true);
+    /** @param quiet read again without the «Узнаём…» state, so the promo field and its success message stay where they are */
+    async load(quiet = false): Promise<void> {
+        if (!quiet) this.loading.set(true);
         try {
-            this.current.set((await firstValueFrom(this.api.load())).current);
+            const catalog = await firstValueFrom(this.api.load());
+            this.current.set(catalog.current);
+            this.discount.set(catalog.pendingDiscount);
         } catch {
-            this.current.set(null);
+            if (!quiet) this.current.set(null);
         } finally { this.loading.set(false); }
     }
 }

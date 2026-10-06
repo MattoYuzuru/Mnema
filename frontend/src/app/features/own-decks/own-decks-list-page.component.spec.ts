@@ -7,6 +7,7 @@ import { OwnDeck } from './own-deck.models';
 import { DeckListState, OwnDecksStore } from './own-decks.store';
 import { OwnDecksListPageComponent } from './own-decks-list-page.component';
 import { spyObj, type SpyObj } from '../../../testing/mocks';
+import { PromoPopupService } from '../promo/promo-popup.service';
 
 describe('OwnDecksListPageComponent', () => {
     beforeEach(() => {
@@ -17,6 +18,7 @@ describe('OwnDecksListPageComponent', () => {
     });
     let fixture: ComponentFixture<OwnDecksListPageComponent>;
     let store: SpyObj<OwnDecksStore>;
+    let promoPopup: SpyObj<PromoPopupService>;
     const state = signal<DeckListState>({
         phase: 'ready', items: [metadataFixture.detail as unknown as OwnDeck], nextCursor: null,
         operation: null, failure: null
@@ -36,9 +38,10 @@ describe('OwnDecksListPageComponent', () => {
         });
         Object.defineProperty(store, 'listState', { value: state.asReadonly() });
         Object.defineProperty(store, 'canGoBack', { value: signal(false).asReadonly() });
+        promoPopup = spyObj<PromoPopupService>({ request: vi.fn().mockName('PromoPopupService.request').mockResolvedValue(undefined) });
         await TestBed.configureTestingModule({
             imports: [OwnDecksListPageComponent],
-            providers: [provideRouter([])]
+            providers: [provideRouter([]), { provide: PromoPopupService, useValue: promoPopup }]
         }).overrideComponent(OwnDecksListPageComponent, {
             set: { providers: [{ provide: OwnDecksStore, useValue: store }] }
         }).compileComponents();
@@ -57,6 +60,18 @@ describe('OwnDecksListPageComponent', () => {
         expect(root.querySelector<HTMLAnchorElement>('.deck-row')?.getAttribute('href'))
             .toBe(`/decks/${expected.deckId}`);
         expect(root.textContent).not.toContain('Обновить список');
+    });
+
+    it('asks for the promo popup once the list has loaded, and not while it is loading or failed', async () => {
+        expect(promoPopup.request).toHaveBeenCalledTimes(1);
+
+        state.set({ phase: 'loading', items: [], nextCursor: null, operation: 'replace', failure: null });
+        fixture.detectChanges();
+        await fixture.whenStable();
+        state.set({ phase: 'error', items: [], nextCursor: null, operation: 'replace', failure: { kind: 'network', status: 0, code: null } });
+        fixture.detectChanges();
+        await fixture.whenStable();
+        expect(promoPopup.request).toHaveBeenCalledTimes(1);
     });
 
     it('keeps loaded rows visible when loading another page fails', () => {

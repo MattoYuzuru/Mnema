@@ -18,7 +18,16 @@
         (ask)="closeWindow()" (retract)="closeWindow()" (dismissed)="closeWindow()" />
     }
   </app-sg-specimen>
-  <p class="notice" role="note">Выпадающий список — <code>app-mnema-select</code> (раздел «Поля ввода»); центр уведомлений — <code>app-notification-bell</code> в шапке; общего компонента диалога подтверждения нет:
+  <app-sg-specimen title="Промо-окно" selector="<app-promo-popup>"
+    when="Предложение, которое появляется само, поэтому оно строго ограничено: модальный <dialog>, почти на весь экран телефона; Esc, «×» и «Не сейчас» закрывают с паузой, «Больше не показывать» — насовсем, галочек нет. Показывается только в паузе (конец занятия, список колод), раз за сессию и никогда поверх задания, редактора и Мастерской."
+    [tokens]="['--mn-sheet', '--mn-ink', '--mn-rule']"
+    usage='<app-promo-popup [campaign]="campaign" (accepted)="go()" (dismissed)="later()" (declined)="never()" />'>
+    <button type="button" class="button" (click)="openPopup()">Открыть промо-окно</button>
+    @if (popupOpen()) {
+      <app-promo-popup [campaign]="campaign" (accepted)="closePopup()" (dismissed)="closePopup()" (declined)="closePopup()" />
+    }
+  </app-sg-specimen>
+  <p class="notice" role="note">Выпадающий список — <code>app-mnema-select</code> (раздел «Поля ввода»); центр уведомлений — <code>app-notification-bell</code> в шапке; общего компонента диалога подтверждения нет (промо-окно выше — не он):
     необратимые действия подтверждает «Удаление удержанием».</p>
 </section>
 

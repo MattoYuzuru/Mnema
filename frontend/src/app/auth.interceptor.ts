@@ -21,9 +21,12 @@ export function isCredentialTarget(requestUrl: string, identityOrigin: string, l
         const learningRoots = [`${prefix}/decks`, `${prefix}/editing-drafts`, `${prefix}/capture-notes`,
             `${prefix}/media-assets`, `${prefix}/notifications`, `${prefix}/generation-sessions`, `${prefix}/speech-inputs`];
         // The account-wide `generation-sessions` list is the only generation route outside `/decks/{id}`.
-        // Single-resource routes without subpaths: capability flags, stateless author preview evaluation, the usage bar and the voice consent.
-        // `speech-inputs` (#298) is account-wide too: the recording upload and its transcript.
-        const learningExact = [`${prefix}/capabilities`, `${prefix}/exercise-previews`, `${prefix}/usage`, `${prefix}/speech-consent`, `${prefix}/plans`, `${prefix}/learning-profile`];
+        // Single-resource routes without subpaths: capability flags, stateless author preview evaluation, the usage bar,
+        // the paywall catalogue and the goal answer.
+        // The promo code redemption, the promo popup and the A/B event sink are single-resource routes too.
+        const learningExact = [`${prefix}/capabilities`, `${prefix}/exercise-previews`, `${prefix}/usage`, `${prefix}/plans`,
+            `${prefix}/learning-profile`, `${prefix}/speech-consent`, `${prefix}/promo-codes/redemptions`, `${prefix}/promo-popup`, `${prefix}/promo-popup/events`,
+            `${prefix}/experiment-events`];
         const learningRoute = url.origin === learning.origin && (learningExact.includes(url.pathname)
             || learningRoots.some(root => url.pathname === root || url.pathname.startsWith(`${root}/`)));
         return identityRoute || learningRoute;

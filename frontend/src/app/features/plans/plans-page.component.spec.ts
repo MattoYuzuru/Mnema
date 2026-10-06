@@ -1,12 +1,18 @@
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { Router, provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { TestBed } from '@angular/core/testing';
-import { NEVER, of, throwError } from 'rxjs';
+import { NEVER, Subject, of, throwError } from 'rxjs';
 
 import { spyObj, type SpyObj } from '../../../testing/mocks';
 import { LearningGoalStore } from '../goal/learning-goal.store';
 import { LearningGoal } from '../goal/goal.models';
+import { PromoApiService } from '../promo/promo-api.service';
+import { PromoRedemption } from '../promo/promo.models';
 import { PlansApiService, parsePlans } from './plans-api.service';
+import { PlansCatalog } from './plans.models';
+import { ExperimentService } from '../experiment/experiment.service';
 import { PlansPageComponent } from './plans-page.component';
 import { plansBody } from './plans-test-data';
 
@@ -16,8 +22,15 @@ describe('PlansPageComponent', () => {
     let api: SpyObj<PlansApiService>;
     let root: HTMLElement;
 
-    async function open(options: { teaser?: boolean; current?: string; goal?: LearningGoal | null; url?: string } = {}): Promise<RouterTestingHarness> {
-        api.load.mockReturnValue(of(parsePlans(plansBody({ teaser: options.teaser, current: options.current }))));
+    let promo: SpyObj<PromoApiService>;
+    let http: HttpTestingController;
+
+    async function open(options: {
+        teaser?: boolean; current?: string; source?: string; goal?: LearningGoal | null; url?: string; experiments?: Record<string, string>;
+        pendingDiscount?: Record<string, unknown> | null;
+    } = {}): Promise<RouterTestingHarness> {
+        api.load.mockReturnValue(of(parsePlans(plansBody({ teaser: options.teaser, current: options.current, source: options.source,
+            experiments: options.experiments, pendingDiscount: options.pendingDiscount }))));
         const store = TestBed.inject(LearningGoalStore);
         store.state.set('ready');
         store.goal.set(options.goal ?? null);
@@ -31,14 +44,30 @@ describe('PlansPageComponent', () => {
 
     beforeEach(() => {
         api = spyObj<PlansApiService>({ load: vi.fn().mockName('PlansApiService.load') });
+        promo = spyObj<PromoApiService>({ redeem: vi.fn().mockName('PromoApiService.redeem') });
         TestBed.configureTestingModule({
             providers: [provideRouter([{ path: 'plans', component: PlansPageComponent }, { path: 'decks', component: PlansPageComponent }]),
-                { provide: PlansApiService, useValue: api }]
+                provideHttpClient(), provideHttpClientTesting(), { provide: PlansApiService, useValue: api }, { provide: PromoApiService, useValue: promo }]
         });
+        http = TestBed.inject(HttpTestingController);
     });
 
     const radios = () => [...root.querySelectorAll<HTMLInputElement>('app-plan-option input[type=radio]')];
     const cta = () => root.querySelector<HTMLButtonElement>('.cta-bar .button')!;
+
+    it('cancels a departed page catalogue before it can adopt old experiment assignments', async () => {
+        const response = new Subject<PlansCatalog>();
+        api.load.mockReturnValue(response);
+        const fixture = TestBed.createComponent(PlansPageComponent);
+        fixture.detectChanges();
+        fixture.destroy();
+        response.next(parsePlans(plansBody({ experiments: { plans_year_first: 'plans_year_first' } })));
+        response.complete();
+        await Promise.resolve();
+        expect(response.observed).toBe(false);
+        expect(TestBed.inject(ExperimentService).variant('plans_year_first')).toBe('control');
+        http.expectNone('/api/experiment-events');
+    });
 
     it('preselects Free for a Free account and shows a neutral heading without a goal', async () => {
         await open();
@@ -233,12 +262,8 @@ describe('PlansPageComponent', () => {
         expect(table.querySelectorAll('tbody tr')).toHaveLength(9);
     });
 
-    it('keeps a disabled promo slot and the FAQ', async () => {
+    it('keeps the FAQ', async () => {
         await open();
-        expect(root.querySelector<HTMLInputElement>('.promo input')!.disabled).toBe(true);
-        expect(root.querySelector<HTMLButtonElement>('.promo button')!.disabled).toBe(true);
-        expect(root.querySelector('.promo label')?.textContent).toBe('Промокод');
-        expect(root.querySelector('.promo .hint')?.textContent).toContain('Скоро');
         const faq = root.querySelector('.faq')!.textContent!;
         expect(faq).toContain('Все колоды остаются');
         expect(faq).toContain('полностью неиспользованные месяцы годовой подписки');
@@ -246,6 +271,101 @@ describe('PlansPageComponent', () => {
         expect(faq).toContain('Когда подключим оплату');
         expect(faq).toContain('голос и проверку ответов');
         expect(root.querySelector('.lede')?.textContent).toContain('голос и проверка ответов ограничены отдельно');
+    });
+
+    describe('promo code', () => {
+        const redemption: PromoRedemption = { type: 'TIER_DAYS', plan: 'PLUS', validUntil: '2026-10-20T09:00:00Z', percent: null,
+            message: 'Plus до 20 октября, без автопродления.' };
+
+        it('offers a labelled field that does not autofill and capitalizes as a code', async () => {
+            await open();
+            const input = root.querySelector<HTMLInputElement>('.promo input')!;
+            expect(root.querySelector('.promo label')?.textContent).toBe('Промокод');
+            expect(root.querySelector('.promo label')?.getAttribute('for')).toBe(input.id);
+            expect(input.disabled).toBe(false);
+            expect(input.getAttribute('autocomplete')).toBe('off');
+            expect(input.getAttribute('autocapitalize')).toBe('characters');
+            expect(root.querySelector('.promo button')?.textContent).toBe('Применить');
+            expect(input.value).toBe('');
+        });
+
+        it('puts a campaign code into the field from the link and never applies it', async () => {
+            await open({ url: '/plans?promo=AUTUMN-26' });
+            expect(root.querySelector<HTMLInputElement>('.promo input')!.value).toBe('AUTUMN-26');
+            expect(promo.redeem).not.toHaveBeenCalled();
+        });
+
+        it('ignores a link code that is not a code', async () => {
+            await open({ url: '/plans?promo=%3Cscript%3E' });
+            expect(root.querySelector<HTMLInputElement>('.promo input')!.value).toBe('');
+        });
+
+        it('reads the plan again after a redemption and shows it as the current plan, keeping the success message', async () => {
+            const harness = await open();
+            expect(root.querySelector('.plan-status')?.textContent?.trim()).toBe('');
+            promo.redeem.mockReturnValue(of(redemption));
+            const input = root.querySelector<HTMLInputElement>('.promo input')!;
+            input.value = 'plus15';
+            input.dispatchEvent(new Event('input'));
+            api.load.mockReturnValue(of(parsePlans(plansBody({ current: 'PLUS', source: 'PROMO' }))));
+            root.querySelector<HTMLFormElement>('.promo form')!.dispatchEvent(new Event('submit'));
+            await harness.fixture.whenStable();
+            harness.detectChanges();
+
+            expect(promo.redeem).toHaveBeenCalledWith('plus15', expect.stringMatching(/^[0-9a-f-]{36}$/u));
+            expect(root.querySelector('.plan-status .notice.success')?.textContent).toContain('Plus до 1 ноября, без автопродления');
+            expect(root.querySelector('.promo .notice.success')?.textContent).toContain('Plus до 20 октября, без автопродления.');
+            expect(radios().map(radio => radio.checked)).toEqual([true, false, false, false]);
+            expect(root.querySelectorAll('app-plan-option')[1].querySelector('.stamp.solid')?.textContent).toContain('Ваш тариф');
+        });
+
+        it('shows a pending discount and a paid tier without renewal', async () => {
+            await open({ current: 'PRO', source: 'BILLING', pendingDiscount: { percent: 20, plan: 'PLUS', validUntil: '2026-10-31T20:59:59Z' } });
+            const lines = [...root.querySelectorAll('.plan-status .notice')].map(line => line.textContent);
+            expect(lines[0]).toContain('Pro до 1 ноября, без автопродления');
+            expect(lines[1]).toBe(`Скидка 20${NBSP}% на Plus применится к оплате до 31 октября.`);
+        });
+
+        it('says nothing about a plan the account has by default', async () => {
+            await open();
+            expect(root.querySelector('.plan-status .notice')).toBeNull();
+        });
+    });
+
+    describe('plans_year_first experiment', () => {
+        const periodRadios = () => [...root.querySelectorAll<HTMLInputElement>('app-segmented-choice input[type=radio]')];
+        const events = () => http.match('/api/experiment-events').map(request => request.request.body);
+
+        it('opens on «Месяц» for the control and counts one exposure', async () => {
+            await open({ experiments: { plans_year_first: 'control' } });
+            expect(periodRadios().map(radio => radio.checked)).toEqual([true, false]);
+            expect(events()).toEqual([{ key: 'plans_year_first', event: 'EXPOSURE' }]);
+        });
+
+        it('opens on «Год» for the variant, with yearly prices', async () => {
+            await open({ experiments: { plans_year_first: 'plans_year_first' } });
+            expect(periodRadios().map(radio => radio.checked)).toEqual([false, true]);
+            expect(root.querySelector('app-plan-option')?.textContent).toContain('0');
+            expect(root.querySelectorAll('app-plan-option')[1].textContent).toContain(`5${NBSP}119${NBSP}₽ в${NBSP}год`);
+            expect(events()).toEqual([{ key: 'plans_year_first', event: 'EXPOSURE' }]);
+        });
+
+        it('never overrides the reader who picked a period, and sends no event when the experiment is not running', async () => {
+            await open();
+            expect(periodRadios().map(radio => radio.checked)).toEqual([true, false]);
+            expect(events()).toEqual([]);
+        });
+
+        it('counts a conversion when the paid call to action is pressed, once', async () => {
+            const harness = await open({ experiments: { plans_year_first: 'control' } });
+            events();
+            radios()[1].click();
+            harness.detectChanges();
+            cta().click();
+            cta().click();
+            harness.detectChanges();
+            expect(events()).toEqual([{ key: 'plans_year_first', event: 'CONVERSION' }]);
+        });
     });
 
     it('shows where the reader came from as display only', async () => {

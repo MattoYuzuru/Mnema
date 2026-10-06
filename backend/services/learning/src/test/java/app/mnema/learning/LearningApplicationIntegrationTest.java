@@ -21,6 +21,7 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -32,6 +33,9 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
             "/auth", "/users", "/me", "/admin", "/templates", "/review",
             "/search", "/uploads", "/imports", "/providers", "/jobs", "/internal"
     );
+
+    /** The only routes under a banned prefix: the promo administration surface (#302), administrator-checked in Identity after the token. */
+    private static final Set<String> ALLOWED_LEGACY_PREFIX_ROUTES = Set.of("/admin/promo-codes", "/admin/promo-codes/{codeId}");
 
     @Autowired
     private ApplicationContext applicationContext;
@@ -82,7 +86,7 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                         "25:deck hub:SUCCESS", "26:usage ledger:SUCCESS", "27:ai provider call:SUCCESS", "28:generation:SUCCESS", "29:generation note snapshot:SUCCESS", "30:exercise new mark:SUCCESS", "31:generation revision headroom:SUCCESS",
                         "32:ai semantic assessment:SUCCESS", "33:generation revise intent:SUCCESS", "34:generation plan:SUCCESS", "35:image search:SUCCESS", "36:speech cache:SUCCESS", "37:speech input:SUCCESS", "38:generation research:SUCCESS",
                         "39:ai operations wake and assessment claim:SUCCESS",
-                        "40:worker generation intents:SUCCESS", "41:plans and learning profile:SUCCESS");
+                        "40:worker generation intents:SUCCESS", "41:plans and learning profile:SUCCESS", "42:promo codes and popup:SUCCESS");
 
         assertThat(jdbcClient.sql("""
                         SELECT schema_name
@@ -146,19 +150,24 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                         "studyProgressController", "mediaUploadController", "mediaPlaybackController",
                         "mediaProcessingController", "mediaManifestController", "capabilityController",
                         "notificationController", "itemHubController", "deckInsightsController",
-                        "usageController", "estimateController", "generationController", "speechInputController", "plansController", "learningProfileController");
+                        "usageController", "estimateController", "generationController", "speechInputController", "plansController", "learningProfileController", "promoController", "promoAdminController", "promoPopupController", "experimentController");
         assertThat(requestMappings.getHandlerMethods().keySet())
                 .flatExtracting(mapping -> mapping.getPatternValues())
                 .allSatisfy(route -> {
                     assertThat(route).doesNotContain("/v2");
                     assertThat(LEGACY_ROUTE_PREFIXES).noneMatch(prefix ->
-                            route.equals(prefix) || route.startsWith(prefix + "/"));
+                            !ALLOWED_LEGACY_PREFIX_ROUTES.contains(route) && (route.equals(prefix) || route.startsWith(prefix + "/")));
                 });
 
         mockMvc.perform(get("/api/v2").contextPath("/api"))
                 .andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/decks").contextPath("/api"))
                 .andExpect(status().isUnauthorized());
+        // The admin and promo surfaces are private like the rest: no token, no answer (the admin check comes after the token).
+        mockMvc.perform(get("/api/admin/promo-codes").contextPath("/api")).andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/promo-codes/redemptions").contextPath("/api").contentType("application/json").content("{\"code\":\"X\"}"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/promo-popup").contextPath("/api")).andExpect(status().isUnauthorized());
     }
 
     @Test

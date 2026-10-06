@@ -49,9 +49,19 @@ export interface PlanEntry {
     readonly recommendedFor: readonly LearningGoal[];
 }
 
+/** A percentage a promo code earned that billing applies to the next purchase; `plan` null means either paid tier. */
+export interface PendingDiscount {
+    readonly percent: number;
+    readonly plan: 'PLUS' | 'PRO' | null;
+    readonly validUntil: string;
+}
+
 export interface PlansCatalog {
     readonly current: PlansCurrent;
     readonly plans: readonly PlanEntry[];
+    /** The variant the server assigned to this account in each enabled A/B experiment, by key. */
+    readonly experiments: Readonly<Record<string, string>>;
+    readonly pendingDiscount: PendingDiscount | null;
 }
 
 export class PlansProtocolError extends Error {

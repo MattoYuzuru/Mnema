@@ -68,7 +68,8 @@ def main():
         protected(source / name)
     material = signing_key()  # Generate before any private-file mutation.
     create(ROOT / 'runtime.env', ''.join(name + '=' + secrets.token_hex(32) + '\n' for name in
-        ('MNEMA_POSTGRES_PASSWORD', 'MNEMA_IDENTITY_DB_PASSWORD', 'MNEMA_LEARNING_DB_PASSWORD')))
+        ('MNEMA_POSTGRES_PASSWORD', 'MNEMA_IDENTITY_DB_PASSWORD', 'MNEMA_LEARNING_DB_PASSWORD',
+         'MNEMA_PROMO_HASH_SECRET', 'MNEMA_EXPERIMENT_SECRET')))
     create(ROOT / 'identity-signing.json', json.dumps(material), mode=0o400, uid=10001)
     for name in FILES:
         create(ROOT / name, (source / name).read_text(), mode=0o755 if name.endswith('.sh') else 0o644)

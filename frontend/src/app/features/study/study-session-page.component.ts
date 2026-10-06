@@ -13,6 +13,7 @@ import { LearnerExerciseComponent, PairChecker } from './learner-exercise.compon
 import { LearnerFeedbackComponent, feedbackTitle } from './learner-feedback.component';
 import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService } from '../authoring/capabilities-api.service';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
+import { PromoPopupService } from '../promo/promo-popup.service';
 import { OwnDeck } from '../own-decks/own-deck.models';
 import { StudyApiService } from './study-api.service';
 import {
@@ -124,6 +125,7 @@ export class StudySessionPageComponent {
     private readonly api = inject(StudyApiService);
     private readonly recovery = inject(StudyRecoveryService);
     private readonly quietZone = inject(QuietZone);
+    private readonly promoPopup = inject(PromoPopupService);
     readonly flow = inject(StudyAssessmentFlow);
     private readonly destroyRef = inject(DestroyRef);
     private readonly injector = inject(Injector);
@@ -141,7 +143,12 @@ export class StudySessionPageComponent {
     constructor() {
         // A task is open (answering, revealing, sending): new toasts wait. Feedback, the end of the session and
         // leaving the page are the natural pauses where they may show.
-        effect(() => this.quietZone.set(TASK_OPEN.includes(this.phase())));
+        effect(() => {
+            const phase = this.phase();
+            this.quietZone.set(TASK_OPEN.includes(phase));
+            // Ask only after the completion phase has released the quiet zone, including an immediately answered request.
+            if (phase === 'complete') untracked(() => void this.promoPopup.request());
+        });
         // The grader may hand the learner to self-check while the waiting card is on screen.
         effect(() => {
             const stage = this.flow.stage();
@@ -457,7 +464,8 @@ export class StudySessionPageComponent {
             this.phase.set('empty'); this.recovery.clear(); this.loadSupportingState(); return;
         }
         if (session.status === 'COMPLETE') {
-            this.phase.set('complete'); this.recovery.clear(); this.loadSupportingState(); return;
+            this.phase.set('complete'); this.recovery.clear(); this.loadSupportingState();
+            return;
         }
         if (session.presentations.length === 0) {
             this.phase.set('unavailable');

@@ -44,7 +44,7 @@ describe('StyleguidePageComponent', () => {
     it('renders the real app components and classes', () => {
         for (const selector of [
             'app-hold-to-delete-button', 'app-segmented-choice', 'app-toggletip', 'app-usage-meter', 'app-mnema-select', 'app-choice-list',
-            'app-batch-pager', 'app-plan-option', 'table.data-table', 'app-new-badge', 'app-native-document-renderer', 'button.generate-cta', 'button.button.primary',
+            'app-batch-pager', 'app-plan-option', 'app-promo-redeem .field-row', 'table.data-table', 'app-new-badge', 'app-native-document-renderer', 'button.generate-cta', 'button.button.primary',
             '.check-field > .check-row', '.settings-row.is-switch', '.cta-bar.cta-bar--inline', '.notice.error', '.empty-state', '.stamp', '.paper-surface.ruled', '.field-error'
         ]) {
             expect(root.querySelector(selector), selector).not.toBeNull();
@@ -88,6 +88,24 @@ describe('StyleguidePageComponent', () => {
         buttons.forEach(button => button.click());
         expect(echo).toHaveBeenCalledOnce();
         expect(notify.mock.calls.map(call => call[2])).toEqual(['INFO', 'WARNING', 'ERROR']);
+    });
+
+    it('answers the promo field of the catalogue without a server and opens the promo window', async () => {
+        const field = root.querySelector<HTMLInputElement>('app-promo-redeem input')!;
+        field.value = 'nonsense';
+        field.dispatchEvent(new Event('input'));
+        root.querySelector<HTMLFormElement>('app-promo-redeem form')!.dispatchEvent(new Event('submit'));
+        await fixture.whenStable();
+        fixture.detectChanges();
+        expect(root.querySelector('app-promo-redeem .field-error')?.textContent).toContain('не подходит');
+
+        const open = [...root.querySelectorAll<HTMLButtonElement>('#menus button.button')].find(button => button.textContent?.includes('промо-окно'))!;
+        open.click();
+        fixture.detectChanges();
+        expect(root.querySelector('app-promo-popup dialog')).not.toBeNull();
+        root.querySelector<HTMLButtonElement>('app-promo-popup .promo-popup-close')!.click();
+        fixture.detectChanges();
+        expect(root.querySelector('app-promo-popup')).toBeNull();
     });
 
     it('opens and closes the «Попросить Мнему» window from its specimen', async () => {

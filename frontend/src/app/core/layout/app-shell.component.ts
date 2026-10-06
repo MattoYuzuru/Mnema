@@ -9,12 +9,13 @@ import { AuthService } from '../../auth.service';
 import { NotificationBellComponent } from '../notifications/notification-bell.component';
 import { ToastRegionComponent } from '../notifications/toast-region.component';
 import { GoalOnboardingComponent } from '../../features/goal/goal-onboarding.component';
+import { PromoPopupHostComponent } from '../../features/promo/promo-popup-host.component';
 
 @Component({
     selector: 'app-shell',
     host: { '(pointerover)': 'setWaveOrigin($event)' },
     imports: [RouterLink, RouterLinkActive, RouterOutlet, DeckConstellationComponent, NotificationBellComponent, ToastRegionComponent,
-        GoalOnboardingComponent],
+        GoalOnboardingComponent, PromoPopupHostComponent],
     templateUrl: './app-shell.component.html',
     styleUrl: './app-shell.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush

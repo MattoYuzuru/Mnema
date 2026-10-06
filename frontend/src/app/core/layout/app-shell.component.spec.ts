@@ -89,6 +89,13 @@ describe('AppShellComponent', () => {
         expect(root.querySelector('app-notification-bell')).toBeNull();
     });
 
+    it('hosts the promo popup outside main, so it can only appear when a page asks at a natural breakpoint', () => {
+        const root = fixture.nativeElement as HTMLElement;
+        expect(root.querySelector('app-promo-popup-host')).not.toBeNull();
+        expect(root.querySelector('main app-promo-popup-host')).toBeNull();
+        expect(root.querySelector('dialog')).toBeNull();
+    });
+
     it('moves focus to the activated page heading without initializing auth', async () => {
         fixture.componentInstance.focusPageHeading();
         await Promise.resolve();

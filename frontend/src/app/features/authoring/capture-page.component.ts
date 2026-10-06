@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, afterRenderEffect, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -20,7 +20,7 @@ import { CaptureNote, newCommandId } from './authoring.models';
     templateUrl: './capture-page.component.html',
     styleUrls: ['./authoring-page.css', './capture-page.component.css'],
     changeDetection: ChangeDetectionStrategy.OnPush,
-    host: { '(keydown.escape)': 'clearSelectionFromKeyboard($event)' }
+    host: { '(keydown.escape)': 'clearSelectionFromKeyboard($event)', '(focusin)': 'revealSelectionFocus($event)' }
 })
 export class CapturePageComponent {
     readonly form = new FormGroup({ text: new FormControl('', { nonNullable: true, validators: [captureTextValidator] }) });
@@ -39,6 +39,8 @@ export class CapturePageComponent {
     readonly loadingMore = signal(false);
     readonly moreError = signal(false);
     private readonly selectAllBox = viewChild<ElementRef<HTMLInputElement>>('selectAll');
+    private readonly selectionBar = viewChild<ElementRef<HTMLElement>>('selectionBar');
+    private readonly hostElement = inject<ElementRef<HTMLElement>>(ElementRef);
     private readonly injector = inject(Injector);
     readonly loadSentinel = viewChild<ElementRef<HTMLElement>>('loadSentinel');
     readonly busy = signal(false);
@@ -93,6 +95,29 @@ export class CapturePageComponent {
             }, { rootMargin: '0px 0px 800px 0px' });
             observer.observe(sentinel);
             onCleanup(() => observer.disconnect());
+        });
+        // The rail can grow when labels wrap or text is enlarged. Reserve its measured height on the viewport,
+        // then reveal the whole checkbox label when Space inserts it beneath an already focused selection.
+        afterRenderEffect(onCleanup => {
+            const bar = this.selectionBar()?.nativeElement;
+            if (bar === undefined) return;
+            const root = bar.ownerDocument.documentElement;
+            const previous = root.style.getPropertyValue('--mn-bulk-bar-height');
+            let active = true;
+            const apply = (): void => {
+                if (!active) return;
+                root.style.setProperty('--mn-bulk-bar-height', `${bar.offsetHeight + 8}px`);
+                this.revealSelectionLabel(bar.ownerDocument.activeElement);
+            };
+            apply();
+            const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(apply);
+            observer?.observe(bar);
+            onCleanup(() => {
+                active = false;
+                observer?.disconnect();
+                if (previous) root.style.setProperty('--mn-bulk-bar-height', previous);
+                else root.style.removeProperty('--mn-bulk-bar-height');
+            });
         });
     }
 
@@ -249,6 +274,18 @@ export class CapturePageComponent {
         this.selected.set(new Set());
         this.selectionNote.set(null);
         if (hadBar) afterNextRender(() => this.selectAllBox()?.nativeElement.focus(), { injector: this.injector });
+    }
+
+    /** Keep the complete touch label visible, not just the smaller checkbox the browser scrolls to on Tab. */
+    protected revealSelectionFocus(event: Event): void {
+        const target = event.target;
+        if (!(target instanceof HTMLElement) || target.closest('.select-all, .note-check') === null) return;
+        afterNextRender(() => this.revealSelectionLabel(target), { injector: this.injector });
+    }
+
+    private revealSelectionLabel(target: Element | null): void {
+        if (this.destroyRef.destroyed || target === null || !this.hostElement.nativeElement.contains(target)) return;
+        target.closest('.select-all, .note-check')?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
     }
 
     /** Escape clears the picks only from the list or the bar, never while typing in a field (the note field, a toggletip). */

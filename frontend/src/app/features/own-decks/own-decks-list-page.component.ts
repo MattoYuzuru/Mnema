@@ -1,8 +1,9 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, computed, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, computed, effect, inject, untracked } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { copyFor } from '../goal/goal-copy';
 import { LearningGoalStore } from '../goal/learning-goal.store';
+import { PromoPopupService } from '../promo/promo-popup.service';
 import { DeckDescriptionComponent } from './deck-description.component';
 
 import { deckFailureMessage } from './own-decks.store';
@@ -26,6 +27,14 @@ export class OwnDecksListPageComponent implements OnInit {
     readonly failureMessage = deckFailureMessage;
     private readonly destroyRef = inject(DestroyRef);
     private timer: ReturnType<typeof setTimeout> | null = null;
+    private readonly promoPopup = inject(PromoPopupService);
+
+    constructor() {
+        // The deck list once loaded is a natural pause: the one place besides the end of a Study session where the promo popup may ask to appear.
+        effect(() => {
+            if (this.store.listState().phase === 'ready') untracked(() => void this.promoPopup.request());
+        });
+    }
 
     ngOnInit(): void {
         this.store.loadList();
