@@ -365,6 +365,8 @@ export async function runPlans(ctx) {
         need(after.status === 200 && after.body.accepted === null, 'withdrawal did not clear the real consent row');
         acceptedCleared = true;
         need(await switchFixture('default') === 204, 'could not restore the ordinary fixture');
+        // Page.navigate to the identical URL is a same-document event; visit another real route before loading this fixture again.
+        await navigate('/ai', tab);
         await navigate('/profile#speech-consent', tab);
         await until(() => exists('#speech-consent app-speech-consent-settings button', tab), 'withdrawal vanished when speech was disabled');
         await page('document.querySelector("#speech-consent button").focus(); return true;');
