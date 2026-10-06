@@ -5,6 +5,7 @@ import { BehaviorSubject, NEVER, of } from 'rxjs';
 
 import { AuthService, AuthStatus } from '../../auth.service';
 import { NotificationsApiService } from '../notifications/notifications-api.service';
+import { LearningProfileApiService } from '../../features/goal/learning-profile-api.service';
 import { AppShellComponent } from './app-shell.component';
 import { spyObj, type SpyObj } from '../../../testing/mocks';
 
@@ -47,7 +48,9 @@ describe('AppShellComponent', () => {
                 ]),
                 { provide: AuthService, useValue: auth },
                 // The center polls for a signed-in account; this spec is about the shell, not the wire.
-                { provide: NotificationsApiService, useValue: { list: () => NEVER } }
+                { provide: NotificationsApiService, useValue: { list: () => NEVER } },
+                // The goal question loads for a signed-in account; this spec is about the shell.
+                { provide: LearningProfileApiService, useValue: { load: () => NEVER } }
             ]
         }).compileComponents();
         fixture = TestBed.createComponent(AppShellComponent);
@@ -64,6 +67,15 @@ describe('AppShellComponent', () => {
         expect(Array.from(root.querySelectorAll('.primary-nav a')).map(link => link.getAttribute('href')))
             .toEqual(['/decks', '/decks/new', '/profile']);
         expect(root.textContent).not.toContain('Начать обучение');
+    });
+
+    it('links «Как Mnema использует ИИ» from the footer, signed in or not', () => {
+        const root = fixture.nativeElement as HTMLElement;
+        const link = Array.from(root.querySelectorAll<HTMLAnchorElement>('footer nav a')).find(anchor => anchor.getAttribute('href') === '/ai');
+        expect(link?.textContent).toBe('Как Mnema использует ИИ');
+        status.next('anonymous');
+        fixture.detectChanges();
+        expect(root.querySelector('footer nav a[href="/ai"]')).not.toBeNull();
     });
 
     it('puts the bell in the session area and the toast landmark after main, for a signed-in account only', () => {

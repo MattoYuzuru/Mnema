@@ -123,6 +123,16 @@ export const appRoutes: Routes = [
             .then(module => module.OwnDeckDetailPageComponent),
         canActivate: [authGuard]
     },
+    {
+        path: 'plans',
+        loadComponent: () => import('./features/plans/plans-page.component').then(module => module.PlansPageComponent),
+        canActivate: [authGuard]
+    },
+    // Public: the footer and the «Что это?» toggletips of the AI actions link here, signed in or not.
+    {
+        path: 'ai',
+        loadComponent: () => import('./features/ai-info/ai-page.component').then(module => module.AiPageComponent)
+    },
     { path: 'privacy', component: PrivacyPageComponent },
     { path: 'terms', component: TermsPageComponent },
     ...developmentOnlyRoutes,

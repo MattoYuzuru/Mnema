@@ -85,18 +85,26 @@ final class UsageState {
         return allowance.portions().stream().limit(openedPortions(allowance, period, now)).mapToInt(Integer::intValue).sum();
     }
 
+    /**
+     * The credits the month has unlocked for an account on {@code allowance}: what the schedule has opened by
+     * {@code now}, never below what is already used or held. The one rule behind both the ledger's materialization and
+     * the read side, so an entitlement that dropped inside the month shows the new plan's bar before any write.
+     */
+    int unlockedTarget(Allowance allowance, UsageCalendar.Period period, Instant now, BalanceRow balance) {
+        return Math.max(balance.used() + balance.reserved(), scheduled(allowance, period, now));
+    }
+
     Credits credits(Resolved state) {
         Allowance allowance = state.allowance();
         UsageCalendar.Period period = state.period();
         int used = state.balance().map(BalanceRow::used).orElse(0);
         int reserved = state.balance().map(BalanceRow::reserved).orElse(0);
-        int unlocked = Math.max(state.balance().map(BalanceRow::unlocked).orElse(0),
-                scheduled(allowance, period, state.now()));
+        int unlocked = Math.max(used + reserved, scheduled(allowance, period, state.now()));
         if (allowance.weekly()) {
             List<Instant> unlocks = calendar.unlocks(period, allowance.portions().size());
             int opened = openedPortions(allowance, period, state.now());
             if (opened < unlocks.size()) {
-                int afterNext = Math.max(unlocked, allowance.portions().stream().limit(opened + 1L)
+                int afterNext = Math.max(used + reserved, allowance.portions().stream().limit(opened + 1L)
                         .mapToInt(Integer::intValue).sum());
                 return new Credits(allowance.plan(), allowance.credits(), unlocked, used, reserved, Window.WEEK,
                         unlocks.get(opened - 1), unlocks.get(opened), Math.max(0, afterNext - used - reserved));

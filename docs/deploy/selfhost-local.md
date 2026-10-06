@@ -250,7 +250,10 @@ The full-stack launcher passes `MNEMA_LOCAL_AI_PLAN` (default `FREE`) to Learnin
 `MNEMA_LOCAL_AI_PLAN=PRO scripts/mnema-local-full-stack.sh start` puts every local account on Pro. The per-account JSON
 override needs a local edit of `x-learning-environment` in `compose.local-full-stack.yml`. Outside Compose set it in the environment of
 `./gradlew :services:learning:bootRun`. A plan change takes effect on the next request: limits
-change at once and the missing credits are granted on the next reservation. Credits and counters
+change at once and the missing credits are granted on the next reservation. Since #301 an entitlement snapshot accepted by
+`EntitlementInbox` (the billing and promo contract; there is no HTTP endpoint and no payments yet) overrides this configuration for
+its owner while it is valid, so on a local stack the configuration above stays the way to pick a plan. `/plans` shows the
+catalogue and the current plan and charges nothing; `learning.plans.max-teaser.enabled=true` shows Max as «В работе». Credits and counters
 live in the retained PostgreSQL volume and are cleared by `reset`.
 
 ### Colima clock

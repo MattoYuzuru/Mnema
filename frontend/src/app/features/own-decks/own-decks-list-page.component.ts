@@ -1,6 +1,8 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, computed, inject } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
+import { copyFor } from '../goal/goal-copy';
+import { LearningGoalStore } from '../goal/learning-goal.store';
 import { DeckDescriptionComponent } from './deck-description.component';
 
 import { deckFailureMessage } from './own-decks.store';
@@ -18,6 +20,9 @@ const VISIBLE_RECHECK_MS = 10_000;
 })
 export class OwnDecksListPageComponent implements OnInit {
     readonly store = inject(OwnDecksStore);
+    private readonly goals = inject(LearningGoalStore);
+    /** The empty-list sentence in the learner's own terms when they named a goal. */
+    protected readonly emptyText = computed(() => copyFor(this.goals.goal()).emptyDecks);
     readonly failureMessage = deckFailureMessage;
     private readonly destroyRef = inject(DestroyRef);
     private timer: ReturnType<typeof setTimeout> | null = null;

@@ -1,0 +1,43 @@
+:host { display: block; min-inline-size: 0; color: var(--mn-body); }
+* { box-sizing: border-box; }
+
+.plans-page {
+    inline-size: min(100%, var(--mn-workspace-width));
+    margin-inline: auto;
+    padding: clamp(1.5rem, 3vw, 2.5rem) clamp(1.125rem, 5vw, 3rem) 0;
+    display: grid;
+    gap: clamp(1.25rem, 3vw, 2rem);
+}
+
+.back-link { display: inline-flex; align-items: center; min-block-size: var(--mn-touch-min); color: var(--mn-ink); text-underline-offset: .22em; justify-self: start; }
+header { max-inline-size: 48rem; display: grid; gap: .75rem; }
+h1, h2 { margin: 0; color: var(--mn-ink); font-family: var(--mn-font-display); font-weight: 500; overflow-wrap: anywhere; }
+h1 { font-size: clamp(2.2rem, 6vw, 4rem); line-height: 1; }
+h2 { font-size: clamp(1.5rem, 3vw, 2rem); line-height: 1.1; }
+.lede { margin: 0; max-inline-size: 52ch; color: var(--mn-muted); }
+
+.tiers { margin: 0; border: 0; padding: 0; min-inline-size: 0; }
+.tiers > legend { padding: 0; margin-block-end: .75rem; color: var(--mn-ink); font: 700 .75rem/1.4 var(--mn-font-mono); letter-spacing: .12em; text-transform: uppercase; }
+.tier-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); }
+
+.compare > summary, .faq summary { min-block-size: var(--mn-touch-min); display: flex; align-items: center; color: var(--mn-ink); font-weight: 600; cursor: pointer; }
+.table-scroll { overflow-x: auto; max-inline-size: 100%; margin-block: .75rem; }
+.table-scroll:focus-visible { outline: 3px solid var(--mn-focus); outline-offset: 3px; }
+.muted { color: var(--mn-muted); font-weight: 400; }
+
+/* The status region is always in the DOM (so a screen reader announces the text when it appears) and takes no room while empty. */
+.notice:empty { display: contents; }
+
+.promo { max-inline-size: 28rem; }
+.promo-row { display: flex; gap: .5rem; }
+.promo-row input { flex: 1 1 auto; min-inline-size: 0; min-block-size: var(--mn-touch-min); border: 1px solid var(--mn-field-border); border-radius: var(--mn-radius); padding: .5rem .75rem; background: var(--mn-sheet); color: var(--mn-body); }
+.promo-row input:disabled { opacity: .6; cursor: not-allowed; }
+
+.faq { display: grid; gap: .25rem; max-inline-size: 48rem; }
+.faq h2 { margin-block-end: .5rem; }
+.faq details { border-block-start: 1px solid var(--mn-rule); }
+.faq details p { margin: 0 0 1rem; max-inline-size: 60ch; line-height: 1.6; }
+
+@media (forced-colors: active) {
+    .table-scroll:focus-visible { outline-color: Highlight; }
+}

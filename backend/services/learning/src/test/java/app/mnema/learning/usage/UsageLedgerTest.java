@@ -305,7 +305,7 @@ class UsageLedgerTest extends UsageIntegrationTest {
     }
 
     @Test
-    void aPlanChangeMidPeriodAddsTheMissingCreditsAndNeverClawsBack() {
+    void aPlanChangeMidPeriodTopsUpOnUpgradeAndRebasesOnDowngradeNeverBelowWhatIsSpent() {
         UUID owner = owner(Plan.FREE);
         Reservation held = reserve(owner, 10);
         settle(owner, held, "debit:up:1", 10);
@@ -316,8 +316,10 @@ class UsageLedgerTest extends UsageIntegrationTest {
         assertThat(balance(owner)).containsExactly(360, 10, 5);
         assertThat(repository.allowance(owner, "2026-10").orElseThrow().allowance().plan()).isEqualTo(Plan.PLUS);
         entitlements.set(owner, Plan.FREE);
-        assertThat(usage.read(owner).credits().unlocked()).isEqualTo(360);
+        // Re-based to the Free bar of the month so far, never below the 15 credits already used or held.
+        assertThat(usage.read(owner).credits().unlocked()).isEqualTo(15);
         assertThat(usage.read(owner).plan()).isEqualTo("FREE");
+        assertThat(catchLimit(() -> reserve(owner, 1)).block().plan()).isEqualTo(Plan.FREE);
     }
 
     @Test

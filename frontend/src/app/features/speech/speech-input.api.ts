@@ -39,6 +39,13 @@ export class SpeechInputApiService {
             .pipe(map(response => { if (response.status < 200 || response.status > 299) throw new SpeechProtocolError('Unexpected consent status.'); }));
     }
 
+    /** Always available to the account, even when voice input is disabled; an absent consent is also a successful withdrawal. */
+    withdrawConsent(): Observable<void> {
+        return this.http.delete<void>(`${this.baseUrl}/speech-consent`, { observe: 'response' }).pipe(map(response => {
+            expectStatus(response, 204);
+        }));
+    }
+
     create(blob: Blob, mimeType: string, request: CreateSpeechInput): Observable<SpeechInputCreated> {
         let params = new HttpParams().set('purpose', request.purpose);
         if (request.lang) params = params.set('lang', request.lang);

@@ -6,6 +6,10 @@ import { LearnerChoiceOption } from '../content/exercise/exercise-content.models
 import { HoldToDeleteButtonComponent } from '../shared/hold-to-delete-button.component';
 import { SegmentedChoiceComponent, SegmentedOption } from '../shared/segmented-choice.component';
 import { ToggletipComponent } from '../shared/toggletip.component';
+import { PlanOptionComponent } from '../features/plans/plan-option.component';
+import { parsePlans } from '../features/plans/plans-api.service';
+import { plansBody } from '../features/plans/plans-test-data';
+import { PlanId, PlanPeriod } from '../features/plans/plans.models';
 import { SgSpecimenComponent } from './sg-specimen.component';
 import { BUTTON_USAGE } from './styleguide.data';
 
@@ -17,7 +21,8 @@ const OPTION_IDS = ['d4000000-0000-4000-8000-000000000001', 'd4000000-0000-4000-
 @Component({
     selector: 'app-sg-controls',
     encapsulation: ViewEncapsulation.None,
-    imports: [SgSpecimenComponent, HoldToDeleteButtonComponent, SegmentedChoiceComponent, ToggletipComponent, MnemaSelectComponent, ChoiceListComponent],
+    imports: [SgSpecimenComponent, HoldToDeleteButtonComponent, SegmentedChoiceComponent, ToggletipComponent, MnemaSelectComponent, ChoiceListComponent,
+        PlanOptionComponent],
     templateUrl: './sg-controls.component.html',
     changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -34,6 +39,10 @@ export class SgControlsComponent {
         { value: 'SOFT', label: 'Мягко', hint: 'Мягко: засчитываем ответ с опечаткой.' },
         { value: 'STRICT', label: 'Строго', hint: 'Строго: ответ должен совпасть с эталоном.' }
     ];
+
+    protected readonly tiers = parsePlans(plansBody()).plans;
+    protected readonly tier = signal<PlanId>('PLUS');
+    protected readonly tierPeriod = signal<PlanPeriod>('MONTH');
 
     protected readonly language = signal('ru');
     protected readonly languages: readonly MnemaSelectOption[] = [

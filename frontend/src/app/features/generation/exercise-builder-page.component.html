@@ -66,6 +66,7 @@
             <app-toggletip topic="Мнема и ИИ">
               <p>Мнема пишет упражнения по выбранным материалам с помощью ИИ, поэтому проверяйте их.</p>
               <p>Ничего не попадает в колоду и в занятия, пока вы не сохраните: сначала можно попробовать каждое упражнение.</p>
+              <p><a routerLink="/ai">Как Mnema использует ИИ</a></p>
             </app-toggletip></span>
           <button type="submit" class="generate-cta" [attr.aria-disabled]="creating() || overBudget() ? 'true' : null"
             [attr.aria-describedby]="uid + '-estimate'">{{ creating() ? 'Создаём…' : ctaLabel() }}</button>

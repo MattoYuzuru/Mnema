@@ -1,0 +1,64 @@
+{
+  "contract": "plans-v1",
+  "description": "Paywall catalog and the learning-profile goal (AI-19, #301). Prices and discounts are configuration (learning.plans.*), not a tariff contract; no payment is possible yet (#79).",
+  "endpoints": [
+    {
+      "operationId": "getPlans",
+      "method": "GET",
+      "path": "/api/plans",
+      "auth": "learning.read",
+      "headers": {
+        "Cache-Control": "private, no-store"
+      },
+      "response": {
+        "current": "{plan FREE|PLUS|PRO|MAX, period MONTH|YEAR, validUntil RFC 3339 UTC, autoRenew false, source CONFIG|BILLING|PROMO}",
+        "plans": "[{plan, availability AVAILABLE|TEASER (MAX only when learning.plans.max-teaser.enabled, never purchasable), priceRub {month, year = month×12×(100−discount)/100 half-up}, perDayRub = month/30 rounded, yearDiscountPercent, highlights[3] (human units from allowances-v1), allowances {materialsPerMonth {min,max}, voiceMinutesPerMonth|null, voiceMinutesPerDay, answerChecksPerMonth, answerChecksPerDay, podcastsPerMonth, qualityImagesPerMonth, factChecksPerMonth, smartPlans {limit, window WEEK|MONTH}}, recommendedFor [goal]}] ordered FREE, PLUS, PRO, MAX"
+      },
+      "notes": [
+        "No query parameter or header changes anything; POST/PUT are 405.",
+        "Current PROMO access reports period MONTH, the quota cadence, regardless of the gift duration; it is not an annual billing purchase. All plans grant monthly allowances, including annual BILLING.",
+        "Recommendations by goal (config): EXAMS → PRO, INTERVIEW → PLUS, LANGUAGE → PLUS, WORK → PRO, SELF → PLUS; no goal → none (neutral)."
+      ]
+    },
+    {
+      "operationId": "getLearningProfile",
+      "method": "GET",
+      "path": "/api/learning-profile",
+      "auth": "learning.read",
+      "response": "{goal EXAMS|INTERVIEW|LANGUAGE|WORK|SELF|null, skipped boolean, answeredAt RFC 3339|null}; unanswered is {null, false, null}"
+    },
+    {
+      "operationId": "putLearningProfile",
+      "method": "PUT",
+      "path": "/api/learning-profile",
+      "auth": "learning.write",
+      "request": "exactly {\"goal\": \"EXAMS|INTERVIEW|LANGUAGE|WORK|SELF\"} or {\"goal\": null, \"skipped\": true}; body ≤256 bytes; anything else 400 INVALID_REQUEST",
+      "response": "the GET body",
+      "notes": [
+        "The goal changes only copy (the /plans heading, the composer placeholder, empty states) and the recommendation; it never reaches an AI provider."
+      ]
+    }
+  ],
+  "examples": {
+    "plansPlus": {
+      "plan": "PLUS",
+      "availability": "AVAILABLE",
+      "priceRub": {
+        "month": 449,
+        "year": 5119
+      },
+      "perDayRub": 15,
+      "yearDiscountPercent": 5,
+      "highlights": [
+        "≈ 12–17 материалов с ИИ в месяц",
+        "Голос: 300 мин в месяц",
+        "Проверка ответов: 500 в месяц"
+      ],
+      "recommendedFor": [
+        "INTERVIEW",
+        "LANGUAGE",
+        "SELF"
+      ]
+    }
+  }
+}

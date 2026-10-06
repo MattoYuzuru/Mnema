@@ -114,7 +114,7 @@ public class UsageLedger {
         UsageCalendar.Period period = calendar.period(now);
         Allowance allowance = ensureAllowance(owner, period, entitlement, now);
         repository.ensureBalance(owner, period.id(), now);
-        grantScheduled(owner, period, entitlement, allowance, now);
+        syncUnlocked(owner, period, entitlement, allowance, now);
 
         for (int attempt = 0; attempt < ADMISSION_ATTEMPTS; attempt++) {
             BalanceRow balance = repository.balance(owner, period.id()).orElseThrow();
@@ -144,23 +144,41 @@ public class UsageLedger {
     }
 
     /**
-     * Raises {@code unlocked} to what the schedule has opened by {@code now}, with one GRANT ledger entry for the
-     * difference. The grant is keyed by plan, period and portion, so concurrent first uses write it once. Grants only
-     * ever add: a plan change mid-period never claws credits back.
+     * Brings {@code unlocked} to the month's allowance in force: {@code max(used + reserved, scheduled(plan, now))}.
+     * Three cases follow from one formula. The schedule opens (a Free portion, the first use of a month, a paid
+     * snapshot that starts inside a month that had a smaller bar): a GRANT for the difference, so a top-up reaches the
+     * higher plan's bar once, never a second bar on top. The entitlement drops inside the month (expiry or downgrade):
+     * an ADJUSTMENT takes the unlocked amount back down to the new plan's bar, never below what is already spent or
+     * held. Nothing changes otherwise. One balance row lock makes it transactional; a repeat finds the target reached.
      */
-    private void grantScheduled(UUID owner, UsageCalendar.Period period, Entitlement entitlement, Allowance allowance,
-                                Instant now) {
-        int target = state.scheduled(allowance, period, now);
-        if (repository.balance(owner, period.id()).orElseThrow().unlocked() >= target) return;
+    private void syncUnlocked(UUID owner, UsageCalendar.Period period, Entitlement entitlement, Allowance allowance,
+                              Instant now) {
+        BalanceRow seen = repository.balance(owner, period.id()).orElseThrow();
+        if (seen.unlocked() == state.unlockedTarget(allowance, period, now, seen)) return;
         BalanceRow locked = repository.lockBalance(owner, period.id());
-        if (locked.unlocked() >= target) return;
+        int target = state.unlockedTarget(allowance, period, now, locked);
         int delta = target - locked.unlocked();
-        int portion = allowance.weekly() ? state.openedPortions(allowance, period, now) - 1 : 0;
-        String key = "grant:" + entitlement.source().name().toLowerCase(java.util.Locale.ROOT) + "-" + owner + "-"
-                + allowance.plan() + ":" + period.id() + ":" + portion;
-        boolean appended = repository.insertLedger(new LedgerEntry(UUID.randomUUID(), owner, "GRANT", delta, null, null,
-                rateCard.version(), period.id(), key, null, null, null, null, now));
+        if (delta == 0) return;
+        String source = entitlement.source().name().toLowerCase(java.util.Locale.ROOT);
+        String version = ":v" + locked.rowVersion();
+        boolean appended;
+        if (delta > 0) {
+            int portion = allowance.weekly() ? state.openedPortions(allowance, period, now) - 1 : 0;
+            String key = "grant:" + source + "-" + owner + "-" + allowance.plan() + ":" + period.id() + ":" + portion;
+            appended = appendBalanceEntry("GRANT", owner, period, delta, key, now)
+                    // The same plan was granted and re-based away earlier in this period: a distinct key per balance state.
+                    || appendBalanceEntry("GRANT", owner, period, delta, key + version, now);
+        } else {
+            String key = "rebase:" + source + "-" + owner + "-" + allowance.plan() + ":" + period.id() + version;
+            appended = appendBalanceEntry("ADJUSTMENT", owner, period, delta, key, now);
+        }
         if (appended) repository.addUnlocked(owner, period.id(), delta, now);
+    }
+
+    private boolean appendBalanceEntry(String kind, UUID owner, UsageCalendar.Period period, int delta, String key,
+                                       Instant now) {
+        return repository.insertLedger(new LedgerEntry(UUID.randomUUID(), owner, kind, delta, null, null,
+                rateCard.version(), period.id(), key, null, null, null, null, now));
     }
 
     // ------------------------------------------------------------------- settle

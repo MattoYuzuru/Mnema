@@ -15,10 +15,11 @@ import java.util.UUID;
 /**
  * The entitlement source until billing (#79) exists: every account is on {@code learning.usage.entitlements.default-plan}
  * (Free) except the accounts named by {@code learning.usage.entitlements.overrides.<accountUuid>=PRO}, which is how a
- * local owner gets a paid plan. The snapshot is valid until the end of the current calendar month.
+ * local owner gets a paid plan. The snapshot is valid until the end of the current calendar month. It is the fallback of
+ * {@link InboxEntitlementSource}, the only {@link EntitlementSource} of the application.
  */
 @Component
-final class ConfigEntitlementSource implements EntitlementSource {
+final class ConfigEntitlementSource {
     private static final String OVERRIDES = "learning.usage.entitlements.overrides";
 
     private final Plan defaultPlan;
@@ -36,8 +37,8 @@ final class ConfigEntitlementSource implements EntitlementSource {
         this.overrides = Map.copyOf(parsed);
     }
 
-    @Override
-    public Entitlement current(UUID owner, Instant now) {
+    /** The configured entitlement; {@link InboxEntitlementSource} falls back to it. */
+    Entitlement current(UUID owner, Instant now) {
         return new Entitlement(overrides.getOrDefault(owner, defaultPlan), Entitlement.Source.CONFIG,
                 calendar.period(now).end());
     }

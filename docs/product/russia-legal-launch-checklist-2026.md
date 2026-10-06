@@ -4,7 +4,7 @@ artifact:
   type: launch-checklist
   title: "Mnema legal and payment launch status"
   status: proposed
-  updated_at: "2026-10-05"
+updated_at: "2026-10-06"
   owners: ["project-owner"]
 ---
 
@@ -27,6 +27,15 @@ review of the actual recipients, contracts and data flows.
   providers remain unconfigured in the active runtime. Credentials can be privately
   staged, but must not be activated as proof of legal approval. See
   [runtime configuration](../operations/vps-runtime.md#auth-configuration).
+- An approved private operator-contact channel is not defined in the checked-in
+  launch documents. Confirm it with the owner under human/legal task #351 before
+  public activation that needs personal-data requests. Public GitHub discussions
+  must not solicit account or other personal data; profile self-service and voice
+  consent withdrawal do not replace the operator's contact channel.
+- Learning's account purge is not implemented. Before public activation, the
+  account-deletion owner must include the learning-profile goal/answer timestamp,
+  owner-linked usage records and backups in the retention/erasure inventory.
+  See [Learning retention](../../backend/services/learning/guide.md#usage-ledger-and-ai-budget-281).
 - The owner defers the T-Business acquiring application until plans/paywall and
   the bank's site/test-account requirements are ready. The manager's written reply
   about **НПД receipts** is pending. No working payment terminal is claimed.

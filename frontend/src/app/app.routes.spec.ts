@@ -49,6 +49,13 @@ describe('appRoutes', () => {
         expect(appRoutes.find(route => route.path === 'decks/:deckId/study')?.canDeactivate).toHaveLength(1);
     });
 
+    it('guards the paywall and leaves the AI explanation public', () => {
+        const plans = appRoutes.find(route => route.path === 'plans')!;
+        expect(plans.loadComponent).toBeDefined();
+        expect(plans.canActivate).toEqual([authGuard]);
+        expect(appRoutes.find(route => route.path === 'ai')?.canActivate).toBeUndefined();
+    });
+
     it('loads each own-deck page through its lazy route', async () => {
         const load = async (path: string) => appRoutes.find(route => route.path === path)!.loadComponent!();
         expect(await load('decks')).toBe(OwnDecksListPageComponent);

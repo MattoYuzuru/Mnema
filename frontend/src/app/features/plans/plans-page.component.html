@@ -1,0 +1,107 @@
+<section class="plans-page" aria-labelledby="plans-title">
+  <a routerLink="/decks" class="back-link">← Мои колоды</a>
+
+  <header>
+    <p class="eyebrow">Тарифы</p>
+    <h1 id="plans-title" tabindex="-1">{{ heading() }}</h1>
+    @if (context(); as text) { <p class="notice" role="status">{{ text }}</p> }
+    <p class="lede">Начните с Free. У него свой бюджет ИИ, а голос и проверка ответов ограничены отдельно. Платный тариф нужен, когда не хватает: все колоды и материалы остаются при любом выборе.</p>
+  </header>
+
+  @switch (state()) {
+    @case ('loading') { <p role="status">Загружаем тарифы…</p> }
+    @case ('error') {
+      <div class="notice error" role="alert">
+        <p>Не удалось загрузить тарифы. Ваш тариф не изменился.</p>
+        <div class="actions"><button type="button" class="button" (click)="load()">Повторить</button></div>
+      </div>
+    }
+    @default {
+      @if (catalog(); as data) {
+        <div class="period">
+          <app-segmented-choice legend="Период оплаты" [options]="periodOptions()" [name]="groupName + '-period'"
+            [value]="period()" (valueChange)="setPeriod($event)" />
+        </div>
+
+        <fieldset class="tiers">
+          <legend>Тариф</legend>
+          <div class="tier-grid">
+            @for (entry of data.plans; track entry.plan) {
+              <app-plan-option [entry]="entry" [period]="period()" [name]="groupName" [selected]="selected() === entry.plan"
+                [current]="data.current.plan === entry.plan" [badge]="isRecommended(entry.plan) ? recommended()!.badge : null"
+                (choose)="choose($event)" />
+            }
+          </div>
+        </fieldset>
+
+        <details class="compare">
+          <summary>Сравнить подробно</summary>
+          <div class="table-scroll" tabindex="0" role="region" aria-label="Сравнение тарифов">
+            <table class="data-table">
+              <caption>Что входит в каждый тариф</caption>
+              <thead>
+                <tr>
+                  <td></td>
+                  @for (entry of data.plans; track entry.plan) { <th scope="col">{{ planLabel[entry.plan] }}@if (entry.availability === 'TEASER') { <span class="muted"> (в работе)</span> }</th> }
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of rows; track row.id) {
+                  <tr>
+                    <th scope="row">{{ row.label }}</th>
+                    @for (entry of data.plans; track entry.plan) { <td>{{ row.cell(entry.allowances) }}</td> }
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          <p class="hint">Голос и проверка ответов не тратят общий бюджет ИИ, но у них свой потолок на месяц и день.</p>
+        </details>
+
+        @if (renewable()) {
+          <div class="renew check-field">
+            <label class="check-row" [for]="renewId">
+              <input type="checkbox" [id]="renewId" [checked]="autoRenew()" (change)="onAutoRenew($event)" />
+              <span>{{ renewText() }}</span>
+            </label>
+            <p class="hint">Галочка не отмечена, пока вы не отметите её сами. Когда подключим оплату, автопродление можно будет отключить в профиле.</p>
+          </div>
+        }
+
+        <div class="promo field">
+          <label [for]="promoId">Промокод</label>
+          <div class="promo-row">
+            <input [id]="promoId" disabled autocomplete="off" aria-describedby="plans-promo-hint" />
+            <button type="button" class="button" disabled>Применить</button>
+          </div>
+          <p class="hint" id="plans-promo-hint">Скоро: промокоды появятся вместе с оплатой.</p>
+        </div>
+
+        <p class="notice" role="status" [id]="noticeId">{{ notice() }}</p>
+
+        <section class="faq" aria-labelledby="plans-faq">
+          <h2 id="plans-faq">Частые вопросы</h2>
+          <details>
+            <summary>Что будет с моими колодами, если вернуться на Free?</summary>
+            <p>Все колоды остаются. Free ограничивает ИИ: месячный бюджет, голос и проверку ответов.</p>
+          </details>
+          <details>
+            <summary>Если передумаю?</summary>
+            <p>Вернём деньги за полностью неиспользованные месяцы годовой подписки. Месяц, в котором вы уже получили месячный лимит, считается оказанной услугой.</p>
+          </details>
+          <details>
+            <summary>Как отключить автопродление?</summary>
+            <p>Когда подключим оплату, это будет переключатель «Автопродление» в профиле, в блоке «Тариф». Подписка продолжит работать до конца оплаченного периода.</p>
+          </details>
+        </section>
+
+        @if (action(); as action) {
+          <div class="cta-bar" #ctaBar>
+            <button type="button" class="button primary" [attr.aria-disabled]="action.disabled ? 'true' : null"
+              [attr.aria-describedby]="notice() ? noticeId : null" (click)="activate()">{{ action.text }}</button>
+          </div>
+        }
+      }
+    }
+  }
+</section>

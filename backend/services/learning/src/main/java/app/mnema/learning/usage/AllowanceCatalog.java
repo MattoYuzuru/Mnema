@@ -21,7 +21,14 @@ final class AllowanceCatalog {
     /** "Weekly" smart plans share one monthly bucket with the Pro plans of the Max plan. */
     private static final int WEEKLY_PLANS_PER_MONTH = 4;
 
+    /**
+     * The display facts of a plan that are not limits: the monthly price of the contract and the rough number of materials with
+     * five exercises its bar buys ({@code displayHint}; the same number twice for a single value).
+     */
+    record Facts(int priceRubPerMonth, int materialsMin, int materialsMax) { }
+
     private final Map<Plan, Allowance> plans = new EnumMap<>(Plan.class);
+    private final Map<Plan, Facts> facts = new EnumMap<>(Plan.class);
 
     @Autowired
     AllowanceCatalog(UsagePolicy policy) {
@@ -33,6 +40,7 @@ final class AllowanceCatalog {
             JsonNode node = document.path("plans").path(plan.name());
             if (!node.isObject()) throw new IllegalStateException("Allowances without plan " + plan);
             plans.put(plan, parse(plan, node, policy));
+            facts.put(plan, facts(node));
         }
     }
 
@@ -69,6 +77,13 @@ final class AllowanceCatalog {
                 caps.path("highFactcheck").intValue(), smartLimit, smartWindow);
     }
 
+    private static Facts facts(JsonNode node) {
+        JsonNode hint = node.path("displayHint").path("approxMaterialsWithFiveExercisesPerMonth");
+        int min = hint.isNumber() ? hint.intValue() : hint.path("min").intValue(0);
+        int max = hint.isNumber() ? hint.intValue() : hint.path("max").intValue(min);
+        return new Facts(node.path("priceRubPerMonth").intValue(0), min, max);
+    }
+
     private static JsonNode read() {
         try (InputStream stream = AllowanceCatalog.class.getClassLoader().getResourceAsStream("usage/allowances-v1.json")) {
             if (stream == null) throw new IllegalStateException("Missing allowances");
@@ -80,5 +95,9 @@ final class AllowanceCatalog {
 
     Allowance allowance(Plan plan) {
         return plans.get(plan);
+    }
+
+    Facts facts(Plan plan) {
+        return facts.get(plan);
     }
 }

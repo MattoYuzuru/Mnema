@@ -1,0 +1,45 @@
+:host { display: block; min-inline-size: 0; }
+
+.plan {
+    position: relative;
+    display: grid;
+    gap: .6rem;
+    block-size: 100%;
+    border: 1px solid var(--mn-rule);
+    border-block-start: 2px solid var(--mn-rule);
+    padding: 1.1rem 1.1rem 1.25rem;
+    background: var(--mn-sheet);
+    align-content: start;
+}
+
+/* Selection and recommendation are drawn as a heavier rule plus text (the radio mark, the stamp), never colour alone. */
+.plan.is-selected { border-color: var(--mn-ink); border-block-start-width: 4px; }
+.plan.is-recommended:not(.is-selected) { border-block-start-color: var(--mn-ink); }
+.plan.is-teaser { background: transparent; border-style: dashed; }
+
+.head { display: flex; align-items: center; gap: .75rem; }
+
+/* The label's hit area covers the whole card, so a tap anywhere chooses the tier. */
+.plan-name {
+    color: var(--mn-ink);
+    font: 500 clamp(1.5rem, 3vw, 1.9rem)/1.1 var(--mn-font-display);
+}
+.plan-name::after { content: ''; position: absolute; inset: 0; cursor: pointer; }
+.plan.is-teaser .plan-name::after { cursor: not-allowed; }
+.plan:has(input:focus-visible) { outline: 3px solid var(--mn-focus); outline-offset: 3px; }
+
+.stamp { margin: 0; justify-self: start; white-space: normal; overflow-wrap: anywhere; }
+
+.price { margin: 0; display: grid; gap: .15rem; }
+.price strong { color: var(--mn-ink); font: 600 1.15rem/1.3 var(--mn-font-body); }
+.note, .saving { color: var(--mn-muted); font-size: .9rem; }
+.saving { color: var(--mn-positive); font-weight: 600; }
+
+.lines { margin: 0; padding-inline-start: 1.1rem; display: grid; gap: .3rem; }
+.lines li { line-height: 1.45; overflow-wrap: anywhere; }
+
+@media (forced-colors: active) {
+    .plan { border-color: CanvasText; }
+    .plan.is-selected { border-color: Highlight; }
+    .plan:has(input:focus-visible) { outline-color: Highlight; }
+}

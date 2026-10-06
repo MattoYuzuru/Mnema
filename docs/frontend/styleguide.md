@@ -74,11 +74,11 @@ npx ng build --configuration development && node scripts/verify-no-styleguide.mj
 | Движение, Иконки | Волна кнопок, чернильное появление, набор знаков | `sg-foundations` |
 | Фирменные приёмы | `.generate-cta`, удаление удержанием | `sg-controls` |
 | Кнопки | `.button` (primary, quiet, small, mono), недоступные | `sg-controls`, `components.css` |
-| Поля ввода, Выбор | `.field`, `.hint`, `.field-error`, `app-mnema-select`, радио/флажки, `app-segmented-choice`, `app-choice-list` | `sg-controls` |
+| Поля ввода, Выбор | `.field`, `.hint`, `.field-error`, `app-mnema-select`, радио/флажки, флажок с пояснением `.check-field`, недоступная настройка `.settings-row`, `app-segmented-choice` (в том числе вопрос о цели), карточка тарифа `app-plan-option`, `app-choice-list` | `sg-controls`, `components.css` |
 | Меню и окна, Вкладки и пейджер | `app-toggletip`, `app-ai-prompt-window`, `app-batch-pager` | `sg-surfaces` |
 | Статусы и ход | `.stamp`, `app-new-badge`, `app-usage-meter`, плейсхолдер медиа | `sg-surfaces` |
 | Обратная связь | `.notice`, тосты `ToastService`, `.empty-state` | `sg-surfaces` |
-| Карточки и области | `.paper-surface` | `sg-surfaces` |
+| Карточки и области | таблица сравнения `.data-table`, панель главного действия `.cta-bar`, `.paper-surface` | `sg-surfaces`, `components.css` |
 | Пример экрана | Страница колоды из элементов каталога | `sg-screen` |
 
 Код страницы — `frontend/src/app/styleguide/`; её собственная раскладка в классах `sg-*`, в примерах они не используются.
@@ -86,7 +86,8 @@ npx ng build --configuration development && node scripts/verify-no-styleguide.mj
 ## Общие классы (`src/theme/components.css`)
 
 `.button` (`.primary`, `.quiet`, `.small`, `.mono`), `.notice` (`.success`, `.warning`, `.error`), `.hint`, `.field`, `.field-error`,
-`.stamp` (`.solid`), `.eyebrow`, `.empty-state`, `.paper-surface` (`.ruled`). Классы глобальны: инкапсуляция Angular не мешает написать
+`.stamp` (`.solid`), `.eyebrow`, `.empty-state`, `.paper-surface` (`.ruled`), `.data-table`, `.check-field` + `.check-row`,
+`.settings-row` (`.is-switch`), `.cta-bar` (`.cta-bar--inline`). Классы глобальны: инкапсуляция Angular не мешает написать
 `class="button primary"` в любом шаблоне. Заливка волной и фокус заданы в `global_styles.css`; `.generate-cta` — там же.
 
 Осторожно с локальными селекторами элементов (`p { font: … }`): в компоненте со scoped-стилями они по специфичности сильнее глобального

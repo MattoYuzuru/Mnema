@@ -122,17 +122,41 @@ fair-use buckets, `GET /api/usage` and the estimate. Migration `V26__usage_ledge
   module's boundary (AI-04, which supplies its own interpreter and the personal-data warnings). p95 is the sum of rate-card
   weights, p50 is `ceil(0.6 x sum)` over unrounded weights, exercises are `ceil(8 x n / 5)`.
 - **Entitlements.** `EntitlementSource` is the port; `ConfigEntitlementSource` serves `learning.usage.entitlements.default-plan`
-  with per-account `learning.usage.entitlements.overrides.<accountUuid>`. A plan change mid-period applies at once to the
-  limits and adds the missing credits as a `GRANT`; credits are never clawed back within a period. `EntitlementInbox` is the
-  validated, idempotent insert of billing's snapshots (no consumer yet, no endpoint). The rate card and allowances are
+  with per-account `learning.usage.entitlements.overrides.<accountUuid>`. **The month bar follows the entitlement in force:**
+  `unlocked = max(used + reserved, scheduled(plan, now))` (`UsageLedger.syncUnlocked`, the same rule on the read side in
+  `UsageState`). A paid snapshot grants its plan's monthly bar for the calendar month it starts in; a new paid snapshot inside a month
+  that already had a smaller grant tops up to the higher plan with a `GRANT` of the difference (never a second bar on top); when the
+  entitlement drops inside a month (expiry or downgrade) the month is re-based to the new plan with an `ADJUSTMENT` (negative), never
+  below what is already used or held and never above the new plan unless already spent. The balance row lock makes it transactional
+  and a repeat finds the target reached; ledger keys carry the balance row version, so a plan granted, re-based away and granted again
+  in one month still gets its entries. So a 30-day paid snapshot that crosses into the next month shows that month's paid bar until
+  `validUntil` and the Free bar after it. `EntitlementInbox` is the
+  validated, idempotent insert of billing's and promo snapshots (no endpoint: `accept` is the only writer, a test scans the
+  sources for it). Since #301 `InboxEntitlementSource` is the effective source: the valid inbox snapshot of the owner with the
+  highest plan (started, `validUntil` in the future; `BILLING` or `PROMO`; MAX > PRO > PLUS > FREE, ties to the latest `received_at`, so a
+  lower promo never masks a valid higher billing snapshot), else `ConfigEntitlementSource`. `accept` also refuses `periodEnd <=
+  periodStart` and a `validUntil` more than a day past `periodEnd`. A BILLING snapshot longer than two months
+  is `period: YEAR`; PROMO always reports `MONTH` (quota cadence, not an invented annual purchase), whatever the gift duration. Allowances stay calendar-month periods, so a year grants the plan's monthly allowance each month until
+  `validUntil`, never twelve at once. `usage_allowance.source` accepts `PROMO` (V41). The rate card and allowances are
   classpath copies of the contract files (`usage/*.json`); a test keeps them identical.
+- **Paywall and goal (#301).** `GET /api/plans` (`PlansController`, no-store) is a pure read: the tiers FREE/PLUS/PRO (MAX only
+  with `learning.plans.max-teaser.enabled=true`, as a `TEASER`), month prices from `allowances-v1.json`, the year price =
+  12 months x (100 - `learning.plans.year-discount-percent.<tier>`) / 100 rounded half up, `perDayRub` = month / 30, three
+  highlights and the comparison table computed from the allowances, `recommendedFor` from `learning.plans.recommendations.<goal>`,
+  and the owner's current entitlement (`autoRenew` is always false until #79). It takes no parameter: no query, header or return URL
+  selects or changes a plan. `GET/PUT /api/learning-profile` (package `profile`, table `learning_profile`) stores the answer to
+  «Для чего вам Mnema?» (`EXAMS`, `INTERVIEW`, `LANGUAGE`, `WORK`, `SELF`, or a skip: `{goal: null, skipped: true}`); nothing in
+  `ai`, `generation`, `study` or `media` may import it (`LearningBoundaryTest`, `PromptAssemblerTest`), so the goal never reaches a provider.
 - **Retention.** Counters of windows older than 90 days are deleted by the expiry worker. Ledger rows are immutable and are
   kept.
   TODO(account-deletion task, owner: the epic that adds Learning's account purge; whether billing (#79) must keep
   ledger rows for a financial retention period is decided there): Learning has no account purge path today (only study retention exists), so nothing deletes usage rows when an
-  account is deleted. The rows hold no personal data (an account id and opaque references), so the purge should delete by
+  account is deleted. The rows hold owner-linked identifiers and opaque references; the purge should delete by
   `owner_id` in this order: `usage_ledger_entry`, `usage_reservation`, `usage_balance`, `usage_allowance`,
   `usage_counter`, `entitlement_inbox`; `DELETE` stays allowed on the ledger for that reason (only `UPDATE` is blocked).
+  The same purge and backup-retention inventory must cover `learning_profile.owner_id`, its goal and answer timestamp;
+  no account-deletion cleanup or anonymity guarantee is implemented by the profile feature. This remains a launch dependency
+  in the [legal checklist](../../../docs/product/russia-legal-launch-checklist-2026.md).
 - **Tests.** `app.mnema.learning.usage`: PostgreSQL integration tests with a movable clock (`UsageTestConfiguration`) cover
   parallel reservations, idempotent settlement, expiry and rollover, the Free schedule across months, the burst, the buckets
   and the notifications; `UsageContractTest` reproduces the examples of `contracts/usage/usage.json` from database state.

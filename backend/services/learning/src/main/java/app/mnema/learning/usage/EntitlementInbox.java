@@ -13,15 +13,17 @@ import java.util.regex.Pattern;
 
 /**
  * The contract for the future billing context (#79, AI-19, AI-21): an entitlement snapshot (plan, period, allowances,
- * {@code valid_until}) arrives idempotently by {@code snapshotId}. Nothing consumes the rows yet: usage reads
- * {@link ConfigEntitlementSource}; a billing-backed {@link EntitlementSource} will read this table. There is no HTTP
- * endpoint, and a browser return URL never reaches it.
+ * {@code valid_until}) arrives idempotently by {@code snapshotId}. {@link InboxEntitlementSource} reads the newest
+ * valid snapshot of an owner. There is no HTTP endpoint, and a browser return URL never reaches it: this method is the
+ * only writer.
  */
 @Service
 public class EntitlementInbox {
     private static final Pattern ID = Pattern.compile("[A-Za-z0-9][A-Za-z0-9_.:+@/-]{0,199}");
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private static final int MAX_ALLOWANCES_BYTES = 8_192;
+    /** How far past its period a snapshot may stay valid: a grace for a late renewal, not an open-ended entitlement. */
+    private static final java.time.Duration VALID_UNTIL_GRACE = java.time.Duration.ofDays(1);
 
     /**
      * @param source     {@code BILLING} or {@code PROMO}
@@ -42,7 +44,8 @@ public class EntitlementInbox {
      * Stores a snapshot once. An identical repeat is a no-op.
      *
      * @return whether the snapshot was new
-     * @throws IllegalArgumentException a malformed snapshot, or a different one under an existing {@code snapshotId}
+     * @throws IllegalArgumentException a malformed snapshot (including {@code periodEnd <= periodStart} or a
+     *                                   {@code validUntil} more than a day past {@code periodEnd}), or a different one under an existing {@code snapshotId}
      */
     @Transactional
     public boolean accept(Snapshot snapshot) {
@@ -50,6 +53,7 @@ public class EntitlementInbox {
         if (snapshot.snapshotId() == null || !ID.matcher(snapshot.snapshotId()).matches()
                 || snapshot.plan() == null || snapshot.periodStart() == null || snapshot.periodEnd() == null
                 || snapshot.validUntil() == null || !snapshot.periodEnd().isAfter(snapshot.periodStart())
+                || snapshot.validUntil().isAfter(snapshot.periodEnd().plus(VALID_UNTIL_GRACE))
                 || !(snapshot.source().equals("BILLING") || snapshot.source().equals("PROMO"))
                 || snapshot.allowances() == null || !snapshot.allowances().isObject()) {
             throw new IllegalArgumentException("Invalid entitlement snapshot");

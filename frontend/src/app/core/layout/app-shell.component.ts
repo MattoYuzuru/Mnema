@@ -8,11 +8,13 @@ import { DeckConstellationComponent } from '../../shared/deck-constellation.comp
 import { AuthService } from '../../auth.service';
 import { NotificationBellComponent } from '../notifications/notification-bell.component';
 import { ToastRegionComponent } from '../notifications/toast-region.component';
+import { GoalOnboardingComponent } from '../../features/goal/goal-onboarding.component';
 
 @Component({
     selector: 'app-shell',
     host: { '(pointerover)': 'setWaveOrigin($event)' },
-    imports: [RouterLink, RouterLinkActive, RouterOutlet, DeckConstellationComponent, NotificationBellComponent, ToastRegionComponent],
+    imports: [RouterLink, RouterLinkActive, RouterOutlet, DeckConstellationComponent, NotificationBellComponent, ToastRegionComponent,
+        GoalOnboardingComponent],
     templateUrl: './app-shell.component.html',
     styleUrl: './app-shell.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush

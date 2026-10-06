@@ -134,3 +134,5 @@
     .sg-nav a[aria-current='location'] { border-color: Highlight; }
     .sg-bar { background: CanvasText; }
 }
+
+.sg-tier-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); }

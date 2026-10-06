@@ -19,8 +19,8 @@ import java.util.UUID;
  * can move it. No method opens a transaction: the callers do, and the ones that write need the caller's.
  *
  * <p>TODO(account-deletion task; owner: the epic that adds Learning's account purge): Learning has no account purge
- * path yet, so no usage row is removed when an account is deleted. The rows hold no personal data (an account id and
- * opaque references); the purge must delete by {@code owner_id} in this order: usage_ledger_entry, usage_reservation,
+ * path yet, so no usage row is removed when an account is deleted. The rows hold owner-linked identifiers and
+ * opaque references; the purge must delete by {@code owner_id} in this order: usage_ledger_entry, usage_reservation,
  * usage_balance, usage_allowance, usage_counter, entitlement_inbox. See "Retention" in the Learning guide.
  */
 @Repository
@@ -328,5 +328,24 @@ class UsageRepository {
                 .param("id", snapshotId).param("owner", owner).param("plan", plan.name()).param("source", source)
                 .param("start", time(start)).param("end", time(end)).param("allowances", allowancesJson)
                 .param("validUntil", time(validUntil)).query(Boolean.class).single();
+    }
+
+    /** One snapshot as the entitlement source reads it. */
+    record SnapshotRow(Plan plan, String source, Instant periodStart, Instant periodEnd, Instant validUntil) { }
+
+    /**
+     * The snapshot of {@code owner} that is in force at {@code now} (started, not expired) with the highest plan, so a
+     * lower promo never masks a valid higher billing snapshot. Equal plans fall to the latest received, then the later
+     * period start, then the id, so the answer is stable.
+     */
+    Optional<SnapshotRow> newestValidSnapshot(UUID owner, Instant now) {
+        return jdbc.sql("SELECT plan,source,period_start,period_end,valid_until FROM app_learning.entitlement_inbox "
+                        + "WHERE owner_id=:owner AND period_start<=:now AND valid_until>:now "
+                        + "ORDER BY CASE plan WHEN 'MAX' THEN 3 WHEN 'PRO' THEN 2 WHEN 'PLUS' THEN 1 ELSE 0 END DESC, "
+                        + "received_at DESC, period_start DESC, snapshot_id DESC LIMIT 1")
+                .param("owner", owner).param("now", time(now))
+                .query((row, number) -> new SnapshotRow(Plan.valueOf(row.getString("plan")), row.getString("source"),
+                        instant(row, "period_start"), instant(row, "period_end"), instant(row, "valid_until")))
+                .optional();
     }
 }
