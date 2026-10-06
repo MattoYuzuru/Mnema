@@ -4,7 +4,7 @@ artifact:
   type: launch-checklist
   title: "Mnema legal and payment launch status"
   status: proposed
-  updated_at: "2026-10-05"
+  updated_at: "2026-10-06"
   owners: ["project-owner"]
 ---
 
@@ -60,3 +60,27 @@ refund and gross-amount reconciliation before production payments. Current
 [ФНС NPD guidance](https://npd.nalog.ru/faq/) and the actual merchant agreement govern
 tax/receipt obligations. Real money remains closed until #79 acceptance and these
 human dependencies pass.
+
+## Promo owner-data retention (deferred)
+
+The Learning account-purge owner and human/legal task #351 must agree retention,
+access and deletion rules before an account-purge implementation. Inventory:
+
+- `promo_attempt`, `promo_popup_state`, `promo_discount` and `promo_redemption`
+  linked by `owner_id`, including campaign choices, discounts, redemption audit
+  and address/device hashes;
+- the administrator identity in `promo_code.created_by`;
+- promo-scoped `command_receipt` rows (`command_scope='promo'`): `actor_id`, stored
+  `result`, keyed-derived fingerprint and operation timestamps.
+
+Hashes, opaque ids and replacement tombstones may remain linkable; they are not
+proof of anonymity. Decide justified audit retention and its duration alongside
+deletion, preserving activation-count and once-per-account semantics. The two-hour
+attempt expiry is operational cleanup, not an account-wide purge. No such purge
+is implemented by #302.
+
+The inventory includes copies in backups. The [current VPS backup policy](../operations/vps-runtime.md#backup-monitoring-and-rollback)
+retains local dumps without automatic retention deletion; offsite backup remains
+deferred in #350. Define dump expiry/access and reapplication of deletion rules
+after restore. Removing live rows alone cannot establish that retained copies
+are gone. These are deferred decisions, with no backup deletion or restore claimed.

@@ -11,12 +11,14 @@ import java.util.UUID;
 
 /**
  * SQL of the promo tables. Time is always passed in (the usage clock), never read from the database. No method opens a transaction: the services do.
- * A code is looked up by the SHA-256 of its normalized text only; no query selects or logs a plain code.
+ * A code is looked up by HMAC-SHA256 of its normalized text under {@code MNEMA_PROMO_HASH_SECRET}; no query selects or logs a plain code.
  *
- * <p>TODO(account-deletion task; owner: the epic that adds Learning's account purge, see {@code UsageRepository}): promo_attempt,
- * promo_popup_state, promo_discount and promo_redemption carry an {@code owner_id}. The first three hold no more than an account id and
- * keyed hashes and are deleted by it; promo_redemption is the redemption audit, so whether it is deleted or anonymised (owner_id to a
- * tombstone, keeping the hashes) is a retention decision for that task, together with billing (#79).
+ * <p>TODO(account-deletion task; owner: the Learning account-purge epic with human/legal task #351): inventory
+ * {@code promo_attempt}, {@code promo_popup_state}, {@code promo_discount} and {@code promo_redemption} by {@code owner_id},
+ * {@code promo_code.created_by}, and promo-scoped {@code command_receipt.actor_id/result}. Decide deletion or justified audit retention,
+ * access and duration together with backup expiry/restoration policy before adding a purge path; preserve redemption-limit correctness.
+ * Keyed hashes, opaque ids or a replacement tombstone can remain linkable and do not guarantee anonymity. The two-hour attempt sweep
+ * is not an account purge; none is implemented here.
  */
 @Repository
 class PromoRepository {

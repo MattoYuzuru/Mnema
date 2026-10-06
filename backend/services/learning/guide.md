@@ -166,7 +166,15 @@ fair-use buckets, `GET /api/usage` and the estimate. Migration `V26__usage_ledge
   `PROMO_NOT_ELIGIBLE` before the code is burned; a discount code stores `promo_discount` (larger percent wins) that `GET /api/plans` returns as `pendingDiscount` and billing (#79) will read.
   Problem codes: `PROMO_INVALID` (unknown, disabled, expired or not started: one answer), `PROMO_EXHAUSTED`, `PROMO_ALREADY_USED`,
   `PROMO_NOT_ELIGIBLE`, `PROMO_VELOCITY`, `RATE_LIMITED`, `IDENTITY_UNAVAILABLE`. The audit is `promo_redemption` plus log lines with ids only; the
-  address and User-Agent exist only as HMAC hashes. Package `experiment`: `learning.experiments.<key>.variants` with weights; the variant is
+  address and User-Agent exist only as HMAC hashes; those hashes and account-linked audit records are not an anonymity guarantee.
+  **Deferred promo account deletion:** the Learning account-purge owner and human/legal task #351 must inventory
+  `promo_attempt`, `promo_popup_state`, `promo_discount`, `promo_redemption` (`owner_id`), `promo_code.created_by`, and
+  `command_receipt.actor_id/result` with `command_scope='promo'` (including the redemption result and keyed-derived fingerprint).
+  Choose deletion versus justified audit retention, access and duration without reopening redemption limits or claiming that a tombstone
+  anonymises the records. Include retained dumps, their expiry/access policy and reapplication of deletion rules after restore; the
+  [current backup policy](../../../docs/operations/vps-runtime.md#backup-monitoring-and-rollback) retains local dumps without automatic
+  retention deletion. The two-hour attempt sweep does not implement account deletion; no promo account-purge path exists today.
+  Package `experiment`: `learning.experiments.<key>.variants` with weights; the variant is
   `HMAC-SHA256(MNEMA_EXPERIMENT_SECRET, accountId:key) mod 100` over the cumulative weights (`control` without the secret, also in production) and is returned in
   `GET /api/plans` as `experiments`; `POST /api/experiment-events` only increments `mnema_experiment_events_total{key,variant,event}` (30 per account per
   minute per instance). The popup (`GET /api/promo-popup`, `POST /api/promo-popup/events`) keeps `promo_popup_state` per account: eligible while the

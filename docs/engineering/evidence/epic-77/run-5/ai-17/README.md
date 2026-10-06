@@ -1,8 +1,10 @@
 # AI-17 operations and evaluation evidence
 
-Status: locally verified implementation; final integration/review and owner acceptance remain pending.
-Issue [#300](https://github.com/MattoYuzuru/Mnema/issues/300). This is implementation/evaluation
-evidence, with no deployment or enabled production AI claim.
+Status: operations implementation merged through [PR #370](https://github.com/MattoYuzuru/Mnema/pull/370)
+as `f554a2b5`; owner acceptance of the evaluation remains pending.
+Issue [#300](https://github.com/MattoYuzuru/Mnema/issues/300). Final integrated S1–S8 evidence is tracked
+in [#302](https://github.com/MattoYuzuru/Mnema/issues/302). This record claims neither deployment,
+prompt activation nor enabled production AI.
 
 Learning can separate HTTP admission from provider execution without placing keys on the API.
 Intent parsing now joins the worker boundary; its existing POST response waits for an ephemeral
@@ -67,9 +69,13 @@ comparison after scoring. Generated texts are not committed.
 
 The owner must score the sample and calibrate the judges (at least 50 decisions), and review
 the 144 proposed assessment labels. Real-user admission additionally depends on #280/#351.
-#300 must not be reported complete solely from green unit tests or machine proxy acceptance.
+The merged operations implementation does not replace these human decisions; neither unit tests
+nor machine proxy acceptance establishes owner approval of candidate v2.
 
 ## Validation
+
+The entries below preserve recovered/pre-integration evidence. The protected implementation
+review and final slice gates are linked from PR #370; the final run5 composition belongs to #302.
 
 - Targeted backend tests passed: existing intent behavior, keyless API/worker hand-over,
   exclusive claims, deadline and discarded-result fencing, caller-transaction rejection,
