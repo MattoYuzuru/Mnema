@@ -136,7 +136,7 @@ fair-use buckets, `GET /api/usage` and the estimate. Migration `V26__usage_ledge
   lower promo never masks a valid higher billing snapshot), else `ConfigEntitlementSource`. `accept` also refuses `periodEnd <=
   periodStart` and a `validUntil` more than a day past `periodEnd`. A BILLING snapshot longer than two months
   is `period: YEAR`; PROMO always reports `MONTH` (quota cadence, not an invented annual purchase), whatever the gift duration. Allowances stay calendar-month periods, so a year grants the plan's monthly allowance each month until
-  `validUntil`, never twelve at once. `usage_allowance.source` accepts `PROMO` (V39). The rate card and allowances are
+  `validUntil`, never twelve at once. `usage_allowance.source` accepts `PROMO` (V41). The rate card and allowances are
   classpath copies of the contract files (`usage/*.json`); a test keeps them identical.
 - **Paywall and goal (#301).** `GET /api/plans` (`PlansController`, no-store) is a pure read: the tiers FREE/PLUS/PRO (MAX only
   with `learning.plans.max-teaser.enabled=true`, as a `TEASER`), month prices from `allowances-v1.json`, the year price =
