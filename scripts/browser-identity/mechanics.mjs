@@ -436,19 +436,28 @@ export async function runMechanics(ctx) {
       const wide = [...sheet.querySelectorAll('*')].filter(e => e.getBoundingClientRect().right > limit)
         .map(e => e.tagName.toLowerCase() + (e.className && typeof e.className === 'string' ? '.' + e.className.trim().split(' ')[0] : '')).slice(0, 4).join(' ');
       const blocks = [...document.querySelectorAll('app-native-document-renderer article p, app-native-document-renderer article h1, app-native-document-renderer article h2, app-native-document-renderer article h3')];
-      return { wide, text: blocks.length >= 2 && blocks.every(e => e.scrollWidth <= e.clientWidth + 1 && e.getBoundingClientRect().right <= limit),
+      const players = [...sheet.querySelectorAll('app-native-media-player')];
+      const playerOverflow = players.some(player => {
+        const boundary = player.getBoundingClientRect();
+        return [...player.querySelectorAll('.mnema-player-controls *')].some(control => {
+          const rect = control.getBoundingClientRect();
+          return rect.width > 0 && (rect.left < boundary.left - 1 || rect.right > boundary.right + 1);
+        });
+      });
+      return { wide, playerOverflow, audio: Boolean(sheet.querySelector('app-native-media-player audio')),
+        video: Boolean(sheet.querySelector('app-native-media-player video')),
+        text: blocks.length >= 2 && blocks.every(e => e.scrollWidth <= e.clientWidth + 1 && e.getBoundingClientRect().right <= limit),
         sheet: sheet.scrollWidth <= sheet.clientWidth, page: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
         font: parseFloat(getComputedStyle(document.querySelector('app-native-document-renderer article')).fontSize) };`);
-    // The sheet also holds media players whose controls are outside this scenario's contract (long text containment);
-    // sheet-level overflow is recorded as an observation in the evidence, not as a failure of the text check.
-    const observed = [];
+    // Reflow includes the published audio/video players and their controls, not only the text (#307).
     const widths = {};
     for (const width of [320, 390, 1440]) {
       await metrics({ width, height: 844, deviceScaleFactor: 1, mobile: false });
       await renderSettled();
       const result = await contained();
       need(result.text, `long text overflows the material at ${width} px`);
-      if (!result.sheet) observed.push(`${width}px: ${result.wide}`);
+      need(result.audio && result.video, 'the reflow fixture must include both audio and video');
+      need(result.sheet && result.page && !result.playerOverflow, `material or player overflows at ${width} px: ${result.wide}`);
       widths[width] = result.page;
     }
     await metrics({ width: 320, height: 844, deviceScaleFactor: 1, mobile: false });
@@ -461,7 +470,7 @@ export async function runMechanics(ctx) {
     await call(`document.documentElement.style.fontSize = ''; return true;`);
     need(doubled.font >= base * 1.9, `2x root text did not scale the material (${base}px -> ${doubled.font}px)`);
     need(doubled.text, 'long text overflows the material at 320 px with 2x root text');
-    if (!doubled.sheet) observed.push('320px at 2x root text: ' + doubled.wide);
+    need(doubled.sheet && doubled.page && !doubled.playerOverflow, 'material or player overflows at 320 px with 2x root text: ' + doubled.wide);
     // 200% browser zoom on a 320 px window is a 160 CSS-pixel layout viewport.
     await metrics({ width: 160, height: 844, deviceScaleFactor: 2, mobile: false });
     await renderSettled();
@@ -469,9 +478,9 @@ export async function runMechanics(ctx) {
     await ctx.saveScreenshot('mechanics-renderer-reflow-200-zoom.png', tab);
     await desktop();
     need(zoomed.text, 'long text overflows the material at 200% zoom on a 320 px window');
-    if (!zoomed.sheet) observed.push('200% zoom on 320px: ' + zoomed.wide);
+    need(zoomed.sheet && zoomed.page && !zoomed.playerOverflow, 'material or player overflows at 200% zoom: ' + zoomed.wide);
     return { widths: [320, 390, 1440], rootTextScale: 2, zoomPercent: 200, longUnbrokenString: 512, longTextContained: true,
-      sheetOverflowObservations: observed };
+      audioVideoContained: true, playerControlsContained: true };
   });
 
   // The decorative constellation: scattered, clear of the content and of each other on a wide page; omitted on a narrow one.
