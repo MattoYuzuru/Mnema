@@ -308,9 +308,9 @@ the caption `… · мужской голос`. `Вернуть` restores the pr
 plays and carries no `Синтезированная речь`: no AI marks on published content).
 
 Not covered: the FAILED clip frame (`Повторить / Убрать блок`). The Stub text adapter writes the spoken text itself (the first heading of one
-of five fixed documents), so `[[stub:tts-down]]` cannot be put into it from the composer; it is covered by the backend tests. The scenario
-records a known finding in its evidence (`findings`, `player-2x-text-overflow-320`) instead of failing: the shared audio player
-(`native-media-player`) overflows a 320 px window with 2x root text; the speech UI itself does not.
+of five fixed documents), so `[[stub:tts-down]]` cannot be put into it from the composer; it is covered by the backend tests. At 320 px with 2x root
+text the step fails when the page overflows, when any control sticks out of the shared audio player (`native-media-player`, including
+the speed select) or when a player button, timeline or speed select is below 44 px.
 
 Screenshots: `workshop-audio-ready-1440.png`, `workshop-audio-panel-{1440,390,320}.png`, `workshop-audio-redone-1440.png`,
 `workshop-audio-undone-1440.png`, `workshop-audio-320-2x-text.png`, `browse-audio-no-mark-1440.png`; failures write

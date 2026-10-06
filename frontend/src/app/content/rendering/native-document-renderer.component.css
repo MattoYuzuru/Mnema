@@ -268,10 +268,12 @@
 @media (max-width: 30rem) {
     .native-document,
     .native-message {
-        padding-inline: 1.125rem;
+        /* Nested paper/media gutters must yield at narrow widths and enlarged text, leaving room for the player targets. */
+        padding-inline: min(1.125rem, 4vw);
         border-inline: 0;
     }
 
+    .native-media { padding: min(.75rem, 3vw); }
     .native-document { border-block-start-width: 2px; }
 }
 
