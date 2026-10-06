@@ -304,6 +304,14 @@ public class AssessmentService {
         row = assessments.forUpdate(attemptId).orElseThrow();
         if (!row.state().equals("ASSESSING")) return;
         Instant now = attempts.now();
+        // The sweeper is eventual. Fence the absolute deadline under the row lock before any delivered grade or fair-use debit.
+        if (!now.isBefore(row.deadlineAt())) {
+            assessments.transition(attemptId, "ASSESSING", "UNAVAILABLE", "DEADLINE", now);
+            count("UNAVAILABLE", "DEADLINE");
+            LOG.info("assessment_result_discarded attempt_id={} state=UNAVAILABLE reason=DEADLINE", attemptId);
+            count("DISCARDED", null);
+            return;
+        }
         if (outcome instanceof GradeOutcome.Unavailable unavailable) {
             assessments.transition(attemptId, "ASSESSING", "UNAVAILABLE", unavailable.reason(), now);
             count("UNAVAILABLE", unavailable.reason());

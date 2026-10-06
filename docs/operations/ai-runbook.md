@@ -133,25 +133,28 @@ to self-check with `DEADLINE`, `CAPABILITY_UNAVAILABLE`, `PROVIDER_UNCERTAIN`, `
 Actuator `health` and `metrics` are served on a **separate management port**, never on the public API
 (the public port answers 401 or 404 for `/actuator/metrics`). The service refuses to start when
 `metrics` is exposed without its own port, or with a port whose address is not a loopback/private IP literal. Wildcard/public addresses are rejected. Enable it with the
-environment of the Learning container:
+environment of the opt-in Learning worker (matching `compose.ai-worker.yaml`):
 
 ```text
-MANAGEMENT_SERVER_PORT=18083
+MANAGEMENT_SERVER_PORT=18085
 MANAGEMENT_SERVER_ADDRESS=127.0.0.1
 MNEMA_MANAGEMENT_EXPOSURE=health,info,metrics
 ```
 
-On the production host Learning is on host networking, so the port is a loopback port next to
-`127.0.0.1:18082`; reach it over SSH (`ssh mnema`), never through Caddy. The management port
+On the production host Learning is on host networking; the opt-in worker serves its private API on
+`127.0.0.1:18084` and management on `127.0.0.1:18085`. Reach management over SSH (`ssh mnema`), never through Caddy. The management port
 answers `GET` and `HEAD` without a token and nothing else; with a separate port the health probes
-move there too, as `/actuator/health/readiness` (without the `/api` prefix): repoint
-`deploy/production/health-monitor.py` and the container health check in the same change that
-sets the port. Default is off: the variables are unset and the process behaves as before.
+move there too, as `/actuator/health/readiness` (without the `/api` prefix). The overlay health check already uses
+`MnemaReadiness 18085 /actuator/health/readiness`; its bounded helper allows 18081, 18082 and 18085 only.
+The default `deploy/production/health-monitor.py` still probes the API on 18082. An opt-in rollout must add a worker
+readiness check at `http://127.0.0.1:18085/actuator/health/readiness` and metrics scraping on 18085. If management is moved
+to a different port, update the helper allowlist, container health check and monitoring URLs together. Setting only the
+port does not preserve readiness. Default is off: the variables are unset and the process behaves as before.
 
 A snapshot as a table (stdlib only):
 
 ```sh
-python3 scripts/ai-ops/metrics_snapshot.py --url http://127.0.0.1:18083/actuator
+python3 scripts/ai-ops/metrics_snapshot.py --url http://127.0.0.1:18085/actuator
 ```
 
 It prints calls, error rate, p95 latency and cost per capability and provider, the age of the
