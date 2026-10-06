@@ -83,14 +83,14 @@ export class PlansPageComponent {
         const catalog = this.catalog();
         return catalog === null ? null : recommendation(catalog, this.goals.goal());
     });
-    /** The tier shown as chosen: the reader's pick, else their own plan, else Free. */
+    /** Free is the default offer; the current tariff is marked independently, and only a deliberate pick changes the selection. */
     protected readonly selected = computed<PlanId>(() => {
         const catalog = this.catalog();
         const pick = this.chosen();
         if (catalog === null) return 'FREE';
         const listed = (plan: PlanId): boolean => catalog.plans.some(entry => entry.plan === plan && entry.availability === 'AVAILABLE');
         if (pick !== null && listed(pick)) return pick;
-        return listed(catalog.current.plan) ? catalog.current.plan : 'FREE';
+        return 'FREE';
     });
     protected readonly selectedEntry = computed(() => this.catalog()?.plans.find(entry => entry.plan === this.selected()) ?? null);
     protected readonly action = computed(() => {

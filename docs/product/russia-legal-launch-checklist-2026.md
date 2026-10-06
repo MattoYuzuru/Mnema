@@ -27,6 +27,11 @@ review of the actual recipients, contracts and data flows.
   providers remain unconfigured in the active runtime. Credentials can be privately
   staged, but must not be activated as proof of legal approval. See
   [runtime configuration](../operations/vps-runtime.md#auth-configuration).
+- An approved private operator-contact channel is not defined in the checked-in
+  launch documents. Confirm it with the owner under human/legal task #351 before
+  public activation that needs personal-data requests. Public GitHub discussions
+  must not solicit account or other personal data; profile self-service and voice
+  consent withdrawal do not replace the operator's contact channel.
 - The owner defers the T-Business acquiring application until plans/paywall and
   the bank's site/test-account requirements are ready. The manager's written reply
   about **НПД receipts** is pending. No working payment terminal is claimed.

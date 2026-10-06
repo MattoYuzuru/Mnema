@@ -7,6 +7,7 @@ import { ProfilePageComponent } from './profile-page.component';
 import { appConfig } from './app.config';
 import { DURING_STUDY_STORAGE_KEY, NotificationPreferences } from './core/notifications/notification-preferences';
 import { PlansApiService } from './features/plans/plans-api.service';
+import { SpeechInputApiService } from './features/speech/speech-input.api';
 import { UsageApiService } from './features/usage/usage-api.service';
 import type { UsageSnapshot } from './features/usage/usage.models';
 import { plusUsage } from './features/usage/usage-test-data';
@@ -40,6 +41,7 @@ describe('ProfilePageComponent', () => {
                 { provide: AccountProfileApi, useValue: api },
                 { provide: UsageApiService, useValue: usage },
                 { provide: PlansApiService, useValue: { load: () => NEVER } },
+                { provide: SpeechInputApiService, useValue: { withdrawConsent: () => of(undefined) } },
                 { provide: AuthService, useValue: {
                         setPassword: vi.fn().mockName("AuthService.setPassword")
                     } }
@@ -159,6 +161,8 @@ describe('ProfilePageComponent', () => {
         expect(section.getAttribute('aria-labelledby')).toBe('ai-budget-heading');
         expect(root.querySelector('#ai-budget-heading')?.textContent).toBe('ИИ-бюджет');
         expect(section.querySelector('app-usage-meter .summary')?.textContent).toContain('Использовано 14');
+        expect(root.querySelector('#speech-consent-heading')?.textContent).toBe('Распознавание речи');
+        expect(root.querySelector('#speech-consent app-speech-consent-settings button')?.textContent).toContain('Отозвать согласие');
     });
 
     it('keeps the profile working when the usage request fails', async () => {
