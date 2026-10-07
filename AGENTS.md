@@ -9,7 +9,9 @@ consistent with the existing codebase (follow current package/module boundaries)
 Frontend: Angular (latest stable), standalone components, Signal-based state (signals,
 computed/effect where idiomatic), a11y-first UI.
 
-This file is always loaded; keep it short. Detail lives in linked docs. Full wording of the
+This file owns repository-wide instructions. Read `backend/AGENTS.md` or
+`frontend/AGENTS.md` before work in that subtree; hosts differ in automatic discovery.
+Detail lives in linked docs. Full wording of the
 generic rules summarised below: [`docs/engineering/engineering-standards.md`](docs/engineering/engineering-standards.md).
 
 ## Where to look (read on demand)
@@ -87,8 +89,8 @@ Add or update tests for non-trivial changes (backend unit + slice/integration; f
 tests for critical logic, e2e only when necessary); prefer deterministic tests over brittle timing.
 
 ```bash
-cd backend && ./gradlew clean quality                              # JDK 25 + Docker/Testcontainers
-cd frontend && npm ci && npm run lint && npm run test && npm run build
+(cd backend && ./gradlew clean quality)                            # JDK 25 + Docker/Testcontainers
+(cd frontend && npm ci && npm run lint && npm run test && npm run build)
 python3 scripts/verify_docs.py
 ```
 
@@ -98,7 +100,7 @@ python3 scripts/verify_docs.py
 - Before any push, re-run the full relevant gate on the exact branch/commit being pushed.
 - If the gate fails for missing coverage or tests, add or update tests until the thresholds pass;
   do not push with a red gate. Coverage thresholds are a hard requirement of done.
-- Machine setup (default `java` is not 21, Colima socket, Node 24) and the complete CI-equivalent
+- Machine setup (default `java` may differ from JDK 25, Colima socket, Node 24) and the complete CI-equivalent
   command list: [`docs/engineering/agent-runbook.md`](docs/engineering/agent-runbook.md).
 
 ## GitHub work items and pull requests

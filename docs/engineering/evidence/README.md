@@ -4,14 +4,15 @@ artifact:
   type: evidence-index
   title: "Engineering evidence index"
   status: current
-  updated_at: "2026-09-30"
+  updated_at: "2026-10-07"
   owners: ["project-owner"]
 ---
 
 # Engineering evidence index
 
 Evidence is historical proof for a specific revision and environment. It does not
-override current code, accepted contracts or the local-only delivery boundary.
+override current code, accepted contracts or the
+[current delivery boundary](../../operations/production-delivery.md).
 Records written before #266 use the removed exercise names (`TYPED`, `LISTEN_TYPE`,
 `CLOZE_SINGLE`, `SINGLE_CHOICE`, `LISTEN_CHOICE`, `AUDIO_TEXT_MATCH`) and the older
 wire shapes; the current mechanics and fields are in
@@ -46,6 +47,10 @@ of the former two-column exercise editor are likewise historical.
   и контракты AI-слоя (#279) с точными commit'ами и границами проверки.
 - [Прогон 2: фундамент без AI](./epic-77/run-2/README.md) — usage ledger, провайдеры, MBM-компилятор,
   `code_block`, центр уведомлений, хаб колоды и UI-примитивы; ревью, измерения и границы проверки.
+- [Прогон 3](./epic-77/run-3/README.md) — composer, Мастерская, approval и заметки как источники.
+- [Прогон 4](./epic-77/run-4/README.md) — упражнения, проверка объяснений, правки и planner.
+- [AI-17 evaluation](./epic-77/run-5/ai-17/README.md) — frozen corpus, кандидаты и границы качества;
+  отдельно отмечены pending owner labels, это не автоматическая приёмка всего эпика.
 
 ## Storage и content
 

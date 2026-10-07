@@ -4,6 +4,7 @@ artifact:
   type: production-frontend-guide
   status: current
   created_at: "2026-10-05"
+  updated_at: "2026-10-07"
   scope: "Angular web UI; living styleguide /styleguide and rules for shared elements"
 ---
 
@@ -13,8 +14,10 @@ artifact:
 или класс приложения, а не копия. Визуальное направление и токены описывают
 [design and experience](./design-and-experience-2026-09.md) и
 [brand and UI contract](./mnema-brand-and-ui-contract.md); этот документ — про то, как ими пользоваться.
-Если документ и страница расходятся, правда в коде: `frontend/src/theme/tokens.css`,
-`frontend/src/theme/components.css`, `frontend/src/app/shared/`.
+Исполняемые примеры находятся в `frontend/src/theme/tokens.css`,
+`frontend/src/theme/components.css`, `frontend/src/app/shared/`. При расхождении с
+принятым design-контрактом проверь причину и исправь канонический источник: код
+сам по себе не отменяет принятую визуальную границу.
 
 ## Правила
 
@@ -34,17 +37,40 @@ artifact:
 
 ## Как открыть
 
+В полном локальном стеке включите development-сборку frontend, сохраняя текущие
+аккаунты, материалы, сертификаты и порты:
+
 ```bash
-cd frontend
-npx ng serve            # http://localhost:4200/styleguide
+MNEMA_LOCAL_FRONTEND_CONFIGURATION=development ./scripts/mnema-local-full-stack.sh start
 ```
 
-Страница не требует входа и backend; данные — локальные фикстуры. `npm start` в проекте нет (`package.json` не менялся),
-цель `serve` описана в `frontend/angular.json` и по умолчанию собирает `development`.
+Откройте [Style Guide в локальном стеке](https://localhost:3443/styleguide) (если при
+bootstrap выбран другой `MNEMA_LOCAL_WEB_PORT`, используйте этот сохранённый порт).
+Это тот же runtime, а не второй набор данных. На следующих `start` повторяйте флаг,
+пока нужен каталог. Для возврата к production-сборке:
 
-Локальный полный стек и production отдают production-сборку (`npm run build`), поэтому `/styleguide` там **нет** — это намеренно.
-Если владельцу нужна страница и на стеке с реальным backend, правильный путь — отдельный флаг dev-сборки образа frontend
-(например, build-arg конфигурации Angular `development` в `deploy/local-full-stack/frontend.Dockerfile`), а не включение маршрута в production.
+```bash
+./scripts/mnema-local-full-stack.sh start
+```
+
+Только каталог без Docker/backend можно открыть отдельным dev-сервером:
+
+```bash
+(cd frontend && npx ng serve --host 127.0.0.1 --port 4200)
+```
+
+[Style Guide без backend](http://localhost:4200/styleguide) использует локальные
+фикстуры и не требует входа. `npm start` в проекте нет; цель `serve` в
+`frontend/angular.json` по умолчанию собирает `development`. Остановите dev-сервер
+через Ctrl+C.
+
+Production и обычный локальный `start` отдают production-сборку (`npm run build`),
+поэтому `/styleguide` там **нет**. Флаг работает только с
+`deploy/local-full-stack/frontend.Dockerfile` и допускает `development` или
+`production`; release Dockerfile его не использует. Это следует Angular
+[build configurations](https://angular.dev/tools/cli/environments) и Docker
+[build arguments](https://docs.docker.com/build/building/variables/).
+Подробнее о данных и портах: [локальный runtime](../deploy/selfhost-local.md).
 
 ## Почему страницы нет в production
 

@@ -3,9 +3,9 @@ artifact:
   id: delivery-audit-2026-08
   type: operations-review
   title: "Mnema delivery and production readiness audit"
-  status: proposed
+  status: historical
   created_at: "2026-08-15"
-  updated_at: "2026-08-24"
+  updated_at: "2026-10-07"
   owners: ["project-owner"]
   evidence_revision: "8e0c83d"
   assumptions:
@@ -14,6 +14,12 @@ artifact:
 ---
 
 # Delivery and production readiness audit
+
+> **Historical audit of the 2026-08 Kubernetes delivery.** The current source is
+> [production delivery](./production-delivery.md) and the [VPS runtime](./vps-runtime.md).
+> Its deployment observations and destructive cutover mandate below are historical,
+> not authorization for a new task. Revalidate unresolved findings on the current
+> runtime before creating remediation work; retained old data is not a cleanup target.
 
 > **Greenfield cutover note (2026-08-30):** the owner has authorized downtime, direct canonical replacement and deletion of every non-account DB/S3/backup artifact. Only long-lived account/profile data survives; sessions/grants do not. No `/v2`, compatibility runtime or full legacy snapshot is permitted, and rollback ends at the first deletion. The [reset/capacity/offline plan](./v2-reset-capacity-and-offline-plan.md) supersedes additive-migration wording here.
 

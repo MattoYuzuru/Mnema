@@ -244,7 +244,7 @@ class SessionLifecycle {
         ObjectNode input = Json.object().put("slotKey", slot.slotKey()).put("assetId", slot.assetId().toString())
                 .put("revisionId", revisionId.toString());
         input.set("spec", spec);
-        // Child steps are created READY and stay unclaimed until a media executor registers (AI-09, AI-10).
+        // Only registered media kinds are claimed; unsupported kinds remain READY.
         steps.insert(UUID.randomUUID(), session.sessionId(), artifact.artifactId(), session.ownerId(), kind, capability, input,
                 "media:" + artifact.artifactId() + ":" + slot.slotKey() + ":" + revisionId);
     }
@@ -573,9 +573,9 @@ class SessionLifecycle {
      * {@code GENERATION_READY} when every artifact is approvable now, {@code GENERATION_PARTIAL} when some are and some
      * failed, {@code GENERATION_FAILED} when none is approvable and something failed ({@code contracts/notifications}).
      * A proposal whose media is still being made is not approvable yet: with no failure nothing is published here.
-     * TODO(AI-09: media steps): publish {@code GENERATION_READY} when the last slot of a REVIEW session resolves. The image-search slots of AI-10
-     * resolve in the Workshop (READY or FAILED, announced by {@code MEDIA_SLOT_STATE}), but nothing announces the session as ready then: a session
-     * with media still announces nothing until its slots are settled by the single place AI-09 adds for all media kinds.
+     * TODO(#373; owner: Generation): publish the session outcome when the last slot of a
+     * REVIEW session resolves. {@link ImageSearchLifecycle} and {@link SpeechLifecycle} currently announce slot changes
+     * only; share this outcome check with them and preserve the session notification's deduplication key.
      */
     private void notifyOutcome(Tx tx, Map<String, Integer> counts) {
         UUID sessionId = tx.session.sessionId();

@@ -4,7 +4,9 @@ WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --no-audit --fund=false
 COPY frontend/ ./
-RUN npm run build
+ARG MNEMA_FRONTEND_CONFIGURATION=production
+RUN case "$MNEMA_FRONTEND_CONFIGURATION" in production|development) ;; *) exit 2 ;; esac \
+    && npx --no-install ng build --configuration "$MNEMA_FRONTEND_CONFIGURATION"
 
 FROM nginx:1.31.6-alpine@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2
 RUN apk add --no-cache --upgrade \

@@ -1,4 +1,21 @@
+---
+artifact:
+  id: epic-74-dependency-decisions
+  type: historical-record
+  title: "Epic #74 dependency decision snapshot"
+  status: historical
+  updated_at: "2026-10-07"
+  owners: ["project-owner"]
+---
+
 # Epic #74 dependency decisions
+
+> **Historical snapshot.** This records the #74 decision/handoff at its date, not
+> current runtime versions, open issue status, agent limits or task authorization.
+> Start from [AGENTS.md](../../AGENTS.md), the
+> [repository guide](./repository-guide.md) and the
+> [agent runbook](./agent-runbook.md) for current work.
+
 
 2026-09-06. Status: all three dependency proposals approved by the owner in chat.
 Package metadata was read from the npm registry. Implementation may now install

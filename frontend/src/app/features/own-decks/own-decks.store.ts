@@ -1,6 +1,6 @@
 import { DestroyRef, Injectable, inject, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Observable, Subscription, map, of, switchMap } from 'rxjs';
+import { Subscription, map, of, switchMap } from 'rxjs';
 
 import {
     DeckCommand,
@@ -8,7 +8,6 @@ import {
     DeckMetadata,
     DeckWriteResult,
     OwnDeck,
-    OwnDeckPage,
     OwnDeckProtocolError,
     createDeckCommand
 } from './own-deck.models';

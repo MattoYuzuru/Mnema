@@ -3,8 +3,8 @@ package app.mnema.learning.generation;
 import app.mnema.learning.ai.AiCapability;
 
 /**
- * Runs one kind of step. A kind without an executor in this process is never claimed: the media steps that
- * {@code TEXT_DRAFT} creates stay READY until AI-09 and AI-10 register theirs.
+ * Runs one kind of step. A kind without a registered executor in this process is never claimed;
+ * its steps remain READY until a matching executor is available.
  */
 interface StepExecutor {
     /** The {@code generation_step.kind} this executor runs. */
@@ -20,7 +20,7 @@ interface StepExecutor {
     AiCapability capability();
 
     /**
-     * Runs a claimed step to a result, a failure or a cancellation, writing each through {@link SessionLifecycle}. It is
+     * Runs a claimed step to a result, a failure or a cancellation through its lifecycle service. It is
      * called outside any database transaction and must never open one around a provider call. A thrown exception leaves
      * the step RUNNING: its lease expires and the step is recovered.
      */

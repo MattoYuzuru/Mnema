@@ -28,25 +28,15 @@ Adds to the root [`AGENTS.md`](../AGENTS.md); does not repeat it. Visual directi
   is under `/decks`; Study is `/decks/:deckId/study`. `/decks/:deckId` is the Deck hub (statistics, the material
   list with selection and bulk delete); there is no separate `/decks/:deckId/materials` list route. There is no
   legacy `my-study`, public-deck, template or import route; do not reintroduce one.
-- Features live in `src/app/features/{ai-info,authoring,generation,goal,own-decks,plans,study,usage}` (`usage` is the profile's «ИИ-бюджет» block over `GET /api/usage`; `plans` is the paywall `/plans` over `GET /api/plans` plus the profile's «Тариф» block (read-only: nothing charges or grants); `goal` is the once-asked «Для чего вам Mnema?» (`LearningGoalStore`, centralised copy in `goal-copy.ts`, never sent to a provider); `ai-info` is the public `/ai`; `generation` is the AI composer and Workshop over `contracts/generation`, see the brand contract); native document/editor/renderer in
-  `src/app/content`. Theme values are centralized in `src/theme/tokens.css`; components use its semantic
-  tokens as the brand contract requires.
-- `/plans` (paywall, authenticated) and `/ai` (public, linked from the footer) are routes of `plans` and `ai-info`; the goal question is an allowlist in `goal-onboarding.component.ts` (`/decks` list, `/profile`, `/plans` only): a new route is quiet by default, so add it there only when the question belongs on it.
-- `promo` owns the explicit code field in `/plans` and the profile, plus the native modal popup. A lost, malformed successful or 5xx redemption reply is an unknown outcome: preserve the normalized code's idempotency key and never assert unchanged rights. A discount is pending payment, not granted access. The popup is requested only on the loaded deck list or Study completion after the quiet zone clears; navigation/account changes fence late replies. Its once-per-account-session decision is kept in memory and sessionStorage, while cooldown/decline/purchase eligibility is server-owned. A preference is confirmed only by `Promo-Event-Recorded: true`; an absent/false header leaves its account-scoped receipt pending and offers suppressed until a later breakpoint retries it. `experiment` reads only the server's `/plans` assignments and resets variants/events on account changes; no client variant is sent with events.
+- Feature ownership and product-specific boundaries (generation, goal, plans, promo, experiment):
+  [frontend feature changes](../docs/engineering/repository-guide.md#frontend-feature-changes).
+- Native document/editor/renderer lives in `src/app/content`; theme values live in
+  `src/theme/tokens.css`. Read the owning wire contract and nearby tests before changing a flow.
 - Shared UI classes live in `src/theme/components.css` (`.button`, `.notice`, `.hint`, `.field`, `.field-error`, `.stamp`, `.eyebrow`, `.empty-state`, `.paper-surface`); do not redefine them in a component's CSS, add layout deltas only. The living catalogue is `/styleguide` (`src/app/styleguide`, dev builds only, registered behind `ngDevMode` in `app.routes.ts`): a new shared element goes there first. After `npm run build` run `node scripts/verify-no-styleguide.mjs`; see [styleguide](../docs/frontend/styleguide.md).
 - Wire shapes come from [`contracts/`](../contracts) fixtures that backend and frontend specs both
   execute (for example `study-contract.spec.ts`). Change fixture, contract and both sides together.
-- Node ids are the Workshop's alone (AI-11): the renderer draws `data-node-id` on top-level blocks only when it is given
-  `exposeNodeIds` (and the Workshop's marks and slots through `overlay`); Browse, Study and the editor preview never pass them.
-  Selection edits (`proposal-document`, `ai-prompt-window`) read a selection by node id, send whole blocks to `editArtifact` and
-  follow the turn through the events; they announce only through the Workshop's summary line. The keyboard route is Shift+F10 or
-  the menu key while the group is shown (the group says so); Tab from the selection reaches the group too, but after the block's own
-  focusable elements (links, players), because the group follows the document in the tab order.
-- «Попросить Мнему…» (AI-16, `generation/ask-mnema.component`) is the one composer of free text for what already exists: a collapsed disclosure in the
-  material profile and the exercise editor (only with `aiGeneration`). The free `createIntent` call returns a spec the server built and clamped;
-  the owner edits it as chips (the exercise builder's own `exercise-settings-fields`, the instruction, the voice) and only «Запустить» creates the
-  session, which is the one step that reserves. `REVISE_ITEM` and `REVISE_EXERCISE` results live in the Workshop (`revise-item-result`,
-  `revise-exercise-result`): «Оставить» is an ordinary revise approval, «Вернуть» goes to the first revision of the draft, «Ещё раз» is a new edit.
+- Workshop node overlays, selection edits and revise intents have dedicated scope and
+  accessibility boundaries: [frontend feature changes](../docs/engineering/repository-guide.md#frontend-feature-changes).
 - Learner-facing models never carry answer keys; references arrive only in feedback. Validate server
   envelopes strictly and treat an unknown network outcome by retrying the exact attempt.
 - Keep keyboard, screen-reader, touch and non-drag alternatives for every interactive exercise

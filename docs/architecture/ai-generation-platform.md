@@ -511,7 +511,7 @@ ETag/304 раз в 30–60 s, раз в 10 s при `activeWork > 0`. Первы
 ## 15. Platform
 
 Backend (#278, доставлено): Java 25 LTS (Temurin 25.0.4.1), Gradle 9.8.0, Spring Boot 4.1.1
-(Framework 7.0.9, Security 7.1.1 с Authorization Server внутри, Session 4.1.1, Jackson 3.1.5,
+(Framework 7.0.9, Security 7.1.1 с Authorization Server внутри, Session 4.1.1, Jackson 3.1.7 (override поверх 3.1.5 из BOM),
 JUnit 6.0.3, Testcontainers 2.0.5, Flyway 12.4.0; Tomcat закреплён на 11.0.26 поверх 11.0.24 из
 BOM ради исправлений безопасности), JaCoCo 0.8.15, `-Xlint:all -Werror`. Frontend (#278, доставлено
 в #306): Angular 22.2.1 zoneless (TypeScript 6.0.x), Node 24.21.0 LTS, ESLint 10, unit-тесты на

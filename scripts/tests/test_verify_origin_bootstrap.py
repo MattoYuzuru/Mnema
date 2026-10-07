@@ -1,5 +1,4 @@
 """The bootstrap must be harmless before explicit host-scoped administration."""
-import os
 from pathlib import Path
 import subprocess
 import tempfile

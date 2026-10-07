@@ -163,8 +163,9 @@ failures, including bodies over the cap, are the opaque `400 INVALID_REQUEST`. F
 
 Both are server-owned, disabled-by-default capabilities
 (`learning.features.ai-assessment.enabled`, `learning.features.speech-to-text.enabled`). A
-capability is available only when its flag is true **and** a provider is configured; no provider
-exists, so a mistakenly enabled flag yields `PROVIDER_NOT_CONFIGURED`, never a fake result.
+capability is available only when its flag is true **and** a usable provider route is configured.
+Adapters and a deterministic local/CI Stub are implemented; an enabled flag without a usable
+route yields `PROVIDER_NOT_CONFIGURED`, never a fake result.
 `GET /api/capabilities` returns eight keys (`aiAssessment`, `speechToText` and the AI-layer capabilities `aiGeneration`,
 `textToSpeech`, `imageSearch`, `imageGeneration`, `videoGeneration`, `webSearch`, see the
 [generation contract](../generation/http.json) `getCapabilities`) as `{available, reason}` with
@@ -174,7 +175,10 @@ exists, so a mistakenly enabled flag yields `PROVIDER_NOT_CONFIGURED`, never a f
 TEXT_OR_SPEECH`. While the matching capability is unavailable, publication fails with 409 `CAPABILITY_UNAVAILABLE` after structural
 validation; Study skips such candidates for new sessions. `aiAssessment` is available when its flag is on **and** an adapter is
 configured on the server's `assess` route (a provider key, or the deterministic Stub in local runs and CI) and the route is healthy.
-There is still no speech-to-text endpoint or response kind. Author audio recording is ordinary media upload and does not depend on either flag.
+Speech input, consent, retention and editable transcripts are implemented by AI-15;
+see the [speech contract](../speech/README.md). A spoken answer uses `answerSource: SPEECH`
+after the learner confirms the transcript. Author audio recording is ordinary media upload
+and does not depend on either flag.
 
 ### AI assessment of free explanations (`ai-semantic`, #292)
 

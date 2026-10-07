@@ -4,9 +4,8 @@ artifact:
   type: navigator
   title: "Mnema documentation"
   status: current
-  updated_at: "2026-10-05"
+  updated_at: "2026-10-07"
   owners: ["project-owner"]
-  evidence_revision: "f6955a5fb9889f546dc47129e5e4bed7b913f95a"
 ---
 
 # Mnema Docs
@@ -21,42 +20,28 @@ artifact:
 
 ## Маршрут implementation-агента
 
-1. **Current:** корневой [`AGENTS.md`](../AGENTS.md) — короткий нормативный контракт
-   (hard constraints, security, UI direction, quality gate, delivery и merge boundary).
-   Локальные отличия: [`backend/AGENTS.md`](../backend/AGENTS.md),
-   [`frontend/AGENTS.md`](../frontend/AGENTS.md).
-2. **Current:** [Domain truth map](./engineering/domain-truth-map.md) — какой источник
-   отвечает на какой доменный вопрос, и глоссарий (mechanic / content / objective /
-   evaluator, presentation, scheduled / replay / practice, capability).
-3. **Current:** [Agent runbook](./engineering/agent-runbook.md) — проверенные команды
-   gate, настройка JDK 25 / Colima / Node 24, browser harness и локальный стек.
-4. **Current:** [Repository guide](./engineering/repository-guide.md) — версии,
-   каталоги, runtime boundaries, change routes и
-   [полный gate](./engineering/repository-guide.md#полный-quality-gate).
-5. **Current:** [System overview](./system-overview.md) и
-   [Production delivery](./operations/production-delivery.md) — что реально
-   работает и как опубликовать и выкатить development release.
-6. **Study:** исполняемый контракт и все семь механик —
-   [`contracts/study`](../contracts/study/README.md); продуктовое обоснование —
-   [exercise catalog](./product/exercise-catalog-v2.md); acceptance —
-   [Epic #75](./engineering/evidence/epic-75/verification/integrated-main-2026-09-24.md).
-7. **Media:** [Epic #76 refinement](./engineering/epic-76-refinement.md) и раздел
-   [Media](#media-epic-76) ниже.
+Начните с корневого [`AGENTS.md`](../AGENTS.md) и scoped-инструкции
+[`backend/AGENTS.md`](../backend/AGENTS.md) или [`frontend/AGENTS.md`](../frontend/AGENTS.md).
+Далее читайте только маршрут своей задачи; evidence и research нужны для конкретного
+решения или предела приёмки, а не для каждого входа в репозиторий.
 
-8. **AI (Epic #77):** [product contract](./product/ai-layer-2026-10.md),
-   [architecture](./architecture/ai-generation-platform.md),
-   [refinement](./engineering/epic-77-refinement.md) и
-   [промпты прогонов](./engineering/prompts/epic-77-ai-layer.md), evidence
-   [прогона 1](./engineering/evidence/epic-77/run-1/README.md), [прогона 2](./engineering/evidence/epic-77/run-2/README.md),
-   [прогона 3](./engineering/evidence/epic-77/run-3/README.md) (Мастерская: composer → одобрение в колоду) и
-   [прогона 4](./engineering/evidence/epic-77/run-4/README.md) (упражнения с ИИ, проверка объяснений, правки, «Попросить Мнему…», план),
-   исполняемые контракты — [generation](../contracts/generation/README.md),
-   [usage](../contracts/usage/README.md), [notifications](../contracts/notifications/README.md).
+| Задача | Первый источник |
+|---|---|
+| Найти правило или термин | [Domain truth map](./engineering/domain-truth-map.md) |
+| Запустить, проверить, открыть Style Guide | [Agent runbook](./engineering/agent-runbook.md) |
+| Найти модуль, версию, owning tests или полный gate | [Repository guide](./engineering/repository-guide.md) |
+| Изменить Study | [Study contract](../contracts/study/README.md); продукт — [exercise catalog](./product/exercise-catalog-v2.md) |
+| Изменить authoring/content | [Learning guide](../backend/services/learning/guide.md) и [native content contract](../contracts/content/native-v1/README.md) |
+| Изменить media | Раздел [Media](#media-epic-76) ниже |
+| Изменить AI | [Generation](../contracts/generation/README.md), [speech](../contracts/speech/README.md), [usage](../contracts/usage/README.md), [notifications](../contracts/notifications/README.md); смысл — [product contract](./product/ai-layer-2026-10.md) |
+| GitHub Issue/PR | [Work item standard](./engineering/work-item-standard.md) |
+| Публикация или deployment | [Production delivery](./operations/production-delivery.md), только в scope соответствующего поручения |
 
 ## Agent-facing engineering files
 
 | Статус | Документ | Назначение |
 |---|---|---|
+| current | [Claude Code adapter](../CLAUDE.md) | Импортирует `AGENTS.md` и ведёт к тем же scoped-правилам; не отдельная политика. |
 | current | [Engineering standards](./engineering/engineering-standards.md) | Полная формулировка общих правил (research, UX/a11y, backend, frontend, tests, TODO, формат ответа); краткая форма — в `AGENTS.md`. |
 | current | [Domain truth map](./engineering/domain-truth-map.md) | Источник истины по доменным вопросам и глоссарий. |
 | current | [Agent runbook](./engineering/agent-runbook.md) | Команды и настройка рабочей машины с пометкой verified/not re-run. |
@@ -91,7 +76,7 @@ artifact:
 | current | [Learning API guide](../backend/services/learning/guide.md) | Content, exercise, Study и media runtime. |
 | current | [Learning runtime policy index](./engineering/runtime-policy-index.md) | Реестр runtime policies Learning. |
 | current | Контракты: [study](../contracts/study/README.md), [authoring](../contracts/authoring/README.md), [decks](../contracts/decks/README.md), [items](../contracts/items/README.md), [native content](../contracts/content/native-v1/README.md) | Общие fixtures backend/frontend. |
-| accepted | AI-контракты: [generation](../contracts/generation/README.md) (состояния, HTTP, события, ошибки, [MBM v1](../contracts/generation/mbm-v1/README.md), [упражнения](../contracts/generation/exercises/README.md)), [usage](../contracts/usage/README.md), [notifications](../contracts/notifications/README.md), [speech input](../contracts/speech/README.md) и [prompt library](../backend/services/learning/src/main/resources/ai/prompts/README.md) | Контракт и fixtures (AI-00, #279); реализованы сессии, события, одобрение, handoff, retention и заметки как источники (#287–#290); упражнения, правки и медиа — AI-09…AI-13. |
+| accepted | AI-контракты: [generation](../contracts/generation/README.md) (состояния, HTTP, события, ошибки, [MBM v1](../contracts/generation/mbm-v1/README.md), [упражнения](../contracts/generation/exercises/README.md)), [usage](../contracts/usage/README.md), [notifications](../contracts/notifications/README.md), [speech input](../contracts/speech/README.md) и [prompt library](../backend/services/learning/src/main/resources/ai/prompts/README.md) | Исполняемые fixtures для реализованных AI/Workshop, speech, usage/plans/promo и notifications; доступность функций задаёт runtime-конфигурация. |
 | historical | [`v1-apache-final`](https://github.com/MattoYuzuru/Mnema/tree/v1-apache-final) | Последний полный срез старых сервисов и миграций. |
 
 ## Media (Epic #76)
@@ -146,8 +131,8 @@ artifact:
 | current | [No-snapshot purge rehearsal](./operations/no-snapshot-purge-rehearsal.md) | Disposable policy test; не production purge. |
 | current | [Production image inventory](./operations/production-image-inventory.md), [release security evidence](./operations/release-security-evidence.md) | Пины и supply-chain evidence четырёх VPS images. |
 | superseded | [Staging runbook](./operations/staging-runbook.md), [release verification](./operations/release-verification-runbook.md), [database recovery](./operations/database-recovery-runbook.md) | Legacy Kubernetes reference; текущая поставка — через VPS workflow. |
-| proposed | [Delivery audit](./operations/delivery-audit-2026-08.md) | Исходные delivery recommendations; текущая VPS policy приоритетнее. |
-| proposed | [Reset/capacity/offline plan](./operations/v2-reset-capacity-and-offline-plan.md) | Будущие #76/#147 boundaries; не разрешение на destructive work. |
+| historical | [Delivery audit](./operations/delivery-audit-2026-08.md) | Kubernetes audit и прежняя cutover-граница; findings проверяются заново на текущем VPS runtime. |
+| proposed | [Reset/capacity/offline plan](./operations/v2-reset-capacity-and-offline-plan.md) | Остаточные purge/capacity/offline решения с legacy inventory; текущий VPS сохраняет старые данные. |
 | historical | [GitHub/staging plan](./operations/github-platform-and-staging-plan-2026-08.md) | План и evidence ранее доступного hosted delivery. |
 
 Production работает на RU VPS; deployment доступен через manual publication и

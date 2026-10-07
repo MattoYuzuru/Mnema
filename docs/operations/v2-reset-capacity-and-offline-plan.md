@@ -11,6 +11,12 @@ artifact:
 
 # Greenfield reset, capacity and offline plan
 
+> **Proposed plan with legacy inventory.** Constraints below describe the 2026-08
+> replacement input, not the current deployment. The [current production path](./production-delivery.md)
+> uses a new database and preserves old databases, objects and backups. Unresolved
+> purge/capacity/offline decisions remain separate work; this plan grants no destructive
+> or deployment authority to a new implementation task.
+
 ## Recommendation
 
 Create a fresh PostgreSQL 18 database, apply the replacement runtime's migrations from zero, import only explicitly allowlisted account data, and cut over during maintenance. The replacement takes the canonical routes: do not create `/v2`, transform disposable v1 data, run dual reads/writes or retain a compatibility runtime.
