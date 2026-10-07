@@ -6,7 +6,7 @@ RUN npm ci --no-audit --fund=false
 COPY frontend/ ./
 ARG MNEMA_FRONTEND_CONFIGURATION=production
 RUN case "$MNEMA_FRONTEND_CONFIGURATION" in production|development) ;; *) exit 2 ;; esac \
-    && npx --no-install ng build --configuration "$MNEMA_FRONTEND_CONFIGURATION"
+    && npx --no-install ng build --configuration "$MNEMA_FRONTEND_CONFIGURATION" --output-hashing=all
 
 FROM nginx:1.31.6-alpine@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2
 RUN apk add --no-cache --upgrade \
