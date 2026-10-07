@@ -27,6 +27,7 @@ replay_pid*
 
 .idea
 .vscode
+.DS_Store
 *.env
 jwt-*.pem
 backend/.gradle
