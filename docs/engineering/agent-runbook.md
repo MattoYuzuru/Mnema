@@ -5,7 +5,7 @@ artifact:
   title: "Mnema agent runbook: commands and local-machine setup"
   status: current
   created_at: "2026-10-01"
-  updated_at: "2026-10-01"
+  updated_at: "2026-10-07"
   owners: ["project-owner"]
 ---
 
@@ -46,14 +46,15 @@ problem, never permission to accept skipped tests.
 ## Quality gate (what CI-equivalent means)
 
 ```bash
-cd backend && ./gradlew clean quality          # compile, tests, JaCoCo, coverage-baseline.json floors
-cd frontend && npm ci && npm run lint && npm run test && npm run build   # Vitest/jsdom: no browser needed
+# From the repository root after the per-shell setup above:
+(cd backend && ./gradlew clean quality)          # compile, tests, JaCoCo, coverage-baseline.json floors
+(cd frontend && npm ci && npm run lint && npm run test && npm run build) # Vitest/jsdom: no browser needed
 python3 scripts/verify_docs.py                 # links, anchors, doc statuses
 python3 -m unittest discover -s scripts/tests -p 'test_*.py'   # ~35 s
 ```
 
 `quality` has no separate backend lint/static-analysis task today (compile + tests +
-coverage). CI additionally runs `scripts/verify_github_actions_pins.py`,
+coverage). Java compilation is the configured static check (`-Xlint:all -Werror`). CI additionally runs `scripts/verify_github_actions_pins.py`,
 `verify_security_automation_policy.py`, `verify_artifact_security_policy.py`,
 `verify_production_image_pins.py`, the maintained `scripts/test-*.sh` contracts and the
 real cross-service checks; the authoritative list is the `frontend-quality` job in
@@ -83,6 +84,21 @@ python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend \
 - Screenshots/evidence go to a `mnema-browser-evidence-*` temp directory. `--keep-on-failure`
   additionally keeps a mode-0700 fixture directory with disposable secrets, cookies and logs;
   inspect locally, never publish it, and delete that exact directory afterwards.
+
+## Style Guide
+
+From the checkout serving the current local runtime:
+
+```bash
+MNEMA_LOCAL_FRONTEND_CONFIGURATION=development scripts/mnema-local-full-stack.sh start
+```
+
+Open [Style Guide](https://localhost:3443/styleguide), using the retained web port if
+it differs from 3443. This rebuilds only the local frontend configuration and retains
+the same stack/data. Repeat the flag on subsequent starts while the catalogue is needed;
+a normal `start` returns to the production build, which excludes `/styleguide`.
+For the fixture-only dev-server option, component rules and production exclusion check,
+see [frontend styleguide](../frontend/styleguide.md#как-открыть).
 
 ## Persistent local stack
 
@@ -115,7 +131,7 @@ scripts/mnema-local-full-stack.sh reset-certificates --confirm
 | Item | State |
 |---|---|
 | `JAVA_HOME` path exists, reports JDK 25.0.4.1 (Temurin-compatible OpenJDK); default `java` is 26.0.2 | verified |
-| `./gradlew clean quality` under JDK 25 with Gradle 9.8.0 and Spring Boot 4.1.1 passes with the coverage floors | verified |
+| `./gradlew clean quality` with JDK 25 / Gradle 9.8.0 / Spring Boot 4.1.1 | earlier passing evidence; full gate not re-run for the 2026-10-01 workstation inventory |
 | Colima socket present, `docker version` answers (29.5.2) with that `DOCKER_HOST` | verified |
 | Testcontainers env above: `:services:identity-account:test --tests '*AccountTransferIntegrationTest'` ran 4 tests, 0 skipped, passed | verified |
 | `/opt/homebrew/opt/node@24/bin/node` is v24.21.0 (npm 11.19.0); default `node` is 26.9 | verified |
@@ -124,5 +140,5 @@ scripts/mnema-local-full-stack.sh reset-certificates --confirm
 | MinIO digest `14cea493…` present in the local Docker image cache | verified |
 | `systemd-timesyncd` inactive and disabled in the Colima VM now | verified |
 | Launcher subcommands, env overrides and SKI/AKI issuance | verified (source) |
-| Full `clean quality`, `npm ci/lint/test/build`, a real `run.py` run, `start`/`smoke` | not re-run here (proven in earlier sessions; slow or touch the shared default stack) |
+| Full `npm ci/lint/test/build`, a real `run.py` run, `start`/`smoke` | earlier evidence; not re-run for the 2026-10-01 workstation inventory |
 | `TESTCONTAINERS_RYUK_DISABLED` necessity; Python strict-X.509 failure mode | owner-reported / doc-stated, not reproduced |

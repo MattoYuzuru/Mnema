@@ -6,7 +6,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { copyFor } from '../goal/goal-copy';
 import { LearningGoalStore } from '../goal/learning-goal.store';
-import { Subscription, catchError, forkJoin, map, of } from 'rxjs';
+import { catchError, forkJoin, map, of } from 'rxjs';
 
 import { AuthService } from '../../auth.service';
 import { ToggletipComponent } from '../../shared/toggletip.component';

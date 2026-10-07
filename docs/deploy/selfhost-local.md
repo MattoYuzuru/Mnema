@@ -24,6 +24,23 @@ generated local CA; the launcher never enables the test-only plaintext transport
 The disposable `scripts/browser-identity` and `scripts/learning-security` harnesses
 keep their own temporary processes, database and keys and do not consume this volume.
 
+### Style Guide in the same local runtime
+
+The default frontend configuration is `production`. To inspect the shared UI catalogue
+with the current backend and retained data, run from the same checkout/state directory:
+
+```bash
+MNEMA_LOCAL_FRONTEND_CONFIGURATION=development ./scripts/mnema-local-full-stack.sh start
+```
+
+Open [Style Guide](https://localhost:3443/styleguide), substituting the web port retained
+at bootstrap if it differs. Repeat the flag on later starts while needed; a normal
+`start` restores the production frontend. Both modes use the same named volumes and
+local security configuration. No data reset is needed. The flag affects only the local
+frontend build and accepts `development` or `production`; production release images
+still exclude the catalogue. Fixture-only dev-server and component rules:
+[frontend styleguide](../frontend/styleguide.md#как-открыть).
+
 ### First start
 
 Prerequisites are Docker Engine with the Compose plugin, Java/JDK 25 (`java` and

@@ -7,7 +7,7 @@ import { AiRubricEditorComponent } from './ai-rubric-editor.component';
 import { AiRubricDraft, emptyRubric } from './ai-rubric-draft';
 import { CAPABILITIES_UNAVAILABLE, LearningCapabilities } from './capabilities-api.service';
 import {
-    ChoiceDraft, ClozeBlankDraft, ClozeDraft, DraftErrors, FreeResponseDraft, MatchDraft, SelfCheckDraft, SlotContext, TextAnswerDraft,
+    ChoiceDraft, ClozeBlankDraft, ClozeDraft, DraftErrors, FreeResponseDraft, MatchDraft, SlotContext, TextAnswerDraft,
     choiceSelectionProblem, newBlank, newOption, newPair
 } from './exercise-draft';
 import { ExerciseSlotEditorComponent } from './exercise-slot-editor.component';

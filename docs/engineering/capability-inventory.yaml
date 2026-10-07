@@ -1,6 +1,5 @@
 schema_version: 2
-updated_at: "2026-10-05"
-evidence_revision: "933da3e60add2102ed7480342dfd3de95a8a255b"
+updated_at: "2026-10-07"
 scope: repository
 status: current
 
@@ -85,6 +84,15 @@ capabilities:
     status: configured
     notes: [frontend-not-in-compose, fresh-data-only, loopback-ports]
 
+  - id: persistent-local-product-runtime
+    kind: compose-launcher
+    location: scripts/mnema-local-full-stack.sh
+    invoke: "scripts/mnema-local-full-stack.sh start"
+    effects: [local-image-build, retained-local-data, loopback-https-product-runtime]
+    status: configured
+    notes: [production-frontend-by-default, development-frontend-opt-in-for-styleguide]
+    canonical_policy: docs/deploy/selfhost-local.md
+
   - id: vps-production
     kind: github-actions-workflow
     location: .github/workflows/vps-deploy.yaml
@@ -107,6 +115,8 @@ capabilities:
 
 repository_agent_assets:
   normative_instructions: AGENTS.md
+  host_adapters: [CLAUDE.md, .github/copilot-instructions.md]
+  scoped_instructions: [backend/AGENTS.md, frontend/AGENTS.md]
   navigator: docs/README.md
   repository_guide: docs/engineering/repository-guide.md
   skills: []

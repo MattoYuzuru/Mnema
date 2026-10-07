@@ -31,8 +31,10 @@ exercise mechanics into the seven below. Epic #76 added the greenfield media lif
   directory.
 - AI layer (Epic #77): run 2 delivered the notification center, the usage ledger (`app.mnema.learning.usage`), the MBM
   compiler (`generation.mbm`), the `code_block` node and the provider foundation (`app.mnema.learning.ai`, below); run 3 adds
-  generation sessions, steps and the text draft (`app.mnema.learning.generation`, "Generation sessions (#287)" below); approval,
-  edits ("Selection edits (#293)" below) and media execution follow (AI-05 and later).
+  generation sessions, steps and the text draft (`app.mnema.learning.generation`, "Generation sessions (#287)" below).
+  Approval, edits, planner, image search, synthesis, web research, speech input and semantic assessment are
+  implemented in the sections below; usage/plans/promo are in the [usage contract](../../../contracts/usage/README.md).
+  Feature availability remains server-configured, not implied by this implementation inventory.
 - MBM compiler (#283): `app.mnema.learning.generation.mbm` is a pure package (no Spring, I/O or clock; identifiers come from
   the injected `IdAllocator`) that compiles MBM v1 to a native-v1 document and renders native-v1 back to MBM.
   `MbmCompiler.compile(source, MbmOptions, IdAllocator)` returns `MbmResult.Success` (document already read by
@@ -1167,7 +1169,7 @@ and the UI (AI-04+) build on it; nothing here debits the user's quota, it only r
   documented in [selfhost-local](../../../docs/deploy/selfhost-local.md#ai-provider-layer-local).
 - Keys are listed in the [runtime policy index](../../../docs/engineering/runtime-policy-index.md).
 
-Fresh Learning migrations V1–V40 are the database source of truth (V40 adds ephemeral worker intent requests; V39 adds wake triggers and assessment claims, #300; V38 adds research pointers, #299; V37 adds speech input and the `STT` capability, #298). V28 adds the generation tables (below) and, where the role
+Fresh Learning migrations are the database source of truth (V42 adds promo codes and popup state; V41 adds plans and the learning profile; V40 adds ephemeral worker intent requests; V39 adds wake triggers and assessment claims, #300; V38 adds research pointers, #299; V37 adds speech input and the `STT` capability, #298). V28 adds the generation tables (below) and, where the role
 may, `pg_trgm`. V27 adds `ai_provider_call` (the provider-call journal). V21 (unified exercise
 mechanics) fails closed when pre-#266 exercise data exists: use a fresh local database. V23
 only widens the exercise type and answer-key kind constraints for `ORDER` and `CATEGORIZE`
@@ -1177,8 +1179,9 @@ member, open captures per Deck) and rewrites nothing; V26 adds the usage ledger 
 Study tables to legacy `core` migrations or port old review algorithms.
 
 Sources: [Spring Security 7.1 JWT](https://docs.spring.io/spring-security/reference/7.1/servlet/oauth2/resource-server/jwt.html)
-for signature/claims/scope boundaries; the exact 6.5.11 source establishes claim
-conversion behavior; [Java 25 HTTP](https://docs.oracle.com/en/java/javase/25/docs/api/java.net.http/java/net/http/HttpRequest.Builder.html)
+for signature/claims/scope boundaries; current raw-claim rejection is covered by
+[`LearningSecurityHttpIntegrationTest`](src/test/java/app/mnema/learning/platform/security/LearningSecurityHttpIntegrationTest.java)
+(including missing `iat`/`exp` before private work); [Java 25 HTTP](https://docs.oracle.com/en/java/javase/25/docs/api/java.net.http/java/net/http/HttpRequest.Builder.html)
 for request deadlines, supplemented by explicit bounded body completion/cancellation;
 [Spring scheduling](https://docs.spring.io/spring-framework/reference/integration/scheduling.html)
 for the enabled fixed-delay retention worker and duration-based configuration;

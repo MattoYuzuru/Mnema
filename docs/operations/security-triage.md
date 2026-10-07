@@ -5,7 +5,7 @@ artifact:
   title: "Security automation triage and exceptions"
   status: current
   created_at: "2026-08-29"
-  updated_at: "2026-08-29"
+  updated_at: "2026-10-07"
   owners: ["project-owner"]
 ---
 
@@ -32,7 +32,8 @@ controls and impact. Scanner severity is not proof of exploitability.
 An alert already present on `main`, with no affected dependency or code path introduced by the PR,
 belongs to the baseline. It remains visible and triaged in GitHub Security, but does not force an
 unrelated PR to repair legacy application debt. Baseline High/Critical findings in shipping scope
-still require a private follow-up with an owner; Angular/npm migration remains #74.
+still require a private follow-up with an owner. The Angular/npm migration from #74
+is complete; a current finding needs its own affected revision and remediation scope.
 
 Dependabot performs weekly bounded version updates for GitHub Actions, Gradle and production Docker
 locations. Routine npm version PRs are disabled with `open-pull-requests-limit: 0`; npm security

@@ -4,9 +4,8 @@ artifact:
   type: architecture-overview
   title: "Mnema current system overview"
   status: current
-  updated_at: "2026-10-02"
+  updated_at: "2026-10-07"
   owners: ["project-owner"]
-  evidence_revision: "1879d9ae0cadde67bf8a0ccc74fbccb53f2acee5"
 ---
 
 # Mnema: текущий обзор системы
@@ -62,8 +61,8 @@ Identity и Learning — отдельные deployables без Gradle dependency
   reducer и explicit material restart без удаления истории; terminal attempt
   атомарно завершает bounded batch, а resume не возвращает решённые presentation;
 - stateless `POST /api/exercise-previews` — тот же evaluator для интерактивного
-  preview редактора упражнений; `GET /api/capabilities` — выключенные server-owned
-  возможности AI-проверки и speech-to-text (провайдера нет, #77);
+  preview редактора упражнений; `GET /api/capabilities` — server-owned флаги и
+  доступность настроенных AI-провайдеров (выключены по умолчанию);
 - due-first scheduled selection, replay выбранной завершённой сессии текущего
   локального дня и practice по уже введённым objective с явным opt-in новых;
 - единый scheduled scheduler с server-pinned quick 10/2 и standard 20/5 budgets;
@@ -72,7 +71,13 @@ Identity и Learning — отдельные deployables без Gradle dependency
 - cursor-bounded material progress без фиктивного mastery percentage, exact restart
   нового learning epoch и bounded retention raw/compact attempt payloads;
 - UUID, canonical JSON, command receipts, RFC 9457 Problem Details, row-version CAS;
-- bearer scope enforcement и fail-closed current-account validation через Identity.
+- bearer scope enforcement и fail-closed current-account validation через Identity;
+- AI generation sessions, Мастерская с явным одобрением, правки, planner,
+  image search, озвучка, диктовка, semantic assessment, usage ledger, планы и промокоды.
+  Состояния и fixtures — в [generation](../contracts/generation/README.md),
+  [speech](../contracts/speech/README.md), [Study](../contracts/study/README.md) и
+  [usage](../contracts/usage/README.md); роли API/worker, flags и ограничения —
+  в [AI runbook](./operations/ai-runbook.md).
 
 Session закрепляет reducer/config identity и immutable presentations, а scheduled
 attempt атомарно пишет одну transition только assessed objective. Replay/practice

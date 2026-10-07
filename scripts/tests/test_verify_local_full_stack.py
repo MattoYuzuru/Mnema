@@ -123,10 +123,16 @@ class LocalFullStackTest(unittest.TestCase):
             "MNEMA_LOCAL_CA_CERT_FILE": str(self.state / "local-ca.crt"),
             "MNEMA_LOCAL_MEDIA_WORK_ROOT": str(self.state / "media-processing"),
         }
-        subprocess.run(
-            ["docker", "compose", "--file", str(COMPOSE), "config", "--quiet"],
-            cwd=ROOT, env=environment, check=True, capture_output=True, timeout=20,
-        )
+        for configuration in ("production", "development"):
+            build_environment = {**environment, "MNEMA_LOCAL_FRONTEND_CONFIGURATION": configuration}
+            if configuration == "production":
+                build_environment.pop("MNEMA_LOCAL_FRONTEND_CONFIGURATION")
+            rendered = subprocess.run(
+                ["docker", "compose", "--file", str(COMPOSE), "config", "--format", "json"],
+                cwd=ROOT, env=build_environment, check=True, capture_output=True, text=True, timeout=20,
+            )
+            frontend_build = json.loads(rendered.stdout)["services"]["frontend"]["build"]
+            self.assertEqual(configuration, frontend_build["args"]["MNEMA_FRONTEND_CONFIGURATION"])
         source = COMPOSE.read_text()
         identity = source.split("  identity-account:\n", 1)[1].split("\n  learning:\n", 1)[0]
         learning = source.split("  learning:\n", 1)[1].split("\n  frontend:\n", 1)[0]

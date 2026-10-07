@@ -8,6 +8,7 @@ import app.mnema.learning.media.GeneratedMediaStager.VerifiedMedia;
 import app.mnema.learning.media.MediaCatalog;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -17,13 +18,16 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Queue;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.CALLS_REAL_METHODS;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -304,11 +308,36 @@ class SpeechClipsTest {
 
     @Test
     void theLeaseOfTheWinnerIsRenewedWhileItWaitsForTheVerification() {
-        SpeechClips fast = new SpeechClips(speech, cache, stager, meters, Duration.ofMillis(20));
         SpeechClips.Outcome.Staged staged = pending();
-        stager.states.add(GeneratedMediaStager.State.VERIFYING);
-        // the wait outlasts the renewal interval: the entry's lease is extended, and a hit (no pending entry) never renews
-        assertThat(fast.await(claim(), control, owner, staged, Instant.now().plusMillis(16_500))).isEqualTo(SpeechClips.Verdict.LATE);
+
+        assertThat(awaitAcrossRenewalAndDeadline(staged)).isEqualTo(SpeechClips.Verdict.LATE);
         verify(cache).renew(staged.pending().key(), staged.pending().token());
+    }
+
+    @Test
+    void aClipWithoutAPendingCacheEntryDoesNotRenewWhileItWaitsForTheVerification() {
+        SpeechClips.Outcome.Staged staged = new SpeechClips.Outcome.Staged(asset, false, 0, null);
+
+        assertThat(awaitAcrossRenewalAndDeadline(staged)).isEqualTo(SpeechClips.Verdict.LATE);
+        verify(cache, never()).renew(any(), any());
+    }
+
+    /** Logical verification polls cross the renewal interval before the deadline, independently of host scheduling. */
+    private SpeechClips.Verdict awaitAcrossRenewalAndDeadline(SpeechClips.Outcome.Staged staged) {
+        Instant started = Instant.parse("2026-10-07T12:00:00Z");
+        AtomicReference<Instant> now = new AtomicReference<>(started);
+        GeneratedMediaStager verification = mock(GeneratedMediaStager.class);
+        when(verification.assetState(owner, asset)).thenAnswer(ignored -> {
+            now.updateAndGet(time -> time.plusSeconds(16));
+            return GeneratedMediaStager.State.VERIFYING;
+        });
+        SpeechClips waiting = new SpeechClips(speech, cache, verification, meters, Duration.ofMillis(5));
+        StepClaim held = claim();
+
+        // Static mocks are thread-scoped; await and this scripted stager run synchronously on the test thread.
+        try (MockedStatic<Instant> time = mockStatic(Instant.class, CALLS_REAL_METHODS)) {
+            time.when(Instant::now).thenAnswer(ignored -> now.get());
+            return waiting.await(held, control, owner, staged, started.plusSeconds(30));
+        }
     }
 }

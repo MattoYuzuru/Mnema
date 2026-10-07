@@ -8,7 +8,6 @@ import json
 import re
 import subprocess
 from pathlib import Path
-from typing import Any
 
 
 LEGACY_SERVICES = ("frontend", "auth", "user", "core", "media", "import")

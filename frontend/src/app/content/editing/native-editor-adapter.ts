@@ -9,7 +9,7 @@ import {
 import { Plugin, PluginKey, Transaction } from 'prosemirror-state';
 
 import { NativeDocument, NativeJson, NativeNode } from '../native-document';
-import { readNativeDocument, readRetainedNativeDocument } from '../native-document-boundary';
+import { readRetainedNativeDocument } from '../native-document-boundary';
 import {
     CODE_BLOCK_MAX_SOURCE,
     buildNativeRenderState,

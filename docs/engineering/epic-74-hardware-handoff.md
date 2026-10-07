@@ -1,4 +1,21 @@
+---
+artifact:
+  id: epic-74-hardware-handoff
+  type: historical-record
+  title: "Epic #74 historical workstation handoff"
+  status: historical
+  updated_at: "2026-10-07"
+  owners: ["project-owner"]
+---
+
 # Epic #74 — продолжение на новом компьютере
+
+> **Historical snapshot.** This records the #74 decision/handoff at its date, not
+> current runtime versions, open issue status, agent limits or task authorization.
+> Start from [AGENTS.md](../../AGENTS.md), the
+> [repository guide](./repository-guide.md) and the
+> [agent runbook](./agent-runbook.md) for current work.
+
 
 Дата checkpoint: 2026-09-15. Это входной документ для агента **без памяти чата**.
 Владелец меняет компьютер и попросил остановиться на ближайшей проверенной точке,

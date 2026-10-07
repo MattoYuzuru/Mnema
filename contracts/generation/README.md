@@ -5,14 +5,19 @@ edits, errors, the MBM v1 output format for materials and the strict-JSON output
 shared input of the backend tasks (AI-01..AI-05, AI-07, AI-13) and of the frontend, so they can proceed in
 parallel without re-deciding wire shapes.
 
-**Status: partly implemented.** AI-04 ([#287](https://github.com/MattoYuzuru/Mnema/issues/287)) implements sessions, artifacts,
+**Status: implemented for the operations below; image/video generation remains unavailable.** AI-04 ([#287](https://github.com/MattoYuzuru/Mnema/issues/287)) implements sessions, artifacts,
 steps, events, the `TEXT_DRAFT` step and the operations `estimateGeneration`, `createSession`, `listSessions`,
 `listActiveSessions`, `getSession`, `cancelSession`, `listEvents` and `getArtifact`; AI-05
 ([#288](https://github.com/MattoYuzuru/Mnema/issues/288)) implements `approveArtifact`, `approveArtifacts`, `rejectArtifact`,
 `undoRejectArtifact`, `handoffArtifact`, `retryArtifact`, `deleteSession`, `archiveUsedNotes` and the retention worker (see
 the decisions below for what they settled); AI-13 ([#291](https://github.com/MattoYuzuru/Mnema/issues/291)) implements `EXERCISES`
 sessions, the exercise side of approval, re-pin and retry, and the «Новое» mark (decision 14); AI-11 ([#293](https://github.com/MattoYuzuru/Mnema/issues/293))
-implements `editArtifact` and `revertArtifact` for materials (decision 15); AI-16 ([#294](https://github.com/MattoYuzuru/Mnema/issues/294)) implements the intent of «Попросить Мнему…» (`createIntent`), `REVISE_ITEM` and `REVISE_EXERCISE` sessions, the exercise edits and a Stub speech executor (decision 16); AI-14 ([#295](https://github.com/MattoYuzuru/Mnema/issues/295)) implements the planner «Сначала показать план»: the `PLAN` step, `PLANNING` and `PLAN_READY` and `approvePlan` (decision 17); the real media executors do not exist yet. Each file says which task implements it. The accepted sources, which this contract must not contradict:
+implements `editArtifact` and `revertArtifact` for materials (decision 15); AI-16 ([#294](https://github.com/MattoYuzuru/Mnema/issues/294)) implements the intent of «Попросить Мнему…» (`createIntent`), `REVISE_ITEM` and `REVISE_EXERCISE` sessions, the exercise edits and a Stub speech executor (decision 16); AI-14 ([#295](https://github.com/MattoYuzuru/Mnema/issues/295)) implements the planner «Сначала показать план»: the `PLAN` step, `PLANNING` and `PLAN_READY` and `approvePlan` (decision 17). AI-10 ([#296](https://github.com/MattoYuzuru/Mnema/issues/296)) and AI-09
+([#297](https://github.com/MattoYuzuru/Mnema/issues/297)) implement real image-search and speech-synthesis
+executors; AI-12 ([#299](https://github.com/MattoYuzuru/Mnema/issues/299)) implements web research.
+Availability still depends on flags, configured routes, provider health and budget; implementation
+is not evidence that a production feature is enabled. Each file names its owning task.
+The accepted sources, which this contract must not contradict:
 
 - [AI generation platform](../../docs/architecture/ai-generation-platform.md) — §3 domain model and states,
   §4 steps, §5 events, §6 MBM and exercises, §7 edits, §9 capabilities, §10 usage, §12 notifications;
@@ -406,12 +411,13 @@ Final. Values live in config keys, so a change is a configuration change. Detail
 
 ## Known doc conflicts
 
-Resolved in favour of the architecture document unless stated. These are recorded, not fixed here.
+Resolution history is retained here. The treatment column records the accepted outcome;
+current wire behavior lives in the linked contracts, not these former conflict descriptions.
 
 | Where | Conflict | Treatment |
 |---|---|---|
 | `docs/architecture/ai-generation-platform.md` (front matter assumption) | Said ORDER/CATEGORIZE "may land after the first AI slices"; both exist (#268, `contracts/study/mechanics.json`) | The assumption is corrected; the contract covers all seven mechanics |
-| `contracts/study/README.md:167` vs architecture §11 | Study maps provider uncertainty to `UNSURE`; the architecture says it must become a self-check | Left to AI-20 ([#292](https://github.com/MattoYuzuru/Mnema/issues/292)) |
+| Former Study assessment text vs architecture §11 | Provider uncertainty was described as `UNSURE`; the architecture requires a self-check | Resolved by AI-20 ([#292](https://github.com/MattoYuzuru/Mnema/issues/292)); current [assessment state machine](../study/README.md#ai-assessment-of-free-explanations-ai-semantic-292) falls back to self-check |
 | research `context-and-quality.md` (the `::verify` block) vs architecture §6 | The research prompt uses a `::verify` block; MBM v1 has none | Not in MBM v1 nor in the prompts |
 | research (edit context: whole document up to 8k tokens) vs architecture §7 (outline + target ± neighbour) | Edit context size | Architecture §7 won: outline (≤200 lines) + target + one neighbour each side (decision 15) |
 | architecture §6 (swapped pair is `INCORRECT`) vs `AttemptEvaluation` | A swapped pair among 3+ gives `PARTIAL` | Probes shift **all** pairs so `INCORRECT` is well defined |

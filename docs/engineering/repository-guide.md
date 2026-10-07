@@ -5,14 +5,14 @@ artifact:
   title: "Mnema repository guide"
   status: current
   created_at: "2026-08-15"
-  updated_at: "2026-10-01"
+  updated_at: "2026-10-07"
   owners: ["project-owner"]
-  evidence_revision: "f6955a5fb9889f546dc47129e5e4bed7b913f95a"
 ---
 
 # Repository guide
 
-This guide describes the checkout after Epics #74–#76 and #266/#268. Root
+This guide describes the current Identity/Learning/Angular checkout, including the
+AI generation, speech, assessment, usage, plans and promo work of Epic #77. Root
 [`AGENTS.md`](../../AGENTS.md) is normative; [docs/README.md](../README.md) owns
 documentation status/navigation. Commands and workstation setup:
 [agent runbook](./agent-runbook.md); which source answers which domain question, plus the
@@ -24,8 +24,8 @@ glossary: [domain truth map](./domain-truth-map.md).
 2. [System overview](../system-overview.md), then the
    [domain truth map](./domain-truth-map.md) for the owning contract.
 3. The current guide for the owning runtime and its nearby tests.
-4. [Production delivery](../operations/production-delivery.md) before any
-   delivery decision.
+4. [Work item standard](./work-item-standard.md) for GitHub delivery;
+   [production delivery](../operations/production-delivery.md) only for release work.
 5. For Study, use the [implemented contract below](#epic-75-study-contract) and
    [integrated acceptance](./evidence/epic-75/verification/integrated-main-2026-09-24.md).
 
@@ -34,7 +34,7 @@ glossary: [domain truth map](./domain-truth-map.md).
 | Platform | Exact repository baseline | Source |
 |---|---:|---|
 | Java | toolchain 25 (LTS) | `backend/services/*/build.gradle.kts`, CI setup-java |
-| Spring Boot | 4.1.1 (Framework 7.0.9, Security 7.1.1 incl. Authorization Server, Session 4.1.1, Jackson 3.1.5, JUnit 6.0.3, Flyway 12.4.0; Tomcat pinned to 11.0.26, the Boot BOM manages 11.0.24) | `backend/settings.gradle.kts`, Boot BOM |
+| Spring Boot | 4.1.1; Tomcat 11.0.26 and Jackson 3.1.7 overrides (other versions resolve from the Boot BOM) | `backend/settings.gradle.kts`, `backend/build.gradle.kts`, Boot BOM |
 | Gradle | 9.8.0 | `backend/gradle/wrapper/gradle-wrapper.properties` |
 | Testcontainers / JaCoCo | 2.0.5 / 0.8.15 | Boot BOM, `backend/build.gradle.kts` |
 | Angular | core/CLI/build 22.2.1, zoneless | `frontend/package.json` |
@@ -55,7 +55,7 @@ Mnema/
 │   ├── build.gradle.kts                 aggregate quality and coverage
 │   └── services/
 │       ├── identity-account/            current account/OAuth/OIDC runtime
-│       └── learning/                    current content/authoring/Study/media runtime
+│       └── learning/                    content/authoring/Study/media and AI/usage runtime
 ├── frontend/src/app/
 │   ├── app.routes.ts                    current route source of truth
 │   ├── home-page.component.ts           current public landing
@@ -63,9 +63,13 @@ Mnema/
 │   ├── features/authoring/              Capture, Draft, editor and Browse
 │   ├── features/own-decks/              canonical private Deck UI
 │   ├── features/study/                  canonical deck-scoped Study UI
-│   └── core/, shared/                  current shell and translation helpers
-├── contracts/                           shared native/content/deck/item/study fixtures;
-│                                        generation, usage, notifications (AI contracts, not yet implemented)
+│   ├── features/generation/             AI composer, Workshop, edits and planner
+│   ├── features/usage, plans, promo/     budget, paywall and promo UI
+│   ├── features/goal, experiment/       onboarding copy and server-assigned variants
+│   ├── styleguide/                      development-only shared UI catalogue
+│   └── core/, shared/                   shell, authentication and shared UI
+├── contracts/                           shared content/authoring/Study fixtures;
+│                                        generation, usage, notifications and speech contracts
 ├── scripts/
 │   ├── browser-identity/                real local HTTPS browser/E2E harness
 │   ├── local-full-stack/                persistent local API smoke
@@ -77,7 +81,7 @@ Mnema/
 ├── k8s/, deploy/                        VPS runtime and legacy operational sources
 ├── docker-compose.yml                   replacement backend maintenance runtime
 ├── compose.local-full-stack.yml         persistent local HTTPS product runtime
-└── .github/workflows/                   protected quality and dormant operations
+└── .github/workflows/                   protected quality, manual VPS release and dormant K8s operations
 ```
 
 `settings.gradle.kts` compiles only Identity & Account and Learning. Old service
@@ -95,10 +99,11 @@ Identity `/userinfo`; it never reads Identity tables.
 ### Learning
 
 Read [its guide](../../backend/services/learning/guide.md). Fresh migrations
-(`src/main/resources/db/learning/migration`, V1–V26 at this revision; Identity V1–V3) own
+(`src/main/resources/db/learning/migration`; list the directory for the current head) own
 platform/storage, private Deck, deck-local LearningItem, EditingDraft, CaptureNote,
 immutable objective/exercise authoring, bounded Study session snapshots, the media
-lifecycle and the unified exercise mechanics (V21, V23). API paths are canonical
+lifecycle, the unified exercise mechanics (V21, V23), AI work queues and usage,
+plans and promo data (V26–V42 at this audit). API paths are canonical
 under `/api`; there is no `/v2` or v1 alias.
 
 The important #75 inputs already implemented are UUID identity, canonical JSON,
@@ -179,6 +184,8 @@ npm ci
 npm run lint
 npm run test
 npm run build
+
+cd ..
 ```
 
 Repository policy and docs:
@@ -231,12 +238,38 @@ Keep local/hosted gates and protected squash; merge alone is not live verificati
 
 ## Change routes
 
+### Frontend feature changes
+
+| Feature directory | Ownership and canonical behavior |
+|---|---|
+| `authoring`, `own-decks`, `study` | Manual editor/Browse, Deck hub and Study; [authoring/Study workflow](../product/authoring-and-study-workflows.md) and [Study contract](../../contracts/study/README.md) |
+| `generation` | AI composer, Workshop, exercise builder, edits and planner; [generation contract](../../contracts/generation/README.md) and [brand UI](../frontend/mnema-brand-and-ui-contract.md#composer-и-мастерская) |
+| `usage`, `plans`, `promo`, `experiment` | AI budget, paywall/profile tier, explicit code field/popup, server-assigned experiments; [usage contract](../../contracts/usage/README.md) |
+| `goal`, `ai-info` | Once-asked learning goal (`LearningGoalStore`, `goal-copy.ts`) and public `/ai`; the goal changes copy/recommendations and never reaches a provider |
+
+- `/plans` is authenticated; `/ai` is public. The goal prompt is allowlisted only on
+  `/decks`, `/profile` and `/plans` in `goal-onboarding.component.ts`; new routes are quiet by default.
+- Promo redemption with a lost, malformed successful or 5xx reply has an unknown outcome:
+  preserve the normalized code's idempotency key. A discount is pending payment, not access.
+  Preference acknowledgement is only `Promo-Event-Recorded: true`; pending receipts suppress
+  new offers until retry at an allowed breakpoint. Account/navigation changes fence late replies;
+  account-session frequency is client-held, cooldown/decline/purchase eligibility server-owned.
+  Experiments use server assignments and reset on account change; events contain no client variant.
+- Workshop alone enables renderer `exposeNodeIds` and `overlay`; Browse, Study and editor preview
+  expose no node ids. Selection edits send whole selected blocks by id and announce through the
+  Workshop summary. Shift+F10/menu key opens the group; keyboard order keeps block links/players
+  before that group, with Tab also reaching it.
+- «Попросить Мнему…» is the collapsed revise composer for materials/exercises when `aiGeneration`
+  is available. `createIntent` is free; only «Запустить» creates the session and reserves.
+  `REVISE_ITEM`/`REVISE_EXERCISE` stay in the Workshop: approval is an ordinary revise command,
+  «Вернуть» restores the draft's first revision and «Ещё раз» starts a new edit.
+
 ### Epic #75: Study/exercises/scheduler
 
 - Add new domain code under `backend/services/learning`; do not repair or import
   `core/.../review` algorithms/entities/migrations.
 - Add new fresh Learning migrations after the current head (list
-  `db/learning/migration`; V23 at this revision); never edit an applied migration.
+  `db/learning/migration` for its latest version); never edit an applied migration.
 - Keep content, exercise revision, attempt/evaluation/evidence and `StudyState`
   separate. Only explicitly `ASSESSED` objectives may receive scheduler evidence.
 - Reuse command receipts/CAS/problem details and Deck/LearningItem revision pins.
@@ -308,3 +341,23 @@ second agent guide.
 Agent instruction files: root `AGENTS.md` (always loaded, short, normative) plus
 `backend/AGENTS.md` and `frontend/AGENTS.md` (local differences only, loaded on demand).
 Long rationale belongs in docs linked from them, not in those files.
+`CLAUDE.md` imports the root contract and routes Claude Code to the same scoped rules;
+`.github/copilot-instructions.md` is a thin GitHub adapter. Do not copy contracts or
+model-specific prompting/API settings into a second rule set.
+
+Start with the owning contract and nearby tests, search exact symbols with `rg`, and
+expand only for an unresolved question. Read historical evidence when it explains a
+decision or an acceptance limit. Keep required gates; after they pass, repeat or
+broaden checks only for a new change, failure or unresolved concern. Parallel work
+needs explicit file/resource ownership and the task's agent limit, with one integrator
+for commits and delivery; do not have several agents mutate the same local stack.
+
+This navigation follows official [OpenAI AGENTS.md discovery](https://learn.chatgpt.com/docs/agent-configuration/agents-md),
+[GPT-6 guidance (including GPT-6.1 Sol)](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-6.1-sol)
+and [Claude Code best practices](https://code.claude.com/docs/en/best-practices): scoped
+instructions, one statement of each rule and domain context on demand. The
+[Opus 5.5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5)
+and [Sonnet 5.5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5-5)
+guides support clear completion and verification boundaries; their chat/API thinking
+advice does not replace repository quality gates. These are design choices, not
+measured token, cost or task-time savings.

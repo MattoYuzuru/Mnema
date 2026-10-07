@@ -3,7 +3,7 @@ export type NativeJson = null | boolean | number | string
   | readonly NativeJson[] | { readonly [key: string]: NativeJson };
 
 /**
- * Native-v1 structure shared by the renderer and future editor/API adapters.
+ * Native-v1 structure shared by the renderer, editor and API boundaries.
  * See contracts/content/native-v1. Types are not validation or authorization:
  * unknown/future nodes remain opaque and grant no rendering capability.
  */

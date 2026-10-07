@@ -265,6 +265,8 @@ services:
     build:
       context: .
       dockerfile: deploy/local-full-stack/frontend.Dockerfile
+      args:
+        MNEMA_FRONTEND_CONFIGURATION: ${MNEMA_LOCAL_FRONTEND_CONFIGURATION:-production}
     environment:
       MNEMA_APP_ENV: development
       MNEMA_PUBLIC_ORIGIN: https://localhost:${MNEMA_LOCAL_WEB_PORT:-3443}

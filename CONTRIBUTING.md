@@ -29,7 +29,8 @@ code-PR, патчи и иные производные работы времен
 которые уже заключили отдельное contributor agreement:
 
 - одна логическая задача — одна ветка и один reviewable PR;
-- используйте понятный prefix: `feat/`, `fix/`, `docs/`, `test/`, `chore/`;
+- для агентских веток используйте `codex/` по умолчанию; для остальных — понятный
+  prefix `feat/`, `fix/`, `docs/`, `test/` или `chore/`;
 - не смешивайте migration, массовое удаление legacy и новый UI в один change;
 - свяжите PR с Issue и заполните verification, risks и rollback;
 - не добавляйте secrets, production data или `.env` values.
@@ -41,14 +42,22 @@ code-PR, патчи и иные производные работы времен
 Перед отправкой PR выполните:
 
 ```bash
-cd backend && ./gradlew quality
-cd ../frontend && npm run lint && npm test && npm run build
+# Из корня репозитория после настройки toolchain:
+(cd backend && ./gradlew clean quality)
+(cd frontend && npm ci && npm run lint && npm run test && npm run build)
+python3 scripts/verify_docs.py
 ```
 
-Если изменение затрагивает только документацию, дополнительно выполните `python3 scripts/verify_docs.py` (ссылки и статусы) и `git diff --check`. Настроенные quality gates всё равно остаются обязательными перед push согласно `AGENTS.md`.
+Для документации проверьте также `git diff --check`. Полный CI-equivalent gate и
+настройка JDK 25/Node 24/Colima — в [agent runbook](docs/engineering/agent-runbook.md).
+Настроенные quality gates остаются обязательными перед push согласно `AGENTS.md`.
 
 ## Review
 
 Автор не считает PR готовым только потому, что код сгенерирован или тесты зелёные. Reviewer проверяет соответствие Issue, архитектурным решениям, security/a11y boundaries и достаточность evidence.
 
-Schema, auth, payments, dependencies, CI/CD и production changes требуют явного owner review. Merge и deployment выполняются отдельно после зелёных required checks.
+Новые решения для schema, auth, payments, dependencies, CI/CD или production требуют
+принятой владельцем границы и проверки рисков. Уже авторизованная задача следует
+[task-scoped autonomy](AGENTS.md#task-scoped-autonomy-and-merge-boundary), без второго
+цикла согласования обычных in-scope шагов. Merge и deployment — отдельные результаты;
+production требует названных владельцем target и effect.

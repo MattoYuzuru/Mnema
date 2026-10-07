@@ -5,7 +5,7 @@ artifact:
   title: "Learning runtime policy index"
   status: current
   created_at: "2026-09-28"
-  updated_at: "2026-10-05"
+  updated_at: "2026-10-07"
   owners: ["learning-api", "web"]
   source_tasks: ["GitHub Issue #241", "GitHub Epic #76", "GitHub Issue #284", "GitHub Issue #281", "GitHub Issue #300"]
 ---
@@ -182,37 +182,33 @@ Manifest и GC contracts описаны в
 вместо успешного ответа с неполным списком. При изменении верхней
 границы draft count нужно одновременно обновить этот клиентский контракт.
 
-## AI-слой: ключи, которых ещё нет (contract only)
+## Старые proposal-имена AI-ключей
 
-Ключи этого раздела — **contract only**: в Learning их пока нет, ни одно поведение не заявлено.
-Значения взяты из [AI generation platform](../architecture/ai-generation-platform.md) и
-[контрактов](../../contracts/generation/README.md); диапазоны и проверку при старте определит
-указанная задача. До реализации ключ нельзя считать настройкой, которую можно менять.
+Историческая contract-only таблица была входом для AI-02…AI-05; реализация уже
+доставлена. Она не была списком поддерживаемых настроек. Текущие defaults и
+владельцы перечислены в [таблице выше](#изменяемые-политики-learning), а
+[application.properties](../../backend/services/learning/src/main/resources/application.properties),
+[AiProperties](../../backend/services/learning/src/main/java/app/mnema/learning/ai/AiProperties.java) и
+[GenerationSettings](../../backend/services/learning/src/main/java/app/mnema/learning/generation/GenerationSettings.java)
+задают исполняемые имена и проверку диапазонов. Старые записи не являются aliases.
 
-| Ключ / место | Владелец и влияние | Единица; default; допустимый диапазон |
-|---|---|---|
-| `learning.generation.session-retention` | Мастерская: жизнь сессии от последней активности; **contract only — implemented by AI-05 (#288)** | Duration; `P30D`; диапазон — AI-05 |
-| `learning.generation.session-expiry-warning` | Уведомление `GENERATION_SESSION_EXPIRING` до `expires_at`; **contract only — AI-05 (#288)** | Duration; `P3D`; диапазон — AI-05 |
-| `learning.generation.event-retention-after-close` | Хранение `generation_event` после закрытия сессии; **contract only — AI-04 (#287)** | Duration; `P1D`; диапазон — AI-04 |
-| `learning.generation.max-active-sessions-per-account` | Admission: активные сессии владельца (PLANNING, PLAN_READY, RUNNING и REVIEW с PROPOSED/REVISING/STALE; `RESOURCE_LIMIT_EXCEEDED`); **contract only — AI-04 (#287)** | Count; `3`; диапазон — AI-04 |
-| `learning.generation.max-bulk-approval` | Артефактов в одной bulk-публикации; **contract only — AI-05 (#288)** | Count; `20`; диапазон — AI-05 |
-| `learning.generation.max-revisions-per-artifact` / `max-turns-per-artifact` | Ревизии и инструкции на артефакт; **contract only — AI-04/AI-11 (#287, #293)** | Count; `30` / `50`; диапазон — AI-04 |
-| `learning.generation.max-instruction-chars` | Длина инструкции правки или запроса; **contract only — AI-04 (#287)** | UTF-16 units; `2000`; диапазон — AI-04 |
-| `learning.generation.step.text-draft-timeout` / `edit-timeout` / `tts-timeout` / `image-timeout` | Таймауты шагов; короче провайдерских; **contract only — AI-04 (#287)** | Duration; `PT6M` / `PT2M` / `PT2M` / `PT3M`; диапазон — AI-04 |
-| `learning.generation.step.max-run` | Максимум одного запуска шагов; **contract only — AI-04 (#287)** | Duration; `PT1H`; диапазон — AI-04 |
-| `learning.generation.concurrency.<capability>` | Семафор вызовов на инстанс: text, tts, image, video, search, assess; **contract only — AI-04 (#287)** | Count; `16`, `4`, `2`, `1`, `4`, `16`; диапазон — AI-04 |
-| `learning.generation.progress.checkpoint-interval` | Минимальный интервал `BLOCKS_APPENDED`; **contract only — AI-04 (#287)** | Duration; `PT0.75S`; диапазон — AI-04 |
-| `learning.ai.routes.<route>` | Server-owned маршрут capability к провайдеру и модели (например `text-fast`); fallback только на 429/5xx/timeout/invalid-after-repair; **contract only — AI-02 (#282)** | Строка provider/model; default — Stub; без секретов |
-| `learning.ai.providers.<id>.enabled` | Kill-switch провайдера без релиза (любого вида: текст, речь, STT, источники изображений, поиск); провайдер без адаптера пропускается маршрутом. Для id с дефисом (`yandex-search`) — через `SPRING_APPLICATION_JSON` | Boolean; `true` |
-| `learning.ai.timeout.connect` / `idle-stream` | Таймауты HTTP-адаптеров; **contract only — AI-02 (#282)** | Duration; `PT5S` / `PT60S`; диапазон — AI-02 |
-| `learning.ai.circuit.failure-threshold` / `window` / `open-duration` | Circuit breaker на `(provider, capability)`; **contract only — AI-02 (#282)** | Count / Duration; `5` / `PT60S`, открыт `PT30S`; диапазон — AI-02 |
-| `learning.ai.retry.max-rate-limit-retries` / `max-transient-retries` | Повторы шага: 429 с `Retry-After`, затем transient; **contract only — AI-02 (#282)** | Count; `6` / `3`; диапазон — AI-02 |
-| `learning.ai.context.max-input-tokens` | Жёсткий потолок входа генерации Flash non-thinking (рабочая зона 12–25k); **contract only — AI-04 (#287)** | Tokens; `32000`; диапазон — AI-04 |
+| Историческое имя | Текущее место |
+|---|---|
+| `generation.session-expiry-warning` / `event-retention-after-close` | `learning.generation.retention.warn-before` / `events-after-end` |
+| `generation.max-active-sessions-per-account` | `learning.generation.max-active-sessions` |
+| `generation.step.text-draft-timeout` / `step.max-run` | `learning.generation.step.text-draft-deadline` / `max-lifetime`; у planner/edit/media собственные deadlines |
+| `generation.concurrency.<capability>` | `learning.ai.permits.<capability>`; очереди и worker concurrency имеют отдельные настройки |
+| `generation.progress.checkpoint-interval` | `learning.generation.stream.checkpoint-interval` |
+| `ai.timeout.*` / `ai.circuit.*` / `ai.retry.max-*` | `learning.ai.transport.*` / `learning.ai.breaker.*` / `learning.ai.retry.transient-attempts` и `rate-limit-retries` |
+| `ai.context.max-input-tokens` | `learning.ai.prompt.max-input-tokens`; отдельные context budgets находятся в `learning.generation.context.*` |
+| `generation.max-bulk-approval`, `max-revisions-per-artifact`, `max-turns-per-artifact`, `max-instruction-chars` | Wire/data limits в `ReviewService` / `ArtifactEdits` / `IntentSpecs` и [generation contract](../../contracts/generation/README.md); не operator knobs |
 
-Секреты провайдеров не являются policy: только имена env из архитектуры (§9), значения — в окружении `worker`.
-Клиентские интервалы опроса (события сессии 1 с / 5–15 с, уведомления 30–60 с / 10 с) — client policy
-контрактов [events](../../contracts/generation/events.json) и
-[notifications](../../contracts/notifications/README.md), а не Spring-ключи.
+`learning.ai.routes.*`, `learning.ai.providers.*.enabled` и
+`learning.generation.session-retention` реализованы под теми же names в таблице выше.
+Secrets остаются только в окружении; интервалы browser polling — client policy из
+[events](../../contracts/generation/events.json) и [notifications](../../contracts/notifications/README.md),
+а не Spring-ключи. Исходная proposal-таблица доступна в Git history; её defaults не
+переопределяют текущую конфигурацию.
 
 ## Аудит ещё не вынесенных значений
 
