@@ -66,6 +66,7 @@ artifact:
 
 | Статус | Документ | Назначение |
 |---|---|---|
+| current | [Public events and feedback](./architecture/public-updates-and-feedback.md) | События, редактор владельца, Telegram inbox и исследованная граница подтверждения аккаунта. |
 | current | [System overview](./system-overview.md) | Replacement topology и legacy boundary. |
 | accepted | [Content and Study platform](./architecture/content-platform-v2.md) | Общая модель; P0 content/Study реализованы, P1/P2 — границы будущей работы. |
 | accepted | [Native content format](./architecture/learning-content-format-v2.md) | Persisted native document contract. |

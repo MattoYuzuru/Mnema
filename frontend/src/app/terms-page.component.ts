@@ -1,11 +1,13 @@
 import { Component, ChangeDetectionStrategy } from '@angular/core';
+import { SupportContactComponent } from './shared/support-contact.component';
 
 @Component({
     selector: 'app-terms-page',
+    imports: [SupportContactComponent],
     template: `
     <div class="legal-page" lang="ru">
-      <h1>Условия использования</h1>
-      <p class="last-updated">Последнее обновление: август 2026</p>
+      <h1 tabindex="-1">Условия использования</h1>
+      <p class="last-updated">Последнее обновление: октябрь 2026</p>
 
       <section>
         <h2>Принятие условий</h2>
@@ -44,7 +46,8 @@ import { Component, ChangeDetectionStrategy } from '@angular/core';
 
       <section>
         <h2>Контакты</h2>
-        <p>По вопросам об этих Условиях использования, пожалуйста, свяжитесь с нами через наш репозиторий на GitHub.</p>
+        <p>По вопросам об этих Условиях использования напишите нам через Telegram-бота.</p>
+        <app-support-contact />
       </section>
     </div>
   `,

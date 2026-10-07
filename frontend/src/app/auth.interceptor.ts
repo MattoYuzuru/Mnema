@@ -19,7 +19,8 @@ export function isCredentialTarget(requestUrl: string, identityOrigin: string, l
             ['/userinfo', '/api/accounts/me', '/api/accounts/me/avatar'].includes(url.pathname);
         const prefix = learning.pathname.replace(/\/$/u, '');
         const learningRoots = [`${prefix}/decks`, `${prefix}/editing-drafts`, `${prefix}/capture-notes`,
-            `${prefix}/media-assets`, `${prefix}/notifications`, `${prefix}/generation-sessions`, `${prefix}/speech-inputs`];
+            `${prefix}/media-assets`, `${prefix}/notifications`, `${prefix}/generation-sessions`, `${prefix}/speech-inputs`,
+            `${prefix}/admin/events`];
         // The account-wide `generation-sessions` list is the only generation route outside `/decks/{id}`.
         // Single-resource routes without subpaths: capability flags, stateless author preview evaluation, the usage bar,
         // the paywall catalogue and the goal answer.

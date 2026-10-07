@@ -11,6 +11,8 @@ import { ArtifactSummary } from '../features/generation/generation.models';
 import { PromoPopupComponent } from '../features/promo/promo-popup.component';
 import { PromoCampaign } from '../features/promo/promo.models';
 import { NewBadgeComponent } from '../shared/new-badge.component';
+import { PublicFooterComponent } from '../shared/public-footer.component';
+import { SupportContactComponent } from '../shared/support-contact.component';
 import { ToggletipComponent } from '../shared/toggletip.component';
 import { UsageMeterComponent } from '../shared/usage-meter.component';
 import { SgSpecimenComponent } from './sg-specimen.component';
@@ -32,7 +34,7 @@ const PLACEHOLDER_ASSET = 'd5000000-0000-4000-8000-0000000000aa';
     selector: 'app-sg-surfaces',
     encapsulation: ViewEncapsulation.None,
     imports: [SgSpecimenComponent, ToggletipComponent, AiPromptWindowComponent, BatchPagerComponent, NewBadgeComponent, UsageMeterComponent,
-        NativeDocumentRendererComponent, PromoPopupComponent],
+        NativeDocumentRendererComponent, PromoPopupComponent, PublicFooterComponent, SupportContactComponent],
     templateUrl: './sg-surfaces.component.html',
     changeDetection: ChangeDetectionStrategy.OnPush
 })

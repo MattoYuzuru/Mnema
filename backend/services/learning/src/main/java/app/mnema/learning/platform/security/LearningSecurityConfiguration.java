@@ -96,6 +96,18 @@ public class LearningSecurityConfiguration {
 
     @Bean
     @Order(2)
+    SecurityFilterChain publicEvents(HttpSecurity http, ApiSecurityErrors errors) throws Exception {
+        return http.securityMatcher("/events")
+                .authorizeHttpRequests(requests -> requests.requestMatchers(HttpMethod.GET, "/events").permitAll()
+                        .requestMatchers(HttpMethod.HEAD, "/events").permitAll().anyRequest().denyAll())
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .requestCache(cache -> cache.disable()).logout(logout -> logout.disable())
+                .exceptionHandling(failures -> failures.authenticationEntryPoint((r, s, e) -> errors.unauthorized(r, s))
+                        .accessDeniedHandler((r, s, e) -> errors.forbidden(r, s))).build();
+    }
+
+    @Bean
+    @Order(3)
     SecurityFilterChain learningSecurity(HttpSecurity http, JwtDecoder decoder, IdentityHttp identity,
                                          IdentityEndpoints endpoints, ApiSecurityErrors errors) throws Exception {
         http.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

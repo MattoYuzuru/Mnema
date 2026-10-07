@@ -19,6 +19,11 @@ wire shapes; the current mechanics and fields are in
 [`contracts/study`](../../../contracts/study/README.md#exercise-mechanics-266). Screenshots
 of the former two-column exercise editor are likewise historical.
 
+## Public content and feedback
+
+- [Public footer and events acceptance, 2026-10-07](./public-feedback-2026-10-07/README.md)
+  records current-task local Chrome/HTTPS evidence, responsive/keyboard checks and exact code revision.
+
 ## Epic #74 closure
 
 - [Integrated main acceptance](./epic-74/verification/integrated-main-2026-09-19.md)

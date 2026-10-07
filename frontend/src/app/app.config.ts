@@ -4,6 +4,8 @@ export interface AppConfig {
     learningApiBaseUrl: string;
     clientId: string;
     buildId: string;
+    /** Public BotFather username, without @. Optional in runtime overrides and fixtures. */
+    supportTelegramUsername?: string;
     features: AppFeatures;
 }
 
@@ -35,6 +37,7 @@ const defaultConfig: AppConfig = {
     learningApiBaseUrl: '/api',
     clientId: 'mnema-web',
     buildId: 'dev',
+    supportTelegramUsername: 'Mnema_Support_Bot',
     features: {
         federatedAuthEnabled: true,
         showEmailVerificationWarning: !isLocalSelfHost

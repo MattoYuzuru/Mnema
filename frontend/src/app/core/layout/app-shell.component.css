@@ -29,8 +29,7 @@
     min-block-size: 100dvh;
 }
 
-.masthead,
-.footer {
+.masthead {
     inline-size: min(var(--mn-page-width), calc(100% - 2 * var(--mn-page-gutter)));
     margin-inline: auto;
 }
@@ -65,8 +64,7 @@
 }
 
 .primary-nav,
-.session,
-.footer nav {
+.session {
     display: flex;
     align-items: center;
     gap: clamp(.75rem, 2.5vw, 2.25rem);
@@ -122,22 +120,6 @@ main {
     min-inline-size: 0;
     inline-size: 100%;
 }
-
-.footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: .75rem 2rem;
-    border-block-start: 1px solid var(--mn-rule);
-    padding-block: 1.6rem 2rem;
-    color: var(--mn-muted);
-    font: .6875rem/1.7 var(--mn-font-mono);
-    letter-spacing: .03em;
-}
-
-.footer a { color: var(--mn-ink); }
-.footer nav { flex-wrap: wrap; min-inline-size: 0; }
 
 :where(a, button):focus-visible,
 main:focus-visible {

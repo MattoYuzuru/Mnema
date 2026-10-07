@@ -103,11 +103,21 @@ npx ng build --configuration development && node scripts/verify-no-styleguide.mj
 | Поля ввода, Выбор | `.field`, `.hint`, `.field-error`, `app-mnema-select`, радио/флажки, флажок с пояснением `.check-field`, недоступная настройка `.settings-row`, `app-segmented-choice` (в том числе вопрос о цели), карточка тарифа `app-plan-option`, поле с кнопкой `.field-row` и поле промокода `app-promo-redeem`, `app-choice-list` | `sg-controls`, `components.css` |
 | Меню и окна, Вкладки и пейджер | `app-toggletip`, `app-ai-prompt-window`, промо-окно `app-promo-popup`, `app-batch-pager` | `sg-surfaces` |
 | Статусы и ход | `.stamp`, `app-new-badge`, `app-usage-meter`, плейсхолдер медиа | `sg-surfaces` |
-| Обратная связь | `.notice`, тосты `ToastService`, `.empty-state` | `sg-surfaces` |
+| Обратная связь | `.notice`, тосты `ToastService`, `.empty-state`, контакт поддержки `app-support-contact` с подписанным знаком Telegram | `sg-surfaces`, `shared/` |
+| Публичный футер | `app-public-footer`: реквизиты проекта, разделы, правовые документы и контакт; четыре, две или одна колонка | `sg-surfaces`, `shared/` |
 | Карточки и области | таблица сравнения `.data-table`, панель главного действия `.cta-bar`, `.paper-surface` | `sg-surfaces`, `components.css` |
 | Пример экрана | Страница колоды из элементов каталога | `sg-screen` |
 
 Код страницы — `frontend/src/app/styleguide/`; её собственная раскладка в классах `sg-*`, в примерах они не используются.
+
+Контакт поддержки берётся из `appConfig.supportTelegramUsername`; текущий публичный
+бот — `Mnema_Support_Bot`. Контейнер может переопределить имя через
+`MNEMA_SUPPORT_TELEGRAM_USERNAME` без изменения сборки. Допускается только имя бота
+в формате BotFather (5–32 латинских символа, цифры или `_`, окончание `bot`);
+ссылка строится на `https://t.me/`. Для отсутствующего или некорректного контакта
+компонент показывает пояснение без ссылки. SVG-знак оригинальный, `aria-hidden`,
+смысл и указание новой вкладки передаёт текст ссылки. Реквизиты футера предоставлены
+владельцем; изменения этих сведений требуют проверенных данных, а не копирования референса.
 
 Поле промокода показывает ответ сервера: доступ до даты без автопродления или скидку на будущую оплату.
 При неизвестном результате оно повторяет ту же команду и не обещает, что тариф не изменился.

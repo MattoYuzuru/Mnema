@@ -8,6 +8,10 @@ import type { ItemEditorPageComponent } from './features/authoring/item-editor-p
 import type { ExerciseAuthoringPageComponent } from './features/authoring/exercise-authoring-page.component';
 import type { StudySessionPageComponent } from './features/study/study-session-page.component';
 import type { NewMaterialPageComponent } from './features/generation/new-material-page.component';
+import type { ManageEventsPageComponent } from './features/events/manage-events-page.component';
+
+const lazyCanLeaveEventEditor: CanDeactivateFn<ManageEventsPageComponent> = (...args) =>
+    import('./features/events/manage-events-page.component').then(module => module.canLeaveEventEditor(args[0]));
 
 const lazyCanLeaveItemEditor: CanDeactivateFn<ItemEditorPageComponent> = (...args) =>
     import('./features/authoring/item-editor-page.component').then(module => module.canLeaveItemEditor(args[0]));
@@ -36,6 +40,9 @@ const developmentOnlyRoutes: Routes = typeof ngDevMode === 'undefined' || ngDevM
 
 export const appRoutes: Routes = [
     { path: '', component: HomePageComponent },
+    { path: 'events', loadComponent: () => import('./features/events/events-page.component').then(module => module.EventsPageComponent) },
+    { path: 'manage/events', canActivate: [authGuard], canDeactivate: [lazyCanLeaveEventEditor],
+        loadComponent: () => import('./features/events/manage-events-page.component').then(module => module.ManageEventsPageComponent) },
     { path: 'login', component: LoginPageComponent },
     { path: 'register', component: LoginPageComponent },
     { path: 'auth/callback', loadComponent: () => import('./auth-callback.component').then(module => module.AuthCallbackComponent) },

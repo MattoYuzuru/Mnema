@@ -1,10 +1,12 @@
 import { Component, ChangeDetectionStrategy } from '@angular/core';
+import { SupportContactComponent } from './shared/support-contact.component';
 
 @Component({
     selector: 'app-privacy-page',
+    imports: [SupportContactComponent],
     template: `
     <div class="legal-page" lang="ru">
-      <h1>Политика конфиденциальности</h1>
+      <h1 tabindex="-1">Политика конфиденциальности</h1>
       <p class="last-updated">Последнее обновление: октябрь 2026</p>
 
       <section>
@@ -42,7 +44,8 @@ import { Component, ChangeDetectionStrategy } from '@angular/core';
 
       <section>
         <h2>Связаться с нами</h2>
-        <p>Если у вас есть вопросы об этой Политике конфиденциальности, пожалуйста, свяжитесь с нами через наш репозиторий на GitHub.</p>
+        <p>Если у вас есть вопросы об этой Политике конфиденциальности, напишите нам через Telegram-бота.</p>
+        <app-support-contact />
       </section>
     </div>
   `,
