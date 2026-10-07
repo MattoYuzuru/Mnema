@@ -24,6 +24,10 @@ next fetch without retaining an older timeline in the browser or a shared cache:
 }
 ```
 
+The public endpoint permits GET/HEAD only and retains Spring Security's default CSRF
+protection. Anonymous unsafe methods without a CSRF token return `403 ACCESS_DENIED`
+as RFC 9457 JSON; publication and editing use the separate authenticated editorial endpoints.
+
 Pages contain at most **50** events, ordered by `eventDate DESC, eventId DESC`. Pass the opaque
 `nextCursor` as the single `cursor` query parameter for the next page. There is no offset,
 page-size override or count query. Empty/malformed/duplicate cursors and other query parameters
@@ -105,6 +109,9 @@ exact owner identity; `EventRequestsTest` checks ambiguous headers/cursors and p
 
 The separate public filter chain and ordered request rules follow
 [Spring Security 7.1](https://docs.spring.io/spring-security/reference/servlet/configuration/java.html).
+The public chain retains the framework's
+[default CSRF protection](https://docs.spring.io/spring-security/reference/servlet/exploits/csrf.html),
+which exempts safe methods and rejects unsafe requests without a valid token.
 Pagination uses explicit unique ordering and tuple comparison from
 [PostgreSQL 18](https://www.postgresql.org/docs/18/functions-comparisons.html), avoiding
 [offset instability](https://www.postgresql.org/docs/18/queries-limit.html).

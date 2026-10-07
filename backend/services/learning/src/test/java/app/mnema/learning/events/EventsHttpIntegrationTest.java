@@ -133,7 +133,15 @@ class EventsHttpIntegrationTest extends PostgresIntegrationTest {
         assertThat(event.path("bodyMarkdown").stringValue(null)).isEqualTo("**Текст** [ссылка](https://mnema.app)");
         assertThat(request("HEAD", "/events", null, null, null).statusCode()).isEqualTo(200);
         assertThat(IDENTITY_CALLS).hasValue(0);
-        problem(request("POST", "/events", null, "{}", null), 401, "AUTHENTICATION_REQUIRED");
+    }
+
+    @Test
+    void anonymousUnsafePublicMethodsAreCsrfProtectedAndReturnStableJsonProblems() throws Exception {
+        for (String method : List.of("POST", "PUT", "PATCH", "DELETE")) {
+            problem(request(method, "/events", null, "{}", null), 403, "ACCESS_DENIED");
+        }
+        assertThat(IDENTITY_CALLS).hasValue(0);
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.product_event").query(Long.class).single()).isZero();
     }
 
     @Test
