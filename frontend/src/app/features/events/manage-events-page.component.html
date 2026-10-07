@@ -1,0 +1,67 @@
+<div class="manage-events">
+  <a routerLink="/events">К публичным событиям</a>
+  <header><span class="eyebrow">Управление проектом</span><h1 tabindex="-1">События</h1></header>
+  <p class="visually-hidden" role="status">{{ notice() }}</p>
+  @if (state() === 'loading') { <p role="status">Проверяем доступ...</p> }
+  @if (state() === 'forbidden') { <div class="notice"><h2>Доступ закрыт</h2><p>Эта страница доступна только владельцу Мнемы.</p><a routerLink="/profile">Открыть профиль</a></div> }
+  @if (state() === 'error') { <div class="notice" role="alert"><p>Не удалось проверить доступ.</p><button type="button" class="button" (click)="initialize()">Попробовать снова</button></div> }
+  @if (state() === 'ready') {
+    @if (pendingSelection()) {
+      <div class="notice warning" role="alert">
+        <p>В редакторе есть несохранённые изменения. Сохраните или скопируйте их перед открытием другой записи.</p>
+        <div class="actions">
+          <button class="button" type="button" (click)="pendingSelection.set(null)" [disabled]="busy() || uncertain()">Продолжить редактирование</button>
+          <button class="button" type="button" (click)="discardAndOpen()" [disabled]="busy() || uncertain()">Отбросить изменения и открыть запись</button>
+        </div>
+      </div>
+    }
+    @if (error()) { <div class="notice" role="alert"><p>{{ error() }}</p>
+      @if (uncertain()) { <button type="button" class="button primary" (click)="submit()" [disabled]="busy()">Повторить тот же запрос</button> }
+    </div> }
+    @if (notice()) { <p class="notice">{{ notice() }}</p> }
+    <div class="workspace">
+      <section aria-labelledby="event-list-heading">
+        <div class="list-heading"><h2 id="event-list-heading">Все записи</h2><button class="button" type="button" (click)="refresh()" [disabled]="busy() || uncertain()">Обновить</button></div>
+        <button class="button primary" type="button" (click)="edit(null)" [disabled]="busy() || uncertain()">Новое событие</button>
+        <ul class="event-list">
+          @for (event of page()?.items ?? []; track event.eventId) {
+            <li><button type="button" class="event-choice" (click)="edit(event)" [disabled]="busy() || uncertain()" [attr.aria-pressed]="selected()?.eventId === event.eventId">
+              <span>{{ event.title }}</span><small>{{ date(event.eventDate) }} · {{ event.published ? 'Опубликовано' : 'Черновик' }}</small>
+            </button></li>
+          } @empty { <li class="hint">Записей пока нет.</li> }
+        </ul>
+        @if (history.length || page()?.nextCursor) {
+          <nav class="actions" aria-label="Страницы записей">
+            <button class="button" type="button" (click)="previous()" [disabled]="busy() || uncertain() || !history.length">Назад</button>
+            <button class="button" type="button" (click)="next()" [disabled]="busy() || uncertain() || !page()?.nextCursor">Далее</button>
+          </nav>
+        }
+      </section>
+      <section class="editor paper-surface" aria-labelledby="editor-heading">
+        <h2 id="editor-heading">{{ heading() }}</h2>
+        <form [formGroup]="form" (ngSubmit)="save()">
+          <label class="field"><span>Заголовок</span><input id="event-title" formControlName="title" maxlength="160" required></label>
+          <label class="field"><span>Дата события</span><input type="date" formControlName="eventDate" required></label>
+          <label class="field"><span>Текст</span><textarea formControlName="bodyMarkdown" maxlength="16000" rows="12" required aria-describedby="markdown-help"></textarea></label>
+          <p class="hint" id="markdown-help">Поддерживаются абзацы, **жирный текст**, *курсив*, `код`, заголовки #, списки с -, цитаты &gt; и [ссылки](https://mnema.app). HTML и изображения не вставляются.</p>
+          <label class="publish-choice"><input type="checkbox" formControlName="published"><span>Показывать на странице событий</span></label>
+          <div class="actions">
+            <button class="button primary" type="submit" [disabled]="busy() || uncertain()">{{ busy() ? 'Сохраняем...' : form.controls.published.value ? 'Опубликовать' : 'Сохранить черновик' }}</button>
+            <button class="button" type="button" (click)="showPreview()">{{ preview() ? 'Закрыть просмотр' : 'Предпросмотр текста' }}</button>
+          </div>
+        </form>
+        @if (preview()) { <section class="preview" aria-label="Предпросмотр текста"><app-event-body [markdown]="previewBody()" /></section> }
+        @if (selected()) {
+          <div class="delete-area">
+            @if (confirmDelete()) {
+              <p>Удалить запись «{{ selected()?.title }}»?</p><div class="actions">
+                <button class="button danger" type="button" (click)="remove()" [disabled]="busy() || uncertain()">Удалить запись</button>
+                <button class="button" type="button" (click)="confirmDelete.set(false)" [disabled]="busy() || uncertain()">Отмена</button>
+              </div>
+            } @else { <button class="button danger" type="button" (click)="confirmDelete.set(true)" [disabled]="busy() || uncertain()">Удалить событие</button> }
+          </div>
+        }
+      </section>
+    </div>
+  }
+</div>

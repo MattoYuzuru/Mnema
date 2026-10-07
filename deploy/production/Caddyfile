@@ -60,3 +60,7 @@ auth.mnema.app {
 www.mnema.app {
 	redir https://mnema.app{uri} 308
 }
+
+admin.mnema.app {
+	redir https://mnema.app/manage/events 308
+}

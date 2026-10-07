@@ -5,6 +5,11 @@ a disposable PostgreSQL18 database, two loopback HTTPS proxies, and an isolated 
 Chrome profile. `browser.mjs` uses Node 24's built-in WebSocket and Chrome DevTools Protocol;
 there is no Playwright/npm/pip dependency or package installation.
 
+The composition also creates a disposable real Identity editorial owner. The events
+scenario verifies another learner's 403, owner sign-in, draft isolation, explicit
+publication, safe Markdown and timeline/editor reflow at 1440/390/320px. Screenshots
+are `events-editor-<width>.png` and `events-timeline-<width>.png`; it sends no data to Telegram.
+
 ## Run
 
 Prerequisites: existing Java 25 on `PATH`, Node 24, Chrome, OpenSSL with `req -addext`, Docker
@@ -190,6 +195,15 @@ to the URL, not a click on a bell or toast entry (that component is covered by t
 Nothing is stubbed: `GET /api/plans` and `GET/PUT /api/learning-profile` are read with the page's own bearer and the page is compared with
 them. A broken stage writes `failure-plans-<stage>.png`/`.txt`. `--only-plans` (development aid, requires `--authoring`) runs it alone after
 the base flow and skips the code block, usage, Workshop and assessment scenarios; never a substitute for the full run.
+
+The public `/ai` scenario checks the current introduction, source-checking benefit and accuracy limit,
+the limited email/phone/card masking disclosure without provider names, and the owner-approved
+operator details and support-bot links. It follows the footer's `/events` link, checks footer columns
+and 44 px link targets at 1440, 768, 390 and 320 CSS px, exercises the keyboard skip link,
+and repeats text containment at 320 CSS px with the root font doubled. Screenshots are
+`ai-public-1280.png`, `ai-public-320.png`, `public-footer-<width>.png` and
+`public-footer-320-2x-text.png`. Doubling the root font is a text-scaling check; DPR alone
+is raster density and is not evidence of browser zoom or a real touch device.
 
 | Stage | Assertions |
 |---|---|

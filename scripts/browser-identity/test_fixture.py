@@ -634,12 +634,19 @@ module.main()
                 try:
                     with patch.object(HARNESS, "ROOT", self.directory), \
                             patch.object(HARNESS.subprocess, "Popen", return_value=process) as launch, \
+                            patch.object(fixture, "account", return_value=(None, "0a000000-0000-4000-8000-000000000043")) as editorial_account, \
                             patch.object(HARNESS.BASE, "Client") as client:
                         client.return_value.request.return_value = (200, {}, b"")
                         fixture.boot(module, 18082, "fixture", generation=generation, promo=promo)
                         arguments = launch.call_args.args[0]
                         expected = module == "learning" and generation and assessment
                         self.assertEqual(expected, argument in arguments)
+                        if module == "learning":
+                            editorial_account.assert_called_once_with("events_fixture")
+                            self.assertEqual(launch.call_args.kwargs["env"]["MNEMA_EVENTS_OWNER_ACCOUNT_ID"],
+                                             "0a000000-0000-4000-8000-000000000043")
+                        else:
+                            editorial_account.assert_not_called()
                         if expected:
                             environment = launch.call_args.kwargs["env"]
                             self.assertEqual("stub", environment["LEARNING_AI_PROVIDER"])

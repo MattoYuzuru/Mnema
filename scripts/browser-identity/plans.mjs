@@ -390,10 +390,24 @@ export async function runPlans(ctx) {
 /** `/ai` without signing in: from the footer link, and by its own address. Runs on a tab that is anonymous. */
 export async function runAiPublic(ctx) {
   const { config, record, SafeFailure, navigate, saveScreenshot, setStep } = ctx;
-  const { need, page, metrics, until, exists, tab } = toolkit(ctx);
+  const { need, page, metrics, reducedMotion, frames, press, until, exists, tab } = toolkit(ctx);
   setStep('ai_public');
-  const evidence = {};
+  const evidence = { screenshots: [], reflow: {} };
+  const shot = async name => { await saveScreenshot(name, tab); evidence.screenshots.push(name); };
+  const layout = () => page(`const footer = document.querySelector('footer');
+    return { path: location.pathname, scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth,
+      columns: getComputedStyle(footer).gridTemplateColumns.split(/\\s+/).length,
+      rootFont: parseFloat(getComputedStyle(document.documentElement).fontSize),
+      smallLinks: [...footer.querySelectorAll('a')].filter(node => node.getBoundingClientRect().height < 43.5).length,
+      overflowingText: [...document.querySelectorAll('.ai-page p, .ai-page li, .ai-page h1, .ai-page h2, footer p, footer dd')]
+        .filter(node => node.scrollWidth > node.clientWidth + 1).length };`);
+  const footerShot = async name => {
+    await page(`document.querySelector('footer .footer-note').scrollIntoView({ block: 'end', behavior: 'instant' }); return true;`);
+    await frames();
+    await shot(name);
+  };
   try {
+    await reducedMotion(true);
     await metrics(1280, 900, 1, false);
     await navigate('/', tab);
     await until(() => exists('footer a[href="/ai"]', tab), 'the footer has no «Как Mnema использует ИИ» link while signed out');
@@ -403,27 +417,74 @@ export async function runAiPublic(ctx) {
       'the footer link did not open the public /ai page (a redirect to sign-in?)');
     const state = await page(`return { sections: [...document.querySelectorAll('article section h2')].map(node => node.textContent.trim()),
       toc: document.querySelectorAll('nav.toc a').length, scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth,
-      text: document.body.innerText, signedIn: Boolean(document.querySelector('.identity')) };`);
+      text: document.body.innerText, signedIn: Boolean(document.querySelector('.identity')),
+      lede: document.querySelector('.lede').textContent,
+      data: document.querySelector('#data').textContent, sources: document.querySelector('#what').textContent,
+      contact: document.querySelector('#contact a')?.getAttribute('href'),
+      footerContact: document.querySelector('footer app-support-contact a')?.getAttribute('href'),
+      events: document.querySelector('footer a[href="/events"]')?.textContent,
+      operator: document.querySelector('footer').textContent };`);
     need(!state.signedIn, 'the tab is signed in: the check proves nothing about the public route');
     need(state.toc === 6 && state.sections.length === 6, `the page has ${state.sections.length} sections and ${state.toc} contents links`);
     need(!/кредит/iu.test(state.text), '/ai shows credits as a unit');
+    need(state.lede.includes('Мнема использует ИИ') && !state.lede.includes('Короткий и честный ответ'), 'the new AI introduction is missing');
+    need(state.sources.includes('ещё одна возможность разобраться в теме') && state.sources.includes('не гарантирует достоверность'),
+      'the source check lost its learning benefit or its accuracy limit');
+    need(!/DeepSeek|OpenRouter|Google|Pixabay|Openverse|Викисклад|Yandex|Perplexity/u.test(state.data), 'the public data section names an AI provider');
+    for (const claim of ['адреса почты', 'записи телефонов', 'номера карт', 'не гарантирует обезличивание', 'за рубежом', 'в России']) {
+      need(state.data.includes(claim), `the data section is missing ${claim}`);
+    }
+    need(!state.data.includes('Для чего вам Mnema?'), 'the removed onboarding-goal disclosure is still shown');
+    need(state.contact === 'https://t.me/Mnema_Support_Bot' && state.footerContact === state.contact, 'AI page and footer do not link the owner-approved bot');
+    need(state.events?.trim() === 'События', 'the footer has no public event destination');
+    for (const detail of ['ИП Рябушкин Матвей Игоревич', '771573834080', '326774600705952']) {
+      need(state.operator.includes(detail), `the footer is missing the owner-approved operator detail ${detail}`);
+    }
     need(state.scrollWidth <= state.clientWidth, '/ai overflows horizontally at 1280');
     evidence.viaFooter = true;
-    await saveScreenshot('ai-public-1280.png', tab);
-    // Directly, at the narrowest width.
-    await metrics(320, 900, 2, false);
+    evidence.copyAndContact = true;
+    await shot('ai-public-1280.png');
+    for (const [width, columns] of [[1440, 4], [768, 2], [390, 1], [320, 1]]) {
+      await metrics(width, 1000, 1, false);
+      await frames();
+      const current = await layout();
+      need(current.scrollWidth <= current.clientWidth && current.overflowingText === 0, `/ai or its footer overflows at ${width} CSS px`);
+      need(current.columns === columns && current.smallLinks === 0, `the footer's columns or touch targets are wrong at ${width} CSS px`);
+      evidence.reflow[width] = current;
+      await footerShot(`public-footer-${width}.png`);
+    }
+    // Directly, at the narrowest width. DPR 2 is raster density, not a claim of browser zoom.
+    await metrics(320, 900, 1, false);
     await navigate('/ai', tab);
     await until(() => exists('article.ai-page h1', tab), 'a direct /ai load did not render the page');
-    const narrow = await page(`return { path: location.pathname, scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth };`);
+    const narrow = await layout();
     need(narrow.path === '/ai' && narrow.scrollWidth <= narrow.clientWidth, '/ai redirects or overflows at 320 CSS px');
     evidence.direct = true;
-    await saveScreenshot('ai-public-320-at-200-percent.png', tab);
+    await shot('ai-public-320.png');
+    await page(`document.documentElement.style.fontSize = '200%'; return true;`);
+    await frames();
+    const doubled = await layout();
+    need(doubled.rootFont >= narrow.rootFont * 1.9 && doubled.scrollWidth <= doubled.clientWidth && doubled.overflowingText === 0,
+      '/ai or its footer does not contain 200% root text at 320 CSS px');
+    need(doubled.smallLinks === 0, 'the footer loses its touch targets with 200% root text');
+    evidence.rootTextScale = 2;
+    await footerShot('public-footer-320-2x-text.png');
+    await page(`document.documentElement.style.removeProperty('font-size'); document.querySelector('.skip-link').focus(); return true;`);
+    await press('Enter');
+    need(await page(`return document.activeElement?.id === 'main-content' && location.pathname === '/ai';`), 'the keyboard skip link did not focus main on /ai');
+    evidence.keyboardSkip = true;
+    await page(`document.querySelector('footer a[href="/events"]').click(); return true;`);
+    await until(() => page(`return location.pathname === '/events' && document.querySelector('h1')?.textContent.trim() === 'События Мнемы';`),
+      'the footer event link did not open the public page');
+    evidence.eventsViaFooter = true;
   } catch (error) {
     try { await saveScreenshot('failure-ai-public.png', tab); } catch { /* the original failure is the verdict */ }
     await writeFile(join(config.output, 'failure-ai-public.txt'),
       (error instanceof SafeFailure ? error.message : `driver: ${String(error?.message ?? error).slice(0, 160)}`) + '\n').catch(() => {});
     throw error;
   } finally {
+    await page(`document.documentElement.style.removeProperty('font-size'); return true;`).catch(() => {});
+    await reducedMotion(false).catch(() => {});
     await metrics(1280, 900, 1, false).catch(() => {});
   }
   record('ai_page_public_without_login', evidence);

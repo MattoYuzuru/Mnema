@@ -340,6 +340,10 @@ class Fixture(BASE.Fixture):
                                 "MNEMA_AVATAR_SECRET_KEY": "mnema-browser-secret-key"})
             arguments += ["--identity.avatar.allow-loopback-http=true"]
         if module == "learning":
+            if not hasattr(self, "events_owner_id"):
+                # Disposable, real Identity account for the editorial browser flow. Existing learner accounts remain outsiders.
+                _, self.events_owner_id = self.account("events_fixture")
+            environment["MNEMA_EVENTS_OWNER_ACCOUNT_ID"] = self.events_owner_id
             if self.args.media:
                 environment.update({"LEARNING_MEDIA_UPLOAD_ENDPOINT": self.media_origin,
                                     "LEARNING_MEDIA_UPLOAD_ALLOW_LOOPBACK_HTTP": "true",
@@ -447,6 +451,7 @@ class Fixture(BASE.Fixture):
         config = {"debugPort": port, "frontend": self.frontend_origin, "identity": self.identity_origin,
                   "output": str(self.args.output), "login": "browser_fixture", "email": "browser_fixture@example.invalid",
                   "password": BASE.PASSWORD, "readySelector": self.args.ready_selector,
+                  "eventsLogin": "events_fixture",
                   "logoutSelector": self.args.logout_selector, "errorSelector": self.args.error_selector,
                   "authoring": self.args.authoring, "media": self.args.media, "mechanics": self.args.mechanics,
                   "generation": self.args.generation, "assessment": self.args.assessment,
@@ -465,7 +470,7 @@ class Fixture(BASE.Fixture):
                     "scripts": {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
                                 for name in ("run.py", "browser.mjs", "mechanics.mjs", "notifications.mjs", "hub.mjs",
                                              "code-block.mjs", "usage.mjs", "workshop.mjs", "exercises.mjs", "selection-edits.mjs",
-                                             "image-search.mjs", "speech.mjs", "voice.mjs", "research.mjs", "ask-mnema.mjs", "assessment.mjs", "planner.mjs", "plans.mjs", "promo.mjs")}}
+                                             "image-search.mjs", "speech.mjs", "voice.mjs", "research.mjs", "ask-mnema.mjs", "assessment.mjs", "planner.mjs", "plans.mjs", "promo.mjs", "events.mjs")}}
         (self.args.output / "fixture.json").write_text(json.dumps(evidence, indent=2))
         runner = self.launch_group([self.args.node, str(Path(__file__).with_name("browser.mjs")), str(private_config)], "browser")
         self.control("browser_running")

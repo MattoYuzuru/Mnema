@@ -54,6 +54,22 @@ class BrowserIdentityConfigTests(unittest.TestCase):
                                   MNEMA_IDENTITY_REDIRECT_URI="https://other.example.test/auth/callback")
         self.assertNotEqual(code, 0)
 
+    def test_support_contact_is_optional_and_uses_a_botfather_username(self):
+        code, content, _ = self.generate()
+        self.assertEqual(code, 0)
+        self.assertNotIn("supportTelegramUsername", content)
+        for username in ["ABbot", "Mnema_Support_BOT", "a" * 29 + "bot"]:
+            code, content, _ = self.generate(MNEMA_SUPPORT_TELEGRAM_USERNAME=username)
+            self.assertEqual(code, 0)
+            self.assertIn(f'supportTelegramUsername = "{username}"', content)
+
+    def test_support_contact_rejects_unsafe_or_invalid_usernames_without_echoing_them(self):
+        for username in ["abot", "a" * 30 + "bot", "MnemaSupport", "@MnemaSupportBot", "private-sentinel_bot",
+                         "MnemaSupportBot/path", "MnemaSupportBot\n", 'MnemaSupportBot";alert(1)', "Мнемаbot"]:
+            code, _, error = self.generate(MNEMA_SUPPORT_TELEGRAM_USERNAME=username)
+            self.assertNotEqual(code, 0)
+            self.assertNotIn(username, error)
+
 
 if __name__ == "__main__":
     unittest.main()

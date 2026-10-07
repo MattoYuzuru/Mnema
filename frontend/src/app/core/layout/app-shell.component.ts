@@ -4,6 +4,7 @@ import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } fro
 
 import { filter, map } from 'rxjs';
 import { DeckConstellationComponent } from '../../shared/deck-constellation.component';
+import { PublicFooterComponent } from '../../shared/public-footer.component';
 
 import { AuthService } from '../../auth.service';
 import { NotificationBellComponent } from '../notifications/notification-bell.component';
@@ -15,7 +16,7 @@ import { PromoPopupHostComponent } from '../../features/promo/promo-popup-host.c
     selector: 'app-shell',
     host: { '(pointerover)': 'setWaveOrigin($event)' },
     imports: [RouterLink, RouterLinkActive, RouterOutlet, DeckConstellationComponent, NotificationBellComponent, ToastRegionComponent,
-        GoalOnboardingComponent, PromoPopupHostComponent],
+        GoalOnboardingComponent, PromoPopupHostComponent, PublicFooterComponent],
     templateUrl: './app-shell.component.html',
     styleUrl: './app-shell.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush

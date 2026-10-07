@@ -35,6 +35,11 @@ exercise mechanics into the seven below. Epic #76 added the greenfield media lif
   Approval, edits, planner, image search, synthesis, web research, speech input and semantic assessment are
   implemented in the sections below; usage/plans/promo are in the [usage contract](../../../contracts/usage/README.md).
   Feature availability remains server-configured, not implied by this implementation inventory.
+- Product events: [`contracts/events`](../../../contracts/events/README.md) defines the public
+  50-item keyset timeline (`GET /api/events`) and owner-only editorial CRUD (`/api/admin/events`).
+  The exact owner account is configured by `MNEMA_EVENTS_OWNER_ACCOUNT_ID`; empty denies every
+  editor. Public reads remain available during Identity outages; editorial requests retain the
+  canonical bearer scopes and current `/userinfo` check. Migration `V43__product_events.sql`.
 - MBM compiler (#283): `app.mnema.learning.generation.mbm` is a pure package (no Spring, I/O or clock; identifiers come from
   the injected `IdAllocator`) that compiles MBM v1 to a native-v1 document and renders native-v1 back to MBM.
   `MbmCompiler.compile(source, MbmOptions, IdAllocator)` returns `MbmResult.Success` (document already read by

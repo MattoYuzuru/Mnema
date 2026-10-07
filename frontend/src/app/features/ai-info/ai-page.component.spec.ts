@@ -3,10 +3,11 @@ import { provideRouter } from '@angular/router';
 
 import { appRoutes } from '../../app.routes';
 import { AiPageComponent } from './ai-page.component';
+import { SUPPORT_CONTACT, telegramContact } from '../../shared/support-contact';
 
 describe('AiPageComponent', () => {
     async function render(): Promise<HTMLElement> {
-        TestBed.configureTestingModule({ providers: [provideRouter([])] });
+        TestBed.configureTestingModule({ providers: [provideRouter([]), { provide: SUPPORT_CONTACT, useValue: telegramContact('MnemaSupportBot') }] });
         const fixture = TestBed.createComponent(AiPageComponent);
         fixture.detectChanges();
         await fixture.whenStable();
@@ -22,13 +23,17 @@ describe('AiPageComponent', () => {
             'Пометки «создано ИИ»', 'Связаться с нами']);
         const text = root.textContent!;
         for (const word of ['Материалы', 'Упражнения', 'Правки', 'Проверка ответов', 'Голос', 'Картинки', 'Источники']) expect(text).toContain(word);
-        expect(text).toContain('DeepSeek');
-        expect(text).toContain('OpenRouter');
-        expect(text).toContain('Google');
+        for (const provider of ['DeepSeek', 'OpenRouter', 'Google', 'Pixabay', 'Openverse', 'Викисклад', 'Yandex', 'Perplexity']) {
+            expect(root.querySelector('#data')?.textContent).not.toContain(provider);
+        }
         expect(text).toContain('отдельное согласие на регион обработки');
         expect(text).toContain('фильтр не гарантирует обезличивание');
         expect(text).toContain('в России');
         expect(text).toContain('Мы не ставим на материалы и упражнения метку');
+        expect(root.querySelector('.lede')?.textContent).toContain('Мнема использует ИИ');
+        expect(root.querySelector('#what')?.textContent).toContain('ещё одна возможность разобраться в теме');
+        expect(text).not.toContain('Для чего вам Mnema?');
+        expect(text).not.toContain('Короткий и честный ответ');
     });
 
     it('describes supported sources and separates recorded speech consent from text synthesis', async () => {
@@ -41,6 +46,8 @@ describe('AiPageComponent', () => {
         expect(withdrawal?.getAttribute('href')).toBe('/profile#speech-consent');
         expect(root.querySelector('#contact')?.textContent).not.toContain('просьбы по вашим данным');
         expect(root.querySelector('#contact a[target="_blank"]')?.getAttribute('rel')).toBe('noopener noreferrer');
+        expect(root.querySelector('#contact a')?.getAttribute('href')).toBe('https://t.me/MnemaSupportBot');
+        expect(root.querySelector('#contact')?.textContent).toContain('пожелания, жалобы, предложения');
     });
 
     it('names every section from its own table of contents', async () => {

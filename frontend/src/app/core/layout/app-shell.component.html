@@ -38,14 +38,7 @@
     <router-outlet (activate)="focusPageHeading()"></router-outlet>
   </main>
 
-  <footer class="footer">
-    <span>MNEMA · ДЛЯ ТЕХ, КТО ЛЮБИТ УЧИТЬСЯ</span>
-    <nav aria-label="Служебные ссылки">
-      <a routerLink="/ai">Как Mnema использует ИИ</a>
-      <a routerLink="/privacy">Конфиденциальность</a>
-      <a routerLink="/terms">Условия</a>
-    </nav>
-  </footer>
+  <app-public-footer />
 </div>
 
 <app-promo-popup-host />

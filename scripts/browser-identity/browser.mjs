@@ -9,6 +9,7 @@ import { runCodeBlock } from './code-block.mjs';
 import { runUsage } from './usage.mjs';
 import { runAiPublic, runPlans } from './plans.mjs';
 import { runPromo } from './promo.mjs';
+import { runEvents } from './events.mjs';
 import { runWorkshop } from './workshop.mjs';
 import { runAssessment } from './assessment.mjs';
 
@@ -1130,6 +1131,8 @@ try {
   // The public /ai page, on the first tab that is now anonymous (#301).
   step = 'ai_public';
   await runAiPublic({ tab: cdp, config, record, SafeFailure, until, exists, navigate, saveScreenshot, setStep: value => { step = value; } });
+  await runEvents({ tab: cdp, config, record, SafeFailure, until, exists, navigate, fill, submit, clickText,
+    saveScreenshot, bearer: secondBearer, setStep: value => { step = value; } });
   step = 'wrong_live_state';
   const beforeWrongState = exchanges.length;
   tamperNextCallback = true;

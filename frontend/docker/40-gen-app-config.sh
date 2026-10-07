@@ -121,6 +121,18 @@ append_string_override "identityRedirectUri" "$IDENTITY_REDIRECT"
 append_string_override "learningApiBaseUrl" "$LEARNING_BASE"
 append_string_override "clientId" "${MNEMA_CLIENT_ID:-}"
 append_string_override "buildId" "${MNEMA_BUILD_ID:-dev}"
+SUPPORT_USERNAME="${MNEMA_SUPPORT_TELEGRAM_USERNAME:-}"
+if [ -n "$SUPPORT_USERNAME" ]; then
+  case "$SUPPORT_USERNAME" in
+    *[!a-zA-Z0-9_]* | ? | ?? | ??? | ????) fail "Support Telegram username must contain 5-32 Latin letters, numbers or underscores" ;;
+  esac
+  [ "${#SUPPORT_USERNAME}" -le 32 ] || fail "Support Telegram username must contain 5-32 Latin letters, numbers or underscores"
+  case "$SUPPORT_USERNAME" in
+    *[bB][oO][tT]) ;;
+    *) fail "Support Telegram username must end in bot" ;;
+  esac
+fi
+append_string_override "supportTelegramUsername" "$SUPPORT_USERNAME"
 append_bool_override "federatedAuthEnabled" "${MNEMA_FEATURE_FEDERATED_AUTH_ENABLED:-}"
 append_bool_override "showEmailVerificationWarning" "${MNEMA_FEATURE_SHOW_EMAIL_VERIFICATION_WARNING:-}"
 

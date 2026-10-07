@@ -72,6 +72,11 @@
   <h2 id="feedback-title">Обратная связь</h2>
   <p class="sg-lede">Три уровня: строка у поля, блок на странице, всплывающее уведомление. Выбирай самый тихий, который достаточен; сообщения об ошибках всегда говорят,
     что случилось и что можно сделать.</p>
+  <app-sg-specimen title="Контакт поддержки" selector="<app-support-contact>"
+    when="На публичных страницах и в футере. Ссылка с подписанной иконкой ведёт к настроенному Telegram-боту; пока контакт не задан, показано пояснение без недействующей ссылки."
+    [tokens]="['--mn-ink', '--mn-muted', '--mn-touch-min']">
+    <app-support-contact />
+  </app-sg-specimen>
   <app-sg-specimen title="Блок на странице" selector=".notice, .notice.success, .notice.warning, .notice.error"
     when="Сообщение о состоянии страницы или формы: ошибка загрузки, конфликт версий, успех. Тон — левая линия; ошибка и конфликт получают role=alert, остальное role=status. Действие внутри — .button."
     [tokens]="['--mn-soft', '--mn-ink', '--mn-positive', '--mn-caution', '--mn-danger']"
@@ -105,6 +110,12 @@
     </section>
   </app-sg-specimen>
 </section>
+
+<app-sg-specimen title="Публичный футер" selector="<app-public-footer>"
+  when="После основного содержимого: сведения о проекте, разделы, действующие документы и контакт поддержки. Колонки становятся двумя, затем одной на узком экране."
+  [tokens]="['--mn-paper', '--mn-rule', '--mn-page-gutter']">
+  <app-public-footer />
+</app-sg-specimen>
 
 <section class="sg-section" id="cards" aria-labelledby="cards-title">
   <p class="eyebrow">Компоненты</p>
