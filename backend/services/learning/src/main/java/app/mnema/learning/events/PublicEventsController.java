@@ -17,7 +17,7 @@ public final class PublicEventsController {
 
     @GetMapping
     ResponseEntity<JsonNode> page(HttpServletRequest request) {
-        return ResponseEntity.ok().header("Cache-Control", "public, max-age=60")
+        return ResponseEntity.ok().header("Cache-Control", "no-store")
                 .body(events.publicPage(EventRequests.parameter(request, "cursor")));
     }
 }

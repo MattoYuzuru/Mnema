@@ -122,7 +122,7 @@ class EventsHttpIntegrationTest extends PostgresIntegrationTest {
 
         var response = request("GET", "/events", "broken-token", null, null);
         assertThat(response.statusCode()).isEqualTo(200);
-        assertThat(response.headers().firstValue("cache-control")).contains("public, max-age=60");
+        assertThat(response.headers().firstValue("cache-control")).contains("no-store");
         var body = json(response);
         assertThat(body.path("items")).hasSize(1);
         assertThat(body.path("nextCursor").isNull()).isTrue();
@@ -223,7 +223,9 @@ class EventsHttpIntegrationTest extends PostgresIntegrationTest {
         assertThat(published.headers().firstValue("etag")).contains("\"1\"");
         String publication = json(published).path("event").path("publishedAt").stringValue(null);
         assertThat(publication).isNotNull();
-        assertThat(json(request("GET", "/events", null, null, null)).path("items")).hasSize(1);
+        var publishedFeed = request("GET", "/events", null, null, null);
+        assertThat(publishedFeed.headers().firstValue("cache-control")).contains("no-store");
+        assertThat(json(publishedFeed).path("items")).hasSize(1);
         var updateReplay = request("PUT", "/admin/events/" + id, owner, updateBody, "\"0\"");
         assertThat(updateReplay.statusCode()).isEqualTo(200);
         assertThat(updateReplay.headers().firstValue("idempotency-replayed")).contains("true");
@@ -233,7 +235,9 @@ class EventsHttpIntegrationTest extends PostgresIntegrationTest {
         var unpublished = request("PUT", "/admin/events/" + id, owner, commandJson(false), "\"1\"");
         assertThat(unpublished.statusCode()).isEqualTo(200);
         assertThat(json(unpublished).path("event").path("publishedAt").stringValue(null)).isEqualTo(publication);
-        assertThat(json(request("GET", "/events", null, null, null)).path("items")).isEmpty();
+        var unpublishedFeed = request("GET", "/events", null, null, null);
+        assertThat(unpublishedFeed.headers().firstValue("cache-control")).contains("no-store");
+        assertThat(json(unpublishedFeed).path("items")).isEmpty();
         String deletion = "/admin/events/" + id + "?commandId=" + UUID.randomUUID();
         problem(request("DELETE", deletion, owner, null, "\"0\""), 412, "VERSION_CONFLICT");
         var deleted = request("DELETE", deletion, owner, null, "\"2\"");

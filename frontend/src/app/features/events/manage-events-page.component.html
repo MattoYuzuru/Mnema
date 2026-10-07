@@ -1,7 +1,7 @@
 <div class="manage-events">
   <a routerLink="/events">К публичным событиям</a>
   <header><span class="eyebrow">Управление проектом</span><h1 tabindex="-1">События</h1></header>
-  <p class="visually-hidden" role="status">{{ notice() }}</p>
+  <p class="status-text" [class.notice]="notice()" role="status">{{ notice() }}</p>
   @if (state() === 'loading') { <p role="status">Проверяем доступ...</p> }
   @if (state() === 'forbidden') { <div class="notice"><h2>Доступ закрыт</h2><p>Эта страница доступна только владельцу Мнемы.</p><a routerLink="/profile">Открыть профиль</a></div> }
   @if (state() === 'error') { <div class="notice" role="alert"><p>Не удалось проверить доступ.</p><button type="button" class="button" (click)="initialize()">Попробовать снова</button></div> }
@@ -18,7 +18,6 @@
     @if (error()) { <div class="notice" role="alert"><p>{{ error() }}</p>
       @if (uncertain()) { <button type="button" class="button primary" (click)="submit()" [disabled]="busy()">Повторить тот же запрос</button> }
     </div> }
-    @if (notice()) { <p class="notice">{{ notice() }}</p> }
     <div class="workspace">
       <section aria-labelledby="event-list-heading">
         <div class="list-heading"><h2 id="event-list-heading">Все записи</h2><button class="button" type="button" (click)="refresh()" [disabled]="busy() || uncertain()">Обновить</button></div>

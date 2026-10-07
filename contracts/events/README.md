@@ -8,7 +8,8 @@ private notification center and learning material.
 ## Reading
 
 `GET /api/events` is public, including when Identity is unavailable. It returns only published
-events, with `Cache-Control: public, max-age=60`:
+events, with `Cache-Control: no-store` so publication, edits and unpublishing appear on the
+next fetch without retaining an older timeline in the browser or a shared cache:
 
 ```json
 {

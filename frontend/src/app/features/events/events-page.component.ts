@@ -15,7 +15,7 @@ import { EventPage, ProductEvent, formatEventDate } from './events.models';
         <a routerLink="/" class="back-link">На главную</a>
         <header><span class="eyebrow">Журнал проекта</span><h1 tabindex="-1">События Мнемы</h1>
           <p class="lede">Обновления, идеи и планы. Рассказываем, что меняется в Мнеме и над чем мы работаем.</p></header>
-        <p class="visually-hidden" role="status">{{ loading() ? 'Загружаем события' : 'События загружены' }}</p>
+        <p class="load-status" role="status">{{ loading() ? 'Загружаем события...' : '' }}</p>
         @if (error()) { <div class="notice" role="alert"><p>{{ error() }}</p><button class="button" type="button" (click)="load(currentCursor)" [disabled]="loading()">Попробовать снова</button></div> }
         @if (!loading() && !error() && page()?.items?.length === 0) {
           <div class="empty-state"><h2>Здесь будут новости проекта</h2><p>Первая запись появится после публикации.</p></div>
@@ -41,6 +41,7 @@ import { EventPage, ProductEvent, formatEventDate } from './events.models';
       header { max-width: 43rem; margin-block: var(--mn-space-6) var(--mn-space-7); }
       h1 { margin-block: var(--mn-space-2) var(--mn-space-4); font-size: clamp(2.7rem, 6vw, 4rem); }
       .lede { font-size: 1.1rem; line-height: 1.7; color: var(--mn-muted); }
+      .load-status:empty { margin: 0; }
       .timeline { list-style: none; margin: 0; padding: 0; }
       article { display: grid; grid-template-columns: 11rem minmax(0, 1fr); gap: var(--mn-space-6); padding-block: var(--mn-space-6); border-top: 1px solid var(--mn-rule); }
       time { color: var(--mn-muted); font-size: .85rem; padding-top: .5rem; }
