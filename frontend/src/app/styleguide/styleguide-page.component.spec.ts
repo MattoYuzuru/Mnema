@@ -44,7 +44,7 @@ describe('StyleguidePageComponent', () => {
     it('renders the real app components and classes', () => {
         for (const selector of [
             'app-hold-to-delete-button', 'app-segmented-choice', 'app-toggletip', 'app-usage-meter', 'app-mnema-select', 'app-choice-list',
-            'app-batch-pager', 'app-plan-option', 'app-promo-redeem .field-row', 'table.data-table', 'app-new-badge', 'app-native-document-renderer', 'app-telegram-glyph', 'app-support-contact', 'app-public-footer', 'button.generate-cta', 'button.button.primary',
+            'app-batch-pager', 'app-plan-option', 'app-promo-redeem .field-row', 'table.data-table', 'app-new-badge', 'app-native-document-renderer', 'app-telegram-glyph', 'app-mail-glyph', 'app-support-contact', 'app-mail-contact button', 'app-legal-operator-block', 'app-sg-legal .toc', 'app-public-footer', 'button.generate-cta', 'button.button.primary',
             '.check-field > .check-row', '.settings-row.is-switch', '.cta-bar.cta-bar--inline', '.notice.error', '.empty-state', '.stamp', '.paper-surface.ruled', '.field-error'
         ]) {
             expect(root.querySelector(selector), selector).not.toBeNull();

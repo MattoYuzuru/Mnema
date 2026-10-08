@@ -12,9 +12,11 @@ import { PromoPopupComponent } from '../features/promo/promo-popup.component';
 import { PromoCampaign } from '../features/promo/promo.models';
 import { NewBadgeComponent } from '../shared/new-badge.component';
 import { PublicFooterComponent } from '../shared/public-footer.component';
+import { MailContactComponent } from '../shared/mail-contact.component';
 import { SupportContactComponent } from '../shared/support-contact.component';
 import { ToggletipComponent } from '../shared/toggletip.component';
 import { UsageMeterComponent } from '../shared/usage-meter.component';
+import { SgLegalComponent } from './sg-legal.component';
 import { SgSpecimenComponent } from './sg-specimen.component';
 
 const ARTIFACT_STATES: readonly ArtifactSummary['state'][] = ['PUBLISHED', 'PROPOSED', 'GENERATING', 'FAILED', 'REJECTED', 'STALE'];
@@ -34,7 +36,7 @@ const PLACEHOLDER_ASSET = 'd5000000-0000-4000-8000-0000000000aa';
     selector: 'app-sg-surfaces',
     encapsulation: ViewEncapsulation.None,
     imports: [SgSpecimenComponent, ToggletipComponent, AiPromptWindowComponent, BatchPagerComponent, NewBadgeComponent, UsageMeterComponent,
-        NativeDocumentRendererComponent, PromoPopupComponent, PublicFooterComponent, SupportContactComponent],
+        NativeDocumentRendererComponent, PromoPopupComponent, PublicFooterComponent, SupportContactComponent, MailContactComponent, SgLegalComponent],
     templateUrl: './sg-surfaces.component.html',
     changeDetection: ChangeDetectionStrategy.OnPush
 })
