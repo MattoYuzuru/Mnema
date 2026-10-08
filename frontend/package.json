@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "build": "ng build --configuration production",
+    "build": "ng build --configuration production && node scripts/verify-public-seo.mjs",
     "lint": "ng lint",
     "test": "ng test --watch=false --coverage"
   },
@@ -29,6 +29,8 @@
     "@angular/build": "22.2.1",
     "@angular/cli": "22.2.1",
     "@angular/compiler-cli": "22.2.1",
+    "@angular/platform-server": "22.2.1",
+    "@angular/ssr": "22.2.1",
     "@eslint/js": "10.0.1",
     "@vitest/coverage-v8": "5.0.3",
     "angular-eslint": "22.5.0",

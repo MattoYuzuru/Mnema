@@ -5,7 +5,7 @@ artifact:
   title: "Mnema agent runbook: commands and local-machine setup"
   status: current
   created_at: "2026-10-01"
-  updated_at: "2026-10-07"
+  updated_at: "2026-10-08"
   owners: ["project-owner"]
 ---
 
@@ -52,6 +52,10 @@ problem, never permission to accept skipped tests.
 python3 scripts/verify_docs.py                 # links, anchors, doc statuses
 python3 -m unittest discover -s scripts/tests -p 'test_*.py'   # ~35 s
 ```
+
+The production frontend build also verifies public prerender, metadata and sitemap
+agreement. Rendering/indexing changes and their performance constraint:
+[public web SEO](../frontend/public-web-seo.md).
 
 `quality` has no separate backend lint/static-analysis task today (compile + tests +
 coverage). Java compilation is the configured static check (`-Xlint:all -Werror`). CI additionally runs `scripts/verify_github_actions_pins.py`,

@@ -24,7 +24,9 @@ declare global {
     }
 }
 
-const host = window.location.hostname;
+// Build-time public prerender has no browser or runtime secrets/configuration.
+const browserWindow = typeof window === 'undefined' ? undefined : window;
+const host = browserWindow?.location.hostname ?? 'mnema.app';
 const isMnemaProd = host === 'mnema.app';
 const isLocalHost = host === 'localhost' || host === '127.0.0.1';
 const isLocalSelfHost = isLocalHost;
@@ -32,8 +34,8 @@ const isLocalSelfHost = isLocalHost;
 const defaultConfig: AppConfig = {
     authServerUrl: isMnemaProd
         ? 'https://auth.mnema.app'
-        : (isLocalHost ? 'https://localhost:18081' : window.location.origin),
-    identityRedirectUri: `${window.location.origin}/auth/callback`,
+        : (isLocalHost ? 'https://localhost:18081' : browserWindow!.location.origin),
+    identityRedirectUri: `${browserWindow?.location.origin ?? 'https://mnema.app'}/auth/callback`,
     learningApiBaseUrl: '/api',
     clientId: 'mnema-web',
     buildId: 'dev',
@@ -44,7 +46,7 @@ const defaultConfig: AppConfig = {
     }
 };
 
-const override = window.MNEMA_APP_CONFIG ?? {};
+const override = browserWindow?.MNEMA_APP_CONFIG ?? {};
 const overrideFeatures = override.features ?? {};
 
 export const appConfig: AppConfig = {

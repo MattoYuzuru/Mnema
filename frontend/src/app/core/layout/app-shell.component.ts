@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 
@@ -26,6 +27,7 @@ export class AppShellComponent {
     readonly status = toSignal(this.auth.status$, { initialValue: this.auth.status() });
     readonly user = toSignal(this.auth.user$, { initialValue: this.auth.user() });
     private readonly router = inject(Router);
+    private readonly platform = inject(PLATFORM_ID);
 
     readonly routeUrl = toSignal(this.router.events.pipe(
         filter(event => event instanceof NavigationEnd), map(event => event.urlAfterRedirects)
@@ -51,6 +53,7 @@ export class AppShellComponent {
     }
 
     focusPageHeading(): void {
+        if (!isPlatformBrowser(this.platform)) return;
         queueMicrotask(() => {
             const heading = document.querySelector<HTMLElement>('#main-content h1');
             heading?.focus();

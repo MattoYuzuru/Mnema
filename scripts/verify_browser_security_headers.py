@@ -4,20 +4,19 @@
 from __future__ import annotations
 
 import argparse
-import base64
-import hashlib
+import json
+from html.parser import HTMLParser
 import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlparse
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from frontend_release_assets import hashed_assets
 
 
-JSON_LD_HASH = "sha256-Fp5GJnYMl9gcleSNB+7ZRLuuxVyhm4juel5fT2zlUrU="
 BASELINE_CSP = "base-uri 'self'; object-src 'none'; frame-ancestors 'none'"
 COMMON_HEADERS = {
     "x-content-type-options": "nosniff",
@@ -44,7 +43,7 @@ def full_policy(auth_origin: str, storage_origin: str) -> str:
     return (
         "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; "
         "form-action 'self'; "
-        f"script-src 'self' '{JSON_LD_HASH}' https://challenges.cloudflare.com; "
+        "script-src 'self' https://challenges.cloudflare.com; "
         "script-src-attr 'none'; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; "
@@ -114,24 +113,63 @@ def verify_header_values(
         raise ContractError(f"{context}: unsafe-inline escaped the documented style-src exception")
 
 
-def verify_index(index_html: str, context: str) -> None:
-    if re.search(r"<[^>]+\son[a-z]+\s*=", index_html, re.IGNORECASE):
-        raise ContractError(f"{context}: inline event handler would violate script-src-attr 'none'")
-    inline_scripts = re.findall(
-        r'<script\s+type="application/ld\+json">(.*?)</script>', index_html, re.DOTALL
-    )
-    if len(inline_scripts) != 1:
-        raise ContractError(f"{context}: expected exactly one JSON-LD inline script")
-    digest = base64.b64encode(hashlib.sha256(inline_scripts[0].encode()).digest()).decode()
-    if f"sha256-{digest}" != JSON_LD_HASH:
-        raise ContractError(f"{context}: JSON-LD hash does not match the CSP allowlist")
+class ScriptInventory(HTMLParser):
+    def __init__(self, context):
+        super().__init__()
+        self.context = context
+        self.scripts = []
+        self.current = None
+        self.noindex = False
 
-    without_json_ld = re.sub(
-        r'<script\s+type="application/ld\+json">.*?</script>', "", index_html, flags=re.DOTALL
-    )
-    remaining_scripts = re.findall(r"<script[^>]*>", without_json_ld, re.IGNORECASE)
-    if any(not re.search(r"\ssrc=", tag, re.IGNORECASE) for tag in remaining_scripts):
-        raise ContractError(f"{context}: unexpected inline executable script")
+    def handle_starttag(self, tag, attrs):
+        if any(name.startswith("on") for name, _ in attrs):
+            raise ContractError(f"{self.context}: inline event handler would violate script-src-attr 'none'")
+        values = dict(attrs)
+        if tag == "meta" and values.get("name") == "robots":
+            self.noindex = "noindex" in (values.get("content") or "").split(",")
+        if tag == "script":
+            if len(values) != len(attrs):
+                raise ContractError(f"{self.context}: duplicate script attribute")
+            self.current = {"attrs": values, "body": ""}
+
+    def handle_data(self, data):
+        if self.current is not None:
+            self.current["body"] += data
+
+    def handle_endtag(self, tag):
+        if tag == "script" and self.current is not None:
+            self.scripts.append(self.current)
+            self.current = None
+
+
+def verify_index(index_html: str, context: str) -> None:
+    # HTML's application/ld+json and application/json are inert data blocks, not executable JS.
+    # Restrict their identity and parse JSON; all other inline script types stay forbidden.
+    parser = ScriptInventory(context)
+    parser.feed(index_html)
+    if parser.current is not None:
+        raise ContractError(f"{context}: unclosed script element")
+    data_ids = set()
+    for script in parser.scripts:
+        attrs = script["attrs"]
+        if "src" in attrs:
+            if not attrs["src"] or script["body"].strip():
+                raise ContractError(f"{context}: invalid external script")
+            continue
+        script_type = attrs.get("type", "").lower()
+        identifier = attrs.get("id")
+        allowed = {"application/ld+json": "mnema-structured-data", "application/json": "ng-state"}
+        if script_type not in allowed or identifier != allowed[script_type] or identifier in data_ids:
+            raise ContractError(f"{context}: unexpected inline executable script or data block")
+        try:
+            value = json.loads(script["body"])
+        except (ValueError, TypeError) as error:
+            raise ContractError(f"{context}: invalid inline JSON") from error
+        if not isinstance(value, dict):
+            raise ContractError(f"{context}: inline data must be a JSON object")
+        data_ids.add(identifier)
+    if not parser.noindex and "mnema-structured-data" not in data_ids:
+        raise ContractError(f"{context}: public HTML needs its structured-data block")
 
 
 def verify_config(args: argparse.Namespace) -> None:
@@ -146,17 +184,23 @@ def verify_config(args: argparse.Namespace) -> None:
     verify_index(args.index.read_text(encoding="utf-8"), str(args.index))
 
 
+class NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 def fetch(url: str, expected_status: int) -> Response:
     request = Request(url, headers={"User-Agent": "mnema-browser-security-contract/1"})
     try:
-        with urlopen(request, timeout=20) as response:
+        with build_opener(NoRedirect()).open(request, timeout=20) as response:
             status = response.status
             headers = normalized_http_headers(response.headers)
             body = response.read(2_097_153)
     except HTTPError as error:
-        status = error.code
-        headers = normalized_http_headers(error.headers)
-        body = error.read(2_097_153)
+        with error:
+            status = error.code
+            headers = normalized_http_headers(error.headers)
+            body = error.read(2_097_153)
     except (TimeoutError, URLError) as error:
         raise ContractError(f"request unavailable: {url}") from error
     if status != expected_status:
@@ -183,9 +227,18 @@ def verify_hosted(args: argparse.Namespace) -> None:
         raise ContractError("base URL must be an HTTP(S) origin")
 
     mode = args.mode
+    for alias, canonical in [("/index.html", "/"), ("/ai/index.html", "/ai")]:
+        url = args.base_url.rstrip("/") + alias + "?ref=seo"
+        response = fetch(url, 308)
+        expected = args.base_url.rstrip("/") + canonical + "?ref=seo"
+        if urljoin(url, response.headers.get("location", "")) != expected:
+            raise ContractError(f"{url}: generated filename did not redirect to its canonical route")
     cases: list[tuple[str, int, str | None]] = [
         ("/", 200, "public, max-age=0, must-revalidate"),
-        ("/login", 200, "public, max-age=0, must-revalidate"),
+        ("/login", 200, "no-store"),
+        ("/ai", 200, "public, max-age=0, must-revalidate"),
+        ("/events", 200, "public, max-age=0, must-revalidate"),
+        ("/missing-public-page", 404, "no-store"),
         ("/app-config.js", 200, "no-store"),
         ("/api/ai", 404, "no-store"),
         ("/missing-browser-security-contract.js", 404, None),
@@ -208,7 +261,11 @@ def verify_hosted(args: argparse.Namespace) -> None:
         if re.search(rb"nginx[/ ]\d", response.body, re.IGNORECASE):
             raise ContractError(f"{url}: nginx version token is exposed in the response body")
         if cache_control is not None and response.headers.get("cache-control") != cache_control:
-            raise ContractError(f"{url}: unexpected cache-control header")
+            raise ContractError(f"{url}: unexpected cache-control header {response.headers.get('cache-control')!r}")
+        if path in ("/", "/ai", "/events", "/login", "/missing-public-page"):
+            verify_index(response.body.decode("utf-8"), url)
+        if path in ("/login", "/missing-public-page") and response.headers.get("x-robots-tag") != "noindex, follow":
+            raise ContractError(f"{url}: missing private/error noindex header")
         if path == "/":
             index_response = response
 

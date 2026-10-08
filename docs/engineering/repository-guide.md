@@ -5,7 +5,7 @@ artifact:
   title: "Mnema repository guide"
   status: current
   created_at: "2026-08-15"
-  updated_at: "2026-10-07"
+  updated_at: "2026-10-08"
   owners: ["project-owner"]
 ---
 
@@ -117,6 +117,11 @@ selection is server-enforced for scheduled/replay/practice, and cleanup preserve
 durable evidence and attempt tombstones.
 
 ### Frontend
+
+Public route/indexing changes follow [public web SEO](../frontend/public-web-seo.md):
+explicit public inventory, sitemap, initial HTML and runtime metadata must agree.
+Native production prerender retains the existing UI and private lazy CSR routes;
+`npm run build` verifies the crawler-visible output.
 
 `app.routes.ts` is the route source of truth. `/decks` authoring routes are current
 and lazy. Material Browse/editor links to the lazy step-by-step exercise editor

@@ -5,7 +5,7 @@ artifact:
   title: "Mnema domain truth map and glossary"
   status: current
   created_at: "2026-10-01"
-  updated_at: "2026-10-07"
+  updated_at: "2026-10-08"
   owners: ["project-owner"]
 ---
 
@@ -33,6 +33,7 @@ competing copy.
 | Runtime behaviour, database shape, routes | Service guides ([Identity](../../backend/services/identity-account/guide.md), [Learning](../../backend/services/learning/guide.md)), ordered migrations, controllers/tests, `frontend/src/app/app.routes.ts` | `docs/services/*`, `docs/core-entities-schema.md` (legacy v1) |
 | Public events, editorial access, feedback boundary | [Events contract](../../contracts/events/README.md), [public updates and feedback](../architecture/public-updates-and-feedback.md) | Telegram handles as authentication; private notifications as release notes |
 | UI direction, tokens, a11y boundaries | [Design and experience](../frontend/design-and-experience-2026-09.md), [Brand and UI contract](../frontend/mnema-brand-and-ui-contract.md), `frontend/src/theme/tokens.css` | `design/prototype` (evidence), Liquid Glass, the 2026-08 experience audit |
+| Public-page discovery, metadata, sitemap, prerender and SEO maintenance | [Public web SEO](../frontend/public-web-seo.md), `frontend/src/app/core/seo/public-pages.json`, generated HTML and its build gate | Search ranking as a guarantee; browser brand as an indexing policy |
 | Delivery, what “done” means, deployment | [Production delivery](../operations/production-delivery.md) and root `AGENTS.md` | legacy Kubernetes staging/recovery runbooks and historical GitHub/staging plan |
 | Issue / PR / Project status format | [Work item standard](./work-item-standard.md); live status is read from GitHub | [GitHub execution model](./github-execution-model.md) (historical setup) |
 | Commands, machine setup | [Agent runbook](./agent-runbook.md) | prose in evidence files, old session handoffs |

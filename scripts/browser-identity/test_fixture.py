@@ -56,6 +56,14 @@ class FixtureSafety(unittest.TestCase):
         with self.assertRaises(ValueError):
             HARNESS.static_path(self.dist, "/escape.js")
 
+    def test_prerendered_routes_and_private_shell_are_distinct(self):
+        (self.dist / "ai").mkdir()
+        (self.dist / "ai/index.html").write_text("public AI introduction")
+        (self.dist / "index.csr.html").write_text("private shell")
+        self.assertEqual(self.dist / "ai/index.html", HARNESS.static_path(self.dist, "/ai?source=footer"))
+        self.assertEqual(self.dist / "index.html", HARNESS.static_path(self.dist, "/"))
+        self.assertEqual(self.dist / "index.csr.html", HARNESS.static_path(self.dist, "/auth/callback?code=private"))
+
     def test_instrumentation_and_proxy_environment_not_inherited(self):
         with patch.dict(os.environ, {"NODE_OPTIONS": "private", "SSLKEYLOGFILE": "private", "HTTPS_PROXY": "private",
                                      "JAVA_TOOL_OPTIONS": "private", "MNEMA_KEY": "private", "DOCKER_HOST": "local"}):

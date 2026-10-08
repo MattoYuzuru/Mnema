@@ -43,12 +43,18 @@ def cdp_timeout_ms():
 
 
 def static_path(dist, request_path):
-    """Resolve only checked-in build assets; SPA routes use the one index document."""
+    """Serve the real prerendered document when present; private SPA routes use the CSR shell."""
     name = unquote(urlsplit(request_path).path)
     candidate = (dist / name.lstrip("/")).resolve()
     if not candidate.is_relative_to(dist) or "\x00" in name:
         raise ValueError("invalid asset path")
-    return candidate if candidate.suffix else dist / "index.html"
+    if candidate.suffix:
+        return candidate
+    prerendered = candidate / "index.html"
+    if prerendered.is_file():
+        return prerendered
+    csr = dist / "index.csr.html"
+    return csr if csr.is_file() else dist / "index.html"
 
 
 def chrome_arguments(chrome, profile, spki, mechanics, microphone=False):
