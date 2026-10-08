@@ -25,11 +25,11 @@ class TurnstileGuardTest {
     private final RateLimits limits = mock(RateLimits.class);
     private final RestClient.Builder builder = RestClient.builder();
     private final MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-    private final TurnstilePolicy required = policy("required", "prod", true, "0xFixtureSiteKey", "0xFixtureSecret");
+    private final TurnstilePolicy required = policy("required", "prod", "0xFixtureSiteKey", "0xFixtureSecret");
     private final TurnstileGuard guard = new TurnstileGuard(required, builder.build(), clock, limits);
 
-    private static TurnstilePolicy policy(String mode, String env, boolean privacy, String site, String secret) {
-        return new TurnstilePolicy(mode, env, privacy, site, secret,
+    private static TurnstilePolicy policy(String mode, String env, String site, String secret) {
+        return new TurnstilePolicy(mode, env, site, secret,
                 URI.create("https://mnema.app"), URI.create("https://auth.mnema.app"));
     }
 
@@ -108,36 +108,38 @@ class TurnstileGuardTest {
     }
 
     @Test
-    void productionCannotDisableProtectionOrUseUnapprovedPrivacyFlowOrTestKeys() {
-        for (String mode : new String[]{"disabled", "blocked", "required"}) {
-            var policy = policy(mode, "prod", false, "", "");
+    void productionCannotDisableProtectionOrUseTestKeysAndBlockedIsTheKillSwitch() {
+        for (String mode : new String[]{"disabled", "blocked"}) {
+            var policy = policy(mode, "prod", "", "");
             var closed = new TurnstileGuard(policy, builder.build(), clock, limits);
             reject(503, () -> closed.verify(null, TurnstileGuard.Action.LOGIN, "192.0.2.1"));
             assertThat(closed.configuration()).isEqualTo(new TurnstileGuard.BrowserConfiguration("blocked", ""));
         }
-        assertThatIllegalArgumentException().isThrownBy(() -> policy("required", "prod", true,
+        assertThatIllegalArgumentException().isThrownBy(() -> policy("required", "prod",
                 "1x00000000000000000000AA", "1x0000000000000000000000000000000AA"));
-        assertThatIllegalArgumentException().isThrownBy(() -> policy("required", "prod", true,
+        assertThatIllegalArgumentException().isThrownBy(() -> policy("required", "prod",
                 "0xFixtureSiteKey", "1x0000000000000000000000000000000AA"));
-        assertThatIllegalArgumentException().isThrownBy(() -> policy("required", "prod", true, "", ""));
-        assertThatIllegalArgumentException().isThrownBy(() -> policy("arbitrary", "dev", true, "", ""));
-        assertThatIllegalArgumentException().isThrownBy(() -> policy("required", "prod", true, "valid-key123", "bad\nsecret"));
+        assertThatIllegalArgumentException().isThrownBy(() -> policy("required", "prod", "", ""));
+        assertThatIllegalArgumentException().isThrownBy(() -> policy("arbitrary", "dev", "", ""));
+        assertThatIllegalArgumentException().isThrownBy(() -> policy("required", "prod", "valid-key123", "bad\nsecret"));
+        assertThat(policy("required", "prod", "0xFixtureSiteKey", "0xFixtureSecret").mode)
+                .isEqualTo(TurnstilePolicy.Mode.REQUIRED);
         server.verify();
     }
 
     @Test
     void onlyKnownDisposableLocalEnvironmentsCanDisableProtection() {
         for (String env : new String[]{"dev", "development", "test", "local", "local-blackbox", "local-browser-fixture", "local-full-stack"})
-            assertThat(policy("disabled", env, false, "", "").mode).isEqualTo(TurnstilePolicy.Mode.DISABLED);
+            assertThat(policy("disabled", env, "", "").mode).isEqualTo(TurnstilePolicy.Mode.DISABLED);
         for (String env : new String[]{"prod", "staging", "unknown"})
-            assertThat(policy("disabled", env, false, "", "").mode).isEqualTo(TurnstilePolicy.Mode.BLOCKED);
-        assertThat(policy("required", "test", true, "1x00000000000000000000AA",
+            assertThat(policy("disabled", env, "", "").mode).isEqualTo(TurnstilePolicy.Mode.BLOCKED);
+        assertThat(policy("required", "test", "1x00000000000000000000AA",
                 "1x0000000000000000000000000000000AA").mode).isEqualTo(TurnstilePolicy.Mode.REQUIRED);
     }
 
     @Test
     void localDisabledModeMakesNoExternalCallAndPublicConfigNeverIncludesSecret() {
-        var local = new TurnstileGuard("disabled", "dev", false, "", "synthetic-unused-secret",
+        var local = new TurnstileGuard("disabled", "dev", "", "synthetic-unused-secret",
                 URI.create("https://mnema.app"), URI.create("https://auth.mnema.app"), clock, limits);
         local.verify(null, TurnstileGuard.Action.LOGIN, "192.0.2.1");
         assertThat(local.configuration()).isEqualTo(new TurnstileGuard.BrowserConfiguration("disabled", ""));

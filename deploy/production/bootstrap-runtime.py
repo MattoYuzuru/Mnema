@@ -47,7 +47,7 @@ def main():
     if sys.argv[1:] == [] or sys.argv[1:] == ['preview']:
         print('Target: mnema 135.106.175.30. First empty-DB runtime, root-only configuration.')
         print('Generate three DB passwords and RSA4096 on RU host; install reviewed Compose inputs.')
-        print('Login/register/foreign AI/federated auth/media remain blocked or unconfigured.')
+        print('Application keys (Turnstile, OAuth, mail, storage) come from prod secrets via app.env, not from this bootstrap; without them Identity does not start.')
         print('No old data, remote bucket, provider key, container, DNS or Caddy mutation.')
         return
     if sys.argv[1:] != ['--apply'] or os.geteuid() != 0:

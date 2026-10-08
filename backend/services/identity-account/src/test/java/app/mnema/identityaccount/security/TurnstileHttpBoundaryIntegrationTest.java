@@ -13,7 +13,9 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringBootTest(properties = {"APP_ENV=prod", "identity.turnstile.mode=disabled"})
+@SpringBootTest(properties = {"APP_ENV=prod", "identity.turnstile.mode=disabled",
+        "SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID=fixture-google-client",
+        "SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_SECRET=fixture-google-secret"})
 @AutoConfigureMockMvc(print = org.springframework.boot.webmvc.test.autoconfigure.MockMvcPrint.NONE)
 class TurnstileHttpBoundaryIntegrationTest extends PostgresIntegrationTest {
     @Autowired MockMvc mvc;
@@ -38,9 +40,25 @@ class TurnstileHttpBoundaryIntegrationTest extends PostgresIntegrationTest {
         mvc.perform(get("/login")).andExpect(status().isOk())
                 .andExpect(header().string("Content-Security-Policy", org.hamcrest.Matchers.containsString("https://challenges.cloudflare.com")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("src=\"/login/script.js\"")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("role=\"status\"")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("role=\"status\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("href=\"https://mnema.app/terms\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("href=\"https://mnema.app/privacy\"")));
         mvc.perform(get("/login/script.js")).andExpect(status().isOk());
         mvc.perform(get("/login/privacy")).andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("turnstile-privacy-policy")));
+    }
+
+    @Test
+    void blockedModeClosesPasswordAuthButKeepsConfiguredOAuthAvailable() throws Exception {
+        mvc.perform(get("/api/accounts/providers").secure(true)).andExpect(status().isOk())
+                .andExpect(content().json("{\"providers\":[\"google\"]}"));
+        mvc.perform(get("/oauth2/authorization/google").secure(true)).andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", org.hamcrest.Matchers.startsWith("https://accounts.google.com/")));
+        mvc.perform(post("/api/accounts/login").with(csrf()).contentType("application/json")
+                        .content("{\"login\":\"fixture\",\"password\":\"synthetic-password-123\",\"turnstileToken\":\"forged\"}"))
+                .andExpect(status().isServiceUnavailable());
+        mvc.perform(post("/api/accounts/register").with(csrf()).contentType("application/json")
+                        .content("{\"email\":\"fixture@example.test\",\"loginName\":\"fixture\",\"password\":\"synthetic-password-123\"}"))
+                .andExpect(status().isServiceUnavailable());
     }
 }

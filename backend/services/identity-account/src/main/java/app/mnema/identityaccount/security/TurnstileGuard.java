@@ -34,12 +34,11 @@ public final class TurnstileGuard {
     @Autowired
     public TurnstileGuard(@Value("${identity.turnstile.mode}") String mode,
                           @Value("${APP_ENV:dev}") String environment,
-                          @Value("${identity.turnstile.privacy-approved}") boolean privacyApproved,
                           @Value("${identity.turnstile.site-key}") String siteKey,
                           @Value("${identity.turnstile.secret-key}") String secret,
                           @Value("${identity.frontend-origin}") URI frontend,
                           @Value("${identity.issuer}") URI issuer, Clock clock, RateLimits limits) {
-        this(new TurnstilePolicy(mode, environment, privacyApproved, siteKey, secret, frontend, issuer), client(), clock, limits);
+        this(new TurnstilePolicy(mode, environment, siteKey, secret, frontend, issuer), client(), clock, limits);
     }
 
     TurnstileGuard(TurnstilePolicy policy, RestClient http, Clock clock, RateLimits limits) {

@@ -35,7 +35,6 @@ export interface BrowserIdentityConfig {
     identityRedirectUri: string;
     clientId: string;
     learningApiBaseUrl: string;
-    features?: { federatedAuthEnabled?: boolean };
 }
 export const BROWSER_IDENTITY_CONFIG = new InjectionToken<BrowserIdentityConfig>('BROWSER_IDENTITY_CONFIG', {
     providedIn: 'root', factory: () => appConfig

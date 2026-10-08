@@ -130,7 +130,7 @@ class Handler(BaseHTTPRequestHandler):
             if urlsplit(self.path).path == "/app-config.js":
                 config = {"authServerUrl": fixture.identity_origin, "identityRedirectUri": fixture.frontend_origin + "/auth/callback",
                           "learningApiBaseUrl": "/api",
-                          "features": {"aiEnabled": False, "federatedAuthEnabled": False}}
+                          "features": {"aiEnabled": False}}
                 return self.reply(200, ("window.MNEMA_APP_CONFIG=" + json.dumps(config) + ";").encode(), "text/javascript")
             asset = static_path(fixture.args.dist, self.path)
             if not asset.is_file() or asset.stat().st_size > 16 * MAX_BODY:
