@@ -4,29 +4,51 @@ artifact:
   type: launch-checklist
   title: "Mnema legal and payment launch status"
   status: proposed
-  updated_at: "2026-10-06"
+  updated_at: "2026-10-08"
   owners: ["project-owner"]
 ---
 
 # Legal and payment launch status
 
-Owner-reported state on 2026-10-05; sensitive filing evidence stays outside GitHub.
+Owner-reported state on 2026-10-08; sensitive filing evidence stays outside GitHub.
 This checklist records launch dependencies, not legal advice or a substitute for
 review of the actual recipients, contracts and data flows.
 
 ## Current status
 
-- The owner is an **ИП на НПД**. The main personal-data operator notification is
-  confirmed, according to the owner. The cross-border notification is **not yet
-  confirmed**. Main notification confirmation does not approve every foreign flow.
+- The owner is an **ИП на НПД**. Status on 2026-10-08, according to the owner: the
+  main personal-data operator notification is **confirmed**, and the
+  **cross-border notification for Cloudflare (Turnstile) is submitted**. The owner
+  decided to open production now: password login/registration behind Cloudflare
+  Turnstile `required` plus Google, Yandex and GitHub OAuth. The owner accepts the
+  risk that article 12 part 11 of 152-FZ (no transfer to a state outside the
+  adequacy list until the ten-working-day period after the notice has passed) may
+  not yet have elapsed. The legal-gate flags were removed from code
+  (`privacy-approved`, the federated-login flag); real controls stay (Siteverify,
+  rate limits, `blocked` kill switch).
+- The public [privacy policy](../../frontend/src/app/privacy-page.component.html) and
+  [terms](../../frontend/src/app/terms-page.component.html) are published from code
+  (effective 2026-10-08, version 1.0) with the operator requisites from
+  `frontend/src/app/shared/legal-operator.ts` (contact e-mail approved by the owner on
+  2026-10-09: printed in the policy and terms, offered as a «Написать на почту» action
+  in the footer without printing it). Legal bases: contract (article 6 part 1
+  item 5) for the account, the service and the optional learning goal (a skippable
+  personalization under the agreement), legitimate interest (item 7) for security.
+  No purpose rests on consent at launch and no consent checkbox exists. A
+  separate-document consent with a server-side record (version and time, a Flyway
+  migration in Identity) becomes necessary before any purpose that rests on consent,
+  such as marketing mail, analytics or AI/voice processing, is switched on.
+- Current processors named in the policy: the Russian virtual-server provider
+  (Selectel), Yandex Cloud (Postbox service mail; Object Storage encrypted offsite
+  backups, 30-day expiry), Cloudflare (cross-border, Turnstile). Telegram
+  processes support messages under its own rules and is not a channel for
+  personal-data requests.
 - The current production database is in Russia; the empty launch is owner-approved.
   Root/auth/www DNS remains DNS-only. Cloudflare proxying is not covered by the
-  Turnstile worksheet. Cloudflare/foreign AI/OAuth recipient, country, purpose,
-  legal basis, retention and privacy disclosures need review before activation.
-- Production password login/register is blocked by Turnstile policy; foreign
-  providers remain unconfigured in the active runtime. Credentials can be privately
-  staged, but must not be activated as proof of legal approval. See
-  [runtime configuration](../operations/vps-runtime.md#auth-configuration).
+  Turnstile disclosure. Foreign AI recipients are disabled and are not listed in the
+  policy as active; the policy must be updated before they are enabled. Media,
+  mail and account deletion remain unconfigured (see
+  [runtime configuration](../operations/vps-runtime.md#auth-configuration)).
 - An approved private operator-contact channel is not defined in the checked-in
   launch documents. Confirm it with the owner under human/legal task #351 before
   public activation that needs personal-data requests. Public GitHub discussions
