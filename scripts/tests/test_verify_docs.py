@@ -42,6 +42,15 @@ class VerifyDocsTest(unittest.TestCase):
 
         self.assertEqual([], validate(self.root))
 
+    def test_ignores_disposable_browser_contract_copies(self) -> None:
+        fixture = self.root / '.browser-security-contract.synthetic' / 'prod/html/assets'
+        fixture.mkdir(parents=True)
+        (fixture / 'README.md').write_text('[copied asset reference](missing.md)', encoding='utf-8')
+        self.assertEqual([], validate(self.root))
+        # A similarly named actual document must still be validated.
+        (self.root / 'docs/browser-security-contract.md').write_text('[missing](missing.md)', encoding='utf-8')
+        self.assertTrue(any('missing target' in error for error in validate(self.root)))
+
     def test_reports_missing_file_anchor_and_wrong_canonical_status(self) -> None:
         (self.root / "docs/README.md").write_text(
             FRONT_MATTER.replace("current", "proposed") + "\n# Docs\n[missing](absent.md)\n",

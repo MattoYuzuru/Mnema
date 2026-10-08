@@ -24,6 +24,8 @@
           },
           "configurations": {
             "production": {
+              "server": "src/main.server.ts",
+              "outputMode": "static",
               "optimization": {
                 "scripts": true,
                 "styles": {

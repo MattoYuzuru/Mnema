@@ -1,4 +1,5 @@
 import { appRoutes } from './app.routes';
+import publicPages from './core/seo/public-pages.json';
 import { authGuard } from './core/guards/auth.guard';
 import { OwnDeckCreatePageComponent } from './features/own-decks/own-deck-create-page.component';
 import { OwnDeckDetailPageComponent } from './features/own-decks/own-deck-detail-page.component';
@@ -14,6 +15,16 @@ import { StudySessionPageComponent } from './features/study/study-session-page.c
 import { StyleguidePageComponent } from './styleguide/styleguide-page.component';
 
 describe('appRoutes', () => {
+    it('registers every indexable document as a real unguarded public route', () => {
+        for (const page of publicPages) {
+            const route = appRoutes.find(candidate => candidate.path === page.path.slice(1));
+            expect(route, page.path).toBeDefined();
+            expect(route?.canActivate, page.path).toBeUndefined();
+            expect(route?.redirectTo, page.path).toBeUndefined();
+            expect(Boolean(route?.component || route?.loadComponent), page.path).toBe(true);
+        }
+        expect(appRoutes.find(route => route.path === '**')?.redirectTo).toBeUndefined();
+    });
     it('keeps the Identity callback and exposes only canonical private deck routes', () => {
         const paths = appRoutes.map(route => route.path);
         expect(paths).toContain('auth/callback');

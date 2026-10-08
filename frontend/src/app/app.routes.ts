@@ -43,8 +43,8 @@ export const appRoutes: Routes = [
     { path: 'events', loadComponent: () => import('./features/events/events-page.component').then(module => module.EventsPageComponent) },
     { path: 'manage/events', canActivate: [authGuard], canDeactivate: [lazyCanLeaveEventEditor],
         loadComponent: () => import('./features/events/manage-events-page.component').then(module => module.ManageEventsPageComponent) },
-    { path: 'login', component: LoginPageComponent },
-    { path: 'register', component: LoginPageComponent },
+    { path: 'login', component: LoginPageComponent, title: 'Вход в Мнему | Mnema' },
+    { path: 'register', component: LoginPageComponent, title: 'Регистрация в Мнеме | Mnema' },
     { path: 'auth/callback', loadComponent: () => import('./auth-callback.component').then(module => module.AuthCallbackComponent) },
     {
         path: 'profile',
@@ -143,5 +143,6 @@ export const appRoutes: Routes = [
     { path: 'privacy', component: PrivacyPageComponent },
     { path: 'terms', component: TermsPageComponent },
     ...developmentOnlyRoutes,
-    { path: '**', redirectTo: '' }
+    { path: '**', title: 'Страница не найдена | Мнема',
+        loadComponent: () => import('./not-found-page.component').then(module => module.NotFoundPageComponent) }
 ];

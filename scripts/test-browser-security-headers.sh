@@ -6,6 +6,7 @@ REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)
 FRONTEND_DIST="${FRONTEND_DIST:-$REPO_ROOT/frontend/dist/mnema-frontend}"
 GENERATOR="$REPO_ROOT/frontend/docker/40-gen-app-config.sh"
 VERIFIER="$SCRIPT_DIR/verify_browser_security_headers.py"
+python3 -m unittest discover -s "$SCRIPT_DIR/tests" -p test_browser_security_html.py
 TEST_ROOT=$(mktemp -d "$REPO_ROOT/.browser-security-contract.XXXXXX")
 CONTAINER_ID=""
 
@@ -162,5 +163,35 @@ run_container_contract() {
 
 run_container_contract staging
 run_container_contract prod
+
+# The real VPS listener is HTTP/loopback behind Caddy, so never leak its scheme or port into a public redirect.
+CONTAINER_ID=$(docker run --detach --rm --network none \
+  --volume "$REPO_ROOT/deploy/production/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
+  --volume "$TEST_ROOT/prod/security-headers.inc:/etc/nginx/conf.d/security-headers.inc:ro" \
+  --volume "$TEST_ROOT/prod/html:/usr/share/nginx/html:ro" \
+  "$NGINX_IMAGE")
+python3 - "$CONTAINER_ID" <<'PY'
+import subprocess
+import sys
+import time
+
+for alias, canonical in [("/index.html?ref=seo", "/?ref=seo"), ("/ai/index.html?ref=seo", "/ai?ref=seo")]:
+    request = f"HEAD {alias} HTTP/1.1\r\nHost: mnema.app\r\nConnection: close\r\n\r\n".encode()
+    for attempt in range(30):
+        response = subprocess.run(["docker", "exec", "-i", sys.argv[1], "nc", "-w", "2", "127.0.0.1", "18080"],
+                                  input=request, capture_output=True, timeout=10)
+        if response.returncode == 0 and response.stdout.startswith(b"HTTP/"):
+            break
+        time.sleep(.1)
+    else:
+        raise SystemExit("VPS nginx listener did not become ready")
+    lines = response.stdout.split(b"\r\n\r\n", 1)[0].decode("ascii").splitlines()
+    assert lines[0].startswith("HTTP/1.1 308 "), "Generated HTML alias must permanently redirect"
+    headers = dict(line.split(": ", 1) for line in lines[1:])
+    assert headers.get("Location") == canonical, "Redirect must preserve the public HTTPS origin, not disclose port 18080"
+print("vps_public_redirect_contract=ok")
+PY
+docker stop "$CONTAINER_ID" >/dev/null
+CONTAINER_ID=""
 
 printf 'browser_security_headers_contract=ok\n'

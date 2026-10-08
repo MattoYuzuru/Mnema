@@ -28,6 +28,8 @@ Adds to the root [`AGENTS.md`](../AGENTS.md); does not repeat it. Visual directi
   is under `/decks`; Study is `/decks/:deckId/study`. `/decks/:deckId` is the Deck hub (statistics, the material
   list with selection and bulk delete); there is no separate `/decks/:deckId/materials` list route. There is no
   legacy `my-study`, public-deck, template or import route; do not reintroduce one.
+- Public route, metadata, sitemap, favicon or rendering work follows [public web SEO](../docs/frontend/public-web-seo.md).
+  Every indexable public page must join the public inventory, sitemap and prerender output. Preserve layout and lazy-loading performance.
 - Feature ownership and product-specific boundaries (generation, goal, plans, promo, experiment):
   [frontend feature changes](../docs/engineering/repository-guide.md#frontend-feature-changes).
 - Native document/editor/renderer lives in `src/app/content`; theme values live in

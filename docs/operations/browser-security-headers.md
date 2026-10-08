@@ -22,7 +22,7 @@ Hosted policies use only `self`, data/blob where the application needs them, and
 
 Production media uses the Yandex Object Storage path-style form `https://storage.yandexcloud.net/<bucket>/<key>`, so browser-facing presigned uploads and downloads stay on the exact CSP origin instead of moving to a bucket-specific subdomain. Both URL forms are supported by [Yandex Object Storage](https://yandex.cloud/en/docs/storage/concepts/object); the renderer and AWS SDK presigner regression test bind this choice.
 
-There is no wildcard source and no `unsafe-eval`. The JSON-LD block is admitted by one reviewed SHA-256 hash, and `script-src-attr 'none'` rejects inline event handlers. Angular component styles still require the single `style-src 'unsafe-inline'` exception. Any future CSP hardening must inventory replacement and remaining legacy styles in a bounded task; do not expand the exception to scripts or use it as a shortcut for a new third-party origin.
+There is no wildcard source and no `unsafe-eval`. Public-page JSON-LD and Angular hydration state use strictly identified `application/ld+json` and `application/json` data blocks. These are inert under the [HTML script-element contract](https://html.spec.whatwg.org/multipage/scripting.html#the-script-element); the verifier parses their JSON and rejects other inline scripts or duplicate attributes/blocks. The superseded homepage-only hash exception is removed. `script-src-attr 'none'` rejects inline event handlers. Angular component styles still require the single `style-src 'unsafe-inline'` exception. Any future CSP hardening must inventory replacement and remaining legacy styles in a bounded task; do not expand the exception to scripts or use it as a shortcut for a new third-party origin.
 
 The policy follows the [W3C CSP report-only rollout model](https://www.w3.org/TR/CSP/#header-content-security-policy-report-only), [Cloudflare's exact Turnstile CSP origins](https://developers.cloudflare.com/turnstile/reference/content-security-policy/), and nginx's [`always` and inherited-header behavior](https://nginx.org/en/docs/http/ngx_http_headers_module.html).
 
@@ -38,7 +38,7 @@ Production deliberately omits `includeSubDomains` and `preload`. Those flags aff
 
 ## Preflight and hosted evidence
 
-Run the production frontend build before the contract because the verifier binds the JSON-LD hash and hashed static bundle:
+Run the production frontend build before the contract because the verifier checks the generated public/CSR data blocks and hashed static bundle:
 
 ```sh
 cd frontend
@@ -49,7 +49,9 @@ cd ..
 
 The contract rejects unknown deployment modes, non-HTTPS or injected hosted origins, broad CSP sources, unexpected inline executable content, an exposed nginx version, and missing headers on success/error/static/runtime-config responses. It also starts the pinned nginx image for both staging and production modes.
 
-After a staging rollout, `staging-deploy.yaml` performs two fail-closed checks inside the existing release smoke boundary:
+Current production delivery uses the [protected VPS path](./production-delivery.md). Legacy Kubernetes staging/production workflows are dormant; they do not deploy the current frontend. The maintained local response contract runs pinned Nginx in both staging-policy and production-policy modes and checks public prerender, private noindex CSR, real 404, runtime config and immutable assets.
+
+The older hosted browser verifier can additionally perform two fail-closed checks inside an authorized release smoke boundary:
 
 1. an HTTP smoke checks `/`, `/login`, `/app-config.js`, the hashed main bundle, a static `404`, and the AI-disabled `503` response;
 2. headless Chrome loads `/login`, confirms that Turnstile created its [documented `cf-turnstile-response` form field](https://developers.cloudflare.com/turnstile/get-started/client-side-rendering/widget-configurations/#form-integration), and rejects any CSP violation in the browser log. Chrome's serialized DOM does not expose Turnstile's internal challenge frame, so the stable form-integration contract is used instead.

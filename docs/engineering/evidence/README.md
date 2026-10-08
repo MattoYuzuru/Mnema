@@ -4,7 +4,7 @@ artifact:
   type: evidence-index
   title: "Engineering evidence index"
   status: current
-  updated_at: "2026-10-07"
+  updated_at: "2026-10-08"
   owners: ["project-owner"]
 ---
 
@@ -20,6 +20,10 @@ wire shapes; the current mechanics and fields are in
 of the former two-column exercise editor are likewise historical.
 
 ## Public content and feedback
+
+- [Public SEO and cleanup, 2026-10-08](./public-seo-2026-10-08/README.md) records
+  prerender/metadata, private noindex, real proxy redirects, full browser checks,
+  before/after geometry and bounded performance observations.
 
 - [Public footer and events acceptance, 2026-10-07](./public-feedback-2026-10-07/README.md)
   records current-task local Chrome/HTTPS evidence, responsive/keyboard checks and exact code revision.

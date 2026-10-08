@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
+import { afterNextRender, ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
@@ -51,18 +51,20 @@ import { EventPage, ProductEvent, formatEventDate } from './events.models';
     `],
     changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class EventsPageComponent implements OnInit {
+export class EventsPageComponent {
     private readonly api = inject(EventsApiService);
     private readonly destroyRef = inject(DestroyRef);
     protected readonly page = signal<EventPage<ProductEvent> | null>(null);
-    protected readonly loading = signal(false);
+    protected readonly loading = signal(true);
     protected readonly error = signal('');
     protected readonly date = formatEventDate;
     protected history: (string | null)[] = [];
     protected currentCursor: string | null = null;
     private epoch = 0;
 
-    ngOnInit(): void { void this.load(null); }
+    // The page introduction is prerendered; published records remain fresh runtime data.
+    // Do not call production APIs or bake drafts/entries into a build artifact.
+    constructor() { afterNextRender(() => { void this.load(null); }); }
 
     protected async load(cursor: string | null): Promise<boolean> {
         const epoch = ++this.epoch;

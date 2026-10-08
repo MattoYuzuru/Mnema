@@ -22,6 +22,7 @@ IGNORED_DIRECTORIES = {
     "dist",
     "node_modules",
 }
+IGNORED_DIRECTORY_PREFIXES = (".browser-security-contract.",)
 EXTERNAL_SCHEMES = {"data", "http", "https", "mailto", "tel"}
 CANONICAL_STATUSES = {
     Path("docs/README.md"): "current",
@@ -48,7 +49,8 @@ def markdown_files(root: Path) -> list[Path]:
     return sorted(
         path
         for path in root.rglob("*.md")
-        if not any(part in IGNORED_DIRECTORIES for part in path.relative_to(root).parts)
+        if not any(part in IGNORED_DIRECTORIES or part.startswith(IGNORED_DIRECTORY_PREFIXES)
+                   for part in path.relative_to(root).parts)
     )
 
 
