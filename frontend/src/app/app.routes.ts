@@ -49,6 +49,9 @@ const developmentOnlyRoutes: Routes = typeof ngDevMode === 'undefined' || ngDevM
 export const appRoutes: Routes = [
     isAdminHost ? { path: '', pathMatch: 'full', redirectTo: 'manage' } : { path: '', component: HomePageComponent },
     { path: 'events', loadComponent: () => import('./features/events/events-page.component').then(module => module.EventsPageComponent) },
+    // The learner host keeps the event editor as it was before the console: no owner shell, no admin client, only the events-owner check.
+    ...(isAdminHost ? [] : [{ path: 'manage/events', canActivate: [authGuard], canDeactivate: [lazyCanLeaveEventEditor], data: { standalone: true },
+        loadComponent: () => import('./features/events/manage-events-page.component').then(module => module.ManageEventsPageComponent) }]),
     { path: 'manage', canActivate: [authGuard], loadComponent: () => import('./features/admin/admin-shell.component').then(module => module.AdminShellComponent),
         children: [
             { path: '', pathMatch: 'full', loadComponent: () => import('./features/admin/admin-report-page.component').then(module => module.AdminReportPageComponent) },

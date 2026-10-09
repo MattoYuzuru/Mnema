@@ -63,6 +63,9 @@ www.mnema.app {
 	redir https://mnema.app{uri} 308
 }
 
+# Owner console host. It is inert until MNEMA_IDENTITY_ADMIN_ORIGIN and MNEMA_ADMIN_OWNER_ACCOUNT_ID are set: Identity then has no
+# `mnema-admin-web` client (sign-in is refused) and every Learning/Identity console route answers 403. The previous redirect to the
+# learner host's /manage/events is gone; the events editor stays reachable at https://mnema.app/manage/events.
 admin.mnema.app {
 	route {
 		import private_paths

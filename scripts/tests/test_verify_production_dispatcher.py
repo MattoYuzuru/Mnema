@@ -1203,6 +1203,29 @@ class ProductionDispatcherTest(unittest.TestCase):
         for name in names:
             self.assertIn(name, DISPATCH.APP_ENV_NAMES)
 
+    def test_console_stays_off_by_default_and_only_the_exact_admin_origin_and_canonical_owner_are_accepted(self):
+        for name in ('MNEMA_IDENTITY_ADMIN_ORIGIN', 'MNEMA_ADMIN_OWNER_ACCOUNT_ID'):
+            self.assertIn(name, DISPATCH.APP_ENV_NAMES)
+            self.assertEqual(DISPATCH.validate_app_config(json.dumps({name: ''}).encode()), {})   # empty = off
+        accepted = {'MNEMA_IDENTITY_ADMIN_ORIGIN': 'https://admin.mnema.app',
+                    'MNEMA_ADMIN_OWNER_ACCOUNT_ID': '0199c7a2-3b4e-7c1d-9a2b-5e6f7a8b9c0d'}
+        self.assertEqual(DISPATCH.validate_app_config(json.dumps(accepted).encode()), accepted)
+        for name, value in (('MNEMA_IDENTITY_ADMIN_ORIGIN', 'https://admin.mnema.app/'),
+                            ('MNEMA_IDENTITY_ADMIN_ORIGIN', 'https://mnema.app'),
+                            ('MNEMA_IDENTITY_ADMIN_ORIGIN', 'http://admin.mnema.app'),
+                            ('MNEMA_IDENTITY_ADMIN_ORIGIN', 'https://admin.mnema.app.evil.test'),
+                            ('MNEMA_ADMIN_OWNER_ACCOUNT_ID', '0199C7A2-3B4E-7C1D-9A2B-5E6F7A8B9C0D'),
+                            ('MNEMA_ADMIN_OWNER_ACCOUNT_ID', '00000000-0000-0000-0000-000000000000'),
+                            ('MNEMA_ADMIN_OWNER_ACCOUNT_ID', 'owner@example.test')):
+            with self.assertRaises(DISPATCH.Rejected, msg=value):
+                DISPATCH.validate_app_config(json.dumps({name: value}).encode())
+
+    def test_production_compose_keeps_the_admin_client_off_until_the_origin_is_configured(self):
+        compose = (ROOT / 'deploy/production/compose.yaml').read_text()
+        self.assertIn('MNEMA_IDENTITY_ADMIN_ORIGIN: ${MNEMA_IDENTITY_ADMIN_ORIGIN:-}', compose)
+        self.assertNotIn('MNEMA_IDENTITY_ADMIN_ORIGIN: https://', compose)
+        self.assertIn('MNEMA_ADMIN_OWNER_ACCOUNT_ID: ${MNEMA_ADMIN_OWNER_ACCOUNT_ID:-}', compose)
+
     def test_billing_checkout_mode_and_base64_terminal_password_are_validated(self):
         payload = {'MNEMA_BILLING_CHECKOUT': 'TESTERS', 'MNEMA_TBANK_TERMINAL_KEY': '1700000000000DEMO',
                    'MNEMA_TBANK_PASSWORD_BASE64': 'Zml4dHVyZSRQYTU1d29yZA==',

@@ -6,7 +6,7 @@ import { filter, map } from 'rxjs';
 import { DeckConstellationComponent } from '../../shared/deck-constellation.component';
 import { PublicFooterComponent } from '../../shared/public-footer.component';
 
-import { isAdminHost } from '../../app.config';
+import { isAdminHost, learnerOrigin } from '../../app.config';
 import { AuthService } from '../../auth.service';
 import { NotificationBellComponent } from '../notifications/notification-bell.component';
 import { NotificationCenter } from '../notifications/notification-center';
@@ -33,8 +33,10 @@ export class AppShellComponent {
         filter(event => event instanceof NavigationEnd), map(event => event.urlAfterRedirects)
     ), { initialValue: this.router.currentNavigation()?.extractedUrl.toString()
         ?? (this.router.navigated ? this.router.url : window.location.pathname + window.location.search) });
-    readonly adminMode = computed(() => isAdminHost || /^\/manage(?:\/|$)/u.test(this.routeUrl().split('?')[0]));
-    readonly learningHome = isAdminHost ? 'https://mnema.app/decks' : '/decks';
+    /** The standalone event editor of the learner host (`/manage/events`) keeps the learner shell it always had. */
+    readonly adminMode = computed(() => isAdminHost || /^\/manage(?:\/|$)/u.test(this.routeUrl().split('?')[0])
+        && !/^\/manage\/events(?:\/|$)/u.test(this.routeUrl().split('?')[0]));
+    readonly learningHome = isAdminHost ? `${learnerOrigin(window.location.hostname, window.location.origin)}/decks` : '/decks';
     private readonly notifications = inject(NotificationCenter);
     readonly constellationSeed = computed(() => {
         const path = this.routeUrl().split('?')[0];

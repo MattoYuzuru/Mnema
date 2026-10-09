@@ -46,7 +46,8 @@ describe('AppShellComponent', () => {
                 provideRouter([
                     { path: '', component: TestPageComponent },
                     { path: 'login', component: TestPageComponent },
-                    { path: 'manage', component: TestPageComponent }
+                    { path: 'manage', component: TestPageComponent },
+                    { path: 'manage/events', component: TestPageComponent }
                 ]),
                 { provide: AuthService, useValue: auth },
                 // The center polls for a signed-in account; this spec is about the shell, not the wire.
@@ -119,6 +120,13 @@ describe('AppShellComponent', () => {
         expect(center.suspended()).toBe(true);
         await TestBed.inject(Router).navigateByUrl('/'); fixture.detectChanges(); await fixture.whenStable();
         expect(center.suspended()).toBe(false);
+    });
+
+    it('keeps the learner shell around the standalone event editor of the learner host', async () => {
+        await TestBed.inject(Router).navigateByUrl('/manage/events'); fixture.detectChanges(); await fixture.whenStable();
+        expect(fixture.componentInstance.adminMode()).toBe(false);
+        expect((fixture.nativeElement as HTMLElement).querySelector('app-public-footer')).not.toBeNull();
+        expect(TestBed.inject(NotificationCenter).suspended()).toBe(false);
     });
 
     it('suspends synchronously on an initial browser owner route before the router completes its first navigation', () => {

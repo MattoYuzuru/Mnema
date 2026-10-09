@@ -217,7 +217,7 @@ generate_certificate_material() {
     'keyUsage=critical,digitalSignature,keyEncipherment' \
     'extendedKeyUsage=serverAuth' \
     'subjectKeyIdentifier=hash' 'authorityKeyIdentifier=keyid:always' \
-    'subjectAltName=DNS:localhost,DNS:frontend,IP:127.0.0.1,IP:::1' > "$destination/localhost.ext"
+    'subjectAltName=DNS:localhost,DNS:admin.localhost,DNS:frontend,IP:127.0.0.1,IP:::1' > "$destination/localhost.ext"
   openssl x509 -req -sha256 -days 825 -in "$destination/localhost.csr" \
     -CA "$destination/local-ca.crt" -CAkey "$destination/local-ca.key" -CAcreateserial \
     -extfile "$destination/localhost.ext" -out "$destination/localhost.crt" >/dev/null 2>&1

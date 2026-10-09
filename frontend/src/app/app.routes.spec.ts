@@ -1,4 +1,5 @@
 import { appRoutes } from './app.routes';
+import { ManageEventsPageComponent } from './features/events/manage-events-page.component';
 import { authGuard } from './core/guards/auth.guard';
 import { OwnDeckCreatePageComponent } from './features/own-decks/own-deck-create-page.component';
 import { OwnDeckDetailPageComponent } from './features/own-decks/own-deck-detail-page.component';
@@ -68,6 +69,15 @@ describe('appRoutes', () => {
         expect(manage.canActivate).toEqual([authGuard]); expect(manage.loadComponent).toBeDefined();
         expect(manage.children?.map(child => child.path)).toEqual(['', 'users', 'users/:accountId', 'promos', 'events', 'support', 'support/:ticketId', 'audit']);
         for (const path of ['users', 'users/:accountId', 'promos', 'events', 'support', 'support/:ticketId']) expect(manage.children?.find(child => child.path === path)?.canDeactivate).toHaveLength(1);
+    });
+
+    it('keeps the event editor reachable on the learner host outside the owner shell, ahead of it', async () => {
+        const standalone = appRoutes.find(route => route.path === 'manage/events')!;
+        expect(standalone.canActivate).toEqual([authGuard]);
+        expect(standalone.canDeactivate).toHaveLength(1);
+        expect(standalone.data).toEqual({ standalone: true });
+        expect(appRoutes.indexOf(standalone)).toBeLessThan(appRoutes.findIndex(route => route.path === 'manage'));
+        expect(await standalone.loadComponent!()).toBe(ManageEventsPageComponent);
     });
 
     it('loads each own-deck page through its lazy route', async () => {
