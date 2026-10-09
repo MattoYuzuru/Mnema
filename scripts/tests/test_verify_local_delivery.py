@@ -1,4 +1,4 @@
-"""Keep dormant operations locked; production delivery stays main-only, scoped and approval-gated."""
+"""Production delivery stays main-only, scoped and approval-gated; no other delivery workflow exists."""
 import re
 import sys
 import unittest
@@ -13,16 +13,6 @@ PUBLISH = "    if: ${{ needs.release-scope.outputs.deploy == 'true' && github.re
 VPS = "    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}"
 # Jobs that follow the publication guard through `needs`; only the first may enter prod.
 APPROVED = {'deploy-production', 'post-deploy-smoke'}
-DORMANT = {
-    'staging-deploy.yaml': {'validate-main-ci': FALSE, 'deploy-staging': FALSE},
-    'production-deploy.yaml': {
-        'validate-staging-deploy': FALSE,
-        'preview-production': "    if: ${{ false && (needs.validate-staging-deploy.outputs.production_eligible == 'true') }}",
-        'deploy-production': "    if: ${{ false && (needs.preview-production.outputs.has_release_changes == 'true') }}",
-    },
-    'database-recovery.yaml': {'database-recovery': FALSE},
-    'staging-rollback-drill.yaml': {'rollback-drill': FALSE},
-}
 ACTIVE = {
     'deploy.yaml': {'validate-main-ref', 'release-scope', 'backend-quality', 'frontend-quality'},
     'pull-request.yaml': {'backend-quality', 'frontend-quality'},
@@ -33,14 +23,14 @@ ACTIVE = {
 def verify(contents):
     """Use the repository's canonical indentation, also checked by artifact policy."""
     errors = []
-    if set(contents) != set(DORMANT) | set(ACTIVE) | {'vps-deploy.yaml'}:
-        errors.append('workflow inventory changed; review no-infrastructure boundary')
+    if set(contents) != set(ACTIVE) | {'vps-deploy.yaml'}:
+        errors.append('workflow inventory changed; review the delivery boundary')
     for filename, content in contents.items():
         jobs = _job_blocks(content)
         job_text = content.partition('jobs:\n')[2]
         if len(re.findall(r'^  [a-zA-Z0-9_-]+:$', job_text, re.M)) != len(jobs):
             errors.append(f'{filename}: duplicate job')
-        expected = dict(DORMANT.get(filename, {}))
+        expected = {}
         if filename == 'vps-deploy.yaml':
             expected = {'operate-vps': VPS}
             header = content.partition('on:\n')[2].partition('\npermissions:')[0]
@@ -88,15 +78,6 @@ def verify(contents):
                     errors.append(f'{name} must be skipped only through its needs chain')
         if set(jobs) != set(expected) | ACTIVE.get(filename, set()) | (APPROVED if filename == 'deploy.yaml' else set()):
             errors.append(f'{filename}: unexpected or missing jobs')
-        if filename in DORMANT:
-            header = content.partition('on:\n')[2]
-            header = re.split(r'^\S', header, maxsplit=1, flags=re.M)[0]
-            triggers = re.findall(r'^  ([a-z_]+):', header, re.M)
-            if triggers != ['workflow_call']:
-                errors.append(f'{filename}: operational blueprint cannot have a standalone trigger')
-            if any(line.strip() and not line.lstrip().startswith('#')
-                   and line != '  workflow_call:' for line in header.splitlines()):
-                errors.append(f'{filename}: dormant workflow_call must have no configuration')
         for name, block in jobs.items():
             if any(re.match(r'^    uses:', line) for line in block):
                 errors.append(f'{filename}/{name}: workflow callers are disabled in local-only mode')
@@ -121,11 +102,11 @@ class LocalDeliveryContractTest(unittest.TestCase):
         self.contents = {p.name: p.read_text() for p in (ROOT / '.github/workflows').iterdir()
                          if p.suffix in {'.yml', '.yaml'}}
 
-    def test_checked_in_workflows_keep_quality_and_dormant_operations_locked(self):
+    def test_checked_in_workflows_keep_quality_and_production_delivery_locked(self):
         self.assertEqual([], verify(self.contents))
 
     def test_each_operational_guard_is_required(self):
-        cases = {**DORMANT, 'deploy.yaml': {'build-and-push': PUBLISH, 'assemble-vps-candidate': PUBLISH},
+        cases = {'deploy.yaml': {'build-and-push': PUBLISH, 'assemble-vps-candidate': PUBLISH},
                  'vps-deploy.yaml': {'operate-vps': VPS}}
         for file, jobs in cases.items():
             for job, guard in jobs.items():
@@ -135,17 +116,9 @@ class LocalDeliveryContractTest(unittest.TestCase):
                     changed[file] = changed[file].replace(block, block.replace(guard, '    if: ${{ always() }}'))
                     self.assertTrue(verify(changed))
 
-    def test_automatic_trigger_cannot_return(self):
-        for file in DORMANT:
-            for trigger in ('workflow_run', 'push', 'schedule', 'workflow_dispatch', 'repository_dispatch'):
-                with self.subTest(file=file, trigger=trigger):
-                    changed = dict(self.contents)
-                    changed[file] = changed[file].replace('  workflow_call:', f'  {trigger}:', 1)
-                    self.assertTrue(verify(changed))
-
     def test_new_unguarded_job_or_workflow_cannot_escape_inventory(self):
         changed = dict(self.contents)
-        changed['staging-deploy.yaml'] += '\n  unexpected:\n    runs-on: ubuntu-latest\n'
+        changed['deploy.yaml'] += '\n  unexpected:\n    runs-on: ubuntu-latest\n'
         self.assertTrue(verify(changed))
         changed = dict(self.contents, **{'new-deploy.yml': 'on: push\njobs:\n'})
         self.assertTrue(verify(changed))
@@ -159,32 +132,18 @@ class LocalDeliveryContractTest(unittest.TestCase):
                         changed[file] = changed[file].replace(f'  {job}:\n', f'  {job}:\n{insertion}\n', 1)
                         self.assertTrue(verify(changed))
 
-    def test_variable_based_opt_in_does_not_replace_literal_lock(self):
-        changed = dict(self.contents)
-        changed['staging-deploy.yaml'] = changed['staging-deploy.yaml'].replace(FALSE, "    if: ${{ vars.ENABLE_DEPLOY == 'true' }}")
-        self.assertTrue(verify(changed))
-
     def test_existing_jobs_cannot_become_workflow_callers(self):
         for file, content in self.contents.items():
             for job in _job_blocks(content):
                 for prefix in ('./', '$/', 'MattoYuzuru/Mnema/'):
                     with self.subTest(file=file, job=job, prefix=prefix):
                         changed = dict(self.contents)
-                        reference = f'{prefix}.github/workflows/staging-deploy.yaml'
+                        reference = f'{prefix}.github/workflows/vps-deploy.yaml'
                         if prefix == 'MattoYuzuru/Mnema/':
                             reference += '@main'
                         changed[file] = content.replace(
                             f'  {job}:\n', f'  {job}:\n    uses: {reference}\n', 1)
                         self.assertTrue(verify(changed))
-
-    def test_dormant_definitions_cannot_gain_inputs_or_secrets(self):
-        for file in DORMANT:
-            for config in ('    inputs: {}', '    secrets: {}'):
-                with self.subTest(file=file, config=config):
-                    changed = dict(self.contents)
-                    changed[file] = changed[file].replace(
-                        '  workflow_call:', f'  workflow_call:\n{config}', 1)
-                    self.assertTrue(verify(changed))
 
     def test_publication_cannot_skip_quality_or_scope_or_enter_prod(self):
         cases = [('      - backend-quality\n      - frontend-quality\n      - release-scope', '      - backend-quality\n      - release-scope'),

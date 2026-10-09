@@ -157,8 +157,8 @@ without an Authority Key Identifier, and OpenSSL 4 no longer adds one by default
 ## Full local stack with media
 
 One command brings up every service needed to test Mnema by hand, including uploaded
-media. This is **local development tooling only**: it is not a production or staging
-path, shares nothing with `k8s/`, and must not be copied into a deployment.
+media. This is **local development tooling only**: it is not a production
+path and must not be copied into a deployment.
 
 ### Prerequisites
 
@@ -169,9 +169,8 @@ Everything listed under [First start](#first-start), plus:
   absolute path inside that shared area.
 - the pinned official MinIO image `quay.io/minio/minio@sha256:14cea493...` in the
   local image store. MinIO no longer serves it from Docker Hub or Quay, so a fresh
-  machine cannot pull it. The repository already pins the same digest for staging
-  (`k8s/staging/data.yaml`), and
-  [the image-environment evidence](../engineering/evidence/epic-74/verification/image-environment.md)
+  machine cannot pull it.
+  [The image-environment evidence](../engineering/evidence/epic-74/verification/image-environment.md)
   describes how it was imported into the local cache. If it is missing, `start`
   fails at the image pull; restore it by that procedure rather than substituting an
   unverified mirror.

@@ -126,8 +126,8 @@ python3 scripts/verify_docs.py
   automatic admission, deploy, verify and public smoke; `vps-deploy.yaml` only for manual
   status/verify/rollback). Host config/tooling is installed by the administrator beforehand.
   Use the working server/jobs within an owner-authorized production task; keep
-  deployment evidence distinct from implementation completion. Legacy Kubernetes
-  workflows are dormant and are not this delivery path.
+  deployment evidence distinct from implementation completion. Kubernetes delivery
+  was removed; the VPS path is the only one.
 - An explicit request to deliver an issue, epic, or change end to end authorizes the ordinary
   in-scope workflow: create a feature branch, edit, test, commit, push that branch, open or update
   its pull request, monitor CI, fix failures, and push follow-up commits. If the request also says

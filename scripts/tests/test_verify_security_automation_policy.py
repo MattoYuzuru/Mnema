@@ -72,7 +72,7 @@ class VerifySecurityAutomationPolicyTest(unittest.TestCase):
         self.assertTrue(any("one open pull request limit" in finding.message for finding in self.findings()))
 
     def test_missing_production_docker_directory_is_rejected(self):
-        self.replace(".github/dependabot.yml", '      - "/k8s/backup"\n', "")
+        self.replace(".github/dependabot.yml", '      - "/deploy/production"\n', "")
 
         self.assertTrue(any("docker directories" in finding.message for finding in self.findings()))
 

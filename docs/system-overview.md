@@ -132,8 +132,7 @@ chains и сервисные исходники отсутствуют в тек
 - frontend: lint, component/protocol tests и production build;
 - real PostgreSQL tests, Identity↔Learning black-box security/cancellation harness;
 - real local HTTPS browser Identity/authoring harness;
-- repository policy, security, release-contract, backup/recovery and disposable
-  purge-rehearsal checks;
+- repository policy, security and release-contract checks, and VPS backup/restore tests;
 - deterministic internal Markdown link/status validation.
 
 Точные команды и платформы: [Repository guide](./engineering/repository-guide.md).

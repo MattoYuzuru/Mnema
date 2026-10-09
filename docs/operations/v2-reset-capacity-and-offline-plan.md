@@ -72,11 +72,31 @@ The policy choice is closed: no complete emergency/legacy snapshot is created or
 
 Rollback exists only while the untouched legacy resources still exist and deletion has not started. The first destructive delete is the point of no return. Afterwards recovery is roll-forward or restore of account-only/new-runtime artifacts; v1 content cannot be restored by design.
 
-The executable private-manifest contract, sanitized evidence boundary and
-disposable verification sequence are defined in
-[`no-snapshot-purge-rehearsal.md`](no-snapshot-purge-rehearsal.md). This tooling
-does not authorize production execution; #147 remains the sole production
-cutover and irreversible-delete boundary.
+The repository removed its Kubernetes *delivery* tooling, including the former
+rehearsal executor `scripts/purge/rehearsal.py` and its runbook
+`docs/operations/no-snapshot-purge-rehearsal.md` (recoverable from Git history before
+the removal commit). The old cluster's data, objects and backups are preserved as
+described in [VPS runtime](vps-runtime.md); their disposition remains an owner decision
+in #147, which is also the sole production cutover and irreversible-delete boundary.
+The owner chose an empty launch, so no purge executor exists today. Requirements for
+any future purge executor, carried over from the removed runbook:
+
+- input is a private, closed-schema manifest (random `targetId`, the literal
+  `first-delete-roll-forward-only` acknowledgement, every category present even when
+  empty, deletion and preserved sets with exact owners/UIDs/versions); anything
+  unknown in the live inventory stops before a plan is written;
+- every live provider is bound to the manifest `targetId` by a marker, and a
+  disposable-environment flag alone is never target-ownership proof;
+- preflight simulates destructive effects (for example `DROP SCHEMA ... CASCADE` in a
+  rolled-back transaction) and fingerprints preserved neighbors; a durable journal
+  records the point of no return before the first delete, after which only retry or
+  fix-forward is allowed;
+- provider-level copies (managed backups/PITR, object versions, delete markers,
+  incomplete multipart uploads, Object Lock) must be reported absent with bound
+  absence evidence; a retained, unverified or unknown copy blocks completion;
+- evidence is sanitized: schema/kind/status, manifest and inventory hashes and counts
+  only, never keys, object paths, resource names or credentials; manifests and plans
+  stay private (`0600`, outside the repository, never CI artifacts).
 
 ## Account deletion and category-specific retention
 

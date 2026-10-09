@@ -94,9 +94,8 @@ x-ai-environment: &ai-environment
   # where Google answers. Only for local runs; production never sets it.
   LEARNING_AI_PROVIDERS_GOOGLE_EGRESS: ${LEARNING_AI_PROVIDERS_GOOGLE_EGRESS:-proxy}
 
-# Official MinIO image, pinned by the digest the repository already uses for staging
-# (k8s/staging/data.yaml). MinIO no longer serves it from Docker Hub or Quay, so it
-# must already be in the local image store; see the runbook. The image ships `mc`.
+# Official MinIO image, pinned by digest. MinIO no longer serves it from Docker Hub or
+# Quay, so it must already be in the local image store; see the runbook. The image ships `mc`.
 x-minio-image: &minio-image quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
 
 services:

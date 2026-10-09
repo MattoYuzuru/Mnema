@@ -45,7 +45,7 @@ capabilities:
   - id: repository-policy-and-operations-contracts
     kind: command-set
     location: .github/workflows/pull-request.yaml
-    effects: [policy-tests, security-contracts, smoke-tests, backup-recovery-test, purge-rehearsal]
+    effects: [policy-tests, security-contracts, smoke-tests]
     status: configured
 
   - id: pull-request-quality
@@ -101,17 +101,6 @@ capabilities:
     status: configured
     requirements: [prod-environment-approval]
     notes: [deployments-run-only-in-main-ci, host-config-installed-by-administrator-with-drift-check]
-    canonical_policy: docs/operations/production-delivery.md
-
-  - id: legacy-kubernetes-operations
-    kind: dormant-workflows
-    locations:
-      - .github/workflows/staging-deploy.yaml
-      - .github/workflows/production-deploy.yaml
-      - .github/workflows/staging-rollback-drill.yaml
-      - .github/workflows/database-recovery.yaml
-    effects: []
-    status: paused-fail-closed
     canonical_policy: docs/operations/production-delivery.md
 
 repository_agent_assets:
