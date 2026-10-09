@@ -17,6 +17,10 @@
     },
     ".github/workflows/deploy.yaml": {
       "jobs": {
+        "assemble-vps-candidate": {
+          "actions": "read",
+          "contents": "read"
+        },
         "backend-quality": {
           "contents": "read"
         },
@@ -26,18 +30,23 @@
           "id-token": "write",
           "packages": "write"
         },
+        "deploy-production": {
+          "actions": "read",
+          "attestations": "read",
+          "contents": "read",
+          "packages": "read"
+        },
         "frontend-quality": {
           "contents": "read"
         },
-        "render-release": {
-          "actions": "read",
+        "post-deploy-smoke": {
           "contents": "read"
+        },
+        "release-scope": {
+          "contents": "read",
+          "deployments": "read"
         },
         "validate-main-ref": {
-          "contents": "read"
-        },
-        "assemble-vps-candidate": {
-          "actions": "read",
           "contents": "read"
         }
       }
@@ -90,7 +99,7 @@
     },
     ".github/workflows/vps-deploy.yaml": {
       "jobs": {
-        "deploy-vps": {
+        "operate-vps": {
           "contents": "read"
         }
       }
@@ -148,38 +157,6 @@
       "ifNoFilesFound": "error",
       "classification": "release-identifier",
       "source": "Buildx immutable image digest output"
-    },
-    {
-      "policyId": "main-production-release-manifest",
-      "workflow": ".github/workflows/deploy.yaml",
-      "job": "render-release",
-      "name": "production-release-manifest",
-      "paths": [
-        "${{ runner.temp }}/production-release.yaml",
-        "${{ runner.temp }}/production-release.yaml.sha256",
-        "${{ runner.temp }}/release-security-evidence.json",
-        "${{ runner.temp }}/release-security-evidence.json.sha256"
-      ],
-      "retentionDays": 30,
-      "ifNoFilesFound": "error",
-      "classification": "release-manifest",
-      "source": "Immutable release renderer and aggregated image security evidence"
-    },
-    {
-      "policyId": "main-staging-release-manifest",
-      "workflow": ".github/workflows/deploy.yaml",
-      "job": "render-release",
-      "name": "staging-release-manifest",
-      "paths": [
-        "${{ runner.temp }}/staging-release.yaml",
-        "${{ runner.temp }}/staging-release.yaml.sha256",
-        "${{ runner.temp }}/release-security-evidence.json",
-        "${{ runner.temp }}/release-security-evidence.json.sha256"
-      ],
-      "retentionDays": 30,
-      "ifNoFilesFound": "error",
-      "classification": "release-manifest",
-      "source": "Immutable staging release renderer and aggregated image security evidence"
     },
     {
       "policyId": "staging-release-record",
@@ -296,7 +273,7 @@
       "retentionDays": 30,
       "ifNoFilesFound": "error",
       "classification": "release-manifest",
-      "source": "Four immutable VPS image identifiers and complete verified image security evidence; no deployment admission or secrets"
+      "source": "Four immutable VPS image identifiers and complete verified image security evidence; no secrets"
     }
   ]
 }

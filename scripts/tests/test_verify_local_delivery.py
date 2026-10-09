@@ -1,4 +1,4 @@
-"""Keep dormant operations locked and publication behind the reviewed main-only opt-in."""
+"""Keep dormant operations locked; production delivery stays main-only, scoped and approval-gated."""
 import re
 import sys
 import unittest
@@ -9,8 +9,10 @@ from verify_artifact_security_policy import _job_blocks
 
 ROOT = Path(__file__).resolve().parents[2]
 FALSE = '    if: ${{ false }}'
-PUBLISH = "    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish_production_candidate == true }}"
+PUBLISH = "    if: ${{ needs.release-scope.outputs.deploy == 'true' && github.ref == 'refs/heads/main' }}"
 VPS = "    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}"
+# Jobs that follow the publication guard through `needs`; only the first may enter prod.
+APPROVED = {'deploy-production', 'post-deploy-smoke'}
 DORMANT = {
     'staging-deploy.yaml': {'validate-main-ci': FALSE, 'deploy-staging': FALSE},
     'production-deploy.yaml': {
@@ -22,7 +24,7 @@ DORMANT = {
     'staging-rollback-drill.yaml': {'rollback-drill': FALSE},
 }
 ACTIVE = {
-    'deploy.yaml': {'validate-main-ref', 'backend-quality', 'frontend-quality'},
+    'deploy.yaml': {'validate-main-ref', 'release-scope', 'backend-quality', 'frontend-quality'},
     'pull-request.yaml': {'backend-quality', 'frontend-quality'},
     'dependency-review.yaml': {'dependency-review'},
 }
@@ -40,36 +42,51 @@ def verify(contents):
             errors.append(f'{filename}: duplicate job')
         expected = dict(DORMANT.get(filename, {}))
         if filename == 'vps-deploy.yaml':
-            expected = {'deploy-vps': VPS}
+            expected = {'operate-vps': VPS}
             header = content.partition('on:\n')[2].partition('\npermissions:')[0]
             if re.findall(r'^  ([a-z_]+):', header, re.M) != ['workflow_dispatch']:
-                errors.append('VPS deployment must have only a manual trigger')
+                errors.append('VPS operations must have only a manual trigger')
             required = ('    environment:\n      name: prod\n',
-                        '      group: mnema-vps-production\n      cancel-in-progress: false',
-                        '        run: bash scripts/deploy-vps.sh',
-                        '        type: string\n        required: true')
-            if any(value not in content for value in required):
-                errors.append('VPS deployment requires protected prod, serial rollout and fixed entrypoint')
+                        '      deployment: false\n',   # keeps reviewers/secrets, creates no Deployment record
+                        '      group: mnema-vps-operations\n      cancel-in-progress: false',
+                        '        run: bash scripts/deploy-vps.sh --operation "$MNEMA_OPERATION"',
+                        '        type: choice\n        required: true',
+                        '          - status\n          - verify\n          - rollback')
+            if any(value not in content for value in required) or \
+                    re.findall(r'^          - (\w+)$', content, re.M) != ['status', 'verify', 'rollback']:
+                errors.append('VPS operations require protected prod, serial execution and a fixed operation entrypoint')
         if filename == 'deploy.yaml':
-            expected.update({'build-and-push': PUBLISH, 'render-release': FALSE,
-                             'assemble-vps-candidate': PUBLISH})
-            required_input = ('  workflow_dispatch:\n    inputs:\n      publish_production_candidate:\n'
-                              '        description: Build and verify four immutable VPS images; no deployment\n'
-                              '        type: boolean\n        required: true\n        default: false')
-            if required_input not in content:
-                errors.append('publication requires an explicit boolean input defaulting to false')
+            expected.update({'build-and-push': PUBLISH, 'assemble-vps-candidate': PUBLISH})
+            header = content.partition('on:\n')[2].partition('\npermissions:')[0]
+            if re.findall(r'^  ([a-z_]+):', header, re.M) != ['push', 'workflow_dispatch'] \
+                    or '    branches: [main]' not in header or 'inputs:' in header:
+                errors.append('Main CI runs on pushes to main and an input-free manual dispatch only')
             build = '\n'.join(jobs.get('build-and-push', []))
             candidate = '\n'.join(jobs.get('assemble-vps-candidate', []))
-            if '    needs:\n      - backend-quality\n      - frontend-quality' not in build:
-                errors.append('publication must depend on both quality gates')
-            if '    needs: build-and-push' not in candidate:
+            deploy = '\n'.join(jobs.get('deploy-production', []))
+            smoke = '\n'.join(jobs.get('post-deploy-smoke', []))
+            if '    needs:\n      - backend-quality\n      - frontend-quality\n      - release-scope' not in build:
+                errors.append('publication must depend on both quality gates and the release scope')
+            if '    needs:\n      - build-and-push\n      - release-scope' not in candidate:
                 errors.append('candidate must depend on all image/security gates')
             if ':latest' in build or 'TAG=sha-${GITHUB_SHA::7}' in build:
                 errors.append('publication requires full SHA tags without latest')
             for block in (build, candidate):
                 if re.search(r'^    (environment|uses):', block, re.M):
                     errors.append('publication cannot deploy or enter an environment')
-        if set(jobs) != set(expected) | ACTIVE.get(filename, set()):
+            if '    needs: assemble-vps-candidate' not in deploy or '    needs: deploy-production' not in smoke:
+                errors.append('deployment must follow the assembled candidate and smoke must follow deployment')
+            if ('    environment:\n      name: prod\n' not in deploy
+                    or '      group: mnema-vps-production\n      cancel-in-progress: false' not in deploy
+                    or 'gh attestation verify' not in deploy
+                    or 'bash scripts/deploy-vps.sh "$RUNNER_TEMP/vps-candidate/vps-candidate.json"' not in deploy):
+                errors.append('deployment requires prod approval, serial rollout, attestation re-check and the fixed entrypoint')
+            if re.search(r'^    (environment|uses|if):', smoke, re.M):
+                errors.append('post-deploy smoke cannot enter an environment or be skipped by a custom guard')
+            for name in APPROVED:
+                if re.search(r'^    if:', '\n'.join(jobs.get(name, [])), re.M):
+                    errors.append(f'{name} must be skipped only through its needs chain')
+        if set(jobs) != set(expected) | ACTIVE.get(filename, set()) | (APPROVED if filename == 'deploy.yaml' else set()):
             errors.append(f'{filename}: unexpected or missing jobs')
         if filename in DORMANT:
             header = content.partition('on:\n')[2]
@@ -84,6 +101,8 @@ def verify(contents):
             if any(re.match(r'^    uses:', line) for line in block):
                 errors.append(f'{filename}/{name}: workflow callers are disabled in local-only mode')
             guards = [line for line in block if line.startswith('    if:')]
+            if filename == 'deploy.yaml' and name in APPROVED:
+                continue
             if name in expected:
                 if guards != [expected[name]]:
                     errors.append(f'{filename}/{name}: missing reviewed job guard')
@@ -106,9 +125,8 @@ class LocalDeliveryContractTest(unittest.TestCase):
         self.assertEqual([], verify(self.contents))
 
     def test_each_operational_guard_is_required(self):
-        cases = {**DORMANT, 'deploy.yaml': {'build-and-push': PUBLISH, 'render-release': FALSE,
-                                         'assemble-vps-candidate': PUBLISH},
-                 'vps-deploy.yaml': {'deploy-vps': VPS}}
+        cases = {**DORMANT, 'deploy.yaml': {'build-and-push': PUBLISH, 'assemble-vps-candidate': PUBLISH},
+                 'vps-deploy.yaml': {'operate-vps': VPS}}
         for file, jobs in cases.items():
             for job, guard in jobs.items():
                 with self.subTest(file=file, job=job):
@@ -168,23 +186,49 @@ class LocalDeliveryContractTest(unittest.TestCase):
                         '  workflow_call:', f'  workflow_call:\n{config}', 1)
                     self.assertTrue(verify(changed))
 
-    def test_publication_cannot_default_on_skip_quality_or_enter_prod(self):
-        cases = [('        default: false', '        default: true'),
-                 ('      - backend-quality\n      - frontend-quality', '      - backend-quality'),
-                 ('    needs: build-and-push', '    needs: validate-main-ref'),
+    def test_publication_cannot_skip_quality_or_scope_or_enter_prod(self):
+        cases = [('      - backend-quality\n      - frontend-quality\n      - release-scope', '      - backend-quality\n      - release-scope'),
+                 ('      - backend-quality\n      - frontend-quality\n      - release-scope', '      - backend-quality\n      - frontend-quality'),
+                 ('      - build-and-push\n      - release-scope', '      - release-scope'),
                  ('TAG=sha-${GITHUB_SHA}', 'TAG=sha-${GITHUB_SHA::7}'),
-                 ('  assemble-vps-candidate:\n', '  assemble-vps-candidate:\n    environment: prod\n')]
+                 ('  assemble-vps-candidate:\n', '  assemble-vps-candidate:\n    environment: prod\n'),
+                 ('  build-and-push:\n', '  build-and-push:\n    environment: prod\n'),
+                 ('  push:\n    branches: [main]', '  push:\n    branches: [main, feature]'),
+                 ('  workflow_dispatch:\n', '  workflow_dispatch:\n    inputs:\n      force:\n        type: boolean\n')]
         for before, after in cases:
             with self.subTest(after=after):
                 changed = dict(self.contents)
-                changed['deploy.yaml'] = changed['deploy.yaml'].replace(before, after)
+                self.assertIn(before, changed['deploy.yaml'])
+                changed['deploy.yaml'] = changed['deploy.yaml'].replace(before, after, 1)
                 self.assertTrue(verify(changed))
 
-    def test_vps_cannot_run_automatically_skip_prod_or_replace_entrypoint(self):
+    def test_deployment_cannot_skip_approval_serialisation_attestation_or_use_another_entrypoint(self):
+        cases = [('      name: prod\n      url: https://mnema.app', '      name: unprotected\n      url: https://mnema.app'),
+                 ('      group: mnema-vps-production\n      cancel-in-progress: false', '      group: mnema-vps-production\n      cancel-in-progress: true'),
+                 ('gh attestation verify', 'gh attestation download'),
+                 ('bash scripts/deploy-vps.sh "$RUNNER_TEMP/vps-candidate/vps-candidate.json"', 'ssh arbitrary-host'),
+                 ('    needs: assemble-vps-candidate\n', '    needs: validate-main-ref\n'),
+                 ('    needs: deploy-production\n', '    needs: release-scope\n')]
+        for before, after in cases:
+            with self.subTest(after=after):
+                changed = dict(self.contents)
+                self.assertIn(before, changed['deploy.yaml'])
+                changed['deploy.yaml'] = changed['deploy.yaml'].replace(before, after)
+                self.assertTrue(verify(changed))
+        for job in APPROVED:
+            with self.subTest(job=job):
+                changed = dict(self.contents)
+                changed['deploy.yaml'] = changed['deploy.yaml'].replace(
+                    f'  {job}:\n', f'  {job}:\n    if: ${{{{ always() }}}}\n', 1)
+                self.assertTrue(verify(changed))
+
+    def test_vps_operations_cannot_run_automatically_skip_prod_or_replace_entrypoint(self):
         for before, after in [('  workflow_dispatch:', '  push:'),
                               ('      name: prod', '      name: unprotected'),
+                              ('      deployment: false\n', ''),
                               ('      cancel-in-progress: false', '      cancel-in-progress: true'),
-                              ('bash scripts/deploy-vps.sh', 'ssh arbitrary-host')]:
+                              ('          - rollback\n', '          - rollback\n          - deploy\n'),
+                              ('bash scripts/deploy-vps.sh --operation', 'ssh arbitrary-host --operation')]:
             with self.subTest(after=after):
                 changed = dict(self.contents)
                 changed['vps-deploy.yaml'] = changed['vps-deploy.yaml'].replace(before, after)

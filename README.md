@@ -98,12 +98,12 @@ Production работает на https://mnema.app; сервис аккаунт�
 
 ```text
 feature branch → полный local gate → hosted PR checks → protected squash → main checks
-→ четыре проверенных образа → admission на VPS → VPS production deployment → live smoke
+→ четыре проверенных образа → одно подтверждение Environment `prod` → admission, deploy и verify на VPS → live smoke
 ```
 
-Публикация запускается через `Main CI` с `publish_production_candidate=true`,
-выкатка — через `VPS production deployment` с допущенным текущим `release_sha`.
-Точные шаги, protection и ограничения — в
+Публикация и выкатка выполняются автоматически в `Main CI` при изменении runtime
+(docs-only слияния не выкатываются); вручную остаются `VPS production operations`
+(status, verify, rollback). Точные шаги, protection и ограничения — в
 [production delivery](docs/operations/production-delivery.md).
 
 ## Лицензия и участие

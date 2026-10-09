@@ -3,13 +3,8 @@ name: Main CI
 on:
   push:
     branches: [main]
+  # Manual dispatch releases the current main now, whether or not runtime paths changed.
   workflow_dispatch:
-    inputs:
-      publish_production_candidate:
-        description: Build and verify four immutable VPS images; no deployment
-        type: boolean
-        required: true
-        default: false
 
 permissions: {}
 
@@ -25,6 +20,27 @@ jobs:
             echo '::error::Main CI may run only for refs/heads/main.'
             exit 1
           fi
+
+  release-scope:
+    needs: validate-main-ref
+    runs-on: ubuntu-latest
+    outputs:
+      deploy: ${{ steps.scope.outputs.deploy }}
+    permissions:
+      contents: read
+      deployments: read
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Decide whether production runtime changed
+        id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -I scripts/release_scope.py
 
   backend-quality:
     needs: validate-main-ref
@@ -196,11 +212,12 @@ jobs:
         run: ./scripts/test-purge-rehearsal-integration.sh
 
   build-and-push:
-    # Reviewed VPS publication only. Pushes and ordinary manual CI never publish.
-    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish_production_candidate == true }}
+    # Publish only when the release-scope job found a runtime change (or on manual dispatch).
+    if: ${{ needs.release-scope.outputs.deploy == 'true' && github.ref == 'refs/heads/main' }}
     needs:
       - backend-quality
       - frontend-quality
+      - release-scope
     runs-on: ubuntu-latest
     concurrency:
       group: main-ci-build-${{ github.ref }}-${{ matrix.name }}
@@ -430,126 +447,11 @@ jobs:
           retention-days: 30
           classification: release-identifier
 
-  render-release:
-    if: ${{ false }}
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      contents: read
-    steps:
-      - name: Checkout release revision
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Download image digests
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          pattern: release-image-*
-          path: ${{ runner.temp }}/release-digests
-          merge-multiple: true
-
-      - name: Download verified per-image security evidence
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          pattern: release-security-*
-          path: ${{ runner.temp }}/release-security
-          merge-multiple: true
-
-      - name: Aggregate exact release security evidence
-        run: |
-          python3 scripts/verify_release_security_evidence.py aggregate \
-            --evidence-dir "$RUNNER_TEMP/release-security" \
-            --digests-dir "$RUNNER_TEMP/release-digests" \
-            --exceptions security/release-image-exceptions.json \
-            --trivy-ignore security/trivy-release-ignore \
-            --repository "$GITHUB_REPOSITORY" \
-            --source-commit "$GITHUB_SHA" \
-            --build-run-id "$GITHUB_RUN_ID" \
-            --build-run-attempt "$GITHUB_RUN_ATTEMPT" \
-            --output "$RUNNER_TEMP/release-security-evidence.json"
-          (cd "$RUNNER_TEMP" && sha256sum release-security-evidence.json \
-            > release-security-evidence.json.sha256)
-
-      - name: Render immutable production release
-        env:
-          DIGEST_DIR: ${{ runner.temp }}/release-digests
-          IMAGE_BASE: ghcr.io/${{ github.repository }}
-          OUTPUT: ${{ runner.temp }}/production-release.yaml
-          RELEASE_SHA: ${{ github.sha }}
-        run: |
-          IMAGE_BASE=$(printf '%s' "$IMAGE_BASE" | tr '[:upper:]' '[:lower:]')
-          export IMAGE_BASE
-          ./scripts/render-release-manifest.sh
-          output_dir=$(dirname -- "$OUTPUT")
-          output_name=$(basename -- "$OUTPUT")
-          (cd "$output_dir" && sha256sum "$output_name" > "${output_name}.sha256")
-
-      - name: Render immutable staging release from the same digests
-        env:
-          APP_ENV: staging
-          AUTH_HOST: auth.staging.mnema.app
-          DIGEST_DIR: ${{ runner.temp }}/release-digests
-          IMAGE_BASE: ghcr.io/${{ github.repository }}
-          INCLUDE_INGRESS: "true"
-          OUTPUT: ${{ runner.temp }}/staging-release.yaml
-          PUBLIC_HOST: staging.mnema.app
-          RELEASE_NAMESPACE: mnema-staging
-          RELEASE_SHA: ${{ github.sha }}
-          S3_ENDPOINT: http://minio:9000
-          S3_PATH_STYLE_ACCESS: "true"
-          S3_PUBLIC_ENDPOINT: https://storage.staging.mnema.app
-          SPRING_PROFILES: prod
-        run: |
-          IMAGE_BASE=$(printf '%s' "$IMAGE_BASE" | tr '[:upper:]' '[:lower:]')
-          export IMAGE_BASE
-          ./scripts/render-release-manifest.sh
-          output_dir=$(dirname -- "$OUTPUT")
-          output_name=$(basename -- "$OUTPUT")
-          (cd "$output_dir" && sha256sum "$output_name" > "${output_name}.sha256")
-
-      - name: Bind verified security evidence to both release manifests
-        run: |
-          for manifest in production-release.yaml staging-release.yaml; do
-            python3 scripts/verify_release_security_evidence.py verify-release \
-              --evidence "$RUNNER_TEMP/release-security-evidence.json" \
-              --manifest "$RUNNER_TEMP/$manifest" \
-              --expected-repository "$GITHUB_REPOSITORY" \
-              --expected-commit "$GITHUB_SHA" \
-              --trivy-ignore security/trivy-release-ignore \
-              --expected-run-id "$GITHUB_RUN_ID"
-          done
-
-      - name: Upload complete release manifest
-        uses: ./.github/actions/safe-upload-artifact
-        with:
-          policy-id: main-production-release-manifest
-          name: production-release-manifest
-          path: |
-            ${{ runner.temp }}/production-release.yaml
-            ${{ runner.temp }}/production-release.yaml.sha256
-            ${{ runner.temp }}/release-security-evidence.json
-            ${{ runner.temp }}/release-security-evidence.json.sha256
-          if-no-files-found: error
-          retention-days: 30
-          classification: release-manifest
-
-      - name: Upload staging release manifest
-        uses: ./.github/actions/safe-upload-artifact
-        with:
-          policy-id: main-staging-release-manifest
-          name: staging-release-manifest
-          path: |
-            ${{ runner.temp }}/staging-release.yaml
-            ${{ runner.temp }}/staging-release.yaml.sha256
-            ${{ runner.temp }}/release-security-evidence.json
-            ${{ runner.temp }}/release-security-evidence.json.sha256
-          if-no-files-found: error
-          retention-days: 30
-          classification: release-manifest
-
   assemble-vps-candidate:
-    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish_production_candidate == true }}
-    needs: build-and-push
+    if: ${{ needs.release-scope.outputs.deploy == 'true' && github.ref == 'refs/heads/main' }}
+    needs:
+      - build-and-push
+      - release-scope
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -597,7 +499,7 @@ jobs:
             --output "$RUNNER_TEMP/vps-candidate.json"
           (cd "$RUNNER_TEMP" && sha256sum vps-candidate.json vps-security-evidence.json > vps-candidate.sha256)
 
-      - name: Upload VPS candidate without deployment admission
+      - name: Upload VPS candidate
         uses: ./.github/actions/safe-upload-artifact
         with:
           policy-id: main-vps-candidate
@@ -609,3 +511,116 @@ jobs:
           if-no-files-found: error
           retention-days: 30
           classification: release-manifest
+
+  deploy-production:
+    needs: assemble-vps-candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    concurrency:
+      group: mnema-vps-production
+      cancel-in-progress: false
+    environment:
+      name: prod
+      url: https://mnema.app
+    permissions:
+      actions: read
+      attestations: read
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout reviewed deployment revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download VPS candidate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: vps-candidate
+          path: ${{ runner.temp }}/vps-candidate
+
+      - name: Log in to GHCR for attestation lookup
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Re-verify candidate integrity and image attestations after approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd "$RUNNER_TEMP/vps-candidate"
+          sha256sum --check --strict vps-candidate.sha256
+          images=$(python3 -I - <<'PY'
+          import hashlib, json, os, re, sys
+          candidate = json.load(open('vps-candidate.json'))
+          sha, run_id = os.environ['GITHUB_SHA'], int(os.environ['GITHUB_RUN_ID'])
+          source = candidate['source']
+          if candidate['sha'] != sha or source['commit'] != sha or source['runId'] != run_id:
+              sys.exit('candidate does not belong to this workflow run')
+          if candidate['securityEvidenceSha256'] != hashlib.sha256(open('vps-security-evidence.json', 'rb').read()).hexdigest():
+              sys.exit('candidate evidence hash differs')
+          pattern = re.compile(r'ghcr\.io/mattoyuzuru/mnema/(frontend|identity-account|learning|postgres)@sha256:[0-9a-f]{64}')
+          if sorted(candidate['images']) != ['frontend', 'identity-account', 'learning', 'postgres'] \
+                  or not all(pattern.fullmatch(image) for image in candidate['images'].values()):
+              sys.exit('candidate images are not the four reviewed identities')
+          print('\n'.join(candidate['images'].values()))
+          PY
+          )
+          test "$(printf '%s\n' "$images" | wc -l)" -eq 4
+          for image in $images; do
+            for predicate in https://slsa.dev/provenance/v1 https://spdx.dev/Document/v2.3; do
+              gh attestation verify "oci://${image}" \
+                --repo "$GITHUB_REPOSITORY" \
+                --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/deploy.yaml" \
+                --source-digest "$GITHUB_SHA" \
+                --source-ref refs/heads/main \
+                --deny-self-hosted-runners \
+                --predicate-type "$predicate" \
+                > /dev/null
+            done
+          done
+
+      - name: Configure, admit, deploy and verify on the production host
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MNEMA_DEPLOY_HOST: ${{ vars.PROD_DEPLOY_HOST }}
+          MNEMA_DEPLOY_USER: ${{ vars.PROD_DEPLOY_USER }}
+          MNEMA_DEPLOY_SSH_KEY: ${{ secrets.PROD_DEPLOY_SSH_KEY }}
+          MNEMA_DEPLOY_KNOWN_HOSTS: ${{ secrets.PROD_DEPLOY_KNOWN_HOSTS }}
+          # Application configuration allowlist (deploy/production/app-config.keys), explicit on purpose.
+          PROD_TURNSTILE_SITE_KEY: ${{ secrets.PROD_TURNSTILE_SITE_KEY }}
+          PROD_TURNSTILE_SECRET_KEY: ${{ secrets.PROD_TURNSTILE_SECRET_KEY }}
+          PROD_GOOGLE_CLIENT_ID: ${{ secrets.PROD_GOOGLE_CLIENT_ID }}
+          PROD_GOOGLE_CLIENT_SECRET: ${{ secrets.PROD_GOOGLE_CLIENT_SECRET }}
+          PROD_YANDEX_CLIENT_ID: ${{ secrets.PROD_YANDEX_CLIENT_ID }}
+          PROD_YANDEX_CLIENT_SECRET: ${{ secrets.PROD_YANDEX_CLIENT_SECRET }}
+          PROD_GH_CLIENT_ID: ${{ secrets.PROD_GH_CLIENT_ID }}
+          PROD_GH_CLIENT_SECRET: ${{ secrets.PROD_GH_CLIENT_SECRET }}
+          PROD_MNEMA_POSTBOX_ACCESS_KEY: ${{ secrets.PROD_MNEMA_POSTBOX_ACCESS_KEY }}
+          PROD_MNEMA_POSTBOX_SECRET_KEY: ${{ secrets.PROD_MNEMA_POSTBOX_SECRET_KEY }}
+          PROD_MNEMA_PROMO_HASH_SECRET: ${{ secrets.PROD_MNEMA_PROMO_HASH_SECRET }}
+          PROD_MNEMA_EXPERIMENT_SECRET: ${{ secrets.PROD_MNEMA_EXPERIMENT_SECRET }}
+          PROD_MNEMA_EVENTS_OWNER_ACCOUNT_ID: ${{ secrets.PROD_MNEMA_EVENTS_OWNER_ACCOUNT_ID }}
+          PROD_MNEMA_IDENTITY_TURNSTILE_MODE: ${{ secrets.PROD_MNEMA_IDENTITY_TURNSTILE_MODE }}
+          PROD_LEARNING_MEDIA_UPLOAD_ACCESS_KEY: ${{ secrets.PROD_LEARNING_MEDIA_UPLOAD_ACCESS_KEY }}
+          PROD_LEARNING_MEDIA_UPLOAD_SECRET_KEY: ${{ secrets.PROD_LEARNING_MEDIA_UPLOAD_SECRET_KEY }}
+          PROD_MNEMA_AVATAR_ACCESS_KEY: ${{ secrets.PROD_MNEMA_AVATAR_ACCESS_KEY }}
+          PROD_MNEMA_AVATAR_SECRET_KEY: ${{ secrets.PROD_MNEMA_AVATAR_SECRET_KEY }}
+        run: bash scripts/deploy-vps.sh "$RUNNER_TEMP/vps-candidate/vps-candidate.json"
+
+  post-deploy-smoke:
+    needs: deploy-production
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout reviewed smoke revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Smoke the public production surface
+        run: python3 -I scripts/smoke/vps_public_smoke.py --sha "$GITHUB_SHA" --summary "$GITHUB_STEP_SUMMARY"

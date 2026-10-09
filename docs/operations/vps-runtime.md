@@ -5,27 +5,25 @@ artifact:
   title: "Mnema early production VPS runtime"
   status: current
   created_at: "2026-10-04"
-  updated_at: "2026-10-05"
+  updated_at: "2026-10-08"
   owners: ["project-owner"]
 ---
 
 # Production VPS runtime
 
 Production serves https://mnema.app and https://auth.mnema.app on the Russian VPS
-`mnema` / `135.106.175.30` (Ubuntu 24.04, 6 CPU / 12 GB; `ssh mnema`). All four
-Compose containers are healthy; the minute health timer and daily local backup
-are active. Actual CI rollout and recovery passed, including maintenance rollback,
-isolated restore and external firewall/TLS checks. Latest release evidence:
-[publication](https://github.com/MattoYuzuru/Mnema/actions/runs/37223845189),
-[rollout](https://github.com/MattoYuzuru/Mnema/actions/runs/37225761472),
-[recovery](https://github.com/MattoYuzuru/Mnema/actions/runs/37227222810).
-Read the recorded/live SHA and readiness for each new delivery; do not assume a
-later main commit is deployed. Public browser acceptance remains separate #349
-work; a saved Codex browser permission currently prevents that surface's check.
+`mnema` / `135.106.175.30` (Ubuntu 24.04, 6 CPU / 12 GB; `ssh mnema`). Four Compose
+containers run behind host Caddy; the minute health timer and the daily local backup
+are active. The current release is whatever `mnema-deploy status` and the latest
+successful `deploy-production` run report; do not assume a later main commit is
+deployed (docs-only merges are intentionally not released). Public browser acceptance
+remains separate #349 work; a saved Codex browser permission currently prevents that
+surface's check.
 
 The owner approved a new empty database; old databases, objects and backups are
-preserved. Offsite backup is deferred in #350. Local dump/restore verification
-works, but VPS-loss recovery is not provided.
+preserved. Every release takes a verified pre-migration dump with an isolated restore
+rehearsal on this host; an optional encrypted offsite copy is configured below. VPS
+loss recovery depends on that offsite copy and is not otherwise provided.
 
 ## Runtime and network boundary
 
@@ -98,8 +96,11 @@ provider that `GET /api/accounts/providers` returns (an empty list shows none).
 **Before a release with the `required` default**, the `prod` Environment must
 already hold `PROD_TURNSTILE_SITE_KEY` and `PROD_TURNSTILE_SECRET_KEY`. Identity
 refuses to start in `required` mode without valid keys (and Learning waits for
-Identity's health), so a release without them fails readiness and the dispatcher
-rolls the deploy back. The emergency switch is `PROD_MNEMA_IDENTITY_TURNSTILE_MODE=blocked`
+Identity's health), so a release without them fails readiness and leaves the
+dispatcher's pending marker for administrator reconciliation (restore
+`app.env.previous`, see [production delivery](production-delivery.md)). The
+dispatcher's `configure` already refuses `required` without both keys. The
+emergency switch is `PROD_MNEMA_IDENTITY_TURNSTILE_MODE=blocked`
 in the `prod` secrets: it starts Identity without keys, closes password sign-in and
 leaves OAuth open.
 
@@ -173,39 +174,71 @@ expanded Compose or credential values.
 
 ## Deployment and inspection
 
-Follow [production delivery](production-delivery.md) and the
-[dispatcher contract](../../deploy/production/README.md): a fresh verified
-four-image candidate, administrator admission and protected `vps-deploy.yaml` on
-current main. Bootstrap scripts are for a new host only; never rerun them here.
-Stop on failed readiness, image mismatch, unsafe migration/rollback, uncertain
-`pending.json`, unexpected public ports or sensitive responses/logs. CI cannot
-clear reconciliation state or install configuration.
+Releases run in Main CI after one `prod` approval; follow
+[production delivery](production-delivery.md) and the
+[dispatcher contract](../../deploy/production/README.md). Host configuration and
+tooling (Compose, nginx, Caddy, dispatcher, backup, health monitor, `runtime.env`)
+are installed by the administrator before approval and checked for drift; bootstrap
+scripts are for a new host only, never rerun here. Stop on failed readiness, image
+mismatch, unsafe migration/rollback, uncertain `pending.json`, unexpected public ports
+or sensitive responses/logs. CI cannot clear reconciliation state or install
+configuration.
 
 Read-only administrator checks:
 
 ```bash
-ssh mnema 'sudo /usr/local/sbin/mnema-deploy status'
+ssh mnema 'sudo /usr/local/sbin/mnema-deploy status'   # sha, pending state, config hashes, backup age
+ssh mnema 'sudo /usr/local/sbin/mnema-deploy verify'   # running images, readiness, no pending marker
 ssh mnema 'sudo docker ps --format "{{.Names}} {{.Status}}"'
 ssh mnema 'sudo systemctl list-timers mnema\* --no-pager'
 ssh mnema 'sudo journalctl -t mnema-health -p err --no-pager'
+ssh mnema 'sudo tail -n 5 /var/lib/mnema-release/admissions.jsonl'   # append-only admission audit
 ```
 
-Status records are not a live health probe. Verify actual readiness, HTTPS/build
-identity, protected routes and auth policy after each rollout; retain firewall,
-log/privacy and backup evidence proportionate to the changes.
+`status` is not a live probe; `verify` and the automatic public smoke are. Retain
+firewall, log/privacy and backup evidence proportionate to the changes.
 
 ## Backup, monitoring and rollback
 
 `sudo /usr/local/sbin/mnema-local-backup backup` creates private 0600 dumps and
-metadata under `/var/backups/mnema` 0700. `rehearse` is the bounded quiet-window
-verification; it never restores production. Daily 03:30 UTC timer is a local
-recovery point, not an offsite durability promise. No automatic retention deletion
-is enabled; disk reserve alert warns below 10 GB. Future larger datasets need a
-bounded streaming reconciliation before this first-release full-table check.
+metadata under `/var/backups/mnema` 0700 and validates the archive with
+`pg_restore --list`; `rehearse` additionally restores it in an isolated network-less
+container and reconciles rows and role isolation. `pre-deploy` (called only by the
+dispatcher, writers stopped, lock held) does the full rehearsal and gates every
+rollout; it never uploads, because the writers are down while it runs. Retention keeps the **two newest complete** dump+metadata pairs (a marker
+of `verified: list|restore` is required) and removes older pairs only after the new
+one is verified; failures (and SIGTERM) delete only their own partial files, rehearsal
+container/volume and credentials file, and other files are never touched. The daily
+03:30 UTC timer shares the production lock with deployments. `mnema-local-backup newest`
+prints the newest complete backup; the dispatcher status and the health monitor use it,
+so there is one definition of "complete".
+
+Optional offsite copy (the dispatcher uploads the pre-deploy dump after a successful
+rollout, bounded to 5 minutes, and the daily timer uploads its own; `mnema-local-backup
+offsite <backup-name>` re-uploads one and exits 3 when offsite is not configured):
+when root-only `/etc/mnema/production/offsite.env` (0600) exists with
+`MNEMA_OFFSITE_ENDPOINT` (`https://storage.yandexcloud.net`), `_REGION`
+(`ru-central1`), `_BUCKET`, `_PREFIX` (for example `mnema-vps/postgres`),
+`_KMS_KEY_ID`, `_ACCESS_KEY_ID` and `_SECRET_ACCESS_KEY`, every backup is uploaded
+with one `curl --aws-sigv4` PUT per object to
+`<prefix>/<backup-name>/<backup-name>.dump` and `.json`. The bucket policy requires
+server-side KMS encryption, `x-amz-acl: private` and write-once semantics, which the
+upload sends (`x-amz-server-side-encryption: aws:kms`, the key id, `If-None-Match: *`);
+an existing object counts as stored. Credentials are read from a 0600 temporary
+`curl -K` file in `/run`, never from argv. The uploader identity must be write-only
+(no read, list or delete); expiry is a bucket lifecycle rule, not this tool. Verified
+against the real bucket: the same key a second time returns 412 (treated as stored),
+versioning is enabled, the uploader gets 403 on DELETE, on writes outside the prefix and
+on writes without SSE-KMS. Each curl call is bounded (`--max-time 600`, abort below
+1 KiB/s for 60 s). Offsite
+failure never fails a local backup or rollout; it is reported as `backup`/`offsite`
+warnings and by the health alert below. Without `offsite.env` nothing leaves the host.
 
 Read alerts with `sudo journalctl -t mnema-health -p err`; inspect timer/service
 states and backup failures with systemd. Checks cover both DB-backed readiness
-endpoints, nginx, public HTTPS, disk and uncertain rollout. Alerts are local;
+endpoints, nginx, public HTTPS, disk, uncertain rollout (`rollout_reconciliation`),
+`backup_stale` (newest complete backup older than 26 h) and, when `offsite.env`
+exists, `offsite_stale` (last successful upload older than 26 h). Alerts are local;
 an external notification destination remains to be configured by the owner.
 Monitor alerts contain component names only. Frontend access logging is disabled;
 its request error log is discarded, and Caddy's operational error logger removes
@@ -216,10 +249,14 @@ it never appears in Caddy logs. Do not enable raw request/body logging later.
 The verified maintenance fallback restores the saved runtime-maintenance Caddyfile
 (with the same Unix admin address) and stops only application containers;
 retain PostgreSQL and every volume/dump. Do not claim Docker down reverses
-migrations. Dispatcher rollback selects only the recorded previous SHA,
-requires current-release schema compatibility and keeps a durable pending marker
-on uncertainty. Data recovery is a separate reviewed operation using the retained
-dump; no production restore, volume removal or broad prune is authorized here.
+migrations. Dispatcher rollback (`vps-deploy.yaml` operation `rollback`) selects only
+the recorded previous SHA and is allowed only when the current release recorded an
+unchanged schema fingerprint (`rollback_compatible`); it repeats the quiesce,
+backup-with-rehearsal and pending-marker flow. After a schema change, recover by
+roll-forward or from the pre-deploy dump in a separate reviewed operation; no
+production restore, volume removal or broad prune is authorized here. Each deployment
+prunes only local `ghcr.io/mattoyuzuru/mnema/*` images outside the current and
+previous release.
 
 Sources: [Docker Ubuntu installation](https://docs.docker.com/engine/install/ubuntu/),
 [host networking](https://docs.docker.com/engine/network/drivers/host/),

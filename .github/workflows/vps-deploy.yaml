@@ -1,40 +1,48 @@
-name: VPS production deployment
+name: VPS production operations
 
+# Releases run only in Main CI. This entry is for manual inspection and recovery.
 on:
   workflow_dispatch:
     inputs:
-      release_sha:
-        description: Current main SHA already admitted by the production administrator
-        type: string
+      operation:
+        description: status (read-only), verify (live images and readiness) or rollback (recorded compatible previous release)
+        type: choice
         required: true
+        default: status
+        options:
+          - status
+          - verify
+          - rollback
 
 permissions: {}
 
 jobs:
-  deploy-vps:
+  operate-vps:
     if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 90
     concurrency:
-      group: mnema-vps-production
+      group: mnema-vps-operations
       cancel-in-progress: false
     permissions:
       contents: read
     environment:
       name: prod
-      url: https://mnema.app
+      # Required reviewers and the environment secrets still apply, but no GitHub Deployment is
+      # created, so status/verify/rollback never move the release baseline used by Main CI.
+      # https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/control-deployments
+      deployment: false
     steps:
-      - name: Checkout protected deployment revision
+      - name: Checkout protected operations revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Deploy only the current admitted main release
+      - name: Run the fixed production operation
         env:
-          GH_TOKEN: ${{ github.token }}
-          MNEMA_RELEASE_SHA: ${{ inputs.release_sha }}
+          MNEMA_OPERATION: ${{ inputs.operation }}
           MNEMA_DEPLOY_HOST: ${{ vars.PROD_DEPLOY_HOST }}
           MNEMA_DEPLOY_USER: ${{ vars.PROD_DEPLOY_USER }}
           MNEMA_DEPLOY_SSH_KEY: ${{ secrets.PROD_DEPLOY_SSH_KEY }}
           MNEMA_DEPLOY_KNOWN_HOSTS: ${{ secrets.PROD_DEPLOY_KNOWN_HOSTS }}
-        run: bash scripts/deploy-vps.sh
+        run: bash scripts/deploy-vps.sh --operation "$MNEMA_OPERATION"

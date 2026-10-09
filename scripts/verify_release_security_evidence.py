@@ -547,7 +547,7 @@ def validate_workflow_contract(path: Path) -> None:
     digest_upload = workflow_step(
         content,
         "Upload immutable image digest",
-        "Checkout release revision",
+        "Checkout verified source",
     )
     digest_keys = workflow_step_keys(digest_upload)
     if digest_keys != ["uses", "with"]:
