@@ -115,9 +115,12 @@ class RuntimeTest(unittest.TestCase):
         self.assertNotIn('media-worker', services)       # per-job containers are started by the root media runner, not by Compose
         self.assertNotIn('media-runner', services)
         learning = services['learning']
-        spool = {'type': 'bind', 'source': '/var/lib/mnema/media-work/spool', 'target': '/var/lib/mnema-media',
-                 'bind': {'create_host_path': False}}
-        self.assertEqual(learning['volumes'], [spool])
+        [spool] = learning['volumes']
+        self.assertEqual({key: spool[key] for key in ('type', 'source', 'target')},
+                         {'type': 'bind', 'source': '/var/lib/mnema/media-work/spool', 'target': '/var/lib/mnema-media'})
+        # Newer Compose omits create_host_path when it is false (its zero value); never true.
+        self.assertIn(spool.get('bind', {}), ({}, {'create_host_path': False}))
+        self.assertIn('bind: {create_host_path: false}', (ROOT / 'deploy/production/compose.yaml').read_text())
         self.assertEqual(learning['user'], '10001:10001')   # no shared group any more: nothing else touches the spool as non-root
         for name in ('identity-account', 'frontend', 'postgres'):
             self.assertNotIn('/var/lib/mnema', json.dumps(services[name].get('volumes')))
