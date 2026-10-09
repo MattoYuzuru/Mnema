@@ -30,8 +30,8 @@ class PromoRepository {
     /** A code with the number of redemptions it has had. */
     record CodeWithCount(Code code, long redemptions) { }
 
-    /** The pending discount of an account. */
-    record Discount(int percent, String plan, Instant validUntil) { }
+    /** The pending discount of an account and the code that earned it. */
+    record Discount(int percent, String plan, Instant validUntil, UUID codeId) { }
 
     private static final String CODE_COLUMNS = "code_id,code_hint,type,plan,days,months,percent,valid_from,valid_until,"
             + "max_redemptions,once_per_account,channel,enabled,created_at,created_by";
@@ -114,10 +114,16 @@ class PromoRepository {
     }
 
     Optional<Discount> pendingDiscount(UUID owner, Instant now) {
-        return jdbc.sql("SELECT percent,plan,valid_until FROM app_learning.promo_discount WHERE owner_id=:owner AND valid_until>:now")
+        return jdbc.sql("SELECT percent,plan,valid_until,code_id FROM app_learning.promo_discount WHERE owner_id=:owner AND valid_until>:now")
                 .param("owner", owner).param("now", time(now))
                 .query((row, number) -> new Discount(row.getInt("percent"), row.getString("plan"),
-                        row.getTimestamp("valid_until").toInstant())).optional();
+                        row.getTimestamp("valid_until").toInstant(), row.getObject("code_id", UUID.class))).optional();
+    }
+
+    /** Deletes the pending discount only while it is still the one earned by {@code codeId}: a stronger code redeemed meanwhile stays. */
+    boolean deleteDiscount(UUID owner, UUID codeId) {
+        return jdbc.sql("DELETE FROM app_learning.promo_discount WHERE owner_id=:owner AND code_id=:code")
+                .param("owner", owner).param("code", codeId).update() == 1;
     }
 
     /** A page of codes, newest first; {@code after} is the last code of the previous page (null for the first page). */

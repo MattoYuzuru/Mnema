@@ -6,9 +6,11 @@ import java.util.Map;
 /**
  * The body of {@code GET /api/plans}: what the paywall shows. Prices and highlights are computed from configuration and
  * {@code contracts/usage/allowances-v1.json}; nothing here grants anything. {@code experiments} maps each enabled A/B experiment to the variant the
- * server assigned to the owner.
+ * server assigned to the owner. {@code checkout} is {@code AVAILABLE} when the owner may start a payment now (billing, #389) and {@code UNAVAILABLE}
+ * otherwise; it only decides whether the paywall shows a payment button.
  */
-public record PlansView(CurrentView current, List<PlanView> plans, Map<String, String> experiments, PendingDiscount pendingDiscount) {
+public record PlansView(CurrentView current, List<PlanView> plans, Map<String, String> experiments, PendingDiscount pendingDiscount,
+                        String checkout) {
 
     /**
      * The discount a promo code earned, waiting for a purchase (#79); {@code plan} is {@code PLUS}, {@code PRO} or null for either. The

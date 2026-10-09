@@ -3,6 +3,7 @@ package app.mnema.learning.usage;
 import app.mnema.learning.experiment.ExperimentAssignments;
 import app.mnema.learning.profile.LearningGoal;
 import app.mnema.learning.promo.PromoDiscounts;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -25,15 +26,17 @@ class PlansService {
     private final UsageClock clock;
     private final ExperimentAssignments experiments;
     private final PromoDiscounts discounts;
+    private final ObjectProvider<CheckoutAvailability> checkout;
 
     PlansService(EntitlementSource entitlements, AllowanceCatalog catalog, PlanSettings settings, UsageClock clock,
-                 ExperimentAssignments experiments, PromoDiscounts discounts) {
+                 ExperimentAssignments experiments, PromoDiscounts discounts, ObjectProvider<CheckoutAvailability> checkout) {
         this.entitlements = entitlements;
         this.catalog = catalog;
         this.settings = settings;
         this.clock = clock;
         this.experiments = experiments;
         this.discounts = discounts;
+        this.checkout = checkout;
     }
 
     PlansView read(UUID owner) {
@@ -48,7 +51,13 @@ class PlansService {
                 Wire.time(entitlement.validUntil()), false, entitlement.source().name()), plans,
                 experiments.variants(owner), discounts.pending(owner)
                 .map(pending -> new PlansView.PendingDiscount(pending.percent(), pending.plan(), Wire.time(pending.validUntil())))
-                .orElse(null));
+                .orElse(null), checkoutState(owner));
+    }
+
+    /** {@code UNAVAILABLE} unless a billing implementation exists and says yes: a deployment without billing never offers a payment. */
+    private String checkoutState(UUID owner) {
+        CheckoutAvailability availability = checkout.getIfAvailable();
+        return availability != null && availability.available(owner) ? "AVAILABLE" : "UNAVAILABLE";
     }
 
     private PlansView.PlanView plan(Plan plan) {

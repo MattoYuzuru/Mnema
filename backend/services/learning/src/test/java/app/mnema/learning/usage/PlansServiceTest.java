@@ -1,6 +1,7 @@
 package app.mnema.learning.usage;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -26,9 +27,27 @@ class PlansServiceTest {
     }
 
     private PlansView view(boolean teaser) {
+        return view(teaser, new StaticListableBeanFactory());
+    }
+
+    private PlansView view(boolean teaser, StaticListableBeanFactory beans) {
         return new PlansService(free, catalog, settings(teaser), CLOCK,
                 org.mockito.Mockito.mock(app.mnema.learning.experiment.ExperimentAssignments.class),
-                org.mockito.Mockito.mock(app.mnema.learning.promo.PromoDiscounts.class)).read(UUID.randomUUID());
+                org.mockito.Mockito.mock(app.mnema.learning.promo.PromoDiscounts.class),
+                beans.getBeanProvider(CheckoutAvailability.class)).read(UUID.randomUUID());
+    }
+
+    @Test
+    void checkoutIsUnavailableWithoutBillingAndFollowsItsAnswerWhenThereIsOne() {
+        assertThat(view(false).checkout()).isEqualTo("UNAVAILABLE");
+
+        var beans = new StaticListableBeanFactory();
+        beans.addBean("availability", (CheckoutAvailability) owner -> true);
+        assertThat(view(false, beans).checkout()).isEqualTo("AVAILABLE");
+
+        var closed = new StaticListableBeanFactory();
+        closed.addBean("availability", (CheckoutAvailability) owner -> false);
+        assertThat(view(false, closed).checkout()).isEqualTo("UNAVAILABLE");
     }
 
     @Test
