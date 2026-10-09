@@ -48,7 +48,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Import(BillingTestConfiguration.class)
 abstract class BillingIntegrationTest extends PostgresIntegrationTest {
+    private static volatile BillingTestConfiguration.MutableClock clockInUse;
     static final FakeBank BANK = new FakeBank();
+    /** «Мой налог»: receipts are ON against it; the worker is driven by the tests, never by its timer (the interval is an hour). */
+    static final FakeMyTax NPD = new FakeMyTax(() -> clockInUse == null ? Instant.now() : clockInUse.now());
 
     @DynamicPropertySource
     static void billing(DynamicPropertyRegistry registry) {
@@ -59,6 +62,12 @@ abstract class BillingIntegrationTest extends PostgresIntegrationTest {
         registry.add("learning.billing.tbank.password-base64", () -> BillingFixtures.PASSWORD_BASE64);
         registry.add("learning.billing.request-timeout", () -> "PT5S");
         registry.add("learning.billing.notification-timeout", () -> "PT1S");
+        registry.add("learning.billing.npd.receipts", () -> "ON");
+        registry.add("learning.billing.npd.inn", () -> FakeMyTax.INN);
+        registry.add("learning.billing.npd.password-base64", () -> FakeMyTax.PASSWORD_BASE64);
+        registry.add("learning.billing.npd.base-url", NPD::baseUrl);
+        registry.add("learning.billing.npd.interval", () -> "PT1H");
+        registry.add("learning.billing.npd.request-timeout", () -> "PT1S");
     }
 
     @LocalServerPort protected int port;
@@ -71,6 +80,7 @@ abstract class BillingIntegrationTest extends PostgresIntegrationTest {
     @Autowired protected BillingRepository repository;
     @Autowired protected BillingSettings settings;
     @Autowired protected TBankClient bank;
+    @Autowired protected NpdReceipts npdReceipts;
     @Autowired protected CommandReceiptService receipts;
     @Autowired protected PlanPrices prices;
     @Autowired protected PromoDiscounts discounts;
@@ -83,7 +93,9 @@ abstract class BillingIntegrationTest extends PostgresIntegrationTest {
     @BeforeEach
     void resetBankAndClock() {
         clock.set(BillingTestConfiguration.START);
+        clockInUse = clock;
         BANK.reset();
+        NPD.reset();
     }
 
     @AfterEach
