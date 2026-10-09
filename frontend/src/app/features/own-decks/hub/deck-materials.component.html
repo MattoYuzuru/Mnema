@@ -39,7 +39,7 @@
         <app-segmented-choice legend="Порядок" [options]="sortOptions" [value]="sort()" (valueChange)="changeSort($event)" />
 
         <app-selectable-material-list [deckId]="deckId()" [items]="items()" [total]="total()" [selection]="selection"
-          [exemplars]="exemplars()" [starPending]="starPending()" [hasMore]="hasMore()" [loadingMore]="loadingMore()"
+          [exemplars]="exemplars()" [starPending]="starPending()" [nextCursor]="meta()?.nextCursor ?? null" [loadingMore]="loadingMore()"
           [moreError]="moreError()" (toggleExemplar)="toggleExemplar($event)" (loadMore)="loadMore()" />
 
         @if (selectionCount() > 0) {

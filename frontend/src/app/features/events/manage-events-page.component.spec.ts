@@ -1,6 +1,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { ManageEventsPageComponent } from './manage-events-page.component';
 import { TEST_EVENT } from './events-test-data';
@@ -20,9 +21,9 @@ describe('owner event editor', () => {
         await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
         await fixture.whenStable(); fixture.detectChanges();
     }
-    async function admit(): Promise<void> {
+    async function admit(nextCursor: string | null = null): Promise<void> {
         http.expectOne('/api/admin/events/access').flush({ allowed: true }); await settle();
-        http.expectOne('/api/admin/events').flush({ items: [TEST_EVENT], nextCursor: null }); await settle();
+        http.expectOne('/api/admin/events').flush({ items: [TEST_EVENT], nextCursor }); await settle();
     }
     function click(text: string): void {
         const button = Array.from(root.querySelectorAll('button')).find(button => button.textContent?.includes(text));
@@ -41,6 +42,21 @@ describe('owner event editor', () => {
         http.expectOne('/api/admin/events/access').flush({}, { status: 403, statusText: 'Forbidden' }); await settle();
         expect(root.textContent).toContain('Доступ закрыт'); expect(root.querySelector('form')).toBeNull();
         http.expectNone('/api/admin/events');
+    });
+
+    it('preserves a dirty editor and loaded entries across continuation failure and retry', async () => {
+        await admit('older'); fill();
+        const next = () => fixture.debugElement.query(By.css('app-auto-load')).triggerEventHandler('loadNext');
+        next(); next();
+        http.expectOne('/api/admin/events?cursor=older').flush({}, { status: 503, statusText: 'Unavailable' }); await settle();
+        expect(root.querySelectorAll('.event-list li')).toHaveLength(1);
+        expect((root.querySelector('input') as HTMLInputElement).value).toBe('Обновление');
+        root.querySelector<HTMLButtonElement>('app-auto-load button')!.click();
+        http.expectOne('/api/admin/events?cursor=older').flush({ items: [{ ...TEST_EVENT, eventId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee' }], nextCursor: null }); await settle();
+        expect(root.querySelectorAll('.event-list li')).toHaveLength(2);
+        expect((root.querySelector('input') as HTMLInputElement).value).toBe('Обновление');
+        vi.spyOn(window, 'confirm').mockReturnValue(false);
+        expect(fixture.componentInstance.canLeave()).toBe(false);
     });
 
     it('can retry access checks and validates an empty draft before sending', async () => {

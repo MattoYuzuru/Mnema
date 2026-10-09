@@ -31,6 +31,26 @@ describe('ItemApiService', () => {
     });
     afterEach(() => http.verify());
 
+    it('allows a 50-material hub page and validates the response against the requested bound', async () => {
+        const rows = Array.from({ length: 50 }, (_, index) => ({ ...summary, memberKey: id(String(1000 + index)),
+            itemRevisionId: id(String(2000 + index)), ordinal: index, title: `Материал ${index}`, exemplar: false }));
+        const read = firstValueFrom(api.list(deckId, { limit: 50 }));
+        http.expectOne(`/api/decks/${deckId}/items?limit=50`).flush({ deckId, deckRevisionId, deckVersion: '8', total: 50,
+            exemplars, items: rows, nextCursor: null }, { headers: { ...headers, ETag: '"8"' } });
+        expect((await read).items).toHaveLength(50);
+        const oversized = firstValueFrom(api.list(deckId, { limit: 50 }));
+        http.expectOne(`/api/decks/${deckId}/items?limit=50`).flush({ deckId, deckRevisionId, deckVersion: '8', total: 51,
+            exemplars, items: [...rows, { ...rows[0], memberKey: id('9000') }], nextCursor: null },
+            { headers: { ...headers, ETag: '"8"' } });
+        await expect(oversized).rejects.toThrowError(AuthoringProtocolError);
+    });
+
+    it('rejects page sizes outside the server contract before a network request', async () => {
+        for (const limit of [0, -1, 101, 1.5])
+            await expect(firstValueFrom(api.list(deckId, { limit }))).rejects.toThrowError(AuthoringProtocolError);
+        http.expectNone(request => request.url.includes('/items'));
+    });
+
     it('reads bounded summaries and exact native detail through private no-store responses', async () => {
         const page = firstValueFrom(api.list(deckId));
         http.expectOne(`/api/decks/${deckId}/items?limit=20`).flush({

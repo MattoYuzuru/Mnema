@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, computed, effect, inject, untracked } from '@angular/core';
 import { DatePipe } from '@angular/common';
+import { AutoLoadComponent } from '../../shared/auto-load.component';
 import { RouterLink } from '@angular/router';
 import { copyFor } from '../goal/goal-copy';
 import { LearningGoalStore } from '../goal/learning-goal.store';
@@ -13,7 +14,7 @@ const VISIBLE_RECHECK_MS = 10_000;
 
 @Component({
     selector: 'app-own-decks-list-page',
-    imports: [DatePipe, RouterLink, DeckDescriptionComponent],
+    imports: [DatePipe, RouterLink, DeckDescriptionComponent, AutoLoadComponent],
     providers: [OwnDecksStore],
     templateUrl: './own-decks-list-page.component.html',
     styleUrl: './own-decks-page.css',

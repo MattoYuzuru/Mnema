@@ -1327,7 +1327,8 @@ describe('ExerciseAuthoringPageComponent', () => {
             component().page.set({ ...component().page()!, nextCursor: 'next' });
             refresh();
             api.list.mockReturnValue(of({ ...emptyPage, total: 3, exercises: [summaryOf(other, id('61'))], nextCursor: null }));
-            buttonByText('Показать ещё').click();
+            fixture.componentInstance.loadMore();
+            fixture.componentInstance.loadMore();
             refresh();
             expect(page().querySelectorAll('#existing-exercises li').length).toBe(3);
         });

@@ -1,4 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 
 import { ItemSummary } from '../../authoring/authoring.models';
@@ -119,6 +120,31 @@ describe('SelectableMaterialListComponent', () => {
         expect(selection.count()).toBe(0);
     });
 
+    it('keeps the whole-deck offer and its focused button while new unselected rows arrive, including the last page', () => {
+        open(rows, 10);
+        header().click(); fixture.detectChanges();
+        const button = root().querySelector<HTMLButtonElement>('.escalate button')!;
+        document.body.append(root()); button.focus();
+        fixture.componentRef.setInput('items', [...rows, row(5), row(6), row(7), row(8), row(9)]);
+        fixture.detectChanges();
+        expect(selection.count()).toBe(5);
+        expect(header().indeterminate).toBe(true);
+        expect(root().querySelector('.escalate button')).toBe(button);
+        expect(document.activeElement).toBe(button);
+        expect(root().querySelector('.escalate')?.textContent).toContain('Выбрано загруженных: 5.');
+        button.click(); fixture.detectChanges();
+        expect(selection.allInDeck()).toBe(true);
+        expect(selection.count()).toBe(10);
+        root().remove();
+    });
+
+    it('offers a whole-deck scope for an entirely loaded list above the explicit-selection limit', () => {
+        open(Array.from({ length: 101 }, (_, index) => row(index)), 101);
+        header().click(); fixture.detectChanges();
+        root().querySelector<HTMLButtonElement>('.escalate button')!.click(); fixture.detectChanges();
+        expect(selection.selection()).toEqual({ allInDeck: true, except: [] });
+    });
+
     it('does not offer the escalation when everything is already loaded', () => {
         open();
         header().click();
@@ -171,23 +197,24 @@ describe('SelectableMaterialListComponent', () => {
         });
     });
 
-    it('shows «Показать ещё» only with more pages, reports intent, disables while loading and keeps a failure visible', () => {
+    it('delegates continuation to auto-load, keeps loading named and offers explicit retry on failure', () => {
         const component = open(rows, 50);
-        expect(root().querySelector('.more')).toBeNull();
-        fixture.componentRef.setInput('hasMore', true);
+        expect(root().querySelector('app-auto-load button')).toBeNull();
+        fixture.componentRef.setInput('nextCursor', 'next');
         fixture.detectChanges();
         let requests = 0;
         component.loadMore.subscribe(() => requests++);
-        const more = root().querySelector<HTMLButtonElement>('.more button')!;
-        expect(more.textContent?.trim()).toBe('Показать ещё (45)');
-        more.click();
+        expect(root().textContent).not.toContain('Показать ещё');
+        fixture.debugElement.query(By.css('app-auto-load')).triggerEventHandler('loadNext');
         expect(requests).toBe(1);
         fixture.componentRef.setInput('loadingMore', true);
         fixture.detectChanges();
-        expect(more.disabled).toBe(true);
+        expect(root().querySelector('app-auto-load [role=status]')?.textContent).toContain('Загружаем');
         fixture.componentRef.setInput('loadingMore', false);
         fixture.componentRef.setInput('moreError', true);
         fixture.detectChanges();
-        expect(root().querySelector('.problem')?.textContent).toContain('Загруженные остались на месте');
+        expect(root().querySelector('app-auto-load [role=alert]')?.textContent).toContain('Загруженные остались на месте');
+        root().querySelector<HTMLButtonElement>('app-auto-load button')!.click();
+        expect(requests).toBe(2);
     });
 });

@@ -1,6 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, afterRenderEffect, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, afterRenderEffect, computed, inject, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { AutoLoadComponent } from '../../shared/auto-load.component';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { catchError, forkJoin, of } from 'rxjs';
@@ -16,7 +17,7 @@ import { CaptureNote, newCommandId } from './authoring.models';
 
 @Component({
     selector: 'app-capture-page',
-    imports: [ReactiveFormsModule, RouterLink, MicButtonComponent],
+    imports: [ReactiveFormsModule, RouterLink, MicButtonComponent, AutoLoadComponent],
     templateUrl: './capture-page.component.html',
     styleUrls: ['./authoring-page.css', './capture-page.component.css'],
     changeDetection: ChangeDetectionStrategy.OnPush,
@@ -42,7 +43,6 @@ export class CapturePageComponent {
     private readonly selectionBar = viewChild<ElementRef<HTMLElement>>('selectionBar');
     private readonly hostElement = inject<ElementRef<HTMLElement>>(ElementRef);
     private readonly injector = inject(Injector);
-    readonly loadSentinel = viewChild<ElementRef<HTMLElement>>('loadSentinel');
     readonly busy = signal(false);
     readonly error = signal<string | null>(null);
     readonly recovery = signal<'reload' | 'retry' | null>(null);
@@ -87,15 +87,6 @@ export class CapturePageComponent {
         this.capabilities.read().pipe(catchError(() => of(CAPABILITIES_UNAVAILABLE)), takeUntilDestroyed(this.destroyRef))
             .subscribe(result => { this.generationAvailable.set(result.aiGeneration.available); this.speechAvailable.set(result.speechToText.available); });
         this.load();
-        effect(onCleanup => {
-            const sentinel = this.loadSentinel()?.nativeElement;
-            if (!sentinel || !this.nextCursor() || this.loading() || this.loadingMore() || this.moreError()) return;
-            const observer = new IntersectionObserver(entries => {
-                if (entries.some(entry => entry.isIntersecting)) this.loadMore();
-            }, { rootMargin: '0px 0px 800px 0px' });
-            observer.observe(sentinel);
-            onCleanup(() => observer.disconnect());
-        });
         // The rail can grow when labels wrap or text is enlarged. Reserve its measured height on the viewport,
         // then reveal the whole checkbox label when Space inserts it beneath an already focused selection.
         afterRenderEffect(onCleanup => {

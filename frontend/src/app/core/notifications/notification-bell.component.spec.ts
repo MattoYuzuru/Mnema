@@ -1,5 +1,6 @@
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 
 import { AuthService } from '../../auth.service';
@@ -84,7 +85,7 @@ describe('NotificationBellComponent', () => {
     it('shows the empty state when there is nothing to list', async () => {
         await render();
         expect(root().querySelector('h2')?.textContent).toBe('Входящие');
-        expect(root().querySelector('ul')).toBeNull();
+        expect(root().querySelectorAll('ul li')).toHaveLength(0);
         expect(root().querySelector('.empty')?.textContent).toContain('Пока тихо');
     });
 
@@ -127,15 +128,21 @@ describe('NotificationBellComponent', () => {
         await fixture.whenStable();
     });
 
-    it('offers older notifications and any error in an alert', async () => {
+    it('automatically continues inside the popover and keeps pagination failures explicitly retryable', async () => {
         center.items.set([note(1)]);
         center.olderCursor.set('RDE');
+        center.panelOpen.set(true);
         center.panelError.set('Не удалось убрать уведомление. Попробуйте ещё раз.');
         await render();
         expect(root().querySelector('[role=alert]')?.textContent).toContain('Не удалось убрать');
         const loadMore = vi.spyOn(center, 'loadMore').mockResolvedValue();
-        root().querySelector<HTMLButtonElement>('.more')!.click();
+        expect(root().querySelector('.more')).toBeNull();
+        fixture.debugElement.query(By.css('app-auto-load')).triggerEventHandler('loadNext');
         expect(loadMore).toHaveBeenCalledOnce();
+        center.moreError.set('Не удалось загрузить остальные уведомления.');
+        await render();
+        root().querySelector<HTMLButtonElement>('app-auto-load button')!.click();
+        expect(loadMore).toHaveBeenCalledTimes(2);
         expect(api.list).not.toHaveBeenCalled();
     });
 });

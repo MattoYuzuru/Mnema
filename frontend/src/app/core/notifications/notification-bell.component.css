@@ -74,7 +74,7 @@ a.text:focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outlin
 .fresh { color: var(--mn-ink); font: 700 .68rem/1.4 var(--mn-font-mono, ui-monospace, monospace); letter-spacing: .08em; text-transform: uppercase; }
 .when { color: var(--mn-muted); font-size: .78rem; }
 
-.dismiss, .more {
+.dismiss {
     min-inline-size: var(--mn-touch-min, 2.75rem);
     min-block-size: var(--mn-touch-min, 2.75rem);
     margin: 0;
@@ -88,12 +88,10 @@ a.text:focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outlin
 }
 
 .dismiss { font-size: 1.4rem; line-height: 1; margin-block-start: -.6rem; margin-inline-end: -.6rem; }
-.more { display: block; inline-size: 100%; border: 1px solid var(--mn-ink); margin-block-start: .75rem; padding-inline: 1rem; font: 600 .85rem/1.25 var(--mn-font-mono, ui-monospace, monospace); }
-.more:disabled { opacity: .65; cursor: progress; }
-.dismiss:focus-visible, .more:focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: -3px; }
+.dismiss:focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: -3px; }
 
 @media (forced-colors: active) {
-    .panel, .more { border-color: CanvasText; box-shadow: none; }
+    .panel { border-color: CanvasText; box-shadow: none; }
     .badge { border: 1px solid CanvasText; background: Canvas; color: CanvasText; }
     .bell { color: ButtonText; }
 }

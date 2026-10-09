@@ -14,7 +14,7 @@ import { constellationFor } from './deck-constellation';
       </div>
     } }`,
     styles: [`
-      :host { position: absolute; inset: 0; pointer-events: none; user-select: none; overflow: clip; }
+      :host { position: absolute; inset: 0; pointer-events: none; user-select: none; overflow: clip; overflow-anchor: none; }
       .rail { position: absolute; top: calc(5% + 2.25rem); bottom: calc(5% + 2.25rem); }
       span { position: absolute; inline-size: 3rem; block-size: 3rem; text-align: center;
         font: 3rem/1 Georgia, serif; color: var(--mn-ink); opacity: .18; }

@@ -25,7 +25,7 @@
       <a class="text-link" routerLink="/decks/new">Создать первую колоду</a>
     </section>
   } @else {
-    <ol class="deck-list">
+    <ol #deckRows class="deck-list">
       @for (deck of state.items; track deck.deckId) {
         <li>
           <a class="deck-row" [routerLink]="['/decks', deck.deckId]">
@@ -46,20 +46,8 @@
       }
     </ol>
 
-    @if (state.phase === 'error') {
-      <div class="notice compact error" role="alert">
-        <p>{{ failureMessage(state.failure!) }}</p>
-        <button class="button secondary" type="button" (click)="store.retryList()">Повторить</button>
-      </div>
-    }
-
-    @if (state.phase === 'ready' && (store.canGoBack() || state.nextCursor !== null)) {
-      <nav class="pager" aria-label="Страницы колод">
-        <button class="button secondary" type="button" (click)="store.loadPrevious()"
-          [disabled]="!store.canGoBack()">Предыдущая страница</button>
-        <button class="button secondary" type="button" (click)="store.loadMore()"
-          [disabled]="state.nextCursor === null">Следующая страница</button>
-      </nav>
-    }
+    <app-auto-load [content]="deckRows" [continuation]="state.nextCursor" [loading]="state.phase === 'loading'"
+      loadingText="Загружаем следующие колоды…" [error]="state.phase === 'error' ? failureMessage(state.failure!) : null"
+      (loadNext)="state.phase === 'error' ? store.retryList() : store.loadMore()" />
   }
 </section>

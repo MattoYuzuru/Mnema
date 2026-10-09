@@ -95,7 +95,6 @@ export class DeckMaterialsComponent {
 
     protected readonly total = computed(() => this.meta()?.total ?? 0);
     protected readonly exemplars = computed<ExemplarBudget>(() => this.meta()?.exemplars ?? { count: 0, limit: 10 });
-    protected readonly hasMore = computed(() => (this.meta()?.nextCursor ?? null) !== null);
     protected readonly selectionCount = this.selection.count;
     protected readonly consequence = computed(() => {
         const state = this.preview();
@@ -114,6 +113,7 @@ export class DeckMaterialsComponent {
     private readonly destroyRef = inject(DestroyRef);
     private readonly revisionId = computed(() => this.meta()?.deckRevisionId ?? null);
     private listLoad: Subscription | null = null;
+    private moreLoad: Subscription | null = null;
     private loadSequence = 0;
     private pendingDelete: { readonly key: string; readonly commandId: string } | null = null;
 
@@ -130,7 +130,7 @@ export class DeckMaterialsComponent {
             onCleanup(() => clearTimeout(timer));
         });
         effect(onCleanup => this.reserveBarSpace(onCleanup));
-        this.destroyRef.onDestroy(() => this.listLoad?.unsubscribe());
+        this.destroyRef.onDestroy(() => { this.listLoad?.unsubscribe(); this.moreLoad?.unsubscribe(); });
     }
 
     /** Lists materials without exercises first and moves the reader to the list; called by the statistics widgets. */
@@ -151,19 +151,25 @@ export class DeckMaterialsComponent {
 
     protected loadMore(): void {
         const meta = this.meta();
-        if (meta === null || meta.nextCursor === null || this.loadingMore()) return;
+        if (meta === null || meta.nextCursor === null || this.loadingMore() || this.listLoad?.closed === false) return;
+        const sequence = this.loadSequence;
         this.loadingMore.set(true);
         this.moreError.set(false);
-        this.items$.list(this.deckId(), { cursor: meta.nextCursor, sort: this.sort(), exerciseCount: true })
+        this.moreLoad = this.items$.list(this.deckId(), { cursor: meta.nextCursor, sort: this.sort(), exerciseCount: true, limit: 50 })
             .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
                 next: next => {
+                    if (sequence !== this.loadSequence) return;
                     this.loadingMore.set(false);
                     if (next.deckRevisionId !== meta.deckRevisionId) { this.staleList(); return; }
                     const { items, ...rest } = next;
                     this.meta.set(rest);
-                    this.items.update(current => [...current, ...items]);
+                    this.items.update(current => {
+                        const known = new Set(current.map(item => item.memberKey));
+                        return [...current, ...items.filter(item => !known.has(item.memberKey))];
+                    });
                 },
                 error: (error: unknown) => {
+                    if (sequence !== this.loadSequence) return;
                     this.loadingMore.set(false);
                     if (hubFailureOf(error)?.status === 412) this.staleList(); else this.moreError.set(true);
                 }
@@ -272,14 +278,15 @@ export class DeckMaterialsComponent {
     private reload(deckId: string, sort: ItemSort): void {
         const sequence = ++this.loadSequence;
         this.listLoad?.unsubscribe();
+        this.moreLoad?.unsubscribe();
         this.sort.set(sort);
         this.selection.clear();
         this.pendingDelete = null;
         this.problem.set(null);
         this.moreError.set(false);
         this.loadingMore.set(false);
-        if (this.meta() === null || this.phase() === 'error') this.phase.set('loading');
-        this.listLoad = this.items$.list(deckId, { sort, exerciseCount: true }).subscribe({
+        this.phase.set('loading');
+        this.listLoad = this.items$.list(deckId, { sort, exerciseCount: true, limit: 50 }).subscribe({
             next: page => {
                 if (sequence !== this.loadSequence) return;
                 const { items, ...rest } = page;

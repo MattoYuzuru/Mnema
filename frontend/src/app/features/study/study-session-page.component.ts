@@ -8,6 +8,7 @@ import { LearnerContent, Mechanic } from '../../content/exercise/exercise-conten
 import { QuietZone } from '../../core/notifications/quiet-zone';
 import { MnemaSelectComponent, MnemaSelectOption } from '../../core/controls/mnema-select.component';
 import { NewBadgeComponent } from '../../shared/new-badge.component';
+import { AutoLoadComponent } from '../../shared/auto-load.component';
 import { AssessmentSelfCheckComponent, AssessmentWaitingComponent } from './assessment-views.component';
 import { LearnerExerciseComponent, PairChecker } from './learner-exercise.component';
 import { LearnerFeedbackComponent, feedbackTitle } from './learner-feedback.component';
@@ -45,7 +46,7 @@ const TASK_OPEN: readonly Phase[] = ['answering', 'revealed', 'submitting', 'sel
 
 @Component({
     selector: 'app-study-session-page',
-    imports: [RouterLink, MnemaSelectComponent, LearnerExerciseComponent, LearnerFeedbackComponent, NewBadgeComponent,
+    imports: [RouterLink, MnemaSelectComponent, LearnerExerciseComponent, LearnerFeedbackComponent, NewBadgeComponent, AutoLoadComponent,
         AssessmentWaitingComponent, AssessmentSelfCheckComponent],
     providers: [StudyAssessmentFlow],
     templateUrl: './study-session-page.component.html',
@@ -75,10 +76,10 @@ export class StudySessionPageComponent {
     readonly pending = signal<AttemptCommand | null>(null);
     readonly progress = signal<readonly MaterialProgress[]>([]);
     readonly progressNextCursor = signal<string | null>(null);
+    readonly progressContext = signal(0);
     readonly progressUnavailable = signal(false);
     readonly progressLoading = signal(false);
     readonly progressMoreError = signal(false);
-    readonly progressSentinel = viewChild<ElementRef<HTMLElement>>('progressSentinel');
     readonly replaySources = signal<readonly ReplaySource[]>([]);
     readonly replayOptions = computed<readonly MnemaSelectOption[]>(() => this.replaySources().map(source => ({
         value: source.sessionId,
@@ -160,16 +161,6 @@ export class StudySessionPageComponent {
             });
         });
         this.destroyRef.onDestroy(() => this.quietZone.set(false));
-        effect(onCleanup => {
-            const sentinel = this.progressSentinel()?.nativeElement;
-            const cursor = this.progressNextCursor();
-            if (!sentinel || !cursor || this.progressLoading() || this.progressMoreError()) return;
-            const observer = new IntersectionObserver(entries => {
-                if (entries.some(entry => entry.isIntersecting)) this.loadMoreProgress();
-            }, { rootMargin: '0px 0px 700px 0px' });
-            observer.observe(sentinel);
-            onCleanup(() => observer.disconnect());
-        });
         const deckId = this.route.snapshot.paramMap.get('deckId');
         if (deckId === null) throw new Error('Study route requires deckId.');
         this.deckId = deckId.toLowerCase();
@@ -669,16 +660,21 @@ export class StudySessionPageComponent {
     }
 
     private loadProgress(cursor: string | null = null, append = false): void {
+        if (!append) this.progressContext.update(value => value + 1);
+        const context = this.progressContext();
         this.progressLoading.set(true);
         this.progressMoreError.set(false);
         this.api.progress(this.deckId, 20, cursor).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
             next: page => {
-                this.progress.set(append ? [...this.progress(), ...page.items] : page.items);
+                if (context !== this.progressContext()) return;
+                const known = new Set(this.progress().map(item => item.memberKey));
+                this.progress.set(append ? [...this.progress(), ...page.items.filter(item => !known.has(item.memberKey))] : page.items);
                 this.progressNextCursor.set(page.nextCursor);
                 this.progressUnavailable.set(false);
                 this.progressLoading.set(false);
             },
             error: () => {
+                if (context !== this.progressContext()) return;
                 if (!append) this.progress.set([]);
                 if (append) this.progressMoreError.set(true);
                 else this.progressUnavailable.set(true);

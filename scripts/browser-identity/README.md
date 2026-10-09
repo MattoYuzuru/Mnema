@@ -513,6 +513,16 @@ At every screenshot the page must not overflow horizontally at 1440 and 390 px a
 assertions (no offer before 5 s, the offer after 4.7 s) use wall-clock timers: a machine under load can throttle them, so rerun once before
 investigating a failure that names a timer.
 
+## Infinite scroll (`--authoring --media --mechanics`, #397)
+
+`hub_infinite_scroll` creates a disposable 1317-material deck through the real API in bounded batches of 20.
+It verifies a 50-row first page, a real next-page request before the end, stable visible material/selection/focus
+after its response, unique ordered appends to all 1317 rows, a focused whole-deck selection offer surviving appends,
+and a 1440 → 390 px reflow without horizontal overflow. One GET is held by the existing guarded Fetch interceptor
+until the user scroll has settled, then released; no origin/header/budget guard is bypassed. Screenshots are
+`infinite-scroll-1440.png` and `infinite-scroll-390.png`. This is browser/fixture evidence, not physical-device or AT evidence.
+The finite mechanics request envelope adds 250 for the fixture (66 GETs, 66 publications, 27 list pages and shell/assets).
+
 ## Assertions and envelope
 
 Two synthetic accounts and two same-profile browser tabs exercise:

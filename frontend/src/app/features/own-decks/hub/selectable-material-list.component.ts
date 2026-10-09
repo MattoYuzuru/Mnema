@@ -1,10 +1,12 @@
-import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, input, output, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
+import { AutoLoadComponent } from '../../../shared/auto-load.component';
 
 import { ExemplarBudget, ItemSummary } from '../../authoring/authoring.models';
 import { MaterialSelection } from './material-selection';
 import { exercisesText, materialsText } from './deck-hub.text';
+import { BULK_DELETE_EXPLICIT_MAX } from './deck-hub.models';
 
 let nextList = 0;
 
@@ -16,7 +18,7 @@ let nextList = 0;
  */
 @Component({
     selector: 'app-selectable-material-list',
-    imports: [DatePipe, RouterLink],
+    imports: [DatePipe, RouterLink, AutoLoadComponent],
     templateUrl: './selectable-material-list.component.html',
     styleUrl: './selectable-material-list.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -29,7 +31,7 @@ export class SelectableMaterialListComponent {
     readonly exemplars = input.required<ExemplarBudget>();
     /** Materials whose star request is in flight; their star ignores clicks. */
     readonly starPending = input<ReadonlySet<string>>(new Set());
-    readonly hasMore = input(false);
+    readonly nextCursor = input<string | null>(null);
     readonly loadingMore = input(false);
     readonly moreError = input(false);
     readonly toggleExemplar = output<ItemSummary>();
@@ -40,8 +42,20 @@ export class SelectableMaterialListComponent {
     protected readonly headerState = computed(() => this.selection().headerState(this.keys()));
     protected readonly atLimit = computed(() => this.exemplars().count >= this.exemplars().limit);
     protected readonly remaining = computed(() => Math.max(0, this.total() - this.items().length));
+    protected readonly offerWholeDeck = signal(false);
     protected readonly exercisesText = exercisesText;
     protected readonly materialsText = materialsText;
+
+    constructor() {
+        effect(() => {
+            const selection = this.selection();
+            if (selection.empty() || selection.allInDeck()) this.offerWholeDeck.set(false);
+            else if (this.headerState() === 'checked' && (this.remaining() > 0 || this.total() > BULK_DELETE_EXPLICIT_MAX)) {
+                // Keep this explicit second step (and its focused button) when appended rows make the header mixed.
+                this.offerWholeDeck.set(true);
+            }
+        });
+    }
 
     protected titleOf(item: ItemSummary): string { return item.title || 'Материал без текста'; }
 

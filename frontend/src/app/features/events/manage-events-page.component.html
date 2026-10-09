@@ -22,19 +22,15 @@
       <section aria-labelledby="event-list-heading">
         <div class="list-heading"><h2 id="event-list-heading">Все записи</h2><button class="button" type="button" (click)="refresh()" [disabled]="busy() || uncertain()">Обновить</button></div>
         <button class="button primary" type="button" (click)="edit(null)" [disabled]="busy() || uncertain()">Новое событие</button>
-        <ul class="event-list">
+        <ul #eventRows class="event-list">
           @for (event of page()?.items ?? []; track event.eventId) {
             <li><button type="button" class="event-choice" (click)="edit(event)" [disabled]="busy() || uncertain()" [attr.aria-pressed]="selected()?.eventId === event.eventId">
               <span>{{ event.title }}</span><small>{{ date(event.eventDate) }} · {{ event.published ? 'Опубликовано' : 'Черновик' }}</small>
             </button></li>
           } @empty { <li class="hint">Записей пока нет.</li> }
         </ul>
-        @if (history.length || page()?.nextCursor) {
-          <nav class="actions" aria-label="Страницы записей">
-            <button class="button" type="button" (click)="previous()" [disabled]="busy() || uncertain() || !history.length">Назад</button>
-            <button class="button" type="button" (click)="next()" [disabled]="busy() || uncertain() || !page()?.nextCursor">Далее</button>
-          </nav>
-        }
+        <app-auto-load [content]="eventRows" [continuation]="page()?.nextCursor ?? null" [loading]="loadingMore()"
+          [enabled]="!busy() && !uncertain()" [error]="listError()" loadingText="Загружаем следующие записи…" (loadNext)="next()" />
       </section>
       <section class="editor paper-surface" aria-labelledby="editor-heading">
         <h2 id="editor-heading">{{ heading() }}</h2>

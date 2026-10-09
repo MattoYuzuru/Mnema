@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, effect, inject, input, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
+import { AutoLoadComponent } from '../../shared/auto-load.component';
 
 import { GenerationApiService } from './generation-api.service';
 import { describeSessionProgress, formatWorkshopStart, workshopHeading } from './generation-view';
@@ -12,12 +13,12 @@ import { SessionSummary } from './generation.models';
  */
 @Component({
     selector: 'app-deck-workshops',
-    imports: [RouterLink],
+    imports: [RouterLink, AutoLoadComponent],
     template: `
       @if (sessions().length > 0) {
         <section class="workshops" aria-labelledby="deck-workshops-title">
           <h2 id="deck-workshops-title">Мастерская: {{ heading() }}</h2>
-          <ul>
+          <ul #workshopRows>
             @for (session of sessions(); track session.sessionId) {
               <li>
                 <a [routerLink]="['/decks', deckId(), 'workshop', session.sessionId]">{{ title(session) }} от {{ startedAt(session) }}</a>
@@ -25,6 +26,8 @@ import { SessionSummary } from './generation.models';
               </li>
             }
           </ul>
+          <app-auto-load [content]="workshopRows" [continuation]="cursor()" [loading]="loadingMore()"
+            [error]="moreError()" loadingText="Загружаем следующие мастерские…" (loadNext)="loadMore()" />
         </section>
       }
     `,
@@ -44,6 +47,10 @@ export class DeckWorkshopsComponent {
     readonly sessions = signal<readonly SessionSummary[]>([]);
     /** The first page was full: there are more than are listed. */
     readonly more = signal(false);
+    protected readonly cursor = signal<string | null>(null);
+    protected readonly loadingMore = signal(false);
+    protected readonly moreError = signal<string | null>(null);
+    private epoch = 0;
 
     private readonly api = inject(GenerationApiService);
     private readonly destroyRef = inject(DestroyRef);
@@ -60,11 +67,41 @@ export class DeckWorkshopsComponent {
     constructor() {
         effect(onCleanup => {
             const deckId = this.deckId();
+            const epoch = ++this.epoch;
+            this.loadingMore.set(false);
+            this.moreError.set(null);
+            this.cursor.set(null);
+            this.sessions.set([]);
             const request = this.api.listSessions(deckId, { active: true }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-                next: page => { this.sessions.set(page.items); this.more.set(page.nextCursor !== null); },
-                error: () => { this.sessions.set([]); this.more.set(false); }
+                next: page => { if (epoch === this.epoch) {
+                    this.sessions.set(page.items); this.cursor.set(page.nextCursor); this.more.set(page.nextCursor !== null);
+                } },
+                error: () => { if (epoch === this.epoch) { this.sessions.set([]); this.more.set(false); } }
             });
             onCleanup(() => request.unsubscribe());
+        });
+    }
+
+    protected loadMore(): void {
+        const cursor = this.cursor();
+        if (cursor === null || this.loadingMore()) return;
+        const epoch = this.epoch;
+        const deckId = this.deckId();
+        this.loadingMore.set(true);
+        this.moreError.set(null);
+        this.api.listSessions(deckId, { active: true, cursor }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+            next: page => {
+                if (epoch !== this.epoch) return;
+                const known = new Set(this.sessions().map(session => session.sessionId));
+                this.sessions.update(sessions => [...sessions, ...page.items.filter(session => !known.has(session.sessionId))]);
+                this.cursor.set(page.nextCursor);
+                this.more.set(page.nextCursor !== null);
+                this.loadingMore.set(false);
+            },
+            error: () => {
+                if (epoch !== this.epoch) return;
+                this.moreError.set('Не удалось загрузить следующие мастерские.'); this.loadingMore.set(false);
+            }
         });
     }
 

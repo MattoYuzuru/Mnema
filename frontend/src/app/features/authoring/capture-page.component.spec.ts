@@ -120,7 +120,7 @@ describe('CapturePageComponent', () => {
         window.IntersectionObserver = class {
             constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
                 onIntersection = callback;
-                expect(options?.rootMargin).toBe('0px 0px 800px 0px');
+                expect(options?.root).toBeNull();
             }
             observe(): void { }
             disconnect(): void { }

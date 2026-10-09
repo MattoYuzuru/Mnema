@@ -164,7 +164,7 @@
       } @else if (progress().length === 0) {
         <p class="empty-note">В колоде пока нет материалов с учебными целями.</p>
       } @else {
-        <ul class="progress-list">
+        <ul #progressRows class="progress-list">
           @for (material of progress(); track material.memberKey) {
             <li>
               <div>
@@ -180,12 +180,9 @@
             </li>
           }
         </ul>
-        @if (progressNextCursor() !== null) {
-          <div #progressSentinel class="progress-sentinel" aria-live="polite">
-            @if (progressLoading()) { <p role="status">Загружаем следующие материалы…</p> }
-            @if (progressMoreError()) { <p>Не удалось загрузить следующие материалы.</p><button class="button tertiary" type="button" (click)="loadMoreProgress()">Повторить</button> }
-          </div>
-        }
+        <app-auto-load [content]="progressRows" [context]="progressContext()" [continuation]="progressNextCursor()" [loading]="progressLoading()"
+          loadingText="Загружаем следующие материалы…" [error]="progressMoreError() ? 'Не удалось загрузить следующие материалы.' : null"
+          (loadNext)="loadMoreProgress()" />
       }
     </section>
   }

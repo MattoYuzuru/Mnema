@@ -93,10 +93,10 @@ describe('DeckMaterialsComponent', () => {
     describe('loading', () => {
         it('lists the first page in authoring order with exercise counts and the total in the heading', async () => {
             await open();
-            expect(items.list).toHaveBeenCalledWith(deckId, { sort: 'ordinal', exerciseCount: true });
+            expect(items.list).toHaveBeenCalledWith(deckId, { sort: 'ordinal', exerciseCount: true, limit: 50 });
             expect(root().querySelector('h2')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('Материалы · 50');
             expect(rows()).toHaveLength(20);
-            expect(root().querySelector('.more button')?.textContent?.trim()).toBe('Показать ещё (30)');
+            expect(root().querySelector('app-auto-load button')).toBeNull();
         });
 
         it('explains an empty deck and offers the first material', async () => {
@@ -131,7 +131,7 @@ describe('DeckMaterialsComponent', () => {
             radio.click();
             radio.dispatchEvent(new Event('change', { bubbles: true }));
             await settle();
-            expect(items.list).toHaveBeenLastCalledWith(deckId, { sort: 'exerciseCount', exerciseCount: true });
+            expect(items.list).toHaveBeenLastCalledWith(deckId, { sort: 'exerciseCount', exerciseCount: true, limit: 50 });
             expect(root().querySelector('app-segmented-choice .hint')?.textContent).toContain('Сначала материалы без упражнений');
             expect(bar()).toBeNull();
             expect(rows()).toHaveLength(1);
@@ -143,41 +143,55 @@ describe('DeckMaterialsComponent', () => {
             document.body.append(root());
             component.showMissingFirst();
             await settle();
-            expect(items.list).toHaveBeenLastCalledWith(deckId, { sort: 'exerciseCount', exerciseCount: true });
+            expect(items.list).toHaveBeenLastCalledWith(deckId, { sort: 'exerciseCount', exerciseCount: true, limit: 50 });
             expect(document.activeElement).toBe(root().querySelector('h2'));
             root().remove();
         });
     });
 
     describe('paging', () => {
+        it('admits one next-page request and ignores it after the sort context changes', async () => {
+            await open();
+            const pending = new Subject<ItemPage>();
+            items.list.mockReturnValueOnce(pending);
+            const next = () => fixture.debugElement.query(By.css('app-auto-load')).triggerEventHandler('loadNext');
+            next(); next();
+            expect(items.list).toHaveBeenCalledTimes(2);
+            items.list.mockReturnValueOnce(of(page(0, 2, 50)));
+            fixture.debugElement.query(By.css('app-segmented-choice')).triggerEventHandler('valueChange', 'exerciseCount');
+            await settle();
+            pending.next(page(20, 20, 50)); pending.complete(); await settle();
+            expect(rows()).toHaveLength(2);
+            expect(items.list).toHaveBeenLastCalledWith(deckId, { sort: 'exerciseCount', exerciseCount: true, limit: 50 });
+        });
         it('appends the next page by cursor in the same sort and never re-requests the first one', async () => {
             await open();
             items.list.mockReturnValueOnce(of(page(20, 20, 50)));
-            root().querySelector<HTMLButtonElement>('.more button')!.click();
+            fixture.debugElement.query(By.css('app-auto-load')).triggerEventHandler('loadNext');
             await settle();
-            expect(items.list).toHaveBeenLastCalledWith(deckId, { cursor: 'cursor-20', sort: 'ordinal', exerciseCount: true });
+            expect(items.list).toHaveBeenLastCalledWith(deckId, { cursor: 'cursor-20', sort: 'ordinal', exerciseCount: true, limit: 50 });
             expect(rows()).toHaveLength(40);
             expect(rows()[20].querySelector('.folio')?.textContent?.trim()).toBe('21');
             items.list.mockReturnValueOnce(of(page(40, 10, 50)));
-            root().querySelector<HTMLButtonElement>('.more button')!.click();
+            fixture.debugElement.query(By.css('app-auto-load')).triggerEventHandler('loadNext');
             await settle();
             expect(rows()).toHaveLength(50);
-            expect(root().querySelector('.more')).toBeNull();
+            expect(root().textContent).not.toContain('Показать ещё');
             expect(items.list).toHaveBeenCalledTimes(3);
         });
 
         it('keeps the loaded rows and offers a retry when a later page fails', async () => {
             await open();
             items.list.mockReturnValueOnce(throwError(() => new Error('offline')));
-            root().querySelector<HTMLButtonElement>('.more button')!.click();
+            fixture.debugElement.query(By.css('app-auto-load')).triggerEventHandler('loadNext');
             await settle();
             expect(rows()).toHaveLength(20);
-            expect(root().querySelector('.more .problem')).not.toBeNull();
+            expect(root().querySelector('app-auto-load [role=alert]')).not.toBeNull();
             items.list.mockReturnValueOnce(of(page(20, 20, 50)));
-            root().querySelector<HTMLButtonElement>('.more button')!.click();
+            fixture.debugElement.query(By.css('app-auto-load')).triggerEventHandler('loadNext');
             await settle();
             expect(rows()).toHaveLength(40);
-            expect(root().querySelector('.more .problem')).toBeNull();
+            expect(root().querySelector('app-auto-load [role=alert]')).toBeNull();
         });
 
         it('starts over with a notice when the next page belongs to another Deck revision', async () => {
@@ -185,7 +199,7 @@ describe('DeckMaterialsComponent', () => {
             await select(0);
             items.list.mockReturnValueOnce(of(page(20, 20, 50, { deckRevisionId: '77777777-7777-4777-8777-777777777777' })))
                 .mockReturnValueOnce(of(page(0, 20, 49)));
-            root().querySelector<HTMLButtonElement>('.more button')!.click();
+            fixture.debugElement.query(By.css('app-auto-load')).triggerEventHandler('loadNext');
             await settle();
             expect(root().querySelector('.note')?.textContent).toContain('Колода изменилась в другой вкладке');
             expect(rows()).toHaveLength(20);
@@ -196,7 +210,7 @@ describe('DeckMaterialsComponent', () => {
         it('treats a stale cursor (412) the same way', async () => {
             await open();
             items.list.mockReturnValueOnce(throwError(() => http(412, 'VERSION_CONFLICT'))).mockReturnValueOnce(of(page(0, 20, 50)));
-            root().querySelector<HTMLButtonElement>('.more button')!.click();
+            fixture.debugElement.query(By.css('app-auto-load')).triggerEventHandler('loadNext');
             await settle();
             expect(root().querySelector('.note')?.textContent).toContain('Список обновлён');
             expect(items.list).toHaveBeenCalledTimes(3);
@@ -455,7 +469,7 @@ describe('DeckMaterialsComponent', () => {
         it('blocks more than 100 individually selected materials with an explanation instead of sending them', async () => {
             await open(of(page(0, 100, 150)));
             items.list.mockReturnValueOnce(of(page(100, 20, 150, { nextCursor: null })));
-            root().querySelector<HTMLButtonElement>('.more button')!.click();
+            fixture.debugElement.query(By.css('app-auto-load')).triggerEventHandler('loadNext');
             await settle();
             root().querySelector<HTMLInputElement>('.select-all input')!.click();
             await settle(300);

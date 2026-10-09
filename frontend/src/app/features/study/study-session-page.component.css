@@ -46,7 +46,6 @@ summary { min-block-size: var(--mn-touch-min, 2.75rem); color: var(--mn-ink); fo
 .mode-panel .button { align-self: flex-start; margin-block-start: auto; }
 .check-row { min-inline-size: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: .65rem; font-size: 1rem; }
 .check-row input { inline-size: 1.25rem; block-size: 1.25rem; margin: 0; }
-.progress-sentinel { min-block-size: 1px; margin-block-start: 1rem; }
 .empty-note { border-inline-start: 3px solid var(--mn-rule); padding-inline-start: .8rem; color: var(--mn-muted); }
 .progress-section { margin-block-start: 2rem; }
 .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; }
