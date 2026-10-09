@@ -73,13 +73,13 @@ export function parseOrder(value: unknown): Order {
         paymentUrl: nullable(body['paymentUrl'], paymentUrl),
         expiresAt: instant(body['expiresAt']), createdAt: instant(body['createdAt']), paidAt: nullable(body['paidAt'], instant),
         periodStart: nullable(body['periodStart'], instant), periodEnd: nullable(body['periodEnd'], instant),
-        receiptUrl: nullable(body['receiptUrl'], receiptUrl)
+        receiptUrl: receiptUrl(body['receiptUrl'])
     };
 }
 
-function receiptUrl(value: unknown): string {
-    if (typeof value !== 'string' || !RECEIPT_URL.test(value)) throw protocol('Untrusted receipt URL.');
-    return value;
+/** The receipt link is a courtesy: anything but the tax service's print address is dropped, and the paid page stays whole. */
+function receiptUrl(value: unknown): string | null {
+    return typeof value === 'string' && RECEIPT_URL.test(value) ? value : null;
 }
 
 function paymentUrl(value: unknown): string {

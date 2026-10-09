@@ -66,7 +66,7 @@ describe('Billing wire contract (contracts/billing/billing.json)', () => {
             }
         });
 
-        it('accepts a receipt link only on the tax service print address', () => {
+        it('keeps a receipt link only on the tax service print address and drops any other without failing the order', () => {
             const receipt = String(examples['orderPaid']['receiptUrl']);
             expect(parseOrder(examples['orderPaid']).receiptUrl).toBe(receipt);
             for (const url of ['http://lknpd.nalog.ru/api/v1/receipt/770123456789/2agnbqj3tw/print', 'https://evil.example/api/v1/receipt/770123456789/2agnbqj3tw/print',
@@ -76,8 +76,11 @@ describe('Billing wire contract (contracts/billing/billing.json)', () => {
                 'https://lknpd.nalog.ru/api/v1/receipt/770123456789/2agnbqj3tw/json', 'javascript:alert(1)', '']) {
                 const order = example('orderPaid');
                 order['receiptUrl'] = url;
-                expect(() => parseOrder(order), url).toThrow(PlansProtocolError);
+                expect(parseOrder(order).receiptUrl, url).toBeNull();
             }
+            const missing = example('orderPaid');
+            delete missing['receiptUrl'];
+            expect(() => parseOrder(missing)).toThrow(PlansProtocolError);
         });
 
         it('rejects a payment URL outside the bank hosts', () => {
