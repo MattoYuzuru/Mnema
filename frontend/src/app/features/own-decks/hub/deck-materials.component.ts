@@ -46,6 +46,8 @@ interface HubNotice { readonly text: string; readonly refresh: boolean; readonly
 
 const PREVIEW_DELAY_MS = 300;
 const ANNOUNCE_DELAY_MS = 500;
+/** Materials per hub page; the backend caps a page at 100. */
+const PAGE_SIZE = 50;
 const BAR_HEIGHT_PROPERTY = '--mn-bulk-bar-height';
 
 const SORT_OPTIONS: readonly SegmentedOption<ItemSort>[] = [
@@ -83,6 +85,8 @@ export class DeckMaterialsComponent {
     protected readonly items = signal<readonly ItemSummary[]>([]);
     protected readonly loadingMore = signal(false);
     protected readonly moreError = signal(false);
+    /** Changes with every list replacement, so a reload that returns the same cursor can continue again. */
+    protected readonly listContext = signal(0);
     protected readonly starPending = signal<ReadonlySet<string>>(new Set());
     protected readonly preview = signal<PreviewState>({ phase: 'idle' });
     protected readonly deleting = signal(false);
@@ -155,7 +159,7 @@ export class DeckMaterialsComponent {
         const sequence = this.loadSequence;
         this.loadingMore.set(true);
         this.moreError.set(false);
-        this.moreLoad = this.items$.list(this.deckId(), { cursor: meta.nextCursor, sort: this.sort(), exerciseCount: true, limit: 50 })
+        this.moreLoad = this.items$.list(this.deckId(), { cursor: meta.nextCursor, sort: this.sort(), exerciseCount: true, limit: PAGE_SIZE })
             .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
                 next: next => {
                     if (sequence !== this.loadSequence) return;
@@ -285,13 +289,15 @@ export class DeckMaterialsComponent {
         this.problem.set(null);
         this.moreError.set(false);
         this.loadingMore.set(false);
-        this.phase.set('loading');
-        this.listLoad = this.items$.list(deckId, { sort, exerciseCount: true, limit: 50 }).subscribe({
+        // Keep the loaded rows (and the focused sort control) until the replacement arrives.
+        if (this.meta() === null || this.phase() === 'error') this.phase.set('loading');
+        this.listLoad = this.items$.list(deckId, { sort, exerciseCount: true, limit: PAGE_SIZE }).subscribe({
             next: page => {
                 if (sequence !== this.loadSequence) return;
                 const { items, ...rest } = page;
                 this.meta.set(rest);
                 this.items.set(items);
+                this.listContext.set(sequence);
                 this.phase.set('ready');
             },
             error: () => { if (sequence === this.loadSequence) this.phase.set('error'); }

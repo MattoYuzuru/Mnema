@@ -174,7 +174,7 @@ html body h1[tabindex="-1"]:focus-visible {
     transition: clip-path var(--mn-wave-duration) cubic-bezier(.22, .61, .36, 1);
 }
 
-:is(.button, .feature-strip a, .item-row, .deck-row):is(:hover, :focus-visible):not(:disabled)::before,
+:is(.button, .feature-strip a, .item-row, .deck-row):is(:hover, :focus-visible):not(:disabled, [aria-disabled='true'])::before,
 /* A list row is an <li>: it never takes focus itself, so its focusable children drive the wave. */
 .item-row:has(:focus-visible)::before {
     clip-path: circle(150% at var(--mn-wave-x, 50%) var(--mn-wave-y, 50%));

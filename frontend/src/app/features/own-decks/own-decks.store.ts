@@ -119,9 +119,7 @@ export class OwnDecksStore {
             next: page => {
                 if (epoch !== this.listEpoch || this.listSignal().phase !== 'ready') return;
                 const previous = this.listSignal();
-                const known = new Set(page.items.map(deck => deck.deckId));
-                this.listSignal.set({ phase: 'ready', items: this.extendedList
-                    ? [...page.items, ...previous.items.filter(deck => !known.has(deck.deckId))] : page.items,
+                this.listSignal.set({ phase: 'ready', items: this.extendedList ? mergeFirstPage(page.items, previous.items) : page.items,
                     nextCursor: this.extendedList ? previous.nextCursor : page.nextCursor,
                     operation: null, failure: null });
             },
@@ -433,4 +431,15 @@ function problemCode(value: unknown): string | null {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
     const code = (value as Record<string, unknown>)['code'];
     return typeof code === 'string' ? code : null;
+}
+
+/**
+ * Replaces the first-page range of an extended list with a fresh first page. Rows the fresh page no longer contains
+ * inside that range were deleted or moved elsewhere, so only rows after the last fresh row's old position stay.
+ */
+export function mergeFirstPage(fresh: readonly OwnDeck[], previous: readonly OwnDeck[]): readonly OwnDeck[] {
+    const known = new Set(fresh.map(deck => deck.deckId));
+    const last = fresh.at(-1);
+    const boundary = last === undefined ? -1 : previous.findIndex(deck => deck.deckId === last.deckId);
+    return [...fresh, ...previous.slice(boundary + 1).filter(deck => !known.has(deck.deckId))];
 }
