@@ -170,7 +170,7 @@ class PromoRedemptionTest extends PromoIntegrationTest {
     @Test
     void unknownDisabledExpiredAndNotStartedCodesAllLookInvalid() {
         UUID account = account(true, false);
-        var disabled = admin.create(UUID.randomUUID(), tier(PromoType.TIER_DAYS, "PLUS", 5, null, 5));
+        var disabled = create(UUID.randomUUID(), tier(PromoType.TIER_DAYS, "PLUS", 5, null, 5));
         admin.setEnabled(UUID.randomUUID(), UUID.fromString(disabled.path("codeId").stringValue(null)), false);
         String expired = code(new PromoAdminService.Create(PromoType.TIER_DAYS, "PLUS", 5, null, null,
                 Instant.parse("2026-09-01T00:00:00Z"), Instant.parse("2026-10-01T00:00:00Z"), 5, true, null, null));

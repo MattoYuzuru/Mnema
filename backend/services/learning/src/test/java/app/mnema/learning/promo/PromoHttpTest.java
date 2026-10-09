@@ -148,7 +148,7 @@ class PromoHttpTest extends PromoIntegrationTest {
     @Test
     void theAdminListIsPagedByACursorOfTwoHundred() throws Exception {
         UUID administrator = account(true, true);
-        for (int index = 0; index < PromoAdminService.PAGE_SIZE + 5; index++) admin.create(administrator, tier(PromoType.TIER_DAYS, "PLUS", 1, null, 1));
+        for (int index = 0; index < PromoAdminService.PAGE_SIZE + 5; index++) create(administrator, tier(PromoType.TIER_DAYS, "PLUS", 1, null, 1));
 
         java.util.Set<String> seen = new java.util.HashSet<>();
         String after = null;

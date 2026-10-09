@@ -85,7 +85,14 @@ abstract class PromoIntegrationTest extends PostgresIntegrationTest {
 
     /** Creates a code as an administrator and returns the plain text. */
     protected String code(PromoAdminService.Create command) {
-        return admin.create(UUID.randomUUID(), command).path("code").stringValue(null);
+        return create(UUID.randomUUID(), command).path("code").stringValue(null);
+    }
+
+    /** The server accepts only a code the administrator supplies, so a fixture without one brings its own, as the browser does. */
+    protected tools.jackson.databind.node.ObjectNode create(UUID administrator, PromoAdminService.Create command) {
+        var c = command;
+        return admin.create(administrator, c.vanity() != null ? c : new PromoAdminService.Create(c.type(), c.plan(), c.days(), c.months(), c.percent(),
+                c.validFrom(), c.validUntil(), c.maxRedemptions(), c.oncePerAccount(), c.channel(), PromoTestCodes.generate()));
     }
 
     protected Instant now() {
