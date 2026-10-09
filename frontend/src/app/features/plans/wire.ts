@@ -42,9 +42,9 @@ export function text(value: unknown, maximum = 200): string {
     return value;
 }
 
-/** A private, uncached 200 response: the entitlement and the goal are the owner's alone. */
-export function privateOk(response: HttpResponse<unknown>): void {
-    if (response.status !== 200) throw protocol('Unexpected status.');
+/** A private, uncached response (200 unless a creation says 201): the entitlement, the goal and the orders are the owner's alone. */
+export function privateOk(response: HttpResponse<unknown>, status = 200): void {
+    if (response.status !== status) throw protocol('Unexpected status.');
     const directives = (response.headers.get('Cache-Control') ?? '').toLowerCase().split(',').map(value => value.trim());
     if (!directives.includes('private') || !directives.includes('no-store')) throw protocol('Response can be cached.');
 }

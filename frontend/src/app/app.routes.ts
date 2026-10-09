@@ -135,6 +135,12 @@ export const appRoutes: Routes = [
         loadComponent: () => import('./features/plans/plans-page.component').then(module => module.PlansPageComponent),
         canActivate: [authGuard]
     },
+    {
+        // Where the bank sends the reader back; it reads the order and ignores everything the bank appended to the address.
+        path: 'plans/payment/:orderId',
+        loadComponent: () => import('./features/billing/payment-return.component').then(module => module.PaymentReturnComponent),
+        canActivate: [authGuard]
+    },
     // Public: the footer and the «Что это?» toggletips of the AI actions link here, signed in or not.
     {
         path: 'ai',

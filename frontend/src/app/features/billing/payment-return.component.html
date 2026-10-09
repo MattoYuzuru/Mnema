@@ -1,0 +1,26 @@
+<section class="payment-return" aria-labelledby="payment-title">
+  <div class="paper-surface ruled card">
+    <p class="eyebrow">Оплата</p>
+    <h1 id="payment-title" #heading tabindex="-1">{{ copy().heading }}</h1>
+    <div role="status" class="status">
+      <p class="lede">{{ copy().text }}</p>
+      @if (amount(); as sum) { <p class="amount">Сумма: {{ sum }}</p> }
+    </div>
+    <div class="actions">
+      @switch (outcome()) {
+        @case ('paid') {
+          <a class="button primary" routerLink="/decks">К моим колодам</a>
+          <a class="button" routerLink="/plans">Тарифы</a>
+        }
+        @case ('failed') { <a class="button primary" routerLink="/plans">Вернуться к тарифам</a> }
+        @case ('refunded') { <a class="button primary" routerLink="/plans">Тарифы</a> }
+        @case ('review') { <a class="button primary" routerLink="/plans">Тарифы</a> }
+        @case ('not-found') { <a class="button primary" routerLink="/plans">Тарифы</a> }
+        @default {
+          @if (copy().recheck) { <button type="button" class="button primary" (click)="recheck()">Проверить ещё раз</button> }
+          <a class="button" routerLink="/plans">Тарифы</a>
+        }
+      }
+    </div>
+  </div>
+</section>

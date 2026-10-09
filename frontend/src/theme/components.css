@@ -32,6 +32,8 @@
 .button.small { min-inline-size: var(--mn-touch-min); padding-inline: .6rem; }
 .button:not(:disabled, [aria-disabled='true']):hover { text-decoration: underline; text-underline-offset: .2em; }
 .button:is(:disabled, [aria-disabled='true']) { cursor: not-allowed; opacity: .6; }
+/* Busy: the action was taken and is running. It stays at full contrast (the label says what is happening) and shows progress, not a refusal. */
+.button[aria-busy='true'] { cursor: progress; opacity: 1; }
 
 /* Notice: a block message on the sheet. The left rule carries the tone; the text always says what happened. */
 .notice {

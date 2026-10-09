@@ -56,8 +56,12 @@ export interface PendingDiscount {
     readonly validUntil: string;
 }
 
+/** Whether the server lets this account pay: `UNAVAILABLE` keeps the paywall as a notice («Оплату подключаем»). */
+export type CheckoutAvailability = 'AVAILABLE' | 'UNAVAILABLE';
+
 export interface PlansCatalog {
     readonly current: PlansCurrent;
+    readonly checkout: CheckoutAvailability;
     readonly plans: readonly PlanEntry[];
     /** The variant the server assigned to this account in each enabled A/B experiment, by key. */
     readonly experiments: Readonly<Record<string, string>>;

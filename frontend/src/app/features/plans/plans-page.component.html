@@ -63,7 +63,12 @@
           <p class="hint">Голос и проверка ответов не тратят общий бюджет ИИ, но у них свой потолок на месяц и день.</p>
         </details>
 
-        @if (renewable()) {
+        @if (oneOff(); as line) {
+          <div class="renew">
+            <p class="hint" [id]="oneOffId">{{ line }}</p>
+            <p class="hint">Нажимая «Оплатить», вы принимаете <a routerLink="/terms" target="_blank" rel="noopener">условия сервиса <span class="new-tab">(откроется в новой вкладке)</span></a>.</p>
+          </div>
+        } @else if (renewable() && !checkoutAvailable()) {
           <div class="renew check-field">
             <label class="check-row" [for]="renewId">
               <input type="checkbox" [id]="renewId" [checked]="autoRenew()" (change)="onAutoRenew($event)" />
@@ -77,8 +82,6 @@
           <app-promo-redeem [prefill]="prefill()" (redeemed)="redeemed()" />
         </div>
 
-        <p class="notice" role="status" [id]="noticeId">{{ notice() }}</p>
-
         <section class="faq" aria-labelledby="plans-faq">
           <h2 id="plans-faq">Частые вопросы</h2>
           <details>
@@ -91,14 +94,19 @@
           </details>
           <details>
             <summary>Как отключить автопродление?</summary>
-            <p>Когда подключим оплату, это будет переключатель «Автопродление» в профиле, в блоке «Тариф». Подписка продолжит работать до конца оплаченного периода.</p>
+            @if (checkoutAvailable()) {
+              <p>Сейчас оплата разовая: автопродления нет, тариф просто закончится в конце оплаченного месяца.</p>
+            } @else {
+              <p>Когда подключим оплату, это будет переключатель «Автопродление» в профиле, в блоке «Тариф». Подписка продолжит работать до конца оплаченного периода.</p>
+            }
           </details>
         </section>
 
         @if (action(); as action) {
           <div class="cta-bar" #ctaBar>
-            <button type="button" class="button primary" [attr.aria-disabled]="action.disabled ? 'true' : null"
-              [attr.aria-describedby]="notice() ? noticeId : null" (click)="activate()">{{ action.text }}</button>
+            <p class="notice" role="status" [id]="noticeId">{{ notice() }}</p>
+            <button type="button" class="button primary" [attr.aria-disabled]="action.disabled || busy() ? 'true' : null" [attr.aria-busy]="busy() ? 'true' : null"
+              [attr.aria-describedby]="describedBy()" (click)="activate()">{{ action.text }}</button>
           </div>
         }
       }

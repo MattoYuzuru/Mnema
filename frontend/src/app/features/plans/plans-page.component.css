@@ -28,6 +28,10 @@ h2 { font-size: clamp(1.5rem, 3vw, 2rem); line-height: 1.1; }
 /* The status region is always in the DOM (so a screen reader announces the text when it appears) and takes no room while empty. */
 .notice:empty { display: contents; }
 
+.cta-bar { flex-direction: column; align-items: center; gap: .5rem; }
+.cta-bar > * { inline-size: min(100%, 28rem); margin-block: 0; }
+.new-tab { color: var(--mn-muted); font-weight: 400; }
+
 .promo { max-inline-size: 28rem; }
 .plan-status { display: grid; gap: .5rem; max-inline-size: 48rem; }
 .plan-status:empty { display: contents; }
