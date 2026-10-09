@@ -12,12 +12,56 @@ type Source = 'learning' | 'identity';
     selector: 'app-admin-audit-page',
     imports: [AutoLoadComponent],
     template: `
-  <header><p class="eyebrow">Кабинет владельца</p><h1 tabindex="-1">Журнал действий</h1><p class="hint">Подтверждённые административные действия и отказы администраторам. Тексты обращений и новостей и полные промокоды сюда не попадают; причина блокировки — только в записи блокировки.</p></header>
+  <header>
+    <p class="eyebrow">Кабинет владельца</p><h1 tabindex="-1">Журнал действий</h1>
+    <p class="hint">
+      Подтверждённые административные действия и отказы администраторам. Тексты обращений и новостей и полные промокоды сюда не попадают; причина блокировки — только в записи блокировки.
+    </p>
+  </header>
   @for (source of sources; track source.key) {
-    <section class="rule-section" [attr.aria-labelledby]="'audit-' + source.key"><div class="actions"><h2 [id]="'audit-' + source.key">{{ source.name }}</h2><button class="button" type="button" (click)="journals[source.key].reload()" [disabled]="journals[source.key].loading()">Обновить</button></div>
-      @if (journals[source.key].loading()) { <p role="status">Загружаем журнал…</p> }
-      @if (journals[source.key].error()) { <div class="notice error" role="alert"><p>{{ journals[source.key].error() }}</p><button class="button" type="button" (click)="journals[source.key].reload()">Повторить</button></div> }
-      <div class="table-scroll" tabindex="0" role="region" [attr.aria-label]="source.name"><table #rows class="data-table"><caption>{{ source.name }} · новые сначала, записи подгружаются при прокрутке</caption><thead><tr><th scope="col">Действие</th><th scope="col">Кто / объект</th><th scope="col">Дата, Москва</th><th scope="col">Команда</th></tr></thead><tbody>@for (entry of journals[source.key].items(); track entry.auditId) { <tr><th scope="row">{{ action(entry.action) }}@if (entry.outcome === 'DENIED') { <small class="hint">Отказано: действие не выполнено</small> }@if (entry.reason) { <small class="hint">Причина: {{ entry.reason }}</small> }</th><td><code>{{ entry.actorAccountId }}</code><small class="hint">Объект: {{ entry.resourceId }}</small></td><td>{{ date(entry.occurredAt) }}</td><td><code>{{ entry.commandId || 'Без команды браузера' }}</code></td></tr> } @empty { @if (!journals[source.key].loading() && !journals[source.key].error()) { <tr><td colspan="4">Записей нет.</td></tr> } }</tbody></table></div>
+    <section class="rule-section" [attr.aria-labelledby]="'audit-' + source.key">
+      <div class="actions">
+        <h2 [id]="'audit-' + source.key">{{ source.name }}</h2>
+        <button class="button" type="button" (click)="journals[source.key].reload()" [disabled]="journals[source.key].loading()">
+          Обновить
+        </button>
+      </div>
+      @if (journals[source.key].loading()) {<p role="status">Загружаем журнал…</p>}
+      @if (journals[source.key].error()) {
+        <div class="notice error" role="alert">
+          <p>{{ journals[source.key].error() }}</p><button class="button" type="button" (click)="journals[source.key].reload()">Повторить</button>
+        </div>
+      }
+      <div class="table-scroll" tabindex="0" role="region" [attr.aria-label]="source.name">
+        <table #rows class="data-table">
+          <caption>{{ source.name }} · новые сначала, записи подгружаются при прокрутке</caption>
+          <thead>
+            <tr>
+              <th scope="col">Действие</th><th scope="col">Кто / объект</th><th scope="col">Дата, Москва</th><th scope="col">Команда</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (entry of journals[source.key].items(); track entry.auditId) {
+              <tr>
+                <th scope="row">
+                  {{ action(entry.action) }}
+                  @if (entry.outcome === 'DENIED') {
+                    <small class="hint">Отказано: действие не выполнено</small>
+                  }@if (entry.reason) {<small class="hint">Причина: {{ entry.reason }}</small>}
+                </th>
+                <td>
+                  <code>{{ entry.actorAccountId }}</code><small class="hint">Объект: {{ entry.resourceId }}</small>
+                </td><td>{{ date(entry.occurredAt) }}</td><td><code>{{ entry.commandId || 'Без команды браузера' }}</code></td>
+              </tr>
+            }
+            @empty {
+              @if (!journals[source.key].loading() && !journals[source.key].error()) {
+                <tr><td colspan="4">Записей нет.</td></tr>
+              }
+            }
+          </tbody>
+        </table>
+      </div>
       <app-auto-load [content]="rows" [context]="journals[source.key].context()" [continuation]="journals[source.key].next()"
         [loading]="journals[source.key].loadingMore()" [error]="journals[source.key].moreError()" loadingText="Загружаем следующие записи журнала…" (loadNext)="journals[source.key].more()" />
     </section>

@@ -196,6 +196,8 @@ describe('owner report', () => {
         await settle();
         expect(root.textContent).toContain('498');
         expect(root.textContent).toContain('Выручка');
+        expect(root.textContent).toContain('возвращённые позже');
+        expect(root.textContent).toContain('полной суммой заказа');
         expect(root.textContent).not.toContain('Нет источника платёжного');
         expect(root.textContent).toContain('Выборка: 2 вызовов');
         expect(root.textContent).toContain('200 мс');
