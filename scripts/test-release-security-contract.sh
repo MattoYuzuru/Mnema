@@ -9,8 +9,9 @@ PRODUCTION="$REPO_ROOT/.github/workflows/production-deploy.yaml"
 PULL_REQUEST="$REPO_ROOT/.github/workflows/pull-request.yaml"
 EXCEPTIONS="$REPO_ROOT/security/release-image-exceptions.json"
 
-build_job=$(sed -n '/^  build-and-push:/,/^  render-release:/p' "$MAIN")
-render_job=$(sed -n '/^  render-release:/,$p' "$MAIN")
+build_job=$(sed -n '/^  build-and-push:/,/^  assemble-vps-candidate:/p' "$MAIN")
+assemble_job=$(sed -n '/^  assemble-vps-candidate:/,/^  deploy-production:/p' "$MAIN")
+deploy_job=$(sed -n '/^  deploy-production:/,/^  post-deploy-smoke:/p' "$MAIN")
 staging_preflight=$(sed -n '/^  validate-main-ci:/,/^  deploy-staging:/p' "$STAGING")
 production_preflight=$(sed -n '/^  validate-staging-deploy:/,/^  preview-production:/p' "$PRODUCTION")
 
@@ -40,10 +41,22 @@ if [ "$evaluate_line" -ge "$digest_upload_line" ]; then
   exit 1
 fi
 
-printf '%s\n' "$render_job" | grep -Fq 'verify_release_security_evidence.py aggregate'
-test "$(printf '%s\n' "$render_job" | grep -F -c 'verify_release_security_evidence.py verify-release')" -eq 1
-# shellcheck disable=SC2016 # GitHub expression is a literal contract marker.
-test "$(printf '%s\n' "$render_job" | grep -F -c '${{ runner.temp }}/release-security-evidence.json')" -eq 4
+printf '%s\n' "$assemble_job" | grep -Fq 'verify_release_security_evidence.py aggregate --include-frontend'
+printf '%s\n' "$assemble_job" | grep -Fq 'render_vps_candidate.py'
+# The approved job re-verifies the exact digests before it reads any production credential.
+verify_line=$(printf '%s\n' "$deploy_job" | grep -n 'gh attestation verify' | head -n 1 | cut -d: -f1)
+ssh_line=$(printf '%s\n' "$deploy_job" | grep -n 'PROD_DEPLOY_SSH_KEY' | head -n 1 | cut -d: -f1)
+if [ -z "$verify_line" ] || [ -z "$ssh_line" ] || [ "$verify_line" -ge "$ssh_line" ]; then
+  echo 'Attestations must be re-verified before production credentials are read' >&2
+  exit 1
+fi
+printf '%s\n' "$deploy_job" | grep -Fq -- '--deny-self-hosted-runners'
+printf '%s\n' "$deploy_job" | grep -Fq -- '--source-ref refs/heads/main'
+printf '%s\n' "$deploy_job" | grep -Fq 'name: prod'
+if printf '%s\n%s\n' "$build_job" "$assemble_job" | grep -Fq 'environment:'; then
+  echo 'Only the approved deploy job may enter the prod Environment' >&2
+  exit 1
+fi
 test "$(printf '%s\n' "$staging_preflight" | grep -F -c 'verify_release_security_evidence.py verify-release')" -eq 2
 # shellcheck disable=SC2016 # Workflow variable is a literal contract marker.
 printf '%s\n' "$staging_preflight" | grep -Fq -- '--expected-run-id "$UPSTREAM_RUN_ID"'
