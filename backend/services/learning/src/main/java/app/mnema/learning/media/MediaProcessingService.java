@@ -12,9 +12,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.ArrayList;
-import java.util.Comparator;
+import java.time.Instant;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /** Reconciles sealed generations to ready media without holding a database transaction over I/O. */
@@ -28,6 +31,9 @@ final class MediaProcessingService {
     private final MediaGcRepository gc;
     private final MediaProcessingSettings settings;
     private final AtomicInteger active = new AtomicInteger();
+    private final Set<Path> runningJobs = ConcurrentHashMap.newKeySet();
+    private final AtomicLong lastSweepMillis = new AtomicLong();
+    private final AtomicBoolean startupSwept = new AtomicBoolean();
 
     MediaProcessingService(MediaProcessingRepository repository, MediaUploadService uploads,
                            MediaObjectStore objects, MediaWorkerGateway worker, MediaGcRepository gc,
@@ -44,6 +50,14 @@ final class MediaProcessingService {
             fixedDelayString = "${learning.media.processing.scan-interval:PT15S}")
     void scan() {
         if (!settings.enabled) return;
+        if (startupSwept.compareAndSet(false, true)) {
+            // One Learning instance owns the work root and nothing of this process runs yet: whatever job directory
+            // exists was left by a previous process. Removing it also stops a worker that is still busy with it.
+            int removed = MediaJobDirectories.sweepAll(settings.workRoot);
+            if (removed > 0) log.info("media_processing_startup_sweep removed={}", removed);
+            lastSweepMillis.set(System.currentTimeMillis());
+        }
+        sweepStaleJobs();
         while (true) {
             int current = active.get();
             if (current >= settings.maxParallel) return;
@@ -59,6 +73,14 @@ final class MediaProcessingService {
                 }
             });
         }
+    }
+
+    /** A crash can orphan a job directory (source bytes included); remove those nobody runs, at most every 10 minutes. */
+    private void sweepStaleJobs() {
+        long now = System.currentTimeMillis();
+        long last = lastSweepMillis.get();
+        if (now - last < 600_000L || !lastSweepMillis.compareAndSet(last, now)) return;
+        MediaJobDirectories.sweepStale(settings.workRoot, settings.staleJobAge, runningJobs, Instant.ofEpochMilli(now));
     }
 
     /** Explicit owner action after retries are exhausted, reusing the sealed original. */
@@ -91,6 +113,7 @@ final class MediaProcessingService {
             }
         });
         Path job = null;
+        Path scratch = null;
         try {
             var source = uploads.sealedSource(claim.assetId(), claim.generation());
             if (!source.sessionId().equals(claim.sessionId()) || !source.kind().equals(claim.kind())
@@ -98,15 +121,18 @@ final class MediaProcessingService {
                 throw new MediaProcessingRejectedException("source_contract_mismatch");
             }
             Files.createDirectories(settings.workRoot);
-            job = Files.createTempDirectory(settings.workRoot, "media-",
+            job = Files.createTempDirectory(settings.workRoot, MediaJobDirectories.PREFIX,
                     PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------")));
+            runningJobs.add(job);
             String sha = objects.downloadVerified(source.objectKey(), job.resolve("source"), claim.declaredLength());
             if (lost.get()) return;
             long maxDuration = settings.maxDurationMs(claim.kind());
             worker.run(job, claim.assetId(), claim.generation(), claim.kind(), claim.declaredLength(), sha,
                     maxDuration);
+            // Variants are copied once into a Learning-only directory while they are verified; only those copies are uploaded.
+            scratch = MediaJobDirectories.newPrivateDirectory(settings.workRoot);
             var result = MediaWorkerResult.read(job.resolve("output"), claim.assetId(), claim.generation(),
-                    claim.kind(), claim.declaredLength(), sha, maxDuration);
+                    claim.kind(), claim.declaredLength(), sha, maxDuration, scratch);
             // a PCM WAV source is accepted for what the server synthesised itself (#297), never for a browser upload
             if (result.source().mimeType().equals("audio/wav") && !repository.generated(claim.assetId())) {
                 throw new MediaProcessingRejectedException("unsupported_audio");
@@ -142,15 +168,11 @@ final class MediaProcessingService {
         } finally {
             alive.set(false);
             heartbeat.interrupt();
-            if (job != null) deleteJob(job);
-        }
-    }
-
-    private static void deleteJob(Path job) {
-        try (var paths = Files.walk(job)) {
-            for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) Files.deleteIfExists(path);
-        } catch (IOException failure) {
-            log.warn("media_processing_job_cleanup_failed error_type={}", failure.getClass().getSimpleName());
+            if (scratch != null) MediaJobDirectories.delete(scratch);
+            if (job != null) {
+                MediaJobDirectories.delete(job);
+                runningJobs.remove(job);
+            }
         }
     }
 }

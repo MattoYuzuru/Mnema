@@ -121,7 +121,7 @@ class LocalFullStackTest(unittest.TestCase):
             "MNEMA_LOCAL_STORAGE_TLS_CERT_FILE": str(self.state / "storage.crt"),
             "MNEMA_LOCAL_STORAGE_TLS_KEY_FILE": str(self.state / "storage.key"),
             "MNEMA_LOCAL_CA_CERT_FILE": str(self.state / "local-ca.crt"),
-            "MNEMA_LOCAL_MEDIA_WORK_ROOT": str(self.state / "media-processing"),
+            "MNEMA_LOCAL_MEDIA_VOLUME": "fixture_local_media_work",
         }
         for configuration in ("production", "development"):
             build_environment = {**environment, "MNEMA_LOCAL_FRONTEND_CONFIGURATION": configuration}

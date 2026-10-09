@@ -20,11 +20,14 @@ FILES = {
     'mnema-health.timer': 'deploy/production/mnema-health.timer',
     'mnema-local-backup.service': 'deploy/production/mnema-local-backup.service',
     'mnema-local-backup.timer': 'deploy/production/mnema-local-backup.timer',
+    'media-work.mount': 'deploy/production/media-work.mount',
+    'mnema-media-runner': 'deploy/production/mnema-media-runner.py',
+    'mnema-media-runner.service': 'deploy/production/mnema-media-runner.service',
     'mnema-deploy-ssh': 'deploy/production/mnema-deploy-ssh',
     'mnema-deploy.sudoers': 'deploy/production/mnema-deploy.sudoers',
     '60-mnema-deploy.conf': 'deploy/production/60-mnema-deploy.conf',
 }
-SERVICES = ('frontend', 'identity-account', 'learning', 'postgres')
+SERVICES = ('frontend', 'identity-account', 'learning', 'media-worker', 'postgres')
 
 
 def installed_config():
@@ -79,6 +82,8 @@ elif command == 'configure':
     print(json.dumps({'configured': sorted(json.loads(stdin)), 'names_sha256': 'x'}))
 elif command.startswith('admit '):
     print(json.dumps({'admitted': True}))
+elif command.startswith('pull '):
+    print(json.dumps({'pulled': 5}))
 else:
     print(json.dumps({'operation': command}))
 ''',
@@ -113,7 +118,7 @@ else:
         result, calls, summary = self.run_script()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual([call['args'][-1] for call in calls],
-                         ['status', 'admit ' + SHA, 'configure', 'deploy ' + SHA, 'verify'])
+                         ['status', 'admit ' + SHA, 'pull ' + SHA, 'configure', 'deploy ' + SHA, 'verify'])
         for call in calls:
             self.assertEqual(call['args'][-2], 'mnema-deploy@135.106.175.30')
             self.assertIn('StrictHostKeyChecking=yes', call['args'])
@@ -122,11 +127,16 @@ else:
             self.assertEqual(call['mode'], 0o600)
             self.assertFalse(call['secret_env'])
         # Only configuration and admission carry stdin, so only they must not use -n.
-        self.assertEqual([('-n' in call['args']) for call in calls], [True, False, False, True, True])
+        self.assertEqual([('-n' in call['args']) for call in calls], [True, False, False, False, True, True])
         # Allowlisted, non-empty PROD_ secrets only; other PROD_ variables (the SSH key) never travel.
-        self.assertEqual(json.loads(calls[2]['stdin']),
+        self.assertEqual(json.loads(calls[3]['stdin']),
                          {'GOOGLE_CLIENT_ID': 'dummy-config-google', 'MNEMA_PROMO_HASH_SECRET': 'dummy-config-promo'})
         self.assertEqual(json.loads(calls[1]['stdin'])['sha'], SHA)   # admission first: a rebuild cannot slip in config
+        # The short-lived Actions token travels only on the pull's stdin: never in an argument, the other calls' stdin or the summary.
+        self.assertEqual(calls[2]['stdin'], 'dummy-token-marker')
+        self.assertNotIn('dummy-token-marker', json.dumps([call['args'] for call in calls]))
+        self.assertTrue(all('dummy-token-marker' not in (call['stdin'] or '') for i, call in enumerate(calls) if i != 2))
+        self.assertNotIn('dummy-token-marker', summary)
         self.assertIn('| configured | GOOGLE_CLIENT_ID, MNEMA_PROMO_HASH_SECRET |', summary)
         self.assertNotIn('dummy-', summary)
         self.assertIn('| offsite | uploaded |', summary)
@@ -142,7 +152,7 @@ else:
             with self.subTest(override=override):
                 result, calls, _ = self.run_script(override)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(len(calls), 5)
+                self.assertEqual(len(calls), 6)
 
     def test_config_drift_stops_before_admission_and_names_the_files(self):
         drifted = installed_config()
@@ -188,13 +198,26 @@ else:
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(calls, [])
 
+    def test_a_failed_pull_stops_before_configuration_and_deployment_and_a_missing_token_never_reaches_ssh(self):
+        result, calls, _ = self.run_script(fail='pull ')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual([call['args'][-1] for call in calls], ['status', 'admit ' + SHA, 'pull ' + SHA])
+        result, calls, _ = self.run_script({'GH_TOKEN': ''})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(calls, [])
+        self.assertIn('registry credential missing', result.stderr.decode())
+        # operations (status, verify, rollback) never carry the token
+        result, calls, _ = self.run_script({'GITHUB_EVENT_NAME': 'workflow_dispatch', 'GH_TOKEN': ''},
+                                           arguments=['--operation', 'status'])
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_failed_admission_or_deployment_stops_the_sequence(self):
         result, calls, _ = self.run_script(fail='admit ')
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual([call['args'][-1] for call in calls], ['status', 'admit ' + SHA])
         result, calls, summary = self.run_script(fail='deploy ')
         self.assertNotEqual(result.returncode, 0)
-        self.assertEqual([call['args'][-1] for call in calls], ['status', 'admit ' + SHA, 'configure', 'deploy ' + SHA])
+        self.assertEqual([call['args'][-1] for call in calls], ['status', 'admit ' + SHA, 'pull ' + SHA, 'configure', 'deploy ' + SHA])
         self.assertIn('Production deployment', summary)
 
     def test_failed_verification_fails_the_job_after_deployment(self):
@@ -205,15 +228,15 @@ else:
     def test_a_rejected_configuration_stops_before_the_deploy_and_after_admission(self):
         result, calls, _ = self.run_script(fail='configure')
         self.assertNotEqual(result.returncode, 0)
-        self.assertEqual([call['args'][-1] for call in calls], ['status', 'admit ' + SHA, 'configure'])
+        self.assertEqual([call['args'][-1] for call in calls], ['status', 'admit ' + SHA, 'pull ' + SHA, 'configure'])
 
     def test_the_configuration_object_is_always_sent_so_the_environment_stays_the_source_of_truth(self):
         blank = {name: '' for name in ('PROD_GOOGLE_CLIENT_ID', 'PROD_MNEMA_PROMO_HASH_SECRET', 'PROD_GH_CLIENT_ID')}
         result, calls, summary = self.run_script(blank)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual([call['args'][-1] for call in calls],
-                         ['status', 'admit ' + SHA, 'configure', 'deploy ' + SHA, 'verify'])
-        self.assertEqual(json.loads(calls[2]['stdin']), {})
+                         ['status', 'admit ' + SHA, 'pull ' + SHA, 'configure', 'deploy ' + SHA, 'verify'])
+        self.assertEqual(json.loads(calls[3]['stdin']), {})
         self.assertIn('| configured | none |', summary)
 
     def test_config_drift_is_detected_for_every_installed_security_file(self):

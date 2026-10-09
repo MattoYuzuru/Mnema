@@ -33,16 +33,37 @@ TERMINATE_GRACE_SECONDS = 30
 STDIN_TIMEOUT_SECONDS = 30
 MAX_CANDIDATE_BYTES = 16 * 1024
 MAX_CONFIG_BYTES = 32 * 1024
+MAX_TOKEN_BYTES = 4 * 1024
+# A GitHub Actions installation token (ghs_...) or any short-lived registry token: printable URL-safe characters only.
+TOKEN_PATTERN = r'[A-Za-z0-9_.-]{16,}'   # the 4 KiB stdin bound limits the length
+REGISTRY = 'ghcr.io'
+RUN_DIR = Path('/run')
+PULL_IMAGE_SECONDS = 10 * 60
+PULL_TOTAL_SECONDS = 15 * 60
 MAX_MANIFEST_BYTES = 16 * 1024
 SHA = r'[0-9a-f]{40}'
-SERVICES = ('frontend', 'identity-account', 'learning', 'postgres')
+SERVICES = ('frontend', 'identity-account', 'learning', 'media-worker', 'postgres')
+# Manifests admitted before the media worker existed carry four images. They stay loadable (status, verify,
+# pruning, the recorded "previous" pointer) but can never be deployed again: see compose().
+LEGACY_SERVICES = ('frontend', 'identity-account', 'learning', 'postgres')
+# The media work filesystem: the root of its own size- and inode-bounded filesystem (loopback ext4 behind a systemd mount
+# unit), owned by root and writable by no one else. Learning's job spool is its `spool` subdirectory (owner 10001, mode 0700);
+# the trusted root service mnema-media-runner keeps its per-job scratch in `.runner` (root only) and runs every job in a
+# throw-away container. Prepared once by the administrator.
+MEDIA_WORK_ROOT = Path('/var/lib/mnema/media-work')
+MEDIA_SPOOL = 'spool'
+LEARNING_UID = 10001
+LEARNING_GID = 10001
+MEDIA_RUNNER_UNIT = 'mnema-media-runner.service'
+# Only these four are Compose services; the media worker image is run per job by the media runner, not by Compose.
+COMPOSE_SERVICES = ('frontend', 'identity-account', 'learning', 'postgres')
 WRITERS = ('identity-account', 'learning')
 SCHEMAS = ('app_identity', 'app_learning')
 IMAGE_NAMESPACE = 'ghcr.io/mattoyuzuru/mnema/'
 POSTGRES = 'mnema-prod-postgres-1'
 BACKUP_NAME = r'[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}'
 OFFSITE_DISABLED_EXIT = 3
-CONTAINERS = {service: 'mnema-prod-' + service + '-1' for service in SERVICES}
+CONTAINERS = {service: 'mnema-prod-' + service + '-1' for service in COMPOSE_SERVICES}
 READINESS = {
     'identity': 'http://127.0.0.1:18081/api/actuator/health/readiness',
     'learning': 'http://127.0.0.1:18082/api/actuator/health/readiness',
@@ -57,10 +78,13 @@ CONFIG_FILES = {
     'mnema-deploy': Path('/usr/local/sbin/mnema-deploy'),
     'mnema-local-backup': Path('/usr/local/sbin/mnema-local-backup'),
     'mnema-health': Path('/usr/local/sbin/mnema-health'),
+    'mnema-media-runner': Path('/usr/local/sbin/mnema-media-runner'),
+    'mnema-media-runner.service': Path('/etc/systemd/system/mnema-media-runner.service'),
     'mnema-health.service': Path('/etc/systemd/system/mnema-health.service'),
     'mnema-health.timer': Path('/etc/systemd/system/mnema-health.timer'),
     'mnema-local-backup.service': Path('/etc/systemd/system/mnema-local-backup.service'),
     'mnema-local-backup.timer': Path('/etc/systemd/system/mnema-local-backup.timer'),
+    'media-work.mount': Path('/etc/systemd/system/var-lib-mnema-media\\x2dwork.mount'),
     'mnema-deploy-ssh': Path('/usr/local/bin/mnema-deploy-ssh'),
     'mnema-deploy.sudoers': Path('/etc/sudoers.d/mnema-deploy'),
     '60-mnema-deploy.conf': Path('/etc/ssh/sshd_config.d/60-mnema-deploy.conf'),
@@ -118,7 +142,7 @@ def install_signal_handlers():
 
 
 def parse_command(value):
-    if not re.fullmatch(r'(?:status|verify|rollback|configure|(?:admit|preflight|deploy) ' + SHA + r')', value):
+    if not re.fullmatch(r'(?:status|verify|rollback|configure|(?:admit|pull|preflight|deploy) ' + SHA + r')', value):
         raise Rejected('unsupported operation')
     return value.split(' ')
 
@@ -132,8 +156,9 @@ def protected(path):
     return path
 
 
-def validate_images(images):
-    if not isinstance(images, dict) or set(images) != set(SERVICES):
+def validate_images(images, allow_legacy=False):
+    expected = [set(SERVICES), *([set(LEGACY_SERVICES)] if allow_legacy else [])]
+    if not isinstance(images, dict) or set(images) not in expected:
         raise Rejected('release binding invalid')
     for service, image in images.items():
         pattern = re.escape(IMAGE_NAMESPACE) + re.escape(service) + r'@sha256:[0-9a-f]{64}'
@@ -151,7 +176,7 @@ def load_release(sha):
     data = json.loads(path.read_text())
     if not isinstance(data, dict) or data.get('sha') != sha:
         raise Rejected('release binding invalid')
-    validate_images(data.get('images'))
+    validate_images(data.get('images'), allow_legacy=True)
     return data
 
 
@@ -341,6 +366,9 @@ def docker(args, input=None, timeout=120):
 
 
 def compose(data, operation):
+    if set(data['images']) != set(SERVICES):
+        # The installed Compose file requires the media worker image; an older release cannot run with it.
+        raise Rejected('release predates the media worker; deploy a newer release instead')
     protected(ROOT / 'compose.yaml')
     secret = protected(ROOT / 'runtime.env')
     if secret.stat().st_mode & 0o077:
@@ -369,11 +397,112 @@ def compose(data, operation):
         elif operation == 'stop':
             command += ['stop', *WRITERS]
         else:
-            command += ['up', '--detach', '--wait', '--wait-timeout', '300']
+            # Images arrive through the `pull` operation (private registry token, ephemeral); compose must never pull.
+            command += ['up', '--pull', 'never', '--detach', '--wait', '--wait-timeout', '300']
             timeout = 420
         result = subprocess.run(command, env=ENV, capture_output=True, timeout=timeout, cwd=ROOT)
         if result.returncode:
             raise Rejected('compose operation failed; administrator inspection required')
+
+
+def check_media_work_root(root=MEDIA_WORK_ROOT):
+    """Media processing needs a work directory that is the root of its own filesystem (a runaway or compromised job can
+    fill only that), owned by root and writable by no one else, with Learning's private spool inside. Compose never
+    creates any of it."""
+    message = 'media work directory missing or unsafe; see deploy/production/README.md'
+    try:
+        protected(root.parent)
+        info = root.lstat()
+        parent = root.parent.lstat()
+        spool = (root / MEDIA_SPOOL).lstat()
+    except (OSError, Rejected):
+        raise Rejected(message) from None
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022 or info.st_dev == parent.st_dev
+            or not stat.S_ISDIR(spool.st_mode) or spool.st_uid != LEARNING_UID or spool.st_gid != LEARNING_GID
+            or stat.S_IMODE(spool.st_mode) != 0o700):
+        raise Rejected(message)
+
+
+def unit_active(unit):
+    try:
+        result = subprocess.run(['/usr/bin/systemctl', 'is-active', unit], env=ENV, capture_output=True, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0 and result.stdout.strip() == b'active'
+
+
+def check_media_runner():
+    """The runner is a host service installed by the administrator; without it no media job would ever finish."""
+    if not unit_active(MEDIA_RUNNER_UNIT):
+        raise Rejected('media runner is not installed or not active; see deploy/production/README.md')
+
+
+def check_images_present(data):
+    """Every image of the release must already be in the local store: compose runs with --pull never."""
+    try:
+        refs = [data['images'][service] for service in SERVICES]
+        docker(['image', 'inspect', '--format', '{{.Id}}', *refs], timeout=60)  # non-zero if any one is missing
+    except (Rejected, KeyError):
+        raise Rejected('release images are not present locally; the pull operation must succeed first') from None
+
+
+def validate_token(raw):
+    """The registry token travels on stdin only; it is checked for form and never echoed."""
+    if len(raw) > MAX_TOKEN_BYTES:
+        raise Rejected('registry token too large')
+    try:
+        text = raw.decode('ascii')
+    except UnicodeDecodeError:
+        raise Rejected('registry token invalid') from None
+    if text.endswith('\n'):
+        text = text[:-1]
+    if not re.fullmatch(TOKEN_PATTERN, text):
+        raise Rejected('registry token invalid')
+    return text
+
+
+def registry_docker(config, args, input=None, timeout=120):
+    """docker with a private, temporary client config; failures never echo Docker's output (it may hold the token)."""
+    try:
+        result = subprocess.run(['/usr/bin/docker', '--config', str(config), *args], env=ENV, capture_output=True,
+                                input=input, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise Rejected('registry operation timed out') from None
+    if result.returncode:
+        raise Rejected('registry operation failed; administrator inspection required')
+
+
+def pull_images(sha, raw_token):
+    """Pull exactly the five digests of the admitted release manifest with the caller's short-lived
+    token. The token is written only to Docker's stdin, lives in a 0700 config directory under /run
+    and is removed (also on SIGTERM, which becomes SystemExit) before anything else happens."""
+    token = validate_token(raw_token)
+    admitted(sha)
+    data = load_release(sha)
+    if set(data['images']) != set(SERVICES):
+        raise Rejected('release predates the media worker; deploy a newer release instead')
+    # A previous pull killed beyond the reach of its handlers (SIGKILL, a host crash) may have left a config; the lock is held,
+    # so none of these belongs to a running pull.
+    for stale in RUN_DIR.glob('mnema-docker-*'):
+        shutil.rmtree(stale, ignore_errors=True)
+    config = Path(tempfile.mkdtemp(prefix='mnema-docker-', dir=RUN_DIR))
+    try:
+        os.chmod(config, 0o700)
+        phase('registry-login')
+        registry_docker(config, ['login', REGISTRY, '--username', 'x-access-token', '--password-stdin'],
+                        input=token.encode() + b'\n', timeout=60)
+        deadline = time.monotonic() + PULL_TOTAL_SECONDS
+        for service in SERVICES:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise Rejected('registry operation timed out')
+            phase('pull-' + service)
+            registry_docker(config, ['pull', '--quiet', data['images'][service]],
+                            timeout=min(PULL_IMAGE_SECONDS, remaining))
+    finally:
+        shutil.rmtree(config, ignore_errors=True)
+    check_images_present(data)
+    output({'target': 'mnema-prod', 'sha': sha, 'pulled': len(SERVICES)})
 
 
 def admitted(sha):
@@ -567,14 +696,21 @@ def promote_app_config(operation, state):
 
 
 def restart_current(current_data):
-    """Best effort: bring the previously recorded release back after an aborted quiesce."""
-    if current_data is None:
-        return False
+    """Best effort: bring the applications back after an aborted quiesce. Returns 'compose' when the recorded
+    release was brought up again, 'containers' when its two stopped writers were started in place (the fallback
+    when compose refuses, e.g. for a release recorded before the media worker, or when nothing is recorded),
+    or None when neither worked. Nothing was migrated at this point, so no restore is involved."""
+    if current_data is not None:
+        try:
+            compose(current_data, 'deploy')
+            return 'compose'
+        except Exception:
+            pass
     try:
-        compose(current_data, 'deploy')
-        return True
+        docker(['start', *(CONTAINERS[service] for service in WRITERS)], timeout=120)
+        return 'containers'
     except Exception:
-        return False
+        return None
 
 
 def mutate(data, state, operation):
@@ -599,11 +735,13 @@ def mutate(data, state, operation):
             (STATE / 'pending.json').unlink(missing_ok=True)
         if not isinstance(error, Exception):
             raise
-        if restarted:
+        if restarted == 'compose':
             raise Rejected('rollout aborted before migration; current release restarted, nothing migrated') from None
-        if current_data is None:
-            raise Rejected('rollout aborted; no recorded release can be restarted, applications are stopped') from None
-        raise Rejected('rollout aborted and the current release did not restart') from None
+        if restarted == 'containers':
+            raise Rejected('rollout aborted before migration; the stopped application containers were started again, '
+                           'nothing migrated') from None
+        raise Rejected('rollout aborted and the applications did not restart; start the stopped containers '
+                       'mnema-prod-identity-account-1 and mnema-prod-learning-1 (nothing was migrated)') from None
     config_changed = promote_app_config(operation, state)
     phase('rollout')
     compose(data, 'deploy')
@@ -661,7 +799,10 @@ def release(operation, sha):
         raise Rejected('insufficient rollout disk reserve')
     phase('preflight')
     check_backup_tool()
+    check_media_work_root()
+    check_media_runner()
     compose(data, 'preflight')
+    check_images_present(data)
     if operation == 'preflight':
         output({'target': 'mnema-prod', 'sha': data['sha'], 'preflight': 'passed'})
         return
@@ -717,12 +858,17 @@ def verify():
     data = load_release(state['sha'])
     images_match = True
     for service, container in CONTAINERS.items():
+        if service not in data['images']:
+            continue  # a release recorded before the media worker has no container for it
         try:
             actual = docker(['inspect', '--format', '{{.Config.Image}}', container]).strip()
         except Rejected:
             actual = None
         images_match = images_match and actual == data['images'][service]
     ready = {name: readiness_ok(url) for name, url in READINESS.items()}
+    # Media jobs run in per-job containers started by the root runner service; it has no HTTP surface.
+    if 'media-worker' in data['images']:
+        ready['media-runner'] = unit_active(MEDIA_RUNNER_UNIT)
     no_pending = pending() is None
     output({'target': 'mnema-prod', 'sha': data['sha'], 'images_match': images_match,
             'readiness': 'passed' if all(ready.values()) else 'failed',
@@ -743,6 +889,8 @@ def main(payload=None):
         admit(arguments[0], payload if payload is not None else read_stdin(MAX_CANDIDATE_BYTES))
     elif operation == 'configure':
         configure(payload if payload is not None else read_stdin(MAX_CONFIG_BYTES))
+    elif operation == 'pull':
+        pull_images(arguments[0], payload if payload is not None else read_stdin(MAX_TOKEN_BYTES))
     else:
         release(operation, arguments[0] if arguments else None)
 
@@ -769,7 +917,7 @@ def entrypoint():
             raise Rejected('dispatcher requires its privileged single-argument entrypoint')
         operation = parse_command(sys.argv[1])[0]
         # Untrusted input is read, bounded and with a deadline, before taking the lock.
-        payload = {'admit': MAX_CANDIDATE_BYTES, 'configure': MAX_CONFIG_BYTES}.get(operation)
+        payload = {'admit': MAX_CANDIDATE_BYTES, 'configure': MAX_CONFIG_BYTES, 'pull': MAX_TOKEN_BYTES}.get(operation)
         payload = read_stdin(payload) if payload else None
         with open(LOCK, 'w') as lock:
             acquire(lock)

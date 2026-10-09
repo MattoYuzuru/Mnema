@@ -110,8 +110,15 @@ Production uses Yandex Object Storage (`https://storage.yandexcloud.net`, region
 private, versioning off, default SSE-KMS, writable only by the `mnema-learning-media`
 service account, with CORS allowing `PUT`, `GET`, `HEAD` and the headers
 `content-type` and `x-amz-*` for `https://mnema.app` only, and a lifecycle rule that
-aborts incomplete multipart uploads after 2 days. Learning stays disabled
-(`LEARNING_MEDIA_UPLOAD_BUCKET` empty) until the processing worker exists (#380).
+aborts incomplete multipart uploads after 2 days. Production Compose points Learning at
+this bucket and turns processing and the object garbage collector on (#380): every media
+kind reaches `READY` only through the root media runner, which runs each job in a throw-away,
+network-less container and alone writes the verdict (design: [media worker](../../backend/media-worker/README.md#media-runner-and-job-protocol-v1);
+production topology and bootstrap: [dispatcher contract](../../deploy/production/README.md)).
+Upload still needs the `LEARNING_MEDIA_UPLOAD_ACCESS_KEY`/`SECRET_KEY` pair from the
+`prod` Environment; production caps are 32 MiB images, 128 MiB audio, 1 GiB video and
+2 GiB reserved per owner, the collector grace is 7 days and one job is processed at a
+time.
 
 AWS SDK for Java 2.30+ adds `x-amz-sdk-checksum-algorithm` and an `aws-chunked`
 `x-amz-trailer` CRC32 to uploads by default, which Yandex Object Storage does not
@@ -131,7 +138,9 @@ single freeze/replay, signed length, multipart resume/complete, generation
 fencing, owner isolation, and reserved quota. Server-side Yandex parity for
 conditional CopyObject, presigned `Content-Length` and multipart is covered by the
 opt-in live check; browser CORS still needs a real-browser check before the
-authoring UI is enabled.
+authoring UI is enabled. The opt-in `MNEMA_MEDIA_SPOOL_SMOKE=1` variant of the same test
+runs the real media runner and the real media-worker image (`MNEMA_MEDIA_WORKER_IMAGE`, default
+`mnema-media-worker:local`; one container per job) for an image, an audio and a video upload through MinIO.
 
 References: [Yandex multipart](https://yandex.cloud/en/docs/storage/s3/api-ref/multipart),
 [limits](https://yandex.cloud/en/docs/storage/concepts/limits),

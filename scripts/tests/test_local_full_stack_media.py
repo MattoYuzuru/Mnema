@@ -1,4 +1,4 @@
-"""Object-storage, media-processor and media-smoke contracts for the local full stack."""
+"""Object-storage, media-runner and media-smoke contracts for the local full stack."""
 
 import hashlib
 import importlib.util
@@ -87,7 +87,7 @@ class ObjectStorageStateTest(LauncherTestCase):
         self.assertRegex(runtime["MNEMA_LOCAL_S3_SECRET_KEY"], r"^[0-9a-f]{64}$")
         self.assertEqual("3445", runtime["MNEMA_LOCAL_STORAGE_PORT"])
         self.assertEqual(0o600, stat.S_IMODE((self.state / "storage.key").stat().st_mode))
-        self.assertEqual(0o700, stat.S_IMODE((self.state / "media-processing").stat().st_mode))
+        self.assertFalse((self.state / "media-processing").exists())  # the work directory is a Compose volume, not host state
         subprocess.run([
             "openssl", "verify", "-CAfile", str(self.state / "local-ca.crt"), str(self.state / "storage.crt"),
         ], check=True, capture_output=True, timeout=10)
@@ -208,9 +208,10 @@ class LauncherCommandsTest(LauncherTestCase):
         self.run_launcher("start")
 
         docker = self.calls(tools, "docker")
+        # the runner starts the worker image per job through Docker, so the image is built before the stack comes up
         build = next(index for index, line in enumerate(docker) if "--profile worker-image build media-worker-image" in line)
-        up = next(index for index, line in enumerate(docker) if " up --detach --build --wait" in line)
-        self.assertLess(build, up)
+        up = next(index for index, line in enumerate(docker) if " up --detach --build --remove-orphans --wait" in line)
+        self.assertLess(build, up)       # --remove-orphans retires the Docker-socket media-processor of older stacks
         self.assertTrue(all("--project-name mnema-test-project" in line for line in docker if " compose " in f" {line}"
                             and "compose version" not in line))
         python = self.calls(tools, "python3")
@@ -261,7 +262,6 @@ class LauncherCommandsTest(LauncherTestCase):
         self.environment["MNEMA_LOCAL_PROJECT_NAME"] = "mnema-test-project"
         for name in ("smoke-account.json", "media-smoke.json"):
             (self.state / name).write_text("{}")
-        (self.state / "media-processing" / "job").mkdir()
         retained = {name: digest(self.state / name) for name in
                     ("runtime.env", "identity-signing-jwk-set.json", "local-ca.crt", "local-ca.key", "storage.key")}
 
@@ -275,7 +275,6 @@ class LauncherCommandsTest(LauncherTestCase):
         self.assertIn("down --volumes --remove-orphans", self.calls(tools, "docker")[-1])
         self.assertFalse((self.state / "smoke-account.json").exists())
         self.assertFalse((self.state / "media-smoke.json").exists())
-        self.assertEqual([], list((self.state / "media-processing").iterdir()))
         self.assertEqual(retained, {name: digest(self.state / name) for name in retained})
 
 
@@ -290,29 +289,56 @@ class ComposeContractTest(unittest.TestCase):
         self.assertRegex(image, r"^quay\.io/minio/minio@sha256:[0-9a-f]{64}$")
         self.assertNotIn("l33tlamer", self.source)
 
-    def test_only_the_media_processor_gets_the_docker_socket_and_client(self):
+    def test_only_the_dev_media_runner_holds_the_docker_socket_and_learning_and_job_containers_do_not(self):
         code = "\n".join(line for line in self.source.splitlines() if not line.strip().startswith("#"))
-        self.assertEqual(1, code.count("source: /var/run/docker.sock"))
-        self.assertEqual(2, code.count("/var/run/docker.sock"))  # the one source/target pair
-        self.assertIn("/var/run/docker.sock", service_block(self.source, "media-processor"))
-        for name in ("identity-account", "learning", "frontend", "minio", "postgres"):
+        self.assertEqual(1, code.count("/var/run/docker.sock:/var/run/docker.sock"))
+        self.assertEqual(1, len([line for line in code.splitlines() if "docker.sock" in line]))
+        self.assertIn("docker.sock", service_block(self.source, "media-runner"))
+        for name in ("identity-account", "learning", "frontend", "minio", "postgres", "media-work-init"):
             self.assertNotIn("docker.sock", service_block(self.source, name), name)
-        self.assertIn("target: learning-media-processor-runtime", service_block(self.source, "media-processor"))
+        self.assertNotIn("media-processor", code)
+        self.assertNotIn("learning-media-processor-runtime", code)
         self.assertIn("target: learning-runtime", service_block(self.source, "learning"))
-        dockerfile = RUNTIME_DOCKERFILE.read_text()
-        self.assertEqual(1, dockerfile.count("COPY --from=docker-cli"))
-        browser_facing = dockerfile.split("AS learning-runtime", 1)[1].split("FROM docker:", 1)[0]
-        self.assertNotIn("docker", browser_facing)
-        self.assertRegex(dockerfile, r"FROM docker:[0-9.]+-cli@sha256:[0-9a-f]{64} AS docker-cli")
+        # the backend images carry no Docker client; only the dev-only runner image has one
+        self.assertNotIn("docker-cli", RUNTIME_DOCKERFILE.read_text())
+        runner_image = (ROOT / "deploy/local-full-stack/media-runner.Dockerfile").read_text()
+        self.assertIn("DEVELOPMENT ONLY", runner_image)
+        self.assertRegex(runner_image, r"FROM docker:[0-9.]+-cli@sha256:[0-9a-f]{64} AS docker-cli")
+        self.assertIn("DEVELOPMENT-ONLY EXCEPTION", self.source)
 
-    def test_processor_is_the_only_instance_with_processing_and_has_no_published_port(self):
-        processor = service_block(self.source, "media-processor")
-        self.assertIn('LEARNING_MEDIA_PROCESSING_ENABLED: "true"', processor)
-        self.assertNotIn("\n    ports:", processor)
-        self.assertIn("SERVER_ADDRESS: 127.0.0.1", processor)
-        self.assertIn("cap_drop: [ALL]", processor)
-        self.assertIn("no-new-privileges:true", processor)
-        self.assertNotIn("LEARNING_MEDIA_PROCESSING_ENABLED", self.source.replace(processor, ""))
+    def test_there_is_no_long_lived_worker_service_and_learning_sees_only_its_spool(self):
+        code = "\n".join(line for line in self.source.splitlines() if not line.strip().startswith("#"))
+        self.assertNotIn("\n  media-worker:", code)
+        learning = service_block(self.source, "learning")
+        self.assertIn("subpath: spool", learning)
+        self.assertIn("source: local_media_work", learning)
+        self.assertNotIn("user:", learning)                      # no shared group any more
+        init = service_block(self.source, "media-work-init")
+        self.assertIn("mkdir -p /work/spool && chmod 700 /work/spool && chown 10001:10001 /work/spool && chmod 755 /work", init)
+        for name in ("learning", "media-runner"):
+            self.assertIn("media-work-init: {condition: service_completed_successfully}", service_block(self.source, name))
+        self.assertIn("media-runner: {condition: service_healthy}", service_block(self.source, "frontend"))
+        for name in ("identity-account", "frontend", "minio", "postgres"):
+            self.assertNotIn("local_media_work", service_block(self.source, name), name)
+
+    def test_the_dev_media_runner_is_unprivileged_beyond_what_it_needs_and_has_no_credentials(self):
+        runner = service_block(self.source, "media-runner")
+        for expected in ("cap_drop: [ALL]", "cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, FSETID, KILL]", "no-new-privileges:true",
+                         "read_only: true", "--volume=${MNEMA_LOCAL_MEDIA_VOLUME", "--image=${MNEMA_LOCAL_MEDIA_WORKER_IMAGE"):
+            self.assertIn(expected, runner)
+        self.assertNotIn("\n    environment:", runner)
+        self.assertNotIn("\n    ports:", runner)
+        self.assertNotIn("secrets:", runner)
+        self.assertNotIn("privileged", runner)
+        self.assertEqual(1, runner.count("local_media_work:"))
+
+    def test_learning_alone_processes_media_and_has_no_published_port(self):
+        self.assertNotIn("VERDICT_UID", self.source)     # the local runner is root too: Learning keeps the production rule
+        self.assertEqual(1, self.source.count('LEARNING_MEDIA_PROCESSING_ENABLED: "true"'))
+        self.assertIn("LEARNING_MEDIA_PROCESSING_WORK_ROOT: /var/lib/mnema-media", self.source)
+        learning = service_block(self.source, "learning")
+        self.assertNotIn("\n    ports:", learning)
+        self.assertIn("cap_drop: [ALL]", self.source.split("x-hardened-runtime:", 1)[1].split("\n\n", 1)[0])
 
     def test_published_ports_are_loopback_only(self):
         ports = [line.strip() for line in self.source.splitlines() if line.strip().startswith('- "127.0.0.1:')]
@@ -320,15 +346,15 @@ class ComposeContractTest(unittest.TestCase):
         self.assertFalse([line for line in self.source.splitlines() if line.strip().startswith('- "0.0.0.0')])
         # MinIO publishes one listener and the frontend proxy two; nothing else publishes.
         self.assertEqual({"minio", "frontend"}, {
-            name for name in ("postgres", "minio", "minio-init", "identity-account", "learning", "media-processor",
-                              "media-worker-image", "frontend")
+            name for name in ("postgres", "minio", "minio-init", "identity-account", "learning", "media-work-init",
+                              "media-runner", "media-worker-image", "frontend")
             if "\n    ports:" in service_block(self.source, name)})
 
     def test_buckets_are_created_idempotently_before_the_backends_start(self):
         init = service_block(self.source, "minio-init")
         self.assertIn("mc mb --ignore-existing local/mnema-local-avatars", init)
         self.assertIn("mc mb --ignore-existing local/mnema-local-media", init)
-        for name in ("identity-account", "learning", "media-processor"):
+        for name in ("identity-account", "learning"):
             self.assertIn("minio-init: {condition: service_completed_successfully}", service_block(self.source, name))
 
     def test_secrets_are_not_literal_in_the_compose_file(self):
@@ -354,7 +380,7 @@ class ComposeContractTest(unittest.TestCase):
                 "MNEMA_LOCAL_STORAGE_TLS_CERT_FILE": str(state / "storage.crt"),
                 "MNEMA_LOCAL_STORAGE_TLS_KEY_FILE": str(state / "storage.key"),
                 "MNEMA_LOCAL_CA_CERT_FILE": str(state / "local-ca.crt"),
-                "MNEMA_LOCAL_MEDIA_WORK_ROOT": str(state / "media-processing"),
+                "MNEMA_LOCAL_MEDIA_VOLUME": "mnema-render-test_local_media_work",
             })
             rendered = json.loads(subprocess.run(
                 ["docker", "compose", "--file", str(COMPOSE), "--profile", "worker-image", "config", "--format", "json"],
@@ -362,24 +388,26 @@ class ComposeContractTest(unittest.TestCase):
             ).stdout)
         services = rendered["services"]
         self.assertEqual({
-            "postgres", "minio", "minio-init", "identity-account", "learning", "media-processor",
+            "postgres", "minio", "minio-init", "identity-account", "learning", "media-work-init", "media-runner",
             "media-worker-image", "frontend",
         }, set(services))
         endpoint = "https://storage.mnema.localhost:3445"
         self.assertEqual(endpoint, services["learning"]["environment"]["LEARNING_MEDIA_UPLOAD_ENDPOINT"])
         self.assertEqual(endpoint, services["identity-account"]["environment"]["MNEMA_AVATAR_ENDPOINT"])
-        self.assertEqual(
-            services["learning"]["environment"]["LEARNING_MEDIA_UPLOAD_BUCKET"],
-            services["media-processor"]["environment"]["LEARNING_MEDIA_UPLOAD_BUCKET"])
-        self.assertNotIn("LEARNING_MEDIA_PROCESSING_ENABLED", services["learning"]["environment"])
-        self.assertEqual("true", services["media-processor"]["environment"]["LEARNING_MEDIA_PROCESSING_ENABLED"])
-        self.assertEqual("mnema-media-worker:local", services["media-processor"]["environment"]["LEARNING_MEDIA_PROCESSING_IMAGE"])
+        learning = services["learning"]["environment"]
+        self.assertEqual("true", learning["LEARNING_MEDIA_PROCESSING_ENABLED"])
+        self.assertEqual("/var/lib/mnema-media", learning["LEARNING_MEDIA_PROCESSING_WORK_ROOT"])
         self.assertIn("storage.mnema.localhost", services["minio"]["networks"]["default"]["aliases"])
-        work_root = str(state / "media-processing")
-        self.assertIn(work_root, {volume["target"] for volume in services["media-processor"]["volumes"]})
-        self.assertNotIn("ports", services["media-processor"])
+        runner = services["media-runner"]
+        self.assertEqual("mnema-render-test_local_media_work", runner["command"][-1].split("=", 1)[1])
+        self.assertEqual("--image=mnema-media-worker:local", runner["command"][-2])
+        self.assertFalse(runner.get("environment") or runner.get("secrets") or runner.get("ports"))
+        self.assertEqual(["/var/lib/mnema/media-work", "/var/run/docker.sock"], sorted(v["target"] for v in runner["volumes"]))
+        spool = [v for v in services["learning"]["volumes"] if v["target"] == "/var/lib/mnema-media"]
+        self.assertEqual([("volume", "local_media_work", "spool")], [(v["type"], v["source"], v["volume"]["subpath"]) for v in spool])
+        self.assertNotIn("/var/run/docker.sock", json.dumps(services["learning"]))
         self.assertEqual(
-            {"identity-account", "learning", "media-processor", "frontend"},
+            {"identity-account", "learning", "frontend"},
             {name for name, service in services.items() if "JAVA_TOOL_OPTIONS" in service.get("environment", {})
              or name == "frontend"})
 

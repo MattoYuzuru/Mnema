@@ -79,6 +79,20 @@ jobs:
           docker build --tag mnema-vps-postgres-fixture:verified deploy/production
           python3 -m unittest discover -s scripts/tests -p 'test_vps_*.py' -v
 
+      - name: Verify the media runner, the worker image and its codec matrix
+        timeout-minutes: 15
+        run: |
+          # No skip is allowed in these suites: a missing tool must break the build, not turn the check into a no-op.
+          python3 scripts/require_no_skips.py --path scripts/tests test_media_runner test_verify_production_dispatcher
+          docker build --tag mnema-media-worker:verified backend/media-worker
+          # The image carries no tests; they and the guard are mounted read-only. The codec matrix runs in the hardened
+          # configuration the runner uses (no network, read-only root, no capability, tmpfs /tmp).
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --memory 3g --cpus 2 --tmpfs /tmp:rw,size=512m,mode=1777 \
+            --volume "$PWD/backend/media-worker/tests:/opt/mnema-media-worker/tests:ro" \
+            --volume "$PWD/scripts/require_no_skips.py:/opt/require_no_skips.py:ro" --entrypoint python3 \
+            mnema-media-worker:verified /opt/require_no_skips.py tests.test_worker
+
       - name: Upload backend coverage report
         uses: ./.github/actions/safe-upload-artifact
         with:
@@ -180,6 +194,12 @@ jobs:
           - name: postgres
             context: ./deploy/production
             dockerfile: ./deploy/production/Dockerfile
+            target: ""
+
+          # FFmpeg image run one container per job by the root media runner (GPL-configured): its GHCR package must stay private, see backend/media-worker/README.md.
+          - name: media-worker
+            context: ./backend/media-worker
+            dockerfile: ./backend/media-worker/Dockerfile
             target: ""
 
           - name: frontend
@@ -418,7 +438,7 @@ jobs:
           path: ${{ runner.temp }}/release-security
           merge-multiple: true
 
-      - name: Bind the four images to this source and build run
+      - name: Bind the five images to this source and build run
         run: |
           python3 scripts/verify_release_security_evidence.py aggregate --include-frontend \
             --evidence-dir "$RUNNER_TEMP/release-security" \
@@ -452,13 +472,15 @@ jobs:
   deploy-production:
     needs: assemble-vps-candidate
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 150
     concurrency:
       group: mnema-vps-production
       cancel-in-progress: false
     environment:
       name: prod
       url: https://mnema.app
+    # Exactly the four read scopes enforced by scripts/verify_artifact_security_policy.py. This token also travels,
+    # short-lived, to the host's `pull`: all four are read-only, `packages: read` is the one that matters there.
     permissions:
       actions: read
       attestations: read
@@ -498,14 +520,14 @@ jobs:
               sys.exit('candidate does not belong to this workflow run')
           if candidate['securityEvidenceSha256'] != hashlib.sha256(open('vps-security-evidence.json', 'rb').read()).hexdigest():
               sys.exit('candidate evidence hash differs')
-          pattern = re.compile(r'ghcr\.io/mattoyuzuru/mnema/(frontend|identity-account|learning|postgres)@sha256:[0-9a-f]{64}')
-          if sorted(candidate['images']) != ['frontend', 'identity-account', 'learning', 'postgres'] \
+          pattern = re.compile(r'ghcr\.io/mattoyuzuru/mnema/(frontend|identity-account|learning|media-worker|postgres)@sha256:[0-9a-f]{64}')
+          if sorted(candidate['images']) != ['frontend', 'identity-account', 'learning', 'media-worker', 'postgres'] \
                   or not all(pattern.fullmatch(image) for image in candidate['images'].values()):
-              sys.exit('candidate images are not the four reviewed identities')
+              sys.exit('candidate images are not the five reviewed identities')
           print('\n'.join(candidate['images'].values()))
           PY
           )
-          test "$(printf '%s\n' "$images" | wc -l)" -eq 4
+          test "$(printf '%s\n' "$images" | wc -l)" -eq 5
           for image in $images; do
             for predicate in https://slsa.dev/provenance/v1 https://spdx.dev/Document/v2.3; do
               gh attestation verify "oci://${image}" \

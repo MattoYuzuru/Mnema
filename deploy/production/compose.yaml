@@ -116,12 +116,23 @@ services:
       LEARNING_FEATURES_AI_GENERATION_ENABLED: "false"
       LEARNING_FEATURES_TEXT_TO_SPEECH_ENABLED: "false"
       LEARNING_FEATURES_IMAGE_GENERATION_ENABLED: "false"
-      # Media object storage (Yandex Object Storage defaults). Empty equals the application default: media upload stays unconfigured.
+      # Media object storage (Yandex Object Storage). Without the key pair (app.env) upload stays unconfigured. Set-but-empty is "" to
+      # Spring, so the non-empty defaults are repeated here.
       LEARNING_MEDIA_UPLOAD_ENDPOINT: ${LEARNING_MEDIA_UPLOAD_ENDPOINT:-https://storage.yandexcloud.net}
       LEARNING_MEDIA_UPLOAD_REGION: ${LEARNING_MEDIA_UPLOAD_REGION:-ru-central1}
-      LEARNING_MEDIA_UPLOAD_BUCKET: ${LEARNING_MEDIA_UPLOAD_BUCKET:-}
+      LEARNING_MEDIA_UPLOAD_BUCKET: ${LEARNING_MEDIA_UPLOAD_BUCKET:-mnema-prod-media-b1g0dnrijqn8}
       LEARNING_MEDIA_UPLOAD_ACCESS_KEY: ${LEARNING_MEDIA_UPLOAD_ACCESS_KEY:-}
       LEARNING_MEDIA_UPLOAD_SECRET_KEY: ${LEARNING_MEDIA_UPLOAD_SECRET_KEY:-}
+      LEARNING_MEDIA_UPLOAD_MAX_IMAGE_BYTES: "33554432"
+      LEARNING_MEDIA_UPLOAD_MAX_AUDIO_BYTES: "134217728"
+      LEARNING_MEDIA_UPLOAD_MAX_VIDEO_BYTES: "1073741824"
+      LEARNING_MEDIA_UPLOAD_MAX_RESERVED_BYTES: "2147483648"
+      # Every media kind reaches READY only through the root media runner (a host service, not a Compose service) and its throw-away containers.
+      LEARNING_MEDIA_PROCESSING_ENABLED: "true"
+      LEARNING_MEDIA_PROCESSING_WORK_ROOT: /var/lib/mnema-media
+      LEARNING_MEDIA_PROCESSING_MAX_PARALLEL: "1"
+      LEARNING_MEDIA_GC_ENABLED: "true"
+      LEARNING_MEDIA_GC_GRACE: P7D
       # Promo codes and A/B (#302). Without a nonblank hash secret (>= 32 characters), promo creation/redemption are disabled; Learning keeps running.
       # Without the experiment secret every account stays on control. The popup is off unless enabled with its copy.
       MNEMA_PROMO_HASH_SECRET: ${MNEMA_PROMO_HASH_SECRET:-}
@@ -136,6 +147,14 @@ services:
       MNEMA_PROMO_POPUP_CTA: ${MNEMA_PROMO_POPUP_CTA:-}
       MNEMA_PROMO_POPUP_CODE: ${MNEMA_PROMO_POPUP_CODE:-}
       MNEMA_PROMO_POPUP_COOLDOWN: ${MNEMA_PROMO_POPUP_COOLDOWN:-P14D}
+    volumes:
+      # Learning's job spool: a subdirectory (owner 10001, mode 0700) of the root-owned, bounded media-work filesystem (loopback ext4 behind
+      # a systemd mount unit). Media jobs run in per-job containers started by the root service mnema-media-runner, which reads these
+      # directories and writes the verdicts; no container of Compose touches the work filesystem except this one mount. See README.md.
+      - type: bind
+        source: /var/lib/mnema/media-work/spool
+        target: /var/lib/mnema-media
+        bind: {create_host_path: false}
     healthcheck:
       test: [CMD, java, -cp, /app/readiness, MnemaReadiness, "18082"]
       interval: 10s

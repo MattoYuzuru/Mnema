@@ -13,7 +13,6 @@ TLS_KEY_FILE="$STATE_DIR/localhost.key"
 STORAGE_CERT_FILE="$STATE_DIR/storage.crt"
 STORAGE_KEY_FILE="$STATE_DIR/storage.key"
 TRUSTSTORE_FILE="$STATE_DIR/learning-truststore.p12"
-MEDIA_WORK_ROOT="$STATE_DIR/media-processing"
 SMOKE_STATE_FILE="$STATE_DIR/smoke-account.json"
 MEDIA_SMOKE_STATE_FILE="$STATE_DIR/media-smoke.json"
 PROJECT_NAME="${MNEMA_LOCAL_PROJECT_NAME:-mnema-local-v2}"
@@ -241,7 +240,6 @@ bootstrap() {
     ensure_storage_state
     validate_material
     ensure_public_truststore
-    install -d -m 700 "$MEDIA_WORK_ROOT"
     printf '[ok] Reusing retained local credentials and certificates in %s\n' "$STATE_DIR"
     return
   fi
@@ -282,7 +280,6 @@ bootstrap() {
   trap - EXIT HUP INT TERM
   load_runtime
   validate_material
-  install -d -m 700 "$MEDIA_WORK_ROOT"
   printf '[ok] Generated retained local-only credentials in %s (nothing is committed).\n' "$STATE_DIR"
 }
 
@@ -313,8 +310,8 @@ compose() {
   MNEMA_LOCAL_STORAGE_PORT="$MNEMA_LOCAL_STORAGE_PORT_VALUE" \
   MNEMA_LOCAL_S3_ACCESS_KEY="$MNEMA_LOCAL_S3_ACCESS_KEY_VALUE" \
   MNEMA_LOCAL_S3_SECRET_KEY="$MNEMA_LOCAL_S3_SECRET_KEY_VALUE" \
-  MNEMA_LOCAL_MEDIA_WORK_ROOT="$MEDIA_WORK_ROOT" \
   MNEMA_LOCAL_MEDIA_WORKER_IMAGE="$MEDIA_WORKER_IMAGE" \
+  MNEMA_LOCAL_MEDIA_VOLUME="${PROJECT_NAME}_local_media_work" \
   MNEMA_LOCAL_BUILD_ID="$build_id" \
   MNEMA_LOCAL_IDENTITY_SIGNING_JWK_SET_FILE="$JWK_FILE" \
   MNEMA_LOCAL_TLS_CERT_FILE="$TLS_CERT_FILE" \
@@ -373,9 +370,10 @@ start() {
   require_command python3
   require_command curl
   bootstrap
-  # The processor starts this image per job through Docker; it is never a compose service.
+  # The runner starts this image per job through Docker; it is built here, not run by Compose.
   compose --profile worker-image build media-worker-image
-  if ! compose up --detach --build --wait --wait-timeout 300; then
+  # --remove-orphans retires the Docker-socket media-processor of earlier stacks.
+  if ! compose up --detach --build --remove-orphans --wait --wait-timeout 300; then
     printf '[error] local stack failed readiness; inspect bounded status/logs below\n' >&2
     compose ps >&2 || true
     compose logs --tail=80 >&2 || true
@@ -400,11 +398,7 @@ reset_data() {
   validate_material
   compose down --volumes --remove-orphans
   rm -f "$SMOKE_STATE_FILE" "$MEDIA_SMOKE_STATE_FILE"
-  if [[ -d "$MEDIA_WORK_ROOT" && ! -L "$MEDIA_WORK_ROOT" ]]; then
-    rm -rf "$MEDIA_WORK_ROOT" || printf '[warn] could not remove %s; delete it manually\n' "$MEDIA_WORK_ROOT" >&2
-    install -d -m 700 "$MEDIA_WORK_ROOT"
-  fi
-  printf '[ok] Deleted only the %s containers, PostgreSQL and object-storage volumes and smoke state; retained local CA/JWK material.\n' "$PROJECT_NAME"
+  printf '[ok] Deleted only the %s containers, PostgreSQL, object-storage and media-work volumes and smoke state; retained local CA/JWK material.\n' "$PROJECT_NAME"
 }
 
 reset_certificates() {

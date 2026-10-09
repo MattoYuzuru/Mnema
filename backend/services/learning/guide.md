@@ -15,6 +15,29 @@ exercise mechanics into the seven below. Epic #76 added the greenfield media lif
 [GC](../../../docs/engineering/media-gc.md) and the
 [runtime policy index](../../../docs/engineering/runtime-policy-index.md).
 
+Media processing (`app.mnema.learning.media`): `MediaProcessingService` claims a sealed
+generation, downloads and hashes the source into a private `media-*` job directory of
+`learning.media.processing.work-root`, and hands it to `MediaWorkerGateway`. The only
+implementation is `SpoolMediaWorkerGateway`: it writes `request.json` and `output/` into the private
+(0700) job directory, atomically publishes `submitted`, and waits for `status.json`, which the root
+media runner writes after it has run the job in a throw-away, network-less container and copied the
+validated output into `output/` (design, threat model, bounds and exit mapping:
+[media worker README](../../media-worker/README.md#media-runner-and-job-protocol-v1)). Learning accepts a
+verdict only from a root-owned file. The container is treated as compromised, so `WorkerFiles` still
+reads each result file once, never through a link, only if regular and size-capped, and
+`MediaWorkerResult` copies every variant while hashing it into a Learning-only `.private/` directory
+that is uploaded and deleted instead. Verification of the result,
+upload and publication stay in Learning, which alone holds object-store credentials.
+`MediaJobDirectories` deletes through directory handles (no link is followed), sweeps directories no
+running job owns after `stale-job-age` (2 h), also stale foreign entries of the work root, and removes
+every leftover job at startup (one Learning instance owns the root). There is no Docker client,
+socket or `docker.*` setting. Tests: `SpoolMediaWorkerGatewayTest` (a Java stand-in for
+the worker: success, rejection, retryable and malformed statuses, linked and FIFO statuses, timeout and
+disk cancel, queue time, interruption, a verdict not owned by root, a job directory that stays 0700),
+`MediaWorkerResultTest` (links, FIFOs,
+oversized and lying output), `MediaJobDirectoriesTest`, and the opt-in
+`MNEMA_MEDIA_SPOOL_SMOKE=1` variant of `MediaUploadIntegrationTest` with the real image.
+
 ## Runtime contract
 
 - Canonical application context: `/api`; there is no `/v2` or legacy service alias.
@@ -640,7 +663,7 @@ production path through the egress proxy has not been exercised end to end, and 
   32 audio tokens a second); without it the adapter estimates. Live: `MNEMA_AI_LIVE=true MNEMA_AI_LIVE_EGRESS=direct … --tests '*SpeechLive*'` from a
   developer network where Google answers, otherwise through the egress proxy.
 - **Media pipeline.** The worker accepts a `RIFF/WAVE` PCM s16le source for audio (`audio/wav`, still transcoded to the same AAC/M4A playback variant); `MediaProcessingService` rejects a WAV source unless the asset's origin is
-  `generated`, and `MediaUploadSettings.validateGenerated` allows `audio/wav` only for the server staging, so the browser allowlist is unchanged. **The `mnema-media-worker:local` image must be rebuilt** (`backend/media-worker`).
+  `generated`, and `MediaUploadSettings.validateGenerated` allows `audio/wav` only for the server staging, so the browser allowlist is unchanged. **The media-worker image must be rebuilt** (`backend/media-worker`).
 - **Executor (`SpeechExecutor`, kind `TTS`, capability `TTS`, deadline PT2M; replaces the Stub executor).** `SpeechClips` is the shared part (cache claim, one provider call, stage, wait; a fallback answer is filed under the provider that made
   it). Three inputs. **The initial step of a slot** (`SessionLifecycle.insertMediaStep`; recovery and queue expiry go through `ImageSearchLifecycle` like an image slot, `MediaSteps.isSlotStep`): the spec's `text`, `lang`, `voice` (default
   female), take 0; PENDING, GENERATING, VERIFYING, READY on the pre-allocated asset (node hold, `generation_media_clip` row), debiting `TTS_CLIP_30S` from the session hold **only when this run called a provider**

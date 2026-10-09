@@ -45,6 +45,20 @@ jobs:
           docker build --tag mnema-vps-postgres-fixture:verified deploy/production
           python3 -m unittest discover -s scripts/tests -p 'test_vps_*.py' -v
 
+      - name: Verify the media runner, the worker image and its codec matrix
+        timeout-minutes: 15
+        run: |
+          # No skip is allowed in these suites: a missing tool must break the build, not turn the check into a no-op.
+          python3 scripts/require_no_skips.py --path scripts/tests test_media_runner test_verify_production_dispatcher
+          docker build --tag mnema-media-worker:verified backend/media-worker
+          # The image carries no tests; they and the guard are mounted read-only. The codec matrix runs in the hardened
+          # configuration the runner uses (no network, read-only root, no capability, tmpfs /tmp).
+          docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --memory 3g --cpus 2 --tmpfs /tmp:rw,size=512m,mode=1777 \
+            --volume "$PWD/backend/media-worker/tests:/opt/mnema-media-worker/tests:ro" \
+            --volume "$PWD/scripts/require_no_skips.py:/opt/require_no_skips.py:ro" --entrypoint python3 \
+            mnema-media-worker:verified /opt/require_no_skips.py tests.test_worker
+
       - name: Upload backend coverage report
         uses: ./.github/actions/safe-upload-artifact
         with:

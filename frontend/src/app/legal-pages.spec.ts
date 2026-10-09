@@ -23,6 +23,8 @@ describe('Personal data policy page', () => {
         const root = render(PrivacyPageComponent);
         expect(text(root.querySelector('h1'))).toBe('Политика обработки персональных данных');
         expect(text(root.querySelector('.last-updated'))).toContain(LEGAL_EFFECTIVE_DATE);
+        // 1.1: avatars and material media became active (storage in Yandex Object Storage, processing on Mnema's server)
+        expect(text(root.querySelector('.last-updated'))).toBe('Действует с 9 октября 2026 · версия 1.1');
         expect(root.querySelector('.legal-page')?.getAttribute('lang')).toBe('ru');
         const block = text(root.querySelector('app-legal-operator-block'));
         for (const value of [LEGAL_OPERATOR.name, LEGAL_OPERATOR.inn, LEGAL_OPERATOR.ogrnip, LEGAL_OPERATOR.email]) expect(block).toContain(value);
@@ -77,7 +79,12 @@ describe('Personal data policy page', () => {
         expect(recipients).toContain('Object Storage');
         expect(recipients).toContain('аватары профиля');
         expect(recipients).toContain('в течение 7 дней');
-        expect(recipients).toContain('Загрузка изображений, аудио и видео в материалы сейчас не предоставляется');
+        // material media is live: stored in Yandex Object Storage, processed on Mnema's own server, removed by the 7-day grace
+        expect(recipients).toContain('файлы (изображения, аудио, видео), которые вы прикрепляете к материалам');
+        expect(recipients).toContain('обрабатываются на сервере Mnema, внешним сервисам обработки файлы не передаются');
+        expect(recipients).toContain('удаляется из хранилища автоматически примерно через 7 дней');
+        expect(recipients).toContain('при удалении аккаунта по вашему запросу файлы удаляются вместе с ним');
+        expect(recipients).not.toContain('сейчас не предоставляется');
         expect(recipients).toContain('Telegram FZ-LLC');
         expect(recipients).not.toContain('Telegram хранит');
         const body = text(root);

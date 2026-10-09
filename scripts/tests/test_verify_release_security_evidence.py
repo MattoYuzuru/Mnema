@@ -230,8 +230,8 @@ class ReleaseSecurityEvidenceTest(unittest.TestCase):
                                   sha=COMMIT, run_id=RUN_ID, run_attempt=RUN_ATTEMPT,
                                   trivy_ignore=self.trivy_ignore, output=self.root / 'candidate.json')
 
-    def test_frontend_and_postgres_use_the_same_high_critical_gate(self):
-        for service in ('frontend', 'postgres'):
+    def test_frontend_media_worker_and_postgres_use_the_same_high_critical_gate(self):
+        for service in ('frontend', 'media-worker', 'postgres'):
             for severity in ('HIGH', 'CRITICAL'):
                 with self.subTest(service=service, severity=severity), self.assertRaises(EvidenceFailure):
                     evaluate(self.fixture(service, [self.vulnerability(severity)]))
@@ -243,14 +243,25 @@ class ReleaseSecurityEvidenceTest(unittest.TestCase):
         with self.assertRaisesRegex(EvidenceFailure, 'frontend'):
             aggregate(args)
 
-    def test_vps_candidate_has_four_images_without_runtime_admission(self):
+    def test_vps_candidate_has_every_vps_image_including_the_media_worker_without_runtime_admission(self):
         from render_vps_candidate import render
         args = self.candidate_arguments()
         render(args)
         data = json.loads(args.output.read_text())
         self.assertEqual(set(VPS_SERVICES), set(data['images']))
+        self.assertIn('media-worker', data['images'])
         self.assertEqual(COMMIT, data['sha'])
         self.assertEqual({'schemaVersion', 'sha', 'images', 'source', 'securityEvidenceSha256'}, set(data))
+
+    def test_vps_candidate_cannot_omit_the_media_worker_security_record(self):
+        for service in VPS_SERVICES:
+            if service != 'media-worker':
+                evaluate(self.fixture(service))
+                (self.digests_dir / f'{service}.digest').write_text(self.digest(service) + '\n')
+        args = self.aggregate_arguments()
+        args.include_frontend = True
+        with self.assertRaises(EvidenceFailure):
+            aggregate(args)
 
     def test_vps_candidate_cannot_omit_the_database_security_record(self):
         args = self.candidate_arguments()

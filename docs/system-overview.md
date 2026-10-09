@@ -46,7 +46,7 @@ Angular 22 SPA
 - Angular SPA использует standalone components и lazy routes. Канонический #74 flow:
   Deck → Capture/«На потом» → EditingDraft → явная публикация → Browse.
 - `compose.local-full-stack.yml` запускает persistent PostgreSQL, MinIO, Identity,
-  Learning, отдельный media-processor и production Angular через localhost HTTPS;
+  Learning, сетевой изолированный media-worker и production Angular через localhost HTTPS;
   обычный stop/start сохраняет локальные данные
   ([runbook](./deploy/selfhost-local.md)). `docker-compose.yml` остаётся backend maintenance runtime.
 

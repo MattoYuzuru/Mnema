@@ -1,0 +1,23 @@
+# Installed as /etc/systemd/system/var-lib-mnema-media\x2dwork.mount (systemd derives the file name from Where=).
+# Media jobs handle hostile input: the work directory sits on its own fixed-size, fixed-inode filesystem, so a runaway
+# or compromised job can exhaust only that filesystem. Setup (once, as root; the full procedure is in
+# deploy/production/README.md, "Media runner"):
+#   install -d -m 0000 /var/lib/mnema/media-work                 # while unmounted nothing can use the empty mount point
+#   fallocate -l 20G /var/lib/mnema/media-work.img               # reserved, not sparse: `du -h` must show 20G
+#   mkfs.ext4 -q -E nodiscard -N 131072 -m 0 -L mnema-media-work /var/lib/mnema/media-work.img
+# then install this unit and `systemctl enable --now` it; on the mounted filesystem the root stays root:root 0755 and
+# `spool/` is created as 10001:10001 mode 0700 (Learning's job spool). docker.service does NOT depend on this mount: if
+# it is absent only media processing fails closed (the runner and the dispatcher refuse to use a plain directory).
+[Unit]
+Description=Mnema media work directory (bounded loopback ext4)
+Documentation=https://github.com/MattoYuzuru/Mnema/blob/main/deploy/production/README.md
+RequiresMountsFor=/var/lib/mnema
+
+[Mount]
+What=/var/lib/mnema/media-work.img
+Where=/var/lib/mnema/media-work
+Type=ext4
+Options=loop,nodev,nosuid,noexec,noatime
+
+[Install]
+WantedBy=multi-user.target

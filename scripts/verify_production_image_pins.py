@@ -82,6 +82,41 @@ def validate_dockerfile(path: Path) -> list[Finding]:
     return findings
 
 
+MEDIA_WORKER_BASE_ARG = re.compile(r"^ARG UBUNTU_BASE=(?P<image>\S+)\s*$", re.MULTILINE)
+
+
+def media_worker_base(content: str) -> str | None:
+    matches = MEDIA_WORKER_BASE_ARG.findall(content)
+    return matches[0] if len(matches) == 1 else None
+
+
+def validate_media_worker_dockerfile(path: Path) -> list[Finding]:
+    """The worker image takes its base through one build argument; keep that argument pinned, every package that decides
+    what runs pinned exactly, and the image non-root."""
+    content, findings = _read(path)
+    if content is None:
+        return findings
+    base = media_worker_base(content)
+    if base is None:
+        return [Finding(path, "media worker image must declare exactly one ARG UBUNTU_BASE base image")]
+    findings.extend(_validate_pinned_image(path, base, "media worker base image"))
+    from_lines = [line.strip() for line in content.splitlines() if FROM_INSTRUCTION.match(line)]
+    if from_lines != ["FROM ${UBUNTU_BASE}"]:
+        findings.append(Finding(path, "media worker image must have a single FROM ${UBUNTU_BASE} stage"))
+    if "ffmpeg=${FFMPEG_VERSION}" not in content or not re.search(r"^ARG FFMPEG_VERSION=\S+$", content, re.MULTILINE):
+        findings.append(Finding(path, "media worker FFmpeg packages must be pinned to an explicit version"))
+    if "python3.12=${PYTHON312_VERSION}" not in content or "libpython3.12-stdlib=${PYTHON312_VERSION}" not in content:
+        findings.append(Finding(path, "media worker Python interpreter and standard library must be pinned exactly"))
+    if 'org.opencontainers.image.source="https://github.com/MattoYuzuru/Mnema"' not in content:
+        findings.append(Finding(path, "media worker image must carry the OCI source label that links its private package to the repository"))
+    lines = [line.strip() for line in content.splitlines()]
+    if "USER 10002:10002" not in lines or not any(line.startswith('ENTRYPOINT ["python3"') for line in lines):
+        findings.append(Finding(path, "media worker image must run as UID 10002 (Learning is 10001) with an exec-form Python entrypoint"))
+    if any(line.startswith("COPY tests") for line in lines):
+        findings.append(Finding(path, "media worker image must not contain the tests"))
+    return findings
+
+
 def _images(content: str) -> list[str]:
     return [match.group("image") for line in content.splitlines() if (match := IMAGE_LINE.fullmatch(line))]
 
@@ -107,8 +142,11 @@ def validate_vps_images(repository_root: Path) -> list[Finding]:
     placeholders = {f'${{MNEMA_{service}_IMAGE:?verified-candidate-required}}'
                     for service in ('FRONTEND', 'IDENTITY_ACCOUNT', 'LEARNING', 'POSTGRES')}
     if len(images) != 4 or any(images.count(value) != 1 for value in placeholders):
-        findings.append(Finding(path, 'VPS requires exactly four admitted image bindings including the database'))
+        findings.append(Finding(path, 'VPS Compose requires exactly four admitted image bindings (the media worker image is run by the media runner, not by Compose)'))
+    if 'MNEMA_MEDIA_WORKER_IMAGE' in content or '\n  media-worker:' in content:
+        findings.append(Finding(path, 'the media worker must not be a Compose service: per-job containers are started by the media runner'))
     findings.extend(validate_dockerfile(repository_root / 'deploy/production/Dockerfile'))
+    findings.extend(validate_media_worker_dockerfile(repository_root / 'backend/media-worker/Dockerfile'))
     return findings
 
 
@@ -142,6 +180,11 @@ def validate_inventory_document(repository_root: Path, path: Path) -> list[Findi
                 for line in dockerfile_content.splitlines()
                 if FROM_INSTRUCTION.match(line) and (match := FROM_LINE.fullmatch(line))
             )
+
+    worker_content, _ = _read(repository_root / 'backend/media-worker/Dockerfile')
+    worker_base = media_worker_base(worker_content) if worker_content is not None else None
+    if worker_base is not None:
+        source_images.add(worker_base)
 
     compose_content, _ = _read(repository_root / 'deploy/production/compose.yaml')
     if compose_content is not None:

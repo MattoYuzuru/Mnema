@@ -32,9 +32,9 @@ and [workflow syntax for permissions](https://docs.github.com/en/actions/referen
 | `main-backend-jacoco` | `deploy` / `backend-quality` | `backend-jacoco-report` | `backend/build/reports/jacoco/jacocoRootReport/` | 30 | internal test report | Gradle JaCoCo quality gate |
 | `main-release-security` | `deploy` / `build-and-push` | `release-security-${{ matrix.name }}` | runner temp `release-security/${{ matrix.name }}-*` | 30 | security evidence | Trivy, Syft and attestation verification |
 | `main-release-image-digest` | `deploy` / `build-and-push` | `release-image-${{ matrix.name }}` | runner temp `release-digests/${{ matrix.name }}.digest` | 30 | release identifier | Buildx digest output |
-| `main-vps-candidate` | `deploy` / `assemble-vps-candidate` | `vps-candidate` | candidate/security evidence/checksums | 30 | release manifest | four-image candidate aggregator |
+| `main-vps-candidate` | `deploy` / `assemble-vps-candidate` | `vps-candidate` | candidate/security evidence/checksums | 30 | release manifest | five-image candidate aggregator |
 
-Publication uses the four-image VPS candidate. `vps-deploy` has only `contents: read` and
+Publication uses the five-image VPS candidate. `vps-deploy` has only `contents: read` and
 stores no artifacts. Application configuration travels only over the forced-command SSH
 session from the approved `deploy-production` job, never as an artifact.
 
@@ -73,7 +73,7 @@ All inventoried workflows declare top-level `permissions: {}`. Every job then de
 |---|---|---|
 | `contents: read` | all jobs | checkout, immutable source/ref verification |
 | `actions: read` | release render and deploy-gate jobs | download artifacts and inspect the exact predecessor run |
-| `packages: write` | `deploy / build-and-push` only | publish the four verified VPS GHCR images |
+| `packages: write` | `deploy / build-and-push` only | publish the five verified VPS GHCR images |
 | `id-token: write` | `deploy / build-and-push` only | GitHub OIDC identity for build attestations |
 | `attestations: write` | `deploy / build-and-push` only | publish provenance attestations for exact image digests |
 

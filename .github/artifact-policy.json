@@ -128,7 +128,7 @@
       "retentionDays": 30,
       "ifNoFilesFound": "error",
       "classification": "release-manifest",
-      "source": "Four immutable VPS image identifiers and complete verified image security evidence; no secrets"
+      "source": "Five immutable VPS image identifiers and complete verified image security evidence; no secrets"
     }
   ]
 }

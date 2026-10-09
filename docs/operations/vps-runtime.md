@@ -12,8 +12,8 @@ artifact:
 # Production VPS runtime
 
 Production serves https://mnema.app and https://auth.mnema.app on the Russian VPS
-`mnema` / `135.106.175.30` (Ubuntu 24.04, 6 CPU / 12 GB; `ssh mnema`). Four Compose
-containers run behind host Caddy; the minute health timer and the daily local backup
+`mnema` / `135.106.175.30` (Ubuntu 24.04, 6 CPU / 12 GB; `ssh mnema`). Five Compose
+containers (all on loopback host networking) and the root `mnema-media-runner` service run behind host Caddy; the minute health timer and the daily local backup
 are active. The current release is whatever `mnema-deploy status` and the latest
 successful `deploy-production` run report; do not assume a later main commit is
 deployed (docs-only merges are intentionally not released). Public browser acceptance
@@ -32,7 +32,8 @@ unreachable by the application UID 10001. The service RuntimeDirectory persists
 this permission boundary across reboot.
 Reviewed Compose uses Linux host networking with explicit 127.0.0.1 listeners:
 frontend 18080, Identity 18081, Learning 18082, PostgreSQL 15432. No published Docker
-ports/NAT, Docker socket mounts, or Docker-group access. Host networking reduces
+ports/NAT, Docker socket mounts, or Docker-group access. The media job containers started by the
+root runner have no network namespace at all (`--network none`) and live for one job. Host networking reduces
 network isolation between these trusted containers; it is chosen for this single
 host and the existing loopback SSH egress tunnel, with capability, user, resource
 and filesystem constraints. External port checks remain mandatory: UFW alone
@@ -46,7 +47,7 @@ its DB password. Application images run UID 10001 without capabilities and with
 read-only roots. Frontend master retains only CHOWN/SETUID/SETGID for nginx workers.
 Memory/CPU/PID limits and 10 MB × 3 local log rotation bound resource use.
 
-PostgreSQL is the fourth verified release image: the pinned official 18.6 Alpine
+PostgreSQL is a verified release image: the pinned official 18.6 Alpine
 base retains its entrypoint with only the unique privilege-switch call changed
 from gosu to Alpine's su-exec (same user/command direct-exec operation); the
 vulnerable Go-based gosu binary is removed entirely. It passes
@@ -125,14 +126,20 @@ Compose defaults `MNEMA_AVATAR_BUCKET` to `mnema-prod-avatars-b1g0dnrijqn8`
 feature turns on when `MNEMA_AVATAR_ACCESS_KEY` and `MNEMA_AVATAR_SECRET_KEY` (the
 `mnema-identity-avatars` service-account static key, scoped to that bucket) are
 present; the application default bucket is empty, so a missing bucket or key keeps
-avatars off. Learning media storage (`LEARNING_MEDIA_UPLOAD_BUCKET`, left empty in
-Compose, `LEARNING_MEDIA_UPLOAD_ACCESS_KEY`, `LEARNING_MEDIA_UPLOAD_SECRET_KEY`) stays
-off until the network-less processing worker lands (#380): every media kind needs the
-worker to reach `READY`, and the policy says media upload is not provided yet. The
-prepared bucket is `mnema-prod-media-b1g0dnrijqn8` (private, SSE-KMS, CORS only for
-`https://mnema.app`); see
+avatars off. Learning media storage is active in the same service once
+`LEARNING_MEDIA_UPLOAD_ACCESS_KEY` and `LEARNING_MEDIA_UPLOAD_SECRET_KEY` are present;
+Compose defaults `LEARNING_MEDIA_UPLOAD_BUCKET` to `mnema-prod-media-b1g0dnrijqn8`
+(private, SSE-KMS, CORS only for `https://mnema.app`), caps uploads at 32 MiB images,
+128 MiB audio and 1 GiB video with 2 GiB reserved per owner, enables the media garbage
+collector with a 7-day grace and processes with one job at a time. Every media kind reaches
+`READY` only through the root `mnema-media-runner` service, which runs each job in its own
+throw-away, network-less FFmpeg container and is the only writer of a job's verdict; Learning
+mounts just `/var/lib/mnema/media-work/spool` from the bounded work filesystem (administrator
+bootstrap and design in the [dispatcher contract](../../deploy/production/README.md) and the
+[media worker README](../../backend/media-worker/README.md)); the policy discloses the storage
+and the on-server processing. See
 [media upload transport](../engineering/media-upload-transport.md#production-object-storage).
-Enabling media, account deletion (`MNEMA_IDENTITY_DELETION_ENABLED`, currently
+Account deletion (`MNEMA_IDENTITY_DELETION_ENABLED`, currently
 `false`) or any foreign recipient requires updating the privacy policy first.
 
 ### Object storage live check

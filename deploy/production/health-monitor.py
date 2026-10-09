@@ -19,8 +19,15 @@ BACKUP_TOOL = '/usr/local/sbin/mnema-local-backup'
 OFFSITE_CONFIG = Path('/etc/mnema/production/offsite.env')
 OFFSITE_SUCCESS = Path('/var/lib/mnema-release/offsite-last-success')
 STALE_SECONDS = 26 * 3600
-# Four URL probes (5 s each) + newest + logger stay well below the unit's TimeoutStartSec=60s.
+# Four URL probes (5 s each) + the runner status (5 s) + newest + logger stay well below the unit's TimeoutStartSec=60s.
 NEWEST_TIMEOUT = 10
+MEDIA_RUNNER_UNIT = 'mnema-media-runner.service'
+MEDIA_RUNNER_HEARTBEAT = Path('/var/lib/mnema-media-runner/heartbeat')
+MEDIA_RUNNER_MAX_AGE = 30
+MEDIA_WORK = Path('/var/lib/mnema/media-work')
+MEDIA_WORK_MIN_FREE_FRACTION = 0.10
+CURRENT = Path('/var/lib/mnema-release/current.json')
+RELEASES = Path('/etc/mnema/production/releases')
 ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'HOME': '/root'}
 
 
@@ -56,6 +63,43 @@ def stale_components():
     return failed
 
 
+def media_worker_expected():
+    """Only a recorded release that contains the worker image has a worker container; an older release (or none yet)
+    must not raise an alert, which also lets the monitor be installed before the first five-image release."""
+    try:
+        sha = json.loads(CURRENT.read_text())['sha']
+        if not isinstance(sha, str) or len(sha) != 40 or not sha.isalnum():
+            return False
+        return 'media-worker' in json.loads((RELEASES / (sha + '.json')).read_text())['images']
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+
+
+def media_runner_healthy(clock=time.time):
+    """The runner is a host service (it starts one container per job): active, with a heartbeat younger than 30 s."""
+    try:
+        result = subprocess.run(['/usr/bin/systemctl', 'is-active', MEDIA_RUNNER_UNIT], env=ENV, capture_output=True, timeout=5)
+        if result.returncode != 0 or result.stdout.strip() != b'active':
+            return False
+        return clock() - MEDIA_RUNNER_HEARTBEAT.stat().st_mtime <= MEDIA_RUNNER_MAX_AGE
+    except (subprocess.SubprocessError, OSError):
+        return False
+
+
+def media_work_problems():
+    """The media work filesystem must be mounted on its own and keep 10 % of its blocks and inodes free."""
+    try:
+        info, parent = os.stat(MEDIA_WORK), os.stat(MEDIA_WORK.parent)
+        if info.st_dev == parent.st_dev:
+            return ['media_work_mount']
+        fs = os.statvfs(MEDIA_WORK)
+    except OSError:
+        return ['media_work_mount']
+    low_blocks = fs.f_blocks and fs.f_bavail / fs.f_blocks < MEDIA_WORK_MIN_FREE_FRACTION
+    low_inodes = fs.f_files and fs.f_favail / fs.f_files < MEDIA_WORK_MIN_FREE_FRACTION
+    return ['media_work_space'] if low_blocks or low_inodes else []
+
+
 def check():
     failed = []
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -66,6 +110,10 @@ def check():
                     failed.append(name)
         except Exception:
             failed.append(name)
+    if media_worker_expected():
+        if not media_runner_healthy():
+            failed.append('media_runner')
+        failed.extend(media_work_problems())
     if shutil.disk_usage('/').free < 10 * 1024 ** 3:
         failed.append('disk_reserve')
     if Path('/var/lib/mnema-release/pending.json').exists():

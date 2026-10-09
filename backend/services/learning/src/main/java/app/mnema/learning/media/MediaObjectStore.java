@@ -203,7 +203,12 @@ final class MediaObjectStore implements AutoCloseable {
         } catch (SdkException failure) { throw new MediaStorageUnavailableException(); }
     }
 
-    /** Derived keys are content-addressed; a timed-out PUT is reconciled by HEAD. */
+    /**
+     * Derived keys are content-addressed; a timed-out PUT is reconciled by HEAD. {@code source} must be a
+     * Learning-private file (the verified copy made by {@link MediaWorkerResult}), never a path the media worker
+     * can write: {@code RequestBody.fromFile} follows links. The SHA-256 travels as object metadata; a request
+     * checksum header is deliberately not sent because Yandex Object Storage does not document it.
+     */
     void putVerified(String key, Path source, long length, String sha256, String mimeType) {
         requireConfigured();
         try {
