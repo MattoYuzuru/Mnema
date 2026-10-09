@@ -157,11 +157,11 @@ application configuration. The names are the allowlist in
 [`app-config.keys`](../../deploy/production/app-config.keys) (Turnstile keys and mode,
 Google/Yandex/GitHub OAuth pairs, Postbox pair, promo and experiment secrets, events owner
 account, learning media upload and avatar storage key pairs, billing checkout mode, tester accounts and the
-T-Bank terminal key and base64-encoded password). After admission the `deploy-production` job maps exactly these secrets into
+T-Bank terminal key and base64-encoded password, and the НПД receipt mode, INN and base64-encoded personal-account password). After admission the `deploy-production` job maps exactly these secrets into
 one step, builds a JSON object from the non-empty ones and sends it on stdin to the
 dispatcher's `configure`, which validates names and values (Turnstile mode only `blocked`
 or `required`, and `required` needs both Turnstile keys; billing checkout only `OFF`, `TESTERS`
-or `ON`; no value may contain `"`, `'`, `\`, `$` or a backtick, which is why the T-Bank
+or `ON`; the НПД receipt mode only `OFF` or `ON` and the INN 12 digits; no value may contain `"`, `'`, `\`, `$` or a backtick, which is why the T-Bank
 password is delivered as `MNEMA_TBANK_PASSWORD_BASE64`) and stages the root-only
 `app.env.next`; values are never printed. The dispatcher promotes it to `app.env` only
 inside `deploy`/`rollback`, after `pending.json` is written, and keeps the replaced file as

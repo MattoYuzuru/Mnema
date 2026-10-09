@@ -85,7 +85,7 @@ chain ([billing contract](../../contracts/billing/README.md)). Production checko
 DEMO-terminal checks. A browser return URL never grants an entitlement. Still open before
 real money: the working terminal (bank test cases on the DEMO terminal first), the offer
 and payment terms on the site (#78), recurring consent and `Charge` (#390), the profile
-billing page with cancellation (#391), НПД receipts, refunds and reconciliation (#392).
+billing page with cancellation (#391). НПД receipts and refund annulment are implemented (#392, below).
 The terminal must stay one-stage without an attached cash register.
 
 Before receiving money, obtain bank terms and test/working terminal credentials,
@@ -95,6 +95,15 @@ flow. T-Bank's [non-PCI autopay flow](https://developer.tbank.ru/eacq/scenarios/
 uses a first recurrent payment/RebillId and subsequent merchant-initiated Charge;
 Mnema must own renewal scheduling, idempotency, cancellation and reconciliation.
 Do not store PAN/CVV or put terminal credentials in browser code.
+
+**Implemented (#392):** the «Мой налог» receipt of every paid order is queued in the payment transaction and registered by a worker through the
+personal-account web API (`MNEMA_NPD_RECEIPTS`, `MNEMA_NPD_INN`, `MNEMA_NPD_PASSWORD_BASE64`; `OFF` by default), a full refund annuls it, a lost answer is
+never answered with a duplicate (the receipt is looked up first), the 9th-of-the-month term raises an alarm, and a daily check compares paid and refunded
+orders with their receipts ([guide](../../backend/services/learning/guide.md#нпд-receipts-392)). **Residual risk:** the API is unofficial (no
+contract, can change without notice; the receipts then queue and alarm, nothing is lost), its HTTP shapes were taken from open-source clients and
+verified only against a fake, the personal-account password is stored in the production configuration, and a partial refund is manual. Still owner
+tasks: confirm with ФНС whether a card payment through acquiring must be receipted at the moment of payment or by the 9th, check the first live receipt by hand
+and keep a manual path ready.
 
 НПД requires a «Мой налог» receipt; a bank payment confirmation is not that receipt.
 T-Bank's published [«Чеки» conditions](https://www.tbank.ru/business/help/business-payments/kassa/check/)

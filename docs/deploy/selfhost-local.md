@@ -290,7 +290,7 @@ Checkout is off locally unless the private dotenv file sets `MNEMA_BILLING_CHECK
 Compose would expand a `$` inside a raw password). The launcher passes them to Learning with `MNEMA_PUBLIC_BASE_URL=https://localhost:3443`.
 The bank cannot deliver a notification to that address, so a local order becomes `PAID` through the return page's `GetState` refresh
 (`/plans/payment/{orderId}`) or the reconciler, never through the browser. Pay on the hosted form with the bank's published test cards
-only. See the [billing contract](../../contracts/billing/README.md).
+only. НПД receipts (`MNEMA_NPD_RECEIPTS`, default `OFF`) stay off locally: `lknpd.nalog.ru` is unreachable from this machine, and a paid test order only queues its receipt. See the [billing contract](../../contracts/billing/README.md).
 
 ### Colima clock
 

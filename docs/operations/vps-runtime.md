@@ -142,6 +142,21 @@ and the on-server processing. See
 Account deletion (`MNEMA_IDENTITY_DELETION_ENABLED`, currently
 `false`) or any foreign recipient requires updating the privacy policy first.
 
+### НПД receipts (#392)
+
+Every paid order needs a «Мой налог» receipt, and a refund annuls it. Three optional keys control it (GitHub Environment `prod` secrets
+`PROD_MNEMA_NPD_RECEIPTS`, `PROD_MNEMA_NPD_INN`, `PROD_MNEMA_NPD_PASSWORD_BASE64`, delivered like every other key; the dispatcher
+accepts only `OFF`/`ON` and a 12-digit INN, and the password travels base64-encoded because the channel refuses `$`):
+
+- `MNEMA_NPD_RECEIPTS=OFF` (default, also when unset): a paid order still queues its receipt, nothing is sent to `lknpd.nalog.ru`, and the
+  `receipt_overdue` alarm (9th of the next month) and the daily `receipt_mismatch` check still run. Use it until the first live check.
+- `MNEMA_NPD_RECEIPTS=ON`: the worker registers and annuls receipts. Learning **refuses to start** without `MNEMA_NPD_INN` and
+  `MNEMA_NPD_PASSWORD_BASE64` (the error names the keys, never a value), so set both in the same release.
+
+`lknpd.nalog.ru` is not reachable from the development machine; this server is the only place the integration runs. Allow outbound HTTPS to it
+(GlobalSign chain, the JVM trust store). Watch the log lines `billing anomaly kind=receipt_*` and the counter
+`mnema_billing_anomalies_total{kind}`; operator steps are in the [Learning guide](../../backend/services/learning/guide.md#нпд-receipts-392).
+
 ### Object storage live check
 
 Opt-in parity check of both S3 clients against the real buckets (skipped unless
