@@ -61,7 +61,8 @@ is verified separately by integration tests. Judge opinions still need owner cal
 
 ## Owner evidence still required
 
-The local `owner-calibration-review.md` deliverable contains **60 unique cases**: the balanced
+The owner review files live outside the repository, in `~/.local/share/mnema/epic-77-run5-eval/`: `owner-calibration-review.md` (the review itself) and
+`calibration-extra/report.json` (the 20 additional cases and their judge opinions); the candidate report is in this directory. The `owner-calibration-review.md` deliverable contains **60 unique cases**: the balanced
 40-case final-run sample plus 20 additional dev cases chosen without inspecting their outcomes.
 It withholds judge opinions to reduce anchoring, includes inputs and unchanged edit context,
 and leaves every accept/reject decision unmarked. The companion reports retain opinions for

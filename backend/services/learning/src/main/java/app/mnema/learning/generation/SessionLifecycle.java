@@ -570,15 +570,33 @@ class SessionLifecycle {
     }
 
     /**
-     * {@code GENERATION_READY} when every artifact is approvable now, {@code GENERATION_PARTIAL} when some are and some
-     * failed, {@code GENERATION_FAILED} when none is approvable and something failed ({@code contracts/notifications}).
-     * A proposal whose media is still being made is not approvable yet: with no failure nothing is published here.
-     * TODO(#373; owner: Generation): publish the session outcome when the last slot of a
-     * REVIEW session resolves. {@link ImageSearchLifecycle} and {@link SpeechLifecycle} currently announce slot changes
-     * only; share this outcome check with them and preserve the session notification's deduplication key.
+     * An initial media step of a slot (image search or speech) ended, in the caller's transaction and after its usage calls: the batch hold is released
+     * once no such step is open, and a session that had already left RUNNING with its media still being made now announces its outcome
+     * ({@link #notifyOutcome}), exactly once whichever slot finishes last. A RUNNING session settles later through {@link #settle}, which sees the same
+     * state; a revision announces nothing. The session lock serialises the slots of a session, and the notification's deduplication key
+     * ({@code generation:{sessionId}:ready}) makes a repeated evaluation harmless.
+     */
+    void slotStepEnded(Tx tx) {
+        releaseIdleBatch(tx);
+        if (isRevision(tx.session) || !(tx.state.equals("REVIEW") || tx.state.equals("CLOSED"))
+                || steps.hasOpenSlotSteps(tx.session.sessionId())) {
+            return;
+        }
+        notifyOutcome(tx, repository.artifactCounts(tx.session.sessionId()));
+    }
+
+    /**
+     * {@code GENERATION_READY} when every artifact is proposed, none failed and no media step is still working (a slot that failed counts as finished:
+     * the owner has something to review, and {@code approvableCount} says how much of it can be approved now), {@code GENERATION_PARTIAL} when some
+     * are approvable and some failed, {@code GENERATION_FAILED} when none is approvable and something failed ({@code contracts/notifications}).
+     * Nothing is announced while a media step of a slot is still working; {@link #slotStepEnded} evaluates the same outcome when the last one ends. Each kind is
+     * published at most once per session (deduplication key), so a retry in the Workshop, of a text or of a media redo, never announces a kind again; a text retry
+     * that reopens the session settles it once more and may publish the kind not yet published (for example READY after PARTIAL), a media redo (a turn) announces nothing.
      */
     private void notifyOutcome(Tx tx, Map<String, Integer> counts) {
         UUID sessionId = tx.session.sessionId();
+        // an outcome is announced once nothing of the session is still being made: media that is still working can turn "nothing approvable" into "ready"
+        if (steps.hasOpenSlotSteps(sessionId)) return;
         int total = counts.values().stream().mapToInt(Integer::intValue).sum();
         int failed = counts.get("FAILED");
         int approvable = repository.approvableCount(sessionId);
@@ -586,7 +604,7 @@ class SessionLifecycle {
         params.put("deckId", tx.session.deckId());
         params.put("sessionId", sessionId);
         params.put("sessionKind", tx.session.kind());
-        if (failed == 0 && approvable == total && total > 0) {
+        if (failed == 0 && total > 0 && counts.get("PROPOSED") == total) {
             params.put("artifactCount", total);
             params.put("approvableCount", approvable);
             notifications.publish(tx.session.ownerId(), NotificationKind.GENERATION_READY, "generation:" + sessionId + ":ready",
@@ -596,7 +614,8 @@ class SessionLifecycle {
             params.put("failedCount", failed);
             notifications.publish(tx.session.ownerId(), NotificationKind.GENERATION_PARTIAL, "generation:" + sessionId + ":partial",
                     params, NotificationRoute.WORKSHOP);
-        } else if (failed > 0 && counts.get("PROPOSED") + counts.get("REVISING") + counts.get("STALE") == 0) {
+        } else if (failed > 0 && counts.get("REVISING") + counts.get("STALE") == 0) {
+            // nothing is approvable (a proposal whose media failed counts as not approvable) and something failed: the contract's GENERATION_FAILED
             List<String> codes = repository.failureCodes(sessionId);
             params.put("errorCode", codes.isEmpty() ? "UNKNOWN" : codes.getFirst());
             notifications.publish(tx.session.ownerId(), NotificationKind.GENERATION_FAILED, "generation:" + sessionId + ":failed",

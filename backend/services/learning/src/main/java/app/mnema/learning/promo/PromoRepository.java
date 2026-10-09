@@ -89,18 +89,18 @@ class PromoRepository {
 
     void insertRedemption(UUID redemptionId, UUID codeId, UUID owner, Instant now, PromoClient client, String snapshotId,
                           boolean oncePerAccount) {
-        jdbc.sql("INSERT INTO app_learning.promo_redemption(redemption_id,code_id,owner_id,redeemed_at,ip_hash,device_hash,snapshot_id,"
-                        + "once_per_account) VALUES (:id,:code,:owner,:now,:ip,:device,:snapshot,:once)")
+        jdbc.sql("INSERT INTO app_learning.promo_redemption(redemption_id,code_id,owner_id,redeemed_at,ip_hash,snapshot_id,"
+                        + "once_per_account) VALUES (:id,:code,:owner,:now,:ip,:snapshot,:once)")
                 .param("id", redemptionId).param("code", codeId).param("owner", owner).param("now", time(now))
-                .param("ip", client.ipHash(), java.sql.Types.BINARY).param("device", client.deviceHash(), java.sql.Types.BINARY)
+                .param("ip", client.ipHash(), java.sql.Types.BINARY)
                 .param("snapshot", snapshotId, java.sql.Types.VARCHAR).param("once", oncePerAccount).update();
     }
 
-    /** Accounts other than {@code owner} that redeemed a code from this address hash since {@code since}. */
-    long otherRedeemersFromIp(byte[] ipHash, UUID owner, Instant since) {
-        return jdbc.sql("SELECT count(DISTINCT owner_id) FROM app_learning.promo_redemption WHERE ip_hash=:ip AND redeemed_at>:since "
-                        + "AND owner_id<>:owner").param("ip", ipHash).param("since", time(since)).param("owner", owner)
-                .query(Long.class).single();
+    /** Accounts other than {@code owner} that redeemed this very code from this address hash since {@code since}. */
+    long otherRedeemersOfCodeFromIp(UUID codeId, byte[] ipHash, UUID owner, Instant since) {
+        return jdbc.sql("SELECT count(DISTINCT owner_id) FROM app_learning.promo_redemption WHERE code_id=:code AND ip_hash=:ip "
+                        + "AND redeemed_at>:since AND owner_id<>:owner").param("code", codeId).param("ip", ipHash).param("since", time(since))
+                .param("owner", owner).query(Long.class).single();
     }
 
     /** Keeps the larger percentage; an expired discount is replaced by any new one. */

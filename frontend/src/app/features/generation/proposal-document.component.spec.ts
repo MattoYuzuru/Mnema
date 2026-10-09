@@ -1556,6 +1556,14 @@ describe('ProposalDocumentComponent', () => {
                 }
             });
 
+            it('offers no «Повторить» for a text with personal data: the same text would be refused again, only «Убрать блок» is left', async () => {
+                await create(withClip(failedClip('PERSONAL_DATA')));
+                expect(frame()!.querySelector('.slot-failed-text')!.textContent).toContain('не отправляется на озвучку');
+                expect(frame()!.querySelector('.slot-failed-text')!.textContent).toContain('«Убрать блок»');
+                expect(names()).toEqual(['Убрать блок']);
+                expect(frame()!.querySelector('app-toggletip')).toBeNull();
+            });
+
             it('«Повторить» sends the redo without a voice, and reports a refusal on the page', async () => {
                 await create(withClip(failedClip('PROVIDER_UNAVAILABLE')));
                 labelled('Повторить')!.click();

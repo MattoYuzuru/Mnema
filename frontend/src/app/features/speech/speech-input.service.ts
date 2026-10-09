@@ -3,7 +3,7 @@ import { firstValueFrom } from 'rxjs';
 
 import { RecordedAudio } from '../../shared/audio-recorder';
 import { SpeechInputApiService } from './speech-input.api';
-import { SpeechConsent, SpeechPurpose, consentCovers } from './speech-input.models';
+import { SPEECH_DISCLOSURE_VERSION, SpeechConsent, SpeechPurpose, consentCovers } from './speech-input.models';
 import { readSpeechProblem, speechFailureMessage, speechProblemMessage } from './speech-problem';
 
 export interface TranscribeRequest {
@@ -51,22 +51,20 @@ export class SpeechInputService {
         }
     }
 
-    /** Records the consent to `consent.required`; a stale version (`409 SPEECH_CONSENT_OUTDATED`) reads the terms again and repeats once. */
+    /**
+     * Records the consent for the region of `consent.required` under the version of the disclosure the person was shown
+     * ({@link SPEECH_DISCLOSURE_VERSION}). If the server asks for another version (`409 SPEECH_CONSENT_OUTDATED`) the text on screen is not the one
+     * the server needs, so nothing is recorded behind the person's back: they are asked to start again and read the current terms.
+     */
     async accept(consent: SpeechConsent): Promise<{ readonly ok: true } | { readonly ok: false; readonly message: string }> {
-        let terms = consent.required;
-        for (let attempt = 0; attempt < 2; attempt++) {
-            try {
-                await firstValueFrom(this.api.putConsent(terms));
-                return { ok: true };
-            } catch (error) {
-                const problem = readSpeechProblem(error);
-                if (problem.code === 'SPEECH_CONSENT_OUTDATED' && attempt === 0) {
-                    try { terms = (await firstValueFrom(this.api.getConsent())).required; continue; } catch { /* fall through to the message */ }
-                }
-                return { ok: false, message: speechProblemMessage(problem) };
-            }
+        try {
+            await firstValueFrom(this.api.putConsent({ version: SPEECH_DISCLOSURE_VERSION, processing: consent.required.processing }));
+            return { ok: true };
+        } catch (error) {
+            const problem = readSpeechProblem(error);
+            if (problem.code === 'SPEECH_CONSENT_OUTDATED') return { ok: false, message: 'Условия согласия обновились. Обновите страницу и нажмите на микрофон ещё раз.' };
+            return { ok: false, message: speechProblemMessage(problem) };
         }
-        return { ok: false, message: 'Не удалось сохранить согласие. Попробуйте ещё раз.' };
     }
 
     async transcribe(request: TranscribeRequest, signal: AbortSignal): Promise<TranscribeOutcome> {

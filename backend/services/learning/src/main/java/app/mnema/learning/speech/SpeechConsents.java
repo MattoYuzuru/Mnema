@@ -13,7 +13,7 @@ import java.util.UUID;
 
 /**
  * The voice consent of an account ({@code contracts/speech}): voice is personal data, so a microphone input needs a consent for the region it is
- * processed in: {@code RU} (a self-hosted container in Russia) or {@code ABROAD} (a foreign provider through the egress gateway, the audio de-identified).
+ * processed in: {@code RU} (a self-hosted container in Russia) or {@code ABROAD} (a foreign provider through the egress gateway; the audio is personal data and is not de-identified, only the account's identity is withheld, which the disclosure says).
  * The version of the text is {@code learning.speech.consent-version}. A consent for {@code ABROAD} covers {@code RU} (the audio then stays at home), a
  * consent for {@code RU} does not cover {@code ABROAD}, so a move of a route to a foreign provider asks again.
  *

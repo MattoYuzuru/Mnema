@@ -9,9 +9,12 @@ import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 
-/** What abuse limits know about a caller: keyed hashes of the network address and the User-Agent, never the values. Either hash may be absent. */
-public record PromoClient(byte[] ipHash, byte[] deviceHash) {
-    static final PromoClient UNKNOWN = new PromoClient(null, null);
+/**
+ * What abuse limits know about a caller: a keyed hash of the network address, never the value; absent when the address is unknown. There is no device
+ * hash: a User-Agent is shared by millions of devices, so it adds no usable signal to the address and would only be stored for nothing.
+ */
+public record PromoClient(byte[] ipHash) {
+    static final PromoClient UNKNOWN = new PromoClient(null);
 
     /** Derives the {@link PromoClient} of a request: address through the trusted-proxy rule (IPv6 reduced to its /64), then HMAC-SHA256 with the promo secret. */
     @Component
@@ -25,11 +28,7 @@ public record PromoClient(byte[] ipHash, byte[] deviceHash) {
         }
 
         PromoClient of(HttpServletRequest request) {
-            byte[] ip = addresses.resolveNetwork(request).map(value -> hmac("ip:" + value)).orElse(null);
-            String agent = request.getHeader("User-Agent");
-            byte[] device = agent == null || agent.isBlank() ? null
-                    : hmac("ua:" + (agent.length() > 256 ? agent.substring(0, 256) : agent));
-            return new PromoClient(ip, device);
+            return new PromoClient(addresses.resolveNetwork(request).map(value -> hmac("ip:" + value)).orElse(null));
         }
 
         private byte[] hmac(String value) {

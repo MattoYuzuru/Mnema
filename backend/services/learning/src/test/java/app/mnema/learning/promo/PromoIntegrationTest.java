@@ -66,7 +66,7 @@ abstract class PromoIntegrationTest extends PostgresIntegrationTest {
         hash[1] = (byte) (number >> 8);
         hash[2] = (byte) (number >> 16);
         hash[31] = 1;
-        return new PromoClient(hash, null);
+        return new PromoClient(hash);
     }
 
     protected MockMvc as(UUID account, Object... controllers) {

@@ -103,6 +103,35 @@ class SpeechClipsTest {
     private SpeechClips.Outcome stage(Instant deadline) { return clips.stage(claim(), control, owner, asset, CLIP, deadline); }
 
     @Test
+    void aTextWithPersonalDataIsRefusedBeforeTheCacheAndAnyProvider() {
+        for (String text : new String[] {"Напишите мне: anna@example.com", "Звоните +7 (916) 123-45-67", "Карта 4111 1111 1111 1111", "mail  anna@example.com  now"}) {
+            SpeechClips.Outcome outcome = clips.stage(claim(), control, owner, asset, new SpeechClips.Clip(text, "ru", "female", 0), Instant.now().plusSeconds(5));
+
+            assertThat(outcome).as(text).isEqualTo(new SpeechClips.Outcome.Failed("PERSONAL_DATA"));
+        }
+        verify(speech, never()).synthesize(any());
+        verify(speech, never()).identity(any(), any());
+        verify(cache, never()).claim(any());
+        assertThat(stager.staged).isEmpty();
+    }
+
+    @Test
+    void aTextWithoutPersonalDataPassesUnchangedToTheProvider() {
+        when(speech.identity("en", "female")).thenReturn(Optional.of(PRIMARY));
+        when(cache.claim(any())).thenReturn(new SpeechCache.Claim.Won(UUID.randomUUID()));
+        when(speech.synthesize(any())).thenReturn(AiResult.ok(audio(PRIMARY)));
+        // dates, decimals, years and a URL with digits are not personal data: the redaction leaves them as they are
+        String text = "In 2026 the rate was 3.14 on 12.10.2026, see https://example.org/a/12345678901.";
+
+        SpeechClips.Outcome outcome = clips.stage(claim(), control, owner, asset, new SpeechClips.Clip(text, "en", "female", 0), Instant.now().plusSeconds(5));
+
+        assertThat(outcome).isInstanceOf(SpeechClips.Outcome.Staged.class);
+        org.mockito.ArgumentCaptor<SpeechSynthesis.Request> sent = org.mockito.ArgumentCaptor.forClass(SpeechSynthesis.Request.class);
+        verify(speech).synthesize(sent.capture());
+        assertThat(sent.getValue().text()).isEqualTo(text);
+    }
+
+    @Test
     void aHitIsAdoptedWithoutAProviderCall() {
         when(speech.identity("ru", "female")).thenReturn(Optional.of(PRIMARY));
         when(cache.claim(any())).thenReturn(new SpeechCache.Claim.Hit(MEDIA));

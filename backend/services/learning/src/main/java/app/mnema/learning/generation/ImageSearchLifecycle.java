@@ -167,7 +167,7 @@ class ImageSearchLifecycle {
         steps.finish(claim.stepId(), "SUCCEEDED", null, candidate.candidateId().toString());
         tx.events.add(slotEvent(slot, "READY", null, candidate.assetId()));
         tx.events.add(lifecycle.usageEvent(tx.session, null));
-        lifecycle.releaseIdleBatch(tx);
+        lifecycle.slotStepEnded(tx);
         lifecycle.flush(tx);
         return true;
     }
@@ -200,7 +200,7 @@ class ImageSearchLifecycle {
         steps.finish(claim.stepId(), "CANCELLED", null, null);
         Slot slot = slot(claim);
         if (slot != null && slot.assetId().toString().equals(claim.input().path("assetId").stringValue(""))) closeOrphanedSlot(tx, slot, "CANCELLED");
-        lifecycle.releaseIdleBatch(tx);
+        lifecycle.slotStepEnded(tx);
         tx.touch = false;
         lifecycle.flush(tx);
     }
@@ -221,7 +221,7 @@ class ImageSearchLifecycle {
     void failSlot(Tx tx, Step step, Slot slot, String errorCode) {
         closeSlot(tx, slot, errorCode);
         steps.finish(step.stepId(), "FAILED", errorCode, null);
-        lifecycle.releaseIdleBatch(tx);
+        lifecycle.slotStepEnded(tx);
         lifecycle.flush(tx);
         LOG.info("generation_media_failed step_id={} session_id={} slot_key={} error_code={}", step.stepId(), step.sessionId(), slot.slotKey(), errorCode);
     }
@@ -239,7 +239,7 @@ class ImageSearchLifecycle {
         if (step.cancelRequested() || slot == null || !openSlot(slot)) {
             steps.finish(stepId, "CANCELLED", null, null);
             if (slot != null && slot.assetId().toString().equals(step.input().path("assetId").stringValue(""))) closeOrphanedSlot(tx, slot, "CANCELLED");
-            lifecycle.releaseIdleBatch(tx);
+            lifecycle.slotStepEnded(tx);
             tx.touch = false;
             lifecycle.flush(tx);
             return;
@@ -265,7 +265,7 @@ class ImageSearchLifecycle {
         Slot slot = slot(step);
         if (slot == null || !openSlot(slot)) {
             steps.finish(stepId, "CANCELLED", null, null);
-            lifecycle.releaseIdleBatch(tx);
+            lifecycle.slotStepEnded(tx);
             tx.touch = false;
             lifecycle.flush(tx);
             return;
@@ -411,7 +411,7 @@ class ImageSearchLifecycle {
         if (tx == null) return;
         closeSlot(tx, slot, errorCode);
         tx.touch = false;
-        lifecycle.releaseIdleBatch(tx);
+        lifecycle.slotStepEnded(tx);
         lifecycle.flush(tx);
     }
 }

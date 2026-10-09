@@ -115,7 +115,7 @@ class SpeechLifecycle {
         steps.finish(claim.stepId(), "SUCCEEDED", null, slot.assetId().toString());
         tx.events.add(ImageSearchLifecycle.slotEvent(slot, "READY", null, slot.assetId()));
         tx.events.add(lifecycle.usageEvent(tx.session, null));
-        lifecycle.releaseIdleBatch(tx);
+        lifecycle.slotStepEnded(tx);
         lifecycle.flush(tx);
         return true;
     }
@@ -277,7 +277,7 @@ class SpeechLifecycle {
                 candidates.slotState(slot.artifactId(), slot.slotKey(), "FAILED", errorCode);
                 tx.events.add(ImageSearchLifecycle.slotEvent(slot, "FAILED", errorCode, slot.assetId()));
                 tx.touch = false;
-                lifecycle.releaseIdleBatch(tx);
+                lifecycle.slotStepEnded(tx);
                 lifecycle.flush(tx);
             }
         }

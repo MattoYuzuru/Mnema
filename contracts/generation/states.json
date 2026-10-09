@@ -416,6 +416,7 @@
       "DEADLINE_EXCEEDED": "The step deadline passed.",
       "USAGE_LIMIT": "The user's limit does not cover the redo.",
       "ESTIMATE_EXCEEDED": "The redo would exceed its reservation.",
+      "PERSONAL_DATA": "Audio slot only: the text to speak holds an e-mail address, a telephone or a card number, so it is refused instead of sent to a speech provider (nothing is charged).",
       "CANCELLED": "The session was cancelled."
     },
     "transitions": [
@@ -882,7 +883,8 @@
       "PROVIDER_UNAVAILABLE": "Every speech route failed.",
       "VERIFICATION_REJECTED": "The media pipeline rejected the synthesised bytes.",
       "DEADLINE_EXCEEDED": "The step deadline (PT2M) passed.",
-      "ESTIMATE_EXCEEDED": "The redo would exceed its turn reservation."
+      "ESTIMATE_EXCEEDED": "The redo would exceed its turn reservation.",
+      "PERSONAL_DATA": "A transcript to speak holds an e-mail address, a telephone or a card number: refused before any provider call, nothing is charged."
     }
   },
   "mediaSlot": {

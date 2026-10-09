@@ -49,6 +49,7 @@ x-learning-environment: &learning-environment
   # Promo codes, A/B and the promo popup (#302); names only, all optional. Every browser reaches Learning through this stack's one proxy
   # address, so raise MNEMA_PROMO_IP_ATTEMPTS_PER_HOUR for repeated local runs. See docs/deploy/selfhost-local.md.
   MNEMA_PROMO_IP_ATTEMPTS_PER_HOUR: ${MNEMA_PROMO_IP_ATTEMPTS_PER_HOUR:-20}
+  MNEMA_PROMO_VELOCITY_ACCOUNTS: ${MNEMA_PROMO_VELOCITY_ACCOUNTS:-10}
   MNEMA_PROMO_HASH_SECRET: ${MNEMA_PROMO_HASH_SECRET:-}
   MNEMA_EXPERIMENT_SECRET: ${MNEMA_EXPERIMENT_SECRET:-}
   MNEMA_PROMO_POPUP_ENABLED: ${MNEMA_PROMO_POPUP_ENABLED:-false}
@@ -57,6 +58,9 @@ x-learning-environment: &learning-environment
   MNEMA_PROMO_POPUP_BODY: ${MNEMA_PROMO_POPUP_BODY:-}
   MNEMA_PROMO_POPUP_CTA: ${MNEMA_PROMO_POPUP_CTA:-}
   MNEMA_PROMO_POPUP_CODE: ${MNEMA_PROMO_POPUP_CODE:-}
+  # Public product events (the editorial owner account id) and the Max teaser of the plans page; both off by default (docs/deploy/selfhost-local.md).
+  MNEMA_EVENTS_OWNER_ACCOUNT_ID: ${MNEMA_EVENTS_OWNER_ACCOUNT_ID:-}
+  LEARNING_PLANS_MAXTEASER_ENABLED: ${LEARNING_PLANS_MAXTEASER_ENABLED:-false}
 
 # AI provider layer (docs/deploy/selfhost-local.md). Names only: the values come from the launcher's process environment or
 # from the owner's private .env that Compose reads, never from this repository. Without them the AI capabilities stay
@@ -86,6 +90,9 @@ x-ai-environment: &ai-environment
   MNEMA_AI_EGRESS_PROXY_URL: ${MNEMA_AI_EGRESS_PROXY_URL:-}
   MNEMA_AI_EGRESS_PROXY_USER: ${MNEMA_AI_EGRESS_PROXY_USER:-}
   MNEMA_AI_EGRESS_PROXY_PASSWORD: ${MNEMA_AI_EGRESS_PROXY_PASSWORD:-}
+  # How Gemini (speech synthesis and speech to text) is reached: `proxy` (the default, through the egress proxy above) or `direct` for a developer network
+  # where Google answers. Only for local runs; production never sets it.
+  LEARNING_AI_PROVIDERS_GOOGLE_EGRESS: ${LEARNING_AI_PROVIDERS_GOOGLE_EGRESS:-proxy}
 
 # Official MinIO image, pinned by digest. MinIO no longer serves it from Docker Hub or
 # Quay, so it must already be in the local image store; see the runbook. The image ships `mc`.

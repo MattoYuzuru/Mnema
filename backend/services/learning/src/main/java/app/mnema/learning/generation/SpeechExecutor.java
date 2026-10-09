@@ -196,6 +196,12 @@ class SpeechExecutor implements StepExecutor {
         ObjectNode command = (ObjectNode) current.payload().path("command").deepCopy();
         List<ObjectNode> blocks = new ArrayList<>();
         audioBlocks(command.path("exercise").path("content"), blocks);
+        // Every transcript is judged before the first clip is touched: one with personal data refuses the whole turn, so no earlier block reaches the
+        // cache, the media pipeline or a provider (and nothing is debited) only for the turn to fail on a later one.
+        if (blocks.stream().map(block -> block.path("transcript").stringValue("")).anyMatch(text -> !text.isBlank() && !SpeechClips.depersonalised(text))) {
+            failTurn(claim, SpeechClips.PERSONAL_DATA);
+            return;
+        }
         String voice = claim.input().path("voice").stringValue(DEFAULT_VOICE);
         Instant deadline = claim.deadlineAt();
         ProviderSpend spend = repository.providerSpend(claim.stepId(), "TTS");

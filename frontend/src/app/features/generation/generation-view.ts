@@ -349,6 +349,7 @@ export function turnFailureReason(code: TurnErrorCode | null): string {
         case 'PROVIDER_UNAVAILABLE': return 'Сервис ИИ временно недоступен.';
         case 'ESTIMATE_EXCEEDED': return 'Результат вышел больше, чем рассчитывалось.';
         case 'DEADLINE_EXCEEDED': return 'Мнема не успела вовремя.';
+        case 'PERSONAL_DATA': return PERSONAL_DATA_VOICE_REFUSAL;
         default: return 'Что-то пошло не так.';
     }
 }
@@ -657,6 +658,9 @@ export function synthesizedCaption(voice: SpeechVoice | null): string {
     return voice === null ? 'Синтезированная речь' : `Синтезированная речь · ${voiceLabel(voice)}`;
 }
 
+/** The refusal of a speech step whose text holds an e-mail address, a telephone or a card number: it is not sent to the voice service. */
+const PERSONAL_DATA_VOICE_REFUSAL = 'В тексте есть e-mail, телефон или номер карты — такой текст не отправляется на озвучку. Нажмите «Убрать блок» или уберите эти данные из текста.';
+
 /** Why an audio slot is empty, in the placeholder frame. */
 export function audioFailureReason(code: SlotErrorCode | null): string {
     switch (code) {
@@ -664,6 +668,7 @@ export function audioFailureReason(code: SlotErrorCode | null): string {
         case 'VERIFICATION_REJECTED': return 'Запись не прошла проверку.';
         case 'DEADLINE_EXCEEDED': return 'Озвучка заняла слишком долго.';
         case 'USAGE_LIMIT': return 'Не хватает лимита на озвучку.';
+        case 'PERSONAL_DATA': return PERSONAL_DATA_VOICE_REFUSAL;
         default: return 'Не удалось озвучить.';
     }
 }
