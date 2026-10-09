@@ -1,0 +1,24 @@
+# Application configuration delivered from GitHub Environment `prod` secrets.
+# GitHub secret PROD_<NAME> becomes host variable <NAME> in root-only app.env.
+# Mirrors APP_ENV_NAMES in mnema-deploy.py (a test keeps both equal) and the explicit
+# env block of the deploy-production job. Host-generated secrets (database passwords,
+# identity-signing.json, offsite.env) are never listed here.
+# Adding a name = reviewed PR + administrator-installed dispatcher + explicit workflow env entry.
+TURNSTILE_SITE_KEY
+TURNSTILE_SECRET_KEY
+GOOGLE_CLIENT_ID
+GOOGLE_CLIENT_SECRET
+YANDEX_CLIENT_ID
+YANDEX_CLIENT_SECRET
+GH_CLIENT_ID
+GH_CLIENT_SECRET
+MNEMA_POSTBOX_ACCESS_KEY
+MNEMA_POSTBOX_SECRET_KEY
+MNEMA_PROMO_HASH_SECRET
+MNEMA_EXPERIMENT_SECRET
+MNEMA_EVENTS_OWNER_ACCOUNT_ID
+MNEMA_IDENTITY_TURNSTILE_MODE
+LEARNING_MEDIA_UPLOAD_ACCESS_KEY
+LEARNING_MEDIA_UPLOAD_SECRET_KEY
+MNEMA_AVATAR_ACCESS_KEY
+MNEMA_AVATAR_SECRET_KEY

@@ -44,7 +44,8 @@ The pinned digest is a multi-platform OCI index. The final column proves that it
 The frontend's pinned nginx base is supplemented with security version floors
 from the stable Alpine 3.24 repository. Publication run `37217508523` found
 `CVE-2026-93990` in `libexpat 2.8.4-r0` and `CVE-2026-103111` in `pcre2 10.48-r0`.
-The image requires `libexpat>=2.8.5-r0` and `pcre2>=10.49-r0`, the first fixed builds
+Publication run `37892843818` found `CVE-2026-4775` (HIGH) in `tiff 4.7.1-r0`.
+The image requires `libexpat>=2.8.5-r0`, `pcre2>=10.49-r0` and `tiff>=4.7.2-r0`, the first fixed builds
 in [Alpine's security database](https://secdb.alpinelinux.org/v3.24/main.json).
 The existing OpenSSL floors remain. No edge repository or scan exception is added;
 provenance/SBOM and the HIGH/CRITICAL gate bind the actual derived release digest.
