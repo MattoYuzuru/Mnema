@@ -1,4 +1,4 @@
-import { appRoutes } from './app.routes';
+import { appRoutes, ownerRoutes } from './app.routes';
 import { ManageEventsPageComponent } from './features/events/manage-events-page.component';
 import { authGuard } from './core/guards/auth.guard';
 import { OwnDeckCreatePageComponent } from './features/own-decks/own-deck-create-page.component';
@@ -65,7 +65,7 @@ describe('appRoutes', () => {
     });
 
     it('guards a lazy owner shell and protects transactional children before leaving', () => {
-        const manage = appRoutes.find(route => route.path === 'manage')!;
+        const manage = ownerRoutes(true).find(route => route.path === 'manage')!;
         expect(manage.canActivate).toEqual([authGuard]); expect(manage.loadComponent).toBeDefined();
         expect(manage.children?.map(child => child.path)).toEqual(['', 'users', 'users/:accountId', 'promos', 'events', 'support', 'support/:ticketId', 'audit']);
         for (const path of ['users', 'users/:accountId', 'promos', 'events', 'support', 'support/:ticketId']) expect(manage.children?.find(child => child.path === path)?.canDeactivate).toHaveLength(1);
@@ -76,7 +76,10 @@ describe('appRoutes', () => {
         expect(standalone.canActivate).toEqual([authGuard]);
         expect(standalone.canDeactivate).toHaveLength(1);
         expect(standalone.data).toEqual({ standalone: true });
-        expect(appRoutes.indexOf(standalone)).toBeLessThan(appRoutes.findIndex(route => route.path === 'manage'));
+        // The learner host (this test environment) has no owner shell and no other /manage route at all.
+        expect(appRoutes.filter(route => route.path?.startsWith('manage'))).toEqual([standalone]);
+        expect(ownerRoutes(false).map(route => route.path)).toEqual(['manage/events']);
+        expect(ownerRoutes(true).map(route => route.path)).toEqual(['manage']);
         expect(await standalone.loadComponent!()).toBe(ManageEventsPageComponent);
     });
 

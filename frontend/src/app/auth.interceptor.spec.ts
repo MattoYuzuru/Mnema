@@ -54,6 +54,14 @@ describe('canonical bearer interceptor', () => {
         }
     });
 
+    it('treats the configured Learning base as text, never as a regular expression', () => {
+        const account = '10000000-0000-4000-8000-000000000001';
+        expect(isCredentialTarget(`/a.pi/admin/console/users/${account}`, identity, '/a.pi', window.location.origin)).toBe(true);
+        expect(isCredentialTarget(`/aXpi/admin/console/users/${account}`, identity, '/a.pi', window.location.origin)).toBe(false);
+        expect(isCredentialTarget('/a+/admin/support/tickets/7', identity, '/a+', window.location.origin)).toBe(true);
+        expect(isCredentialTarget('/aaa/admin/support/tickets/7', identity, '/a+', window.location.origin)).toBe(false);
+    });
+
     it('refuses legacy APIs, lookalike hosts/path prefixes and routing encodings', () => {
         for (const url of ['/api/core/decks', '/api/user/me', '/api/media/x', '/api/decks-other', '/api/editing-drafts-other',
             '/api/capture-notes-other', '/api/notifications-other', '/api/notifications%2fread-cursor', '/api/generation-sessions-other', '/api/generation-sessions%2fx', '/api/media-assets-other', '/api/other/../decks',
