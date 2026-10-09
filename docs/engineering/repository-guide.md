@@ -232,9 +232,11 @@ environment prerequisites and cleanup.
 
 Production is available on the Russian VPS `mnema` (`ssh mnema`,
 `135.106.175.30`), serving `mnema.app` and `auth.mnema.app`. Development releases
-use manual four-image publication, administrator admission and the protected
-`vps-deploy.yaml` job. Follow [production delivery](../operations/production-delivery.md).
-Keep local/hosted gates and protected squash; merge alone is not live verification.
+run in Main CI after the protected squash: scoped four-image publication, one
+`prod` Environment approval, automatic admission, deployment, verification and public
+smoke (`deploy.yaml`; `vps-deploy.yaml` is for manual status/verify/rollback). Follow
+[production delivery](../operations/production-delivery.md). Keep local/hosted gates and
+protected squash; merge alone is not live verification.
 
 ## Change routes
 

@@ -5,7 +5,7 @@ artifact:
   title: "Mnema CI artifact and workflow-token security boundary"
   status: current
   created_at: "2026-08-29"
-  updated_at: "2026-10-05"
+  updated_at: "2026-10-08"
   owners: ["project-owner"]
 ---
 
@@ -32,9 +32,7 @@ and [workflow syntax for permissions](https://docs.github.com/en/actions/referen
 | `main-backend-jacoco` | `deploy` / `backend-quality` | `backend-jacoco-report` | `backend/build/reports/jacoco/jacocoRootReport/` | 30 | internal test report | Gradle JaCoCo quality gate |
 | `main-release-security` | `deploy` / `build-and-push` | `release-security-${{ matrix.name }}` | runner temp `release-security/${{ matrix.name }}-*` | 30 | security evidence | Trivy, Syft and attestation verification |
 | `main-release-image-digest` | `deploy` / `build-and-push` | `release-image-${{ matrix.name }}` | runner temp `release-digests/${{ matrix.name }}.digest` | 30 | release identifier | Buildx digest output |
-| `main-production-release-manifest` | `deploy` / `render-release` | `production-release-manifest` | production manifest/checksum plus aggregate security evidence/checksum | 30 | release manifest | immutable release renderer and evidence aggregator |
 | `main-vps-candidate` | `deploy` / `assemble-vps-candidate` | `vps-candidate` | candidate/security evidence/checksums | 30 | release manifest | four-image candidate aggregator |
-| `main-staging-release-manifest` | `deploy` / `render-release` | `staging-release-manifest` | staging manifest/checksum plus aggregate security evidence/checksum | 30 | release manifest | immutable release renderer and evidence aggregator |
 | `staging-release-record` | `staging-deploy` / `deploy-staging` | `staging-release-record-${{ github.run_id }}` | `RELEASE_RECORD` | 90 | release state | `release_state.py record` after verification |
 | `staging-failure-diagnostics` | `staging-deploy` / `deploy-staging` | `staging-release-diagnostics-${{ github.run_id }}` | diagnostics directory, smoke/rollback reports and rollback record | 30 | sanitized diagnostics | bounded diagnostics, smoke and release-state scripts |
 | `production-release-preview` | `production-deploy` / `preview-production` | `production-release-preview-${{ github.run_id }}-${{ github.run_attempt }}` | canonical release diff and bounded preview metadata | 30 | sanitized release preview | `capture-release-diff.sh` with Secret values suppressed |
@@ -45,7 +43,8 @@ and [workflow syntax for permissions](https://docs.github.com/en/actions/referen
 
 Current publication uses the four-image VPS candidate. The Kubernetes release/deploy
 entries remain dormant source policy; `vps-deploy` has only `contents: read` and
-uploads no configuration or application secrets.
+stores no artifacts. Application configuration travels only over the forced-command SSH
+session from the approved `deploy-production` job, never as an artifact.
 
 The JSON inventory is canonical for exact expression text and all individual paths; this table
 is its human-readable operational view. Coverage retention is explicitly 30 days instead of a

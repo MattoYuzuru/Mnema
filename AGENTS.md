@@ -121,8 +121,10 @@ python3 scripts/verify_docs.py
 - Current production is https://mnema.app on the Russian VPS `mnema`
   (`135.106.175.30`, administrator access `ssh mnema`). Follow
   [production delivery](docs/operations/production-delivery.md) for development
-  releases: full local/hosted gates, protected squash, four-image publication,
-  administrator admission, protected `vps-deploy.yaml` and live verification.
+  releases: full local/hosted gates, protected squash, then Main CI releases a runtime
+  change automatically (scoped four-image publication, one `prod` Environment approval,
+  automatic admission, deploy, verify and public smoke; `vps-deploy.yaml` only for manual
+  status/verify/rollback). Host config/tooling is installed by the administrator beforehand.
   Use the working server/jobs within an owner-authorized production task; keep
   deployment evidence distinct from implementation completion. Legacy Kubernetes
   workflows are dormant and are not this delivery path.

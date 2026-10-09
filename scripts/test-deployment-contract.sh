@@ -29,7 +29,7 @@ fi
 grep -Fq 'version: v1.35.8' "$STAGING_WORKFLOW"
 grep -Fq 'workflow_dispatch:' "$MAIN_WORKFLOW"
 grep -Fq 'name: Require exact main branch' "$MAIN_WORKFLOW"
-test "$(grep -c 'needs: validate-main-ref' "$MAIN_WORKFLOW")" -eq 2
+test "$(grep -c 'needs: validate-main-ref' "$MAIN_WORKFLOW")" -eq 3
 grep -Fq 'run: ./scripts/test-create-staging-kubeconfig.sh' "$MAIN_WORKFLOW"
 grep -Fq 'run: ./scripts/test-create-staging-kubeconfig.sh' "$REPO_ROOT/.github/workflows/pull-request.yaml"
 grep -Fq 'run: ./scripts/test-environment-secret-separation.sh' "$MAIN_WORKFLOW"
