@@ -235,6 +235,36 @@ class GenerationSpeechIntegrationTest extends GenerationEditsSupport {
     }
 
     @Test
+    void aTextWithPersonalDataIsRefusedBeforeAnyProviderCallAndNothingIsDebitedOrCached() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        int callsBefore = speech.calls.size();
+
+        Proposal proposal = proposal(owner, deck, audioSpec("[[fake:audio-personal]] с аудио"));
+        awaitSlot(proposal.artifact(), "FAILED");
+
+        assertThat(slot(owner, deck, proposal).path("errorCode").stringValue(null)).isEqualTo("PERSONAL_DATA");
+        assertThat(slotEvents(owner, deck, proposal)).endsWith("FAILED:PERSONAL_DATA");
+        assertThat(speech.calls).as("the text never reached the provider port").hasSize(callsBefore);
+        assertThat(mediaStager.staged).isEmpty();
+        assertThat(cacheRows("READY")).isZero();
+        assertThat(cacheRows("PENDING")).isZero();
+        assertThat(debits(owner)).isEqualTo(pricing.credits("MATERIAL_MEDIUM"));
+        assertThat(heldClips(proposal.artifact())).isZero();
+
+        // «Повторить» reads the same text: the turn fails with the same code, nothing changes and nothing is held
+        UUID turn = redo(owner, deck, proposal, null);
+        awaitTurn(turn, "FAILED");
+        assertThat(turnError(turn)).isEqualTo("PERSONAL_DATA");
+        awaitArtifact(proposal.artifact(), "PROPOSED");
+        assertThat(revisions(proposal.artifact())).isEqualTo(1);
+        assertThat(speech.calls).hasSize(callsBefore);
+        assertThat(debits(owner)).isEqualTo(pricing.credits("MATERIAL_MEDIUM"));
+        assertThat(reservationsOf(owner)).doesNotContain("ACTIVE");
+        assertThat(slotState(proposal.artifact())).isEqualTo("FAILED");
+    }
+
+    @Test
     void bytesThePipelineRejectsFailTheSlotAndAreNeverCached() throws Exception {
         UUID owner = UUID.randomUUID();
         UUID deck = deck(owner);
@@ -552,20 +582,32 @@ class GenerationSpeechIntegrationTest extends GenerationEditsSupport {
         SpeechSynthesis.Identity identity = new SpeechSynthesis.Identity("stub", "stub-tts", "1", "wav", "female");
         SpeechCache.Key key = SpeechCache.key("touch " + UUID.randomUUID(), "en", identity, 0);
         UUID token = ((SpeechCache.Claim.Won) cache.claim(key)).token();
-        GeneratedMediaStager.VerifiedMedia media = new GeneratedMediaStager.VerifiedMedia(
-                jdbc.sql("SELECT blob_id FROM app_learning.media_blob LIMIT 1").query(UUID.class).optional().orElse(null), List.of());
-        org.junit.jupiter.api.Assumptions.assumeTrue(media.sourceBlob() != null);
-        assertThat(cache.publish(key, token, media, 1_000, 10)).isTrue();
-        String used = "SELECT last_used_at FROM app_learning.speech_cache WHERE cache_key=:key";
-        var fresh = jdbc.sql(used).param("key", key.hash()).query(java.time.OffsetDateTime.class).single();
+        // its own precondition: a blob of its own (a random digest, so no other test's blob can collide), removed whatever the outcome
+        UUID blob = UUID.randomUUID();
+        insertBlob(blob);
+        try {
+            GeneratedMediaStager.VerifiedMedia media = new GeneratedMediaStager.VerifiedMedia(blob, List.of());
+            assertThat(cache.publish(key, token, media, 1_000, 10)).isTrue();
+            String used = "SELECT last_used_at FROM app_learning.speech_cache WHERE cache_key=:key";
+            var fresh = jdbc.sql(used).param("key", key.hash()).query(java.time.OffsetDateTime.class).single();
 
-        assertThat(cache.claim(key)).isInstanceOf(SpeechCache.Claim.Hit.class);
-        assertThat(jdbc.sql(used).param("key", key.hash()).query(java.time.OffsetDateTime.class).single()).as("a hit within the day writes nothing").isEqualTo(fresh);
+            assertThat(cache.claim(key)).isInstanceOf(SpeechCache.Claim.Hit.class);
+            assertThat(jdbc.sql(used).param("key", key.hash()).query(java.time.OffsetDateTime.class).single()).as("a hit within the day writes nothing").isEqualTo(fresh);
 
-        jdbc.sql("UPDATE app_learning.speech_cache SET last_used_at=CURRENT_TIMESTAMP - interval '2 days' WHERE cache_key=:key").param("key", key.hash()).update();
-        assertThat(cache.claim(key)).isInstanceOf(SpeechCache.Claim.Hit.class);
-        assertThat(jdbc.sql(used).param("key", key.hash()).query(java.time.OffsetDateTime.class).single()).as("a day later it is touched").isAfter(fresh.minusMinutes(1));
-        cache.drop(key);
+            jdbc.sql("UPDATE app_learning.speech_cache SET last_used_at=CURRENT_TIMESTAMP - interval '2 days' WHERE cache_key=:key").param("key", key.hash()).update();
+            assertThat(cache.claim(key)).isInstanceOf(SpeechCache.Claim.Hit.class);
+            assertThat(jdbc.sql(used).param("key", key.hash()).query(java.time.OffsetDateTime.class).single()).as("a day later it is touched").isAfter(fresh.minusMinutes(1));
+        } finally {
+            cache.drop(key);
+            jdbc.sql("DELETE FROM app_learning.media_blob WHERE blob_id=:blob").param("blob", blob).update();
+        }
+    }
+
+    private void insertBlob(UUID blob) {
+        byte[] digest = new byte[32];
+        new java.security.SecureRandom().nextBytes(digest);
+        jdbc.sql("INSERT INTO app_learning.media_blob(blob_id,sha256,byte_length,mime_type,object_key,verified_at) VALUES (:blob,:hash,1,'audio/wav',:key,CURRENT_TIMESTAMP)")
+                .param("blob", blob).param("hash", digest).param("key", "k/" + blob).update();
     }
 
     @Test
@@ -602,8 +644,7 @@ class GenerationSpeechIntegrationTest extends GenerationEditsSupport {
         SpeechCache.Key stuck = SpeechCache.key("stuck " + UUID.randomUUID(), "en", identity, 0);
         for (SpeechCache.Key each : List.of(old, fresh, stuck)) cache.claim(each);
         UUID blob = UUID.randomUUID();
-        jdbc.sql("INSERT INTO app_learning.media_blob(blob_id,sha256,byte_length,mime_type,object_key,verified_at) VALUES (:blob,:hash,1,'audio/wav',:key,CURRENT_TIMESTAMP)")
-                .param("blob", blob).param("hash", new byte[32]).param("key", "k/" + blob).update();
+        insertBlob(blob);
         GeneratedMediaStager.VerifiedMedia verified = new GeneratedMediaStager.VerifiedMedia(blob, List.of());
         for (SpeechCache.Key each : List.of(old, fresh)) {
             UUID owned = jdbc.sql("SELECT lease_token FROM app_learning.speech_cache WHERE cache_key=:key").param("key", each.hash()).query(UUID.class).single();

@@ -15,11 +15,12 @@ user input from then on (a Study answer carries `answerSource: SPEECH`, contract
   route entry or the global daily budget).
 - Voice is personal data, so it needs a separate consent: `GET /api/speech-consent` →
   `{required: {version, processing}, accepted: {version, processing, acceptedAt} | null}` where `processing` is `RU` (self-host in
-  Russia) or `ABROAD` (Gemini through the egress gateway; audio leaves Russia de-identified). `PUT /api/speech-consent
+  Russia) or `ABROAD` (Gemini through the egress gateway; the voice leaves Russia: a recording is personal data, so only the account's identity is withheld, the audio itself is not de-identified). `PUT /api/speech-consent
   {version, processing}` records it (idempotent; a stale `version`/`processing` is `409 SPEECH_CONSENT_OUTDATED`). The required
   version changes when the active route's processing region changes, so a move to a foreign route asks again. The admitted region is stored with each input and re-checked when it is transcribed; the router never uses a route entry outside the consented region (ABROAD covers RU, not the reverse).
-  `DELETE /api/speech-consent` withdraws it. `version` is a string (`speech-2026-10`); `PUT` answers `200` with the `GET` body, `DELETE`
-  answers `204` (also when nothing was accepted). The UI shows the disclosure on the first microphone press.
+  `DELETE /api/speech-consent` withdraws it. `version` is a string (`speech-2026-10-2`); `PUT` answers `200` with the `GET` body, `DELETE`
+  answers `204` (also when nothing was accepted). The UI shows the disclosure on the first microphone press. The client records the consent under the version of the disclosure it showed (a constant it shares with `learning.speech.consent-version`), never under whatever the
+  server requires, so a server whose text has moved on answers `409 SPEECH_CONSENT_OUTDATED` and nothing is recorded for a text the person did not read.
 
 ## Endpoints
 
@@ -48,8 +49,10 @@ and body returns the stored `202` with `Idempotency-Replayed: true`. `GET` of a 
 
 - The audio bytes live only until transcription ends (success or failure) and are deleted then; the row (text, metadata)
   expires 15 minutes after creation (`expiresAt`) and is purged; nothing is kept for training or debugging.
-- Only the de-identified audio and optional hints (deck terms, language) reach a provider; the provider user id is the HMAC
-  user key. Logs carry ids, durations, sizes, outcome and route — never text or audio.
+- Only the audio and optional hints (deck terms, language) reach a provider, and they carry no account identity: no name, e-mail or
+  user id (the Gemini Interactions API has no such field; the HMAC user key is not sent to a transcription provider). The audio
+  itself is personal data, which is why the consent above exists and its disclosure (`mic-button`) names the recipient, what is sent
+  and what is kept. A change of the disclosure text changes `learning.speech.consent-version`, so every account consents again. Logs carry ids, durations, sizes, outcome and route — never text or audio.
 - Fair use: the STT bucket (seconds) of contracts/usage: Free 60 min/month and ≤10 min/day, Plus 300 (30), Pro 600 (60), Max
   velocity ≤120 min/day. Admission reserves the declared seconds, completion settles the metered seconds; a failed input is not
   counted. A global daily budget of the transcription capability turns the capability `TEMPORARILY_UNAVAILABLE`.

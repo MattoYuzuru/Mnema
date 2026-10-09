@@ -452,6 +452,32 @@ class GenerationReviseIntegrationTest extends GenerationEditsSupport {
         assertThat(restored.get(1).path("assetId").stringValue(null)).isEqualTo(recording.toString());
     }
 
+    /** One transcript with an e-mail address refuses the whole voice change before any clip is made: the earlier, clean block is not spoken either. */
+    @Test
+    void aTranscriptWithPersonalDataRefusesTheWholeVoiceChangeBeforeAnyClipIsMade() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        StudyFixtures.Material material = fixtures.addMaterial(owner, deck, "Планировщик выбирает план", "Статистика обновляется командой ANALYZE");
+        ObjectNode exercise = fixtures.freeResponse(material, StudyFixtures.blocks(StudyFixtures.text("Послушайте."),
+                StudyFixtures.audio(fixtures.readyAsset(owner, "audio/mpeg"), "Чистый", "Привет, мир"),
+                StudyFixtures.audio(fixtures.readyAsset(owner, "audio/mpeg"), "Личный", "Пишите на anna@example.com")), StudyFixtures.blocks(), "ответ");
+        JsonNode ack = fixtures.publish(material, exercise, "Запись с почтой");
+
+        UUID session = start(owner, deck, reviseExercise(UUID.fromString(ack.path("exerciseId").stringValue(null)),
+                UUID.fromString(ack.path("exerciseRevisionId").stringValue(null)), null, "male"));
+        awaitState(session, "REVIEW");
+        Proposal proposal = proposals(owner, deck, session).getFirst();
+        JsonNode detail = detail(owner, deck, proposal);
+
+        assertThat(detail.path("turns").get(0).path("status").stringValue(null)).isEqualTo("FAILED");
+        assertThat(detail.path("turns").get(0).path("errorCode").stringValue(null)).isEqualTo("PERSONAL_DATA");
+        assertThat(speech.calls).as("not even the clean block reached the provider port").isEmpty();
+        assertThat(mediaStager.staged).isEmpty();
+        assertThat(debits(owner)).isZero();
+        assertThat(detail.path("revisions")).hasSize(1);
+        assertThat(reservationStates(owner)).doesNotContain("ACTIVE");
+    }
+
     @Test
     void aRewriteAndAVoiceChangeRunInOrderOnOneArtifactAndAFailedRewriteDoesNotStartTheVoice() throws Exception {
         UUID owner = UUID.randomUUID();

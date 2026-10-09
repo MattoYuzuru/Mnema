@@ -4,7 +4,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Text-to-speech port (AI-09, #297): one short clip of already de-identified text in a language and an abstract voice. Implementations never
+ * Text-to-speech port (AI-09, #297): one short clip of text in a language and an abstract voice. The caller has refused a text that holds an e-mail address, a telephone or a card number (SpeechClips); implementations never
  * throw for provider problems and never log the text, a key or a provider message. Not to be called inside a database transaction.
  */
 public interface SpeechSynthesis {

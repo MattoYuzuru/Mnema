@@ -51,6 +51,8 @@ Semantics (details and dedupe keys per kind in `notifications.json`):
 - **Approvable now.** `approvableCount` is the number of artifacts that can be approved at this moment: `PROPOSED` with every media
   slot `READY` or `REMOVED` (not `STALE`, not `REVISING`). The session summary and `GENERATION_READY`/`GENERATION_PARTIAL` use the
   same definition.
+- `GENERATION_READY` waits for the media of a session: with `::image`/`::audio` slots it is published once, when the last slot ends (a failed slot counts as ended; `approvableCount` is then
+  lower than `artifactCount`). A text-only session publishes it when the text settles.
 - `GENERATION_FAILED` is produced when no artifact is approvable and at least one failed, or the plan failed; **never** for a user
   cancellation. Its `errorCode` is the most frequent artifact error code of the session.
 - `USAGE_LOW` fires when a bucket's used share crosses 80, 90 and 100 percent (`percent` is the integer floor), once per bucket,

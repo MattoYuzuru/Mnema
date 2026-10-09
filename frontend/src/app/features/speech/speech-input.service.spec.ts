@@ -2,9 +2,10 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, TestRequest, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 
+import disclosure from '../../../../../contracts/speech/disclosure.json';
 import { RecordedAudio } from '../../shared/audio-recorder';
 import { SpeechInputService, TranscribeOutcome, TranscribeRequest } from './speech-input.service';
-import { consentCovers, parseConsent } from './speech-input.models';
+import { SPEECH_DISCLOSURE_VERSION, consentCovers, parseConsent } from './speech-input.models';
 import { speechFailureMessage } from './speech-problem';
 
 const inputId = '0a7e9c1e-5c1b-4d6f-9d44-0f2f6c1f7a11';
@@ -218,26 +219,29 @@ describe('SpeechInputService', () => {
             expect(await check).toMatchObject({ ok: false, consent: null });
         });
 
-        it('records the required terms and repeats once with fresh terms after a stale version', async () => {
+        it('records the region the server needs under the version of the disclosure that was shown', async () => {
             const parsed = parseConsent(consent(null));
-            let accepted = service.accept(parsed);
+            const accepted = service.accept(parsed);
             await settle();
-            let put = http.expectOne('/api/speech-consent');
+            const put = http.expectOne('/api/speech-consent');
             expect(put.request.method).toBe('PUT');
-            expect(put.request.body).toEqual({ version: 2, processing: 'RU' });
+            expect(put.request.body).toEqual({ version: SPEECH_DISCLOSURE_VERSION, processing: 'RU' });
             put.flush(null, { status: 204, statusText: 'No Content' });
             expect(await accepted).toEqual({ ok: true });
+        });
 
-            accepted = service.accept(parsed);
+        it('records nothing behind the back of the person when the server asks for another version, and says to read the terms again', async () => {
+            const accepted = service.accept(parseConsent({ required: { version: 'speech-2099-01', processing: 'ABROAD' }, accepted: null }));
             await settle();
-            http.expectOne('/api/speech-consent').flush({ code: 'SPEECH_CONSENT_OUTDATED' }, { status: 409, statusText: 'x' });
-            await settle();
-            http.expectOne(candidate => candidate.method === 'GET').flush({ required: { version: 3, processing: 'ABROAD' }, accepted: null });
-            await settle();
-            put = http.expectOne('/api/speech-consent');
-            expect(put.request.body).toEqual({ version: 3, processing: 'ABROAD' });
-            put.flush(null, { status: 204, statusText: 'No Content' });
-            expect(await accepted).toEqual({ ok: true });
+            const put = http.expectOne('/api/speech-consent');
+            expect(put.request.body).toEqual({ version: SPEECH_DISCLOSURE_VERSION, processing: 'ABROAD' });
+            put.flush({ code: 'SPEECH_CONSENT_OUTDATED' }, { status: 409, statusText: 'x' });
+            expect(await accepted).toEqual({ ok: false, message: expect.stringContaining('Условия согласия обновились') });
+            http.expectNone(candidate => candidate.method === 'PUT');
+        });
+
+        it('records under the disclosure version of the shared contract file, which the backend test holds equal to the version the server requires', () => {
+            expect(disclosure.consentVersion).toBe(SPEECH_DISCLOSURE_VERSION);
         });
     });
 });

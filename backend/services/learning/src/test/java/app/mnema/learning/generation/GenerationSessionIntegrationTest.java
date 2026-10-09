@@ -440,6 +440,99 @@ class GenerationSessionIntegrationTest extends GenerationIntegrationTest {
         // one proposal waits for its audio (not approvable), one failed: not a "failed" session, so no GENERATION_FAILED yet
         assertThat(notificationKinds(owner)).isEmpty();
         speech.release.countDown();
+
+        // when its audio is done the approvable proposal and the failed artifact are announced as PARTIAL, once
+        await("the partial notification", java.time.Duration.ofSeconds(20), () -> !notificationKinds(owner).isEmpty());
+        assertThat(notificationKinds(owner)).containsExactly("GENERATION_PARTIAL");
+        JsonNode params = notificationParams(owner, "GENERATION_PARTIAL");
+        assertThat(params.path("approvableCount").intValue()).isEqualTo(1);
+        assertThat(params.path("failedCount").intValue()).isEqualTo(1);
+    }
+
+    @Test
+    void aFailedArtifactAndAProposalWhoseAudioFailedAreAnnouncedAsFailedBecauseNothingIsApprovable() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        UUID withMedia = note(owner, deck, "[[fake:audio-down]] с аудио");
+        UUID refused = note(owner, deck, "[[stub:refusal]] отказ");
+        UUID session = start(owner, deck, withAudio(spec(null, noteSource(withMedia, 0), noteSource(refused, 0))));
+        awaitState(session, "REVIEW");
+        await("the failed slot", java.time.Duration.ofSeconds(20), () -> jdbc.sql("SELECT count(*)::integer FROM app_learning.generation_media_slot "
+                + "WHERE session_id=:id AND state='FAILED'").param("id", session).query(Integer.class).single() == 1);
+        await("the notification", java.time.Duration.ofSeconds(20), () -> !notificationKinds(owner).isEmpty());
+
+        // the contract: GENERATION_FAILED when no artifact is approvable and one failed, whatever the order the text and the audio ended in
+        assertThat(notificationKinds(owner)).containsExactly("GENERATION_FAILED");
+        assertThat(notificationParams(owner, "GENERATION_FAILED").path("errorCode").stringValue(null)).isEqualTo("REFUSAL");
+    }
+
+    private tools.jackson.databind.node.ObjectNode withAudio(tools.jackson.databind.node.ObjectNode spec) {
+        ((tools.jackson.databind.node.ObjectNode) spec.path("settings")).putObject("media").putObject("audio").put("enabled", true).put("lang", "ja");
+        return spec;
+    }
+
+    private JsonNode notificationParams(UUID owner, String kind) throws Exception {
+        return JSON.readTree(jdbc.sql("SELECT params::text FROM app_learning.notification WHERE owner_id=:owner AND kind=:kind").param("owner", owner)
+                .param("kind", kind).query(String.class).single());
+    }
+
+    @Test
+    void readyIsAnnouncedOnceWhenTheLastMediaSlotOfAReviewSessionEnds() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        UUID session = start(owner, deck, withAudio(spec("[[fake:audio-hold]] с аудио")));
+        awaitState(session, "REVIEW");
+        assertThat(speech.entered.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+        assertThat(notificationKinds(owner)).as("the clip is still being made").isEmpty();
+
+        speech.release.countDown();
+
+        await("the ready notification", java.time.Duration.ofSeconds(20), () -> !notificationKinds(owner).isEmpty());
+        assertThat(notificationKinds(owner)).containsExactly("GENERATION_READY");
+        JsonNode params = notificationParams(owner, "GENERATION_READY");
+        assertThat(params.path("sessionId").stringValue(null)).isEqualTo(session.toString());
+        assertThat(params.path("artifactCount").intValue()).isEqualTo(1);
+        assertThat(params.path("approvableCount").intValue()).isEqualTo(1);
+        assertThat(jdbc.sql("SELECT dedupe_key FROM app_learning.notification WHERE owner_id=:owner").param("owner", owner).query(String.class).single())
+                .isEqualTo("generation:" + session + ":ready");
+    }
+
+    @Test
+    void twoSlotsOfOneSessionEndingTogetherAnnounceOneReady() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        UUID first = note(owner, deck, "[[fake:audio-hold]] первая с аудио");
+        UUID second = note(owner, deck, "[[fake:audio-hold]] вторая с аудио");
+        UUID session = start(owner, deck, withAudio(spec(null, noteSource(first, 0), noteSource(second, 0))));
+        awaitState(session, "REVIEW");
+        assertThat(speech.entered.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+        assertThat(notificationKinds(owner)).isEmpty();
+
+        speech.release.countDown();
+
+        await("both slots READY", java.time.Duration.ofSeconds(20), () -> jdbc.sql("SELECT count(*)::integer FROM app_learning.generation_media_slot "
+                + "WHERE session_id=:id AND state='READY'").param("id", session).query(Integer.class).single() == 2);
+        await("the ready notification", java.time.Duration.ofSeconds(20), () -> !notificationKinds(owner).isEmpty());
+        // give a duplicate every chance to appear: the session lock and the deduplication key allow exactly one
+        Thread.sleep(500);
+        assertThat(notificationKinds(owner)).containsExactly("GENERATION_READY");
+        assertThat(notificationParams(owner, "GENERATION_READY").path("artifactCount").intValue()).isEqualTo(2);
+    }
+
+    @Test
+    void aFailedMediaSlotStillEndsTheWaitWithOneReadyForTheOwnerToReview() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        UUID session = start(owner, deck, withAudio(spec("[[fake:audio-down]] с аудио")));
+        awaitState(session, "REVIEW");
+        await("the failed slot", java.time.Duration.ofSeconds(20), () -> jdbc.sql("SELECT count(*)::integer FROM app_learning.generation_media_slot "
+                + "WHERE session_id=:id AND state='FAILED'").param("id", session).query(Integer.class).single() == 1);
+        await("the ready notification", java.time.Duration.ofSeconds(20), () -> !notificationKinds(owner).isEmpty());
+
+        assertThat(notificationKinds(owner)).containsExactly("GENERATION_READY");
+        JsonNode params = notificationParams(owner, "GENERATION_READY");
+        assertThat(params.path("artifactCount").intValue()).isEqualTo(1);
+        assertThat(params.path("approvableCount").intValue()).as("the failed audio must be retried or removed first").isZero();
     }
 
     @Test
