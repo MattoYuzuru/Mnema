@@ -4,16 +4,12 @@ set -eu
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)
 MAIN="$REPO_ROOT/.github/workflows/deploy.yaml"
-STAGING="$REPO_ROOT/.github/workflows/staging-deploy.yaml"
-PRODUCTION="$REPO_ROOT/.github/workflows/production-deploy.yaml"
 PULL_REQUEST="$REPO_ROOT/.github/workflows/pull-request.yaml"
 EXCEPTIONS="$REPO_ROOT/security/release-image-exceptions.json"
 
 build_job=$(sed -n '/^  build-and-push:/,/^  assemble-vps-candidate:/p' "$MAIN")
 assemble_job=$(sed -n '/^  assemble-vps-candidate:/,/^  deploy-production:/p' "$MAIN")
 deploy_job=$(sed -n '/^  deploy-production:/,/^  post-deploy-smoke:/p' "$MAIN")
-staging_preflight=$(sed -n '/^  validate-main-ci:/,/^  deploy-staging:/p' "$STAGING")
-production_preflight=$(sed -n '/^  validate-staging-deploy:/,/^  preview-production:/p' "$PRODUCTION")
 
 printf '%s\n' "$build_job" | grep -Fq 'attestations: write'
 printf '%s\n' "$build_job" | grep -Fq 'id-token: write'
@@ -57,24 +53,6 @@ if printf '%s\n%s\n' "$build_job" "$assemble_job" | grep -Fq 'environment:'; the
   echo 'Only the approved deploy job may enter the prod Environment' >&2
   exit 1
 fi
-test "$(printf '%s\n' "$staging_preflight" | grep -F -c 'verify_release_security_evidence.py verify-release')" -eq 2
-# shellcheck disable=SC2016 # Workflow variable is a literal contract marker.
-printf '%s\n' "$staging_preflight" | grep -Fq -- '--expected-run-id "$UPSTREAM_RUN_ID"'
-if grep -Fq 'policy-id: staging-production-promotion' "$STAGING"; then
-  echo 'Maintenance candidates must not be relayed for production promotion' >&2
-  exit 1
-fi
-printf '%s\n' "$production_preflight" | grep -Fq "production_eligible: 'false'"
-grep -Fq "needs.validate-staging-deploy.outputs.production_eligible == 'true'" "$PRODUCTION"
-# Dormant production verification/Secret protections remain until #147 owns the
-# new production go/no-go; no environment override can open the hard gate.
-test "$(grep -F -c 'verify_release_security_evidence.py verify-release' "$PRODUCTION")" -eq 2
-
-if printf '%s\n%s\n' "$staging_preflight" "$production_preflight" | grep -Fq 'environment:'; then
-  echo 'Security evidence preflight must complete before Environment access' >&2
-  exit 1
-fi
-
 grep -Fq 'run: ./scripts/test-release-security-contract.sh' "$MAIN"
 grep -Fq 'run: ./scripts/test-release-security-contract.sh' "$PULL_REQUEST"
 python3 "$REPO_ROOT/scripts/verify_release_security_evidence.py" aggregate --help >/dev/null

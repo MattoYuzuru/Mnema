@@ -58,11 +58,6 @@ updates:
       - "/backend"
       - "/frontend"
       - "/deploy/production"
-      - "/k8s"
-      - "/k8s/ai"
-      - "/k8s/backup"
-      - "/k8s/observability"
-      - "/k8s/staging"
     schedule:
       interval: "weekly"
       day: "monday"

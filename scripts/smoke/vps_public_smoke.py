@@ -103,6 +103,30 @@ def check_oidc_issuer(fetch: Fetch, sha: str) -> None:
         raise CheckFailed("issuer differs")
 
 
+HSTS_ONE_YEAR = re.compile(r"(?:^|;)\s*max-age=31536000\s*(?:;|$)", re.IGNORECASE)
+
+
+def require_hsts(response: Response) -> None:
+    if not HSTS_ONE_YEAR.search(response.headers.get("strict-transport-security", "")):
+        raise CheckFailed("Strict-Transport-Security max-age=31536000 missing")
+
+
+def check_frontend_headers(fetch: Fetch, sha: str) -> None:
+    response = fetch(SITE + "/")
+    expect_status(response, 200)
+    require_hsts(response)
+    if response.headers.get("x-content-type-options", "").strip().lower() != "nosniff":
+        raise CheckFailed("X-Content-Type-Options nosniff missing")
+    if not response.headers.get("content-security-policy", "").strip():
+        raise CheckFailed("Content-Security-Policy missing")
+
+
+def check_auth_hsts(fetch: Fetch, sha: str) -> None:
+    response = fetch(AUTH + "/.well-known/openid-configuration")
+    expect_status(response, 200)
+    require_hsts(response)
+
+
 def check_api_protected(fetch: Fetch, sha: str) -> None:
     expect_status(fetch(SITE + "/api/decks"), 401)
 
@@ -116,6 +140,8 @@ CHECKS: tuple[tuple[str, Callable[[Fetch, str], None]], ...] = (
     ("www redirects to apex", check_www_redirect),
     ("build identity equals released commit", check_build_id),
     ("OIDC issuer", check_oidc_issuer),
+    ("frontend HSTS, nosniff and CSP headers", check_frontend_headers),
+    ("auth origin HSTS", check_auth_hsts),
     ("protected API requires a session", check_api_protected),
     ("public actuator is blocked", check_actuator_blocked),
 )

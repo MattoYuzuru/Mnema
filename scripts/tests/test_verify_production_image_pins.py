@@ -24,22 +24,12 @@ class VerifyProductionImagePinsTest(unittest.TestCase):
             Path("deploy/production/compose.yaml"),
             Path("deploy/production/Dockerfile"),
             Path("deploy/production/local-backup.py"),
-            Path("k8s/postgres.yaml"),
-            Path("k8s/redis.yaml"),
-            Path("k8s/identity-account-deploy.yaml"),
-            Path("k8s/learning-deploy.yaml"),
-            Path(".github/workflows/production-deploy.yaml"),
             Path(".github/dependabot.yml"),
-            Path("scripts/render-release-manifest.sh"),
             Path("docs/operations/production-image-inventory.md"),
         ):
             target = self.repository / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(REPOSITORY_ROOT / relative, target)
-        shutil.copytree(
-            REPOSITORY_ROOT / "k8s/observability",
-            self.repository / "k8s/observability",
-        )
 
     def tearDown(self):
         self.temporary_directory.cleanup()
@@ -114,14 +104,6 @@ class VerifyProductionImagePinsTest(unittest.TestCase):
         )
         self.assertTrue(any("Dockerfile FROM" in finding.message for finding in self.findings()))
 
-    def test_tag_only_production_database_image_is_rejected(self):
-        self.replace(
-            "k8s/postgres.yaml",
-            "postgres:16.15-alpine3.24@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685",
-            "postgres:16.15-alpine3.24",
-        )
-        self.assertTrue(any("production image" in finding.message for finding in self.findings()))
-
     def test_vps_mutable_database_and_undeclared_application_binding_are_rejected(self):
         path = self.repository / 'deploy/production/compose.yaml'
         content = path.read_text()
@@ -131,65 +113,36 @@ class VerifyProductionImagePinsTest(unittest.TestCase):
         messages = [finding.message for finding in self.findings()]
         self.assertTrue(any('four admitted image bindings' in message for message in messages))
 
+    def append_compose(self, text: str):
+        path = self.repository / "deploy/production/compose.yaml"
+        path.write_text(path.read_text(encoding="utf-8").rstrip("\n") + "\n" + text, encoding="utf-8")
+
+    def test_compose_flow_mapping_image_cannot_bypass_policy(self):
+        self.append_compose("  sidecar: {image: example/sidecar:latest}\n")
+        self.assertTrue(any("one-line YAML scalar" in finding.message for finding in self.findings()))
+
+    def test_compose_extra_mutable_or_undigested_image_is_rejected(self):
+        for image in ("example/sidecar:latest", "example/sidecar:1.0", "example/sidecar"):
+            with self.subTest(image=image):
+                self.tearDown()
+                self.setUp()
+                self.append_compose(f"  sidecar:\n    image: {image}\n")
+                self.assertTrue(any("four admitted image bindings" in finding.message for finding in self.findings()))
+
     def test_vps_database_base_cannot_use_a_floating_tag(self):
         self.replace('deploy/production/Dockerfile',
                      'postgres:18.6-alpine3.24@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873',
                      'postgres:18.6-alpine3.24')
         self.assertTrue(any('Dockerfile FROM' in finding.message for finding in self.findings()))
 
-    def test_new_mutable_observability_image_is_rejected(self):
-        path = self.repository / "k8s/observability/99-new-component.yaml"
-        path.write_text("spec:\n  containers:\n    - image: example/component:1.0\n", encoding="utf-8")
-        self.assertTrue(any(path == finding.path for finding in self.findings()))
-
-    def test_noncanonical_image_mapping_cannot_bypass_policy(self):
-        self.replace(
-            "k8s/redis.yaml",
-            "          image: redis:7.4.11-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf",
-            "          \"image\" : redis:7.4.11-alpine",
-        )
-        self.assertTrue(any("production image" in finding.message for finding in self.findings()))
-
-    def test_unclassified_production_apply_path_is_rejected(self):
-        self.replace(
-            ".github/workflows/production-deploy.yaml",
-            "          kubectl apply -f k8s/observability/\n",
-            "          kubectl apply -f k8s/observability/\n          kubectl apply -f k8s/ai/\n",
-        )
-        self.assertTrue(any("apply surface" in finding.message for finding in self.findings()))
-
-    def test_long_form_production_apply_cannot_bypass_policy(self):
-        self.replace(
-            ".github/workflows/production-deploy.yaml",
-            "          kubectl apply -f k8s/observability/\n",
-            "          kubectl apply -f k8s/observability/\n"
-            "          kubectl apply --filename k8s/ai/\n",
-        )
-        self.assertTrue(any("classified -f target" in finding.message for finding in self.findings()))
-
-    def test_duplicate_stdin_apply_cannot_hide_excluded_manifest(self):
-        self.replace(
-            ".github/workflows/production-deploy.yaml",
-            "          kubectl apply -f k8s/observability/\n",
-            "          kubectl apply -f k8s/observability/\n"
-            "          cat k8s/ai/ai-deploy.yaml | kubectl apply -f -\n",
-        )
-        self.assertTrue(any("apply surface" in finding.message for finding in self.findings()))
-
-    def test_nonproduction_manifest_is_outside_the_policy_surface(self):
-        path = self.repository / "k8s/ai/ai-deploy.yaml"
-        path.parent.mkdir(parents=True)
-        path.write_text("spec:\n  containers:\n    - image: local-ai:latest\n", encoding="utf-8")
-        self.assertEqual([], self.findings())
-
     def test_missing_dependabot_production_directory_is_rejected(self):
-        self.replace(".github/dependabot.yml", '      - "/k8s/observability"\n', "")
+        self.replace(".github/dependabot.yml", '      - "/deploy/production"\n', "")
         self.assertTrue(any("Docker coverage" in finding.message for finding in self.findings()))
 
     def test_stale_inventory_is_rejected(self):
         self.replace(
             "docs/operations/production-image-inventory.md",
-            "`sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf`",
+            "`sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873`",
             "`sha256:" + "f" * 64 + "`",
         )
         self.assertTrue(any("inventory is missing" in finding.message for finding in self.findings()))

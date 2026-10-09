@@ -54,7 +54,7 @@ class ReleaseScopeTest(unittest.TestCase):
         paths = ['docs/operations/production-delivery.md', 'README.md', 'AGENTS.md', 'frontend/README.md',
                  'frontend/docs/notes.md', 'deploy/production/README.md', 'scripts/verify_docs.py',
                  '.github/workflows/pull-request.yaml', '.github/workflows/vps-deploy.yaml', 'design/prototype/x.html',
-                 'scripts/smoke/vps_public_smoke.py', 'k8s/learning-deploy.yaml']
+                 'scripts/smoke/vps_public_smoke.py', 'compose.local-full-stack.yml']
         for path in paths:
             with self.subTest(path=path):
                 self.assertFalse(SCOPE.is_runtime_path(path))

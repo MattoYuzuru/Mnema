@@ -74,14 +74,14 @@ Mnema/
 │   ├── browser-identity/                real local HTTPS browser/E2E harness
 │   ├── local-full-stack/                persistent local API smoke
 │   ├── learning-security/               real Identity↔Learning harness
-│   ├── backup/, smoke/, purge/          deterministic policy/integration tools
+│   ├── smoke/                           public post-deploy smoke
 │   └── tests/                           repository policy tests
 ├── docs/                                canonical navigator and evidence
 ├── design/prototype/                    historical design evidence
-├── k8s/, deploy/                        VPS runtime and legacy operational sources
+├── deploy/                              VPS runtime, dispatcher and local full-stack sources
 ├── docker-compose.yml                   replacement backend maintenance runtime
 ├── compose.local-full-stack.yml         persistent local HTTPS product runtime
-└── .github/workflows/                   protected quality, manual VPS release and dormant K8s operations
+└── .github/workflows/                   protected quality, Main CI release and manual VPS operations
 ```
 
 `settings.gradle.kts` compiles only Identity & Account and Learning. Old service
@@ -208,12 +208,12 @@ python3 scripts/learning-security/run.py
 python3 scripts/learning-security/verify_cancellation.py
 ```
 
-The remaining mandatory release/security/smoke/backup/purge contracts are the exact
+The remaining mandatory release/security/smoke contracts are the exact
 commands in the `frontend-quality` job of
 [PR Quality](../../.github/workflows/pull-request.yaml). They include every maintained
-`scripts/test-*.sh`, smoke and backup unit suites, PostgreSQL 16→18 recovery and the
-disposable no-snapshot purge rehearsal. Operational contract tests do not perform a
-deployment.
+`scripts/test-*.sh` and the smoke unit suite; VPS backup and restore are covered by
+`scripts/tests/test_vps_*.py` in `backend-quality`. Operational contract tests do not
+perform a deployment.
 
 The real browser harness covers auth, authoring and one `FREE_RESPONSE` Study interaction in
 its base `--authoring` flow; `--authoring --media --mechanics` extends it to authoring and
