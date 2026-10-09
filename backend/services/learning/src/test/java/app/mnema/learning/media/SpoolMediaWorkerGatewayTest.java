@@ -45,14 +45,26 @@ class SpoolMediaWorkerGatewayTest {
         }
     }
 
-    /** The test process cannot create root-owned files, so it plays the runner under its own uid. */
+    /**
+     * The test process cannot create root-owned files, so it plays the runner under its own uid: the owner of a file this very
+     * process creates. (Not the owner of the temp directory: on Linux CI {@code /tmp} belongs to root, which would make every
+     * test verdict look "root-owned" to the wrong side of the comparison.)
+     */
     private static final int RUNNER_UID = currentUid();
 
     private static int currentUid() {
+        Path probe = null;
         try {
-            return (Integer) Files.getAttribute(Path.of(System.getProperty("java.io.tmpdir")), "unix:uid");
+            probe = Files.createTempFile("mnema-uid-probe", ".tmp");
+            return (Integer) Files.getAttribute(probe, "unix:uid");
         } catch (IOException failure) {
             throw new IllegalStateException(failure);
+        } finally {
+            try {
+                if (probe != null) Files.deleteIfExists(probe);
+            } catch (IOException ignored) {
+                // a leftover empty temp file is harmless
+            }
         }
     }
 
