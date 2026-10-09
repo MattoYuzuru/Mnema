@@ -103,7 +103,7 @@ class SpeechInputIntegrationTest extends PostgresIntegrationTest {
 
     private void consent(UUID owner) throws Exception {
         MockHttpServletResponse response = send(owner, put("/speech-consent").contentType("application/json")
-                .content("{\"version\":\"speech-2026-10\",\"processing\":\"RU\"}"));
+                .content("{\"version\":\"speech-2026-10-2\",\"processing\":\"RU\"}"));
         assertThat(response.getStatus()).as(response.getContentAsString()).isEqualTo(200);
     }
 
@@ -178,7 +178,13 @@ class SpeechInputIntegrationTest extends PostgresIntegrationTest {
         assertThat(before.getStatus()).isEqualTo(200);
         assertThat(before.getHeader("Cache-Control")).isEqualTo("private, no-store");
         JsonNode view = json(before);
-        assertThat(view.path("required").path("version").stringValue(null)).isEqualTo("speech-2026-10");
+        assertThat(view.path("required").path("version").stringValue(null)).isEqualTo("speech-2026-10-2");
+        // the version the frontend records a consent under (the disclosure it shows) is the one the server requires: one contract file for both
+        java.nio.file.Path root = java.nio.file.Path.of("").toAbsolutePath();
+        while (root != null && !java.nio.file.Files.exists(root.resolve("contracts/speech/disclosure.json"))) root = root.getParent();
+        assertThat(root).isNotNull();
+        assertThat(JSON.readTree(java.nio.file.Files.readString(root.resolve("contracts/speech/disclosure.json"))).path("consentVersion").stringValue(null))
+                .isEqualTo(view.path("required").path("version").stringValue(null));
         // the Stub processes in the process: nothing leaves Russia
         assertThat(view.path("required").path("processing").stringValue(null)).isEqualTo("RU");
         assertThat(view.path("accepted").isNull()).isTrue();
@@ -187,27 +193,27 @@ class SpeechInputIntegrationTest extends PostgresIntegrationTest {
         MockHttpServletResponse refused = submit(owner, "COMPOSER", 3_000);
         assertThat(refused.getStatus()).isEqualTo(409);
         assertThat(json(refused).path("code").stringValue(null)).isEqualTo("SPEECH_CONSENT_REQUIRED");
-        assertThat(json(refused).path("version").stringValue(null)).isEqualTo("speech-2026-10");
+        assertThat(json(refused).path("version").stringValue(null)).isEqualTo("speech-2026-10-2");
         assertThat(json(refused).path("processing").stringValue(null)).isEqualTo("RU");
 
         // a stale version and another region are outdated, a malformed body is invalid
-        for (String body : new String[] {"{\"version\":\"speech-2025-01\",\"processing\":\"RU\"}", "{\"version\":\"speech-2026-10\",\"processing\":\"ABROAD\"}"}) {
+        for (String body : new String[] {"{\"version\":\"speech-2025-01\",\"processing\":\"RU\"}", "{\"version\":\"speech-2026-10-2\",\"processing\":\"ABROAD\"}"}) {
             MockHttpServletResponse stale = send(owner, put("/speech-consent").contentType("application/json").content(body));
             assertThat(stale.getStatus()).isEqualTo(409);
             assertThat(json(stale).path("code").stringValue(null)).isEqualTo("SPEECH_CONSENT_OUTDATED");
-            assertThat(json(stale).path("version").stringValue(null)).isEqualTo("speech-2026-10");
+            assertThat(json(stale).path("version").stringValue(null)).isEqualTo("speech-2026-10-2");
         }
-        for (String body : new String[] {"{}", "[]", "{\"version\":1,\"processing\":\"RU\"}", "{\"version\":\"speech-2026-10\",\"processing\":\"MARS\"}",
-                "{\"version\":\"speech-2026-10\",\"processing\":\"RU\",\"extra\":true}", "{nope"}) {
+        for (String body : new String[] {"{}", "[]", "{\"version\":1,\"processing\":\"RU\"}", "{\"version\":\"speech-2026-10-2\",\"processing\":\"MARS\"}",
+                "{\"version\":\"speech-2026-10-2\",\"processing\":\"RU\",\"extra\":true}", "{nope"}) {
             assertThat(send(owner, put("/speech-consent").contentType("application/json").content(body)).getStatus()).as(body).isEqualTo(400);
         }
 
         // accepted: 200 with the GET body; again is the same, with its first time
         MockHttpServletResponse accepted = send(owner, put("/speech-consent").contentType("application/json")
-                .content("{\"version\":\"speech-2026-10\",\"processing\":\"RU\"}"));
+                .content("{\"version\":\"speech-2026-10-2\",\"processing\":\"RU\"}"));
         assertThat(accepted.getStatus()).isEqualTo(200);
         JsonNode first = json(accepted).path("accepted");
-        assertThat(first.path("version").stringValue(null)).isEqualTo("speech-2026-10");
+        assertThat(first.path("version").stringValue(null)).isEqualTo("speech-2026-10-2");
         assertThat(first.path("processing").stringValue(null)).isEqualTo("RU");
         assertThat(first.path("acceptedAt").stringValue(null)).isNotBlank();
         consent(owner);
@@ -461,6 +467,10 @@ class SpeechInputIntegrationTest extends PostgresIntegrationTest {
         java.util.List<String> titles = java.util.List.of("  Токио  ", "токио", "Рамен\u0000\n суши", "mail me at a@b.example", "https://example.org/x", "call +79001234567",
                 "12345678", "x".repeat(65), "", "Нормальный термин", "Ещё один");
         assertThat(SpeechHints.clean(titles, 60)).containsExactly("Токио", "Рамен суши", "Нормальный термин", "Ещё один");
+        // what the prompt layer's Redactor would mask (a telephone in a grouped form, a card), a bare link and a bare domain are dropped too; dotted names are not links
+        java.util.List<String> sneaky = java.util.List.of("916 123-45-67", "8 (916) 123-45-67", "4111 1111 1111 1111", "example.com/x", "Статья на habr.ru/post",
+                "example.com", "Node.js", "ASP.NET Core", "Версия 3.14", "Планировщик запросов");
+        assertThat(SpeechHints.clean(sneaky, 60)).containsExactly("Node.js", "ASP.NET Core", "Версия 3.14", "Планировщик запросов");
         assertThat(SpeechHints.clean(titles, 2)).containsExactly("Токио", "Рамен суши");
         assertThat(SpeechHints.clean(java.util.Arrays.asList("a", null, "b"), 60)).containsExactly("a", "b");
         assertThat(SpeechHints.clean(java.util.List.of(), 60)).isEmpty();
@@ -655,7 +665,7 @@ class SpeechInputIntegrationTest extends PostgresIntegrationTest {
 
         // withdrawn between admission and processing
         UUID withdrawn = UUID.randomUUID();
-        consentFor(withdrawn, "speech-2026-10", "RU");
+        consentFor(withdrawn, "speech-2026-10-2", "RU");
         var claim = running(withdrawn, 3_000, ru);
         assertThat(send(withdrawn, delete("/speech-consent")).getStatus()).isEqualTo(204);
         mine.run(claim);
@@ -675,7 +685,7 @@ class SpeechInputIntegrationTest extends PostgresIntegrationTest {
 
         // an input admitted for ABROAD whose consent was narrowed to RU: no longer covered
         UUID narrowed = UUID.randomUUID();
-        consentFor(narrowed, "speech-2026-10", "RU");
+        consentFor(narrowed, "speech-2026-10-2", "RU");
         var wide = running(narrowed, 3_000, app.mnema.learning.ai.Transcription.Region.ABROAD);
         mine.run(wide);
         assertThat(provider.requests).isEmpty();
@@ -689,10 +699,10 @@ class SpeechInputIntegrationTest extends PostgresIntegrationTest {
         SpeechInputWorker mine = workerOf(provider);
 
         UUID russian = UUID.randomUUID();
-        consentFor(russian, "speech-2026-10", "RU");
+        consentFor(russian, "speech-2026-10-2", "RU");
         mine.run(running(russian, 3_000, app.mnema.learning.ai.Transcription.Region.RU));
         UUID abroad = UUID.randomUUID();
-        consentFor(abroad, "speech-2026-10", "ABROAD");
+        consentFor(abroad, "speech-2026-10-2", "ABROAD");
         mine.run(running(abroad, 3_000, app.mnema.learning.ai.Transcription.Region.RU));
 
         assertThat(provider.requests).extracting(app.mnema.learning.ai.Transcription.Request::allowedRegion)
@@ -704,7 +714,7 @@ class SpeechInputIntegrationTest extends PostgresIntegrationTest {
         Provider provider = new Provider();
         SpeechInputWorker mine = workerOf(provider);
         UUID owner = UUID.randomUUID();
-        consentFor(owner, "speech-2026-10", "RU");
+        consentFor(owner, "speech-2026-10-2", "RU");
 
         // 3 s declared, 20 s measured: far above max(2 s, 20 %)
         provider.answer = heard("a very long text", 20);
@@ -732,7 +742,7 @@ class SpeechInputIntegrationTest extends PostgresIntegrationTest {
         Provider provider = new Provider();
         SpeechInputWorker mine = workerOf(provider);
         UUID owner = UUID.randomUUID();
-        consentFor(owner, "speech-2026-10", "RU");
+        consentFor(owner, "speech-2026-10-2", "RU");
         new TransactionTemplate(transactions).executeWithoutResult(status -> ledger.consume(owner, Bucket.STT, 1_790, "stt:test:" + owner, null));
 
         provider.answer = heard("free text", 20);
@@ -752,7 +762,7 @@ class SpeechInputIntegrationTest extends PostgresIntegrationTest {
         Provider provider = new Provider();
         SpeechInputWorker mine = workerOf(provider);
         UUID owner = UUID.randomUUID();
-        consentFor(owner, "speech-2026-10", "RU");
+        consentFor(owner, "speech-2026-10-2", "RU");
         provider.answer = heard("я".repeat(SpeechInputWorker.MAX_TEXT + 1), 3);
         var claim = running(owner, 3_000, app.mnema.learning.ai.Transcription.Region.RU);
 

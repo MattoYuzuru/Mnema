@@ -77,8 +77,9 @@ cd backend && set -a && source ../.env && set +a && MNEMA_AI_EVAL=live ./gradlew
 `MNEMA_GOLDEN_KINDS`, `MNEMA_GOLDEN_HELD_OUT=true`, `MNEMA_GOLDEN_LIMIT` (per kind), `MNEMA_GOLDEN_PARALLELISM`, `MNEMA_GOLDEN_JUDGES`,
 `MNEMA_GOLDEN_BUDGET_MICROS` (a live run starts no new fixture once generation and judging have cost this much; default $2.80) and
 `MNEMA_GOLDEN_EVIDENCE_DIR` (a copy of `report.json` and `report.md`). Output: `backend/services/learning/build/reports/golden-eval/`: `report.json`, `report.md`
-(identifiers and numbers only, safe to attach as evidence) and `owner-review.md` (the 40-item sample **with generated texts**, for the owner's checkboxes; keep it
-out of the repository).
+(identifiers and numbers only, safe to attach as evidence) and `owner-review.md` (the 40-item runner sample **with generated texts**, for the owner's checkboxes; keep it
+out of the repository). The run-5 owner calibration review is a 60-case sample: this 40-case final-run sample plus 20 additional dev cases chosen without inspecting
+their outcomes ([run-5 evidence](../../../docs/engineering/evidence/epic-77/run-5/ai-17/README.md)).
 
 ## What the runner does
 
@@ -137,7 +138,7 @@ What the corpus does **not** cover, so that a green report is not read as more t
   objective reuse are not covered.
 * Languages: materials from notes cover all seven; the other kinds are mostly RU and EN with a few fixtures in the others, so a per-language rate outside RU and EN rests on few items.
 * Judges are two cheap models. They share blind spots with the generator on rare facts, are weaker in JA, ZH and KO, and cannot see what the owner would call
-  "not in my voice". The owner sample (`owner-review.md`, 40 items) is the check against that.
+  "not in my voice". The owner sample (`owner-review.md`, 40 items from the runner; 60 cases in the run-5 calibration review) is the check against that.
 * A live run is one sample of a stochastic system: differences of a few points between runs are noise.
 
 

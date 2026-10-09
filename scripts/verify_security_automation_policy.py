@@ -25,11 +25,6 @@ DOCKER_DIRECTORIES = {
     "/backend",
     "/deploy/production",
     "/frontend",
-    "/k8s",
-    "/k8s/ai",
-    "/k8s/backup",
-    "/k8s/observability",
-    "/k8s/staging",
 }
 UPDATE_START = re.compile(r'^  - package-ecosystem: "(?P<ecosystem>[^"]+)"$')
 

@@ -52,7 +52,7 @@ The owner decisions are recorded in [owner-decisions-2026-08](../decisions/owner
 | P0 | A stale update session can mutate a published target revision ([CardService.java](https://github.com/MattoYuzuru/Mnema/blob/v1-apache-final/backend/services/core/src/main/java/app/mnema/core/deck/service/CardService.java#L1512)) | history is not truly immutable |
 | P0 | Production serves unhashed JS/CSS with one-year immutable cache ([nginx.conf](../../frontend/nginx.conf#L50)) | returning users can be stuck on an obsolete frontend |
 | P0 | Main delivery can cancel a partial multi-target deployment | clusters/services can run different releases |
-| P0 | Repository production PostgreSQL is one 15 Gi PVC without a proven backup/restore runbook ([postgres.yaml](../../k8s/postgres.yaml#L45)) | storage and recovery boundaries are unsafe |
+| P0 | Repository production PostgreSQL is one 15 Gi PVC without a proven backup/restore runbook (`k8s/postgres.yaml`, removed with the Kubernetes delivery; see Git history) | storage and recovery boundaries are unsafe |
 | P1 | Review submission has no client event idempotency contract | retries/first-state concurrency can duplicate outcomes |
 | P1 | Import processing does not reclaim every stale `processing` job | jobs can remain stuck after failure |
 | P1 | User statistics in browser storage are not consistently identity-scoped | account switching can expose stale local state |

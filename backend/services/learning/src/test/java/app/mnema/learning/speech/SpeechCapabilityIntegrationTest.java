@@ -57,7 +57,7 @@ class SpeechCapabilityIntegrationTest extends PostgresIntegrationTest {
         assertThat(problem.path("reason").stringValue(null)).isEqualTo("DISABLED");
 
         assertThat(send(owner, get("/speech-consent")).getStatus()).isEqualTo(409);
-        assertThat(send(owner, put("/speech-consent").contentType("application/json").content("{\"version\":\"speech-2026-10\",\"processing\":\"RU\"}")).getStatus())
+        assertThat(send(owner, put("/speech-consent").contentType("application/json").content("{\"version\":\"speech-2026-10-2\",\"processing\":\"RU\"}")).getStatus())
                 .isEqualTo(409);
         assertThat(send(owner, delete("/speech-consent")).getStatus()).isEqualTo(204);
         assertThat(send(owner, delete("/speech-inputs/" + UUID.randomUUID())).getStatus()).isEqualTo(204);

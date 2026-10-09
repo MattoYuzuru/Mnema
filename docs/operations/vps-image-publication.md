@@ -2,8 +2,7 @@
 
 Main CI publishes the five VPS images automatically for every push to `main` that
 changes the production runtime, and on a manual dispatch of **Main CI**
-(`deploy.yaml`) on `main`. Publication does not reactivate the old Kubernetes
-deployment, recovery or rollback jobs. One VPS runs Compose through the
+(`deploy.yaml`) on `main`. One VPS runs Compose through the
 [root-owned dispatcher](../../deploy/production/README.md); see
 [production delivery](production-delivery.md) for the complete release sequence.
 

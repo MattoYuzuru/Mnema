@@ -20,7 +20,7 @@ import java.util.Locale;
  * {@code response_format} of {@code audio/wav} at 24 kHz, and one prebuilt voice in {@code generation_config.speech_config}. The audio is the base64
  * {@code data} of the {@code audio} content of a {@code model_output} step: a RIFF/WAVE PCM s16le mono file, which the media pipeline accepts as a source
  * (the worker transcodes it to the playback variant). The language is auto-detected by the model, so none is sent; the style instruction is a fixed
- * learner-oriented sentence ({@link SpeechSettings#style()}) and the only text besides the clip's own, which the caller has already de-identified.
+ * learner-oriented sentence ({@link SpeechSettings#style()}) and the only text besides the clip's own, which the caller has already checked for personal data (an e-mail address, a telephone or a card number is refused, never sent).
  *
  * <p>Pricing (https://ai.google.dev/gemini-api/docs/pricing): input and audio output are token-billed. The response carries {@code usage}
  * ({@code total_input_tokens}, {@code total_output_tokens}; live check 2026-10-05: about 200 input tokens even for one word and 32 audio tokens per

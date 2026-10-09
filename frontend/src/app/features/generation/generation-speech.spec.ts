@@ -1,6 +1,6 @@
 import { AuthoringProtocolError } from '../authoring/authoring.models';
 import {
-    AUDIO_REDO_HINT, AUDIO_RUNNING, audioFailureReason, editOutcomeNote, synthesizedCaption, voiceLabel, voiceRedoneText
+    AUDIO_REDO_HINT, AUDIO_RUNNING, audioFailureReason, editOutcomeNote, synthesizedCaption, turnFailureReason, voiceLabel, voiceRedoneText
 } from './generation-view';
 import {
     AUDIO_ERROR_CODES, RequestValidationError, parseArtifactDetail, parseTurn, serializeEdit
@@ -28,11 +28,18 @@ describe('speech on the wire (contracts/generation, AI-09 #297)', () => {
         expect(parseArtifactDetail(detail(slot => { delete slot.voice; delete slot.lang; })).mediaSlots[0]).toMatchObject({ voice: null, lang: null });
     });
 
+    it('reads a refused audio slot with its PERSONAL_DATA code and knows it as a media slot code of states.json', () => {
+        const held = clone(examples['artifactDetailItem']);
+        Object.assign(held.mediaSlots[0], { state: 'FAILED', errorCode: 'PERSONAL_DATA' });
+        expect(parseArtifactDetail(held).mediaSlots[0]).toMatchObject({ state: 'FAILED', errorCode: 'PERSONAL_DATA' });
+        expect(Object.keys(statesContract['artifact'].mediaSlotErrorCodes)).toContain('PERSONAL_DATA');
+    });
+
     it('reads turnAudioRegenerateApplied, and the codes an audio turn fails with', () => {
         expect(parseTurn(examples['turnAudioRegenerateApplied'])).toMatchObject({ status: 'APPLIED', action: 'AUDIO_REGENERATE', voice: 'male',
             targetNodeIds: [audio], resultRevisionId: '4e700000-0000-4000-8000-000000000004' });
         const failed = { ...clone(examples['turnAudioRegenerateApplied']), status: 'FAILED', resultRevisionId: null };
-        for (const code of ['PROVIDER_UNAVAILABLE', 'VERIFICATION_REJECTED', 'DEADLINE_EXCEEDED']) expect(parseTurn({ ...failed, errorCode: code }).errorCode).toBe(code);
+        for (const code of ['PROVIDER_UNAVAILABLE', 'VERIFICATION_REJECTED', 'DEADLINE_EXCEEDED', 'PERSONAL_DATA']) expect(parseTurn({ ...failed, errorCode: code }).errorCode).toBe(code);
         expect(parseTurn({ ...failed, errorCode: 'SOMETHING_NEW' }).errorCode).toBeNull();
     });
 
@@ -74,6 +81,8 @@ describe('speech on the wire (contracts/generation, AI-09 #297)', () => {
             expect(audioFailureReason('VERIFICATION_REJECTED')).toBe('Запись не прошла проверку.');
             expect(audioFailureReason('DEADLINE_EXCEEDED')).toBe('Озвучка заняла слишком долго.');
             expect(audioFailureReason('USAGE_LIMIT')).toBe('Не хватает лимита на озвучку.');
+            expect(audioFailureReason('PERSONAL_DATA')).toContain('не отправляется на озвучку');
+            expect(turnFailureReason('PERSONAL_DATA')).toBe(audioFailureReason('PERSONAL_DATA'));
             expect(audioFailureReason(null)).toBe('Не удалось озвучить.');
         });
 

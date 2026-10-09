@@ -4,7 +4,7 @@ artifact:
   type: architecture-overview
   title: "Mnema current system overview"
   status: current
-  updated_at: "2026-10-07"
+  updated_at: "2026-10-09"
   owners: ["project-owner"]
 ---
 
@@ -20,6 +20,13 @@ authoring. Канонический Study runner проводит семь ме�
 HTTPS runtime с MinIO и обработкой медиа также реализован. Epic #76 добавил native
 media lifecycle, playback, offline manifest и безопасный GC в Learning; медиа
 (в том числе аудио) — содержимое упражнения, а не отдельная механика.
+
+Текущие модули поверх этой основы: AI-слой в `learning` (генерация материалов и
+упражнений помощником «Мнема» в Workshop, правки по выделению, семантическая проверка
+ответов, озвучка, распознавание речи (с отдельным согласием), поиск изображений, веб-исследование
+«Источники»; в production функции ИИ выключены флагами), планы и usage (тарифы, кредиты,
+fair-use, независимый выбор плана и цели обучения), промокоды, A/B и промо-попап и
+публичные события продукта со ссылкой на поддержку в Telegram.
 
 ## Shipping и local replacement boundary
 
@@ -125,8 +132,7 @@ chains и сервисные исходники отсутствуют в тек
 - frontend: lint, component/protocol tests и production build;
 - real PostgreSQL tests, Identity↔Learning black-box security/cancellation harness;
 - real local HTTPS browser Identity/authoring harness;
-- repository policy, security, release-contract, backup/recovery and disposable
-  purge-rehearsal checks;
+- repository policy, security and release-contract checks, and VPS backup/restore tests;
 - deterministic internal Markdown link/status validation.
 
 Точные команды и платформы: [Repository guide](./engineering/repository-guide.md).

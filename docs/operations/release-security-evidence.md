@@ -12,12 +12,9 @@ The current aggregator `scripts/render_vps_candidate.py` binds the five services
 source/run/attempt, digests and verified security evidence into `vps-candidate`.
 The existing evidence verifier supplies the individual image evidence policy.
 See [VPS publication](vps-image-publication.md) for exact files and checks. Candidate
-publication does not grant administrator admission or runtime acceptance.
+publication alone deploys nothing: `deploy-production` re-verifies the attestations
+after the `prod` approval and the dispatcher's `admit` checks the digests.
 Full scan/SBOM/attestation evidence stays in sanitized 30-day Actions artifacts.
-
-The retained two-service Kubernetes release renderer is a dormant source contract,
-not the current production publication or deployment path. Its manifests do not
-represent the running VPS topology.
 
 ## Independent verification
 

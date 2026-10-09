@@ -119,74 +119,12 @@ jobs:
       - name: Verify browser response-security contract
         run: ./scripts/test-browser-security-headers.sh
 
-      - name: Verify release manifest renderer
-        run: ./scripts/test-render-release-manifest.sh
-
-      - name: Verify canonical production release diff
-        run: ./scripts/test-capture-release-diff.sh
-
-      - name: Verify value-silent Kubernetes Secret drift detection
-        run: ./scripts/test-detect-kubernetes-secret-drift.sh
-
-      - name: Verify approved Secret snapshot binding
-        run: ./scripts/test-secret-snapshot-binding.sh
-
-      - name: Verify bootstrap-only Secret rotation guard
-        run: ./scripts/test-kubernetes-bootstrap-secret-values.sh
-
-      - name: Verify environment credential separation contract
-        run: ./scripts/test-environment-secret-separation.sh
-
-      - name: Verify production deployment safety contract
-        run: ./scripts/test-production-deploy-safety.sh
-
-      - name: Verify exact live release binding and conditional Secret replace
-        run: ./scripts/test-kubernetes-live-release-binding.sh
-
-      - name: Verify staging plan is fully previewed before mutation
-        run: ./scripts/test-staging-plan-preview.sh
-
-      - name: Verify idempotent Kubernetes Secret consumer reconciliation
-        run: ./scripts/test-kubernetes-secret-consumer-reconciliation.sh
-
-      - name: Verify fail-closed Kubernetes Secret rollback
-        run: ./scripts/test-kubernetes-secret-rollback.sh
-
-      - name: Verify production telemetry host-boundary contract
-        run: ./scripts/test-production-telemetry-boundary.sh
-
       - name: Verify release security evidence contract
         run: ./scripts/test-release-security-contract.sh
 
-      - name: Verify environment isolation contract
+      - name: Verify delivery boundary and local replacement contract
         run: ./scripts/test-deployment-contract.sh
-
-      - name: Verify staging kubeconfig contract
-        run: ./scripts/test-create-staging-kubeconfig.sh
-
-      - name: Verify staging host firewall contract
-        run: ./scripts/test-staging-host-firewall.sh
-
-      - name: Verify staging TLS boundary
-        run: ./scripts/test-staging-tls-boundary.sh
-
-      - name: Verify fail-closed staging bootstrap helper
-        run: ./scripts/test-apply-staging-bootstrap.sh
 
       - name: Run release automation unit tests
         run: python3 -m unittest discover -s scripts/smoke/tests -v
 
-      - name: Verify database backup and recovery contract
-        run: ./scripts/test-backup-contract.sh
-
-      - name: Verify scoped recovery kubeconfig contract
-        run: ./scripts/test-create-recovery-kubeconfig.sh
-
-      - name: Run database recovery unit tests
-        run: PYTHONPATH=scripts/backup python3 -m unittest discover -s scripts/backup/tests -v
-
-      - name: Run PostgreSQL 16 to 18 recovery integration test
-        run: ./scripts/test-backup-integration.sh
-
-      - name: Run no-snapshot purge rehearsal integration test
-        run: ./scripts/test-purge-rehearsal-integration.sh

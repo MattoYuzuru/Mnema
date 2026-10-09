@@ -4,7 +4,7 @@ artifact:
   type: navigator
   title: "Mnema documentation"
   status: current
-  updated_at: "2026-10-07"
+  updated_at: "2026-10-09"
   owners: ["project-owner"]
 ---
 
@@ -130,15 +130,12 @@ artifact:
 | current | [AI operations runbook](./operations/ai-runbook.md) | Роли api/worker, ключи только на worker, kill switches и бюджеты, метрики на отдельном порту, инциденты провайдеров, хранение данных, eval-gate. |
 | current | [AI egress proxy](./operations/ai-egress-proxy.md) | Stateless Squid CONNECT proxy в Финляндии для AI-провайдеров, недоступных из РФ; kill switch и fallback. |
 | current | [Browser security headers](./operations/browser-security-headers.md) | Проверяемый response-security contract. |
-| current | [No-snapshot purge rehearsal](./operations/no-snapshot-purge-rehearsal.md) | Disposable policy test; не production purge. |
 | current | [Production image inventory](./operations/production-image-inventory.md), [release security evidence](./operations/release-security-evidence.md) | Пины и supply-chain evidence четырёх VPS images. |
-| superseded | [Staging runbook](./operations/staging-runbook.md), [release verification](./operations/release-verification-runbook.md), [database recovery](./operations/database-recovery-runbook.md) | Legacy Kubernetes reference; текущая поставка — через VPS workflow. |
-| historical | [Delivery audit](./operations/delivery-audit-2026-08.md) | Kubernetes audit и прежняя cutover-граница; findings проверяются заново на текущем VPS runtime. |
 | proposed | [Reset/capacity/offline plan](./operations/v2-reset-capacity-and-offline-plan.md) | Остаточные purge/capacity/offline решения с legacy inventory; текущий VPS сохраняет старые данные. |
-| historical | [GitHub/staging plan](./operations/github-platform-and-staging-plan-2026-08.md) | План и evidence ранее доступного hosted delivery. |
 
-Production работает на RU VPS; deployment доступен через manual publication и
-protected VPS workflow. [Runtime](./operations/vps-runtime.md) фиксирует текущее
+Production работает на RU VPS; deployment идёт через Main CI и protected VPS workflow.
+Kubernetes-доставка (staging/production workflows, `k8s/`, recovery и purge tooling) удалена;
+её точное состояние сохранено в Git history, а старых сервисов — ещё и в теге `v1-apache-final`. [Runtime](./operations/vps-runtime.md) фиксирует текущее
 состояние и проверку; [publication](./operations/vps-image-publication.md) — candidate
 и security evidence; [dispatcher](../deploy/production/README.md) — admission.
 

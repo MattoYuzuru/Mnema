@@ -59,13 +59,13 @@
       "severity": "INFO",
       "route": "WORKSHOP",
       "producer": "generation (AI-05, #288)",
-      "when": "The session entered REVIEW (or CLOSED) with every artifact approvable and none FAILED.",
+      "when": "The session is in REVIEW (or CLOSED) with every artifact PROPOSED, none FAILED and no media step of a slot still working: when the text settles, or, for a session with media slots, when the last slot ends (READY or FAILED), exactly once.",
       "params": {
         "deckId": "uuid",
         "sessionId": "uuid",
         "sessionKind": "MATERIALS | EXERCISES | REVISE_ITEM | REVISE_EXERCISE",
         "artifactCount": "integer >= 1",
-        "approvableCount": "integer: artifacts approvable now (PROPOSED with every media slot READY or REMOVED); equals artifactCount here"
+        "approvableCount": "integer: artifacts approvable now (PROPOSED with every media slot READY or REMOVED); equals artifactCount unless a media slot failed (the owner retries or removes that block)"
       },
       "dedupeKey": "generation:{sessionId}:ready",
       "example": {

@@ -45,6 +45,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * {@code [[fake:audio]]} (a valid document with one {@code ::audio} directive; the Stub speech makes its clip),
  * {@code [[fake:audio-hold]]} (the same, whose clip waits in {@link ScriptedSpeech} until a test releases it: a slot that stays GENERATING),
  * {@code [[fake:audio-down]]} and {@code [[fake:audio-garbage]]} (the Stub speech is down, or answers bytes the pipeline rejects),
+ * {@code [[fake:audio-personal]]} (the same, whose text to speak holds an e-mail address: the speech step must refuse it before any provider call),
  * {@code [[fake:image]]} (a valid document with one {@code ::image mode=search} directive whose query carries the {@code [[stub:image-none]]}
  * and {@code [[stub:image-down]]} markers of the prompt, so the Stub image search can be made to find nothing or to be down). For exercise requests (JSON output):
  * {@code [[fake:not-json]]} (every answer is prose), {@code [[fake:fenced]]} (the Stub's answer inside a code fence) and
@@ -169,6 +170,7 @@ class GenerationTestConfiguration {
             if (prompt.contains("[[fake:audio-hold]]")) return ok(request, audioDocument("[[fake:tts-hold]]"));
             if (prompt.contains("[[fake:audio-down]]")) return ok(request, audioDocument("[[stub:tts-down]]"));
             if (prompt.contains("[[fake:audio-garbage]]")) return ok(request, audioDocument("[[stub:tts-garbage]]"));
+            if (prompt.contains("[[fake:audio-personal]]")) return ok(request, audioDocument("write to anna@example.com"));
             if (prompt.contains("[[fake:image]]")) return ok(request, imageDocument(prompt));
             if (prompt.contains("[[fake:not-json]]")) return ok(request, "это не json");
             if (prompt.contains("[[fake:length-once]]") && !repair) {

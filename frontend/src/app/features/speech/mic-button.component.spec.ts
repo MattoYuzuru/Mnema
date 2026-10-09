@@ -174,12 +174,22 @@ describe('MicButtonComponent', () => {
         expect(button('Остановить запись')).toBeTruthy();
     });
 
-    it('describes foreign processing as de-identified', async () => {
+    it('describes foreign processing truthfully: not de-identified, who gets it, what is sent, what is not, how to withdraw', async () => {
         speech.checkConsent.mockResolvedValue({ ok: false, consent: { required: { version: 3, processing: 'ABROAD' }, accepted: null } });
         button('Начать запись').click();
         await flush();
-        expect(root().querySelector('dialog')!.textContent).toContain('зарубежный сервис распознавания');
-        expect(root().querySelector('dialog')!.textContent).toContain('обезличена');
+        const text = root().querySelector('dialog')!.textContent!;
+        expect(text).toContain('Google LLC (США)');
+        expect(text).toContain('через прокси Mnema в Финляндии');
+        expect(text).toContain('запись не обезличена');
+        expect(text).not.toContain('Запись обезличена');
+        expect(text).toContain('названия её материалов как подсказки');
+        expect(text).toContain('Имя, адрес почты и идентификатор аккаунта не передаются');
+        expect(text).toContain('Текст хранится до 15 минут');
+        expect(text).toContain('сколько секунд распознано и когда');
+        expect(text).not.toContain('помним только');
+        expect(text).toContain('отозвать в профиле');
+        expect(text).not.toContain('на наших серверах в России');
     });
 
     it('«Не сейчас» and Esc close the disclosure without recording or saving anything', async () => {

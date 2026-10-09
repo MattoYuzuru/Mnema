@@ -186,9 +186,12 @@ fair-use buckets, `GET /api/usage` and the estimate. Migration `V26__usage_ledge
   is verified, fail closed). `POST /api/promo-codes/redemptions {code}` with an `Idempotency-Key` (UUIDv4/v7, replayed through
   `CommandReceiptService`): its receipt fingerprint is derived from the keyed code hash, never the unkeyed digest of the code, so a database copy cannot verify
   a vanity-code guess through the receipt table. Replay first, then the account's hourly place (`promo_attempt`, advisory-locked; 5 per hour), then the
-  verified email, then the address's hourly place (20 per hour; an unverified account never takes it), then the code row under `FOR UPDATE` so
-  `max_redemptions` is exact, and under that lock the address velocity rule (counted under the address's advisory lock, so racing accounts of one
-  address cannot slip past it). The validity/activation instant is read after the code, discount-account and address locks are held, so waiting
+  verified email, then the address's hourly place (20 per hour by default; an unverified account never takes it), then the code row under `FOR UPDATE` so
+  `max_redemptions` is exact, and under that lock the velocity rule, which is **per code**: at most `learning.promo.velocity.accounts`
+  (`MNEMA_PROMO_VELOCITY_ACCOUNTS`, default 10) accounts may redeem the same code from the same address hash within `velocity.window` (24 h); the next one gets `PROMO_VELOCITY` (the code refuses when the count of *other* accounts is already N). The code's row lock serializes it, so racing accounts
+  of one address cannot slip past; other codes do not count, so a household, an office or a mobile carrier's NAT is not penalised for using several codes. The per-address attempt window
+  is `MNEMA_PROMO_IP_ATTEMPTS_PER_HOUR` (default 20). The User-Agent is not stored (`promo_redemption.device_hash` stays NULL: a User-Agent is shared by millions of devices and no rule ever read it; the column
+  is kept so a rolling deploy does not break the previous version's insert). The validity/activation instant is read after the code and discount-account locks are held, so waiting
   for a lock cannot grant an expired code. The address is its IPv4 or the /64 of its IPv6, hashed. `PromoAttemptSweep` (roles `worker` and `all`) deletes attempts older than 2 h in bounded batches. A tier code publishes a
   `PROMO` snapshot `promo:{redemptionId}` to `EntitlementInbox` (same call a payment will use). `TIER_MONTHS` expiry uses `UsageCalendar` and
   `learning.usage.calendar-zone` (Europe/Moscow), preserves the local activation time and clamps to the last day of a shorter month: January 31 at 01:15
@@ -196,7 +199,7 @@ fair-use buckets, `GET /api/usage` and the estimate. Migration `V26__usage_ledge
   `PROMO_NOT_ELIGIBLE` before the code is burned; a discount code stores `promo_discount` (larger percent wins) that `GET /api/plans` returns as `pendingDiscount` and billing (#79) will read.
   Problem codes: `PROMO_INVALID` (unknown, disabled, expired or not started: one answer), `PROMO_EXHAUSTED`, `PROMO_ALREADY_USED`,
   `PROMO_NOT_ELIGIBLE`, `PROMO_VELOCITY`, `RATE_LIMITED`, `IDENTITY_UNAVAILABLE`. The audit is `promo_redemption` plus log lines with ids only; the
-  address and User-Agent exist only as HMAC hashes; those hashes and account-linked audit records are not an anonymity guarantee.
+  address exists only as an HMAC hash; that hash and account-linked audit records are not an anonymity guarantee.
   **Deferred promo account deletion:** the Learning account-purge owner and human/legal task #351 must inventory
   `promo_attempt`, `promo_popup_state`, `promo_discount`, `promo_redemption` (`owner_id`), `promo_code.created_by`, and
   `command_receipt.actor_id/result` with `command_scope='promo'` (including the redemption result and keyed-derived fingerprint).
@@ -297,10 +300,12 @@ the media executors; their tables exist (V28), their routes do not. The planner 
   refusal is `REFUSAL`, no retry. **No transaction or connection is held during a provider call** (the router also refuses to
   run in one); `GenerationSessionIntegrationTest` asserts it at the call and at every streamed delta with a per-thread
   connection counter.
-- **Notifications** (in the transaction that ends the run): `GENERATION_READY` when every artifact is approvable and none
-  failed, `GENERATION_PARTIAL` with approvable and failed ones, `GENERATION_FAILED` (most frequent error code) only when
-  no proposal is left to review (nothing `PROPOSED`, `REVISING` or `STALE`), never for a cancellation. A proposal with media still being made is not approvable and, with no failure, publishes
-  nothing yet. TODO(AI-09, AI-10: media steps): publish `GENERATION_READY` when the last slot of a REVIEW session resolves.
+- **Notifications** (in the transaction that ends the run): `GENERATION_READY` when every artifact is `PROPOSED`, none failed and no initial media step
+  (image search, speech) of a slot is still open, `GENERATION_PARTIAL` with approvable and failed ones, `GENERATION_FAILED` (most frequent error code) only when
+  no proposal is left to review (nothing `PROPOSED`, `REVISING` or `STALE`), never for a cancellation. While a slot's step is open, `GENERATION_READY` waits; `SessionLifecycle.slotStepEnded` runs after every initial
+  slot step that ends READY or FAILED (`ImageSearchLifecycle.slotReady/failSlot`, `SpeechLifecycle.slotReady`), releases the batch hold when idle and, for a session that already left RUNNING, evaluates the same outcome
+  once more (#373). The session lock serialises concurrent slots and the deduplication key `generation:{sessionId}:ready` makes a repeat harmless, so exactly one notification is published; a failed slot counts as
+  ended (`approvableCount` is then below `artifactCount`). Cancelled slot steps announce nothing.
 - **Cancel** (`POST .../cancellation`, no `If-Match`, state-idempotent): waiting steps `CANCELLED`, running ones get
   `cancel_requested` (their heartbeat aborts the call and ends the step), `QUEUED` and `GENERATING` artifacts `FAILED(CANCELLED)`,
   the reservation released except what was consumed, and the media slots of the cancelled steps `FAILED(CANCELLED)` with
@@ -624,15 +629,17 @@ Licensed stock images for `::image{mode="search"}` slots. Contract: `contracts/g
 ## Speech synthesis (#297)
 
 Text to speech for `::audio` slots and the redo of a clip. Contract: `contracts/generation/http.json` (`mediaSlotItem.voice/lang`, `editArtifact` `AUDIO_REGENERATE`, `turnAudioRegenerateApplied`) and `states.json`
-(`turn.audioErrorCodes`); architecture §4, §9 (SpeechSynthesis), §13. **Live not verified**: neither `MNEMA_AI_GOOGLE_API_KEY` nor the egress proxy exist in the owner environment yet, so the adapters are
-tested on recorded fixtures and the Stub only.
+(`turn.audioErrorCodes`); architecture §4, §9 (SpeechSynthesis), §13. **Live verification:** Gemini TTS was run live on 2026-10-05 with the owner's key straight from a developer network (`MNEMA_AI_LIVE_EGRESS=direct`, see below); the
+production path through the egress proxy has not been exercised end to end, and the rest is covered by recorded fixtures and the Stub.
 
 - **Port (`app.mnema.learning.ai`).** `SpeechSynthesis.synthesize(Request{text, lang (BCP 47), voice female|male, take, stepId, attempt}) -> AiResult<Audio{bytes, mimeType, billedCharacters, durationMs, identity, costMicros}>`,
   `identity(lang, voice)` (what would serve it now: provider, model, model version, format and the provider's voice name, for the cache key) and `configured()` (the `textToSpeech` capability reads it). `RoutedSpeechSynthesis`
   walks `learning.ai.routes.tts` (`tts-ru`, when not empty, serves Russian instead): the first usable entry is asked, transient/rate-limit/credential/unusable-answer failures fall through, a refusal ends the call. An entry is
   skipped (never an error) when its provider is switched off (`learning.ai.providers.<id>.enabled=false`, the kill switch), has no key, has no transport (a proxied provider without an active proxy), does not speak the language or
   has an open breaker. Per `(provider, TTS)` breaker, `permits.tts`, the daily `budget.tts-micros`, an `ai_provider_call` row (the hash of the shape, never the text), `mnema_ai_calls_total`; refuses to run inside a transaction. Text over
-  `learning.ai.tts.max-text` (600, the MBM bound) is refused before any call.
+  `learning.ai.tts.max-text` (600, the MBM bound) is refused before any call. **Personal data:** `SpeechClips.stage` runs the text (normalised as the provider gets it) through `Redactor` before the cache and before any
+  provider; if the redaction would change it (an e-mail address, a telephone or a card number) the clip is refused, never masked, with the slot/turn code `PERSONAL_DATA` (V44 widens the slot check constraint; nothing is
+  debited or cached), the same way `EditContexts` refuses a target with `TARGET_PERSONAL_DATA`. The check sits above the `SpeechSynthesis` port, so the Stub and every adapter behave alike. An exercise voice redo judges every transcript before the first clip is made (`SpeechExecutor.exerciseTurn`), so one transcript with personal data fails the turn before any provider call, cache entry or staged asset; the Workshop then offers only «Убрать блок» (no retry).
 - **Adapters.** `GeminiSpeechSynthesis`: `POST {base}/v1beta/interactions` (https://ai.google.dev/gemini-api/docs/speech-generation, verified 2026-10-04: the `interactions` endpoint is the documented one; the classic
   `models/{model}:generateContent` with `responseModalities` is not shown there), key in `x-goog-api-key`, `response_format {audio, audio/wav, 24000}`, one prebuilt voice (`learning.ai.tts.google-female/male`, default Kore and Charon), a
   fixed learner-oriented style annotation (`learning.ai.tts.style`; the only text besides the clip's own); the audio is the base64 `data` of the `audio` content of a `model_output` step, a RIFF/WAVE PCM s16le mono file checked by `Wav`.
@@ -767,7 +774,7 @@ approved one); Gemini was run live on 2026-10-05 (below).
   expiresAt}`; `GET /{id}` the row (404 for foreign, expired or unknown), `DELETE /{id}` 204 always. Admission is one transaction under an advisory lock of the account: capability (409), consent for the region of the clip's
   language (409 `SPEECH_CONSENT_REQUIRED`), own deck (404), the replay of the key (the stored 202 with `Idempotency-Replayed: true`, `409 IDEMPOTENCY_CONFLICT` for another body: the hash covers the audio, purpose, type, duration,
   language, deck and script), the rate limit (`speech_input_use`, 20 per 10 minutes, `429` with `Retry-After`; a replay takes no place), fair use, insert of `speech_input` + `speech_input_audio` + the use.
-  `GET/PUT/DELETE /api/speech-consent` (`speech_consent`, one row per account: version `speech-2026-10`, region `RU|ABROAD`): `GET` states the widest region any route can use when no language is given, `PUT` is idempotent
+  `GET/PUT/DELETE /api/speech-consent` (`speech_consent`, one row per account: version `speech-2026-10-2`, region `RU|ABROAD`): `GET` states the widest region any route can use when no language is given, `PUT` is idempotent
   (a stale version or another region than required is `409 SPEECH_CONSENT_OUTDATED`, the answer is `200` with the `GET` body), `DELETE` is `204`; an `ABROAD` consent covers `RU`, not the reverse; the disclosure stays
   readable while the provider is only `TEMPORARILY_UNAVAILABLE`.
 - **Fair use.** The ledger counts, it does not hold (`UsageLedger.consume`, idempotent per key). Admission calls the new `UsageLedger.requireFairUse` (a read like `fairUseFits`, but it throws the same
@@ -844,7 +851,7 @@ the model gives a verdict per rubric point, the server does the rest. Code in `s
 - **Stub** (`StubAssessments`): markers in the learner answer `[[stub:assess-complete|shallow|partial|contradicted|offtopic|unclear|asr|disagree|injection|invalid|slow]]` and a lexical heuristic (documented in its Javadoc);
   `slow` waits 8 s for the harness. **Roles** (#300): `AssessmentRunner` exists only for `worker` and `all`; an `api` process accepts the answer and a worker grades it: the insert notifies `mnema_assessments` and the worker's `sweep` (`learning.ai.assess.sweep-interval`) takes what nobody claimed, so the 20 s deadline holds with the hand-over. An `api` process with `learning.runtime.provider-credentials=worker` reports `aiAssessment` from the shared configuration. **Permits**: an S2/S3 answer takes two `learning.ai.permits.assess` slots, so the default is 32 = 2 × `learning.ai.assess.concurrency` (16); keep that rule when changing either. **Attempt cap**: one provider attempt of the `assess` route takes at most `learning.ai.routes.assess-attempt-cap` (`PT8S`; a capped attempt that times out hands over to the next provider instead of being retried) so the fallback fits the 20 s deadline. **In flight**: at most `learning.ai.assess.max-in-flight` (3) answers per account are graded at once; the next goes straight to self-check with reason `BUSY` (soft cap). **Prompt size**: the `assessment` ceiling (24k estimated tokens) covers the largest exercise the contract allows (question cut at 16,000 chars), so a published rubric is always gradable. A result that cannot be stored is retried once, then ends `UNAVAILABLE/PROVIDER_UNAVAILABLE` at once.
 - Tests: `AssessmentFlowIntegrationTest`, `AssessmentDisputeIntegrationTest` (real context, PostgreSQL, the Stub, a blocking test double in `AssessmentTestConfiguration`), `SemanticPolicyTest`, `SemanticGraderTest`,
-  `StubAssessmentsTest`, `AssessmentGoldenPolicyTest` (`contracts/study/assessment-golden`, 12 × 10, status `proposed`), the contract fixture `assessment.json`; opt-in live eval `SemanticEvalRunner`
+  `StubAssessmentsTest`, `AssessmentGoldenPolicyTest` (`contracts/study/assessment-golden`, 144 answers = 12 exercises × 12, status `proposed`), the contract fixture `assessment.json`; opt-in live eval `SemanticEvalRunner`
   (`MNEMA_AI_EVAL=live MNEMA_AI_DEEPSEEK_API_KEY=... ./gradlew :services:learning:cleanTest :services:learning:test --tests '*SemanticEvalRunner*'`, report in `build/reports/assessment-eval/`).
 
 ## AI operations (#300)

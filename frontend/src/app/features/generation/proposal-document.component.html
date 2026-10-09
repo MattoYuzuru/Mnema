@@ -75,7 +75,9 @@
         <div class="slot-failed" role="group" aria-label="Озвучка не получилась">
           <p class="slot-failed-text">{{ audioFailureOf(failedClip) }}</p>
           <div class="media-actions">
-            @if (voiceAllowed()) {
+            @if (failedClip.errorCode === 'PERSONAL_DATA') {
+              <!-- the same text would be refused again: no retry, only the way out -->
+            } @else if (voiceAllowed()) {
               <button type="button" class="strip-button" [attr.data-focus-key]="'retry:' + id" [attr.aria-disabled]="busy() ? 'true' : null" (click)="retryVoice(id)">Повторить</button>
             } @else {
               <span class="media-unavailable">

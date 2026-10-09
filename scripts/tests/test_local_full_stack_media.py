@@ -287,8 +287,6 @@ class ComposeContractTest(unittest.TestCase):
         self.assertEqual(1, len(images))
         image = images.pop()
         self.assertRegex(image, r"^quay\.io/minio/minio@sha256:[0-9a-f]{64}$")
-        staging = (ROOT / "k8s/staging/data.yaml").read_text()
-        self.assertIn("minio/minio@" + image.split("@", 1)[1], staging)
         self.assertNotIn("l33tlamer", self.source)
 
     def test_only_the_dev_media_runner_holds_the_docker_socket_and_learning_and_job_containers_do_not(self):

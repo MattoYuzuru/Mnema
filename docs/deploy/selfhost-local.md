@@ -157,8 +157,8 @@ without an Authority Key Identifier, and OpenSSL 4 no longer adds one by default
 ## Full local stack with media
 
 One command brings up every service needed to test Mnema by hand, including uploaded
-media. This is **local development tooling only**: it is not a production or staging
-path, shares nothing with `k8s/`, and must not be copied into a deployment.
+media. This is **local development tooling only**: it is not a production
+path and must not be copied into a deployment.
 
 ### Prerequisites
 
@@ -169,9 +169,8 @@ Everything listed under [First start](#first-start), plus:
   absolute path inside that shared area.
 - the pinned official MinIO image `quay.io/minio/minio@sha256:14cea493...` in the
   local image store. MinIO no longer serves it from Docker Hub or Quay, so a fresh
-  machine cannot pull it. The repository already pins the same digest for staging
-  (`k8s/staging/data.yaml`), and
-  [the image-environment evidence](../engineering/evidence/epic-74/verification/image-environment.md)
+  machine cannot pull it.
+  [The image-environment evidence](../engineering/evidence/epic-74/verification/image-environment.md)
   describes how it was imported into the local cache. If it is missing, `start`
   fails at the image pull; restore it by that procedure rather than substituting an
   unverified mirror.
@@ -269,7 +268,7 @@ override needs a local edit of `x-learning-environment` in `compose.local-full-s
 change at once and the missing credits are granted on the next reservation. Since #301 an entitlement snapshot accepted by
 `EntitlementInbox` (the billing and promo contract; there is no HTTP endpoint and no payments yet) overrides this configuration for
 its owner while it is valid, so on a local stack the configuration above stays the way to pick a plan. `/plans` shows the
-catalogue and the current plan and charges nothing; `learning.plans.max-teaser.enabled=true` shows Max as «В работе». Credits and counters
+catalogue and the current plan and charges nothing; `learning.plans.max-teaser.enabled=true` (on the local stack `LEARNING_PLANS_MAXTEASER_ENABLED=true`) shows Max as «В работе». Credits and counters
 live in the retained PostgreSQL volume and are cleared by `reset`.
 
 ### Promo codes, A/B and the promo popup (#302)
@@ -277,7 +276,7 @@ live in the retained PostgreSQL volume and are cleared by `reset`.
 Promo codes need no extra configuration locally. An administrator creates a code with `POST /api/admin/promo-codes` (the caller's token and an
 `admin` account in Identity; there is no UI yet) and redeems it in `/plans` or the profile with a verified email. The attempt limits
 are per account and per address hash (`learning.promo.attempts-per-hour` and `ip-attempts-per-hour`); on the local stack every browser reaches
-Learning through one proxy address, so raise the address limit (default 20 an hour) for repeated runs with `MNEMA_PROMO_IP_ATTEMPTS_PER_HOUR`. Set
+Learning through one proxy address, so raise the address limit (default 20 an hour) for repeated runs with `MNEMA_PROMO_IP_ATTEMPTS_PER_HOUR`. The velocity rule is per code: at most `MNEMA_PROMO_VELOCITY_ACCOUNTS` (default 10) accounts of one address may redeem the same code within 24 hours, the next gets `PROMO_VELOCITY`. Set
 `MNEMA_PROMO_HASH_SECRET` to make the address and stored code hashes comparable across restarts (without it a random secret is drawn per process, with a
 WARN, and issued codes do not survive a restart; production, `APP_ENV=prod`, without a secret of 32 or more characters switches promo codes off with an ERROR log, the rest keeps running) and
 `MNEMA_EXPERIMENT_SECRET` to switch A/B assignment on (without it everybody is `control`). The promo popup is off unless
@@ -332,7 +331,7 @@ browser-facing Learning service, never the media processor or the frontend.
 | `MNEMA_AI_EGRESS_PROXY_URL` / `MNEMA_AI_EGRESS_PROXY_USER` / `MNEMA_AI_EGRESS_PROXY_PASSWORD` | Optional stateless HTTP CONNECT proxy (`http://host:port`, user and password together) for providers unreachable from Russia; never needed locally or in CI. See [AI egress proxy](../operations/ai-egress-proxy.md) |
 | `MNEMA_AI_PIXABAY_API_KEY` | Pixabay key for licensed image search ([API terms](https://pixabay.com/api/docs/): answers cached 24 h, images downloaded to our storage, never hot-linked). Without it Pixabay is not asked |
 | `MNEMA_AI_OPENVERSE_CLIENT_ID` / `MNEMA_AI_OPENVERSE_CLIENT_SECRET` | Openverse client credentials (both or neither). Called directly by default (verified from a Russian network 2026-10-05); if a network meets its Cloudflare challenge, set `learning.ai.providers.openverse.egress=proxy` (needs the egress proxy). Wikimedia Commons needs no key and is always asked |
-| `MNEMA_AI_GOOGLE_API_KEY` | Google Gemini key for speech synthesis ([Gemini speech generation](https://ai.google.dev/gemini-api/docs/speech-generation), model `gemini-3.8-flash-tts`) and for speech to text ([Gemini audio transcription](https://ai.google.dev/gemini-api/docs/transcribe), models `gemini-3.5-flash-lite` and `gemini-3.5-transcribe`; the key's own plan decides the rate limits: the dedicated model answered 429 to a burst of sequential calls in the spike). The API is not reachable from Russia, so the provider defaults to the egress proxy (`learning.ai.providers.google.egress=proxy`): without an active `MNEMA_AI_EGRESS_PROXY_URL` it is not configured. Not verified live yet |
+| `MNEMA_AI_GOOGLE_API_KEY` | Google Gemini key for speech synthesis ([Gemini speech generation](https://ai.google.dev/gemini-api/docs/speech-generation), default route `gemini-3.8-flash-lite-tts`, then `gemini-3.8-flash-tts`) and for speech to text ([Gemini audio transcription](https://ai.google.dev/gemini-api/docs/transcribe), models `gemini-3.5-flash-lite` and `gemini-3.5-transcribe`; the key's own plan decides the rate limits: the dedicated model answered 429 to a burst of sequential calls in the spike). The API is not reachable from Russia, so the provider defaults to the egress proxy (`learning.ai.providers.google.egress=proxy`): without an active `MNEMA_AI_EGRESS_PROXY_URL` it is not configured. For a developer network where Google answers, set `LEARNING_AI_PROVIDERS_GOOGLE_EGRESS=direct` (local stack only; the default is `proxy`). Verified live on 2026-10-05 with the owner's key, directly from a developer network; the egress-proxy path has not been exercised end to end |
 | `MNEMA_AI_TTS_API_KEY` / `MNEMA_AI_YANDEX_FOLDER_ID` | Yandex SpeechKit v1 (Russian only): API key and the Yandex Cloud folder id, both or neither. It is called only when it is listed in `learning.ai.routes.tts` or `tts-ru` (not in the default route: the live comparison with Gemini decides). Not verified live yet |
 | `MNEMA_AI_YANDEX_SEARCH_API_KEY` / `MNEMA_AI_YANDEX_FOLDER_ID` | Yandex Search API v2 (веб-исследование и «Источники», #299): API-ключ сервисного аккаунта (scope `yc.search-api.execute`, роль `search-api.webSearch.user` на каталоге) и id каталога Yandex Cloud, оба или ни одного; `MNEMA_AI_YANDEX_FOLDER_ID` общий с SpeechKit. Поиск вызывается напрямую (не через egress proxy) с российского хоста; платный (≈0,49 ₽ за запрос, 5 кредитов). Не проверено live |
 | `MNEMA_AI_PERPLEXITY_API_KEY` | Perplexity Search API: **fallback, выключен по умолчанию**. Он вызывается, только если владелец внёс его в `learning.ai.routes.search` (`yandex,perplexity`); идёт через egress proxy (`learning.ai.providers.perplexity.egress=proxy`): без активного `MNEMA_AI_EGRESS_PROXY_URL` его нет. Один запрос на пять поисковых запросов. Не проверено live |
@@ -399,7 +398,7 @@ The golden eval is not part of `check` or `quality`: `goldenEval` is its own Gra
 corpus (`GoldenCorpusTest`, `GoldenEvalSmokeTest`) is what CI runs. Its report (`report.json`, `report.md`: validity on the
 first try and after repair, repair rate, latency p50/p95, cost per item and per accepted item, judge acceptance and
 agreement, thresholds with pass or fail, the boundaries of the corpus) holds identifiers and numbers only; `owner-review.md`
-is the 40-item sample with generated texts for the owner's acceptance and stays out of the repository. Corpus, rubric,
+is the 40-item sample with generated texts for the owner's acceptance and stays out of the repository (the run-5 owner review is the 60-case `owner-calibration-review.md`: these 40 cases plus 20 additional dev cases). Corpus, rubric,
 thresholds and what it does not cover: [`contracts/generation/eval`](../../contracts/generation/eval/README.md).
 
 ## Historical v1 self-host reference

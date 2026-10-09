@@ -60,7 +60,7 @@ class SpeechRolesIntegrationTest extends PostgresIntegrationTest {
         assertThat(context.getBeanNamesForType(SpeechInputWorker.class)).isEmpty();
         assertThat(context.getBeanNamesForType(SpeechInputController.class)).hasSize(1);
         UUID owner = UUID.randomUUID();
-        assertThat(send(owner, put("/speech-consent").contentType("application/json").content("{\"version\":\"speech-2026-10\",\"processing\":\"RU\"}")).getStatus())
+        assertThat(send(owner, put("/speech-consent").contentType("application/json").content("{\"version\":\"speech-2026-10-2\",\"processing\":\"RU\"}")).getStatus())
                 .isEqualTo(200);
 
         MockHttpServletResponse response = send(owner, post("/speech-inputs").queryParam("purpose", "COMPOSER").header("Idempotency-Key", UUID.randomUUID().toString())

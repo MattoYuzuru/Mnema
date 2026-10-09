@@ -43,7 +43,8 @@ push to main → validate → backend-quality ‖ frontend-quality ‖ release-s
   and rollback compatibility to the step summary. Details:
   [dispatcher contract](../../deploy/production/README.md).
 - `post-deploy-smoke` checks the public surface: HTML, `www` redirect, build identity
-  equal to the commit, OIDC issuer, protected `/api` (401), blocked actuator (404).
+  equal to the commit, OIDC issuer, response-security headers (HSTS `max-age=31536000`, `nosniff` and a CSP on the
+  frontend, HSTS on the auth origin), protected `/api` (401), blocked actuator (404).
 - Time budget. A normal release takes about 5 to 8 minutes after approval (small database:
   dump and isolated restore take well under a minute; rollout waits for health). Every step
   is individually bounded; the worst case is the sum of those bounds, in seconds: `status`
@@ -226,9 +227,9 @@ rehearsal on the host; offsite copy is optional and configured by the administra
 ([VPS runtime](vps-runtime.md#backup-monitoring-and-rollback)).
 Turnstile/public password auth and foreign providers remain restricted by the
 [actual legal/configuration status](../product/russia-legal-launch-checklist-2026.md).
-The legacy Kubernetes staging/deploy/recovery workflows are dormant source
-contracts, not the VPS delivery path. No Kubernetes reactivation is needed for
-this release sequence.
+The former Kubernetes staging/deploy/recovery workflows and manifests were removed
+(see Git history before the removal commit); the VPS path above is the only
+delivery path.
 
 References: GitHub [Environment protection](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/managing-environments-for-deployment),
 [approving a pending deployment](https://docs.github.com/en/rest/actions/workflow-runs#review-pending-deployments-for-a-workflow-run)

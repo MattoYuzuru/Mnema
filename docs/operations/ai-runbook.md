@@ -246,7 +246,7 @@ Voice is never processed without the account's consent for the region that proce
 `RU` for a route in Russia, `ABROAD` for Gemini). An input whose consent was withdrawn, is outdated, or no longer
 covers the region fails `UNAVAILABLE` with its audio deleted and **no provider is called**; a rise of
 `mnema_stt_inputs_total{outcome="UNAVAILABLE"}` right after a consent-version change is expected. After a change of
-`learning.speech.consent-version` every account sees the consent prompt again. An unrecognised or too-long clip is `NO_SPEECH` or `TOO_LONG`,
+`learning.speech.consent-version` every account sees the consent prompt again. **Do not enable speech to text with the `ABROAD` route (Gemini) in production** until the owner amends the decision of 2026-10-04 (#280): the voice that route sends is not de-identified. An unrecognised or too-long clip is `NO_SPEECH` or `TOO_LONG`,
 the learner's own. Audio is never kept after a result; a failure with the audio still present points to a stuck
 sweeper (`SpeechInputSweeper` runs in every role).
 

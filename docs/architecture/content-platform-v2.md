@@ -77,7 +77,7 @@ The full-text GIN index also indexes every JSON copy ([V14__search_indexes.sql](
 | 3,000 | 4,501,500 | 8.4–21.0 GiB |
 | 10,000 | 50,005,000 | 93–233 GiB |
 
-The production PostgreSQL PVC currently requests 15 GiB ([postgres.yaml](../../k8s/postgres.yaml#L45)). This is a scale boundary, not a benchmark: actual row size and edit pattern must be measured.
+The former Kubernetes production PostgreSQL PVC requested 15 GiB (`k8s/postgres.yaml`, removed with the Kubernetes delivery; see Git history). The current boundary is the VPS: PostgreSQL 18 uses one persistent volume on the single host disk ([VPS runtime](../operations/vps-runtime.md)), shared with images, logs and local dumps, and the host health monitor reports `disk_reserve` when less than 10 GB is free. This is a scale boundary, not a benchmark: actual row size and edit pattern must be measured.
 
 Subscribing also eagerly inserts a `user_cards` row for every active source card ([DeckService.java](https://github.com/MattoYuzuru/Mnema/blob/v1-apache-final/backend/services/core/src/main/java/app/mnema/core/deck/service/DeckService.java#L630)). This grows as:
 
