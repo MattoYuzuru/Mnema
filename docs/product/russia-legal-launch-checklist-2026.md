@@ -40,7 +40,7 @@ review of the actual recipients, contracts and data flows.
   such as marketing mail, analytics or AI/voice processing, is switched on.
 - Current processors named in the policy: the Russian virtual-server provider
   (Selectel), Yandex Cloud (Postbox service mail; Object Storage encrypted offsite
-  backups, 30-day expiry), Cloudflare (cross-border, Turnstile). Telegram
+  backups, 30-day expiry, and encrypted profile avatars), Cloudflare (cross-border, Turnstile). Telegram
   processes support messages under its own rules and is not a channel for
   personal-data requests.
 - The current production database is in Russia; the empty launch is owner-approved.

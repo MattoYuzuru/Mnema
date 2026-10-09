@@ -117,13 +117,53 @@ the non-empty application defaults for endpoints, regions and the avatar bucket 
 repeated explicitly because Spring reads a set-but-empty variable as an empty
 string). Yandex Postbox mail (`MNEMA_POSTBOX_ACCESS_KEY`, `MNEMA_POSTBOX_SECRET_KEY`:
 recovery and verification mail) and the Yandex Object Storage offsite backups are
-disclosed in the public policy as current Russian processors. Avatar storage
-(`MNEMA_AVATAR_ACCESS_KEY`, `MNEMA_AVATAR_SECRET_KEY`) and Learning media storage
-(`LEARNING_MEDIA_UPLOAD_BUCKET`, `LEARNING_MEDIA_UPLOAD_ACCESS_KEY`,
-`LEARNING_MEDIA_UPLOAD_SECRET_KEY`) are not announced as active: enabling them,
-account deletion (`MNEMA_IDENTITY_DELETION_ENABLED`, currently `false`) or any
-foreign recipient requires updating the privacy policy first. Media processing for
-audio and video needs a separate worker that production does not run.
+disclosed in the public policy as current Russian processors. Avatar storage is
+active in the same Yandex Object Storage service and is disclosed in the policy:
+Compose defaults `MNEMA_AVATAR_BUCKET` to `mnema-prod-avatars-b1g0dnrijqn8`
+(versioning on, default SSE-KMS, replaced versions expire after 7 days) and the
+feature turns on when `MNEMA_AVATAR_ACCESS_KEY` and `MNEMA_AVATAR_SECRET_KEY` (the
+`mnema-identity-avatars` service-account static key, scoped to that bucket) are
+present; the application default bucket is empty, so a missing bucket or key keeps
+avatars off. Learning media storage (`LEARNING_MEDIA_UPLOAD_BUCKET`, left empty in
+Compose, `LEARNING_MEDIA_UPLOAD_ACCESS_KEY`, `LEARNING_MEDIA_UPLOAD_SECRET_KEY`) stays
+off until the network-less processing worker lands (#380): every media kind needs the
+worker to reach `READY`, and the policy says media upload is not provided yet. The
+prepared bucket is `mnema-prod-media-b1g0dnrijqn8` (private, SSE-KMS, CORS only for
+`https://mnema.app`); see
+[media upload transport](../engineering/media-upload-transport.md#production-object-storage).
+Enabling media, account deletion (`MNEMA_IDENTITY_DELETION_ENABLED`, currently
+`false`) or any foreign recipient requires updating the privacy policy first.
+
+### Object storage live check
+
+Opt-in parity check of both S3 clients against the real buckets (skipped unless
+`MNEMA_S3_LIVE=true`; objects use a random `verify/<uuid>/` prefix, the avatar
+erase check a random account pair, and everything is removed afterwards). Run from
+`backend/` with JDK 25 and keys exported in the environment (never printed):
+
+```bash
+MNEMA_S3_LIVE=true \
+MNEMA_S3_LIVE_AVATAR_BUCKET=... MNEMA_S3_LIVE_AVATAR_ACCESS_KEY=... MNEMA_S3_LIVE_AVATAR_SECRET_KEY=... \
+MNEMA_S3_LIVE_MEDIA_BUCKET=... MNEMA_S3_LIVE_MEDIA_ACCESS_KEY=... MNEMA_S3_LIVE_MEDIA_SECRET_KEY=... \
+./gradlew test --tests '*S3LiveParityTest' --rerun --continue
+```
+
+`--continue` is required: without it a failure in the first module (Identity) stops
+Gradle before the Learning test task runs, and the Learning report on disk is then
+the stale all-skipped one from an earlier run. Read the per-module counts in the
+Gradle output, not old report files.
+
+`MNEMA_S3_LIVE_ENDPOINT` (default `https://storage.yandexcloud.net`) and
+`MNEMA_S3_LIVE_REGION` (default `ru-central1`) are optional. The avatar test covers
+versioned put, head by version, list versions, versioned delete and the exact
+eraser; the media test covers presigned single PUT with `Content-Length`, presigned
+multipart (create, part PUT, ListParts, Complete), conditional CopyObject (match and
+412), `If-None-Match` PUT, presigned ranged GET and delete, and asserts every stored
+object reports `aws:kms`.
+
+Yandex returns user metadata keys capitalised (`Account-Id`, `Sha256`); both
+clients read metadata case-insensitively, so ownership checks work with it and with
+lowercase providers such as MinIO.
 
 Provider callbacks are exactly
 `https://auth.mnema.app/login/oauth2/code/google`, `/yandex`, `/github` under that
