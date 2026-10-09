@@ -81,7 +81,7 @@ services:
       # Set-but-empty is "" to Spring, so the non-empty application defaults are repeated here.
       MNEMA_AVATAR_ENDPOINT: ${MNEMA_AVATAR_ENDPOINT:-https://storage.yandexcloud.net}
       MNEMA_AVATAR_REGION: ${MNEMA_AVATAR_REGION:-ru-central1}
-      MNEMA_AVATAR_BUCKET: ${MNEMA_AVATAR_BUCKET:-mnema-avatars}
+      MNEMA_AVATAR_BUCKET: ${MNEMA_AVATAR_BUCKET:-mnema-prod-avatars-b1g0dnrijqn8}
       MNEMA_AVATAR_ACCESS_KEY: ${MNEMA_AVATAR_ACCESS_KEY:-}
       MNEMA_AVATAR_SECRET_KEY: ${MNEMA_AVATAR_SECRET_KEY:-}
     volumes:

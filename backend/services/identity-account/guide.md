@@ -255,7 +255,13 @@ Missing mail configuration cannot count as successful delivery.
 
 Avatars use `MNEMA_AVATAR_ENDPOINT`, `MNEMA_AVATAR_REGION`,
 `MNEMA_AVATAR_BUCKET`, `MNEMA_AVATAR_ACCESS_KEY` and `MNEMA_AVATAR_SECRET_KEY`.
-Credentials must be scoped to the identity-owned bucket. Uploads decode supported
+The bucket has no application default: avatars are configured only when bucket and
+both keys are present, otherwise the operation fails closed with 503. Production
+uses `mnema-prod-avatars-b1g0dnrijqn8` on Yandex Object Storage (versioning on,
+default SSE-KMS, noncurrent versions expire after 7 days); the client sends no
+default checksum trailer (`WHEN_REQUIRED`) because the provider does not document
+it. Ownership metadata (`account-id`, `asset-id`) is read case-insensitively because
+Yandex returns user-metadata keys capitalised. Credentials must be scoped to the identity-owned bucket. Uploads decode supported
 images before storage, with 10 MiB and 1024×1024 bounds. Keys are generated from
 account/asset UUIDs. The object is written before the reference is atomically
 replaced; exact old/orphan key receipts survive storage failures and are retried

@@ -75,6 +75,9 @@ describe('Personal data policy page', () => {
         expect(recipients).toContain('ООО «Яндекс.Облако»');
         expect(recipients).toContain('Postbox');
         expect(recipients).toContain('Object Storage');
+        expect(recipients).toContain('аватары профиля');
+        expect(recipients).toContain('в течение 7 дней');
+        expect(recipients).toContain('Загрузка изображений, аудио и видео в материалы сейчас не предоставляется');
         expect(recipients).toContain('Telegram FZ-LLC');
         expect(recipients).not.toContain('Telegram хранит');
         const body = text(root);

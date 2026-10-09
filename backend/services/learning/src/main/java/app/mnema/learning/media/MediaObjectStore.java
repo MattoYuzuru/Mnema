@@ -3,6 +3,8 @@ package app.mnema.learning.media;
 import org.springframework.stereotype.Component;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.core.checksums.RequestChecksumCalculation;
+import software.amazon.awssdk.core.checksums.ResponseChecksumValidation;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.regions.Region;
@@ -53,6 +55,9 @@ final class MediaObjectStore implements AutoCloseable {
                 settings.configured() ? settings.secretKey : "unconfigured"));
         s3 = S3Client.builder().endpointOverride(settings.endpoint).region(Region.of(settings.region))
                 .forcePathStyle(true).credentialsProvider(credentials)
+                // Yandex Object Storage does not document the default CRC32 trailer of AWS SDK v2.30+.
+                .requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)
+                .responseChecksumValidation(ResponseChecksumValidation.WHEN_REQUIRED)
                 .overrideConfiguration(c -> c.apiCallTimeout(settings.storageTimeout)
                         .apiCallAttemptTimeout(settings.storageTimeout)).build();
         presigner = S3Presigner.builder().endpointOverride(settings.endpoint).region(Region.of(settings.region))
@@ -210,7 +215,7 @@ final class MediaObjectStore implements AutoCloseable {
             try {
                 var existing = s3.headObject(HeadObjectRequest.builder().bucket(settings.bucket).key(key).build());
                 if (existing.contentLength() == length && mimeType.equals(existing.contentType())
-                        && sha256.equals(existing.metadata().get("sha256"))) return;
+                        && sha256.equals(userMetadata(existing.metadata()).get("sha256"))) return;
             } catch (SdkException ignored) { /* An absent or unavailable object is retryable. */ }
             throw new MediaStorageUnavailableException();
         }
@@ -218,6 +223,13 @@ final class MediaObjectStore implements AutoCloseable {
 
     private void requireConfigured() {
         if (!settings.configured()) throw new MediaStorageUnavailableException();
+    }
+
+    /** S3 providers differ in user-metadata key case (Yandex returns {@code Sha256}); compare case-insensitively. */
+    static Map<String, String> userMetadata(Map<String, String> raw) {
+        var result = new java.util.TreeMap<String, String>(String.CASE_INSENSITIVE_ORDER);
+        result.putAll(raw);
+        return result;
     }
 
     private static Map<String, String> headers(Map<String, List<String>> headers) {

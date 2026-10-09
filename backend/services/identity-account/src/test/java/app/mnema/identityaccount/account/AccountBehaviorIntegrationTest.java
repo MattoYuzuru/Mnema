@@ -201,6 +201,7 @@ class AccountBehaviorIntegrationTest extends PostgresIntegrationTest {
         r.add("identity.postbox.secret-key", () -> "synthetic-postbox-secret");
         r.add("identity.avatar.endpoint", () -> "http://127.0.0.1:" + SERVER.getAddress().getPort());
         r.add("identity.avatar.allow-loopback-http", () -> true);
+        r.add("identity.avatar.bucket", () -> "mnema-avatars");
         r.add("identity.avatar.access-key", () -> "synthetic-s3-access");
         r.add("identity.avatar.secret-key", () -> "synthetic-s3-secret");
     }
