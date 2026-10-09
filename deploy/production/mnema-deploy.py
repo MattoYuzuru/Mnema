@@ -105,9 +105,11 @@ APP_ENV_NAMES = (
     'MNEMA_AVATAR_ACCESS_KEY', 'MNEMA_AVATAR_SECRET_KEY',
     'MNEMA_BILLING_CHECKOUT', 'MNEMA_BILLING_TESTER_ACCOUNT_IDS',
     'MNEMA_TBANK_TERMINAL_KEY', 'MNEMA_TBANK_PASSWORD_BASE64',
+    'MNEMA_NPD_RECEIPTS', 'MNEMA_NPD_INN', 'MNEMA_NPD_PASSWORD_BASE64',
 )
 TURNSTILE_MODES = ('blocked', 'required')
 BILLING_CHECKOUT_MODES = ('OFF', 'TESTERS', 'ON')
+NPD_RECEIPT_MODES = ('OFF', 'ON')
 TURNSTILE_KEYS = ('TURNSTILE_SITE_KEY', 'TURNSTILE_SECRET_KEY')
 MAX_CONFIG_VALUE = 4096
 FORBIDDEN_VALUE_CHARACTERS = frozenset('"\'\\$`')
@@ -317,6 +319,10 @@ def validate_entry(name, value):
         raise Rejected('configuration value for ' + name + ' must be blocked or required')
     if name == 'MNEMA_BILLING_CHECKOUT' and value and value not in BILLING_CHECKOUT_MODES:
         raise Rejected('configuration value for ' + name + ' must be OFF, TESTERS or ON')
+    if name == 'MNEMA_NPD_RECEIPTS' and value and value not in NPD_RECEIPT_MODES:
+        raise Rejected('configuration value for ' + name + ' must be OFF or ON')
+    if name == 'MNEMA_NPD_INN' and value and not re.fullmatch(r'[0-9]{12}', value):
+        raise Rejected('configuration value for ' + name + ' must be 12 digits')
     return value
 
 

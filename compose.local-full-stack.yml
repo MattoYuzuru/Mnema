@@ -70,6 +70,10 @@ x-learning-environment: &learning-environment
   MNEMA_BILLING_TESTER_ACCOUNT_IDS: ${MNEMA_BILLING_TESTER_ACCOUNT_IDS:-}
   MNEMA_TBANK_TERMINAL_KEY: ${MNEMA_TBANK_TERMINAL_KEY:-}
   MNEMA_TBANK_PASSWORD_BASE64: ${MNEMA_TBANK_PASSWORD_BASE64:-}
+  # НПД receipts (#392): off locally, lknpd.nalog.ru is not reachable from the development machine; a paid test order still queues its receipt.
+  MNEMA_NPD_RECEIPTS: ${MNEMA_NPD_RECEIPTS:-OFF}
+  MNEMA_NPD_INN: ${MNEMA_NPD_INN:-}
+  MNEMA_NPD_PASSWORD_BASE64: ${MNEMA_NPD_PASSWORD_BASE64:-}
   MNEMA_PUBLIC_BASE_URL: https://localhost:${MNEMA_LOCAL_WEB_PORT:-3443}
 
 # AI provider layer (docs/deploy/selfhost-local.md). Names only: the values come from the launcher's process environment or
