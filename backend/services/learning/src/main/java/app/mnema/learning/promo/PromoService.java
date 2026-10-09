@@ -94,9 +94,8 @@ public class PromoService {
     private JsonNode redeemLocked(UUID owner, byte[] hash, PromoClient client) {
         PromoRepository.Code code = repository.lockByHash(hash).orElseThrow(() -> rejected(owner, Reason.INVALID));
         // Acquire every potentially contended redemption lock before reading time: an expiring code cannot borrow time spent waiting.
-        // Lock order is code row, account discount (if any), address velocity (if available).
+        // Lock order is code row, account discount (if any). The velocity rule is per code, so the code's row lock already serializes it.
         if (!code.type().grantsTier()) repository.lockKey("promo.discount:owner:" + owner);
-        if (client.ipHash() != null) repository.lockKey("promo.velocity:ip:" + java.util.HexFormat.of().formatHex(client.ipHash()));
         Instant now = clock.now();
         if (!code.enabled() || now.isBefore(code.validFrom()) || (code.validUntil() != null && !now.isBefore(code.validUntil()))) {
             throw rejected(owner, Reason.INVALID);
@@ -117,9 +116,11 @@ public class PromoService {
         UUID redemptionId = UUID.randomUUID();
         String snapshotId = code.type().grantsTier() ? "promo:" + redemptionId : null;
         if (client.ipHash() != null) {
-            // The velocity rule is part of the redemption, not a check before it: under the address's lock and the code's row lock, two accounts
-            // of one address cannot both see "two others so far" and both redeem. (Order of locks: code row, account, address.)
-            if (repository.otherRedeemersFromIp(client.ipHash(), owner, now.minus(settings.velocityWindow)) >= settings.velocityAccounts) {
+            // The velocity rule is part of the redemption, not a check before it: under the code's row lock, two accounts of one address
+            // cannot both see "all but one place taken" and both redeem. It is per code: a shared address (a household, an office, a mobile
+            // carrier's NAT) may redeem many different codes, only one code redeemed by many accounts from one address looks like a farm.
+            if (repository.otherRedeemersOfCodeFromIp(code.codeId(), client.ipHash(), owner, now.minus(settings.velocityWindow))
+                    >= settings.velocityAccounts) {
                 throw rejected(owner, Reason.VELOCITY);
             }
         }

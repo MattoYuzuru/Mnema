@@ -1,5 +1,6 @@
 package app.mnema.learning.speech;
 
+import app.mnema.learning.ai.prompt.Redactor;
 import app.mnema.learning.catalog.content.ItemPreviews;
 import org.springframework.stereotype.Component;
 
@@ -14,8 +15,8 @@ import java.util.regex.Pattern;
 
 /**
  * Recognition hints of a clip: the titles of the deck's current materials, cleaned into at most {@code learning.speech.max-hints} short terms. The deck
- * is the learner's own (checked at admission); a title is the learner's own text, so a term that looks like personal data (an e-mail address, a link, a
- * long number) is dropped rather than sent to a provider. The learner's name, the deck's name and the owner id are never hints.
+ * is the learner's own (checked at admission); a title is the learner's own text, so a term that looks like personal data (an e-mail address, a telephone
+ * or card number as the prompt layer's {@link Redactor} sees them, a link, a long number) is dropped rather than sent to a provider. The learner's name, the deck's name and the owner id are never hints.
  */
 @Component
 class SpeechHints {
@@ -23,6 +24,9 @@ class SpeechHints {
     private static final Pattern CONTROL = Pattern.compile("[\\p{Cc}\\p{Cf}]+");
     private static final Pattern SPACES = Pattern.compile("\\s+");
     private static final Pattern PERSONAL = Pattern.compile("@|://|\\bwww\\.|\\d{5,}|\\+\\d");
+    /** A bare address: {@code host.tld/path} or a host on a common top-level domain (not {@code .net}, which {@code ASP.NET} is); ordinary dotted names ({@code Node.js}) are not links. */
+    private static final Pattern LINK = Pattern.compile(
+            "(?iu)[\\p{L}\\p{N}-]+(?:\\.[\\p{L}\\p{N}-]+)*\\.(?:[\\p{L}]{2,24}/|(?:com|ru|org|io|ai|app|dev|рф|su|me|info|co|uk|de|edu|gov)(?![\\p{L}\\p{N}]))");
 
     /** How many titles one call may have to read from storage (the rest is cached by then: a title is read once per material revision). */
     private static final int MAX_READS = 20;
@@ -65,7 +69,10 @@ class SpeechHints {
         for (String title : titles) {
             if (title == null) continue;
             String term = SPACES.matcher(CONTROL.matcher(Normalizer.normalize(title, Normalizer.Form.NFC)).replaceAll(" ")).replaceAll(" ").strip();
-            if (term.isEmpty() || term.length() > MAX_TERM || PERSONAL.matcher(term).find()) continue;
+            if (term.isEmpty() || term.length() > MAX_TERM || PERSONAL.matcher(term).find() || LINK.matcher(term).find()
+                    || !Redactor.redact(term).equals(term)) {
+                continue;
+            }
             if (!seen.add(term.toLowerCase(Locale.ROOT))) continue;
             out.add(term);
             if (out.size() >= max) break;

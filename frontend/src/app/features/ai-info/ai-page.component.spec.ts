@@ -42,6 +42,10 @@ describe('AiPageComponent', () => {
         expect(root.querySelector('#what')?.textContent).toContain('режим «Проверять факты»');
         expect(text).not.toContain('Если вы добавили ссылки или файлы');
         expect(text).toContain('согласие на распознавание записи не управляет озвучкой');
+        // the voice paragraphs state what the code does: a recording is not de-identified, a text with personal data is refused, not masked
+        expect(text).toContain('запись не обезличивается');
+        expect(text).toContain('не озвучивает такой текст и ничего не отправляет');
+        expect(text).not.toContain('действует тот же ограниченный фильтр');
         const withdrawal = root.querySelector<HTMLAnchorElement>('#off a');
         expect(withdrawal?.getAttribute('href')).toBe('/profile#speech-consent');
         expect(root.querySelector('#contact')?.textContent).not.toContain('просьбы по вашим данным');

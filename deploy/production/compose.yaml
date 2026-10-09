@@ -125,6 +125,9 @@ services:
       # Promo codes and A/B (#302). Without a nonblank hash secret (>= 32 characters), promo creation/redemption are disabled; Learning keeps running.
       # Without the experiment secret every account stays on control. The popup is off unless enabled with its copy.
       MNEMA_PROMO_HASH_SECRET: ${MNEMA_PROMO_HASH_SECRET:-}
+      # Abuse limits: attempts per address hash per hour (default 20) and the accounts one address may serve for the same code in 24 hours (default 10, the next one is refused).
+      MNEMA_PROMO_IP_ATTEMPTS_PER_HOUR: ${MNEMA_PROMO_IP_ATTEMPTS_PER_HOUR:-20}
+      MNEMA_PROMO_VELOCITY_ACCOUNTS: ${MNEMA_PROMO_VELOCITY_ACCOUNTS:-10}
       MNEMA_EXPERIMENT_SECRET: ${MNEMA_EXPERIMENT_SECRET:-}
       MNEMA_PROMO_POPUP_ENABLED: ${MNEMA_PROMO_POPUP_ENABLED:-false}
       MNEMA_PROMO_POPUP_ID: ${MNEMA_PROMO_POPUP_ID:-}

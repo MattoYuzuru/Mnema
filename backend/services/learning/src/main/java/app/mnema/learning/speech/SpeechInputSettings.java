@@ -22,7 +22,7 @@ import java.time.Duration;
 public record SpeechInputSettings(@DefaultValue("20") int rateLimit, @DefaultValue("PT10M") Duration rateWindow, @DefaultValue("PT15M") Duration ttl,
                                   @DefaultValue("PT30S") Duration deadline, @DefaultValue("PT2S") Duration sweepInterval,
                                   @DefaultValue("400") int pollAfterMs, @DefaultValue("60") int maxHints,
-                                  @DefaultValue("speech-2026-10") String consentVersion) {
+                                  @DefaultValue("speech-2026-10-2") String consentVersion) {
     /** The contract's cap of one recording, in bytes. */
     public static final int MAX_BYTES = 2 * 1024 * 1024;
 
@@ -48,6 +48,6 @@ public record SpeechInputSettings(@DefaultValue("20") int rateLimit, @DefaultVal
 
     /** Defaults, for code that builds the pieces without Spring binding. */
     public static SpeechInputSettings defaults() {
-        return new SpeechInputSettings(20, Duration.ofMinutes(10), Duration.ofMinutes(15), Duration.ofSeconds(30), Duration.ofSeconds(2), 400, 60, "speech-2026-10");
+        return new SpeechInputSettings(20, Duration.ofMinutes(10), Duration.ofMinutes(15), Duration.ofSeconds(30), Duration.ofSeconds(2), 400, 60, "speech-2026-10-2");
     }
 }

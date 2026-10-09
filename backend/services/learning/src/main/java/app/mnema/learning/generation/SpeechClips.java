@@ -2,6 +2,7 @@ package app.mnema.learning.generation;
 
 import app.mnema.learning.ai.AiResult;
 import app.mnema.learning.ai.SpeechSynthesis;
+import app.mnema.learning.ai.prompt.Redactor;
 import app.mnema.learning.generation.StepExecutor.StepControl;
 import app.mnema.learning.media.GeneratedMediaStager;
 import app.mnema.learning.media.MediaCatalog;
@@ -28,6 +29,11 @@ class SpeechClips {
     private static final Logger LOG = LoggerFactory.getLogger(SpeechClips.class);
     private static final Duration DEFAULT_POLL = Duration.ofMillis(500);
     private static final Duration RENEW = Duration.ofSeconds(15);
+    /**
+     * The code of a clip whose text holds what the redaction of the prompt layer would mask (an e-mail address, a telephone or a card number): it is not
+     * sent to a provider, the step fails with it and nothing is charged. Owner decision: text leaves Russia only depersonalised.
+     */
+    static final String PERSONAL_DATA = "PERSONAL_DATA";
 
     /** What one clip is made of. {@code text} is normalised by the cache key and the provider call alike. */
     record Clip(String text, String lang, String voice, int take) { }
@@ -67,7 +73,15 @@ class SpeechClips {
         this.poll = poll;
     }
 
+    /** Whether the text is safe to hand to a provider: the redaction of the prompt layer would not change it (the same rule as {@code EditContexts.refusal}). */
+    static boolean depersonalised(String text) {
+        String spoken = SpeechCache.normalize(text);
+        return Redactor.redact(spoken).equals(spoken);
+    }
+
     Outcome stage(StepClaim claim, StepControl control, UUID owner, UUID assetId, Clip clip, Instant deadline) {
+        // before the cache and before any provider: a text with personal data is refused, never masked (masking would change what is spoken)
+        if (!depersonalised(clip.text())) return new Outcome.Failed(PERSONAL_DATA);
         while (true) {
             if (control.lost() || Thread.currentThread().isInterrupted()) return new Outcome.Interrupted(false);
             if (control.cancelled()) return new Outcome.Interrupted(true);

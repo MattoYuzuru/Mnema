@@ -1,0 +1,4 @@
+{
+  "description": "The version of the disclosure text of the microphone dialog (frontend mic-button) and the consent version the server requires (learning.speech.consent-version). The client records a consent under this version, never under the server's, so a consent names the text the person read. Change the text, this value, the property and the frontend constant together.",
+  "consentVersion": "speech-2026-10-2"
+}

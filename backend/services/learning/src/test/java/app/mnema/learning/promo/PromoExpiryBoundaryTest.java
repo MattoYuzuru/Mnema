@@ -1,7 +1,6 @@
 package app.mnema.learning.promo;
 
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.api.Test;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import java.util.UUID;
@@ -9,33 +8,23 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.doAnswer;
 
 /** A code that expires while its row lock is acquired must be checked at the locked redemption instant. */
 class PromoExpiryBoundaryTest extends PromoIntegrationTest {
     @MockitoSpyBean private PromoRepository repository;
 
-    @ParameterizedTest
-    @ValueSource(strings = {"code", "address"})
-    void expiryIsCheckedAfterTheContendedLocksWithoutAnyWallClockSleep(String lock) {
+    @Test
+    void expiryIsCheckedAfterTheContendedLocksWithoutAnyWallClockSleep() {
         UUID learner = account(true, false);
         UUID command = UUID.randomUUID();
         String plain = code(new PromoAdminService.Create(PromoType.TIER_DAYS, "PLUS", 15, null, null, null,
                 now().plusSeconds(1), 1, true, null, null));
-        if (lock.equals("code")) {
-            doAnswer(invocation -> {
-                Object locked = invocation.callRealMethod();
-                clock.set("2026-10-02T09:00:44Z");
-                return locked;
-            }).when(repository).lockByHash(any(byte[].class));
-        } else {
-            doAnswer(invocation -> {
-                invocation.callRealMethod();
-                clock.set("2026-10-02T09:00:44Z");
-                return null;
-            }).when(repository).lockKey(startsWith("promo.velocity:ip:"));
-        }
+        doAnswer(invocation -> {
+            Object locked = invocation.callRealMethod();
+            clock.set("2026-10-02T09:00:44Z");
+            return locked;
+        }).when(repository).lockByHash(any(byte[].class));
 
         assertThatThrownBy(() -> promo.redeem(learner, jwt(learner), command, plain, network()))
                 .isInstanceOfSatisfying(PromoRejectedException.class,

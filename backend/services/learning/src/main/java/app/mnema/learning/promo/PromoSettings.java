@@ -9,7 +9,7 @@ import java.security.SecureRandom;
 import java.time.Duration;
 
 /**
- * The abuse limits of redemption ({@code learning.promo.*}) and the secret that keys the address and device hashes. Without
+ * The abuse limits of redemption ({@code learning.promo.*}) and the secret that keys the address hash and the stored code hashes. Without
  * {@code MNEMA_PROMO_HASH_SECRET} (also the key of the stored code hashes) a random secret is drawn per process outside production: hashes are then
  * comparable inside one instance only and no stored code survives a restart, which is fine for local work and logged as a WARN. In production
  * ({@code APP_ENV=prod}) a missing secret, or one shorter than {@value #MIN_PRODUCTION_SECRET} characters, switches promo codes off (fail closed:
@@ -32,7 +32,7 @@ final class PromoSettings {
 
     PromoSettings(@Value("${learning.promo.attempts-per-hour:5}") int attemptsPerHour,
                   @Value("${learning.promo.ip-attempts-per-hour:20}") int ipAttemptsPerHour,
-                  @Value("${learning.promo.velocity.accounts:3}") int velocityAccounts,
+                  @Value("${learning.promo.velocity.accounts:10}") int velocityAccounts,
                   @Value("${learning.promo.velocity.window:PT24H}") Duration velocityWindow,
                   @Value("${learning.promo.hash-secret:}") String hashSecret,
                   @Value("${APP_ENV:dev}") String environment) {

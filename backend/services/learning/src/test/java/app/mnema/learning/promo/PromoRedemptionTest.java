@@ -121,15 +121,36 @@ class PromoRedemptionTest extends PromoIntegrationTest {
     }
 
     @Test
-    void anAddressThatAlreadyServedThreeOtherAccountsIsRefusedByVelocity() {
+    void anAddressThatAlreadyServedTheLimitOfOtherAccountsForOneCodeIsRefusedByVelocity() {
         PromoClient farm = network();
         String code = code(new PromoAdminService.Create(PromoType.TIER_DAYS, "PLUS", 3, null, null, null, null, 50, true, null, null));
-        for (int index = 0; index < 3; index++) redeem(account(true, false), code, farm);
+        // the default tolerates a household or a mobile carrier's NAT: ten other accounts, not three
+        assertThat(settings.velocityAccounts).isEqualTo(10);
+        for (int index = 0; index < settings.velocityAccounts; index++) {
+            // the address allowance is 20 attempts an hour: the farm of one address is far below it
+            redeem(account(true, false), code, farm);
+        }
 
         assertThat(refusal(account(true, false), code, farm)).isEqualTo(PromoRejectedException.Reason.VELOCITY);
 
         clock.set("2026-10-03T09:00:50Z");
         redeem(account(true, false), code, farm);
+    }
+
+    @Test
+    void manyAccountsOfOneAddressMayRedeemDifferentCodesTheVelocityRuleCountsOneCodeAtATime() {
+        PromoClient carrierNat = network();
+        String shared = code(new PromoAdminService.Create(PromoType.TIER_DAYS, "PLUS", 3, null, null, null, null, 50, true, null, null));
+        for (int index = 0; index < settings.velocityAccounts; index++) redeem(account(true, false), shared, carrierNat);
+        assertThat(refusal(account(true, false), shared, carrierNat)).isEqualTo(PromoRejectedException.Reason.VELOCITY);
+
+        // another code from the same address is a different matter: the accounts that took the first one do not count against it
+        String other = code(new PromoAdminService.Create(PromoType.TIER_DAYS, "PLUS", 3, null, null, null, null, 50, true, null, null));
+        redeem(account(true, false), other, carrierNat);
+
+        // the audit holds the address hash only: the User-Agent is no longer stored
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.promo_redemption WHERE ip_hash=:ip AND device_hash IS NOT NULL")
+                .param("ip", carrierNat.ipHash()).query(Long.class).single()).isZero();
     }
 
     @Test
@@ -265,7 +286,7 @@ class PromoRedemptionTest extends PromoIntegrationTest {
     void theAuditHoldsHashesNeverACodeOrAnAddress() {
         String plain = code(tier(PromoType.TIER_DAYS, "PLUS", 15, null, 5));
         UUID account = account(true, false);
-        redeem(account, plain, new PromoClient(network().ipHash(), new byte[32]));
+        redeem(account, plain, network());
 
         String normalized = PromoCodes.normalize(plain).orElseThrow();
         var hint = jdbc.sql("SELECT code_hint FROM app_learning.promo_code WHERE code_hash=:h").param("h", PromoCodes.hash(settings.hashSecret, normalized))
@@ -401,10 +422,10 @@ class PromoRedemptionTest extends PromoIntegrationTest {
     }
 
     @Test
-    void tenParallelAccountsFromOneAddressRedeemExactlyAsManyTimesAsTheVelocityRuleAllows() throws Exception {
+    void parallelAccountsFromOneAddressRedeemExactlyAsManyTimesAsTheVelocityRuleAllows() throws Exception {
         String code = code(new PromoAdminService.Create(PromoType.TIER_DAYS, "PLUS", 3, null, null, null, null, 50, true, null, null));
         PromoClient farm = network();
-        int parallel = 10;
+        int parallel = settings.velocityAccounts + 4;
         ExecutorService pool = Executors.newFixedThreadPool(parallel);
         CountDownLatch start = new CountDownLatch(1);
         List<Future<String>> outcomes = new ArrayList<>();
