@@ -5,7 +5,7 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { forkJoin, map, of, switchMap } from 'rxjs';
+import { Subscription, forkJoin, map, of, switchMap } from 'rxjs';
 
 import {
     AuthoringBlock, ExerciseSpec, LIMITS, MECHANICS, Mechanic, ObjectiveCommand, PROMPT_SLOTS, REFERENCE_SLOTS, authoringSlots,
@@ -15,6 +15,7 @@ import { MECHANIC_CATALOG, StepId, catalogEntry, stepTitle } from '../../content
 import { MnemaSelectComponent, MnemaSelectOption } from '../../core/controls/mnema-select.component';
 import { HoldToDeleteButtonComponent } from '../../shared/hold-to-delete-button.component';
 import { NewBadgeComponent } from '../../shared/new-badge.component';
+import { AutoLoadComponent } from '../../shared/auto-load.component';
 import { ToastService } from '../../core/notifications/toast.service';
 import { AskMnemaComponent } from '../generation/ask-mnema.component';
 import { ExerciseProposal, quoteContext, readProposal } from '../generation/exercise-proposal';
@@ -122,7 +123,7 @@ function stepOwns(step: StepId, key: string): boolean {
     selector: 'app-exercise-authoring-page',
     imports: [RouterLink, MnemaSelectComponent, HoldToDeleteButtonComponent, NewBadgeComponent, MechanicPickerComponent, ExercisePreviewHostComponent,
         ExerciseSlotEditorComponent, FreeResponseEditorComponent, ClozeEditorComponent, ChoiceEditorComponent, MatchEditorComponent,
-        OrderEditorComponent, CategoryGroupsEditorComponent, CategorizeItemsEditorComponent, AskMnemaComponent],
+        OrderEditorComponent, CategoryGroupsEditorComponent, CategorizeItemsEditorComponent, AskMnemaComponent, AutoLoadComponent],
     templateUrl: './exercise-authoring-page.component.html',
     styleUrl: './exercise-authoring-page.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -159,6 +160,8 @@ export class ExerciseAuthoringPageComponent {
     /** Existing-exercise row whose enable toggle or delete is in flight. */
     readonly listBusy = signal<string | null>(null);
     readonly listMessage = signal<string | null>(null);
+    readonly loadingMore = signal(false);
+    readonly moreError = signal<string | null>(null);
     private readonly titleEdited = signal(false);
 
     readonly entry = computed(() => { const value = this.mechanic(); return value === null ? null : catalogEntry(value); });
@@ -258,6 +261,8 @@ export class ExerciseAuthoringPageComponent {
     private readonly toast = inject(ToastService);
     private readonly destroyRef = inject(DestroyRef);
     private pending: PendingWrite | null = null;
+    private moreEpoch = 0;
+    private moreLoad: Subscription | null = null;
 
     constructor() {
         this.load();
@@ -276,6 +281,7 @@ export class ExerciseAuthoringPageComponent {
     }
 
     load(): void {
+        this.cancelMore();
         const deckId = this.route.snapshot.paramMap.get('deckId');
         const exerciseId = this.route.snapshot.paramMap.get('exerciseId');
         const routeMember = this.route.snapshot.paramMap.get('memberKey');
@@ -323,15 +329,33 @@ export class ExerciseAuthoringPageComponent {
         const deck = this.deck();
         const item = this.item();
         const page = this.page();
-        if (deck === null || item === null || page === null || page.nextCursor === null || this.phase() === 'loading') return;
-        this.exercises.list(deck.deckId, item.memberKey, page.nextCursor)
+        if (deck === null || item === null || page === null || page.nextCursor === null || this.phase() !== 'ready'
+            || this.loadingMore() || this.listBusy() !== null) return;
+        this.loadingMore.set(true);
+        this.moreError.set(null);
+        const epoch = this.moreEpoch;
+        this.moreLoad = this.exercises.list(deck.deckId, item.memberKey, page.nextCursor)
             .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
                 next: next => {
+                    if (epoch !== this.moreEpoch) return;
+                    this.loadingMore.set(false);
+                    if (this.deck()?.deckId !== deck.deckId || this.item()?.memberKey !== item.memberKey || this.page() !== page) return;
                     if (next.deckRevisionId !== page.deckRevisionId) { this.load(); return; }
-                    this.page.set({ ...next, exercises: [...page.exercises, ...next.exercises] });
+                    const known = new Set(page.exercises.map(exercise => exercise.exerciseId));
+                    this.page.set({ ...next, exercises: [...page.exercises, ...next.exercises.filter(exercise => !known.has(exercise.exerciseId))] });
                 },
-                error: () => this.message.set('Не удалось загрузить следующую страницу упражнений.')
+                error: () => {
+                    if (epoch !== this.moreEpoch) return;
+                    this.loadingMore.set(false); this.moreError.set('Не удалось загрузить следующие упражнения.');
+                }
             });
+    }
+
+    private cancelMore(): void {
+        ++this.moreEpoch;
+        this.moreLoad?.unsubscribe();
+        this.loadingMore.set(false);
+        this.moreError.set(null);
     }
 
     // -----------------------------------------------------------------------------------------
@@ -539,6 +563,7 @@ export class ExerciseAuthoringPageComponent {
     toggleListed(entry: ExerciseSummary): void {
         const deck = this.deck();
         if (deck === null || this.listBusy() !== null || entry.exerciseId === this.exercise()?.exerciseId) return;
+        this.cancelMore();
         this.listBusy.set(entry.exerciseId); this.listMessage.set(null);
         this.exercises.read(deck.deckId, entry.exerciseId).pipe(
             switchMap(detail => this.exercises.update(deck.deckId, entry.exerciseId, deck.rowVersion, deck.revisionId,
@@ -555,6 +580,7 @@ export class ExerciseAuthoringPageComponent {
     deleteListed(entry: ExerciseSummary): void {
         const deck = this.deck();
         if (deck === null || this.listBusy() !== null || entry.exerciseId === this.exercise()?.exerciseId) return;
+        this.cancelMore();
         this.listBusy.set(entry.exerciseId); this.listMessage.set(null);
         this.exercises.delete(deck.deckId, entry.exerciseId, deck.rowVersion).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
             next: () => this.refreshList('Упражнение удалено.'),

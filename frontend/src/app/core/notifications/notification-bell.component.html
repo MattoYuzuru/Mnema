@@ -13,8 +13,8 @@
   @if (center.panelError(); as problem) { <p class="problem" role="alert">{{ problem }}</p> }
   @if (center.entries().length === 0) {
     <p class="empty">Пока тихо. Когда Мнема закончит работу, сообщение появится здесь.</p>
-  } @else {
-    <ul class="list">
+  }
+    <ul #notificationRows class="list">
       @for (entry of center.entries(); track entry.notification.notificationId) {
         <li class="entry" [class.is-new]="isNew(entry.notification.seq)">
           <app-notification-glyph [severity]="entry.presented.severity" />
@@ -35,8 +35,7 @@
         </li>
       }
     </ul>
-  }
-  @if (center.olderCursor() !== null) {
-    <button type="button" class="more" [disabled]="center.loadingMore()" (click)="center.loadMore()">Показать ещё</button>
-  }
+  <app-auto-load [content]="notificationRows" [root]="panel" [continuation]="center.olderCursor()"
+    [enabled]="center.panelOpen()" [loading]="center.loadingMore()" [error]="center.moreError()"
+    loadingText="Загружаем следующие уведомления…" (loadNext)="center.loadMore()" />
 </div>

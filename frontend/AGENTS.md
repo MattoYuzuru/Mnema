@@ -35,6 +35,10 @@ Adds to the root [`AGENTS.md`](../AGENTS.md); does not repeat it. Visual directi
 - Shared UI classes live in `src/theme/components.css` (`.button`, `.notice`, `.hint`, `.field`, `.field-error`, `.stamp`, `.eyebrow`, `.empty-state`, `.paper-surface`); do not redefine them in a component's CSS, add layout deltas only. The living catalogue is `/styleguide` (`src/app/styleguide`, dev builds only, registered behind `ngDevMode` in `app.routes.ts`): a new shared element goes there first. After `npm run build` run `node scripts/verify-no-styleguide.mjs`; see [styleguide](../docs/frontend/styleguide.md).
 - Wire shapes come from [`contracts/`](../contracts) fixtures that backend and frontend specs both
   execute (for example `study-contract.spec.ts`). Change fixture, contract and both sides together.
+- Long lists use `shared/auto-load.component.ts`: prefetch at roughly 75% of loaded list content, append bounded cursor
+  pages, preserve focus/selection, admit one request and stop automatic retries on error. Set `root` for an embedded
+  scrolling panel. No normal «Показать ещё» or previous/next page controls; only explicit error recovery.
+  [Styleguide list contract](../docs/frontend/styleguide.md#длинные-списки-и-автоподгрузка) owns the living example and exceptions.
 - Workshop node overlays, selection edits and revise intents have dedicated scope and
   accessibility boundaries: [frontend feature changes](../docs/engineering/repository-guide.md#frontend-feature-changes).
 - Learner-facing models never carry answer keys; references arrive only in feedback. Validate server

@@ -1,11 +1,12 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 
 import { spyObj, type SpyObj } from '../../../testing/mocks';
 import { DeckWorkshopsComponent } from './deck-workshops.component';
 import { GenerationApiService } from './generation-api.service';
-import { SessionSummary, parseSessionSummary } from './generation.models';
+import { SessionPage, SessionSummary, parseSessionSummary } from './generation.models';
 import { clone, examples, ids } from './generation-test-data';
 
 describe('DeckWorkshopsComponent', () => {
@@ -66,6 +67,34 @@ describe('DeckWorkshopsComponent', () => {
     it('says «N+» when the first page is full', () => {
         create(of({ items: [session('1'), session('2')], nextCursor: 'more' }));
         expect(root().querySelector('h2')?.textContent).toBe('Мастерская: 2+ активных');
+    });
+
+    it('admits one request, keeps a failed page retryable and appends unique sessions', () => {
+        create(of({ items: [session('1')], nextCursor: 'older' }));
+        const pending = new Subject<SessionPage>();
+        api.listSessions.mockReturnValueOnce(pending);
+        const next = () => fixture.debugElement.query(By.css('app-auto-load')).triggerEventHandler('loadNext');
+        next(); next();
+        expect(api.listSessions).toHaveBeenCalledTimes(2);
+        pending.error(new Error('offline')); fixture.detectChanges();
+        expect(root().querySelectorAll('li')).toHaveLength(1);
+        api.listSessions.mockReturnValueOnce(of({ items: [session('1'), session('2')], nextCursor: null }));
+        root().querySelector<HTMLButtonElement>('app-auto-load button')!.click(); fixture.detectChanges();
+        expect(api.listSessions).toHaveBeenLastCalledWith(ids.deckId, { active: true, cursor: 'older' });
+        expect(root().querySelectorAll('li')).toHaveLength(2);
+        expect(root().querySelector('h2')?.textContent).toBe('Мастерская: 2 активные');
+    });
+
+    it('rejects an old continuation after switching decks', () => {
+        create(of({ items: [session('1')], nextCursor: 'older' }));
+        const pending = new Subject<SessionPage>();
+        api.listSessions.mockReturnValueOnce(pending);
+        fixture.debugElement.query(By.css('app-auto-load')).triggerEventHandler('loadNext');
+        api.listSessions.mockReturnValueOnce(of({ items: [session('9')], nextCursor: null }));
+        fixture.componentRef.setInput('deckId', '22222222-2222-4222-8222-222222222222'); fixture.detectChanges();
+        pending.next({ items: [session('2')], nextCursor: null }); pending.complete(); fixture.detectChanges();
+        expect(root().querySelectorAll('li')).toHaveLength(1);
+        expect(root().querySelector('li a')?.getAttribute('href')).toContain('000000000009');
     });
 
     it('shows nothing when no Workshop is active, and nothing when the list cannot be read', () => {

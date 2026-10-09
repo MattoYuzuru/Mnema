@@ -4,6 +4,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
+import { AutoLoadComponent } from '../../shared/auto-load.component';
 import { EventsApiService } from './events-api.service';
 import { EventBodyComponent } from './event-body.component';
 import { EventEdit, EventPage, ManagedEvent, eventDate, formatEventDate } from './events.models';
@@ -13,7 +14,7 @@ type Mutation = { readonly kind: 'save'; readonly edit: EventEdit; readonly exis
 
 @Component({
     selector: 'app-manage-events-page',
-    imports: [ReactiveFormsModule, RouterLink, EventBodyComponent],
+    imports: [ReactiveFormsModule, RouterLink, EventBodyComponent, AutoLoadComponent],
     templateUrl: './manage-events-page.component.html',
     styleUrl: './manage-events-page.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -26,6 +27,8 @@ export class ManageEventsPageComponent implements OnInit {
     protected readonly selected = signal<ManagedEvent | null>(null);
     protected readonly busy = signal(false);
     protected readonly error = signal('');
+    protected readonly loadingMore = signal(false);
+    protected readonly listError = signal<string | null>(null);
     protected readonly notice = signal('');
     protected readonly uncertain = signal(false);
     protected readonly confirmDelete = signal(false);
@@ -40,8 +43,7 @@ export class ManageEventsPageComponent implements OnInit {
         bodyMarkdown: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(16000)] }),
         published: new FormControl(false, { nonNullable: true })
     });
-    protected history: (string | null)[] = [];
-    protected cursor: string | null = null;
+    private listEpoch = 0;
     private mutation: Mutation | null = null;
 
     ngOnInit(): void { void this.initialize(); }
@@ -107,6 +109,8 @@ export class ManageEventsPageComponent implements OnInit {
         const mutation = this.mutation;
         if (mutation === null || this.busy()) return;
         this.busy.set(true); this.uncertain.set(false); this.error.set(''); this.notice.set(''); this.form.disable();
+        ++this.listEpoch;
+        this.loadingMore.set(false);
         try {
             if (mutation.kind === 'delete') {
                 await firstValueFrom(this.api.remove(mutation.existing, mutation.commandId).pipe(takeUntilDestroyed(this.destroyRef)));
@@ -117,7 +121,7 @@ export class ManageEventsPageComponent implements OnInit {
                 this.selected.set(saved); this.form.markAsPristine();
                 this.notice.set(saved.published ? 'Событие опубликовано.' : 'Черновик сохранён.');
             }
-            this.mutation = null; this.pendingSelection.set(null); this.confirmDelete.set(false); this.history = []; this.cursor = null;
+            this.mutation = null; this.pendingSelection.set(null); this.confirmDelete.set(false);
             try { await this.load(null); }
             catch { this.error.set('Изменение сохранено, но список не обновился. Нажмите «Обновить».'); }
         } catch (error) {
@@ -134,21 +138,31 @@ export class ManageEventsPageComponent implements OnInit {
         } finally { this.busy.set(false); if (!this.uncertain()) this.form.enable(); }
     }
 
-    protected async load(cursor: string | null): Promise<void> {
-        this.page.set(await firstValueFrom(this.api.manage(cursor).pipe(takeUntilDestroyed(this.destroyRef))));
-        this.cursor = cursor;
+    protected async load(cursor: string | null, append = false): Promise<void> {
+        const epoch = ++this.listEpoch;
+        this.loadingMore.set(append);
+        this.listError.set(null);
+        try {
+            const page = await firstValueFrom(this.api.manage(cursor).pipe(takeUntilDestroyed(this.destroyRef)));
+            if (epoch !== this.listEpoch) return;
+            const previous = this.page()?.items ?? [];
+            const known = new Set(previous.map(event => event.eventId));
+            this.page.set(append ? { ...page, items: [...previous, ...page.items.filter(event => !known.has(event.eventId))] } : page);
+        } finally { if (epoch === this.listEpoch) this.loadingMore.set(false); }
     }
 
-    protected async refresh(): Promise<void> { await this.changePage(this.cursor); }
+    protected async refresh(): Promise<void> { await this.changePage(null); }
     protected async next(): Promise<void> {
         const next = this.page()?.nextCursor;
-        if (!next) return;
-        const previous = this.cursor;
-        if (await this.changePage(next)) this.history.push(previous);
-    }
-    protected async previous(): Promise<void> {
-        if (!this.history.length) return;
-        if (await this.changePage(this.history.at(-1) ?? null)) this.history.pop();
+        if (!next || this.loadingMore() || this.busy() || this.uncertain()) return;
+        const epoch = this.listEpoch + 1;
+        try { await this.load(next, true); }
+        catch (error) {
+            if (epoch !== this.listEpoch) return;
+            if (error instanceof HttpErrorResponse && (error.status === 401 || error.status === 403)) {
+                this.state.set('forbidden'); this.page.set(null);
+            } else this.listError.set('Не удалось загрузить следующие записи. Текст в редакторе сохранён.');
+        }
     }
     private async changePage(cursor: string | null): Promise<boolean> {
         if (this.busy() || this.uncertain()) return false;

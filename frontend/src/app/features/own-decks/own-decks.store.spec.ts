@@ -1,6 +1,6 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
-import { Observable, Observer, Subscription, of, throwError } from 'rxjs';
+import { Observable, Observer, Subject, Subscription, of, throwError } from 'rxjs';
 
 import metadataFixture from '../../../../../contracts/decks/metadata.json';
 import { DeckCommand, DeckWriteResult, OwnDeck, OwnDeckPage } from './own-deck.models';
@@ -32,6 +32,20 @@ describe('OwnDecksStore', () => {
         expect(mayRetrySameCommand({ kind: 'http', status: 400, code: 'INVALID_REQUEST' })).toBe(false);
     });
 
+    it('admits one continuation request and retries the same cursor without losing earlier rows', () => {
+        const older = { ...fixtureDeck, deckId: '33333333-3333-4333-8333-333333333333' };
+        const pending = new Subject<OwnDeckPage>();
+        api.list.mockReturnValueOnce(of({ items: [fixtureDeck], nextCursor: 'older' })).mockReturnValueOnce(pending)
+            .mockReturnValueOnce(of({ items: [older], nextCursor: null }));
+        store.loadList(); store.loadMore(); store.loadMore();
+        expect(api.list).toHaveBeenCalledTimes(2);
+        pending.error(new Error('offline'));
+        expect(store.listState().items).toEqual([fixtureDeck]);
+        store.retryList();
+        expect(api.list).toHaveBeenLastCalledWith('older');
+        expect(store.listState().items).toEqual([fixtureDeck, older]);
+    });
+
     it('ignores a stale list response even when its transport does not honor unsubscribe', () => {
         const observers: Observer<OwnDeckPage>[] = [];
         api.list.mockImplementation(() => stubbornObservable(observers));
@@ -45,7 +59,7 @@ describe('OwnDecksStore', () => {
         expect(store.listState().items.map(deck => deck.deckId)).toEqual([newer.deckId]);
     });
 
-    it('keeps only one bounded server page after extended cursor navigation', () => {
+    it('accumulates unique cursor pages until the end, then stops requesting', () => {
         api.list.mockImplementation(cursor => {
             const page = cursor == null ? 0 : Number(cursor.replace('page-', ''));
             const items = Array.from({ length: 20 }, (_, offset) => ({
@@ -59,22 +73,25 @@ describe('OwnDecksStore', () => {
         for (let page = 1; page < 100; page += 1)
             store.loadMore();
 
-        expect(store.listState().items.length).toBe(20);
+        expect(store.listState().items.length).toBe(2000);
+        store.loadMore();
+        expect(api.list).toHaveBeenCalledTimes(100);
     });
 
-    it('navigates back with a retained cursor without accumulating both pages', () => {
+    it('keeps earlier pages, drops duplicate ids and preserves the continuation during a first-page refresh', () => {
         const older = { ...fixtureDeck, deckId: '33333333-3333-4333-8333-333333333333' };
-        api.list.mockReturnValueOnce(of({ items: [fixtureDeck], nextCursor: 'older-page' })).mockReturnValueOnce(of({ items: [older], nextCursor: null })).mockReturnValueOnce(of({ items: [fixtureDeck], nextCursor: 'older-page' }));
+        api.list.mockReturnValueOnce(of({ items: [fixtureDeck], nextCursor: 'older-page' }))
+            .mockReturnValueOnce(of({ items: [fixtureDeck, older], nextCursor: 'oldest-page' }))
+            .mockReturnValueOnce(of({ items: [{ ...fixtureDeck, metadata: { ...fixtureDeck.metadata, title: 'Обновлено' } }], nextCursor: 'older-page' }));
 
         store.loadList();
         store.loadMore();
-        expect(store.listState().items.map(deck => deck.deckId)).toEqual([older.deckId]);
-        expect(store.canGoBack()).toBe(true);
-
-        store.loadPrevious();
+        expect(store.listState().items.map(deck => deck.deckId)).toEqual([fixtureDeck.deckId, older.deckId]);
+        store.refreshVisibleList();
         expect(vi.mocked(api.list).mock.calls[2][0]).toBeNull();
-        expect(store.listState().items.map(deck => deck.deckId)).toEqual([fixtureDeck.deckId]);
-        expect(store.canGoBack()).toBe(false);
+        expect(store.listState().items.map(deck => deck.deckId)).toEqual([fixtureDeck.deckId, older.deckId]);
+        expect(store.listState().items[0].metadata.title).toBe('Обновлено');
+        expect(store.listState().nextCursor).toBe('oldest-page');
     });
 
     it('refreshes the visible page without changing its cursor or discarding confirmed rows on failure', () => {

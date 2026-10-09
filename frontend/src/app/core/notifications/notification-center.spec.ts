@@ -178,6 +178,34 @@ describe('NotificationCenter', () => {
         expect(center.items().map(item => item.seq)).toEqual(['4', '3', '2', '1']);
     });
 
+    it('admits one older-page request and preserves the cursor and rows across an explicit retry', async () => {
+        await signIn(page([note(2)], { nextCursor: 'older' }));
+        const pending = new Subject<NotificationListResult>();
+        api.list.mockReturnValueOnce(pending);
+        const first = center.loadMore();
+        await center.loadMore();
+        expect(api.list).toHaveBeenLastCalledWith({ limit: 20, cursor: 'older' });
+        pending.error(new Error('offline')); await first;
+        expect(center.moreError()).toContain('Не удалось');
+        expect(center.items().map(item => item.seq)).toEqual(['2']);
+        expect(center.olderCursor()).toBe('older');
+        answers(page([note(1)])); await center.loadMore();
+        expect(center.items().map(item => item.seq)).toEqual(['2', '1']);
+        expect(center.moreError()).toBeNull();
+    });
+
+    it('does not restore an old continuation error after signing out', async () => {
+        await signIn(page([note(2)], { nextCursor: 'older' }));
+        const pending = new Subject<NotificationListResult>();
+        api.list.mockReturnValueOnce(pending);
+        const more = center.loadMore();
+        status.set('anonymous'); TestBed.tick();
+        pending.error(new Error('old transport')); await more;
+        expect(center.items()).toEqual([]);
+        expect(center.moreError()).toBeNull();
+        expect(center.loadingMore()).toBe(false);
+    });
+
     it('holds the toast during a quiet zone but updates the badge at once', async () => {
         await signIn(page([note(1)], { readUpto: '1' }));
         const quiet = TestBed.inject(QuietZone);

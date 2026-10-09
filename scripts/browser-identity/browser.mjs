@@ -2,7 +2,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { runHub } from './hub.mjs';
+import { runHub, runInfiniteList } from './hub.mjs';
 import { runMechanics } from './mechanics.mjs';
 import { runNotifications } from './notifications.mjs';
 import { runCodeBlock } from './code-block.mjs';
@@ -127,6 +127,7 @@ try {
   let tamperNextCallback = false;
   /** Set by a scenario: `(request) => [{ name, value }] | null` for the request about to continue. */
   let requestHeaderHook = null;
+  let requestPauseHook = null;
   const bearerTokens = [], idTokens = [], exchanges = [];
   const challenges = new Set();
   const loadedDocuments = new Set();
@@ -172,7 +173,9 @@ try {
       // generation scenario (#291) adds a batch review, an editor round trip and a Study session on top of them (each full page load
       // also asks Identity, so its budget grows with `--generation` too; web research (#299) adds 500 requests).
       // The paywall scenario (#301) loads the app about twenty times (every width and the quiet routes of the goal question).
-      if (networkRequests > (config.mechanics ? 3000 : config.media ? 1250 : config.authoring ? 1000 : 500) + (config.authoring ? 900 : 0) + (config.generation ? 4000 : 0) + (config.assessment ? 1000 : 0)
+      // The bounded 1317-item infinite-list fixture adds 66 reads + 66 publications + 27 pages, plus its shell/assets.
+      const infiniteListBudget = config.mechanics ? 250 : 0;
+      if (networkRequests > (config.mechanics ? 3000 : config.media ? 1250 : config.authoring ? 1000 : 500) + (config.authoring ? 900 : 0) + infiniteListBudget + (config.generation ? 4000 : 0) + (config.assessment ? 1000 : 0)
           || identityRequests > 150 + (config.authoring ? 80 : 0) + (config.generation ? 100 : 0) + (config.assessment ? 50 : 0)) asynchronousFailure = true;
       if (!allowed.has(url.origin) || asynchronousFailure) {
         externalRequests++;
@@ -188,7 +191,10 @@ try {
         // A scenario may add request headers (the Stub transcription of #298 reads `X-Stub-Transcript`, which only the Stub honours).
         const added = requestHeaderHook?.(event.request) ?? null;
         const headers = added === null ? {} : { headers: [...Object.entries(event.request.headers).map(([name, value]) => ({ name, value })), ...added] };
-        run(interception(release(tab.call('Fetch.continueRequest', { requestId: event.requestId, ...headers }))));
+        const wait = requestPauseHook?.(event.request) ?? null;
+        run(interception(release(wait === null
+          ? tab.call('Fetch.continueRequest', { requestId: event.requestId, ...headers })
+          : Promise.resolve(wait).then(() => tab.call('Fetch.continueRequest', { requestId: event.requestId, ...headers })))));
       }
     });
     tab.on('Network.requestWillBeSent', event => {
@@ -1054,6 +1060,11 @@ try {
         tab: second, config, record, SafeFailure, until, exists, bodyIncludes, sanitizedLocation, navigate,
         saveScreenshot, saveFullScreenshot, clickText, setStep: value => { step = value; }, deckPath, bearer: secondBearer });
       mechanicsFailures = [...mechanicsFailures, ...hub.failures];
+      const infiniteList = await runInfiniteList({
+        tab: second, config, record, SafeFailure, until, navigate, saveScreenshot,
+        setStep: value => { step = value; }, bearer: secondBearer,
+        setRequestPause: hook => { requestPauseHook = hook; } });
+      mechanicsFailures = [...mechanicsFailures, ...infiniteList.failures];
     }
     if (!config.onlyPlans && !config.onlyPromo) {
       // Native code block (#303): real editor input, publication, Browse, scrolling, round trip. Runs last in its own material.

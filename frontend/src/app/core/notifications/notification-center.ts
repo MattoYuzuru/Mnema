@@ -42,6 +42,7 @@ export class NotificationCenter {
     /** Cursor of the next older page; `null` when the whole center is loaded. */
     readonly olderCursor = signal<string | null>(null);
     readonly loadingMore = signal(false);
+    readonly moreError = signal<string | null>(null);
     readonly panelError = signal<string | null>(null);
     readonly panelOpen = signal(false);
     /** The read watermark at the moment the panel was opened: items above it are shown as new. */
@@ -53,6 +54,7 @@ export class NotificationCenter {
 
     private running = false;
     private epoch = 0;
+    private listEpoch = 0;
     private chain: Promise<unknown> = Promise.resolve();
     /**
      * Ids dismissed in this session. A list response that was already in flight when the learner dismissed (the panel
@@ -96,16 +98,18 @@ export class NotificationCenter {
         const cursor = this.olderCursor();
         if (cursor === null || this.loadingMore()) return;
         this.loadingMore.set(true);
+        this.moreError.set(null);
         const epoch = this.epoch;
+        const listEpoch = this.listEpoch;
         try {
             const result = await firstValueFrom(this.api.list({ limit: PAGE_SIZE, cursor }));
-            if (epoch !== this.epoch || result.kind !== 'page') return;
+            if (epoch !== this.epoch || listEpoch !== this.listEpoch || result.kind !== 'page') return;
             const known = new Set(this.items().map(item => item.notificationId));
             this.items.update(list => [...list, ...result.page.items.filter(item => !known.has(item.notificationId) && !this.dismissed.has(item.notificationId))]);
             this.olderCursor.set(result.page.nextCursor);
         } catch {
-            if (epoch === this.epoch) this.panelError.set('Не удалось загрузить остальные уведомления. Попробуйте ещё раз.');
-        } finally { this.loadingMore.set(false); }
+            if (epoch === this.epoch && listEpoch === this.listEpoch) this.moreError.set('Не удалось загрузить остальные уведомления.');
+        } finally { if (epoch === this.epoch && listEpoch === this.listEpoch) this.loadingMore.set(false); }
     }
 
     /** Removes one notification from the center (not from the toast stack). A 404 means it is already gone. */
@@ -140,6 +144,9 @@ export class NotificationCenter {
     private stop(): void {
         this.running = false;
         this.epoch++;
+        this.listEpoch++;
+        this.loadingMore.set(false);
+        this.moreError.set(null);
         this.pollQueued = false;
         this.clearTimer();
         this.lastSeq = null;
@@ -187,14 +194,19 @@ export class NotificationCenter {
 
     /** Newest-first first page: the baseline for the badge, the panel and every later catch-up. */
     private async load(epoch: number): Promise<void> {
-        const result = await firstValueFrom(this.api.list({ limit: PAGE_SIZE }));
-        if (epoch !== this.epoch || result.kind !== 'page') return;
-        const page = result.page;
-        this.items.set(sortNewestFirst(page.items.filter(item => !this.dismissed.has(item.notificationId))));
-        this.olderCursor.set(page.nextCursor);
-        this.lastSeq = page.items.reduce((max, item) => compareSeq(item.seq, max) > 0 ? item.seq : max, '0');
-        this.etag = result.etag;
-        this.applyCounters(page.unreadCount, page.readUpto, page.activeWork);
+        const listEpoch = ++this.listEpoch;
+        this.loadingMore.set(true);
+        this.moreError.set(null);
+        try {
+            const result = await firstValueFrom(this.api.list({ limit: PAGE_SIZE }));
+            if (epoch !== this.epoch || listEpoch !== this.listEpoch || result.kind !== 'page') return;
+            const page = result.page;
+            this.items.set(sortNewestFirst(page.items.filter(item => !this.dismissed.has(item.notificationId))));
+            this.olderCursor.set(page.nextCursor);
+            this.lastSeq = page.items.reduce((max, item) => compareSeq(item.seq, max) > 0 ? item.seq : max, '0');
+            this.etag = result.etag;
+            this.applyCounters(page.unreadCount, page.readUpto, page.activeWork);
+        } finally { if (epoch === this.epoch && listEpoch === this.listEpoch) this.loadingMore.set(false); }
     }
 
     private async catchUp(epoch: number): Promise<void> {

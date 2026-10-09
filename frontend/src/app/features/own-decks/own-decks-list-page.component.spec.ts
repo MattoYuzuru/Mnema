@@ -32,12 +32,10 @@ describe('OwnDecksListPageComponent', () => {
         store = spyObj<OwnDecksStore>({
             loadList: vi.fn().mockName("OwnDecksStore.loadList"),
             loadMore: vi.fn().mockName("OwnDecksStore.loadMore"),
-            loadPrevious: vi.fn().mockName("OwnDecksStore.loadPrevious"),
             retryList: vi.fn().mockName("OwnDecksStore.retryList"),
             refreshVisibleList: vi.fn().mockName("OwnDecksStore.refreshVisibleList")
         });
         Object.defineProperty(store, 'listState', { value: state.asReadonly() });
-        Object.defineProperty(store, 'canGoBack', { value: signal(false).asReadonly() });
         promoPopup = spyObj<PromoPopupService>({ request: vi.fn().mockName('PromoPopupService.request').mockResolvedValue(undefined) });
         await TestBed.configureTestingModule({
             imports: [OwnDecksListPageComponent],

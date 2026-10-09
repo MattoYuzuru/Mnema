@@ -15,6 +15,10 @@
 .item-row {
     position: relative;
     display: grid;
+    /* A skipped grid row must shrink with its container, not retain its remembered desktop minimum width. */
+    inline-size: 100%;
+    min-inline-size: 0;
+    max-inline-size: 100%;
     grid-template-columns: var(--mn-touch-min, 2.75rem) 2.25rem minmax(0, 1fr) var(--mn-touch-min, 2.75rem) auto;
     gap: .25rem .75rem;
     align-items: center;
@@ -23,6 +27,10 @@
     border-inline-start: 3px solid transparent;
     padding: .5rem .75rem .5rem 0;
     overflow: visible;
+    /* Keep DOM/selection/accessibility identity while the browser skips offscreen layout and paint. */
+    content-visibility: auto;
+    /* Intrinsic sizing is the content box; padding + the top border complete the 4.5rem border box. */
+    contain-intrinsic-block-size: auto calc(4.5rem - 1rem - 1px);
     --mn-wave-fill: var(--mn-soft);
 }
 .item-row.selected { border-inline-start-color: var(--mn-ink); background: color-mix(in srgb, var(--mn-soft) 55%, transparent); }
@@ -44,8 +52,6 @@
 :is(.star, .select-all input, .check input, .text-action, .button):focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 2px; }
 
 .text-action { display: inline-flex; align-items: center; min-block-size: var(--mn-touch-min, 2.75rem); border: 0; padding: 0; color: var(--mn-ink); background: transparent; font: 700 .92rem/1.25 var(--mn-font-body, system-ui, sans-serif); text-decoration: underline; text-underline-offset: .22em; cursor: pointer; }
-.more { display: grid; justify-items: start; gap: .5rem; padding-block: 1rem; border-block-start: 1px solid var(--mn-rule); }
-.problem { margin: 0; color: var(--mn-danger); font-size: .9rem; }
 
 @media (max-width: 42rem) {
     .item-row { grid-template-columns: var(--mn-touch-min, 2.75rem) minmax(0, 1fr) var(--mn-touch-min, 2.75rem); }

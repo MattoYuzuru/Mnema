@@ -28,6 +28,7 @@ import {
 } from './authoring.models';
 
 export interface ItemListOptions {
+    readonly limit?: number;
     readonly cursor?: string | null;
     readonly sort?: ItemSort;
     /** Adds `exerciseCount` to every summary without a per-material request. */
@@ -44,10 +45,11 @@ export class ItemApiService {
      * a cursor belongs to the sort and deck revision that issued it, so a sort change starts from the first page.
      */
     list(deckId: string, options: ItemListOptions = {}): Observable<ItemPage> {
-        const { cursor = null, sort = 'ordinal', exerciseCount = false } = options;
+        const { cursor = null, sort = 'ordinal', exerciseCount = false, limit = ITEM_PAGE_SIZE } = options;
         return defer(() => {
             const deck = requireEntity(deckId);
-            let params = new HttpParams().set('limit', ITEM_PAGE_SIZE.toString());
+            if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new AuthoringProtocolError('Invalid item page size.');
+            let params = new HttpParams().set('limit', limit.toString());
             if (sort !== 'ordinal') params = params.set('sort', sort);
             if (exerciseCount || sort === 'exerciseCount') params = params.set('include', 'exerciseCount');
             if (cursor !== null) params = params.set('cursor', requireCursor(cursor)!);
@@ -56,7 +58,7 @@ export class ItemApiService {
             });
         }).pipe(map(response => {
             requirePrivate(response);
-            const page = parseItemPage(response.body, exerciseCount || sort === 'exerciseCount');
+            const page = parseItemPage(response.body, exerciseCount || sort === 'exerciseCount', limit);
             requireEtag(response, page.deckVersion);
             if (page.deckId !== deckId.toLowerCase()) throw new AuthoringProtocolError('Item page deck mismatch.');
             return page;
@@ -135,9 +137,9 @@ export class ItemApiService {
     }
 }
 
-function parseItemPage(value: unknown, withCounts: boolean): ItemPage {
+function parseItemPage(value: unknown, withCounts: boolean, limit: number): ItemPage {
     const object = requireObject(value, ['deckId', 'deckRevisionId', 'deckVersion', 'total', 'exemplars', 'items', 'nextCursor']);
-    if (!Array.isArray(object['items']) || object['items'].length > ITEM_PAGE_SIZE) {
+    if (!Array.isArray(object['items']) || object['items'].length > limit) {
         throw new AuthoringProtocolError('Invalid item page.');
     }
     const budget = requireObject(object['exemplars'], ['count', 'limit']);

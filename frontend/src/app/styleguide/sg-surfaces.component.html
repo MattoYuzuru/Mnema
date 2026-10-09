@@ -70,6 +70,18 @@
 <section class="sg-section" id="feedback" aria-labelledby="feedback-title">
   <p class="eyebrow">Компоненты</p>
   <h2 id="feedback-title">Обратная связь</h2>
+  <app-sg-specimen title="Автоподгрузка списка" selector="<app-auto-load>"
+    when="Длинные списки продолжаются автоматически примерно на 75% загруженного содержимого. Кнопок страниц и «Показать ещё» нет. При сбое строки сохраняются, доступен явный повтор; фокус остаётся на месте. Пейджер партии выше выбирает отдельный объект и не управляет загрузкой списка."
+    usage='<ul #rows>…</ul><app-auto-load [content]="rows" [continuation]="cursor()" [loading]="loading()" [error]="error()" (loadNext)="loadNextPage()" />'>
+    <button type="button" class="button quiet" (click)="failNextPage.set(true)">Сымитировать сбой следующей порции</button>
+    <div #scrollPanel class="sg-auto-load-scroll">
+      <ol #scrollList>
+        @for (row of scrollRows(); track row) { <li><a href="#feedback">Запись {{ row }}</a></li> }
+      </ol>
+      <app-auto-load [content]="scrollList" [root]="scrollPanel" [continuation]="scrollCursor()"
+        [loading]="scrollLoading()" [error]="scrollError()" (loadNext)="loadScrollPage()" />
+    </div>
+  </app-sg-specimen>
   <p class="sg-lede">Три уровня: строка у поля, блок на странице, всплывающее уведомление. Выбирай самый тихий, который достаточен; сообщения об ошибках всегда говорят,
     что случилось и что можно сделать.</p>
   <app-sg-specimen title="Контакт поддержки" selector="<app-support-contact>"

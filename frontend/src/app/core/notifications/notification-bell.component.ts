@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, ElementRef, computed, inject, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { AutoLoadComponent } from '../../shared/auto-load.component';
 
 import { NotificationCenter } from './notification-center';
 import { NotificationGlyphComponent } from './notification-glyph.component';
@@ -16,7 +17,7 @@ const TIME = new Intl.DateTimeFormat('ru', { day: 'numeric', month: 'short', hou
  */
 @Component({
     selector: 'app-notification-bell',
-    imports: [RouterLink, NotificationGlyphComponent],
+    imports: [RouterLink, NotificationGlyphComponent, AutoLoadComponent],
     templateUrl: './notification-bell.component.html',
     styleUrl: './notification-bell.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush

@@ -17,7 +17,7 @@ export interface DeckListState {
     readonly phase: 'idle' | 'loading' | 'ready' | 'error';
     readonly items: readonly OwnDeck[];
     readonly nextCursor: string | null;
-    readonly operation: 'replace' | 'next' | 'previous' | null;
+    readonly operation: 'replace' | 'next' | null;
     readonly failure: DeckFailure | null;
 }
 
@@ -70,8 +70,6 @@ interface ResolvedWrite {
     readonly confirmation: 'fresh' | 'refreshed-after-replay';
 }
 
-const LIST_CURSOR_WINDOW = 10;
-
 @Injectable()
 export class OwnDecksStore {
     private readonly api = inject(OwnDecksApiService);
@@ -86,14 +84,11 @@ export class OwnDecksStore {
     private readonly mutationSignal = signal<DeckMutationState>({ phase: 'idle' });
 
     readonly listState = this.listSignal.asReadonly();
-    private readonly canGoBackSignal = signal(false);
-    readonly canGoBack = this.canGoBackSignal.asReadonly();
     readonly detailState = this.detailSignal.asReadonly();
     readonly mutationState = this.mutationSignal.asReadonly();
 
     private listEpoch = 0;
-    private listCursors: (string | null)[] = [null];
-    private listCursorIndex = 0;
+    private extendedList = false;
     private failedListCursor: string | null = null;
     private detailEpoch = 0;
     private mutationEpoch = 0;
@@ -116,15 +111,18 @@ export class OwnDecksStore {
         this.requestList(null, 'replace');
     }
 
-    /** Recheck the visible page without moving the pagination cursor or hiding its rows. */
+    /** Recheck the newest page without discarding the older pages the learner has already reached. */
     refreshVisibleList(): void {
         if (this.listSignal().phase !== 'ready' || this.listRefreshSubscription?.closed === false) return;
         const epoch = this.listEpoch;
-        const cursor = this.listCursors[this.listCursorIndex];
-        this.listRefreshSubscription = this.api.list(cursor).subscribe({
+        this.listRefreshSubscription = this.api.list(null).subscribe({
             next: page => {
                 if (epoch !== this.listEpoch || this.listSignal().phase !== 'ready') return;
-                this.listSignal.set({ phase: 'ready', items: page.items, nextCursor: page.nextCursor,
+                const previous = this.listSignal();
+                const known = new Set(page.items.map(deck => deck.deckId));
+                this.listSignal.set({ phase: 'ready', items: this.extendedList
+                    ? [...page.items, ...previous.items.filter(deck => !known.has(deck.deckId))] : page.items,
+                    nextCursor: this.extendedList ? previous.nextCursor : page.nextCursor,
                     operation: null, failure: null });
             },
             error: () => { /* Keep the last confirmed page; the next visible recheck retries. */ }
@@ -135,12 +133,6 @@ export class OwnDecksStore {
         const state = this.listSignal();
         if (state.phase !== 'ready' || state.nextCursor === null) return;
         this.requestList(state.nextCursor, 'next');
-    }
-
-    loadPrevious(): void {
-        const state = this.listSignal();
-        if (state.phase !== 'ready' || this.listCursorIndex === 0) return;
-        this.requestList(this.listCursors[this.listCursorIndex - 1], 'previous');
     }
 
     retryList(): void {
@@ -243,7 +235,7 @@ export class OwnDecksStore {
         this.mutationSignal.set({ phase: 'idle' });
     }
 
-    private requestList(cursor: string | null, operation: 'replace' | 'next' | 'previous'): void {
+    private requestList(cursor: string | null, operation: 'replace' | 'next'): void {
         const epoch = ++this.listEpoch;
         this.listSubscription?.unsubscribe();
         this.listRefreshSubscription?.unsubscribe();
@@ -259,9 +251,12 @@ export class OwnDecksStore {
             next: page => {
                 if (epoch !== this.listEpoch) return;
                 this.failedListCursor = null;
-                this.applyPageNavigation(cursor, operation);
+                this.extendedList = operation === 'next';
+                const known = new Set(previous.items.map(deck => deck.deckId));
                 this.listSignal.set({
-                    phase: 'ready', items: page.items, nextCursor: page.nextCursor, operation: null, failure: null
+                    phase: 'ready', items: operation === 'next'
+                        ? [...previous.items, ...page.items.filter(deck => !known.has(deck.deckId))] : page.items,
+                    nextCursor: page.nextCursor, operation: null, failure: null
                 });
             },
             error: error => {
@@ -273,21 +268,6 @@ export class OwnDecksStore {
                 });
             }
         });
-    }
-
-    private applyPageNavigation(cursor: string | null, operation: 'replace' | 'next' | 'previous'): void {
-        if (operation === 'replace') {
-            this.listCursors = [null];
-            this.listCursorIndex = 0;
-        } else if (operation === 'next') {
-            this.listCursors = this.listCursors.slice(0, this.listCursorIndex + 1);
-            this.listCursors.push(cursor);
-            if (this.listCursors.length > LIST_CURSOR_WINDOW) this.listCursors.shift();
-            else this.listCursorIndex += 1;
-        } else {
-            this.listCursorIndex -= 1;
-        }
-        this.canGoBackSignal.set(this.listCursorIndex > 0);
     }
 
     private requestDetail(deckId: string): void {

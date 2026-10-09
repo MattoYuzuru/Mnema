@@ -10,9 +10,9 @@
   </p>
 </div>
 
-@if (headerState() === 'checked' && !selection().allInDeck() && remaining() > 0) {
+@if (offerWholeDeck() && !selection().allInDeck() && !selection().empty()) {
   <p class="escalate">
-    Выбрано загруженных: {{ items().length }}.
+    Выбрано загруженных: {{ selection().count() }}.
     <button class="text-action" type="button" (click)="selection().selectAllInDeck()">Выбрать все {{ total() }} в колоде?</button>
   </p>
 } @else if (selection().allInDeck()) {
@@ -22,7 +22,7 @@
   </p>
 }
 
-<ul class="item-list">
+<ul #materialRows class="item-list">
   @for (item of items(); track item.memberKey) {
     <li class="item-row" [class.selected]="selection().isSelected(item.memberKey)">
       <label class="check">
@@ -53,11 +53,7 @@
   }
 </ul>
 
-@if (hasMore()) {
-  <div class="more">
-    <button class="button secondary" type="button" [disabled]="loadingMore()" (click)="loadMore.emit()">
-      {{ loadingMore() ? 'Загружаем…' : 'Показать ещё' + (remaining() > 0 ? ' (' + remaining() + ')' : '') }}
-    </button>
-    @if (moreError()) { <p class="problem">Не удалось загрузить следующие материалы. Загруженные остались на месте.</p> }
-  </div>
-}
+<app-auto-load [content]="materialRows" [continuation]="nextCursor()" [loading]="loadingMore()"
+  loadingText="Загружаем следующие материалы…"
+  [error]="moreError() ? 'Не удалось загрузить следующие материалы. Загруженные остались на месте.' : null"
+  (loadNext)="loadMore.emit()" />

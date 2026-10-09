@@ -63,6 +63,10 @@ export async function runHub(ctx) {
     e.scrollIntoView({ block: 'center', behavior: 'instant' }); e.focus(); return document.activeElement === e;`, selector, index),
   'target could not take keyboard focus: ' + selector);
   const realClick = async (selector, index = 0, modifiers = 0) => {
+    await page(`const e = document.querySelectorAll(args[0])[args[1]];
+      if (e instanceof HTMLElement) e.scrollIntoView({ block: 'center', behavior: 'instant' }); return true;`, selector, index);
+    // content-visibility:auto reveals an offscreen row during rendering; measure the hit target after that render.
+    await renderSettled();
     const point = await page(`const e = document.querySelectorAll(args[0])[args[1]];
       if (!(e instanceof HTMLElement) || e.matches(':disabled')) return null;
       e.scrollIntoView({ block: 'center', behavior: 'instant' });
@@ -450,4 +454,139 @@ export async function runHub(ctx) {
     await desktop().catch(() => {});
   }
   return { failures };
+}
+
+/** The cursor/list boundary in a real browser: a disposable 1317-material deck, never the owner's retained data. */
+export async function runInfiniteList(ctx) {
+  const { tab, config, record, SafeFailure, until, navigate, saveScreenshot, bearer, setRequestPause } = ctx;
+  const name = 'hub_infinite_scroll';
+  ctx.setStep(name);
+  const started = Date.now();
+  const facts = {};
+  const materialCount = 1317;
+  // Setup writes stay well inside the fixture proxy's 8s request bound and its two-CPU database budget.
+  const fixtureBatchSize = 20;
+  let resumePage = () => {};
+  const need = (condition, message) => { if (!condition) throw new SafeFailure(message); };
+  const page = (body, ...args) => tab.callFunction(`async function(...args) { ${body} }`, args);
+  const api = (path, method = 'GET', body = null, headers = {}) => page(`
+    const response = await fetch(args[0] + '/api' + args[1], { method: args[3], credentials: 'omit',
+      headers: { Authorization: args[2], ...(args[4] === null ? {} : { 'Content-Type': 'application/json' }), ...args[5] },
+      ...(args[4] === null ? {} : { body: JSON.stringify(args[4]) }) });
+    const text = await response.text(); let body = null; try { body = text ? JSON.parse(text) : null; } catch { /* metadata only */ }
+    return { status: response.status, etag: response.headers.get('etag'), body };`,
+  config.frontend, path, 'Bearer ' + bearer, method, body, headers);
+  const count = () => page(`return document.querySelectorAll('app-selectable-material-list li.item-row').length;`);
+  const native = ordinal => ({ formatVersion: 1, root: { id: crypto.randomUUID(), type: 'doc', version: 1, attrs: {},
+    content: [{ id: crypto.randomUUID(), type: 'paragraph', version: 1, attrs: { lang: 'ru', dir: 'auto' },
+      content: [{ id: crypto.randomUUID(), type: 'text', version: 1, attrs: { text: `Прокрутка: материал ${ordinal + 1}` }, content: [] }] }] } });
+  try {
+    facts.stage = 'create_fixture';
+    const created = await api('/decks', 'POST', { commandId: crypto.randomUUID(), metadata: { title: 'Опережающая прокрутка', description: '' } });
+    need(created.status === 201, 'infinite-scroll deck creation answered ' + created.status);
+    const id = created.body.deck.deckId;
+    for (let from = 0; from < materialCount; from += fixtureBatchSize) {
+      facts.stage = 'publish_fixture'; facts.published = from;
+      const current = await api(`/decks/${id}`);
+      need(current.status === 200, 'infinite-scroll deck read failed');
+      const published = await api(`/decks/${id}/items/publications`, 'POST', {
+        commandId: crypto.randomUUID(), expectedDeckRevisionId: current.body.revisionId,
+        changes: Array.from({ length: Math.min(fixtureBatchSize, materialCount - from) }, (_, index) => ({ operation: 'create',
+          memberKey: crypto.randomUUID(), document: native(from + index) }))
+      }, { 'If-Match': current.etag });
+      need(published.status === 200, 'infinite-scroll fixture publication answered ' + published.status);
+    }
+    facts.published = materialCount;
+    facts.stage = 'prefetch';
+    await tab.call('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+    await navigate(`/decks/${id}`, tab);
+    await until(async () => await count() === 50, 'the hub did not start with one 50-material page');
+    need(await page(`return ![...document.querySelectorAll('app-deck-materials button')].some(button => button.textContent.includes('Показать ещё'));`),
+      'the hub still requires a load-more button');
+    // Pick a real row by keyboard and keep that same element focused while a new page is appended.
+    await page(`const input = document.querySelector('.item-row .check input'); input.scrollIntoView({block: 'center'}); input.focus(); return true;`);
+    await tab.call('Input.dispatchKeyEvent', { type: 'keyDown', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, text: ' ' });
+    await tab.call('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 });
+    await until(() => page(`return document.querySelector('app-bulk-action-bar app-hold-to-delete-button button')?.disabled === false;`),
+      'the selection did not settle before prefetch verification');
+    let continuationStarted = false;
+    const waiting = new Promise(resolve => { resumePage = resolve; });
+    setRequestPause(request => {
+      const url = new URL(request.url);
+      if (!continuationStarted && request.method === 'GET' && url.origin === config.frontend
+          && url.pathname === `/api/decks/${id}/items` && url.searchParams.has('cursor')) {
+        continuationStarted = true;
+        return waiting;
+      }
+      return null;
+    });
+    await page(`const rows = document.querySelector('.item-list'); const rect = rows.getBoundingClientRect();
+      scrollTo({ top: Math.max(0, scrollY + rect.top + rect.height * .78 - innerHeight), behavior: 'instant' }); return true;`);
+    await until(() => Promise.resolve(continuationStarted), 'the next page was not requested before the list end');
+    // Hold this one real GET until the scroll/layout caused by user input has settled. Compare before/after the
+    // response append, not an unfinished native scroll with a finished one. All origin/budget/header guards remain on.
+    await page(`await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); return true;`);
+    const before = await page(`const rows = document.querySelector('.item-list'); const rect = rows.getBoundingClientRect();
+      const visible = [...rows.children].find(row => row.getBoundingClientRect().bottom > 0 && row.getBoundingClientRect().top < innerHeight);
+      return { scroll: scrollY, remainingPixels: rect.bottom - innerHeight, count: rows.children.length,
+        anchor: Number(visible?.querySelector('.folio')?.textContent), anchorTop: visible?.getBoundingClientRect().top };`);
+    resumePage(); setRequestPause(null);
+    await until(async () => await count() === 100, 'the next page was not prefetched around 75% of the list');
+    await page(`await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); return true;`);
+    const after = await page(`const first = document.querySelector('.item-row .check input');
+      const anchor = [...document.querySelectorAll('.item-row')].find(row => Number(row.querySelector('.folio')?.textContent) === args[0]);
+      return { selected: first.checked, focused: document.activeElement === first, scroll: scrollY, anchorTop: anchor?.getBoundingClientRect().top,
+        offscreenRendering: getComputedStyle(document.querySelector('.item-row')).contentVisibility,
+        overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth };`, before.anchor);
+    facts.scroll = { before, after };
+    need(after.selected && after.focused, 'prefetch moved focus or lost the material selection');
+    need(Math.abs(after.anchorTop - before.anchorTop) <= 2, 'appending the next page moved the visible material');
+    need(!after.overflow && after.offscreenRendering === 'auto', 'large-list rendering or desktop reflow is missing');
+    facts.prefetchedBeforeEnd = before.remainingPixels > 0;
+    facts.selectionAndFocusRetained = true;
+    facts.initialPageSize = 50;
+    await saveScreenshot('infinite-scroll-1440.png', tab);
+    await page(`const input = document.querySelector('.select-all input'); input.scrollIntoView({block:'center',behavior:'instant'}); input.focus(); return true;`);
+    await tab.call('Input.dispatchKeyEvent', { type: 'keyDown', key: ' ', code: 'Space', windowsVirtualKeyCode: 32, text: ' ' });
+    await tab.call('Input.dispatchKeyEvent', { type: 'keyUp', key: ' ', code: 'Space', windowsVirtualKeyCode: 32 });
+    await until(() => page(`return document.querySelector('.escalate button') !== null;`), 'whole-deck selection offer is missing');
+    await page(`document.querySelector('.escalate button').focus(); return true;`);
+    // Follow the same loaded list to its terminal page without clicking a content-loading control.
+    for (let expected = 150; expected < materialCount + 50; expected += 50) {
+      const target = Math.min(expected, materialCount);
+      await page(`const rows = document.querySelector('.item-list'); const rect = rows.getBoundingClientRect();
+        scrollTo({ top: Math.max(0, scrollY + rect.top + rect.height * .8 - innerHeight), behavior: 'instant' }); return true;`);
+      await until(async () => await count() === target, 'infinite-scroll continuation did not reach its next page');
+    }
+    need(await page(`return [...document.querySelectorAll('.item-row .folio')].every((row, index) => Number(row.textContent) === index + 1);`),
+      'cursor appends duplicated or reordered materials');
+    need(await page(`const button = document.querySelector('.escalate button'); return button !== null && document.activeElement === button
+      && [...document.querySelectorAll('.item-row .check input')].filter(input => input.checked).length === 100;`),
+      'autopaging removed the focused selection offer or silently selected appended rows');
+    facts.wholeDeckOfferFocusRetained = true;
+    facts.loadedAtEnd = await count();
+    await tab.call('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await page(`await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); return true;`);
+    await page(`document.querySelector('.item-row:last-child').scrollIntoView({block:'center',behavior:'instant'}); return true;`);
+    await page(`await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); return true;`);
+    facts.mobile = await page(`const width = document.documentElement.clientWidth;
+      return { innerWidth, width, scrollWidth: document.documentElement.scrollWidth,
+        wide: [...document.querySelectorAll('.page,main,.item-list,.item-row,.list-head,.escalate,.widgets,app-bulk-action-bar,app-public-footer')]
+          .map(element => ({ element: element.tagName.toLowerCase() + '.' + String(element.className), rect: element.getBoundingClientRect() }))
+          .filter(item => item.rect.right > width + 1 || item.rect.width > width + 1)
+          .slice(0, 8).map(item => ({ element: item.element, right: item.rect.right, width: item.rect.width })) };`);
+    need(facts.mobile.scrollWidth <= facts.mobile.width, 'infinite list overflows at 390px');
+    await saveScreenshot('infinite-scroll-390.png', tab);
+    facts.widths = [1440, 390];
+    record(name, { state: 'passed', ...facts, durationMs: Date.now() - started });
+    return { failures: [] };
+  } catch (error) {
+    await saveScreenshot(`failure-${name}.png`, tab).catch(() => {});
+    record(name, { state: 'failed', reason: error instanceof SafeFailure ? error.message : 'driver_failure',
+      completed: facts, durationMs: Date.now() - started });
+    return { failures: [name] };
+  } finally {
+    resumePage(); setRequestPause(null);
+    await tab.call('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false }).catch(() => {});
+  }
 }

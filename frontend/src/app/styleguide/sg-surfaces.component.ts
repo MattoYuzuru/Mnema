@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, ViewEncapsulation, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ViewEncapsulation, computed, inject, signal } from '@angular/core';
 
 import { NativeDocument } from '../content/native-document';
 import { documentOf, nativeNode } from '../content/rendering/native-renderer.fixtures';
@@ -16,6 +16,7 @@ import { MailContactComponent } from '../shared/mail-contact.component';
 import { SupportContactComponent } from '../shared/support-contact.component';
 import { ToggletipComponent } from '../shared/toggletip.component';
 import { UsageMeterComponent } from '../shared/usage-meter.component';
+import { AutoLoadComponent } from '../shared/auto-load.component';
 import { SgLegalComponent } from './sg-legal.component';
 import { SgSpecimenComponent } from './sg-specimen.component';
 
@@ -36,13 +37,36 @@ const PLACEHOLDER_ASSET = 'd5000000-0000-4000-8000-0000000000aa';
     selector: 'app-sg-surfaces',
     encapsulation: ViewEncapsulation.None,
     imports: [SgSpecimenComponent, ToggletipComponent, AiPromptWindowComponent, BatchPagerComponent, NewBadgeComponent, UsageMeterComponent,
-        NativeDocumentRendererComponent, PromoPopupComponent, PublicFooterComponent, SupportContactComponent, MailContactComponent, SgLegalComponent],
+        NativeDocumentRendererComponent, PromoPopupComponent, PublicFooterComponent, SupportContactComponent, MailContactComponent, SgLegalComponent, AutoLoadComponent],
     templateUrl: './sg-surfaces.component.html',
     changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class SgSurfacesComponent {
     private readonly toasts = inject(ToastService);
     private nextToast = 0;
+
+    protected readonly scrollCount = signal(20);
+    protected readonly scrollRows = computed(() => Array.from({ length: this.scrollCount() }, (_, index) => index + 1));
+    protected readonly scrollCursor = computed(() => this.scrollCount() < 60 ? `after-${this.scrollCount()}` : null);
+    protected readonly scrollLoading = signal(false);
+    protected readonly scrollError = signal<string | null>(null);
+    protected readonly failNextPage = signal(false);
+    private scrollTimer: ReturnType<typeof setTimeout> | null = null;
+
+    constructor() { inject(DestroyRef).onDestroy(() => { if (this.scrollTimer !== null) clearTimeout(this.scrollTimer); }); }
+
+    protected loadScrollPage(): void {
+        if (this.scrollLoading() || this.scrollCursor() === null) return;
+        this.scrollError.set(null);
+        this.scrollLoading.set(true);
+        this.scrollTimer = setTimeout(() => {
+            if (this.failNextPage()) {
+                this.scrollError.set('Пример сетевого сбоя. Загруженные записи сохранились.');
+                this.failNextPage.set(false);
+            } else this.scrollCount.update(count => Math.min(60, count + 20));
+            this.scrollLoading.set(false);
+        }, 300);
+    }
 
     protected readonly popupOpen = signal(false);
     protected readonly campaign: PromoCampaign = {

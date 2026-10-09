@@ -136,3 +136,5 @@
 }
 
 .sg-tier-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); }
+.sg-auto-load-scroll { max-block-size: 22rem; overflow-y: auto; margin-block-start: var(--mn-space-4); border: 1px solid var(--mn-rule); padding: var(--mn-space-4); }
+.sg-auto-load-scroll li { padding-block: var(--mn-space-3); }

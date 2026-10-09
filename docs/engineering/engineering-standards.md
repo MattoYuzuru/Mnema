@@ -120,6 +120,10 @@ here: see [`AGENTS.md`](../../AGENTS.md#ui-direction) and the
   - routing and component boundaries clean
   - avoid unbounded subscriptions (use takeUntilDestroyed / async patterns)
 - Performance: avoid unnecessary change churn; be mindful of large lists (virtualization when necessary).
+- Long content lists automatically append bounded cursor pages around 75% of the loaded list. Do not add «Показать ещё»
+  or previous/next page buttons. Use the living [styleguide list contract](../frontend/styleguide.md#длинные-списки-и-автоподгрузка)
+  for the shared component, explicit retry, context isolation, focus/selection and embedded scroll roots. Object navigation
+  remains separate. Measure large-list rendering and keep offscreen work bounded without breaking accessibility.
 
 ## Quality bar (was §8)
 

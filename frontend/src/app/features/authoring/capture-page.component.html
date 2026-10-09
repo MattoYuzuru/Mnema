@@ -22,7 +22,7 @@
       <!-- The one status region of the selection: it speaks only when a pick is refused or cut short. -->
       <p class="selection-limit" role="status">{{ limitText() }}</p>
     }
-    <ul class="capture-list">
+    <ul #captureRows class="capture-list">
       @for (note of notes(); track note.noteId) {
         <li class="capture-card" [class.is-selected]="isSelected(note)">
           @if (generationAvailable()) {
@@ -45,11 +45,8 @@
         </div>
       </section>
     }
-    @if (nextCursor()) {
-      <div #loadSentinel class="list-sentinel" aria-live="polite">
-        @if (loadingMore()) { <p role="status">Загружаем следующие заметки…</p> }
-        @if (moreError()) { <p>Не удалось загрузить следующие заметки.</p><button class="button" type="button" (click)="loadMore()">Повторить</button> }
-      </div>
-    }
+    <app-auto-load [content]="captureRows" [context]="listContext()" [continuation]="nextCursor()" [loading]="loading() || loadingMore()"
+      loadingText="Загружаем следующие заметки…" [error]="moreError() ? 'Не удалось загрузить следующие заметки.' : null"
+      (loadNext)="loadMore()" />
   }
 </section>

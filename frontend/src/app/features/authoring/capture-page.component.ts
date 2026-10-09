@@ -1,9 +1,10 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, afterRenderEffect, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, afterRenderEffect, computed, inject, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { AutoLoadComponent } from '../../shared/auto-load.component';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { catchError, forkJoin, of } from 'rxjs';
+import { Subscription, catchError, forkJoin, of } from 'rxjs';
 
 import { NativeDocument } from '../../content/native-document';
 import { OwnDeck } from '../own-decks/own-deck.models';
@@ -16,7 +17,7 @@ import { CaptureNote, newCommandId } from './authoring.models';
 
 @Component({
     selector: 'app-capture-page',
-    imports: [ReactiveFormsModule, RouterLink, MicButtonComponent],
+    imports: [ReactiveFormsModule, RouterLink, MicButtonComponent, AutoLoadComponent],
     templateUrl: './capture-page.component.html',
     styleUrls: ['./authoring-page.css', './capture-page.component.css'],
     changeDetection: ChangeDetectionStrategy.OnPush,
@@ -35,14 +36,16 @@ export class CapturePageComponent {
         return `${count} ${word}`;
     });
     readonly loading = signal(true);
+    readonly listContext = signal(0);
     readonly nextCursor = signal<string | null>(null);
     readonly loadingMore = signal(false);
     readonly moreError = signal(false);
+    private listLoad: Subscription | null = null;
+    private moreLoad: Subscription | null = null;
     private readonly selectAllBox = viewChild<ElementRef<HTMLInputElement>>('selectAll');
     private readonly selectionBar = viewChild<ElementRef<HTMLElement>>('selectionBar');
     private readonly hostElement = inject<ElementRef<HTMLElement>>(ElementRef);
     private readonly injector = inject(Injector);
-    readonly loadSentinel = viewChild<ElementRef<HTMLElement>>('loadSentinel');
     readonly busy = signal(false);
     readonly error = signal<string | null>(null);
     readonly recovery = signal<'reload' | 'retry' | null>(null);
@@ -87,15 +90,6 @@ export class CapturePageComponent {
         this.capabilities.read().pipe(catchError(() => of(CAPABILITIES_UNAVAILABLE)), takeUntilDestroyed(this.destroyRef))
             .subscribe(result => { this.generationAvailable.set(result.aiGeneration.available); this.speechAvailable.set(result.speechToText.available); });
         this.load();
-        effect(onCleanup => {
-            const sentinel = this.loadSentinel()?.nativeElement;
-            if (!sentinel || !this.nextCursor() || this.loading() || this.loadingMore() || this.moreError()) return;
-            const observer = new IntersectionObserver(entries => {
-                if (entries.some(entry => entry.isIntersecting)) this.loadMore();
-            }, { rootMargin: '0px 0px 800px 0px' });
-            observer.observe(sentinel);
-            onCleanup(() => observer.disconnect());
-        });
         // The rail can grow when labels wrap or text is enlarged. Reserve its measured height on the viewport,
         // then reveal the whole checkbox label when Space inserts it beneath an already focused selection.
         afterRenderEffect(onCleanup => {
@@ -122,6 +116,11 @@ export class CapturePageComponent {
     }
 
     load(): void {
+        const context = this.listContext() + 1;
+        this.listContext.set(context);
+        this.listLoad?.unsubscribe();
+        this.moreLoad?.unsubscribe();
+        this.loadingMore.set(false);
         const deckId = this.route.snapshot.paramMap.get('deckId');
         if (deckId === null) { this.error.set('Некорректный адрес колоды.'); this.loading.set(false); return; }
         this.pendingCapture = null;
@@ -132,16 +131,17 @@ export class CapturePageComponent {
         this.loading.set(true);
         this.error.set(null);
         this.moreError.set(false);
-        forkJoin({ deck: this.decks.detail(deckId), captures: this.api.listDeckCaptures(deckId) })
+        this.listLoad = forkJoin({ deck: this.decks.detail(deckId), captures: this.api.listDeckCaptures(deckId) })
             .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
                 next: result => {
+                    if (context !== this.listContext()) return;
                     this.deck.set(result.deck);
                     this.notes.set(result.captures.items);
                     this.total.set(result.captures.total);
                     this.nextCursor.set(result.captures.nextCursor);
                     this.loading.set(false);
                 },
-                error: () => { this.error.set('Не удалось загрузить заметки.'); this.loading.set(false); }
+                error: () => { if (context === this.listContext()) { this.error.set('Не удалось загрузить заметки.'); this.loading.set(false); } }
             });
     }
 
@@ -149,17 +149,19 @@ export class CapturePageComponent {
         const deck = this.deck();
         const cursor = this.nextCursor();
         if (deck === null || cursor === null || this.loading() || this.loadingMore()) return;
+        const context = this.listContext();
         this.loadingMore.set(true);
         this.moreError.set(false);
-        this.api.listDeckCaptures(deck.deckId, cursor).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        this.moreLoad = this.api.listDeckCaptures(deck.deckId, cursor).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
             next: result => {
+                if (context !== this.listContext()) return;
                 this.notes.update(notes => [...notes, ...result.items.filter(note =>
                     !notes.some(existing => existing.noteId === note.noteId))]);
                 this.total.set(result.total);
                 this.nextCursor.set(result.nextCursor);
                 this.loadingMore.set(false);
             },
-            error: () => { this.moreError.set(true); this.loadingMore.set(false); }
+            error: () => { if (context === this.listContext()) { this.moreError.set(true); this.loadingMore.set(false); } }
         });
     }
 

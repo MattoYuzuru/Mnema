@@ -263,7 +263,7 @@ describe('OwnDeckDetailPageComponent', () => {
                 .find(button => button.textContent?.includes('Показать материалы без упражнений'))!;
             withoutExercises.click();
             fixture.detectChanges();
-            expect(items.list).toHaveBeenLastCalledWith(deck.deckId, { sort: 'exerciseCount', exerciseCount: true });
+            expect(items.list).toHaveBeenLastCalledWith(deck.deckId, { sort: 'exerciseCount', exerciseCount: true, limit: 50 });
         });
     });
 });

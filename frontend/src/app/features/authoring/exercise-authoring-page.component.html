@@ -168,7 +168,7 @@
         <section id="existing-exercises" class="existing" aria-labelledby="existing-title">
           <h2 id="existing-title" tabindex="-1">Упражнения этого материала · {{ currentPage.total }}</h2>
           @if (listMessage(); as note) { <p class="notice" role="status">{{ note }}</p> }
-          <ul>
+          <ul #exerciseRows>
             @for (entry of currentPage.exercises; track entry.exerciseId) {
               <li [attr.data-exercise]="entry.exerciseId">
                 <div class="row-main"><span class="row-heading"><strong>{{ typeTitle(entry.type) }}</strong>@if (entry.isNew) { <app-new-badge /> }</span><span>{{ entry.objective.title }}</span></div>
@@ -183,7 +183,9 @@
               </li>
             }
           </ul>
-          @if (currentPage.nextCursor) { <button class="button" type="button" (click)="loadMore()">Показать ещё</button> }
+          <app-auto-load [content]="exerciseRows" [continuation]="currentPage.nextCursor" [loading]="loadingMore()"
+            [enabled]="phase() === 'ready' && listBusy() === null" [error]="moreError()" loadingText="Загружаем следующие упражнения…"
+            (loadNext)="loadMore()" />
         </section>
       }
     }
