@@ -45,7 +45,7 @@
         </div>
       </section>
     }
-    <app-auto-load [content]="captureRows" [continuation]="nextCursor()" [loading]="loadingMore()"
+    <app-auto-load [content]="captureRows" [context]="listContext()" [continuation]="nextCursor()" [loading]="loading() || loadingMore()"
       loadingText="Загружаем следующие заметки…" [error]="moreError() ? 'Не удалось загрузить следующие заметки.' : null"
       (loadNext)="loadMore()" />
   }

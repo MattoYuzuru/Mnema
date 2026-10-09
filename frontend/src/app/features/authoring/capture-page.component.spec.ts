@@ -2,12 +2,12 @@ import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 
 import { OwnDeck } from '../own-decks/own-deck.models';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { AuthoringApiService } from './authoring-api.service';
-import { CaptureNote, CaptureWriteResult } from './authoring.models';
+import { CaptureNote, CaptureWriteResult, DeckCapturePage } from './authoring.models';
 import { CAPABILITIES_UNAVAILABLE, CapabilitiesApiService, LearningCapabilities } from './capabilities-api.service';
 import { CapturePageComponent, documentFromText } from './capture-page.component';
 import { spyObj, type SpyObj } from '../../../testing/mocks';
@@ -136,6 +136,34 @@ describe('CapturePageComponent', () => {
         expect(vi.mocked(api.listDeckCaptures).mock.lastCall).toEqual([deck.deckId, 'page-two']);
         expect(fixture.componentInstance.notes().map(note => note.noteId)).toEqual([capture.noteId, nextNote.noteId]);
         expect(fixture.nativeElement.textContent).not.toContain('Показать ещё');
+    });
+
+    it('re-arms the same continuation after replacing the Capture snapshot and cancels the old request', () => {
+        let intersect: IntersectionObserverCallback = () => undefined;
+        window.IntersectionObserver = class {
+            constructor(callback: IntersectionObserverCallback) { intersect = callback; }
+            observe(): void { }
+            disconnect(): void { }
+        } as unknown as typeof IntersectionObserver;
+        const next = { ...capture, noteId: id('8'), text: 'Следующая заметка' };
+        const old = new Subject<DeckCapturePage>();
+        const refreshed = new Subject<DeckCapturePage>();
+        api.listDeckCaptures.mockClear();
+        api.listDeckCaptures.mockReturnValueOnce(of({ items: [capture], nextCursor: 'same-cursor', total: 2 }))
+            .mockReturnValueOnce(old).mockReturnValueOnce(refreshed)
+            .mockReturnValueOnce(of({ items: [next], nextCursor: null, total: 2 }));
+        fixture.componentInstance.load(); fixture.detectChanges();
+        intersect([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+        expect(fixture.componentInstance.loadingMore()).toBe(true);
+        fixture.componentInstance.load(); fixture.detectChanges();
+        intersect([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+        expect(api.listDeckCaptures).toHaveBeenCalledTimes(3);
+        old.next({ items: [next], nextCursor: null, total: 2 }); old.complete();
+        expect(fixture.componentInstance.notes()).toEqual([capture]);
+        refreshed.next({ items: [capture], nextCursor: 'same-cursor', total: 2 }); refreshed.complete(); fixture.detectChanges();
+        intersect([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver); fixture.detectChanges();
+        expect(api.listDeckCaptures).toHaveBeenLastCalledWith(deck.deckId, 'same-cursor');
+        expect(fixture.componentInstance.notes()).toEqual([capture, next]);
     });
 
     describe('picking notes for «Создать материалы с ИИ» (#290)', () => {
