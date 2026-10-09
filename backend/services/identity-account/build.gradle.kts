@@ -19,7 +19,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-security-oauth2-resource-server")
     implementation("org.springframework.boot:spring-boot-starter-security-oauth2-authorization-server")
     implementation("org.springframework.boot:spring-boot-starter-session-jdbc")
-    implementation("software.amazon.awssdk:s3:2.55.10") {
+    implementation("software.amazon.awssdk:s3:2.55.11") {
         // Only the synchronous S3Client/S3Presigner are used; the async Netty transport is never loaded.
         exclude(group = "software.amazon.awssdk", module = "netty-nio-client")
     }
