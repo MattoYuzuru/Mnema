@@ -132,6 +132,28 @@ class AdminConsoleHttpIntegrationTest extends PostgresIntegrationTest {
         assertThat(restored.path("moderation").booleanValue()).isTrue();
     }
 
+    @Test void aLearnerWebTokenNeverReachesConsoleOrSupportRoutesEvenForTheOwnerAccount() throws Exception {
+        String web=token(OWNER,"learning.read",false,"0","mnema-web");
+        String untagged=token(OWNER,"learning.read",false,"0",null);
+        String owner=token(OWNER,"learning.read",false);
+        String stranger=token(UUID.randomUUID(),"learning.read",false);
+        var routes=new java.util.ArrayList<>(paths()); routes.add("/admin/support/tickets"); routes.add("/admin/support/tickets/1");
+        for(String path:routes) {
+            assertThat(get(path,web).statusCode()).as("web "+path).isEqualTo(403);
+            assertThat(get(path,untagged).statusCode()).as("untagged "+path).isEqualTo(403);
+            assertThat(get(path,stranger).statusCode()).as("admin client, not the owner "+path).isEqualTo(403);
+        }
+        assertThat(post("/admin/support/tickets/1/commands",token(OWNER,"learning.write",false,"0","mnema-web"),"{}").statusCode()).isEqualTo(403);
+        assertThat(get("/admin/support/tickets",owner).statusCode()).as("owner through the admin client reaches the unconfigured bridge").isEqualTo(503);
+        assertThat(JSON.readTree(get("/admin/support/tickets",owner).body()).path("code").stringValue("")).isEqualTo("SUPPORT_UNAVAILABLE");
+        assertThat(JSON.readTree(get("/admin/console/access",owner).body()).path("permissions").path("support").booleanValue()).isFalse();
+        assertThat(get("/admin/events",web).statusCode()).as("the events-owner flow keeps working with the learner client").isEqualTo(200);
+    }
+
+    private HttpResponse<String> post(String path,String token,String body) throws Exception {
+        return CLIENT.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/api"+path)).timeout(Duration.ofSeconds(15))
+                .header("Authorization","Bearer "+token).header("Content-Type","application/json").POST(HttpRequest.BodyPublishers.ofString(body)).build(),HttpResponse.BodyHandlers.ofString());
+    }
     private List<String> paths() { return List.of("/admin/console/access","/admin/console/report?from=2020-01-01&to=2020-01-02","/admin/console/users/"+OWNER+"?from=2020-01-01&to=2020-01-02","/admin/console/audit"); }
     private HttpResponse<String> get(String path,String token) throws Exception {
         var request=HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+"/api"+path)).timeout(Duration.ofSeconds(15)).GET();
@@ -142,10 +164,14 @@ class AdminConsoleHttpIntegrationTest extends PostgresIntegrationTest {
         return token(subject,scope,expired,"0");
     }
     private static String token(UUID subject,String scope,boolean expired,String generation) throws Exception {
+        return token(subject,scope,expired,generation,"mnema-admin-web");
+    }
+    private static String token(UUID subject,String scope,boolean expired,String generation,String client) throws Exception {
         Instant now=Instant.now();
         var claims=new JWTClaimsSet.Builder().issuer(ISSUER).subject(subject.toString()).audience("mnema-api").issueTime(Date.from(now.minusSeconds(10)))
-                .expirationTime(Date.from(now.plusSeconds(expired ? -60 : 300))).claim("scope",scope).claim("generation",generation).claim("client_id","mnema-admin-web").build();
-        var token=new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).type(new JOSEObjectType("at+jwt")).keyID(KEY.getKeyID()).build(),claims);
+                .expirationTime(Date.from(now.plusSeconds(expired ? -60 : 300))).claim("scope",scope).claim("generation",generation);
+        if(client!=null) claims.claim("client_id",client);
+        var token=new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).type(new JOSEObjectType("at+jwt")).keyID(KEY.getKeyID()).build(),claims.build());
         token.sign(new RSASSASigner(KEY));return token.serialize();
     }
 }

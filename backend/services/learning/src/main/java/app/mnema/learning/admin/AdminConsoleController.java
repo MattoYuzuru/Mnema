@@ -10,7 +10,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -66,19 +65,13 @@ public class AdminConsoleController {
     }
 
     @GetMapping("/audit")
-    @Transactional(readOnly = true, timeout = 5)
     ResponseEntity<AdminAudit.Page> audit(@AuthenticationPrincipal Jwt token, HttpServletRequest request) {
         owner(token);
         AdminReportRange.query(request, Set.of("before"));
         return privateResponse(audit.page(request.getParameter("before")));
     }
 
-    private UUID owner(Jwt token) {
-        if (token == null) throw new InvalidRequestException();
-        UUID actor = UuidPolicy.requireEntityId(UUID.fromString(token.getSubject()), "actor");
-        access.require(actor);
-        return actor;
-    }
+    private UUID owner(Jwt token) { return access.require(token); }
 
     private AdminReportRange range(HttpServletRequest request) {
         AdminReportRange.query(request, Set.of("from", "to"));

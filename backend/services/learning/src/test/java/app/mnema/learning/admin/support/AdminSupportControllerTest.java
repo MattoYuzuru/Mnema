@@ -41,6 +41,8 @@ class AdminSupportControllerTest {
                 .isInstanceOf(AccessForbiddenException.class);
         assertThatThrownBy(() -> controller.command(identity(UUID.randomUUID()), "1", new ByteArrayInputStream("bad".getBytes(StandardCharsets.UTF_8))))
                 .isInstanceOf(AccessForbiddenException.class);
+        assertThatThrownBy(() -> controller.tickets(Jwt.withTokenValue("fixture-token").header("alg", "RS256").subject(OWNER.toString())
+                .claim("client_id", "mnema-web").build(), new MockHttpServletRequest())).isInstanceOf(AccessForbiddenException.class);
         verifyNoInteractions(client);
     }
 
@@ -73,6 +75,6 @@ class AdminSupportControllerTest {
     }
 
     private static Jwt identity(UUID subject) {
-        return Jwt.withTokenValue("fixture-token").header("alg", "RS256").subject(subject.toString()).build();
+        return Jwt.withTokenValue("fixture-token").header("alg", "RS256").subject(subject.toString()).claim("client_id", "mnema-admin-web").build();
     }
 }

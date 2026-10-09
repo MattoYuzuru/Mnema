@@ -48,11 +48,7 @@ public final class AdminSupportController {
                 SupportRequests.command(body, actor)));
     }
 
-    private UUID actor(Jwt identity) {
-        UUID actor = SupportRequests.uuid(identity.getSubject(), false);
-        access.require(actor);
-        return actor;
-    }
+    private UUID actor(Jwt identity) { return access.require(identity); }
 
     private static ResponseEntity<JsonNode> response(AdminSupportClient.Result result) {
         var response = ResponseEntity.status(result.status()).header("Cache-Control", "private, no-store");

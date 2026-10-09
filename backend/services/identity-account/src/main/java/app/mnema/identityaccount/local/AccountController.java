@@ -182,28 +182,28 @@ public class AccountController {
     @PostMapping("/admin/accounts/{id}/ban")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void ban(Authentication a, @PathVariable UUID id, @Valid @RequestBody Ban r) {
-        adminOwner.require(BrowserSessions.access(a));
+        adminOwner.requireModeration(a);
         moderation.apply(BrowserSessions.access(a), id, Moderation.Action.BAN, r.reason());
     }
 
     @PostMapping("/admin/accounts/{id}/unban")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void unban(Authentication a, @PathVariable UUID id) {
-        adminOwner.require(BrowserSessions.access(a));
+        adminOwner.requireModeration(a);
         moderation.apply(BrowserSessions.access(a), id, Moderation.Action.UNBAN, null);
     }
 
     @PostMapping("/admin/accounts/{id}/admin")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void grant(Authentication a, @PathVariable UUID id) {
-        adminOwner.require(BrowserSessions.access(a));
+        adminOwner.requireModeration(a);
         moderation.apply(BrowserSessions.access(a), id, Moderation.Action.GRANT_ADMIN, null);
     }
 
     @DeleteMapping("/admin/accounts/{id}/admin")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void revoke(Authentication a, @PathVariable UUID id) {
-        adminOwner.require(BrowserSessions.access(a));
+        adminOwner.requireModeration(a);
         moderation.apply(BrowserSessions.access(a), id, Moderation.Action.REVOKE_ADMIN, null);
     }
 }

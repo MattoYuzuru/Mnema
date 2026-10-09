@@ -1,7 +1,6 @@
 package app.mnema.identityaccount.admin;
 
 import app.mnema.identityaccount.contract.AccountFailure;
-import app.mnema.identityaccount.security.BrowserSessions;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -26,21 +25,21 @@ public final class AdminDirectoryController {
 
     @GetMapping("/directory")
     ResponseEntity<AdminDirectory.Page> page(Authentication actor, HttpServletRequest request) {
-        access.require(BrowserSessions.access(actor));
+        access.requireConsole(actor);
         query(request, Set.of("query", "status", "after"));
         return privateResponse(directory.page(request.getParameter("query"), request.getParameter("status"), request.getParameter("after")));
     }
 
     @GetMapping("/directory/{id}")
     ResponseEntity<AdminDirectory.Account> account(Authentication actor, @PathVariable UUID id, HttpServletRequest request) {
-        access.require(BrowserSessions.access(actor));
+        access.requireConsole(actor);
         query(request, Set.of());
         return privateResponse(directory.account(id));
     }
 
     @GetMapping("/audit")
     ResponseEntity<AdminDirectory.AuditPage> audit(Authentication actor, HttpServletRequest request) {
-        access.require(BrowserSessions.access(actor));
+        access.requireConsole(actor);
         query(request, Set.of("before"));
         return privateResponse(directory.audit(request.getParameter("before")));
     }

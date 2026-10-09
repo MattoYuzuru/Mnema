@@ -115,7 +115,7 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
-    void restoredSessionRechecksGenerationAndDelegatedAdminCannotEnterOwnerConsole() throws Exception {
+    void restoredSessionRechecksGenerationAndModerationHttpUsesCurrentAuthority() throws Exception {
         var target = account();
         var cookie = login(target);
         jdbc.sql("UPDATE app_identity.account SET security_generation=security_generation+1 WHERE account_id=:id")
@@ -128,13 +128,13 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
         var subordinate = account();
         String route = "/api/accounts/admin/accounts/" + subordinate.accountId();
         mvc.perform(post(route + "/admin").secure(true).cookie(adminCookie).with(csrf()))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNoContent());
         mvc.perform(delete(route + "/admin").secure(true).cookie(adminCookie).with(csrf()))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNoContent());
         mvc.perform(post(route + "/ban").secure(true).cookie(adminCookie).with(csrf()).contentType("application/json")
-                .content("{\"reason\":\"synthetic moderation\"}")).andExpect(status().isForbidden());
+                .content("{\"reason\":\"synthetic moderation\"}")).andExpect(status().isNoContent());
         mvc.perform(post(route + "/unban").secure(true).cookie(adminCookie).with(csrf()))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isNoContent());
     }
 
     @Test

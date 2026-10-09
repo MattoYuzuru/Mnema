@@ -27,5 +27,8 @@ class AdminClientRegistrationIntegrationTest extends PostgresIntegrationTest {
         assertThat(disabled.findByClientId("mnema-admin-web")).isNull();
         assertThat(disabled.findByClientId("mnema-web").getRedirectUris())
                 .containsExactly("https://mnema.app/auth/callback");
+        // The database is shared by test classes: leave the registration as the other admin tests expect it.
+        configuration.clients(jdbc, new BrowserOrigins("https://mnema.app", "https://admin.mnema.app"),
+                "https://mnema.app/auth/callback", transactions);
     }
 }

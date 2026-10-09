@@ -15,11 +15,27 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class AdminConsoleAccessTest {
     @Test void ownerConfigurationDeniesEmptyAndOtherIdentityAndRejectsMalformedIds() {
         UUID owner = UUID.randomUUID();
-        new AdminConsoleAccess(owner.toString()).require(owner);
-        assertThatThrownBy(() -> new AdminConsoleAccess("").require(owner)).isInstanceOf(AccessForbiddenException.class);
-        assertThatThrownBy(() -> new AdminConsoleAccess(owner.toString()).require(UUID.randomUUID())).isInstanceOf(AccessForbiddenException.class);
+        assertThat(new AdminConsoleAccess(owner.toString()).require(token(owner, "mnema-admin-web"))).isEqualTo(owner);
+        assertThatThrownBy(() -> new AdminConsoleAccess("").require(token(owner, "mnema-admin-web"))).isInstanceOf(AccessForbiddenException.class);
+        assertThatThrownBy(() -> new AdminConsoleAccess(owner.toString()).require(token(UUID.randomUUID(), "mnema-admin-web"))).isInstanceOf(AccessForbiddenException.class);
+        assertThatThrownBy(() -> new AdminConsoleAccess(owner.toString()).require(null)).isInstanceOf(InvalidRequestException.class);
         for (String value : new String[]{"bad", "00000000-0000-0000-0000-000000000000", owner.toString().toUpperCase(java.util.Locale.ROOT)})
             assertThatThrownBy(() -> new AdminConsoleAccess(value)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test void theOwnerNeedsATokenIssuedToTheAdminClient() {
+        UUID owner = UUID.randomUUID();
+        var access = new AdminConsoleAccess(owner.toString());
+        for (String client : new String[]{"mnema-web", "", "MNEMA-ADMIN-WEB", "mnema-admin-web "}) assertThatThrownBy(() -> access.require(token(owner, client)))
+                .as(client).isInstanceOf(AccessForbiddenException.class);
+        assertThatThrownBy(() -> access.require(token(owner, null))).isInstanceOf(AccessForbiddenException.class);
+        assertThatThrownBy(() -> access.require(token(UUID.randomUUID(), "mnema-admin-web"))).isInstanceOf(AccessForbiddenException.class);
+    }
+
+    static org.springframework.security.oauth2.jwt.Jwt token(UUID subject, String client) {
+        var builder = org.springframework.security.oauth2.jwt.Jwt.withTokenValue("fixture-token").header("alg", "RS256").subject(subject.toString());
+        if (client != null) builder.claim("client_id", client); else builder.claim("scope", "learning.read");
+        return builder.build();
     }
 
     @Test void rangeIsCanonicalBoundedHalfOpenAndIncludesToday() {

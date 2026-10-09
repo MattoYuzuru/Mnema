@@ -147,7 +147,9 @@ public class AuthorizationConfiguration {
             if (OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType())) {
                 context.getJwsHeader().type("at+jwt");
                 context.getClaims().subject(access.accountId().toString())
-                        .audience(new ArrayList<>(List.of("mnema-api"))).claim("generation", Long.toString(generation));
+                        .audience(new ArrayList<>(List.of("mnema-api"))).claim("generation", Long.toString(generation))
+                        // RFC 9068 client_id: resource servers distinguish the owner console client from the learner web client.
+                        .claim("client_id", context.getRegisteredClient().getClientId());
             }
         });
     }
