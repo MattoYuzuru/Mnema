@@ -1,0 +1,16 @@
+{
+  "Success": true,
+  "ErrorCode": "0",
+  "Message": "OK",
+  "TerminalKey": "1700000000000DEMO",
+  "Status": "REFUNDED",
+  "PaymentId": "9407493286",
+  "OrderId": "0199c7a2-3b4e-7c1d-9a2b-5e6f7a8b9c0d",
+  "Params": [
+    {
+      "Key": "Route",
+      "Value": "ACQ"
+    }
+  ],
+  "Amount": 44900
+}

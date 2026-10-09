@@ -1,0 +1,6 @@
+{
+  "Success": false,
+  "ErrorCode": "204",
+  "Message": "Неверные параметры.",
+  "Details": "Неверный токен. Проверьте пару TerminalKey/SecretKey."
+}

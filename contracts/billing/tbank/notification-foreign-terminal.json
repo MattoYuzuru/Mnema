@@ -1,0 +1,16 @@
+{
+  "TerminalKey": "1700000000999DEMO",
+  "OrderId": "0199c7a2-3b4e-7c1d-9a2b-5e6f7a8b9c0d",
+  "Success": true,
+  "Status": "CONFIRMED",
+  "PaymentId": 9407493286,
+  "ErrorCode": "0",
+  "Amount": 44900,
+  "CardId": 512345678,
+  "Pan": "430000******0777",
+  "ExpDate": "1230",
+  "Data": {
+    "Source": "cards"
+  },
+  "Token": "a2a78f7d5d4f214990c3798d663ea4da0dd6e9065cedfe4e455795bfd30c6465"
+}

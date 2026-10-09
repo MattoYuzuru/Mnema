@@ -1,0 +1,13 @@
+{
+  "TerminalKey": "1700000000000DEMO",
+  "Amount": 44900,
+  "OrderId": "0199c7a2-3b4e-7c1d-9a2b-5e6f7a8b9c0d",
+  "Description": "Mnema Plus — 1 месяц",
+  "Language": "ru",
+  "PayType": "O",
+  "NotificationURL": "https://mnema.app/api/billing/tbank/notifications",
+  "SuccessURL": "https://mnema.app/plans/payment/0199c7a2-3b4e-7c1d-9a2b-5e6f7a8b9c0d",
+  "FailURL": "https://mnema.app/plans/payment/0199c7a2-3b4e-7c1d-9a2b-5e6f7a8b9c0d",
+  "RedirectDueDate": "2026-10-09T13:00:00+03:00",
+  "Token": "19f3c442a707aa33ccaf43202576b4e3e0995b22773e8bd02c7d7e62379ea025"
+}

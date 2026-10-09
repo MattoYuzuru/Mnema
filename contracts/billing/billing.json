@@ -1,0 +1,137 @@
+{
+  "contract": "billing-v1",
+  "description": "Checkout of a paid plan through the T-Bank hosted payment form, the order read used by the return page, and the bank notification endpoint (#389, epic #79). One-off monthly payments only: recurring Charge is #390, the profile billing page #391, НПД receipts #392.",
+  "endpoints": [
+    {
+      "operationId": "createCheckout",
+      "method": "POST",
+      "path": "/api/billing/checkout",
+      "auth": "learning.write",
+      "headers": {
+        "Idempotency-Key": "required, UUIDv4 or UUIDv7; a retry with the same key and body returns the same order (the same paymentUrl while it is valid)",
+        "Content-Type": "application/json"
+      },
+      "request": "{plan PLUS|PRO, period MONTH}; unknown members are 400",
+      "response": {
+        "status": 201,
+        "headers": { "Cache-Control": "private, no-store" },
+        "body": "Order"
+      },
+      "errors": [
+        "400 INVALID_REQUEST: malformed body, missing Idempotency-Key, plan FREE|MAX, period other than MONTH",
+        "409 CAPABILITY_UNAVAILABLE {capability: billing, reason: DISABLED|NOT_CONFIGURED}: checkout is off (learning.billing.checkout=OFF, or TESTERS and the account is not a tester) or the terminal is not configured",
+        "409 BILLING_PLAN_BELOW_CURRENT: the account's current entitlement is a higher plan than the requested one",
+        "409 IDEMPOTENCY_CONFLICT: the key was used for a different body",
+        "429 RATE_LIMITED: more than learning.billing.checkout-per-hour checkouts of one account in a rolling hour",
+        "503 PAYMENT_PROVIDER_UNAVAILABLE: Init failed or timed out; the order stays without a payment link and a retry with the same key asks the bank again"
+      ],
+      "notes": [
+        "The amount is computed by the server from contracts/usage/allowances-v1.json (priceRubPerMonth) minus a pending promo discount that applies to the plan (PromoDiscounts); the browser never sends a price.",
+        "paymentUrl is an https URL on an allowlisted T-Bank host (pay.tbank-online.com, securepay.tinkoff.ru, securepay.tbank.ru); the client navigates to it only after checking that.",
+        "Opening the same plan twice within the payment link lifetime reuses the open order instead of creating a second one."
+      ]
+    },
+    {
+      "operationId": "getOrder",
+      "method": "GET",
+      "path": "/api/billing/orders/{orderId}",
+      "auth": "learning.read",
+      "response": {
+        "status": 200,
+        "headers": { "Cache-Control": "private, no-store" },
+        "body": "Order"
+      },
+      "errors": [
+        "404 RESOURCE_NOT_FOUND: unknown order or an order of another account (indistinguishable)"
+      ],
+      "notes": [
+        "Used by the return page /plans/payment/{orderId}. While the order is PENDING the server may ask the bank (GetState) at most once per learning.billing.refresh-interval per order and apply the bank's answer; the query string T-Bank appends to SuccessURL/FailURL is ignored. The browser never confirms a payment."
+      ]
+    },
+    {
+      "operationId": "tbankNotification",
+      "method": "POST",
+      "path": "/api/billing/tbank/notifications",
+      "auth": "none (no session, no bearer); authenticity = Token (SHA-256 signature with the terminal password) and TerminalKey, then a GetState re-check",
+      "request": "T-Bank HTTP notification, application/json, at most 16 KiB; see tbank/notification-*.json",
+      "response": "200 text/plain body exactly OK after the notification was durably processed (including an acknowledged no-op: unknown order, repeated status). Anything else makes the bank retry (hourly for 24 h, then daily for a month).",
+      "errors": [
+        "400 text/plain: not a JSON object, too large",
+        "403 text/plain: wrong TerminalKey or Token (logged without values)",
+        "503 text/plain: GetState or the database failed; the bank retries and the reconciler also re-checks"
+      ]
+    }
+  ],
+  "schemas": {
+    "Order": {
+      "orderId": "UUID (also the T-Bank OrderId)",
+      "plan": "PLUS|PRO",
+      "period": "MONTH",
+      "status": "PENDING|PAID|FAILED|REFUNDED|REVIEW",
+      "amountKopecks": "integer charged, after the discount",
+      "listPriceKopecks": "integer, the plan price before the discount",
+      "discountPercent": "integer 1..90 or null",
+      "paymentUrl": "https URL while status is PENDING and the link has not expired, else null",
+      "expiresAt": "RFC 3339 UTC: the payment link deadline (RedirectDueDate)",
+      "createdAt": "RFC 3339 UTC",
+      "paidAt": "RFC 3339 UTC or null",
+      "periodStart": "RFC 3339 UTC or null (set when PAID)",
+      "periodEnd": "RFC 3339 UTC or null (set when PAID; the BILLING entitlement validUntil)"
+    }
+  },
+  "statuses": {
+    "PENDING": "the order exists; the bank has not confirmed the payment (includes the internal CREATED before Init succeeded)",
+    "PAID": "GetState confirmed CONFIRMED with the order's amount; the BILLING entitlement snapshot billing:{orderId} was accepted in the same transaction",
+    "FAILED": "the bank reported REJECTED, AUTH_FAIL, CANCELED or DEADLINE_EXPIRED, or the link expired unused",
+    "REFUNDED": "a PAID order the bank later reported REVERSED, PARTIAL_REVERSED, REFUNDED or PARTIAL_REFUNDED; access policy is #392 (the entitlement is not withdrawn in B1)",
+    "REVIEW": "the bank confirmed an amount or order that does not match; nothing is granted, the operator reconciles"
+  },
+  "examples": {
+    "createCheckoutRequest": { "plan": "PLUS", "period": "MONTH" },
+    "orderPending": {
+      "orderId": "0199c7a2-3b4e-7c1d-9a2b-5e6f7a8b9c0d",
+      "plan": "PLUS",
+      "period": "MONTH",
+      "status": "PENDING",
+      "amountKopecks": 44900,
+      "listPriceKopecks": 44900,
+      "discountPercent": null,
+      "paymentUrl": "https://pay.tbank-online.com/So6mQeQB",
+      "expiresAt": "2026-10-09T10:00:00Z",
+      "createdAt": "2026-10-09T09:00:00Z",
+      "paidAt": null,
+      "periodStart": null,
+      "periodEnd": null
+    },
+    "orderPaid": {
+      "orderId": "0199c7a2-3b4e-7c1d-9a2b-5e6f7a8b9c0d",
+      "plan": "PLUS",
+      "period": "MONTH",
+      "status": "PAID",
+      "amountKopecks": 44900,
+      "listPriceKopecks": 44900,
+      "discountPercent": null,
+      "paymentUrl": null,
+      "expiresAt": "2026-10-09T10:00:00Z",
+      "createdAt": "2026-10-09T09:00:00Z",
+      "paidAt": "2026-10-09T09:03:00Z",
+      "periodStart": "2026-10-09T09:03:00Z",
+      "periodEnd": "2026-11-09T09:03:00Z"
+    },
+    "orderDiscountedPro": {
+      "orderId": "0199c7a2-3b4e-7c1d-9a2b-5e6f7a8b9c0e",
+      "plan": "PRO",
+      "period": "MONTH",
+      "status": "FAILED",
+      "amountKopecks": 79200,
+      "listPriceKopecks": 99000,
+      "discountPercent": 20,
+      "paymentUrl": null,
+      "expiresAt": "2026-10-09T10:00:00Z",
+      "createdAt": "2026-10-09T09:00:00Z",
+      "paidAt": null,
+      "periodStart": null,
+      "periodEnd": null
+    }
+  }
+}
