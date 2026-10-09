@@ -233,14 +233,21 @@ releases the code, but nothing opens until the owner sets these `prod` Environme
 | `MNEMA_IDENTITY_ADMIN_ORIGIN` | Exactly `https://admin.mnema.app`: registers the public OAuth client `mnema-admin-web` (callback `/auth/callback`, S256, 20-minute access token) and allows that browser origin. Console routes accept only tokens issued to this client. | The client is not registered (and removed with its grants if it existed); sign-in on `admin.mnema.app` is refused. |
 | `MNEMA_ADMIN_SUPPORT_ENDPOINT`, `MNEMA_ADMIN_SUPPORT_SECRET` | Fixed `https://…/internal/support` bridge to the Telegram bot and its 32–256 character base64url machine credential; both empty or both set. `MNEMA_ADMIN_SUPPORT_ALLOW_LOOPBACK_HTTP` is hard-wired `false` in production. | Support shows "Поддержка недоступна" in the console; no request leaves Learning. |
 
-Enabling the console, in order: (1) the administrator installs the reviewed `compose.yaml`, `Caddyfile` and
-`mnema-deploy` (the drift check names any file that differs); (2) DNS and a certificate for `admin.mnema.app` exist
-(the Caddy block is inert until Identity has the client); (3) the owner sets `PROD_MNEMA_ADMIN_OWNER_ACCOUNT_ID` and
+**Before the first release after this merge, independent of enabling the console**, the administrator must install
+`deploy/production/compose.yaml`, `deploy/production/Caddyfile` and `deploy/production/mnema-deploy.py` (as
+`/usr/local/sbin/mnema-deploy`) from `main` on the host and confirm `mnema-deploy status` shows their hashes equal to the
+repository. `compose.yaml` and `mnema-deploy` changed (admin keys, the empty-by-default admin origin, dispatcher validation);
+the `Caddyfile` only gained comments. The deploy job's drift check (`scripts/deploy-vps.sh`, step 1) fails the release and
+names every file that still differs, so approving first would only waste the approval.
+
+Enabling the console afterwards, in order: (1) a reviewed change replaces the `admin.mnema.app` redirect in the `Caddyfile` with the
+commented console block (the console must not be served while Identity has no client), and the administrator installs it; (2) DNS
+and a certificate for `admin.mnema.app` exist; (3) the owner sets `PROD_MNEMA_ADMIN_OWNER_ACCOUNT_ID` and
 `PROD_MNEMA_IDENTITY_ADMIN_ORIGIN` and releases; (4) the owner signs in at `https://admin.mnema.app`.
 **Support** additionally needs a transport that does not exist yet: Learning accepts only an HTTPS bridge, while the bot
 listens on plain HTTP at the host's `127.0.0.1` and Learning runs in a container. Until a private TLS path between them is
-built (a separate task), leave the two support secrets empty. The old redirect from `admin.mnema.app` to
-`/manage/events` is gone; the events editor stays at `https://mnema.app/manage/events`. The audit tables
+built (a separate task), leave the two support secrets empty. While the console is off, `admin.mnema.app` keeps redirecting
+to the events editor at `https://mnema.app/manage/events`; enabling the console replaces that redirect. The audit tables
 (`app_identity.admin_audit`, `app_learning.admin_audit`) reject `UPDATE`, `DELETE` and `TRUNCATE`; retention and erasure
 belong to the account-purge workstream (#409).
 
