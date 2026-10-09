@@ -55,7 +55,8 @@
       "notes": [
         "TIER_DAYS requires plan and days only; TIER_MONTHS requires plan and months only; DISCOUNT_PERCENT requires percent and validUntil, optionally plan. MAX is unavailable.",
         "validFrom defaults to now, validUntil must be later than validFrom; oncePerAccount defaults true; channel matches [A-Za-z0-9][A-Za-z0-9 _.:/@#+-]{0,39}.",
-        "Omit code to generate 12 unambiguous random characters (approximately 60 bits); an optional vanity code uses redemption normalization. The response is the only plaintext retrieval."
+        "code is required (the console generates 12 unambiguous random characters, approximately 60 bits, in the browser; there is no server-side generator) and uses redemption normalization. Idempotency-Key is required: a request without it or without code is 400. The response (and an exact replay of the same key, actor and payload) is the only plaintext retrieval; a code already in use is 400 code_taken.",
+        "PATCH {enabled} is idempotent: repeating the current state returns the code and writes no journal entry; only an actual change appends PROMO_ENABLE or PROMO_DISABLE."
       ]
     },
     {

@@ -4,7 +4,6 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
-import java.security.SecureRandom;
 import java.util.Optional;
 
 /**
@@ -13,13 +12,12 @@ import java.util.Optional;
  * stored, so a database copy alone does not allow an offline guess of a short code.
  */
 final class PromoCodes {
-    /** No 0/O, 1/I/L: a code read from a screen or a poster cannot be mistyped into another one. */
+    /** No 0/O, 1/I/L: a code read from a screen or a poster cannot be mistyped into another one. The console generates its 12-character codes from it. */
     static final String ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
     static final int GENERATED_LENGTH = 12;
     /** A vanity code is at least this long: with a 31 character alphabet a generated code has about 60 bits, eight characters are the floor of a chosen one. */
     static final int MIN_LENGTH = 8;
     private static final int MAX_LENGTH = 24;
-    private static final SecureRandom RANDOM = new SecureRandom();
 
     private PromoCodes() { }
 
@@ -53,13 +51,6 @@ final class PromoCodes {
     /** First two and last two characters: enough for an admin to tell codes apart, too little to guess one. */
     static String hint(String normalized) {
         return normalized.substring(0, 2) + "…" + normalized.substring(normalized.length() - 2);
-    }
-
-    /** A random normalized code of {@value #GENERATED_LENGTH} characters of the unambiguous alphabet (about 60 bits). */
-    static String generate() {
-        StringBuilder code = new StringBuilder(GENERATED_LENGTH);
-        for (int index = 0; index < GENERATED_LENGTH; index++) code.append(ALPHABET.charAt(RANDOM.nextInt(ALPHABET.length())));
-        return code.toString();
     }
 
     /** The form the admin reads once and hands out: a generated code in three groups of four. */

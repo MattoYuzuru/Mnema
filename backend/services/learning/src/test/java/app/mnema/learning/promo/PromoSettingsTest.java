@@ -87,10 +87,10 @@ class PromoSettingsTest {
         assertThat(PromoCodes.hash(secret, "ABCD1234")).isNotEqualTo(java.security.MessageDigest.getInstance("SHA-256")
                 .digest("ABCD1234".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
         assertThat(PromoCodes.hint("SPRING26PLUS")).isEqualTo("SP…US");
-        String generated = PromoCodes.generate();
+        String generated = PromoTestCodes.generate();
         assertThat(generated).hasSize(12).matches("[" + PromoCodes.ALPHABET + "]+");
         assertThat(PromoCodes.display(generated)).isEqualTo(generated.substring(0, 4) + "-" + generated.substring(4, 8) + "-" + generated.substring(8));
         assertThat(PromoCodes.display("VANITY")).isEqualTo("VANITY");
-        assertThat(PromoCodes.generate()).isNotEqualTo(generated);
+        assertThat(PromoTestCodes.generate()).isNotEqualTo(generated);
     }
 }

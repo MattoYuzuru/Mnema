@@ -33,10 +33,9 @@ import java.util.regex.Pattern;
 public class PromoAdminService {
     private static final Logger log = LoggerFactory.getLogger(PromoAdminService.class);
     private static final Pattern CHANNEL = Pattern.compile("[A-Za-z0-9][A-Za-z0-9 _.:/@#+-]{0,39}");
-    private static final int GENERATION_ATTEMPTS = 5;
     static final int PAGE_SIZE = 200;
 
-    /** A creation request, already shaped; {@code vanity} is a code the admin chose (normalized on use), else one is generated. */
+    /** A creation request, already shaped; {@code vanity} is the code the admin supplies (the browser generates one itself); it is normalized on use and required. */
     public record Create(PromoType type, String plan, Integer days, Integer months, Integer percent, Instant validFrom,
                          Instant validUntil, int maxRedemptions, boolean oncePerAccount, String channel, String vanity) { }
 
@@ -86,18 +85,11 @@ public class PromoAdminService {
         validate(command);
         Instant from = command.validFrom() == null ? now : command.validFrom();
         if (command.validUntil() != null && !command.validUntil().isAfter(from)) throw InvalidRequestException.because("period");
-        String normalized = null;
-        PromoRepository.Code row = null;
-        for (int attempt = 0; attempt < (command.vanity() == null ? GENERATION_ATTEMPTS : 1); attempt++) {
-            normalized = command.vanity() == null ? PromoCodes.generate() : PromoCodes.normalize(command.vanity())
-                    .orElseThrow(() -> InvalidRequestException.because("code"));
-            row = new PromoRepository.Code(UUID.randomUUID(), PromoCodes.hint(normalized), command.type(), command.plan(),
-                    command.days(), command.months(), command.percent(), from, command.validUntil(), command.maxRedemptions(),
-                    command.oncePerAccount(), command.channel(), true, now, admin);
-            if (repository.insertCode(row, PromoCodes.hash(settings.hashSecret, normalized))) break;
-            row = null;
-        }
-        if (row == null) throw InvalidRequestException.because("code_taken");
+        String normalized = PromoCodes.normalize(command.vanity()).orElseThrow(() -> InvalidRequestException.because("code"));
+        PromoRepository.Code row = new PromoRepository.Code(UUID.randomUUID(), PromoCodes.hint(normalized), command.type(), command.plan(),
+                command.days(), command.months(), command.percent(), from, command.validUntil(), command.maxRedemptions(),
+                command.oncePerAccount(), command.channel(), true, now, admin);
+        if (!repository.insertCode(row, PromoCodes.hash(settings.hashSecret, normalized))) throw InvalidRequestException.because("code_taken");
         log.info("promo code created code_id={} admin_id={} type={} max_redemptions={}", row.codeId(), admin, row.type(), row.maxRedemptions());
         ObjectNode view = view(row, 0);
         view.put("code", PromoCodes.display(normalized));
@@ -137,10 +129,13 @@ public class PromoAdminService {
     /** Switches a code on or off: the kill switch. Redemptions that already happened keep their entitlement. */
     @Transactional
     public ObjectNode setEnabled(UUID admin, UUID codeId, boolean enabled) {
-        if (!repository.setEnabled(codeId, enabled)) throw new ResourceNotFoundException();
-        log.info("promo code switched code_id={} admin_id={} enabled={}", codeId, admin, enabled);
+        // The conditional update is the atomic test of "did the state change"; an unknown code is found missing below.
+        boolean changed = repository.setEnabled(codeId, enabled);
         var entry = repository.find(codeId).orElseThrow(ResourceNotFoundException::new);
-        audit.append(admin, enabled ? "PROMO_ENABLE" : "PROMO_DISABLE", codeId, null);
+        if (changed) {
+            log.info("promo code switched code_id={} admin_id={} enabled={}", codeId, admin, enabled);
+            audit.append(admin, enabled ? "PROMO_ENABLE" : "PROMO_DISABLE", codeId, null);
+        }
         return view(entry.code(), entry.redemptions());
     }
 

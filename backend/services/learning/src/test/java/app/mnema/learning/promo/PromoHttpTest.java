@@ -20,7 +20,7 @@ class PromoHttpTest extends PromoIntegrationTest {
         try {
             JsonNode parsed = JSON.readTree(json);
             if (parsed instanceof tools.jackson.databind.node.ObjectNode object && !object.has("code")) {
-                object.put("code", PromoCodes.generate());
+                object.put("code", PromoTestCodes.generate());
                 json = JSON.writeValueAsString(object);
             }
         } catch (tools.jackson.core.JacksonException ignored) { /* malformed bodies must reach the HTTP boundary */ }
@@ -31,7 +31,7 @@ class PromoHttpTest extends PromoIntegrationTest {
     @Test
     void creationRequiresKeyAndExplicitCodeAndExactRetriesExposeNoDurablePlaintext() throws Exception {
         UUID administrator=account(true,true), key=UUID.randomUUID();
-        String plain=PromoCodes.generate();
+        String plain=PromoTestCodes.generate();
         String payload="{\"type\":\"TIER_DAYS\",\"plan\":\"PLUS\",\"days\":15,\"maxRedemptions\":3,\"code\":\""+plain+"\"}";
         var missingKey=as(administrator,adminController).perform(post("/admin/promo-codes").contentType(MediaType.APPLICATION_JSON).content(payload)).andReturn().getResponse();
         assertThat(missingKey.getStatus()).isEqualTo(400);
@@ -122,6 +122,24 @@ class PromoHttpTest extends PromoIntegrationTest {
         assertThat(off.getStatus()).isEqualTo(200);
         assertThat(body(off).path("enabled").booleanValue()).isFalse();
         assertThat(body(off).path("redemptions").longValue()).isEqualTo(1);
+        UUID switched = UUID.fromString(codeId);
+        java.util.function.Function<String, Long> audited = action -> jdbc.sql("SELECT count(*) FROM app_learning.admin_audit WHERE resource_id=:id AND action=:action")
+                .param("id", switched).param("action", action).query(Long.class).single();
+        assertThat(audited.apply("PROMO_DISABLE")).isEqualTo(1);
+        // Repeating the current state changes nothing and is not journaled.
+        var again = as(administrator, adminController).perform(patch("/admin/promo-codes/" + codeId).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"enabled\":false}")).andReturn().getResponse();
+        assertThat(again.getStatus()).isEqualTo(200);
+        assertThat(body(again).path("enabled").booleanValue()).isFalse();
+        assertThat(audited.apply("PROMO_DISABLE")).isEqualTo(1);
+        var on = as(administrator, adminController).perform(patch("/admin/promo-codes/" + codeId).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"enabled\":true}")).andReturn().getResponse();
+        assertThat(on.getStatus()).isEqualTo(200);
+        assertThat(audited.apply("PROMO_ENABLE")).isEqualTo(1);
+        as(administrator, adminController).perform(patch("/admin/promo-codes/" + codeId).contentType(MediaType.APPLICATION_JSON).content("{\"enabled\":true}")).andReturn();
+        assertThat(audited.apply("PROMO_ENABLE")).isEqualTo(1);
+        as(administrator, adminController).perform(patch("/admin/promo-codes/" + codeId).contentType(MediaType.APPLICATION_JSON).content("{\"enabled\":false}")).andReturn();
+        assertThat(audited.apply("PROMO_DISABLE")).isEqualTo(2);
         var after = redeem(account(true, false), code, UUID.randomUUID().toString(), address());
         assertThat(after.getStatus()).isEqualTo(422);
         assertThat(body(after).path("code").stringValue(null)).isEqualTo("PROMO_INVALID");
