@@ -7,7 +7,7 @@ import { ToggletipComponent } from '../../shared/toggletip.component';
 import { AdminApiService } from './admin-api.service';
 import { AdminReport } from './admin.models';
 import {
-    mediaState, operationUnits, addDays, bytes, dateTime, defaultPeriod, errorText, isForbidden, moneyUsd, number,
+    mediaState, operationUnits, addDays, bytes, dateTime, defaultPeriod, errorText, isForbidden, milliseconds, moneyRub, moneyUsd, number,
     operationName, percent, reportPeriod
 } from './admin-presenters';
 @Component({
@@ -37,6 +37,8 @@ export class AdminReportPageComponent implements OnInit {
     protected readonly mediaState = mediaState;
     protected readonly units = operationUnits;
     protected readonly money = moneyUsd;
+    protected readonly rub = moneyRub;
+    protected readonly ms = milliseconds;
     protected readonly number = number;
     protected readonly percent = percent;
     protected readonly bytes = bytes;

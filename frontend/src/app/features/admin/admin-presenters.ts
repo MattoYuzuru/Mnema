@@ -55,6 +55,14 @@ export const moneyUsd = (micros: number): string => new Intl.NumberFormat('ru-RU
     minimumFractionDigits: 2,
     maximumFractionDigits: 4
 }).format(micros / 1000000);
+export const moneyRub = (kopecks: number): string => new Intl.NumberFormat('ru-RU', {
+    style: 'currency',
+    currency: 'RUB',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+}).format(kopecks / 100);
+/** A latency percentile exists only for a nonempty sample; an empty one is a dash, never zero. */
+export const milliseconds = (value: number | null): string => value === null ? '— мс' : `${number(value)} мс`;
 export const number = (value: number | null): string => value === null ? 'Нет данных' : new Intl.NumberFormat('ru-RU', {
     maximumFractionDigits: 2
 }).format(value);

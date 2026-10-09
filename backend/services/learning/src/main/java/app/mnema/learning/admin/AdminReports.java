@@ -56,7 +56,7 @@ public class AdminReports {
                 .query((rs, n) -> node().put("state", rs.getString("state")).put("count", rs.getLong("count"))).list().forEach(states::add);
         result.set("media", media);
         var financial = result.putObject("financial");
-        financial.set("revenue", unavailable("BILLING_NOT_CONNECTED"));
+        financial.set("revenue", revenue(range));
         financial.set("infrastructure", unavailable("INVOICE_SOURCE_NOT_CONNECTED"));
         financial.set("providerInvoices", unavailable("INVOICE_SOURCE_NOT_CONNECTED"));
         return result;
@@ -71,6 +71,7 @@ public class AdminReports {
                 .put("period", entitlement.period().name()).put("validUntil", entitlement.validUntil().toString()));
         ObjectNode usage = usage(range, account);
         usage.set("operations", usage.remove("features"));
+        usage.set("operationsTruncated", usage.remove("featuresTruncated"));
         result.set("usage", usage);
         var learning = result.putObject("learning");
         learning.put("decks", scalar("SELECT count(*) FROM app_learning.deck WHERE owner_id=:owner AND deleted_at IS NULL", range, account));
@@ -93,14 +94,25 @@ public class AdminReports {
         return result;
     }
 
+    /** Gross, confirmed T-Bank orders by their {@code paid_at}; refunds are shown beside, never netted, and bank fees are unknown. */
+    private ObjectNode revenue(AdminReportRange range) {
+        return jdbc.sql("SELECT count(*) FILTER(WHERE status='PAID') AS paid,COALESCE(sum(amount_kopecks) FILTER(WHERE status='PAID'),0) AS paid_kopecks,"
+                        + "count(*) FILTER(WHERE status='REFUNDED') AS refunded,COALESCE(sum(amount_kopecks) FILTER(WHERE status='REFUNDED'),0) AS refunded_kopecks "
+                        + "FROM app_learning.billing_order WHERE status IN ('PAID','REFUNDED') AND paid_at>=:from AND paid_at<:to")
+                .params(params(range, null)).query((rs, n) -> node().put("status", "AVAILABLE").put("source", "BILLING_ORDERS").put("currency", "RUB")
+                        .put("accuracy", "GROSS_CONFIRMED_ORDERS").put("paidOrders", rs.getLong("paid")).put("paidKopecks", rs.getLong("paid_kopecks"))
+                        .put("refundedOrders", rs.getLong("refunded")).put("refundedKopecks", rs.getLong("refunded_kopecks"))).single();
+    }
+
     private ObjectNode ai(AdminReportRange range) {
         var rows = jdbc.sql("SELECT count(*) AS calls,count(*) FILTER(WHERE outcome='PENDING') AS pending,count(*) FILTER(WHERE outcome NOT IN ('PENDING','OK')) AS failed,"
-                        + "COALESCE(sum(cost_micros),0) AS cost,percentile_cont(0.5) WITHIN GROUP(ORDER BY latency_ms) AS p50,percentile_cont(0.95) WITHIN GROUP(ORDER BY latency_ms) AS p95,percentile_cont(0.99) WITHIN GROUP(ORDER BY latency_ms) AS p99 "
+                        + "COALESCE(sum(cost_micros),0) AS cost,count(latency_ms) AS latency_samples,percentile_cont(0.5) WITHIN GROUP(ORDER BY latency_ms) AS p50,percentile_cont(0.95) WITHIN GROUP(ORDER BY latency_ms) AS p95,percentile_cont(0.99) WITHIN GROUP(ORDER BY latency_ms) AS p99 "
                         + "FROM app_learning.ai_provider_call WHERE created_at>=:from AND created_at<:to")
                 .params(params(range, null)).query((rs, n) -> {
                     var value = node().put("currency", "USD").put("accuracy", "ESTIMATE").put("calls", rs.getLong("calls"))
                             .put("pendingCalls", rs.getLong("pending")).put("failedCalls", rs.getLong("failed")).put("estimatedCostMicros", rs.getLong("cost"));
-                    value.set("latency", percentiles(rs, true));
+                    // The population is every call with a recorded latency (completed failures included, pending and unreported excluded).
+                    value.set("latency", percentiles(rs, true).put("sampleCount", rs.getLong("latency_samples")).put("population", "RECORDED_LATENCY"));
                     return value;
                 }).single();
         rows.put("journalRetentionDays", journalRetention.toDays());
@@ -133,13 +145,15 @@ public class AdminReports {
         long denominator = value.path("activeUsers").longValue();
         var features = value.putArray("features");
         jdbc.sql("SELECT COALESCE(operation,bucket,'UNCLASSIFIED') AS operation,count(DISTINCT owner_id) AS users,count(*) AS events,COALESCE(sum(-credits::bigint),0) AS credits,COALESCE(sum(units),0) AS units" + selected
-                        + " GROUP BY COALESCE(operation,bucket,'UNCLASSIFIED') ORDER BY credits DESC,operation LIMIT 64")
+                        + " GROUP BY COALESCE(operation,bucket,'UNCLASSIFIED') ORDER BY credits DESC,operation LIMIT 65")
                 .params(params(range, owner)).query((rs, n) -> {
                     var feature = node().put("operation", rs.getString("operation")).put("users", rs.getLong("users"))
                             .put("events", rs.getLong("events")).put("creditsDebited", rs.getLong("credits")).put("units", rs.getLong("units"));
                     if (denominator == 0) feature.putNull("share"); else feature.put("share", (double) rs.getLong("users") / denominator);
                     return feature;
                 }).list().forEach(features::add);
+        value.put("featuresTruncated", features.size() > 64);
+        while (features.size() > 64) features.remove(64);
         if (owner == null) {
             var topUsers = value.putArray("topUsers");
             jdbc.sql("SELECT owner_id,count(*) AS events,sum(-credits::bigint) AS credits" + selected + " GROUP BY owner_id ORDER BY credits DESC,owner_id LIMIT 20")

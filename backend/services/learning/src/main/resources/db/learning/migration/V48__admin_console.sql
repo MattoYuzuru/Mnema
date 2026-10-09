@@ -12,8 +12,11 @@ BEGIN
     RAISE EXCEPTION 'Admin audit is append-only' USING ERRCODE = '23000';
 END;
 $$;
-CREATE TRIGGER admin_audit_immutable BEFORE UPDATE ON app_learning.admin_audit
+-- Rows are never updated or deleted; retention and erasure belong to the account-purge workstream (#409) and need an explicit migration.
+CREATE TRIGGER admin_audit_immutable BEFORE UPDATE OR DELETE ON app_learning.admin_audit
     FOR EACH ROW EXECUTE FUNCTION app_learning.admin_audit_immutable_guard();
+CREATE TRIGGER admin_audit_no_truncate BEFORE TRUNCATE ON app_learning.admin_audit
+    FOR EACH STATEMENT EXECUTE FUNCTION app_learning.admin_audit_immutable_guard();
 CREATE INDEX usage_ledger_reporting_time ON app_learning.usage_ledger_entry(created_at) WHERE kind = 'DEBIT';
 CREATE INDEX study_attempt_reporting_time ON app_learning.study_attempt_tombstone(submitted_at);
 CREATE INDEX study_session_reporting_complete ON app_learning.study_session(completed_at) WHERE completed_at IS NOT NULL;

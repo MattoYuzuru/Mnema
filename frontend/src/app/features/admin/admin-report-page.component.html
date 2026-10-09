@@ -16,7 +16,7 @@
     <dl class="report-facts">
       <div><dt>Оценка расходов ИИ</dt><dd>{{ money(data.ai.estimatedCostMicros) }}<small class="hint">Журнал вызовов провайдера, выбранный период</small></dd></div>
       <div><dt>Вызовы</dt><dd>{{ number(data.ai.calls) }}<small class="hint">С ошибкой: {{ number(data.ai.failedCalls) }} · незавершённые: {{ number(data.ai.pendingCalls) }}</small></dd></div>
-      <div><dt>Выручка</dt><dd>Нет источника<small class="hint">Платёжный учёт не подключён. Тариф и промодоступ не означают поступление денег.</small></dd></div>
+      <div><dt>Выручка (подтверждённые заказы)</dt><dd>{{ rub(data.financial.revenue.paidKopecks) }}<small class="hint">Заказов: {{ number(data.financial.revenue.paidOrders) }}, по дате подтверждения оплаты. Возвраты за период: {{ number(data.financial.revenue.refundedOrders) }} на {{ rub(data.financial.revenue.refundedKopecks) }} — не вычтены. Брутто банка до комиссий, не выплата на счёт. Тариф и промодоступ не означают поступление денег.</small></dd></div>
       <div><dt>Инфраструктура и прочие счета</dt><dd>Нет источника<small class="hint">Счета VPS, хранилища и внешних сервисов не подключены. Итоговая прибыль недоступна.</small></dd></div>
     </dl>
     <div class="table-scroll" tabindex="0" role="region" aria-label="Расходы по провайдерам и операциям"><table class="data-table"><caption>Сохранённые вызовы по маршруту</caption><thead><tr><th scope="col">Операция / провайдер / модель</th><th scope="col">Вызовы</th><th scope="col">Ошибки</th><th scope="col">Оценка, USD</th></tr></thead><tbody>
@@ -25,9 +25,11 @@
     </tbody></table></div>
     <details><summary>Расход по дням, UTC</summary><div class="table-scroll" tabindex="0" role="region" aria-label="Расход по дням"><table class="data-table"><caption>Дни с сохранёнными вызовами; отсутствие дня не подтверждает нулевой счёт провайдера.</caption><thead><tr><th scope="col">Дата</th><th scope="col">Вызовы</th><th scope="col">Ошибки</th><th scope="col">Оценка, USD</th></tr></thead><tbody>@for (row of data.ai.byDay; track row.date) { <tr><th scope="row">{{ row.date }}</th><td>{{ number(row.calls) }}</td><td>{{ number(row.failedCalls) }}</td><td>{{ money(row.estimatedCostMicros) }}</td></tr> } @empty { <tr><td colspan="4">Сохранённых вызовов нет.</td></tr> }</tbody></table></div></details>
     <h3>Задержка вызова <app-toggletip topic="перцентилей задержки">p50 — половина вызовов быстрее этого значения; p95 и p99 — 95 % и 99 %. Расчёт на сервере по сохранённым длительностям, без обещания времени для следующего вызова.</app-toggletip></h3>
-    <dl class="report-facts"><div><dt>p50</dt><dd>{{ number(data.ai.latency.p50Ms) }} мс</dd></div><div><dt>p95</dt><dd>{{ number(data.ai.latency.p95Ms) }} мс</dd></div><div><dt>p99</dt><dd>{{ number(data.ai.latency.p99Ms) }} мс</dd></div></dl>
+    <p class="hint">Выборка: {{ number(data.ai.latency.sampleCount) }} вызовов с записанной длительностью (завершённые, включая ошибки; незавершённые и без замера не входят).@if (data.ai.latency.sampleCount === 0) { Перцентили не определены. }</p>
+    <dl class="report-facts"><div><dt>p50</dt><dd>{{ ms(data.ai.latency.p50Ms) }}</dd></div><div><dt>p95</dt><dd>{{ ms(data.ai.latency.p95Ms) }}</dd></div><div><dt>p99</dt><dd>{{ ms(data.ai.latency.p99Ms) }}</dd></div></dl>
   </section>
   <section class="rule-section" aria-labelledby="usage-title"><h2 id="usage-title">Что используют</h2>
+    @if (data.usage.featuresTruncated) { <p class="notice warning">Показаны 64 функции с наибольшим списанием. Общие суммы включают остальные.</p> }
     <dl class="report-facts"><div><dt>Пользователи с расходом ИИ</dt><dd>{{ number(data.usage.activeUsers) }}<small class="hint">Уникальные аккаунты с DEBIT, в том числе с нулевым списанием, в выбранном периоде</small></dd></div><div><dt>Списано кредитов</dt><dd>{{ number(data.usage.creditsDebited) }}<small class="hint">Валовые списания без вычета возвратов. Внутренние единицы лимита, не деньги</small></dd></div></dl>
     <h3>Кредиты на пользователя <app-toggletip topic="выборки расхода">Выборка: только аккаунты со списанием ИИ в этом периоде; не все зарегистрированные пользователи. Значения рассчитываются на сервере, при пустой выборке — «Нет данных».</app-toggletip></h3>
     <p class="hint">Размер выборки: {{ number(data.usage.creditsPerUser.sample) }} аккаунтов.</p>

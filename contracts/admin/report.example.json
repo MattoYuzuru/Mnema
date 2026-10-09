@@ -12,7 +12,9 @@
     "latency": {
       "p50Ms": null,
       "p95Ms": null,
-      "p99Ms": null
+      "p99Ms": null,
+      "sampleCount": 0,
+      "population": "RECORDED_LATENCY"
     },
     "journalRetentionDays": 90,
     "retentionWindowStart": "2026-07-11T12:00:00Z",
@@ -32,6 +34,7 @@
       "p99": null
     },
     "features": [],
+    "featuresTruncated": false,
     "topUsers": []
   },
   "learning": {
@@ -50,8 +53,14 @@
   },
   "financial": {
     "revenue": {
-      "status": "UNAVAILABLE",
-      "reason": "BILLING_NOT_CONNECTED"
+      "status": "AVAILABLE",
+      "source": "BILLING_ORDERS",
+      "currency": "RUB",
+      "accuracy": "GROSS_CONFIRMED_ORDERS",
+      "paidOrders": 0,
+      "paidKopecks": 0,
+      "refundedOrders": 0,
+      "refundedKopecks": 0
     },
     "infrastructure": {
       "status": "UNAVAILABLE",

@@ -6,7 +6,29 @@
       "action": "PROMO_CREATE",
       "resourceId": "10000000-0000-4000-8000-000000000002",
       "commandId": "10000000-0000-4000-8000-000000000003",
+      "outcome": "SUCCESS",
+      "reason": null,
       "occurredAt": "2026-10-09T12:00:00Z"
+    },
+    {
+      "auditId": "0199c478-a000-7000-8000-000000000002",
+      "actorAccountId": "10000000-0000-4000-8000-000000000001",
+      "action": "BAN",
+      "resourceId": "10000000-0000-4000-8000-000000000004",
+      "commandId": null,
+      "outcome": "SUCCESS",
+      "reason": "Synthetic moderation reason",
+      "occurredAt": "2026-10-09T11:00:00Z"
+    },
+    {
+      "auditId": "0199c478-a000-7000-8000-000000000003",
+      "actorAccountId": "10000000-0000-4000-8000-000000000001",
+      "action": "GRANT_ADMIN",
+      "resourceId": "10000000-0000-4000-8000-000000000004",
+      "commandId": null,
+      "outcome": "DENIED",
+      "reason": null,
+      "occurredAt": "2026-10-09T10:00:00Z"
     }
   ],
   "next": null

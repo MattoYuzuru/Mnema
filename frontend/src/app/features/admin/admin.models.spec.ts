@@ -16,7 +16,9 @@ describe('administrative wire and interpretation', () => {
         expect(report.ai.latency.p50Ms).toBeNull();
         expect(report.usage.creditsPerUser.sample).toBe(0);
         expect(report.usage.creditsPerUser.p99).toBeNull();
-        expect(report.financial.revenue.status).toBe('UNAVAILABLE');
+        expect(report.financial.revenue.status).toBe('AVAILABLE');
+        expect(report.financial.revenue.paidKopecks).toBe(0);
+        expect(report.ai.latency.sampleCount).toBe(0);
         expect(parseDirectory(wire.directory).accounts[0].lastLoginAt).toBeNull();
         expect(parseDetail(wire.directory.accounts[0]).banReason).toBeNull();
         expect(parseUserReport(wire.user).usage.operations[0].units).toBe(60);

@@ -50,7 +50,12 @@ class AdminReportsIntegrationTest extends PostgresIntegrationTest {
         var empty=reports.report(new AdminReportRange(java.time.LocalDate.parse("2039-08-01"),java.time.LocalDate.parse("2039-08-02")));
         assertThat(empty.path("ai").path("latency").path("p50Ms").isNull()).isTrue();
         assertThat(empty.path("usage").path("creditsPerUser").path("p50").isNull()).isTrue();
-        assertThat(empty.path("financial").path("revenue").path("status").stringValue()).isEqualTo("UNAVAILABLE");
+        assertThat(empty.path("ai").path("latency").path("sampleCount").longValue()).isZero();
+        assertThat(empty.path("ai").path("latency").path("population").stringValue()).isEqualTo("RECORDED_LATENCY");
+        assertThat(empty.path("usage").path("featuresTruncated").booleanValue()).isFalse();
+        assertThat(empty.path("financial").path("revenue").path("status").stringValue()).isEqualTo("AVAILABLE");
+        assertThat(empty.path("financial").path("revenue").path("paidOrders").longValue()).isZero();
+        assertThat(empty.path("financial").path("infrastructure").path("status").stringValue()).isEqualTo("UNAVAILABLE");
         assertThat(empty.path("ai").path("rangeIncludesExpiredData").booleanValue()).isTrue();
         UUID a=UUID.randomUUID(),b=UUID.randomUUID();
         debit(a,-4,"MATERIAL_SHORT",null,null,"2040-01-02T00:00:00Z");
@@ -67,6 +72,7 @@ class AdminReportsIntegrationTest extends PostgresIntegrationTest {
         assertThat(result.path("ai").path("failedCalls").longValue()).isEqualTo(1);
         assertThat(result.path("ai").path("estimatedCostMicros").longValue()).isEqualTo(100);
         assertThat(result.path("ai").path("latency").path("p50Ms").doubleValue()).isEqualTo(200);
+        assertThat(result.path("ai").path("latency").path("sampleCount").longValue()).as("the pending call has no latency").isEqualTo(2);
         assertThat(result.path("usage").path("activeUsers").longValue()).isEqualTo(2);
         assertThat(result.path("usage").path("creditsDebited").longValue()).isEqualTo(16);
         assertThat(result.path("usage").path("creditsPerUser").path("p50").doubleValue()).isEqualTo(8);
@@ -78,9 +84,31 @@ class AdminReportsIntegrationTest extends PostgresIntegrationTest {
         var user=reports.user(b,range);
         assertThat(user.path("usage").path("creditsDebited").longValue()).isEqualTo(12);
         assertThat(user.path("usage").path("operations")).hasSize(2);
+        assertThat(user.path("usage").path("operationsTruncated").booleanValue()).isFalse();
         assertThat(user.path("allowances")).isEmpty();
         var unknown=reports.user(UUID.randomUUID(),range);
         assertThat(unknown.path("learning").path("decks").longValue()).isZero();
+    }
+
+    @Test void featureBreakdownsAreFlaggedWhenTruncatedAndRevenueSumsConfirmedBillingOrders() {
+        UUID account=UUID.randomUUID();
+        for(int n=0;n<66;n++) debit(account,-1,"OPERATION_"+String.format("%02d",n),null,null,"2040-01-05T00:00:00Z");
+        var range=new AdminReportRange(java.time.LocalDate.parse("2040-01-05"),java.time.LocalDate.parse("2040-01-06"));
+        var wide=reports.report(range).path("usage");
+        assertThat(wide.path("features")).hasSize(64);
+        assertThat(wide.path("featuresTruncated").booleanValue()).isTrue();
+        var user=reports.user(account,range).path("usage");
+        assertThat(user.path("operations")).hasSize(64);
+        assertThat(user.path("operationsTruncated").booleanValue()).isTrue();
+        assertThat(wide.path("creditsDebited").longValue()).as("totals include every operation").isEqualTo(66);
+        order("PAID",19900,"2040-01-05T10:00:00Z");order("PAID",29900,"2040-01-05T11:00:00Z");order("REFUNDED",19900,"2040-01-05T12:00:00Z");
+        order("PAID",99900,"2040-01-04T23:59:59Z");order("PAID",99900,"2040-01-06T00:00:00Z");order("FAILED",5000,null);
+        var revenue=reports.report(range).path("financial").path("revenue");
+        assertThat(revenue.path("currency").stringValue()).isEqualTo("RUB");
+        assertThat(revenue.path("paidOrders").longValue()).isEqualTo(2);
+        assertThat(revenue.path("paidKopecks").longValue()).isEqualTo(49800);
+        assertThat(revenue.path("refundedOrders").longValue()).isEqualTo(1);
+        assertThat(revenue.path("refundedKopecks").longValue()).isEqualTo(19900);
     }
 
     @Test void ownerApiRefusesAnotherActorBeforeQueryParsingAndNeverMutatesUsage() throws Exception {
@@ -104,9 +132,12 @@ class AdminReportsIntegrationTest extends PostgresIntegrationTest {
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.admin_audit WHERE resource_id=:id").param("id",resource).query(Long.class).single()).isZero();
         transactions.executeWithoutResult(status -> { for(int n=0;n<55;n++) audit.append(OWNER,"PROMO_ENABLE",resource,null); });
         var first=audit.page(null); assertThat(first.entries()).hasSize(50); assertThat(first.next()).isNotNull();
+        assertThat(first.entries().getFirst().outcome()).isEqualTo("SUCCESS");
         var next=audit.page(first.next()); assertThat(next.entries()).isNotEmpty();
         assertThat(first.entries().stream().map(AdminAudit.Entry::auditId).toList()).doesNotContainAnyElementsOf(next.entries().stream().map(AdminAudit.Entry::auditId).toList());
-        assertThatThrownBy(() -> jdbc.sql("UPDATE app_learning.admin_audit SET action='PROMO_DISABLE' WHERE resource_id=:id").param("id",resource).update()).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        for(String statement:new String[]{"UPDATE app_learning.admin_audit SET action='PROMO_DISABLE' WHERE resource_id=:id","DELETE FROM app_learning.admin_audit WHERE resource_id=:id"})
+            assertThatThrownBy(() -> jdbc.sql(statement).param("id",resource).update()).as(statement).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.sql("TRUNCATE app_learning.admin_audit").update()).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
         assertThat(as(OWNER).perform(get("/admin/console/audit?before=bad")).andReturn().getResponse().getStatus()).isEqualTo(400);
         assertThat(as(OWNER).perform(get("/admin/console/audit")).andReturn().getResponse().getStatus()).isEqualTo(200);
     }
@@ -147,7 +178,7 @@ class AdminReportsIntegrationTest extends PostgresIntegrationTest {
     }
 
     private MockMvc as(UUID actor) {
-        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(Jwt.withTokenValue("test").header("alg","RS256").subject(actor.toString()).build()));
+        SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(Jwt.withTokenValue("test").header("alg","RS256").subject(actor.toString()).claim("client_id","mnema-admin-web").build()));
         return MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new ApiExceptionHandler()).setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver()).build();
     }
     private void debit(UUID account,int credits,String operation,String bucket,Long units,String time) {
@@ -157,6 +188,13 @@ class AdminReportsIntegrationTest extends PostgresIntegrationTest {
     private void call(String outcome,long cost,Integer latency,String time) {
         jdbc.sql("INSERT INTO app_learning.ai_provider_call(call_id,capability,provider,model,request_hash,outcome,cost_micros,latency_ms,created_at) VALUES (:id,'TEXT','stub','test-model',:hash,:outcome,:cost,:latency,CAST(:time AS timestamptz))")
                 .param("id",UUID.randomUUID()).param("hash","0".repeat(64)).param("outcome",outcome).param("cost",cost).param("latency",latency).param("time",time).update();
+    }
+    private void order(String status,long amount,String paidAt) {
+        boolean paid=paidAt!=null;
+        jdbc.sql("INSERT INTO app_learning.billing_order(order_id,owner_id,plan,period,status,amount_kopecks,list_price_kopecks,paid_at,period_start,period_end,snapshot_id,expires_at,created_at,updated_at) "
+                        + "VALUES (:id,:owner,'PLUS','MONTH',:status,:amount,:amount,CAST(:paid AS timestamptz),CAST(:start AS timestamptz),CAST(:end AS timestamptz),:snapshot,'2040-02-01T00:00:00Z','2040-01-01T00:00:00Z','2040-01-01T00:00:00Z')")
+                .param("id",UUID.randomUUID()).param("owner",UUID.randomUUID()).param("status",status).param("amount",amount).param("paid",paidAt)
+                .param("start",paid ? paidAt : null).param("end",paid ? "2040-03-01T00:00:00Z" : null).param("snapshot",paid ? "billing:"+UUID.randomUUID() : null).update();
     }
     private void blob(UUID id,long bytes) {
         jdbc.sql("INSERT INTO app_learning.media_blob(blob_id,sha256,byte_length,mime_type,object_key,verified_at) VALUES (:id,decode(:hash,'hex'),:bytes,'image/png',:key,'2040-01-09T12:00:00Z')")

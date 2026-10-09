@@ -13,7 +13,8 @@ import java.util.UUID;
 
 @Service
 public class AdminAudit {
-    public record Entry(UUID auditId, UUID actorAccountId, String action, UUID resourceId, UUID commandId, Instant occurredAt) { }
+    /** This journal records only actions committed in their domain transaction: the outcome is always SUCCESS and there is no free text. */
+    public record Entry(UUID auditId, UUID actorAccountId, String action, UUID resourceId, UUID commandId, String outcome, String reason, Instant occurredAt) { }
     public record Page(List<Entry> entries, String next) { public Page { entries = List.copyOf(entries); } }
     private final JdbcClient jdbc;
 
@@ -25,13 +26,14 @@ public class AdminAudit {
                 .param("actor", actor).param("action", action).param("resource", resource).param("command", command).update();
     }
 
+    @Transactional(readOnly = true, timeout = 5)
     public Page page(String before) {
         UUID cursor = cursor(before);
         var rows = jdbc.sql("SELECT audit_id,actor_account_id,action,resource_id,command_id,occurred_at FROM app_learning.admin_audit "
                         + (cursor == null ? "" : "WHERE audit_id < :before ") + "ORDER BY audit_id DESC LIMIT 51")
                 .params(cursor == null ? java.util.Map.of() : java.util.Map.of("before", cursor))
                 .query((rs, n) -> new Entry(rs.getObject("audit_id", UUID.class), rs.getObject("actor_account_id", UUID.class),
-                        rs.getString("action"), rs.getObject("resource_id", UUID.class), rs.getObject("command_id", UUID.class),
+                        rs.getString("action"), rs.getObject("resource_id", UUID.class), rs.getObject("command_id", UUID.class), "SUCCESS", null,
                         rs.getObject("occurred_at", OffsetDateTime.class).toInstant())).list();
         return new Page(rows.stream().limit(50).toList(), rows.size() > 50 ? rows.get(49).auditId().toString() : null);
     }

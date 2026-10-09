@@ -27,7 +27,8 @@
         "units": 60,
         "share": 1.0
       }
-    ]
+    ],
+    "operationsTruncated": false
   },
   "learning": {
     "decks": 0,

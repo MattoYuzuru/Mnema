@@ -25,6 +25,18 @@ export interface FeatureUsage {
     readonly share: number | null;
 }
 
+/** Gross confirmed T-Bank orders in the period (no bank fees, refunds shown beside, never netted). */
+export interface Revenue {
+    readonly status: 'AVAILABLE';
+    readonly source: 'BILLING_ORDERS';
+    readonly currency: 'RUB';
+    readonly accuracy: 'GROSS_CONFIRMED_ORDERS';
+    readonly paidOrders: number;
+    readonly paidKopecks: number;
+    readonly refundedOrders: number;
+    readonly refundedKopecks: number;
+}
+
 export interface AdminReport {
     readonly from: string;
     readonly to: string;
@@ -40,6 +52,9 @@ export interface AdminReport {
             readonly p50Ms: number | null;
             readonly p95Ms: number | null;
             readonly p99Ms: number | null;
+            /** Calls with a recorded latency; the percentiles describe only this population. */
+            readonly sampleCount: number;
+            readonly population: 'RECORDED_LATENCY';
         };
         readonly journalRetentionDays: number;
         readonly retentionWindowStart: string;
@@ -66,6 +81,7 @@ export interface AdminReport {
         readonly creditsDebited: number;
         readonly creditsPerUser: Percentiles;
         readonly features: readonly FeatureUsage[];
+        readonly featuresTruncated: boolean;
         readonly topUsers: readonly {
             readonly accountId: string;
             readonly events: number;
@@ -94,10 +110,7 @@ export interface AdminReport {
             readonly status: 'UNAVAILABLE';
             readonly reason: 'INVOICE_SOURCE_NOT_CONNECTED';
         };
-        readonly revenue: {
-            readonly status: 'UNAVAILABLE';
-            readonly reason: 'BILLING_NOT_CONNECTED';
-        };
+        readonly revenue: Revenue;
         readonly infrastructure: {
             readonly status: 'UNAVAILABLE';
             readonly reason: 'INVOICE_SOURCE_NOT_CONNECTED';
@@ -143,6 +156,7 @@ export interface UserReport {
     readonly usage: {
         readonly creditsDebited: number;
         readonly operations: readonly FeatureUsage[];
+        readonly operationsTruncated: boolean;
     };
     readonly learning: {
         readonly decks: number;
@@ -212,8 +226,10 @@ export interface AuditEntry {
     readonly action: string;
     readonly resourceId: string;
     readonly commandId: string | null;
+    readonly outcome: 'SUCCESS' | 'DENIED';
+    /** Owner-typed ban reason (Identity BAN rows only); never read from or written by the browser journal. */
+    readonly reason: string | null;
     readonly occurredAt: string;
-    readonly reason?: string | null;
 }
 
 export interface AuditPage {
@@ -419,7 +435,9 @@ export function parseReport(value: unknown): AdminReport {
             latency: {
                 p50Ms: nullable(latency['p50Ms'], num),
                 p95Ms: nullable(latency['p95Ms'], num),
-                p99Ms: nullable(latency['p99Ms'], num)
+                p99Ms: nullable(latency['p99Ms'], num),
+                sampleCount: integer(latency['sampleCount']),
+                population: enumeration(latency['population'], ['RECORDED_LATENCY'] as const)
             },
             journalRetentionDays: integer(ai['journalRetentionDays']),
             retentionWindowStart: instant(ai['retentionWindowStart']),
@@ -452,6 +470,7 @@ export function parseReport(value: unknown): AdminReport {
             creditsDebited: integer(usage['creditsDebited']),
             creditsPerUser: parsePercentiles(usage['creditsPerUser']),
             features: array(usage['features'], parseFeature),
+            featuresTruncated: flag(usage['featuresTruncated']),
             topUsers: array(usage['topUsers'], value => {
                 const u = object(value);
                 return {
@@ -487,8 +506,14 @@ export function parseReport(value: unknown): AdminReport {
                 reason: enumeration(invoices['reason'], ['INVOICE_SOURCE_NOT_CONNECTED'] as const)
             },
             revenue: {
-                status: enumeration(revenue['status'], ['UNAVAILABLE'] as const),
-                reason: enumeration(revenue['reason'], ['BILLING_NOT_CONNECTED'] as const)
+                status: enumeration(revenue['status'], ['AVAILABLE'] as const),
+                source: enumeration(revenue['source'], ['BILLING_ORDERS'] as const),
+                currency: enumeration(revenue['currency'], ['RUB'] as const),
+                accuracy: enumeration(revenue['accuracy'], ['GROSS_CONFIRMED_ORDERS'] as const),
+                paidOrders: integer(revenue['paidOrders']),
+                paidKopecks: integer(revenue['paidKopecks']),
+                refundedOrders: integer(revenue['refundedOrders']),
+                refundedKopecks: integer(revenue['refundedKopecks'])
             },
             infrastructure: {
                 status: enumeration(infrastructure['status'], ['UNAVAILABLE'] as const),
@@ -547,7 +572,8 @@ export function parseUserReport(value: unknown): UserReport {
         },
         usage: {
             creditsDebited: integer(usage['creditsDebited']),
-            operations: array(usage['operations'], parseFeature)
+            operations: array(usage['operations'], parseFeature),
+            operationsTruncated: flag(usage['operationsTruncated'])
         },
         learning: {
             decks: integer(learning['decks']),
@@ -617,10 +643,9 @@ export function parseAuditPage(value: unknown): AuditPage {
                 action: str(r['action']),
                 resourceId: str(r['resourceId']),
                 commandId: nullable(r['commandId'], uuid),
-                occurredAt: instant(r['occurredAt']),
-                ...('reason' in r ? {
-                    reason: nullable(r['reason'], str)
-                } : {})
+                outcome: enumeration(r['outcome'], ['SUCCESS', 'DENIED'] as const),
+                reason: nullable(r['reason'], value => str(value, 280)),
+                occurredAt: instant(r['occurredAt'])
             };
         }),
         next: nullable(o['next'], uuid)

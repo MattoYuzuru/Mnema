@@ -22,7 +22,7 @@ public class AdminDirectory {
                           String status, boolean admin, String deletionState, Instant createdAt, Instant lastLoginAt,
                           Instant bannedAt, String banReason) { }
     public record Page(List<Account> accounts, String next) { public Page { accounts = List.copyOf(accounts); } }
-    public record AuditEntry(UUID auditId, UUID actorAccountId, String action, UUID resourceId, UUID commandId, Instant occurredAt) { }
+    public record AuditEntry(UUID auditId, UUID actorAccountId, String action, UUID resourceId, UUID commandId, String outcome, String reason, Instant occurredAt) { }
     public record AuditPage(List<AuditEntry> entries, String next) { public AuditPage { entries = List.copyOf(entries); } }
     private record Cursor(Instant createdAt, UUID accountId) {
         String encode() {
@@ -71,11 +71,11 @@ public class AdminDirectory {
             try { cursor = UUID.fromString(before); if (!cursor.toString().equals(before)) throw invalid(); }
             catch (IllegalArgumentException failure) { throw invalid(); }
         }
-        var rows = jdbc.sql("SELECT audit_id,actor_account_id,action,resource_id,occurred_at FROM app_identity.admin_audit "
+        var rows = jdbc.sql("SELECT audit_id,actor_account_id,action,resource_id,outcome,reason,occurred_at FROM app_identity.admin_audit "
                         + (cursor == null ? "" : "WHERE audit_id<:before ") + "ORDER BY audit_id DESC LIMIT 51")
                 .params(cursor == null ? java.util.Map.of() : java.util.Map.of("before", cursor))
                 .query((rs, n) -> new AuditEntry(rs.getObject("audit_id", UUID.class), rs.getObject("actor_account_id", UUID.class),
-                        rs.getString("action"), rs.getObject("resource_id", UUID.class), null, instant(rs, "occurred_at"))).list();
+                        rs.getString("action"), rs.getObject("resource_id", UUID.class), null, rs.getString("outcome"), rs.getString("reason"), instant(rs, "occurred_at"))).list();
         return new AuditPage(rows.stream().limit(50).toList(), rows.size() > 50 ? rows.get(49).auditId().toString() : null);
     }
 
