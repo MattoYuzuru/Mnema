@@ -26,8 +26,8 @@ import { MailGlyphComponent } from './mail-glyph.component';
     `,
     styles: [`
       :host { display: block; min-inline-size: 0; }
-      button { display: inline-flex; align-items: center; gap: var(--mn-space-2); min-block-size: var(--mn-touch-min); margin: 0; border: 0; padding: 0; color: var(--mn-ink); background: none; font: inherit; text-align: start; cursor: pointer; overflow-wrap: anywhere; }
-      .label { text-decoration: underline; text-underline-offset: .22em; }
+      button { display: inline-flex; align-items: center; gap: var(--mn-space-2); max-inline-size: 100%; min-block-size: var(--mn-touch-min); margin: 0; border: 0; padding: 0; color: var(--mn-ink); background: none; font: inherit; text-align: start; cursor: pointer; overflow-wrap: anywhere; }
+      .label { min-inline-size: 0; text-decoration: underline; text-underline-offset: .22em; }
       button:focus-visible, a:focus-visible { outline: 3px solid var(--mn-focus); outline-offset: 3px; }
       .fallback { margin: 0; color: var(--mn-muted); font-size: .875rem; line-height: 1.5; }
       .fallback:empty { display: none; }
