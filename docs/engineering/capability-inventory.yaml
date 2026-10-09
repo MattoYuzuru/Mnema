@@ -72,10 +72,10 @@ capabilities:
   - id: main-quality
     kind: github-actions-workflow
     location: .github/workflows/deploy.yaml
-    trigger: push_to_main
-    effects: [backend-quality, frontend-quality]
+    trigger: push_to_main_or_workflow_dispatch
+    effects: [backend-quality, frontend-quality, release-scope, four-image-publication, prod-approved-deployment, public-smoke]
     status: configured
-    notes: [manual-four-image-publication-opt-in, publication-security-gates-required]
+    notes: [docs-only-pushes-skip-release, publication-security-gates-required, one-prod-environment-approval]
 
   - id: local-replacement-runtime
     kind: compose
@@ -97,9 +97,10 @@ capabilities:
     kind: github-actions-workflow
     location: .github/workflows/vps-deploy.yaml
     trigger: workflow_dispatch_on_main
-    effects: [admitted-four-image-compose-rollout]
+    effects: [status, verify, rollback-to-recorded-compatible-previous-release]
     status: configured
-    requirements: [current-main-candidate, administrator-admission, prod-environment-approval]
+    requirements: [prod-environment-approval]
+    notes: [deployments-run-only-in-main-ci, host-config-installed-by-administrator-with-drift-check]
     canonical_policy: docs/operations/production-delivery.md
 
   - id: legacy-kubernetes-operations

@@ -1,18 +1,22 @@
 # VPS image publication
 
-Main CI provides the current bounded **publication** path for the new Russian VPS, `mnema` (`135.106.175.30`).
-It does not reactivate the old Kubernetes deployment, recovery or rollback jobs.
-One VPS will use Compose through the [root-owned dispatcher](../../deploy/production/README.md);
-Compose configuration, actual dependency/backup acceptance and public rollout are
-separate required evidence. See [production delivery](production-delivery.md) for the complete release sequence.
+Main CI publishes the four VPS images automatically for every push to `main` that
+changes the production runtime, and on a manual dispatch of **Main CI**
+(`deploy.yaml`) on `main`. Publication does not reactivate the old Kubernetes
+deployment, recovery or rollback jobs. One VPS runs Compose through the
+[root-owned dispatcher](../../deploy/production/README.md); see
+[production delivery](production-delivery.md) for the complete release sequence.
 
 ## Source and images
 
-Run **Main CI** (`deploy.yaml`) on branch `main`, selecting the boolean
-`publish_production_candidate`. Default false and ordinary push runs keep publication
-off. Both quality jobs run on the same revision before any image build. Assembly
-checks that the revision is still current remote main; a newer main requires a fresh
-run rather than deploying an older candidate.
+The `release-scope` job compares the pushed commit with the newest successful Main CI `prod`
+GitHub Deployment and publishes only when `backend/`, `frontend/` (outside `*.md`),
+`contracts/`, `deploy/production/` (outside `*.md`), `security/` or the release
+workflow/scripts changed (`scripts/release_scope.py`); a manual dispatch always
+publishes, and an unknown baseline publishes. Both quality jobs run on the same
+revision before any image build. Assembly checks that the revision is still current
+remote main; a newer main requires its own run rather than deploying an older
+candidate.
 
 The publication matrix has exactly four services: `identity-account`, `learning`,
 `frontend`, `postgres`. Tags use the entire `sha-<40 hex commit>`; there is no `latest` publication.
@@ -30,7 +34,7 @@ expiry scoped. The scanner DB/tool identity, full report/SARIF, SBOM and attesta
 verification remain in the existing sanitized artifact boundary. No scan bypass or
 new blanket exception is introduced.
 
-## Candidate is not admission
+## Candidate, admission and deployment
 
 `vps-candidate` retains the following sanitized files for 30 days:
 
@@ -40,18 +44,14 @@ new blanket exception is introduced.
 
 The renderer rejects missing/duplicate services, foreign repositories, mutable
 references, inconsistent source/run/digests, expired exceptions, missing attestations,
-unresolved blocking findings and inconsistent counts. It emits **none** of the
-dispatcher's acceptance flags. Publication does not assert backup restore, data
-cutover, live Turnstile/privacy approval or migration readiness. An administrator
-must verify the current source/run, image evidence, reviewed runtime configuration
-and actual acceptance records before installing a root-only release manifest and
-admission on `mnema`. The CI user cannot write those files.
-
-This workflow reads no deployment credentials and enters no GitHub Environment.
-The existing `prod` reviewer and main-only policy remain required for a subsequent
-reviewed deployment path. A failed/interrupted build may leave an unadmitted image
-in GHCR; it cannot create a complete candidate or mutate a server. Do not infer
-acceptance from the mere presence of a tag.
+unresolved blocking findings and inconsistent counts. Publication itself neither
+admits nor deploys: it reads no deployment credentials and enters no GitHub
+Environment. The next job, `deploy-production`, waits for the `prod` Environment
+approval, re-verifies the checksums and every digest's attestations, and only then
+sends the candidate to the dispatcher's `admit` operation, which validates form,
+namespace and digests and records it. A failed or interrupted build may leave an
+unadmitted image in GHCR; it cannot create a complete candidate or mutate a server.
+Do not infer acceptance from the mere presence of a tag.
 
 ## Verification and rollback
 
@@ -62,15 +62,14 @@ Publication itself never mutates DNS, runtime configuration or old data.
 
 Repository verifier tests mutate guards/dependencies/inputs and candidate evidence
 to prove closed failures. The existing release evidence policy also gates frontend.
-Hosted CI and a fresh manual publication run must succeed before claiming actual
+Hosted CI and a fresh publication run must succeed before claiming actual
 image digests, SBOM/provenance or vulnerability results.
 
-Rollback for publication is a protected code revert that removes the manual opt-in
-while preserving quality jobs and dormant operational guards. It does not delete
-images, data or backups, and does not roll back a deployed application. Runtime
-rollback remains the dispatcher's reviewed schema-compatibility boundary.
+Rollback for publication is a protected code revert; it does not delete images, data
+or backups and does not roll back a deployed application. Runtime rollback is the
+dispatcher's `rollback` operation under its schema-compatibility boundary.
 
-References: GitHub [typed manual inputs](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onworkflow_dispatchinputs),
+References: GitHub
 [artifact attestations](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds),
 Docker [build attestations](https://docs.docker.com/build/metadata/attestations/),
 and the existing [release security policy](release-security-evidence.md).

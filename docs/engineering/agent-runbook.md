@@ -5,7 +5,7 @@ artifact:
   title: "Mnema agent runbook: commands and local-machine setup"
   status: current
   created_at: "2026-10-01"
-  updated_at: "2026-10-07"
+  updated_at: "2026-10-08"
   owners: ["project-owner"]
 ---
 
@@ -64,6 +64,22 @@ Cross-service security/cancellation harness (needs built boot jars):
 ```bash
 ./backend/gradlew -p backend :services:identity-account:bootJar :services:learning:bootJar
 python3 scripts/learning-security/run.py
+```
+
+## Production release after merge
+
+A runtime change merged to `main` is released by Main CI after one `prod` approval; a
+docs-only merge is not. Full protocol and administrator install commands:
+[production delivery](../operations/production-delivery.md#agent-protocol).
+
+```bash
+gh run list --workflow deploy.yaml --branch main --limit 1 --json databaseId,headSha,status
+gh run watch <id> --exit-status        # background; do not poll
+env_id=$(gh api repos/MattoYuzuru/Mnema/environments/prod --jq .id)
+gh api -X POST repos/MattoYuzuru/Mnema/actions/runs/<id>/pending_deployments \
+  -F "environment_ids[]=$env_id" -f state=approved -f comment='<owner task>'
+python3 -m unittest discover -s scripts/smoke/tests -v    # smoke script unit tests (local)
+python3 scripts/smoke/vps_public_smoke.py --sha <deployed-sha>   # same check CI runs after deploy
 ```
 
 ## Browser harness (real HTTPS Chrome against real services)
