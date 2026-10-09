@@ -94,9 +94,14 @@ public class AdminReports {
         return result;
     }
 
-    /** Gross, confirmed T-Bank orders by their {@code paid_at}; refunds are shown beside, never netted, and bank fees are unknown. */
+    /**
+     * Gross confirmed T-Bank orders by their {@code paid_at}: every order that was ever paid, which includes the ones refunded later
+     * ({@code PaymentStateApplier} moves PAID to REFUNDED), so a refund never removes revenue from the period that earned it. The
+     * refunded subset is shown beside, never netted. The refunded amount is not stored, so a partial refund is reported at the full
+     * order amount: an upper bound. Bank fees are unknown.
+     */
     private ObjectNode revenue(AdminReportRange range) {
-        return jdbc.sql("SELECT count(*) FILTER(WHERE status='PAID') AS paid,COALESCE(sum(amount_kopecks) FILTER(WHERE status='PAID'),0) AS paid_kopecks,"
+        return jdbc.sql("SELECT count(*) AS paid,COALESCE(sum(amount_kopecks),0) AS paid_kopecks,"
                         + "count(*) FILTER(WHERE status='REFUNDED') AS refunded,COALESCE(sum(amount_kopecks) FILTER(WHERE status='REFUNDED'),0) AS refunded_kopecks "
                         + "FROM app_learning.billing_order WHERE status IN ('PAID','REFUNDED') AND paid_at>=:from AND paid_at<:to")
                 .params(params(range, null)).query((rs, n) -> node().put("status", "AVAILABLE").put("source", "BILLING_ORDERS").put("currency", "RUB")

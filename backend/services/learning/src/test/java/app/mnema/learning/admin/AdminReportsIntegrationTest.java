@@ -105,10 +105,16 @@ class AdminReportsIntegrationTest extends PostgresIntegrationTest {
         order("PAID",99900,"2040-01-04T23:59:59Z");order("PAID",99900,"2040-01-06T00:00:00Z");order("FAILED",5000,null);
         var revenue=reports.report(range).path("financial").path("revenue");
         assertThat(revenue.path("currency").stringValue()).isEqualTo("RUB");
-        assertThat(revenue.path("paidOrders").longValue()).isEqualTo(2);
-        assertThat(revenue.path("paidKopecks").longValue()).isEqualTo(49800);
+        assertThat(revenue.path("paidOrders").longValue()).as("a refunded order was paid too").isEqualTo(3);
+        assertThat(revenue.path("paidKopecks").longValue()).isEqualTo(69700);
         assertThat(revenue.path("refundedOrders").longValue()).isEqualTo(1);
         assertThat(revenue.path("refundedKopecks").longValue()).isEqualTo(19900);
+        // A later refund moves PAID to REFUNDED: the period that earned the money still reports it, and the refund stays visible beside.
+        jdbc.sql("UPDATE app_learning.billing_order SET status='REFUNDED' WHERE amount_kopecks=29900 AND paid_at=CAST('2040-01-05T11:00:00Z' AS timestamptz)").update();
+        var refunded=reports.report(range).path("financial").path("revenue");
+        assertThat(refunded.path("paidKopecks").longValue()).isEqualTo(69700);
+        assertThat(refunded.path("refundedOrders").longValue()).isEqualTo(2);
+        assertThat(refunded.path("refundedKopecks").longValue()).isEqualTo(49800);
     }
 
     @Test void ownerApiRefusesAnotherActorBeforeQueryParsingAndNeverMutatesUsage() throws Exception {
