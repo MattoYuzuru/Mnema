@@ -103,8 +103,11 @@ APP_ENV_NAMES = (
     'MNEMA_EVENTS_OWNER_ACCOUNT_ID', 'MNEMA_IDENTITY_TURNSTILE_MODE',
     'LEARNING_MEDIA_UPLOAD_ACCESS_KEY', 'LEARNING_MEDIA_UPLOAD_SECRET_KEY',
     'MNEMA_AVATAR_ACCESS_KEY', 'MNEMA_AVATAR_SECRET_KEY',
+    'MNEMA_BILLING_CHECKOUT', 'MNEMA_BILLING_TESTER_ACCOUNT_IDS',
+    'MNEMA_TBANK_TERMINAL_KEY', 'MNEMA_TBANK_PASSWORD_BASE64',
 )
 TURNSTILE_MODES = ('blocked', 'required')
+BILLING_CHECKOUT_MODES = ('OFF', 'TESTERS', 'ON')
 TURNSTILE_KEYS = ('TURNSTILE_SITE_KEY', 'TURNSTILE_SECRET_KEY')
 MAX_CONFIG_VALUE = 4096
 FORBIDDEN_VALUE_CHARACTERS = frozenset('"\'\\$`')
@@ -312,6 +315,8 @@ def validate_entry(name, value):
         raise Rejected('configuration value for ' + name + ' is invalid')
     if name == 'MNEMA_IDENTITY_TURNSTILE_MODE' and value and value not in TURNSTILE_MODES:
         raise Rejected('configuration value for ' + name + ' must be blocked or required')
+    if name == 'MNEMA_BILLING_CHECKOUT' and value and value not in BILLING_CHECKOUT_MODES:
+        raise Rejected('configuration value for ' + name + ' must be OFF, TESTERS or ON')
     return value
 
 

@@ -64,6 +64,13 @@ x-learning-environment: &learning-environment
   # Public product events (the editorial owner account id) and the Max teaser of the plans page; both off by default (docs/deploy/selfhost-local.md).
   MNEMA_EVENTS_OWNER_ACCOUNT_ID: ${MNEMA_EVENTS_OWNER_ACCOUNT_ID:-}
   LEARNING_PLANS_MAXTEASER_ENABLED: ${LEARNING_PLANS_MAXTEASER_ENABLED:-false}
+  # Billing (#389) against the owner's T-Bank DEMO terminal; names only, off by default (docs/deploy/selfhost-local.md). The bank cannot reach a
+  # local NotificationURL, so a local order is confirmed by the return page's GetState refresh and the reconciler.
+  MNEMA_BILLING_CHECKOUT: ${MNEMA_BILLING_CHECKOUT:-OFF}
+  MNEMA_BILLING_TESTER_ACCOUNT_IDS: ${MNEMA_BILLING_TESTER_ACCOUNT_IDS:-}
+  MNEMA_TBANK_TERMINAL_KEY: ${MNEMA_TBANK_TERMINAL_KEY:-}
+  MNEMA_TBANK_PASSWORD_BASE64: ${MNEMA_TBANK_PASSWORD_BASE64:-}
+  MNEMA_PUBLIC_BASE_URL: https://localhost:${MNEMA_LOCAL_WEB_PORT:-3443}
 
 # AI provider layer (docs/deploy/selfhost-local.md). Names only: the values come from the launcher's process environment or
 # from the owner's private .env that Compose reads, never from this repository. Without them the AI capabilities stay

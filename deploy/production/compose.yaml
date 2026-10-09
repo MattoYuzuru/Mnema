@@ -147,6 +147,13 @@ services:
       MNEMA_PROMO_POPUP_CTA: ${MNEMA_PROMO_POPUP_CTA:-}
       MNEMA_PROMO_POPUP_CODE: ${MNEMA_PROMO_POPUP_CODE:-}
       MNEMA_PROMO_POPUP_COOLDOWN: ${MNEMA_PROMO_POPUP_COOLDOWN:-P14D}
+      # Billing (#389): T-Bank hosted checkout. OFF unless app.env says TESTERS (only the listed account ids) or ON; real money stays OFF until the
+      # launch checklist's bank, legal and receipt gates pass. The terminal password arrives base64-encoded (a bank password may contain '$').
+      MNEMA_BILLING_CHECKOUT: ${MNEMA_BILLING_CHECKOUT:-OFF}
+      MNEMA_BILLING_TESTER_ACCOUNT_IDS: ${MNEMA_BILLING_TESTER_ACCOUNT_IDS:-}
+      MNEMA_TBANK_TERMINAL_KEY: ${MNEMA_TBANK_TERMINAL_KEY:-}
+      MNEMA_TBANK_PASSWORD_BASE64: ${MNEMA_TBANK_PASSWORD_BASE64:-}
+      MNEMA_PUBLIC_BASE_URL: https://mnema.app
     volumes:
       # Learning's job spool: a subdirectory (owner 10001, mode 0700) of the root-owned, bounded media-work filesystem (loopback ext4 behind
       # a systemd mount unit). Media jobs run in per-job containers started by the root service mnema-media-runner, which reads these
