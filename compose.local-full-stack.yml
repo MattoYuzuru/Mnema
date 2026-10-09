@@ -1,7 +1,7 @@
 name: mnema-local-v2
 
 # Local development stack only: PostgreSQL, Identity, Learning, MinIO object storage,
-# the Learning media processor and the Angular frontend behind a local HTTPS proxy.
+# the media runner and the Angular frontend behind a local HTTPS proxy.
 # This is not a deployment definition. The launcher (scripts/mnema-local-full-stack.sh)
 # supplies every variable; see docs/deploy/selfhost-local.md, "Full local stack with media".
 
@@ -31,7 +31,7 @@ x-database: &database
   SPRING_DATASOURCE_USERNAME: ${MNEMA_LOCAL_POSTGRES_USER:-mnema}
   SPRING_DATASOURCE_PASSWORD: ${MNEMA_LOCAL_POSTGRES_PASSWORD:?Local launcher did not provide its PostgreSQL password}
 
-# Shared by both Learning instances (browser-facing and processor). The signed-URL
+# Learning, which also drains the media queue through the media runner. The signed-URL
 # host and port are the same inside Compose and in the browser.
 x-learning-environment: &learning-environment
   <<: [*local-truststore, *database]
@@ -44,6 +44,9 @@ x-learning-environment: &learning-environment
   LEARNING_MEDIA_UPLOAD_BUCKET: mnema-local-media
   LEARNING_MEDIA_UPLOAD_ACCESS_KEY: ${MNEMA_LOCAL_S3_ACCESS_KEY:?Local launcher did not provide its object-storage access key}
   LEARNING_MEDIA_UPLOAD_SECRET_KEY: ${MNEMA_LOCAL_S3_SECRET_KEY:?Local launcher did not provide its object-storage secret key}
+  # Every media kind reaches READY through the media-runner service, which runs one throw-away container per job.
+  LEARNING_MEDIA_PROCESSING_ENABLED: "true"
+  LEARNING_MEDIA_PROCESSING_WORK_ROOT: /var/lib/mnema-media
   # AI budget plan of every local account (FREE, PLUS, PRO, MAX); see docs/deploy/selfhost-local.md.
   LEARNING_USAGE_ENTITLEMENTS_DEFAULT_PLAN: ${MNEMA_LOCAL_AI_PLAN:-FREE}
   # Promo codes, A/B and the promo popup (#302); names only, all optional. Every browser reaches Learning through this stack's one proxy
@@ -60,7 +63,7 @@ x-learning-environment: &learning-environment
 
 # AI provider layer (docs/deploy/selfhost-local.md). Names only: the values come from the launcher's process environment or
 # from the owner's private .env that Compose reads, never from this repository. Without them the AI capabilities stay
-# unavailable. Only the browser-facing Learning instance gets them; the media processor (Docker socket) does not.
+# unavailable. They reach Learning only; the media runner and its job containers have no environment and no network credentials.
 x-ai-environment: &ai-environment
   LEARNING_FEATURES_AI_GENERATION_ENABLED: ${LEARNING_FEATURES_AI_GENERATION_ENABLED:-false}
   LEARNING_FEATURES_AI_ASSESSMENT_ENABLED: ${LEARNING_FEATURES_AI_ASSESSMENT_ENABLED:-false}
@@ -202,63 +205,74 @@ services:
     depends_on:
       postgres: {condition: service_healthy}
       minio-init: {condition: service_completed_successfully}
+      media-work-init: {condition: service_completed_successfully}
+    volumes:
+      # Learning sees only its own spool, a subdirectory of the media work volume (owner 10001, mode 0700).
+      - type: volume
+        source: local_media_work
+        target: /var/lib/mnema-media
+        volume:
+          subpath: spool
     secrets:
       - mnema_local_truststore
     <<: *hardened-runtime
 
-  # A second Learning instance that only drains the media queue. It is the one service
-  # that gets the Docker socket, because the existing worker gateway starts each
-  # FFmpeg job with `docker run`. That is host-root-equivalent: see the runbook.
-  # It has no published port and listens on its own container loopback only.
-  media-processor:
-    build:
-      <<: *backend-build
-      target: learning-media-processor-runtime
-    environment:
-      <<: *learning-environment
-      PORT: "8082"
-      SERVER_ADDRESS: 127.0.0.1
-      LEARNING_MEDIA_PROCESSING_ENABLED: "true"
-      LEARNING_MEDIA_PROCESSING_WORK_ROOT: ${MNEMA_LOCAL_MEDIA_WORK_ROOT:?Local launcher did not provide its media work root}
-      LEARNING_MEDIA_PROCESSING_IMAGE: ${MNEMA_LOCAL_MEDIA_WORKER_IMAGE:-mnema-media-worker:local}
-    depends_on:
-      postgres: {condition: service_healthy}
-      minio-init: {condition: service_completed_successfully}
+  # Same layout as production: the volume root belongs to root (the media runner's), `spool/` is Learning's (10001, mode 0700).
+  # chmod runs before chown: after the chown the process would no longer own the directory and has no CAP_FOWNER.
+  media-work-init:
+    image: *minio-image
+    entrypoint: ["/bin/sh", "-ec"]
+    command: ["mkdir -p /work/spool && chmod 700 /work/spool && chown 10001:10001 /work/spool && chmod 755 /work"]
+    user: "0:0"
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    security_opt: [no-new-privileges:true]
+    read_only: true
     volumes:
-      - type: bind
-        source: /var/run/docker.sock
-        target: /var/run/docker.sock
-      # The Docker daemon resolves worker bind-mount sources on the host, so the work
-      # root is mounted at the identical absolute path.
-      - type: bind
-        source: ${MNEMA_LOCAL_MEDIA_WORK_ROOT:?Local launcher did not provide its media work root}
-        target: ${MNEMA_LOCAL_MEDIA_WORK_ROOT}
-    secrets:
-      - mnema_local_truststore
-    # Root is needed to use the daemon socket and to write the work root across the
-    # VM file-sharing boundary; every capability is dropped regardless.
+      - local_media_work:/work
+    restart: "no"
+
+  # DEVELOPMENT-ONLY EXCEPTION. The production runner is a root host service (deploy/production/mnema-media-runner.py) and no
+  # production container ever mounts the Docker socket. Here the very same script runs in this one container with the socket, because a
+  # developer machine has no such service. It starts one throw-away container per job (no network, read-only root, no capability,
+  # UID 10002) from the worker image, and is the only holder of the socket: neither Learning nor any job container has it. This
+  # trusts the local Docker daemon exactly as the previous Docker-per-job gateway did; use it only on a machine you trust with Docker.
+  media-runner:
+    build:
+      context: .
+      dockerfile: deploy/local-full-stack/media-runner.Dockerfile
+    command:
+      - --work-dir=/var/lib/mnema/media-work
+      - --state-dir=/var/lib/mnema-media-runner
+      - --docker=/usr/local/bin/docker
+      - --image=${MNEMA_LOCAL_MEDIA_WORKER_IMAGE:-mnema-media-worker:local}
+      - --volume=${MNEMA_LOCAL_MEDIA_VOLUME:?Local launcher did not provide its media volume name}
     user: "0:0"
     read_only: true
     tmpfs:
-      - /tmp:rw,noexec,nosuid,size=128m
+      - /tmp:rw,noexec,nosuid,size=16m
+      - /var/lib/mnema-media-runner:rw,mode=0700,size=1m
     cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, FSETID, KILL]
     security_opt: [no-new-privileges:true]
+    volumes:
+      - local_media_work:/var/lib/mnema/media-work
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      media-work-init: {condition: service_completed_successfully}
     healthcheck:
-      # The Temurin 25 JRE base ships without curl; bash's /dev/tcp needs no extra package.
-      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8082 && printf 'GET /api/actuator/health/readiness HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && head -n 1 <&3 | grep -q ' 200 '"]
+      test: ["CMD", "python3", "-c", "import os,sys,time; sys.exit(0 if time.time()-os.stat('/var/lib/mnema-media-runner/heartbeat').st_mtime < 30 else 1)"]
       interval: 3s
       timeout: 3s
-      retries: 60
-      start_period: 20s
+      retries: 30
+      start_period: 5s
     restart: unless-stopped
 
-  # Build-only definition of the existing worker image; the launcher builds it with
-  # `--profile worker-image` and the processor starts it per job through Docker.
+  # Build-only definition of the worker image; the launcher builds it with `--profile worker-image` and the runner starts it per job.
   media-worker-image:
     profiles: [worker-image]
     build:
       context: ./backend/media-worker
-      dockerfile: Dockerfile.local
     image: ${MNEMA_LOCAL_MEDIA_WORKER_IMAGE:-mnema-media-worker:local}
 
   frontend:
@@ -279,7 +293,7 @@ services:
     depends_on:
       identity-account: {condition: service_started}
       learning: {condition: service_started}
-      media-processor: {condition: service_healthy}
+      media-runner: {condition: service_healthy}
     ports:
       - "127.0.0.1:${MNEMA_LOCAL_WEB_PORT:-3443}:8443"
       - "127.0.0.1:${MNEMA_LOCAL_IDENTITY_PORT:-3444}:8444"
@@ -318,3 +332,4 @@ secrets:
 volumes:
   local_postgres_data:
   local_object_data:
+  local_media_work:

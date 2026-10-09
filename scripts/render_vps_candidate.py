@@ -27,7 +27,7 @@ def render(args):
         raise EvidenceFailure('candidate security policy did not pass')
     images = data.get('images')
     if not isinstance(images, list) or len(images) != len(VPS_SERVICES):
-        raise EvidenceFailure('candidate requires four image security records')
+        raise EvidenceFailure('candidate requires one security record per VPS image')
     ignore_hash = validate_trivy_ignore(args.trivy_ignore)
     result = {}
     totals = Counter()

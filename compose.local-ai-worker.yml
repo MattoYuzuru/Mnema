@@ -22,9 +22,13 @@ services:
     extends:
       file: compose.local-full-stack.yml
       service: learning
+    # It does not process media, so it must not inherit Learning's job spool mount.
+    volumes: !reset []
     environment:
       MNEMA_RUNTIME_ROLES: worker
       MNEMA_PROVIDER_CREDENTIALS: local
+      # One instance owns the media work directory (it sweeps leftover jobs at startup): the API instance.
+      LEARNING_MEDIA_PROCESSING_ENABLED: "false"
       SERVER_ADDRESS: 127.0.0.1
       MANAGEMENT_SERVER_PORT: "8083"
       MANAGEMENT_SERVER_ADDRESS: 127.0.0.1

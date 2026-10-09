@@ -534,8 +534,8 @@ class BackupFreshnessAlertTest(unittest.TestCase):
     def test_the_monitors_own_timeouts_fit_inside_the_unit_timeout(self):
         unit = (ROOT / 'deploy/production/mnema-health.service').read_text()
         timeout = int(unit.split('TimeoutStartSec=')[1].split('s')[0])
-        # four 5 s probes + the newest call + the 5 s logger call, with headroom
-        self.assertLess(4 * 5 + HEALTH.NEWEST_TIMEOUT + 5 + 5, timeout)
+        # four 5 s probes + the 5 s worker inspect + the newest call + the 5 s logger call, with headroom
+        self.assertLess(4 * 5 + 5 + HEALTH.NEWEST_TIMEOUT + 5 + 5, timeout)
 
     def test_an_unavailable_backup_tool_counts_as_stale(self):
         for failure in (types.SimpleNamespace(returncode=1, stdout=b''), types.SimpleNamespace(returncode=0, stdout=b'garbage'),

@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import signal
 import sys
 from pathlib import Path
 
@@ -16,6 +17,8 @@ def main() -> int:
     parser.add_argument("--ffmpeg", default="ffmpeg")
     parser.add_argument("--ffprobe", default="ffprobe")
     args = parser.parse_args()
+    # The spool runner stops a job with SIGTERM; unwinding lets CommandRunner kill its codec sessions.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
     try:
         request = WorkRequest.read(args.manifest)
         MediaProcessor(CommandRunner(args.ffmpeg, args.ffprobe)).process(request, args.source, args.output)

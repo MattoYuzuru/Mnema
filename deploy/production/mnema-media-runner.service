@@ -1,0 +1,49 @@
+# Trusted root service that runs every media job in its own throw-away container (see mnema-media-runner.py).
+# It is the only thing besides the Docker daemon that touches the work filesystem as root, and the only writer of
+# job verdicts. Installed by the administrator, like the other host files, and part of the drift set.
+[Unit]
+Description=Mnema media runner (one container per media job)
+Documentation=https://github.com/MattoYuzuru/Mnema/blob/main/deploy/production/README.md
+After=docker.service network-online.target
+Wants=docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -I /usr/local/sbin/mnema-media-runner
+Restart=always
+RestartSec=5
+TimeoutStopSec=90
+KillMode=mixed
+Environment=HOME=/var/lib/mnema-media-runner DOCKER_CONFIG=/var/lib/mnema-media-runner/docker
+StateDirectory=mnema-media-runner
+StateDirectoryMode=0700
+UMask=0022
+# Root is required to hand files to Learning (chown) and to enter whatever a compromised container left behind
+# (CAP_DAC_OVERRIDE); everything else is dropped. Docker is reached over its Unix socket only.
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER CAP_FSETID CAP_KILL
+AmbientCapabilities=
+ProtectSystem=strict
+ReadWritePaths=/var/lib/mnema/media-work
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+TasksMax=128
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

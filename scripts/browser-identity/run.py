@@ -10,8 +10,10 @@ import json
 import mimetypes
 import os
 from pathlib import Path
+import shutil
 import signal
 import ssl
+import sys
 import subprocess
 import tempfile
 import threading
@@ -243,6 +245,8 @@ class Fixture(BASE.Fixture):
         self.active_learning_port = None
         self.media_container = None
         self.media_origin = None
+        self.media_runner = None
+        self.media_work_root = None
 
     def note_slow(self, method, path, status, seconds):
         """A proxied request that took two seconds or more: method, path without its query, status and time (kept with the private logs)."""
@@ -309,6 +313,33 @@ class Fixture(BASE.Fixture):
                 (self.tmp / "media-store-setup.log").write_bytes(result.stderr)
             BASE.require(result.returncode == 0, "local media store " + arguments[0] + " setup failed")
         aws("create-bucket", "--bucket", "mnema-browser-media")
+        self.start_media_worker()
+
+    def start_media_worker(self):
+        """The Learning jar runs on the host, so the media runner (the production script, started here unprivileged) runs on the
+        host too and starts one throw-away worker container per job. Its verdicts are owned by the current user, which is why
+        the harness tells Learning to accept that owner (production: root only)."""
+        BASE.command(["docker", "image", "inspect", "mnema-media-worker:local"])
+        self.media_work_root = self.tmp / "media-work"   # self.tmp is under the home directory on macOS, which Colima shares
+        self.media_work_root.mkdir(mode=0o700)
+        (self.media_work_root / "spool").mkdir(mode=0o700)
+        (self.media_work_root / "state").mkdir(mode=0o700)
+        script = ("import importlib.util, pathlib, signal, sys\n"
+                  "spec = importlib.util.spec_from_file_location('runner', sys.argv[1])\n"
+                  "module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)\n"
+                  "work = pathlib.Path(sys.argv[2]); uid, gid = int(sys.argv[3]), int(sys.argv[4])\n"
+                  "config = module.Config(work_dir=work, state_dir=work / 'state', trusted_uid=uid, learning_uid=uid,\n"
+                  "    learning_gid=gid, worker_uid=uid, worker_gid=gid, require_mount=False, image='mnema-media-worker:local',\n"
+                  "    docker=sys.argv[5])\n"
+                  "runner = module.Runner(config)\n"
+                  "signal.signal(signal.SIGTERM, lambda *_: runner.stop.set())\n"
+                  "runner.run_forever()\n")
+        log = open(self.tmp / "media-runner.log", "wb")
+        self.media_runner = subprocess.Popen(
+            [sys.executable, "-c", script, str(ROOT / "deploy/production/mnema-media-runner.py"), str(self.media_work_root),
+             str(os.getuid()), str(os.getgid()), shutil.which("docker") or "docker"],
+            stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        log.close()
 
     def prepare_origins(self):
         # Called after the caller owns this fixture, so partial listener startup is cleaned up.
@@ -352,6 +383,8 @@ class Fixture(BASE.Fixture):
                                     "LEARNING_MEDIA_UPLOAD_ACCESS_KEY": "mnema-browser-access",
                                     "LEARNING_MEDIA_UPLOAD_SECRET_KEY": "mnema-browser-secret-key",
                                     "LEARNING_MEDIA_PROCESSING_ENABLED": "true",
+                                    "LEARNING_MEDIA_PROCESSING_WORK_ROOT": str(self.media_work_root / "spool"),
+                                    "LEARNING_MEDIA_PROCESSING_VERDICT_UID": str(os.getuid()),
                                     "LEARNING_MEDIA_PROCESSING_INITIAL_DELAY": "PT1S",
                                     "LEARNING_MEDIA_PROCESSING_SCAN_INTERVAL": "PT2S"})
             if generation:
@@ -532,6 +565,17 @@ class Fixture(BASE.Fixture):
                                          capture_output=True, timeout=5)
                 if removed.returncode and b"No such container" not in removed.stderr:
                     issues.append("media_container_remove")
+            if self.media_runner is not None:
+                self.media_runner.terminate()
+                try:
+                    self.media_runner.wait(timeout=30)
+                except subprocess.TimeoutExpired:
+                    os.killpg(self.media_runner.pid, signal.SIGKILL)
+                    issues.append("media_runner_stop")
+                leftovers = subprocess.run(["docker", "ps", "--all", "--quiet", "--filter", "name=mnema-media-job-"],
+                                           capture_output=True, timeout=15)
+                for container in leftovers.stdout.decode().split():
+                    subprocess.run(["docker", "rm", "--force", container], capture_output=True, timeout=30)
             # macOS can transiently refuse a signal while a Chrome helper exits. Final ownership
             # verification distinguishes that race from a genuinely surviving process group.
             surviving = list(self.groups)

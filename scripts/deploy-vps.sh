@@ -52,8 +52,14 @@ trap 'rm -rf -- "$credentials"' EXIT
 trap 'exit 1' HUP INT TERM
 printf '%s\n' "$MNEMA_DEPLOY_SSH_KEY" > "$credentials/key"
 printf '%s\n' "$MNEMA_DEPLOY_KNOWN_HOSTS" > "$credentials/known_hosts"
+# The job's short-lived Actions token (packages: read) is the only registry credential. It goes to the dispatcher's
+# `pull` on stdin, never argv or the environment of ssh, and is not stored on the host.
+if [[ $mode == release ]]; then
+  [[ -n ${GH_TOKEN:-} ]] || reject 'registry credential missing'
+  printf '%s' "$GH_TOKEN" > "$credentials/registry-credential"
+fi
 unset MNEMA_DEPLOY_SSH_KEY MNEMA_DEPLOY_KNOWN_HOSTS GH_TOKEN
-chmod 600 "$credentials/key" "$credentials/known_hosts"
+chmod 600 "$credentials/key" "$credentials/known_hosts"   # the credential file is created under umask 077
 ssh-keygen -F 135.106.175.30 -f "$credentials/known_hosts" >/dev/null || reject 'host key is not pinned'
 
 options=(-F /dev/null -i "$credentials/key"
@@ -128,6 +134,9 @@ files = {
     'mnema-health.timer': 'deploy/production/mnema-health.timer',
     'mnema-local-backup.service': 'deploy/production/mnema-local-backup.service',
     'mnema-local-backup.timer': 'deploy/production/mnema-local-backup.timer',
+    'media-work.mount': 'deploy/production/media-work.mount',
+    'mnema-media-runner': 'deploy/production/mnema-media-runner.py',
+    'mnema-media-runner.service': 'deploy/production/mnema-media-runner.service',
     'mnema-deploy-ssh': 'deploy/production/mnema-deploy-ssh',
     'mnema-deploy.sudoers': 'deploy/production/mnema-deploy.sudoers',
     '60-mnema-deploy.conf': 'deploy/production/60-mnema-deploy.conf',
@@ -158,7 +167,12 @@ fi
 # refused by the dispatcher, so a rebuild can never replace what was approved.
 remote_stdin "admit $release_sha" "$candidate" > "$credentials/admit.json"
 
-# 3. Application configuration from the prod Environment secrets (explicit allowlist, stdin
+# 3. Pull exactly the five admitted digests with the job's short-lived credential. The images stay local and the
+# dispatcher's compose never pulls (the media-worker package is private; the other four are public).
+remote_stdin "pull $release_sha" "$credentials/registry-credential" > "$credentials/pull.json"
+rm -f "$credentials/registry-credential"
+
+# 4. Application configuration from the prod Environment secrets (explicit allowlist, stdin
 # only, never printed). The object is always sent, possibly empty: the Environment is the
 # single source of truth, so an unset secret removes its key. The dispatcher only stages
 # it; it becomes app.env inside the deploy transaction.
@@ -168,7 +182,7 @@ for name in $(compgen -e | grep '^PROD_' || true); do unset "$name"; done
 remote_stdin configure "$credentials/app-config.json" > "$credentials/configure.json"
 rm -f "$credentials/app-config.json"
 
-# 4. Deploy it, 5. verify the live state.
+# 5. Deploy it, 6. verify the live state.
 outcome=0
 remote "deploy $release_sha" | tee "$credentials/deploy.json" || outcome=1
 if [[ $outcome -eq 0 ]]; then

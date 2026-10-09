@@ -96,9 +96,14 @@ class MediaUploadIntegrationTest extends PostgresIntegrationTest {
     @Autowired private MediaProcessingSettings processingSettings;
     @Autowired private JdbcClient jdbc;
 
-    /** Local-only proof that the real Docker worker publishes verified variants through MinIO. */
+    /**
+     * Local-only proof that the real media runner starts a real media-worker container per job (no network, one
+     * throw-away container each) and that the variants it hands back are published through MinIO. The test plays the
+     * root runner under the current user, so its verdicts are accepted as owned by that user.
+     * {@code MNEMA_MEDIA_WORKER_IMAGE} names the image (default {@code mnema-media-worker:local}).
+     */
     @Test
-    @EnabledIfEnvironmentVariable(named = "MNEMA_MEDIA_DOCKER_SMOKE", matches = "1")
+    @EnabledIfEnvironmentVariable(named = "MNEMA_MEDIA_SPOOL_SMOKE", matches = "1")
     void realImageAudioAndVideoPassUploadWorkerAndSignedPlayback(@TempDir Path temporary) throws Exception {
         Path image = temporary.resolve("diagram.png");
         Path audio = temporary.resolve("narration.mp3");
@@ -112,37 +117,67 @@ class MediaUploadIntegrationTest extends PostgresIntegrationTest {
                 "sine=frequency=440:duration=2", "-c:v", "libx264", "-pix_fmt", "yuv420p",
                 "-c:a", "aac", "-shortest", video.toString());
 
-        Path sharedRoot = Path.of(System.getProperty("user.home"), ".mnema", "media-processing");
-        var settings = new MediaProcessingSettings(true, sharedRoot.toString(), "docker",
-                "mnema-media-worker:local", Duration.ofMinutes(30), Duration.ofMinutes(2),
-                Duration.ofSeconds(30), Duration.ofMinutes(1), Duration.ofMinutes(30), 5, 2,
-                Duration.ofHours(1), Duration.ofMinutes(5));
+        Path state = Files.createDirectories(Path.of(System.getProperty("user.home"), ".mnema"));
+        Path workDir = Files.createTempDirectory(state, "spool-smoke-");
+        int uid = (Integer) Files.getAttribute(workDir, "unix:uid");
+        Path sharedRoot = Files.createDirectory(workDir.resolve("spool"),
+                java.nio.file.attribute.PosixFilePermissions.asFileAttribute(
+                        java.nio.file.attribute.PosixFilePermissions.fromString("rwx------")));
+        var settings = new MediaProcessingSettings(true, sharedRoot.toString(), Duration.ofMinutes(30),
+                Duration.ofHours(2), uid, Duration.ofMinutes(2), Duration.ofSeconds(30), Duration.ofMinutes(1),
+                Duration.ofMinutes(30), 5, 2, Duration.ofHours(1), Duration.ofMinutes(5));
+        int gid = (Integer) Files.getAttribute(workDir, "unix:gid");
         var processing = new MediaProcessingService(processingRepository, uploads, objects,
-                new DockerMediaWorkerGateway(settings), mediaGcRepository, settings);
-        for (var source : List.of(new LocalMedia(image, "image", "image/png"),
-                new LocalMedia(audio, "audio", "audio/mpeg"),
-                new LocalMedia(video, "video", "video/mp4"))) {
-            byte[] bytes = Files.readAllBytes(source.path());
-            UUID owner = UUID.randomUUID();
-            var started = uploads.start(owner, UUID.randomUUID(), "upload", source.kind(), source.mime(), bytes.length);
-            put(started.url(), started.headers(), bytes);
-            uploads.finalizeUpload(owner, started.assetId(), 0, UUID.randomUUID());
-            var claim = processingRepository.claim(started.assetId());
-            assertThat(claim).isNotNull();
-            processing.process(claim);
-            assertThat(assetState(started.assetId())).as(source.kind()).isEqualTo("READY");
-            List<String> keys = jdbc.sql("SELECT b.object_key FROM app_learning.media_variant v "
-                            + "JOIN app_learning.media_blob b ON b.blob_id=v.blob_id "
-                            + "WHERE v.asset_id=:asset ORDER BY v.profile")
-                    .param("asset", started.assetId()).query(String.class).list();
-            assertThat(keys).as(source.kind()).isNotEmpty();
-            for (String key : keys) {
-                var head = objects.head(key);
-                assertThat(head).as(key).isNotNull();
-                var response = HTTP.send(HttpRequest.newBuilder(URI.create(playbackStore.read(key, false).url()))
-                        .GET().build(), HttpResponse.BodyHandlers.ofByteArray());
-                assertThat(response.statusCode()).as(key).isEqualTo(200);
-                assertThat(response.body().length).as(key).isEqualTo(head.size());
+                new SpoolMediaWorkerGateway(Duration.ofMinutes(5), Duration.ofMillis(250),
+                        SpoolMediaWorkerGateway.DISK_CAP_BYTES, uid), mediaGcRepository, settings);
+        String script = "import importlib.util, pathlib, signal, sys\n"
+                + "spec = importlib.util.spec_from_file_location('runner', sys.argv[1])\n"
+                + "module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)\n"
+                + "work = pathlib.Path(sys.argv[2]); uid, gid = int(sys.argv[3]), int(sys.argv[4])\n"
+                + "config = module.Config(work_dir=work, state_dir=work / 'state', trusted_uid=uid, learning_uid=uid,\n"
+                + "    learning_gid=gid, worker_uid=uid, worker_gid=gid, require_mount=False, image=sys.argv[5], docker='docker')\n"
+                + "(work / 'state').mkdir(mode=0o700, exist_ok=True)\n"
+                + "runner = module.Runner(config)\n"
+                + "signal.signal(signal.SIGTERM, lambda *_: runner.stop.set())\n"
+                + "runner.run_forever()\n";
+        Path runnerScript = Path.of("..", "..", "..", "deploy", "production", "mnema-media-runner.py").toAbsolutePath().normalize();
+        if (!Files.isRegularFile(runnerScript)) runnerScript = Path.of("deploy", "production", "mnema-media-runner.py").toAbsolutePath();
+        Process runner = new ProcessBuilder("python3", "-c", script, runnerScript.toString(), workDir.toString(),
+                Integer.toString(uid), Integer.toString(gid),
+                System.getenv().getOrDefault("MNEMA_MEDIA_WORKER_IMAGE", "mnema-media-worker:local"))
+                .inheritIO().start();
+        try {
+            for (var source : List.of(new LocalMedia(image, "image", "image/png"),
+                    new LocalMedia(audio, "audio", "audio/mpeg"),
+                    new LocalMedia(video, "video", "video/mp4"))) {
+                byte[] bytes = Files.readAllBytes(source.path());
+                UUID owner = UUID.randomUUID();
+                var started = uploads.start(owner, UUID.randomUUID(), "upload", source.kind(), source.mime(), bytes.length);
+                put(started.url(), started.headers(), bytes);
+                uploads.finalizeUpload(owner, started.assetId(), 0, UUID.randomUUID());
+                var claim = processingRepository.claim(started.assetId());
+                assertThat(claim).isNotNull();
+                processing.process(claim);
+                assertThat(assetState(started.assetId())).as(source.kind()).isEqualTo("READY");
+                List<String> keys = jdbc.sql("SELECT b.object_key FROM app_learning.media_variant v "
+                                + "JOIN app_learning.media_blob b ON b.blob_id=v.blob_id "
+                                + "WHERE v.asset_id=:asset ORDER BY v.profile")
+                        .param("asset", started.assetId()).query(String.class).list();
+                assertThat(keys).as(source.kind()).isNotEmpty();
+                for (String key : keys) {
+                    var head = objects.head(key);
+                    assertThat(head).as(key).isNotNull();
+                    var response = HTTP.send(HttpRequest.newBuilder(URI.create(playbackStore.read(key, false).url()))
+                            .GET().build(), HttpResponse.BodyHandlers.ofByteArray());
+                    assertThat(response.statusCode()).as(key).isEqualTo(200);
+                    assertThat(response.body().length).as(key).isEqualTo(head.size());
+                }
+            }
+        } finally {
+            runner.destroy();
+            runner.waitFor(30, java.util.concurrent.TimeUnit.SECONDS);
+            try (var paths = Files.walk(workDir)) {
+                for (Path path : paths.sorted(java.util.Comparator.reverseOrder()).toList()) Files.deleteIfExists(path);
             }
         }
     }

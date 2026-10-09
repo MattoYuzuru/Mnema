@@ -233,7 +233,7 @@ def upload_and_process(web, access, storage_port, context, kind, mime, data, sig
     while state != "READY":
         require(state not in ("REJECTED", "FAILED_RETRYABLE"), f"{kind} processing ended as {state}")
         require(time.monotonic() < deadline,
-                f"{kind} asset still {state} after {timeout}s; check the media-processor logs")
+                f"{kind} asset still {state} after {timeout}s; check the learning and media-worker logs")
         time.sleep(3)
         status, _, current = web.request("GET", f"{base}/{asset}/upload", bearer=access)
         require(status == 200 and isinstance(current, dict), f"{kind} status poll failed ({status})")

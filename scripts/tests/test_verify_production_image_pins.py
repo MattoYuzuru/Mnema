@@ -24,6 +24,7 @@ class VerifyProductionImagePinsTest(unittest.TestCase):
             Path("deploy/production/compose.yaml"),
             Path("deploy/production/Dockerfile"),
             Path("deploy/production/local-backup.py"),
+            Path("backend/media-worker/Dockerfile"),
             Path("k8s/postgres.yaml"),
             Path("k8s/redis.yaml"),
             Path("k8s/identity-account-deploy.yaml"),
@@ -130,6 +131,36 @@ class VerifyProductionImagePinsTest(unittest.TestCase):
         path.write_text(content)
         messages = [finding.message for finding in self.findings()]
         self.assertTrue(any('four admitted image bindings' in message for message in messages))
+
+    def test_media_worker_base_must_be_pinned_and_the_image_non_root_with_pinned_ffmpeg(self):
+        dockerfile = 'backend/media-worker/Dockerfile'
+        self.replace(dockerfile, 'ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3',
+                     'ubuntu:24.04')
+        self.assertTrue(any('media worker base image' in finding.message for finding in self.findings()))
+        self.setUp()
+        self.replace(dockerfile, 'USER 10002:10002', 'USER root')
+        self.assertTrue(any('UID 10002' in finding.message for finding in self.findings()))
+        self.setUp()
+        self.replace(dockerfile, 'COPY mnema_media_worker ./mnema_media_worker', 'COPY mnema_media_worker ./mnema_media_worker\nCOPY tests ./tests')
+        self.assertTrue(any('must not contain the tests' in finding.message for finding in self.findings()))
+        self.setUp()
+        self.replace(dockerfile, 'libpython3.12-stdlib=${PYTHON312_VERSION}', 'libpython3.12-stdlib')
+        self.assertTrue(any('Python interpreter and standard library' in finding.message for finding in self.findings()))
+        self.setUp()
+        self.replace(dockerfile, 'ffmpeg=${FFMPEG_VERSION}', 'ffmpeg')
+        self.assertTrue(any('FFmpeg packages must be pinned' in finding.message for finding in self.findings()))
+        self.setUp()
+        self.replace(dockerfile, 'org.opencontainers.image.source="https://github.com/MattoYuzuru/Mnema"', 'x="y"')
+        self.assertTrue(any('OCI source label' in finding.message for finding in self.findings()))
+        self.setUp()
+        self.replace(dockerfile, 'FROM ${UBUNTU_BASE}', 'FROM ubuntu:24.04')
+        self.assertTrue(any('single FROM' in finding.message for finding in self.findings()))
+
+    def test_the_media_worker_cannot_come_back_as_a_long_lived_compose_service(self):
+        path = self.repository / 'deploy/production/compose.yaml'
+        path.write_text(path.read_text().replace('\n  frontend:\n', '\n  media-worker:\n    image: ${MNEMA_MEDIA_WORKER_IMAGE:?verified-candidate-required}\n\n  frontend:\n', 1))
+        messages = [finding.message for finding in self.findings()]
+        self.assertTrue(any('must not be a Compose service' in message for message in messages))
 
     def test_vps_database_base_cannot_use_a_floating_tag(self):
         self.replace('deploy/production/Dockerfile',

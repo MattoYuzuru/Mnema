@@ -4,15 +4,9 @@ import app.mnema.learning.platform.json.ContentJsonReader;
 import tools.jackson.databind.JsonNode;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.LinkOption;
 import java.nio.file.Path;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -39,14 +33,18 @@ final class MediaWorkerResult {
 
     private MediaWorkerResult() { }
 
+    /**
+     * Parses and verifies the worker's result. Nothing the worker wrote is trusted or read twice: the
+     * manifest is read once (no links, regular file, bounded), and every variant is copied once from the
+     * worker's file into {@code privateDir} (a Learning-only directory) while its size and SHA-256 are
+     * checked. The returned variants point at those private copies, which the caller uploads and deletes.
+     */
     static Verified read(Path output, UUID assetId, long generation, String kind,
-                         long sourceLength, String sourceSha, long maxDurationMs) {
+                         long sourceLength, String sourceSha, long maxDurationMs, Path privateDir) {
         try {
-            Path manifest = output.resolve("result.json");
-            if (!Files.isRegularFile(manifest, LinkOption.NOFOLLOW_LINKS)
-                    || Files.size(manifest) > MAX_JSON_BYTES) throw invalid();
+            WorkerFiles.requireDirectory(output);
             JsonNode root = new ContentJsonReader(MAX_JSON_BYTES, 8, 200)
-                    .read(Files.readAllBytes(manifest));
+                    .read(WorkerFiles.readBounded(output.resolve("result.json"), MAX_JSON_BYTES));
             if (!fields(root, ROOT) || !integer(root.path("formatVersion"), 1, 1)
                     || !assetId.toString().equals(root.path("assetId").stringValue(null))
                     || !integer(root.path("generation"), generation, generation)
@@ -89,10 +87,9 @@ final class MediaWorkerResult {
                 Integer width = nullableInt(item.path("width"));
                 Integer height = nullableInt(item.path("height"));
                 dimensions(profile.mimeType().equals("audio/mp4"), width, height);
-                Path path = output.resolve(name + "." + profile.extension());
-                if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)
-                        || Files.size(path) != length || !hash(path).equals(hash)) throw invalid();
-                verified.add(new Variant(profile.purpose(), name, profile.mimeType(), path,
+                Path copy = privateDir.resolve(name + "." + profile.extension());
+                WorkerFiles.copyVerified(output.resolve(name + "." + profile.extension()), copy, length, hash);
+                verified.add(new Variant(profile.purpose(), name, profile.mimeType(), copy,
                         hash, length, duration, width, height));
             }
             if (!seen.equals(expected)) throw invalid();
@@ -161,20 +158,6 @@ final class MediaWorkerResult {
     private static void dimensions(boolean audio, Integer width, Integer height) {
         if ((width == null) != (height == null) || (audio && width != null) || (!audio && width == null)) {
             throw invalid();
-        }
-    }
-
-    private static String hash(Path path) throws IOException {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            try (InputStream input = Files.newInputStream(path, LinkOption.NOFOLLOW_LINKS)) {
-                byte[] buffer = new byte[1024 * 1024];
-                int count;
-                while ((count = input.read(buffer)) != -1) digest.update(buffer, 0, count);
-            }
-            return HexFormat.of().formatHex(digest.digest());
-        } catch (NoSuchAlgorithmException impossible) {
-            throw new IllegalStateException(impossible);
         }
     }
 

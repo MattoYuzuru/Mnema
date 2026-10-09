@@ -5,18 +5,16 @@ import org.springframework.stereotype.Component;
 
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.regex.Pattern;
 
-/** Local worker controls; upload admission is configured independently in MediaUploadSettings. */
+/** Worker spool controls; upload admission is configured independently in MediaUploadSettings. */
 @Component
 final class MediaProcessingSettings {
-    private static final Pattern IMAGE = Pattern.compile("[a-zA-Z0-9][a-zA-Z0-9._:/@-]{0,255}");
-
     final boolean enabled;
     final Path workRoot;
-    final String dockerBinary;
-    final String image;
     final Duration workerTimeout;
+    final Duration staleJobAge;
+    /** Owner a genuine verdict file must have: root. Only the browser harness, which runs the runner unprivileged, changes it. */
+    final int verdictUid;
     final Duration lease;
     final Duration heartbeat;
     final Duration retryBase;
@@ -29,9 +27,9 @@ final class MediaProcessingSettings {
     MediaProcessingSettings(
             @Value("${learning.media.processing.enabled:false}") boolean enabled,
             @Value("${learning.media.processing.work-root:}") String workRoot,
-            @Value("${learning.media.processing.docker-binary:docker}") String dockerBinary,
-            @Value("${learning.media.processing.image:mnema-media-worker:local}") String image,
             @Value("${learning.media.processing.worker-timeout:PT30M}") Duration workerTimeout,
+            @Value("${learning.media.processing.stale-job-age:PT2H}") Duration staleJobAge,
+            @Value("${learning.media.processing.verdict-uid:0}") int verdictUid,
             @Value("${learning.media.processing.lease:PT2M}") Duration lease,
             @Value("${learning.media.processing.heartbeat:PT30S}") Duration heartbeat,
             @Value("${learning.media.processing.retry-base:PT1M}") Duration retryBase,
@@ -43,9 +41,10 @@ final class MediaProcessingSettings {
         Path root = Path.of(workRoot.isBlank()
                 ? Path.of(System.getProperty("user.home"), ".mnema", "media-processing").toString()
                 : workRoot).toAbsolutePath().normalize();
-        if (dockerBinary.isBlank() || dockerBinary.startsWith("-") || dockerBinary.contains("\u0000")
-                || !IMAGE.matcher(image).matches() || workerTimeout.compareTo(Duration.ofMinutes(1)) < 0
-                || workerTimeout.compareTo(Duration.ofMinutes(30)) > 0
+        if (workerTimeout.compareTo(Duration.ofMinutes(1)) < 0 || workerTimeout.compareTo(Duration.ofMinutes(30)) > 0
+                // a job directory outlives its slowest legitimate use: download, worker wait, upload
+                || staleJobAge.compareTo(Duration.ofHours(1)) < 0 || staleJobAge.compareTo(Duration.ofHours(24)) > 0
+                || verdictUid < 0
                 || lease.compareTo(Duration.ofMinutes(1)) < 0 || lease.compareTo(Duration.ofMinutes(15)) > 0
                 || heartbeat.compareTo(Duration.ofSeconds(5)) < 0
                 || heartbeat.multipliedBy(2).compareTo(lease) >= 0
@@ -60,9 +59,9 @@ final class MediaProcessingSettings {
         }
         this.enabled = enabled;
         this.workRoot = root;
-        this.dockerBinary = dockerBinary;
-        this.image = image;
         this.workerTimeout = workerTimeout;
+        this.staleJobAge = staleJobAge;
+        this.verdictUid = verdictUid;
         this.lease = lease;
         this.heartbeat = heartbeat;
         this.retryBase = retryBase;

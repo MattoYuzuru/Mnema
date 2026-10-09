@@ -41,6 +41,7 @@ def raw(document):
     return json.dumps(document).encode()
 
 
+DISPATCH_CHECK = DISPATCH.check_images_present
 FINGERPRINT = {'app_identity': {'count': 3, 'max_rank': 3, 'md5': 'x'}, 'app_learning': None}
 CHANGED = {'app_identity': {'count': 4, 'max_rank': 4, 'md5': 'y'}, 'app_learning': None}
 
@@ -48,7 +49,7 @@ CHANGED = {'app_identity': {'count': 4, 'max_rank': 4, 'md5': 'y'}, 'app_learnin
 class Host:
     """Temporary ROOT/STATE with the dispatcher's external effects replaced by recorders."""
 
-    def __init__(self, case, current=None, fingerprints=(FINGERPRINT, FINGERPRINT), backup_error=None):
+    def __init__(self, case, current=None, fingerprints=(FINGERPRINT, FINGERPRINT), backup_error=None, start_error=None):
         self.case = case
         self.directory = Path(tempfile.mkdtemp())
         case.addCleanup(lambda: __import__('shutil').rmtree(self.directory, ignore_errors=True))
@@ -65,6 +66,7 @@ class Host:
             (self.state / 'current.json').write_text(json.dumps(current))
         self.fingerprints = list(fingerprints)
         self.backup_error = backup_error
+        self.start_error = start_error
         self.listing = ''
 
     def compose(self, data, operation):
@@ -85,6 +87,11 @@ class Host:
             return self.running_image + '\n'
         if args[:2] == ['image', 'ls']:
             return self.listing
+        if args[0] == 'start':
+            if self.start_error:
+                raise self.start_error
+            self.events.append(('start', *args[1:]))
+            return ''
         if args[:2] == ['image', 'rm']:
             self.events.append(('rm', args[2]))
             return ''
@@ -104,6 +111,9 @@ class Host:
         stack.enter_context(patch.object(DISPATCH, 'compose', side_effect=self.compose))
         stack.enter_context(patch.object(DISPATCH, 'pre_deploy_backup', side_effect=self.backup))
         stack.enter_context(patch.object(DISPATCH, 'check_backup_tool'))
+        stack.enter_context(patch.object(DISPATCH, 'check_media_work_root'))
+        stack.enter_context(patch.object(DISPATCH, 'check_media_runner'))
+        stack.enter_context(patch.object(DISPATCH, 'check_images_present'))
         stack.enter_context(patch.object(DISPATCH, 'offsite_upload', side_effect=self.offsite))
         stack.enter_context(patch.object(DISPATCH, 'newest_backup_age_hours', return_value=0.5))
         stack.enter_context(patch.object(DISPATCH, 'docker', side_effect=self.docker))
@@ -140,6 +150,11 @@ class ProductionDispatcherTest(unittest.TestCase):
                 DISPATCH.parse_command(command)
         self.assertEqual(DISPATCH.parse_command('deploy ' + 'a' * 40), ['deploy', 'a' * 40])
         self.assertEqual(DISPATCH.parse_command('admit ' + 'a' * 40), ['admit', 'a' * 40])
+        self.assertEqual(DISPATCH.parse_command('pull ' + 'a' * 40), ['pull', 'a' * 40])
+        for command in ('pull', 'pull ' + 'a' * 39, 'pull ' + 'a' * 40 + ' ghcr.io/x@sha256:' + 'b' * 64,
+                        'pull ' + 'A' * 40, 'pull ' + 'a' * 40 + '\nid', 'pull  ' + 'a' * 40):
+            with self.subTest(command=command), self.assertRaises(DISPATCH.Rejected):
+                DISPATCH.parse_command(command)
         for command in ('status', 'verify', 'rollback'):
             self.assertEqual(DISPATCH.parse_command(command), [command])
 
@@ -198,6 +213,8 @@ class ProductionDispatcherTest(unittest.TestCase):
             'service swap': candidate(images={**bad_images, 'learning': bad_images['frontend']}),
             'extra service': candidate(images={**bad_images, 'redis': 'ghcr.io/mattoyuzuru/mnema/redis@sha256:' + 'c' * 64}),
             'missing service': candidate(images={k: v for k, v in bad_images.items() if k != 'postgres'}),
+            'four-image candidate without the media worker': candidate(images={
+                k: v for k, v in bad_images.items() if k != 'media-worker'}),
             'wrong sha': candidate(sha='e' * 40),
             'source commit': candidate(source={**candidate()['source'], 'commit': OLD}),
             'source repository': candidate(source={**candidate()['source'], 'repository': 'other/repo'}),
@@ -253,7 +270,8 @@ class ProductionDispatcherTest(unittest.TestCase):
 
     def test_untrusted_input_is_read_before_the_production_lock_is_taken(self):
         order = []
-        for operation, payload in (('admit ' + NEW, DISPATCH.MAX_CANDIDATE_BYTES), ('configure', DISPATCH.MAX_CONFIG_BYTES)):
+        for operation, payload in (('admit ' + NEW, DISPATCH.MAX_CANDIDATE_BYTES), ('configure', DISPATCH.MAX_CONFIG_BYTES),
+                                   ('pull ' + NEW, DISPATCH.MAX_TOKEN_BYTES)):
             order.clear()
             with tempfile.TemporaryDirectory() as temporary, patch.object(DISPATCH, 'LOCK', Path(temporary) / 'lock'), \
                  patch.object(DISPATCH.os, 'geteuid', return_value=0), patch.object(DISPATCH.sys, 'argv', ['d', operation]), \
@@ -270,6 +288,155 @@ class ProductionDispatcherTest(unittest.TestCase):
              patch.object(DISPATCH, 'read_stdin') as reader, patch.object(DISPATCH, 'main'):
             self.assertEqual(DISPATCH.entrypoint(), 0)
         reader.assert_not_called()
+
+    # --- ephemeral registry pull ------------------------------------------------------
+
+    TOKEN = 'ghs_' + 'T' * 36
+
+    def pull(self, host, token=None, run=None, sha=NEW):
+        """Run pull_images with docker replaced by a recorder; returns (calls, directories seen, output)."""
+        calls, configs = [], []
+        scratch = host.directory / 'run'
+        scratch.mkdir(exist_ok=True)
+
+        def fake_run(command, **kwargs):
+            config = Path(command[command.index('--config') + 1])
+            configs.append((config.is_dir(), stat.S_IMODE(config.stat().st_mode)))
+            calls.append((command, kwargs.get('input'), config))
+            return run(command, **kwargs) if run else types.SimpleNamespace(returncode=0, stdout=b'', stderr=b'')
+
+        output = io.StringIO()
+        with host.patches(), patch.object(DISPATCH, 'RUN_DIR', scratch), \
+             patch.object(DISPATCH.subprocess, 'run', side_effect=fake_run), contextlib.redirect_stdout(output), \
+             contextlib.redirect_stderr(io.StringIO()):
+            try:
+                DISPATCH.pull_images(sha, (token or self.TOKEN).encode() if not isinstance(token, bytes) else token)
+            finally:
+                self.leftover = list(scratch.iterdir())
+        return calls, configs, output.getvalue()
+
+    def test_the_registry_token_is_validated_for_form_and_never_echoed(self):
+        valid = self.TOKEN.encode()
+        self.assertEqual(DISPATCH.validate_token(valid), self.TOKEN)
+        self.assertEqual(DISPATCH.validate_token(valid + b'\n'), self.TOKEN)
+        self.assertEqual(DISPATCH.validate_token(b'a' * 1000), 'a' * 1000)   # no artificial length cap below the 4 KiB stdin bound
+        for bad in (b'', b'short', b'a' * 15, b'a' * (DISPATCH.MAX_TOKEN_BYTES + 1), valid + b'\n\n',
+                    valid[:20] + b' ' + valid[20:], valid + b'"', valid + b'$(id)', valid + b';', valid + b'\\',
+                    'ghs_\u00e9' .encode() + b'a' * 20, b'ghs_\xff' + b'a' * 20, b'\n' + valid):
+            with self.subTest(bad=bad[:24]), self.assertRaises(DISPATCH.Rejected) as caught:
+                DISPATCH.validate_token(bad)
+            self.assertIn(str(caught.exception), ('registry token invalid', 'registry token too large'))
+
+    def test_pull_logs_in_on_stdin_with_a_private_config_and_pulls_exactly_the_manifest_digests(self):
+        host = Host(self, current={'sha': OLD, 'previous': None})
+        calls, configs, output = self.pull(host)
+        commands = [command for command, _, _ in calls]
+        # login first, token only on stdin; then exactly the five admitted digests, nothing else
+        login = commands[0]
+        self.assertEqual(login[:2], ['/usr/bin/docker', '--config'])
+        self.assertEqual(login[3:], ['login', 'ghcr.io', '--username', 'x-access-token', '--password-stdin'])
+        self.assertEqual(calls[0][1], self.TOKEN.encode() + b'\n')
+        pulls = [command for command in commands[1:]]
+        self.assertEqual([command[3:5] for command in pulls], [['pull', '--quiet']] * 5)
+        self.assertEqual([command[5] for command in pulls], [images('2')[service] for service in SERVICES])
+        self.assertEqual(len({str(call[2]) for call in calls}), 1)
+        for command, stdin, _ in calls[1:]:
+            self.assertIsNone(stdin)
+        self.assertNotIn(self.TOKEN, ' '.join(' '.join(command) for command in commands))
+        self.assertTrue(all(is_dir and mode == 0o700 for is_dir, mode in configs))
+        self.assertTrue(calls[0][2].parent == host.directory / 'run' and calls[0][2].name.startswith('mnema-docker-'))
+        self.assertFalse(calls[0][2].exists())
+        self.assertEqual(self.leftover, [])
+        self.assertEqual(json.loads(output), {'target': 'mnema-prod', 'sha': NEW, 'pulled': 5})
+        self.assertNotIn(self.TOKEN, output)
+
+    def test_pull_removes_the_temporary_config_when_login_or_a_pull_fails_and_stops_there(self):
+        host = Host(self, current={'sha': OLD, 'previous': None})
+        for failing in (0, 3):
+            seen = []
+
+            def run(command, **kwargs):
+                seen.append(command)
+                code = 1 if len(seen) == failing + 1 else 0
+                return types.SimpleNamespace(returncode=code, stdout=b'', stderr=(b'denied: ' + self.TOKEN.encode()))
+
+            with self.subTest(failing=failing), self.assertRaises(DISPATCH.Rejected) as caught:
+                self.pull(host, run=run)
+            self.assertEqual(len(seen), failing + 1)            # nothing after the first failure
+            self.assertEqual(self.leftover, [])
+            self.assertNotIn(self.TOKEN, str(caught.exception))  # Docker's output is never surfaced
+            self.assertIn('registry operation failed', str(caught.exception))
+
+    def test_pull_removes_the_temporary_config_on_sigterm_and_on_timeout(self):
+        host = Host(self, current={'sha': OLD, 'previous': None})
+
+        def terminated(command, **kwargs):
+            if 'pull' in command:
+                raise SystemExit(143)                            # what install_signal_handlers makes of SIGTERM
+            return types.SimpleNamespace(returncode=0, stdout=b'', stderr=b'')
+
+        with self.assertRaises(SystemExit):
+            self.pull(host, run=terminated)
+        self.assertEqual(self.leftover, [])
+
+        def slow(command, **kwargs):
+            raise subprocess.TimeoutExpired(command, 1)
+
+        with self.assertRaisesRegex(DISPATCH.Rejected, 'timed out'):
+            self.pull(host, run=slow)
+        self.assertEqual(self.leftover, [])
+        # the whole operation is bounded: an exhausted budget refuses further pulls
+        clock = iter([0, 0, DISPATCH.PULL_TOTAL_SECONDS + 1] + [10 ** 6] * 20)
+        with patch.object(DISPATCH.time, 'monotonic', side_effect=lambda: next(clock)), \
+             self.assertRaisesRegex(DISPATCH.Rejected, 'timed out'):
+            self.pull(host)
+        self.assertEqual(self.leftover, [])
+
+    def test_pull_removes_configs_left_behind_by_a_killed_earlier_pull(self):
+        host = Host(self, current={'sha': OLD, 'previous': None})
+        stale = host.directory / 'run' / 'mnema-docker-stale'
+        (stale / 'nested').mkdir(parents=True)
+        (stale / 'config.json').write_text('{"auths": {}}')
+        unrelated = host.directory / 'run' / 'something-else'
+        unrelated.mkdir()
+        self.pull(host)
+        self.assertFalse(stale.exists())
+        self.assertTrue(unrelated.exists())
+
+    def test_pull_refuses_before_touching_docker_or_disk_for_a_bad_token_unadmitted_sha_or_legacy_release(self):
+        host = Host(self, current={'sha': OLD, 'previous': None})
+        with self.assertRaisesRegex(DISPATCH.Rejected, 'token'):
+            self.pull(host, token=b'not a token')
+        with self.assertRaisesRegex(DISPATCH.Rejected, 'not the currently admitted'):
+            self.pull(host, sha=OLD)
+        legacy = {s: v for s, v in images('3').items() if s != 'media-worker'}
+        (host.root / 'releases' / (NEW + '.json')).write_text(json.dumps({'sha': NEW, 'images': legacy}))
+        with self.assertRaisesRegex(DISPATCH.Rejected, 'predates the media worker'):
+            self.pull(host)
+        self.assertEqual(self.leftover, [])
+
+    def test_compose_never_pulls_and_a_release_with_a_missing_image_is_refused_before_any_writer_stops(self):
+        command = self.compose_command(Host(self))
+        self.assertEqual(command[command.index('up'):command.index('up') + 3], ['up', '--pull', 'never'])
+        host = Host(self, current={'sha': OLD, 'previous': None})
+        calls = []
+
+        def docker(args, **kwargs):
+            calls.append(args)
+            raise DISPATCH.Rejected('docker operation failed; administrator inspection required')
+
+        for operation in ('deploy ' + NEW, 'preflight ' + NEW):
+            with host.patches(), patch.object(DISPATCH, 'check_images_present', DISPATCH_CHECK), \
+                 patch.object(DISPATCH, 'docker', side_effect=docker), patch.object(DISPATCH.os, 'geteuid', return_value=0), \
+                 patch.object(DISPATCH.sys, 'argv', ['dispatcher', operation]), contextlib.redirect_stderr(io.StringIO()), \
+                 self.assertRaisesRegex(DISPATCH.Rejected, 'not present locally'):
+                DISPATCH.main()
+            self.assertNotIn(('compose', NEW, 'stop'), host.events)
+        # all five refs are checked in one call, exactly the manifest's
+        self.assertEqual(calls[0][:3], ['image', 'inspect', '--format'])
+        self.assertEqual(calls[0][4:], [images('2')[service] for service in SERVICES])
+        with patch.object(DISPATCH, 'docker', return_value='sha256:x\n'):
+            DISPATCH_CHECK({'sha': NEW, 'images': images('2')})
 
     # --- release manifests and gates --------------------------------------------------
 
@@ -400,11 +567,46 @@ class ProductionDispatcherTest(unittest.TestCase):
         self.assertFalse((host.state / 'pending.json').exists())
         self.assertEqual(host.state_file('current.json')['sha'], OLD)
 
-    def test_failed_backup_without_a_recorded_release_says_applications_are_stopped(self):
+    WRITER_CONTAINERS = ('mnema-prod-identity-account-1', 'mnema-prod-learning-1')
+
+    def test_failed_backup_without_a_recorded_release_starts_the_stopped_containers_again(self):
         host = Host(self, backup_error=DISPATCH.Rejected('x'))
-        with self.assertRaisesRegex(DISPATCH.Rejected, 'applications are stopped'):
+        with self.assertRaisesRegex(DISPATCH.Rejected, 'stopped application containers were started again, nothing migrated'):
             host.run('deploy ' + NEW)
+        self.assertIn(('start', *self.WRITER_CONTAINERS), host.events)    # exactly the two writers, by their exact names
         self.assertFalse((host.state / 'pending.json').exists())
+
+    def test_a_current_release_compose_cannot_start_is_restarted_by_starting_its_containers(self):
+        legacy = {s: v for s, v in images('3').items() if s != 'media-worker'}
+        host = Host(self, current={'sha': OLD, 'previous': None}, backup_error=DISPATCH.Rejected('x'))
+        (host.root / 'releases' / (OLD + '.json')).write_text(json.dumps({'sha': OLD, 'images': legacy}))
+
+        def compose(data, operation):
+            host.events.append(('compose', data['sha'], operation))
+            if operation == 'deploy':
+                raise DISPATCH.Rejected('release predates the media worker; deploy a newer release instead')
+
+        with host.patches(), patch.object(DISPATCH, 'compose', side_effect=compose), \
+             patch.object(DISPATCH.os, 'geteuid', return_value=0), contextlib.redirect_stderr(io.StringIO()), \
+             patch.object(DISPATCH.sys, 'argv', ['dispatcher', 'deploy ' + NEW]), \
+             self.assertRaisesRegex(DISPATCH.Rejected, 'were started again, nothing migrated'):
+            DISPATCH.main()
+        self.assertEqual(host.events[-1], ('start', *self.WRITER_CONTAINERS))
+        self.assertFalse((host.state / 'pending.json').exists())
+
+    def test_when_neither_compose_nor_docker_start_works_the_message_names_the_containers(self):
+        host = Host(self, current={'sha': OLD, 'previous': None}, backup_error=DISPATCH.Rejected('x'),
+                    start_error=DISPATCH.Rejected('docker operation failed'))
+
+        def compose(data, operation):
+            if operation == 'deploy':
+                raise DISPATCH.Rejected('x')
+
+        with host.patches(), patch.object(DISPATCH, 'compose', side_effect=compose), \
+             patch.object(DISPATCH.os, 'geteuid', return_value=0), contextlib.redirect_stderr(io.StringIO()), \
+             patch.object(DISPATCH.sys, 'argv', ['dispatcher', 'deploy ' + NEW]), \
+             self.assertRaisesRegex(DISPATCH.Rejected, 'did not restart.*mnema-prod-identity-account-1 and mnema-prod-learning-1'):
+            DISPATCH.main()
 
     def test_failed_rollout_keeps_the_pending_boundary_without_recording_success(self):
         host = Host(self, current={'sha': OLD, 'previous': None})
@@ -468,26 +670,28 @@ class ProductionDispatcherTest(unittest.TestCase):
 
     # --- verify and status ------------------------------------------------------------------
 
-    def verify(self, host, inspected, ready=True):
+    def verify(self, host, inspected, ready=True, runner=True):
         def docker(args, **kwargs):
             return inspected[args[-1]] + '\n'
         output = io.StringIO()
         with host.patches(), patch.object(DISPATCH, 'docker', side_effect=docker), \
+             patch.object(DISPATCH, 'unit_active', return_value=runner) as active, \
              patch.object(DISPATCH, 'readiness_ok', return_value=ready), contextlib.redirect_stdout(output):
             try:
                 DISPATCH.verify()
                 error = None
             except DISPATCH.Rejected as exc:
                 error = exc
+        self.runner_checked = [call.args for call in active.call_args_list]
         return json.loads(output.getvalue()), error
 
     def test_verify_compares_every_running_image_with_the_recorded_manifest(self):
         host = Host(self, current={'sha': NEW, 'previous': OLD})
-        inspected = {DISPATCH.CONTAINERS[s]: images('2')[s] for s in SERVICES}
+        inspected = {DISPATCH.CONTAINERS[s]: images('2')[s] for s in DISPATCH.COMPOSE_SERVICES}
         result, error = self.verify(host, inspected)
         self.assertIsNone(error)
         self.assertEqual((result['images_match'], result['readiness'], result['pending']), (True, 'passed', False))
-        for service in SERVICES:
+        for service in DISPATCH.COMPOSE_SERVICES:
             with self.subTest(service=service):
                 result, error = self.verify(host, {**inspected, DISPATCH.CONTAINERS[service]: images('9')[service]})
                 self.assertFalse(result['images_match'])
@@ -499,6 +703,121 @@ class ProductionDispatcherTest(unittest.TestCase):
         result, error = self.verify(host, inspected)
         self.assertTrue(result['pending'])
         self.assertIsNotNone(error)
+
+    def test_verify_requires_the_media_runner_service_and_skips_it_for_a_release_that_has_none(self):
+        host = Host(self, current={'sha': NEW, 'previous': OLD})
+        inspected = {DISPATCH.CONTAINERS[s]: images('2')[s] for s in DISPATCH.COMPOSE_SERVICES}
+        result, error = self.verify(host, inspected)
+        self.assertIsNone(error)
+        self.assertEqual(self.runner_checked, [('mnema-media-runner.service',)])
+        result, error = self.verify(host, inspected, runner=False)
+        self.assertEqual(result['readiness'], 'failed')
+        self.assertIsNotNone(error)
+        legacy = {s: v for s, v in images('3').items() if s != 'media-worker'}
+        (host.root / 'releases' / (OLD + '.json')).write_text(json.dumps({'sha': OLD, 'images': legacy}))
+        (host.state / 'current.json').write_text(json.dumps({'sha': OLD, 'previous': None}))
+        legacy_containers = {DISPATCH.CONTAINERS[s]: legacy[s] for s in DISPATCH.COMPOSE_SERVICES}
+        result, error = self.verify(host, legacy_containers, runner=False)
+        self.assertIsNone(error)
+        self.assertEqual(self.runner_checked, [])
+        self.assertEqual((result['images_match'], result['readiness']), (True, 'passed'))
+
+    def test_the_media_worker_is_no_compose_service_and_has_no_container_to_compare(self):
+        self.assertNotIn('media-worker', DISPATCH.CONTAINERS)
+        self.assertIn('media-worker', DISPATCH.SERVICES)             # but it is still admitted, pulled and checked as an image
+        self.assertEqual(set(DISPATCH.COMPOSE_SERVICES) | {'media-worker'}, set(DISPATCH.SERVICES))
+
+    def test_the_media_runner_must_be_active_before_a_deploy(self):
+        for active, expected in ((True, 0), (False, 1)):
+            with self.subTest(active=active), patch.object(DISPATCH, 'unit_active', return_value=active) as check:
+                if expected:
+                    with self.assertRaisesRegex(DISPATCH.Rejected, 'media runner'):
+                        DISPATCH.check_media_runner()
+                else:
+                    DISPATCH.check_media_runner()
+                check.assert_called_once_with('mnema-media-runner.service')
+        done = types.SimpleNamespace(returncode=0, stdout=b'active\n')
+        with patch.object(DISPATCH.subprocess, 'run', return_value=done) as run:
+            self.assertTrue(DISPATCH.unit_active('x.service'))
+        self.assertEqual(run.call_args.args[0], ['/usr/bin/systemctl', 'is-active', 'x.service'])
+        for result in (types.SimpleNamespace(returncode=3, stdout=b'inactive\n'), OSError(), subprocess.TimeoutExpired(['systemctl'], 15)):
+            with patch.object(DISPATCH.subprocess, 'run', side_effect=result if isinstance(result, Exception) else None,
+                              return_value=None if isinstance(result, Exception) else result):
+                self.assertFalse(DISPATCH.unit_active('x.service'))
+
+    def test_a_release_admitted_before_the_media_worker_stays_readable_but_can_never_be_deployed(self):
+        host = Host(self, current={'sha': OLD, 'previous': None})
+        legacy = {s: v for s, v in images('3').items() if s != 'media-worker'}
+        (host.root / 'releases' / (OLD + '.json')).write_text(json.dumps({'sha': OLD, 'images': legacy}))
+        with host.patches():
+            self.assertEqual(DISPATCH.load_release(OLD)['images'], legacy)
+        with self.assertRaises(DISPATCH.Rejected):
+            DISPATCH.validate_images(legacy)
+        with patch.object(DISPATCH, 'ROOT', host.root), patch.object(DISPATCH, 'protected', side_effect=lambda p: p), \
+             self.assertRaisesRegex(DISPATCH.Rejected, 'predates the media worker'):
+            DISPATCH.compose({'sha': OLD, 'images': legacy}, 'deploy')
+        # an aborted rollout cannot restart such a release; the dispatcher says so instead of guessing
+        self.assertFalse(DISPATCH.restart_current({'sha': OLD, 'images': legacy}))
+        # a recorded rollback target of this shape is refused rather than half-started
+        host = Host(self, current={'sha': NEW, 'previous': OLD, 'rollback_compatible': True})
+        (host.root / 'releases' / (OLD + '.json')).write_text(json.dumps({'sha': OLD, 'images': legacy}))
+        with patch.object(DISPATCH, 'ROOT', host.root), patch.object(DISPATCH, 'STATE', host.state), \
+             patch.object(DISPATCH, 'protected', side_effect=lambda p: p), \
+             patch.object(DISPATCH.shutil, 'disk_usage', return_value=types.SimpleNamespace(free=20 * 1024 ** 3)), \
+             patch.object(DISPATCH, 'check_backup_tool'), patch.object(DISPATCH, 'check_media_work_root'), \
+             patch.object(DISPATCH, 'check_media_runner'), \
+             self.assertRaisesRegex(DISPATCH.Rejected, 'predates the media worker'):
+            DISPATCH.release('rollback', None)
+
+    def test_the_media_work_directory_is_its_own_root_owned_filesystem_with_a_private_learning_spool(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            root = parent / 'media-work'
+            message = 'media work directory missing or unsafe'
+            trusted = patch.object(DISPATCH, 'protected', side_effect=lambda p: p)
+            with trusted, self.assertRaisesRegex(DISPATCH.Rejected, message):
+                DISPATCH.check_media_work_root(root)                       # absent
+            (root / 'spool').mkdir(parents=True)
+            real_lstat = Path.lstat
+
+            def describe(root_uid=0, root_mode=0o755, device=2, spool_uid=10001, spool_gid=10001, spool_mode=0o700, spool_dir=True):
+                def lstat(path):
+                    info = real_lstat(path)
+                    kind = stat.S_IFDIR if spool_dir else stat.S_IFREG
+                    if path == root:
+                        return types.SimpleNamespace(st_mode=stat.S_IFDIR | root_mode, st_uid=root_uid, st_gid=0, st_dev=device)
+                    if path == root / 'spool':
+                        return types.SimpleNamespace(st_mode=kind | spool_mode, st_uid=spool_uid, st_gid=spool_gid, st_dev=device)
+                    return types.SimpleNamespace(st_mode=info.st_mode, st_uid=info.st_uid, st_gid=info.st_gid, st_dev=1)
+                return lstat
+
+            with trusted, patch.object(Path, 'lstat', describe()):
+                DISPATCH.check_media_work_root(root)
+            for name, changes in (('not owned by root', {'root_uid': 10001}), ('group writable', {'root_mode': 0o775}),
+                                  ('world writable', {'root_mode': 0o757}),
+                                  ('not a separate filesystem', {'device': 1}),
+                                  ('spool owned by root', {'spool_uid': 0}), ('spool owned by the worker', {'spool_uid': 10002}),
+                                  ('spool group readable', {'spool_mode': 0o750}), ('spool world readable', {'spool_mode': 0o705}),
+                                  ('spool wrong group', {'spool_gid': 10003}), ('spool is not a directory', {'spool_dir': False})):
+                with self.subTest(name), trusted, patch.object(Path, 'lstat', describe(**changes)), \
+                     self.assertRaisesRegex(DISPATCH.Rejected, message):
+                    DISPATCH.check_media_work_root(root)
+            link = parent / 'link'
+            link.symlink_to(root)
+            with trusted, self.assertRaisesRegex(DISPATCH.Rejected, message):
+                DISPATCH.check_media_work_root(link)                       # a symlink is never followed
+            with patch.object(DISPATCH, 'protected', side_effect=DISPATCH.Rejected('x')), \
+                 self.assertRaisesRegex(DISPATCH.Rejected, message):
+                DISPATCH.check_media_work_root(root)                       # unsafe parent
+
+    def test_a_deploy_is_refused_before_any_writer_stops_when_the_work_directory_is_unsafe(self):
+        host = Host(self, current={'sha': OLD, 'previous': None})
+        with host.patches(), patch.object(DISPATCH, 'check_media_work_root',
+                                          side_effect=DISPATCH.Rejected('media work directory missing or unsafe')), \
+             patch.object(DISPATCH.os, 'geteuid', return_value=0), contextlib.redirect_stderr(io.StringIO()), \
+             patch.object(DISPATCH.sys, 'argv', ['dispatcher', 'deploy ' + NEW]), self.assertRaises(DISPATCH.Rejected):
+            DISPATCH.main()
+        self.assertNotIn(('compose', NEW, 'stop'), host.events)
 
     def test_verify_without_a_recorded_release_is_rejected(self):
         with self.assertRaises(DISPATCH.Rejected), Host(self).patches():
@@ -518,7 +837,7 @@ class ProductionDispatcherTest(unittest.TestCase):
         self.assertEqual(set(status['config']), {
             'compose.yaml', 'nginx.conf', 'Caddyfile', 'mnema-deploy', 'mnema-local-backup', 'mnema-health',
             'mnema-health.service', 'mnema-health.timer', 'mnema-local-backup.service', 'mnema-local-backup.timer',
-            'mnema-deploy-ssh', 'mnema-deploy.sudoers', '60-mnema-deploy.conf'})
+            'media-work.mount', 'mnema-media-runner', 'mnema-media-runner.service', 'mnema-deploy-ssh', 'mnema-deploy.sudoers', '60-mnema-deploy.conf'})
         self.assertEqual(status['config']['compose.yaml'], __import__('hashlib').sha256(b'compose').hexdigest())
         self.assertIsNone(status['config']['nginx.conf'])
         self.assertEqual((status['admitted_sha'], status['verified_sha'], status['rollback_compatible']),
@@ -693,9 +1012,10 @@ class ProductionDispatcherTest(unittest.TestCase):
         with host.patches(), patch.object(DISPATCH, 'compose', side_effect=compose), \
              patch.object(DISPATCH.os, 'geteuid', return_value=0), contextlib.redirect_stderr(io.StringIO()), \
              patch.object(DISPATCH.sys, 'argv', ['dispatcher', 'deploy ' + NEW]), \
-             self.assertRaisesRegex(DISPATCH.Rejected, 'did not restart'):
+             self.assertRaisesRegex(DISPATCH.Rejected, 'started again, nothing migrated'):
             DISPATCH.main()
         self.assertEqual(calls[-2:], [(NEW, 'stop'), (OLD, 'deploy')])
+        self.assertEqual(host.events[-1], ('start', *self.WRITER_CONTAINERS))
 
     def test_static_backup_tool_checks_run_before_any_writer_is_stopped(self):
         host = Host(self, current={'sha': OLD, 'previous': None})
