@@ -123,6 +123,7 @@ artifact:
 | Статус | Документ | Назначение |
 |---|---|---|
 | current | [Production delivery](./operations/production-delivery.md), [VPS runtime](./operations/vps-runtime.md), [image publication](./operations/vps-image-publication.md) | Работающий production, publication/admission/deploy и verification. |
+| current | [Identity abuse protection](./operations/turnstile.md) | Production password sign-in и registration проходят Cloudflare Turnstile (`required`); `blocked` — kill switch, OAuth не затрагивается. Публичные политика ПДн и соглашение публикуются из frontend; статус уведомлений — в [legal checklist](./product/russia-legal-launch-checklist-2026.md). |
 | current | [Persistent local runtime](./deploy/selfhost-local.md) | HTTPS-запуск Identity, Learning, Angular, media и Colima clock; historical v1 часть помечена отдельно. |
 | current | [Security automation triage](./operations/security-triage.md) | Dependabot/dependency review/CodeQL policy. |
 | current | [CI artifact boundary](./operations/ci-artifact-security-boundary.md) | Artifact and token policy для ручной публикации четырёх образов. |

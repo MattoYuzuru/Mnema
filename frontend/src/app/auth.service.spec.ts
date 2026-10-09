@@ -322,10 +322,11 @@ describe('real Identity browser protocol orchestration', () => {
         await rejected;
     });
 
-    it('honors an explicit runtime federation disable without provider traffic', async () => {
-        TestBed.inject(BROWSER_IDENTITY_CONFIG).features = { federatedAuthEnabled: false };
-        expect(await auth.availableProviders()).toEqual([]);
-        await expect(auth.beginFederatedLogin('github', '/decks')).rejects.toThrow();
+    it('treats an empty provider list as no federated login and refuses an unknown provider', async () => {
+        const result = auth.availableProviders();
+        http.expectOne(`${issuer}/api/accounts/providers`).flush({ providers: [] });
+        expect(await result).toEqual([]);
+        await expect(auth.beginFederatedLogin('evil' as never, '/decks')).rejects.toThrow();
         expect(navigate).not.toHaveBeenCalled();
     });
 

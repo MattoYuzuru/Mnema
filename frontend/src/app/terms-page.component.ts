@@ -1,113 +1,35 @@
-import { Component, ChangeDetectionStrategy } from '@angular/core';
-import { SupportContactComponent } from './shared/support-contact.component';
+import { ChangeDetectionStrategy, Component } from '@angular/core';
+import { RouterLink } from '@angular/router';
+
+import { LEGAL_DOCUMENT_VERSION, LEGAL_EFFECTIVE_DATE } from './shared/legal-operator';
+import { LegalOperatorBlockComponent } from './shared/legal-operator-block.component';
+
+/** Table of contents and headings share these ids; the spec checks that every entry resolves to a heading. */
+export const TERMS_SECTIONS = [
+    { id: 'parties', title: '1. Стороны и принятие Соглашения' },
+    { id: 'subject', title: '2. Предмет Соглашения' },
+    { id: 'account', title: '3. Аккаунт' },
+    { id: 'plans', title: '4. Тарифы, промокоды и платежи' },
+    { id: 'content', title: '5. Ваш контент' },
+    { id: 'rules', title: '6. Запрещённое использование' },
+    { id: 'ai', title: '7. Функции искусственного интеллекта' },
+    { id: 'availability', title: '8. Доступность и изменение Сервиса' },
+    { id: 'liability', title: '9. Ответственность' },
+    { id: 'termination', title: '10. Прекращение использования' },
+    { id: 'law', title: '11. Применимое право и споры' },
+    { id: 'amendments', title: '12. Изменение Соглашения' },
+    { id: 'contacts', title: '13. Контакты и реквизиты' }
+] as const;
 
 @Component({
     selector: 'app-terms-page',
-    imports: [SupportContactComponent],
-    template: `
-    <div class="legal-page" lang="ru">
-      <h1 tabindex="-1">Условия использования</h1>
-      <p class="last-updated">Последнее обновление: октябрь 2026</p>
-
-      <section>
-        <h2>Принятие условий</h2>
-        <p>Получая доступ и используя Mnema, вы принимаете и соглашаетесь соблюдать условия и положения настоящего соглашения.</p>
-      </section>
-
-      <section>
-        <h2>Доступ к сервису</h2>
-        <p>Настоящие Условия регулируют доступ к размещённому сервису Mnema. Они не передают право собственности и не предоставляют прав на исходный код репозитория: исходный код лицензируется отдельно на условиях, опубликованных в репозитории.</p>
-      </section>
-
-      <section>
-        <h2>Пользовательский контент</h2>
-        <p>Вы сохраняете все права на созданный вами контент карточек. Делая колоды публичными, вы предоставляете другим пользователям право форкать и использовать ваш контент для личного обучения.</p>
-      </section>
-
-      <section>
-        <h2>Запрещенное использование</h2>
-        <p>Вы не можете использовать Mnema в незаконных целях или для нарушения каких-либо законов. Вы не можете пытаться получить несанкционированный доступ к какой-либо части сервиса.</p>
-      </section>
-
-      <section>
-        <h2>Отказ от ответственности</h2>
-        <p>Mnema предоставляется &quot;как есть&quot; без каких-либо заявлений или гарантий. Мы не гарантируем, что сервис будет бесперебойным или безошибочным.</p>
-      </section>
-
-      <section>
-        <h2>Ограничение ответственности</h2>
-        <p>Ни при каких обстоятельствах Mnema не несет ответственности за какие-либо убытки, возникающие в результате использования или невозможности использования сервиса.</p>
-      </section>
-
-      <section>
-        <h2>Изменения условий</h2>
-        <p>Мы оставляем за собой право изменять эти условия в любое время. Продолжение использования сервиса после изменений означает принятие новых условий.</p>
-      </section>
-
-      <section>
-        <h2>Контакты</h2>
-        <p>По вопросам об этих Условиях использования напишите нам через Telegram-бота.</p>
-        <app-support-contact />
-      </section>
-    </div>
-  `,
-    changeDetection: ChangeDetectionStrategy.OnPush,
-    styles: [`
-      .legal-page {
-        max-width: 56rem;
-        margin: 0 auto;
-        padding: var(--mn-space-7) var(--mn-page-gutter);
-      }
-
-      h1 {
-        font-size: clamp(2.5rem, 5vw, 3.5rem);
-        margin: 0 0 var(--mn-space-2) 0;
-      }
-
-      .last-updated {
-        font-size: 0.9rem;
-        color: var(--mn-muted);
-        margin: 0 0 var(--mn-space-7) 0;
-      }
-
-      section {
-        margin-bottom: var(--mn-space-7);
-      }
-
-      h2 {
-        font-size: 2rem;
-        margin: 0 0 var(--mn-space-4) 0;
-      }
-
-      p {
-        line-height: 1.6;
-        color: var(--mn-body);
-        margin: 0 0 var(--mn-space-4) 0;
-      }
-
-      @media (max-width: 768px) {
-        .legal-page {
-          padding-block: var(--mn-space-5);
-        }
-
-        h1 {
-          font-size: 2.5rem;
-        }
-
-        h2 {
-          font-size: 1.75rem;
-        }
-      }
-
-      @media (max-width: 480px) {
-        .legal-page {
-          padding-block: var(--mn-space-4);
-        }
-
-        h1 {
-          font-size: 2.25rem;
-        }
-      }
-    `]
+    imports: [RouterLink, LegalOperatorBlockComponent],
+    templateUrl: './terms-page.component.html',
+    styleUrl: './shared/legal-page.css',
+    changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class TermsPageComponent {}
+export class TermsPageComponent {
+    protected readonly sections = TERMS_SECTIONS;
+    protected readonly effectiveDate = LEGAL_EFFECTIVE_DATE;
+    protected readonly version = LEGAL_DOCUMENT_VERSION;
+}

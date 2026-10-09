@@ -134,13 +134,48 @@ describe('Identity form behavior', () => {
         const element = fixture.nativeElement as HTMLElement;
         const google = element.querySelector<HTMLButtonElement>('[aria-label="Войти через Google"]')!;
         expect(google.disabled).toBe(false);
-        expect(element.querySelector<HTMLButtonElement>('[aria-label="Войти через Яндекс"]')!.disabled).toBe(true);
+        expect(element.querySelector('[aria-label="Войти через Яндекс"]')).toBeNull();
+        expect([...element.querySelectorAll('.provider-option strong')].map(name => name.textContent)).toEqual(['Google', 'GitHub']);
         google.click();
         google.click();
         await fixture.whenStable();
         expect(auth.beginFederatedLogin).toHaveBeenCalledExactlyOnceWith('google', '/decks?tab=mine');
         expect(auth.loginWithPassword).not.toHaveBeenCalled();
         expect(fixture.componentInstance.busy()).toBe(true);
+    });
+
+    it('draws no provider buttons or divider when Identity reports no configured provider', async () => {
+        status.set('anonymous');
+        user.set(null);
+        auth = { status, user, logoutUnconfirmed: signal(false), loginWithPassword: vi.fn(), registerWithPassword: vi.fn(), logout: vi.fn(),
+            availableProviders: vi.fn().mockResolvedValue([]), beginFederatedLogin: vi.fn() };
+        await TestBed.configureTestingModule({ imports: [LoginPageComponent], providers: [provideRouter([]),
+                { provide: AuthService, useValue: auth }, { provide: ActivatedRoute, useValue: { snapshot: {
+                            routeConfig: { path: 'login' }, queryParamMap: convertToParamMap({})
+                        } } }] }).compileComponents();
+        const fixture = TestBed.createComponent(LoginPageComponent);
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.detectChanges();
+        const element = fixture.nativeElement as HTMLElement;
+        expect(element.querySelector('.provider-options')).toBeNull();
+        expect(element.querySelector('.password-divider')).toBeNull();
+        expect(element.querySelector('form')).not.toBeNull();
+        expect(element.querySelector('.intro')?.textContent).toContain('Войдите с логином или почтой');
+    });
+
+    it('tells the user which documents apply before they submit or pick a provider, without a consent control', async () => {
+        const fixture = await page('register');
+        const element = fixture.nativeElement as HTMLElement;
+        const notice = element.querySelector('[data-testid="legal-notice"]')!;
+        const links = [...notice.querySelectorAll('a')].map(link => [link.getAttribute('href'), link.textContent!.replace(/\s+/g, ' ').trim()]);
+        expect(links[0]).toEqual(['/terms', 'Пользовательское соглашение (откроется в новой вкладке)']);
+        expect(links[1]![0]).toBe('/privacy');
+        expect(links[2]![0]).toBe('/privacy#cross-border');
+        expect(notice.textContent).toContain('Продолжая, вы принимаете');
+        expect(notice.textContent).toContain('ознакомились с');
+        for (const link of notice.querySelectorAll('a')) expect(link.getAttribute('rel')).toContain('noopener');
+        expect(element.querySelector('input[type="checkbox"]')).toBeNull();
     });
 
     it('keeps password login usable when availability fails and offers a retry', async () => {

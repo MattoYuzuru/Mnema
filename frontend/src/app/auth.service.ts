@@ -70,7 +70,6 @@ export class AuthService {
     }
 
     async availableProviders(): Promise<FederatedProvider[]> {
-        if (this.config.features?.federatedAuthEnabled === false) return [];
         validateIdentityConfig(this.config, this.browser.origin);
         const value = objectValue(await firstValueFrom(this.http.get<unknown>(`${this.config.authServerUrl}/api/accounts/providers`)
             .pipe(timeout(8000))));
@@ -81,7 +80,6 @@ export class AuthService {
     }
 
     async beginFederatedLogin(provider: FederatedProvider, returnTo: string): Promise<void> {
-        if (this.config.features?.federatedAuthEnabled === false) throw new AuthFailure('configuration');
         if (this.cookieFlowPending || !isFederatedProvider(provider)) throw new AuthFailure('protocol');
         await this.startAuthorization(returnTo, provider);
     }

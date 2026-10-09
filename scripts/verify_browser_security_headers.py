@@ -66,7 +66,7 @@ def expected_headers(mode: str, auth_origin: str, storage_origin: str) -> dict[s
         expected["content-security-policy-report-only"] = full_policy(auth_origin, storage_origin)
     elif mode == "prod":
         expected["content-security-policy"] = full_policy(auth_origin, storage_origin)
-        expected["strict-transport-security"] = "max-age=300"
+        expected["strict-transport-security"] = "max-age=31536000"
     else:
         raise ContractError(f"unsupported mode: {mode}")
     return expected

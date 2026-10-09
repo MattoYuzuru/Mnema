@@ -275,7 +275,6 @@ services:
       MNEMA_LEARNING_API_BASE_URL: /api
       MNEMA_CLIENT_ID: mnema-web
       MNEMA_BUILD_ID: ${MNEMA_LOCAL_BUILD_ID:?Local launcher did not provide a build id}
-      MNEMA_FEATURE_FEDERATED_AUTH_ENABLED: "true"
       MNEMA_FEATURE_SHOW_EMAIL_VERIFICATION_WARNING: "false"
     depends_on:
       identity-account: {condition: service_started}

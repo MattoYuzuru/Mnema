@@ -2,6 +2,7 @@ package app.mnema.identityaccount.local;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.web.savedrequest.HttpSessionRequestCache;
 import org.springframework.stereotype.Controller;
@@ -13,6 +14,13 @@ import java.net.URI;
 
 @Controller
 public class LoginPage {
+    private final String frontendOrigin;
+
+    LoginPage(@Value("${identity.frontend-origin}") URI frontendOrigin) {
+        var origin = frontendOrigin.toString();
+        this.frontendOrigin = origin.endsWith("/") ? origin.substring(0, origin.length() - 1) : origin;
+    }
+
     @GetMapping("/login/continue")
     void resume(HttpServletRequest request, HttpServletResponse response) throws IOException {
         var cache = new HttpSessionRequestCache();
@@ -42,9 +50,11 @@ public class LoginPage {
                 <label>Login or email <input name="login" autocomplete="username" required maxlength="320"></label>
                 <label>Password <input name="password" type="password" autocomplete="current-password" required maxlength="128"></label>
                 <button>Sign in</button><p role="status" id="status"></p><p role="alert" id="error"></p></form>
-                <p>Sign-in protection may use Cloudflare Turnstile. <a href="/login/privacy">Data processing</a>.</p></main>
+                <p>Sign-in protection uses Cloudflare Turnstile. <a href="/login/privacy">Data processing</a>.</p>
+                <p>By continuing you accept the <a href="%1$s/terms">Terms of Service</a> and the
+                <a href="%1$s/privacy">Personal Data Policy</a> (in Russian).</p></main>
                 <script src="/login/script.js" defer></script></html>
-                """;
+                """.formatted(frontendOrigin);
     }
 
     @GetMapping(value = "/login/privacy", produces = "text/html")
@@ -52,14 +62,16 @@ public class LoginPage {
     String privacy() {
         return """
                 <!doctype html><html lang="en"><meta charset="utf-8"><title>Sign-in protection</title>
-                <main><h1>Cloudflare Turnstile</h1><p>When enabled, your browser sends connection and device information,
+                <main><h1>Cloudflare Turnstile</h1><p>Your browser sends connection and device information,
                 including IP address, browser information and site hostname, to Cloudflare for abuse protection.
                 Mnema sends only the verification token to Siteverify, without your password, email or learning content.</p>
                 <p>Cloudflare processing is described in the
                 <a href="https://www.cloudflare.com/turnstile-privacy-policy/">Turnstile Privacy Addendum</a>.</p>
                 <p>If protection is unavailable, sign-in stays closed until a successful new verification.</p>
+                <p>The full <a href="%1$s/privacy">Personal Data Policy</a> (in Russian) lists the operator, purposes,
+                recipients and your rights.</p>
                 <a href="/login">Return to sign in</a></main></html>
-                """;
+                """.formatted(frontendOrigin);
     }
 
     @GetMapping(value = "/login/script.js", produces = "application/javascript")

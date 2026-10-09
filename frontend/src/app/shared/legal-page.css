@@ -1,0 +1,57 @@
+/* Shared by the public legal documents (privacy policy, terms of service). Colours and spacing come from the theme tokens. */
+:host { display: block; min-inline-size: 0; }
+
+.legal-page {
+    max-inline-size: 56rem;
+    margin-inline: auto;
+    padding: var(--mn-space-7) var(--mn-page-gutter);
+    color: var(--mn-body);
+    font: 1rem/1.65 var(--mn-font-body, system-ui, sans-serif);
+    overflow-wrap: anywhere;
+}
+
+h1 { margin: 0 0 var(--mn-space-2); font-size: clamp(2rem, 5vw, 3.25rem); }
+h1:focus-visible { outline: 3px solid var(--mn-focus); outline-offset: 4px; }
+h2 { margin: 0 0 var(--mn-space-4); font-size: clamp(1.4rem, 3vw, 1.9rem); scroll-margin-block-start: var(--mn-space-5); }
+h3 { margin: var(--mn-space-5) 0 var(--mn-space-2); font-size: 1.15rem; }
+
+.last-updated { margin: 0 0 var(--mn-space-6); color: var(--mn-muted); font-size: .9rem; }
+.lead { max-inline-size: 60ch; }
+
+section { margin-block-end: var(--mn-space-7); }
+p { margin: 0 0 var(--mn-space-4); }
+ul, ol { margin: 0 0 var(--mn-space-4); padding-inline-start: 1.4rem; }
+li { margin-block-end: var(--mn-space-2); }
+
+a { color: var(--mn-ink); text-underline-offset: .22em; }
+a:focus-visible { outline: 3px solid var(--mn-focus); outline-offset: 3px; }
+
+.toc { margin-block-end: var(--mn-space-7); border-block: 1px solid var(--mn-rule); padding-block: var(--mn-space-4); }
+.toc h2 { margin-block-end: var(--mn-space-3); font-size: 1.1rem; }
+.toc ol { columns: 2 18rem; column-gap: var(--mn-space-6); margin: 0; padding: 0; list-style: none; }
+.toc li { break-inside: avoid; margin-block-end: var(--mn-space-1); }
+.toc a { display: inline-block; min-block-size: 1.75rem; }
+
+.table-scroll { overflow-x: auto; max-inline-size: 100%; margin-block: var(--mn-space-3) var(--mn-space-5); }
+.table-scroll:focus-visible { outline: 3px solid var(--mn-focus); outline-offset: 3px; }
+.data-table { min-inline-size: 46rem; }
+.data-table :is(th, td) { overflow-wrap: break-word; }
+.data-table tbody th { inline-size: 11rem; min-inline-size: 9rem; }
+.data-table.compact { min-inline-size: 36rem; }
+
+@media (max-width: 48rem) {
+    .legal-page { padding-block: var(--mn-space-5); }
+}
+
+@media (forced-colors: active) {
+    .toc { border-color: CanvasText; }
+    a:focus-visible, h1:focus-visible, .table-scroll:focus-visible { outline-color: Highlight; }
+}
+
+.facts { margin: 0 0 var(--mn-space-4); }
+.facts div { display: grid; grid-template-columns: minmax(0, 11rem) minmax(0, 1fr); gap: var(--mn-space-3); border-block-start: 1px solid var(--mn-rule); padding-block: var(--mn-space-2); }
+.facts dt { color: var(--mn-muted); }
+.facts dd { margin: 0; }
+@media (max-width: 36rem) { .facts div { grid-template-columns: minmax(0, 1fr); gap: 0; } }
+
+.visually-hidden { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

@@ -42,7 +42,7 @@ The renderer rejects missing/duplicate services, foreign repositories, mutable
 references, inconsistent source/run/digests, expired exceptions, missing attestations,
 unresolved blocking findings and inconsistent counts. It emits **none** of the
 dispatcher's acceptance flags. Publication does not assert backup restore, data
-cutover, live Turnstile/privacy approval or migration readiness. An administrator
+cutover, live Turnstile acceptance or migration readiness. An administrator
 must verify the current source/run, image evidence, reviewed runtime configuration
 and actual acceptance records before installing a root-only release manifest and
 admission on `mnema`. The CI user cannot write those files.

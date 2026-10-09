@@ -64,43 +64,72 @@ Auth/API responses are no-store. www redirects to the canonical root.
 
 ## Auth configuration
 
-Production Turnstile is `blocked`, privacy approval false: login/register fail
-closed without a Cloudflare script or Siteverify call. The owner confirmed the
-main RKN notification; the cross-border notification is not yet confirmed.
-Foreign AI and federated login remain inactive. Media/email credentials and
-account-deletion policy are separate unconfigured operations. Do not substitute
+Production opened password and OAuth sign-in on 2026-10-08 by owner decision.
+Identity runs Turnstile in `required` mode: `/api/accounts/register` and
+`/login` verify a Cloudflare Siteverify token (exact hostname and action, age,
+replay, timeout, fail closed) before any credential check. The owner submitted
+the main RKN notification and the cross-border notification for Cloudflare and
+accepts the part 11 article 12 waiting-period risk. The public
+privacy policy ([source](../../frontend/src/app/privacy-page.component.html)) and
+terms ([source](../../frontend/src/app/terms-page.component.html)) are published from the
+frontend code. Foreign AI stays disabled; payments stay closed. Do not substitute
 fixture keys, Stub providers or a production bypass.
 
-All three OAuth pairs and Turnstile keys exist in the owner's local `.env` and
-GitHub repo/prod Secrets. Their private VPS staging file is
-`/etc/mnema/production/pending-auth.env` (root:root0600, root-only directory).
-The dispatcher does **not** read that file; credentials are prepared for later
-activation without making providers available now. GitHub deployment uploads no
-application configuration. Existing secrets are preserved.
+Application configuration (the approved Google, Yandex and GitHub OAuth pairs, the
+Turnstile keys, `MNEMA_IDENTITY_TURNSTILE_MODE`, the Postbox pair, the promo and
+experiment secrets and `MNEMA_EVENTS_OWNER_ACCOUNT_ID`) is delivered by the deploy
+job from the GitHub Environment `prod` secrets (`PROD_<NAME>`) into the root-owned
+`/etc/mnema/production/app.env`, which the dispatcher passes to Compose as an extra
+`--env-file`; the mechanism is in [production delivery](production-delivery.md).
+Names map 1:1: Compose interpolates `${GOOGLE_CLIENT_ID:-}` and the like, so an
+absent value leaves the feature off. Host-only secrets (database passwords) stay in
+`runtime.env`, the signing key in `identity-signing.json`. There is no
+`pending-auth.env`, no privacy flag and no frontend federation flag: Identity
+registers a provider when its pair is present, and the SPA shows a button only for a
+provider that `GET /api/accounts/providers` returns (an empty list shows none).
 
-| Stored key names | Identity container environment |
+| `prod` secret (`PROD_` prefix) / env name | Identity container environment |
 |---|---|
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID` / `_CLIENT_SECRET` |
 | `YANDEX_CLIENT_ID`, `YANDEX_CLIENT_SECRET` | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_YANDEX_CLIENT_ID` / `_CLIENT_SECRET` |
 | `GH_CLIENT_ID`, `GH_CLIENT_SECRET` | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENT_ID` / `_CLIENT_SECRET` |
 | `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` | Same names, Identity only |
 
-GitHub `prod` secret names prepend `PROD_` to those stored names. After the actual
-recipient/privacy and production-widget gates pass, the administrator privately
-places **only approved pairs** in root-owned `runtime.env`, sets
-`MNEMA_IDENTITY_TURNSTILE_MODE=required`,
-`MNEMA_IDENTITY_TURNSTILE_PRIVACY_APPROVED=true` and
-`MNEMA_FEATURE_FEDERATED_AUTH_ENABLED=true` for approved OAuth providers, and
-performs a reviewed current-main rollout with auth evidence. Putting a pair in
-active runtime config registers that provider; the frontend toggle alone cannot
-block the backend OAuth route. Main RKN confirmation alone is not authorization
-for foreign recipients. Never print expanded Compose or credential values.
+**Before a release with the `required` default**, the `prod` Environment must
+already hold `PROD_TURNSTILE_SITE_KEY` and `PROD_TURNSTILE_SECRET_KEY`. Identity
+refuses to start in `required` mode without valid keys (and Learning waits for
+Identity's health), so a release without them fails readiness and the dispatcher
+rolls the deploy back. The emergency switch is `PROD_MNEMA_IDENTITY_TURNSTILE_MODE=blocked`
+in the `prod` secrets: it starts Identity without keys, closes password sign-in and
+leaves OAuth open.
+
+`MNEMA_IDENTITY_TURNSTILE_MODE` defaults to `required`. `blocked` is the
+operational kill switch: password login and registration answer 503 without any
+Siteverify call and the browser loads no Cloudflare script, while OAuth sign-in
+keeps working. `disabled` is accepted only in local environments; production turns
+it into `blocked`. Test keys are refused outside local environments. To close
+password sign-in, set the `PROD_MNEMA_IDENTITY_TURNSTILE_MODE` secret to `blocked`
+and redeploy; never disable the check. An empty value means the default `required`.
+
+Optional capabilities stay off until the deployed application configuration carries
+their keys (Compose already passes the names; empty keys keep the feature off, and
+the non-empty application defaults for endpoints, regions and the avatar bucket are
+repeated explicitly because Spring reads a set-but-empty variable as an empty
+string). Yandex Postbox mail (`MNEMA_POSTBOX_ACCESS_KEY`, `MNEMA_POSTBOX_SECRET_KEY`:
+recovery and verification mail) and the Yandex Object Storage offsite backups are
+disclosed in the public policy as current Russian processors. Avatar storage
+(`MNEMA_AVATAR_ACCESS_KEY`, `MNEMA_AVATAR_SECRET_KEY`) and Learning media storage
+(`LEARNING_MEDIA_UPLOAD_BUCKET`, `LEARNING_MEDIA_UPLOAD_ACCESS_KEY`,
+`LEARNING_MEDIA_UPLOAD_SECRET_KEY`) are not announced as active: enabling them,
+account deletion (`MNEMA_IDENTITY_DELETION_ENABLED`, currently `false`) or any
+foreign recipient requires updating the privacy policy first. Media processing for
+audio and video needs a separate worker that production does not run.
 
 Provider callbacks are exactly
 `https://auth.mnema.app/login/oauth2/code/google`, `/yandex`, `/github` under that
-same prefix. The SPA return URL `https://mnema.app/auth/callback` is a different
-step. Verify callbacks in each provider account before activation; their dashboard
-configuration has not been independently confirmed.
+same prefix; the owner confirmed them and the Turnstile widget hostnames. The SPA
+return URL `https://mnema.app/auth/callback` is a different step. Never print
+expanded Compose or credential values.
 
 ## Deployment and inspection
 

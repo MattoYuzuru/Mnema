@@ -63,8 +63,8 @@ services:
       MNEMA_IDENTITY_TRUSTED_PROXY_CIDRS: 127.0.0.1/32,::1/128
       MNEMA_IDENTITY_SIGNING_JWK_SET_FILE: /run/secrets/identity-signing.json
       MNEMA_IDENTITY_SIGNING_ACTIVE_KID: production-20261004
-      MNEMA_IDENTITY_TURNSTILE_MODE: ${MNEMA_IDENTITY_TURNSTILE_MODE:-blocked}
-      MNEMA_IDENTITY_TURNSTILE_PRIVACY_APPROVED: ${MNEMA_IDENTITY_TURNSTILE_PRIVACY_APPROVED:-false}
+      # required (default) verifies Cloudflare Turnstile before password login/registration; blocked is the operational kill switch.
+      MNEMA_IDENTITY_TURNSTILE_MODE: ${MNEMA_IDENTITY_TURNSTILE_MODE:-required}
       TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
       TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
       SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
@@ -74,6 +74,16 @@ services:
       SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENT_ID: ${GH_CLIENT_ID:-}
       SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENT_SECRET: ${GH_CLIENT_SECRET:-}
       MNEMA_IDENTITY_DELETION_ENABLED: "false"
+      # Optional capabilities, activated only by the deployed application configuration (app.env). Empty equals the application default: password-recovery and
+      # verification mail are not sent without the Yandex Postbox key pair, and avatar upload stays unavailable without the key pair.
+      MNEMA_POSTBOX_ACCESS_KEY: ${MNEMA_POSTBOX_ACCESS_KEY:-}
+      MNEMA_POSTBOX_SECRET_KEY: ${MNEMA_POSTBOX_SECRET_KEY:-}
+      # Set-but-empty is "" to Spring, so the non-empty application defaults are repeated here.
+      MNEMA_AVATAR_ENDPOINT: ${MNEMA_AVATAR_ENDPOINT:-https://storage.yandexcloud.net}
+      MNEMA_AVATAR_REGION: ${MNEMA_AVATAR_REGION:-ru-central1}
+      MNEMA_AVATAR_BUCKET: ${MNEMA_AVATAR_BUCKET:-mnema-avatars}
+      MNEMA_AVATAR_ACCESS_KEY: ${MNEMA_AVATAR_ACCESS_KEY:-}
+      MNEMA_AVATAR_SECRET_KEY: ${MNEMA_AVATAR_SECRET_KEY:-}
     volumes:
       - ${MNEMA_PRODUCTION_ROOT:-/etc/mnema/production}/identity-signing.json:/run/secrets/identity-signing.json:ro
     healthcheck:
@@ -106,6 +116,12 @@ services:
       LEARNING_FEATURES_AI_GENERATION_ENABLED: "false"
       LEARNING_FEATURES_TEXT_TO_SPEECH_ENABLED: "false"
       LEARNING_FEATURES_IMAGE_GENERATION_ENABLED: "false"
+      # Media object storage (Yandex Object Storage defaults). Empty equals the application default: media upload stays unconfigured.
+      LEARNING_MEDIA_UPLOAD_ENDPOINT: ${LEARNING_MEDIA_UPLOAD_ENDPOINT:-https://storage.yandexcloud.net}
+      LEARNING_MEDIA_UPLOAD_REGION: ${LEARNING_MEDIA_UPLOAD_REGION:-ru-central1}
+      LEARNING_MEDIA_UPLOAD_BUCKET: ${LEARNING_MEDIA_UPLOAD_BUCKET:-}
+      LEARNING_MEDIA_UPLOAD_ACCESS_KEY: ${LEARNING_MEDIA_UPLOAD_ACCESS_KEY:-}
+      LEARNING_MEDIA_UPLOAD_SECRET_KEY: ${LEARNING_MEDIA_UPLOAD_SECRET_KEY:-}
       # Promo codes and A/B (#302). Without a nonblank hash secret (>= 32 characters), promo creation/redemption are disabled; Learning keeps running.
       # Without the experiment secret every account stays on control. The popup is off unless enabled with its copy.
       MNEMA_PROMO_HASH_SECRET: ${MNEMA_PROMO_HASH_SECRET:-}
@@ -142,7 +158,6 @@ services:
       MNEMA_SUPPORT_TELEGRAM_USERNAME: ${MNEMA_SUPPORT_TELEGRAM_USERNAME:-Mnema_Support_Bot}
       MNEMA_CLIENT_ID: mnema-web
       MNEMA_BUILD_ID: ${MNEMA_BUILD_ID:?verified-candidate-required}
-      MNEMA_FEATURE_FEDERATED_AUTH_ENABLED: ${MNEMA_FEATURE_FEDERATED_AUTH_ENABLED:-false}
       MNEMA_FEATURE_SHOW_EMAIL_VERIFICATION_WARNING: "false"
     volumes:
       - ${MNEMA_PRODUCTION_ROOT:-/etc/mnema/production}/nginx.conf:/etc/nginx/conf.d/default.conf:ro

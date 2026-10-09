@@ -32,9 +32,9 @@ The policy follows the [W3C CSP report-only rollout model](https://www.w3.org/TR
 | --- | --- | --- | --- |
 | development | clickjacking/base/object baseline | none | none |
 | staging | clickjacking/base/object baseline | full resource policy | none |
-| production | full resource policy | none | `max-age=300`, host only |
+| production | full resource policy | none | `max-age=31536000` (one year), host only |
 
-Production deliberately omits `includeSubDomains` and `preload`. Those flags affect hosts outside this application and require a separate domain inventory and long-lived rollback decision. HSTS is generated only for the verified HTTPS production mode, consistent with the [HSTS host and lifetime semantics](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Strict-Transport-Security).
+`auth.mnema.app` (Identity, served by host Caddy, not by the frontend nginx) returns the same `Strict-Transport-Security: max-age=31536000` from `deploy/production/Caddyfile`. Production deliberately omits `includeSubDomains` and `preload`. Those flags affect hosts outside this application and require a separate domain inventory and long-lived rollback decision. HSTS is generated only for the verified HTTPS production mode, consistent with the [HSTS host and lifetime semantics](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Strict-Transport-Security).
 
 ## Preflight and hosted evidence
 
@@ -65,6 +65,6 @@ Stop promotion when the staging browser reports any violation. Classify the bloc
 - for an inline script or handler, remove it or bind an immutable script body with a reviewed hash; never add script `unsafe-inline`;
 - for Turnstile, retain the vendor's exact `challenges.cloudflare.com` sources instead of proxying `api.js` or admitting a wildcard.
 
-A failed hosted check remains part of the release smoke outcome, so the existing staging or production workflow restores the previous verified manifest. Follow [release verification and rollback](release-verification-runbook.md) for the operational record. If production HSTS itself must be withdrawn, serve `Strict-Transport-Security: max-age=0` over HTTPS; merely rolling back to a response without HSTS leaves the five-minute cached policy active until expiry.
+A failed hosted check remains part of the release smoke outcome, so the existing staging or production workflow restores the previous verified manifest. Follow [release verification and rollback](release-verification-runbook.md) for the operational record. If production HSTS itself must be withdrawn, serve `Strict-Transport-Security: max-age=0` over HTTPS; merely rolling back to a response without HSTS leaves the one-year cached policy active until expiry.
 
 Do not promote a report-only policy to production by editing a live container. Change the generated contract, pass the repository quality gates, observe staging, and promote the exact tested image digest through the protected workflows.
