@@ -86,7 +86,7 @@ alarms and operator actions: [Learning guide](../../backend/services/learning/gu
 |---|---|---|
 | `learning.billing.npd.receipts` (`MNEMA_NPD_RECEIPTS`) | `OFF` | `OFF` queues receipts and sends nothing; `ON` sends and needs the next two keys or the start fails |
 | `learning.billing.npd.inn` (`MNEMA_NPD_INN`) | empty | The seller's 12-digit INN |
-| `learning.billing.npd.password-base64` (`MNEMA_NPD_PASSWORD_BASE64`) | empty | Password of the «Мой налог» personal account, base64 of its UTF-8 bytes |
+| `learning.billing.npd.password-base64` (`MNEMA_NPD_PASSWORD_BASE64`) | empty | Password of the «Мой налог» personal account, base64 of its UTF-8 bytes (`printf %s '<password>' \| base64`; `echo` would add a newline) |
 | `learning.billing.npd.base-url` | `https://lknpd.nalog.ru/api/v1` | API base (https; http for loopback tests) |
 | `learning.billing.npd.interval` | `PT1M` | Delay between worker passes |
 | `learning.billing.npd.connect-timeout`, `…request-timeout` | `PT5S`, `PT20S` | Bounds of each call; the request timeout covers the whole exchange |

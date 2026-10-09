@@ -103,7 +103,8 @@ orders with their receipts ([guide](../../backend/services/learning/guide.md#н�
 contract, can change without notice; the receipts then queue and alarm, nothing is lost), its HTTP shapes were taken from open-source clients and
 verified only against a fake, the personal-account password is stored in the production configuration, and a partial refund is manual. Still owner
 tasks: confirm with ФНС whether a card payment through acquiring must be receipted at the moment of payment or by the 9th, check the first live receipt by hand
-and keep a manual path ready.
+(registered; service «Подписка Мнема … заказ №…»; the amount paid; the payment date; payment type «на счёт», i.e. `paymentType` `ACCOUNT`, not cash; the link on the
+return page opens it) and keep a manual path ready.
 
 НПД requires a «Мой налог» receipt; a bank payment confirmation is not that receipt.
 T-Bank's published [«Чеки» conditions](https://www.tbank.ru/business/help/business-payments/kassa/check/)

@@ -298,7 +298,8 @@ The seller is an ИП on НПД; the bank cash register is not used, so every in
   order to `PAID` (exactly once: `ON CONFLICT DO NOTHING`) and changed by `NpdReceipts` only. States: `PENDING → SENDING → REGISTERED → CANCEL_PENDING →
   CANCELLED`, and `FAILED_PERMANENT`. An order in `REVIEW` gets **no automatic receipt**: the operator decides what, if anything, to register. Orders
   paid before V47 have no row; the daily check reports them.
-- **Receipt content.** Service «Подписка Мнема Plus на 1 месяц» (or Pro), quantity 1, the amount actually charged (after any promo discount) as a
+- **Receipt content.** Service «Подписка Мнема Plus на 1 месяц, заказ №0199c7a2» (or Pro; the first 8 characters of the order id make the name unique per order, which the
+  lookup below relies on), quantity 1, the amount actually charged (after any promo discount) as a
   two-decimal ruble amount, buyer `FROM_INDIVIDUAL`, `paymentType` `ACCOUNT` (a card payment through the bank's acquiring is money on the
   seller's account, not cash; the reference clients default to `CASH`), `operationTime` = the payment's confirmation instant in the Moscow offset.
 - **Refund.** A full refund (`REVERSED`, `REFUNDED`) of a `PAID` order: a receipt not yet sent is annulled locally (nothing is called); one whose
@@ -307,37 +308,57 @@ The seller is an ИП on НПД; the bank cash register is not used, so every in
   annuls it and registers the remainder.
 - **Worker** (`NpdReceiptWorker`, roles `worker`/`all`, every `learning.billing.npd.interval`, default 1 min). The claim runs `FOR UPDATE SKIP LOCKED` in a
   short transaction, persists `SENDING` and a 5-minute lease **before** the request, the calls to «Мой налог» run outside any transaction and
-  the result is applied in another short one. Retries back off 1 min, 2, 4 … capped at 6 h (`next_attempt_at`); after 10 attempts without a
+  the result is applied in another short one. The lease is renewed in a short transaction right before each request (which also re-reads the row, so a refund that came
+  since the claim stops the send), so the 5-minute wait counts from the send, not from the claim of a batch of 20. Retries back off 1 min, 2, 4 … capped at 6 h (`next_attempt_at`); after 10 attempts without a
   registered receipt the operator is told once (`receipt_failed`) and the worker keeps trying.
 - **No duplicate receipts.** «Мой налог» has no idempotency key. After a timeout, a 5xx, a broken connection or a crash the row is `SENDING` and is
   never sent again blindly: after the 5-minute settle wait the worker looks the receipt up in the taxpayer's incomes (±60 s around the operation time;
-  same second, total and service name). None found: it is sent again. Exactly one: it is adopted. More than one, or an annulled one: `FAILED_PERMANENT`
+  same second, total and service name); a match that is already the stored receipt of another order is set aside first. None found: it is sent again. Exactly one: it is adopted. More than one, or an annulled one: `FAILED_PERMANENT`
   and `receipt_failed` for an operator. A refusal of the lookup itself leaves the row `SENDING`. A cancellation is read back
   (`/receipt/{inn}/{id}/json`) before a retry and after a refusal, so an annulment whose answer was lost is recognised.
 - **Failures.** 4xx (not 401/408/429) on an income or cancellation: `FAILED_PERMANENT` immediately and `receipt_failed` (retrying a refused request
   cannot help; typical: the annual НПД income limit, an invalid value). 401: one refresh, then one login with the INN and password; a refused login
-  stops the pass, raises `receipt_auth`, releases the claimed rows and blocks logging in for 15 minutes (no account lock by a wrong password).
+  stops the pass, raises `receipt_auth`, releases the claimed rows (they are not counted as attempts, so a login outage never raises `receipt_failed`) and
+  blocks logging in for 15 minutes, doubling with every further refusal up to 24 hours and resetting on a success (no account lock by a wrong password). A refund that comes
+  while the first request is on its way and does not go out (`NOT_SENT`, login refused) annuls the receipt locally instead of sending an income for refunded money.
 - **Legal term.** 422-ФЗ art. 14: at the moment of settlement for cash and electronic means of payment, and **no later than the 9th of the month
   after the one the money was received in** for other non-cash payments
   ([КонсультантПлюс: срок выдачи чека самозанятым](https://www.consultant.ru/law/podborki/srok_vydachi_cheka_samozanyatym/), ФНС letter
   ЗГ-3-20/1261@). Whether a card payment through acquiring counts as an electronic means of payment is for the owner to confirm with ФНС, so the
   worker registers at once and the alarms are layered: `receipt_overdue` (once per receipt, `deadline_at` = the start of the 10th, Moscow) when a
   receipt is still not registered by the 9th, and the daily check below after one day.
-- **Daily check.** In the worker pass, at most once a day per process: PAID orders older than a day without a registered (or annulled) receipt, and
-  REFUNDED orders whose receipt is not annulled, each a `receipt_mismatch` (up to 100 per run; it repeats daily until fixed). No scheduler framework.
-- **Settings** (`NpdSettings`): `MNEMA_NPD_RECEIPTS` `OFF` (default) or `ON`, `MNEMA_NPD_INN` (12 digits), `MNEMA_NPD_PASSWORD_BASE64`. `OFF` still queues a
-  receipt for every paid order (nothing is lost) and the deadline alarm and daily check still run, but nothing is sent; `ON` sends and, without a usable INN and
+- **Daily check.** In the worker pass, at most once a day per process, over the **last 90 days** (newest first, up to 100 per list): PAID orders older than a
+  day without a registered (or annulled) receipt, and REFUNDED orders whose receipt is not annulled, each a `receipt_mismatch` (repeated daily until fixed). With sending
+  `OFF` it only logs one WARN with the counts (`npd receipts are off: paid_without_receipt=… refunded_not_annulled=…`) and raises no anomaly, so tester payments made before
+  receipts are switched on do not spam errors. No scheduler framework.
+- **Orders paid before V47** have no `billing_receipt` row and, inside the 90 days, are reported daily. Look at each in «Мой налог»; for the ones that need no receipt
+  (tester payments on the DEMO terminal) close them out once, with the V47 deploy time as the bound:
+
+  ```sql
+  INSERT INTO app_learning.billing_receipt(order_id, state, service_name, amount_kopecks, operation_time, deadline_at, next_attempt_at, last_error_code, created_at, updated_at)
+  SELECT o.order_id, 'CANCELLED', 'Заказ до V47, чек вне системы', o.amount_kopecks, o.paid_at, o.paid_at, now(), 'PRE_V47', now(), now()
+  FROM app_learning.billing_order o
+  WHERE o.status IN ('PAID', 'REFUNDED') AND NOT EXISTS (SELECT 1 FROM app_learning.billing_receipt r WHERE r.order_id = o.order_id)
+    AND o.paid_at < TIMESTAMPTZ '2026-10-10 00:00:00+00';  -- replace with the time V47 was deployed
+  ```
+
+  A real income that was registered by hand: insert the row with `state='REGISTERED'` and `receipt_uuid` instead (and `'CANCELLED'` after the refund's annulment).
+  The statement is exercised by `NpdReceiptsTest`.
+- **Settings** (`NpdSettings`): `MNEMA_NPD_RECEIPTS` `OFF` (default) or `ON`, `MNEMA_NPD_INN` (12 digits), `MNEMA_NPD_PASSWORD_BASE64` (create it with `printf %s '<password>' | base64`: `echo` appends a newline that becomes part of the password). `OFF` still queues a
+  receipt for every paid order (nothing is lost) and the deadline alarm and the daily check (a WARN summary) still run, but nothing is sent; `ON` sends and, without a usable INN and
   password, **stops the start** with a message that names the settings and never a value. The device id is `mnema` plus 16 hex of the SHA-256 of the INN:
   stable across restarts. Tokens live in memory only; INN, password, tokens, bodies and the print link are never logged, only `order_id`, the receipt
   number, the operation and a short code (`HTTP_422`, `TIMEOUT`, …).
-- **Buyer link.** `GET /api/billing/orders/{id}` carries `receiptUrl` (`/receipt/{inn}/{id}/print` on the configured base) while the order is `PAID`
+- **Buyer link.** `GET /api/billing/orders/{id}` carries `receiptUrl` (`https://lknpd.nalog.ru/api/v1/receipt/{inn}/{id}/print`, always the real host, never the configured base) while the order is `PAID`
   and the receipt is `REGISTERED`; the return page shows it as «Чек».
 - **Operator.** `FAILED_PERMANENT` or a `receipt_*` alarm: read `last_error_code` of the order's `billing_receipt` row. If the cause is cured (limit,
   password, the receipt was registered by hand), set `state='PENDING', attempts=0, next_attempt_at=now()` to send again, or register or annul the
   receipt in «Мой налог» by hand and set `state` (`REGISTERED` with `receipt_uuid`, or `CANCELLED`) accordingly. Never reset a `SENDING` row without first
   looking in «Мой налог» for the receipt.
 - **Residual risk.** The API is unofficial and can change without notice; the HTTP shapes cannot be checked from the development machine, so the first
-  live receipt after switching `ON` is verified by hand (service, amount, date, link).
+  live receipt after switching `ON` is verified by hand. Acceptance: it is registered (`REGISTERED`, a receipt number); in «Мой налог» its service is
+  «Подписка Мнема … заказ №…», the amount is what the buyer paid, the date is the payment's date, **the payment type is «на счёт» (`paymentType` `ACCOUNT`)**
+  and not cash, and the `receiptUrl` of the order opens the printable receipt; then a refund of a test payment annuls it as «Возврат средств».
 
 ## Generation sessions (#287)
 
