@@ -45,9 +45,9 @@ export class AppShellComponent {
         }
     }
 
-    focusMain(event: Event): void {
+    focusTarget(event: Event, id: string): void {
         event.preventDefault();
-        document.querySelector<HTMLElement>('#main-content')?.focus();
+        document.getElementById(id)?.focus();
     }
 
     focusPageHeading(): void {

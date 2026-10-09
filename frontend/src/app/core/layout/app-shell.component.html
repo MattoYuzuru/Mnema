@@ -1,4 +1,6 @@
-<a class="skip-link" href="#main-content" (click)="focusMain($event)">К основному содержанию</a>
+<a class="skip-link" href="#main-content" (click)="focusTarget($event, 'main-content')">К основному содержанию</a>
+<!-- Long lists continue on scroll, so the footer (requisites, documents, support) needs its own way in. -->
+<a class="skip-link" href="#site-footer" (click)="focusTarget($event, 'site-footer')">К подвалу: документы и поддержка</a>
 
 <div class="paper-shell">
   <header class="masthead">
@@ -38,7 +40,7 @@
     <router-outlet (activate)="focusPageHeading()"></router-outlet>
   </main>
 
-  <app-public-footer />
+  <app-public-footer id="site-footer" tabindex="-1" />
 </div>
 
 <app-promo-popup-host />
