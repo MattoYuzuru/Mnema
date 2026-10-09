@@ -16,12 +16,14 @@ final class MyTaxException extends RuntimeException {
     private final Outcome outcome;
     private final String code;
     private final int status;
+    private final String operation;
 
-    MyTaxException(Outcome outcome, String code, int status) {
+    MyTaxException(Outcome outcome, String code, int status, String operation) {
         super("Moy Nalog failure", null, false, false);
         this.outcome = outcome;
         this.code = code;
         this.status = status;
+        this.operation = operation;
     }
 
     Outcome outcome() {
@@ -30,6 +32,11 @@ final class MyTaxException extends RuntimeException {
 
     String code() {
         return code;
+    }
+
+    /** Which call failed: {@code income}, {@code cancel}, {@code incomes}, {@code receipt}, {@code login} or {@code refresh}. */
+    String operation() {
+        return operation;
     }
 
     /** The HTTP status, or 0 when there was no answer. */

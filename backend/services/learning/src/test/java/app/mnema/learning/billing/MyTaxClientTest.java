@@ -164,6 +164,47 @@ class MyTaxClientTest {
     }
 
     @Test
+    void everyRefusedLoginDoublesThePauseUpToADayAndASuccessResetsIt() {
+        SERVICE.rejectLogin = true;
+        for (int refusal = 1; refusal <= 3; refusal++) {
+            assertThatThrownBy(() -> client.registerIncome(NAME, 49_900, PAID)).isInstanceOfSatisfying(MyTaxException.class,
+                    failure -> assertThat(failure.code()).isEqualTo("AUTH_REJECTED"));
+            Duration pause = MyTaxClient.LOGIN_BACKOFF.multipliedBy(1L << (refusal - 1));
+            CLOCK.advance(pause.minusSeconds(1));
+            assertThat(client.loginBlocked()).as("still blocked just before " + pause).isTrue();
+            CLOCK.advance(Duration.ofSeconds(2));
+            assertThat(client.loginBlocked()).isFalse();
+        }
+        assertThat(SERVICE.logins).hasSize(3);
+        assertThat(MyTaxClient.loginBackoff(1)).isEqualTo(Duration.ofMinutes(15));
+        assertThat(MyTaxClient.loginBackoff(2)).isEqualTo(Duration.ofMinutes(30));
+        assertThat(MyTaxClient.loginBackoff(7)).isEqualTo(Duration.ofHours(16));
+        assertThat(MyTaxClient.loginBackoff(8)).as("capped at a day").isEqualTo(Duration.ofHours(24));
+        assertThat(MyTaxClient.loginBackoff(500)).isEqualTo(Duration.ofHours(24));
+        assertThat(MyTaxClient.loginBackoff(0)).isEqualTo(Duration.ofMinutes(15));
+
+        SERVICE.rejectLogin = false;
+        client.registerIncome(NAME, 49_900, PAID);
+        SERVICE.revokeTokens();
+        SERVICE.rejectRefresh = true;
+        SERVICE.rejectLogin = true;
+        assertThatThrownBy(() -> client.registerIncome(NAME, 49_900, PAID)).isInstanceOf(MyTaxException.class);
+        CLOCK.advance(MyTaxClient.LOGIN_BACKOFF.plusSeconds(1));
+        assertThat(client.loginBlocked()).as("the pause started again from 15 minutes").isFalse();
+    }
+
+    @Test
+    void theCallsSendTheRefererOfThePageThatMakesThemInTheWebApp() {
+        client.registerIncome(NAME, 49_900, PAID);
+        CLOCK.advance(Duration.ofMinutes(59).plusSeconds(30));
+        client.registerIncome(NAME, 49_900, PAID.plusSeconds(5));
+        client.findIncomes(PAID, 49_900, NAME);
+
+        assertThat(SERVICE.referers).containsExactly("/auth/lkfl https://lknpd.nalog.ru/auth/login", "/income https://lknpd.nalog.ru/sales/create",
+                "/auth/token https://lknpd.nalog.ru/sales", "/income https://lknpd.nalog.ru/sales/create", "/incomes null");
+    }
+
+    @Test
     void aTokenTheServiceKeepsRefusingEndsAsAuthAfterOneRenewal() {
         client.registerIncome(NAME, 49_900, PAID);
         SERVICE.denyAll = true;
@@ -308,11 +349,10 @@ class MyTaxClientTest {
         assertThatThrownBy(() -> client.registerIncome(NAME, 49_900, PAID)).isInstanceOf(MyTaxException.class);
         client.cancelIncome(uuid);
 
-        assertThat(logs.list).isNotEmpty();
         for (ILoggingEvent event : logs.list) {
             String line = event.getFormattedMessage() + " " + event.getThrowableProxy();
             assertThat(line).doesNotContain(FakeMyTax.INN, FakeMyTax.PASSWORD, FakeMyTax.PASSWORD_BASE64, "access-", "refresh-", "Bearer", NAME, "499");
         }
-        assertThat(logs.list).anyMatch(event -> event.getFormattedMessage().startsWith("npd call failed operation=login outcome=REJECTED code=HTTP_422"));
+        assertThat(logs.list.stream().filter(event -> event.getLoggerName().startsWith("app.mnema.")).toList()).as("the client logs nothing: the worker logs each failure once").isEmpty();
     }
 }

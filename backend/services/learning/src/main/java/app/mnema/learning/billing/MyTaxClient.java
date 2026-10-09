@@ -3,8 +3,6 @@ package app.mnema.learning.billing;
 import app.mnema.learning.billing.MyTaxException.Outcome;
 import app.mnema.learning.platform.json.ContentJsonReader;
 import app.mnema.learning.usage.UsageClock;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
@@ -53,11 +51,11 @@ import java.util.regex.Pattern;
  *
  * <p><b>Session.</b> The access token and the refresh token live in memory only. A token that expires within a minute, or a 401, is renewed once with the
  * refresh token; if that fails with a 4xx the INN and password log in again, once; if that is refused the login is blocked for {@link #LOGIN_BACKOFF} so a wrong
- * password is not hammered into an account lock. Nothing is logged but the operation and a short code: not the INN, the password, a token or a body.
+ * password is not hammered into an account lock (the pause doubles with every refusal up to {@link #LOGIN_BACKOFF_MAX} and resets on a success). The client logs
+ * nothing: a failure carries only the operation and a short code ({@link MyTaxException}), never the INN, the password, a token or a body.
  */
 @Component
 class MyTaxClient implements DisposableBean {
-    private static final Logger log = LoggerFactory.getLogger(MyTaxClient.class);
     static final int MAX_RESPONSE_BYTES = 256 * 1024;
     private static final ContentJsonReader READER = new ContentJsonReader(MAX_RESPONSE_BYTES, 8, 20_000);
     private static final JsonMapper JSON = JsonMapper.builder().build();
@@ -74,8 +72,9 @@ class MyTaxClient implements DisposableBean {
     private static final int LOOKUP_PAGES = 3;
     /** A token that expires within this is renewed before it is used. */
     private static final Duration RENEW_AHEAD = Duration.ofSeconds(60);
-    /** After the personal account refused the login, no new login is tried for this long. */
+    /** After the personal account refused the login, no new login is tried for this long; every further refusal doubles it. */
     static final Duration LOGIN_BACKOFF = Duration.ofMinutes(15);
+    static final Duration LOGIN_BACKOFF_MAX = Duration.ofHours(24);
 
     /** A receipt found by {@link #findIncomes}. */
     record Found(String receiptUuid, boolean cancelled) { }
@@ -89,6 +88,7 @@ class MyTaxClient implements DisposableBean {
     private final HttpClient http;
     private Session session;
     private Instant loginBlockedUntil;
+    private int loginRefusals;
 
     MyTaxClient(NpdSettings settings, UsageClock clock) {
         this.settings = settings;
@@ -276,15 +276,23 @@ class MyTaxClient implements DisposableBean {
         try {
             session = authenticate("login", "/auth/lkfl", loginBody(), null, now);
             loginBlockedUntil = null;
+            loginRefusals = 0;
             return session.token();
         } catch (MyTaxException failure) {
             session = null;
             if (failure.outcome() == Outcome.REJECTED && failure.status() != 429) {
-                loginBlockedUntil = now.plus(LOGIN_BACKOFF);
+                loginRefusals++;
+                loginBlockedUntil = now.plus(loginBackoff(loginRefusals));
                 throw failed("login", Outcome.AUTH, "AUTH_REJECTED", failure.status());
             }
             throw failure;
         }
+    }
+
+    /** 15 minutes after the first refusal, then 30, 60 … up to a day. */
+    static Duration loginBackoff(int refusals) {
+        Duration wait = LOGIN_BACKOFF.multipliedBy(1L << Math.min(Math.max(refusals - 1, 0), 10));
+        return wait.compareTo(LOGIN_BACKOFF_MAX) > 0 ? LOGIN_BACKOFF_MAX : wait;
     }
 
     private Session authenticate(String operation, String path, String body, String previousRefresh, Instant now) {
@@ -325,7 +333,8 @@ class MyTaxClient implements DisposableBean {
     private Answer call(String operation, String method, String path, String body, String token) {
         HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(settings.baseUrl + path)).timeout(settings.requestTimeout)
                 .header("Accept", "application/json, text/plain, */*").header("Accept-Language", "ru-RU,ru;q=0.9").header("User-Agent", USER_AGENT);
-        if (path.startsWith("/auth/")) request.header("Referer", "https://lknpd.nalog.ru/auth/login");
+        String referer = referer(path);
+        if (referer != null) request.header("Referer", referer);
         if (token != null) request.header("Authorization", "Bearer " + token);
         if (body == null) {
             request.GET();
@@ -356,8 +365,16 @@ class MyTaxClient implements DisposableBean {
         throw failed(operation, Outcome.MAYBE_SENT, "HTTP_" + status, status);
     }
 
+    /** The pages of the web app that make these calls, as the reference client sends them (loolzaaa/mytax-client). */
+    private static String referer(String path) {
+        if (path.startsWith("/auth/lkfl")) return "https://lknpd.nalog.ru/auth/login";
+        if (path.startsWith("/auth/token")) return "https://lknpd.nalog.ru/sales";
+        if (path.equals("/income")) return "https://lknpd.nalog.ru/sales/create";
+        return null;
+    }
+
+    /** Not logged here: the caller (the worker) logs each failure once, with the order it belongs to. */
     private static MyTaxException failed(String operation, Outcome outcome, String code, int status) {
-        log.warn("npd call failed operation={} outcome={} code={}", operation, outcome, code);
-        return new MyTaxException(outcome, code, status);
+        return new MyTaxException(outcome, code, status, operation);
     }
 }

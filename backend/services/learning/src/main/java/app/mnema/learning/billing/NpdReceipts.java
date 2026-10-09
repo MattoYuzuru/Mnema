@@ -37,7 +37,8 @@ class NpdReceipts {
     static final Duration SETTLE = Duration.ofMinutes(5);
     /** After this many attempts without a registered receipt an operator is told once; the worker keeps trying until the deadline and beyond. */
     static final int ALERT_ATTEMPTS = 10;
-    private static final String PRINT = "/print";
+    /** The buyer's link is always on the real service, never on a configured (test or proxy) base. */
+    private static final String PRINT_BASE = "https://lknpd.nalog.ru/api/v1";
 
     private final NpdReceiptRepository repository;
     private final NpdSettings settings;
@@ -47,10 +48,13 @@ class NpdReceipts {
         this.settings = settings;
     }
 
-    /** The service name on the receipt, from the order's plan: «Подписка Мнема Plus на 1 месяц». */
+    /**
+     * The service name on the receipt, from the order's plan and unique per order: «Подписка Мнема Plus на 1 месяц, заказ №0199c7a2». The lookup of a lost
+     * request matches on operation second, total and name, and two orders of one plan paid in the same second would otherwise be indistinguishable.
+     */
     static String serviceName(BillingOrder order) {
         String plan = order.plan().name();
-        return "Подписка Мнема " + plan.charAt(0) + plan.substring(1).toLowerCase(Locale.ROOT) + " на 1 месяц";
+        return "Подписка Мнема " + plan.charAt(0) + plan.substring(1).toLowerCase(Locale.ROOT) + " на 1 месяц, заказ №" + order.orderId().toString().substring(0, 8);
     }
 
     /**
@@ -101,17 +105,48 @@ class NpdReceipts {
     public String receiptUrl(UUID orderId) {
         if (settings.inn() == null) return null;
         return repository.find(orderId).filter(receipt -> receipt.state() == State.REGISTERED && receipt.receiptUuid() != null)
-                .map(receipt -> printUrl(settings, receipt.receiptUuid())).orElse(null);
-    }
-
-    static String printUrl(NpdSettings settings, String receiptUuid) {
-        return settings.baseUrl + "/receipt/" + settings.inn() + "/" + receiptUuid + PRINT;
+                .map(receipt -> PRINT_BASE + "/receipt/" + settings.inn() + "/" + receipt.receiptUuid() + "/print").orElse(null);
     }
 
     /** Takes the receipts that are due: see {@link NpdReceiptRepository#claimDue}. */
     @Transactional
     public List<NpdReceiptRepository.Claim> claim(Instant now, int limit) {
         return repository.claimDue(now, now.plus(SETTLE), limit);
+    }
+
+    /**
+     * Called right before a request to «Мой налог»: the lease of the row (and so the {@link #SETTLE} wait before it is looked up) counts from now, not from the
+     * claim of the batch, and the row is read again, because a refund may have come since the claim.
+     *
+     * @return the row as it is now, or empty when it is no longer one the worker is working on
+     */
+    @Transactional
+    public Optional<NpdReceipt> begin(UUID orderId, Instant now) {
+        return repository.lock(orderId).filter(receipt -> receipt.state() == State.SENDING || receipt.state() == State.CANCEL_PENDING).map(receipt -> {
+            NpdReceipt leased = receipt.in(receipt.state(), receipt.receiptUuid(), now.plus(SETTLE), receipt.lastErrorCode());
+            save(leased, now);
+            return leased;
+        });
+    }
+
+    /** Of {@code candidates}, the receipts that are not the stored receipt of another order: a lookup must never adopt somebody else's. */
+    @Transactional(readOnly = true)
+    public List<MyTaxClient.Found> notOfOtherOrders(UUID orderId, List<MyTaxClient.Found> candidates) {
+        if (candidates.isEmpty()) return candidates;
+        List<String> taken = repository.receiptsOfOtherOrders(orderId, candidates.stream().map(MyTaxClient.Found::receiptUuid).toList());
+        return candidates.stream().filter(found -> !taken.contains(found.receiptUuid())).toList();
+    }
+
+    /**
+     * The attempt was not made (the login is refused, so the rest of the batch is let go) or ended in a login refusal: the row goes back to {@code to}, due after
+     * the shortest backoff, and the attempt does not count, so an outage of the login cannot raise {@code receipt_failed} on top of {@code receipt_auth}.
+     */
+    @Transactional
+    public void release(UUID orderId, State to, String errorCode, Instant now) {
+        repository.lock(orderId).filter(receipt -> receipt.state().open()).ifPresent(receipt -> {
+            NpdReceipt back = receipt.withAttempts(Math.max(0, receipt.attempts() - 1)).in(to, receipt.receiptUuid(), now.plus(MIN_BACKOFF), errorCode);
+            save(back.cancelledIfNeverSent(), now);
+        });
     }
 
     /** The service registered the receipt {@code receiptUuid}; when a refund came meanwhile it is annulled next. */
@@ -157,8 +192,8 @@ class NpdReceipts {
         NpdReceipt receipt = locked.get();
         Duration wait = backoff(receipt.attempts());
         if (to == State.SENDING && wait.compareTo(SETTLE) < 0) wait = SETTLE;
-        NpdReceipt next = receipt.in(to, receipt.receiptUuid(), now.plus(wait), errorCode);
-        boolean alert = receipt.attempts() >= ALERT_ATTEMPTS && receipt.failedAlertedAt() == null;
+        NpdReceipt next = receipt.in(to, receipt.receiptUuid(), now.plus(wait), errorCode).cancelledIfNeverSent();
+        boolean alert = next.state().open() && receipt.attempts() >= ALERT_ATTEMPTS && receipt.failedAlertedAt() == null;
         save(alert ? next.failedAlerted(now) : next, now);
         return alert;
     }
@@ -180,16 +215,16 @@ class NpdReceipts {
         return overdue.stream().map(NpdReceipt::orderId).toList();
     }
 
-    /** The consistency check: PAID orders older than {@code paidBefore} without a registered receipt. */
+    /** The consistency check: PAID orders paid between {@code since} and {@code paidBefore} without a registered receipt, newest first. */
     @Transactional(readOnly = true)
-    public List<UUID> paidWithoutReceipt(Instant paidBefore, int limit) {
-        return repository.paidWithoutReceipt(paidBefore, limit);
+    public List<UUID> paidWithoutReceipt(Instant since, Instant paidBefore, int limit) {
+        return repository.paidWithoutReceipt(since, paidBefore, limit);
     }
 
-    /** The consistency check: REFUNDED orders whose receipt is not annulled. */
+    /** The consistency check: REFUNDED orders changed since {@code since} whose receipt is not annulled, newest first. */
     @Transactional(readOnly = true)
-    public List<UUID> refundedWithoutCancellation(int limit) {
-        return repository.refundedWithoutCancellation(limit);
+    public List<UUID> refundedWithoutCancellation(Instant since, int limit) {
+        return repository.refundedWithoutCancellation(since, limit);
     }
 
     private void save(NpdReceipt receipt, Instant now) {

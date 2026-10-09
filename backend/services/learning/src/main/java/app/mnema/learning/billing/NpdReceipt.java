@@ -34,6 +34,14 @@ record NpdReceipt(UUID orderId, State state, String serviceName, long amountKope
                 failedAlertedAt, overdueAlertedAt, createdAt, updatedAt, rowVersion);
     }
 
+    /**
+     * A refund came while the first request was being made and that request did not go out (the row is back at {@code PENDING}): nothing was registered,
+     * so there is nothing to send and nothing to annul.
+     */
+    NpdReceipt cancelledIfNeverSent() {
+        return state == State.PENDING && cancelRequested ? in(State.CANCELLED, null, nextAttemptAt, lastErrorCode) : this;
+    }
+
     NpdReceipt withAttempts(int newAttempts) {
         return new NpdReceipt(orderId, state, serviceName, amountKopecks, operationTime, deadlineAt, receiptUuid, cancelRequested, newAttempts, nextAttemptAt,
                 lastErrorCode, failedAlertedAt, overdueAlertedAt, createdAt, updatedAt, rowVersion);

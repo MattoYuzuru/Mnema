@@ -77,6 +77,8 @@ final class FakeMyTax implements AutoCloseable {
     final List<ObjectNode> cancels = new CopyOnWriteArrayList<>();
     final List<String> incomeQueries = new CopyOnWriteArrayList<>();
     final List<String> userAgents = new CopyOnWriteArrayList<>();
+    /** {@code path referer} of every request. */
+    final List<String> referers = new CopyOnWriteArrayList<>();
     final AtomicInteger receiptReads = new AtomicInteger();
     volatile long tokenLifetimeSeconds = 3_600;
     volatile boolean rejectLogin;
@@ -135,6 +137,7 @@ final class FakeMyTax implements AutoCloseable {
         cancels.clear();
         incomeQueries.clear();
         userAgents.clear();
+        referers.clear();
         receiptReads.set(0);
     }
 
@@ -166,6 +169,7 @@ final class FakeMyTax implements AutoCloseable {
             ObjectNode request = raw.length == 0 ? BillingFixtures.JSON.createObjectNode() : (ObjectNode) BillingFixtures.JSON.readTree(new String(raw, StandardCharsets.UTF_8));
             String agent = exchange.getRequestHeaders().getFirst("User-Agent");
             if (agent != null) userAgents.add(agent);
+            referers.add(exchange.getRequestURI().getPath().substring("/api/v1".length()) + " " + exchange.getRequestHeaders().getFirst("Referer"));
             Reply reply;
             if (redirectStatus != 0) {
                 exchange.getResponseHeaders().set("Location", "https://example.invalid/");

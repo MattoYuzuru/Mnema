@@ -22,10 +22,11 @@ import java.util.UUID;
  * <p><b>No duplicate receipts.</b> The service has no idempotency key. The claim persists {@code SENDING} before the request, so a lost answer, a timeout or a crash
  * always leaves a row that is looked up in the taxpayer's incomes (operation second, total and service name, as {@code varrcan/lknpd} documents) before it is sent
  * again: none found after the {@link NpdReceipts#SETTLE} wait means it is safe to send; exactly one is adopted; more than one, or an annulled one, is handed to an
- * operator ({@code receipt_failed}). A request the service refused (4xx) is not retried blindly: it fails permanently for an operator.
+ * operator ({@code receipt_failed}); a receipt that is the stored receipt of another order is never adopted, and the service name is unique per order. The lease of
+ * a row is renewed right before each request, so the wait counts from the send. A request the service refused (4xx) is not retried blindly: it fails permanently for an operator.
  *
  * <p>A refund of a registered receipt annuls it ({@code «Возврат средств»}); before a retried annulment the receipt is read, so an annulment whose answer was lost
- * is recognised. A rejected login stops the pass and blocks logging in for {@link MyTaxClient#LOGIN_BACKOFF} ({@code receipt_auth}).
+ * is recognised. A rejected login stops the pass and blocks logging in for {@link MyTaxClient#LOGIN_BACKOFF}, doubling on every refusal ({@code receipt_auth}); rows let go that way are not counted as attempts.
  */
 @Service
 class NpdReceiptWorker {
@@ -35,6 +36,8 @@ class NpdReceiptWorker {
     /** A paid order younger than this is the worker's business first; the daily check reports older ones without a registered receipt. */
     static final Duration CHECK_AFTER_PAYMENT = Duration.ofDays(1);
     static final Duration CHECK_EVERY = Duration.ofDays(1);
+    /** The check looks at the last 90 days only; older orders (paid before V47) are closed out by an operator, see the guide. */
+    static final Duration CHECK_WINDOW = Duration.ofDays(90);
 
     private final NpdReceipts receipts;
     private final NpdSettings settings;
@@ -80,43 +83,60 @@ class NpdReceiptWorker {
         return claimed.size();
     }
 
-    /** PAID orders older than a day without a registered receipt, and REFUNDED orders whose receipt is not annulled. */
+    /**
+     * PAID orders older than a day without a registered receipt, and REFUNDED orders whose receipt is not annulled, within the last {@link #CHECK_WINDOW}
+     * (newest first, at most {@value #CHECK_LIMIT} each). Sending {@code ON}: one {@code receipt_mismatch} per order. Sending {@code OFF}: the receipts
+     * were never going to be there, so one WARN with the counts and no anomaly (payments made before receipts are switched on do not spam errors).
+     */
     void consistency(Instant now) {
-        for (UUID orderId : receipts.paidWithoutReceipt(now.minus(CHECK_AFTER_PAYMENT), CHECK_LIMIT)) applier.anomaly(Anomaly.RECEIPT_MISMATCH, orderId, null);
-        for (UUID orderId : receipts.refundedWithoutCancellation(CHECK_LIMIT)) applier.anomaly(Anomaly.RECEIPT_MISMATCH, orderId, null);
+        Instant since = now.minus(CHECK_WINDOW);
+        List<UUID> unreceipted = receipts.paidWithoutReceipt(since, now.minus(CHECK_AFTER_PAYMENT), CHECK_LIMIT);
+        List<UUID> unannulled = receipts.refundedWithoutCancellation(since, CHECK_LIMIT);
+        if (!settings.sending()) {
+            if (!unreceipted.isEmpty() || !unannulled.isEmpty()) {
+                log.warn("npd receipts are off: paid_without_receipt={} refunded_not_annulled={}", unreceipted.size(), unannulled.size());
+            }
+            return;
+        }
+        for (UUID orderId : unreceipted) applier.anomaly(Anomaly.RECEIPT_MISMATCH, orderId, null);
+        for (UUID orderId : unannulled) applier.anomaly(Anomaly.RECEIPT_MISMATCH, orderId, null);
     }
 
-    private void attempt(Claim claim) {
-        NpdReceipt receipt = claim.receipt();
-        Instant now = clock.now();
-        if (receipt.state() == State.CANCEL_PENDING) {
-            cancel(receipt, now);
+    void attempt(Claim claim) {
+        if (claim.receipt().state() == State.CANCEL_PENDING) {
+            cancel(claim);
         } else {
-            register(claim, now);
+            register(claim);
         }
     }
 
-    private void register(Claim claim, Instant now) {
-        NpdReceipt receipt = claim.receipt();
+    private void register(Claim claim) {
+        UUID orderId = claim.receipt().orderId();
+        NpdReceipt receipt = receipts.begin(orderId, clock.now()).orElse(null);
+        if (receipt == null) return;
         if (claim.previous() == State.SENDING) {
-            List<MyTaxClient.Found> found = lookup(receipt);
+            List<MyTaxClient.Found> found = receipts.notOfOtherOrders(orderId, lookup(receipt));
             if (found.size() == 1 && !found.getFirst().cancelled()) {
-                receipts.registered(receipt.orderId(), found.getFirst().receiptUuid(), now);
-                log.info("npd receipt found after an unknown outcome order_id={}", receipt.orderId());
+                receipts.registered(orderId, found.getFirst().receiptUuid(), clock.now());
+                log.info("npd receipt found after an unknown outcome order_id={}", orderId);
                 return;
             }
             if (!found.isEmpty()) {
                 // Two receipts with one fingerprint, or one that was annulled by someone: not ours to guess.
-                permanent(receipt.orderId(), "AMBIGUOUS_RECEIPT", now);
+                permanent(orderId, "AMBIGUOUS_RECEIPT", clock.now());
                 return;
             }
-            if (receipt.cancelRequested()) {
-                receipts.neverRegistered(receipt.orderId(), now);
-                return;
-            }
+            // The wait before a resend counts from the send, not from the claim or the lookup.
+            receipt = receipts.begin(orderId, clock.now()).orElse(null);
+            if (receipt == null) return;
+        }
+        if (receipt.cancelRequested()) {
+            // Refunded since the claim, and nothing is registered: there is nothing to send and nothing to annul.
+            receipts.neverRegistered(orderId, clock.now());
+            return;
         }
         String uuid = client.registerIncome(receipt.serviceName(), receipt.amountKopecks(), receipt.operationTime());
-        receipts.registered(receipt.orderId(), uuid, now);
+        receipts.registered(orderId, uuid, clock.now());
     }
 
     /** The lookup is not the request: a refusal of it says nothing about the receipt, which stays "unknown" and is looked up again later. */
@@ -124,23 +144,26 @@ class NpdReceiptWorker {
         try {
             return client.findIncomes(receipt.operationTime(), receipt.amountKopecks(), receipt.serviceName());
         } catch (MyTaxException failure) {
-            if (failure.outcome() == Outcome.REJECTED) throw new MyTaxException(Outcome.MAYBE_SENT, failure.code(), failure.status());
+            if (failure.outcome() == Outcome.REJECTED) throw new MyTaxException(Outcome.MAYBE_SENT, failure.code(), failure.status(), failure.operation());
             throw failure;
         }
     }
 
-    private void cancel(NpdReceipt receipt, Instant now) {
+    private void cancel(Claim claim) {
+        UUID orderId = claim.receipt().orderId();
+        NpdReceipt receipt = receipts.begin(orderId, clock.now()).orElse(null);
+        if (receipt == null) return;
         try {
             // An earlier attempt may have annulled the receipt without the answer reaching us.
-            if (receipt.attempts() > 1 && client.isCancelled(receipt.receiptUuid())) {
-                receipts.cancelled(receipt.orderId(), now);
+            if (claim.receipt().attempts() > 1 && client.isCancelled(receipt.receiptUuid())) {
+                receipts.cancelled(orderId, clock.now());
                 return;
             }
             client.cancelIncome(receipt.receiptUuid());
         } catch (MyTaxException failure) {
             if (failure.outcome() != Outcome.REJECTED || !client.isCancelled(receipt.receiptUuid())) throw failure;
         }
-        receipts.cancelled(receipt.orderId(), now);
+        receipts.cancelled(orderId, clock.now());
     }
 
     /** @return whether the pass must stop (the login is refused) */
@@ -150,13 +173,15 @@ class NpdReceiptWorker {
         Instant now = clock.now();
         boolean cancelling = receipt.state() == State.CANCEL_PENDING;
         State resume = cancelling ? State.CANCEL_PENDING : State.SENDING;
-        log.warn("npd receipt attempt failed order_id={} outcome={} code={}", orderId, failure.outcome(), failure.code());
+        State unsent = cancelling ? State.CANCEL_PENDING : claim.previous();
+        // The one line of this failure: the client logs nothing.
+        log.warn("npd receipt attempt failed order_id={} operation={} outcome={} code={}", orderId, failure.operation(), failure.outcome(), failure.code());
         switch (failure.outcome()) {
-            case NOT_SENT -> later(orderId, cancelling ? State.CANCEL_PENDING : claim.previous(), failure.code(), now);
+            case NOT_SENT -> later(orderId, unsent, failure.code(), now);
             case MAYBE_SENT -> later(orderId, resume, failure.code(), now);
             case AUTH -> {
                 if (!"AUTH_BLOCKED".equals(failure.code())) applier.anomaly(Anomaly.RECEIPT_AUTH, orderId, null);
-                later(orderId, cancelling ? State.CANCEL_PENDING : claim.previous(), failure.code(), now);
+                receipts.release(orderId, unsent, failure.code(), now);
                 return true;
             }
             case REJECTED -> permanent(orderId, failure.code(), now);
@@ -172,9 +197,9 @@ class NpdReceiptWorker {
         if (receipts.failPermanently(orderId, code, now)) applier.anomaly(Anomaly.RECEIPT_FAILED, orderId, null);
     }
 
-    /** A claimed receipt the pass did not get to (the login was refused): it goes back to where it was, due after the backoff. */
+    /** A claimed receipt the pass did not get to (the login was refused): it goes back to where it was, due after the shortest backoff, uncounted. */
     private void release(Claim claim) {
         State back = claim.receipt().state() == State.CANCEL_PENDING ? State.CANCEL_PENDING : claim.previous();
-        later(claim.receipt().orderId(), back, "AUTH_BLOCKED", clock.now());
+        receipts.release(claim.receipt().orderId(), back, "AUTH_BLOCKED", clock.now());
     }
 }

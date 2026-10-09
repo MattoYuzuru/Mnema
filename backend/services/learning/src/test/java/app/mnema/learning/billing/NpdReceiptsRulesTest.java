@@ -18,8 +18,11 @@ class NpdReceiptsRulesTest {
 
     @Test
     void theServiceNameIsRussianAndNamesThePlanAndThePeriod() {
-        assertThat(NpdReceipts.serviceName(order(Plan.PLUS))).isEqualTo("Подписка Мнема Plus на 1 месяц");
-        assertThat(NpdReceipts.serviceName(order(Plan.PRO))).isEqualTo("Подписка Мнема Pro на 1 месяц");
+        BillingOrder plus = order(Plan.PLUS);
+        BillingOrder pro = order(Plan.PRO);
+        assertThat(NpdReceipts.serviceName(plus)).isEqualTo("Подписка Мнема Plus на 1 месяц, заказ №" + plus.orderId().toString().substring(0, 8));
+        assertThat(NpdReceipts.serviceName(pro)).startsWith("Подписка Мнема Pro на 1 месяц, заказ №").hasSizeLessThanOrEqualTo(128);
+        assertThat(NpdReceipts.serviceName(order(Plan.PLUS))).as("unique per order").isNotEqualTo(NpdReceipts.serviceName(plus));
     }
 
     @Test

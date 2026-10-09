@@ -8,8 +8,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * The schedule of {@link NpdReceiptWorker}. It exists only for the {@code worker} and {@code all} roles ({@code learning.runtime.roles}), like
- * {@link PaymentReconciler}: an {@code api} process never calls «Мой налог» on a timer. The pass is idempotent and claims rows with
- * {@code FOR UPDATE SKIP LOCKED}, so a doubled or lost run changes nothing.
+ * {@link PaymentReconciler}: an {@code api} process never calls «Мой налог» on a timer. Passes may overlap (two processes, or a slow pass and the next
+ * one): they claim rows with {@code FOR UPDATE SKIP LOCKED} and a lease, so each row is worked on by one pass at a time, and a lost pass only delays its rows.
  */
 @Component
 @ConditionalOnExpression("'${learning.runtime.roles:all}'.trim().toLowerCase() == 'worker' or "

@@ -101,18 +101,27 @@ class NpdReceiptRepository {
                 .param("now", time(now)).param("limit", limit).query(NpdReceiptRepository::receipt).list();
     }
 
-    /** PAID orders paid before {@code paidBefore} without a registered (or annulled) receipt: orders the daily check reports. */
-    List<UUID> paidWithoutReceipt(Instant paidBefore, int limit) {
-        return jdbc.sql("SELECT o.order_id FROM app_learning.billing_order o LEFT JOIN app_learning.billing_receipt r ON r.order_id=o.order_id "
-                        + "WHERE o.status='PAID' AND o.paid_at<:before AND (r.order_id IS NULL OR r.state NOT IN ('REGISTERED','CANCEL_PENDING','CANCELLED')) "
-                        + "ORDER BY o.paid_at LIMIT :limit")
-                .param("before", time(paidBefore)).param("limit", limit).query(UUID.class).list();
+    /** Receipt numbers of {@code candidates} that are the stored receipt of an order other than {@code orderId}. */
+    List<String> receiptsOfOtherOrders(UUID orderId, java.util.Collection<String> candidates) {
+        return jdbc.sql("SELECT receipt_uuid FROM app_learning.billing_receipt WHERE receipt_uuid IN (:uuids) AND order_id<>:id")
+                .param("uuids", candidates).param("id", orderId).query(String.class).list();
     }
 
-    /** REFUNDED orders whose receipt is not annulled (or does not exist). */
-    List<UUID> refundedWithoutCancellation(int limit) {
+    /**
+     * PAID orders paid in the window {@code (since, paidBefore)}, newest first, without a registered (or annulled) receipt: orders the daily check reports.
+     * Older orders are out of the window on purpose; an operator closes out the ones paid before V47 (guide).
+     */
+    List<UUID> paidWithoutReceipt(Instant since, Instant paidBefore, int limit) {
         return jdbc.sql("SELECT o.order_id FROM app_learning.billing_order o LEFT JOIN app_learning.billing_receipt r ON r.order_id=o.order_id "
-                        + "WHERE o.status='REFUNDED' AND (r.order_id IS NULL OR r.state<>'CANCELLED') ORDER BY o.updated_at LIMIT :limit")
-                .param("limit", limit).query(UUID.class).list();
+                        + "WHERE o.status='PAID' AND o.paid_at>:since AND o.paid_at<:before "
+                        + "AND (r.order_id IS NULL OR r.state NOT IN ('REGISTERED','CANCEL_PENDING','CANCELLED')) ORDER BY o.paid_at DESC LIMIT :limit")
+                .param("since", time(since)).param("before", time(paidBefore)).param("limit", limit).query(UUID.class).list();
+    }
+
+    /** REFUNDED orders changed since {@code since}, newest first, whose receipt is not annulled (or does not exist). */
+    List<UUID> refundedWithoutCancellation(Instant since, int limit) {
+        return jdbc.sql("SELECT o.order_id FROM app_learning.billing_order o LEFT JOIN app_learning.billing_receipt r ON r.order_id=o.order_id "
+                        + "WHERE o.status='REFUNDED' AND o.updated_at>:since AND (r.order_id IS NULL OR r.state<>'CANCELLED') ORDER BY o.updated_at DESC LIMIT :limit")
+                .param("since", time(since)).param("limit", limit).query(UUID.class).list();
     }
 }
