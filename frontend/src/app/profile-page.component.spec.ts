@@ -67,6 +67,35 @@ describe('ProfilePageComponent', () => {
         expect(component.avatarError()).toBe('Изображение слишком большое или пустое. Выберите другое.');
     });
 
+    it('saves multiline bio and displays the canonical server text', async () => {
+        await component.load();
+        const bio = '  Учусь ✨  \n\n\n  • Языки  ';
+        api.update.mockReturnValue(of({ ...profile, bio: 'Учусь ✨\n\n• Языки' }));
+        component.form.controls.bio.setValue(bio);
+        await component.save();
+        expect(api.update).toHaveBeenCalledWith({ profileUsername: 'reader', displayName: 'Reader', bio });
+        expect(component.saveSuccess()).toBe(true);
+        expect(component.saveError()).toBeNull();
+        expect(component.form.controls.bio.value).toBe('Учусь ✨\n\n• Языки');
+    });
+
+    it('blocks excessive lines with accessible guidance before sending an edit', async () => {
+        const fixture = TestBed.createComponent(ProfilePageComponent);
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.componentInstance.form.controls.bio.setValue(Array(7).fill('строка').join('\n'));
+        fixture.componentInstance.form.controls.bio.markAsTouched();
+        fixture.detectChanges();
+        const root = fixture.nativeElement as HTMLElement;
+        const input = root.querySelector<HTMLTextAreaElement>('#profile-bio')!;
+        expect(input.getAttribute('aria-invalid')).toBe('true');
+        expect(input.getAttribute('aria-describedby')).toBe('bio-hint bio-error');
+        expect(root.querySelector('#bio-error')?.textContent).toContain('6 строк');
+        expect(root.querySelector<HTMLButtonElement>('form:has(#profile-bio) button')?.disabled).toBe(true);
+        await fixture.componentInstance.save();
+        expect(api.update).not.toHaveBeenCalled();
+    });
+
     it('requires password confirmation before contacting Identity', async () => {
         const auth = TestBed.inject(AuthService) as unknown as SpyObj<AuthService>;
         component.passwordForm.setValue({ currentPassword: 'existing-secret',

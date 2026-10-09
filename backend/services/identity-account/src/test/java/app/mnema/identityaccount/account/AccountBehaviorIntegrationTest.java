@@ -283,6 +283,35 @@ class AccountBehaviorIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void multilineBioRoundTripsThroughHttpAndInvalidEditsLeaveStoredProfileUntouched() throws Exception {
+        var access = account();
+        String token = bearer(access);
+        String username = "bio-" + UUID.randomUUID();
+        String expected = "Учусь каждый день ✨\n\n• Математика и языки";
+        var edit = Map.of("profileUsername", username, "displayName", "Reader",
+                "bio", "\r\n  Учусь\t\tкаждый  день ✨  \r\n\r\n\r\n  • Математика и языки  \r\n");
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/accounts/me")
+                        .header("Authorization", "Bearer " + token).contentType("application/json")
+                        .content(json.writeValueAsString(edit)))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.bio").value(expected));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/accounts/me")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.bio").value(expected));
+        for (String invalid : List.of(String.join("\n", Collections.nCopies(7, "строка")), "bad\u0001", "а".repeat(201))) {
+            mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/accounts/me")
+                            .header("Authorization", "Bearer " + token).contentType("application/json")
+                            .content(json.writeValueAsString(Map.of("profileUsername", username,
+                                    "displayName", "Reader", "bio", invalid))))
+                    .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isBadRequest());
+            assertThat(profiles.get(access).bio()).isEqualTo(expected);
+        }
+        assertThat(jdbc.sql("SELECT bio FROM app_identity.account WHERE account_id=:id")
+                .param("id", access.accountId()).query(String.class).single()).isEqualTo(expected);
+    }
+
+    @Test
     void ambiguousMailTimeoutInvalidatesSecretWithinBoundedTransport() {
         var account = account();
         jdbc.sql("UPDATE app_identity.account SET email_verified=true WHERE account_id=:id")

@@ -10,6 +10,12 @@ scenario verifies another learner's 403, owner sign-in, draft isolation, explici
 publication, safe Markdown and timeline/editor reflow at 1440/390/320px. Screenshots
 are `events-editor-<width>.png` and `events-timeline-<width>.png`; it sends no data to Telegram.
 
+The base profile flow saves and reloads a Unicode multiline bio, checks whitespace
+normalization and rejects more than six lines through the real form. Profile captures
+cover desktop, 390 and 320 CSS px; the backend integration test also verifies rejected
+edits preserve the stored bio. The text contract is in the
+[Identity guide](../../backend/services/identity-account/guide.md#browseraccount-endpoints).
+
 ## Run
 
 Prerequisites: existing Java 25 on `PATH`, Node 24, Chrome, OpenSSL with `req -addext`, Docker

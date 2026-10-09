@@ -257,9 +257,10 @@ export async function runNotifications(ctx) {
   });
 
   await stage('toast_keyboard', async () => {
-    // Real keyboard: Tab from the last footer link enters the toast region (DOM order), Esc closes the toast.
-    need(await page(`const link = [...document.querySelectorAll('.footer nav a')].at(-1);
-      link.focus(); return document.activeElement === link;`), 'footer link cannot take focus');
+    // Real keyboard: Tab from the last footer control enters the toast region (DOM order), Esc closes the toast.
+    need(await page(`const control = [...document.querySelectorAll('.footer a[href], .footer button:not([disabled])')].at(-1);
+      control.focus(); return document.activeElement === control;`), 'footer control cannot take focus');
+    const origin = await activeElement();
     await keys.Tab();
     const inside = await activeElement();
     need(inside.inRegion && inside.cls.includes('close'), 'Tab from the footer did not reach the toast close button');
@@ -267,8 +268,8 @@ export async function runNotifications(ctx) {
     await until(async () => { const state = await toastState(); return state.toasts.length === 0 && !state.open; },
       'Esc did not close the toast and its popover', 10_000);
     const focus = await activeElement();
-    need(!focus.isBody && focus.tag === 'A' && focus.text.length > 0, 'focus was lost to <body> after closing the toast');
-    evidence.toastEsc = { closed: true, focusReturnedTo: 'previous link', hoverPause: 'not exercised: ERROR has no timeout and the echo toast has no caller' };
+    need(!focus.isBody && focus.tag === origin.tag && focus.text === origin.text, 'focus did not return to the footer control after closing the toast');
+    evidence.toastEsc = { closed: true, focusReturnedTo: 'previous footer control', hoverPause: 'not exercised: ERROR has no timeout and the echo toast has no caller' };
   });
 
   // ======================================================================================================================

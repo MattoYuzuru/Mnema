@@ -98,6 +98,18 @@ transaction and a token-hash advisory lock; responses are released after commit.
 | `POST /deletion/proof/federated` | Start a bound-provider deletion-only proof |
 | `POST /deletion/confirmed` | `{proof}` → 202 for owners without ordinary access, including banned owners |
 
+`bio` is plain Unicode text, capped at 200 UTF-16 code units on input and six lines
+after layout normalization (blank lines count). CRLF/CR become LF; horizontal spaces
+and tabs collapse to one space, line edges are trimmed, outer blank lines disappear
+and consecutive blank lines collapse to one. Other ASCII control characters and DEL
+are rejected with HTTP 400. Invalid edits leave the saved profile untouched. Reads
+accept existing multiline descriptions without imposing the new edit-only line cap.
+No HTML/Markdown rendering is enabled. Single-line identity/protocol fields keep
+their existing validation. Server enforcement and field-specific rules follow
+[OWASP input validation](https://cheatsheetseries.owasp.org/cheatsheets/Input_Validation_Cheat_Sheet.html);
+the form supplies immediate, associated errors using
+[Angular form validation](https://angular.dev/guide/forms/form-validation).
+
 All paths in the table are below `/api/accounts`. Private profile fields are
 `accountId,email,emailVerified,profileUsername,displayName,bio,admin,status,
 avatarPresent,hasPassword`. Unknown DTO fields are rejected. Local login and

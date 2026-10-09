@@ -2,7 +2,8 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { Observable, map } from 'rxjs';
 import { AUTH_BROWSER, BROWSER_IDENTITY_CONFIG, validateIdentityConfig } from './auth-browser';
-import { IdentityProfile, AuthFailure, boundedText, objectValue, parseProfile } from './auth-protocol';
+import { IdentityProfile, AuthFailure, objectValue, parseProfile } from './auth-protocol';
+import { isProfileBio, normalizeProfileBio } from './profile-bio';
 
 export interface AccountProfile extends IdentityProfile {
     bio: string | null;
@@ -18,9 +19,10 @@ export interface AccountProfileEdit {
 function parseAccountProfile(value: unknown): AccountProfile {
     const identity = parseProfile(value);
     const fields = objectValue(value);
-    if (!(fields['bio'] === null || boundedText(fields['bio'], 200)) ||
+    if (!(fields['bio'] === null || isProfileBio(fields['bio'])) ||
         typeof fields['avatarPresent'] !== 'boolean') throw new AuthFailure('protocol');
-    return { ...identity, bio: fields['bio'], avatarPresent: fields['avatarPresent'] };
+    return { ...identity, bio: fields['bio'] === null ? null : normalizeProfileBio(fields['bio']),
+        avatarPresent: fields['avatarPresent'] };
 }
 
 @Injectable({ providedIn: 'root' })

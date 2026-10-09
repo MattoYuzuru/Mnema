@@ -56,4 +56,21 @@ describe('AccountProfileApi', () => {
         expect(upload.request.body instanceof FormData).toBe(true);
         upload.flush(null);
     });
+
+    it('reads an existing multiline bio and accepts the saved response', () => {
+        const bio = 'Учусь каждый день ✨\n\n• Математика и языки';
+        api.load().subscribe(profile => expect(profile.bio).toBe(bio));
+        http.expectOne('https://identity.mnema.test/api/accounts/me').flush({ ...response, bio });
+        api.update({ profileUsername: 'reader', displayName: 'Reader', bio })
+            .subscribe(profile => expect(profile.bio).toBe(bio));
+        http.expectOne('https://identity.mnema.test/api/accounts/me').flush({ ...response, bio });
+    });
+
+    it.each([{ bio: 'x'.repeat(201) }, { bio: 'bad\u0001' }, { displayName: 'bad\nname' }])(
+    'rejects invalid response fields without weakening single-line identity checks: %j', fields => {
+        const failed = vi.fn();
+        api.load().subscribe({ error: failed });
+        http.expectOne('https://identity.mnema.test/api/accounts/me').flush({ ...response, ...fields });
+        expect(failed).toHaveBeenCalledOnce();
+    });
 });
