@@ -247,6 +247,7 @@ protected squash; merge alone is not live verification.
 | `authoring`, `own-decks`, `study` | Manual editor/Browse, Deck hub and Study; [authoring/Study workflow](../product/authoring-and-study-workflows.md) and [Study contract](../../contracts/study/README.md) |
 | `generation` | AI composer, Workshop, exercise builder, edits and planner; [generation contract](../../contracts/generation/README.md) and [brand UI](../frontend/mnema-brand-and-ui-contract.md#composer-и-мастерская) |
 | `usage`, `plans`, `promo`, `experiment` | AI budget, paywall/profile tier, explicit code field/popup, server-assigned experiments; [usage contract](../../contracts/usage/README.md) |
+| `billing` | Checkout call from `/plans`, trusted T-Bank redirect, return page `/plans/payment/:orderId` that only reads the server order; [billing contract](../../contracts/billing/README.md) |
 | `goal`, `ai-info` | Once-asked learning goal (`LearningGoalStore`, `goal-copy.ts`) and public `/ai`; the goal changes copy/recommendations and never reaches a provider |
 
 - `/plans` is authenticated; `/ai` is public. The goal prompt is allowlisted only on
