@@ -1378,7 +1378,7 @@ Credit cohort/feature counts come from append-only DEBIT ledger entries; micro-U
 provider cost comes from the 90-day call journal, with pending/unpriced failures and retention
 explicitly marked. Current media catalog bytes are inventory, not invoices. Generation user
 counts cover retained sessions only; published artifact counts use durable provenance. Revenue is the
-gross sum of confirmed `billing_order` rows (PAID by `paid_at`, REFUNDED shown beside, RUB, before bank fees);
+gross sum of confirmed `billing_order` rows (PAID and REFUNDED by `paid_at`, the REFUNDED subset shown beside, RUB, before bank fees; a partial refund counts at the full order amount);
 provider invoices and infrastructure charges have no connected authoritative source and return
 `UNAVAILABLE`, never zero or inferred profit. Latency percentiles carry `sampleCount`, and the feature
 breakdown carries `featuresTruncated`. User monthly allowances are stored snapshots.

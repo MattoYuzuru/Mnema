@@ -64,8 +64,10 @@ bearer JWT с `client_id = mnema-admin-web`. Токен `mnema-web` того ж�
 проверяют `MNEMA_EVENTS_OWNER_ACCOUNT_ID`; promo/moderation сохраняют фактическую
 Identity authority и ограничения иерархии. Права модулей отражает access response.
 
-`admin.mnema.app` отдаёт SPA и same-origin Learning `/api`, а не redirect. Блок Caddy инертен,
-пока кабинет не настроен: вход отклоняется, а редактор событий остаётся на `https://mnema.app/manage/events`.
+Пока кабинет выключен, `admin.mnema.app` в `Caddyfile` сохраняет прежний redirect на
+`https://mnema.app/manage/events`: посетитель не попадает на вход, который Identity отклонил бы (клиента
+`mnema-admin-web` нет). Блок, отдающий SPA и same-origin Learning `/api`, лежит в `Caddyfile` закомментированным и
+заменяет redirect отдельным ревью-изменением при включении кабинета.
 Локально admin-origin — `https://admin.localhost:<порт web>` (тот же порт и сертификат, другой origin).
 Lazy `/manage` shell исключает learner onboarding, promo popup и приватное
 notification polling. Guard управляет представлением; сервер решает доступ.
@@ -101,7 +103,7 @@ read snapshot; расходы/credits/байты не складываются.
 | Study persisted rows | Attempts/session outcomes в доступной истории | Не page views/clicks; учитывать mode и политику retention |
 | `generation_provenance` | Durable publication provenance | Generation session/artifact rows имеют отдельный retention, не полный longitudinal funnel |
 | Media catalog/blob | Текущие asset states и deduplicated inventory bytes | Snapshot, не помесячный storage/egress/CPU invoice; account source bytes не сумма всех variants |
-| `billing_order` (T-Bank) | Заказы со статусом `PAID` по `paid_at` в периоде: число и сумма в копейках (RUB); `REFUNDED` показаны рядом | Брутто подтверждённых заказов до комиссий банка, не выплата на счёт; возвраты не вычитаются; не смешивается с USD и ledger micro-RUB |
+| `billing_order` (T-Bank) | Заказы `PAID` и `REFUNDED` по `paid_at` в периоде (возврат переводит PAID в REFUNDED, поэтому выручка периода его не теряет): число и сумма в копейках (RUB); подмножество `REFUNDED` показано рядом | Брутто до комиссий банка, не выплата на счёт; возвраты не вычитаются; сумма возврата не хранится, частичный возврат учтён полной суммой заказа — верхняя граница; не смешивается с USD и ledger micro-RUB |
 | Provider/cloud invoices | В текущем scope отсутствуют | `UNAVAILABLE`, а не ноль; entitlement/catalog price не заменяют поступление денег |
 
 Usage-active cohort — distinct owner с DEBIT/fair-use activity в периоде.

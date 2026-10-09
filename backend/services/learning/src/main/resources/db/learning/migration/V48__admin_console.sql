@@ -21,3 +21,5 @@ CREATE INDEX usage_ledger_reporting_time ON app_learning.usage_ledger_entry(crea
 CREATE INDEX study_attempt_reporting_time ON app_learning.study_attempt_tombstone(submitted_at);
 CREATE INDEX study_session_reporting_complete ON app_learning.study_session(completed_at) WHERE completed_at IS NOT NULL;
 CREATE INDEX generation_provenance_reporting_time ON app_learning.generation_provenance(created_at);
+-- Revenue reporting reads confirmed orders by their payment time.
+CREATE INDEX billing_order_reporting_paid ON app_learning.billing_order(paid_at) WHERE status IN ('PAID', 'REFUNDED');
