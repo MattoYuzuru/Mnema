@@ -46,13 +46,14 @@ public class Profiles {
     }
 
     public Profile update(AccountAccess access, String username, String displayName, String bio) {
+        String normalizedBio = ProfileBio.normalize(bio);
         return transactions.execute(s -> {
             accounts.require(access, true);
             jdbcClient.sql(
                             "UPDATE app_identity.account SET profile_username=:username,display_name=:name,bio=:bio,profile_created_at=coalesce(profile_created_at,GREATEST(statement_timestamp(),created_at)),updated_at=GREATEST(statement_timestamp(),updated_at),row_version=row_version+1 WHERE account_id=:id")
                     .param("username", username)
                     .param("name", displayName == null || displayName.isBlank() ? null : displayName.strip())
-                    .param("bio", bio).param("id", access.accountId()).update();
+                    .param("bio", normalizedBio).param("id", access.accountId()).update();
             return get(access);
         });
     }

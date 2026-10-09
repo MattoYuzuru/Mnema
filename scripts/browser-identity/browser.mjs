@@ -378,15 +378,19 @@ try {
   await navigate('/profile');
   await until(() => exists('#profile-bio'), 'native account profile did not load');
   await fill('#display-name', 'Mnema browser fixture');
-  await fill('#profile-bio', 'Профиль нового Identity API');
+  await fill('#profile-bio', Array(7).fill('Строка').join('\n'));
+  require(await cdp.callFunction(`function() {
+    return document.querySelector('form:has(#profile-bio) button[type=submit]')?.disabled === true;
+  }`), 'profile accepted more than six lines');
+  await fill('#profile-bio', '\n  Учусь каждый  день ✨  \n\n\n\n  • Математика и языки  \n');
   // The goal question (#301) is also a form on /profile: name the profile's own.
   require(await click('form:has(#profile-bio) button[type=submit]'), 'profile save action absent');
   await until(() => exists('.success'), 'bearer profile update did not complete');
   await cdp.call('Page.reload', { ignoreCache: true });
   await until(async () => await cdp.callFunction(`function() {
-    return document.querySelector('#profile-bio')?.value === 'Профиль нового Identity API';
+    return document.querySelector('#profile-bio')?.value === 'Учусь каждый день ✨\\n\\n• Математика и языки';
   }`), 'native profile edit did not persist across reload');
-  record('native_profile_edit', { persisted: true });
+  record('native_profile_edit', { persisted: true, multiline: true, whitespaceNormalized: true, excessLinesRejected: true });
   if (config.media) {
     step = 'native_profile_avatar';
     require(await cdp.callFunction(`async function() {

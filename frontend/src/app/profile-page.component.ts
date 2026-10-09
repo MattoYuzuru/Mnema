@@ -8,6 +8,7 @@ import { firstValueFrom } from 'rxjs';
 import { AccountProfile, AccountProfileApi } from './account-profile.api';
 import { AuthService } from './auth.service';
 import { appConfig } from './app.config';
+import { validProfileBioEdit } from './profile-bio';
 import { DuringStudyMode, NotificationPreferences } from './core/notifications/notification-preferences';
 import { ProfilePlanComponent } from './features/plans/profile-plan.component';
 import { SpeechConsentSettingsComponent } from './features/speech/speech-consent-settings.component';
@@ -68,7 +69,13 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
                 <label for="display-name">Отображаемое имя</label>
                 <input id="display-name" formControlName="displayName" autocomplete="name" maxlength="200" />
                 <label for="profile-bio">О себе</label>
-                <textarea id="profile-bio" formControlName="bio" maxlength="200" rows="4"></textarea>
+                <textarea id="profile-bio" formControlName="bio" maxlength="200" rows="4"
+                          [attr.aria-describedby]="form.controls.bio.touched && form.controls.bio.invalid ? 'bio-hint bio-error' : 'bio-hint'"
+                          [attr.aria-invalid]="form.controls.bio.touched && form.controls.bio.invalid"></textarea>
+                <p id="bio-hint" class="hint">До 200 символов и 6 строк. Можно разделять абзацы пустой строкой; лишние отступы уберём при сохранении.</p>
+                @if (form.controls.bio.touched && form.controls.bio.invalid) {
+                  <p id="bio-error" class="error field-error" role="alert">Оставьте не больше 200 символов и 6 строк, без служебных символов.</p>
+                }
                 @if (saveError()) { <p class="error" role="alert">{{ saveError() }}</p> }
                 @if (saveSuccess()) { <p class="success" role="status">Изменения сохранены.</p> }
                 <button type="submit" class="button primary" [disabled]="form.invalid || saving()">{{ saving() ? 'Сохраняем…' : 'Сохранить профиль' }}</button>
@@ -195,7 +202,7 @@ export class ProfilePageComponent implements OnInit {
     readonly form = this.fb.nonNullable.group({
         profileUsername: ['', [Validators.required, Validators.pattern(/^[A-Za-z0-9_.-]{3,50}$/u)]],
         displayName: ['', Validators.maxLength(200)],
-        bio: ['', Validators.maxLength(200)]
+        bio: ['', (control: AbstractControl) => validProfileBioEdit(String(control.value ?? '')) ? null : { profileBio: true }]
     });
     readonly passwordForm = this.fb.nonNullable.group({
         currentPassword: ['', Validators.required],
@@ -257,6 +264,7 @@ export class ProfilePageComponent implements OnInit {
         try {
             const profile = await firstValueFrom(this.api.update(this.form.getRawValue()));
             this.profile.set(profile);
+            this.form.controls.bio.setValue(profile.bio ?? '');
             this.saveSuccess.set(true);
         } catch { this.saveError.set('Не удалось сохранить профиль. Проверьте данные и попробуйте снова.'); }
         finally { this.saving.set(false); }
