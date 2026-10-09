@@ -421,16 +421,14 @@ try {
     }`), 'native avatar did not survive reload');
     record('native_profile_avatar', { persisted: true });
   }
-  await cdp.callFunction(`function() { document.querySelector('#profile-bio').scrollIntoView({ block: 'center' }); }`);
-  await saveScreenshot('native-profile-desktop.png');
+  await saveFullScreenshot('native-profile-desktop.png');
   for (const width of [390, 320]) {
     await cdp.call('Emulation.setDeviceMetricsOverride', {
       width, height: 900, deviceScaleFactor: width === 320 ? 2 : 1, mobile: false });
     require(await cdp.callFunction(`function() {
       return document.documentElement.scrollWidth <= window.innerWidth;
     }`), 'profile has horizontal overflow on a narrow viewport');
-    await cdp.callFunction(`function() { document.querySelector('#profile-bio').scrollIntoView({ block: 'center' }); }`);
-    await saveScreenshot(`native-profile-${width}.png`);
+    await saveFullScreenshot(`native-profile-${width}.png`);
   }
   await cdp.call('Emulation.setDeviceMetricsOverride', {
     width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
