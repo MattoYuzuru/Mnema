@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, ViewEncapsulation, afterNextRender, computed, input, signal } from '@angular/core';
 
 import { NotificationGlyphComponent } from '../core/notifications/notification-glyph.component';
+import { MailGlyphComponent } from '../shared/mail-glyph.component';
 import { TelegramGlyphComponent } from '../shared/telegram-glyph.component';
 import { contrastGrade, contrastRatio, parseCssColor } from './color-contrast';
 import { PALETTE, SEMANTIC_PAIRS, SPACING_TOKENS } from './styleguide.data';
@@ -15,7 +16,7 @@ const FONT_TOKENS = ['--mn-font-display', '--mn-font-body', '--mn-font-mono'] as
 @Component({
     selector: 'app-sg-foundations',
     encapsulation: ViewEncapsulation.None,
-    imports: [SgSpecimenComponent, NotificationGlyphComponent, TelegramGlyphComponent],
+    imports: [SgSpecimenComponent, NotificationGlyphComponent, TelegramGlyphComponent, MailGlyphComponent],
     templateUrl: './sg-foundations.component.html',
     changeDetection: ChangeDetectionStrategy.OnPush
 })

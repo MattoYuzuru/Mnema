@@ -52,9 +52,9 @@ NGINX
         printf 'add_header Content-Security-Policy-Report-Only "%s" always;\n' "$full_csp" >> "$security_tmp"
       else
         printf 'add_header Content-Security-Policy "%s" always;\n' "$full_csp" >> "$security_tmp"
-        # Start with a bounded host-only policy. includeSubDomains and preload
+        # One-year host-only policy. includeSubDomains and preload
         # require a separate inventory and long-lived rollout decision.
-        printf '%s\n' 'add_header Strict-Transport-Security "max-age=300" always;' >> "$security_tmp"
+        printf '%s\n' 'add_header Strict-Transport-Security "max-age=31536000" always;' >> "$security_tmp"
       fi
       ;;
     *)
@@ -133,7 +133,6 @@ if [ -n "$SUPPORT_USERNAME" ]; then
   esac
 fi
 append_string_override "supportTelegramUsername" "$SUPPORT_USERNAME"
-append_bool_override "federatedAuthEnabled" "${MNEMA_FEATURE_FEDERATED_AUTH_ENABLED:-}"
 append_bool_override "showEmailVerificationWarning" "${MNEMA_FEATURE_SHOW_EMAIL_VERIFICATION_WARNING:-}"
 
 write_security_headers

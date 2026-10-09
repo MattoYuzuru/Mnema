@@ -7,28 +7,29 @@ This protection does not replace WAF, network DDoS controls or AI budget limits.
 Federated OAuth and recovery/mail routes keep their existing independent controls;
 this slice does not claim Turnstile coverage for them.
 
-## Configuration and production gate
+## Configuration
 
 | Name | Owning runtime / behavior |
 | --- | --- |
 | `APP_ENV` | Identity: fixed `prod` in the reviewed deployment configuration |
-| `MNEMA_IDENTITY_TURNSTILE_MODE` | `required`, `blocked`, or local-only `disabled` |
-| `MNEMA_IDENTITY_TURNSTILE_PRIVACY_APPROVED` | Administrator enables only with operator evidence in #280/#351 |
+| `MNEMA_IDENTITY_TURNSTILE_MODE` | `required` (production default), `blocked` (operational kill switch), or local-only `disabled` |
 | `TURNSTILE_SITE_KEY` | Public widget key; read from Identity configuration by the browser |
 | `TURNSTILE_SECRET_KEY` | Identity-only private secret; never frontend/Git/CI output |
 
 The explicit local environments are `dev`, `development`, `test`, `local`,
 `local-blackbox`, `local-browser-fixture`, and `local-full-stack` (the existing
 disposable repository fixtures). Other environments cannot disable protection: `disabled` becomes
-`blocked`. `required` without the approved privacy boundary also becomes `blocked`.
-Blocked mode returns 503 for password login/registration, performs no Siteverify
-call and causes the browser to avoid loading the Cloudflare script. Health and
-other service behavior remain available. Invalid/missing required keys stop startup;
+`blocked`. There is no legal-approval flag: production runs `required` by owner
+decision of 2026-10-08, after the main RKN notification and the cross-border
+notification for Cloudflare were submitted (see the
+[legal launch status](../product/russia-legal-launch-checklist-2026.md)). Blocked
+mode, selected deliberately through the deployed application configuration (`PROD_MNEMA_IDENTITY_TURNSTILE_MODE`), returns 503 for password login/registration, performs no Siteverify
+call and causes the browser to avoid loading the Cloudflare script, while OAuth sign-in and the rest of the service keep working. Invalid/missing required keys stop startup;
 Cloudflare testing keys are forbidden outside local/test environments. The
 production Compose/config verifier must pin `APP_ENV=prod`; callers cannot choose it.
 
 `GET /api/accounts/abuse-protection` exposes only mode and the public site key when
-required. It never exposes a secret or claims that legal approval has occurred.
+required. It never exposes a secret.
 
 ## Widget and request contract
 
@@ -57,24 +58,32 @@ uninterrupted access during a provider outage.
 
 Production frontend CSP already permits the Cloudflare script, frame and connection.
 Identity uses an explicit CSP and its own external `/login/script.js`; no inline
-script exception is needed. The privacy page and hosted login disclosure link to
-the Turnstile Privacy Addendum, as required for Invisible use.
+script exception is needed. The public privacy policy (section 8) and the hosted
+login disclosure link to the Turnstile Privacy Addendum, as required for Invisible
+use, and the login and registration page links the policy and terms next to the
+submit button.
 
 ## Data and acceptance boundaries
 
 Omitting `remoteip` in Siteverify reduces the server payload; it does not remove
-the direct browser→Cloudflare IP/device flow or prove Russian-law compliance.
-Operator identity/contact, purposes, recipients/retention, consent/other basis and
-any required notifications must be completed by the operator in #280/#351. The
-targeted Turnstile disclosure is not evidence that the entire privacy policy or
-notifications have been approved. Keep the production gate blocked until then.
+the direct browser→Cloudflare IP/device flow. That flow is a cross-border
+transfer to Cloudflare, Inc. (USA) and is disclosed in section 8 of the public
+[privacy policy](../../frontend/src/app/privacy-page.component.html) with the
+purpose, data, Cloudflare's roles and the notification. The Cloudflare-side list of
+processing countries and retention for this account is not confirmed (the
+published addendum does not state it); keep the policy wording aligned with
+whatever Cloudflare confirms. The root, auth and www DNS records are DNS-only:
+proxying site traffic through Cloudflare is a different data flow that this
+disclosure does not cover.
 
-Local unit/HTTP/browser fixtures prove implementation behavior, not ownership of a
-real widget. Production acceptance must separately demonstrate real invisible
-login/register, exact hostname/action, duplicate/expiry denial, direct API denial,
-script blocking, upstream timeout, CSP and mobile/keyboard feedback. Do not use
-dummy tokens or test keys as production evidence. Rollback preserves the protection
-boundary: set mode `blocked` rather than disable it in production.
+The owner confirmed the Cloudflare widget (Invisible mode, exactly `mnema.app` and
+`auth.mnema.app`) and the three OAuth callbacks. Local unit/HTTP/browser fixtures
+prove implementation behavior, not ownership of a real widget. Real production
+evidence still has to demonstrate invisible login/register, exact hostname/action,
+duplicate/expiry denial, direct API denial, script blocking, upstream timeout, CSP
+and mobile/keyboard feedback. Do not use dummy tokens or test keys as production
+evidence. Rollback preserves the protection boundary: set mode `blocked` rather
+than disable it in production.
 
 Sources informing the design:
 [Cloudflare Siteverify and one-use contract](https://developers.cloudflare.com/turnstile/get-started/server-side-validation/),

@@ -107,6 +107,19 @@ profile usernames allow 3–50 ASCII letters/digits/underscore/dot/hyphen, exclu
 Unknown, banned and otherwise non-public accounts produce the same public profile
 and avatar 404 contracts.
 
+## Abuse protection and sign-in availability
+
+`POST /register` and `POST /login` verify a Cloudflare Turnstile token before any
+credential work (`TurnstileGuard`; contract and production operation:
+[turnstile.md](../../../docs/operations/turnstile.md)). `identity.turnstile.mode`
+is `required` in production, `blocked` is the operational kill switch (503 for
+password auth, OAuth unaffected) and `disabled` exists only for the local
+environments listed in `TurnstilePolicy`; any other environment turns it into
+`blocked`. There is no legal-approval property: the policy decision lives in the
+public documents and the deployment configuration, not in a runtime flag. The
+hosted `/login` page repeats the notice that continuing accepts the terms and
+links the policy on the frontend origin (`identity.frontend-origin`).
+
 ## Account deletion and recovery
 
 Deletion is disabled unless `MNEMA_IDENTITY_DELETION_ENABLED=true`. Enabling it also

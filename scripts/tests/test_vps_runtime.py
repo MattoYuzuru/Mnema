@@ -32,8 +32,11 @@ class RuntimeTest(unittest.TestCase):
             'MNEMA_BUILD_ID': 'a' * 40, 'MNEMA_PRODUCTION_ROOT': '/fixture'}
         for name in ('GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'YANDEX_CLIENT_ID', 'YANDEX_CLIENT_SECRET',
                      'GH_CLIENT_ID', 'GH_CLIENT_SECRET', 'TURNSTILE_SITE_KEY', 'TURNSTILE_SECRET_KEY',
-                     'MNEMA_IDENTITY_TURNSTILE_MODE', 'MNEMA_IDENTITY_TURNSTILE_PRIVACY_APPROVED',
-                     'MNEMA_FEATURE_FEDERATED_AUTH_ENABLED'):
+                     'MNEMA_IDENTITY_TURNSTILE_MODE', 'MNEMA_POSTBOX_ACCESS_KEY', 'MNEMA_POSTBOX_SECRET_KEY',
+                     'MNEMA_AVATAR_ACCESS_KEY', 'MNEMA_AVATAR_SECRET_KEY', 'LEARNING_MEDIA_UPLOAD_BUCKET',
+                     'LEARNING_MEDIA_UPLOAD_ACCESS_KEY', 'LEARNING_MEDIA_UPLOAD_SECRET_KEY', 'MNEMA_AVATAR_ENDPOINT',
+                     'MNEMA_AVATAR_REGION', 'MNEMA_AVATAR_BUCKET', 'LEARNING_MEDIA_UPLOAD_ENDPOINT',
+                     'LEARNING_MEDIA_UPLOAD_REGION'):
             env.pop(name, None)
         for service in ('FRONTEND', 'IDENTITY_ACCOUNT', 'LEARNING', 'POSTGRES'):
             env['MNEMA_' + service + '_IMAGE'] = 'example/fixture@sha256:' + 'b' * 64
@@ -82,18 +85,30 @@ class RuntimeTest(unittest.TestCase):
         for name in ('identity-account', 'learning'):
             self.assertEqual(len(services[name]['tmpfs']), 1)
             self.assertTrue(services[name]['tmpfs'][0].startswith('/tmp:'))
-        self.assertEqual(identity['MNEMA_IDENTITY_TURNSTILE_MODE'], 'blocked')
-        self.assertEqual(identity['MNEMA_IDENTITY_TURNSTILE_PRIVACY_APPROVED'], 'false')
+        self.assertEqual(identity['MNEMA_IDENTITY_TURNSTILE_MODE'], 'required')
+        self.assertNotIn('MNEMA_IDENTITY_TURNSTILE_PRIVACY_APPROVED', identity)
+        for name in ('MNEMA_POSTBOX_ACCESS_KEY', 'MNEMA_POSTBOX_SECRET_KEY', 'MNEMA_AVATAR_ACCESS_KEY',
+                     'MNEMA_AVATAR_SECRET_KEY'):
+            self.assertEqual(identity[name], '')
+        for name in ('LEARNING_MEDIA_UPLOAD_BUCKET', 'LEARNING_MEDIA_UPLOAD_ACCESS_KEY',
+                     'LEARNING_MEDIA_UPLOAD_SECRET_KEY'):
+            self.assertEqual(learning[name], '')
+        # Spring reads a set-but-empty variable as "", so the non-empty application defaults are passed explicitly.
+        self.assertEqual(identity['MNEMA_AVATAR_ENDPOINT'], 'https://storage.yandexcloud.net')
+        self.assertEqual(identity['MNEMA_AVATAR_REGION'], 'ru-central1')
+        self.assertEqual(identity['MNEMA_AVATAR_BUCKET'], 'mnema-avatars')
+        self.assertEqual(learning['LEARNING_MEDIA_UPLOAD_ENDPOINT'], 'https://storage.yandexcloud.net')
+        self.assertEqual(learning['LEARNING_MEDIA_UPLOAD_REGION'], 'ru-central1')
         self.assertEqual(identity['SERVER_ADDRESS'], '127.0.0.1')
         self.assertEqual(learning['SERVER_ADDRESS'], '127.0.0.1')
         self.assertNotIn('fixture-superuser', json.dumps(identity))
         self.assertNotIn('fixture-learning', json.dumps(identity))
         self.assertNotIn('fixture-identity', json.dumps(learning))
         self.assertEqual(services['frontend']['environment']['MNEMA_CLIENT_ID'], 'mnema-web')
-        self.assertEqual(services['frontend']['environment']['MNEMA_FEATURE_FEDERATED_AUTH_ENABLED'], 'false')
+        self.assertNotIn('MNEMA_FEATURE_FEDERATED_AUTH_ENABLED', services['frontend']['environment'])
         self.assertEqual(identity['SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENT_SECRET'], '')
 
-    def test_configured_auth_credentials_reach_only_identity_and_need_explicit_activation(self):
+    def test_configured_auth_credentials_reach_only_identity_and_runtime_env_selects_the_kill_switch(self):
         credentials = {name: 'private-fixture-' + name for name in ('GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET',
             'YANDEX_CLIENT_ID', 'YANDEX_CLIENT_SECRET', 'GH_CLIENT_ID', 'GH_CLIENT_SECRET',
             'TURNSTILE_SITE_KEY', 'TURNSTILE_SECRET_KEY')}
@@ -106,15 +121,34 @@ class RuntimeTest(unittest.TestCase):
         self.assertEqual(identity['SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_YANDEX_CLIENT_SECRET'],
                          credentials['YANDEX_CLIENT_SECRET'])
         self.assertEqual(identity['TURNSTILE_SECRET_KEY'], credentials['TURNSTILE_SECRET_KEY'])
-        self.assertEqual(identity['MNEMA_IDENTITY_TURNSTILE_MODE'], 'blocked')
-        self.assertEqual(identity['MNEMA_IDENTITY_TURNSTILE_PRIVACY_APPROVED'], 'false')
+        self.assertEqual(identity['MNEMA_IDENTITY_TURNSTILE_MODE'], 'required')
         for name in ('postgres', 'learning', 'frontend'):
             self.assertNotIn('private-fixture-', json.dumps(services[name]))
-        activated = self.render_compose({**credentials, 'MNEMA_IDENTITY_TURNSTILE_MODE': 'required',
-            'MNEMA_IDENTITY_TURNSTILE_PRIVACY_APPROVED': 'true', 'MNEMA_FEATURE_FEDERATED_AUTH_ENABLED': 'true'})
-        self.assertEqual(activated['identity-account']['environment']['MNEMA_IDENTITY_TURNSTILE_MODE'], 'required')
-        self.assertEqual(activated['identity-account']['environment']['MNEMA_IDENTITY_TURNSTILE_PRIVACY_APPROVED'], 'true')
-        self.assertEqual(activated['frontend']['environment']['MNEMA_FEATURE_FEDERATED_AUTH_ENABLED'], 'true')
+        killed = self.render_compose({**credentials, 'MNEMA_IDENTITY_TURNSTILE_MODE': 'blocked'})
+        self.assertEqual(killed['identity-account']['environment']['MNEMA_IDENTITY_TURNSTILE_MODE'], 'blocked')
+
+    def test_optional_mail_and_storage_keys_reach_only_their_owning_service(self):
+        optional = {name: 'private-fixture-' + name for name in ('MNEMA_POSTBOX_ACCESS_KEY', 'MNEMA_POSTBOX_SECRET_KEY',
+            'MNEMA_AVATAR_ACCESS_KEY', 'MNEMA_AVATAR_SECRET_KEY', 'LEARNING_MEDIA_UPLOAD_BUCKET',
+            'LEARNING_MEDIA_UPLOAD_ACCESS_KEY', 'LEARNING_MEDIA_UPLOAD_SECRET_KEY')}
+        services = self.render_compose(optional)
+        identity = services['identity-account']['environment']
+        learning = services['learning']['environment']
+        for name in ('MNEMA_POSTBOX_ACCESS_KEY', 'MNEMA_POSTBOX_SECRET_KEY', 'MNEMA_AVATAR_ACCESS_KEY', 'MNEMA_AVATAR_SECRET_KEY'):
+            self.assertEqual(identity[name], optional[name])
+            self.assertNotIn(optional[name], json.dumps(services['learning']))
+        for name in ('LEARNING_MEDIA_UPLOAD_BUCKET', 'LEARNING_MEDIA_UPLOAD_ACCESS_KEY', 'LEARNING_MEDIA_UPLOAD_SECRET_KEY'):
+            self.assertEqual(learning[name], optional[name])
+            self.assertNotIn(optional[name], json.dumps(services['identity-account']))
+        for name in ('postgres', 'frontend'):
+            self.assertNotIn('private-fixture-', json.dumps(services[name]))
+
+    def test_caddy_pins_one_year_host_only_hsts_for_the_auth_origin(self):
+        caddyfile = (ROOT / 'deploy/production/Caddyfile').read_text()
+        auth = caddyfile[caddyfile.index('auth.mnema.app {'):caddyfile.index('www.mnema.app {')]
+        self.assertIn('header Strict-Transport-Security "max-age=31536000"', auth)
+        self.assertNotIn('includeSubDomains', caddyfile)
+        self.assertNotIn('preload', caddyfile.lower())
 
     def test_java_readiness_checks_http_status_and_never_redirects_or_logs_body(self):
         status = {'value': 200}

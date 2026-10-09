@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, ElementRef, OnDestroy, OnInit, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule, NgForm } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, RouterLink } from '@angular/router';
@@ -43,22 +43,26 @@ export function identityErrorMessage(error: unknown): string {
           <a class="button primary" routerLink="/decks">Мои колоды →</a>
           <button class="text-action" type="button" data-testid="logout" [disabled]="busy()" (click)="logout()">Выйти из аккаунта</button>
         } @else {
-          <p class="intro">{{ registering ? 'Создайте аккаунт через удобный сервис или с почтой, чтобы сохранять свои материалы.' : 'Выберите удобный способ входа.' }}</p>
-          <div class="provider-options" role="group" aria-label="Вход через сервисы">
-            @for (provider of providers; track provider.name) {
-              <button class="provider-option" type="button" [disabled]="busy() || !available().includes(provider.id)"
-                [attr.aria-label]="'Войти через ' + provider.name" (click)="loginWithProvider(provider.id)">
-                <img [src]="provider.icon" width="32" height="32" alt="" />
-                <strong>{{ provider.name }}</strong><span>{{ providerStatus() === 'loading' ? 'Проверяем…' : (available().includes(provider.id) ? 'Продолжить' : 'Недоступен') }}</span>
-              </button>
-            }
-          </div>
+          <p class="intro">{{ intro() }}</p>
+          @if (offered().length > 0) {
+            <div class="provider-options" role="group" aria-label="Вход через сервисы">
+              @for (provider of offered(); track provider.id) {
+                <button class="provider-option" type="button" [disabled]="busy()"
+                  [attr.aria-label]="'Войти через ' + provider.name" (click)="loginWithProvider(provider.id)">
+                  <img [src]="provider.icon" width="32" height="32" alt="" />
+                  <strong>{{ provider.name }}</strong><span>Продолжить</span>
+                </button>
+              }
+            </div>
+          }
           @if (providerStatus() === 'error') {
             <p class="hint" role="status">Не удалось проверить вход через сервисы.
               <button class="text-action" type="button" [disabled]="busy()" (click)="loadProviders()">Повторить</button>
             </p>
           }
-          <p class="password-divider">{{ registering ? 'Или зарегистрируйтесь с почтой' : 'Или войдите с логином или почтой' }}</p>
+          @if (offered().length > 0) {
+            <p class="password-divider">{{ registering ? 'Или зарегистрируйтесь с почтой' : 'Или войдите с логином или почтой' }}</p>
+          }
           <form #form="ngForm" (ngSubmit)="submit(form)" novalidate>
             @if (registering) {
               <label for="email">Электронная почта</label>
@@ -77,11 +81,14 @@ export function identityErrorMessage(error: unknown): string {
             }
             <button class="button primary" type="submit" [disabled]="busy()">{{ busy() ? 'Подтверждаем…' : (registering ? 'Создать аккаунт →' : 'Войти →') }}</button>
           </form>
+          <p class="hint legal-notice" data-testid="legal-notice">Продолжая, вы принимаете
+            <a routerLink="/terms" target="_blank" rel="noopener">Пользовательское соглашение<span class="visually-hidden"> (откроется в новой вкладке)</span></a>
+            и подтверждаете, что ознакомились с
+            <a routerLink="/privacy" target="_blank" rel="noopener">Политикой обработки персональных данных<span class="visually-hidden"> (откроется в новой вкладке)</span></a>.
+            Вход и регистрация по паролю защищены проверкой Cloudflare Turnstile — <a routerLink="/privacy" fragment="cross-border" target="_blank" rel="noopener">что при этом передаётся<span class="visually-hidden"> (откроется в новой вкладке)</span></a>.</p>
           <p class="switch-mode">{{ registering ? 'Уже есть аккаунт?' : 'Впервые здесь?' }}
             <a [routerLink]="registering ? '/login' : '/register'" [queryParams]="{ returnUrl }">{{ registering ? 'Войти' : 'Создать аккаунт' }}</a>
           </p>
-          <p class="hint">Защита входа может использовать Cloudflare Turnstile.
-            <a routerLink="/privacy">Обработка данных</a>.</p>
         }
         @if (error()) { <p class="identity-error" role="alert" tabindex="-1">{{ error() }}</p> }
         @if (auth.logoutUnconfirmed()) {
@@ -107,6 +114,11 @@ export class LoginPageComponent implements OnInit, OnDestroy {
     readonly error = signal('');
     readonly available = signal<FederatedProvider[]>([]);
     readonly providerStatus = signal<'loading' | 'ready' | 'error'>('loading');
+    /** Only providers that Identity reports as configured get a button; an empty list shows none. */
+    readonly offered = computed(() => this.providers.filter(provider => this.available().includes(provider.id)));
+    readonly intro = computed(() => this.offered().length > 0
+        ? (this.registering ? 'Создайте аккаунт через удобный сервис или с почтой, чтобы сохранять свои материалы.' : 'Выберите удобный способ входа.')
+        : (this.registering ? 'Создайте аккаунт с почтой, чтобы сохранять свои материалы.' : 'Войдите с логином или почтой.'));
     email = '';
     username = '';
     login = '';

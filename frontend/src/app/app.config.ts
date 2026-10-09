@@ -10,7 +10,6 @@ export interface AppConfig {
 }
 
 export interface AppFeatures {
-    federatedAuthEnabled: boolean;
     showEmailVerificationWarning: boolean;
 }
 
@@ -39,7 +38,6 @@ const defaultConfig: AppConfig = {
     buildId: 'dev',
     supportTelegramUsername: 'Mnema_Support_Bot',
     features: {
-        federatedAuthEnabled: true,
         showEmailVerificationWarning: !isLocalSelfHost
     }
 };

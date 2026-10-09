@@ -1,111 +1,37 @@
-import { Component, ChangeDetectionStrategy } from '@angular/core';
-import { SupportContactComponent } from './shared/support-contact.component';
+import { ChangeDetectionStrategy, Component } from '@angular/core';
+import { RouterLink } from '@angular/router';
+
+import { LEGAL_DOCUMENT_VERSION, LEGAL_EFFECTIVE_DATE } from './shared/legal-operator';
+import { LegalOperatorBlockComponent } from './shared/legal-operator-block.component';
+
+/** Table of contents and headings share these ids; the spec checks that every entry resolves to a heading. */
+export const PRIVACY_SECTIONS = [
+    { id: 'general', title: '1. Общие положения' },
+    { id: 'data', title: '2. Какие данные мы обрабатываем и откуда они берутся' },
+    { id: 'purposes', title: '3. Цели, основания и сроки обработки' },
+    { id: 'bases', title: '4. Согласие и другие основания' },
+    { id: 'methods', title: '5. Действия и способы обработки' },
+    { id: 'cookies', title: '6. Cookie и хранилище браузера' },
+    { id: 'recipients', title: '7. Кому могут передаваться данные' },
+    { id: 'cross-border', title: '8. Трансграничная передача: Cloudflare Turnstile' },
+    { id: 'localization', title: '9. Хранение в России' },
+    { id: 'retention', title: '10. Сроки хранения, удаление и резервные копии' },
+    { id: 'rights', title: '11. Ваши права и как ими воспользоваться' },
+    { id: 'security', title: '12. Как мы защищаем данные' },
+    { id: 'minors', title: '13. Дети' },
+    { id: 'changes', title: '14. Изменения Политики' },
+    { id: 'sources', title: '15. Нормативная база' }
+] as const;
 
 @Component({
     selector: 'app-privacy-page',
-    imports: [SupportContactComponent],
-    template: `
-    <div class="legal-page" lang="ru">
-      <h1 tabindex="-1">Политика конфиденциальности</h1>
-      <p class="last-updated">Последнее обновление: октябрь 2026</p>
-
-      <section>
-        <h2>Собираемая информация</h2>
-        <p>Когда вы используете Mnema, мы обрабатываем информацию, которую вы предоставляете нам напрямую, включая адрес электронной почты, имя пользователя, учебные материалы и упражнения.</p>
-      </section>
-
-      <section>
-        <h2>Как мы используем вашу информацию</h2>
-        <p>Мы используем эти данные для работы аккаунта, сохранения учебных материалов, проведения учебных сессий и отслеживания прогресса обучения.</p>
-      </section>
-
-      <section>
-        <h2>Обмен информацией</h2>
-        <p>Мы не продаем и не передаем вашу личную информацию третьим лицам, за исключением случаев, необходимых для предоставления наших услуг или требуемых законом.</p>
-      </section>
-
-      <section>
-        <h2>Защита входа Cloudflare Turnstile</h2>
-        <p>Когда проверка включена, браузер связывается с Cloudflare и передаёт технические данные соединения и устройства, включая IP-адрес, сведения о браузере и имя сайта. Сервис аккаунтов передаёт Cloudflare одноразовый токен проверки; пароль, почту и учебные материалы в этот запрос мы не включаем.</p>
-        <p>Cloudflare обрабатывает эти данные для защиты от автоматизированного злоупотребления и согласно своим условиям.
-          Подробнее: <a href="https://www.cloudflare.com/turnstile-privacy-policy/" target="_blank" rel="noopener noreferrer">Turnstile Privacy Addendum</a>.
-          Проверка может не завершиться при блокировке скриптов или недоступности сервиса; в этом случае вход и регистрация остаются закрыты до новой успешной проверки.</p>
-      </section>
-
-      <section>
-        <h2>Безопасность данных</h2>
-        <p>Мы применяем соответствующие меры безопасности для защиты вашей личной информации от несанкционированного доступа, изменения или уничтожения.</p>
-      </section>
-
-      <section>
-        <h2>Ваши права</h2>
-        <p>Вы имеете право в любое время получать доступ, обновлять или удалять вашу личную информацию через настройки аккаунта.</p>
-      </section>
-
-      <section>
-        <h2>Связаться с нами</h2>
-        <p>Если у вас есть вопросы об этой Политике конфиденциальности, напишите нам через Telegram-бота.</p>
-        <app-support-contact />
-      </section>
-    </div>
-  `,
-    changeDetection: ChangeDetectionStrategy.OnPush,
-    styles: [`
-      .legal-page {
-        max-width: 56rem;
-        margin: 0 auto;
-        padding: var(--mn-space-7) var(--mn-page-gutter);
-      }
-
-      h1 {
-        font-size: clamp(2.5rem, 5vw, 3.5rem);
-        margin: 0 0 var(--mn-space-2) 0;
-      }
-
-      .last-updated {
-        font-size: 0.9rem;
-        color: var(--mn-muted);
-        margin: 0 0 var(--mn-space-7) 0;
-      }
-
-      section {
-        margin-bottom: var(--mn-space-7);
-      }
-
-      h2 {
-        font-size: 2rem;
-        margin: 0 0 var(--mn-space-4) 0;
-      }
-
-      p {
-        line-height: 1.6;
-        color: var(--mn-body);
-        margin: 0 0 var(--mn-space-4) 0;
-      }
-
-      @media (max-width: 768px) {
-        .legal-page {
-          padding-block: var(--mn-space-5);
-        }
-
-        h1 {
-          font-size: 2.5rem;
-        }
-
-        h2 {
-          font-size: 1.75rem;
-        }
-      }
-
-      @media (max-width: 480px) {
-        .legal-page {
-          padding-block: var(--mn-space-4);
-        }
-
-        h1 {
-          font-size: 2.25rem;
-        }
-      }
-    `]
+    imports: [RouterLink, LegalOperatorBlockComponent],
+    templateUrl: './privacy-page.component.html',
+    styleUrl: './shared/legal-page.css',
+    changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class PrivacyPageComponent {}
+export class PrivacyPageComponent {
+    protected readonly sections = PRIVACY_SECTIONS;
+    protected readonly effectiveDate = LEGAL_EFFECTIVE_DATE;
+    protected readonly version = LEGAL_DOCUMENT_VERSION;
+}

@@ -47,6 +47,8 @@ auth.mnema.app {
 		import private_paths
 		header Cache-Control no-store
 		header Referrer-Policy no-referrer
+		# Host-only, same one-year value as the frontend's mnema.app header; host only, no further directives.
+		header Strict-Transport-Security "max-age=31536000"
 		reverse_proxy 127.0.0.1:18081 {
 			header_up X-Forwarded-For {remote_host}
 			transport http {

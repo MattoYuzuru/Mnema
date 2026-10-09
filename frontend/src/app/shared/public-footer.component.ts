@@ -1,23 +1,25 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
+import { LEGAL_OPERATOR } from './legal-operator';
+import { MailContactComponent } from './mail-contact.component';
 import { SupportContactComponent } from './support-contact.component';
 
 let nextFooterId = 0;
 
 @Component({
     selector: 'app-public-footer',
-    imports: [RouterLink, SupportContactComponent],
+    imports: [RouterLink, SupportContactComponent, MailContactComponent],
     template: `
       <footer class="footer">
         <section [attr.aria-labelledby]="uid + '-about'">
           <h2 class="eyebrow" [id]="uid + '-about'">О проекте</h2>
           <a class="footer-brand" routerLink="/" aria-label="Mnema, главная">MNEMA</a>
           <p>Место для ваших материалов, упражнений и повторений.</p>
-          <p>ИП Рябушкин Матвей Игоревич</p>
+          <p>{{ operator.shortName }}</p>
           <dl class="operator-details">
-            <div><dt>ИНН</dt><dd>771573834080</dd></div>
-            <div><dt>ОГРНИП</dt><dd>326774600705952</dd></div>
+            <div><dt>ИНН</dt><dd>{{ operator.inn }}</dd></div>
+            <div><dt>ОГРНИП</dt><dd>{{ operator.ogrnip }}</dd></div>
           </dl>
         </section>
         <nav [attr.aria-labelledby]="uid + '-sections'">
@@ -32,8 +34,8 @@ let nextFooterId = 0;
         <nav [attr.aria-labelledby]="uid + '-legal'">
           <h2 class="eyebrow" [id]="uid + '-legal'">Правовая информация</h2>
           <ul>
-            <li><a routerLink="/privacy">Политика конфиденциальности</a></li>
-            <li><a routerLink="/terms">Условия использования</a></li>
+            <li><a routerLink="/privacy">Политика обработки персональных данных</a></li>
+            <li><a routerLink="/terms">Пользовательское соглашение</a></li>
             <li><a routerLink="/ai">Как Mnema использует ИИ</a></li>
           </ul>
         </nav>
@@ -41,6 +43,7 @@ let nextFooterId = 0;
           <h2 class="eyebrow" [id]="uid + '-contact'">Контакты</h2>
           <p>Вопросы, идеи, сообщения об ошибках и другая обратная связь.</p>
           <app-support-contact />
+          <app-mail-contact />
         </nav>
         <p class="footer-note">MNEMA · ДЛЯ ТЕХ, КТО ЛЮБИТ УЧИТЬСЯ</p>
       </footer>
@@ -65,5 +68,6 @@ let nextFooterId = 0;
     changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class PublicFooterComponent {
+    protected readonly operator = LEGAL_OPERATOR;
     protected readonly uid = `mn-footer-${nextFooterId++}`;
 }

@@ -77,6 +77,11 @@
     [tokens]="['--mn-ink', '--mn-muted', '--mn-touch-min']">
     <app-support-contact />
   </app-sg-specimen>
+  <app-sg-specimen title="Контакт по почте" selector="<app-mail-contact>"
+    when="Рядом с контактом поддержки там, где адрес нельзя печатать текстом (футер). Это кнопка с подписанным знаком конверта: адрес собирается только при нажатии, Enter и Пробел работают. Где закон требует видимый адрес (политика, соглашение), он печатается текстом со ссылкой mailto."
+    [tokens]="['--mn-ink', '--mn-focus', '--mn-touch-min']">
+    <app-mail-contact />
+  </app-sg-specimen>
   <app-sg-specimen title="Блок на странице" selector=".notice, .notice.success, .notice.warning, .notice.error"
     when="Сообщение о состоянии страницы или формы: ошибка загрузки, конфликт версий, успех. Тон — левая линия; ошибка и конфликт получают role=alert, остальное role=status. Действие внутри — .button."
     [tokens]="['--mn-soft', '--mn-ink', '--mn-positive', '--mn-caution', '--mn-danger']"
@@ -115,6 +120,12 @@
   when="После основного содержимого: сведения о проекте, разделы, действующие документы и контакт поддержки. Колонки становятся двумя, затем одной на узком экране."
   [tokens]="['--mn-paper', '--mn-rule', '--mn-page-gutter']">
   <app-public-footer />
+</app-sg-specimen>
+
+<app-sg-specimen title="Юридический документ" selector="<app-legal-operator-block>, .toc, .facts"
+  when="Публичные политика и соглашение. Блок оператора (имя, ИНН, ОГРНИП, почта, поддержка) собирается из одного файла реквизитов shared/legal-operator.ts; .toc — содержание со ссылками на разделы, .facts — строки «термин — описание» для сведений о получателе. Стили лежат в shared/legal-page.css."
+  [tokens]="['--mn-ink', '--mn-muted', '--mn-rule']">
+  <app-sg-legal />
 </app-sg-specimen>
 
 <section class="sg-section" id="cards" aria-labelledby="cards-title">

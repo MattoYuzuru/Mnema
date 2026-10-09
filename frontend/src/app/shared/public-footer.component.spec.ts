@@ -25,6 +25,19 @@ describe('PublicFooterComponent', () => {
         }
     });
 
+    it('offers a mail action under the Telegram contact without printing or linking the address', () => {
+        const fixture = TestBed.createComponent(PublicFooterComponent);
+        fixture.detectChanges();
+        const root = fixture.nativeElement as HTMLElement;
+        const contacts = root.querySelector('nav[aria-labelledby$="-contact"]')!;
+        expect([...contacts.querySelectorAll('app-support-contact, app-mail-contact')].map(element => element.tagName.toLowerCase()))
+            .toEqual(['app-support-contact', 'app-mail-contact']);
+        expect(contacts.querySelector('app-mail-contact button')?.textContent).toContain('Написать на почту');
+        expect(root.querySelector('a[href^="mailto:"]')).toBeNull();
+        expect(root.innerHTML).not.toContain('@');
+        expect(root.innerHTML).not.toContain('yandex');
+    });
+
     it('gives two instances distinct navigation names, including the styleguide specimen', () => {
         const roots = [TestBed.createComponent(PublicFooterComponent), TestBed.createComponent(PublicFooterComponent)];
         roots.forEach(fixture => fixture.detectChanges());
