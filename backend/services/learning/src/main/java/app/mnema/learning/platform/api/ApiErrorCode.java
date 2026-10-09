@@ -8,6 +8,8 @@ enum ApiErrorCode {
     AUTHENTICATION_REQUIRED(HttpStatus.UNAUTHORIZED, "Authentication required", "Valid authentication is required."),
     ACCESS_DENIED(HttpStatus.FORBIDDEN, "Access denied", "The operation is not permitted."),
     IDENTITY_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "Identity unavailable", "Authentication is temporarily unavailable."),
+    SUPPORT_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "Support unavailable", "The support inbox is temporarily unavailable."),
+    SUPPORT_CONFLICT(HttpStatus.CONFLICT, "Support conflict", "The ticket changed or the command identifier was already used."),
     IDEMPOTENCY_CONFLICT(
             HttpStatus.CONFLICT,
             "Idempotency conflict",

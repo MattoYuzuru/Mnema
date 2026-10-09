@@ -37,6 +37,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest(properties = {
         "identity.deletion.enabled=true",
+        "identity.admin-origin=https://admin.mnema.app",
         "identity.deletion.recovery-period=PT1H",
         "identity.deletion.scan-delay=PT24H"
 })
@@ -168,7 +169,12 @@ class FederationHttpIntegrationTest extends PostgresIntegrationTest {
     }
 
     Pending begin(String provider, String subject, String email, Cookie cookie, String browserState) throws Exception {
+        return begin(provider, subject, email, cookie, browserState, null);
+    }
+
+    Pending begin(String provider, String subject, String email, Cookie cookie, String browserState, String client) throws Exception {
         var request = get("/oauth2/authorization/" + provider).secure(true);
+        if (client != null) request.queryParam("mnema_client_id", client);
         if (browserState != null) request.queryParam("mnema_state", browserState);
         if (cookie != null) request.cookie(cookie);
         var result = mvc.perform(request).andExpect(status().is3xxRedirection()).andReturn();
@@ -291,6 +297,38 @@ class FederationHttpIntegrationTest extends PostgresIntegrationTest {
         var malformed = begin("github", UUID.randomUUID().toString(), UUID.randomUUID() + "@example.test", null,
                 "https://foreign.example");
         assertThat(callback(malformed).getResponse().getRedirectedUrl()).isEqualTo("/login/continue");
+    }
+
+    @Test
+    void adminFederationReturnsOnlyToItsRegisteredOriginAndClientUsesPkce() throws Exception {
+        String state = "a".repeat(43);
+        var pending = begin("github", UUID.randomUUID().toString(), UUID.randomUUID() + "@example.test",
+                null, state, "mnema-admin-web");
+        var completed = callback(pending);
+        assertThat(completed.getResponse().getRedirectedUrl())
+                .isEqualTo("https://admin.mnema.app/auth/callback?federation_state=" + state);
+        String verifier = "synthetic-admin-verifier-0123456789-abcdefghijklmnopqrstuvwxyz";
+        String challenge = Base64.getUrlEncoder().withoutPadding().encodeToString(
+                java.security.MessageDigest.getInstance("SHA-256").digest(verifier.getBytes(StandardCharsets.US_ASCII)));
+        var authorized = mvc.perform(get("/oauth2/authorize").secure(true)
+                        .cookie(completed.getResponse().getCookie("SESSION"))
+                        .queryParam("response_type", "code").queryParam("client_id", "mnema-admin-web")
+                        .queryParam("redirect_uri", "https://admin.mnema.app/auth/callback")
+                        .queryParam("scope", "openid profile account.read account.write learning.read learning.write")
+                        .queryParam("state", "admin-spa-state").queryParam("code_challenge", challenge)
+                        .queryParam("code_challenge_method", "S256"))
+                .andExpect(status().is3xxRedirection()).andReturn();
+        var parameters = parameters(URI.create(authorized.getResponse().getRedirectedUrl()).getRawQuery());
+        mvc.perform(post("/oauth2/token").param("grant_type", "authorization_code")
+                        .param("client_id", "mnema-admin-web").param("redirect_uri", "https://admin.mnema.app/auth/callback")
+                        .param("code", parameters.get("code")).param("code_verifier", verifier))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.expires_in").value(org.hamcrest.Matchers.lessThanOrEqualTo(1200)));
+        mvc.perform(options("/api/accounts/me").secure(true).header("Origin", "https://admin.mnema.app")
+                        .header("Access-Control-Request-Method", "GET").header("Access-Control-Request-Headers", "Authorization"))
+                .andExpect(status().isOk()).andExpect(header().string("Access-Control-Allow-Origin", "https://admin.mnema.app"));
+        mvc.perform(options("/api/accounts/me").secure(true).header("Origin", "https://evil.mnema.app")
+                        .header("Access-Control-Request-Method", "GET"))
+                .andExpect(status().isForbidden());
     }
 
     @Test

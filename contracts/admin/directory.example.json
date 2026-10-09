@@ -1,0 +1,19 @@
+{
+  "accounts": [
+    {
+      "accountId": "10000000-0000-4000-8000-000000000001",
+      "email": "synthetic@example.test",
+      "emailVerified": true,
+      "profileUsername": "synthetic",
+      "displayName": "Synthetic account",
+      "status": "ACTIVE",
+      "admin": false,
+      "deletionState": "ACTIVE",
+      "createdAt": "2026-10-01T00:00:00Z",
+      "lastLoginAt": null,
+      "bannedAt": null,
+      "banReason": null
+    }
+  ],
+  "next": null
+}

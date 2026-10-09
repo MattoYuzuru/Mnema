@@ -22,7 +22,9 @@ public final class EventAdminAccess {
         }
     }
 
+    public boolean allows(UUID actor) { return owner != null && owner.equals(actor); }
+
     void require(UUID actor) {
-        if (owner == null || !owner.equals(actor)) throw new AccessForbiddenException();
+        if (!allows(actor)) throw new AccessForbiddenException();
     }
 }

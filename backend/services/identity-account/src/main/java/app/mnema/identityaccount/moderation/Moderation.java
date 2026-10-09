@@ -68,6 +68,8 @@ public class Moderation {
                             .param("id", target).update();
                 }
             }
+            jdbcClient.sql("INSERT INTO app_identity.admin_audit(actor_account_id,action,resource_id) VALUES (:actor,:action,:target)")
+                    .param("actor", actor.accountId()).param("action", action.name()).param("target", target).update();
         });
     }
 }

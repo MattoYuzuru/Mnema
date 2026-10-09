@@ -63,6 +63,13 @@ describe('appRoutes', () => {
         expect(await payment.loadComponent!()).toBe(PaymentReturnComponent);
     });
 
+    it('guards a lazy owner shell and protects transactional children before leaving', () => {
+        const manage = appRoutes.find(route => route.path === 'manage')!;
+        expect(manage.canActivate).toEqual([authGuard]); expect(manage.loadComponent).toBeDefined();
+        expect(manage.children?.map(child => child.path)).toEqual(['', 'users', 'users/:accountId', 'promos', 'events', 'support', 'support/:ticketId', 'audit']);
+        for (const path of ['users', 'users/:accountId', 'promos', 'events', 'support', 'support/:ticketId']) expect(manage.children?.find(child => child.path === path)?.canDeactivate).toHaveLength(1);
+    });
+
     it('loads each own-deck page through its lazy route', async () => {
         const load = async (path: string) => appRoutes.find(route => route.path === path)!.loadComponent!();
         expect(await load('decks')).toBe(OwnDecksListPageComponent);

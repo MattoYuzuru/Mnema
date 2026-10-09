@@ -5,6 +5,7 @@ import { BehaviorSubject, NEVER, of } from 'rxjs';
 
 import { AuthService, AuthStatus } from '../../auth.service';
 import { NotificationsApiService } from '../notifications/notifications-api.service';
+import { NotificationCenter } from '../notifications/notification-center';
 import { LearningProfileApiService } from '../../features/goal/learning-profile-api.service';
 import { AppShellComponent } from './app-shell.component';
 import { spyObj, type SpyObj } from '../../../testing/mocks';
@@ -44,7 +45,8 @@ describe('AppShellComponent', () => {
             providers: [
                 provideRouter([
                     { path: '', component: TestPageComponent },
-                    { path: 'login', component: TestPageComponent }
+                    { path: 'login', component: TestPageComponent },
+                    { path: 'manage', component: TestPageComponent }
                 ]),
                 { provide: AuthService, useValue: auth },
                 // The center polls for a signed-in account; this spec is about the shell, not the wire.
@@ -102,6 +104,37 @@ describe('AppShellComponent', () => {
 
         expect(document.activeElement?.textContent).toBe('Мои колоды');
         expect(auth.logout).not.toHaveBeenCalled();
+    });
+
+    it('suppresses learner prompts, public footer and notification polling in the owner console', async () => {
+        await TestBed.inject(Router).navigateByUrl('/manage'); fixture.detectChanges(); await fixture.whenStable();
+        const root = fixture.nativeElement as HTMLElement;
+        expect(root.querySelector('app-goal-onboarding')).toBeNull();
+        expect(root.querySelector('app-promo-popup-host')).toBeNull();
+        expect(root.querySelector('app-notification-bell')).toBeNull();
+        expect(root.querySelector('app-public-footer')).toBeNull();
+        expect(root.querySelector('.primary-nav a')?.textContent).toBe('Открыть Мнему');
+        expect(root.querySelectorAll('main')).toHaveLength(1);
+        const center = TestBed.inject(NotificationCenter);
+        expect(center.suspended()).toBe(true);
+        await TestBed.inject(Router).navigateByUrl('/'); fixture.detectChanges(); await fixture.whenStable();
+        expect(center.suspended()).toBe(false);
+    });
+
+    it('suspends synchronously on an initial browser owner route before the router completes its first navigation', () => {
+        fixture.destroy();
+        const router = TestBed.inject(Router), wasNavigated = router.navigated;
+        const originalUrl = window.location.pathname + window.location.search;
+        router.navigated = false;
+        window.history.replaceState(null, '', '/manage/users');
+        try {
+            fixture = TestBed.createComponent(AppShellComponent);
+            expect(fixture.componentInstance.adminMode()).toBe(true);
+            expect(TestBed.inject(NotificationCenter).suspended()).toBe(true);
+        } finally {
+            router.navigated = wasNavigated;
+            window.history.replaceState(null, '', originalUrl);
+        }
     });
 
     it('starts a button fill at the pointer entry position', () => {

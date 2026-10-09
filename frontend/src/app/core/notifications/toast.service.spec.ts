@@ -174,4 +174,26 @@ describe('ToastService', () => {
         toasts.clearNotifications();
         expect(ids()).toEqual(['echo-0']);
     });
+
+    it('clears only learner announcement correlations and preserves a queued local echo', () => {
+        toasts.notify('one', 'Old learner message', 'ERROR', null);
+        toasts.notify('two', 'Queued learner message', 'ERROR', null);
+        toasts.echo('Own action saved');
+        expect(toasts.announcement()).toBe('Old learner message');
+        toasts.clearNotifications();
+        expect(toasts.announcement()).toBe('Own action saved');
+        expect(ids()).toEqual(['echo-0']);
+        vi.advanceTimersByTime(1750);
+        expect(toasts.announcement()).toBe('');
+    });
+
+    it('preserves an already announced echo while removing later learner messages', () => {
+        toasts.echo('Own action');
+        toasts.notify('one', 'Learner message', 'ERROR', null);
+        toasts.clearNotifications();
+        expect(toasts.announcement()).toBe('Own action');
+        vi.advanceTimersByTime(1750);
+        expect(toasts.announcement()).toBe('');
+        expect(ids()).toEqual(['echo-0']);
+    });
 });

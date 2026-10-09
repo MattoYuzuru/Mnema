@@ -64,5 +64,24 @@ www.mnema.app {
 }
 
 admin.mnema.app {
-	redir https://mnema.app/manage/events 308
+	route {
+		import private_paths
+		@api path /api /api/*
+		handle @api {
+			header Cache-Control no-store
+			reverse_proxy 127.0.0.1:18082 {
+				header_up -Cookie
+				header_up X-Forwarded-For {remote_host}
+				header_down -Set-Cookie
+				flush_interval -1
+				transport http {
+					dial_timeout 2s
+					response_header_timeout 30s
+				}
+			}
+		}
+		handle {
+			reverse_proxy 127.0.0.1:18080
+		}
+	}
 }

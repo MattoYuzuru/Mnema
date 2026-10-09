@@ -1,6 +1,8 @@
 package app.mnema.learning.promo;
 
 import app.mnema.learning.platform.api.InvalidRequestException;
+import app.mnema.learning.platform.id.UuidPolicy;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -22,7 +24,7 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * The admin-scope promo endpoints (no UI yet): a valid Learning token ({@code learning.read} to list, {@code learning.write} to change) and an
+ * The admin-scope promo endpoints: a valid Learning token ({@code learning.read} to list, {@code learning.write} to change) and an
  * administrator account in Identity. Every method checks the second condition first and fails closed.
  */
 @RestController
@@ -43,12 +45,13 @@ public final class PromoAdminController {
         return ResponseEntity.ok().header("Cache-Control", "private, no-store").body(admin.list(after == null ? null : uuid(after)));
     }
 
-    /** Creates a code and returns its plain text once: {@code {code, codeId, hint, ...}}. */
+    /** Creates a code; exact command replay reconstructs {@code code} only from the submitted request. */
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
-    ResponseEntity<JsonNode> create(@AuthenticationPrincipal Jwt identity, InputStream body) {
+    ResponseEntity<JsonNode> create(@AuthenticationPrincipal Jwt identity, InputStream body, HttpServletRequest request) {
         admin.requireAdmin(identity);
         UUID owner = PromoBodies.owner(identity);
-        JsonNode command = PromoBodies.object(body, Set.of("type", "maxRedemptions"), CREATE);
+        UUID key = key(request);
+        JsonNode command = PromoBodies.object(body, Set.of("type", "maxRedemptions", "code"), CREATE);
         PromoType type;
         try {
             type = PromoType.valueOf(PromoBodies.text(command, "type"));
@@ -62,7 +65,7 @@ public final class PromoAdminController {
                 PromoBodies.integer(command, "months"), PromoBodies.integer(command, "percent"),
                 instant(PromoBodies.text(command, "validFrom")), instant(PromoBodies.text(command, "validUntil")), max,
                 once == null || once, PromoBodies.text(command, "channel"), PromoBodies.text(command, "code"));
-        return ResponseEntity.status(HttpStatus.CREATED).header("Cache-Control", "private, no-store").body(admin.create(owner, create));
+        return ResponseEntity.status(HttpStatus.CREATED).header("Cache-Control", "private, no-store").body(admin.createCommand(owner, key, command, create));
     }
 
     /** {@code {"enabled": boolean}}: the kill switch. */
@@ -73,6 +76,16 @@ public final class PromoAdminController {
         Boolean enabled = PromoBodies.flag(PromoBodies.object(body, Set.of("enabled"), Set.of("enabled")), "enabled");
         if (enabled == null) throw new InvalidRequestException();
         return ResponseEntity.ok().header("Cache-Control", "private, no-store").body(admin.setEnabled(owner, uuid(codeId), enabled));
+    }
+
+    private static UUID key(HttpServletRequest request) {
+        var values = java.util.Collections.list(request.getHeaders("Idempotency-Key"));
+        if (values.size() != 1) throw InvalidRequestException.because("idempotency_key_required");
+        try {
+            UUID id = UUID.fromString(values.getFirst());
+            if (!id.toString().equals(values.getFirst())) throw new IllegalArgumentException();
+            return UuidPolicy.requireCommandId(id);
+        } catch (IllegalArgumentException failure) { throw InvalidRequestException.because("idempotency_key_required"); }
     }
 
     private static UUID uuid(String text) {

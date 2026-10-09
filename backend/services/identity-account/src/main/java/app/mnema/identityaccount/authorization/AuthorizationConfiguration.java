@@ -3,6 +3,7 @@ package app.mnema.identityaccount.authorization;
 import app.mnema.identityaccount.account.AccountStore;
 import app.mnema.identityaccount.contract.AccountAccess;
 import app.mnema.identityaccount.contract.AccountFailure;
+import app.mnema.identityaccount.contract.BrowserOrigins;
 import app.mnema.identityaccount.contract.IssuerContract;
 import app.mnema.identityaccount.security.BrowserSessions;
 
@@ -63,7 +64,8 @@ public class AuthorizationConfiguration {
     }
 
     @Bean
-    RegisteredClientRepository clients(JdbcTemplate jdbcClient, @Value("${identity.redirect-uri}") String redirect) {
+    RegisteredClientRepository clients(JdbcTemplate jdbcClient, BrowserOrigins origins,
+                                      @Value("${identity.redirect-uri}") String redirect, TransactionTemplate transactions) {
         new IssuerContract(URI.create(redirect));
         var repo = new JdbcRegisteredClientRepository(jdbcClient);
         var client = RegisteredClient.withId("mnema-web").clientId("mnema-web")
@@ -75,7 +77,27 @@ public class AuthorizationConfiguration {
                         ClientSettings.builder().requireProofKey(true).requireAuthorizationConsent(false).build())
                 .tokenSettings(TokenSettings.builder().accessTokenTimeToLive(Duration.ofDays(3))
                         .authorizationCodeTimeToLive(Duration.ofMinutes(2)).build()).build();
+        if (!redirect.equals(origins.main() + "/auth/callback"))
+            throw new IllegalArgumentException("Main callback must match its configured browser origin");
         repo.save(client);
+        if (origins.admin() != null) {
+            repo.save(RegisteredClient.withId("mnema-admin-web").clientId("mnema-admin-web")
+                    .clientAuthenticationMethod(ClientAuthenticationMethod.NONE)
+                    .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                    .redirectUri(origins.admin() + "/auth/callback")
+                    .scope(OidcScopes.OPENID).scope(OidcScopes.PROFILE).scope("account.read").scope("account.write")
+                    .scope("learning.read").scope("learning.write")
+                    .clientSettings(ClientSettings.builder().requireProofKey(true).requireAuthorizationConsent(false).build())
+                    .tokenSettings(TokenSettings.builder().accessTokenTimeToLive(Duration.ofMinutes(20))
+                            .authorizationCodeTimeToLive(Duration.ofMinutes(2)).build()).build());
+        } else {
+            // Reconcile only this reserved client: removing an admin origin also revokes its old grants/callback.
+            transactions.executeWithoutResult(status -> {
+                jdbcClient.update("DELETE FROM app_identity.oauth2_authorization WHERE registered_client_id=?", "mnema-admin-web");
+                jdbcClient.update("DELETE FROM app_identity.oauth2_authorization_consent WHERE registered_client_id=?", "mnema-admin-web");
+                jdbcClient.update("DELETE FROM app_identity.oauth2_registered_client WHERE id=?", "mnema-admin-web");
+            });
+        }
         return repo;
     }
 

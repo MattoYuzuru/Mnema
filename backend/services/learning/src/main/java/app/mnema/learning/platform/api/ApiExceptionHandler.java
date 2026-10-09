@@ -1,5 +1,7 @@
 package app.mnema.learning.platform.api;
 
+import app.mnema.learning.admin.support.SupportConflictException;
+import app.mnema.learning.admin.support.SupportUnavailableException;
 import app.mnema.learning.catalog.item.BulkSelectionTooLargeException;
 import app.mnema.learning.catalog.item.ExemplarLimitReachedException;
 import app.mnema.learning.generation.EditInProgressException;
@@ -102,6 +104,16 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(IdentityUnavailableException.class)
     ResponseEntity<Object> handleIdentityUnavailable(IdentityUnavailableException exception, HttpServletRequest request) {
         return response(ApiErrorCode.IDENTITY_UNAVAILABLE, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(SupportUnavailableException.class)
+    ResponseEntity<Object> handleSupportUnavailable(SupportUnavailableException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.SUPPORT_UNAVAILABLE, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(SupportConflictException.class)
+    ResponseEntity<Object> handleSupportConflict(SupportConflictException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.SUPPORT_CONFLICT, request.getRequestURI(), new HttpHeaders());
     }
 
     @ExceptionHandler(SpeechConsentRequiredException.class)

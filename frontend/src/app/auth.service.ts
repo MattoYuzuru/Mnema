@@ -100,7 +100,7 @@ export class AuthService {
                 ...(provider ? { provider } : {}) };
             this.persist(PKCE_STORAGE_KEY, transaction);
             if (provider) {
-                this.browser.navigate(`${this.config.authServerUrl}/oauth2/authorization/${provider}?${new URLSearchParams({ mnema_state: state })}`);
+                this.browser.navigate(`${this.config.authServerUrl}/oauth2/authorization/${provider}?${new URLSearchParams({ mnema_state: state, ...(this.config.clientId === 'mnema-admin-web' ? { mnema_client_id: this.config.clientId } : {}) })}`);
                 return;
             }
             const query = new URLSearchParams({ response_type: 'code', client_id: this.config.clientId,

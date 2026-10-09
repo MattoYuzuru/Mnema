@@ -1,6 +1,7 @@
 package app.mnema.learning.events;
 
 import app.mnema.learning.platform.api.ResourceNotFoundException;
+import app.mnema.learning.admin.AdminAudit;
 import app.mnema.learning.platform.concurrency.CompareAndSetExecutor;
 import app.mnema.learning.platform.idempotency.CommandIdentity;
 import app.mnema.learning.platform.idempotency.CommandReceiptService;
@@ -15,12 +16,14 @@ import java.util.function.Supplier;
 
 @Service
 public class EventService {
+    private final AdminAudit audit;
     private final EventRepository repository;
     private final EventAdminAccess access;
     private final CommandReceiptService receipts;
     private final CompareAndSetExecutor cas;
 
-    EventService(EventRepository repository, EventAdminAccess access, CommandReceiptService receipts, CompareAndSetExecutor cas) {
+    EventService(EventRepository repository, EventAdminAccess access, CommandReceiptService receipts, CompareAndSetExecutor cas, AdminAudit audit) {
+        this.audit = audit;
         this.repository = repository;
         this.access = access;
         this.receipts = receipts;
@@ -40,7 +43,11 @@ public class EventService {
     public WriteResult create(UUID actor, EventRequests.Command command) {
         access.require(actor);
         return execute(actor, command.commandId(), "event.create", command.envelope(null, null),
-                () -> acknowledgement(command.commandId(), repository.create(UUID.randomUUID(), command)));
+                () -> {
+                    EventRecord row = repository.create(UUID.randomUUID(), command);
+                    audit.append(actor, "EVENT_CREATE", row.eventId(), command.commandId());
+                    return acknowledgement(command.commandId(), row);
+                });
     }
 
     @Transactional(timeout = 10)
@@ -49,6 +56,7 @@ public class EventService {
         return execute(actor, command.commandId(), "event.replace", command.envelope(id, version), () -> {
             repository.find(id).orElseThrow(ResourceNotFoundException::new);
             cas.updateOne(version, () -> repository.replace(id, version, command));
+            audit.append(actor, "EVENT_REPLACE", id, command.commandId());
             return acknowledgement(command.commandId(), repository.find(id).orElseThrow(ResourceNotFoundException::new));
         });
     }
@@ -61,6 +69,7 @@ public class EventService {
         return execute(actor, commandId, "event.delete", envelope, () -> {
             repository.find(id).orElseThrow(ResourceNotFoundException::new);
             cas.updateOne(version, () -> repository.delete(id, version));
+            audit.append(actor, "EVENT_DELETE", id, commandId);
             return JsonNodeFactory.instance.objectNode().put("commandId", commandId.toString()).put("eventId", id.toString());
         });
     }

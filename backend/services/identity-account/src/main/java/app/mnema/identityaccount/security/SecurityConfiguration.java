@@ -3,7 +3,7 @@ package app.mnema.identityaccount.security;
 import app.mnema.identityaccount.account.AccountStore;
 import app.mnema.identityaccount.authorization.GrantTransactionFilter;
 import app.mnema.identityaccount.contract.AccountErrors;
-import app.mnema.identityaccount.contract.IssuerContract;
+import app.mnema.identityaccount.contract.BrowserOrigins;
 import app.mnema.identityaccount.federation.FederationRequests;
 import app.mnema.identityaccount.federation.FederationSuccess;
 import app.mnema.identityaccount.federation.ProviderTokenDiscarder;
@@ -48,7 +48,6 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import jakarta.servlet.http.HttpServletRequest;
 
-import java.net.URI;
 import java.time.Clock;
 import java.util.List;
 
@@ -87,10 +86,9 @@ public class SecurityConfiguration {
     }
 
     @Bean
-    CorsConfigurationSource corsConfigurationSource(@Value("${identity.frontend-origin}") String origin) {
-        new IssuerContract(URI.create(origin));
+    CorsConfigurationSource corsConfigurationSource(BrowserOrigins origins) {
         var config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of(origin));
+        config.setAllowedOrigins(origins.all());
         config.setAllowCredentials(true);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("Content-Type", "X-CSRF-TOKEN", "Authorization"));
@@ -132,7 +130,7 @@ public class SecurityConfiguration {
     SecurityFilterChain accountSecurity(HttpSecurity http, AccountStore accounts,
                                         ObjectProvider<ClientRegistrationRepository> registrations,
                                         FederationSuccess success, ProviderUsers users, Clock clock,
-                                        AccountErrors errors, @Value("${identity.frontend-origin}") String origin) throws Exception {
+                                        AccountErrors errors, BrowserOrigins origins) throws Exception {
         http.headers(h -> h.contentSecurityPolicy(c -> c.policyDirectives(
                         "default-src 'none'; script-src 'self' https://challenges.cloudflare.com; " +
                         "connect-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; " +
@@ -176,7 +174,7 @@ public class SecurityConfiguration {
                     "/oauth2/authorization");
             resolver.setAuthorizationRequestCustomizer(OAuth2AuthorizationRequestCustomizers.withPkce());
             http.oauth2Login(o -> o.authorizedClientRepository(new ProviderTokenDiscarder()).authorizationEndpoint(
-                            a -> a.authorizationRequestRepository(new FederationRequests(clock))
+                            a -> a.authorizationRequestRepository(new FederationRequests(clock, origins))
                                     .authorizationRequestResolver(resolver))
                     .tokenEndpoint(token -> token.accessTokenResponseClient(users.tokenClient()))
                     .userInfoEndpoint(u -> u.userService(users).oidcUserService(users.oidcUsers()))
@@ -189,7 +187,9 @@ public class SecurityConfiguration {
                                 e.getCause() == null ? "none" : e.getCause().getClass().getSimpleName());
                         var session = r.getSession(false);
                         if (session != null) session.removeAttribute("identity.intent");
-                        s.sendRedirect(new IssuerContract(URI.create(origin)).issuer() + "/auth/callback?error=federation_failed");
+                        String origin = origins.loginOrigin(r);
+                        if (session != null) session.removeAttribute("identity.login-origin");
+                        s.sendRedirect(origin + "/auth/callback?error=federation_failed");
                     }));
         }
         return http.build();

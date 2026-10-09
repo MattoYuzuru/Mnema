@@ -1,6 +1,10 @@
 package app.mnema.learning.promo;
 
 import app.mnema.learning.platform.api.AccessForbiddenException;
+import app.mnema.learning.admin.AdminAudit;
+import app.mnema.learning.platform.idempotency.CommandIdentity;
+import app.mnema.learning.platform.idempotency.CommandReceiptService;
+import tools.jackson.databind.JsonNode;
 import app.mnema.learning.platform.api.IdentityUnavailableException;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
@@ -21,8 +25,9 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 
 /**
- * Creating, listing (200 per page, {@code ?after=} the last code id of the previous page) and switching off promo codes. The caller must be an administrator in Identity (the caller's own bearer, cached for at most a
- * minute; when Identity cannot say, the request is refused). The plain code of a created code is in the response of the creation and nowhere else.
+ * Creating, listing (200 per page, {@code ?after=} the last code id of the previous page) and switching off promo codes.
+ * The caller's own bearer must establish a current administrator role in Identity without a cached grant.
+ * The plain code is returned from creation and exact request replay; durable responses omit it.
  */
 @Service
 public class PromoAdminService {
@@ -35,12 +40,16 @@ public class PromoAdminService {
     public record Create(PromoType type, String plan, Integer days, Integer months, Integer percent, Instant validFrom,
                          Instant validUntil, int maxRedemptions, boolean oncePerAccount, String channel, String vanity) { }
 
+    private final CommandReceiptService receipts;
+    private final AdminAudit audit;
     private final PromoRepository repository;
     private final AccountStandings standings;
     private final UsageClock clock;
     private final PromoSettings settings;
 
-    PromoAdminService(PromoRepository repository, AccountStandings standings, UsageClock clock, PromoSettings settings) {
+    PromoAdminService(PromoRepository repository, AccountStandings standings, UsageClock clock, PromoSettings settings, CommandReceiptService receipts, AdminAudit audit) {
+        this.receipts = receipts;
+        this.audit = audit;
         this.repository = repository;
         this.standings = standings;
         this.clock = clock;
@@ -49,8 +58,25 @@ public class PromoAdminService {
 
     /** @throws AccessForbiddenException the caller is not an administrator; {@link IdentityUnavailableException} Identity did not answer */
     void requireAdmin(Jwt token) {
-        AccountStandings.Standing standing = standings.of(token).orElseThrow(IdentityUnavailableException::new);
+        AccountStandings.Standing standing = standings.fresh(token).orElseThrow(IdentityUnavailableException::new);
         if (!standing.admin()) throw new AccessForbiddenException();
+    }
+
+    /** The request supplies the code; only its keyed fingerprint and a code-free acknowledgement are durable. */
+    @Transactional
+    public ObjectNode createCommand(UUID admin, UUID key, JsonNode payload, Create command) {
+        settings.requireAvailable();
+        String normalized = PromoCodes.normalize(command.vanity()).orElseThrow(() -> InvalidRequestException.because("code"));
+        ObjectNode envelope = (ObjectNode) payload.deepCopy();
+        envelope.remove("code");
+        envelope.put("codeHmac", java.util.HexFormat.of().formatHex(PromoCodes.hash(settings.hashSecret, "admin-create-code:" + command.vanity())));
+        JsonNode saved = receipts.execute(new CommandIdentity(key, admin, "promo.admin", "promo.create"), envelope, () -> {
+            ObjectNode created = create(admin, command);
+            created.remove("code");
+            audit.append(admin, "PROMO_CREATE", UUID.fromString(created.path("codeId").stringValue()), key);
+            return created;
+        });
+        return ((ObjectNode) saved).put("code", PromoCodes.display(normalized));
     }
 
     @Transactional
@@ -114,6 +140,7 @@ public class PromoAdminService {
         if (!repository.setEnabled(codeId, enabled)) throw new ResourceNotFoundException();
         log.info("promo code switched code_id={} admin_id={} enabled={}", codeId, admin, enabled);
         var entry = repository.find(codeId).orElseThrow(ResourceNotFoundException::new);
+        audit.append(admin, enabled ? "PROMO_ENABLE" : "PROMO_DISABLE", codeId, null);
         return view(entry.code(), entry.redemptions());
     }
 

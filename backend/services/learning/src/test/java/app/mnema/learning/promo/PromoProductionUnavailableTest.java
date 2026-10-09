@@ -17,8 +17,8 @@ class PromoProductionUnavailableTest extends PromoIntegrationTest {
         UUID administrator = account(true, true);
         UUID learner = account(true, false);
         var created = as(administrator, adminController).perform(post("/admin/promo-codes")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"type\":\"TIER_DAYS\",\"plan\":\"PLUS\",\"days\":15,\"maxRedemptions\":1}"))
+                .contentType(MediaType.APPLICATION_JSON).header("Idempotency-Key", UUID.randomUUID().toString())
+                .content("{\"type\":\"TIER_DAYS\",\"plan\":\"PLUS\",\"days\":15,\"maxRedemptions\":1,\"code\":\"SPRING26\"}"))
                 .andReturn().getResponse();
         var redeemed = as(learner, controller).perform(post("/promo-codes/redemptions")
                 .contentType(MediaType.APPLICATION_JSON).header("Idempotency-Key", UUID.randomUUID().toString())

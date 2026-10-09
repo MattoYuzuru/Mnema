@@ -2,7 +2,7 @@ package app.mnema.identityaccount.federation;
 
 import app.mnema.identityaccount.contract.AccountAccess;
 import app.mnema.identityaccount.contract.AccountFailure;
-import app.mnema.identityaccount.contract.IssuerContract;
+import app.mnema.identityaccount.contract.BrowserOrigins;
 import app.mnema.identityaccount.deletion.AccountDeletions;
 import app.mnema.identityaccount.security.BrowserSessions;
 import app.mnema.identityaccount.security.OwnershipProofs.Purpose;
@@ -11,7 +11,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
@@ -19,7 +18,6 @@ import org.springframework.security.web.authentication.AuthenticationSuccessHand
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
-import java.net.URI;
 import java.time.Clock;
 import java.util.List;
 import java.util.UUID;
@@ -31,14 +29,16 @@ public class FederationSuccess implements AuthenticationSuccessHandler {
     private final BrowserSessions sessions;
     private final Clock clock;
     private final String origin;
+    private final BrowserOrigins origins;
     private final AccountDeletions deletions;
 
     public FederationSuccess(FederatedAccounts accounts, BrowserSessions sessions, Clock clock,
-                             AccountDeletions deletions, @Value("${identity.frontend-origin}") String origin) {
+                             AccountDeletions deletions, BrowserOrigins origins) {
         this.accounts = accounts;
         this.sessions = sessions;
         this.clock = clock;
-        this.origin = new IssuerContract(URI.create(origin)).issuer();
+        this.origins = origins;
+        this.origin = origins.main();
         this.deletions = deletions;
     }
 
@@ -48,6 +48,8 @@ public class FederationSuccess implements AuthenticationSuccessHandler {
         var oauth = (OAuth2AuthenticationToken) authentication;
         String provider = oauth.getAuthorizedClientRegistrationId();
         var session = request.getSession(false);
+        String loginOrigin = origins.loginOrigin(request);
+        if (session != null) session.removeAttribute("identity.login-origin");
         Object intent = request.getAttribute("identity.intent");
         try {
             AccountAccess link = null;
@@ -89,14 +91,14 @@ public class FederationSuccess implements AuthenticationSuccessHandler {
             sessions.login(access, request, response);
             if (link != null) response.sendRedirect(origin + "/profile");
             else if (request.getAttribute("identity.login-state") instanceof String state)
-                response.sendRedirect(origin + "/auth/callback?federation_state=" + state);
+                response.sendRedirect(loginOrigin + "/auth/callback?federation_state=" + state);
             else response.sendRedirect("/login/continue");
         } catch (RuntimeException error) {
             LOG.warn("federation_completion_failed provider={} error_type={}", provider,
                     error.getClass().getSimpleName());
             SecurityContextHolder.clearContext();
             if (session != null) session.invalidate();
-            response.sendRedirect(origin + "/auth/callback?error=federation_failed");
+            response.sendRedirect(loginOrigin + "/auth/callback?error=federation_failed");
         }
     }
 }

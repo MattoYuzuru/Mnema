@@ -378,3 +378,24 @@ Important implementation sources:
 [Yandex PKCE](https://yandex.ru/dev/id/doc/en/codes/code-url),
 [Java 25 AES-GCM parameters](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/javax/crypto/spec/GCMParameterSpec.html),
 and [authenticated-stream caveat](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/javax/crypto/CipherInputStream.html).
+
+## Owner operations directory
+
+The [admin wire contract](../../../contracts/admin/README.md) owns the owner-only directory,
+account snapshot and moderation journal. `identity.admin.owner-id` reads
+`MNEMA_ADMIN_OWNER_ACCOUNT_ID`: an exact immutable account UUID, empty denies access.
+Directory reads require this owner and current account generation; configuration does not grant
+`is_admin`. Existing moderation HTTP endpoints also require this owner, while `Moderation` retains
+its actual administrator/self/subordinate checks. Successful moderation inserts an identifier-only
+journal entry in the same transaction. `V4__admin_directory_and_audit.sql` adds the journal and
+keyset index; it does not change credentials or role grants. Journal updates are rejected.
+The journal has no account foreign keys, so it cannot block the existing purge worker. The worker
+does not erase journal actor/resource UUIDs. TODO(#409; owner: account-purge/legal workstream):
+decide retention and include those links in the deletion and backup inventory; journal UUIDs
+are pseudonymous account-linked data, not anonymous data.
+
+`GET /api/accounts/admin/directory` searches literal bounded account fields and emits 50 rows maximum,
+`/directory/{id}` resolves one nonpurged account, and `/audit` emits a separate 50-row UUIDv7 keyset.
+All responses are private/no-store. No account facts are copied into Learning. Source OAuth/CORS
+configuration admits only explicitly configured application/admin origins, as defined by the
+[admin architecture](../../../docs/architecture/admin-console.md); deployment remains separate.

@@ -181,9 +181,9 @@ fair-use buckets, `GET /api/usage` and the estimate. Migration `V26__usage_ledge
   only `HMAC-SHA256(MNEMA_PROMO_HASH_SECRET, normalized code)` (upper case, no spaces, dashes or underscores; 8 to 24 characters, generated codes
   have 12 of a 31-character alphabet, about 60 bits) and a hint of its first and last two characters; with `APP_ENV=prod` an unset, blank or shorter than 32
   characters secret switches promo codes off (redemption and creation answer 409 `CAPABILITY_UNAVAILABLE`, `capability: promoCodes`; an ERROR at startup — the rest of Learning runs) (outside production a random one is drawn with a WARN, and issued codes do not survive a restart);
-  the plain code is returned once by the admin creation (`POST /api/admin/promo-codes`, `PATCH /{codeId}` for the kill switch, `GET` to list, 200 per page with `?after=<last codeId>` and `next` in the response;
-  the token and an `admin` account in Identity, read with the caller's own bearer through `AccountStandings` and cached 60 s only when the email
-  is verified, fail closed). `POST /api/promo-codes/redemptions {code}` with an `Idempotency-Key` (UUIDv4/v7, replayed through
+  the admin supplies the plain code and an `Idempotency-Key`; exact retry reconstructs the same one-time response from that request, with code-free durable receipts (`POST /api/admin/promo-codes`, `PATCH /{codeId}` for the kill switch, `GET` to list, 200 per page with `?after=<last codeId>` and `next` in the response;
+  the token and an `admin` account in Identity, read with the caller's own bearer through uncached `AccountStandings.fresh`,
+  fail closed; ordinary verified-email checks alone retain a generation-bound 60-second cache). `POST /api/promo-codes/redemptions {code}` with an `Idempotency-Key` (UUIDv4/v7, replayed through
   `CommandReceiptService`): its receipt fingerprint is derived from the keyed code hash, never the unkeyed digest of the code, so a database copy cannot verify
   a vanity-code guess through the receipt table. Replay first, then the account's hourly place (`promo_attempt`, advisory-locked; 5 per hour), then the
   verified email, then the address's hourly place (20 per hour by default; an unverified account never takes it), then the code row under `FOR UPDATE` so
@@ -200,7 +200,7 @@ fair-use buckets, `GET /api/usage` and the estimate. Migration `V26__usage_ledge
   Problem codes: `PROMO_INVALID` (unknown, disabled, expired or not started: one answer), `PROMO_EXHAUSTED`, `PROMO_ALREADY_USED`,
   `PROMO_NOT_ELIGIBLE`, `PROMO_VELOCITY`, `RATE_LIMITED`, `IDENTITY_UNAVAILABLE`. The audit is `promo_redemption` plus log lines with ids only; the
   address exists only as an HMAC hash; that hash and account-linked audit records are not an anonymity guarantee.
-  **Deferred promo account deletion:** the Learning account-purge owner and human/legal task #351 must inventory
+  **Deferred promo account deletion:** the Learning account-purge owner and human/legal task #409 must inventory
   `promo_attempt`, `promo_popup_state`, `promo_discount`, `promo_redemption` (`owner_id`), `promo_code.created_by`, and
   `command_receipt.actor_id/result` with `command_scope='promo'` (including the redemption result and keyed-derived fingerprint).
   Choose deletion versus justified audit retention, access and duration without reopening redemption limits or claiming that a tombstone
@@ -1358,3 +1358,39 @@ for the enabled fixed-delay retention worker and duration-based configuration;
 and [Unicode UAX #15](https://www.unicode.org/reports/tr15/) for canonical
 decomposition in soft text matching; [PostgreSQL constraints](https://www.postgresql.org/docs/18/sql-createtable.html)
 for the deferred ordinal uniqueness during transactional roster compaction.
+
+## Owner operations reporting
+
+The [admin wire contract](../../../contracts/admin/README.md) owns `/api/admin/console/access`,
+`/report`, `/users/{accountId}` and `/audit`. `learning.admin.owner-id` reads
+`MNEMA_ADMIN_OWNER_ACCOUNT_ID`; empty denies every console request. Editorial owner access stays
+separate and promo/moderation permissions require an actual Identity admin grant. The support
+permission describes configured transport, not health. Existing bearer scopes and live Identity
+verification apply; a hostname or browser permission flag confers no authorization.
+Console role flags and promo admin checks bypass the standing cache and ask Identity for the
+current role. Ordinary verified-email reads retain a 60-second account/generation cache.
+
+`AdminReports` reads one read-only repeatable-read snapshot with a ten-second transaction timeout.
+UTC half-open date intervals are 1–90 days. Each route/feature/day/ranking list is bounded. Read
+paths never initialize an allowance, contact an AI provider or read material/answer content.
+Credit cohort/feature counts come from append-only DEBIT ledger entries; micro-USD configured
+provider cost comes from the 90-day call journal, with pending/unpriced failures and retention
+explicitly marked. Current media catalog bytes are inventory, not invoices. Generation user
+counts cover retained sessions only; published artifact counts use durable provenance. Revenue,
+provider invoices and infrastructure charges have no connected authoritative source and return
+`UNAVAILABLE`, never zero or inferred profit. User monthly allowances are stored snapshots.
+`currentEntitlement` separately reads the existing entitlement port at the same `generatedAt`,
+including a promo recipient with no usage snapshot. The report range never changes this current
+plan/source/period/validity. CONFIG validity is the current Moscow calendar month boundary;
+promo `MONTH` is the quota cadence, not a claim of monthly purchase. No allowance is initialized.
+
+`V46__admin_console.sql` adds time indexes and the identifier-only editorial/promo journal.
+Successful changes append atomically; global command receipt replay does not duplicate editorial
+or promo creation actions. Promo create requires explicit code and command key, and replaces the
+code with an HMAC fingerprint before receipt hashing; neither receipt, list, journal nor logs retain
+plaintext. The existing tier/discount validation, redemption abuse limits and enable setter remain.
+The migration is additive; code rollback can ignore the table and indexes. Account-linked audit
+retention/deletion remains owned by the account-purge/legal workstream. TODO(#409; owner:
+account-purge/legal workstream): decide retention and inventory both actor/resource UUIDs,
+command receipts and bot actor links. The current deletion paths do not erase these rows;
+there are no audit foreign keys that could block account purge.

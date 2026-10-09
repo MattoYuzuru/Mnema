@@ -1,0 +1,22 @@
+:host { display: block; min-inline-size: 0; }
+header { margin-block-end: var(--mn-space-6); }
+h1 { margin: var(--mn-space-2) 0; font-size: clamp(2.25rem, 4vw, 3.5rem); }
+h2 { margin-block: 0 var(--mn-space-4); font-size: 1.75rem; }
+h3 { font-family: var(--mn-font-body); font-size: 1.05rem; }
+section + section { margin-block-start: var(--mn-space-6); }
+.filters, .actions { display: flex; flex-wrap: wrap; align-items: end; gap: var(--mn-space-3); }
+.filters { margin-block: var(--mn-space-5); }
+.filters .field { flex: 1 1 10rem; min-inline-size: 0; }
+.filters .button { flex: 0 1 auto; }
+.notice, .empty-state { margin-block: var(--mn-space-4); }
+fieldset { min-inline-size: 0; border: 0; padding: 0; margin: 0; }
+form.editor { display: grid; gap: var(--mn-space-4); }
+.editor-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: var(--mn-space-4); }
+.details-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--mn-space-6); }
+.rule-section { border-block-start: 1px solid var(--mn-rule); padding-block-start: var(--mn-space-5); }
+small { display: block; }
+select, input, textarea { min-inline-size: 0; max-inline-size: 100%; }
+code { overflow-wrap: anywhere; }
+@media (max-width: 50rem) { .details-grid { grid-template-columns: minmax(0, 1fr); } }
+
+summary { min-block-size: var(--mn-touch-min); cursor: pointer; padding-block: var(--mn-space-3); }

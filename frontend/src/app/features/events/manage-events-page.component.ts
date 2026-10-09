@@ -2,6 +2,8 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { AdminSession } from '../admin/admin-api.service';
+import { HoldToDeleteButtonComponent } from '../../shared/hold-to-delete-button.component';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { AutoLoadComponent } from '../../shared/auto-load.component';
@@ -14,13 +16,15 @@ type Mutation = { readonly kind: 'save'; readonly edit: EventEdit; readonly exis
 
 @Component({
     selector: 'app-manage-events-page',
-    imports: [ReactiveFormsModule, RouterLink, EventBodyComponent, AutoLoadComponent],
+    host: { '(window:beforeunload)': 'protectBeforeUnload($event)' },
+    imports: [ReactiveFormsModule, RouterLink, EventBodyComponent, HoldToDeleteButtonComponent, AutoLoadComponent],
     templateUrl: './manage-events-page.component.html',
     styleUrl: './manage-events-page.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ManageEventsPageComponent implements OnInit {
     private readonly api = inject(EventsApiService);
+    private readonly adminSession = inject(AdminSession);
     private readonly destroyRef = inject(DestroyRef);
     protected readonly state = signal<'loading' | 'ready' | 'forbidden' | 'error'>('loading');
     protected readonly page = signal<EventPage<ManagedEvent> | null>(null);
@@ -31,9 +35,10 @@ export class ManageEventsPageComponent implements OnInit {
     protected readonly listError = signal<string | null>(null);
     protected readonly notice = signal('');
     protected readonly uncertain = signal(false);
-    protected readonly confirmDelete = signal(false);
     protected readonly preview = signal(false);
     protected readonly previewBody = signal('');
+    protected readonly previewTitle = signal('');
+    protected readonly previewDate = signal('');
     protected readonly pendingSelection = signal<{ event: ManagedEvent | null } | null>(null);
     protected readonly date = formatEventDate;
     protected readonly heading = computed(() => this.selected() ? 'Редактировать событие' : 'Новое событие');
@@ -72,17 +77,23 @@ export class ManageEventsPageComponent implements OnInit {
     }
 
     private open(event: ManagedEvent | null): void {
-        this.selected.set(event); this.confirmDelete.set(false); this.preview.set(false); this.error.set(''); this.notice.set('');
+        this.selected.set(event); this.preview.set(false); this.error.set(''); this.notice.set('');
         this.form.reset(event ? { title: event.title, eventDate: event.eventDate, bodyMarkdown: event.bodyMarkdown, published: event.published }
             : { title: '', eventDate: localToday(), bodyMarkdown: '', published: false });
     }
 
+    protected protectBeforeUnload(event: BeforeUnloadEvent): void {
+        if (this.adminSession.generation() > 0 && !this.adminSession.access()) return;
+        if (this.busy() || this.uncertain() || this.form.dirty) event.preventDefault();
+    }
+
     canLeave(): boolean {
+        if (this.adminSession.generation() > 0 && !this.adminSession.access()) return true;
         if (this.busy() || this.uncertain()) return false;
         return !this.form.dirty || window.confirm('Изменения не сохранены. Покинуть страницу и отбросить их?');
     }
 
-    protected showPreview(): void { this.previewBody.set(this.form.controls.bodyMarkdown.value); this.preview.update(value => !value); }
+    protected showPreview(): void { this.previewBody.set(this.form.controls.bodyMarkdown.value); this.previewTitle.set(this.form.controls.title.value); this.previewDate.set(this.form.controls.eventDate.value); this.preview.update(value => !value); }
 
     protected async save(): Promise<void> {
         if (this.busy() || this.uncertain()) return;
@@ -121,7 +132,7 @@ export class ManageEventsPageComponent implements OnInit {
                 this.selected.set(saved); this.form.markAsPristine();
                 this.notice.set(saved.published ? 'Событие опубликовано.' : 'Черновик сохранён.');
             }
-            this.mutation = null; this.pendingSelection.set(null); this.confirmDelete.set(false);
+            this.mutation = null; this.pendingSelection.set(null);
             try { await this.load(null); }
             catch { this.error.set('Изменение сохранено, но список не обновился. Нажмите «Обновить».'); }
         } catch (error) {

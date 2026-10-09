@@ -4,13 +4,15 @@
 
 <div class="paper-shell">
   <header class="masthead">
-    <a class="brand" routerLink="/" aria-label="Mnema — главная">
+    <a class="brand" [routerLink]="adminMode() ? '/manage' : '/'" aria-label="Mnema — главная">
       <img class="brand-mark" src="/assets/brand/mnema-mark.svg" width="32" height="32" alt="" aria-hidden="true">
       <span>MNEMA</span>
     </a>
 
     <nav class="primary-nav" aria-label="Основная навигация">
-      @if (status() === 'authenticated') {
+      @if (adminMode()) {
+        <a [href]="learningHome">Открыть Мнему</a>
+      } @else if (status() === 'authenticated') {
         <a routerLink="/decks" routerLinkActive="active" ariaCurrentWhenActive="page" [routerLinkActiveOptions]="{ exact: true }">Мои колоды</a>
         <a routerLink="/decks/new" routerLinkActive="active" ariaCurrentWhenActive="page">Новая колода</a>
         <a routerLink="/profile" routerLinkActive="active" ariaCurrentWhenActive="page">Профиль</a>
@@ -23,7 +25,7 @@
 
     <div class="session">
       @if (status() === 'authenticated') {
-        <app-notification-bell />
+        @if (!adminMode()) { <app-notification-bell /> }
         <span class="identity">{{ user()?.name || user()?.email }}</span>
         <button type="button" class="button mono" (click)="logout()">Выйти</button>
       } @else if (status() === 'pending') {
@@ -36,12 +38,12 @@
 
   <main id="main-content" tabindex="-1">
     @if (constellationSeed(); as seed) { <app-deck-constellation [seed]="seed" [layoutKey]="routeUrl()" /> }
-    <app-goal-onboarding />
+    @if (!adminMode()) { <app-goal-onboarding /> }
     <router-outlet (activate)="focusPageHeading()"></router-outlet>
   </main>
 
-  <app-public-footer id="site-footer" tabindex="-1" />
+  @if (!adminMode()) { <app-public-footer id="site-footer" tabindex="-1" /> }
 </div>
 
-<app-promo-popup-host />
+@if (!adminMode()) { <app-promo-popup-host /> }
 <app-toast-region />

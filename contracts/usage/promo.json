@@ -1,6 +1,6 @@
 {
   "contract": "promo-v1",
-  "description": "AI-21 (#302): promo access and pending discounts, owner-scoped popup preferences and experiment metrics. Payments and an admin UI remain separate work (#79).",
+  "description": "AI-21 (#302): promo access and pending discounts, owner-scoped popup preferences and experiment metrics. Payments remain separate work (#79); the owner console and admin UI are Epic #398.",
   "conventions": {
     "auth": "Bearer token; account always comes from its subject",
     "headers": { "Cache-Control": "private, no-store" },
@@ -41,15 +41,16 @@
       "operationId": "listPromoCodes",
       "method": "GET",
       "path": "/api/admin/promo-codes?after={UUID}",
-      "auth": "learning.read and administrator confirmed by Identity; cached at most 60 seconds, fail closed",
+      "auth": "learning.read and administrator confirmed by Identity on every privileged request without the standing cache; fail closed",
       "response": "{codes: [adminCodeView] (at most 200), next: UUID|null}; next is the last returned id, passed as after"
     },
     {
       "operationId": "createPromoCode",
       "method": "POST",
       "path": "/api/admin/promo-codes",
-      "auth": "learning.write and administrator confirmed by Identity",
-      "request": "{type TIER_DAYS|TIER_MONTHS|DISCOUNT_PERCENT, maxRedemptions integer 1..1000000, plan PLUS|PRO|null, days integer 1..366|null, months integer 1..24|null, percent integer 1..90|null, validFrom RFC 3339|null, validUntil RFC 3339|null, oncePerAccount boolean|null, channel string|null, code string|null}; type and maxRedemptions required, others optional",
+      "auth": "learning.write and administrator confirmed by Identity on every privileged request",
+      "headers": {"Idempotency-Key": "canonical command UUID v4/v7, required"},
+      "request": "{type TIER_DAYS|TIER_MONTHS|DISCOUNT_PERCENT, maxRedemptions integer 1..1000000, plan PLUS|PRO|null, days integer 1..366|null, months integer 1..24|null, percent integer 1..90|null, validFrom RFC 3339|null, validUntil RFC 3339|null, oncePerAccount boolean|null, channel string|null, code string}; type, maxRedemptions and code required, others optional",
       "response": "201 adminCodeView plus code (plaintext shown once)",
       "notes": [
         "TIER_DAYS requires plan and days only; TIER_MONTHS requires plan and months only; DISCOUNT_PERCENT requires percent and validUntil, optionally plan. MAX is unavailable.",

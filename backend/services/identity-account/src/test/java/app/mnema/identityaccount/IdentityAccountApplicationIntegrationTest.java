@@ -68,7 +68,7 @@ class IdentityAccountApplicationIntegrationTest extends PostgresIntegrationTest 
     @Test
     void bootsFreshIdentityMigrationWithoutLegacyHistoryOrSchemas() {
         assertThat(flyway.info().applied()).filteredOn(m -> m.getVersion() != null)
-                .extracting(m -> m.getVersion().getVersion()).containsExactly("1", "2", "3");
+                .extracting(m -> m.getVersion().getVersion()).containsExactly("1", "2", "3", "4");
 
         assertThat(jdbcClient.sql("""
                         SELECT schema_name
@@ -90,7 +90,7 @@ class IdentityAccountApplicationIntegrationTest extends PostgresIntegrationTest 
                 .list();
         assertThat(tables).contains("account", "account_avatar", "external_identity", "local_credential",
                 "ownership_challenge", "spring_session", "oauth2_authorization", "account_deletion",
-                "account_deletion_avatar", "account_erasure_handoff", "account_erasure_receipt");
+                "account_deletion_avatar", "account_erasure_handoff", "account_erasure_receipt", "admin_audit");
         assertThat(columns("external_identity")).containsExactly(
                 "identity_id", "account_id", "provider", "provider_subject", "linked_at", "last_login_at"
         );

@@ -116,6 +116,25 @@ a normal `start` returns to the production build, which excludes `/styleguide`.
 For the fixture-only dev-server option, component rules and production exclusion check,
 see [frontend styleguide](../frontend/styleguide.md#как-открыть).
 
+## Owner console browser fixture
+
+After building both boot jars and the production frontend, the console is exercised
+against disposable PostgreSQL and the real bot bridge source with synthetic tickets:
+
+```bash
+python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend \
+  --node "$NODE24" --admin --admin-bot-source /absolute/path/to/Mnema-Telegram-Bot-with-admin-bridge
+```
+
+The explicit bot checkout must contain `mnema_bot/admin_server.py`. The fixture
+starts only its own loopback process/SQLite and configures one real disposable
+Identity owner; it never loads bot `.env`, starts a Telegram poller, sends a real
+message or restarts the retained local stack. Reply evidence stops at durable
+outbox queuing; actual delivery is covered by bot fixtures, not claimed as a real
+Telegram smoke. See [console delivery](./admin-console-delivery.md) for exact
+executed revisions/results and [console architecture](../architecture/admin-console.md)
+for admin-host rollout and unavailable financial sources.
+
 ## Persistent local stack
 
 ```bash

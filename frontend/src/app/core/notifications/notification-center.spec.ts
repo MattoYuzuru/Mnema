@@ -73,6 +73,55 @@ describe('NotificationCenter', () => {
         expect(toasts.visible()).toEqual([]);
     });
 
+    it('does not poll or load inbox pages while the owner console suspends it', async () => {
+        center.setSuspended(true);
+        await signIn(page([note(1)], { unreadCount: 1 }));
+        center.open();
+        center.olderCursor.set('older');
+        await center.loadMore();
+        await center.dismiss(note(1).notificationId);
+        document.dispatchEvent(new Event('visibilitychange'));
+        await settle(IDLE_POLL_MS * 3);
+        expect(api.list).not.toHaveBeenCalled();
+        expect(api.dismiss).not.toHaveBeenCalled();
+        expect(center.items()).toEqual([]);
+        expect(center.panelOpen()).toBe(false);
+    });
+
+    it('clears learner toasts and rejects a late old page after suspension', async () => {
+        await signIn(page([note(1)], { unreadCount: 1 }));
+        const old = new Subject<NotificationListResult>();
+        api.list.mockReturnValueOnce(old);
+        await settle(IDLE_POLL_MS);
+        toasts.notify('learner', 'Learner notification', 'ERROR', null);
+        center.setSuspended(true);
+        expect(center.items()).toEqual([]);
+        expect(toasts.visible()).toEqual([]);
+        old.next(page([note(2)], { unreadCount: 2 })); old.complete();
+        TestBed.tick(); await settle(IDLE_POLL_MS * 2);
+        expect(center.items()).toEqual([]);
+        expect(center.unreadCount()).toBe(0);
+        expect(toasts.visible()).toEqual([]);
+        expect(api.list).toHaveBeenCalledTimes(2);
+    });
+
+    it('resumes a fresh baseline without waiting for an old suspended request', async () => {
+        await signIn(page([note(1)]));
+        const old = new Subject<NotificationListResult>();
+        api.list.mockReturnValueOnce(old);
+        await settle(IDLE_POLL_MS);
+        center.setSuspended(true); TestBed.tick();
+        answers(page([note(5)], { unreadCount: 1 }));
+        center.setSuspended(false); TestBed.tick(); await settle();
+        expect(api.list).toHaveBeenLastCalledWith({ limit: 20 });
+        expect(center.items().map(item => item.seq)).toEqual(['5']);
+        old.next(page([note(9)], { unreadCount: 9 })); old.complete(); await settle();
+        expect(center.items().map(item => item.seq)).toEqual(['5']);
+        answers(notModified);
+        await settle(IDLE_POLL_MS);
+        expect(api.list).toHaveBeenLastCalledWith({ limit: 100, after: '5' }, '"etag-1-5"');
+    });
+
     it('shows 99+ above 99 and nothing at zero', async () => {
         await signIn(page([note(1)], { unreadCount: 100 }));
         expect(center.badgeText()).toBe('99+');
@@ -302,6 +351,30 @@ describe('NotificationCenter', () => {
         await center.dismiss(note(1).notificationId);
         expect(center.items().map(item => item.seq)).toEqual(['1']);
         expect(center.panelError()).toBe('Не удалось убрать уведомление. Попробуйте ещё раз.');
+    });
+
+    it('does not let an old failed dismissal undo the new generation dismissal', async () => {
+        await signIn(page([note(2), note(1)], { unreadCount: 2 }));
+        const oldDelete = new Subject<void>();
+        api.dismiss.mockReturnValueOnce(oldDelete);
+        const oldDismissal = center.dismiss(note(2).notificationId);
+
+        center.setSuspended(true); TestBed.tick();
+        answers(page([note(2), note(1)], { unreadCount: 2 }));
+        center.setSuspended(false); TestBed.tick(); await settle();
+        const freshReload = new Subject<NotificationListResult>();
+        api.list.mockReturnValueOnce(freshReload);
+        api.setReadCursor.mockReturnValue(of({ readUpto: '1', unreadCount: 0 }));
+        center.open(); await settle();
+        api.dismiss.mockReturnValueOnce(of(undefined));
+        await center.dismiss(note(2).notificationId);
+
+        oldDelete.error(new HttpErrorResponse({ status: 503 }));
+        await oldDismissal;
+        freshReload.next(page([note(2), note(1)], { unreadCount: 2 }));
+        freshReload.complete(); await settle();
+        expect(center.items().map(item => item.seq)).toEqual(['1']);
+        expect(center.panelError()).toBeNull();
     });
 
     it('pages to older notifications with the cursor', async () => {

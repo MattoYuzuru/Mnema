@@ -1,0 +1,9 @@
+{
+  "owner": true,
+  "permissions": {
+    "events": true,
+    "promos": true,
+    "moderation": true,
+    "support": false
+  }
+}

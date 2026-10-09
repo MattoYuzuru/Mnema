@@ -10,7 +10,7 @@
 // account be walked through dismiss, close, accept and decline in one run. Both fixture endpoints exist only with `--only-promo`.
 //
 // Stages: not verified and not an administrator (403 on the admin endpoints, `PROMO_NOT_ELIGIBLE` on a redemption, 400 without an
-// Idempotency-Key, 401 without a token); an administrator creates a generated code once (the plain code is in the creation answer and nowhere
+// Idempotency-Key, 401 without a token); an administrator creates an explicit random code once (the plain code is in the creation answer and nowhere
 // else, MAX is refused), a discount code and a kill-switched one; `/plans` redeems by keyboard (a wrong code, the right one in lower case, the
 // same one again, a discount, and the sixth attempt of the hour) with the messages the learner reads, the plan block and the API changing
 // to Plus until a date without renewal, the same entitlement on `/api/usage`, the pending discount, the profile's field, and 390 px;
@@ -49,7 +49,12 @@ export async function runPromo(ctx) {
   const shot = async name => { await saveScreenshot(name, tab); evidence.screenshots.push(name); };
 
   /** The real API with the page's own bearer; every status keeps its problem body and Retry-After. `token: false` sends no Authorization. */
-  const call = (method, path, { body, key, token = true } = {}) => page(`const [base, method, path, body, key, bearer] = args;
+  const call = async (method, path, { body, key, token = true } = {}) => {
+    if (method === 'POST' && path === '/api/admin/promo-codes') {
+      key ??= await uuid();
+      body = { ...body, code: body?.code ?? (await uuid()).replaceAll('-', '').slice(0, 12).toUpperCase() };
+    }
+    return page(`const [base, method, path, body, key, bearer] = args;
     const headers = {};
     if (bearer) headers.Authorization = 'Bearer ' + bearer;
     if (body !== undefined) headers['Content-Type'] = 'application/json';
@@ -60,6 +65,7 @@ export async function runPromo(ctx) {
     return { status: response.status, retryAfter: response.headers.get('Retry-After'), recorded: response.headers.get('Promo-Event-Recorded'),
       cache: response.headers.get('Cache-Control'), body: json, text };`,
   config.frontend, method, path, body, key, token ? ctx.bearer : null);
+  };
   const uuid = () => page('return crypto.randomUUID();');
   const fixture = async path => {
     const status = await page(`const response = await fetch(args[0], { method: 'POST' }); return response.status;`, path);

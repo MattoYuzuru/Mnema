@@ -65,7 +65,13 @@ class IdentityAccountStandingsTest {
     }
 
     private Jwt token() {
-        return Jwt.withTokenValue("bearer-token").header("alg", "RS256").subject(account.toString()).build();
+        return token("0");
+    }
+
+    private Jwt token(Object generation) {
+        var builder = Jwt.withTokenValue("bearer-token").header("alg", "RS256").subject(account.toString());
+        if (generation != null) builder.claim("generation", generation);
+        return builder.build();
     }
 
     @Test
@@ -116,6 +122,43 @@ class IdentityAccountStandingsTest {
         now.set(Instant.parse("2026-10-02T09:01:00Z"));
         assertThat(standings.of(token())).contains(new AccountStandings.Standing(true, false));
         assertThat(calls.get()).isEqualTo(2);
+    }
+
+    @Test
+    void aReloggedGenerationDoesNotReuseAnEarlierAdministrativeStanding() {
+        body = profile(account.toString(), "true", "true");
+        assertThat(standings.of(token("0"))).contains(new AccountStandings.Standing(true, true));
+        body = profile(account.toString(), "true", "false");
+        assertThat(standings.of(token("1"))).contains(new AccountStandings.Standing(true, false));
+        body = profile(account.toString(), "true", "true");
+        assertThat(standings.of(token("2"))).contains(new AccountStandings.Standing(true, true));
+        assertThat(calls.get()).isEqualTo(3);
+    }
+
+    @Test
+    void privilegedReadsRecognizeRevocationAndGrantWithoutWaitingForCacheExpiry() {
+        body = profile(account.toString(), "true", "true");
+        assertThat(standings.of(token())).contains(new AccountStandings.Standing(true, true));
+        body = profile(account.toString(), "true", "false");
+        assertThat(standings.fresh(token())).contains(new AccountStandings.Standing(true, false));
+        assertThat(standings.of(token())).contains(new AccountStandings.Standing(true, false));
+        body = profile(account.toString(), "true", "true");
+        assertThat(standings.fresh(token())).contains(new AccountStandings.Standing(true, true));
+        status = 503;
+        assertThat(standings.fresh(token())).isEmpty();
+        status = 200;
+        body = profile(account.toString(), "true", "false");
+        assertThat(standings.of(token())).contains(new AccountStandings.Standing(true, false));
+        assertThat(calls.get()).isEqualTo(5);
+    }
+
+    @Test
+    void malformedGenerationsNeverReachIdentity() {
+        for (Object generation : new Object[]{null, 0L, "-1", "bad", "9223372036854775808"}) {
+            assertThat(standings.of(token(generation))).as("generation %s", generation).isEmpty();
+            assertThat(standings.fresh(token(generation))).as("generation %s", generation).isEmpty();
+        }
+        assertThat(calls.get()).isZero();
     }
 
     @Test
