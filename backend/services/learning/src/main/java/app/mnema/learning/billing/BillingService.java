@@ -63,12 +63,13 @@ class BillingService {
     private final PlanPrices prices;
     private final PromoDiscounts discounts;
     private final UsageClock clock;
+    private final NpdReceipts npdReceipts;
     /** A savepoint around the insert of a discounted order: a unique-index conflict must not abort the checkout's transaction. */
     private final TransactionTemplate savepoint;
 
     BillingService(BillingRepository repository, BillingSettings settings, TBankClient bank, PaymentStateApplier applier,
                    CommandReceiptService receipts, EntitlementSource entitlements, PlanPrices prices, PromoDiscounts discounts, UsageClock clock,
-                   PlatformTransactionManager transactions) {
+                   NpdReceipts npdReceipts, PlatformTransactionManager transactions) {
         this.repository = repository;
         this.settings = settings;
         this.bank = bank;
@@ -78,6 +79,7 @@ class BillingService {
         this.prices = prices;
         this.discounts = discounts;
         this.clock = clock;
+        this.npdReceipts = npdReceipts;
         this.savepoint = new TransactionTemplate(transactions);
         this.savepoint.setPropagationBehavior(TransactionDefinition.PROPAGATION_NESTED);
     }
@@ -102,7 +104,7 @@ class BillingService {
         BillingOrder order = load(orderId);
         if (order.status() == OrderStatus.FAILED && INIT_REFUSED.equals(order.failureReason())) throw new PaymentProviderUnavailableException();
         if (order.status() == OrderStatus.CREATED) order = startPayment(order);
-        return OrderView.of(order, clock.now());
+        return OrderView.of(order, clock.now(), null);
     }
 
     /**
@@ -121,7 +123,7 @@ class BillingService {
             refresh(order);
             order = load(orderId);
         }
-        return OrderView.of(order, clock.now());
+        return OrderView.of(order, clock.now(), order.status() == OrderStatus.PAID ? npdReceipts.receiptUrl(orderId) : null);
     }
 
     private void refresh(BillingOrder order) {

@@ -1,6 +1,6 @@
 {
   "contract": "billing-v1",
-  "description": "Checkout of a paid plan through the T-Bank hosted payment form, the order read used by the return page, and the bank notification endpoint (#389, epic #79). One-off monthly payments only: recurring Charge is #390, the profile billing page #391, НПД receipts #392.",
+  "description": "Checkout of a paid plan through the T-Bank hosted payment form, the order read used by the return page, and the bank notification endpoint (#389, epic #79). One-off monthly payments only: recurring Charge is #390, the profile billing page #391, НПД receipts #392 (the Order carries the receipt link).",
   "endpoints": [
     {
       "operationId": "createCheckout",
@@ -76,14 +76,15 @@
       "createdAt": "RFC 3339 UTC",
       "paidAt": "RFC 3339 UTC or null",
       "periodStart": "RFC 3339 UTC or null (set when PAID)",
-      "periodEnd": "RFC 3339 UTC or null (set when PAID; the BILLING entitlement validUntil)"
+      "periodEnd": "RFC 3339 UTC or null (set when PAID; the BILLING entitlement validUntil)",
+      "receiptUrl": "https URL of the printable «Мой налог» receipt (https://lknpd.nalog.ru/api/v1/receipt/{inn}/{receiptId}/print) once the receipt is registered, else null; a PAID order only, and absent while receipts are off, queued, retried or failed"
     }
   },
   "statuses": {
     "PENDING": "the order exists; the bank has not confirmed the payment (includes the internal CREATED before Init succeeded)",
     "PAID": "GetState confirmed CONFIRMED with the order's amount; the BILLING entitlement snapshot billing:{orderId} was accepted in the same transaction",
     "FAILED": "the bank reported REJECTED, AUTH_FAIL, CANCELED, DEADLINE_EXPIRED or ATTEMPTS_EXPIRED, the bank refused Init (a new checkout opens a new order), or the link expired unused; a payment that still arrives (re-checked for 72 hours) is granted",
-    "REFUNDED": "a PAID order the bank later reported REVERSED, PARTIAL_REVERSED, REFUNDED or PARTIAL_REFUNDED; access policy is #392 (the entitlement is not withdrawn in B1)",
+    "REFUNDED": "a PAID order the bank later reported REVERSED, PARTIAL_REVERSED, REFUNDED or PARTIAL_REFUNDED; the «Мой налог» receipt of a full refund is annulled automatically, a partial one is handled by an operator; the entitlement is not withdrawn",
     "REVIEW": "the bank confirmed an amount that does not match, partly refunded a payment that was never granted, or still reported the payment in progress 72 hours after the link; nothing is granted, the operator reconciles"
   },
   "examples": {
@@ -101,7 +102,8 @@
       "createdAt": "2026-10-09T09:00:00Z",
       "paidAt": null,
       "periodStart": null,
-      "periodEnd": null
+      "periodEnd": null,
+      "receiptUrl": null
     },
     "orderPaid": {
       "orderId": "0199c7a2-3b4e-7c1d-9a2b-5e6f7a8b9c0d",
@@ -116,7 +118,8 @@
       "createdAt": "2026-10-09T09:00:00Z",
       "paidAt": "2026-10-09T09:03:00Z",
       "periodStart": "2026-10-09T09:03:00Z",
-      "periodEnd": "2026-11-09T09:03:00Z"
+      "periodEnd": "2026-11-09T09:03:00Z",
+      "receiptUrl": "https://lknpd.nalog.ru/api/v1/receipt/770123456789/2agnbqj3tw/print"
     },
     "orderDiscountedPro": {
       "orderId": "0199c7a2-3b4e-7c1d-9a2b-5e6f7a8b9c0e",
@@ -131,7 +134,8 @@
       "createdAt": "2026-10-09T09:00:00Z",
       "paidAt": null,
       "periodStart": null,
-      "periodEnd": null
+      "periodEnd": null,
+      "receiptUrl": null
     }
   }
 }

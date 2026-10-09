@@ -10,6 +10,9 @@
       @switch (outcome()) {
         @case ('paid') {
           <a class="button primary" routerLink="/decks">К моим колодам</a>
+          @if (order()?.receiptUrl; as receipt) {
+            <a class="button" [href]="receipt" target="_blank" rel="noopener noreferrer">Чек</a>
+          }
           <a class="button" routerLink="/plans">Тарифы</a>
         }
         @case ('failed') { <a class="button primary" routerLink="/plans">Вернуться к тарифам</a> }

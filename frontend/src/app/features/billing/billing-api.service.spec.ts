@@ -66,6 +66,20 @@ describe('Billing wire contract (contracts/billing/billing.json)', () => {
             }
         });
 
+        it('accepts a receipt link only on the tax service print address', () => {
+            const receipt = String(examples['orderPaid']['receiptUrl']);
+            expect(parseOrder(examples['orderPaid']).receiptUrl).toBe(receipt);
+            for (const url of ['http://lknpd.nalog.ru/api/v1/receipt/770123456789/2agnbqj3tw/print', 'https://evil.example/api/v1/receipt/770123456789/2agnbqj3tw/print',
+                'https://lknpd.nalog.ru.evil.example/api/v1/receipt/770123456789/2agnbqj3tw/print', 'https://user@lknpd.nalog.ru/api/v1/receipt/770123456789/2agnbqj3tw/print',
+                'https://lknpd.nalog.ru:8443/api/v1/receipt/770123456789/2agnbqj3tw/print', 'https://lknpd.nalog.ru/api/v1/receipt/7701/2agnbqj3tw/print',
+                'https://lknpd.nalog.ru/api/v1/receipt/770123456789/../print', 'https://lknpd.nalog.ru/api/v1/receipt/770123456789/2agnbqj3tw/print?x=1',
+                'https://lknpd.nalog.ru/api/v1/receipt/770123456789/2agnbqj3tw/json', 'javascript:alert(1)', '']) {
+                const order = example('orderPaid');
+                order['receiptUrl'] = url;
+                expect(() => parseOrder(order), url).toThrow(PlansProtocolError);
+            }
+        });
+
         it('rejects a payment URL outside the bank hosts', () => {
             for (const url of ['http://pay.tbank-online.com/x', 'https://evil.example/pay', 'https://pay.tbank-online.com.evil.example/x',
                 'https://user:secret@pay.tbank-online.com/x', 'https://pay.tbank-online.com:8443/x', 'javascript:alert(1)', 'pay.tbank-online.com/x', '']) {

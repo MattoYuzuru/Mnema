@@ -20,7 +20,7 @@ class BillingAvailabilityTest extends BillingIntegrationTest {
     @Autowired private org.springframework.transaction.PlatformTransactionManager transactions;
 
     private BillingController controllerFor(BillingSettings settings) {
-        return new BillingController(new BillingService(repository, settings, bank, applier, receipts, entitlements, prices, discounts, clock, transactions));
+        return new BillingController(new BillingService(repository, settings, bank, applier, receipts, entitlements, prices, discounts, clock, npdReceipts, transactions));
     }
 
     private static BillingSettings settings(String mode, String testers, String publicUrl, String key) {
