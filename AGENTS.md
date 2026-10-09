@@ -71,9 +71,8 @@ docs or historical evidence (those are read-only history, not current behaviour)
   requirements.
 - Shared UI elements come from the living styleguide; a new one is added there first:
   [`docs/frontend/styleguide.md`](docs/frontend/styleguide.md) (`/styleguide`, development builds only).
-- Long content lists use automatic cursor-page continuation around 75% of loaded content, with no «Показать ещё»
-  or page-navigation buttons. Use the styleguide's shared auto-load component; errors keep rows and offer explicit retry.
-  Object navigation (for example the generation batch pager) remains separate. See the [list rule](docs/frontend/styleguide.md#длинные-списки-и-автоподгрузка).
+- Long content lists continue automatically through the shared auto-load component, with no «Показать ещё» or page
+  buttons: [list rule](docs/frontend/styleguide.md#длинные-списки-и-автоподгрузка).
 - UX/a11y principles (primary action, back/close, progressive disclosure, keyboard/focus, semantic
   HTML, reduced motion, mobile-first) and the duty to propose a better layout when requested UI is
   awkward, confusing or overcomplicated: [`engineering-standards.md`](docs/engineering/engineering-standards.md#proactive-design-fixes-and-ux-principles-was-42-43).
