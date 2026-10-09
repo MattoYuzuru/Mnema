@@ -304,7 +304,11 @@ export class PlansPageComponent {
             // The page is leaving: it stays busy so nothing can start a second payment before the bank's form opens.
         } catch (failure) {
             if (this.destroyRef.destroyed) return;
-            this.notice.set(checkoutNotice(failure instanceof BillingError ? failure.code : 'UNKNOWN'));
+            const code = failure instanceof BillingError ? failure.code : 'UNKNOWN';
+            // A bank that answered (even with a refusal) closes that attempt: the server reuses an order still open, so a new key is safe. A lost answer
+            // keeps the key, so the retry cannot open a second payment.
+            if (code === 'PAYMENT_PROVIDER_UNAVAILABLE') this.checkoutKey = null;
+            this.notice.set(checkoutNotice(code));
             this.busy.set(false);
         }
     }
