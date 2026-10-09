@@ -123,7 +123,7 @@ class BillingOrderReadTest extends BillingIntegrationTest {
         assertThat(expired.path("paymentUrl").isNull()).isTrue();
 
         UUID other = UUID.randomUUID();
-        BANK.refuseInit = true;
+        BANK.breakInit = true;
         assertThat(checkout(other, "PRO").getStatus()).isEqualTo(503);
         String uninitialized = jdbc.sql("SELECT order_id::text FROM app_learning.billing_order WHERE owner_id=:owner").param("owner", other)
                 .query(String.class).single();

@@ -78,7 +78,7 @@ class TBankClientTest {
     private TBankClient client(Duration requestTimeout) {
         BillingSettings settings = new BillingSettings("ON", "", "https://mnema.app", "http://127.0.0.1:" + server.getAddress().getPort() + "/v2",
                 BillingFixtures.TERMINAL, BillingFixtures.PASSWORD_BASE64, Duration.ofHours(1), Duration.ofSeconds(10), 10, Duration.ofMinutes(2),
-                Duration.ofSeconds(2), requestTimeout);
+                Duration.ofSeconds(2), requestTimeout, Duration.ofSeconds(5));
         return new TBankClient(settings, new TBankTrust());
     }
 
@@ -263,9 +263,22 @@ class TBankClientTest {
     }
 
     @Test
+    void aShorterDeadlineOfOneCallBoundsTheWholeExchangeWhateverTheRequestTimeout() {
+        answers("get-state-response-confirmed.json");
+        delay = 1_500;
+        long started = System.nanoTime();
+
+        assertThat(failureOf(() -> client.getState(BillingFixtures.PAYMENT_ID, Duration.ofMillis(300))).reason()).isEqualTo(Reason.TIMEOUT);
+
+        assertThat(Duration.ofNanos(System.nanoTime() - started)).as("the client's own request timeout is 5 s").isLessThan(Duration.ofSeconds(1));
+        delay = 0;
+        assertThat(client.getState(BillingFixtures.PAYMENT_ID, Duration.ofSeconds(2)).status()).isEqualTo("CONFIRMED");
+    }
+
+    @Test
     void withoutCredentialsNothingIsSent() {
         BillingSettings unset = new BillingSettings("ON", "", "", "http://127.0.0.1:" + server.getAddress().getPort() + "/v2", "", "", Duration.ofHours(1),
-                Duration.ofSeconds(10), 10, Duration.ofMinutes(2), Duration.ofSeconds(2), Duration.ofSeconds(5));
+                Duration.ofSeconds(10), 10, Duration.ofMinutes(2), Duration.ofSeconds(2), Duration.ofSeconds(5), Duration.ofSeconds(5));
         TBankClient bare = new TBankClient(unset, new TBankTrust());
         try {
             assertThat(failureOf(() -> bare.init(ORDER)).reason()).isEqualTo(Reason.NOT_CONFIGURED);

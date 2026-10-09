@@ -23,10 +23,14 @@ import static org.mockito.Mockito.verify;
 class BillingReconciliationTest extends BillingIntegrationTest {
     @Autowired private PlatformTransactionManager transactions;
 
-    /** Orders of other tests share the database; only the ones of this test may be open, or the batch and the counts would not be ours. */
+    /**
+     * Orders of other tests share the database; only the ones of this test may be open or failed within the re-check window, or the batch and the counts would
+     * not be ours.
+     */
     @BeforeEach
     void closeLeftovers() {
         jdbc.sql("UPDATE app_learning.billing_order SET status='FAILED', failure_reason='TEST' WHERE status IN ('CREATED','PENDING')").update();
+        jdbc.sql("UPDATE app_learning.billing_order SET last_checked_at=TIMESTAMPTZ '2100-01-01 00:00:00Z' WHERE status='FAILED'").update();
     }
 
     @Test
@@ -86,9 +90,9 @@ class BillingReconciliationTest extends BillingIntegrationTest {
     @Test
     void anOrderWhoseInitNeverAnsweredFailsOnlyAfterItsLinkTimeIsOver() throws Exception {
         UUID owner = UUID.randomUUID();
-        BANK.refuseInit = true;
+        BANK.breakInit = true;
         assertThat(checkout(owner, "PLUS").getStatus()).isEqualTo(503);
-        String orderId = jdbc.sql("SELECT order_id::text FROM app_learning.billing_order WHERE owner_id=:owner").param("owner", owner).query(String.class).single();
+        String orderId = onlyOrder(owner);
 
         clock.advance(Duration.ofMinutes(5));
         assertThat(reconciliation.runOnce()).isEqualTo(1);
@@ -126,6 +130,70 @@ class BillingReconciliationTest extends BillingIntegrationTest {
     }
 
     @Test
+    void aFailedOrderWithAPaymentIsAskedAboutHourlyForThreeDaysAndALatePaymentPaysIt() throws Exception {
+        UUID owner = UUID.randomUUID();
+        String orderId = open(owner, "PLUS").path("orderId").stringValue(null);
+        BANK.move(orderId, "REJECTED");
+        clock.advance(Duration.ofMinutes(3));
+        assertThat(reconciliation.runOnce()).isEqualTo(1);
+        assertThat(status(orderId)).isEqualTo("FAILED");
+
+        clock.advance(Duration.ofMinutes(30));
+        assertThat(reconciliation.runOnce()).as("a failed order is asked about once an hour").isZero();
+        BANK.move(orderId, "CONFIRMED");
+        clock.advance(Duration.ofMinutes(31));
+        assertThat(reconciliation.runOnce()).isEqualTo(1);
+
+        assertThat(status(orderId)).isEqualTo("PAID");
+        assertThat(snapshots(owner)).isEqualTo(1);
+        assertThat(events(orderId)).contains("RECONCILE:REJECTED:FAILED", "RECONCILE:CONFIRMED:PAID");
+    }
+
+    @Test
+    void aFailedOrderIsNoLongerAskedAboutThreeDaysAfterItWasCreated() throws Exception {
+        String orderId = open(UUID.randomUUID(), "PLUS").path("orderId").stringValue(null);
+        BANK.move(orderId, "REJECTED");
+        clock.advance(Duration.ofMinutes(3));
+        reconciliation.runOnce();
+        assertThat(status(orderId)).isEqualTo("FAILED");
+        clock.advance(Duration.ofHours(71));
+        assertThat(reconciliation.runOnce()).isEqualTo(1);
+
+        clock.advance(Duration.ofHours(1));
+        assertThat(reconciliation.runOnce()).isZero();
+        assertThat(BANK.getStates).hasSize(2);
+    }
+
+    @Test
+    void anOrderTheBankKeepsInProgressGoesToReviewThreeDaysAfterItsLinkAndIsNotAskedAboutAgain() throws Exception {
+        UUID owner = UUID.randomUUID();
+        String authorized = open(owner, "PLUS").path("orderId").stringValue(null);
+        String unanswered = open(owner, "PRO").path("orderId").stringValue(null);
+        BANK.move(authorized, "AUTHORIZED");
+        BANK.move(unanswered, "3DS_CHECKING");
+        double counted = anomalies("stale_order");
+
+        clock.advance(Duration.ofHours(72).plusMinutes(59));
+        reconciliation.runOnce();
+        assertThat(status(authorized)).isEqualTo("PENDING");
+
+        clock.advance(Duration.ofMinutes(3));
+        BANK.breakGetState = true;
+        assertThat(reconciliation.runOnce()).isEqualTo(2);
+
+        assertThat(status(authorized)).isEqualTo("REVIEW");
+        assertThat(column(authorized, "failure_reason")).isEqualTo("STALE");
+        assertThat(status(unanswered)).as("a bank that does not answer does not keep an order open").isEqualTo("REVIEW");
+        assertThat(events(authorized)).contains("RECONCILE:AUTHORIZED:REVIEW");
+        assertThat(anomalies("stale_order")).isEqualTo(counted + 2);
+        assertThat(snapshots(owner)).isZero();
+        BANK.breakGetState = false;
+        clock.advance(Duration.ofHours(1));
+        assertThat(reconciliation.runOnce()).isZero();
+        assertThat(applier.holdStale(UUID.fromString(authorized))).isFalse();
+    }
+
+    @Test
     void reconcilersRunningTogetherTakeDisjointOrders() throws Exception {
         for (int index = 0; index < 6; index++) open(UUID.randomUUID(), "PLUS");
         clock.advance(Duration.ofMinutes(3));
@@ -146,7 +214,7 @@ class BillingReconciliationTest extends BillingIntegrationTest {
         open(UUID.randomUUID(), "PLUS");
         clock.advance(Duration.ofMinutes(3));
         BillingSettings unset = new BillingSettings("ON", "", "", BANK.baseUrl(), "", "", Duration.ofHours(1), Duration.ofSeconds(10), 10, Duration.ofMinutes(2),
-                Duration.ofSeconds(5), Duration.ofSeconds(5));
+                Duration.ofSeconds(5), Duration.ofSeconds(5), Duration.ofSeconds(5));
 
         assertThat(new PaymentReconciliation(repository, unset, bank, applier, clock, transactions).runOnce()).isZero();
 

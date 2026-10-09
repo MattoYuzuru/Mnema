@@ -4,6 +4,7 @@ import app.mnema.learning.promo.PromoDiscounts;
 import app.mnema.learning.usage.EntitlementInbox;
 import app.mnema.learning.usage.UsageCalendar;
 import app.mnema.learning.usage.UsageClock;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -12,6 +13,7 @@ import tools.jackson.databind.node.JsonNodeFactory;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -25,15 +27,33 @@ import java.util.UUID;
  * the later of now and the end of the account's latest paid month of that plan, and the promo discount the order used is consumed. {@code PAID} is
  * absorbing for granting: a repeated {@code CONFIRMED} grants nothing, a later {@code REJECTED} takes nothing back, a refund marks the order
  * {@code REFUNDED} but does not withdraw the entitlement (that policy is #392). Every call appends one {@code billing_event}.
+ *
+ * <p>Money that needs an operator is an {@link Anomaly}: one log line {@code billing anomaly kind=…} (ERROR when money is at stake) and the counter
+ * {@code mnema_billing_anomalies_total{kind}}.
  */
 @Service
 class PaymentStateApplier {
     private static final Logger log = LoggerFactory.getLogger(PaymentStateApplier.class);
-    private static final Set<String> FAILED = Set.of("REJECTED", "AUTH_FAIL", "CANCELED", "DEADLINE_EXPIRED");
+    /** The bank's final statuses of a payment that took no money (developer.tbank.ru/eacq/intro/developer/operation-statuses, read 2026-10-09). */
+    private static final Set<String> FAILED = Set.of("REJECTED", "AUTH_FAIL", "CANCELED", "DEADLINE_EXPIRED", "ATTEMPTS_EXPIRED");
+    /** Money returned after an authorization or a confirmation; every other status (AUTHORIZING, 3DS_CHECKING, REFUNDING, …) is still in progress. */
     private static final Set<String> REVERSED = Set.of("REVERSED", "PARTIAL_REVERSED", "REFUNDED", "PARTIAL_REFUNDED");
     private static final Set<String> UNPAID_FORM = Set.of("NEW", "FORM_SHOWED");
     /** How long past its link a form that was never completed stays pending before the reconciler gives up on it. */
     static final Duration EXPIRY_GRACE = Duration.ofHours(24);
+    /** How long past its link an order may stay unfinished in any other bank status before the reconciler stops asking and hands it to an operator. */
+    static final Duration REVIEW_AFTER = Duration.ofHours(72);
+
+    /** Money an operator must look at; {@code money} anomalies are logged as ERROR, the others as WARN. */
+    enum Anomaly {
+        DUPLICATE_PAYMENT(true), AMOUNT_MISMATCH(true), PARTIAL_REFUND(true), STALE_ORDER(true), DISCOUNT_SPENT(false);
+
+        private final boolean money;
+
+        Anomaly(boolean money) {
+            this.money = money;
+        }
+    }
 
     /** What asked: the log says it, the audit row says {@code GET_STATE} for the first two and {@code RECONCILE} for the third. */
     enum Trigger { NOTIFICATION, GET_STATE, RECONCILE }
@@ -47,25 +67,41 @@ class PaymentStateApplier {
     private final PromoDiscounts discounts;
     private final UsageCalendar calendar;
     private final UsageClock clock;
+    private final MeterRegistry meters;
 
     PaymentStateApplier(BillingRepository repository, BillingSettings settings, EntitlementInbox inbox, PromoDiscounts discounts,
-                        UsageCalendar calendar, UsageClock clock) {
+                        UsageCalendar calendar, UsageClock clock, MeterRegistry meters) {
         this.repository = repository;
         this.settings = settings;
         this.inbox = inbox;
         this.discounts = discounts;
         this.calendar = calendar;
         this.clock = clock;
+        this.meters = meters;
     }
 
     /** Applies {@code state} to the order {@code orderId}. */
     @Transactional
     public Outcome apply(UUID orderId, BankState state, Trigger trigger) {
+        return applyLocked(orderId, state, trigger, null);
+    }
+
+    /**
+     * Applies the {@code state} a notification asked for and records {@code notification} in the same transaction: a notification counts as handled only once
+     * its answer is applied, so a bank retry after a failure is processed in full.
+     */
+    @Transactional
+    public Outcome applyNotified(UUID orderId, BankState state, BillingRepository.Event notification) {
+        return applyLocked(orderId, state, Trigger.NOTIFICATION, notification);
+    }
+
+    private Outcome applyLocked(UUID orderId, BankState state, Trigger trigger, BillingRepository.Event notification) {
         Instant now = clock.now();
         String source = trigger == Trigger.RECONCILE ? "RECONCILE" : "GET_STATE";
         Optional<BillingOrder> locked = repository.lock(orderId);
         if (locked.isEmpty()) return Outcome.IGNORED;
         BillingOrder order = locked.get();
+        if (notification != null) repository.insertEvent(notification, now);
         if (!settings.isOwnTerminal(state.terminalKey()) || !orderId.equals(TBankClient.orderId(state.orderId()))) {
             log.warn("billing bank state ignored order_id={} reason=foreign_terminal_or_order source={}", orderId, trigger);
             event(order, state, source, "IGNORED", now);
@@ -78,7 +114,7 @@ class PaymentStateApplier {
         } else if (!order.paymentId().equals(state.paymentId())) {
             // A second bank payment of the same order (an Init that raced a retry). Only money taken for an order that is not yet paid grants access.
             if (confirmed && order.status() == OrderStatus.PAID) {
-                log.error("billing duplicate payment order_id={} payment_id={}", orderId, state.paymentId());
+                anomaly(Anomaly.DUPLICATE_PAYMENT, orderId, state.paymentId());
                 event(order, state, source, "DUPLICATE_PAYMENT", now);
                 return Outcome.UNCHANGED;
             }
@@ -93,7 +129,7 @@ class PaymentStateApplier {
             if (!grantable(order.status())) {
                 outcome = "NO_CHANGE";
             } else if (state.amount() == null || state.amount() != order.amountKopecks()) {
-                log.warn("billing amount mismatch order_id={} payment_id={}", orderId, state.paymentId());
+                anomaly(Anomaly.AMOUNT_MISMATCH, orderId, state.paymentId());
                 next = next.moved(OrderStatus.REVIEW, state.status(), "AMOUNT_MISMATCH");
                 outcome = "REVIEW";
             } else {
@@ -112,6 +148,11 @@ class PaymentStateApplier {
                 log.warn("billing order refunded, entitlement kept order_id={} bank_status={}", orderId, state.status());
                 next = next.moved(OrderStatus.REFUNDED, state.status(), null);
                 outcome = "REFUNDED";
+            } else if ("PARTIAL_REFUNDED".equals(state.status()) && grantable(order.status())) {
+                // A confirmation this order never saw, then part of the money returned: some of it is still taken and nothing was granted.
+                anomaly(Anomaly.PARTIAL_REFUND, orderId, state.paymentId());
+                next = next.moved(OrderStatus.REVIEW, state.status(), "PARTIAL_REFUND");
+                outcome = "REVIEW";
             } else if (order.status().open()) {
                 next = next.moved(OrderStatus.FAILED, state.status(), state.status());
                 outcome = "FAILED";
@@ -154,10 +195,24 @@ class PaymentStateApplier {
         log.info("billing order transition order_id={} from={} to={} bank_status={} source=INIT", orderId, order.status(), next.status(), result.status());
     }
 
-    /** Records an {@code Init} the bank refused or did not answer; the order stays {@code CREATED} and a retry asks again. */
-    void initFailed(UUID orderId, PaymentProviderException failure) {
-        repository.insertEvent(new BillingRepository.Event(orderId, null, "INIT", null, false, failure.errorCode(), null, failure.reason().name()),
-                clock.now());
+    /**
+     * Records an {@code Init} the bank refused or did not answer. A refusal opened nothing and the bank would refuse the same {@code OrderId} again, so the
+     * order fails {@code INIT_REFUSED} and the next checkout of the purchase opens a new order; after a timeout or a broken connection the bank may have
+     * opened a payment, so the order stays {@code CREATED} for its retry, its notification or the reconciler.
+     */
+    @Transactional
+    public void initFailed(UUID orderId, PaymentProviderException failure) {
+        Instant now = clock.now();
+        Optional<BillingOrder> locked = repository.lock(orderId);
+        if (locked.isEmpty()) return;
+        BillingOrder order = locked.get();
+        boolean refused = failure.reason() == PaymentProviderException.Reason.REFUSED && order.status() == OrderStatus.CREATED && order.paymentId() == null;
+        if (refused) {
+            repository.save(order.moved(OrderStatus.FAILED, null, "INIT_REFUSED"), now);
+            log.info("billing order transition order_id={} from={} to={} bank_status=- source=INIT", orderId, order.status(), OrderStatus.FAILED);
+        }
+        repository.insertEvent(new BillingRepository.Event(orderId, null, "INIT", null, false, failure.errorCode(), null,
+                refused ? "FAILED" : failure.reason().name()), now);
     }
 
     /** Fails an order whose {@code Init} never succeeded and whose link time is over ({@code INIT_FAILED}). */
@@ -175,6 +230,34 @@ class PaymentStateApplier {
         return repository.lock(orderId).filter(order -> order.status() == OrderStatus.PENDING
                 && now.isAfter(order.expiresAt().plus(EXPIRY_GRACE))
                 && (order.providerStatus() == null || UNPAID_FORM.contains(order.providerStatus()))).map(order -> fail(order, "EXPIRED", now)).orElse(false);
+    }
+
+    /**
+     * Stops asking about an unfinished order whose link ended more than {@link #REVIEW_AFTER} ago and that the bank still reports in progress (or does not
+     * answer about): it goes to {@code REVIEW} ({@code STALE}) for an operator.
+     */
+    @Transactional
+    public boolean holdStale(UUID orderId) {
+        Instant now = clock.now();
+        return repository.lock(orderId).filter(order -> order.status().open() && now.isAfter(order.expiresAt().plus(REVIEW_AFTER))).map(order -> {
+            repository.save(order.moved(OrderStatus.REVIEW, order.providerStatus(), "STALE"), now);
+            repository.insertEvent(new BillingRepository.Event(order.orderId(), order.paymentId(), "RECONCILE", order.providerStatus(), null, null, null,
+                    "REVIEW"), now);
+            anomaly(Anomaly.STALE_ORDER, order.orderId(), order.paymentId());
+            log.info("billing order transition order_id={} from={} to={} bank_status={} source=RECONCILE", order.orderId(), order.status(),
+                    OrderStatus.REVIEW, order.providerStatus() == null ? "-" : order.providerStatus());
+            return true;
+        }).orElse(false);
+    }
+
+    /**
+     * Closes the unfinished orders of {@code owner} that hold the discount of {@code codeId} past their link time ({@code EXPIRED}), so the discount can price
+     * the next purchase. A payment that still reaches such an order is granted all the same, so closing it loses no money. Runs in the caller's transaction.
+     */
+    @Transactional
+    public void expireDiscountHolders(UUID owner, UUID codeId) {
+        Instant now = clock.now();
+        for (BillingOrder order : repository.lockExpiredDiscountHolders(owner, codeId, now)) fail(order, "EXPIRED", now);
     }
 
     private boolean fail(BillingOrder order, String reason, Instant now) {
@@ -202,9 +285,19 @@ class PaymentStateApplier {
                 JsonNodeFactory.instance.objectNode().put("allowances", "catalog").put("plan", order.plan().name()), end));
         if (order.discountCodeId() != null && !discounts.consume(order.owner(), order.discountCodeId())) {
             // The money is taken, so the month is granted; the discount was spent or replaced meanwhile and an operator may want to know.
-            log.warn("billing discount already spent order_id={}", order.orderId());
+            anomaly(Anomaly.DISCOUNT_SPENT, order.orderId(), order.paymentId());
         }
         return order.paid(bankStatus, now, start, end, snapshotId);
+    }
+
+    private void anomaly(Anomaly kind, UUID orderId, String paymentId) {
+        String name = kind.name().toLowerCase(Locale.ROOT);
+        if (kind.money) {
+            log.error("billing anomaly kind={} order_id={} payment_id={}", name, orderId, paymentId == null ? "-" : paymentId);
+        } else {
+            log.warn("billing anomaly kind={} order_id={} payment_id={}", name, orderId, paymentId == null ? "-" : paymentId);
+        }
+        meters.counter("mnema_billing_anomalies_total", "kind", name).increment();
     }
 
     private void event(BillingOrder order, BankState state, String source, String outcome, Instant now) {

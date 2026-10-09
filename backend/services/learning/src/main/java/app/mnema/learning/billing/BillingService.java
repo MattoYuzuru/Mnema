@@ -40,7 +40,8 @@ import java.util.UUID;
  * <p>Checkout order of decisions: the mode and the credentials, then the shape of the request, then, in one command receipt (an idempotent retry returns
  * the same order), the hourly limit, the current plan, the price and a reusable open order or a new {@code CREATED} one. {@code Init} runs outside every
  * transaction: a bank that does not answer cannot hold a database connection, and an order that never got a link stays {@code CREATED} so that a retry with
- * the same key asks the bank again.
+ * the same key asks the bank again. An order whose {@code Init} the bank refused is failed ({@code INIT_REFUSED}): a retry with the same key is answered 503
+ * again without asking the bank, and the next checkout with a new key opens a new order with a new {@code OrderId}.
  */
 @Service
 class BillingService {
@@ -51,6 +52,7 @@ class BillingService {
     private static final int KOPECKS = 100;
     /** How long one caller owns the right to call {@code Init} for an order; a loser is told to retry, and by then the order is {@code PENDING}. */
     private static final Duration INIT_CLAIM = Duration.ofSeconds(30);
+    private static final String INIT_REFUSED = "INIT_REFUSED";
 
     private final BillingRepository repository;
     private final BillingSettings settings;
@@ -98,6 +100,7 @@ class BillingService {
         JsonNode receipt = receipts.execute(identity, payload, () -> createOrder(owner, plan));
         UUID orderId = UUID.fromString(receipt.path("orderId").stringValue(null));
         BillingOrder order = load(orderId);
+        if (order.status() == OrderStatus.FAILED && INIT_REFUSED.equals(order.failureReason())) throw new PaymentProviderUnavailableException();
         if (order.status() == OrderStatus.CREATED) order = startPayment(order);
         return OrderView.of(order, clock.now());
     }
@@ -139,9 +142,8 @@ class BillingService {
         try {
             result = bank.init(order);
         } catch (PaymentProviderException failure) {
+            // A refusal fails the order; after a timeout or a broken connection the bank may have opened a payment, so the order and its claim stay.
             applier.initFailed(order.orderId(), failure);
-            // A refusal opened nothing, so the retry may ask at once; after a timeout or a broken connection the bank may have opened a payment, so the claim stays.
-            if (failure.reason() == PaymentProviderException.Reason.REFUSED) repository.releaseInit(order.orderId());
             throw new PaymentProviderUnavailableException();
         }
         applier.initialized(order.orderId(), result);
@@ -172,7 +174,7 @@ class BillingService {
         Optional<PromoDiscounts.Pending> discount = discounts.pending(owner).filter(pending -> pending.plan() == null || pending.plan().equals(plan.name()));
         if (discount.isPresent()) {
             // A discount prices one purchase: while another unfinished order holds it, this one is full price (or is that very order, reused below).
-            repository.expireDiscountHolders(owner, discount.get().codeId(), now);
+            applier.expireDiscountHolders(owner, discount.get().codeId());
             Optional<BillingOrder> holder = repository.openDiscountHolder(owner, discount.get().codeId(), now);
             if (holder.isPresent() && !reusable(holder.get(), plan, discounted(listRub, discount.get().percent()) * KOPECKS, now)) discount = Optional.empty();
         }

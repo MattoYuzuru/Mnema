@@ -97,13 +97,13 @@ class BillingRepository {
     }
 
     /**
-     * Frees a discount held by unfinished orders whose link time is over: they are closed {@code FAILED/EXPIRED}. A payment that still reaches such an order
-     * is granted all the same ({@code PaymentStateApplier}), so closing it loses no money, and the discount can price the next purchase.
+     * The unfinished orders of {@code owner} that hold the discount of {@code codeId} and whose link time is over, under their row locks: the caller
+     * ({@code PaymentStateApplier}) closes them so the discount can price the next purchase.
      */
-    int expireDiscountHolders(UUID owner, UUID codeId, Instant now) {
-        return jdbc.sql("UPDATE app_learning.billing_order SET status='FAILED',failure_reason='EXPIRED',updated_at=:now,row_version=row_version+1 "
-                        + "WHERE owner_id=:owner AND discount_code_id=:code AND status IN ('CREATED','PENDING') AND expires_at<=:now")
-                .param("owner", owner).param("code", codeId).param("now", time(now)).update();
+    List<BillingOrder> lockExpiredDiscountHolders(UUID owner, UUID codeId, Instant now) {
+        return jdbc.sql("SELECT " + COLUMNS + " FROM app_learning.billing_order WHERE owner_id=:owner AND discount_code_id=:code "
+                        + "AND status IN ('CREATED','PENDING') AND expires_at<=:now ORDER BY order_id FOR UPDATE")
+                .param("owner", owner).param("code", codeId).param("now", time(now)).query(BillingRepository::order).list();
     }
 
     /**
@@ -115,11 +115,6 @@ class BillingRepository {
         return jdbc.sql("UPDATE app_learning.billing_order SET init_claimed_at=:now WHERE order_id=:id AND status='CREATED' "
                         + "AND (init_claimed_at IS NULL OR init_claimed_at<:stale)").param("now", time(now)).param("id", orderId)
                 .param("stale", time(staleBefore)).update() == 1;
-    }
-
-    /** Gives the claim back after a bank refusal: nothing was opened, so a retry may ask at once. */
-    void releaseInit(UUID orderId) {
-        jdbc.sql("UPDATE app_learning.billing_order SET init_claimed_at=NULL WHERE order_id=:id").param("id", orderId).update();
     }
 
     long createdSince(UUID owner, Instant since) {
@@ -152,31 +147,42 @@ class BillingRepository {
     }
 
     /**
-     * Takes the right to ask the bank about a pending order: only one caller wins per interval, however many browsers poll.
+     * Takes the right to ask the bank about an order the bank may still change ({@link OrderStatus#bankMayChange()}): only one caller wins per interval,
+     * however many browsers poll or replayed notifications arrive.
      *
      * @return whether this caller won
      */
     boolean claimRefresh(UUID orderId, Instant now, Instant staleBefore) {
-        return jdbc.sql("UPDATE app_learning.billing_order SET last_checked_at=:now WHERE order_id=:id AND status='PENDING' AND payment_id IS NOT NULL "
+        return jdbc.sql("UPDATE app_learning.billing_order SET last_checked_at=:now WHERE order_id=:id AND status IN ('CREATED','PENDING','FAILED','PAID') "
                         + "AND (last_checked_at IS NULL OR last_checked_at<:stale)")
                 .param("now", time(now)).param("id", orderId).param("stale", time(staleBefore)).update() == 1;
     }
 
     /**
-     * Claims up to {@code limit} unfinished orders for the reconciler: created before {@code createdBefore}, not looked at since {@code checkedBefore}.
-     * {@code FOR UPDATE SKIP LOCKED} lets several workers claim disjoint sets; the claim stamps {@code last_checked_at}.
+     * Claims up to {@code limit} orders for the reconciler, all created before {@code createdBefore}: the unfinished ones not looked at since
+     * {@code checkedBefore}, and the {@code FAILED} ones with a bank payment created after {@code failedSince} and not looked at since
+     * {@code failedCheckedBefore} (a late or second attempt may still pay them). {@code FOR UPDATE SKIP LOCKED} lets several workers claim disjoint sets; the claim stamps
+     * {@code last_checked_at}.
      */
-    List<BillingOrder> claimOpen(Instant now, Instant createdBefore, Instant checkedBefore, int limit) {
-        List<BillingOrder> claimed = jdbc.sql("SELECT " + COLUMNS + " FROM app_learning.billing_order WHERE status IN ('CREATED','PENDING') "
-                        + "AND created_at<:created AND (last_checked_at IS NULL OR last_checked_at<:checked) ORDER BY created_at LIMIT :limit "
-                        + "FOR UPDATE SKIP LOCKED")
-                .param("created", time(createdBefore)).param("checked", time(checkedBefore)).param("limit", limit)
-                .query(BillingRepository::order).list();
+    List<BillingOrder> claimOpen(Instant now, Instant createdBefore, Instant checkedBefore, Instant failedSince, Instant failedCheckedBefore, int limit) {
+        List<BillingOrder> claimed = jdbc.sql("SELECT " + COLUMNS + " FROM app_learning.billing_order WHERE created_at<:created AND ("
+                        + "(status IN ('CREATED','PENDING') AND (last_checked_at IS NULL OR last_checked_at<:checked)) OR "
+                        + "(status='FAILED' AND payment_id IS NOT NULL AND created_at>:failedSince "
+                        + "AND (last_checked_at IS NULL OR last_checked_at<:failedChecked))) "
+                        + "ORDER BY created_at LIMIT :limit FOR UPDATE SKIP LOCKED")
+                .param("created", time(createdBefore)).param("checked", time(checkedBefore)).param("failedSince", time(failedSince))
+                .param("failedChecked", time(failedCheckedBefore)).param("limit", limit).query(BillingRepository::order).list();
         for (BillingOrder order : claimed) {
             jdbc.sql("UPDATE app_learning.billing_order SET last_checked_at=:now WHERE order_id=:id").param("now", time(now))
                     .param("id", order.orderId()).update();
         }
         return claimed;
+    }
+
+    /** Whether a notification of {@code paymentId} with {@code bankStatus} was already handled: its event is written only with the applied answer. */
+    boolean notificationHandled(String paymentId, String bankStatus) {
+        return jdbc.sql("SELECT EXISTS (SELECT 1 FROM app_learning.billing_event WHERE source='NOTIFICATION' AND payment_id=:payment AND bank_status=:status)")
+                .param("payment", paymentId).param("status", bankStatus).query(Boolean.class).single();
     }
 
     /** @return whether the event was new; a repeated notification of the same payment and status is not stored twice */

@@ -51,6 +51,8 @@ final class BillingSettings implements CheckoutAvailability {
     final Duration reconcileInterval;
     final Duration connectTimeout;
     final Duration requestTimeout;
+    /** The whole {@code GetState} exchange a notification waits for: the bank waits about 10 s for {@code OK}, so this stays at 5 s or less. */
+    final Duration notificationTimeout;
 
     BillingSettings(@Value("${learning.billing.checkout:OFF}") String checkout,
                     @Value("${learning.billing.testers:}") String testers,
@@ -63,7 +65,8 @@ final class BillingSettings implements CheckoutAvailability {
                     @Value("${learning.billing.checkout-per-hour:10}") int checkoutPerHour,
                     @Value("${learning.billing.reconcile-interval:PT2M}") Duration reconcileInterval,
                     @Value("${learning.billing.connect-timeout:PT5S}") Duration connectTimeout,
-                    @Value("${learning.billing.request-timeout:PT15S}") Duration requestTimeout) {
+                    @Value("${learning.billing.request-timeout:PT15S}") Duration requestTimeout,
+                    @Value("${learning.billing.notification-timeout:PT5S}") Duration notificationTimeout) {
         this.mode = mode(checkout);
         this.testers = testers(testers);
         this.bankBaseUrl = bankBaseUrl(bankBaseUrl);
@@ -72,6 +75,7 @@ final class BillingSettings implements CheckoutAvailability {
         this.reconcileInterval = within(reconcileInterval, Duration.ofSeconds(1), Duration.ofHours(1));
         this.connectTimeout = within(connectTimeout, Duration.ofMillis(100), Duration.ofSeconds(30));
         this.requestTimeout = within(requestTimeout, Duration.ofMillis(100), Duration.ofSeconds(60));
+        this.notificationTimeout = within(notificationTimeout, Duration.ofMillis(100), Duration.ofSeconds(5));
         if (checkoutPerHour < 1 || checkoutPerHour > 1_000) throw new IllegalArgumentException("Invalid learning.billing.checkout-per-hour");
         this.checkoutPerHour = checkoutPerHour;
         String origin = publicOrigin(publicBaseUrl);

@@ -15,7 +15,7 @@ class BillingSettingsTest {
 
     private static BillingSettings settings(String checkout, String testers, String publicUrl, String bankUrl, String key, String password) {
         return new BillingSettings(checkout, testers, publicUrl, bankUrl, key, password, Duration.ofHours(1), Duration.ofSeconds(10), 10,
-                Duration.ofMinutes(2), Duration.ofSeconds(5), Duration.ofSeconds(15));
+                Duration.ofMinutes(2), Duration.ofSeconds(5), Duration.ofSeconds(15), Duration.ofSeconds(5));
     }
 
     private static BillingSettings configured(String checkout, String testers) {
@@ -89,12 +89,15 @@ class BillingSettingsTest {
         assertThatThrownBy(() -> configured("TESTERS", "not-a-uuid")).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> configured("TESTERS", "00000000-0000-0000-0000-000000000000")).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new BillingSettings("ON", "", "", "https://securepay.tinkoff.ru/v2", "", "", Duration.ofSeconds(1), Duration.ofSeconds(10), 10,
-                Duration.ofMinutes(2), Duration.ofSeconds(5), Duration.ofSeconds(15))).isInstanceOf(IllegalArgumentException.class);
+                Duration.ofMinutes(2), Duration.ofSeconds(5), Duration.ofSeconds(15), Duration.ofSeconds(5))).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new BillingSettings("ON", "", "", "https://securepay.tinkoff.ru/v2", "", "", Duration.ofHours(1), Duration.ofSeconds(10), 0,
-                Duration.ofMinutes(2), Duration.ofSeconds(5), Duration.ofSeconds(15))).isInstanceOf(IllegalArgumentException.class);
+                Duration.ofMinutes(2), Duration.ofSeconds(5), Duration.ofSeconds(15), Duration.ofSeconds(5))).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new BillingSettings("ON", "", "", "https://securepay.tinkoff.ru/v2", "", "", Duration.ofHours(1), Duration.ofSeconds(10), 10,
-                Duration.ofMinutes(2), Duration.ofSeconds(5), null)).isInstanceOf(IllegalArgumentException.class);
+                Duration.ofMinutes(2), Duration.ofSeconds(5), null, Duration.ofSeconds(5))).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new BillingSettings("ON", "", "", "https://securepay.tinkoff.ru/v2", "", "", Duration.ofHours(1), Duration.ofSeconds(10), 10,
-                Duration.ofMinutes(2), Duration.ofSeconds(5), Duration.ofMinutes(5))).isInstanceOf(IllegalArgumentException.class);
+                Duration.ofMinutes(2), Duration.ofSeconds(5), Duration.ofMinutes(5), Duration.ofSeconds(5))).isInstanceOf(IllegalArgumentException.class);
+        // The bank waits about 10 s for the answer to a notification: the GetState it makes may not take more than 5 s.
+        assertThatThrownBy(() -> new BillingSettings("ON", "", "", "https://securepay.tinkoff.ru/v2", "", "", Duration.ofHours(1), Duration.ofSeconds(10), 10,
+                Duration.ofMinutes(2), Duration.ofSeconds(5), Duration.ofSeconds(15), Duration.ofSeconds(6))).isInstanceOf(IllegalArgumentException.class);
     }
 }
