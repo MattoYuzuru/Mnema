@@ -17,7 +17,7 @@ with a locally cached `postgres:18`, built backend `bootJar`s and the built Angu
 directory. Build/gates belong to the implementation workflow; this harness does not build
 or download dependencies/images. On Colima set the existing local `DOCKER_HOST` normally.
 The optional media mode also needs cached pinned MinIO and
-`mnema-media-worker:local` images, AWS CLI and FFmpeg on `PATH`.
+`mnema-media-worker:local` images (the harness runs the production media runner script unprivileged on the host; it starts one throw-away worker container per job, and Learning is told to accept that user as the verdict owner), AWS CLI and FFmpeg on `PATH`.
 
 ```sh
 python3 -m unittest discover -s scripts/browser-identity -p 'test_*.py' -v

@@ -2,13 +2,13 @@
 
 Status: **current**, updated 2026-10-05.
 
-Current VPS publication contains exactly four immutable GHCR image digests:
-`identity-account`, `learning`, `frontend`, `postgres`. Every image needs maximal
+Current VPS publication contains exactly five immutable GHCR image digests:
+`identity-account`, `learning`, `frontend`, `media-worker`, `postgres`. Every image needs maximal
 BuildKit provenance, SPDX SBOM, verified GitHub provenance/SBOM attestations bound
 to repository/workflow/current main SHA, and a Trivy report with no unexcepted
 HIGH/CRITICAL findings. Scanner/database identity and all severities remain visible.
 
-The current aggregator `scripts/render_vps_candidate.py` binds the four services,
+The current aggregator `scripts/render_vps_candidate.py` binds the five services,
 source/run/attempt, digests and verified security evidence into `vps-candidate`.
 The existing evidence verifier supplies the individual image evidence policy.
 See [VPS publication](vps-image-publication.md) for exact files and checks. Candidate
@@ -59,7 +59,7 @@ python3 /path/to/verified/Mnema/scripts/render_vps_candidate.py \
 cmp vps-candidate.json candidate-checked.json
 ```
 
-Repeat both attestation checks above for **all four** candidate digest references.
+Repeat both attestation checks above for **all five** candidate digest references.
 Checksum/renderer success alone does not authenticate registry attestations or
 prove migrations, backup, auth/data admission or live health.
 
@@ -94,7 +94,7 @@ contract above.
 
 Current frontend/backend/PostgreSQL remediation and base-image floors are in
 [production image inventory](production-image-inventory.md), the Dockerfiles and
-Gradle build. All four derived release images ship and require fresh scan evidence;
+Gradle build. All five derived release images ship and require fresh scan evidence;
 no old baseline version or scan exception substitutes for that gate.
 
 ## Failure and retry

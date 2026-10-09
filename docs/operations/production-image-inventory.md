@@ -14,17 +14,18 @@ Every external image used to build Mnema or applied by the hosted production wor
 - the `identity-account` and `learning` release templates consumed by `scripts/render-release-manifest.sh`;
 - the exact literal `kubectl apply` surface in the production workflow;
 - Dependabot Docker coverage for `/backend`, `/frontend`, `/k8s`, and `/k8s/observability`.
-- the new VPS `deploy/production/compose.yaml`: four administrator-admitted
-  image bindings; the PostgreSQL Dockerfile base is pinned, and restore binds to
+- the new VPS `deploy/production/compose.yaml`: five administrator-admitted
+  image bindings (the media worker's pinned Ubuntu base is checked in
+  `backend/media-worker/Dockerfile`); the PostgreSQL Dockerfile base is pinned, and restore binds to
   the admitted derived PostgreSQL image; Dependabot also covers `/deploy/production`.
 
 Current VPS publication and rollout use exactly `identity-account`, `learning`,
-`frontend` and `postgres`, all admitted by immutable GHCR digest. See
+`frontend`, `media-worker` and `postgres`, all admitted by immutable GHCR digest. See
 [VPS runtime](vps-runtime.md) and [publication](vps-image-publication.md). Kubernetes
 manifests below remain source-pin contracts for the dormant legacy path, not the
 current VPS topology.
 
-VPS Compose takes exactly four administrator-admitted digest references. The
+VPS Compose takes exactly five administrator-admitted digest references. The
 legacy Kubernetes renderer separately replaces its two application placeholders
 and rejects unpinned manifests; this is a source contract, not a staging gate for VPS.
 
@@ -44,7 +45,8 @@ The pinned digest is a multi-platform OCI index. The final column proves that it
 The frontend's pinned nginx base is supplemented with security version floors
 from the stable Alpine 3.24 repository. Publication run `37217508523` found
 `CVE-2026-93990` in `libexpat 2.8.4-r0` and `CVE-2026-103111` in `pcre2 10.48-r0`.
-The image requires `libexpat>=2.8.5-r0` and `pcre2>=10.49-r0`, the first fixed builds
+Publication run `37892843818` found `CVE-2026-4775` (HIGH) in `tiff 4.7.1-r0`.
+The image requires `libexpat>=2.8.5-r0`, `pcre2>=10.49-r0` and `tiff>=4.7.2-r0`, the first fixed builds
 in [Alpine's security database](https://secdb.alpinelinux.org/v3.24/main.json).
 The existing OpenSSL floors remain. No edge repository or scan exception is added;
 provenance/SBOM and the HIGH/CRITICAL gate bind the actual derived release digest.
@@ -79,6 +81,31 @@ were present. Runtime acceptance and vulnerability evidence remain separate gate
 | --- | --- | --- | --- | --- |
 | VPS PostgreSQL | `deploy/production/Dockerfile` | `postgres:18.6-alpine3.24` | `sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873` | `sha256:d8703cd7fba306b9fec9268ecedfa8a966846c053036a60e3635791957eb2f66` |
 
+## VPS media worker base
+
+The fifth VPS image, `media-worker` (`backend/media-worker/Dockerfile`), is built from the
+Ubuntu base below, passed through the `UBUNTU_BASE` build argument that the pin verifier
+reads (Dependabot cannot follow an `ARG`, so this pair is updated by hand together with the
+FFmpeg package pins in the same Dockerfile and the codec matrix is rerun). Its `linux/amd64`
+child was run on the Colima VM (`uname -m` reported `x86_64`) when the pin was recorded.
+The image contains a GPL-configured FFmpeg: keep its registry package private
+(see [licensing](../../backend/media-worker/README.md#licensing)).
+
+Release scan policy checked locally before the first publication (2026-10-09, `aquasec/trivy:0.70.0`,
+`image --scanners vuln --ignore-unfixed=false` on the `linux/amd64` build, same flags as the release
+job): the pinned base alone had one HIGH (`CVE-2026-84782`, `libssl3t64 3.0.13-0ubuntu3.15`, fixed in
+`3.0.13-0ubuntu3.16`), so the Dockerfile pins `libssl3t64` to the fixed version (`LIBSSL_VERSION`).
+With it the image has 0 CRITICAL, 0 HIGH, 553 MEDIUM and 28 LOW findings (all MEDIUM/LOW are
+`affected`/unfixed Ubuntu `universe` and base findings that the gate does not block), i.e. no release
+exception is needed. A Debian base was not adopted: Ubuntu passes, and a different FFmpeg major would
+change every encoded byte of the stored derivatives. The hosted publication run remains the gate;
+drop `LIBSSL_VERSION` once the base digest includes the fix, and bump all pins together when one leaves
+the archive.
+
+| Component | Path | Readable tag | Pinned index digest | `linux/amd64` child |
+| --- | --- | --- | --- | --- |
+| VPS media worker | `backend/media-worker/Dockerfile` | `ubuntu:24.04` | `sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3` | `sha256:496754492fb28b4d3049432f2ca787449331e23fb14f0dd3fffea86bf5a93eb4` |
+
 ## Legacy Kubernetes support pins
 
 The following support images belong to the retained, disabled Kubernetes flow.
@@ -112,7 +139,7 @@ Dependabot owns routine Docker patch/minor proposals. For each update:
 1. keep the explicit version tag and update its index digest together;
 2. verify that the index contains `linux/amd64` with `docker buildx imagetools inspect <tag>@<digest>`;
 3. run `python3 scripts/verify_production_image_pins.py`, its unit tests, and `./scripts/test-render-release-manifest.sh`;
-4. require the normal local/hosted PR quality gates, fresh four-image publication
+4. require the normal local/hosted PR quality gates, fresh five-image publication
    and the administrator/runtime acceptance in [production delivery](production-delivery.md).
 
 If a pinned image regresses, restore its previous reviewed `tag@digest` pair through the same protected PR and verified VPS release flow. Do not retag, edit a live workload, or approve production to work around the failure.

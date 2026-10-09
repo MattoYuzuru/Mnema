@@ -73,7 +73,7 @@ capabilities:
     kind: github-actions-workflow
     location: .github/workflows/deploy.yaml
     trigger: push_to_main_or_workflow_dispatch
-    effects: [backend-quality, frontend-quality, release-scope, four-image-publication, prod-approved-deployment, public-smoke]
+    effects: [backend-quality, frontend-quality, release-scope, five-image-publication, prod-approved-deployment, public-smoke]
     status: configured
     notes: [docs-only-pushes-skip-release, publication-security-gates-required, one-prod-environment-approval]
 

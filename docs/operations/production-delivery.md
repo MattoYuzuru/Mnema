@@ -21,7 +21,7 @@ protected squash into main → **Main CI** (`deploy.yaml`) releases automaticall
 
 ```text
 push to main → validate → backend-quality ‖ frontend-quality ‖ release-scope
-  → build-and-push (4 images, provenance/SBOM/attestations/Trivy policy)
+  → build-and-push (5 images, provenance/SBOM/attestations/Trivy policy)
   → assemble-vps-candidate → deploy-production (Environment prod: ONE approval)
   → post-deploy-smoke → step summary
 ```
@@ -36,9 +36,10 @@ push to main → validate → backend-quality ‖ frontend-quality ‖ release-s
   (`gh workflow run deploy.yaml --ref main`) always releases the current main.
 - `deploy-production` waits for the `prod` Environment reviewer. After approval it
   re-verifies the candidate checksums and the GitHub attestations (provenance and
-  SBOM) of all four digests, re-checks that the SHA is still the head of main, runs
-  the host-drift check, admits the candidate, stages the application configuration,
-  deploys and verifies over the forced-command SSH key, and writes the commit, digests, backup name, schema change
+  SBOM) of all five digests, re-checks that the SHA is still the head of main, runs
+  the host-drift check, admits the candidate, pulls exactly its five digests with the job's own
+  short-lived token (the `media-worker` package is private; Compose never pulls), stages the application
+  configuration, deploys and verifies over the forced-command SSH key, and writes the commit, digests, backup name, schema change
   and rollback compatibility to the step summary. Details:
   [dispatcher contract](../../deploy/production/README.md).
 - `post-deploy-smoke` checks the public surface: HTML, `www` redirect, build identity
@@ -46,10 +47,11 @@ push to main → validate → backend-quality ‖ frontend-quality ‖ release-s
 - Time budget. A normal release takes about 5 to 8 minutes after approval (small database:
   dump and isolated restore take well under a minute; rollout waits for health). Every step
   is individually bounded; the worst case is the sum of those bounds, in seconds: `status`
-  630 (10 min lock wait included), `admit` 630, `configure` 630, `deploy` 3570 (lock 600,
+  630 (10 min lock wait included), `admit` 630, `pull` 1650 (lock 600, stdin 30, login 60, pulls 900,
+  local check 60), `configure` 630, `deploy` 3570 (lock 600,
   preflight 240, pin check 120, schema before 240, stop 240, backup 930, rollout 420, schema
-  after 240, image prune 210, offsite 330), `verify` 1095, in total 6555 s, about 109 min.
-  The `deploy-production` job therefore allows 120 minutes. A lost CI job or SSH session
+  after 240, image prune 210, offsite 330), `verify` 1095, in total 8205 s, about 137 min.
+  The `deploy-production` job therefore allows 150 minutes. A lost CI job or SSH session
   does not stop a rollout (hang-up is ignored); before the pending marker the dispatcher
   restarts the current release, after it the marker blocks further operations.
 - Re-running a failed `deploy-production` job is supported. An older run that was
@@ -86,6 +88,19 @@ ssh mnema "cd $d && sudo install -o root -g root -m 0755 mnema-deploy.py /usr/lo
   && sudo systemctl reload caddy && cd / && rm -rf $d"
 ssh mnema 'sudo /usr/local/sbin/mnema-deploy status'   # config hashes now equal the repository files
 ```
+
+The first release that contains the media worker image needs one more administrator step before
+approval (commands and reasons in the
+[dispatcher contract](../../deploy/production/README.md#root-owned-bootstrap-boundary),
+"Media runner"): a non-sparse 20 GiB loopback ext4 image mounted at `/var/lib/mnema/media-work` by the
+reviewed unit `deploy/production/media-work.mount` (installed under the escaped name
+`var-lib-mnema-media\x2dwork.mount`), root-owned with Learning's private `spool/` inside, and the root service
+`mnema-media-runner` (`mnema-media-runner.py` and `mnema-media-runner.service`). The units and the script are part
+of the drift set, so a changed one must be reinstalled like the other files. `preflight`, `deploy` and
+`rollback` refuse with `media work directory missing or unsafe` or `media runner is not installed or not active`
+until both exist; docker.service does not depend on the mount, so without it only media processing is unavailable. The private `ghcr.io/mattoyuzuru/mnema/media-worker` package needs no host
+credential: the `pull` step uses the job's short-lived token, provided the owner has checked once,
+in the package settings, that Actions access for `MattoYuzuru/Mnema` is *Read*.
 
 Install only the files the PR changed; unchanged files already match (the sshd and
 sudoers files need an SSH test from a second session before the first one is closed).

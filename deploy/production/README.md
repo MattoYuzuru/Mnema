@@ -33,16 +33,16 @@ keys without identifying consumers. Never disable StrictHostKeyChecking.
 
 Operations (single forced-command argument, validated by regex; callers supply no
 paths, environment or Docker arguments): `status`, `verify`, `rollback`, `configure`,
-`admit <sha>`, `preflight <sha>`, `deploy <sha>`. CI calls them in the order
-`status`, `admit`, `configure`, `deploy`, `verify`. The root-owned dispatcher and its
+`admit <sha>`, `pull <sha>`, `preflight <sha>`, `deploy <sha>`. CI calls them in the order
+`status`, `admit`, `pull`, `configure`, `deploy`, `verify`. The root-owned dispatcher and its
 installed siblings are updated only by the administrator (see
 [production delivery](../../docs/operations/production-delivery.md)); CI compares
 their hashes (`status.config`) with the reviewed repository files and refuses to
 continue on drift, so CI never uploads host configuration.
 
 **Admission.** `admit <sha>` reads at most 16 KiB of `vps-candidate.json` from stdin
-and validates it strictly: schema 1, `sha` equal to the argument, exactly the four
-services, each `ghcr.io/mattoyuzuru/mnema/<service>@sha256:<64 hex>`, source
+and validates it strictly: schema 1, `sha` equal to the argument, exactly the five
+services (`frontend`, `identity-account`, `learning`, `media-worker`, `postgres`), each `ghcr.io/mattoyuzuru/mnema/<service>@sha256:<64 hex>`, source
 repository `mattoyuzuru/mnema`, commit equal to the SHA, workflow
 `.github/workflows/deploy.yaml`, positive run identity. It then writes the root-only
 `releases/<sha>.json` (`sha`, `images`, `source`, `admitted_at`; an existing manifest
@@ -53,7 +53,7 @@ the SHA. Only the one admitted SHA can be deployed.
 Trade-off, stated plainly: admission is no longer a manual administrator review of
 evidence flags. Its authority is (1) the protected `prod` Environment approval,
 which requires the owner as reviewer, (2) re-verification of the provenance and SBOM
-attestations of all four digests in the approved job (signer workflow, source commit,
+attestations of all five digests in the approved job (signer workflow, source commit,
 `refs/heads/main`, no self-hosted runners), (3) namespace and digest pinning in the
 dispatcher, (4) the audit log (consider `chattr +a` on it), (5) a verified
 pre-migration backup with restore rehearsal before every rollout, and (6) the
@@ -97,7 +97,101 @@ namespace, privileges, mounts or host files. `status` reports `app_config_names`
 `app_config_next_names` (names only). Adding a name needs a reviewed PR and an administrator-installed
 dispatcher.
 
-**Input handling.** `admit` and `configure` read their stdin (size cap and 30 s deadline)
+**Media runner.** Media processing is not a Compose service. A small trusted root service,
+`mnema-media-runner` (`mnema-media-runner.py` installed as `/usr/local/sbin/mnema-media-runner`, run by
+`mnema-media-runner.service`; both are in the drift set), finds the jobs Learning leaves in its private spool and
+runs each one in a fresh throw-away container of the `media-worker` image (no network, read-only root, no
+capability, UID 10002, bounded pids/memory/cpus, `--pull never`, two mounts) from the release the dispatcher
+recorded as current. Only root writes a job's verdict (`status.json`); Learning accepts nothing else. Design, threat
+model and residual risks: [`backend/media-worker/README.md`](../../backend/media-worker/README.md). No container
+mounts the Docker socket and Learning cannot reach the daemon.
+
+The runner needs a work directory that is the root of its **own filesystem**, owned by root, with Learning's private
+spool inside (`spool/`, 10001:10001, mode 0700) and the runner's root-only scratch (`.runner/`, created by the
+runner). `preflight`, `deploy` and `rollback` refuse with `media work directory missing or unsafe` unless it is a real
+directory (not a link), root-owned, not writable by group or others, a different device than its parent, with a
+correct `spool/`; and with `media runner is not installed or not active` unless the service is active. `verify`
+requires the service to be active for a release that carries the worker image. The runner itself refuses to start
+jobs while the directory is not a separate mount (jobs stay queued and Learning retries), and the health monitor
+reports `media_runner` (service active and heartbeat younger than 30 s), `media_work_mount` and `media_work_space`
+(under 10 % free blocks or inodes) once the recorded release contains the worker. Compose mounts only
+`/var/lib/mnema/media-work/spool` into Learning.
+
+One-time administrator bootstrap, before the first release that contains the worker. The work directory is a
+fixed-size, fixed-inode loopback ext4 (20 GiB, 131072 inodes) so a runaway or compromised job can fill only that
+filesystem. The image must be **non-sparse**: `fallocate` reserves it and `mkfs.ext4 -E nodiscard` keeps the format
+step from punching holes into it. **docker.service does not depend on the mount** (no `RequiresMountsFor` drop-in):
+if the mount is absent, only media processing fails closed.
+
+```bash
+ssh mnema 'sudo install -d -m 0000 /var/lib/mnema/media-work'   # unmounted: the empty mount point is unusable
+ssh mnema 'sudo fallocate -l 20G /var/lib/mnema/media-work.img && sudo chmod 0600 /var/lib/mnema/media-work.img \
+  && sudo mkfs.ext4 -q -E nodiscard -N 131072 -m 0 -L mnema-media-work /var/lib/mnema/media-work.img'
+ssh mnema 'sudo du -h /var/lib/mnema/media-work.img'            # expect 20G (a sparse file would show far less)
+# the units and the runner are part of the drift set: install them from the exact main commit, like the other host files
+cd deploy/production && scp media-work.mount mnema-media-runner.py mnema-media-runner.service mnema:/tmp/
+ssh mnema 'sudo install -o root -g root -m 0644 /tmp/media-work.mount "/etc/systemd/system/var-lib-mnema-media\x2dwork.mount" \
+  && sudo install -o root -g root -m 0755 /tmp/mnema-media-runner.py /usr/local/sbin/mnema-media-runner \
+  && sudo install -o root -g root -m 0644 /tmp/mnema-media-runner.service /etc/systemd/system/mnema-media-runner.service \
+  && rm /tmp/media-work.mount /tmp/mnema-media-runner.py /tmp/mnema-media-runner.service \
+  && sudo systemctl daemon-reload && sudo systemctl enable --now "var-lib-mnema-media\x2dwork.mount" \
+  && sudo install -d -o 10001 -g 10001 -m 0700 /var/lib/mnema/media-work/spool \
+  && sudo chown root:root /var/lib/mnema/media-work && sudo chmod 0755 /var/lib/mnema/media-work \
+  && sudo systemctl enable --now mnema-media-runner.service'
+ssh mnema 'findmnt /var/lib/mnema/media-work && sudo stat -c "%U:%G %a %n" /var/lib/mnema/media-work /var/lib/mnema/media-work/spool \
+  && systemctl is-active mnema-media-runner'   # expect root:root 755, 10001:10001 700 and active
+```
+
+The unit was written for systemd's sandboxing options but has not been exercised on this host by the repository's
+tests; after installing, run `systemd-analyze security mnema-media-runner.service` and check
+`journalctl -u mnema-media-runner` once. Disk: a job holds the source (at most 1 GiB video) in Learning's spool,
+the runner's copy of it in `.runner`, the container's output and Learning's private copies of the verified result in
+`spool/.private`, so 20 GiB leaves room for one job at a time; the 10 GB free-space reserve of the rollout applies
+to the host. **Install order:** the health monitor only expects the runner once the recorded release contains the
+worker image, so the new monitor, dispatcher and Compose can be installed before the first five-image release
+without an alert; the mount, `spool/` and the active runner must exist before that release is approved.
+
+The `media-worker` image is **GPL-configured FFmpeg: its GHCR package must stay private** (see the licensing
+section of the worker README). The VPS holds no registry credential and gets none: the other four
+images are public, and for the private one the `deploy-production` job sends its own short-lived
+Actions token (`packages: read`) to `pull <sha>`.
+
+**Pull.** `pull <sha>` reads at most 4 KiB from stdin *before* taking the lock (like `admit` and
+`configure`) and accepts only a token of at least 16 characters from `[A-Za-z0-9_.-]` (the 4 KiB stdin bound is the length limit). It requires the
+admitted SHA and a five-image manifest, first removes any `/run/mnema-docker-*` a killed earlier pull left behind (the lock is held), creates a 0700 `DOCKER_CONFIG` under `/run`, runs
+`docker --config <tmp> login ghcr.io --username x-access-token --password-stdin` (the token only on
+Docker's stdin, never in argv, a file of ours or any output) and pulls *exactly* the five digests of
+that manifest (10 min per image, 15 min in total). The temporary config is deleted in a `finally`;
+SIGTERM becomes `SystemExit`, so it is removed then too, and Docker's own output is never echoed.
+Afterwards all five digests must be in the local store. `deploy` and `rollback` run
+`docker compose up --pull never` and `preflight`, `deploy` and `rollback` first check that the five
+digests are present (`release images are not present locally`), so a missing image can never trigger a
+pull with a stale or absent credential. The forced-command wrapper and the sudoers rule are unchanged:
+`pull <sha>` is the same single-argument form.
+
+One-time owner check (GitHub, not in the repository): after the first publication open the package
+`media-worker` of the account that owns the repository (Package settings → *Manage Actions access*)
+and confirm `MattoYuzuru/Mnema` has at least *Read*; the image's OCI source label links the package
+to the repository, which normally inherits that. Confirm it stays private:
+`gh api /user/packages/container/mnema%2Fmedia-worker --jq .visibility` must print `private`
+(run it as the owner; `/users/<owner>/packages/...` and an anonymous `docker pull` must be denied).
+If the first `pull` fails with `registry operation failed`, this setting is the first thing to check.
+
+Memory limits add up to 7.25 GiB for the four Compose services (PostgreSQL 3, Identity 2, Learning 2, frontend 0.25) plus
+the 3 GiB of the one running job container on the 12 GB host; real use is far lower.
+
+Releases admitted before the worker existed carry four images. They stay readable
+(`status`, `verify`, pruning, the recorded previous-release pointer) but cannot be deployed
+or rolled back to: the dispatcher answers `release predates the media worker`. The first
+release that contains the worker therefore cannot be undone by `rollback` either. If it aborts
+between stopping the writers and the pending marker, nothing has been migrated and no restore is
+involved: the dispatcher first tries to bring the recorded release up through Compose and, when
+Compose refuses (a pre-worker manifest, or none recorded), falls back to
+`docker start mnema-prod-identity-account-1 mnema-prod-learning-1`, which starts the same stopped
+containers in place, and says which way worked. Only if both fail does it ask the administrator to
+start those two containers by hand (still nothing to restore).
+
+**Input handling.** `admit`, `configure` and `pull` read their stdin (size cap and 30 s deadline)
 *before* taking the production lock, so a stalled client cannot block releases or backups.
 
 **Deploy sequence** (`deploy <sha>`): admitted check, manifest load, 10 GB disk
@@ -142,8 +236,9 @@ pending flow and records `previous: null`, so a second rollback cannot roll forw
 onto the schema just left. Docker restart does not reverse migrations: after a schema change,
 recover by roll-forward or by the retained pre-deploy dump in a reviewed operation.
 
-`verify` compares the running images of the four containers with the recorded
-manifest, checks the three local readiness URLs and the absence of a pending marker,
+`verify` compares the running images of the four Compose containers with the recorded
+manifest, checks the three local readiness URLs, that the media runner service is `active`
+(for a release that carries the worker image) and the absence of a pending marker,
 and exits non-zero on any difference. `status` additionally reports `admitted_sha`,
 `rollback_compatible`, `pending_backup`, `app_config_names` and sha256 of the installed
 Compose/nginx/Caddy files, host tools, systemd units, SSH forced-command wrapper, sudoers
@@ -194,7 +289,7 @@ returns 412 (`If-None-Match: *` makes objects write-once), bucket versioning is 
 the uploader identity can neither DELETE (403) nor write outside its prefix or without
 SSE-KMS (403). Expiry is a bucket lifecycle rule, not this tooling.
 
-The dispatcher admits four verified images, including PostgreSQL, and rewrites
+The dispatcher admits five verified images, including PostgreSQL and the media worker (which Compose never runs), and rewrites
 `postgres-image` for every accepted release (the PostgreSQL image is rebuilt per
 SHA). The local backup helper refuses a live source using any other image.
 Application credential activation is separate root-owned configuration; see the

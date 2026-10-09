@@ -1,6 +1,6 @@
 # VPS image publication
 
-Main CI publishes the four VPS images automatically for every push to `main` that
+Main CI publishes the five VPS images automatically for every push to `main` that
 changes the production runtime, and on a manual dispatch of **Main CI**
 (`deploy.yaml`) on `main`. Publication does not reactivate the old Kubernetes
 deployment, recovery or rollback jobs. One VPS runs Compose through the
@@ -18,11 +18,17 @@ revision before any image build. Assembly checks that the revision is still curr
 remote main; a newer main requires its own run rather than deploying an older
 candidate.
 
-The publication matrix has exactly four services: `identity-account`, `learning`,
-`frontend`, `postgres`. Tags use the entire `sha-<40 hex commit>`; there is no `latest` publication.
+The publication matrix has exactly five services: `identity-account`, `learning`,
+`frontend`, `media-worker`, `postgres`. Tags use the entire `sha-<40 hex commit>`; there is no `latest` publication.
 Release identity is `ghcr.io/mattoyuzuru/mnema/<service>@sha256:<64 hex digest>`.
 Build caches are isolated per service. The backend images use the current Java25
-replacement modules; the frontend image builds the same source's Angular application.
+replacement modules; the frontend image builds the same source's Angular application; the
+`media-worker` image builds `backend/media-worker` (pinned Ubuntu base and FFmpeg packages)
+and, containing a GPL-configured FFmpeg, must stay a private GHCR package
+([licensing](../../backend/media-worker/README.md#licensing)); the image carries the OCI source
+label that links the private package to the repository, and the release job pulls it with its own
+short-lived token (`pull`, see the dispatcher contract). The PR and Main CI quality jobs
+build that image and run its codec tests and the media runner and dispatcher suites, with no skip allowed, before any publication.
 No dirty checkout or source build is transferred to production.
 
 For **every** digest, BuildKit creates maximal provenance and SPDX SBOM; GitHub
@@ -38,8 +44,8 @@ new blanket exception is introduced.
 
 `vps-candidate` retains the following sanitized files for 30 days:
 
-- `vps-candidate.json`: exact SHA, four digest references, run identity, evidence hash.
-- `vps-security-evidence.json`: complete four-image security evidence.
+- `vps-candidate.json`: exact SHA, five digest references, run identity, evidence hash.
+- `vps-security-evidence.json`: complete five-image security evidence.
 - `vps-candidate.sha256`: file checksums.
 
 The renderer rejects missing/duplicate services, foreign repositories, mutable
@@ -56,7 +62,7 @@ Do not infer acceptance from the mere presence of a tag.
 ## Verification and rollback
 
 The active root/auth/www A records resolve to `135.106.175.30`, DNS-only.
-Production Caddy and four healthy Compose containers are applied. Current state,
+Production Caddy and the Compose containers are applied. Current state,
 credential/privacy limits and runtime acceptance are in [VPS runtime](vps-runtime.md).
 Publication itself never mutates DNS, runtime configuration or old data.
 

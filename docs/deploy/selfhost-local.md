@@ -189,8 +189,9 @@ Everything listed under [First start](#first-start), plus:
 ```
 
 The first `start` builds the backend images, the frontend and
-`mnema-media-worker:local` from `backend/media-worker/Dockerfile.local` (later starts
-reuse the Docker build cache). `MNEMA_LOCAL_PROJECT_NAME`, `MNEMA_LOCAL_STATE_DIR` and
+`mnema-media-worker:local` from `backend/media-worker/Dockerfile` (later starts
+reuse the Docker build cache; `start` also retires the Docker-socket `media-processor` of
+older stacks with `--remove-orphans`). `MNEMA_LOCAL_PROJECT_NAME`, `MNEMA_LOCAL_STATE_DIR` and
 `MNEMA_LOCAL_MEDIA_WORKER_IMAGE` override the Compose project name (default
 `mnema-local-v2`), the state directory and the worker image tag; use them to run a
 second isolated copy next to the default one.
@@ -203,12 +204,16 @@ second isolated copy next to the default one.
 | `minio` | Official MinIO, TLS on the storage port, named volume `local_object_data` |
 | `minio-init` | One-shot, idempotent: creates `mnema-local-avatars` (versioned) and `mnema-local-media` |
 | `identity-account` | Identity, writes avatars to MinIO |
-| `learning` | Browser-facing Learning API; issues signed upload URLs, no Docker access |
-| `media-processor` | A second Learning instance with media processing enabled and no published port |
+| `learning` | Browser-facing Learning API; issues signed upload URLs and drains the media queue; no Docker access |
+| `media-work-init` | One-shot: lays out the `local_media_work` volume like production (root-owned root, Learning's private `spool/`) |
+| `media-runner` | **Development-only exception:** the production runner script in a container that holds the Docker socket; starts one throw-away container per media job |
+| `media-worker-image` | Build-only (`--profile worker-image`): the worker image the runner starts per job |
 | `frontend` | Production Angular build and local TLS proxy |
 
-The `media-worker-image` Compose entry only builds the worker image
-(`--profile worker-image`); the processor starts that image once per job.
+The worker image and the runner script are the ones production uses (`backend/media-worker/Dockerfile`,
+`deploy/production/mnema-media-runner.py`; design in
+[the worker README](../../backend/media-worker/README.md#media-runner-and-job-protocol-v1)); the
+launcher builds the image before it brings the stack up.
 
 Signed upload and playback URLs use `https://storage.mnema.localhost:<port>`. The name
 resolves to MinIO inside Compose and to loopback in browsers, so the browser PUT works
@@ -217,35 +222,29 @@ without mixed content; the certificate for that name is signed by the same local
 
 `smoke-media` registers its own synthetic account (kept in an owner-only state file),
 uploads a generated avatar PNG, a generated PNG and a generated MP3 through the real
-API and signed URLs, waits for the processor to mark both media assets `READY`,
+API and signed URLs, waits for the runner to mark both media assets `READY`,
 downloads the processed WebP and M4A variants and compares the original. A processing
-failure ends the run with the asset state and a pointer to the processor logs.
+failure ends the run with the asset state and a pointer to the Learning and `media-runner` logs.
 
-### Docker socket trade-off
+### Media runner boundary (and the one development-only exception)
 
-The existing worker gateway starts every FFmpeg job with `docker run` (no network,
-read-only root, all capabilities dropped, 3 GiB / 2 CPUs, non-root UID). The processor
-therefore needs a Docker client and the daemon socket, which is equivalent to root on
-the Docker host (or inside its VM). Containment:
-
-- only the `media-processor` service mounts `/var/run/docker.sock`, and only its image
-  target (`learning-media-processor-runtime`) contains the `docker` client; the
-  browser-facing `learning` service has neither;
-- the processor has no published port and listens on its container loopback; its
-  container runs as root with every capability dropped, a read-only root filesystem
-  and `no-new-privileges`;
-- its scratch directory is `.mnema/local-full-stack/media-processing/` (mode 700), mounted
-  at the same absolute path so the daemon can bind it into worker containers;
-  completed jobs are deleted.
-
-Run this stack only on a machine you trust with a personal Docker daemon. A narrower
-design (a Docker-API proxy or a dedicated rootless daemon) would need a new image and
-was not adopted for a local-only convenience stack.
+Production runs the media runner as a root host service and never mounts the Docker socket
+into a container. A developer machine has no such service, so the local stack runs the **same
+script** (`deploy/production/mnema-media-runner.py`) in the `media-runner` container, which
+holds `/var/run/docker.sock`. That is host-root-equivalent on the Docker host (or inside its VM):
+run this stack only on a machine you trust with a personal Docker daemon, exactly as with the
+previous Docker-per-job gateway. Containment: only `media-runner` has the socket (Learning, the
+backend images and every job container have neither the socket nor a Docker client); it has no
+published port, a read-only root, only the capabilities it needs (`CHOWN`, `DAC_OVERRIDE`,
+`FOWNER`, `FSETID`, `KILL`) and no credentials; each job runs in a fresh container with no network,
+a read-only root, no capability, UID 10002 and two mounts of the `local_media_work` volume (subpaths of
+the runner's scratch), and only the runner writes a verdict. Learning sees only the `spool/` subpath
+of the volume. `reset` deletes the volume with the other local data.
 
 ### Reset semantics and state
 
 `reset --confirm-delete-local-data` removes only the selected project's containers and
-its `local_postgres_data` and `local_object_data` volumes, the media scratch directory
+its `local_postgres_data`, `local_object_data` and `local_media_work` volumes
 and the two smoke state files. The CA, signing JWK, truststore and credentials stay.
 `stop`/`start` keep every volume; the bucket step is idempotent. State created before
 object storage existed is upgraded in place by `start`/`bootstrap` without rotating
