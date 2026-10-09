@@ -98,19 +98,40 @@ CORS for the exact frontend origin and PUT with the signed headers; test this in
 a browser before connecting the authoring UI. Configure incomplete multipart
 lifecycle expiry as an infrastructure prerequisite.
 
-Learning adds AWS SDK for Java 2.41.1 to its own Gradle module because Java's
+Learning adds AWS SDK for Java 2.55.10 to its own Gradle module because Java's
 HTTP client does not supply SigV4 presigning or S3 multipart protocol; this is
 the same pinned SDK version already used by the identity-account avatar service.
 No module or legacy media runtime is reused.
+
+## Production object storage
+
+Production uses Yandex Object Storage (`https://storage.yandexcloud.net`, region
+`ru-central1`, path-style). The media bucket `mnema-prod-media-b1g0dnrijqn8` is
+private, versioning off, default SSE-KMS, writable only by the `mnema-learning-media`
+service account, with CORS allowing `PUT`, `GET`, `HEAD` and the headers
+`content-type` and `x-amz-*` for `https://mnema.app` only, and a lifecycle rule that
+aborts incomplete multipart uploads after 2 days. Learning stays disabled
+(`LEARNING_MEDIA_UPLOAD_BUCKET` empty) until the processing worker exists (#380).
+
+AWS SDK for Java 2.30+ adds `x-amz-sdk-checksum-algorithm` and an `aws-chunked`
+`x-amz-trailer` CRC32 to uploads by default, which Yandex Object Storage does not
+document. `MediaObjectStore` (and the Identity `AvatarStorage`) therefore build the
+`S3Client` with `requestChecksumCalculation(WHEN_REQUIRED)` and
+`responseChecksumValidation(WHEN_REQUIRED)`; `MediaObjectStoreWireTest` and
+`AvatarStorageWireTest` assert on a loopback stub that PUTs and presigned URLs carry
+no checksum header or parameter. The object-store operations are verified against the
+real bucket by the opt-in live check in
+[VPS runtime](../operations/vps-runtime.md#object-storage-live-check).
 
 Local protocol check: from `backend/`, use Java 25 and an available Docker
 daemon, then run
 `./gradlew :services:learning:test --tests 'app.mnema.learning.media.MediaUploadIntegrationTest'`.
 The fixture uses PostgreSQL 18 and the repository-pinned MinIO image. It covers
 single freeze/replay, signed length, multipart resume/complete, generation
-fencing, owner isolation, and reserved quota. Yandex Object Storage parity for
-conditional CopyObject, signed browser `Content-Length`, and CORS still needs a
-provider/browser integration check when an environment is available.
+fencing, owner isolation, and reserved quota. Server-side Yandex parity for
+conditional CopyObject, presigned `Content-Length` and multipart is covered by the
+opt-in live check; browser CORS still needs a real-browser check before the
+authoring UI is enabled.
 
 References: [Yandex multipart](https://yandex.cloud/en/docs/storage/s3/api-ref/multipart),
 [limits](https://yandex.cloud/en/docs/storage/concepts/limits),

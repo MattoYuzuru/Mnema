@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.net.URI;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -38,6 +39,21 @@ class AvatarStorageConfigurationTest {
             assertThatThrownBy(() -> create(endpoint, false, true))
                     .as("reject %s", endpoint)
                     .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Test
+    void isConfiguredOnlyWithBucketAndBothKeys() {
+        var endpoint = URI.create("https://storage.example.test");
+        for (String[] values : new String[][]{{"", "access", "secret"}, {"bucket", "", "secret"},
+                {"bucket", "access", ""}, {"", "", ""}}) {
+            try (var storage = new AvatarStorage(endpoint, "ru-central1", values[0], values[1], values[2], false,
+                    false)) {
+                assertThat(storage.configured()).as(String.join("|", values)).isFalse();
+            }
+        }
+        try (var storage = new AvatarStorage(endpoint, "ru-central1", "bucket", "access", "secret", false, false)) {
+            assertThat(storage.configured()).isTrue();
         }
     }
 

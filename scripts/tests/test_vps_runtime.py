@@ -96,7 +96,7 @@ class RuntimeTest(unittest.TestCase):
         # Spring reads a set-but-empty variable as "", so the non-empty application defaults are passed explicitly.
         self.assertEqual(identity['MNEMA_AVATAR_ENDPOINT'], 'https://storage.yandexcloud.net')
         self.assertEqual(identity['MNEMA_AVATAR_REGION'], 'ru-central1')
-        self.assertEqual(identity['MNEMA_AVATAR_BUCKET'], 'mnema-avatars')
+        self.assertEqual(identity['MNEMA_AVATAR_BUCKET'], 'mnema-prod-avatars-b1g0dnrijqn8')
         self.assertEqual(learning['LEARNING_MEDIA_UPLOAD_ENDPOINT'], 'https://storage.yandexcloud.net')
         self.assertEqual(learning['LEARNING_MEDIA_UPLOAD_REGION'], 'ru-central1')
         self.assertEqual(identity['SERVER_ADDRESS'], '127.0.0.1')
