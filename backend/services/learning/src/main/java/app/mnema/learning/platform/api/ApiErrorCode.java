@@ -33,6 +33,16 @@ enum ApiErrorCode {
             "Rate limited",
             "Too many requests; retry after the time in Retry-After."
     ),
+    BILLING_PLAN_BELOW_CURRENT(
+            HttpStatus.CONFLICT,
+            "Plan below current",
+            "The account already has a higher plan."
+    ),
+    PAYMENT_PROVIDER_UNAVAILABLE(
+            HttpStatus.SERVICE_UNAVAILABLE,
+            "Payment provider unavailable",
+            "The bank did not answer; retry the request."
+    ),
     SPEECH_CONSENT_REQUIRED(
             HttpStatus.CONFLICT,
             "Speech consent required",

@@ -55,6 +55,13 @@
       <button type="button" class="button" aria-disabled="true">Добавить упражнения</button>
     </div>
   </app-sg-specimen>
+  <app-sg-specimen title="Занятая" selector=".button[aria-busy='true']"
+    when="Действие запущено и идёт: кнопка остаётся в фокусе, подпись называет происходящее («Переходим к оплате…»), aria-busy и aria-disabled ставятся вместе, повторное нажатие ничего не делает. Контраст полный, курсор — progress."
+    [tokens]="['--mn-ink', '--mn-on-ink']">
+    <div class="actions">
+      <button type="button" class="button primary" aria-busy="true" aria-disabled="true">Переходим к оплате…</button>
+    </div>
+  </app-sg-specimen>
   <app-sg-specimen title="Кнопка в шапке" selector=".button.mono"
     when="Только действия сессии в шапке («Войти», «Выйти»): тот же .button с модификатором .mono (mono, 0,72 rem). На страницах не использовать."
     [tokens]="['--mn-font-mono', '--mn-ink']" usage='<button type="button" class="button mono">Выйти</button>'>

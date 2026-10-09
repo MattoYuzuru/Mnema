@@ -1203,6 +1203,20 @@ class ProductionDispatcherTest(unittest.TestCase):
         for name in names:
             self.assertIn(name, DISPATCH.APP_ENV_NAMES)
 
+    def test_billing_checkout_mode_and_base64_terminal_password_are_validated(self):
+        payload = {'MNEMA_BILLING_CHECKOUT': 'TESTERS', 'MNEMA_TBANK_TERMINAL_KEY': '1700000000000DEMO',
+                   'MNEMA_TBANK_PASSWORD_BASE64': 'Zml4dHVyZSRQYTU1d29yZA==',
+                   'MNEMA_BILLING_TESTER_ACCOUNT_IDS': '0199c7a2-3b4e-7c1d-9a2b-5e6f7a8b9c0d,0199c7a2-3b4e-7c1d-9a2b-5e6f7a8b9c0e'}
+        self.assertEqual(DISPATCH.validate_app_config(json.dumps(payload).encode()), payload)
+        for mode in ('OFF', 'ON'):
+            DISPATCH.validate_app_config(json.dumps({'MNEMA_BILLING_CHECKOUT': mode}).encode())
+        for mode in ('on', 'TESTER', 'ENABLED'):
+            with self.assertRaises(DISPATCH.Rejected):
+                DISPATCH.validate_app_config(json.dumps({'MNEMA_BILLING_CHECKOUT': mode}).encode())
+        # A raw bank password may contain '$'; the channel refuses it, which is why the password travels base64-encoded.
+        with self.assertRaises(DISPATCH.Rejected):
+            DISPATCH.validate_app_config(json.dumps({'MNEMA_TBANK_PASSWORD_BASE64': 'fixture$Pa55word'}).encode())
+
     def test_rejection_messages_name_the_key_but_never_the_value(self):
         with self.assertRaises(DISPATCH.Rejected) as caught:
             DISPATCH.validate_app_config(b'{"GH_CLIENT_ID": "hunter 2"}')

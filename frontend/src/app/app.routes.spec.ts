@@ -2,6 +2,7 @@ import { appRoutes } from './app.routes';
 import { authGuard } from './core/guards/auth.guard';
 import { OwnDeckCreatePageComponent } from './features/own-decks/own-deck-create-page.component';
 import { OwnDeckDetailPageComponent } from './features/own-decks/own-deck-detail-page.component';
+import { PaymentReturnComponent } from './features/billing/payment-return.component';
 import { OwnDecksListPageComponent } from './features/own-decks/own-decks-list-page.component';
 import { BrowsePageComponent } from './features/authoring/browse-page.component';
 import { CapturePageComponent } from './features/authoring/capture-page.component';
@@ -54,6 +55,12 @@ describe('appRoutes', () => {
         expect(plans.loadComponent).toBeDefined();
         expect(plans.canActivate).toEqual([authGuard]);
         expect(appRoutes.find(route => route.path === 'ai')?.canActivate).toBeUndefined();
+    });
+
+    it('guards the payment return page and loads it lazily', async () => {
+        const payment = appRoutes.find(route => route.path === 'plans/payment/:orderId')!;
+        expect(payment.canActivate).toEqual([authGuard]);
+        expect(await payment.loadComponent!()).toBe(PaymentReturnComponent);
     });
 
     it('loads each own-deck page through its lazy route', async () => {

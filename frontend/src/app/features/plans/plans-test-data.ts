@@ -6,7 +6,7 @@ import { HttpHeaders } from '@angular/common/http';
  */
 export function plansBody(options: {
     readonly teaser?: boolean; readonly current?: string; readonly source?: string; readonly experiments?: Record<string, string>;
-    readonly pendingDiscount?: Record<string, unknown> | null;
+    readonly pendingDiscount?: Record<string, unknown> | null; readonly checkout?: 'AVAILABLE' | 'UNAVAILABLE';
 } = {}): Record<string, any> {
     const teaser = options.teaser ?? true;
     const table = (materials: [number, number], voiceMonth: number | null, voiceDay: number, checksMonth: number, checksDay: number,
@@ -34,6 +34,7 @@ export function plansBody(options: {
     return {
         current: { plan: options.current ?? 'FREE', period: 'MONTH', validUntil: '2026-10-31T21:00:00Z', autoRenew: false,
             source: options.source ?? 'CONFIG' },
+        checkout: options.checkout ?? 'UNAVAILABLE',
         plans, experiments: options.experiments ?? {}, pendingDiscount: options.pendingDiscount ?? null
     };
 }

@@ -55,10 +55,10 @@ stable `code`. Credits are integers; timestamps are UTC RFC 3339.
   keeps the count (the model did grade). If the limit is reached between the early check and the grade, that transaction rolls back and the answer ends in self-check.
 - **Ledger** — append-only (`GRANT`, `DEBIT`, `REFUND`, `ADJUSTMENT`, `EXPIRE`) with `costMicros`, `rateCardVersion` and `periodId`;
   the balance is materialized in the same transaction.
-- **Entitlement** — consumption lives in Learning; purchases, promo codes and periods live in the future billing context,
-  which publishes an entitlement snapshot (plan, period, allowances, `valid_until`) idempotently. Until then an
-  `EntitlementSource` port has a configuration implementation (`source: CONFIG`). A browser return URL never changes
-  entitlements.
+- **Entitlement** — consumption lives in Learning; purchases ([billing](../billing/README.md), #389), promo codes and
+  periods publish an entitlement snapshot (plan, period, allowances, `valid_until`) idempotently to `EntitlementInbox`.
+  Without a valid snapshot the configuration fallback applies (`source: CONFIG`). A browser return URL never changes
+  entitlements: a paid month is granted only after the bank's `GetState` confirms the payment.
 - "Spend X% on this deck": `budget = X% × current remaining` becomes the reservation cap and the planner input.
 
 ### Reservation lifecycle

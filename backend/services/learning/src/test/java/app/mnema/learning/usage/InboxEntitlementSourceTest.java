@@ -169,7 +169,8 @@ class InboxEntitlementSourceTest extends UsageIntegrationTest {
         Jwt jwt = Jwt.withTokenValue("test").header("alg", "RS256").subject(owner.toString()).build();
         SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
         MockMvc mvc = MockMvcBuilders.standaloneSetup(new PlansController(
-                        new PlansService(source, catalog, settings, clock, experiments, discounts))).setControllerAdvice(new ApiExceptionHandler())
+                        new PlansService(source, catalog, settings, clock, experiments, discounts,
+                                new org.springframework.beans.factory.support.StaticListableBeanFactory().getBeanProvider(CheckoutAvailability.class)))).setControllerAdvice(new ApiExceptionHandler())
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver()).build();
 
         var response = mvc.perform(get("/plans?plan=PRO&period=YEAR&returnUrl=https://pay.example/success&status=paid")
@@ -179,6 +180,7 @@ class InboxEntitlementSourceTest extends UsageIntegrationTest {
         JsonNode body = JSON.readTree(response.getContentAsString());
         assertThat(body.path("current").path("plan").stringValue(null)).isEqualTo("FREE");
         assertThat(body.path("current").path("autoRenew").booleanValue()).isFalse();
+        assertThat(body.path("checkout").stringValue(null)).isEqualTo("UNAVAILABLE");
         assertThat(mvc.perform(post("/plans?plan=PRO")).andReturn().getResponse().getStatus()).isEqualTo(405);
         assertThat(mvc.perform(put("/plans?plan=PRO")).andReturn().getResponse().getStatus()).isEqualTo(405);
 

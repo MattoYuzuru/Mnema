@@ -106,8 +106,27 @@ public class LearningSecurityConfiguration {
                         .accessDeniedHandler((r, s, e) -> errors.forbidden(r, s))).build();
     }
 
+    /**
+     * The bank's payment notification (#389): no session and no bearer, because the bank has neither. Authenticity is the {@code Token} signature and
+     * the {@code TerminalKey}, verified by the controller before anything is read, and every notification is re-checked with {@code GetState}. Exactly
+     * one path and one method are open; no cookie is read and no OAuth resource server runs here. The CSRF filter stays on and exempts only that one
+     * endpoint: the bank cannot send a CSRF token, and a forged cross-site request still has to carry a valid {@code Token}.
+     */
     @Bean
     @Order(3)
+    SecurityFilterChain publicBillingNotifications(HttpSecurity http, ApiSecurityErrors errors) throws Exception {
+        return http.securityMatcher("/billing/tbank/notifications")
+                .authorizeHttpRequests(requests -> requests.requestMatchers(HttpMethod.POST, "/billing/tbank/notifications").permitAll()
+                        .anyRequest().denyAll())
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .csrf(csrf -> csrf.ignoringRequestMatchers("/billing/tbank/notifications"))
+                .requestCache(cache -> cache.disable()).logout(logout -> logout.disable())
+                .exceptionHandling(failures -> failures.authenticationEntryPoint((r, s, e) -> errors.unauthorized(r, s))
+                        .accessDeniedHandler((r, s, e) -> errors.forbidden(r, s))).build();
+    }
+
+    @Bean
+    @Order(4)
     SecurityFilterChain learningSecurity(HttpSecurity http, JwtDecoder decoder, IdentityHttp identity,
                                          IdentityEndpoints endpoints, ApiSecurityErrors errors) throws Exception {
         http.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

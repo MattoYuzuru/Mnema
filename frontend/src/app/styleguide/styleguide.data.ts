@@ -100,4 +100,5 @@ export const BUTTON_USAGE = `<button type="button" class="button primary">Сох
 <button type="button" class="button quiet">Закрыть</button>
 <button type="button" class="button small" aria-label="Убрать вариант 2">Убрать</button>
 <a class="button primary" routerLink="/decks">Мои колоды →</a>
-<button type="button" class="button" aria-disabled="true">Недоступно</button>`;
+<button type="button" class="button" aria-disabled="true">Недоступно</button>
+<button type="button" class="button primary" aria-busy="true" aria-disabled="true">Переходим к оплате…</button>`;

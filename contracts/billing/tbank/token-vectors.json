@@ -1,0 +1,40 @@
+{
+  "description": "Official vectors from developer.tbank.ru/eacq/intro/developer/token and /notification (read 2026-10-09). values = the root scalars after adding Password; expectedToken = lowercase hex SHA-256 of the values concatenated in key order. Booleans are spelled true/false, numbers as their JSON text.",
+  "vectors": [
+    {
+      "name": "init-request-doc-example",
+      "password": "11111111111111",
+      "fields": {
+        "TerminalKey": "MerchantTerminalKey",
+        "Amount": 19200,
+        "OrderId": "00000",
+        "Description": "Подарочная карта на 1000 рублей",
+        "DATA": {
+          "Phone": "+71234567890"
+        },
+        "Receipt": {
+          "Email": "a@test.ru"
+        }
+      },
+      "expectedToken": "72dd466f8ace0a37a1f740ce5fb78101712bc0665d91a8108c7c8a0ccd426db2"
+    },
+    {
+      "name": "notification-doc-example",
+      "password": "11111111111",
+      "fields": {
+        "TerminalKey": "1234567890DEMO",
+        "OrderId": "000000",
+        "Success": true,
+        "Status": "AUTHORIZED",
+        "PaymentId": "0000000",
+        "ErrorCode": "0",
+        "Amount": "1111",
+        "CardId": "000000",
+        "Pan": "200000******0000",
+        "ExpDate": "1111",
+        "RebillId": "000000"
+      },
+      "expectedToken": "1c0964277d0213349243065a0d5b838b8e90d2d25f740d0f2767836e710e80c8"
+    }
+  ]
+}

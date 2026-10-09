@@ -1,6 +1,6 @@
 import { parsePlans } from './plans-api.service';
 import {
-    COMPARE_ROWS, autoRenewText, cta, discountText, entitlementText, limitContext, plansHeading, priceText, recommendation, renewalDate, rub, yearSwitchHint, yearTerms
+    COMPARE_ROWS, autoRenewText, cta, discountText, discountFor, discountedPrice, oneMonthLater, oneOffText, entitlementText, limitContext, plansHeading, priceText, recommendation, renewalDate, rub, yearSwitchHint, yearTerms
 } from './plans-view';
 import { plansBody } from './plans-test-data';
 
@@ -93,5 +93,54 @@ describe('plans view', () => {
     it('words a pending discount with its plan and its end', () => {
         expect(discountText({ percent: 20, plan: 'PLUS', validUntil: '2026-10-31T20:59:59Z' })).toBe(`Скидка 20${NBSP}% на Plus применится к оплате до 31 октября`);
         expect(discountText({ percent: 10, plan: null, validUntil: '2026-10-31T20:59:59Z' })).toBe(`Скидка 10${NBSP}% применится к оплате до 31 октября`);
+    });
+
+    describe('checkout call to action', () => {
+        const offer = { discount: null };
+        const discount = { percent: 20, plan: 'PRO' as const, validUntil: '2026-10-31T20:59:59Z' };
+
+        it('pays the month price, never the year, and leaves the old text when payments are not on', () => {
+            expect(cta(plus, 'MONTH', 'FREE', offer)).toEqual({ text: `Оплатить Plus — 449${NBSP}₽`, disabled: false, action: 'checkout' });
+            expect(cta(plus, 'MONTH', 'FREE')).toMatchObject({ action: 'buy' });
+            expect(cta(plus, 'YEAR', 'FREE', offer)).toEqual({ text: `Перейти на Plus — 5${NBSP}119${NBSP}₽ в${NBSP}год`, disabled: false, action: 'checkout-year' });
+        });
+
+        it('names the discounted amount against the list price only for a tier the discount applies to', () => {
+            expect(cta(pro, 'MONTH', 'FREE', { discount }).text).toBe(`Оплатить Pro — 792${NBSP}₽ вместо 990${NBSP}₽`);
+            expect(cta(plus, 'MONTH', 'FREE', { discount }).text).toBe(`Оплатить Plus — 449${NBSP}₽`);
+            expect(cta(plus, 'MONTH', 'FREE', { discount: { ...discount, plan: null } }).text).toBe(`Оплатить Plus — 359${NBSP}₽ вместо 449${NBSP}₽`);
+        });
+
+        it('leaves Free, the current tier and a teaser alone', () => {
+            expect(cta(free, 'MONTH', 'PLUS', offer).action).toBe('downgrade');
+            expect(cta(plus, 'MONTH', 'PLUS', offer)).toMatchObject({ disabled: true, action: 'none' });
+            expect(cta(max, 'MONTH', 'FREE', offer)).toMatchObject({ disabled: true, action: 'none' });
+        });
+
+        it('rounds a discounted price half up', () => {
+            expect(discountedPrice(990, 20)).toBe(792);
+            expect(discountedPrice(449, 20)).toBe(359);
+            expect(discountedPrice(449, 15)).toBe(382);
+            expect(discountedPrice(990, 5)).toBe(941);
+            expect(discountedPrice(1, 50)).toBe(1);
+            expect(discountFor(null, 'PLUS')).toBeNull();
+            expect(discountFor(discount, 'PRO')).toBe(discount);
+            expect(discountFor(discount, 'PLUS')).toBeNull();
+        });
+    });
+
+    describe('one-off payment line', () => {
+        it('names the date one calendar month on, on the Moscow calendar', () => {
+            expect(oneMonthLater(new Date('2026-10-09T09:00:00Z'))).toBe('9 ноября');
+            expect(oneMonthLater(new Date('2026-12-15T09:00:00Z'))).toBe('15 января');
+            expect(oneMonthLater(new Date('2026-10-31T09:00:00Z'))).toBe('30 ноября');
+            expect(oneMonthLater(new Date('2027-01-31T09:00:00Z'))).toBe('28 февраля');
+            // 23:30 UTC on 8 October is already 9 October in Moscow
+            expect(oneMonthLater(new Date('2026-10-08T23:30:00Z'))).toBe('9 ноября');
+        });
+
+        it('says there is no renewal', () => {
+            expect(oneOffText(new Date('2026-10-09T09:00:00Z'))).toBe('Разовая оплата за месяц, без автопродления. Доступ — до 9 ноября.');
+        });
     });
 });

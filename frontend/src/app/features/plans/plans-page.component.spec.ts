@@ -5,6 +5,11 @@ import { RouterTestingHarness } from '@angular/router/testing';
 import { TestBed } from '@angular/core/testing';
 import { NEVER, Subject, of, throwError } from 'rxjs';
 
+import billingContract from '../../../../../contracts/billing/billing.json';
+import { BillingApiService } from '../billing/billing-api.service';
+import { BillingError, BillingErrorCode, Order } from '../billing/billing.models';
+import { PaymentRedirect } from '../billing/payment-redirect.service';
+
 import { spyObj, type SpyObj } from '../../../testing/mocks';
 import { LearningGoalStore } from '../goal/learning-goal.store';
 import { LearningGoal } from '../goal/goal.models';
@@ -23,14 +28,16 @@ describe('PlansPageComponent', () => {
     let root: HTMLElement;
 
     let promo: SpyObj<PromoApiService>;
+    let billing: SpyObj<BillingApiService>;
+    let redirect: SpyObj<PaymentRedirect>;
     let http: HttpTestingController;
 
     async function open(options: {
         teaser?: boolean; current?: string; source?: string; goal?: LearningGoal | null; url?: string; experiments?: Record<string, string>;
-        pendingDiscount?: Record<string, unknown> | null;
+        pendingDiscount?: Record<string, unknown> | null; checkout?: 'AVAILABLE' | 'UNAVAILABLE';
     } = {}): Promise<RouterTestingHarness> {
         api.load.mockReturnValue(of(parsePlans(plansBody({ teaser: options.teaser, current: options.current, source: options.source,
-            experiments: options.experiments, pendingDiscount: options.pendingDiscount }))));
+            experiments: options.experiments, pendingDiscount: options.pendingDiscount, checkout: options.checkout }))));
         const store = TestBed.inject(LearningGoalStore);
         store.state.set('ready');
         store.goal.set(options.goal ?? null);
@@ -45,9 +52,13 @@ describe('PlansPageComponent', () => {
     beforeEach(() => {
         api = spyObj<PlansApiService>({ load: vi.fn().mockName('PlansApiService.load') });
         promo = spyObj<PromoApiService>({ redeem: vi.fn().mockName('PromoApiService.redeem') });
+        billing = spyObj<BillingApiService>({ createCheckout: vi.fn().mockName('BillingApiService.createCheckout') });
+        redirect = spyObj<PaymentRedirect>({ go: vi.fn().mockName('PaymentRedirect.go') });
         TestBed.configureTestingModule({
-            providers: [provideRouter([{ path: 'plans', component: PlansPageComponent }, { path: 'decks', component: PlansPageComponent }]),
-                provideHttpClient(), provideHttpClientTesting(), { provide: PlansApiService, useValue: api }, { provide: PromoApiService, useValue: promo }]
+            providers: [provideRouter([{ path: 'plans', component: PlansPageComponent }, { path: 'decks', component: PlansPageComponent },
+                { path: 'terms', component: PlansPageComponent }]),
+                provideHttpClient(), provideHttpClientTesting(), { provide: PlansApiService, useValue: api }, { provide: PromoApiService, useValue: promo },
+                { provide: BillingApiService, useValue: billing }, { provide: PaymentRedirect, useValue: redirect }]
         });
         http = TestBed.inject(HttpTestingController);
     });
@@ -271,6 +282,274 @@ describe('PlansPageComponent', () => {
         expect(faq).toContain('Когда подключим оплату');
         expect(faq).toContain('голос и проверку ответов');
         expect(root.querySelector('.lede')?.textContent).toContain('голос и проверка ответов ограничены отдельно');
+    });
+
+    describe('checkout', () => {
+        const order = (plan: 'PLUS' | 'PRO' = 'PLUS', patch: Partial<Order> = {}): Order =>
+            ({ ...(billingContract.examples.orderPending as unknown as Order), plan, ...patch });
+        const periodRadio = (value: string) => [...root.querySelectorAll<HTMLInputElement>('app-segmented-choice input[type=radio]')]
+            .find(radio => radio.value === value)!;
+        const settle = async (harness: RouterTestingHarness) => { await harness.fixture.whenStable(); harness.detectChanges(); };
+
+        async function choosePlus(options: Parameters<typeof open>[0] = {}): Promise<RouterTestingHarness> {
+            const harness = await open({ checkout: 'AVAILABLE', ...options });
+            radios()[1].click();
+            harness.detectChanges();
+            return harness;
+        }
+
+        it('offers «Оплатить» with the month price, and the discounted price when a discount applies to that tier', async () => {
+            const harness = await choosePlus();
+            expect(cta().textContent).toBe(`Оплатить Plus — 449${NBSP}₽`);
+            radios()[2].click();
+            harness.detectChanges();
+            expect(cta().textContent).toBe(`Оплатить Pro — 990${NBSP}₽`);
+        });
+
+        it('shows the discounted amount against the list price for the tier the discount names', async () => {
+            const harness = await open({ checkout: 'AVAILABLE', pendingDiscount: { percent: 20, plan: 'PRO', validUntil: '2026-10-31T20:59:59Z' } });
+            radios()[1].click();
+            harness.detectChanges();
+            expect(cta().textContent).toBe(`Оплатить Plus — 449${NBSP}₽`);
+            radios()[2].click();
+            harness.detectChanges();
+            expect(cta().textContent).toBe(`Оплатить Pro — 792${NBSP}₽ вместо 990${NBSP}₽`);
+        });
+
+        it('applies a discount that names no tier to either paid tier', async () => {
+            const anyTier = await open({ checkout: 'AVAILABLE', pendingDiscount: { percent: 15, plan: null, validUntil: '2026-10-31T20:59:59Z' } });
+            radios()[1].click();
+            anyTier.detectChanges();
+            expect(cta().textContent).toBe(`Оплатить Plus — 382${NBSP}₽ вместо 449${NBSP}₽`);
+        });
+
+        it('keeps the current tier and Free as before', async () => {
+            const harness = await open({ checkout: 'AVAILABLE', current: 'PLUS' });
+            radios()[1].click();
+            harness.detectChanges();
+            expect(cta().textContent).toBe('Это ваш тариф');
+            radios()[0].click();
+            harness.detectChanges();
+            expect(cta().textContent).toBe('Вернуться на Free');
+        });
+
+        it('replaces the auto-renew checkbox with a one-off line with the access date and the terms link', async () => {
+            vi.useFakeTimers({ toFake: ['Date'] });
+            try {
+                vi.setSystemTime(new Date('2026-10-09T09:00:00Z'));
+                const harness = await choosePlus();
+                expect(root.querySelector('.renew input')).toBeNull();
+                const hints = [...root.querySelectorAll('.renew .hint')].map(hint => hint.textContent?.trim());
+                expect(hints[0]).toBe('Разовая оплата за месяц, без автопродления. Доступ — до 9 ноября.');
+                expect(hints[1]).toBe('Нажимая «Оплатить», вы принимаете условия сервиса (откроется в новой вкладке).');
+                const terms = root.querySelector<HTMLAnchorElement>('.renew a')!;
+                expect(terms.getAttribute('href')).toBe('/terms');
+                expect(terms.getAttribute('target')).toBe('_blank');
+                expect(terms.getAttribute('rel')).toBe('noopener');
+                expect(terms.textContent).toContain('(откроется в новой вкладке)');
+                year().click();
+                harness.detectChanges();
+                expect(root.querySelector('.renew')).toBeNull();
+                radios()[0].click();
+                harness.detectChanges();
+                expect(root.querySelector('.renew')).toBeNull();
+            } finally { vi.useRealTimers(); }
+        });
+
+        it('answers the auto-renew FAQ for one-off payment (the old answer stays while checkout is unavailable: «keeps the FAQ»)', async () => {
+            await open({ checkout: 'AVAILABLE' });
+            expect(root.querySelector('.faq')!.textContent).toContain('Сейчас оплата разовая: автопродления нет, тариф просто закончится в конце оплаченного месяца.');
+            expect(root.querySelector('.faq')!.textContent).not.toContain('Когда подключим оплату');
+        });
+
+        it('goes busy on activation, ignores a second press, and leaves for the trusted bank URL', async () => {
+            const response = new Subject<Order>();
+            billing.createCheckout.mockReturnValue(response);
+            const harness = await choosePlus();
+            const button = cta();
+            button.focus();
+            button.click();
+            button.click();
+            harness.detectChanges();
+            expect(billing.createCheckout).toHaveBeenCalledTimes(1);
+            expect(billing.createCheckout).toHaveBeenCalledWith('PLUS', 'MONTH', expect.stringMatching(/^[0-9a-f-]{36}$/u));
+            expect(button.textContent).toBe('Переходим к оплате…');
+            expect(notice().textContent).toBe('Переходим к оплате…');
+            expect(button.closest('.cta-bar')!.contains(notice())).toBe(true);
+            expect(button.getAttribute('aria-busy')).toBe('true');
+            expect(button.getAttribute('aria-disabled')).toBe('true');
+            expect(document.activeElement).toBe(button);
+            expect(redirect.go).not.toHaveBeenCalled();
+            response.next(order());
+            response.complete();
+            await settle(harness);
+            expect(redirect.go).toHaveBeenCalledExactlyOnceWith('https://pay.tbank-online.com/So6mQeQB');
+            expect(cta().getAttribute('aria-busy')).toBe('true');
+            button.click();
+            expect(billing.createCheckout).toHaveBeenCalledTimes(1);
+        });
+
+        it('reuses the key for a retry of the same choice and takes a new one for a new choice', async () => {
+            billing.createCheckout.mockReturnValue(throwError(() => new BillingError('PAYMENT_PROVIDER_UNAVAILABLE')));
+            const harness = await choosePlus();
+            const keys = () => billing.createCheckout.mock.calls.map(call => call[2]);
+            cta().click();
+            await settle(harness);
+            cta().click();
+            await settle(harness);
+            expect(keys()[0]).toBe(keys()[1]);
+            radios()[2].click();
+            harness.detectChanges();
+            cta().click();
+            await settle(harness);
+            expect(billing.createCheckout.mock.calls[2].slice(0, 2)).toEqual(['PRO', 'MONTH']);
+            expect(keys()[2]).not.toBe(keys()[0]);
+            radios()[1].click();
+            harness.detectChanges();
+            cta().click();
+            await settle(harness);
+            expect(keys()[3]).not.toBe(keys()[0]);
+            expect(keys()[3]).not.toBe(keys()[2]);
+        });
+
+        it.each<[BillingErrorCode, string]>([
+            ['CAPABILITY_UNAVAILABLE', 'Оплату подключаем: тариф можно будет оформить здесь же. Пока доступен промокод.'],
+            ['BILLING_PLAN_BELOW_CURRENT', 'У вас уже тариф выше. Он действует до конца оплаченного периода.'],
+            ['RATE_LIMITED', 'Слишком много попыток оплаты. Попробуйте через час.'],
+            ['PAYMENT_PROVIDER_UNAVAILABLE', 'Банк не ответил. Попробуйте ещё раз — повторное нажатие не создаст второй платёж.'],
+            ['UNKNOWN', 'Банк не ответил. Попробуйте ещё раз — повторное нажатие не создаст второй платёж.']
+        ])('says %s calmly in the status region, frees the button and never leaves', async (code, text) => {
+            billing.createCheckout.mockReturnValue(throwError(() => new BillingError(code)));
+            const harness = await choosePlus();
+            cta().click();
+            await settle(harness);
+            expect(notice().textContent).toBe(text);
+            expect(cta().getAttribute('aria-busy')).toBeNull();
+            expect(cta().textContent).toBe(`Оплатить Plus — 449${NBSP}₽`);
+            const oneOffId = root.querySelector('.renew .hint')!.id;
+            expect(oneOffId).not.toBe('');
+            expect(cta().getAttribute('aria-describedby')).toBe(`${oneOffId} ${notice().id}`);
+            expect(redirect.go).not.toHaveBeenCalled();
+        });
+
+        it('describes the button by the one-off line alone while there is no notice', async () => {
+            await choosePlus();
+            expect(cta().getAttribute('aria-describedby')).toBe(root.querySelector('.renew .hint')!.id);
+        });
+
+        it.each<[string, Partial<Order>, 'PLUS' | 'PRO']>([
+            ['an untrusted URL', { paymentUrl: 'https://evil.example/pay' }, 'PLUS'],
+            ['no URL', { paymentUrl: null }, 'PLUS'],
+            ['a different plan', {}, 'PRO'],
+            ['an order that is not pending', { status: 'PAID' }, 'PLUS']
+        ])('never navigates on %s and says the bank did not answer', async (_name, patch, plan) => {
+            billing.createCheckout.mockReturnValue(of(order(plan, patch)));
+            const harness = await choosePlus();
+            cta().click();
+            await settle(harness);
+            expect(notice().textContent).toBe('Банк не ответил. Попробуйте ещё раз — повторное нажатие не создаст второй платёж.');
+            expect(cta().getAttribute('aria-busy')).toBeNull();
+            expect(redirect.go).not.toHaveBeenCalled();
+        });
+
+        it('clears the previous notice while the new attempt runs', async () => {
+            billing.createCheckout.mockReturnValueOnce(throwError(() => new BillingError('RATE_LIMITED')));
+            const harness = await choosePlus();
+            cta().click();
+            await settle(harness);
+            expect(notice().textContent).not.toBe('');
+            billing.createCheckout.mockReturnValue(NEVER);
+            cta().click();
+            harness.detectChanges();
+            expect(notice().textContent).toBe('Переходим к оплате…');
+        });
+
+        it('keeps the call to action on the year price and answers an activation with a notice, without a request', async () => {
+            const harness = await choosePlus();
+            year().click();
+            harness.detectChanges();
+            expect(cta().textContent).toBe(`Перейти на Plus — 5${NBSP}119${NBSP}₽ в${NBSP}год`);
+            cta().click();
+            harness.detectChanges();
+            expect(notice().textContent).toBe('Годовая оплата появится позже. Сейчас можно оплатить месяц.');
+            expect(billing.createCheckout).not.toHaveBeenCalled();
+            periodRadio('MONTH').click();
+            harness.detectChanges();
+            expect(notice().textContent).toBe('');
+            expect(cta().textContent).toBe(`Оплатить Plus — 449${NBSP}₽`);
+        });
+
+        it('clears a repeated notice and says it again on the next tick so a second press is announced', async () => {
+            const harness = await choosePlus();
+            year().click();
+            harness.detectChanges();
+            cta().click();
+            harness.detectChanges();
+            const text = 'Годовая оплата появится позже. Сейчас можно оплатить месяц.';
+            expect(notice().textContent).toBe(text);
+            vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+            try {
+                cta().click();
+                harness.detectChanges();
+                expect(notice().textContent).toBe('');
+                await vi.advanceTimersByTimeAsync(0);
+                harness.detectChanges();
+                expect(notice().textContent).toBe(text);
+            } finally { vi.useRealTimers(); }
+        });
+
+        it('says a repeated return-to-Free notice again too, and drops a pending repeat when the choice changes', async () => {
+            const harness = await open({ checkout: 'AVAILABLE', current: 'PRO' });
+            radios()[0].click();
+            harness.detectChanges();
+            cta().click();
+            harness.detectChanges();
+            vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+            try {
+                cta().click();
+                harness.detectChanges();
+                expect(notice().textContent).toBe('');
+                radios()[1].click();
+                harness.detectChanges();
+                await vi.advanceTimersByTimeAsync(10);
+                harness.detectChanges();
+                expect(notice().textContent).toBe('');
+            } finally { vi.useRealTimers(); }
+        });
+
+        it('counts one conversion for the paid call to action', async () => {
+            billing.createCheckout.mockReturnValue(NEVER);
+            const harness = await choosePlus({ experiments: { plans_year_first: 'control' } });
+            http.match('/api/experiment-events');
+            cta().click();
+            harness.detectChanges();
+            expect(http.match('/api/experiment-events').map(request => request.request.body)).toEqual([{ key: 'plans_year_first', event: 'CONVERSION' }]);
+        });
+
+        it('frees the button when the page comes back from the bank through the back-forward cache', async () => {
+            billing.createCheckout.mockReturnValue(NEVER);
+            const harness = await choosePlus();
+            cta().click();
+            harness.detectChanges();
+            expect(cta().getAttribute('aria-busy')).toBe('true');
+            window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }));
+            harness.detectChanges();
+            expect(cta().getAttribute('aria-busy')).toBeNull();
+            expect(notice().textContent).toBe('');
+        });
+
+        it('behaves exactly as before while checkout is unavailable', async () => {
+            const harness = await open({ checkout: 'UNAVAILABLE' });
+            radios()[1].click();
+            harness.detectChanges();
+            expect(cta().textContent).toBe(`Перейти на Plus — 449${NBSP}₽ в${NBSP}месяц`);
+            expect(root.querySelector('.renew input[type=checkbox]')).not.toBeNull();
+            cta().click();
+            harness.detectChanges();
+            expect(notice().textContent).toBe('Оплату подключаем: тариф можно будет оформить здесь же. Пока доступен промокод.');
+            expect(billing.createCheckout).not.toHaveBeenCalled();
+            expect(redirect.go).not.toHaveBeenCalled();
+        });
     });
 
     describe('promo code', () => {

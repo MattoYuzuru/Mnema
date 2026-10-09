@@ -1,0 +1,16 @@
+{
+  "Success": false,
+  "ErrorCode": "1051",
+  "Message": "Недостаточно средств на карте",
+  "TerminalKey": "1700000000000DEMO",
+  "Status": "REJECTED",
+  "PaymentId": "9407493286",
+  "OrderId": "0199c7a2-3b4e-7c1d-9a2b-5e6f7a8b9c0d",
+  "Params": [
+    {
+      "Key": "Route",
+      "Value": "ACQ"
+    }
+  ],
+  "Amount": 44900
+}

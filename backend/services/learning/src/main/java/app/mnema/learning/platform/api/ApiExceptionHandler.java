@@ -72,6 +72,16 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return response(ApiErrorCode.RATE_LIMITED, HttpStatus.TOO_MANY_REQUESTS, request.getRequestURI(), headers, exception.extension());
     }
 
+    @ExceptionHandler(BillingPlanBelowCurrentException.class)
+    ResponseEntity<Object> handleBillingPlanBelowCurrent(BillingPlanBelowCurrentException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.BILLING_PLAN_BELOW_CURRENT, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(PaymentProviderUnavailableException.class)
+    ResponseEntity<Object> handlePaymentProviderUnavailable(PaymentProviderUnavailableException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.PAYMENT_PROVIDER_UNAVAILABLE, request.getRequestURI(), new HttpHeaders());
+    }
+
     @ExceptionHandler(PromoRejectedException.class)
     ResponseEntity<Object> handlePromoRejected(PromoRejectedException exception, HttpServletRequest request) {
         ApiErrorCode code = switch (exception.reason()) {

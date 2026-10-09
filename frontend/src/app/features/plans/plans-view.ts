@@ -59,12 +59,28 @@ export interface Cta {
     readonly disabled: boolean;
     /**
      * `stay` keeps the free plan and leaves the page; `buy` opens the notice that payments are being connected;
-     * `downgrade` opens the notice that the plan returns to Free when the paid period ends.
+     * `downgrade` opens the notice that the plan returns to Free when the paid period ends. With checkout on, `checkout` opens
+     * the bank's payment form and `checkout-year` says that a year cannot be paid yet.
      */
-    readonly action: 'stay' | 'buy' | 'downgrade' | 'none';
+    readonly action: 'stay' | 'buy' | 'checkout' | 'checkout-year' | 'downgrade' | 'none';
 }
 
-export function cta(entry: PlanEntry, period: PlanPeriod, current: PlanId): Cta {
+/** The whole rubles an order costs after a pending discount: half up, as the server computes it. */
+export function discountedPrice(price: number, percent: number): number {
+    return Math.floor((price * (100 - percent) + 50) / 100);
+}
+
+/** The pending discount that applies to a tier, or null. */
+export function discountFor(discount: PendingDiscount | null, plan: PlanId): PendingDiscount | null {
+    return discount !== null && (discount.plan === null || discount.plan === plan) ? discount : null;
+}
+
+/** What the call to action needs once payments are on: whether they are, and the discount the next order will carry. */
+export interface CheckoutOffer {
+    readonly discount: PendingDiscount | null;
+}
+
+export function cta(entry: PlanEntry, period: PlanPeriod, current: PlanId, offer: CheckoutOffer | null = null): Cta {
     if (entry.availability === 'TEASER') return { text: 'Тариф в работе', disabled: true, action: 'none' };
     if (entry.plan === 'FREE') {
         return current === 'FREE' ? { text: 'Остаться на Free', disabled: false, action: 'stay' }
@@ -72,10 +88,19 @@ export function cta(entry: PlanEntry, period: PlanPeriod, current: PlanId): Cta 
     }
     if (entry.plan === current) return { text: 'Это ваш тариф', disabled: true, action: 'none' };
     const price = period === 'MONTH' ? `${rub(entry.priceRub.month)} в${NBSP}месяц` : `${rub(entry.priceRub.year)} в${NBSP}год`;
-    return { text: `Перейти на ${PLAN_LABEL[entry.plan]} — ${price}`, disabled: false, action: 'buy' };
+    if (offer !== null && period === 'MONTH') {
+        const discount = discountFor(offer.discount, entry.plan);
+        const amount = discount === null ? rub(entry.priceRub.month) : `${rub(discountedPrice(entry.priceRub.month, discount.percent))} вместо ${rub(entry.priceRub.month)}`;
+        return { text: `Оплатить ${PLAN_LABEL[entry.plan]} — ${amount}`, disabled: false, action: 'checkout' };
+    }
+    return { text: `Перейти на ${PLAN_LABEL[entry.plan]} — ${price}`, disabled: false, action: offer === null ? 'buy' : 'checkout-year' };
 }
 
 export const PAYMENT_NOTICE = 'Оплату подключаем: тариф можно будет оформить здесь же. Пока доступен промокод.';
+export const YEAR_NOTICE = 'Годовая оплата появится позже. Сейчас можно оплатить месяц.';
+export const BELOW_CURRENT_NOTICE = 'У вас уже тариф выше. Он действует до конца оплаченного периода.';
+export const RATE_LIMITED_NOTICE = 'Слишком много попыток оплаты. Попробуйте через час.';
+export const BANK_NOTICE = 'Банк не ответил. Попробуйте ещё раз — повторное нажатие не создаст второй платёж.';
 export const DOWNGRADE_NOTICE = 'Тариф вернётся на Free после окончания оплаченного периода.';
 
 /** «5 ноября» (this year's date has no year; a yearly renewal names its year). */
@@ -84,6 +109,23 @@ export function renewalDate(now: Date, period: PlanPeriod): string {
     const next = new Date(now.getTime());
     next.setUTCFullYear(next.getUTCFullYear() + 1);
     return `${DAY_MONTH.format(next)} ${YEAR.format(next)}`;
+}
+
+const MOSCOW_PARTS = new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: 'numeric', day: 'numeric', timeZone: CALENDAR_ZONE });
+
+/** «9 ноября» for a payment made on 9 October: one calendar month later on the account's calendar, clamped to the month's end. */
+export function oneMonthLater(now: Date): string {
+    const part = (type: string): number => Number(MOSCOW_PARTS.formatToParts(now).find(entry => entry.type === type)?.value);
+    const year = part('year');
+    const month = part('month');
+    const target = new Date(Date.UTC(year, month, 1));
+    const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+    return DAY_MONTH.format(new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth(), Math.min(part('day'), lastDay), 12)));
+}
+
+/** The line under a paid choice when payment is a single month: no renewal, and until when the access lasts. */
+export function oneOffText(now: Date): string {
+    return `Разовая оплата за месяц, без автопродления. Доступ — до ${oneMonthLater(now)}.`;
 }
 
 /** The text of the auto-renew checkbox: the amount and the date, always spelled out. The box itself is never ticked for the reader. */

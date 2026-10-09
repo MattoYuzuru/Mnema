@@ -4,7 +4,7 @@ artifact:
   type: launch-checklist
   title: "Mnema legal and payment launch status"
   status: proposed
-  updated_at: "2026-10-08"
+  updated_at: "2026-10-09"
   owners: ["project-owner"]
 ---
 
@@ -58,9 +58,13 @@ review of the actual recipients, contracts and data flows.
   account-deletion owner must include the learning-profile goal/answer timestamp,
   owner-linked usage records and backups in the retention/erasure inventory.
   See [Learning retention](../../backend/services/learning/guide.md#usage-ledger-and-ai-budget-281).
-- The owner defers the T-Business acquiring application until plans/paywall and
-  the bank's site/test-account requirements are ready. The manager's written reply
-  about **НПД receipts** is pending. No working payment terminal is claimed.
+- T-Business acquiring (2026-10-09, owner): the bank's manager confirmed the hosted
+  payment form (cards, T-Pay, Mir Pay, SberPay; СБП 0.7 %) and that the bank's online
+  cash register is not used for НПД: the receipt is issued in «Мой налог». The store
+  has a **DEMO terminal** («Тестирование подключения»); its key and password are owner
+  secrets (local private dotenv; GitHub `prod` Environment only as
+  `MNEMA_TBANK_TERMINAL_KEY` / `MNEMA_TBANK_PASSWORD_BASE64`). No working (production)
+  terminal is claimed.
 
 ## Product and payment boundary
 
@@ -70,6 +74,19 @@ teaser. Prices, limits and trial decisions come only from the
 Paywall/profile usage is #301 in #77. Payment and billing are #79: checkout,
 renewals, payer settings/cancel, receipts, refunds and reconciliation are separate
 implementation. A browser return URL never grants an entitlement.
+
+**Implemented (#389, B1):** the billing core in Learning — server-priced orders, `Init`
+with the hosted `PaymentURL`, a notification endpoint that verifies `TerminalKey` and the
+SHA-256 `Token`, re-checks every payment with `GetState` and grants the paid month through
+`EntitlementInbox` only after that, an idempotent order state machine, a reconciler for
+missed notifications and a dedicated trust store for the bank's Russian Trusted Root CA
+chain ([billing contract](../../contracts/billing/README.md)). Production checkout is
+`OFF` by default (`MNEMA_BILLING_CHECKOUT`); `TESTERS` limits it to listed accounts for
+DEMO-terminal checks. A browser return URL never grants an entitlement. Still open before
+real money: the working terminal (bank test cases on the DEMO terminal first), the offer
+and payment terms on the site (#78), recurring consent and `Charge` (#390), the profile
+billing page with cancellation (#391), НПД receipts, refunds and reconciliation (#392).
+The terminal must stay one-stage without an attached cash register.
 
 Before receiving money, obtain bank terms and test/working terminal credentials,
 recurrent capability, approved seller details/offer/privacy disclosures, explicit

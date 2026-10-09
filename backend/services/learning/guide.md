@@ -226,6 +226,40 @@ fair-use buckets, `GET /api/usage` and the estimate. Migration `V26__usage_ledge
   parallel reservations, idempotent settlement, expiry and rollover, the Free schedule across months, the burst, the buckets
   and the notifications; `UsageContractTest` reproduces the examples of `contracts/usage/usage.json` from database state.
 
+## Billing (#389)
+
+Package `billing`: one-off monthly checkout of Plus and Pro through the T-Bank hosted payment form, the order state machine,
+the signed bank notification and the grant through `EntitlementInbox`. Wire contract, statuses, Token rules and recorded
+bank exchanges: [`contracts/billing`](../../../contracts/billing/README.md). Recurring `Charge` is #390, the profile billing
+page #391, НПД receipts, refunds and reconciliation #392.
+
+- **Endpoints.** `POST /api/billing/checkout` (`learning.write`, `Idempotency-Key`), `GET /api/billing/orders/{orderId}`
+  (owner only) and `POST /api/billing/tbank/notifications`, which has its own security filter chain: no bearer token, no
+  session, no cookies; its authenticity is the `TerminalKey` and the SHA-256 `Token` signed with the terminal password,
+  compared in constant time. `GET /api/plans` reports `checkout: AVAILABLE|UNAVAILABLE` through the `usage.CheckoutAvailability` port.
+- **Price.** The server prices an order from `allowances-v1.json` and the owner's pending promo discount for that plan;
+  the discount is consumed in the transaction that marks the order `PAID`. The browser never sends an amount.
+- **Grant authority.** Only a `GetState` answer (`CONFIRMED`, the order's terminal, order id and amount) moves an order to
+  `PAID`, in one transaction with `EntitlementInbox.accept(billing:{orderId}, BILLING, …)`. Three triggers ask the bank: a
+  verified notification (answered `OK` only after that transaction committed; a failure answers 503 and the bank retries),
+  the return page reading a `PENDING` order (at most once per `learning.billing.refresh-interval` per order) and
+  `PaymentReconciler` (roles `worker`/`all`, every `learning.billing.reconcile-interval`) for orders whose notification did
+  not arrive or whose `Init` failed. The browser return URL and its query string never change an order.
+- **Periods.** A paid month starts at confirmation, or at the end of the owner's latest paid period of the same plan, and
+  lasts one calendar month in Europe/Moscow; `InboxEntitlementSource` then reports the plan with source `BILLING`.
+  A refund (`REFUNDED`) does not withdraw the entitlement in B1; the access policy for refunds is #392.
+- **Kill switch.** `learning.billing.checkout` (`MNEMA_BILLING_CHECKOUT`) is `OFF` by default; `TESTERS` limits checkout to
+  `learning.billing.testers`. `OFF` stops new orders only: notifications, the reconciler and paid entitlements keep working,
+  so switching off never loses a payment in flight.
+- **TLS.** The T-Bank client alone trusts the Russian Trusted Root CA from `src/main/resources/billing` (fingerprint checked
+  at start) through its own `SSLContext`; the JVM default trust store and every other client are unchanged.
+- **Data and retention.** `billing_order` (one row per purchase attempt) and the append-only `billing_event` audit (bank
+  status, error code, amount; never card data, `Token`, `RebillId` or raw bodies). Both are financial history and are kept;
+  the account-purge owner (#351) and receipts/reconciliation (#392) decide retention and deletion together with the usage
+  ledger and `entitlement_inbox`.
+- **Logs.** `billing order transition order_id=… from=… to=… bank_status=… source=…` and `error_code=` of bank refusals;
+  never the password, a token, a payment URL or card fields.
+
 ## Generation sessions (#287)
 
 `app.mnema.learning.generation` implements the core of the Workshop ([`contracts/generation`](../../../contracts/generation/README.md),

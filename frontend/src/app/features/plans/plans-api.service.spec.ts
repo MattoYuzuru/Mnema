@@ -36,6 +36,16 @@ describe('PlansApiService', () => {
         expect(catalog.plans[3].allowances.voiceMinutesPerMonth).toBeNull();
     });
 
+    it('parses the checkout availability and rejects any other value', async () => {
+        expect(((await load(plansBody({ checkout: 'AVAILABLE' }))) as any).checkout).toBe('AVAILABLE');
+        expect(((await load(plansBody({ checkout: 'UNAVAILABLE' }))) as any).checkout).toBe('UNAVAILABLE');
+        for (const value of ['ON', 'available', null, true]) {
+            const body = plansBody();
+            body['checkout'] = value;
+            expect(await rejection(body)).toBeInstanceOf(PlansProtocolError);
+        }
+    });
+
     it('parses the experiments and the pending discount', async () => {
         const catalog = await load(plansBody({ experiments: { plans_year_first: 'control' },
             pendingDiscount: { percent: 20, plan: 'PLUS', validUntil: '2026-10-31T20:59:59Z' } })) as any;
@@ -56,6 +66,7 @@ describe('PlansApiService', () => {
         const mutations: ((body: Record<string, any>) => void)[] = [
             body => { body['extra'] = 1; },
             body => { delete body['current']; },
+            body => { delete body['checkout']; },
             body => { body['current']['plan'] = 'ULTRA'; },
             body => { body['current']['autoRenew'] = 'no'; },
             body => { body['current']['validUntil'] = 'tomorrow'; },

@@ -283,6 +283,15 @@ WARN, and issued codes do not survive a restart; production, `APP_ENV=prod`, wit
 `MNEMA_PROMO_POPUP_ENABLED=true` with `MNEMA_PROMO_POPUP_ID`, `_TITLE` and `_BODY` (and optionally `_CTA`, `_CODE`, `_COOLDOWN`). See the
 runtime policy index for every key.
 
+### Billing against the T-Bank DEMO terminal (#389)
+
+Checkout is off locally unless the private dotenv file sets `MNEMA_BILLING_CHECKOUT` (`TESTERS` with your account id in
+`MNEMA_BILLING_TESTER_ACCOUNT_IDS`, or `ON`), `MNEMA_TBANK_TERMINAL_KEY` and `MNEMA_TBANK_PASSWORD_BASE64` (base64 of the terminal password:
+Compose would expand a `$` inside a raw password). The launcher passes them to Learning with `MNEMA_PUBLIC_BASE_URL=https://localhost:3443`.
+The bank cannot deliver a notification to that address, so a local order becomes `PAID` through the return page's `GetState` refresh
+(`/plans/payment/{orderId}`) or the reconciler, never through the browser. Pay on the hosted form with the bank's published test cards
+only. See the [billing contract](../../contracts/billing/README.md).
+
 ### Colima clock
 
 **Symptom.** Sporadic HTTP 500 (for example on `POST /api/media-assets/{id}/upload/finalize`)

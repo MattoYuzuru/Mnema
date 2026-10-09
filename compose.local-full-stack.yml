@@ -64,6 +64,13 @@ x-learning-environment: &learning-environment
   # Public product events (the editorial owner account id) and the Max teaser of the plans page; both off by default (docs/deploy/selfhost-local.md).
   MNEMA_EVENTS_OWNER_ACCOUNT_ID: ${MNEMA_EVENTS_OWNER_ACCOUNT_ID:-}
   LEARNING_PLANS_MAXTEASER_ENABLED: ${LEARNING_PLANS_MAXTEASER_ENABLED:-false}
+  # Billing (#389) against the owner's T-Bank DEMO terminal; names only, off by default (docs/deploy/selfhost-local.md). The bank cannot reach a
+  # local NotificationURL, so a local order is confirmed by the return page's GetState refresh and the reconciler.
+  MNEMA_BILLING_CHECKOUT: ${MNEMA_BILLING_CHECKOUT:-OFF}
+  MNEMA_BILLING_TESTER_ACCOUNT_IDS: ${MNEMA_BILLING_TESTER_ACCOUNT_IDS:-}
+  MNEMA_TBANK_TERMINAL_KEY: ${MNEMA_TBANK_TERMINAL_KEY:-}
+  MNEMA_TBANK_PASSWORD_BASE64: ${MNEMA_TBANK_PASSWORD_BASE64:-}
+  MNEMA_PUBLIC_BASE_URL: https://localhost:${MNEMA_LOCAL_WEB_PORT:-3443}
 
 # AI provider layer (docs/deploy/selfhost-local.md). Names only: the values come from the launcher's process environment or
 # from the owner's private .env that Compose reads, never from this repository. Without them the AI capabilities stay
@@ -224,11 +231,12 @@ services:
     <<: *hardened-runtime
 
   # Same layout as production: the volume root belongs to root (the media runner's), `spool/` is Learning's (10001, mode 0700).
-  # chmod runs before chown: after the chown the process would no longer own the directory and has no CAP_FOWNER.
+  # chmod runs while root owns the directory: without CAP_FOWNER only the owner may chmod. A restart finds spool/ already owned by 10001,
+  # so it is handed back to root first (CAP_CHOWN), which keeps the step idempotent on a retained volume.
   media-work-init:
     image: *minio-image
     entrypoint: ["/bin/sh", "-ec"]
-    command: ["mkdir -p /work/spool && chmod 700 /work/spool && chown 10001:10001 /work/spool && chmod 755 /work"]
+    command: ["mkdir -p /work/spool && chown 0:0 /work/spool && chmod 700 /work/spool && chown 10001:10001 /work/spool && chmod 755 /work"]
     user: "0:0"
     cap_drop: [ALL]
     cap_add: [CHOWN]

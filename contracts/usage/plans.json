@@ -14,7 +14,8 @@
         "current": "{plan FREE|PLUS|PRO|MAX, period MONTH|YEAR, validUntil RFC 3339 UTC, autoRenew false, source CONFIG|BILLING|PROMO}",
         "plans": "[{plan, availability AVAILABLE|TEASER (MAX only when learning.plans.max-teaser.enabled, never purchasable), priceRub {month, year = month×12×(100−discount)/100 half-up}, perDayRub = month/30 rounded, yearDiscountPercent, highlights[3] (human units from allowances-v1), allowances {materialsPerMonth {min,max}, voiceMinutesPerMonth|null, voiceMinutesPerDay, answerChecksPerMonth, answerChecksPerDay, podcastsPerMonth, qualityImagesPerMonth, factChecksPerMonth, smartPlans {limit, window WEEK|MONTH}}, recommendedFor [goal]}] ordered FREE, PLUS, PRO, MAX",
         "experiments": "{experimentKey: variant}; at most 20 enabled server-owned assignments, empty object when none; key [a-z][a-z0-9_]{1,39}, variant [a-z][a-z0-9_]{0,31}; the 21st enabled experiment is rejected at startup",
-        "pendingDiscount": "null or {percent integer 1..90, plan PLUS|PRO|null, validUntil RFC 3339 UTC}; a promo discount changes no entitlement and awaits future billing (#79)"
+        "pendingDiscount": "null or {percent integer 1..90, plan PLUS|PRO|null, validUntil RFC 3339 UTC}; a promo discount changes no entitlement and awaits future billing (#79)",
+        "checkout": "AVAILABLE|UNAVAILABLE: whether this account may start a payment now (learning.billing.checkout mode, tester list and a configured terminal; contracts/billing); UNAVAILABLE when billing is off or not deployed"
       },
       "notes": [
         "No query parameter or header changes anything; POST/PUT are 405.",
