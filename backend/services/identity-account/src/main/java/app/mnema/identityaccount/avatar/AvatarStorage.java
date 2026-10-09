@@ -6,6 +6,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.core.checksums.RequestChecksumCalculation;
+import software.amazon.awssdk.core.checksums.ResponseChecksumValidation;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -23,6 +25,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 
 @Service
@@ -44,8 +47,12 @@ public class AvatarStorage implements AutoCloseable, OwnedAvatarEraser {
         if (!"https".equals(endpoint.getScheme()) && !loopbackHttp && !stagingMinioHttp)
             throw new IllegalArgumentException("Avatar endpoint requires HTTPS");
         this.bucket = bucket;
-        configured = !access.isBlank() && !secret.isBlank();
+        configured = !bucket.isBlank() && !access.isBlank() && !secret.isBlank();
+        // Yandex Object Storage does not document the default CRC32 trailer of AWS SDK v2.30+; send and verify
+        // checksums only where an operation requires them.
         s3 = S3Client.builder().endpointOverride(endpoint).region(Region.of(region)).forcePathStyle(true)
+                .requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)
+                .responseChecksumValidation(ResponseChecksumValidation.WHEN_REQUIRED)
                 .credentialsProvider(StaticCredentialsProvider.create(
                         AwsBasicCredentials.create(configured ? access : "unconfigured",
                                 configured ? secret : "unconfigured")))
@@ -131,8 +138,9 @@ public class AvatarStorage implements AutoCloseable, OwnedAvatarEraser {
             var request = HeadObjectRequest.builder().bucket(bucket).key(manifest.storageKey());
             if (versionId != null && !versionId.isBlank()) request.versionId(versionId);
             var object = s3.headObject(request.build());
-            if (!manifest.accountId().toString().equals(object.metadata().get("account-id")) ||
-                    !manifest.assetId().toString().equals(object.metadata().get("asset-id")))
+            var metadata = userMetadata(object.metadata());
+            if (!manifest.accountId().toString().equals(metadata.get("account-id")) ||
+                    !manifest.assetId().toString().equals(metadata.get("asset-id")))
                 throw new AccountFailure(409, "avatar_ownership_mismatch");
             return true;
         } catch (NoSuchKeyException missing) {
@@ -141,6 +149,13 @@ public class AvatarStorage implements AutoCloseable, OwnedAvatarEraser {
             if (missing.statusCode() == 404) return false;
             throw missing;
         }
+    }
+
+    /** S3 providers differ in user-metadata key case (Yandex returns {@code Account-Id}); compare case-insensitively. */
+    static Map<String, String> userMetadata(Map<String, String> raw) {
+        var result = new TreeMap<String, String>(String.CASE_INSENSITIVE_ORDER);
+        result.putAll(raw);
+        return result;
     }
 
     private void deleteVersion(String key, String versionId) {
