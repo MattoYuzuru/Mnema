@@ -111,7 +111,6 @@ artifact:
 | Статус | Документ | Назначение |
 |---|---|---|
 | current | [Repository guide](./engineering/repository-guide.md) | Карта кода, версии, change routes и gate. |
-| current | [Owner console delivery](./engineering/admin-console-delivery.md) | Epic #398, задачи, source revisions, локальная проверка и граница production. |
 | current | [Work item standard](./engineering/work-item-standard.md) | Issue/PR/Project status contract. |
 | current | [Capability inventory](./engineering/capability-inventory.yaml) | Машиночитаемый список команд и harnesses; при расхождении приоритетнее runbook и `--help`. |
 | current | [Evidence index](./engineering/evidence/README.md) | Короткий вход в большие evidence-наборы. |
@@ -149,6 +148,7 @@ Kubernetes-доставка (staging/production workflows, `k8s/`, recovery и p
   Epic #74/#75/#76, storage, browser, security и research evidence. Ключевые записи:
   [закрытие #74](./engineering/evidence/epic-74/verification/integrated-main-2026-09-19.md),
   [закрытие #75](./engineering/evidence/epic-75/verification/integrated-main-2026-09-24.md).
+- **historical:** [Owner console delivery record](./engineering/evidence/admin-console-2026-10/README.md) — первый снимок реализации эпика #398, его задачи, локальная проверка и границы.
 - **historical:** [AI layer research 2026-10](./reviews/ai-layer-research-2026-10/README.md) —
   исследования архитектуры, экономики, UX, контекста и платформы; принятые
   решения перенесены в product/architecture docs.

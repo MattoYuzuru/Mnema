@@ -5,7 +5,7 @@ artifact:
   title: "Owner console boundaries, reporting and support bridge"
   status: accepted
   created_at: "2026-10-09"
-  updated_at: "2026-10-09"
+  updated_at: "2026-10-10"
   owners: ["project-owner"]
 ---
 
@@ -14,7 +14,7 @@ artifact:
 Требования приняты в [product contract](../product/admin-console.md).
 Исполняемый HTTP и shapes принадлежат [admin contract](../../contracts/admin/README.md).
 Точное состояние реализации и проверки — в
-[delivery record](../engineering/admin-console-delivery.md).
+[delivery record](../engineering/evidence/admin-console-2026-10/README.md).
 
 ## Границы компонентов
 
@@ -45,11 +45,28 @@ bearer. Learning владеет своими отчётами, usage/promo и ed
 `MNEMA_ADMIN_OWNER_ACCOUNT_ID` задаётся явно в Identity и Learning. Пустое
 значение закрывает console; неправильный UUID не должен открывать сервис.
 Текущий subject/generation/grant проверяется до чтения данных и receipt.
+
+Кабинет требует **оба** условия: точный аккаунт владельца и access token, выданный клиенту
+`mnema-admin-web`. Identity пишет в каждый access token claim `client_id` (RFC 9068); Learning
+`/admin/console/**`, `/admin/support/**` и Identity `/api/accounts/admin/{directory,audit}` принимают только
+bearer JWT с `client_id = mnema-admin-web`. Токен `mnema-web` того же аккаунта, cookie-сессия и токен
+без claim получают 403. Identity moderation (ban/unban/grant/revoke) при **настроенном** владельце требует то же;
+пока владелец не настроен, она работает как до кабинета (действующий Identity admin, иерархия). Редактор
+событий (`/admin/events`) и существующий promo-admin сохраняют независимую проверку и токен любого
+клиента.
+
+**Кабинет поставляется выключенным.** Production `compose.yaml` не фиксирует admin-origin:
+`MNEMA_IDENTITY_ADMIN_ORIGIN` и `MNEMA_ADMIN_OWNER_ACCOUNT_ID` приходят из allowlist `prod`-секретов
+и по умолчанию пусты. Пустой origin — клиент `mnema-admin-web` не зарегистрирован (и удалён вместе с
+его grants, если был), вход на admin-хосте отклоняется; пустой владелец — все маршруты кабинета 403.
+Включение — осознанное действие владельца, перечень в [VPS runtime](../operations/vps-runtime.md#owner-console).
 Делегированная роль admin сама по себе не даёт console. События дополнительно
 проверяют `MNEMA_EVENTS_OWNER_ACCOUNT_ID`; promo/moderation сохраняют фактическую
 Identity authority и ограничения иерархии. Права модулей отражает access response.
 
-`admin.mnema.app` отдаёт SPA и same-origin Learning `/api`, а не redirect.
+`admin.mnema.app` отдаёт SPA и same-origin Learning `/api`, а не redirect. Блок Caddy инертен,
+пока кабинет не настроен: вход отклоняется, а редактор событий остаётся на `https://mnema.app/manage/events`.
+Локально admin-origin — `https://admin.localhost:<порт web>` (тот же порт и сертификат, другой origin).
 Lazy `/manage` shell исключает learner onboarding, promo popup и приватное
 notification polling. Guard управляет представлением; сервер решает доступ.
 Identity cookies остаются host-only на `auth.mnema.app`, CORS разрешает только
@@ -63,7 +80,11 @@ public client `mnema-admin-web`: exact `/auth/callback`, authorization code S256
 
 Все административные данные `private, no-store`. Аудит содержит actor/action/
 target/time/outcome, не тела переписки, коды, токены, prompts или материалы.
-Mutation и audit одного владельца должны фиксироваться атомарно.
+Mutation и audit одного владельца должны фиксироваться атомарно. Исход: Identity-журнал хранит
+`SUCCESS` и `DENIED` (отказ действующему администратору, записанный отдельной короткой транзакцией после
+отката, чтобы обычный аккаунт не раздувал журнал), причину блокировки (до 280 символов) только у `BAN`; Learning
+журнал — только подтверждённые действия (`SUCCESS`, причины нет). Таблицы журналов append-only на уровне
+PostgreSQL: триггеры отклоняют `UPDATE`, `DELETE` и `TRUNCATE`.
 
 ## Отчётность и точность
 
@@ -80,14 +101,17 @@ read snapshot; расходы/credits/байты не складываются.
 | Study persisted rows | Attempts/session outcomes в доступной истории | Не page views/clicks; учитывать mode и политику retention |
 | `generation_provenance` | Durable publication provenance | Generation session/artifact rows имеют отдельный retention, не полный longitudinal funnel |
 | Media catalog/blob | Текущие asset states и deduplicated inventory bytes | Snapshot, не помесячный storage/egress/CPU invoice; account source bytes не сумма всех variants |
-| Billing/provider/cloud invoices | В текущем scope отсутствуют | `UNAVAILABLE`, а не ноль; entitlement/catalog price не заменяют поступление денег |
+| `billing_order` (T-Bank) | Заказы со статусом `PAID` по `paid_at` в периоде: число и сумма в копейках (RUB); `REFUNDED` показаны рядом | Брутто подтверждённых заказов до комиссий банка, не выплата на счёт; возвраты не вычитаются; не смешивается с USD и ledger micro-RUB |
+| Provider/cloud invoices | В текущем scope отсутствуют | `UNAVAILABLE`, а не ноль; entitlement/catalog price не заменяют поступление денег |
 
 Usage-active cohort — distinct owner с DEBIT/fair-use activity в периоде.
 Feature key `COALESCE(operation,bucket)` включает zero-credit STT/assessment.
 Feature share = distinct пользователей операции / размер этой cohort; числители
 пересекаются. Credit distribution включает fair-use-only пользователей с нулём.
 p50/p95/p99 используют PostgreSQL `percentile_cont` и N; пустая population даёт null.
-Latency population и failure/pending счётчики подписаны отдельно.
+Latency population (`latency.sampleCount`, `population=RECORDED_LATENCY`: вызовы с записанной длительностью) и
+failure/pending счётчики подписаны отдельно. Разбивка функций ограничена 64 строками, `featuresTruncated`
+сообщает об усечении, как `routeGroupsTruncated` для маршрутов.
 
 Журнал провайдеров не хранит owner_id. Нельзя распределять все расходы по
 пользователям через случайный retained step join: для assessment/STT и purged
@@ -103,12 +127,22 @@ Authoritative SQLite и single worker остаются в bot repository. Отд
 Production соединение требует подготовленный private TLS transport;
 stdlib listener нельзя выставлять публичным HTTP server.
 
+**Предусловие, которого сейчас нет.** Learning принимает только `https` bridge (production принудительно
+`ALLOW_LOOPBACK_HTTP=false`), а бот слушает plain HTTP на `127.0.0.1` хоста, тогда как Learning работает в
+контейнере. Пока TLS-транспорт (приватный сертификат/прокси между контейнером и ботом) не поставлен,
+`MNEMA_ADMIN_SUPPORT_ENDPOINT` и `_SECRET` остаются пустыми: поддержка в кабинете — явное состояние
+UNAVAILABLE (`permissions.support=false`, спокойное русское сообщение, ни одного запроса к боту и без ошибок
+в интерфейсе; прямой вызов API получает 503 `SUPPORT_UNAVAILABLE`). Транспорт не строится в рамках эпика #398;
+его отсутствие — блокирующий пункт перед включением поддержки.
+
 Learning использует один фиксированный configured HTTPS endpoint, ограниченные
 timeout/concurrency/body/page sizes и не следует пользовательским URLs. Local
 HTTP разрешён только явно для literal loopback fixture. Actor UUID извлекается
 из текущего проверенного caller, не из browser payload.
 
-Tickets исключают неподанные drafts. Фильтры ограничены, страницы keyset.
+Tickets исключают неподанные drafts. Фильтры ограничены, страницы keyset с ограниченным размером
+(очередь до 100, переписка до 100, журналы по 50, коды по 200, директория по 50); интерфейс подгружает их
+общим `app-auto-load`, без кнопок страниц.
 Числовые Telegram/ticket/message IDs сериализуются строками. Attachment response
 содержит только bounded metadata, не `file_id`, token или секретный download URL.
 
@@ -127,9 +161,11 @@ Telegram отправка становится `uncertain`; автоматиче
 ## Поставка и проверка
 
 Production/DNS/bridge installation не входят в текущий локальный mandate.
-Config/source-ready не означает deployed. Billing отдельно принадлежит #79/#389;
-его V45 не изменяется. Admin Learning V46 и Identity V4 должны интегрироваться
-с текущим main до любой поставки; применённые migrations не переписываются.
+Config/source-ready не означает deployed. Billing отдельно принадлежит #79/#389
+(V45 в `main`). Admin Learning V48 и Identity V4 не пересекаются с `main`; применённые migrations
+не переписываются. Merge в `main` выпускает runtime в production автоматически, поэтому кабинет
+в нём выключен до настройки владельцем (см. выше); `compose.yaml` и `Caddyfile` проверяются drift-check и
+ставятся администратором до одобрения релиза.
 
 Проверка: реальный PostgreSQL HTTP deny/revocation/owner, arithmetic fixtures,
 SQLite receipt/CAS/note-isolation/outbox, fake upstream bridge (без настоящего

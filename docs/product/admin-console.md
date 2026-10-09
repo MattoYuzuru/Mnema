@@ -16,7 +16,7 @@ artifact:
 рабочее место на `admin.mnema.app` для диагностики пользовательского доступа,
 расходов, публикации событий и поддержки. Код, локальная проверка и production
 доступность имеют разные статусы; состояние поставки фиксирует
-[delivery record](../engineering/admin-console-delivery.md).
+[delivery record](../engineering/evidence/admin-console-2026-10/README.md).
 
 ## Область и роли
 

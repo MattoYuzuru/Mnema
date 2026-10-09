@@ -1363,7 +1363,8 @@ for the deferred ordinal uniqueness during transactional roster compaction.
 
 The [admin wire contract](../../../contracts/admin/README.md) owns `/api/admin/console/access`,
 `/report`, `/users/{accountId}` and `/audit`. `learning.admin.owner-id` reads
-`MNEMA_ADMIN_OWNER_ACCOUNT_ID`; empty denies every console request. Editorial owner access stays
+`MNEMA_ADMIN_OWNER_ACCOUNT_ID`; empty denies every console request, and every console and support
+request also needs a token whose `client_id` claim is `mnema-admin-web` (`AdminConsoleAccess`). Editorial owner access stays
 separate and promo/moderation permissions require an actual Identity admin grant. The support
 permission describes configured transport, not health. Existing bearer scopes and live Identity
 verification apply; a hostname or browser permission flag confers no authorization.
@@ -1376,16 +1377,18 @@ paths never initialize an allowance, contact an AI provider or read material/ans
 Credit cohort/feature counts come from append-only DEBIT ledger entries; micro-USD configured
 provider cost comes from the 90-day call journal, with pending/unpriced failures and retention
 explicitly marked. Current media catalog bytes are inventory, not invoices. Generation user
-counts cover retained sessions only; published artifact counts use durable provenance. Revenue,
+counts cover retained sessions only; published artifact counts use durable provenance. Revenue is the
+gross sum of confirmed `billing_order` rows (PAID by `paid_at`, REFUNDED shown beside, RUB, before bank fees);
 provider invoices and infrastructure charges have no connected authoritative source and return
-`UNAVAILABLE`, never zero or inferred profit. User monthly allowances are stored snapshots.
+`UNAVAILABLE`, never zero or inferred profit. Latency percentiles carry `sampleCount`, and the feature
+breakdown carries `featuresTruncated`. User monthly allowances are stored snapshots.
 `currentEntitlement` separately reads the existing entitlement port at the same `generatedAt`,
 including a promo recipient with no usage snapshot. The report range never changes this current
 plan/source/period/validity. CONFIG validity is the current Moscow calendar month boundary;
 promo `MONTH` is the quota cadence, not a claim of monthly purchase. No allowance is initialized.
 
-`V46__admin_console.sql` adds time indexes and the identifier-only editorial/promo journal.
-Successful changes append atomically; global command receipt replay does not duplicate editorial
+`V48__admin_console.sql` adds time indexes and the identifier-only editorial/promo journal.
+The journal rejects `UPDATE`, `DELETE` and `TRUNCATE`. Successful changes append atomically; global command receipt replay does not duplicate editorial
 or promo creation actions. Promo create requires explicit code and command key, and replaces the
 code with an HMAC fingerprint before receipt hashing; neither receipt, list, journal nor logs retain
 plaintext. The existing tier/discount validation, redemption abuse limits and enable setter remain.

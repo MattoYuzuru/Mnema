@@ -384,11 +384,15 @@ and [authenticated-stream caveat](https://docs.oracle.com/en/java/javase/25/docs
 The [admin wire contract](../../../contracts/admin/README.md) owns the owner-only directory,
 account snapshot and moderation journal. `identity.admin.owner-id` reads
 `MNEMA_ADMIN_OWNER_ACCOUNT_ID`: an exact immutable account UUID, empty denies access.
-Directory reads require this owner and current account generation; configuration does not grant
-`is_admin`. Existing moderation HTTP endpoints also require this owner, while `Moderation` retains
-its actual administrator/self/subordinate checks. Successful moderation inserts an identifier-only
-journal entry in the same transaction. `V4__admin_directory_and_audit.sql` adds the journal and
-keyset index; it does not change credentials or role grants. Journal updates are rejected.
+Directory and journal reads require this owner, current account generation **and** a bearer token issued to
+the `mnema-admin-web` client (`client_id` claim, added to every access token by the token customizer;
+`AdminOwnerAccess`); configuration does not grant `is_admin`. That client is registered only while
+`identity.admin-origin` (`MNEMA_IDENTITY_ADMIN_ORIGIN`) is set. Existing moderation HTTP endpoints require
+the same once an owner is configured and are otherwise unchanged, while `Moderation` retains its actual
+administrator/self/subordinate checks. Successful moderation inserts a journal entry in the same
+transaction (outcome `SUCCESS`, plus the ban reason on `BAN`); a refused attempt by a current administrator is
+journaled `DENIED` afterwards. `V4__admin_directory_and_audit.sql` adds the journal and keyset index; it does
+not change credentials or role grants. The journal rejects `UPDATE`, `DELETE` and `TRUNCATE`.
 The journal has no account foreign keys, so it cannot block the existing purge worker. The worker
 does not erase journal actor/resource UUIDs. TODO(#409; owner: account-purge/legal workstream):
 decide retention and include those links in the deletion and backup inventory; journal UUIDs

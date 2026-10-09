@@ -1,15 +1,21 @@
 ---
 artifact:
   id: admin-console-delivery
-  type: delivery-record
+  type: verification-evidence
   title: "Owner console work and verification"
-  status: current
+  status: historical
   created_at: "2026-10-09"
-  updated_at: "2026-10-09"
+  updated_at: "2026-10-10"
   owners: ["project-owner"]
 ---
 
 # Owner console delivery
+
+Историческая запись первой реализации (снимок Codex на `cae7c0e1`). Текущие правила — в
+[architecture](../../../architecture/admin-console.md) и [contract](../../../../contracts/admin/README.md). После независимого
+ревью реализация изменена: токен admin-клиента на всех маршрутах кабинета, доставка выключенной до настройки владельцем,
+авто-подгрузка списков, cursor-протокол журналов и честное состояние недоступной поддержки. Числа проверок ниже относятся
+к первому снимку, а не к текущему коммиту.
 
 [Epic #398](https://github.com/MattoYuzuru/Mnema/issues/398) и native sub-issues
 добавлены в [Project #4](https://github.com/users/MattoYuzuru/projects/4).
@@ -84,8 +90,8 @@ flow, native200% zoom, real AT/touch/Safari/Firefox и production smoke здес
 
 ## Что осталось за границей текущей поставки
 
-Billing исключён владельцем: #389 владеет V45; перед интеграцией/поставкой V46
-нужен согласованный актуальный migration history. Revenue/provider/cloud invoice
+Billing (#389, V45) к моменту интеграции уже в `main`; миграция Learning кабинета — V48,
+Identity — V4. Revenue/provider/cloud invoice
 sources не подключены; estimate, credits и inventory не заменяют cash evidence.
 
 Source находится локально в `codex/admin-console`; companion bot — локальная
@@ -97,4 +103,4 @@ bootstrap и bridge credentials требуют отдельного production �
 [Backlog #409](https://github.com/MattoYuzuru/Mnema/issues/409) владеет решениями
 retention/account deletion для audit/support и связанным lifecycle. Это не
 разрешение на destructive purge. Задачи эпика остаются open до merged/applied
-outcome по [work item standard](./work-item-standard.md).
+outcome по [work item standard](../../work-item-standard.md).

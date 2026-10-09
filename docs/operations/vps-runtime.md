@@ -221,6 +221,29 @@ ssh mnema 'sudo tail -n 5 /var/lib/mnema-release/admissions.jsonl'   # append-on
 `status` is not a live probe; `verify` and the automatic public smoke are. Retain
 firewall, log/privacy and backup evidence proportionate to the changes.
 
+## Owner console
+
+The owner console (epic #398, [architecture](../architecture/admin-console.md)) ships **disabled**: a merge to `main`
+releases the code, but nothing opens until the owner sets these `prod` Environment secrets
+(`PROD_<NAME>`, allowlist `deploy/production/app-config.keys`, delivered into `app.env`). Unset means off, never an error.
+
+| Name | What it does | Unset |
+|---|---|---|
+| `MNEMA_ADMIN_OWNER_ACCOUNT_ID` | The one canonical lowercase Identity account UUID that may use the console, in Identity and Learning. The dispatcher refuses any other shape. | Every console, directory, journal and support route answers 403; Identity moderation, the events editor and promo administration behave as before. |
+| `MNEMA_IDENTITY_ADMIN_ORIGIN` | Exactly `https://admin.mnema.app`: registers the public OAuth client `mnema-admin-web` (callback `/auth/callback`, S256, 20-minute access token) and allows that browser origin. Console routes accept only tokens issued to this client. | The client is not registered (and removed with its grants if it existed); sign-in on `admin.mnema.app` is refused. |
+| `MNEMA_ADMIN_SUPPORT_ENDPOINT`, `MNEMA_ADMIN_SUPPORT_SECRET` | Fixed `https://…/internal/support` bridge to the Telegram bot and its 32–256 character base64url machine credential; both empty or both set. `MNEMA_ADMIN_SUPPORT_ALLOW_LOOPBACK_HTTP` is hard-wired `false` in production. | Support shows "Поддержка недоступна" in the console; no request leaves Learning. |
+
+Enabling the console, in order: (1) the administrator installs the reviewed `compose.yaml`, `Caddyfile` and
+`mnema-deploy` (the drift check names any file that differs); (2) DNS and a certificate for `admin.mnema.app` exist
+(the Caddy block is inert until Identity has the client); (3) the owner sets `PROD_MNEMA_ADMIN_OWNER_ACCOUNT_ID` and
+`PROD_MNEMA_IDENTITY_ADMIN_ORIGIN` and releases; (4) the owner signs in at `https://admin.mnema.app`.
+**Support** additionally needs a transport that does not exist yet: Learning accepts only an HTTPS bridge, while the bot
+listens on plain HTTP at the host's `127.0.0.1` and Learning runs in a container. Until a private TLS path between them is
+built (a separate task), leave the two support secrets empty. The old redirect from `admin.mnema.app` to
+`/manage/events` is gone; the events editor stays at `https://mnema.app/manage/events`. The audit tables
+(`app_identity.admin_audit`, `app_learning.admin_audit`) reject `UPDATE`, `DELETE` and `TRUNCATE`; retention and erasure
+belong to the account-purge workstream (#409).
+
 ## Backup, monitoring and rollback
 
 `sudo /usr/local/sbin/mnema-local-backup backup` creates private 0600 dumps and
