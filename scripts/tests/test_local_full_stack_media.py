@@ -314,7 +314,7 @@ class ComposeContractTest(unittest.TestCase):
         self.assertIn("source: local_media_work", learning)
         self.assertNotIn("user:", learning)                      # no shared group any more
         init = service_block(self.source, "media-work-init")
-        self.assertIn("mkdir -p /work/spool && chmod 700 /work/spool && chown 10001:10001 /work/spool && chmod 755 /work", init)
+        self.assertIn("mkdir -p /work/spool && chown 0:0 /work/spool && chmod 700 /work/spool && chown 10001:10001 /work/spool && chmod 755 /work", init)
         for name in ("learning", "media-runner"):
             self.assertIn("media-work-init: {condition: service_completed_successfully}", service_block(self.source, name))
         self.assertIn("media-runner: {condition: service_healthy}", service_block(self.source, "frontend"))

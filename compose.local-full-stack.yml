@@ -231,11 +231,12 @@ services:
     <<: *hardened-runtime
 
   # Same layout as production: the volume root belongs to root (the media runner's), `spool/` is Learning's (10001, mode 0700).
-  # chmod runs before chown: after the chown the process would no longer own the directory and has no CAP_FOWNER.
+  # chmod runs while root owns the directory: without CAP_FOWNER only the owner may chmod. A restart finds spool/ already owned by 10001,
+  # so it is handed back to root first (CAP_CHOWN), which keeps the step idempotent on a retained volume.
   media-work-init:
     image: *minio-image
     entrypoint: ["/bin/sh", "-ec"]
-    command: ["mkdir -p /work/spool && chmod 700 /work/spool && chown 10001:10001 /work/spool && chmod 755 /work"]
+    command: ["mkdir -p /work/spool && chown 0:0 /work/spool && chmod 700 /work/spool && chown 10001:10001 /work/spool && chmod 755 /work"]
     user: "0:0"
     cap_drop: [ALL]
     cap_add: [CHOWN]
