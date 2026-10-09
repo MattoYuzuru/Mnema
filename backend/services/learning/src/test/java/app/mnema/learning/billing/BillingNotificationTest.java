@@ -147,7 +147,7 @@ class BillingNotificationTest extends BillingIntegrationTest {
 
     @Test
     void everyFailureStatusFailsAnOpenOrder() throws Exception {
-        for (String failure : new String[] {"AUTH_FAIL", "CANCELED", "DEADLINE_EXPIRED", "REVERSED", "PARTIAL_REVERSED", "REFUNDED", "PARTIAL_REFUNDED"}) {
+        for (String failure : new String[] {"AUTH_FAIL", "CANCELED", "DEADLINE_EXPIRED", "ATTEMPTS_EXPIRED", "REVERSED", "PARTIAL_REVERSED", "REFUNDED"}) {
             String orderId = pendingOrder(UUID.randomUUID(), "PLUS");
             BANK.move(orderId, failure);
 
@@ -155,6 +155,28 @@ class BillingNotificationTest extends BillingIntegrationTest {
 
             assertThat(status(orderId)).as(failure).isEqualTo("FAILED");
             assertThat(column(orderId, "failure_reason")).isEqualTo(failure);
+        }
+    }
+
+    @Test
+    void aPartlyRefundedPaymentThatWasNeverGrantedGoesToReview() throws Exception {
+        for (String before : new String[] {"PENDING", "FAILED"}) {
+            UUID owner = UUID.randomUUID();
+            String orderId = pendingOrder(owner, "PLUS");
+            if (before.equals("FAILED")) {
+                BANK.move(orderId, "REJECTED");
+                assertOk(notify(notification("notification-rejected.json", orderId, "REJECTED")));
+            }
+            assertThat(status(orderId)).isEqualTo(before);
+            BANK.move(orderId, "PARTIAL_REFUNDED");
+            double counted = anomalies("partial_refund");
+
+            assertOk(notify(notification("notification-refunded.json", orderId, "PARTIAL_REFUNDED")));
+
+            assertThat(status(orderId)).as(before).isEqualTo("REVIEW");
+            assertThat(column(orderId, "failure_reason")).isEqualTo("PARTIAL_REFUND");
+            assertThat(snapshots(owner)).isZero();
+            assertThat(anomalies("partial_refund")).isEqualTo(counted + 1);
         }
     }
 
@@ -200,10 +222,12 @@ class BillingNotificationTest extends BillingIntegrationTest {
         String orderId = pendingOrder(owner, "PRO");
         BANK.move(orderId, "CONFIRMED");
         BANK.paymentOf(orderId).answeredAmount = 100L;
+        double counted = anomalies("amount_mismatch");
 
         assertOk(notify(notification("notification-amount-mismatch.json", orderId, "CONFIRMED")));
 
         assertThat(status(orderId)).isEqualTo("REVIEW");
+        assertThat(anomalies("amount_mismatch")).isEqualTo(counted + 1);
         assertThat(column(orderId, "failure_reason")).isEqualTo("AMOUNT_MISMATCH");
         assertThat(snapshots(owner)).isZero();
         assertThat(discountRows(owner)).as("the discount is spent by a payment, not by a mismatch").isEqualTo(1);
@@ -393,6 +417,61 @@ class BillingNotificationTest extends BillingIntegrationTest {
     }
 
     @Test
+    void aRetryOfANotificationWhoseApplyFailedIsProcessedForEveryOrderTheBankMayStillChange() throws Exception {
+        // A late payment of a failed order: the first delivery fails, the bank's retry an hour later pays it.
+        UUID owner = UUID.randomUUID();
+        String failed = pendingOrder(owner, "PLUS");
+        BANK.move(failed, "REJECTED");
+        assertOk(notify(notification("notification-rejected.json", failed, "REJECTED")));
+        BANK.move(failed, "CONFIRMED");
+        ObjectNode confirmed = notification("notification-confirmed.json", failed, "CONFIRMED");
+        BANK.breakGetState = true;
+        assertThat(notify(confirmed).getStatus()).isEqualTo(503);
+        assertThat(events(failed)).as("nothing counts as handled").doesNotContain("NOTIFICATION:CONFIRMED:RECEIVED");
+        BANK.breakGetState = false;
+        clock.advance(Duration.ofHours(1));
+
+        assertOk(notify(confirmed));
+
+        assertThat(status(failed)).isEqualTo("PAID");
+        assertThat(snapshots(owner)).isEqualTo(1);
+        assertThat(events(failed)).containsSubsequence("NOTIFICATION:CONFIRMED:RECEIVED", "GET_STATE:CONFIRMED:PAID");
+
+        // A refund of a paid order: the same.
+        BANK.move(failed, "REFUNDED");
+        ObjectNode refunded = notification("notification-refunded.json", failed, "REFUNDED");
+        BANK.breakGetState = true;
+        assertThat(notify(refunded).getStatus()).isEqualTo(503);
+        BANK.breakGetState = false;
+        clock.advance(Duration.ofHours(1));
+        assertOk(notify(refunded));
+        assertThat(status(failed)).isEqualTo("REFUNDED");
+        assertThat(count("SELECT count(*) FROM app_learning.billing_event WHERE order_id=CAST(? AS uuid) AND source='NOTIFICATION'", failed)).isEqualTo(3);
+    }
+
+    @Test
+    void aNotificationWaitsForTheBankAtMostTheNotificationTimeoutAndItsRetryIsProcessed() throws Exception {
+        UUID owner = UUID.randomUUID();
+        String orderId = pendingOrder(owner, "PLUS");
+        BANK.move(orderId, "CONFIRMED");
+        ObjectNode confirmed = notification("notification-confirmed.json", orderId, "CONFIRMED");
+        BANK.delayMillis = 2_000;
+        long started = System.nanoTime();
+
+        MockHttpServletResponse slow = notify(confirmed);
+
+        assertThat(slow.getStatus()).isEqualTo(503);
+        assertThat(Duration.ofNanos(System.nanoTime() - started)).as("notification-timeout is PT1S here, request-timeout PT5S").isLessThan(Duration.ofMillis(1_800));
+        assertThat(status(orderId)).isEqualTo("PENDING");
+        BANK.delayMillis = 0;
+        assertOk(notify(confirmed));
+        assertThat(status(orderId)).isEqualTo("PAID");
+        // The bank answers the abandoned call late; let it finish before the next test counts calls.
+        for (int wait = 0; wait < 100 && BANK.getStates.size() < 2; wait++) Thread.sleep(50);
+        assertThat(BANK.getStates).hasSize(2);
+    }
+
+    @Test
     void aBodyThatIsNotAJsonObjectOrIsTooLargeIsABadRequest() throws Exception {
         String valid = notification("notification-confirmed.json", pendingOrder(UUID.randomUUID(), "PLUS"), "CONFIRMED").toString();
         for (String bad : new String[] {"", "not json", "[]", "\"x\"", "{\"TerminalKey\":\"a\",\"TerminalKey\":\"b\"}", "{\"a\":" + "[".repeat(40) + "]".repeat(40) + "}",
@@ -410,7 +489,7 @@ class BillingNotificationTest extends BillingIntegrationTest {
     @Test
     void notificationsAreForbiddenWhileBillingIsNotConfigured() throws Exception {
         BillingSettings unset = new BillingSettings("ON", "", "", BANK.baseUrl(), "", "", Duration.ofHours(1), Duration.ofSeconds(10), 10,
-                Duration.ofMinutes(2), Duration.ofSeconds(5), Duration.ofSeconds(5));
+                Duration.ofMinutes(2), Duration.ofSeconds(5), Duration.ofSeconds(5), Duration.ofSeconds(5));
         TBankNotifications bare = new TBankNotifications(unset, repository, bank, applier, clock);
 
         assertThat(bare.handle(BillingFixtures.tbank("notification-confirmed.json").toString().getBytes(StandardCharsets.UTF_8)))
@@ -444,9 +523,11 @@ class BillingNotificationTest extends BillingIntegrationTest {
         BANK.move(orderId, "CONFIRMED");
         assertOk(notify(notification("notification-confirmed.json", orderId, "CONFIRMED")));
         BankState duplicate = new BankState(BillingFixtures.TERMINAL, orderId, otherPayment(), "CONFIRMED", 44_900L, true, "0");
+        double counted = anomalies("duplicate_payment");
 
         assertThat(applier.apply(UUID.fromString(orderId), duplicate, Trigger.GET_STATE)).isEqualTo(Outcome.UNCHANGED);
 
+        assertThat(anomalies("duplicate_payment")).isEqualTo(counted + 1);
         assertThat(status(orderId)).isEqualTo("PAID");
         assertThat(snapshots(owner)).isEqualTo(1);
         assertThat(column(orderId, "payment_id")).isEqualTo(BANK.paymentOf(orderId).paymentId);
@@ -479,7 +560,7 @@ class BillingNotificationTest extends BillingIntegrationTest {
     @Test
     void aPaymentIdIsAdoptedWhenInitNeverRecordedOne() throws Exception {
         UUID owner = UUID.randomUUID();
-        BANK.refuseInit = true;
+        BANK.breakInit = true;
         assertThat(checkout(owner, "PLUS").getStatus()).isEqualTo(503);
         String orderId = jdbc.sql("SELECT order_id::text FROM app_learning.billing_order WHERE owner_id=:owner").param("owner", owner).query(String.class).single();
 

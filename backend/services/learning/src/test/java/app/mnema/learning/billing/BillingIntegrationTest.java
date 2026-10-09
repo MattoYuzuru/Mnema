@@ -9,6 +9,8 @@ import app.mnema.learning.usage.EntitlementSource;
 import app.mnema.learning.usage.Plan;
 import app.mnema.learning.usage.PlanPrices;
 import app.mnema.learning.usage.UsageCalendar;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -56,6 +58,7 @@ abstract class BillingIntegrationTest extends PostgresIntegrationTest {
         registry.add("learning.billing.tbank.terminal-key", () -> BillingFixtures.TERMINAL);
         registry.add("learning.billing.tbank.password-base64", () -> BillingFixtures.PASSWORD_BASE64);
         registry.add("learning.billing.request-timeout", () -> "PT5S");
+        registry.add("learning.billing.notification-timeout", () -> "PT1S");
     }
 
     @LocalServerPort protected int port;
@@ -75,6 +78,7 @@ abstract class BillingIntegrationTest extends PostgresIntegrationTest {
     @Autowired protected EntitlementInbox inbox;
     @Autowired protected UsageCalendar calendar;
     @Autowired protected BillingTestConfiguration.MutableClock clock;
+    @Autowired protected MeterRegistry meters;
 
     @BeforeEach
     void resetBankAndClock() {
@@ -181,6 +185,17 @@ abstract class BillingIntegrationTest extends PostgresIntegrationTest {
                 .param(1, owner).param(2, percent).param(3, plan, java.sql.Types.VARCHAR).param(4, Timestamp.from(Instant.parse("2027-06-01T00:00:00Z")))
                 .param(5, code).param(6, Timestamp.from(Instant.parse("2026-10-01T00:00:00Z"))).update();
         return code;
+    }
+
+    /** How many money anomalies of {@code kind} were counted so far ({@code mnema_billing_anomalies_total}). */
+    protected double anomalies(String kind) {
+        Counter counter = meters.find("mnema_billing_anomalies_total").tag("kind", kind).counter();
+        return counter == null ? 0 : counter.count();
+    }
+
+    /** The order of {@code owner} that a failed checkout left behind. */
+    protected String onlyOrder(UUID owner) {
+        return jdbc.sql("SELECT order_id::text FROM app_learning.billing_order WHERE owner_id=:owner").param("owner", owner).query(String.class).single();
     }
 
     protected long discountRows(UUID owner) {

@@ -16,7 +16,7 @@ import { EventPage, ProductEvent, formatEventDate } from './events.models';
         <a routerLink="/" class="back-link">На главную</a>
         <header><span class="eyebrow">Журнал проекта</span><h1 tabindex="-1">События Мнемы</h1>
           <p class="lede">Обновления, идеи и планы. Рассказываем, что меняется в Мнеме и над чем мы работаем.</p></header>
-        <p class="load-status" role="status">{{ loading() ? 'Загружаем события...' : '' }}</p>
+        <p class="load-status" role="status">{{ loading() && !page()?.items?.length ? 'Загружаем события…' : '' }}</p>
         @if (error() && !page()?.items?.length) { <div class="notice" role="alert"><p>{{ error() }}</p><button class="button" type="button" (click)="load(null)" [disabled]="loading()">Попробовать снова</button></div> }
         @if (!loading() && !error() && page()?.items?.length === 0) {
           <div class="empty-state"><h2>Здесь будут новости проекта</h2><p>Первая запись появится после публикации.</p></div>

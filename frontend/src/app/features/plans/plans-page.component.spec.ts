@@ -389,8 +389,19 @@ describe('PlansPageComponent', () => {
             expect(billing.createCheckout).toHaveBeenCalledTimes(1);
         });
 
-        it('reuses the key for a retry of the same choice and takes a new one for a new choice', async () => {
+        it('takes a new key after the bank refused, because the server failed that order', async () => {
             billing.createCheckout.mockReturnValue(throwError(() => new BillingError('PAYMENT_PROVIDER_UNAVAILABLE')));
+            const harness = await choosePlus();
+            cta().click();
+            await settle(harness);
+            cta().click();
+            await settle(harness);
+            const keys = billing.createCheckout.mock.calls.map(call => call[2]);
+            expect(keys[0]).not.toBe(keys[1]);
+        });
+
+        it('reuses the key for a retry of the same choice and takes a new one for a new choice', async () => {
+            billing.createCheckout.mockReturnValue(throwError(() => new BillingError('UNKNOWN')));
             const harness = await choosePlus();
             const keys = () => billing.createCheckout.mock.calls.map(call => call[2]);
             cta().click();

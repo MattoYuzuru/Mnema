@@ -241,24 +241,49 @@ page #391, НПД receipts, refunds and reconciliation #392.
   the discount is consumed in the transaction that marks the order `PAID`. The browser never sends an amount.
 - **Grant authority.** Only a `GetState` answer (`CONFIRMED`, the order's terminal, order id and amount) moves an order to
   `PAID`, in one transaction with `EntitlementInbox.accept(billing:{orderId}, BILLING, …)`. Three triggers ask the bank: a
-  verified notification (answered `OK` only after that transaction committed; a failure answers 503 and the bank retries),
-  the return page reading a `PENDING` order (at most once per `learning.billing.refresh-interval` per order) and
-  `PaymentReconciler` (roles `worker`/`all`, every `learning.billing.reconcile-interval`) for orders whose notification did
-  not arrive or whose `Init` failed. The browser return URL and its query string never change an order.
+  verified notification, the return page reading a `PENDING` order (at most once per `learning.billing.refresh-interval` per
+  order) and `PaymentReconciler` (roles `worker`/`all`, every `learning.billing.reconcile-interval`) for orders whose
+  notification did not arrive or whose `Init` failed. The browser return URL and its query string never change an order.
+- **Notifications.** A verified notification asks `GetState` (with its `PaymentId`) for every order the bank may still
+  change (`OrderStatus.bankMayChange`: `CREATED` whose `Init` answer was lost, `PENDING`, `FAILED` after a late or second
+  attempt, `PAID` for a refund); `REFUNDED` and `REVIEW` orders, and a repeat of the paid payment's `CONFIRMED`/`AUTHORIZED`,
+  are only recorded. The `NOTIFICATION` audit row is written in the apply transaction, so it exists only once the answer was
+  applied: `OK` follows the commit, a failure answers 503 and the bank's retry is processed in full. A notification already
+  handled is a replay and asks the bank at most once per refresh interval. The notification's `GetState` is bounded by
+  `learning.billing.notification-timeout` (≤ `PT5S`, connect included) because the bank waits about 10 s; `Init`, the return
+  page and the reconciler use `connect-timeout`/`request-timeout`.
+- **Reconciler.** Claims `CREATED`/`PENDING` orders once per interval and `FAILED` orders with a bank payment once an hour for
+  72 hours after creation (`FAILED_WINDOW`; a late payment still grants). `CREATED` without a payment fails `INIT_FAILED`
+  after its link; a never-completed form fails `EXPIRED` a day after its link; any other order still unfinished 72 hours after
+  its link (`AUTHORIZED`, `3DS_CHECKING`, a bank that never answers) goes to `REVIEW` (`STALE`) and is not asked again.
+- **Init.** A bank refusal of `Init` fails the order `INIT_REFUSED` (audit `INIT:-:FAILED`): the bank would refuse the same
+  `OrderId` again, so a same-key retry answers 503 without calling the bank and the next checkout opens a new order. A timeout
+  or broken connection keeps the order `CREATED` and its 30 s claim, because the bank may have opened a payment.
+- **Statuses** (developer.tbank.ru `operation-statuses`, read 2026-10-09). `REJECTED`, `AUTH_FAIL`, `CANCELED`,
+  `DEADLINE_EXPIRED`, `ATTEMPTS_EXPIRED` fail an open order; `REVERSED`, `PARTIAL_REVERSED`, `REFUNDED`, `PARTIAL_REFUNDED`
+  mark a `PAID` order `REFUNDED` and fail an open one, except `PARTIAL_REFUNDED` of an order never granted, which goes to
+  `REVIEW` (`PARTIAL_REFUND`); every other status (`NEW`, `FORM_SHOWED`, `AUTHORIZING`, `AUTHORIZED`, `3DS_*`, `*_CHECKING`,
+  `REFUNDING`, …) is in progress. `PaymentStateApplier` writes every transition after `Init`, including the checkout's closing
+  of an expired discount holder, each with a `billing_event`.
 - **Periods.** A paid month starts at confirmation, or at the end of the owner's latest paid period of the same plan, and
   lasts one calendar month in Europe/Moscow; `InboxEntitlementSource` then reports the plan with source `BILLING`.
   A refund (`REFUNDED`) does not withdraw the entitlement in B1; the access policy for refunds is #392.
 - **Kill switch.** `learning.billing.checkout` (`MNEMA_BILLING_CHECKOUT`) is `OFF` by default; `TESTERS` limits checkout to
   `learning.billing.testers`. `OFF` stops new orders only: notifications, the reconciler and paid entitlements keep working,
   so switching off never loses a payment in flight.
-- **TLS.** The T-Bank client alone trusts the Russian Trusted Root CA from `src/main/resources/billing` (fingerprint checked
-  at start) through its own `SSLContext`; the JVM default trust store and every other client are unchanged.
+- **TLS.** The T-Bank client alone trusts the Russian Trusted Root CA and the TrustAsia TLS RSA Root CA from
+  `src/main/resources/billing` (each fingerprint checked at start) through its own `SSLContext`; the JVM default trust store
+  and every other client are unchanged. T-Bank's «Установка TLS-сертификатов» requires both during its transition
+  (`pay.tbank-online.com` already chains to TrustAsia); the TrustAsia PEM comes from TrustAsia's repository, cross-checked
+  with the Mozilla CCADB. Drop it when the bank ends the transition.
 - **Data and retention.** `billing_order` (one row per purchase attempt) and the append-only `billing_event` audit (bank
   status, error code, amount; never card data, `Token`, `RebillId` or raw bodies). Both are financial history and are kept;
   the account-purge owner (#351) and receipts/reconciliation (#392) decide retention and deletion together with the usage
   ledger and `entitlement_inbox`.
 - **Logs.** `billing order transition order_id=… from=… to=… bank_status=… source=…` and `error_code=` of bank refusals;
-  never the password, a token, a payment URL or card fields.
+  never the password, a token, a payment URL or card fields. Money an operator must look at is `billing anomaly kind=…
+  order_id=… payment_id=…` (ERROR; WARN for `discount_spent`) and the counter `mnema_billing_anomalies_total{kind}`:
+  `duplicate_payment`, `amount_mismatch`, `partial_refund`, `stale_order`, `discount_spent`.
 
 ## Generation sessions (#287)
 

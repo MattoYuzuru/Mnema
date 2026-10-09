@@ -214,7 +214,7 @@ class BillingCheckoutTest extends BillingIntegrationTest {
     }
 
     @Test
-    void aBankThatRefusesInitIs503AndARetryWithTheSameKeyAsksAgain() throws Exception {
+    void aBankThatRefusesInitFailsTheOrderAndTheNextCheckoutOpensANewOne() throws Exception {
         UUID owner = UUID.randomUUID();
         String key = UUID.randomUUID().toString();
         String json = "{\"plan\":\"PLUS\",\"period\":\"MONTH\"}";
@@ -225,22 +225,45 @@ class BillingCheckoutTest extends BillingIntegrationTest {
         assertThat(failed.getStatus()).isEqualTo(503);
         assertThat(body(failed).path("code").stringValue(null)).isEqualTo("PAYMENT_PROVIDER_UNAVAILABLE");
         assertThat(failed.getContentAsString()).doesNotContain("204").doesNotContain("токен");
-        String orderId = jdbc.sql("SELECT order_id::text FROM app_learning.billing_order WHERE owner_id=:owner").param("owner", owner).query(String.class).single();
-        assertThat(status(orderId)).isEqualTo("CREATED");
+        String orderId = onlyOrder(owner);
+        assertThat(status(orderId)).as("the bank would refuse the same OrderId again").isEqualTo("FAILED");
+        assertThat(column(orderId, "failure_reason")).isEqualTo("INIT_REFUSED");
         assertThat(column(orderId, "payment_id")).isNull();
-        assertThat(events(orderId)).containsExactly("INIT:-:REFUSED");
+        assertThat(events(orderId)).containsExactly("INIT:-:FAILED");
 
         BANK.refuseInit = false;
-        MockHttpServletResponse retried = checkout(owner, json, key);
+        MockHttpServletResponse replayed = checkout(owner, json, key);
+        assertThat(replayed.getStatus()).as("the same key replays the failure without asking the bank").isEqualTo(503);
+        assertThat(BANK.inits).hasSize(1);
 
-        assertThat(retried.getStatus()).isEqualTo(201);
-        assertThat(body(retried).path("orderId").stringValue(null)).isEqualTo(orderId);
-        assertThat(body(retried).path("status").stringValue(null)).isEqualTo("PENDING");
-        assertThat(body(retried).path("paymentUrl").stringValue(null)).startsWith("https://pay.tbank-online.com/");
-        assertThat(status(orderId)).isEqualTo("PENDING");
+        MockHttpServletResponse next = checkout(owner, json, UUID.randomUUID().toString());
+
+        assertThat(next.getStatus()).isEqualTo(201);
+        assertThat(body(next).path("orderId").stringValue(null)).isNotEqualTo(orderId);
+        assertThat(body(next).path("status").stringValue(null)).isEqualTo("PENDING");
+        assertThat(BANK.lastInit().path("OrderId").stringValue(null)).isEqualTo(body(next).path("orderId").stringValue(null));
         assertThat(BANK.inits).hasSize(2);
-        assertThat(orders(owner)).isEqualTo(1);
-        assertThat(events(orderId)).containsExactly("INIT:-:REFUSED", "INIT:NEW:PENDING");
+        assertThat(orders(owner)).isEqualTo(2);
+    }
+
+    @Test
+    void anInitWhoseAnswerIsLostKeepsTheOrderForTheSameKeyAndItsNotification() throws Exception {
+        UUID owner = UUID.randomUUID();
+        String key = UUID.randomUUID().toString();
+        String json = "{\"plan\":\"PLUS\",\"period\":\"MONTH\"}";
+        BANK.breakInit = true;
+
+        assertThat(checkout(owner, json, key).getStatus()).isEqualTo(503);
+
+        String orderId = onlyOrder(owner);
+        assertThat(status(orderId)).as("the bank may have opened a payment").isEqualTo("CREATED");
+        assertThat(events(orderId)).containsExactly("INIT:-:HTTP_STATUS");
+        // The payment the lost answer opened is paid and notified: the notification adopts it.
+        BANK.move(orderId, "CONFIRMED");
+        assertThat(notify(notification("notification-confirmed.json", orderId, "CONFIRMED")).getContentAsString()).isEqualTo("OK");
+        assertThat(status(orderId)).isEqualTo("PAID");
+        assertThat(column(orderId, "payment_id")).isEqualTo(BANK.paymentOf(orderId).paymentId);
+        assertThat(snapshots(owner)).isEqualTo(1);
     }
 
     @Test

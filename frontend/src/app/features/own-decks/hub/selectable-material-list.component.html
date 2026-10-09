@@ -53,7 +53,7 @@
   }
 </ul>
 
-<app-auto-load [content]="materialRows" [continuation]="nextCursor()" [loading]="loadingMore()"
+<app-auto-load [content]="materialRows" [context]="listContext()" [continuation]="nextCursor()" [loading]="loadingMore()"
   loadingText="Загружаем следующие материалы…"
   [error]="moreError() ? 'Не удалось загрузить следующие материалы. Загруженные остались на месте.' : null"
   (loadNext)="loadMore.emit()" />

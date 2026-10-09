@@ -35,6 +35,7 @@ describe('AutoLoadComponent', () => {
     afterEach(() => { window.IntersectionObserver = originalObserver; window.ResizeObserver = originalResize; });
 
     async function render(): Promise<void> { fixture.detectChanges(); await fixture.whenStable(); }
+    function nextFrame(): Promise<void> { return new Promise(resolve => requestAnimationFrame(() => resolve())); }
     function cross(index = observations.length - 1, visible = true): void {
         observations[index].callback([{ isIntersecting: visible } as IntersectionObserverEntry], {} as IntersectionObserver);
     }
@@ -61,7 +62,7 @@ describe('AutoLoadComponent', () => {
         expect(requested).toHaveBeenCalledTimes(2);
     });
 
-    it('keeps an error stopped until an explicit retry and retains keyboard focus', async () => {
+    it('keeps an error stopped until an explicit retry and keeps the focused button through the retry', async () => {
         cross();
         fixture.componentRef.setInput('error', 'Нет связи'); await render();
         cross();
@@ -69,8 +70,36 @@ describe('AutoLoadComponent', () => {
         const button = fixture.nativeElement.querySelector('button') as HTMLButtonElement;
         document.body.append(fixture.nativeElement); button.focus(); button.click();
         expect(requested).toHaveBeenCalledTimes(2);
+        // The owner clears its error and starts loading, as the list owners do.
+        fixture.componentRef.setInput('error', null);
+        fixture.componentRef.setInput('loading', true); await render();
+        expect(fixture.nativeElement.querySelector('button')).toBe(button);
+        expect(button.getAttribute('aria-disabled')).toBe('true');
+        expect(document.activeElement).toBe(button);
+        button.click();
+        expect(requested).toHaveBeenCalledTimes(2);
+        fixture.componentRef.setInput('error', 'Снова нет связи');
+        fixture.componentRef.setInput('loading', false); await render();
         expect(document.activeElement).toBe(button);
         fixture.nativeElement.remove();
+    });
+
+    it('moves focus to the first appended row after a keyboard retry succeeds', async () => {
+        const list = document.createElement('ul');
+        list.innerHTML = '<li><a href="/one">Один</a></li>';
+        document.body.append(list, fixture.nativeElement);
+        fixture.componentRef.setInput('content', list);
+        fixture.componentRef.setInput('error', 'Нет связи'); await render();
+        (fixture.nativeElement.querySelector('button') as HTMLButtonElement).focus();
+        (fixture.nativeElement.querySelector('button') as HTMLButtonElement).click();
+        fixture.componentRef.setInput('error', null);
+        fixture.componentRef.setInput('loading', true); await render();
+        list.insertAdjacentHTML('beforeend', '<li><a href="/two">Два</a></li>');
+        fixture.componentRef.setInput('continuation', 'page-three');
+        fixture.componentRef.setInput('loading', false); await render();
+        expect(fixture.nativeElement.querySelector('button')).toBeNull();
+        expect(document.activeElement?.textContent).toBe('Два');
+        list.remove(); fixture.nativeElement.remove();
     });
 
     it('never requests after the end or while the panel is closed', async () => {
@@ -93,10 +122,21 @@ describe('AutoLoadComponent', () => {
 
     it('observes the supplied scrolling panel and ignores a disconnected observer after reflow', async () => {
         const root = document.createElement('div');
+        const content = document.createElement('ul');
+        let height = 0;
+        content.getBoundingClientRect = () => ({ height } as DOMRect);
+        fixture.componentRef.setInput('content', content);
         fixture.componentRef.setInput('root', root); await render();
         expect(observations.at(-1)?.options?.root).toBe(root);
         const old = observations.length - 1;
         resized([], {} as ResizeObserver);
+        await nextFrame();
+        expect(observations.length - 1).toBe(old);
+        height = 40_000;
+        resized([], {} as ResizeObserver); resized([], {} as ResizeObserver);
+        await nextFrame();
+        expect(observations.length - 1).toBe(old + 1);
+        expect(observations.at(-1)?.options?.rootMargin).toBe('0px 0px 10000px 0px');
         cross(old);
         expect(requested).not.toHaveBeenCalled();
         cross();

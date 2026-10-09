@@ -32,6 +32,8 @@ export class SelectableMaterialListComponent {
     /** Materials whose star request is in flight; their star ignores clicks. */
     readonly starPending = input<ReadonlySet<string>>(new Set());
     readonly nextCursor = input<string | null>(null);
+    /** Owner's list-replacement marker, forwarded to auto-load. */
+    readonly listContext = input<string | number>(0);
     readonly loadingMore = input(false);
     readonly moreError = input(false);
     readonly toggleExemplar = output<ItemSummary>();

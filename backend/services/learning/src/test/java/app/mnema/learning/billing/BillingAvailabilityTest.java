@@ -25,7 +25,7 @@ class BillingAvailabilityTest extends BillingIntegrationTest {
 
     private static BillingSettings settings(String mode, String testers, String publicUrl, String key) {
         return new BillingSettings(mode, testers, publicUrl, BANK.baseUrl(), key, BillingFixtures.PASSWORD_BASE64, Duration.ofHours(1), Duration.ofSeconds(10),
-                10, Duration.ofMinutes(2), Duration.ofSeconds(5), Duration.ofSeconds(5));
+                10, Duration.ofMinutes(2), Duration.ofSeconds(5), Duration.ofSeconds(5), Duration.ofSeconds(5));
     }
 
     private JsonNode refused(BillingController under, UUID owner) throws Exception {

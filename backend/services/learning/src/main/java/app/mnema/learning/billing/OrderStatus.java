@@ -12,6 +12,14 @@ enum OrderStatus {
         return this == CREATED || this == PENDING;
     }
 
+    /**
+     * The bank may still move money of the order: a payment that comes after all ({@code CREATED} whose Init timed out, {@code FAILED} after a late or second
+     * attempt) or a refund of a {@code PAID} one. A verified notification asks the bank about these; {@code REFUNDED} and {@code REVIEW} are final here.
+     */
+    boolean bankMayChange() {
+        return this != REFUNDED && this != REVIEW;
+    }
+
     /** The wire status: {@code CREATED} is reported as {@code PENDING}. */
     String wire() {
         return this == CREATED ? PENDING.name() : name();

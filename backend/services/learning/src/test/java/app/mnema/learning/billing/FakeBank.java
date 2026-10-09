@@ -48,6 +48,8 @@ final class FakeBank implements AutoCloseable {
     final java.util.concurrent.atomic.AtomicInteger badSignatures = new java.util.concurrent.atomic.AtomicInteger();
     /** Answer {@code Init} with the recorded error 204 while true. */
     volatile boolean refuseInit;
+    /** Open the payment of an {@code Init} but answer HTTP 500 while true: the answer is lost, the payment exists. */
+    volatile boolean breakInit;
     /** Answer {@code GetState} with HTTP 500 while true. */
     volatile boolean breakGetState;
     /** Replaces the {@code PaymentURL} of the next answers when not null. */
@@ -81,6 +83,7 @@ final class FakeBank implements AutoCloseable {
 
     void reset() {
         refuseInit = false;
+        breakInit = false;
         breakGetState = false;
         delayMillis = 0;
         paymentUrl = "https://pay.tbank-online.com/So6mQeQB";
@@ -127,6 +130,7 @@ final class FakeBank implements AutoCloseable {
         String paymentId = Long.toString(sequence.incrementAndGet());
         Payment payment = new Payment(paymentId, request.path("OrderId").stringValue(null), request.path("Amount").longValue());
         payments.put(paymentId, payment);
+        if (breakInit) throw new IllegalStateException("answer lost");
         ObjectNode body = BillingFixtures.tbank("init-response-success.json");
         body.put("PaymentId", paymentId);
         body.put("OrderId", payment.orderId);

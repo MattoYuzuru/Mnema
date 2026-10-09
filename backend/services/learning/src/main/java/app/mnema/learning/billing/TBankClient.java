@@ -16,6 +16,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
@@ -76,7 +77,7 @@ class TBankClient implements DisposableBean {
         body.put("SuccessURL", returnUrl);
         body.put("FailURL", returnUrl);
         body.put("RedirectDueDate", DUE_DATE.format(order.expiresAt()));
-        JsonNode answer = post("init", "Init", body);
+        JsonNode answer = post("init", "Init", body, settings.requestTimeout);
         requireSuccess("init", answer);
         String paymentId = paymentId(answer.path("PaymentId"));
         String url = answer.path("PaymentURL").isString() ? answer.path("PaymentURL").stringValue(null) : null;
@@ -90,13 +91,18 @@ class TBankClient implements DisposableBean {
         return new InitResult(paymentId, url, status);
     }
 
-    /** Asks the bank for the state of {@code paymentId}. */
+    /** Asks the bank for the state of {@code paymentId} within the request timeout. */
     BankState getState(String paymentId) {
+        return getState(paymentId, settings.requestTimeout);
+    }
+
+    /** Asks the bank for the state of {@code paymentId}; {@code deadline} bounds the whole exchange, connecting included. */
+    BankState getState(String paymentId, Duration deadline) {
         requireConfigured("get_state");
         ObjectNode body = JSON.createObjectNode();
         body.put("TerminalKey", settings.terminalKey);
         body.put("PaymentId", paymentId);
-        JsonNode answer = post("get_state", "GetState", body);
+        JsonNode answer = post("get_state", "GetState", body, deadline);
         boolean success = answer.path("Success").isBoolean() && answer.path("Success").booleanValue();
         // A payment the bank refused (REJECTED, AUTH_FAIL) is answered with Success:false and its Status; only an answer without a payment is a failure.
         if (!success && !answer.path("Status").isString()) requireSuccess("get_state", answer);
@@ -121,18 +127,19 @@ class TBankClient implements DisposableBean {
         if (!settings.configured()) throw failed(operation, Reason.NOT_CONFIGURED, null);
     }
 
-    private JsonNode post(String operation, String path, ObjectNode body) {
+    private JsonNode post(String operation, String path, ObjectNode body, Duration deadline) {
         TBankToken.sign(body, settings.password());
-        HttpRequest request = HttpRequest.newBuilder(URI.create(settings.bankBaseUrl + "/" + path)).timeout(settings.requestTimeout)
+        HttpRequest request = HttpRequest.newBuilder(URI.create(settings.bankBaseUrl + "/" + path)).timeout(deadline)
                 .header("Content-Type", "application/json; charset=utf-8").header("Accept", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body.toString(), StandardCharsets.UTF_8)).build();
         try {
-            // The whole exchange, body included, has one deadline (the request timeout of the JDK covers the headers only), and the body is capped while it streams.
+            // The whole exchange, connect and body included, has one deadline (the request timeout of the JDK covers the headers only), and the body is capped
+            // while it streams.
             CompletableFuture<HttpResponse<byte[]>> exchange = http.sendAsync(request,
                     HttpResponse.BodyHandlers.limiting(HttpResponse.BodyHandlers.ofByteArray(), MAX_RESPONSE_BYTES));
             HttpResponse<byte[]> response;
             try {
-                response = exchange.get(settings.requestTimeout.toMillis(), TimeUnit.MILLISECONDS);
+                response = exchange.get(deadline.toMillis(), TimeUnit.MILLISECONDS);
             } catch (TimeoutException failure) {
                 exchange.cancel(true);
                 throw failed(operation, Reason.TIMEOUT, null);

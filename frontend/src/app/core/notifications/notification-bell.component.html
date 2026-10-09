@@ -14,7 +14,7 @@
   @if (center.entries().length === 0) {
     <p class="empty">Пока тихо. Когда Мнема закончит работу, сообщение появится здесь.</p>
   }
-    <ul #notificationRows class="list">
+    <ul #notificationRows class="list" [hidden]="center.entries().length === 0">
       @for (entry of center.entries(); track entry.notification.notificationId) {
         <li class="entry" [class.is-new]="isNew(entry.notification.seq)">
           <app-notification-glyph [severity]="entry.presented.severity" />
@@ -37,5 +37,5 @@
     </ul>
   <app-auto-load [content]="notificationRows" [root]="panel" [continuation]="center.olderCursor()"
     [enabled]="center.panelOpen()" [loading]="center.loadingMore()" [error]="center.moreError()"
-    loadingText="Загружаем следующие уведомления…" (loadNext)="center.loadMore()" />
+    [loadingText]="center.entries().length === 0 ? 'Загружаем уведомления…' : 'Загружаем следующие уведомления…'" (loadNext)="center.loadMore()" />
 </div>

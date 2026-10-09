@@ -17,9 +17,12 @@ import java.util.regex.Pattern;
 /**
  * Handles one T-Bank payment notification ({@code contracts/billing}). The order of trust is deliberate: a bounded, strictly parsed JSON object; credentials
  * configured; the {@code TerminalKey} is ours (constant time); the {@code Token} signature verifies; only then is anything read. A verified notification is
- * a trigger and not evidence: the state is asked from the bank ({@code GetState}) and that answer is applied by {@link PaymentStateApplier}. {@code OK} is
- * answered only after the apply transaction committed, or for a notification there is nothing to do for (retries would not help); everything else makes
- * the bank retry, hourly for a day and then daily.
+ * a trigger and not evidence: the state is asked from the bank ({@code GetState}, within {@code learning.billing.notification-timeout}, because the bank
+ * waits about 10 s for the answer) and that answer is applied by {@link PaymentStateApplier}, which records the notification in the same transaction.
+ * {@code OK} is answered only after that transaction committed, or for a notification there is nothing to do for (retries would not help); everything else
+ * makes the bank retry, hourly for a day and then daily, and a retry is processed in full because the failed attempt recorded nothing. Every order the bank
+ * may still change is asked about ({@link OrderStatus#bankMayChange()}): a late payment of a {@code CREATED} or {@code FAILED} order, a refund of a
+ * {@code PAID} one.
  *
  * <p>Nothing here logs a token, a card field or a body; refusals say why in one word.
  */
@@ -97,14 +100,19 @@ class TBankNotifications {
                 ? notification.path("Amount").longValue() : null;
         Boolean success = notification.path("Success").isBoolean() ? notification.path("Success").booleanValue() : null;
         // Only the facts the bank sent and we need: never the card fields, Data or the token.
+        BillingRepository.Event event = new BillingRepository.Event(orderId, paymentId, "NOTIFICATION", status, success, TBankClient.errorCode(notification),
+                amount, "RECEIVED");
         Instant now = clock.now();
-        boolean first = repository.insertEvent(new BillingRepository.Event(orderId, paymentId, "NOTIFICATION", status, success, TBankClient.errorCode(notification),
-                amount, "RECEIVED"), now);
-        if ((order.status() == OrderStatus.PAID || order.status() == OrderStatus.REFUNDED) && PAYMENT_DONE.contains(status)) return Reply.OK;
-        // A signed notification can be replayed by anyone who saw it: a repeat of a (payment, status) already seen asks the bank at most once per refresh interval,
-        // like the return page. The bank's own retries after a failed GetState still pass, because the failed attempt stamped nothing.
-        if (!first && !repository.claimRefresh(orderId, now, now.minus(settings.refreshInterval))) return Reply.OK;
-        applier.apply(orderId, bank.getState(paymentId), PaymentStateApplier.Trigger.NOTIFICATION);
+        boolean settled = order.status() == OrderStatus.PAID && PAYMENT_DONE.contains(status) && paymentId.equals(order.paymentId());
+        if (!order.status().bankMayChange() || settled) {
+            // Nothing the bank says can change the order: the notification is recorded and acknowledged.
+            repository.insertEvent(event, now);
+            return Reply.OK;
+        }
+        // A signed notification can be replayed by anyone who saw it: one already handled asks the bank at most once per refresh interval, like the return
+        // page.
+        if (repository.notificationHandled(paymentId, status) && !repository.claimRefresh(orderId, now, now.minus(settings.refreshInterval))) return Reply.OK;
+        applier.applyNotified(orderId, bank.getState(paymentId, settings.notificationTimeout), event);
         return Reply.OK;
     }
 

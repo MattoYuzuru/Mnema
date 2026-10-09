@@ -61,6 +61,7 @@ class BillingHardeningTest extends BillingIntegrationTest {
         assertThat(second.path("amountKopecks").longValue()).isEqualTo(79_200);
         assertThat(status(orderOf(first))).isEqualTo("FAILED");
         assertThat(column(orderOf(first), "failure_reason")).isEqualTo("EXPIRED");
+        assertThat(events(orderOf(first))).as("closing the holder is audited like any transition").containsExactly("INIT:NEW:PENDING", "RECONCILE:NEW:FAILED");
         // A payment that still reaches the closed order is granted: money taken must give access.
         BANK.move(orderOf(first), "CONFIRMED");
         assertThat(notify(notification("notification-confirmed.json", orderOf(first), "CONFIRMED")).getStatus()).isEqualTo(200);
@@ -94,11 +95,13 @@ class BillingHardeningTest extends BillingIntegrationTest {
         String orderId = orderOf(open(owner, "PRO"));
         jdbc.sql("DELETE FROM app_learning.promo_discount WHERE owner_id=?").param(1, owner).update();
         BANK.move(orderId, "CONFIRMED");
+        double spent = anomalies("discount_spent");
 
         assertThat(notify(notification("notification-confirmed.json", orderId, "CONFIRMED")).getStatus()).isEqualTo(200);
 
         assertThat(status(orderId)).isEqualTo("PAID");
         assertThat(snapshots(owner)).isEqualTo(1);
+        assertThat(anomalies("discount_spent")).isEqualTo(spent + 1);
     }
 
     @Test
@@ -136,13 +139,11 @@ class BillingHardeningTest extends BillingIntegrationTest {
         UUID owner = UUID.randomUUID();
         String key = UUID.randomUUID().toString();
         String json = "{\"plan\":\"PLUS\",\"period\":\"MONTH\"}";
-        BANK.refuseInit = true;
+        BANK.breakInit = true;
         assertThat(checkout(owner, json, key).getStatus()).isEqualTo(503);
-        BANK.refuseInit = false;
-        UUID orderId = UUID.fromString(jdbc.sql("SELECT order_id::text FROM app_learning.billing_order WHERE owner_id=:owner").param("owner", owner)
-                .query(String.class).single());
-        assertThat(repository.claimInit(orderId, clock.now(), clock.now().minusSeconds(30))).isTrue();
-        assertThat(repository.claimInit(orderId, clock.now(), clock.now().minusSeconds(30))).isFalse();
+        BANK.breakInit = false;
+        UUID orderId = UUID.fromString(onlyOrder(owner));
+        assertThat(repository.claimInit(orderId, clock.now(), clock.now().minusSeconds(30))).as("a lost answer keeps the claim").isFalse();
 
         assertThat(checkout(owner, json, key).getStatus()).isEqualTo(503);
         assertThat(BANK.inits).hasSize(1);

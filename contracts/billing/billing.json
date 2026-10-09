@@ -58,7 +58,7 @@
       "errors": [
         "400 text/plain: not a JSON object, too large",
         "403 text/plain: wrong TerminalKey or Token (logged without values)",
-        "503 text/plain: GetState or the database failed; the bank retries and the reconciler also re-checks"
+        "503 text/plain: GetState (at most learning.billing.notification-timeout, 5 s) or the database failed; nothing is recorded, so the bank's retry is processed in full and the reconciler also re-checks"
       ]
     }
   ],
@@ -82,9 +82,9 @@
   "statuses": {
     "PENDING": "the order exists; the bank has not confirmed the payment (includes the internal CREATED before Init succeeded)",
     "PAID": "GetState confirmed CONFIRMED with the order's amount; the BILLING entitlement snapshot billing:{orderId} was accepted in the same transaction",
-    "FAILED": "the bank reported REJECTED, AUTH_FAIL, CANCELED or DEADLINE_EXPIRED, or the link expired unused",
+    "FAILED": "the bank reported REJECTED, AUTH_FAIL, CANCELED, DEADLINE_EXPIRED or ATTEMPTS_EXPIRED, the bank refused Init (a new checkout opens a new order), or the link expired unused; a payment that still arrives (re-checked for 72 hours) is granted",
     "REFUNDED": "a PAID order the bank later reported REVERSED, PARTIAL_REVERSED, REFUNDED or PARTIAL_REFUNDED; access policy is #392 (the entitlement is not withdrawn in B1)",
-    "REVIEW": "the bank confirmed an amount or order that does not match; nothing is granted, the operator reconciles"
+    "REVIEW": "the bank confirmed an amount that does not match, partly refunded a payment that was never granted, or still reported the payment in progress 72 hours after the link; nothing is granted, the operator reconciles"
   },
   "examples": {
     "createCheckoutRequest": { "plan": "PLUS", "period": "MONTH" },

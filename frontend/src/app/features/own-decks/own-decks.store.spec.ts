@@ -94,6 +94,19 @@ describe('OwnDecksStore', () => {
         expect(store.listState().nextCursor).toBe('oldest-page');
     });
 
+    it('drops a row deleted elsewhere from the refreshed first-page range and keeps the extended tail', () => {
+        const [a, b, c, d] = [4, 5, 6, 7].map(n => ({ ...fixtureDeck, deckId: `${n}`.repeat(8) + `-${n}${n}${n}${n}-4${n}${n}${n}-8${n}${n}${n}-` + `${n}`.repeat(12) }));
+        api.list.mockReturnValueOnce(of({ items: [a, b], nextCursor: 'page-2' }))
+            .mockReturnValueOnce(of({ items: [c, d], nextCursor: null }))
+            .mockReturnValueOnce(of({ items: [a, c], nextCursor: 'page-2b' }));
+
+        store.loadList();
+        store.loadMore();
+        store.refreshVisibleList();
+        expect(store.listState().items.map(item => item.deckId)).toEqual([a.deckId, c.deckId, d.deckId]);
+        expect(store.listState().nextCursor).toBeNull();
+    });
+
     it('refreshes the visible page without changing its cursor or discarding confirmed rows on failure', () => {
         const newer = { ...fixtureDeck, deckId: '33333333-3333-4333-8333-333333333333' };
         api.list.mockReturnValueOnce(of({ items: [fixtureDeck], nextCursor: 'older-page' })).mockReturnValueOnce(of({ items: [newer], nextCursor: 'older-page' })).mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));

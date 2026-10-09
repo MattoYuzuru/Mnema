@@ -132,13 +132,15 @@ describe('AppShellComponent', () => {
         expect(row.style.getPropertyValue('--mn-wave-y')).toBe('8px');
     });
 
-    it('keeps the current route and focuses main when the skip link is activated', () => {
-        const link = (fixture.nativeElement as HTMLElement).querySelector<HTMLAnchorElement>('.skip-link')!;
+    it('keeps the current route and focuses main or the footer when a skip link is activated', () => {
+        const [main, footer] = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll<HTMLAnchorElement>('.skip-link'));
         const event = new MouseEvent('click', { bubbles: true, cancelable: true });
 
-        expect(link.dispatchEvent(event)).toBe(false);
+        expect(main.dispatchEvent(event)).toBe(false);
         expect(event.defaultPrevented).toBe(true);
         expect(document.activeElement?.id).toBe('main-content');
+        footer.click();
+        expect(document.activeElement?.id).toBe('site-footer');
         expect(TestBed.inject(Router).url).toBe('/');
     });
 

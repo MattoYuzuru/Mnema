@@ -137,6 +137,24 @@ describe('DeckMaterialsComponent', () => {
             expect(rows()).toHaveLength(1);
         });
 
+        it('keeps the loaded rows and the focused sort control while the new order loads', async () => {
+            await open();
+            const reply = new Subject<ReturnType<typeof page>>();
+            items.list.mockReturnValueOnce(reply);
+            const radio = Array.from(root().querySelectorAll<HTMLInputElement>('app-segmented-choice input'))
+                .find(input => input.closest('label')?.textContent?.includes('Без упражнений'))!;
+            radio.focus();
+            radio.click();
+            radio.dispatchEvent(new Event('change', { bubbles: true }));
+            await settle();
+            expect(rows().length).toBeGreaterThan(0);
+            expect(root().querySelector('.note[role=status]')).toBeNull();
+            expect(document.activeElement).toBe(radio);
+            reply.next(page(0, 20, 50, { items: [row(4, { exerciseCount: 0 })] }));
+            await settle();
+            expect(rows()).toHaveLength(1);
+        });
+
         it('lists materials without exercises first and focuses the list when a statistics widget asks', async () => {
             const component = await open();
             items.list.mockReturnValueOnce(of(page(0, 2, 2)));
