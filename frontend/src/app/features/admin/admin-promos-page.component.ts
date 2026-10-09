@@ -1,9 +1,11 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, map } from 'rxjs';
+import { AutoLoadComponent } from '../../shared/auto-load.component';
 import { AdminApiService, AdminSession } from './admin-api.service';
-import { AdminPromo, AdminProtocolError, PromoCreate, PromoKind, PromoPage } from './admin.models';
+import { AdminPromo, AdminProtocolError, PromoCreate, PromoKind } from './admin.models';
+import { CursorList } from './cursor-list';
 import { dateTime, errorText, isForbidden, unknownOutcome } from './admin-presenters';
 type PromoMutation = {
     readonly kind: 'create';
@@ -40,7 +42,7 @@ function utcFromMoscow(value: string): string | null {
     host: {
         '(window:beforeunload)': 'protectBeforeUnload($event)'
     },
-    imports: [ReactiveFormsModule],
+    imports: [ReactiveFormsModule, AutoLoadComponent],
     templateUrl: './admin-promos-page.component.html',
     styleUrl: './admin-page.css',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -49,9 +51,17 @@ export class AdminPromosPageComponent implements OnInit {
     private readonly api = inject(AdminApiService);
     private readonly destroy = inject(DestroyRef);
     protected readonly session = inject(AdminSession);
-    protected readonly page = signal<PromoPage | null>(null);
-    protected readonly loading = signal(false);
-    protected readonly listError = signal('');
+    protected readonly codes = new CursorList<AdminPromo>({
+        fetch: cursor => this.api.promos(cursor).pipe(map(page => ({ items: page.codes, next: page.next }))),
+        key: code => code.codeId,
+        destroy: this.destroy,
+        firstError: 'Список промокодов не загрузился. Поля формы сохранены.',
+        moreError: 'Следующие промокоды не загрузились.',
+        onForbidden: () => {
+            this.createdCode.set(null);
+            this.form.reset();
+        }
+    });
     protected readonly actionError = signal('');
     protected readonly notice = signal('');
     protected readonly busy = signal(false);
@@ -61,7 +71,7 @@ export class AdminPromosPageComponent implements OnInit {
     protected readonly enabledFilter = signal('');
     protected readonly typeFilter = signal('');
     protected readonly kind = signal<PromoKind>('TIER_DAYS');
-    protected readonly filtered = computed(() => (this.page()?.codes ?? []).filter(code => (!this.query() || `${code.hint} ${code.channel ?? ''}`.toLowerCase().includes(this.query().trim().toLowerCase())) && (!this.enabledFilter() || code.enabled === (this.enabledFilter() === 'yes')) && (!this.typeFilter() || code.type === this.typeFilter())));
+    protected readonly filtered = computed(() => this.codes.items().filter(code => (!this.query() || `${code.hint} ${code.channel ?? ''}`.toLowerCase().includes(this.query().trim().toLowerCase())) && (!this.enabledFilter() || code.enabled === (this.enabledFilter() === 'yes')) && (!this.typeFilter() || code.type === this.typeFilter())));
     protected readonly form = new FormGroup({
         type: new FormControl<PromoKind>('TIER_DAYS', {
             nonNullable: true
@@ -92,8 +102,6 @@ export class AdminPromosPageComponent implements OnInit {
         })
     });
     protected readonly date = dateTime;
-    protected readonly cursor = signal<string | null>(null);
-    protected readonly history = signal<(string | null)[]>([]);
     private mutation: PromoMutation | null = null;
     ngOnInit(): void {
         this.form.controls.type.valueChanges.pipe(takeUntilDestroyed(this.destroy)).subscribe(type => {
@@ -101,41 +109,7 @@ export class AdminPromosPageComponent implements OnInit {
             this.form.controls.amount.setValue(type === 'DISCOUNT_PERCENT' ? 10 : type === 'TIER_MONTHS' ? 1 : 7);
         });
         if (this.session.access()?.permissions.promos)
-            void this.load(null);
-    }
-
-    protected async load(after: string | null): Promise<boolean> {
-        if (this.loading())
-            return false;
-        this.loading.set(true);
-        this.listError.set('');
-        try {
-            this.page.set(await firstValueFrom(this.api.promos(after).pipe(takeUntilDestroyed(this.destroy))));
-            this.cursor.set(after);
-            return true;
-        } catch (error) {
-            if (isForbidden(error)) {
-                this.page.set(null);
-                this.createdCode.set(null);
-                this.form.reset();
-            }
-            this.listError.set(errorText(error, 'Список промокодов не загрузился. Поля формы сохранены.'));
-            return false;
-        } finally {
-            this.loading.set(false);
-        }
-    }
-
-    protected async next(): Promise<void> {
-        const next = this.page()?.next, old = this.cursor();
-        if (next && await this.load(next))
-            this.history.update(values => [...values, old]);
-    }
-
-    protected async previous(): Promise<void> {
-        const values = this.history();
-        if (await this.load(values.at(-1) ?? null))
-            this.history.set(values.slice(0, -1));
+            void this.codes.reload();
     }
 
     protected async create(): Promise<void> {
@@ -227,20 +201,15 @@ export class AdminPromosPageComponent implements OnInit {
                 this.notice.set('Промокод создан. Сохраните его сейчас: список хранит только подсказку.');
             }
             else {
-                this.page.update(page => page ? {
-                    ...page,
-                    codes: page.codes.map(code => code.codeId === result.codeId ? result : code)
-                } : page);
+                this.codes.replace(result);
                 this.notice.set(result.enabled ? 'Код включён.' : 'Код выключен. Уже выданный доступ сохранён.');
             }
             this.mutation = null;
-            if (mutation.kind === 'create') {
-                this.history.set([]);
-                await this.load(null);
-            }
+            if (mutation.kind === 'create')
+                await this.codes.reload();
         } catch (error) {
             if (isForbidden(error)) {
-                this.page.set(null);
+                this.codes.clear();
                 this.createdCode.set(null);
                 this.form.reset();
                 this.mutation = null;

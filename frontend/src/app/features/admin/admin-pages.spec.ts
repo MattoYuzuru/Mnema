@@ -2,6 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Component, Type, signal } from '@angular/core';
+import { By } from '@angular/platform-browser';
 import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { BehaviorSubject } from 'rxjs';
 import { appConfig } from '../../app.config';
@@ -185,6 +186,28 @@ describe('owner report', () => {
         expect(root.textContent).toContain('не суммируются');
         expect(root.textContent).toContain('90 дней');
     });
+    it('shows paid-order revenue in rubles, the latency sample size and a dash only for an empty sample', async () => {
+        const report = clone(wire.report);
+        report.financial.revenue = { ...report.financial.revenue, paidOrders: 2, paidKopecks: 49800, refundedOrders: 1, refundedKopecks: 19900 };
+        report.ai.latency = { p50Ms: 200, p95Ms: 290, p99Ms: 299, sampleCount: 2, population: 'RECORDED_LATENCY' } as never;
+        report.usage.featuresTruncated = true;
+        await setup(AdminReportPageComponent);
+        flushReport(report);
+        await settle();
+        expect(root.textContent).toContain('498');
+        expect(root.textContent).toContain('Выручка');
+        expect(root.textContent).not.toContain('Нет источника платёжного');
+        expect(root.textContent).toContain('Выборка: 2 вызовов');
+        expect(root.textContent).toContain('200 мс');
+        expect(root.textContent).toContain('Показаны 64 функции');
+    });
+    it('uses a dash for latency percentiles of an empty sample', async () => {
+        await setup(AdminReportPageComponent);
+        flushReport();
+        await settle();
+        expect(root.textContent).toContain('— мс');
+        expect(root.textContent).toContain('Выборка: 0 вызовов');
+    });
     it('honestly warns of expired rows and truncated route groups, and includes source-linked drilldowns', async () => {
         const report = clone(wire.report);
         report.ai.rangeIncludesExpiredData = true;
@@ -255,20 +278,63 @@ describe('user directory and context', () => {
         await settle();
         expect(root.querySelector('tbody a')?.textContent).toBe('synthetic@example.test');
     });
-    it('does not resurrect details from a late successful account read after access is denied', async () => {
+    it('does not keep account facts when the Learning report denies access, and opens a detail without a list read', async () => {
         await setup(AdminUsersPageComponent, {
             accountId: wire.user.accountId
         });
-        const account = http.expectOne(`${identity}/directory/${wire.user.accountId}`);
-        http.expectOne(request => request.url === `${identity}/directory`).flush({}, {
+        http.expectNone(request => request.url === `${identity}/directory`);
+        http.expectOne(`${identity}/directory/${wire.user.accountId}`).flush(wire.directory.accounts[0]);
+        await settle();
+        expect(root.textContent).toContain('synthetic@example.test');
+        http.expectOne(request => request.url === `/api/admin/console/users/${wire.user.accountId}`).flush({}, {
             status: 403,
             statusText: 'Forbidden'
         });
         await settle();
-        account.flush(wire.directory.accounts[0]);
-        await settle();
         expect(root.textContent).not.toContain('synthetic@example.test');
-        http.expectNone(request => request.url === `/api/admin/console/users/${wire.user.accountId}`);
+    });
+    it('appends the next directory page without replacing rows, drops duplicates and retries a failed page explicitly', async () => {
+        await setup(AdminUsersPageComponent);
+        const first = clone(wire.directory) as { accounts: typeof wire.directory.accounts; next: string | null };
+        first.next = 'cursor-2';
+        http.expectOne(request => request.url === `${identity}/directory`).flush(first);
+        await settle();
+        const more = () => fixture.debugElement.query(By.css('app-auto-load')).triggerEventHandler('loadNext');
+        expect(root.querySelectorAll('tbody tr')).toHaveLength(1);
+        expect(root.querySelector('button')?.textContent).not.toContain('Далее');
+        more();
+        http.expectOne(request => request.url === `${identity}/directory` && request.params.get('after') === 'cursor-2').flush({}, {
+            status: 503,
+            statusText: 'Unavailable'
+        });
+        await settle();
+        expect(root.querySelectorAll('tbody tr')).toHaveLength(1);
+        expect(root.querySelector('app-auto-load [role=alert]')?.textContent).toContain('Следующие пользователи не загрузились');
+        click('Повторить');
+        const second = clone(wire.directory) as { accounts: typeof wire.directory.accounts; next: string | null };
+        second.accounts = [first.accounts[0], { ...first.accounts[0], accountId: '10000000-0000-4000-8000-0000000000aa', email: 'second@example.test' }];
+        second.next = null;
+        http.expectOne(request => request.url === `${identity}/directory` && request.params.get('after') === 'cursor-2').flush(second);
+        await settle();
+        expect(root.querySelectorAll('tbody tr')).toHaveLength(2);
+        expect(root.textContent).toContain('second@example.test');
+    });
+    it('discards a continuation that arrives after a filter replaced the list', async () => {
+        await setup(AdminUsersPageComponent);
+        const first = clone(wire.directory) as { accounts: typeof wire.directory.accounts; next: string | null };
+        first.next = 'cursor-2';
+        http.expectOne(request => request.url === `${identity}/directory`).flush(first);
+        await settle();
+        fixture.debugElement.query(By.css('app-auto-load')).triggerEventHandler('loadNext');
+        const late = http.expectOne(request => request.params.get('after') === 'cursor-2');
+        query.next(convertToParamMap({ query: 'other' }));
+        const fresh = http.expectOne(request => request.url === `${identity}/directory` && request.params.get('query') === 'other');
+        fresh.flush({ accounts: [], next: null });
+        await settle();
+        late.flush(first);
+        await settle();
+        expect(root.querySelectorAll('tbody tr th')).toHaveLength(0);
+        expect(root.textContent).toContain('пользователей нет');
     });
     it('uses literal search and resets cursor when filters apply', async () => {
         await setup(AdminUsersPageComponent);
@@ -289,7 +355,6 @@ describe('user directory and context', () => {
         await setup(AdminUsersPageComponent, {
             accountId: wire.user.accountId
         });
-        http.expectOne(request => request.url === `${identity}/directory`).flush(wire.directory);
         http.expectOne(`${identity}/directory/${wire.user.accountId}`).flush(wire.directory.accounts[0]);
         await settle();
         http.expectOne(request => request.url === `/api/admin/console/users/${wire.user.accountId}`).flush({}, {
@@ -312,7 +377,6 @@ describe('user directory and context', () => {
         await setup(AdminUsersPageComponent, {
             accountId: wire.user.accountId
         });
-        http.expectOne(request => request.url === `${identity}/directory`).flush(wire.directory);
         http.expectOne(`${identity}/directory/${wire.user.accountId}`).flush(wire.directory.accounts[0]);
         await settle();
         http.expectOne(request => request.url === `/api/admin/console/users/${wire.user.accountId}`).flush(wire.user);
@@ -440,6 +504,32 @@ describe('promo operations', () => {
         });
         await settle();
         expect((root.querySelector('[formControlName=channel]') as HTMLInputElement).value).toBe('community');
+    });
+    it('continues the code list on demand, keeps filters over loaded rows and shows a failed page with explicit retry', async () => {
+        await setup(AdminPromosPageComponent);
+        http.expectOne('/api/admin/promo-codes').flush({ codes: [promo], next: promo.codeId });
+        await settle();
+        const more = () => fixture.debugElement.query(By.css('app-auto-load')).triggerEventHandler('loadNext');
+        more();
+        http.expectOne(request => request.url === '/api/admin/promo-codes' && request.params.get('after') === promo.codeId).flush({}, {
+            status: 503,
+            statusText: 'Unavailable'
+        });
+        await settle();
+        expect(root.querySelectorAll('tbody tr')).toHaveLength(1);
+        expect(root.querySelector('app-auto-load [role=alert]')?.textContent).toContain('Следующие промокоды не загрузились');
+        click('Повторить');
+        const other = { ...promo, codeId: '30000000-0000-4000-8000-000000000002', hint: 'ZZ…99', enabled: false };
+        http.expectOne(request => request.params.get('after') === promo.codeId).flush({ codes: [promo, other], next: null });
+        await settle();
+        expect(root.querySelectorAll('tbody tr')).toHaveLength(2);
+        expect(root.textContent).not.toContain('Далее');
+        fill('channel', 'kept while the list reloads');
+        click('Обновить');
+        http.expectOne('/api/admin/promo-codes').flush({ codes: [other], next: null });
+        await settle();
+        expect(root.querySelectorAll('tbody tr')).toHaveLength(1);
+        expect((root.querySelector('[formControlName=channel]') as HTMLInputElement).value).toBe('kept while the list reloads');
     });
     it('does not call admin promo APIs without the real admin permission', async () => {
         await setup(AdminPromosPageComponent);
@@ -622,6 +712,44 @@ describe('support workspace', () => {
         await settle();
         expect((root.querySelector('textarea') as HTMLTextAreaElement).value).toBe('Неотправленный ответ');
     });
+    it('appends queue and conversation pages by id with retry, and replaces both on refresh', async () => {
+        await setup(AdminSupportPageComponent, {
+            ticketId
+        });
+        const second = { ...wire.support.tickets.entries[0], id: '9007199254740994' };
+        http.expectOne(request => request.url === '/api/admin/support/tickets').flush({ entries: wire.support.tickets.entries, nextCursor: second.id });
+        flushThread({ ...wire.support.conversation, nextMessageCursor: '9007199254740998' });
+        await settle();
+        const controls = () => fixture.debugElement.queryAll(By.css('app-auto-load'));
+        expect(controls()).toHaveLength(2);
+        controls()[0].triggerEventHandler('loadNext');
+        http.expectOne(request => request.url === '/api/admin/support/tickets' && request.params.get('before') === second.id).flush({}, {
+            status: 503,
+            statusText: 'Unavailable'
+        });
+        await settle();
+        expect(root.querySelector('.ticket-queue app-auto-load [role=alert]')?.textContent).toContain('Следующие обращения не загрузились');
+        expect(root.querySelectorAll('.ticket-choice')).toHaveLength(1);
+        (root.querySelector('.ticket-queue app-auto-load button') as HTMLButtonElement).click();
+        http.expectOne(request => request.params.get('before') === second.id).flush({ entries: [wire.support.tickets.entries[0], second], nextCursor: null });
+        await settle();
+        expect(root.querySelectorAll('.ticket-choice')).toHaveLength(2);
+        controls()[1].triggerEventHandler('loadNext');
+        const page = http.expectOne(request => request.url === `/api/admin/support/tickets/${ticketId}` && request.params.get('afterMessage') === '9007199254740998');
+        page.flush({ ...wire.support.conversation, messages: [wire.support.conversation.messages[1], { ...wire.support.conversation.messages[1], id: '9007199254741000', text: 'Later' }], nextMessageCursor: null });
+        await settle();
+        expect(root.querySelectorAll('.message')).toHaveLength(3);
+        expect(root.textContent).toContain('Later');
+        expect(root.textContent).not.toContain('Следующие сообщения');
+    });
+    it('shows a plain Russian unavailable state, not an error, when the bot bridge is not configured', async () => {
+        await setup(AdminSupportPageComponent);
+        http.match(request => request.url.startsWith('/api/admin/support'));
+        TestBed.inject(AdminSession).access.set({ owner: true, permissions: { events: true, moderation: true, promos: true, support: false } });
+        fixture.detectChanges();
+        expect(root.textContent).toContain('Поддержка недоступна');
+        expect(root.querySelector('[role=alert]')).toBeNull();
+    });
     it('clears private conversations after access revocation', async () => {
         await setup(AdminSupportPageComponent, {
             ticketId
@@ -639,6 +767,23 @@ describe('support workspace', () => {
     });
 });
 describe('separate action journals', () => {
+    it('continues each journal independently, labels denied attempts and the ban reason, and dedupes by audit id', async () => {
+        await setup(AdminAuditPageComponent);
+        const learning = clone(wire.audit) as { entries: typeof wire.audit.entries; next: string | null };
+        learning.next = learning.entries.at(-1)!.auditId;
+        http.expectOne('/api/admin/console/audit').flush(learning);
+        http.expectOne(`${identity}/audit`).flush(wire.audit);
+        await settle();
+        expect(root.textContent).toContain('Отказано');
+        expect(root.textContent).toContain('Причина: Synthetic moderation reason');
+        const rows = () => root.querySelectorAll('section')[0].querySelectorAll('tbody tr').length;
+        expect(rows()).toBe(3);
+        fixture.debugElement.queryAll(By.css('app-auto-load'))[0].triggerEventHandler('loadNext');
+        http.expectOne(request => request.url === '/api/admin/console/audit' && request.params.get('before') === learning.next).flush({ entries: [learning.entries[0], { ...learning.entries[0], auditId: '0199c478-a000-7000-8000-000000000009' }], next: null });
+        await settle();
+        expect(rows()).toBe(4);
+        expect(root.querySelectorAll('section')[1].querySelectorAll('tbody tr')).toHaveLength(3);
+    });
     it('keeps the other source useful after a source outage and supports retry', async () => {
         await setup(AdminAuditPageComponent);
         http.expectOne('/api/admin/console/audit').flush(wire.audit);

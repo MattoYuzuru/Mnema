@@ -4,11 +4,11 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { AdminSession } from '../admin/admin-api.service';
 import { HoldToDeleteButtonComponent } from '../../shared/hold-to-delete-button.component';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { AutoLoadComponent } from '../../shared/auto-load.component';
 import { EventsApiService } from './events-api.service';
-import { EventBodyComponent } from './event-body.component';
+import { EventArticleComponent } from './event-article.component';
 import { EventEdit, EventPage, ManagedEvent, eventDate, formatEventDate } from './events.models';
 
 type Mutation = { readonly kind: 'save'; readonly edit: EventEdit; readonly existing: ManagedEvent | null }
@@ -16,8 +16,8 @@ type Mutation = { readonly kind: 'save'; readonly edit: EventEdit; readonly exis
 
 @Component({
     selector: 'app-manage-events-page',
-    host: { '(window:beforeunload)': 'protectBeforeUnload($event)' },
-    imports: [ReactiveFormsModule, RouterLink, EventBodyComponent, HoldToDeleteButtonComponent, AutoLoadComponent],
+    host: { '(window:beforeunload)': 'protectBeforeUnload($event)', '[class.standalone]': 'standalone' },
+    imports: [ReactiveFormsModule, RouterLink, EventArticleComponent, HoldToDeleteButtonComponent, AutoLoadComponent],
     templateUrl: './manage-events-page.component.html',
     styleUrl: './manage-events-page.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -25,6 +25,8 @@ type Mutation = { readonly kind: 'save'; readonly edit: EventEdit; readonly exis
 export class ManageEventsPageComponent implements OnInit {
     private readonly api = inject(EventsApiService);
     private readonly adminSession = inject(AdminSession);
+    /** On the learner host the editor is its own page (events-owner check only); in the console it fills the owner shell. */
+    protected readonly standalone = inject(ActivatedRoute).snapshot.data['standalone'] === true;
     private readonly destroyRef = inject(DestroyRef);
     protected readonly state = signal<'loading' | 'ready' | 'forbidden' | 'error'>('loading');
     protected readonly page = signal<EventPage<ManagedEvent> | null>(null);

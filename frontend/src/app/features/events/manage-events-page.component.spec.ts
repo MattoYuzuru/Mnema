@@ -3,7 +3,6 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { By } from '@angular/platform-browser';
 import { HoldToDeleteButtonComponent } from '../../shared/hold-to-delete-button.component';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { ManageEventsPageComponent } from './manage-events-page.component';
 import { TEST_EVENT } from './events-test-data';

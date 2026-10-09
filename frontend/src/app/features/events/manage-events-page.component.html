@@ -45,7 +45,7 @@
             <button class="button" type="button" (click)="showPreview()">{{ preview() ? 'Закрыть просмотр' : 'Предпросмотр текста' }}</button>
           </div>
         </form>
-        @if (preview()) { <section class="preview" aria-label="Предпросмотр новости"><p class="eyebrow">Так выглядит публичная запись</p><h2>{{ previewTitle() || 'Без заголовка' }}</h2><p class="hint">{{ previewDate() }}</p><app-event-body [markdown]="previewBody()" /></section> }
+        @if (preview()) { <section class="preview" aria-label="Предпросмотр новости"><p class="eyebrow">Так выглядит публичная запись</p><app-event-article eventId="preview" [title]="previewTitle() || 'Без заголовка'" [eventDate]="previewDate()" [markdown]="previewBody()" /></section> }
         @if (selected()) {
           <div class="delete-area"><app-hold-to-delete-button label="Удалить событие" consequence="Запись исчезнет из публичной ленты и редактора. Восстановления в кабинете нет." [disabled]="busy() || uncertain()" (confirmed)="remove()" /></div>
         }

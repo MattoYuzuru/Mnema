@@ -1,4 +1,5 @@
 .manage-events { min-inline-size: 0; }
+:host(.standalone) .manage-events { max-width: var(--mn-page-width); margin: auto; padding: var(--mn-space-7) var(--mn-page-gutter); }
 header { margin-block: var(--mn-space-4) var(--mn-space-6); }
 .status-text:empty { margin: 0; }
 h1 { margin-block: var(--mn-space-2); font-size: clamp(2.7rem, 6vw, 4rem); }
@@ -16,4 +17,5 @@ form { display: grid; gap: var(--mn-space-5); }
 .actions { display: flex; flex-wrap: wrap; gap: var(--mn-space-3); }
 .preview, .delete-area { border-top: 1px solid var(--mn-rule); padding-top: var(--mn-space-5); margin-top: var(--mn-space-6); }
 .preview { max-width: 42rem; }
+.preview app-event-article { margin-top: var(--mn-space-3); }
 @media (max-width: 800px) { .workspace { grid-template-columns: minmax(0, 1fr); } .editor { padding: var(--mn-space-4); } }

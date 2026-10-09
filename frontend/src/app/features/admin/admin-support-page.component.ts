@@ -2,9 +2,11 @@ import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, inject, signal 
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { combineLatest, firstValueFrom } from 'rxjs';
+import { combineLatest, firstValueFrom, map } from 'rxjs';
+import { AutoLoadComponent } from '../../shared/auto-load.component';
 import { AdminApiService, AdminSession } from './admin-api.service';
-import { Conversation, SupportPage, SupportTicket, TicketCommand, TicketStatus } from './admin.models';
+import { Conversation, SupportTicket, TicketCommand, TicketStatus } from './admin.models';
+import { CursorList } from './cursor-list';
 import {
     bytes, dateTime, deliveryNames, errorText, isForbidden, ticketCategories, ticketStatuses, unknownOutcome
 } from './admin-presenters';
@@ -13,7 +15,7 @@ import {
     host: {
         '(window:beforeunload)': 'protectBeforeUnload($event)'
     },
-    imports: [ReactiveFormsModule, RouterLink],
+    imports: [ReactiveFormsModule, RouterLink, AutoLoadComponent],
     templateUrl: './admin-support-page.component.html',
     styleUrls: ['./admin-page.css', './admin-support-page.component.css'],
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -24,27 +26,31 @@ export class AdminSupportPageComponent implements OnInit {
     private readonly router = inject(Router);
     private readonly destroy = inject(DestroyRef);
     protected readonly session = inject(AdminSession);
-    private listEpoch = 0;
     private threadEpoch = 0;
     private mutation: {
         readonly id: string;
         readonly command: TicketCommand;
     } | null = null;
-    protected readonly page = signal<SupportPage | null>(null);
+    protected readonly tickets = new CursorList<SupportTicket>({
+        fetch: cursor => this.api.tickets({ ...this.listParams(), before: cursor }).pipe(map(page => ({ items: page.entries, next: page.nextCursor }))),
+        key: ticket => ticket.id,
+        destroy: this.destroy,
+        firstError: 'Очередь недоступна. Проверьте подключение бота и повторите. Текст ответа сохранён.',
+        moreError: 'Следующие обращения не загрузились. Текст ответа сохранён.',
+        onForbidden: () => this.clearPrivate()
+    });
     protected readonly thread = signal<Conversation | null>(null);
     protected readonly selectedId = signal<string | null>(null);
-    protected readonly loading = signal(false);
     protected readonly threadLoading = signal(false);
     protected readonly moreLoading = signal(false);
+    protected readonly moreError = signal<string | null>(null);
+    protected readonly threadContext = signal(0);
     protected readonly busy = signal(false);
     protected readonly uncertain = signal(false);
-    protected readonly listError = signal('');
     protected readonly threadError = signal('');
     protected readonly actionError = signal('');
     protected readonly notice = signal('');
     protected readonly pendingSelection = signal<SupportTicket | null>(null);
-    protected readonly cursor = signal<string | null>(null);
-    protected readonly history = signal<(string | null)[]>([]);
     protected readonly listParams = signal<Record<string, string>>({});
     protected readonly filters = new FormGroup({
         q: new FormControl('', {
@@ -93,7 +99,6 @@ export class AdminSupportPageComponent implements OnInit {
             };
             this.filters.reset(values);
             this.listParams.set(values);
-            this.cursor.set(query.get('before'));
             const id = params.get('ticketId');
             if (id !== this.selectedId()) {
                 this.composer.reset({
@@ -107,7 +112,7 @@ export class AdminSupportPageComponent implements OnInit {
             }
             this.selectedId.set(id);
             if (this.session.access()?.permissions.support) {
-                void this.loadList(this.cursor());
+                void this.tickets.reload();
                 if (id)
                     void this.loadThread(id);
                 else {
@@ -121,7 +126,6 @@ export class AdminSupportPageComponent implements OnInit {
     protected async apply(): Promise<void> {
         if (this.busy() || this.uncertain())
             return;
-        this.history.set([]);
         await this.router.navigate(['/manage/support'], {
             queryParams: this.filters.getRawValue()
         });
@@ -169,40 +173,20 @@ export class AdminSupportPageComponent implements OnInit {
         await this.open(ticket);
     }
 
-    protected async loadList(before: string | null): Promise<boolean> {
-        const epoch = ++this.listEpoch;
-        this.loading.set(true);
-        this.listError.set('');
-        try {
-            const page = await firstValueFrom(this.api.tickets({
-                ...this.listParams(),
-                before
-            }).pipe(takeUntilDestroyed(this.destroy)));
-            if (epoch === this.listEpoch) {
-                this.page.set(page);
-                this.cursor.set(before);
-            }
-            return true;
-        } catch (error) {
-            if (epoch === this.listEpoch) {
-                if (isForbidden(error))
-                    this.clearPrivate();
-                this.listError.set(errorText(error, 'Очередь недоступна. Проверьте подключение бота и повторите. Текст ответа сохранён.'));
-            }
-            return false;
-        } finally {
-            if (epoch === this.listEpoch)
-                this.loading.set(false);
-        }
-    }
-
     protected async loadThread(id: string, append = false): Promise<void> {
         const epoch = append ? this.threadEpoch : ++this.threadEpoch;
-        if (append)
+        if (append) {
+            if (this.moreLoading() || !this.thread()?.nextMessageCursor)
+                return;
             this.moreLoading.set(true);
-        else
+            this.moreError.set(null);
+        }
+        else {
             this.threadLoading.set(true);
-        this.threadError.set('');
+            this.threadContext.update(value => value + 1);
+            this.moreError.set(null);
+            this.threadError.set('');
+        }
         try {
             const after = append ? this.thread()?.nextMessageCursor ?? null : null;
             const result = await firstValueFrom(this.api.conversation(id, after).pipe(takeUntilDestroyed(this.destroy)));
@@ -220,7 +204,10 @@ export class AdminSupportPageComponent implements OnInit {
             if (epoch === this.threadEpoch) {
                 if (isForbidden(error))
                     this.clearPrivate();
-                this.threadError.set(errorText(error, 'Переписка не загрузилась. Текст ответа сохранён; попробуйте обновить переписку.'));
+                if (append)
+                    this.moreError.set(errorText(error, 'Следующие сообщения не загрузились. Текст ответа сохранён.'));
+                else
+                    this.threadError.set(errorText(error, 'Переписка не загрузилась. Текст ответа сохранён; попробуйте обновить переписку.'));
             }
         } finally {
             if (epoch === this.threadEpoch) {
@@ -228,18 +215,6 @@ export class AdminSupportPageComponent implements OnInit {
                 this.moreLoading.set(false);
             }
         }
-    }
-
-    protected async next(): Promise<void> {
-        const next = this.page()?.nextCursor, before = this.cursor();
-        if (next && await this.loadList(next))
-            this.history.update(values => [...values, before]);
-    }
-
-    protected async previous(): Promise<void> {
-        const values = this.history();
-        if (await this.loadList(values.at(-1) ?? null))
-            this.history.set(values.slice(0, -1));
     }
 
     protected async send(): Promise<void> {
@@ -300,7 +275,7 @@ export class AdminSupportPageComponent implements OnInit {
             this.notice.set(mutation.command.type === 'reply' ? 'Ответ принят в очередь. Это ещё не подтверждение доставки Telegram.' : mutation.command.type === 'note' ? 'Внутренняя заметка сохранена. Пользователь её не получает.' : 'Статус обращения сохранён.');
             this.mutation = null;
             await this.loadThread(mutation.id);
-            await this.loadList(this.cursor());
+            await this.tickets.reload();
         } catch (error) {
             if (isForbidden(error)) {
                 this.clearPrivate();
@@ -319,12 +294,11 @@ export class AdminSupportPageComponent implements OnInit {
     }
 
     private clearPrivate(): void {
-        ++this.listEpoch;
         ++this.threadEpoch;
         this.mutation = null;
         this.uncertain.set(false);
         this.busy.set(false);
-        this.page.set(null);
+        this.tickets.clear();
         this.thread.set(null);
         this.composer.reset({
             type: 'reply',
