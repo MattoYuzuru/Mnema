@@ -90,9 +90,21 @@ export class ToastService {
         this.enqueue({ id, text, severity, link, durationMs: severity === 'ERROR' ? null : TOAST_MS, echo: false });
     }
 
-    /** The 3 s confirmation of the user's own action, e.g. «Материал одобрен». Never held for Study. */
+    /**
+     * The 3 s confirmation of the user's own action, e.g. «Материал одобрен». Never held for Study. The same text shown
+     * or waiting a second time replaces the earlier toast instead of stacking beside it.
+     */
     echo(text: string): void {
-        this.enqueue({ id: `echo-${this.nextEcho++}`, text, severity: 'INFO', link: null, durationMs: ECHO_MS, echo: true });
+        this.enqueueEcho(text, 'INFO', ECHO_MS);
+    }
+
+    /**
+     * The failure of the user's own action, e.g. «Не удалось скопировать ссылку». Like {@link echo} it is not a
+     * notification: no quiet zone or «только значок» setting drops it, and it replaces an identical earlier one. It stays
+     * until closed, like every error.
+     */
+    echoError(text: string): void {
+        this.enqueueEcho(text, 'ERROR', null);
     }
 
     close(id: string): void {
@@ -123,6 +135,13 @@ export class ToastService {
 
     setHovered(value: boolean): void { this.hovered = value; this.syncTimers(); }
     setFocused(value: boolean): void { this.focused = value; this.syncTimers(); }
+
+    private enqueueEcho(text: string, severity: NotificationSeverity, durationMs: number | null): void {
+        [...this.shown(), ...this.waiting()]
+            .filter(toast => toast.echo && toast.text === text && toast.severity === severity)
+            .forEach(toast => this.close(toast.id));
+        this.enqueue({ id: `echo-${this.nextEcho++}`, text, severity, link: null, durationMs, echo: true });
+    }
 
     private enqueue(toast: Toast): void {
         this.waiting.update(list => [...list, toast]);

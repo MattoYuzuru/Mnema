@@ -107,10 +107,12 @@ public class MediaCatalog {
                 || assets.stream().anyMatch(java.util.Objects::isNull)) {
             throw new InvalidRequestException();
         }
-        if (!jdbc.sql("SELECT 1 FROM app_learning.exercise_revision r "
-                        + "JOIN app_learning.exercise_definition e ON e.deck_id=r.deck_id "
-                        + "AND e.exercise_id=r.exercise_id WHERE r.deck_id=:deck AND r.exercise_id=:exercise "
-                        + "AND r.revision_id=:revision AND e.owner_id=:owner")
+        // The revision is a lineage row; it is attachable by the account whose deck wrote it (the owner-only attach rule
+        // stays until Share/9 relaxes it): the revision's origin deck is this deck and the deck is the actor's.
+        if (!jdbc.sql("SELECT 1 FROM app_learning.deck d "
+                        + "JOIN app_learning.exercise_revision r ON r.reuse_scope_id=d.reuse_scope_id "
+                        + "AND r.exercise_id=:exercise AND r.revision_id=:revision AND r.deck_id=d.deck_id "
+                        + "WHERE d.deck_id=:deck AND d.owner_id=:owner")
                 .param("deck", deck).param("exercise", exercise).param("revision", revision)
                 .param("owner", actor).query(Integer.class).optional().isPresent()) {
             throw new ResourceNotFoundException();
@@ -123,8 +125,9 @@ public class MediaCatalog {
         validateAssets(actor, kinds.keySet());
         kinds.forEach((asset, kind) -> requireDeclaredKind(asset, kind));
         kinds.forEach((asset, kind) -> jdbc.sql("INSERT INTO app_learning.exercise_media_ref "
-                        + "(deck_id,exercise_id,exercise_revision_id,owner_id,asset_id,media_kind) "
-                        + "VALUES (:deck,:exercise,:revision,:owner,:asset,:kind)")
+                        + "(deck_id,reuse_scope_id,exercise_id,exercise_revision_id,asset_owner_id,asset_id,media_kind) "
+                        + "SELECT d.deck_id,d.reuse_scope_id,:exercise,:revision,:owner,:asset,:kind "
+                        + "FROM app_learning.deck d WHERE d.deck_id=:deck")
                 .param("deck", deck).param("exercise", exercise).param("revision", revision)
                 .param("owner", actor).param("asset", asset).param("kind", kind.column()).update());
     }
@@ -151,7 +154,10 @@ public class MediaCatalog {
         UuidPolicy.requireEntityId(deck, "deckId");
         UuidPolicy.requireEntityId(exercise, "exerciseId");
         UuidPolicy.requireEntityId(revision, "revisionId");
-        return jdbc.sql("SELECT app_learning.exercise_media_ready(:owner,:deck,:exercise,:revision)")
+        // readiness is a property of the lineage revision; the deck only names the scope and the actor must own it. Fail closed:
+        // an unknown deck is not ready.
+        return jdbc.sql("SELECT COALESCE((SELECT app_learning.exercise_media_ready(d.reuse_scope_id,:exercise,:revision) "
+                        + "FROM app_learning.deck d WHERE d.deck_id=:deck AND d.owner_id=:owner),FALSE)")
                 .param("deck", deck).param("exercise", exercise).param("revision", revision)
                 .param("owner", actor).query(Boolean.class).single();
     }

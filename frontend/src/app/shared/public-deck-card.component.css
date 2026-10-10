@@ -1,0 +1,17 @@
+:host { display: block; min-inline-size: 0; }
+.card { display: grid; align-content: start; gap: .6rem; min-inline-size: 0; block-size: 100%; border: 1px solid var(--mn-rule); border-block-start: 2px solid var(--mn-ink); padding: 1rem 1rem .75rem; background: var(--mn-sheet); color: var(--mn-body); }
+.head { display: flex; align-items: flex-start; gap: .5rem; margin-block-start: -.25rem; margin-inline-end: -.5rem; }
+.title { flex: 1 1 auto; min-inline-size: 0; margin: .5rem 0 0; color: var(--mn-ink); font: 600 1.25rem/1.25 var(--mn-font-display); overflow-wrap: anywhere; }
+.title a { color: inherit; text-underline-offset: .18em; }
+.title a:focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 2px; }
+.head app-action-menu { flex: none; }
+.description { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; margin: 0; overflow: hidden; line-height: 1.5; overflow-wrap: anywhere; }
+.tags { display: flex; flex-wrap: wrap; gap: .4rem; margin: 0; }
+.size, .updated { margin: 0; color: var(--mn-muted); font-size: .9rem; line-height: 1.4; }
+.media { display: flex; flex-wrap: wrap; gap: .3rem 1rem; margin: 0; padding: 0; list-style: none; color: var(--mn-ink); font-size: .9rem; }
+.media li { display: inline-flex; align-items: center; gap: .35rem; }
+.audience { display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; margin: 0; font-size: .9rem; }
+.audience div { display: flex; gap: .35rem; }
+.audience dt { color: var(--mn-muted); }
+.audience dd { margin: 0; color: var(--mn-ink); font-weight: 600; }
+@media (forced-colors: active) { .card { border-color: CanvasText; } }

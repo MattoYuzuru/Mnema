@@ -89,12 +89,14 @@ class ContextRepository {
     Map<UUID, Integer> exerciseCounts(UUID deck, Collection<UUID> members) {
         Map<UUID, Integer> result = new HashMap<>();
         if (members.isEmpty()) return result;
-        jdbc.sql("SELECT binding.member_key,count(*)::integer AS n FROM app_learning.exercise_content_binding binding "
-                        + "JOIN app_learning.deck_head_exercise head ON head.deck_id=binding.deck_id "
+        jdbc.sql("SELECT binding.member_key,count(*)::integer AS n FROM app_learning.deck d "
+                        + "JOIN app_learning.exercise_content_binding binding ON binding.reuse_scope_id=d.reuse_scope_id "
+                        + "AND binding.role='ASSESSED' AND binding.member_key IN (:members) "
+                        + "JOIN app_learning.deck_head_exercise head ON head.deck_id=d.deck_id "
                         + "AND head.exercise_id=binding.exercise_id AND head.revision_id=binding.exercise_revision_id "
-                        + "JOIN app_learning.exercise_revision revision ON revision.deck_id=head.deck_id "
+                        + "JOIN app_learning.exercise_revision revision ON revision.reuse_scope_id=head.reuse_scope_id "
                         + "AND revision.exercise_id=head.exercise_id AND revision.revision_id=head.revision_id AND revision.enabled "
-                        + "WHERE binding.deck_id=:deck AND binding.role='ASSESSED' AND binding.member_key IN (:members) "
+                        + "WHERE d.deck_id=:deck "
                         + "GROUP BY binding.member_key").param("deck", deck).param("members", members)
                 .query((row, ignored) -> result.put(row.getObject("member_key", UUID.class), row.getInt("n"))).list();
         return result;
@@ -111,12 +113,14 @@ class ContextRepository {
     Map<UUID, Map<String, Integer>> mechanicCounts(UUID deck, Collection<UUID> members) {
         Map<UUID, Map<String, Integer>> result = new HashMap<>();
         if (members.isEmpty()) return result;
-        jdbc.sql("SELECT binding.member_key,revision.exercise_type,count(*)::integer AS n FROM app_learning.exercise_content_binding binding "
-                        + "JOIN app_learning.deck_head_exercise head ON head.deck_id=binding.deck_id "
+        jdbc.sql("SELECT binding.member_key,revision.exercise_type,count(*)::integer AS n FROM app_learning.deck d "
+                        + "JOIN app_learning.exercise_content_binding binding ON binding.reuse_scope_id=d.reuse_scope_id "
+                        + "AND binding.role='ASSESSED' AND binding.member_key IN (:members) "
+                        + "JOIN app_learning.deck_head_exercise head ON head.deck_id=d.deck_id "
                         + "AND head.exercise_id=binding.exercise_id AND head.revision_id=binding.exercise_revision_id "
-                        + "JOIN app_learning.exercise_revision revision ON revision.deck_id=head.deck_id "
+                        + "JOIN app_learning.exercise_revision revision ON revision.reuse_scope_id=head.reuse_scope_id "
                         + "AND revision.exercise_id=head.exercise_id AND revision.revision_id=head.revision_id AND revision.enabled "
-                        + "WHERE binding.deck_id=:deck AND binding.role='ASSESSED' AND binding.member_key IN (:members) "
+                        + "WHERE d.deck_id=:deck "
                         + "GROUP BY binding.member_key,revision.exercise_type ORDER BY binding.member_key,revision.exercise_type")
                 .param("deck", deck).param("members", members)
                 .query((row, ignored) -> result.computeIfAbsent(row.getObject("member_key", UUID.class), key -> new java.util.LinkedHashMap<>())
@@ -126,16 +130,19 @@ class ContextRepository {
 
     /** The current objectives bound to a material, oldest first, with the mechanics of the exercises that evidence each one. */
     List<ObjectiveLine> objectives(UUID deck, UUID member, int limit) {
+        // the deck's own objective heads of this material; the exercises that evidence an objective are the deck's head exercises
         return jdbc.sql("SELECT o.objective_id,r.revision_id,r.descriptor ->> 'title' AS title,"
                         + "COALESCE((SELECT string_agg(DISTINCT er.exercise_type, ',') FROM app_learning.exercise_content_binding b "
-                        + "JOIN app_learning.deck_head_exercise he ON he.deck_id=b.deck_id AND he.exercise_id=b.exercise_id "
-                        + "AND he.revision_id=b.exercise_revision_id JOIN app_learning.exercise_revision er ON er.deck_id=he.deck_id "
+                        + "JOIN app_learning.deck_head_exercise he ON he.deck_id=:deck AND he.exercise_id=b.exercise_id "
+                        + "AND he.revision_id=b.exercise_revision_id JOIN app_learning.exercise_revision er ON er.reuse_scope_id=he.reuse_scope_id "
                         + "AND er.exercise_id=he.exercise_id AND er.revision_id=he.revision_id AND er.enabled "
-                        + "WHERE b.deck_id=o.deck_id AND b.role='ASSESSED' AND b.objective_id=o.objective_id),'') AS types "
-                        + "FROM app_learning.memory_objective o JOIN app_learning.objective_head h ON h.deck_id=o.deck_id "
-                        + "AND h.objective_id=o.objective_id JOIN app_learning.objective_revision r ON r.deck_id=h.deck_id "
+                        + "WHERE b.reuse_scope_id=o.reuse_scope_id AND b.role='ASSESSED' AND b.member_key=o.member_key "
+                        + "AND b.objective_id=o.objective_id),'') AS types "
+                        + "FROM app_learning.deck d JOIN app_learning.memory_objective o ON o.reuse_scope_id=d.reuse_scope_id "
+                        + "AND o.member_key=:member JOIN app_learning.objective_head h ON h.deck_id=d.deck_id "
+                        + "AND h.objective_id=o.objective_id JOIN app_learning.objective_revision r ON r.reuse_scope_id=h.reuse_scope_id "
                         + "AND r.objective_id=h.objective_id AND r.revision_id=h.revision_id "
-                        + "WHERE o.deck_id=:deck AND o.member_key=:member ORDER BY o.created_at,o.objective_id LIMIT :limit")
+                        + "WHERE d.deck_id=:deck ORDER BY o.created_at,o.objective_id LIMIT :limit")
                 .param("deck", deck).param("member", member).param("limit", limit)
                 .query((row, ignored) -> new ObjectiveLine(row.getObject("objective_id", UUID.class),
                         row.getObject("revision_id", UUID.class), row.getString("title"),
@@ -144,11 +151,13 @@ class ContextRepository {
 
     /** The newest current enabled exercises assessed on a material (the model must not repeat them), newest first. */
     List<ExerciseLine> exercises(UUID deck, UUID member, int limit) {
-        return jdbc.sql("SELECT er.exercise_type,er.content::text AS content FROM app_learning.exercise_content_binding b "
-                        + "JOIN app_learning.deck_head_exercise he ON he.deck_id=b.deck_id AND he.exercise_id=b.exercise_id "
-                        + "AND he.revision_id=b.exercise_revision_id JOIN app_learning.exercise_revision er ON er.deck_id=he.deck_id "
+        return jdbc.sql("SELECT er.exercise_type,er.content::text AS content FROM app_learning.deck d "
+                        + "JOIN app_learning.exercise_content_binding b ON b.reuse_scope_id=d.reuse_scope_id "
+                        + "AND b.role='ASSESSED' AND b.member_key=:member "
+                        + "JOIN app_learning.deck_head_exercise he ON he.deck_id=d.deck_id AND he.exercise_id=b.exercise_id "
+                        + "AND he.revision_id=b.exercise_revision_id JOIN app_learning.exercise_revision er ON er.reuse_scope_id=he.reuse_scope_id "
                         + "AND er.exercise_id=he.exercise_id AND er.revision_id=he.revision_id AND er.enabled "
-                        + "WHERE b.deck_id=:deck AND b.role='ASSESSED' AND b.member_key=:member ORDER BY he.ordinal DESC LIMIT :limit")
+                        + "WHERE d.deck_id=:deck ORDER BY he.ordinal DESC LIMIT :limit")
                 .param("deck", deck).param("member", member).param("limit", limit)
                 .query((row, ignored) -> new ExerciseLine(row.getString("exercise_type"), row.getString("content"))).list();
     }

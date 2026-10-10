@@ -47,7 +47,8 @@ import java.util.UUID;
 
 @Service
 public class ExerciseService {
-    private static final int MAX_EXERCISES = 100_000;
+    /** The bound of one deck's exercise roster (the profile of the exercises manifest). */
+    public static final int MAX_EXERCISES = 100_000;
     private static final Duration PREPARATION_LEASE = Duration.ofMinutes(1);
 
     private final ExerciseRepository repository;
@@ -123,8 +124,8 @@ public class ExerciseService {
                 .orElseThrow(ResourceNotFoundException::new);
         ExerciseRepository.SubjectRow subject = repository.subject(deckId, exerciseId, exercise.revisionId())
                 .orElseThrow(() -> new IllegalStateException("Exercise has no assessed binding"));
-        ExerciseRepository.ObjectiveRow objective = repository.objectiveRevision(actor, deckId,
-                subject.objectiveId(), subject.objectiveRevisionId()).orElseThrow(IllegalStateException::new);
+        ExerciseRepository.ObjectiveRow objective = repository.objectiveOf(actor, deckId, exerciseId,
+                exercise.revisionId()).orElseThrow(IllegalStateException::new);
         ObjectNode result = summary(exercise);
         result.set("objective", objective(objective));
         result.put("deckId", deckId.toString()).put("deckRevisionId", deck.revisionId().toString())
@@ -183,8 +184,8 @@ public class ExerciseService {
                 UUID exercisesPin = storage.retain(findPin(pins, exercises.ref()), owner);
                 repository.insertDeckRevision(deck, nextRevision, UUID.randomUUID(), now, membersPin,
                         exercises.ref().objectId(), exercisesPin, deck.exerciseCount() - 1);
-                repository.insertRemoval(deckId, nextRevision, sequence, exerciseId, previous.revisionId(),
-                        previous.ordinal());
+                repository.insertRemoval(deckId, deck.scopeId(), nextRevision, sequence, exerciseId,
+                        previous.revisionId(), previous.ordinal());
             });
         } finally {
             cleanup.executeWithoutResult(ignored -> pins.forEach(pin -> storage.release(deck.scopeId(), pin.stagingPinId())));
@@ -332,11 +333,11 @@ public class ExerciseService {
         if (objective.createIdentity()) {
             repository.insertObjective(deckId, objective.objectiveId(), objective.objectiveKey(), objective.memberKey(),
                     actor, deck.scopeId(), time);
-            repository.insertObjectiveRevision(deckId, objective.objectiveId(), objective.revisionId(), 0, null,
-                    prepared.deckRevision(), deckSequence, command.commandId(), objective.title(), time);
-            repository.insertObjectiveHead(deckId, objective.objectiveId(), objective.revisionId(), 0, time);
+            repository.insertObjectiveRevision(deckId, deck.scopeId(), objective.objectiveId(), objective.revisionId(), 0,
+                    null, prepared.deckRevision(), deckSequence, command.commandId(), objective.title(), time);
+            repository.insertObjectiveHead(deckId, deck.scopeId(), objective.objectiveId(), objective.revisionId(), 0, time);
         } else if (objective.createRevision()) {
-            repository.insertObjectiveRevision(deckId, objective.objectiveId(), objective.revisionId(),
+            repository.insertObjectiveRevision(deckId, deck.scopeId(), objective.objectiveId(), objective.revisionId(),
                     objective.sequence(), objective.parentRevisionId(), prepared.deckRevision(), deckSequence,
                     command.commandId(), objective.title(), time);
             repository.updateObjectiveHead(deckId, objective.objectiveId(), objective.revisionId(),
@@ -355,9 +356,9 @@ public class ExerciseService {
             mediaCatalog.attachExerciseRevision(actor, deckId, prepared.exerciseId(), prepared.exerciseRevision(),
                     assets);
         }
-        insertBindings(deckId, prepared, command.exercise(), objective);
+        insertBindings(deckId, deck.scopeId(), prepared, command.exercise(), objective);
         if (pathExerciseId == null) {
-            repository.insertExerciseHead(deckId, prepared.exerciseId(), prepared.exerciseRevision(), 0,
+            repository.insertExerciseHead(deckId, deck.scopeId(), prepared.exerciseId(), prepared.exerciseRevision(), 0,
                     prepared.ordinal(), time);
         } else {
             repository.updateExerciseHead(deckId, prepared.exerciseId(), prepared.exerciseRevision(),
@@ -370,7 +371,7 @@ public class ExerciseService {
         repository.insertDeckRevision(deck, prepared.deckRevision(), command.commandId(), time, membersPin,
                 prepared.exercises().ref().objectId(), exercisesPin,
                 pathExerciseId == null ? deck.exerciseCount() + 1 : deck.exerciseCount());
-        repository.insertChange(deckId, prepared.deckRevision(), deckSequence, prepared.exerciseId(),
+        repository.insertChange(deckId, deck.scopeId(), prepared.deckRevision(), deckSequence, prepared.exerciseId(),
                 prepared.previous() == null ? null : prepared.previous().revisionId(), prepared.exerciseRevision(),
                 prepared.ordinal());
         release(prepared);
@@ -386,11 +387,11 @@ public class ExerciseService {
     }
 
     /** The ASSESSED subject plus one CONTEXT row per distinct quoted material revision, with its node IDs. */
-    private void insertBindings(UUID deckId, Prepared prepared, ExerciseCommand.Exercise exercise,
+    private void insertBindings(UUID deckId, UUID scope, Prepared prepared, ExerciseCommand.Exercise exercise,
                                 ObjectivePlan objective) {
         ExerciseCommand.Subject subject = exercise.subject();
         int ordinal = 0;
-        repository.insertBinding(deckId, prepared.exerciseId(), prepared.exerciseRevision(),
+        repository.insertBinding(deckId, scope, prepared.exerciseId(), prepared.exerciseRevision(),
                 new ExerciseRepository.BindingInsert(UUID.randomUUID(), ordinal++, "ASSESSED", subject.memberKey(),
                         subject.itemRevisionId(), List.of(), objective.objectiveId(), objective.revisionId()));
         Map<ItemKey, Set<UUID>> context = new LinkedHashMap<>();
@@ -399,7 +400,7 @@ public class ExerciseService {
                     ignored -> new LinkedHashSet<>()).add(material.nodeId());
         }
         for (var entry : context.entrySet()) {
-            repository.insertBinding(deckId, prepared.exerciseId(), prepared.exerciseRevision(),
+            repository.insertBinding(deckId, scope, prepared.exerciseId(), prepared.exerciseRevision(),
                     new ExerciseRepository.BindingInsert(UUID.randomUUID(), ordinal++, "CONTEXT",
                             entry.getKey().member(), entry.getKey().revision(), List.copyOf(entry.getValue()), null, null));
         }

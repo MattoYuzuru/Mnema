@@ -43,6 +43,7 @@
     --mn-space-8: 4rem;
     --mn-radius: 2px;
     --mn-touch-min: 2.75rem;
+    --mn-glyph-size: 1.25rem;
     --mn-page-width: 81.25rem;
     --mn-page-gutter: clamp(1.125rem, 4.4vw, 2.75rem);
 }

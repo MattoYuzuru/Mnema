@@ -2,6 +2,8 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 
 import { ToastService } from '../core/notifications/toast.service';
+import { GLYPH_NAMES } from '../shared/glyph.component';
+import { ShareLinkService } from '../shared/share-link.service';
 import { StyleguidePageComponent } from './styleguide-page.component';
 import { SECTION_GROUPS } from './styleguide.data';
 
@@ -44,7 +46,7 @@ describe('StyleguidePageComponent', () => {
     it('renders the real app components and classes', () => {
         for (const selector of [
             'app-hold-to-delete-button', 'app-segmented-choice', 'app-toggletip', 'app-usage-meter', 'app-mnema-select', 'app-choice-list',
-            'app-batch-pager', 'app-author-chip', 'app-plan-option', 'app-promo-redeem .field-row', 'table.data-table', 'app-new-badge', 'app-native-document-renderer', 'app-telegram-glyph', 'app-mail-glyph', 'app-support-contact', 'app-mail-contact button', 'app-legal-operator-block', 'app-sg-legal .toc', 'app-public-footer', 'button.generate-cta', 'button.button.primary',
+            'app-batch-pager', 'app-author-chip', 'app-plan-option', 'app-promo-redeem .field-row', 'table.data-table', 'app-new-badge', 'app-native-document-renderer', 'app-telegram-glyph', 'app-mail-glyph', 'app-glyph[data-glyph=colonnade]', 'app-action-menu [role=menu][popover]', 'app-share-button button', 'app-public-deck-card article', 'app-support-contact', 'app-mail-contact button', 'app-legal-operator-block', 'app-sg-legal .toc', 'app-public-footer', 'button.generate-cta', 'button.button.primary',
             '.check-field > .check-row', '.settings-row.is-switch', '.settings-row.is-switch.is-live', 'fieldset.check-group > legend', '.cta-bar.cta-bar--inline', '.notice.error', '.empty-state', '.stamp', '.paper-surface.ruled', '.field-error'
         ]) {
             expect(root.querySelector(selector), selector).not.toBeNull();
@@ -76,6 +78,47 @@ describe('StyleguidePageComponent', () => {
         expect(chips[1].querySelector('.placeholder')?.textContent).toBe('A');
         expect(chips[2].querySelector('.login')?.textContent?.length).toBeGreaterThan(40);
         expect(chips[3].querySelector('.chip')).toBeNull();
+    });
+
+    it('catalogues every glyph of app-glyph and the card with its three states', () => {
+        const names = [...root.querySelectorAll<HTMLElement>('#icons app-glyph')].map(glyph => glyph.dataset['glyph']);
+        expect(names.sort()).toEqual([...GLYPH_NAMES].sort());
+        const cards = [...root.querySelectorAll<HTMLElement>('#cards app-public-deck-card')];
+        expect(cards).toHaveLength(2);
+        expect(cards[0].querySelector('.audience')).not.toBeNull();
+        expect(cards[1].querySelector('.audience')).toBeNull();
+        expect(cards[1].querySelector('.chip')).toBeNull();
+    });
+
+    it('says what the menu specimen did, and shows the link field when copying failed', async () => {
+        const links = TestBed.inject(ShareLinkService);
+        const share = vi.spyOn(links, 'share').mockResolvedValue('failed');
+        const specimen = [...root.querySelectorAll<HTMLElement>('#menus .sg-stage')].find(stage => stage.querySelector('app-action-menu'))!;
+        const rows = [...specimen.querySelectorAll<HTMLButtonElement>('[role=menuitem]')];
+        rows.find(row => row.textContent?.includes('Поделиться'))!.click();
+        await fixture.whenStable();
+        fixture.detectChanges();
+        expect(share).toHaveBeenCalledWith('https://mnema.app/styleguide', 'Каталог Mnema (образец)');
+        expect(specimen.querySelector('[role=status]')?.textContent).toBe('Скопировать не удалось.');
+        expect(specimen.querySelector('app-share-link-field input')).not.toBeNull();
+        rows.find(row => row.textContent?.includes('Пожаловаться'))!.click();
+        await fixture.whenStable();
+        fixture.detectChanges();
+        expect(specimen.querySelector('[role=status]')?.textContent).toBe('Выбран пункт «report».');
+        expect(specimen.querySelector('app-share-link-field')).toBeNull();
+    });
+
+    it('explains each share outcome in the menu specimen', async () => {
+        const links = TestBed.inject(ShareLinkService);
+        const specimen = [...root.querySelectorAll<HTMLElement>('#menus .sg-stage')].find(stage => stage.querySelector('app-action-menu'))!;
+        const row = [...specimen.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(item => item.textContent?.includes('Поделиться'))!;
+        for (const [outcome, text] of [['shared', 'Системное меню приняло ссылку.'], ['copied', 'Ссылка скопирована.'], ['cancelled', 'Меню «Поделиться» закрыто без выбора.']] as const) {
+            vi.spyOn(links, 'share').mockResolvedValue(outcome);
+            row.click();
+            await fixture.whenStable();
+            fixture.detectChanges();
+            expect(specimen.querySelector('[role=status]')?.textContent, outcome).toBe(text);
+        }
     });
 
     it('reads the palette from the live tokens and grades the contrast pairs', async () => {

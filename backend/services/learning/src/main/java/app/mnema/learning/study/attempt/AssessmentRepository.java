@@ -182,22 +182,29 @@ class AssessmentRepository {
                 .optional();
     }
 
-    /** Whether the learner already has an assessed attempt at this exercise in this epoch (in any mode). */
-    boolean attemptedExercise(UUID actor, UUID exercise, long epoch) {
+    /**
+     * Whether the learner already has an assessed attempt at this exercise in this epoch (in any mode) <b>in this deck</b>: a
+     * source and its copies share the exercise id, and progress (the epoch included) belongs to the learner's own deck.
+     */
+    boolean attemptedExercise(UUID actor, UUID deck, UUID exercise, long epoch) {
         return jdbc.sql("""
                 SELECT EXISTS(SELECT 1 FROM app_learning.study_attempt_tombstone t
                     JOIN app_learning.study_presentation p ON p.account_id=t.account_id AND p.session_id=t.session_id
                      AND p.presentation_id=t.presentation_id
-                   WHERE t.account_id=:actor AND p.exercise_id=:exercise AND p.learning_epoch=:epoch AND t.status='ASSESSED')
-                """).param("actor", actor).param("exercise", exercise).param("epoch", epoch)
+                   WHERE t.account_id=:actor AND p.deck_id=:deck AND p.exercise_id=:exercise AND p.learning_epoch=:epoch
+                     AND t.status='ASSESSED')
+                """).param("actor", actor).param("deck", deck).param("exercise", exercise).param("epoch", epoch)
                 .query(Boolean.class).single();
     }
 
     /** The immutable evaluator policy of the exercise revision the presentation was issued from (the rubric lives here). */
     Optional<JsonNode> evaluatorPolicy(UUID deck, UUID exercise, UUID revision) {
+        // the revision is a lineage row reached through the reading deck's scope; the caller names the deck of the presentation
         return jdbc.sql("""
-                SELECT evaluator_policy FROM app_learning.exercise_revision
-                 WHERE deck_id=:deck AND exercise_id=:exercise AND revision_id=:revision
+                SELECT revision.evaluator_policy FROM app_learning.deck d JOIN app_learning.exercise_revision revision
+                    ON revision.reuse_scope_id=d.reuse_scope_id AND revision.exercise_id=:exercise
+                   AND revision.revision_id=:revision
+                 WHERE d.deck_id=:deck
                 """).param("deck", deck).param("exercise", exercise).param("revision", revision)
                 .query((row, ignored) -> json(row.getString("evaluator_policy"))).optional();
     }

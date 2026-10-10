@@ -15,8 +15,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * V51 (Share/4, #426) on data written at the V49 shape: every per-deck row gets its deck's scope, the media reference keeps
  * the asset owner, all constraints are validated and the immutability guards are enabled again. The second test fixes the exact
- * set of key constraints of the item tables, so the next change (Share/5 drops {@code item_revision_origin_key} together with
- * the bindings' deck keys; Updates/2 drops the per-deck sequence key) has to change it consciously.
+ * set of key constraints of the item tables, so the next change (Updates/2 drops the per-deck sequence key) has to change it
+ * consciously. Share/5 (V52) dropped {@code item_revision_origin_key} together with the bindings' deck keys.
  */
 class LineageItemsMigrationIntegrationTest extends PostgresIntegrationTest {
     private final UUID owner1 = UUID.randomUUID();
@@ -170,7 +170,7 @@ class LineageItemsMigrationIntegrationTest extends PostgresIntegrationTest {
             editing_draft editing_draft_deck_scope_fkey FOREIGN KEY (deck_id, reuse_scope_id) REFERENCES deck(deck_id, reuse_scope_id)
             editing_draft editing_draft_media_owner UNIQUE (draft_id, owner_id)
             editing_draft editing_draft_pkey PRIMARY KEY (draft_id)
-            exercise_content_binding exercise_content_binding_item_revision_origin_fkey FOREIGN KEY (deck_id, member_key, item_revision_id) REFERENCES item_revision(deck_id, member_key, revision_id)
+            exercise_content_binding exercise_content_binding_item_revision_fkey FOREIGN KEY (reuse_scope_id, member_key, item_revision_id) REFERENCES item_revision(reuse_scope_id, member_key, revision_id)
             item_preview item_preview_pkey PRIMARY KEY (reuse_scope_id, member_key, revision_id)
             item_preview item_preview_revision_fkey FOREIGN KEY (reuse_scope_id, member_key, revision_id) REFERENCES item_revision(reuse_scope_id, member_key, revision_id) ON DELETE CASCADE
             item_revision item_revision_deck_id_deck_revision_id_deck_sequence_fkey FOREIGN KEY (deck_id, deck_revision_id, deck_sequence) REFERENCES deck_revision(deck_id, revision_id, sequence) DEFERRABLE INITIALLY DEFERRED
@@ -180,7 +180,6 @@ class LineageItemsMigrationIntegrationTest extends PostgresIntegrationTest {
             item_revision item_revision_lineage_id_key UNIQUE (reuse_scope_id, revision_id)
             item_revision item_revision_lineage_sequence_key UNIQUE (reuse_scope_id, member_key, revision_id, item_sequence)
             item_revision item_revision_origin_deck_fkey FOREIGN KEY (deck_id, reuse_scope_id, owner_id) REFERENCES deck(deck_id, reuse_scope_id, owner_id)
-            item_revision item_revision_origin_key UNIQUE (deck_id, member_key, revision_id)
             item_revision item_revision_parent_fkey FOREIGN KEY (reuse_scope_id, member_key, parent_revision_id, parent_item_sequence) REFERENCES item_revision(reuse_scope_id, member_key, revision_id, item_sequence)
             item_revision item_revision_pkey PRIMARY KEY (reuse_scope_id, member_key, revision_id)
             item_revision item_revision_reuse_scope_id_content_root_id_fkey FOREIGN KEY (reuse_scope_id, content_root_id) REFERENCES storage_object(reuse_scope_id, object_id)
@@ -188,7 +187,7 @@ class LineageItemsMigrationIntegrationTest extends PostgresIntegrationTest {
             learning_item learning_item_deck_id_reuse_scope_id_owner_id_fkey FOREIGN KEY (deck_id, reuse_scope_id, owner_id) REFERENCES deck(deck_id, reuse_scope_id, owner_id)
             learning_item learning_item_lineage_key UNIQUE (reuse_scope_id, member_key)
             learning_item learning_item_pkey PRIMARY KEY (deck_id, member_key)
-            memory_objective memory_objective_deck_id_member_key_fkey FOREIGN KEY (deck_id, member_key) REFERENCES learning_item(deck_id, member_key)
+            memory_objective memory_objective_item_fkey FOREIGN KEY (reuse_scope_id, member_key) REFERENCES learning_item(reuse_scope_id, member_key)
             """;
 
     private static long count(JdbcClient jdbc, String table) {

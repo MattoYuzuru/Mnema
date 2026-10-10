@@ -4,7 +4,7 @@ artifact:
   type: production-frontend-guide
   status: current
   created_at: "2026-10-05"
-  updated_at: "2026-10-09"
+  updated_at: "2026-10-10"
   scope: "Angular web UI; living styleguide /styleguide and rules for shared elements"
 ---
 
@@ -145,16 +145,16 @@ npx ng build --configuration development && node scripts/verify-no-styleguide.mj
 | Палитра, Семантические цвета | Токены `--mn-*` с живыми значениями; контраст пар считается из вычисленных цветов | `sg-foundations`, `color-contrast.ts` |
 | Типографика | Display, чтение, рубрика `.eyebrow`, `.hint` | `sg-foundations` |
 | Сетка и отступы, Радиусы и поверхности | Шкала `--mn-space-*`, размеры, лист и правило | `sg-foundations` |
-| Движение, Иконки | Волна кнопок, чернильное появление, набор знаков | `sg-foundations` |
+| Движение, Иконки | Волна кнопок, чернильное появление, набор знаков; новые знаки каталога (книга с лупой, открытая книга, «Поделиться», копия-ветвь, замок, звено, свиток с печатью, колоннада, «⋯», картинки, аудио, видео) — один компонент `app-glyph name="…"`, размер — токен `--mn-glyph-size` (1,25 rem) | `sg-foundations`, `shared/glyph.component.ts` |
 | Фирменные приёмы | `.generate-cta`, удаление удержанием | `sg-controls` |
 | Кнопки | `.button` (primary, quiet, small, mono), недоступные | `sg-controls`, `components.css` |
 | Поля ввода, Выбор | `.field`, `.hint`, `.field-error`, `app-mnema-select`, радио/флажки, флажок с пояснением `.check-field`, недоступная настройка `.settings-row` рабочий переключатель согласия `.settings-row.is-switch.is-live` с группой флажков `fieldset.check-group` + `legend` (профиль, «Публичный профиль»; во время сохранения `aria-disabled`, не `disabled`), `app-segmented-choice` (в том числе вопрос о цели), карточка тарифа `app-plan-option`, поле с кнопкой `.field-row` и поле промокода `app-promo-redeem`, `app-choice-list` | `sg-controls`, `components.css` |
-| Меню и окна, Вкладки и пейджер | `app-toggletip`, `app-ai-prompt-window`, промо-окно `app-promo-popup`, `app-batch-pager` | `sg-surfaces` |
+| Меню и окна, Вкладки и пейджер | `app-toggletip`, меню действий «⋯» `app-action-menu` (APG menu button на нативном `popover`), «Поделиться» (`app-share-button`, `ShareLinkService`, поле ссылки `app-share-link-field`), `app-ai-prompt-window`, промо-окно `app-promo-popup`, `app-batch-pager` | `sg-surfaces`, `shared/` |
 | Статусы и ход | `.stamp`, `app-new-badge`, чип автора `app-author-chip` (фото 20 px и `@логин`; без фото кружок с буквой, без логина ничего не рисует), `app-usage-meter`, плейсхолдер медиа | `sg-surfaces`, `shared/` |
 | Обратная связь | `app-auto-load` (опережающая подгрузка списка и повтор ошибки), `.notice`, тосты `ToastService`, `.empty-state`, `app-support-contact`, `app-mail-contact` | `sg-surfaces`, `shared/` |
 | Юридический документ | `app-legal-operator-block` (реквизиты из `shared/legal-operator.ts`), содержание `.toc`, строки сведений `.facts`, стили `shared/legal-page.css` | `sg-surfaces`, `shared/` |
 | Публичный футер | `app-public-footer`: реквизиты проекта, разделы, правовые документы и контакт; четыре, две или одна колонка | `sg-surfaces`, `shared/` |
-| Карточки и области | таблица сравнения `.data-table`, сводка показателей `.report-facts` (термин, значение, источник в `dl`), именованная область прокрутки `.table-scroll` для широкой таблицы, панель главного действия `.cta-bar`, `.paper-surface` | `sg-surfaces`, `components.css` |
+| Карточки и области | каркас карточки публичной колоды `app-public-deck-card` (фикстуры; счётчики от 10 и с округлением, без звёзд и лайков), таблица сравнения `.data-table`, сводка показателей `.report-facts` (термин, значение, источник в `dl`), именованная область прокрутки `.table-scroll` для широкой таблицы, панель главного действия `.cta-bar`, `.paper-surface` | `sg-surfaces`, `components.css` |
 | Пример экрана | Страница колоды из элементов каталога | `sg-screen` |
 
 Код страницы — `frontend/src/app/styleguide/`; её собственная раскладка в классах `sg-*`, в примерах они не используются.
@@ -169,6 +169,25 @@ npx ng build --configuration development && node scripts/verify-no-styleguide.mj
 `shared/legal-operator.ts` при нажатии; политика и соглашение показывают адрес текстом и ссылкой.
 Реквизиты футера предоставлены
 владельцем; изменения этих сведений требуют проверенных данных, а не копирования референса.
+
+### Меню действий «⋯» и «Поделиться»
+
+- **`app-action-menu`.** Кнопка «⋯» и меню по шаблону [APG menu button](https://www.w3.org/WAI/ARIA/apg/patterns/menu-button/):
+  `aria-haspopup="menu"`, `aria-expanded`, `aria-controls`, имя задаёт вызывающий («Действия с колодой «…»»). Меню — нативный
+  `popover="auto"` ([MDN Popover API](https://developer.mozilla.org/docs/Web/API/Popover_API)): верхний слой, закрытие кликом вне и
+  Esc. Enter, Пробел и ↓ открывают меню и ставят фокус на первый пункт, ↑ — на последний; ↑ ↓ (по кругу), Home, End и буква
+  ходят по пунктам (та же буква ещё раз — следующий такой пункт); Esc и выбор пункта возвращают фокус на кнопку, Tab закрывает меню. Недоступные пункты пропускаются. Вход:
+  `label`, `items` (`id`, `label`, `glyph?`, `disabled?`, `danger?`), выход `chosen` с `id`. Возле кнопки меню ставит CSS anchor
+  positioning, без него браузер центрирует его в окне (как у `app-toggletip`). В меню только действия, которые уже работают.
+- **«Поделиться».** `ShareLinkService.share(url, title)` вызывается прямо из обработчика клика (нужна активация пользователя).
+  На телефоне (`(pointer: coarse)`, `navigator.share`, `canShare({ url })`) открывается системное меню
+  ([Web Share API](https://developer.mozilla.org/docs/Web/API/Navigator/share)) только с `url` и `title`, без готового текста;
+  закрытие меню без выбора (`AbortError`) молчит. Иначе ссылка копируется ([Clipboard API](https://developer.mozilla.org/docs/Web/API/Clipboard/writeText)),
+  тост «Ссылка скопирована» (повтор заменяет прежний). Если буфер закрыт, появляется ошибка (`ToastService.echoError`: действие пользователя, а не уведомление, поэтому паузы занятия её не гасят) и результат `failed`: экран показывает ссылку в
+  `app-share-link-field` (URL-поле только для чтения; когда оно появилось, фокус переходит в него, ссылка выделена, пояснение связано `aria-describedby`); `execCommand` не используется.
+- **`app-public-deck-card`.** Каркас карточки каталога: данные `PublicDeckCard` (`shared/public-deck-card.ts`), «Добавили» и
+  «Учат сейчас» показываются от 10 и округляются вниз до двух значащих цифр (`audienceCount`: 9 — скрыто, 10 → «10», 1234 → «1,2 тыс.»).
+  Скрытый автор, пустые медиа и малые счётчики не рисуются. Короткая форма («1,2 тыс.») — для глаз, скринридер читает полную («1,2 тысячи»); тема и язык имеют невидимые «Тема:» и «Язык:»; уровень заголовка — вход `headingLevel` (2–4, по умолчанию 3); у каждого экземпляра свой id.
 
 Поле промокода показывает ответ сервера: доступ до даты без автопродления или скидку на будущую оплату.
 При неизвестном результате оно повторяет ту же команду и не обещает, что тариф не изменился.

@@ -71,42 +71,55 @@ class ExerciseRepository {
                 """).param("actor", actor).param("deck", deck).query(DECK).optional();
     }
 
+    /** The deck's current head of an objective; the objective itself is a lineage row reached through the deck's scope. */
     Optional<ObjectiveRow> objectiveHead(UUID actor, UUID deck, UUID objective) {
         return jdbc.sql("""
                 SELECT o.objective_id,o.objective_key,o.member_key,r.revision_id,r.objective_sequence,
                        r.descriptor ->> 'title' AS title,o.created_at,h.updated_at
-                  FROM app_learning.deck d JOIN app_learning.memory_objective o ON o.deck_id=d.deck_id
-                  JOIN app_learning.objective_head h ON h.deck_id=o.deck_id AND h.objective_id=o.objective_id
-                  JOIN app_learning.objective_revision r ON r.deck_id=h.deck_id AND r.objective_id=h.objective_id
+                  FROM app_learning.deck d JOIN app_learning.objective_head h ON h.deck_id=d.deck_id AND h.objective_id=:objective
+                  JOIN app_learning.memory_objective o ON o.reuse_scope_id=h.reuse_scope_id AND o.objective_id=h.objective_id
+                  JOIN app_learning.objective_revision r ON r.reuse_scope_id=h.reuse_scope_id AND r.objective_id=h.objective_id
                     AND r.revision_id=h.revision_id
-                 WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND o.deck_id=:deck AND o.objective_id=:objective
+                 WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND d.deck_id=:deck
                 """).param("actor", actor).param("deck", deck).param("objective", objective)
                 .query(OBJECTIVE).optional();
     }
 
-    /** The current objectives bound to a material, oldest first: the objectives an approval may reuse by title. */
+    /** The deck's current objectives bound to a material, oldest first: the objectives an approval may reuse by title. */
     List<ObjectiveRow> objectivesOf(UUID actor, UUID deck, UUID member) {
         return jdbc.sql("""
                 SELECT o.objective_id,o.objective_key,o.member_key,r.revision_id,r.objective_sequence,
                        r.descriptor ->> 'title' AS title,o.created_at,h.updated_at
-                  FROM app_learning.deck d JOIN app_learning.memory_objective o ON o.deck_id=d.deck_id
-                  JOIN app_learning.objective_head h ON h.deck_id=o.deck_id AND h.objective_id=o.objective_id
-                  JOIN app_learning.objective_revision r ON r.deck_id=h.deck_id AND r.objective_id=h.objective_id
+                  FROM app_learning.deck d JOIN app_learning.memory_objective o
+                    ON o.reuse_scope_id=d.reuse_scope_id AND o.member_key=:member
+                  JOIN app_learning.objective_head h ON h.deck_id=d.deck_id AND h.objective_id=o.objective_id
+                  JOIN app_learning.objective_revision r ON r.reuse_scope_id=h.reuse_scope_id AND r.objective_id=h.objective_id
                     AND r.revision_id=h.revision_id
-                 WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND o.deck_id=:deck AND o.member_key=:member
+                 WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND d.deck_id=:deck
                  ORDER BY o.created_at,o.objective_id
                 """).param("actor", actor).param("deck", deck).param("member", member).query(OBJECTIVE).list();
     }
 
-    Optional<ObjectiveRow> objectiveRevision(UUID actor, UUID deck, UUID objective, UUID revision) {
+    /**
+     * The objective revision an exercise revision of this deck evidences, read through the exercise's ASSESSED binding. There
+     * is no read of an objective revision by its own id: it is visible to a deck only through a revision of the deck's exercises
+     * ({@link ExerciseRevisionVisibility}) or through the deck's objective head.
+     */
+    Optional<ObjectiveRow> objectiveOf(UUID actor, UUID deck, UUID exercise, UUID exerciseRevision) {
         return jdbc.sql("""
                 SELECT o.objective_id,o.objective_key,o.member_key,r.revision_id,r.objective_sequence,
                        r.descriptor ->> 'title' AS title,o.created_at,r.created_at AS updated_at
-                  FROM app_learning.deck d JOIN app_learning.memory_objective o ON o.deck_id=d.deck_id
-                  JOIN app_learning.objective_revision r ON r.deck_id=o.deck_id AND r.objective_id=o.objective_id
-                 WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND o.deck_id=:deck AND o.objective_id=:objective AND r.revision_id=:revision
-                """).param("actor", actor).param("deck", deck).param("objective", objective)
-                .param("revision", revision).query(OBJECTIVE).optional();
+                  FROM app_learning.deck d JOIN app_learning.exercise_revision x
+                    ON x.reuse_scope_id=d.reuse_scope_id AND x.exercise_id=:exercise AND x.revision_id=:revision
+                  JOIN app_learning.exercise_content_binding b ON b.reuse_scope_id=x.reuse_scope_id
+                   AND b.exercise_id=x.exercise_id AND b.exercise_revision_id=x.revision_id AND b.role='ASSESSED'
+                  JOIN app_learning.memory_objective o ON o.reuse_scope_id=b.reuse_scope_id AND o.objective_id=b.objective_id
+                  JOIN app_learning.objective_revision r ON r.reuse_scope_id=b.reuse_scope_id AND r.objective_id=b.objective_id
+                   AND r.revision_id=b.objective_revision_id
+                 WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND d.deck_id=:deck AND
+                """ + ExerciseRevisionVisibility.visibleTo(":deck", "x"))
+                .param("actor", actor).param("deck", deck).param("exercise", exercise).param("revision", exerciseRevision)
+                .query(OBJECTIVE).optional();
     }
 
     Optional<ExerciseRow> exerciseHead(UUID actor, UUID deck, UUID exercise) {
@@ -117,25 +130,39 @@ class ExerciseRepository {
         return exercise(actor, deck, exercise, revision);
     }
 
+    /**
+     * The deck's head of an exercise, or one of its revisions by id. The definition and the revisions are lineage rows reached
+     * through the deck's scope; a revision by id must be visible to the deck ({@link ExerciseRevisionVisibility}).
+     */
     private Optional<ExerciseRow> exercise(UUID actor, UUID deck, UUID exercise, UUID revision) {
         String revisionJoin = revision == null
-                ? "JOIN app_learning.deck_head_exercise h ON h.deck_id=x.deck_id AND h.exercise_id=x.exercise_id "
-                + "JOIN app_learning.exercise_revision r ON r.deck_id=h.deck_id AND r.exercise_id=h.exercise_id AND r.revision_id=h.revision_id"
-                : "JOIN app_learning.exercise_revision r ON r.deck_id=x.deck_id AND r.exercise_id=x.exercise_id "
-                + "LEFT JOIN app_learning.deck_head_exercise h ON h.deck_id=x.deck_id AND h.exercise_id=x.exercise_id";
-        String ordinal = revision == null ? "h.ordinal" : "COALESCE((SELECT c.ordinal FROM app_learning.deck_exercise_change c WHERE c.deck_id=x.deck_id AND c.exercise_id=x.exercise_id AND c.revision_id=r.revision_id),h.ordinal)";
+                ? "JOIN app_learning.deck_head_exercise h ON h.deck_id=d.deck_id AND h.exercise_id=x.exercise_id "
+                + "JOIN app_learning.exercise_revision r ON r.reuse_scope_id=h.reuse_scope_id AND r.exercise_id=h.exercise_id "
+                + "AND r.revision_id=h.revision_id"
+                : "JOIN app_learning.exercise_revision r ON r.reuse_scope_id=x.reuse_scope_id AND r.exercise_id=x.exercise_id "
+                + "AND r.revision_id=:revision "
+                + "LEFT JOIN app_learning.deck_head_exercise h ON h.deck_id=d.deck_id AND h.exercise_id=x.exercise_id";
+        // a revision's position: the one its own publication recorded, else the head's, else (an exercise the deck removed, or
+        // a revision inherited before the deck's journal began) the position its removal recorded
+        String ordinal = revision == null ? "h.ordinal" : "COALESCE((SELECT c.ordinal FROM app_learning.deck_exercise_change c "
+                + "WHERE c.deck_id=d.deck_id AND c.exercise_id=x.exercise_id AND c.revision_id=r.revision_id),h.ordinal,"
+                + "(SELECT c.ordinal FROM app_learning.deck_exercise_change c WHERE c.deck_id=d.deck_id "
+                + "AND c.exercise_id=x.exercise_id AND c.previous_revision_id=r.revision_id ORDER BY c.deck_sequence DESC LIMIT 1))";
         var query = jdbc.sql("""
                 SELECT x.exercise_id,r.revision_id,r.exercise_sequence,%s AS ordinal,r.exercise_type,r.enabled,
                        r.content,r.answer_key,r.evaluator_policy,r.descriptor_root_id,x.created_at,r.created_at AS updated_at
-                  FROM app_learning.deck d JOIN app_learning.exercise_definition x ON x.deck_id=d.deck_id
+                  FROM app_learning.deck d JOIN app_learning.exercise_definition x
+                    ON x.reuse_scope_id=d.reuse_scope_id AND x.exercise_id=:exercise
                   %s
-                 WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND x.deck_id=:deck AND x.exercise_id=:exercise
-                """.formatted(ordinal, revisionJoin) + (revision == null ? "" : " AND r.revision_id=:revision"))
+                 WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND d.deck_id=:deck
+                """.formatted(ordinal, revisionJoin)
+                + (revision == null ? "" : " AND " + ExerciseRevisionVisibility.visibleTo(":deck", "r")))
                 .param("actor", actor).param("deck", deck).param("exercise", exercise);
         if (revision != null) query.param("revision", revision);
         return query.query(EXERCISE).optional();
     }
 
+    /** One page of the deck's exercise roster in order: every read starts at the deck's heads. */
     List<ExerciseListRow> page(UUID actor, UUID deck, UUID member, int start, int limit) {
         String memberFilter = member == null ? "" : " AND b.member_key=:member";
         var query = jdbc.sql("""
@@ -146,14 +173,14 @@ class ExerciseRepository {
                        objective.descriptor ->> 'title' AS objective_title,o.created_at AS objective_created_at,
                        head.updated_at AS objective_updated_at
                   FROM app_learning.deck d JOIN app_learning.deck_head_exercise h ON h.deck_id=d.deck_id
-                  JOIN app_learning.exercise_definition x ON x.deck_id=h.deck_id AND x.exercise_id=h.exercise_id
-                  JOIN app_learning.exercise_revision r ON r.deck_id=h.deck_id AND r.exercise_id=h.exercise_id
+                  JOIN app_learning.exercise_definition x ON x.reuse_scope_id=h.reuse_scope_id AND x.exercise_id=h.exercise_id
+                  JOIN app_learning.exercise_revision r ON r.reuse_scope_id=h.reuse_scope_id AND r.exercise_id=h.exercise_id
                     AND r.revision_id=h.revision_id
-                  JOIN app_learning.exercise_content_binding b ON b.deck_id=r.deck_id
+                  JOIN app_learning.exercise_content_binding b ON b.reuse_scope_id=r.reuse_scope_id
                     AND b.exercise_id=r.exercise_id AND b.exercise_revision_id=r.revision_id AND b.role='ASSESSED'
-                  JOIN app_learning.memory_objective o ON o.deck_id=b.deck_id AND o.objective_id=b.objective_id
-                  JOIN app_learning.objective_head head ON head.deck_id=o.deck_id AND head.objective_id=o.objective_id
-                  JOIN app_learning.objective_revision objective ON objective.deck_id=head.deck_id
+                  JOIN app_learning.memory_objective o ON o.reuse_scope_id=b.reuse_scope_id AND o.objective_id=b.objective_id
+                  JOIN app_learning.objective_head head ON head.deck_id=h.deck_id AND head.objective_id=o.objective_id
+                  JOIN app_learning.objective_revision objective ON objective.reuse_scope_id=head.reuse_scope_id
                     AND objective.objective_id=head.objective_id AND objective.revision_id=head.revision_id
                  WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND h.deck_id=:deck AND h.ordinal>=:start
                 """ + memberFilter + """
@@ -167,19 +194,24 @@ class ExerciseRepository {
         return jdbc.sql("""
                 SELECT count(*) FROM app_learning.deck d
                   JOIN app_learning.deck_head_exercise h ON h.deck_id=d.deck_id
-                  JOIN app_learning.exercise_content_binding b ON b.deck_id=h.deck_id
+                  JOIN app_learning.exercise_content_binding b ON b.reuse_scope_id=h.reuse_scope_id
                     AND b.exercise_id=h.exercise_id AND b.exercise_revision_id=h.revision_id AND b.role='ASSESSED'
                  WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND h.deck_id=:deck AND b.member_key=:member
                 """).param("actor", actor).param("deck", deck).param("member", member)
                 .query(Integer.class).single();
     }
 
+    /** The ASSESSED binding of an exercise revision that is visible to the deck. */
     Optional<SubjectRow> subject(UUID deck, UUID exercise, UUID revision) {
         return jdbc.sql("""
-                SELECT member_key,item_revision_id,objective_id,objective_revision_id
-                  FROM app_learning.exercise_content_binding
-                 WHERE deck_id=:deck AND exercise_id=:exercise AND exercise_revision_id=:revision AND role='ASSESSED'
-                """).param("deck", deck).param("exercise", exercise).param("revision", revision)
+                SELECT b.member_key,b.item_revision_id,b.objective_id,b.objective_revision_id
+                  FROM app_learning.deck d JOIN app_learning.exercise_revision x
+                    ON x.reuse_scope_id=d.reuse_scope_id AND x.exercise_id=:exercise AND x.revision_id=:revision
+                  JOIN app_learning.exercise_content_binding b ON b.reuse_scope_id=x.reuse_scope_id
+                   AND b.exercise_id=x.exercise_id AND b.exercise_revision_id=x.revision_id AND b.role='ASSESSED'
+                 WHERE d.deck_id=:deck AND
+                """ + ExerciseRevisionVisibility.visibleTo(":deck", "x"))
+                .param("deck", deck).param("exercise", exercise).param("revision", revision)
                 .query((row, ignored) -> new SubjectRow(row.getObject("member_key", UUID.class),
                         row.getObject("item_revision_id", UUID.class), row.getObject("objective_id", UUID.class),
                         row.getObject("objective_revision_id", UUID.class))).optional();
@@ -238,26 +270,26 @@ class ExerciseRepository {
                 .param("actor", actor).param("scope", scope).param("time", Timestamp.from(time)).update();
     }
 
-    void insertObjectiveRevision(UUID deck, UUID objective, UUID revision, long sequence, UUID parent,
+    void insertObjectiveRevision(UUID deck, UUID scope, UUID objective, UUID revision, long sequence, UUID parent,
                                  UUID deckRevision, long deckSequence, UUID command, String title, Instant time) {
         jdbc.sql("""
-                INSERT INTO app_learning.objective_revision(deck_id,objective_id,revision_id,objective_sequence,
+                INSERT INTO app_learning.objective_revision(deck_id,reuse_scope_id,objective_id,revision_id,objective_sequence,
                     parent_revision_id,parent_objective_sequence,deck_revision_id,deck_sequence,command_id,
                     descriptor,created_at)
-                VALUES (:deck,:objective,:revision,:sequence,:parent,:parentSequence,:deckRevision,:deckSequence,
+                VALUES (:deck,:scope,:objective,:revision,:sequence,:parent,:parentSequence,:deckRevision,:deckSequence,
                     :command,CAST(:descriptor AS jsonb),:time)
-                """).param("deck", deck).param("objective", objective).param("revision", revision)
+                """).param("deck", deck).param("scope", scope).param("objective", objective).param("revision", revision)
                 .param("sequence", sequence).param("parent", parent, java.sql.Types.OTHER)
                 .param("parentSequence", parent == null ? null : sequence - 1, java.sql.Types.BIGINT)
                 .param("deckRevision", deckRevision).param("deckSequence", deckSequence).param("command", command)
                 .param("descriptor", descriptor(title).toString()).param("time", Timestamp.from(time)).update();
     }
 
-    void insertObjectiveHead(UUID deck, UUID objective, UUID revision, long sequence, Instant time) {
+    void insertObjectiveHead(UUID deck, UUID scope, UUID objective, UUID revision, long sequence, Instant time) {
         jdbc.sql("""
-                INSERT INTO app_learning.objective_head(deck_id,objective_id,revision_id,objective_sequence,updated_at)
-                VALUES (:deck,:objective,:revision,:sequence,:time)
-                """).param("deck", deck).param("objective", objective).param("revision", revision)
+                INSERT INTO app_learning.objective_head(deck_id,reuse_scope_id,objective_id,revision_id,objective_sequence,updated_at)
+                VALUES (:deck,:scope,:objective,:revision,:sequence,:time)
+                """).param("deck", deck).param("scope", scope).param("objective", objective).param("revision", revision)
                 .param("sequence", sequence).param("time", Timestamp.from(time)).update();
     }
 
@@ -298,13 +330,13 @@ class ExerciseRepository {
                 .param("time", Timestamp.from(time)).update();
     }
 
-    void insertBinding(UUID deck, UUID exercise, UUID revision, BindingInsert binding) {
+    void insertBinding(UUID deck, UUID scope, UUID exercise, UUID revision, BindingInsert binding) {
         jdbc.sql("""
-                INSERT INTO app_learning.exercise_content_binding(deck_id,exercise_id,exercise_revision_id,binding_id,
-                    binding_ordinal,role,member_key,item_revision_id,objective_id,objective_revision_id,node_ids)
-                VALUES (:deck,:exercise,:revision,:binding,:ordinal,:role,:member,:itemRevision,:objective,
+                INSERT INTO app_learning.exercise_content_binding(deck_id,reuse_scope_id,exercise_id,exercise_revision_id,
+                    binding_id,binding_ordinal,role,member_key,item_revision_id,objective_id,objective_revision_id,node_ids)
+                VALUES (:deck,:scope,:exercise,:revision,:binding,:ordinal,:role,:member,:itemRevision,:objective,
                     :objectiveRevision,:nodeIds)
-                """).param("deck", deck).param("exercise", exercise).param("revision", revision)
+                """).param("deck", deck).param("scope", scope).param("exercise", exercise).param("revision", revision)
                 .param("binding", binding.bindingId()).param("ordinal", binding.ordinal()).param("role", binding.role())
                 .param("member", binding.memberKey()).param("itemRevision", binding.itemRevisionId())
                 .param("objective", binding.objectiveId(), java.sql.Types.OTHER)
@@ -312,11 +344,12 @@ class ExerciseRepository {
                 .param("nodeIds", binding.nodeIds().toArray(UUID[]::new)).update();
     }
 
-    void insertExerciseHead(UUID deck, UUID exercise, UUID revision, long sequence, int ordinal, Instant time) {
+    void insertExerciseHead(UUID deck, UUID scope, UUID exercise, UUID revision, long sequence, int ordinal, Instant time) {
         jdbc.sql("""
-                INSERT INTO app_learning.deck_head_exercise(deck_id,exercise_id,revision_id,exercise_sequence,ordinal,updated_at)
-                VALUES (:deck,:exercise,:revision,:sequence,:ordinal,:time)
-                """).param("deck", deck).param("exercise", exercise).param("revision", revision)
+                INSERT INTO app_learning.deck_head_exercise(deck_id,reuse_scope_id,exercise_id,revision_id,exercise_sequence,
+                    ordinal,updated_at)
+                VALUES (:deck,:scope,:exercise,:revision,:sequence,:ordinal,:time)
+                """).param("deck", deck).param("scope", scope).param("exercise", exercise).param("revision", revision)
                 .param("sequence", sequence).param("ordinal", ordinal).param("time", Timestamp.from(time)).update();
     }
 
@@ -340,23 +373,23 @@ class ExerciseRepository {
                 .param("deck", deck).param("after", after).update();
     }
 
-    void insertRemoval(UUID deck, UUID deckRevision, long deckSequence, UUID exercise,
+    void insertRemoval(UUID deck, UUID scope, UUID deckRevision, long deckSequence, UUID exercise,
                        UUID previous, int ordinal) {
         jdbc.sql("""
-                INSERT INTO app_learning.deck_exercise_change(deck_id,deck_revision_id,deck_sequence,exercise_id,
+                INSERT INTO app_learning.deck_exercise_change(deck_id,reuse_scope_id,deck_revision_id,deck_sequence,exercise_id,
                     previous_revision_id,revision_id,ordinal)
-                VALUES (:deck,:deckRevision,:deckSequence,:exercise,:previous,NULL,:ordinal)
-                """).param("deck", deck).param("deckRevision", deckRevision).param("deckSequence", deckSequence)
+                VALUES (:deck,:scope,:deckRevision,:deckSequence,:exercise,:previous,NULL,:ordinal)
+                """).param("deck", deck).param("scope", scope).param("deckRevision", deckRevision).param("deckSequence", deckSequence)
                 .param("exercise", exercise).param("previous", previous).param("ordinal", ordinal).update();
     }
 
-    void insertChange(UUID deck, UUID deckRevision, long deckSequence, UUID exercise, UUID previous,
+    void insertChange(UUID deck, UUID scope, UUID deckRevision, long deckSequence, UUID exercise, UUID previous,
                       UUID revision, int ordinal) {
         jdbc.sql("""
-                INSERT INTO app_learning.deck_exercise_change(deck_id,deck_revision_id,deck_sequence,exercise_id,
+                INSERT INTO app_learning.deck_exercise_change(deck_id,reuse_scope_id,deck_revision_id,deck_sequence,exercise_id,
                     previous_revision_id,revision_id,ordinal)
-                VALUES (:deck,:deckRevision,:deckSequence,:exercise,:previous,:revision,:ordinal)
-                """).param("deck", deck).param("deckRevision", deckRevision).param("deckSequence", deckSequence)
+                VALUES (:deck,:scope,:deckRevision,:deckSequence,:exercise,:previous,:revision,:ordinal)
+                """).param("deck", deck).param("scope", scope).param("deckRevision", deckRevision).param("deckSequence", deckSequence)
                 .param("exercise", exercise).param("previous", previous, java.sql.Types.OTHER)
                 .param("revision", revision).param("ordinal", ordinal).update();
     }
