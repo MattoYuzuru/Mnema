@@ -67,22 +67,31 @@ public class MediaCatalog {
                 .param("holdSeconds", settings.unattachedReadyHold().toSeconds()).update() == 1;
     }
 
-    /** #237 must call this inside the transaction that inserts the item revision. */
+    /**
+     * #237 must call this inside the transaction that inserts the item revision. The reference belongs to the revision
+     * (the lineage); {@code asset_owner_id} is the owner of the asset.
+     *
+     * <p>TODO(Share/9, #431): an attached asset must be the actor's own today because no copies exist yet. A copy edit that
+     * keeps the author's image must instead accept an asset mentioned by a revision visible to the deck (the database
+     * already allows it: the foreign key is on the asset's owner, not on the revision writer).
+     */
     @Transactional(propagation = Propagation.MANDATORY)
     public void attachRevision(UUID actor, UUID deck, UUID member, UUID revision, Collection<Reference> references) {
         UuidPolicy.requireEntityId(actor, "actor");
         UuidPolicy.requireEntityId(deck, "deckId");
         UuidPolicy.requireEntityId(member, "memberKey");
         UuidPolicy.requireEntityId(revision, "revisionId");
-        if (!jdbc.sql("SELECT 1 FROM app_learning.item_revision WHERE deck_id=:deck AND member_key=:member "
-                        + "AND revision_id=:revision AND owner_id=:owner")
+        // The revision just written by this deck's command: found through the deck's scope (primary key), origin checked.
+        UUID scope = jdbc.sql("SELECT r.reuse_scope_id FROM app_learning.deck d JOIN app_learning.item_revision r "
+                        + "ON r.reuse_scope_id=d.reuse_scope_id AND r.member_key=:member AND r.revision_id=:revision "
+                        + "WHERE d.deck_id=:deck AND r.deck_id=d.deck_id AND r.owner_id=:owner")
                 .param("deck", deck).param("member", member).param("revision", revision).param("owner", actor)
-                .query(Integer.class).optional().isPresent()) throw new ResourceNotFoundException();
+                .query(UUID.class).optional().orElseThrow(ResourceNotFoundException::new);
         validateReferences(actor, references);
         for (Reference reference : references) jdbc.sql("INSERT INTO app_learning.content_media_ref "
-                        + "(deck_id,member_key,revision_id,node_id,owner_id,asset_id) "
-                        + "VALUES (:deck,:member,:revision,:node,:owner,:asset)")
-                .param("deck", deck).param("member", member).param("revision", revision)
+                        + "(deck_id,reuse_scope_id,member_key,revision_id,node_id,asset_owner_id,asset_id) "
+                        + "VALUES (:deck,:scope,:member,:revision,:node,:owner,:asset)")
+                .param("deck", deck).param("scope", scope).param("member", member).param("revision", revision)
                 .param("node", reference.nodeId()).param("owner", actor).param("asset", reference.assetId()).update();
     }
 

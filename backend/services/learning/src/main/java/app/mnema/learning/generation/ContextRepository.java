@@ -56,9 +56,9 @@ class ContextRepository {
 
     private static final String HEADS = "SELECT h.member_key,h.revision_id,r.reuse_scope_id,r.content_root_id,p.title,"
             + "EXISTS(SELECT 1 FROM app_learning.deck_item_exemplar e WHERE e.deck_id=h.deck_id AND e.member_key=h.member_key) AS starred "
-            + "FROM app_learning.deck_head_item h JOIN app_learning.item_revision r ON r.deck_id=h.deck_id "
+            + "FROM app_learning.deck_head_item h JOIN app_learning.item_revision r ON r.reuse_scope_id=h.reuse_scope_id "
             + "AND r.member_key=h.member_key AND r.revision_id=h.revision_id LEFT JOIN app_learning.item_preview p "
-            + "ON p.deck_id=h.deck_id AND p.member_key=h.member_key AND p.revision_id=h.revision_id WHERE h.deck_id=:deck";
+            + "ON p.reuse_scope_id=h.reuse_scope_id AND p.member_key=h.member_key AND p.revision_id=h.revision_id WHERE h.deck_id=:deck";
 
     private static Head head(java.sql.ResultSet row) throws java.sql.SQLException {
         return new Head(row.getObject("member_key", UUID.class), row.getObject("revision_id", UUID.class),
@@ -173,7 +173,7 @@ class ContextRepository {
         if (schema.isEmpty() || title.isBlank()) return Optional.empty();
         String function = schema.get() + ".similarity(p.title,:title)";
         return jdbc.sql("SELECT h.member_key,p.title," + function + " AS score FROM app_learning.deck_head_item h "
-                        + "JOIN app_learning.item_preview p ON p.deck_id=h.deck_id AND p.member_key=h.member_key "
+                        + "JOIN app_learning.item_preview p ON p.reuse_scope_id=h.reuse_scope_id AND p.member_key=h.member_key "
                         + "AND p.revision_id=h.revision_id WHERE h.deck_id=:deck AND " + function + ">=:threshold "
                         + "ORDER BY score DESC,h.member_key LIMIT 1")
                 .param("deck", deck).param("title", title).param("threshold", threshold)

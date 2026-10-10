@@ -2,6 +2,9 @@ package app.mnema.learning.storage;
 
 import app.mnema.learning.platform.concurrency.CompareAndSetExecutor;
 import app.mnema.learning.platform.id.UuidPolicy;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -10,6 +13,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -18,6 +22,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Supplier;
+import java.util.regex.Pattern;
 
 import static app.mnema.learning.storage.StorageTypes.*;
 
@@ -28,11 +33,14 @@ import static app.mnema.learning.storage.StorageTypes.*;
  */
 @Service
 public class ImmutableStorage {
+    private static final Logger LOG = LoggerFactory.getLogger(ImmutableStorage.class);
+    private static final Pattern VIOLATED_CONSTRAINT = Pattern.compile("violates foreign key constraint \"([A-Za-z0-9_$]{1,63})\"");
     private final StorageRepository repository;
     private final StorageEncoding encoding;
     private final StorageSettings settings;
     private final CompareAndSetExecutor cas;
     private final TransactionTemplate collectionTransaction;
+    private final TransactionTemplate removalSavepoint;
 
     public ImmutableStorage(StorageRepository repository, StorageEncoding encoding, StorageSettings settings,
                             CompareAndSetExecutor cas, PlatformTransactionManager transactions) {
@@ -43,6 +51,9 @@ public class ImmutableStorage {
         collectionTransaction = new TransactionTemplate(transactions);
         collectionTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         collectionTransaction.setTimeout(10);
+        // A savepoint inside the batch: a foreign key violation on removal must not abort the whole batch transaction.
+        removalSavepoint = new TransactionTemplate(transactions);
+        removalSavepoint.setPropagationBehavior(TransactionDefinition.PROPAGATION_NESTED);
     }
 
     /** Topological objects; repeat calls may reuse equal objects but issue fresh staging pins. */
@@ -182,15 +193,41 @@ public class ImmutableStorage {
                 if (repository.referenced(ref)) {
                     repository.removeCandidate(ref);
                     deferred++;
-                } else {
-                    var children = object.get().value().edges();
-                    repository.removeObject(ref);
-                    for (NewEdge child : children) repository.enqueue(child.child(), now.plus(settings.orphanGrace()));
+                } else if (removeUnlessForeignKeyHeld(ref)) {
+                    for (NewEdge child : object.get().value().edges()) {
+                        repository.enqueue(child.child(), now.plus(settings.orphanGrace()));
+                    }
                     deleted++;
+                } else {
+                    // A domain row (an item or exercise revision, a deck revision, ...) references the object by foreign
+                    // key: it is still held. Drop the candidate like any other held object; the next unreferenced moment
+                    // re-queues it, instead of retrying the same removal on every pass forever.
+                    repository.removeCandidate(ref);
+                    deferred++;
                 }
             }
             return new CollectionResult(candidates.size(), deleted, deferred);
         });
+    }
+
+    /**
+     * Removes the object inside a savepoint. A foreign key violation (SQLSTATE 23503) from a domain table that references
+     * the object means "still referenced": the savepoint is rolled back (cascaded edge deletions included) and the batch
+     * transaction stays usable.
+     */
+    private boolean removeUnlessForeignKeyHeld(ObjectRef ref) {
+        try {
+            removalSavepoint.executeWithoutResult(status -> repository.removeObject(ref));
+            return true;
+        } catch (DataIntegrityViolationException exception) {
+            if (exception.getMostSpecificCause() instanceof SQLException cause && "23503".equals(cause.getSQLState())) {
+                // the constraint name identifies the holder (a table), never an object id or content
+                var named = VIOLATED_CONSTRAINT.matcher(String.valueOf(cause.getMessage()));
+                LOG.warn("storage_gc_object_held_by_foreign_key constraint={}", named.find() ? named.group(1) : "unknown");
+                return false;
+            }
+            throw exception;
+        }
     }
 
     private <T> T retryBatch(Supplier<T> operation) {

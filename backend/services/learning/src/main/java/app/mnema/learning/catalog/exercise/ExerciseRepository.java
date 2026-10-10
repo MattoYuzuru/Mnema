@@ -185,13 +185,18 @@ class ExerciseRepository {
                         row.getObject("objective_revision_id", UUID.class))).optional();
     }
 
+    /**
+     * The revision an exercise may be bound to: the deck's CURRENT head of the material. This is the head branch of
+     * {@code ItemRevisionVisibility} on purpose (bindings never target a journal-only revision), reached through the
+     * deck's own head row and its scope, never through the origin deck of the revision.
+     */
     Optional<ItemRevision> itemRevision(UUID actor, UUID deck, UUID member, UUID revision) {
         return jdbc.sql("""
                 SELECT r.member_key,r.revision_id,r.reuse_scope_id,r.content_root_id
-                  FROM app_learning.deck d JOIN app_learning.item_revision r ON r.deck_id=d.deck_id
-                  JOIN app_learning.deck_head_item h ON h.deck_id=r.deck_id AND h.member_key=r.member_key
-                    AND h.revision_id=r.revision_id
-                 WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND r.deck_id=:deck AND r.member_key=:member AND r.revision_id=:revision
+                  FROM app_learning.deck d JOIN app_learning.deck_head_item h ON h.deck_id=d.deck_id
+                  JOIN app_learning.item_revision r ON r.reuse_scope_id=h.reuse_scope_id AND r.member_key=h.member_key
+                    AND r.revision_id=h.revision_id
+                 WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND d.deck_id=:deck AND h.member_key=:member AND h.revision_id=:revision
                 """).param("actor", actor).param("deck", deck).param("member", member).param("revision", revision)
                 .query((row, ignored) -> new ItemRevision(row.getObject("member_key", UUID.class),
                         row.getObject("revision_id", UUID.class), row.getObject("reuse_scope_id", UUID.class),

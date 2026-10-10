@@ -153,7 +153,7 @@ class GenerationReviewIntegrationTest extends GenerationReviewSupport {
         assertThat(approve(owner, deck, proposal, UUID.randomUUID()).getStatus()).isEqualTo(200);
 
         // the catalog bound the asset to the revision it stored, and the Workshop's hold on it is gone
-        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.content_media_ref WHERE asset_id=:asset AND owner_id=:owner")
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.content_media_ref WHERE asset_id=:asset AND asset_owner_id=:owner")
                 .param("asset", asset).param("owner", owner).query(Integer.class).single()).isEqualTo(1);
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.generation_media_ref WHERE artifact_id=:id").param("id", proposal.artifact())
                 .query(Integer.class).single()).isZero();

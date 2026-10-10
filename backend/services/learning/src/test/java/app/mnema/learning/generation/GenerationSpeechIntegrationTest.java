@@ -370,7 +370,7 @@ class GenerationSpeechIntegrationTest extends GenerationEditsSupport {
         // approval binds the clip the node uses now
         MockHttpServletResponse approved = approve(owner, deck, fresh(owner, deck, proposal), UUID.randomUUID());
         assertThat(approved.getStatus()).as(approved.getContentAsString()).isEqualTo(200);
-        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.content_media_ref WHERE asset_id=:asset AND owner_id=:owner").param("asset", secondAsset)
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.content_media_ref WHERE asset_id=:asset AND asset_owner_id=:owner").param("asset", secondAsset)
                 .param("owner", owner).query(Integer.class).single()).isEqualTo(1);
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.content_media_ref WHERE asset_id=:asset").param("asset", firstAsset).query(Integer.class).single()).isZero();
     }

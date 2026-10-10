@@ -73,8 +73,8 @@ class DeckHubScaleIntegrationTest extends PostgresIntegrationTest {
             jdbc.sql("SET LOCAL session_replication_role = replica").update();
             // Head projection only: insights never read the immutable roots, item revisions or learning_item rows.
             jdbc.sql("""
-                    INSERT INTO app_learning.deck_head_item(deck_id,member_key,revision_id,item_sequence,updated_at)
-                    SELECT :deck,gen_random_uuid(),gen_random_uuid(),0,statement_timestamp() FROM generate_series(1,:extra)
+                    INSERT INTO app_learning.deck_head_item(deck_id,reuse_scope_id,member_key,revision_id,item_sequence,updated_at)
+                    SELECT :deck,(SELECT reuse_scope_id FROM app_learning.deck WHERE deck_id=:deck),gen_random_uuid(),gen_random_uuid(),0,statement_timestamp() FROM generate_series(1,:extra)
                     """).param("deck", wide).param("extra", MATERIALS - 1).update();
             cloneExercises(wide);
         });
@@ -99,7 +99,8 @@ class DeckHubScaleIntegrationTest extends PostgresIntegrationTest {
         started = System.nanoTime();
         items.list(actor, real, "25", null, "exerciseCount", null);
         coldFirstSortedPageMs = (System.nanoTime() - started) / 1_000_000;
-        previewsAfterFirstPage = jdbc.sql("SELECT count(*) FROM app_learning.item_preview WHERE deck_id=:deck")
+        previewsAfterFirstPage = jdbc.sql("SELECT count(*) FROM app_learning.item_preview p JOIN app_learning.deck d ON d.reuse_scope_id=p.reuse_scope_id "
+                + "WHERE d.deck_id=:deck")
                 .param("deck", real).query(Integer.class).single();
     }
 

@@ -42,7 +42,13 @@ Receipts bind actor, Deck, both expected Deck values and the complete normalized
 command. An exact retry returns the original acknowledgement with
 `Idempotency-Replayed: true` and no ETag. A changed reuse of the command ID returns
 409. Fresh results include the new Deck ETag. Clients reconcile any retry with GET.
-Foreign or absent Deck/member/revision tuples share the opaque 404 boundary.
+Foreign or absent Deck/member/revision tuples share the opaque 404 boundary. An exact
+revision is readable only through a Deck that has it as its current head or has
+published it itself; a revision of another Deck in the same storage lineage (for
+example the source's later edit, or a copy's edit) is the same opaque 404. Responses
+always name the reading Deck (`deckId`, `deckRevisionId`, `deckVersion`) and
+`itemVersion` is the position in that revision's own branch of the lineage, unique
+per branch and not globally.
 
 Deleting one material uses the same publication route with one `delete` change.
 Its acknowledgement has `itemRevisionId: null` and `ordinal: null`; exact retries
@@ -100,8 +106,8 @@ Browse summaries include required `title`: the first nonempty heading/paragraph
 in native document order, normalized to one line and bounded to 240 Unicode code
 points. Ruby contributes its base text; opaque and media payloads contribute no
 text. An empty string means the material has no readable text. The private,
-rebuildable `item_preview` projection is keyed by Deck/member/exact revision and
-populated lazily after ownership is checked. Both Browse and Study progress use
+rebuildable `item_preview` projection is keyed by the storage lineage (reuse scope),
+member and exact revision and populated lazily after ownership is checked. Both Browse and Study progress use
 this projection; clients never fetch complete documents just to label a list.
 CSS ellipsis fits the available row width while preserving the full accessible
 name. Direct document reads and publication acknowledgements are unchanged.

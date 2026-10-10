@@ -368,7 +368,8 @@ class DeckHubIntegrationTest extends PostgresIntegrationTest {
         assertThat(items.list(owner, own, null, null, null, null).path("exemplars").path("count").intValue()).isOne();
 
         // A stale row (a delete racing the insert) is invisible and uncounted.
-        jdbc.sql("INSERT INTO app_learning.deck_item_exemplar(deck_id,member_key,marked_at) VALUES (:deck,:member,now())")
+        jdbc.sql("INSERT INTO app_learning.deck_item_exemplar(deck_id,reuse_scope_id,member_key,marked_at) "
+                + "VALUES (:deck,(SELECT reuse_scope_id FROM app_learning.deck WHERE deck_id=:deck),:member,now())")
                 .param("deck", own).param("member", created.get(1).member()).update();
         JsonNode listed = items.list(owner, own, null, null, null, null);
         assertThat(listed.path("exemplars").path("count").intValue()).isOne();
@@ -677,8 +678,8 @@ class DeckHubIntegrationTest extends PostgresIntegrationTest {
 
     private void capture(UUID owner, UUID target, String createdAt, boolean archived) {
         jdbc.sql("""
-                INSERT INTO app_learning.capture_note(note_id,owner_id,deck_id,row_version,source,note_text,archived,created_at,updated_at)
-                VALUES (:id,:owner,:deck,0,'src','text',:archived,CAST(:at AS timestamptz),CAST(:at AS timestamptz))
+                INSERT INTO app_learning.capture_note(note_id,owner_id,deck_id,reuse_scope_id,row_version,source,note_text,archived,created_at,updated_at)
+                VALUES (:id,:owner,:deck,(SELECT reuse_scope_id FROM app_learning.deck WHERE deck_id=:deck),0,'src','text',:archived,CAST(:at AS timestamptz),CAST(:at AS timestamptz))
                 """).param("id", UUID.randomUUID()).param("owner", owner).param("deck", target).param("archived", archived)
                 .param("at", createdAt).update();
     }
