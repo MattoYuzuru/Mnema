@@ -5,9 +5,9 @@ artifact:
   title: "Learning runtime policy index"
   status: current
   created_at: "2026-09-28"
-  updated_at: "2026-10-07"
+  updated_at: "2026-10-10"
   owners: ["learning-api", "web"]
-  source_tasks: ["GitHub Issue #241", "GitHub Epic #76", "GitHub Issue #284", "GitHub Issue #281", "GitHub Issue #300"]
+  source_tasks: ["GitHub Issue #241", "GitHub Epic #76", "GitHub Issue #284", "GitHub Issue #281", "GitHub Issue #300", "GitHub Issue #417"]
 ---
 
 # Изменяемые политики Learning
@@ -31,6 +31,12 @@ namespaces.
 | `learning.storage.max-staging-lease` | Immutable native storage: максимальная временная pin lease | Duration; `PT1H`; 1 ms–1 день |
 | `learning.storage.orphan-grace` | Immutable native storage: grace до sweep | Duration; `PT10M`; 1 ms–7 дней |
 | `learning.storage.lock-timeout` | Immutable native storage: ожидание lock | Duration; `PT1S`; 1 ms–5 секунд |
+| `learning.storage.gc.enabled` | Immutable native storage GC: kill switch расписания (роли `worker`/`all`; роль `api` его не регистрирует). Ручных вызовов нет | Boolean; `true` |
+| `learning.storage.gc.initial-delay` / `interval` | GC: пауза после старта и задержка между проходами | Duration; `PT2M` / `PT1M` |
+| `learning.storage.gc.grace` | GC: дополнительная выдержка сверх `orphan-grace` перед удалением недостижимого объекта (cutoff = now − grace) | Duration; `PT1H`; 0–30 дней |
+| `learning.storage.gc.max-scopes` | GC: число reuse scope за проход (round-robin, курсор переживает проходы) | Count; `8` (1–64) |
+| `learning.storage.gc.max-batches-per-scope` | GC: батчей ядра (по 8 объектов) на scope за проход | Count; `16` (1–256) |
+| `learning.storage.gc.max-run` | GC: потолок времени одного прохода | Duration; `PT30S`; 1 с–5 мин |
 | `learning.media.upload.max-image-bytes` | Загрузка изображения; не влияет на аудио или видео | Bytes; `67108864` (64 MiB); 1 B–5 TiB, с ограничением owner quota |
 | `learning.media.upload.max-audio-bytes` | Загрузка аудио; не влияет на изображение или видео | Bytes; `536870912` (512 MiB); 1 B–5 TiB, с ограничением owner quota |
 | `learning.media.upload.max-video-bytes` | Загрузка видео, включая MOV с телефона; длительность проверяет processor отдельно | Bytes; `4294967296` (4 GiB); 1 B–5 TiB, с ограничением owner quota |

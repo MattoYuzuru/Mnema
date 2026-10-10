@@ -1215,6 +1215,20 @@ capacity evidence.
 - Native document v1, immutable block/page storage and counted structural edits
   back both material and exercise membership roots. Exercise writes advance the
   Deck CAS and receipt in the same transaction.
+- **Immutable storage GC (#417).** `StorageGc` (+ `StorageGcSchedule`, roles `worker|all`) runs the kernel's `expireStaging`
+  and `collectBatch` on a timer; before this nothing called them and `storage_gc_candidate` only grew. A pass visits at most
+  `learning.storage.gc.max-scopes` reuse scopes round-robin (an in-process cursor survives passes), at most
+  `max-batches-per-scope` kernel batches of eight per scope and `max-run` seconds, and collects only candidates older than
+  `orphan-grace` + `gc.grace` (default `PT1H`). Reachability is the kernel's alone: an object with an incoming edge or any pin
+  (a `deck.revision` durable pin, an unexpired staging pin) is never deleted, and the item/exercise revision FKs refuse the
+  rest. Nothing releases a durable pin today, so only unpublished or abandoned content is reclaimed; history retention stays a
+  separate product decision. Overlapping passes (two processes, a slow pass) take disjoint candidates by `SKIP LOCKED`; a failing
+  scope is logged (`storage_gc_scope_failed`) and counted, the others go on. Metrics: `mnema_storage_gc_objects_total{outcome}`,
+  `mnema_storage_gc_staging_expired_total`, `mnema_storage_gc_errors_total`, `mnema_storage_gc_pass_seconds`; one
+  `storage_gc_pass` info line per pass that did work. Kill switch `learning.storage.gc.enabled=false`; keys in the
+  [runtime policy index](../../../docs/engineering/runtime-policy-index.md). Tests: `StorageGcTest`,
+  `StorageGcIntegrationTest` (real PostgreSQL: live head and retained revisions survive, staging protects until expiry,
+  overlapping passes, new-root race), the removal case of `ExerciseServiceIntegrationTest`.
 
 - Deck hub (#285, [`contracts/decks/hub.json`](../../../contracts/decks/hub.json)):
   `GET /api/decks/{id}/insights` (`DeckInsightsService`) is one snapshot-isolated read-only transaction over current

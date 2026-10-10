@@ -9,6 +9,7 @@ import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.concurrency.VersionConflictException;
 import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
+import app.mnema.learning.storage.ImmutableStorage;
 import app.mnema.learning.study.session.StudySessionService;
 import app.mnema.learning.support.PostgresIntegrationTest;
 import app.mnema.learning.support.StudyFixtures;
@@ -49,6 +50,7 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
     @Autowired private ItemService items;
     @Autowired private JdbcClient jdbc;
     @Autowired private MediaCatalog media;
+    @Autowired private ImmutableStorage storage;
     @Autowired private StudySessionService studies;
     private StudyFixtures fixtures;
 
@@ -87,6 +89,18 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.deck_exercise_change "
                         + "WHERE deck_id=:deck AND revision_id IS NULL")
                 .param("deck", material.deck()).query(Long.class).single()).isOne();
+
+        // Storage garbage collection (a settled pass over every candidate of the deck) must keep the removed exercise's revision readable.
+        UUID scope = jdbc.sql("SELECT reuse_scope_id FROM app_learning.deck WHERE deck_id=:deck").param("deck", material.deck())
+                .query(UUID.class).single();
+        for (int pass = 0; pass < 6; pass++) {
+            jdbc.sql("UPDATE app_learning.storage_gc_candidate SET not_before=clock_timestamp()-interval '1 second' WHERE reuse_scope_id=:scope")
+                    .param("scope", scope).update();
+            storage.collectBatch(scope, java.time.Instant.now().plusSeconds(1), 8);
+        }
+        assertThat(service.read(material.actor(), material.deck(), ids[1], revisions[1])
+                .path("exerciseRevisionId").stringValue(null)).isEqualTo(revisions[1].toString());
+        assertThat(service.list(material.actor(), material.deck(), null, null, null).path("total").intValue()).isEqualTo(2);
     }
 
     @Test

@@ -23,7 +23,8 @@ import static app.mnema.learning.storage.StorageTypes.*;
 
 /**
  * Internal physical storage. Callers must authorize the requested domain revision/scope and pin owner.
- * No method grants access by knowledge of a physical ID, performs native validation or starts a scheduler.
+ * No method grants access by knowledge of a physical ID, performs native validation or starts a scheduler; the timer that calls
+ * {@link #expireStaging} and {@link #collectBatch} is {@code StorageGc}.
  */
 @Service
 public class ImmutableStorage {
