@@ -73,7 +73,7 @@ artifact:
 | Share/13 Панель доступа и приглашения | [#435](https://github.com/MattoYuzuru/Mnema/issues/435) | L | Share/7, 12, 2 |
 | Share/14 OG-превью без SSR | [#436](https://github.com/MattoYuzuru/Mnema/issues/436) | S | Share/11, 2 |
 | Share/15 Жалобы и снятие | [#437](https://github.com/MattoYuzuru/Mnema/issues/437) | M | Share/7, 11 |
-| Share/16 Юрист: тексты (human) | [#438](https://github.com/MattoYuzuru/Mnema/issues/438) | S | Share/1 |
+| Share/16 Утверждённые тексты на страницах, облегчение документов | [#438](https://github.com/MattoYuzuru/Mnema/issues/438) | S | Share/1 (ставится вместе с функциями) |
 | Share/17 Проверка эпика 1 | [#439](https://github.com/MattoYuzuru/Mnema/issues/439) | M | Share/10, 11, 13, 14, 15 |
 | Updates/1 frontier-diff | [#440](https://github.com/MattoYuzuru/Mnema/issues/440) | M | Share/8 |
 | Updates/2 Комбинированная публикация | [#441](https://github.com/MattoYuzuru/Mnema/issues/441) | M | Share/5, 6 |
@@ -99,7 +99,7 @@ artifact:
 Попутные задачи вне эпиков (решение владельца):
 
 - [#417](https://github.com/MattoYuzuru/Mnema/issues/417) — GC хранилища в production
-  (ведётся отдельной сессией, PR
+  (смержено в
   [#418](https://github.com/MattoYuzuru/Mnema/pull/418));
 - [#460](https://github.com/MattoYuzuru/Mnema/issues/460) — retention генераций и
   выдач Study;
@@ -124,8 +124,11 @@ flowchart LR
     E3 --> E4[Эпик 4 рекомендации]
 ```
 
-- Независимо и параллельно с началом эпика 1 можно взять Share/1, Share/6,
-  Share/12, Community/0 и попутные задачи.
+- Независимо и параллельно с началом эпика 1 можно взять Share/1, Share/3,
+  Share/6, Share/12 и попутную #461.
+- Попутная #460 (retention Study) идёт в начале эпика 2. #462 и Community/0 — в
+  начале эпика 3.
+- Промпты сессий — [prompts/community-decks.md](./prompts/community-decks.md).
 - Эпики 2 и 3 идут параллельно после эпика 1. Эпик 4 начинается после эпика 3.
 - Первая публичная колода появляется не раньше закрытия Share/15 и Share/16.
 

@@ -120,6 +120,7 @@ artifact:
 | accepted | [Epic #77 refinement](./engineering/epic-77-refinement.md) | AI-слой: delivery slices, пять прогонов и acceptance эпика. |
 | current | [Epic #77 prompts](./engineering/prompts/epic-77-ai-layer.md) | Промпты последовательных прогонов агента для реактивированного AI-эпика. |
 | accepted | [Community decks refinement](./engineering/community-decks-refinement.md) | Четыре эпика (#419–#422), задачи, зависимости и правила исполнения. |
+| current | [Community decks prompts](./engineering/prompts/community-decks.md) | Промпты сессий ведущего агента для четырёх эпиков колод сообщества. |
 | historical | [Epic #74 refinement](./engineering/epic-74-refinement.md), [dependency decisions](./engineering/epic-74-dependency-decisions.md), [hardware handoff](./engineering/epic-74-hardware-handoff.md) | Выполненный план, принятые зависимости и session handoff #74. |
 | historical | [GitHub execution model](./engineering/github-execution-model.md) | Исходная настройка Project #4; текущие статусы читаются из GitHub. |
 | proposed | [Greenfield delivery plan](./engineering/v2-delivery-plan-2026-08.md) | Sequencing proposal; GitHub state и этот navigator приоритетнее. |
