@@ -2,7 +2,6 @@ package app.mnema.identityaccount.profile;
 
 import app.mnema.identityaccount.account.AccountStore;
 import app.mnema.identityaccount.contract.AccountAccess;
-import app.mnema.identityaccount.contract.AccountFailure;
 
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -15,10 +14,6 @@ public class Profiles {
     public record Profile(UUID accountId, String email, boolean emailVerified, String profileUsername,
                           String displayName, String bio, boolean admin, String status, boolean avatarPresent,
                           boolean hasPassword) {
-    }
-
-    public record PublicProfile(UUID accountId, String profileUsername, String displayName, String bio,
-                                boolean avatarPresent) {
     }
 
     private final AccountStore accounts;
@@ -36,13 +31,6 @@ public class Profiles {
         return new Profile(a.accountId(), a.email(), a.emailVerified(), a.profileUsername(), a.displayName(), a.bio(),
                 a.isAdmin(), a.status(), exists("account_avatar", a.accountId()),
                 exists("local_credential", a.accountId()));
-    }
-
-    public PublicProfile publicProfile(UUID id) {
-        var a = accounts.find(id, false).filter(account -> account.status().equals("ACTIVE") &&
-                        account.deletionState().equals("ACTIVE"))
-                .orElseThrow(() -> new AccountFailure(404, "profile_not_found"));
-        return new PublicProfile(id, a.profileUsername(), a.displayName(), a.bio(), exists("account_avatar", id));
     }
 
     public Profile update(AccountAccess access, String username, String displayName, String bio) {

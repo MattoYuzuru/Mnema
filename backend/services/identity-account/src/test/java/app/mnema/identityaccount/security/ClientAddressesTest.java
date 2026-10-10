@@ -31,6 +31,17 @@ class ClientAddressesTest {
     }
 
     @Test
+    void rateKeyKeepsIpv4AndCollapsesIpv6ToItsSlash64() {
+        assertThat(ClientAddresses.rateKey("198.51.100.11")).isEqualTo("198.51.100.11");
+        assertThat(ClientAddresses.rateKey("2001:db8:1:2:aaaa:bbbb:cccc:dddd"))
+                .isEqualTo(ClientAddresses.rateKey("2001:db8:1:2::1")).isEqualTo("20010db800010002/64");
+        assertThat(ClientAddresses.rateKey("2001:db8:1:3::1")).isNotEqualTo(ClientAddresses.rateKey("2001:db8:1:2::1"));
+        assertThat(ClientAddresses.rateKey("::ffff:198.51.100.11")).isEqualTo("198.51.100.11");
+        assertThat(addresses.rateKey(request("203.0.113.9", "2001:db8::1"))).isEqualTo("203.0.113.9");
+        assertThat(addresses.rateKey(request("10.42.0.5", "2001:db8:5:6::7"))).isEqualTo("20010db800050006/64");
+    }
+
+    @Test
     void configurationRejectsEmptyOrInvalidNetworks() {
         assertThatThrownBy(() -> new ClientAddresses(" ")).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new ClientAddresses("10.42.0.0/33")).isInstanceOf(IllegalArgumentException.class);
