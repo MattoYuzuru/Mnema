@@ -5,7 +5,7 @@ artifact:
   title: "Revision storage, fork locality and independently scalable workloads"
   status: current
   created_at: "2026-09-06"
-  updated_at: "2026-09-19"
+  updated_at: "2026-10-10"
   owners: ["project-owner"]
   decision_scope: [revision-storage, fork-lineage, publication, runtime-boundaries, bounded-reads]
 ---
@@ -91,9 +91,11 @@ Selected storage internals:
   record the semantic diff for audit/pull; they are not required to replay ordinary
   reads. Small bounded metadata may be stored as a full JSONB snapshot.
 - Current search/due/eligibility projections remain relational and rebuildable.
-  Only changed entries are updated for ordinary saves. A future fork initially
-  reads shared revision projections through its namespace; it cannot require
-  eager per-item rows or a fork-wide search-index build before its first page.
+  Only changed entries are updated for ordinary saves. *Superseded 2026-10-10
+  ([community decks architecture](./community-decks.md), CD-1/CD-2):* immutable
+  revision rows belong to the lineage (`reuse_scope_id`); a fork is created with a
+  constant number of records and a job writes per-deck head pointers before first
+  use. Fully sparse copy-on-write heads remain the load-triggered next step.
 
 With `N` memberships, manifest fanout `F`, `K` changed entries and `B` changed block
 bytes, a normal mutation costs approximately `B + O(K log_F N)` bounded page

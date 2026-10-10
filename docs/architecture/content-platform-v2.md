@@ -5,7 +5,7 @@ artifact:
   title: "Mnema greenfield content and study platform"
   status: accepted
   created_at: "2026-08-15"
-  updated_at: "2026-09-20"
+  updated_at: "2026-10-10"
   owners: ["project-owner"]
   source_tasks: ["project architecture and product review"]
   supersedes: []
@@ -291,9 +291,10 @@ of already-authorized fork content. See the
 
 ### Visibility, collaboration and publication review
 
-Private ownership is the initial behavior. Preserve an extensible visibility
-policy for later `PUBLIC`, `REQUEST_RESTRICTED` and `PRIVATE` decks; restricted
-access requires explicit permission, not an unguessable URL. Catalog, likes,
+Private ownership is the initial behavior. *Updated 2026-10-10:* the accepted
+levels are private, by link, by invitation and public
+([community decks](./community-decks.md)). Invitation access requires an explicit
+grant, not an unguessable URL; "by link" is a separately named weaker level. Catalog, likes,
 recommendations and community onboarding are future product phases, not primary
 navigation requirements for the current frontend.
 
