@@ -33,6 +33,8 @@ const OPTION_IDS = ['d4000000-0000-4000-8000-000000000001', 'd4000000-0000-4000-
 export class SgControlsComponent {
     protected readonly buttonUsage = BUTTON_USAGE;
     protected readonly deleted = signal(false);
+    protected readonly consentOn = signal(false);
+    protected setConsent(event: Event): void { this.consentOn.set((event.target as HTMLInputElement).checked); }
 
     protected readonly title = signal('');
     protected readonly titleInvalid = signal(true);

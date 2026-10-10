@@ -144,11 +144,6 @@ public class AccountController {
                 edit.bio());
     }
 
-    @GetMapping("/profiles/{id}")
-    Profiles.PublicProfile profile(@PathVariable UUID id) {
-        return profiles.publicProfile(id);
-    }
-
     @PostMapping("/me/password")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void password(Authentication authentication, @Valid @RequestBody Password r) {

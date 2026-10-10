@@ -50,3 +50,9 @@ export function validateIdentityConfig(config: BrowserIdentityConfig, frontendOr
             redirect.username || redirect.password || redirect.search || redirect.hash || !/^[A-Za-z0-9._-]{1,128}$/u.test(config.clientId)) throw new Error();
     } catch { throw new AuthFailure('configuration'); }
 }
+
+/** `{identity origin}/api/accounts` after the same origin checks every Identity call makes. */
+export function accountsApiBase(config: BrowserIdentityConfig, frontendOrigin: string): string {
+    validateIdentityConfig(config, frontendOrigin);
+    return `${config.authServerUrl}/api/accounts`;
+}

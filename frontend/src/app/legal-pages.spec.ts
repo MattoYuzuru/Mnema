@@ -23,8 +23,8 @@ describe('Personal data policy page', () => {
         const root = render(PrivacyPageComponent);
         expect(text(root.querySelector('h1'))).toBe('Политика обработки персональных данных');
         expect(text(root.querySelector('.last-updated'))).toContain(LEGAL_EFFECTIVE_DATE);
-        // 1.1: avatars and material media became active (storage in Yandex Object Storage, processing on Mnema's server)
-        expect(text(root.querySelector('.last-updated'))).toBe('Действует с 9 октября 2026 · версия 1.1');
+        // 1.2: the public profile became a separate consent (section 15); 1.1 made avatars and material media active
+        expect(text(root.querySelector('.last-updated'))).toBe('Действует с 10 октября 2026 · версия 1.2');
         expect(root.querySelector('.legal-page')?.getAttribute('lang')).toBe('ru');
         const block = text(root.querySelector('app-legal-operator-block'));
         for (const value of [LEGAL_OPERATOR.name, LEGAL_OPERATOR.inn, LEGAL_OPERATOR.ogrnip, LEGAL_OPERATOR.email]) expect(block).toContain(value);
@@ -93,7 +93,31 @@ describe('Personal data policy page', () => {
         expect(body).toContain('ключевые хэши (HMAC)');
         expect(body).not.toContain('необратим');
         expect(body).not.toContain('отдельном экране');
-        expect(body).toContain('Сейчас ни для одной цели мы не запрашиваем согласие');
+        expect(body).toContain('Сейчас мы запрашиваем согласие только на публичный профиль');
+        expect(body).not.toContain('Сейчас ни для одной цели мы не запрашиваем согласие');
+    });
+
+    it('gives the public profile its own section with the approved consent wording and links it from section 2', () => {
+        const root = render(PrivacyPageComponent);
+        const heading = root.querySelector('h2#public-profile')!;
+        expect(text(heading)).toBe('15. Публичный профиль и колоды сообщества');
+        const section = heading.closest('section')!;
+        expect(section.getAttribute('aria-labelledby')).toBe('public-profile');
+        // only the paragraph of the feature that exists; the other three ship with their tasks
+        expect(section.querySelectorAll('p')).toHaveLength(1);
+        const paragraph = text(section);
+        for (const phrase of ['Профиль виден другим, только если вы включили его в настройках.', 'Тогда всем показывается ваш логин и то, что вы отметили: имя, фото, «О себе».',
+            'ст. 10.1 152-ФЗ', 'Оно действует до отзыва', 'данные показываются только на mnema.app', 'другие цели и передача третьим лицам запрещены',
+            'Отозвать согласие можно переключателем в профиле или письмом оператору: показ прекращается сразу.']) expect(paragraph).toContain(phrase);
+        expect(paragraph).not.toContain('Колоды, которыми вы делитесь');
+        const data = text(root.querySelector('#data')!.closest('section'));
+        expect(data).toContain('другим не показываются, пока вы не включили публичный профиль (см. раздел 15 «Публичный профиль и колоды сообщества»)');
+        expect(data).not.toContain('доступен без входа');
+        const links = [...root.querySelectorAll('a[href$="#public-profile"]')].filter(link => !link.closest('nav'));
+        expect(links).toHaveLength(2);
+        links.forEach(link => expect(text(link)).toBe('Публичный профиль и колоды сообщества'));
+        expect(text(root.querySelector('#sources'))).toBe('16. Нормативная база');
+        expect(root.querySelector('nav.toc a[href$="#public-profile"]')).not.toBeNull();
     });
 
     it('lists the browser storage keys and the server-side promo state', () => {

@@ -141,6 +141,11 @@ public class AccountPurgeWorker {
                     .param("account", lease.accountId()).update();
             jdbcClient.sql("DELETE FROM app_identity.avatar_cleanup WHERE account_id=:account")
                     .param("account", lease.accountId()).update();
+            // Data minimisation: the append-only journal guard permits this delete only while the account is PURGING.
+            jdbcClient.sql("DELETE FROM app_identity.public_profile_consent_event WHERE account_id=:account")
+                    .param("account", lease.accountId()).update();
+            jdbcClient.sql("DELETE FROM app_identity.public_profile_consent WHERE account_id=:account")
+                    .param("account", lease.accountId()).update();
             jdbcClient.sql("DELETE FROM app_identity.ownership_challenge WHERE account_id=:account")
                     .param("account", lease.accountId()).update();
             jdbcClient.sql("DELETE FROM app_identity.spring_session WHERE principal_name=:account")

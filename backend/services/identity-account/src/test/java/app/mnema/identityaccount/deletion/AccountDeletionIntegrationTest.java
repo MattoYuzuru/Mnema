@@ -8,6 +8,7 @@ import app.mnema.identityaccount.federation.FederatedAccounts;
 import app.mnema.identityaccount.local.LocalAccounts;
 import app.mnema.identityaccount.moderation.Moderation;
 import app.mnema.identityaccount.profile.Profiles;
+import app.mnema.identityaccount.profile.PublicProfiles;
 import app.mnema.identityaccount.security.OwnershipProofs;
 import app.mnema.identityaccount.support.PostgresIntegrationTest;
 
@@ -82,6 +83,8 @@ class AccountDeletionIntegrationTest extends PostgresIntegrationTest {
     @Autowired
     Profiles profiles;
     @Autowired
+    PublicProfiles publicProfiles;
+    @Autowired
     Moderation moderation;
     @Autowired
     AccountDeletions deletions;
@@ -112,6 +115,8 @@ class AccountDeletionIntegrationTest extends PostgresIntegrationTest {
     @Test
     void concurrentRequestsCreateOneFixedOperationAndImmediatelyRevokeAndHide() throws Exception {
         AccountAccess account = account();
+        publicProfiles.update(account, new PublicProfiles.Update(true, true, false, true, PublicProfiles.TEXT_VERSION));
+        assertThat(publicProfiles.card(account.accountId())).isPresent();
         var confirmedProof = proof(account);
         var differentProof = proof(account);
         Cookie session = login(account);
@@ -155,8 +160,8 @@ class AccountDeletionIntegrationTest extends PostgresIntegrationTest {
         assertThat(jdbc.sql("SELECT count(*) FROM app_identity.ownership_challenge WHERE account_id=:account")
                 .param("account", account.accountId()).query(Long.class).single()).isZero();
         assertThatThrownBy(() -> accounts.require(account, false)).isInstanceOf(AccountFailure.class);
-        assertThatThrownBy(() -> profiles.publicProfile(account.accountId())).isInstanceOf(AccountFailure.class)
-                .hasMessage("profile_not_found");
+        assertThat(publicProfiles.card(account.accountId())).as("a deleting account has no public card").isEmpty();
+        assertThat(count("public_profile_consent", account.accountId())).as("consent is kept until the purge").isOne();
         mvc.perform(get("/api/accounts/me").secure(true).cookie(session)).andExpect(status().isUnauthorized());
         mvc.perform(get("/api/accounts/me").header("Authorization", "Bearer " + bearer))
                 .andExpect(status().isUnauthorized());
@@ -347,6 +352,9 @@ class AccountDeletionIntegrationTest extends PostgresIntegrationTest {
     @Test
     void purgeRetriesOwnedAvatarFailuresThenScrubsIdentityAndWritesFencedReceipts() {
         AccountAccess account = account();
+        publicProfiles.update(account, new PublicProfiles.Update(true, true, true, true, PublicProfiles.TEXT_VERSION));
+        publicProfiles.update(account, new PublicProfiles.Update(true, true, false, true, PublicProfiles.TEXT_VERSION));
+        assertThat(count("public_profile_consent_event", account.accountId())).isEqualTo(2);
         String originalEmail = email(account);
         jdbc.sql("UPDATE app_identity.account SET is_admin=true WHERE account_id=:account")
                 .param("account", account.accountId()).update();
@@ -408,6 +416,8 @@ class AccountDeletionIntegrationTest extends PostgresIntegrationTest {
         assertThat(count("external_identity", account.accountId())).isZero();
         assertThat(count("account_avatar", account.accountId())).isZero();
         assertThat(count("account_deletion_avatar", account.accountId())).isZero();
+        assertThat(count("public_profile_consent", account.accountId())).isZero();
+        assertThat(count("public_profile_consent_event", account.accountId())).isZero();
         assertThat(jdbc.sql("SELECT banned_by FROM app_identity.account WHERE account_id=:account")
                 .param("account", moderated.accountId()).query(UUID.class).single()).isEqualTo(account.accountId());
         assertThat(jdbc.sql("SELECT avatar_object_count FROM app_identity.account_erasure_handoff WHERE operation_id=:operation")

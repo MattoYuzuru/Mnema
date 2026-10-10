@@ -146,11 +146,25 @@
 .check-field { display: grid; gap: .25rem; }
 .check-row { display: flex; align-items: flex-start; gap: .75rem; min-block-size: var(--mn-touch-min); padding-block: .5rem; cursor: pointer; line-height: 1.45; }
 .check-row input { flex: none; margin-block-start: .15rem; }
+.check-row:has(input:disabled) { color: var(--mn-muted); cursor: default; }
+.check-row:has(input[aria-disabled='true']) { cursor: progress; }
+
+/* Several related checkboxes under one legend (a native fieldset: the legend is the group's accessible name). */
+.check-group { min-inline-size: 0; margin: 0; border: 0; padding: 0; }
+.check-group > legend { margin-block-end: .25rem; padding: 0; color: var(--mn-ink); font-weight: 650; }
+
+/* Text for assistive technology only, e.g. «(откроется в новой вкладке)» after a link. */
+.visually-hidden { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 /* A settings row for something that is not available yet: label and control on one line, disabled, with a shared line under the
    group that says when it appears. Disabled controls stay muted text, never an invented value. */
 .settings-row { display: flex; align-items: center; justify-content: space-between; gap: .75rem; min-block-size: var(--mn-touch-min); color: var(--mn-muted); }
 .settings-row.is-switch { justify-content: flex-start; }
+/* A switch that works (a consent in the profile): ink text, the whole row is the hit area. While a save is on its way the input
+   keeps `aria-disabled="true"` (never `disabled`, so focus stays) and the cursor shows progress. */
+.settings-row.is-live { color: var(--mn-ink); font-weight: 650; cursor: pointer; }
+.settings-row.is-live:has(input:disabled) { color: var(--mn-muted); cursor: default; }
+.settings-row.is-live:has(input[aria-disabled='true']) { cursor: progress; }
 
 /* The primary action stays in reach: pinned to the bottom of the viewport. The page publishes its height as
    --mn-bulk-bar-height on the root (scroll padding, see global_styles.css), so a focused control is never hidden under it.

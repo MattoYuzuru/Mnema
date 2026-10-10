@@ -84,9 +84,13 @@ transaction and a token-hash advisory lock; responses are released after commit.
 | `GET /me/identities` | Owned `{identityId,provider}` entries, no provider subjects |
 | `POST /me/identities/link` | `{provider,proof}` → authorization URL |
 | `DELETE /me/identities/{id}` | `{proof}` → 204 and revoked access |
-| `GET /profiles/{id}` | Public username/display name/bio/avatar presence only |
+| `GET`, `PUT /me/public-profile` | Own public-profile consent, see "Public profile consent and author cards" |
 | `PUT`, `DELETE /me/avatar` | Multipart `file` upload / remove → 204 |
-| `GET /profiles/{id}/avatar` | Verified owned bytes, no-store, nosniff |
+| `GET /me/avatar` | The owner's own verified bytes (independent of consent), `Cache-Control: no-store`, nosniff; 404 `avatar_not_found` when absent |
+| `GET /profiles/{id}` | Public author card; 404 `profile_not_found` unless consent and a login exist |
+| `GET /profiles/{id}/avatar` | Verified owned bytes only when the card exists and the owner shows the photo; strong `ETag` (stored SHA-256), `If-None-Match` → 304 from the database row alone; `public, max-age=60` on 200 and 304, nosniff; else 404 `avatar_not_found` |
+| `GET /profiles?ids=a,b,…` | Batch of cards, 1–50 ids, request order, non-public ids omitted |
+| `GET /profiles/by-username/{u}` | Card by profile username (case-insensitive), same 404 |
 | `POST /admin/accounts/{id}/ban` | `{reason}` → 204 |
 | `POST /admin/accounts/{id}/unban` | 204 |
 | `POST`, `DELETE /admin/accounts/{id}/admin` | Grant / revoke → 204 |
@@ -118,6 +122,64 @@ profile usernames allow 3–50 ASCII letters/digits/underscore/dot/hyphen, exclu
 72 UTF-8 bytes. Preserved BCrypt hashes are accepted without transfer-time rehash.
 Unknown, banned and otherwise non-public accounts produce the same public profile
 and avatar 404 contracts.
+
+## Public profile consent and author cards
+
+Wire examples and the shared test fixture: [`contracts/identity`](../../../contracts/identity/README.md)
+(`public-profile.json`; `PublicProfileIntegrationTest` checks it against the real responses).
+Product wording: community decks contract, "Профиль автора" and "Правила и ПДн". The consent
+text is approved; `PublicProfiles.TEXT_VERSION` (`2026-10-10`) is its date.
+
+Public reads exist only for a *card*: account `ACTIVE`, deletion state `ACTIVE`, consent
+`enabled` and a profile username. Unknown, banned, deleting, no-consent, withdrawn and
+no-username accounts return the same 404 (`profile_not_found` for cards, `avatar_not_found`
+for photos), so there is no existence oracle. Card JSON is
+`{accountId,profileUsername,displayName,bio,avatarPresent}`; `displayName`/`bio` are `null`
+unless their flag is on (blank values are `null` too) and `avatarPresent` is `false` unless
+`showAvatar` is on and a photo exists. Public answers carry `Cache-Control: public, max-age=60`
+(404s are not cacheable), so a withdrawal is visible within a minute.
+
+`GET /me/public-profile` (bearer or session) → `{enabled,showDisplayName,showAvatar,showBio,
+textVersion,publishReady,updatedAt}`; no row yet is all `false` with `updatedAt:null`.
+`publishReady` = enabled and a profile username (the account is active by authentication);
+future deck publication requires it. `PUT` replaces all five fields
+`{enabled,showDisplayName,showAvatar,showBio,textVersion}`; the body is parsed strictly (exact
+field set, JSON booleans/string, no coercion; otherwise 400 `invalid_request`).
+
+| Case | Answer |
+| --- | --- |
+| `enabled:true` and `textVersion` differs from `TEXT_VERSION` | 409 `consent_text_outdated`, nothing written |
+| `enabled:true` and no profile username | 409 `profile_username_required`, nothing written |
+| `enabled:false` | Withdrawal: every stored `show*` flag becomes `false`; the supplied `textVersion` is ignored (never 409) and the journal records the current one |
+| PUT equal to the stored state | 200, no write, no journal row, `updatedAt` unchanged |
+| Re-consent to a new text version with equal flags | An effective change (`CHANGE`) |
+
+Tables (migration `V5`): `public_profile_consent` (one row per account; `CHECK` not enabled ⇒
+all `show_*` false) and `public_profile_consent_event`, the append-only journal
+(`GRANT` when enabling from none/disabled, `CHANGE` while enabled, `WITHDRAW`; the four flags,
+`text_version`, `occurred_at`). A trigger refuses `UPDATE` and `TRUNCATE` always and `DELETE`
+unless the account is `PURGING`. The account row lock taken by `PUT` serializes concurrent
+changes, profile edits and moderation. Account purge deletes both tables' rows for the
+account in the purge transaction (data minimisation) before the tombstone is written; a
+deleting account (`PENDING_DELETION`) is already hidden because the card needs deletion state
+`ACTIVE`, and cancelling the deletion restores the previous consent. Unban likewise restores
+the card. The disposable account transfer does not carry consent: the target schema is fresh,
+imported accounts have no consent row and therefore stay hidden until their owners
+re-consent.
+
+Rate limits use the existing `RateLimits` DB buckets (15-minute window) and answer 429
+`try_later`. The client key is `ClientAddresses.rateKey`: the IPv4 address, or the /64 network
+for IPv6 (a subscriber holds a whole /64). The batch is limited per client key (600).
+By-username always spends the client-key bucket (60) and, when the caller is authenticated,
+additionally a per-account bucket (60), so alternating anonymous and signed-in calls cannot
+double the budget. `ExpiredStateCleanup` repeats its bounded 1000-row deletes (at most 50 per
+table per run) so the extra rate-limit rows cannot outgrow it. The public avatar is decided in
+one statement (card gate, `show_avatar`, stored photo row) so a withdrawal cannot fall between a
+check and the read. Malformed batch requests (missing,
+empty, more than 50, duplicate or non-canonical ids; 400 `invalid_request`) are rejected
+before they count. A malformed username is the same 404 and does count. Cost: one PK lookup
+per card, one `account_id = ANY(...)` query per batch and one unique-index lookup per
+username; no consent rows means every public read is a single lookup returning 404.
 
 ## Abuse protection and sign-in availability
 
@@ -183,7 +245,7 @@ operation in `PURGING` with a bounded backoff and non-sensitive error code. No e
 unchecked prefix-only or checksum-only deletion exists.
 
 Identity completion removes credentials, provider subjects, profile fields, sessions,
-grants, proofs and avatar metadata, then leaves a tombstone containing only the UUID,
+grants, proofs, avatar metadata and public-profile consent with its journal, then leaves a tombstone containing only the UUID,
 creation/update and security/deletion generations, moderation status/actor timestamp
 needed for FK integrity, operation timestamps/retry evidence, an aggregate avatar-
 manifest hash and durable erasure receipts. Email becomes `NULL`, so registration may

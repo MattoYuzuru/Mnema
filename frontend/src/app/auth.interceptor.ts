@@ -17,7 +17,7 @@ export function isCredentialTarget(requestUrl: string, identityOrigin: string, l
         if (url.username || url.password || url.hash || identity.origin !== identityOrigin) return false;
         const accountId = '[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}';
         const identityRoute = url.origin === identity.origin &&
-            (['/userinfo', '/api/accounts/me', '/api/accounts/me/avatar', '/api/accounts/admin/directory', '/api/accounts/admin/audit'].includes(url.pathname)
+            (['/userinfo', '/api/accounts/me', '/api/accounts/me/avatar', '/api/accounts/me/public-profile', '/api/accounts/admin/directory', '/api/accounts/admin/audit'].includes(url.pathname)
             || new RegExp(`^/api/accounts/admin/directory/${accountId}$`, 'iu').test(url.pathname)
             || new RegExp(`^/api/accounts/admin/accounts/${accountId}/(?:ban|unban)$`, 'iu').test(url.pathname));
         const prefix = learning.pathname.replace(/\/$/u, '');

@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.Arrays;
+import java.util.HexFormat;
 import java.util.List;
 
 /**
@@ -45,6 +46,22 @@ public final class ClientAddresses {
             if (!trusted(candidate)) return candidate.getHostAddress();
         }
         return address(hops[0].strip()).getHostAddress();
+    }
+
+    /**
+     * Rate-limit key of the client: IPv4 is the address itself, IPv6 is its /64 network, because one subscriber
+     * normally holds a whole /64 and could otherwise rotate through addresses to multiply a limit.
+     */
+    public String rateKey(HttpServletRequest request) {
+        return rateKey(resolve(request));
+    }
+
+    static String rateKey(String resolved) {
+        if (!resolved.contains(":")) return resolved;
+        InetAddress parsed = address(resolved);
+        byte[] bytes = parsed.getAddress();
+        if (bytes.length != 16) return parsed.getHostAddress();
+        return HexFormat.of().formatHex(bytes, 0, 8) + "/64";
     }
 
     private boolean trusted(InetAddress address) {
