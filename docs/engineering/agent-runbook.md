@@ -66,6 +66,25 @@ Cross-service security/cancellation harness (needs built boot jars):
 python3 scripts/learning-security/run.py
 ```
 
+### Docker Hub pulls in CI
+
+GitHub-hosted runners share IPs, so anonymous Docker Hub pulls hit `toomanyrequests` or
+`auth.docker.io` timeouts (PR #411, 2026-10-09). Every CI job that pulls Docker Hub images
+(both quality jobs in PR and Main CI, and the release image build) first runs
+[`.github/actions/docker-hub-mirror`](../../.github/actions/docker-hub-mirror/action.yml): it
+sets the runner daemon's `registry-mirrors` to `https://mirror.gcr.io` and reloads it. That
+covers `docker run`/`docker build` and Testcontainers, and the daemon falls back to Docker Hub
+when the image isn't cached. The release job's `docker-container` BuildKit builder
+does not read the daemon config, so `setup-buildx-action` passes its own
+`[registry."docker.io"] mirrors = ["mirror.gcr.io"]`. Image references and `@sha256` pins
+are unchanged; content is digest-verified, so the mirror cannot substitute an image.
+Not used: a Docker Hub token (needs an owner secret, and a failing `auth.docker.io` still blocks
+it) and Testcontainers `hub.image.name.prefix` (rewrites names with no Docker Hub fallback).
+Sources: [Google cached Docker Hub images](https://docs.cloud.google.com/artifact-registry/docs/pull-cached-dockerhub-images),
+[dockerd reloadable options](https://docs.docker.com/reference/cli/dockerd/),
+[BuildKit registry mirror](https://docs.docker.com/build/buildkit/configure/#registry-mirror).
+Local Colima runs are unaffected.
+
 ## Production release after merge
 
 A runtime change merged to `main` is released by Main CI after one `prod` approval; a

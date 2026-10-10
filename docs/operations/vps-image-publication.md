@@ -29,6 +29,9 @@ label that links the private package to the repository, and the release job pull
 short-lived token (`pull`, see the dispatcher contract). The PR and Main CI quality jobs
 build that image and run its codec tests and the media runner and dispatcher suites, with no skip allowed, before any publication.
 No dirty checkout or source build is transferred to production.
+Base images stay pinned by `@sha256` in the Dockerfiles; CI only fetches Docker Hub content
+through the [`mirror.gcr.io` pull-through cache](../engineering/agent-runbook.md#docker-hub-pulls-in-ci),
+which cannot change a digest-addressed layer.
 
 For **every** digest, BuildKit creates maximal provenance and SPDX SBOM; GitHub
 build/SBOM attestations are created and verified against this workflow, exact commit
