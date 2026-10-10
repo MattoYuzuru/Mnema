@@ -29,6 +29,13 @@ for quality_workflow in "$MAIN_WORKFLOW" "$PULL_REQUEST_WORKFLOW"; do
   grep -Fq 'python3 scripts/learning-security/verify_cancellation.py' "$quality_workflow"
 done
 
+# Every job that pulls Docker Hub images routes them through mirror.gcr.io (anonymous hosted-runner limit, #411).
+test "$(grep -c 'uses: ./.github/actions/docker-hub-mirror' "$PULL_REQUEST_WORKFLOW")" -eq 2
+test "$(grep -c 'uses: ./.github/actions/docker-hub-mirror' "$MAIN_WORKFLOW")" -eq 3
+build_job=$(sed -n '/^  build-and-push:/,/^  assemble-vps-candidate:/p' "$MAIN_WORKFLOW")
+printf '%s\n' "$build_job" | grep -Fq '[registry."docker.io"]'
+printf '%s\n' "$build_job" | grep -Fq 'mirrors = ["mirror.gcr.io"]'
+
 if grep -Eq '^    uses:' "$MAIN_WORKFLOW" "$VPS_WORKFLOW"; then
   echo "Delivery workflows must not call other workflows" >&2
   exit 1
