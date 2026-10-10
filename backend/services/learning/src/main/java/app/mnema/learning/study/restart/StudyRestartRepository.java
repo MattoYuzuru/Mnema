@@ -30,17 +30,22 @@ class StudyRestartRepository {
     }
 
     List<UUID> objectives(UUID deck, List<UUID> members) {
+        // the reading deck's own objectives of these materials (its objective heads), never every objective of the lineage
         return jdbc.sql("""
-                SELECT objective_id FROM app_learning.memory_objective
-                 WHERE deck_id=:deck AND member_key IN (:members) ORDER BY objective_id
+                SELECT head.objective_id FROM app_learning.objective_head head
+                  JOIN app_learning.memory_objective objective ON objective.reuse_scope_id=head.reuse_scope_id
+                   AND objective.objective_id=head.objective_id
+                 WHERE head.deck_id=:deck AND objective.member_key IN (:members) ORDER BY head.objective_id
                 """).param("deck", deck).param("members", members).query(UUID.class).list();
     }
 
     void ensureState(UUID actor, UUID deck, UUID objective, Instant now) {
+        // the assignment carries the scope of the reading deck; the objective is a lineage row of that scope
         jdbc.sql("""
-                INSERT INTO app_learning.study_policy_assignment(account_id,deck_id,objective_id,reducer_config_id,
-                    assigned_at)
-                VALUES (:actor,:deck,:objective,:config,:now)
+                INSERT INTO app_learning.study_policy_assignment(account_id,deck_id,reuse_scope_id,objective_id,
+                    reducer_config_id,assigned_at)
+                SELECT :actor,d.deck_id,d.reuse_scope_id,:objective,:config,:now
+                  FROM app_learning.deck d WHERE d.deck_id=:deck
                 ON CONFLICT (account_id,deck_id,objective_id) DO NOTHING
                 """).param("actor", actor).param("deck", deck).param("objective", objective).param("config", CONFIG)
                 .param("now", Timestamp.from(now)).update();

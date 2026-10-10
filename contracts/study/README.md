@@ -290,8 +290,13 @@ does not remove the objective from a future session.
 and reuses its presentation revisions/order without old responses. `PRACTICE`
 selects introduced objectives by default; `includeNew=true` is explicit. A batch
 contains at most 20 presentations. A READY candidate generation is keyed by the
-pinned exercise root; absent preparation returns `PREPARING`, never an unbounded
+pinned exercise root and is built from that root's exercises in roster order, in bounded
+steps by ordinal; absent preparation returns `PREPARING`, never an unbounded
 fallback scan. Retry/resume uses an opaque cursor and deterministic seed.
+Ids in the wire format (`deckId`, `deckRevisionId`, `deckVersion`) are always the
+learner's own deck's; the exercise, objective and revision ids belong to the content
+that deck publishes, which a copy of a Deck shares with its source until it edits it,
+so a copy studies the exercises it inherited with progress of its own.
 
 Before issuing a new Scheduled/Practice presentation, every bound material must
 still belong to the current Deck. This membership check applies to newly started

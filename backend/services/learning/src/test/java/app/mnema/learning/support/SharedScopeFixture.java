@@ -24,7 +24,7 @@ import java.util.UUID;
 
 /**
  * Two decks in ONE storage lineage (Share/4, #426), built without the future copy job: a copy is a deck row and a revision 0
- * pinned on the source's published roots (O(1)), and its heads are one INSERT...SELECT from the source's heads, exactly what
+ * pinned on the source's published roots (O(1)), and its heads (materials, exercises, objectives) are one INSERT...SELECT each from the source's heads, exactly what
  * the Share/3 prototype (LineageScopeSharingIntegrationTest) simulates. Everything afterwards goes through the real
  * services, so an edit on either side is the production code path.
  */
@@ -116,6 +116,13 @@ public final class SharedScopeFixture {
                 document(text));
     }
 
+    /** A copy owned by the SAME account as the source (progress of the two decks must still stay apart). */
+    public Copy copyForSameOwner(UUID source) {
+        UUID owner = jdbc.sql("SELECT owner_id FROM app_learning.deck WHERE deck_id=:deck").param("deck", source)
+                .query(UUID.class).single();
+        return copy(source, owner);
+    }
+
     /** The O(1) fork: deck + revision 0 on the source's published roots, heads copied from the source's heads. */
     public Copy copy(UUID source, UUID owner) {
         record Published(UUID scope, UUID revision, UUID membersRoot, UUID exercisesRoot) { }
@@ -145,6 +152,15 @@ public final class SharedScopeFixture {
             jdbc.sql("INSERT INTO app_learning.deck_head_item(deck_id,reuse_scope_id,member_key,revision_id,item_sequence,updated_at) "
                             + "SELECT :copy,reuse_scope_id,member_key,revision_id,item_sequence,clock_timestamp() "
                             + "FROM app_learning.deck_head_item WHERE deck_id=:source")
+                    .param("copy", copy).param("source", source).update();
+            // Share/5 (#427): the heads of the exercise roster and of the objectives, the same way
+            jdbc.sql("INSERT INTO app_learning.deck_head_exercise(deck_id,reuse_scope_id,exercise_id,revision_id,exercise_sequence,"
+                            + "ordinal,updated_at) SELECT :copy,reuse_scope_id,exercise_id,revision_id,exercise_sequence,ordinal,"
+                            + "clock_timestamp() FROM app_learning.deck_head_exercise WHERE deck_id=:source")
+                    .param("copy", copy).param("source", source).update();
+            jdbc.sql("INSERT INTO app_learning.objective_head(deck_id,reuse_scope_id,objective_id,revision_id,objective_sequence,"
+                            + "updated_at) SELECT :copy,reuse_scope_id,objective_id,revision_id,objective_sequence,clock_timestamp() "
+                            + "FROM app_learning.objective_head WHERE deck_id=:source")
                     .param("copy", copy).param("source", source).update();
         });
         return new Copy(copy, owner, genesis, published.scope());

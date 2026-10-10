@@ -56,10 +56,10 @@ public class MediaManifestCatalog {
                         + "WHERE h.deck_id=:deck AND r.asset_owner_id=:owner UNION ALL "
                         + "SELECT r.asset_id,'exercise' AS kind,r.exercise_id AS subject_id, "
                         + "r.exercise_revision_id AS revision_id,NULL::uuid AS node_id "
-                        + "FROM app_learning.exercise_media_ref r "
-                        + "JOIN app_learning.deck_head_exercise h ON h.deck_id=r.deck_id "
-                        + "AND h.exercise_id=r.exercise_id AND h.revision_id=r.exercise_revision_id "
-                        + "WHERE r.deck_id=:deck AND r.owner_id=:owner "
+                        + "FROM app_learning.deck_head_exercise h "
+                        + "JOIN app_learning.exercise_media_ref r ON r.reuse_scope_id=h.reuse_scope_id "
+                        + "AND r.exercise_id=h.exercise_id AND r.exercise_revision_id=h.revision_id "
+                        + "WHERE h.deck_id=:deck AND r.asset_owner_id=:owner "
                         + "ORDER BY asset_id,kind,subject_id,revision_id,node_id LIMIT :limit")
                 .param("deck", deck).param("owner", owner).param("limit", settings.maxReferences() + 1)
                 .query((row, ignored) -> new Pin((UUID) row.getObject("asset_id"), row.getString("kind"),
