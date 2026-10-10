@@ -1217,6 +1217,22 @@ class ProductionDispatcherTest(unittest.TestCase):
         with self.assertRaises(DISPATCH.Rejected):
             DISPATCH.validate_app_config(json.dumps({'MNEMA_TBANK_PASSWORD_BASE64': 'fixture$Pa55word'}).encode())
 
+    def test_npd_receipt_mode_inn_and_base64_password_are_validated(self):
+        payload = {'MNEMA_NPD_RECEIPTS': 'ON', 'MNEMA_NPD_INN': '770123456789', 'MNEMA_NPD_PASSWORD_BASE64': 'bnBkJFBhNTV3b3JkLVNlY3JldA=='}
+        self.assertEqual(DISPATCH.validate_app_config(json.dumps(payload).encode()), payload)
+        DISPATCH.validate_app_config(json.dumps({'MNEMA_NPD_RECEIPTS': 'OFF'}).encode())
+        # An empty value means absent, like every other key.
+        self.assertEqual(DISPATCH.validate_app_config(json.dumps({'MNEMA_NPD_RECEIPTS': '', 'MNEMA_NPD_INN': ''}).encode()), {})
+        for name, value in (('MNEMA_NPD_RECEIPTS', 'on'), ('MNEMA_NPD_RECEIPTS', 'TESTERS'), ('MNEMA_NPD_INN', '77012345678'),
+                            ('MNEMA_NPD_INN', '7701234567890'), ('MNEMA_NPD_INN', '77012345678x')):
+            with self.assertRaises(DISPATCH.Rejected) as caught:
+                DISPATCH.validate_app_config(json.dumps({name: value}).encode())
+            self.assertIn(name, str(caught.exception))
+            self.assertNotIn('=' + value, str(caught.exception))
+        # A raw password may contain '$'; the channel refuses it, which is why the password travels base64-encoded.
+        with self.assertRaises(DISPATCH.Rejected):
+            DISPATCH.validate_app_config(json.dumps({'MNEMA_NPD_PASSWORD_BASE64': 'npd$Pa55word'}).encode())
+
     def test_rejection_messages_name_the_key_but_never_the_value(self):
         with self.assertRaises(DISPATCH.Rejected) as caught:
             DISPATCH.validate_app_config(b'{"GH_CLIENT_ID": "hunter 2"}')

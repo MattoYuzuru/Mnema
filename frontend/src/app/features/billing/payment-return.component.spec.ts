@@ -160,12 +160,38 @@ describe('PaymentReturnComponent', () => {
         expect(heading()).toBe('Оплата прошла');
         expect(status()).toContain('Plus до 9 ноября.');
         expect(status()).toContain(`Сумма: 449${NBSP}₽`);
-        expect(links()).toEqual([['К моим колодам', '/decks'], ['Тарифы', '/plans']]);
+        expect(links()).toEqual([['К моим колодам', '/decks'], ['Чек', paid.receiptUrl], ['Тарифы', '/plans']]);
+        expect(root.querySelector('.actions a[href^="https://lknpd"]')?.getAttribute('rel')).toBe('noopener noreferrer');
         expect(root.querySelector('.actions .button.primary')?.textContent).toBe('К моим колодам');
         expect(document.activeElement).toBe(root.querySelector('h1'));
         expect(reads()).toBe(2);
         await elapse(60_000);
         expect(reads()).toBe(2);
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('reads a paid order on until its receipt exists, then offers it and stops', async () => {
+        const unreceipted = { ...paid, receiptUrl: null };
+        billing.getOrder.mockReturnValueOnce(of(unreceipted)).mockReturnValueOnce(of(unreceipted)).mockReturnValue(of(paid));
+        await open();
+        expect(heading()).toBe('Оплата прошла');
+        expect(links()).toEqual([['К моим колодам', '/decks'], ['Тарифы', '/plans']]);
+        await elapse(2_000);
+        expect(links()).toEqual([['К моим колодам', '/decks'], ['Тарифы', '/plans']]);
+        await elapse(2_000);
+        expect(links()).toEqual([['К моим колодам', '/decks'], ['Чек', paid.receiptUrl], ['Тарифы', '/plans']]);
+        expect(reads()).toBe(3);
+        await elapse(60_000);
+        expect(reads()).toBe(3);
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('gives up waiting for a receipt that never comes without changing the paid page', async () => {
+        billing.getOrder.mockReturnValue(of({ ...paid, receiptUrl: null }));
+        await open();
+        await elapse(90_000);
+        expect(heading()).toBe('Оплата прошла');
+        expect(links()).toEqual([['К моим колодам', '/decks'], ['Тарифы', '/plans']]);
         expect(vi.getTimerCount()).toBe(0);
     });
 

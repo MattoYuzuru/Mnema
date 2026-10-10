@@ -26,7 +26,8 @@ import java.util.UUID;
  * not yet paid to {@code PAID}: in the same transaction the month goes to {@link EntitlementInbox} ({@code billing:{orderId}}, {@code BILLING}), starting at
  * the later of now and the end of the account's latest paid month of that plan, and the promo discount the order used is consumed. {@code PAID} is
  * absorbing for granting: a repeated {@code CONFIRMED} grants nothing, a later {@code REJECTED} takes nothing back, a refund marks the order
- * {@code REFUNDED} but does not withdraw the entitlement (that policy is #392). Every call appends one {@code billing_event}.
+ * {@code REFUNDED} but does not withdraw the entitlement (that policy is #392). Every call appends one {@code billing_event}. The same transactions queue the
+ * «Мой налог» receipt of a paid order and the annulment of a fully refunded one ({@link NpdReceipts}).
  *
  * <p>Money that needs an operator is an {@link Anomaly}: one log line {@code billing anomaly kind=…} (ERROR when money is at stake) and the counter
  * {@code mnema_billing_anomalies_total{kind}}.
@@ -38,6 +39,7 @@ class PaymentStateApplier {
     private static final Set<String> FAILED = Set.of("REJECTED", "AUTH_FAIL", "CANCELED", "DEADLINE_EXPIRED", "ATTEMPTS_EXPIRED");
     /** Money returned after an authorization or a confirmation; every other status (AUTHORIZING, 3DS_CHECKING, REFUNDING, …) is still in progress. */
     private static final Set<String> REVERSED = Set.of("REVERSED", "PARTIAL_REVERSED", "REFUNDED", "PARTIAL_REFUNDED");
+    private static final Set<String> PARTIAL = Set.of("PARTIAL_REVERSED", "PARTIAL_REFUNDED");
     private static final Set<String> UNPAID_FORM = Set.of("NEW", "FORM_SHOWED");
     /** How long past its link a form that was never completed stays pending before the reconciler gives up on it. */
     static final Duration EXPIRY_GRACE = Duration.ofHours(24);
@@ -46,7 +48,15 @@ class PaymentStateApplier {
 
     /** Money an operator must look at; {@code money} anomalies are logged as ERROR, the others as WARN. */
     enum Anomaly {
-        DUPLICATE_PAYMENT(true), AMOUNT_MISMATCH(true), PARTIAL_REFUND(true), STALE_ORDER(true), DISCOUNT_SPENT(false);
+        DUPLICATE_PAYMENT(true), AMOUNT_MISMATCH(true), PARTIAL_REFUND(true), STALE_ORDER(true), DISCOUNT_SPENT(false),
+        /** A receipt «Мой налог» that failed for good, was not registered after {@link NpdReceipts#ALERT_ATTEMPTS} attempts or is ambiguous. */
+        RECEIPT_FAILED(true),
+        /** A receipt still not registered after the 9th of the month after the payment (422-ФЗ art. 14). */
+        RECEIPT_OVERDUE(true),
+        /** «Мой налог» refused the login of the taxpayer (password changed, account blocked). */
+        RECEIPT_AUTH(true),
+        /** The daily check: a paid order without a registered receipt, or a refunded order whose receipt is not annulled. */
+        RECEIPT_MISMATCH(true);
 
         private final boolean money;
 
@@ -68,9 +78,10 @@ class PaymentStateApplier {
     private final UsageCalendar calendar;
     private final UsageClock clock;
     private final MeterRegistry meters;
+    private final NpdReceipts receipts;
 
     PaymentStateApplier(BillingRepository repository, BillingSettings settings, EntitlementInbox inbox, PromoDiscounts discounts,
-                        UsageCalendar calendar, UsageClock clock, MeterRegistry meters) {
+                        UsageCalendar calendar, UsageClock clock, MeterRegistry meters, NpdReceipts receipts) {
         this.repository = repository;
         this.settings = settings;
         this.inbox = inbox;
@@ -78,6 +89,7 @@ class PaymentStateApplier {
         this.calendar = calendar;
         this.clock = clock;
         this.meters = meters;
+        this.receipts = receipts;
     }
 
     /** Applies {@code state} to the order {@code orderId}. */
@@ -148,6 +160,13 @@ class PaymentStateApplier {
                 log.warn("billing order refunded, entitlement kept order_id={} bank_status={}", orderId, state.status());
                 next = next.moved(OrderStatus.REFUNDED, state.status(), null);
                 outcome = "REFUNDED";
+                if (PARTIAL.contains(state.status())) {
+                    // A part of the money is still ours: the receipt of the whole payment must neither stay nor simply disappear. An operator annuls it and
+                    // registers the remainder (the daily check reports the refunded order whose receipt is not annulled).
+                    anomaly(Anomaly.PARTIAL_REFUND, orderId, state.paymentId());
+                } else {
+                    receipts.cancelOnRefund(orderId, now);
+                }
             } else if ("PARTIAL_REFUNDED".equals(state.status()) && grantable(order.status())) {
                 // A confirmation this order never saw, then part of the money returned: some of it is still taken and nothing was granted.
                 anomaly(Anomaly.PARTIAL_REFUND, orderId, state.paymentId());
@@ -287,10 +306,13 @@ class PaymentStateApplier {
             // The money is taken, so the month is granted; the discount was spent or replaced meanwhile and an operator may want to know.
             anomaly(Anomaly.DISCOUNT_SPENT, order.orderId(), order.paymentId());
         }
-        return order.paid(bankStatus, now, start, end, snapshotId);
+        BillingOrder paid = order.paid(bankStatus, now, start, end, snapshotId);
+        // The income needs a «Мой налог» receipt (422-ФЗ): queued in this transaction, exactly once, so a paid order can never lack one.
+        receipts.enqueue(paid, now);
+        return paid;
     }
 
-    private void anomaly(Anomaly kind, UUID orderId, String paymentId) {
+    void anomaly(Anomaly kind, UUID orderId, String paymentId) {
         String name = kind.name().toLowerCase(Locale.ROOT);
         if (kind.money) {
             log.error("billing anomaly kind={} order_id={} payment_id={}", name, orderId, paymentId == null ? "-" : paymentId);

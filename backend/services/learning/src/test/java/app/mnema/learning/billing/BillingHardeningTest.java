@@ -76,7 +76,7 @@ class BillingHardeningTest extends BillingIntegrationTest {
         JsonNode holder = open(owner, "PLUS");
         BillingRepository blind = spy(new BillingRepository(jdbc));
         doReturn(Optional.empty()).when(blind).openDiscountHolder(any(), any(), any());
-        BillingController racing = new BillingController(new BillingService(blind, settings, bank, applier, receipts, entitlements, prices, discounts, clock, transactions));
+        BillingController racing = new BillingController(new BillingService(blind, settings, bank, applier, receipts, entitlements, prices, discounts, clock, npdReceipts, transactions));
 
         MockHttpServletResponse response = as(owner, racing).perform(post("/billing/checkout").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"plan\":\"PRO\",\"period\":\"MONTH\"}").header("Idempotency-Key", UUID.randomUUID().toString())).andReturn().getResponse();

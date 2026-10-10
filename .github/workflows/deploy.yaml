@@ -571,6 +571,9 @@ jobs:
           PROD_MNEMA_BILLING_TESTER_ACCOUNT_IDS: ${{ secrets.PROD_MNEMA_BILLING_TESTER_ACCOUNT_IDS }}
           PROD_MNEMA_TBANK_TERMINAL_KEY: ${{ secrets.PROD_MNEMA_TBANK_TERMINAL_KEY }}
           PROD_MNEMA_TBANK_PASSWORD_BASE64: ${{ secrets.PROD_MNEMA_TBANK_PASSWORD_BASE64 }}
+          PROD_MNEMA_NPD_RECEIPTS: ${{ secrets.PROD_MNEMA_NPD_RECEIPTS }}
+          PROD_MNEMA_NPD_INN: ${{ secrets.PROD_MNEMA_NPD_INN }}
+          PROD_MNEMA_NPD_PASSWORD_BASE64: ${{ secrets.PROD_MNEMA_NPD_PASSWORD_BASE64 }}
         run: bash scripts/deploy-vps.sh "$RUNNER_TEMP/vps-candidate/vps-candidate.json"
 
   post-deploy-smoke:

@@ -38,7 +38,8 @@ class RuntimeTest(unittest.TestCase):
                      'LEARNING_MEDIA_UPLOAD_ACCESS_KEY', 'LEARNING_MEDIA_UPLOAD_SECRET_KEY', 'MNEMA_AVATAR_ENDPOINT',
                      'MNEMA_AVATAR_REGION', 'MNEMA_AVATAR_BUCKET', 'LEARNING_MEDIA_UPLOAD_ENDPOINT',
                      'LEARNING_MEDIA_UPLOAD_REGION', 'MNEMA_BILLING_CHECKOUT', 'MNEMA_BILLING_TESTER_ACCOUNT_IDS',
-                     'MNEMA_TBANK_TERMINAL_KEY', 'MNEMA_TBANK_PASSWORD_BASE64'):
+                     'MNEMA_TBANK_TERMINAL_KEY', 'MNEMA_TBANK_PASSWORD_BASE64', 'MNEMA_NPD_RECEIPTS', 'MNEMA_NPD_INN',
+                     'MNEMA_NPD_PASSWORD_BASE64'):
             env.pop(name, None)
         for service in ('FRONTEND', 'IDENTITY_ACCOUNT', 'LEARNING', 'POSTGRES'):
             env['MNEMA_' + service + '_IMAGE'] = 'example/fixture@sha256:' + 'b' * 64
@@ -202,6 +203,20 @@ class RuntimeTest(unittest.TestCase):
             self.assertEqual(services['learning']['environment'][name], value)
         for name in ('identity-account', 'postgres', 'frontend'):
             self.assertNotIn('private-fixture-', json.dumps(services[name]))
+
+    def test_npd_receipts_are_off_by_default_and_their_keys_reach_only_learning(self):
+        learning = self.render_compose()['learning']['environment']
+        self.assertEqual(learning['MNEMA_NPD_RECEIPTS'], 'OFF')
+        for name in ('MNEMA_NPD_INN', 'MNEMA_NPD_PASSWORD_BASE64'):
+            self.assertEqual(learning[name], '')
+        optional = {'MNEMA_NPD_INN': '770123456789', 'MNEMA_NPD_PASSWORD_BASE64': 'private-fixture-npd-password'}
+        services = self.render_compose({**optional, 'MNEMA_NPD_RECEIPTS': 'ON'})
+        self.assertEqual(services['learning']['environment']['MNEMA_NPD_RECEIPTS'], 'ON')
+        for name, value in optional.items():
+            self.assertEqual(services['learning']['environment'][name], value)
+        for name in ('identity-account', 'postgres', 'frontend'):
+            self.assertNotIn('private-fixture-npd', json.dumps(services[name]))
+            self.assertNotIn('770123456789', json.dumps(services[name]))
 
     def test_caddy_pins_one_year_host_only_hsts_for_the_auth_origin(self):
         caddyfile = (ROOT / 'deploy/production/Caddyfile').read_text()

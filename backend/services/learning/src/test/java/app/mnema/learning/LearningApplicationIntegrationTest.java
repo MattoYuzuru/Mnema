@@ -88,7 +88,7 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                         "32:ai semantic assessment:SUCCESS", "33:generation revise intent:SUCCESS", "34:generation plan:SUCCESS", "35:image search:SUCCESS", "36:speech cache:SUCCESS", "37:speech input:SUCCESS", "38:generation research:SUCCESS",
                         "39:ai operations wake and assessment claim:SUCCESS",
                         "40:worker generation intents:SUCCESS", "41:plans and learning profile:SUCCESS", "42:promo codes and popup:SUCCESS",
-                        "43:product events:SUCCESS", "44:speech personal data slot error:SUCCESS", "45:billing orders:SUCCESS", "46:billing failed recheck:SUCCESS");
+                        "43:product events:SUCCESS", "44:speech personal data slot error:SUCCESS", "45:billing orders:SUCCESS", "46:billing failed recheck:SUCCESS", "47:npd receipts:SUCCESS");
 
         assertThat(jdbcClient.sql("""
                         SELECT schema_name

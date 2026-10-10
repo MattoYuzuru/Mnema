@@ -4,7 +4,7 @@ Checkout of Plus and Pro through the T-Bank hosted payment form, the order state
 notification and the hand-over of a paid month to usage through `EntitlementInbox`. **Status: implemented** in
 `app.mnema.learning.billing` by [#389](https://github.com/MattoYuzuru/Mnema/issues/389) (epic
 [#79](https://github.com/MattoYuzuru/Mnema/issues/79)). Out of scope here: recurring payments and `Charge` (#390), the
-profile «Подписка и оплата» page (#391), НПД receipts, refunds and reconciliation (#392).
+profile «Подписка и оплата» page (#391). НПД receipts and refund annulment (#392) are in the last section.
 
 | File | Content |
 |---|---|
@@ -75,5 +75,21 @@ for what may take real money, and the T-Bank internet-acquiring API: [Init](http
 | `learning.billing.connect-timeout`, `learning.billing.request-timeout` | `PT5S`, `PT15S` | `Init` and the `GetState` of the return page and the reconciler |
 | `learning.billing.notification-timeout` | `PT5S` (at most) | The whole `GetState` a notification makes, connect included: the bank waits about 10 s for `OK` |
 
+## НПД receipts (#392)
+
+Every `PAID` order has a «Мой налог» receipt, queued in the transaction that marks it paid (`billing_receipt`, V47) and registered by the worker
+through the personal-account web API; a full refund annuls it. The `Order` therefore carries `receiptUrl` (the printable receipt, an `https`
+address on `lknpd.nalog.ru`) once the receipt is registered, otherwise `null`. State machine, duplicate protection, the 9th-of-the-month term,
+alarms and operator actions: [Learning guide](../../backend/services/learning/guide.md#нпд-receipts-392).
+
+| Key | Default | Meaning |
+|---|---|---|
+| `learning.billing.npd.receipts` (`MNEMA_NPD_RECEIPTS`) | `OFF` | `OFF` queues receipts and sends nothing; `ON` sends and needs the next two keys or the start fails |
+| `learning.billing.npd.inn` (`MNEMA_NPD_INN`) | empty | The seller's 12-digit INN |
+| `learning.billing.npd.password-base64` (`MNEMA_NPD_PASSWORD_BASE64`) | empty | Password of the «Мой налог» personal account, base64 of its UTF-8 bytes (`printf %s '<password>' \| base64`; `echo` would add a newline) |
+| `learning.billing.npd.base-url` | `https://lknpd.nalog.ru/api/v1` | API base (https; http for loopback tests) |
+| `learning.billing.npd.interval` | `PT1M` | Delay between worker passes |
+| `learning.billing.npd.connect-timeout`, `…request-timeout` | `PT5S`, `PT20S` | Bounds of each call; the request timeout covers the whole exchange |
+
 The terminal must be one-stage (`PayType=O`, no separate `Confirm`) and have no online cash register attached: the owner
-is on НПД and receipts go to «Мой налог» (#392), so `Init` carries no `Receipt`.
+is on НПД and receipts go to «Мой налог» (#392, above), so `Init` carries no `Receipt`.

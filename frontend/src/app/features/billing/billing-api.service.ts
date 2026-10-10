@@ -7,10 +7,12 @@ import { exact, instant, integer, nullable, oneOf, privateOk, protocol } from '.
 import { BILLING_ERROR_CODES, BillingError, BillingErrorCode, CheckoutPeriod, ORDER_STATUSES, Order, PaidPlan } from './billing.models';
 
 const ORDER_KEYS = ['orderId', 'plan', 'period', 'status', 'amountKopecks', 'listPriceKopecks', 'discountPercent', 'paymentUrl', 'expiresAt',
-    'createdAt', 'paidAt', 'periodStart', 'periodEnd'];
+    'createdAt', 'paidAt', 'periodStart', 'periodEnd', 'receiptUrl'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 /** The hosts of the T-Bank hosted payment form (`contracts/billing/billing.json`, createCheckout notes). */
 const TRUSTED_PAYMENT_HOSTS: readonly string[] = ['pay.tbank-online.com', 'securepay.tinkoff.ru', 'securepay.tbank.ru'];
+/** The printable receipt of «Мой налог»: `https://lknpd.nalog.ru/api/v1/receipt/{inn}/{receiptId}/print`. */
+const RECEIPT_URL = /^https:\/\/lknpd\.nalog\.ru\/api\/v1\/receipt\/[0-9]{12}\/[A-Za-z0-9_-]{1,64}\/print$/u;
 const MAX_AMOUNT_KOPECKS = 100_000_000;
 
 /**
@@ -70,8 +72,14 @@ export function parseOrder(value: unknown): Order {
         listPriceKopecks: integer(body['listPriceKopecks'], MAX_AMOUNT_KOPECKS), discountPercent,
         paymentUrl: nullable(body['paymentUrl'], paymentUrl),
         expiresAt: instant(body['expiresAt']), createdAt: instant(body['createdAt']), paidAt: nullable(body['paidAt'], instant),
-        periodStart: nullable(body['periodStart'], instant), periodEnd: nullable(body['periodEnd'], instant)
+        periodStart: nullable(body['periodStart'], instant), periodEnd: nullable(body['periodEnd'], instant),
+        receiptUrl: receiptUrl(body['receiptUrl'])
     };
+}
+
+/** The receipt link is a courtesy: anything but the tax service's print address is dropped, and the paid page stays whole. */
+function receiptUrl(value: unknown): string | null {
+    return typeof value === 'string' && RECEIPT_URL.test(value) ? value : null;
 }
 
 function paymentUrl(value: unknown): string {

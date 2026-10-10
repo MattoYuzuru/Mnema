@@ -20,6 +20,8 @@ export interface Order {
     readonly paidAt: string | null;
     readonly periodStart: string | null;
     readonly periodEnd: string | null;
+    /** The printable «Мой налог» receipt, once registered; only on a trusted tax-service address. */
+    readonly receiptUrl: string | null;
 }
 
 /** The stable `code` of a failed billing call; anything else (a network failure, a malformed answer) is `UNKNOWN`. */

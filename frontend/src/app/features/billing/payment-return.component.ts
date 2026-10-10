@@ -153,7 +153,8 @@ export class PaymentReturnComponent {
                 next: order => {
                     if (epoch !== this.epoch) return;
                     if (order.orderId === this.orderId) this.order.set(order);
-                    if (order.orderId !== this.orderId || order.status === 'PENDING') again();
+                    // A paid order is read on until its receipt link exists (it is registered a little after the payment) or the time is up.
+                    if (order.orderId !== this.orderId || order.status === 'PENDING' || (order.status === 'PAID' && order.receiptUrl === null)) again();
                 },
                 error: (failure: unknown) => {
                     if (epoch !== this.epoch) return;
