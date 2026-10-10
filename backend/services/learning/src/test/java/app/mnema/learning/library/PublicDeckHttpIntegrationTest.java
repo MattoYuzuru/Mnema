@@ -387,6 +387,19 @@ class PublicDeckHttpIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void aPublishedCopyServesTheExercisesItInheritedThroughTheLineage() {
+        Deck source = fixtures.deck(UUID.randomUUID(), "Источник с упражнением");
+        SharedScopeFixture shared = new SharedScopeFixture(decks, items, storage, jdbc, transactions);
+        SharedScopeFixture.Copy copy = shared.copy(source.id(), UUID.randomUUID());
+        String code = fixtures.publishAt(new Deck(copy.owner(), copy.deckId(), null, null), DeckVisibility.LINK);
+
+        JsonNode page = json(get("/public/decks/" + code + "/exercises", null));
+        assertThat(page.path("total").intValue()).isEqualTo(1);
+        assertThat(page.path("exercises").get(0).path("exerciseId").stringValue(null)).isEqualTo(source.exercise().toString());
+        assertThat(page.toString()).doesNotContain(LibraryFixtures.SECRET_ANSWER).doesNotContain(LibraryFixtures.SECRET_REFERENCE);
+    }
+
+    @Test
     void readingOneDecksPublishedRevisionNeverExposesRowsOfAnotherDeckOfTheSameLineage() {
         SharedScopeFixture shared = new SharedScopeFixture(decks, items, storage, jdbc, transactions);
         SharedScopeFixture.Scenario scenario = shared.fork();
