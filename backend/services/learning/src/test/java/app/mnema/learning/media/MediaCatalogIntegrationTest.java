@@ -75,9 +75,9 @@ class MediaCatalogIntegrationTest extends PostgresIntegrationTest {
         assertThat(catalog.ready(draftAsset, 0, draftBlob)).isTrue();
         UUID draft = UUID.randomUUID();
         Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
-        jdbc.sql("INSERT INTO app_learning.editing_draft(draft_id,owner_id,deck_id,row_version,document,"
+        jdbc.sql("INSERT INTO app_learning.editing_draft(draft_id,owner_id,deck_id,reuse_scope_id,row_version,document,"
                         + "created_at,acknowledged_at,expires_at) "
-                        + "VALUES (:draft,:owner,:deck,0,'{}'::jsonb,:now,:now,:expires)")
+                        + "VALUES (:draft,:owner,:deck,(SELECT reuse_scope_id FROM app_learning.deck WHERE deck_id=:deck),0,'{}'::jsonb,:now,:now,:expires)")
                 .param("draft", draft).param("owner", owner).param("deck", deck)
                 .param("now", Timestamp.from(now))
                 .param("expires", Timestamp.from(now.plus(30, ChronoUnit.DAYS))).update();
@@ -423,9 +423,9 @@ class MediaCatalogIntegrationTest extends PostgresIntegrationTest {
         UUID deck = deck(owner);
         UUID draft = UUID.randomUUID();
         Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
-        jdbc.sql("INSERT INTO app_learning.editing_draft(draft_id,owner_id,deck_id,row_version,document,"
+        jdbc.sql("INSERT INTO app_learning.editing_draft(draft_id,owner_id,deck_id,reuse_scope_id,row_version,document,"
                         + "created_at,acknowledged_at,expires_at) "
-                        + "VALUES (:draft,:owner,:deck,0,'{}'::jsonb,:now,:now,:expires)")
+                        + "VALUES (:draft,:owner,:deck,(SELECT reuse_scope_id FROM app_learning.deck WHERE deck_id=:deck),0,'{}'::jsonb,:now,:now,:expires)")
                 .param("draft", draft).param("owner", owner).param("deck", deck)
                 .param("now", Timestamp.from(now))
                 .param("expires", Timestamp.from(now.plus(30, ChronoUnit.DAYS))).update();
@@ -520,9 +520,9 @@ class MediaCatalogIntegrationTest extends PostgresIntegrationTest {
         processing(asset);
         assertThat(catalog.ready(asset, 0, blob)).isTrue();
         Instant acknowledged = Instant.now().minus(31, ChronoUnit.DAYS).truncatedTo(ChronoUnit.MICROS);
-        jdbc.sql("INSERT INTO app_learning.editing_draft(draft_id,owner_id,deck_id,row_version,document,"
+        jdbc.sql("INSERT INTO app_learning.editing_draft(draft_id,owner_id,deck_id,reuse_scope_id,row_version,document,"
                         + "created_at,acknowledged_at,expires_at) "
-                        + "VALUES (:draft,:owner,:deck,0,'{}'::jsonb,:time,:time,:expires)")
+                        + "VALUES (:draft,:owner,:deck,(SELECT reuse_scope_id FROM app_learning.deck WHERE deck_id=:deck),0,'{}'::jsonb,:time,:time,:expires)")
                 .param("draft", draft).param("owner", owner).param("deck", deck)
                 .param("time", Timestamp.from(acknowledged))
                 .param("expires", Timestamp.from(acknowledged.plus(30, ChronoUnit.DAYS))).update();

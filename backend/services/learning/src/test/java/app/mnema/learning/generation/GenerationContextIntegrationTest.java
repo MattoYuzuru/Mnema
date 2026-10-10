@@ -19,7 +19,8 @@ class GenerationContextIntegrationTest extends GenerationIntegrationTest {
     @Autowired private ContextRepository contextRepository;
 
     private void star(UUID deck, UUID member) {
-        jdbc.sql("INSERT INTO app_learning.deck_item_exemplar(deck_id,member_key,marked_at) VALUES (:deck,:member,CURRENT_TIMESTAMP)")
+        jdbc.sql("INSERT INTO app_learning.deck_item_exemplar(deck_id,reuse_scope_id,member_key,marked_at) "
+                        + "VALUES (:deck,(SELECT reuse_scope_id FROM app_learning.deck WHERE deck_id=:deck),:member,CURRENT_TIMESTAMP)")
                 .param("deck", deck).param("member", member).update();
     }
 

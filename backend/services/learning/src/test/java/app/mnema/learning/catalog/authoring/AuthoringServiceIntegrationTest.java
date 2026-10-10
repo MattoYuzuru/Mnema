@@ -309,9 +309,9 @@ class AuthoringServiceIntegrationTest extends PostgresIntegrationTest {
         DeckHead draftDeck = createDeck(draftActor);
         String document = AuthoringCommandsTest.document("quota").toString();
         jdbc.sql("""
-                INSERT INTO app_learning.editing_draft(draft_id,owner_id,deck_id,row_version,document,
+                INSERT INTO app_learning.editing_draft(draft_id,owner_id,deck_id,reuse_scope_id,row_version,document,
                     created_at,acknowledged_at,expires_at)
-                SELECT md5(:actor::text || value::text)::uuid,:actor,:deck,0,CAST(:document AS jsonb),
+                SELECT md5(:actor::text || value::text)::uuid,:actor,:deck,(SELECT reuse_scope_id FROM app_learning.deck WHERE deck_id=:deck),0,CAST(:document AS jsonb),
                     statement_timestamp(),statement_timestamp(),statement_timestamp()+interval '30 days'
                   FROM generate_series(1,200) value
                 """).param("actor", draftActor).param("deck", draftDeck.id()).param("document", document).update();
@@ -322,9 +322,9 @@ class AuthoringServiceIntegrationTest extends PostgresIntegrationTest {
         UUID byteActor = UUID.randomUUID();
         DeckHead byteDeck = createDeck(byteActor);
         jdbc.sql("""
-                INSERT INTO app_learning.editing_draft(draft_id,owner_id,deck_id,row_version,document,
+                INSERT INTO app_learning.editing_draft(draft_id,owner_id,deck_id,reuse_scope_id,row_version,document,
                     created_at,acknowledged_at,expires_at)
-                SELECT md5(:actor::text || value::text)::uuid,:actor,:deck,0,
+                SELECT md5(:actor::text || value::text)::uuid,:actor,:deck,(SELECT reuse_scope_id FROM app_learning.deck WHERE deck_id=:deck),0,
                     jsonb_build_object('padding',repeat('x',1048560)),statement_timestamp(),
                     statement_timestamp(),statement_timestamp()+interval '30 days'
                   FROM generate_series(1,20) value
@@ -337,9 +337,9 @@ class AuthoringServiceIntegrationTest extends PostgresIntegrationTest {
         UUID captureActor = UUID.randomUUID();
         DeckHead captureDeck = createDeck(captureActor);
         jdbc.sql("""
-                INSERT INTO app_learning.capture_note(note_id,owner_id,deck_id,row_version,source,note_text,
+                INSERT INTO app_learning.capture_note(note_id,owner_id,deck_id,reuse_scope_id,row_version,source,note_text,
                     archived,created_at,updated_at)
-                SELECT md5(:actor::text || value::text)::uuid,:actor,:deck,0,'source','note',false,
+                SELECT md5(:actor::text || value::text)::uuid,:actor,:deck,(SELECT reuse_scope_id FROM app_learning.deck WHERE deck_id=:deck),0,'source','note',false,
                     statement_timestamp(),statement_timestamp() FROM generate_series(1,10000) value
                 """).param("actor", captureActor).param("deck", captureDeck.id()).update();
         assertThatThrownBy(() -> captures.create(captureActor, captureCreate(captureDeck.id(), "source", "extra")))

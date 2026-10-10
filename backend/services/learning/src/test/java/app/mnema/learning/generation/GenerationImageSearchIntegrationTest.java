@@ -185,7 +185,7 @@ class GenerationImageSearchIntegrationTest extends GenerationEditsSupport {
         assertThat(media.get(0).path("source").stringValue(null)).isEqualTo("STUB");
         assertThat(media.get(0).path("license").stringValue(null)).isEqualTo("CC0 1.0");
         assertThat(media.get(0).path("sourcePageUrl").stringValue(null)).startsWith("https://example.org/stub/");
-        assertThat(jdbc.sql("SELECT count(*)::integer FROM app_learning.content_media_ref WHERE asset_id=:asset AND owner_id=:owner").param("asset", asset)
+        assertThat(jdbc.sql("SELECT count(*)::integer FROM app_learning.content_media_ref WHERE asset_id=:asset AND asset_owner_id=:owner").param("asset", asset)
                 .param("owner", owner).query(Integer.class).single()).isEqualTo(1);
         assertThat(holds(proposal.artifact())).isZero();
     }

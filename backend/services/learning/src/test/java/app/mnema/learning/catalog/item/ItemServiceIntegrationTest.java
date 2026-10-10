@@ -70,8 +70,7 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
         assertThat(first.has("document")).isFalse();
         assertThat(service.list(actor, deck, "20", null).path("items").get(0).path("title"))
                 .isEqualTo(first.path("title"));
-        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.item_preview WHERE deck_id=:deck")
-                .param("deck", deck).query(Integer.class).single()).isEqualTo(1);
+        assertThat(previews(deck)).isEqualTo(1);
     }
 
     @Test
@@ -330,7 +329,7 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
                 JSON.createArrayNode().add(change("save", selected, revision, 1, changed, null))));
         assertThat(repository.currentOrdinal(initial, repository.headItem(actor, deck, selected).orElseThrow())).isEmpty();
         assertThat(service.read(actor, deck, selected, null).path("ordinal").asInt()).isEqualTo(1);
-        assertThat(count("item_preview", "deck_id", deck)).isZero();
+        assertThat(previews(deck)).isZero();
     }
 
     @Test
@@ -490,6 +489,12 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
     private static void assertNative(JsonNode actual, JsonNode expected) {
         CanonicalJsonHasher canonical = new CanonicalJsonHasher();
         assertThat(canonical.canonicalBytes(actual)).containsExactly(canonical.canonicalBytes(expected));
+    }
+
+    /** Previews cached for the revisions in the deck's lineage scope (a preview has no deck of its own). */
+    private long previews(UUID deck) {
+        return jdbc.sql("SELECT count(*) FROM app_learning.item_preview p JOIN app_learning.deck d "
+                + "ON d.reuse_scope_id=p.reuse_scope_id WHERE d.deck_id=:deck").param("deck", deck).query(Long.class).single();
     }
 
     private long count(String table, String column, UUID value) {

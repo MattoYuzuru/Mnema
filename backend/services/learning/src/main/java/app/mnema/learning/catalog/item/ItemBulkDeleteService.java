@@ -155,7 +155,8 @@ public class ItemBulkDeleteService {
             if (positions.size() != selection.itemIds().size()) throw new ResourceNotFoundException();
             positions.sort(Comparator.comparingInt(ItemRepository.Position::ordinal));
         }
-        Map<UUID, UUID> revisions = repository.revisionsByDescriptor(deckId,
+        Map<UUID, UUID> revisions = repository.revisionsByDescriptor(at.scopeId(),
+                positions.stream().map(ItemRepository.Position::memberKey).toList(),
                 positions.stream().map(ItemRepository.Position::descriptorRootId).toList());
         List<Member> result = new ArrayList<>(positions.size());
         for (ItemRepository.Position position : positions) {

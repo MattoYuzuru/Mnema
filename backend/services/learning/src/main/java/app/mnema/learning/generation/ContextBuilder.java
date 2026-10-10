@@ -340,7 +340,7 @@ class ContextBuilder {
         int handle = 1;
         for (Head head : shown) {
             String title = head.title() != null ? head.title()
-                    : previews.title(deck, head.memberKey(), head.revisionId(), head.scopeId(), head.contentRootId());
+                    : previews.title(head.scopeId(), head.memberKey(), head.revisionId());
             // item_preview keeps the title only: the first line of a material is not read (no full documents in the outline)
             entries.add(new PromptBlocks.OutlineEntry("m" + handle++, title, "", counts.getOrDefault(head.memberKey(), 0)));
         }

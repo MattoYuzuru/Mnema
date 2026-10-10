@@ -1,5 +1,6 @@
 package app.mnema.learning.study.session;
 
+import app.mnema.learning.catalog.item.ItemRevisionVisibility;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -385,9 +386,11 @@ class StudySessionRepository {
 
     Optional<Material> material(UUID deck, UUID member, UUID revision) {
         return jdbc.sql("""
-                SELECT member_key,revision_id,reuse_scope_id,content_root_id FROM app_learning.item_revision
-                 WHERE deck_id=:deck AND member_key=:member AND revision_id=:revision
-                """).param("deck", deck).param("member", member).param("revision", revision)
+                SELECT r.member_key,r.revision_id,r.reuse_scope_id,r.content_root_id
+                  FROM app_learning.deck d JOIN app_learning.item_revision r
+                    ON r.reuse_scope_id=d.reuse_scope_id AND r.member_key=:member AND r.revision_id=:revision
+                 WHERE d.deck_id=:deck
+                """ + " AND " + ItemRevisionVisibility.visibleTo(":deck", "r")).param("deck", deck).param("member", member).param("revision", revision)
                 .query((row, ignored) -> new Material(row.getObject("member_key", UUID.class),
                         row.getObject("revision_id", UUID.class), row.getObject("reuse_scope_id", UUID.class),
                         row.getObject("content_root_id", UUID.class))).optional();

@@ -230,7 +230,7 @@ class ExerciseContexts {
         for (Head head : context.latest(deck, MAX_NEIGHBORS + 2)) {
             if (head.memberKey().equals(member) || titles.size() == MAX_NEIGHBORS) continue;
             String title = head.title() != null ? head.title()
-                    : previews.title(deck, head.memberKey(), head.revisionId(), head.scopeId(), head.contentRootId());
+                    : previews.title(head.scopeId(), head.memberKey(), head.revisionId());
             if (title != null && !title.isBlank()) titles.add(clip(title, TITLE_CHARACTERS));
         }
         return titles;
