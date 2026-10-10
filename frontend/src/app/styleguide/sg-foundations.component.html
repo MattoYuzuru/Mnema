@@ -152,7 +152,7 @@
   <p class="eyebrow">Основы</p>
   <h2 id="icons-title">Иконки</h2>
   <p class="sg-lede">Иконки — простые встроенные SVG с <code>currentColor</code>, штрих 1,5–1,75, <code>aria-hidden="true"</code>; смысл всегда несёт текст или accessible name.
-    Шрифтов значков, CDN и библиотек нет. Статус отличается формой, а не только цветом.</p>
+    Шрифтов значков, CDN и библиотек нет. Статус отличается формой, а не только цветом. Новые знаки — один компонент <code>app-glyph</code> с именем (20 px, размер задаёт токен <code>--mn-glyph-size</code>, 1,25 rem); знаки почты, Telegram и уведомлений остались отдельными компонентами.</p>
   <ul class="sg-icons">
     <li><img src="/assets/brand/mnema-mark.svg" width="32" height="32" alt="" /><span>Знак Mnema</span><code>mnema-mark.svg</code></li>
     <li><app-notification-glyph severity="INFO" /><span>Информация</span><code>app-notification-glyph</code></li>
@@ -160,6 +160,18 @@
     <li><app-notification-glyph severity="ERROR" /><span>Ошибка</span><code>severity="ERROR"</code></li>
     <li><app-telegram-glyph /><span>Telegram, рядом с подписью контакта</span><code>app-telegram-glyph</code></li>
     <li><app-mail-glyph /><span>Почта, рядом с подписью действия</span><code>app-mail-glyph</code></li>
+    <li><app-glyph name="book-search" /><span>Закрытая книга с лупой: вход в поиск</span><code>name="book-search"</code></li>
+    <li><app-glyph name="book-open" /><span>Открытая книга: поиск раскрыт, колода</span><code>name="book-open"</code></li>
+    <li><app-glyph name="share" /><span>Поделиться</span><code>name="share"</code></li>
+    <li><app-glyph name="copy-branch" /><span>Копия с ветвью автора</span><code>name="copy-branch"</code></li>
+    <li><app-glyph name="lock" /><span>Закрытая колода</span><code>name="lock"</code></li>
+    <li><app-glyph name="link" /><span>Доступ по ссылке</span><code>name="link"</code></li>
+    <li><app-glyph name="scroll-seal" /><span>Свиток с печатью: правила, согласие</span><code>name="scroll-seal"</code></li>
+    <li><app-glyph name="colonnade" /><span>Колоннада: Сообщество</span><code>name="colonnade"</code></li>
+    <li><app-glyph name="more" /><span>Действия «⋯», только с именем кнопки</span><code>name="more"</code></li>
+    <li><app-glyph name="image" /><span>Внутри картинки</span><code>name="image"</code></li>
+    <li><app-glyph name="audio" /><span>Внутри аудио</span><code>name="audio"</code></li>
+    <li><app-glyph name="video" /><span>Внутри видео</span><code>name="video"</code></li>
     <li><span class="sg-glyph" aria-hidden="true">→</span><span>Переход</span><code>«Мои колоды →»</code></li>
     <li><span class="sg-glyph" aria-hidden="true">×</span><span>Закрыть</span><code>aria-label="Закрыть …"</code></li>
     <li><span class="sg-glyph" aria-hidden="true">✧</span><span>Декор колоды</span><code>aria-hidden</code></li>
